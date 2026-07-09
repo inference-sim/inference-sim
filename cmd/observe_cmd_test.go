@@ -3,11 +3,13 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -17,7 +19,9 @@ import (
 	"time"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/workload"
+	"github.com/spf13/cobra"
 )
 
 func TestObserveCmd_MissingRequiredFlags_Errors(t *testing.T) {
@@ -148,7 +152,7 @@ func TestObserveOrchestrator_OpenLoop_ConservationAndConcurrency(t *testing.T) {
 
 	// WHEN dispatching with max-concurrency 2 and 0 warmup
 	ctx := context.Background()
-	runObserveOrchestrator(ctx, client, recorder, nil, requests, false, 2, 0, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(ctx, client, recorder, nil, cluster.NewSliceRequestSource(requests), false, 2, 0, nil, nil, false, false, 1.0)
 
 	// THEN: BC-6 conservation: all 5 requests recorded
 	records := recorder.Records()
@@ -215,7 +219,7 @@ func TestObserveOrchestrator_SessionFollowUp_GeneratesRound2(t *testing.T) {
 	sessionMgr := workload.NewSessionManager(wl.Sessions)
 
 	ctx := context.Background()
-	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, false, 10, 0, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(ctx, client, recorder, sessionMgr, cluster.NewSliceRequestSource(wl.Requests), false, 10, 0, nil, nil, false, false, 1.0)
 
 	records := recorder.Records()
 	if len(records) < 2 {
@@ -282,7 +286,7 @@ func TestObserveOrchestrator_SessionError_CancelsSession(t *testing.T) {
 	sessionMgr := workload.NewSessionManager(wl.Sessions)
 
 	ctx := context.Background()
-	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, false, 10, 0, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(ctx, client, recorder, sessionMgr, cluster.NewSliceRequestSource(wl.Requests), false, 10, 0, nil, nil, false, false, 1.0)
 
 	records := recorder.Records()
 	for _, r := range records {
@@ -314,7 +318,7 @@ func TestObserveOrchestrator_WarmupExclusion(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 2, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, cluster.NewSliceRequestSource(requests), false, 10, 2, nil, nil, false, false, 1.0)
 
 	records := recorder.Records()
 	if len(records) != 3 {
@@ -342,7 +346,7 @@ func TestObserveOrchestrator_WarmupExceedsTotal(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 5, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, cluster.NewSliceRequestSource(requests), false, 10, 5, nil, nil, false, false, 1.0)
 
 	records := recorder.Records()
 	if len(records) != 0 {
@@ -381,7 +385,7 @@ func TestObserveOrchestrator_RecordITL_CapturesChunkTimestamps(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0, nil, nil, false, true, 1.0)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, cluster.NewSliceRequestSource(requests), false, 10, 0, nil, nil, false, true, 1.0)
 
 	// THEN ITL records are captured
 	itlRecords := recorder.ITLRecords()
@@ -399,6 +403,104 @@ func TestObserveOrchestrator_RecordITL_CapturesChunkTimestamps(t *testing.T) {
 		if rec.TimestampUs <= 0 {
 			t.Errorf("ITL record %d: TimestampUs = %d, want > 0", i, rec.TimestampUs)
 		}
+	}
+}
+
+// TestObserveOrchestrator_RecordITL_CoversSessionFollowUps verifies that
+// --record-itl enables streaming (and thus ITL capture) for session follow-up
+// rounds, not just round-0 (#1443, BC-6). Follow-ups are created by
+// SessionManager with Streaming=false; the pre-#1443 slice pre-pass only
+// touched round-0 requests, so follow-up ITL was silently dropped. Moving the
+// streaming-on override into per-request dispatch fixes this. This test pins the
+// corrected behavior: at least one round>0 request must appear in the ITL data.
+func TestObserveOrchestrator_RecordITL_CoversSessionFollowUps(t *testing.T) {
+	// Streaming SSE server that returns 3 chunks with usage — same shape as the
+	// round-0 ITL test, so every dispatched request yields ITL records.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"a"}}]}`)
+		flusher.Flush()
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"b"}}]}`)
+		flusher.Flush()
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"c"},"finish_reason":"stop"}],"usage":{"prompt_tokens":50,"completion_tokens":3}}`)
+		flusher.Flush()
+		_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	// Single-session multi-turn spec — round-0 is pre-generated (non-streaming),
+	// round-1 is a SessionManager follow-up (also non-streaming at creation).
+	spec := &workload.WorkloadSpec{
+		Version:       "2",
+		Seed:          42,
+		AggregateRate: 10.0,
+		Clients: []workload.ClientSpec{
+			{
+				ID:           "session-client",
+				RateFraction: 1.0,
+				Arrival:      workload.ArrivalSpec{Process: "constant"},
+				InputDist:    workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				OutputDist:   workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+				Reasoning: &workload.ReasoningSpec{
+					MultiTurn: &workload.MultiTurnSpec{
+						MaxRounds:     2,
+						ThinkTimeUs:   10000,
+						ContextGrowth: "accumulate",
+						SingleSession: true,
+					},
+				},
+			},
+		},
+	}
+	wl, err := workload.GenerateWorkload(spec, 1_000_000, 1)
+	if err != nil {
+		t.Fatalf("GenerateWorkload: %v", err)
+	}
+	if len(wl.Sessions) == 0 {
+		t.Skip("spec did not produce sessions")
+	}
+	// Sanity: the pre-generated round-0 request is non-streaming, so if ITL is
+	// captured it must be because the orchestrator turned streaming on.
+	for _, r := range wl.Requests {
+		if r.Streaming {
+			t.Fatal("precondition: pre-generated request unexpectedly streaming; test would not prove the override")
+		}
+	}
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	recorder := &Recorder{}
+	sessionMgr := workload.NewSessionManager(wl.Sessions)
+	// recordITL=true (last-but-one arg), noStreaming=false.
+	runObserveOrchestrator(context.Background(), client, recorder, sessionMgr,
+		cluster.NewSliceRequestSource(wl.Requests), false, 1, 0, nil, nil, false, true, 1.0)
+
+	// A round-1 follow-up must exist and must have captured ITL (per-chunk
+	// timestamps), proving streaming-on was applied to the follow-up too.
+	records := recorder.Records()
+	var followUpReqID = -1
+	for _, r := range records {
+		if r.RoundIndex > 0 {
+			if r.NumChunks < 2 {
+				t.Errorf("follow-up round %d recorded NumChunks=%d, want >=2 (streaming not enabled)", r.RoundIndex, r.NumChunks)
+			}
+			followUpReqID = r.RequestID
+		}
+	}
+	if followUpReqID < 0 {
+		t.Fatal("no round>0 follow-up record found — merge path not exercised")
+	}
+	itl := recorder.ITLRecords()
+	hasFollowUpITL := false
+	for _, rec := range itl {
+		if rec.RequestID == followUpReqID {
+			hasFollowUpITL = true
+			break
+		}
+	}
+	if !hasFollowUpITL {
+		t.Errorf("no ITL records for follow-up request %d — streaming-on override did not reach session follow-ups", followUpReqID)
 	}
 }
 
@@ -422,7 +524,7 @@ func TestObserveOrchestrator_TimestampOrdering(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, cluster.NewSliceRequestSource(requests), false, 10, 0, nil, nil, false, false, 1.0)
 
 	records := recorder.Records()
 	if len(records) != 1 {
@@ -462,7 +564,7 @@ func TestObserveOrchestrator_TraceV2RoundTrip(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, cluster.NewSliceRequestSource(requests), false, 10, 0, nil, nil, false, false, 1.0)
 
 	headerPath := filepath.Join(t.TempDir(), "header.yaml")
 	dataPath := filepath.Join(t.TempDir(), "data.csv")
@@ -497,6 +599,323 @@ func TestObserveOrchestrator_TraceV2RoundTrip(t *testing.T) {
 	}
 }
 
+// A5 merge-rewrite guards (#1443, BC-2).
+
+// TestPreferFollowUp_TieGoesToFollowUp pins the tie-break operator that the
+// lazy-generation merge rewrite extracted into a pure function. A live
+// orchestrator run cannot construct a deterministic arrival tie between a
+// follow-up and a pre-gen request (follow-up arrivals are wall-clock-derived),
+// so this pure unit test is the only guard against inverting <= to <. Ties MUST
+// go to the follow-up, preserving the pre-lazy dispatch order.
+func TestPreferFollowUp_TieGoesToFollowUp(t *testing.T) {
+	tests := []struct {
+		name       string
+		followUpAt int64
+		preGenAt   int64
+		want       bool
+	}{
+		{"followup earlier", 1000, 2000, true},
+		{"equal arrival -> followup wins", 5000, 5000, true},
+		{"followup later", 3000, 1000, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			followUp := &sim.Request{ArrivalTime: tt.followUpAt}
+			preGen := &sim.Request{ArrivalTime: tt.preGenAt}
+			if got := preferFollowUp(followUp, preGen); got != tt.want {
+				t.Errorf("preferFollowUp(fu=%d, pg=%d) = %v, want %v",
+					tt.followUpAt, tt.preGenAt, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestObserveOrchestrator_MergeOrder_OpenLoopExactSequence is an absolute guard
+// on the one-slot lookahead buffer: it asserts the exact dispatch sequence
+// against a hand-written expectation, so it fails if the buffer drops,
+// duplicates, or reorders a pre-generated request. A cross-mode parity test
+// cannot catch such a bug (both modes share the merge code); this can. Uses an
+// open-loop (nil sessionMgr) stream at maxConcurrency=1 so dispatch order equals
+// record-append order and every recorded field is fully deterministic.
+func TestObserveOrchestrator_MergeOrder_OpenLoopExactSequence(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"text": "x"}},
+			"usage":   map[string]any{"prompt_tokens": 10, "completion_tokens": 5},
+		})
+	}))
+	defer server.Close()
+
+	// Arrivals include a tie (5000, 5000) to pin stable same-arrival ordering.
+	// Distinct InputTokens lengths make each request individually identifiable.
+	arrivals := []int64{0, 5000, 5000, 10000, 20000}
+	inputLens := []int{11, 22, 33, 44, 55}
+	requests := make([]*sim.Request, len(arrivals))
+	for i := range requests {
+		requests[i] = &sim.Request{
+			ID:           fmt.Sprintf("request_%d", i),
+			ArrivalTime:  arrivals[i],
+			InputTokens:  make([]sim.TokenID, inputLens[i]),
+			OutputTokens: make([]sim.TokenID, 5),
+			MaxOutputLen: 5,
+			State:        sim.StateQueued,
+		}
+	}
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	recorder := &Recorder{}
+	runObserveOrchestrator(context.Background(), client, recorder, nil,
+		cluster.NewSliceRequestSource(requests), false, 1, 0, nil, nil, false, false, 1.0)
+
+	records := recorder.Records()
+	if len(records) != len(requests) {
+		t.Fatalf("expected %d records, got %d", len(requests), len(records))
+	}
+	for i, rec := range records {
+		if rec.RequestID != i {
+			t.Errorf("record %d: RequestID = %d, want %d (dispatch order broken)", i, rec.RequestID, i)
+		}
+		if rec.ArrivalTimeUs != arrivals[i] {
+			t.Errorf("record %d: ArrivalTimeUs = %d, want %d (merge reordered)", i, rec.ArrivalTimeUs, arrivals[i])
+		}
+		if rec.InputTokens != inputLens[i] {
+			t.Errorf("record %d: InputTokens = %d, want %d (wrong request at this position)", i, rec.InputTokens, inputLens[i])
+		}
+	}
+}
+
+// TestObserveOrchestrator_EagerLazyParity_SameDispatchSequence proves eager and
+// lazy generation produce the same observe dispatch for a supported spec at a
+// fixed seed (BC-1, BC-3, INV-6). Runs a closed-loop single-session spec through
+// the orchestrator once per mode at maxConcurrency=1, then compares the recorded
+// requests on the deterministic TraceRecord surface, grouped by
+// (SessionID, RoundIndex).
+//
+// Wall-clock-derived fields are excluded per the determinism surface: follow-up
+// (RoundIndex>0) ArrivalTimeUs is time.Since(startWall)+thinkTime and RequestID
+// is the dispatch index, both non-deterministic; XRequestID is a random UUID.
+// ArrivalTimeUs/RequestID are compared only for RoundIndex==0.
+func TestObserveOrchestrator_EagerLazyParity_SameDispatchSequence(t *testing.T) {
+	newStub := func() *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []map[string]any{{"text": "response"}},
+				"usage":   map[string]any{"prompt_tokens": 100, "completion_tokens": 50},
+			})
+		}))
+	}
+
+	// Supported shape: single-client, single-session multi-turn reasoning
+	// (no concurrency, no per-window params) — the lazy source handles it.
+	newSpec := func() *workload.WorkloadSpec {
+		return &workload.WorkloadSpec{
+			Version:       "2",
+			Seed:          42,
+			AggregateRate: 10.0,
+			Clients: []workload.ClientSpec{
+				{
+					ID:           "session-client",
+					RateFraction: 1.0,
+					Arrival:      workload.ArrivalSpec{Process: "constant"},
+					InputDist:    workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+					OutputDist:   workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+					Reasoning: &workload.ReasoningSpec{
+						MultiTurn: &workload.MultiTurnSpec{
+							MaxRounds:     2,
+							ThinkTimeUs:   10000,
+							ContextGrowth: "accumulate",
+							SingleSession: true,
+						},
+					},
+				},
+			},
+		}
+	}
+
+	// Eager run.
+	eagerServer := newStub()
+	defer eagerServer.Close()
+	eagerWL, err := workload.GenerateWorkload(newSpec(), 1_000_000, 3)
+	if err != nil {
+		t.Fatalf("GenerateWorkload (eager): %v", err)
+	}
+	if len(eagerWL.Sessions) == 0 {
+		t.Fatal("eager spec produced no sessions — cannot exercise BC-5 merge path")
+	}
+	eagerRec := &Recorder{}
+	runObserveOrchestrator(context.Background(),
+		NewRealClient(eagerServer.URL, "", "test-model", "vllm"),
+		eagerRec, workload.NewSessionManager(eagerWL.Sessions),
+		cluster.NewSliceRequestSource(eagerWL.Requests),
+		false, 1, 0, nil, nil, false, false, 1.0)
+
+	// Lazy run — same spec/seed.
+	lazyServer := newStub()
+	defer lazyServer.Close()
+	lazySrc, lazySessions, lazyBudget, lazyErr := workload.GenerateWorkloadLazy(newSpec(), 1_000_000, 3)
+	if lazyErr != nil {
+		t.Fatalf("GenerateWorkloadLazy returned error (spec should be supported): %v", lazyErr)
+	}
+	lazyMgr := workload.NewSessionManager(lazySessions)
+	if lazyBudget >= 0 {
+		lazyMgr.SetFollowUpBudget(lazyBudget)
+	}
+	lazyRec := &Recorder{}
+	runObserveOrchestrator(context.Background(),
+		NewRealClient(lazyServer.URL, "", "test-model", "vllm"),
+		lazyRec, lazyMgr, lazySrc,
+		false, 1, 0, nil, nil, false, false, 1.0)
+
+	// Group by (SessionID, RoundIndex) — the stable deterministic key —
+	// so the comparison does not depend on record-append order.
+	type key struct {
+		sid   string
+		round int
+	}
+	index := func(recs []workload.TraceRecord) map[key]workload.TraceRecord {
+		m := make(map[key]workload.TraceRecord, len(recs))
+		for _, r := range recs {
+			m[key{r.SessionID, r.RoundIndex}] = r
+		}
+		return m
+	}
+	eagerIdx := index(eagerRec.Records())
+	lazyIdx := index(lazyRec.Records())
+
+	if len(eagerIdx) == 0 {
+		t.Fatal("no records recorded in eager mode")
+	}
+	if len(eagerIdx) != len(lazyIdx) {
+		t.Fatalf("record-key count mismatch: eager %d, lazy %d", len(eagerIdx), len(lazyIdx))
+	}
+	// Ensure the session follow-up (merge) path was actually exercised in both
+	// modes — a round-1 record must exist, else the parity check is trivial.
+	hasRound := func(idx map[key]workload.TraceRecord, round int) bool {
+		for k := range idx {
+			if k.round == round {
+				return true
+			}
+		}
+		return false
+	}
+	if !hasRound(eagerIdx, 1) || !hasRound(lazyIdx, 1) {
+		t.Fatalf("expected a round-1 follow-up in both modes (eager r1=%v, lazy r1=%v) — merge path not exercised",
+			hasRound(eagerIdx, 1), hasRound(lazyIdx, 1))
+	}
+	for k, e := range eagerIdx {
+		l, ok := lazyIdx[k]
+		if !ok {
+			t.Errorf("key %+v present in eager but missing in lazy", k)
+			continue
+		}
+		// Always-deterministic surface (all real workload.TraceRecord fields).
+		if e.InputTokens != l.InputTokens {
+			t.Errorf("key %+v: InputTokens eager=%d lazy=%d", k, e.InputTokens, l.InputTokens)
+		}
+		if e.OutputTokens != l.OutputTokens {
+			t.Errorf("key %+v: OutputTokens eager=%d lazy=%d", k, e.OutputTokens, l.OutputTokens)
+		}
+		if e.Model != l.Model {
+			t.Errorf("key %+v: Model eager=%q lazy=%q", k, e.Model, l.Model)
+		}
+		if e.ClientID != l.ClientID {
+			t.Errorf("key %+v: ClientID eager=%q lazy=%q", k, e.ClientID, l.ClientID)
+		}
+		if e.Streaming != l.Streaming {
+			t.Errorf("key %+v: Streaming eager=%v lazy=%v", k, e.Streaming, l.Streaming)
+		}
+		// Arrival time and request id are deterministic only for round-0
+		// (pre-generated) records; follow-up rounds are wall-clock-derived.
+		if k.round == 0 {
+			if e.ArrivalTimeUs != l.ArrivalTimeUs {
+				t.Errorf("key %+v: round-0 ArrivalTimeUs eager=%d lazy=%d", k, e.ArrivalTimeUs, l.ArrivalTimeUs)
+			}
+			if e.RequestID != l.RequestID {
+				t.Errorf("key %+v: round-0 RequestID eager=%d lazy=%d", k, e.RequestID, l.RequestID)
+			}
+		}
+	}
+}
+
+// TestObserveLazyFallback_UnsupportedSpecSentinels pins the sentinel contract
+// observe relies on to fall back to the eager generator (BC-4). observe matches
+// these via errors.Is exactly as blis run does; if GenerateWorkloadLazy stopped
+// returning them for these shapes, observe's fallback (and this PR's warning
+// path) would silently break.
+func TestObserveLazyFallback_UnsupportedSpecSentinels(t *testing.T) {
+	// Concurrency client → ErrLazyUnsupportedConcurrency.
+	concurrencySpec := &workload.WorkloadSpec{
+		Version:       "2",
+		Seed:          42,
+		AggregateRate: 10.0,
+		Clients: []workload.ClientSpec{
+			{
+				ID:          "concurrency-client",
+				Concurrency: 4,
+				InputDist:   workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				OutputDist:  workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+			},
+		},
+	}
+	if _, _, _, err := workload.GenerateWorkloadLazy(concurrencySpec, 1_000_000, 10); !errors.Is(err, workload.ErrLazyUnsupportedConcurrency) {
+		t.Errorf("concurrency spec: got err %v, want ErrLazyUnsupportedConcurrency", err)
+	}
+
+	// Multi-session reasoning (SingleSession=false) → ErrLazyUnsupportedMultiSession.
+	multiSessionSpec := &workload.WorkloadSpec{
+		Version:       "2",
+		Seed:          42,
+		AggregateRate: 10.0,
+		Clients: []workload.ClientSpec{
+			{
+				ID:           "multi-session-client",
+				RateFraction: 1.0,
+				Arrival:      workload.ArrivalSpec{Process: "constant"},
+				InputDist:    workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				OutputDist:   workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+				Reasoning: &workload.ReasoningSpec{
+					MultiTurn: &workload.MultiTurnSpec{
+						MaxRounds:     3,
+						ThinkTimeUs:   1000,
+						ContextGrowth: "accumulate",
+						SingleSession: false,
+					},
+				},
+			},
+		},
+	}
+	if _, _, _, err := workload.GenerateWorkloadLazy(multiSessionSpec, 1_000_000, 10); !errors.Is(err, workload.ErrLazyUnsupportedMultiSession) {
+		t.Errorf("multi-session spec: got err %v, want ErrLazyUnsupportedMultiSession", err)
+	}
+
+	// Per-window (time-varying) parameters → ErrLazyUnsupportedTimeVarying.
+	perWindowRate := 5.0
+	timeVaryingSpec := &workload.WorkloadSpec{
+		Version:       "2",
+		Seed:          42,
+		AggregateRate: 10.0,
+		Clients: []workload.ClientSpec{
+			{
+				ID:           "time-varying-client",
+				RateFraction: 1.0,
+				Arrival:      workload.ArrivalSpec{Process: "constant"},
+				InputDist:    workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				OutputDist:   workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+				Lifecycle: &workload.LifecycleSpec{
+					Windows: []workload.ActiveWindow{
+						{StartUs: 0, EndUs: 500_000, TraceRate: &perWindowRate},
+					},
+				},
+			},
+		},
+	}
+	if _, _, _, err := workload.GenerateWorkloadLazy(timeVaryingSpec, 1_000_000, 10); !errors.Is(err, workload.ErrLazyUnsupportedTimeVarying) {
+		t.Errorf("time-varying spec: got err %v, want ErrLazyUnsupportedTimeVarying", err)
+	}
+}
+
 // Task 7: Error storm drain and context cancellation (BC-10, BC-12)
 
 func TestObserveOrchestrator_ErrorStormDrain(t *testing.T) {
@@ -520,7 +939,7 @@ func TestObserveOrchestrator_ErrorStormDrain(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 5, 0, nil, nil, false, false, 1.0)
+		runObserveOrchestrator(context.Background(), client, recorder, nil, cluster.NewSliceRequestSource(requests), false, 5, 0, nil, nil, false, false, 1.0)
 		close(done)
 	}()
 
@@ -564,7 +983,7 @@ func TestObserveOrchestrator_ContextCancellation(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		runObserveOrchestrator(ctx, client, recorder, nil, requests, false, 2, 0, nil, nil, false, false, 1.0)
+		runObserveOrchestrator(ctx, client, recorder, nil, cluster.NewSliceRequestSource(requests), false, 2, 0, nil, nil, false, false, 1.0)
 		close(done)
 	}()
 
@@ -1045,6 +1464,83 @@ func TestObserveCmd_RttMsFlag_Exists(t *testing.T) {
 	}
 	if f.DefValue != "0" {
 		t.Errorf("--rtt-ms default: got %q, want %q", f.DefValue, "0")
+	}
+}
+
+// TestObserveCmd_LazyGenerationFlag_Exists verifies observe exposes the same
+// --lazy-generation alpha switch as run/replay, defaulting off (#1443).
+func TestObserveCmd_LazyGenerationFlag_Exists(t *testing.T) {
+	f := observeCmd.Flags().Lookup("lazy-generation")
+	if f == nil {
+		t.Fatal("missing expected flag --lazy-generation")
+	}
+	if f.DefValue != "false" {
+		t.Errorf("--lazy-generation default: got %q, want %q", f.DefValue, "false")
+	}
+}
+
+// TestValidateITLStreamingFlags covers the mutual-exclusion guard for
+// --record-itl + --no-streaming: ITL recording needs streaming, so the
+// combination is incoherent and must be rejected upfront rather than silently
+// no-opping with a per-request warning (PR #1457 review).
+func TestValidateITLStreamingFlags(t *testing.T) {
+	tests := []struct {
+		name        string
+		recordITL   bool
+		noStreaming bool
+		wantErr     bool
+	}{
+		{"neither set", false, false, false},
+		{"itl only", true, false, false},
+		{"no-streaming only", false, true, false},
+		{"both set -> error", true, true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := validateITLStreamingFlags(tt.recordITL, tt.noStreaming)
+			if tt.wantErr && msg == "" {
+				t.Errorf("recordITL=%v noStreaming=%v: expected an error message, got empty", tt.recordITL, tt.noStreaming)
+			}
+			if !tt.wantErr && msg != "" {
+				t.Errorf("recordITL=%v noStreaming=%v: expected no error, got %q", tt.recordITL, tt.noStreaming, msg)
+			}
+		})
+	}
+}
+
+// TestClassifyLazyGenError verifies runObserve routes each GenerateWorkloadLazy
+// result correctly: nil → use streaming, each ErrLazyUnsupported* sentinel →
+// eager fallback (with a reason), any other error → fatal. This guards the
+// sentinel-matching that a wrong errors.Is target or a missing case would break
+// silently (PR #1457 review, IMPORTANT-1). Uses errors.Is-wrapped sentinels to
+// confirm matching survives fmt.Errorf("%w") wrapping.
+func TestClassifyLazyGenError(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		wantDisp  lazyGenDisposition
+		reasonSub string // substring the fallback reason must contain ("" = don't check)
+	}{
+		{"nil uses streaming", nil, lazyUseStreaming, ""},
+		{"time-varying falls back", workload.ErrLazyUnsupportedTimeVarying, lazyFallbackToEager, "per-window"},
+		{"concurrency falls back", workload.ErrLazyUnsupportedConcurrency, lazyFallbackToEager, "concurrency"},
+		{"multi-session falls back", workload.ErrLazyUnsupportedMultiSession, lazyFallbackToEager, "multi-session"},
+		{"wrapped sentinel still falls back", fmt.Errorf("context: %w", workload.ErrLazyUnsupportedConcurrency), lazyFallbackToEager, "concurrency"},
+		{"other error is fatal", errors.New("boom"), lazyFatal, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			disp, reason := classifyLazyGenError(tt.err)
+			if disp != tt.wantDisp {
+				t.Errorf("classifyLazyGenError(%v) disposition = %d, want %d", tt.err, disp, tt.wantDisp)
+			}
+			if tt.reasonSub != "" && !strings.Contains(reason, tt.reasonSub) {
+				t.Errorf("classifyLazyGenError(%v) reason = %q, want substring %q", tt.err, reason, tt.reasonSub)
+			}
+			if tt.wantDisp != lazyFallbackToEager && reason != "" {
+				t.Errorf("classifyLazyGenError(%v) returned reason %q for non-fallback disposition", tt.err, reason)
+			}
+		})
 	}
 }
 
@@ -1666,3 +2162,197 @@ func TestApplyThinkTimeSampler_NilSamplerIsNoOp(t *testing.T) {
 	}
 }
 
+// --- runObserve end-to-end Fatalf tests (subprocess pattern, PR #1457 review) ---
+//
+// runObserve calls logrus.Fatalf (→ os.Exit(1)) on invalid flag combinations and
+// on a terminal lazy-sampler error. These paths can't be exercised in-process
+// (os.Exit kills the test binary), so — following the established pattern in
+// replay_test.go — the child branch (BLIS_TEST_SUBPROCESS=1) drives runObserve
+// to the fatal path, and the parent re-execs this test and asserts exit code 1
+// plus that no trace file was written.
+
+// observeSubprocessDir returns a stable temp dir shared between the child's
+// runObserve invocation and the parent's post-exit file-existence assertions.
+// Both processes derive the same path from the test's TempDir base so the parent
+// can verify the trace was NOT written when runObserve aborts.
+func observeSubprocessPaths(t *testing.T) (header, data string) {
+	t.Helper()
+	dir := filepath.Join(os.TempDir(), "blis-observe-fatal-"+t.Name())
+	return filepath.Join(dir, "trace.yaml"), filepath.Join(dir, "trace.csv")
+}
+
+// setObserveGlobalsForSubprocess sets the observe command globals to a valid
+// baseline so that runObserve reaches the code path under test rather than
+// tripping an unrelated validation Fatalf. Callers override the specific fields
+// they are testing after calling this.
+func setObserveGlobalsForSubprocess(serverURL, header, data string) {
+	observeServerURL = serverURL
+	observeModel = "test-model"
+	observeTraceHeader = header
+	observeTraceData = data
+	observeWorkload = ""
+	observeWorkloadSpec = ""
+	observeRate = 10.0
+	observeConcurrency = 0
+	observeNumRequests = 3
+	observeSeed = 42
+	observeHorizon = 0
+	observeMaxConcur = 4
+	observeWarmup = 0
+	observePrewarmDuration = 0
+	observeNoStreaming = false
+	observeRecordITL = false
+	observeITLOutput = ""
+	observeLazyGeneration = false
+	observeAPIFormat = "completions"
+	observeServerType = "vllm"
+	observeAPIKey = ""
+	observeTimeout = 300
+	observeRttMs = 0
+	observeThinkTimeMs = 0
+	observeThinkTimeDist = ""
+	observeUnconstrainedOutput = false
+	observeDefaultsFilePath = "../defaults.yaml"
+	// Shared post-hoc/saturation/goodput globals (declared in root.go).
+	postHocDetector = "none"
+	saturationThreshold = 5000.0
+	saturationReport = ""
+	goodputSLOTTFT = ""
+	goodputSLOITL = ""
+	goodputSLOE2E = ""
+}
+
+// newObserveTestCmd builds a cobra command carrying only the flags that
+// runObserve inspects via cmd.Flags().Changed(...), pre-parsed to the given
+// rate. runObserve reads all other values from the globals set above.
+func newObserveTestCmd(rate float64) *cobra.Command {
+	c := &cobra.Command{}
+	c.Flags().Float64Var(&observeRate, "rate", 0, "")
+	c.Flags().Int64Var(&observeSeed, "seed", 42, "")
+	c.Flags().Int64Var(&observeHorizon, "horizon", 0, "")
+	c.Flags().IntVar(&observeNumRequests, "num-requests", 0, "")
+	c.Flags().IntVar(&observeMaxConcur, "max-concurrency", 256, "")
+	c.Flags().IntVar(&observeThinkTimeMs, "think-time-ms", 0, "")
+	c.Flags().StringVar(&observeThinkTimeDist, "think-time-dist", "", "")
+	_ = c.ParseFlags([]string{"--rate", fmt.Sprintf("%g", rate)})
+	return c
+}
+
+// stubObserveServer returns a server that answers both the calibration request
+// and the workload requests with a fixed non-streaming completion.
+func stubObserveServer() *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"text": "hi"}},
+			"usage":   map[string]any{"prompt_tokens": 100, "completion_tokens": 5},
+		})
+	}))
+}
+
+// TestObserveCmd_RecordITLNoStreaming_FatalNoTrace verifies that
+// `--record-itl` + `--no-streaming` aborts runObserve with exit 1 and writes no
+// trace file (the mutual-exclusion guard, wired into the CLI path). SUGGESTION-1
+// from the PR #1457 review — the Fatalf call-site wiring, not just the helper.
+func TestObserveCmd_RecordITLNoStreaming_FatalNoTrace(t *testing.T) {
+	header, data := observeSubprocessPaths(t)
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		_ = os.MkdirAll(filepath.Dir(header), 0o755)
+		srv := stubObserveServer()
+		defer srv.Close()
+		setObserveGlobalsForSubprocess(srv.URL, header, data)
+		observeRecordITL = true
+		observeNoStreaming = true // incoherent combo → must Fatalf upfront
+		runObserve(newObserveTestCmd(10.0), nil)
+		os.Exit(0) // reached only if no Fatalf = parent failure
+	}
+
+	_ = os.RemoveAll(filepath.Dir(header))
+	cmd := exec.Command(os.Args[0], "-test.run=TestObserveCmd_RecordITLNoStreaming_FatalNoTrace", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	assertObserveFatalNoTrace(t, out, err, header, data, "record-itl")
+}
+
+// TestObserveCmd_LazySamplerError_FatalNoTrace verifies BC-9: a terminal lazy
+// sampler error (surfaced by lazySource.Err() after dispatch) aborts runObserve
+// with exit 1 and writes no trace — the invariant IMPORTANT-2 asks to pin. The
+// trigger is a reasoning client whose ReasonRatioDist passes spec.Validate() but
+// fails the sampler (missing "mu"), reachable only in the lazy path.
+func TestObserveCmd_LazySamplerError_FatalNoTrace(t *testing.T) {
+	header, data := observeSubprocessPaths(t)
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		dir := filepath.Dir(header)
+		_ = os.MkdirAll(dir, 0o755)
+		specPath := filepath.Join(dir, "spec.yaml")
+		// Single-session reasoning (lazy-supported) with an incomplete
+		// ReasonRatioDist: Validate() passes, the streaming sampler fails.
+		specYAML := "version: \"2\"\n" +
+			"seed: 42\n" +
+			"aggregate_rate: 10.0\n" +
+			"num_requests: 3\n" +
+			"clients:\n" +
+			"  - id: c\n" +
+			"    rate_fraction: 1.0\n" +
+			"    arrival: {process: constant}\n" +
+			"    input_distribution: {type: constant, params: {value: 50}}\n" +
+			"    output_distribution: {type: constant, params: {value: 25}}\n" +
+			"    reasoning:\n" +
+			"      reason_ratio_distribution: {type: lognormal, params: {sigma: 0.5}}\n" +
+			"      multi_turn: {max_rounds: 2, think_time_us: 1000, context_growth: accumulate, single_session: true}\n"
+		if err := os.WriteFile(specPath, []byte(specYAML), 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "write spec failed: %v\n", err)
+			os.Exit(2)
+		}
+		srv := stubObserveServer()
+		defer srv.Close()
+		setObserveGlobalsForSubprocess(srv.URL, header, data)
+		observeWorkloadSpec = specPath
+		observeRate = 0 // spec-driven; --rate not "changed"
+		observeLazyGeneration = true
+		c := &cobra.Command{}
+		c.Flags().Float64Var(&observeRate, "rate", 0, "")
+		c.Flags().Int64Var(&observeSeed, "seed", 42, "")
+		c.Flags().Int64Var(&observeHorizon, "horizon", 0, "")
+		c.Flags().IntVar(&observeNumRequests, "num-requests", 0, "")
+		c.Flags().IntVar(&observeMaxConcur, "max-concurrency", 256, "")
+		c.Flags().IntVar(&observeThinkTimeMs, "think-time-ms", 0, "")
+		c.Flags().StringVar(&observeThinkTimeDist, "think-time-dist", "", "")
+		_ = c.ParseFlags([]string{}) // no --rate change: spec provides the rate
+		runObserve(c, nil)
+		os.Exit(0)
+	}
+
+	_ = os.RemoveAll(filepath.Dir(header))
+	cmd := exec.Command(os.Args[0], "-test.run=TestObserveCmd_LazySamplerError_FatalNoTrace", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	assertObserveFatalNoTrace(t, out, err, header, data, "sampler")
+}
+
+// assertObserveFatalNoTrace checks that the subprocess exited with code 1
+// (logrus.Fatalf), that its output mentions the expected reason, and that
+// neither trace file was written (the no-trace-on-abort invariant).
+func assertObserveFatalNoTrace(t *testing.T, out []byte, err error, header, data, reasonSubstr string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("expected non-zero exit (Fatalf), got exit 0; output:\n%s", out)
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("unexpected error type: %v; output:\n%s", err, out)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("expected exit code 1 (logrus.Fatalf), got %d; output:\n%s", exitErr.ExitCode(), out)
+	}
+	if !strings.Contains(string(out), reasonSubstr) {
+		t.Errorf("fatal output should mention %q, got:\n%s", reasonSubstr, out)
+	}
+	if _, statErr := os.Stat(header); statErr == nil {
+		t.Errorf("trace header %s was written despite fatal abort", header)
+	}
+	if _, statErr := os.Stat(data); statErr == nil {
+		t.Errorf("trace data %s was written despite fatal abort", data)
+	}
+	_ = os.RemoveAll(filepath.Dir(header))
+}

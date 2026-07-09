@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/saturation"
 	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/sirupsen/logrus"
@@ -63,6 +65,7 @@ var (
 	observeITLOutput           string
 	observeTimeout             int
 	observePrewarmDuration     time.Duration
+	observeLazyGeneration      bool // --lazy-generation: stream requests from generator (alpha, #1441/#1443)
 	// saturationReport is declared in root.go and shared across run, replay, observe
 )
 
@@ -123,6 +126,10 @@ func init() {
 	observeCmd.Flags().StringVar(&observeWorkload, "workload", "", "Workload preset name (chatbot, summarization, contentgen, multidoc); requires --rate")
 	observeCmd.Flags().StringVar(&observeDefaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to defaults.yaml (for preset workload definitions)")
 	observeCmd.Flags().Float64Var(&observeRate, "rate", 0, "Requests per second for distribution synthesis")
+	observeCmd.Flags().BoolVar(&observeLazyGeneration, "lazy-generation", false,
+		"Alpha (#1441): stream requests from the workload generator instead of pre-generating "+
+			"the full slice. Default off. Falls back to eager mode (with a warning) for time-varying "+
+			"workloads, concurrency clients, and multi-session reasoning (SingleSession=false).")
 
 	// Optional
 	observeCmd.Flags().StringVar(&observeAPIKey, "api-key", "", "Bearer token for server authentication")
@@ -159,7 +166,7 @@ func init() {
 	observeCmd.Flags().IntVar(&observeTimeout, "timeout", defaultHTTPTimeoutSeconds, "HTTP request timeout in seconds (per request)")
 
 	// ITL recording (opt-in; requires streaming)
-	observeCmd.Flags().BoolVar(&observeRecordITL, "record-itl", false, "Record per-chunk timestamps for ITL calibration (streaming only; forces streaming on non-streaming workloads)")
+	observeCmd.Flags().BoolVar(&observeRecordITL, "record-itl", false, "Record per-chunk timestamps for ITL calibration (forces streaming per request; mutually exclusive with --no-streaming)")
 	observeCmd.Flags().StringVar(&observeITLOutput, "itl-output", "", "Output path for ITL CSV file (default: <trace-data>.itl.csv if --record-itl is set)")
 
 	// Saturation analysis (optional, run/replay parity)
@@ -201,6 +208,53 @@ func validateObserveWorkloadFlags(preset, workloadSpec string, rateChanged bool,
 		return fmt.Sprintf("--workload %q requires --rate (preset synthesis needs a request rate)", preset)
 	}
 	return ""
+}
+
+// validateITLStreamingFlags rejects the incoherent --record-itl + --no-streaming
+// combination. ITL recording captures per-chunk timestamps, which only exist for
+// streaming responses; with --no-streaming the per-request streaming override in
+// runObserveOrchestrator is defeated by requestToPending's `Streaming && !noStreaming`,
+// so no ITL is ever recorded. Fail fast with a clear message instead of emitting a
+// per-request "non-streaming" warning hundreds of times (PR #1457 review).
+// Returns a non-empty error string if the combination is invalid, empty otherwise.
+// Extracted for unit testability (R14).
+func validateITLStreamingFlags(recordITL, noStreaming bool) string {
+	if recordITL && noStreaming {
+		return "--record-itl and --no-streaming are mutually exclusive; ITL recording requires streaming responses"
+	}
+	return ""
+}
+
+// lazyGenDisposition tells runObserve how to react to a GenerateWorkloadLazy
+// result: use the streaming source, fall back to the eager generator, or abort.
+type lazyGenDisposition int
+
+const (
+	lazyUseStreaming    lazyGenDisposition = iota // err == nil: use the lazy source
+	lazyFallbackToEager                           // ErrLazyUnsupported*: warn + eager
+	lazyFatal                                     // any other error: abort
+)
+
+// classifyLazyGenError maps a GenerateWorkloadLazy error to a disposition and,
+// for the fallback case, the human-facing reason fragment. Extracted so the
+// sentinel matching — the part most prone to silent breakage (a wrong errors.Is
+// target or a missing case would route an unsupported spec to Fatal, or a real
+// error to eager) — is unit-testable independently of runObserve's HTTP/globals
+// (R14). The disposition→action mapping (warn / Fatalf / use) stays at the CLI
+// boundary in runObserve. Mirrors blis run's switch (cmd/root.go).
+func classifyLazyGenError(err error) (lazyGenDisposition, string) {
+	switch {
+	case err == nil:
+		return lazyUseStreaming, ""
+	case errors.Is(err, workload.ErrLazyUnsupportedTimeVarying):
+		return lazyFallbackToEager, "workload has per-window parameters"
+	case errors.Is(err, workload.ErrLazyUnsupportedConcurrency):
+		return lazyFallbackToEager, "workload has concurrency clients"
+	case errors.Is(err, workload.ErrLazyUnsupportedMultiSession):
+		return lazyFallbackToEager, "workload has multi-session reasoning (SingleSession=false)"
+	default:
+		return lazyFatal, ""
+	}
 }
 
 // buildPresetSpec loads the named preset from defaults.yaml and synthesizes a WorkloadSpec.
@@ -251,6 +305,11 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	// Warn if --itl-output is set without --record-itl (no ITL data will be written)
 	if observeITLOutput != "" && !observeRecordITL {
 		logrus.Warnf("--itl-output is set but --record-itl is not enabled; no ITL data will be written")
+	}
+	// --record-itl requires streaming; reject --no-streaming upfront rather than
+	// silently no-opping the per-request streaming override (PR #1457 review).
+	if msg := validateITLStreamingFlags(observeRecordITL, observeNoStreaming); msg != "" {
+		logrus.Fatalf("%s", msg)
 	}
 	// BC-7: at least one workload input mode must be provided
 	if observeWorkload == "" && observeWorkloadSpec == "" && !cmd.Flags().Changed("rate") && observeConcurrency <= 0 {
@@ -382,13 +441,53 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Fatalf("Workload requires either num_requests, --num-requests, or --horizon to bound generation")
 	}
 
-	// Generate requests and session blueprints (BC-1, BC-2, D1)
-	wl, err := workload.GenerateWorkload(spec, horizon, maxRequests)
-	if err != nil {
-		logrus.Fatalf("Failed to generate workload: %v", err)
+	// Generate requests and session blueprints (BC-1, BC-2, D1).
+	//
+	// Lazy generation path (#1441/#1443, alpha, default off). When set, build a
+	// streaming request source instead of materializing the full slice, mirroring
+	// blis run (cmd/root.go). Falls back to the eager generator (with a one-line
+	// warning) for specs the streaming source cannot handle yet (time-varying
+	// parameters, concurrency clients, multi-session reasoning).
+	//
+	// No spec pre-expand is needed here (unlike run): observe has no
+	// pre-generation applyTimeoutToSpec step, and both generators expand
+	// spec.Clients in place before the (post-generation) prefix-string loop
+	// reads it. Skipping run's ExpandClientsAndCohorts pre-expand keeps the
+	// eager-fallback path identical to eager-direct (that helper clears the
+	// inference-perf/servegen markers, which would perturb spec.Validate()).
+	var wl *workload.GeneratedWorkload
+	// lazySource is typed as the interface satisfied by *workload.lazyRequestSource:
+	// Next() feeds the orchestrator, Err() surfaces a terminal per-client sampler
+	// failure after dispatch so we can Fatalf (matching eager's abort-on-invalid-spec).
+	var lazySource interface {
+		Next() (*sim.Request, bool)
+		Err() error
+	}
+	if observeLazyGeneration {
+		src, sessions, followUpBudget, lazyErr := workload.GenerateWorkloadLazy(spec, horizon, maxRequests)
+		switch disp, reason := classifyLazyGenError(lazyErr); disp {
+		case lazyFallbackToEager:
+			logrus.Warnf("[workload] --lazy-generation ignored: %s; using eager generator (issue #1441)", reason)
+		case lazyFatal:
+			logrus.Fatalf("Failed to build lazy workload: %v", lazyErr)
+		default: // lazyUseStreaming
+			lazySource = src
+			wl = &workload.GeneratedWorkload{Sessions: sessions, FollowUpBudget: followUpBudget}
+		}
+	}
+	if wl == nil {
+		var err error
+		wl, err = workload.GenerateWorkload(spec, horizon, maxRequests)
+		if err != nil {
+			logrus.Fatalf("Failed to generate workload: %v", err)
+		}
 	}
 
-	logrus.Infof("Generated %d requests", len(wl.Requests))
+	if lazySource != nil {
+		logrus.Infof("Generated streaming workload source (lazy, #1441)")
+	} else {
+		logrus.Infof("Generated %d requests", len(wl.Requests))
+	}
 	if len(wl.Sessions) > 0 {
 		logrus.Infof("Generated %d session blueprints (closed-loop)", len(wl.Sessions))
 	}
@@ -396,26 +495,15 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	// Apply --think-time-dist sampler to all session blueprints (overrides constant ThinkTimeUs).
 	applyThinkTimeSampler(wl.Sessions, observeThinkTimeSampler)
 
-	if len(wl.Requests) == 0 {
+	// wl.Requests is nil in lazy mode; the empty-trace warning only applies to eager.
+	if lazySource == nil && len(wl.Requests) == 0 {
 		logrus.Warn("No requests generated — writing empty trace")
 	}
 
-	// Enable streaming on all requests when --record-itl is set (BC-6).
-	// ITL recording requires streaming responses to capture per-chunk timestamps.
-	// The inference-perf format defaults to non-streaming for parity with the real tool,
-	// so we override it here when the user explicitly opts in to ITL recording.
-	if observeRecordITL {
-		streamingCount := 0
-		for i := range wl.Requests {
-			if !wl.Requests[i].Streaming {
-				wl.Requests[i].Streaming = true
-				streamingCount++
-			}
-		}
-		if streamingCount > 0 {
-			logrus.Infof("Enabled streaming on %d requests for ITL recording", streamingCount)
-		}
-	}
+	// NOTE: the former eager ITL streaming-on pre-pass over wl.Requests is
+	// removed; runObserveOrchestrator now enables streaming per emitted request
+	// when --record-itl is set (works for both the eager slice and the lazy
+	// source, and covers session follow-ups). See BC-6 (#1443).
 
 	// Setup
 	client := NewRealClient(observeServerURL, observeAPIKey, observeModel, observeServerType,
@@ -480,10 +568,32 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		runPrewarm(ctx, client, observePrewarmDuration)
 	}
 
+	// RequestSource: streaming in lazy mode, eager-slice adapter otherwise.
+	// The workload package's lazy source satisfies cluster.RequestSource via
+	// structural typing (same Next() method), mirroring blis run.
+	var observeSource cluster.RequestSource
+	if lazySource != nil {
+		observeSource = lazySource
+	} else {
+		observeSource = cluster.NewSliceRequestSource(wl.Requests)
+	}
+
 	// Run orchestrator
 	startTime := time.Now()
-	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, observeNoStreaming, observeMaxConcur, observeWarmup, prefixes, prefixLengths, observeUnconstrainedOutput, observeRecordITL, tokensPerWord)
+	runObserveOrchestrator(ctx, client, recorder, sessionMgr, observeSource, observeNoStreaming, observeMaxConcur, observeWarmup, prefixes, prefixLengths, observeUnconstrainedOutput, observeRecordITL, tokensPerWord)
 	logrus.Infof("Observation wall-clock time: %.3fs", time.Since(startTime).Seconds())
+
+	// Surface any terminal sampler/generator error the lazy source recorded on a
+	// per-client state during dispatch. Eager mode would have hit Fatalf at
+	// generation on the same invalid spec; without this, lazy mode would exit 0
+	// with reduced traffic and misleading metrics (BC-9, mirrors run at
+	// cmd/root.go). A non-nil Err() aborts before the trace is exported below —
+	// an invalid-spec run produces no trace, matching eager's abort-at-generation.
+	if lazySource != nil {
+		if err := lazySource.Err(); err != nil {
+			logrus.Fatalf("Lazy workload sampler failure: %v", err)
+		}
+	}
 
 	// Resolve goodput SLO targets (#1413, BC-1, BC-7). Observe has no trace
 	// header at invocation; precedence is CLI > workload spec.
@@ -865,14 +975,30 @@ func runPrewarm(ctx context.Context, client *RealClient, duration time.Duration)
 	}
 }
 
+// preferFollowUp reports whether the pending session follow-up should dispatch
+// before the buffered pre-generated request. Ties go to the follow-up (<=),
+// preserving the pre-lazy merge order (former index-based merge in
+// runObserveOrchestrator). Extracted as a pure function so the tie-break is
+// unit-testable — a live orchestrator run cannot construct a deterministic tie
+// because follow-up arrival times are wall-clock-derived (session.go). (#1443)
+func preferFollowUp(followUp, preGen *sim.Request) bool {
+	return followUp.ArrivalTime <= preGen.ArrivalTime
+}
+
 // runObserveOrchestrator implements the dispatch loop with session support.
 // This is the core orchestration function, extracted for testability.
+//
+// Requests are pulled from source (a cluster.RequestSource — eager slice adapter
+// or lazy streaming generator, selected by --lazy-generation) one at a time via
+// Next(), and merged against in-flight session follow-ups by arrival time using a
+// one-slot lookahead buffer (nextPreGen). This preserves the O(in-flight) memory
+// property of lazy generation on the request stream (#1443, #1438 Change A5).
 func runObserveOrchestrator(
 	ctx context.Context,
 	client *RealClient,
 	recorder *Recorder,
 	sessionMgr *workload.SessionManager,
-	requests []*sim.Request,
+	source cluster.RequestSource,
 	noStreaming bool,
 	maxConcurrency int,
 	warmupCount int,
@@ -882,10 +1008,6 @@ func runObserveOrchestrator(
 	recordITL bool,
 	tokensPerWord float64,
 ) {
-	if len(requests) == 0 {
-		return
-	}
-
 	semaphore := make(chan struct{}, maxConcurrency)
 	var wg sync.WaitGroup
 	startWall := time.Now()
@@ -897,16 +1019,17 @@ func runObserveOrchestrator(
 	// Completion channel for session serialization (BC-8, D7)
 	completionCh := make(chan completionEvent, maxConcurrency)
 
-	// Active session tracking for drain (count unique session IDs)
+	// Active session tracking for drain. Counting is folded into the dispatch
+	// loop (incremented on the first sighting of each SessionID among the
+	// pre-generated requests) rather than pre-scanned, so the lazy source is
+	// never fully materialized up front (#1443). seenSessions dedups so a
+	// session is counted exactly once; follow-ups reuse an existing SessionID
+	// and arrive via followUpCh (never through the pre-gen selection site), so
+	// they cannot double-count.
 	activeSessionCount := int64(0)
+	var seenSessions map[string]bool
 	if sessionMgr != nil {
-		sessionIDs := make(map[string]bool)
-		for _, req := range requests {
-			if req.SessionID != "" && !sessionIDs[req.SessionID] {
-				sessionIDs[req.SessionID] = true
-				activeSessionCount++
-			}
-		}
+		seenSessions = make(map[string]bool)
 	}
 
 	// Session serializer goroutine (BC-8: single-threaded OnComplete)
@@ -967,10 +1090,40 @@ func runObserveOrchestrator(
 	}
 
 	// Merge pre-generated requests and follow-ups, dispatch in arrival order.
-	// Follow-ups are buffered in a local slice and merged by arrival time
-	// with pre-generated requests (deterministic, no select/default race).
-	preGenIdx := 0
+	// Pre-generated requests are pulled from the source one at a time through a
+	// one-slot lookahead buffer (nextPreGen); follow-ups are buffered in a local
+	// slice and merged by arrival time (deterministic, no select/default race).
 	var pendingFollowUps []*sim.Request
+
+	// nextPreGen holds the next pre-generated request pulled from source (the
+	// one-slot lookahead that replaces the former requests[preGenIdx] random
+	// access). nil once the source is exhausted.
+	var nextPreGen *sim.Request
+	if r, ok := source.Next(); ok { // prime the lookahead
+		nextPreGen = r
+	}
+
+	// takePreGen returns the buffered pre-generated request and refills the
+	// lookahead from source. It also folds active-session counting into the
+	// loop: the first time a session's (round-0) request is selected, the
+	// session is counted. Both pre-gen consumption branches route through this
+	// single helper so the counting cannot diverge between them.
+	//
+	// PRECONDITION: callers MUST guard with hasPreGen (nextPreGen != nil) — the
+	// deref of req.SessionID below assumes a buffered request is present.
+	takePreGen := func() *sim.Request {
+		req := nextPreGen
+		if sessionMgr != nil && req.SessionID != "" && !seenSessions[req.SessionID] {
+			seenSessions[req.SessionID] = true
+			atomic.AddInt64(&activeSessionCount, 1)
+		}
+		if r, ok := source.Next(); ok {
+			nextPreGen = r
+		} else {
+			nextPreGen = nil // exhausted; req above already captured, not dropped
+		}
+		return req
+	}
 
 	drainFollowUps := func() {
 		for {
@@ -993,21 +1146,19 @@ func runObserveOrchestrator(
 		// pre-generated and pending follow-ups
 		var nextReq *sim.Request
 
-		hasPreGen := preGenIdx < len(requests)
+		hasPreGen := nextPreGen != nil
 		hasFollowUp := len(pendingFollowUps) > 0
 
 		if hasPreGen && hasFollowUp {
-			if pendingFollowUps[0].ArrivalTime <= requests[preGenIdx].ArrivalTime {
+			if preferFollowUp(pendingFollowUps[0], nextPreGen) {
 				nextReq = pendingFollowUps[0]
 				pendingFollowUps = pendingFollowUps[1:]
 
 			} else {
-				nextReq = requests[preGenIdx]
-				preGenIdx++
+				nextReq = takePreGen()
 			}
 		} else if hasPreGen {
-			nextReq = requests[preGenIdx]
-			preGenIdx++
+			nextReq = takePreGen()
 		} else if hasFollowUp {
 			nextReq = pendingFollowUps[0]
 			pendingFollowUps = pendingFollowUps[1:]
@@ -1030,6 +1181,15 @@ func runObserveOrchestrator(
 
 		if nextReq == nil {
 			continue
+		}
+
+		// Enable streaming per-request when --record-itl is set (BC-6). ITL
+		// recording needs streaming responses to capture per-chunk timestamps.
+		// Applied here (as each request is emitted) rather than in a pre-pass
+		// over a materialized slice, so it works for the lazy source too and
+		// covers both pre-generated and session follow-up requests. (#1443)
+		if recordITL && !nextReq.Streaming {
+			nextReq.Streaming = true
 		}
 
 		// Rate-pace: sleep until target wall-clock time
