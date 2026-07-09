@@ -3582,6 +3582,12 @@
 <td>Maximum requests to generate (0 = from spec or unlimited)</td>
 </tr>
 <tr>
+<td><code>--lazy-generation</code></td>
+<td><code>bool</code></td>
+<td><code>false</code></td>
+<td>Alpha (#1441/#1443): stream requests from the generator instead of pre-generating the full slice (same flag/semantics as <code>blis run</code>). Falls back to eager mode with a warning for time-varying, concurrency, or multi-session (<code>SingleSession=false</code>) workloads. Default (off) dispatch behavior is unchanged</td>
+</tr>
+<tr>
 <td><code>--think-time-ms</code></td>
 <td><code>int</code></td>
 <td><code>0</code></td>
@@ -3627,7 +3633,7 @@
 <td><code>--record-itl</code></td>
 <td><code>bool</code></td>
 <td><code>false</code></td>
-<td>Record per-chunk timestamps for ITL calibration (streaming only; use with <code>--itl-output</code>)</td>
+<td>Record per-chunk timestamps for ITL calibration (forces streaming per request; mutually exclusive with <code>--no-streaming</code>; use with <code>--itl-output</code>)</td>
 </tr>
 <tr>
 <td><code>--itl-output</code></td>
