@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/workload"
+	"github.com/spf13/cobra"
 )
 
 func TestObserveCmd_MissingRequiredFlags_Errors(t *testing.T) {
@@ -1506,6 +1508,42 @@ func TestValidateITLStreamingFlags(t *testing.T) {
 	}
 }
 
+// TestClassifyLazyGenError verifies runObserve routes each GenerateWorkloadLazy
+// result correctly: nil → use streaming, each ErrLazyUnsupported* sentinel →
+// eager fallback (with a reason), any other error → fatal. This guards the
+// sentinel-matching that a wrong errors.Is target or a missing case would break
+// silently (PR #1457 review, IMPORTANT-1). Uses errors.Is-wrapped sentinels to
+// confirm matching survives fmt.Errorf("%w") wrapping.
+func TestClassifyLazyGenError(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		wantDisp  lazyGenDisposition
+		reasonSub string // substring the fallback reason must contain ("" = don't check)
+	}{
+		{"nil uses streaming", nil, lazyUseStreaming, ""},
+		{"time-varying falls back", workload.ErrLazyUnsupportedTimeVarying, lazyFallbackToEager, "per-window"},
+		{"concurrency falls back", workload.ErrLazyUnsupportedConcurrency, lazyFallbackToEager, "concurrency"},
+		{"multi-session falls back", workload.ErrLazyUnsupportedMultiSession, lazyFallbackToEager, "multi-session"},
+		{"wrapped sentinel still falls back", fmt.Errorf("context: %w", workload.ErrLazyUnsupportedConcurrency), lazyFallbackToEager, "concurrency"},
+		{"other error is fatal", errors.New("boom"), lazyFatal, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			disp, reason := classifyLazyGenError(tt.err)
+			if disp != tt.wantDisp {
+				t.Errorf("classifyLazyGenError(%v) disposition = %d, want %d", tt.err, disp, tt.wantDisp)
+			}
+			if tt.reasonSub != "" && !strings.Contains(reason, tt.reasonSub) {
+				t.Errorf("classifyLazyGenError(%v) reason = %q, want substring %q", tt.err, reason, tt.reasonSub)
+			}
+			if tt.wantDisp != lazyFallbackToEager && reason != "" {
+				t.Errorf("classifyLazyGenError(%v) returned reason %q for non-fallback disposition", tt.err, reason)
+			}
+		})
+	}
+}
+
 func TestObserveCmd_APIFormatFlag_Exists(t *testing.T) {
 	f := observeCmd.Flags().Lookup("api-format")
 	if f == nil {
@@ -2122,4 +2160,199 @@ func TestApplyThinkTimeSampler_NilSamplerIsNoOp(t *testing.T) {
 			t.Errorf("blueprint[%d]: ThinkTimeSampler unexpectedly set after nil applyThinkTimeSampler", i)
 		}
 	}
+}
+
+// --- runObserve end-to-end Fatalf tests (subprocess pattern, PR #1457 review) ---
+//
+// runObserve calls logrus.Fatalf (→ os.Exit(1)) on invalid flag combinations and
+// on a terminal lazy-sampler error. These paths can't be exercised in-process
+// (os.Exit kills the test binary), so — following the established pattern in
+// replay_test.go — the child branch (BLIS_TEST_SUBPROCESS=1) drives runObserve
+// to the fatal path, and the parent re-execs this test and asserts exit code 1
+// plus that no trace file was written.
+
+// observeSubprocessDir returns a stable temp dir shared between the child's
+// runObserve invocation and the parent's post-exit file-existence assertions.
+// Both processes derive the same path from the test's TempDir base so the parent
+// can verify the trace was NOT written when runObserve aborts.
+func observeSubprocessPaths(t *testing.T) (header, data string) {
+	t.Helper()
+	dir := filepath.Join(os.TempDir(), "blis-observe-fatal-"+t.Name())
+	return filepath.Join(dir, "trace.yaml"), filepath.Join(dir, "trace.csv")
+}
+
+// setObserveGlobalsForSubprocess sets the observe command globals to a valid
+// baseline so that runObserve reaches the code path under test rather than
+// tripping an unrelated validation Fatalf. Callers override the specific fields
+// they are testing after calling this.
+func setObserveGlobalsForSubprocess(serverURL, header, data string) {
+	observeServerURL = serverURL
+	observeModel = "test-model"
+	observeTraceHeader = header
+	observeTraceData = data
+	observeWorkload = ""
+	observeWorkloadSpec = ""
+	observeRate = 10.0
+	observeConcurrency = 0
+	observeNumRequests = 3
+	observeSeed = 42
+	observeHorizon = 0
+	observeMaxConcur = 4
+	observeWarmup = 0
+	observePrewarmDuration = 0
+	observeNoStreaming = false
+	observeRecordITL = false
+	observeITLOutput = ""
+	observeLazyGeneration = false
+	observeAPIFormat = "completions"
+	observeServerType = "vllm"
+	observeAPIKey = ""
+	observeTimeout = 300
+	observeRttMs = 0
+	observeThinkTimeMs = 0
+	observeThinkTimeDist = ""
+	observeUnconstrainedOutput = false
+	observeDefaultsFilePath = "../defaults.yaml"
+	// Shared post-hoc/saturation/goodput globals (declared in root.go).
+	postHocDetector = "none"
+	saturationThreshold = 5000.0
+	saturationReport = ""
+	goodputSLOTTFT = ""
+	goodputSLOITL = ""
+	goodputSLOE2E = ""
+}
+
+// newObserveTestCmd builds a cobra command carrying only the flags that
+// runObserve inspects via cmd.Flags().Changed(...), pre-parsed to the given
+// rate. runObserve reads all other values from the globals set above.
+func newObserveTestCmd(rate float64) *cobra.Command {
+	c := &cobra.Command{}
+	c.Flags().Float64Var(&observeRate, "rate", 0, "")
+	c.Flags().Int64Var(&observeSeed, "seed", 42, "")
+	c.Flags().Int64Var(&observeHorizon, "horizon", 0, "")
+	c.Flags().IntVar(&observeNumRequests, "num-requests", 0, "")
+	c.Flags().IntVar(&observeMaxConcur, "max-concurrency", 256, "")
+	c.Flags().IntVar(&observeThinkTimeMs, "think-time-ms", 0, "")
+	c.Flags().StringVar(&observeThinkTimeDist, "think-time-dist", "", "")
+	_ = c.ParseFlags([]string{"--rate", fmt.Sprintf("%g", rate)})
+	return c
+}
+
+// stubObserveServer returns a server that answers both the calibration request
+// and the workload requests with a fixed non-streaming completion.
+func stubObserveServer() *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"text": "hi"}},
+			"usage":   map[string]any{"prompt_tokens": 100, "completion_tokens": 5},
+		})
+	}))
+}
+
+// TestObserveCmd_RecordITLNoStreaming_FatalNoTrace verifies that
+// `--record-itl` + `--no-streaming` aborts runObserve with exit 1 and writes no
+// trace file (the mutual-exclusion guard, wired into the CLI path). SUGGESTION-1
+// from the PR #1457 review — the Fatalf call-site wiring, not just the helper.
+func TestObserveCmd_RecordITLNoStreaming_FatalNoTrace(t *testing.T) {
+	header, data := observeSubprocessPaths(t)
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		_ = os.MkdirAll(filepath.Dir(header), 0o755)
+		srv := stubObserveServer()
+		defer srv.Close()
+		setObserveGlobalsForSubprocess(srv.URL, header, data)
+		observeRecordITL = true
+		observeNoStreaming = true // incoherent combo → must Fatalf upfront
+		runObserve(newObserveTestCmd(10.0), nil)
+		os.Exit(0) // reached only if no Fatalf = parent failure
+	}
+
+	_ = os.RemoveAll(filepath.Dir(header))
+	cmd := exec.Command(os.Args[0], "-test.run=TestObserveCmd_RecordITLNoStreaming_FatalNoTrace", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	assertObserveFatalNoTrace(t, out, err, header, data, "record-itl")
+}
+
+// TestObserveCmd_LazySamplerError_FatalNoTrace verifies BC-9: a terminal lazy
+// sampler error (surfaced by lazySource.Err() after dispatch) aborts runObserve
+// with exit 1 and writes no trace — the invariant IMPORTANT-2 asks to pin. The
+// trigger is a reasoning client whose ReasonRatioDist passes spec.Validate() but
+// fails the sampler (missing "mu"), reachable only in the lazy path.
+func TestObserveCmd_LazySamplerError_FatalNoTrace(t *testing.T) {
+	header, data := observeSubprocessPaths(t)
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		dir := filepath.Dir(header)
+		_ = os.MkdirAll(dir, 0o755)
+		specPath := filepath.Join(dir, "spec.yaml")
+		// Single-session reasoning (lazy-supported) with an incomplete
+		// ReasonRatioDist: Validate() passes, the streaming sampler fails.
+		specYAML := "version: \"2\"\n" +
+			"seed: 42\n" +
+			"aggregate_rate: 10.0\n" +
+			"num_requests: 3\n" +
+			"clients:\n" +
+			"  - id: c\n" +
+			"    rate_fraction: 1.0\n" +
+			"    arrival: {process: constant}\n" +
+			"    input_distribution: {type: constant, params: {value: 50}}\n" +
+			"    output_distribution: {type: constant, params: {value: 25}}\n" +
+			"    reasoning:\n" +
+			"      reason_ratio_distribution: {type: lognormal, params: {sigma: 0.5}}\n" +
+			"      multi_turn: {max_rounds: 2, think_time_us: 1000, context_growth: accumulate, single_session: true}\n"
+		if err := os.WriteFile(specPath, []byte(specYAML), 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "write spec failed: %v\n", err)
+			os.Exit(2)
+		}
+		srv := stubObserveServer()
+		defer srv.Close()
+		setObserveGlobalsForSubprocess(srv.URL, header, data)
+		observeWorkloadSpec = specPath
+		observeRate = 0 // spec-driven; --rate not "changed"
+		observeLazyGeneration = true
+		c := &cobra.Command{}
+		c.Flags().Float64Var(&observeRate, "rate", 0, "")
+		c.Flags().Int64Var(&observeSeed, "seed", 42, "")
+		c.Flags().Int64Var(&observeHorizon, "horizon", 0, "")
+		c.Flags().IntVar(&observeNumRequests, "num-requests", 0, "")
+		c.Flags().IntVar(&observeMaxConcur, "max-concurrency", 256, "")
+		c.Flags().IntVar(&observeThinkTimeMs, "think-time-ms", 0, "")
+		c.Flags().StringVar(&observeThinkTimeDist, "think-time-dist", "", "")
+		_ = c.ParseFlags([]string{}) // no --rate change: spec provides the rate
+		runObserve(c, nil)
+		os.Exit(0)
+	}
+
+	_ = os.RemoveAll(filepath.Dir(header))
+	cmd := exec.Command(os.Args[0], "-test.run=TestObserveCmd_LazySamplerError_FatalNoTrace", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	assertObserveFatalNoTrace(t, out, err, header, data, "sampler")
+}
+
+// assertObserveFatalNoTrace checks that the subprocess exited with code 1
+// (logrus.Fatalf), that its output mentions the expected reason, and that
+// neither trace file was written (the no-trace-on-abort invariant).
+func assertObserveFatalNoTrace(t *testing.T, out []byte, err error, header, data, reasonSubstr string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("expected non-zero exit (Fatalf), got exit 0; output:\n%s", out)
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("unexpected error type: %v; output:\n%s", err, out)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("expected exit code 1 (logrus.Fatalf), got %d; output:\n%s", exitErr.ExitCode(), out)
+	}
+	if !strings.Contains(string(out), reasonSubstr) {
+		t.Errorf("fatal output should mention %q, got:\n%s", reasonSubstr, out)
+	}
+	if _, statErr := os.Stat(header); statErr == nil {
+		t.Errorf("trace header %s was written despite fatal abort", header)
+	}
+	if _, statErr := os.Stat(data); statErr == nil {
+		t.Errorf("trace data %s was written despite fatal abort", data)
+	}
+	_ = os.RemoveAll(filepath.Dir(header))
 }

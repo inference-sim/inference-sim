@@ -225,6 +225,38 @@ func validateITLStreamingFlags(recordITL, noStreaming bool) string {
 	return ""
 }
 
+// lazyGenDisposition tells runObserve how to react to a GenerateWorkloadLazy
+// result: use the streaming source, fall back to the eager generator, or abort.
+type lazyGenDisposition int
+
+const (
+	lazyUseStreaming    lazyGenDisposition = iota // err == nil: use the lazy source
+	lazyFallbackToEager                           // ErrLazyUnsupported*: warn + eager
+	lazyFatal                                     // any other error: abort
+)
+
+// classifyLazyGenError maps a GenerateWorkloadLazy error to a disposition and,
+// for the fallback case, the human-facing reason fragment. Extracted so the
+// sentinel matching — the part most prone to silent breakage (a wrong errors.Is
+// target or a missing case would route an unsupported spec to Fatal, or a real
+// error to eager) — is unit-testable independently of runObserve's HTTP/globals
+// (R14). The disposition→action mapping (warn / Fatalf / use) stays at the CLI
+// boundary in runObserve. Mirrors blis run's switch (cmd/root.go).
+func classifyLazyGenError(err error) (lazyGenDisposition, string) {
+	switch {
+	case err == nil:
+		return lazyUseStreaming, ""
+	case errors.Is(err, workload.ErrLazyUnsupportedTimeVarying):
+		return lazyFallbackToEager, "workload has per-window parameters"
+	case errors.Is(err, workload.ErrLazyUnsupportedConcurrency):
+		return lazyFallbackToEager, "workload has concurrency clients"
+	case errors.Is(err, workload.ErrLazyUnsupportedMultiSession):
+		return lazyFallbackToEager, "workload has multi-session reasoning (SingleSession=false)"
+	default:
+		return lazyFatal, ""
+	}
+}
+
 // buildPresetSpec loads the named preset from defaults.yaml and synthesizes a WorkloadSpec.
 // Returns (nil, errMsg) if the preset is not defined or defaults.yaml cannot be accessed; (spec, "") on success.
 // Extracted from runObserve for unit testability (R14). File read or YAML parse errors
@@ -433,16 +465,12 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	}
 	if observeLazyGeneration {
 		src, sessions, followUpBudget, lazyErr := workload.GenerateWorkloadLazy(spec, horizon, maxRequests)
-		switch {
-		case errors.Is(lazyErr, workload.ErrLazyUnsupportedTimeVarying):
-			logrus.Warnf("[workload] --lazy-generation ignored: workload has per-window parameters; using eager generator (issue #1441)")
-		case errors.Is(lazyErr, workload.ErrLazyUnsupportedConcurrency):
-			logrus.Warnf("[workload] --lazy-generation ignored: workload has concurrency clients; using eager generator (issue #1441)")
-		case errors.Is(lazyErr, workload.ErrLazyUnsupportedMultiSession):
-			logrus.Warnf("[workload] --lazy-generation ignored: workload has multi-session reasoning (SingleSession=false); using eager generator (issue #1441)")
-		case lazyErr != nil:
+		switch disp, reason := classifyLazyGenError(lazyErr); disp {
+		case lazyFallbackToEager:
+			logrus.Warnf("[workload] --lazy-generation ignored: %s; using eager generator (issue #1441)", reason)
+		case lazyFatal:
 			logrus.Fatalf("Failed to build lazy workload: %v", lazyErr)
-		default:
+		default: // lazyUseStreaming
 			lazySource = src
 			wl = &workload.GeneratedWorkload{Sessions: sessions, FollowUpBudget: followUpBudget}
 		}
