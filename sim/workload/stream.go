@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"sort"
 
@@ -26,16 +27,18 @@ var ErrLazyUnsupportedTimeVarying = errors.New("lazy generation: time-varying wo
 // that path. Caller should fall back to GenerateWorkload.
 var ErrLazyUnsupportedConcurrency = errors.New("lazy generation: concurrency clients not supported in alpha")
 
-// ErrLazyUnsupportedMultiSession signals fallback for specs containing
-// reasoning multi-turn clients with SingleSession=false. In multi-session
-// mode the eager generator interleaves sessions of a single client by
-// arrival time across the merge-sort, and reproducing that interleaving
-// in a single-entry-per-client streaming source would require pushing
-// every session's anchor onto the heap up front — defeating the memory
-// savings. SingleSession=true clients (the inference-perf shape and the
-// issue's reproducer) ARE supported. Caller falls back to GenerateWorkload
-// for multi-session specs.
-var ErrLazyUnsupportedMultiSession = errors.New("lazy generation: reasoning clients with SingleSession=false not supported in alpha")
+// Multi-session reasoning (SingleSession=false) IS supported by the lazy
+// generator as of #1458. Each such client is a traffic source that spawns
+// many independent, overlapping sessions across the horizon. The eager
+// generator interleaves those sessions by arrival time through its global
+// merge-sort; the lazy generator reproduces the interleaving with a small
+// per-client internal merge over its LIVE sessions (see clientStreamState's
+// liveSessions field and produceNextReasoning). This bounds resident sessions
+// to the concurrent working set (≈ arrival_rate × session_duration, Little's
+// law) — independent of horizon — rather than materializing every session up
+// front. The earlier assumption that supporting this "would require pushing
+// every session's anchor onto the heap up front, defeating the memory
+// savings" was too pessimistic and no longer holds.
 
 // clientStreamState holds per-client streaming production state.
 // One per "live" client in the original allClients order (the order matters:
@@ -58,14 +61,29 @@ type clientStreamState struct {
 	// `currentTime` accumulator in GenerateRequests' non-reasoning loop).
 	currentTime int64
 
-	// Reasoning mode: pendingSession holds one session's pre-computed rounds.
-	// Yielded one at a time via pendingSessionIdx, then drained by drawing the
-	// next IAT and calling GenerateReasoningRequests again.
+	// Reasoning single-session mode: pendingSession holds the client's one
+	// session's pre-computed rounds. Yielded one at a time via
+	// pendingSessionIdx, then the client exhausts (singleSessionDone).
 	pendingSession    []*sim.Request
 	pendingSessionIdx int
 	// singleSessionDone short-circuits SingleSession=true reasoning clients
 	// after they emit their only session.
 	singleSessionDone bool
+
+	// Reasoning multi-session mode (SingleSession=false, #1458): a client is a
+	// traffic source that spawns many independent, OVERLAPPING sessions over
+	// the horizon. Because session N+1 can start before session N's later
+	// rounds arrive, we cannot drain one session before the next and still feed
+	// the global heap an arrival-monotonic sub-stream. Instead we keep an
+	// internal min-heap of "live" sessions (built but not fully drained), keyed
+	// by each session's next-round arrival time. Resident sessions are bounded
+	// by the concurrent working set (≈ arrival_rate × session_duration, Little's
+	// law) — independent of horizon.
+	liveSessions   *liveSessionHeap
+	nextSessionIdx int   // monotonic per-client session-build index (emit tie-break)
+	msClientCap    int64 // per-client build cap = 2*maxRequests (0 = unbounded); mirrors eager's perClientCap
+	msReqCount     int64 // count of ALL rounds built for this client (for msClientCap)
+	msBuildDone    bool  // true once no further session can be built (horizon/sampler/lifecycle/cap)
 
 	// perClientSeq increments on every successful produceNext yield. Used as
 	// the tertiary heap tie-breaker so that even when two queue entries from
@@ -202,113 +220,212 @@ func (s *clientStreamState) produceNextSingleShot() (*sim.Request, int64, bool) 
 }
 
 func (s *clientStreamState) produceNextReasoning() (*sim.Request, int64, bool) {
+	if s.isSingleSession {
+		return s.produceNextSingleSession()
+	}
+	return s.produceNextMultiSession()
+}
+
+// produceNextSingleSession streams a SingleSession=true reasoning client: one
+// session per client, cycling through its rounds. Mirrors the SingleSession
+// branch of GenerateRequests' reasoning path (generator.go). No per-client cap
+// applies (eager's single-session branch does not use perClientCap).
+func (s *clientStreamState) produceNextSingleSession() (*sim.Request, int64, bool) {
 	for {
-		// First, drain any pending session rounds. We yield ALL rounds here,
-		// including non-round-0 rounds of closed-loop sessions, so that each
-		// counts toward maxRequests at the lazyRequestSource level — matching
-		// eager mode's "produce all rounds, sort+truncate, then filter round-0"
-		// sequencing in GenerateWorkload. The round-0-only filter for
-		// closed-loop sessions is applied at lazyRequestSource.Next, AFTER
-		// the cap-counting heap pop.
+		// Drain the (only) session's pending rounds. All rounds are yielded,
+		// including non-round-0 rounds of closed-loop sessions, so each counts
+		// toward maxRequests at the lazyRequestSource level — matching eager's
+		// "produce all rounds, sort+truncate, then filter round-0" sequencing.
+		// The round-0-only filter for closed-loop sessions is applied at
+		// lazyRequestSource.Next, after the cap-counting heap pop.
 		for s.pendingSessionIdx < len(s.pendingSession) {
 			req := s.pendingSession[s.pendingSessionIdx]
 			s.pendingSessionIdx++
 			if req.ArrivalTime >= s.horizon {
 				// Rounds are chronological; remaining are past horizon too.
-				// Mirrors the `break` in GenerateRequests' reasoning round
-				// loop on the first round that exceeds horizon.
+				// Mirrors the `break` in GenerateRequests' reasoning round loop.
 				s.pendingSession = nil
 				s.pendingSessionIdx = 0
 				break
 			}
 			if s.client.Lifecycle != nil && !isInActiveWindow(req.ArrivalTime, s.client.Lifecycle) {
-				// Skip rounds outside lifecycle windows (mirrors the
-				// per-round `continue` in GenerateRequests' reasoning loop).
-				continue
+				continue // skip rounds outside lifecycle windows
 			}
 			s.perClientSeq++
 			return req, req.ArrivalTime, true
 		}
-		// No more pending rounds — release the session slice.
 		s.pendingSession = nil
 		s.pendingSessionIdx = 0
 
-		// Single-session reasoning client: only one session per client.
-		if s.isSingleSession && s.singleSessionDone {
+		// Only one session per client.
+		if s.singleSessionDone {
 			s.exhausted = true
 			return nil, 0, false
 		}
 
-		// Draw the next session's start time.
 		iat := s.arrivalSampler.SampleIAT(s.clientRNG)
 		if iat == 0 {
 			s.exhausted = true
 			return nil, 0, false
 		}
-		var startTime int64
-		if s.isSingleSession {
-			startTime = iat
-			if s.client.Lifecycle != nil && len(s.client.Lifecycle.Windows) > 0 {
-				startTime = s.client.Lifecycle.Windows[0].StartUs + iat
-			}
-			s.singleSessionDone = true
-			if startTime >= s.horizon {
-				s.exhausted = true
-				return nil, 0, false
-			}
-			if s.client.Lifecycle != nil && !isInActiveWindow(startTime, s.client.Lifecycle) {
-				s.exhausted = true
-				return nil, 0, false
-			}
-		} else {
-			s.currentTime += iat
-			startTime = s.currentTime
-			if startTime >= s.horizon {
-				s.exhausted = true
-				return nil, 0, false
-			}
-			if s.client.Lifecycle != nil && !isInActiveWindow(startTime, s.client.Lifecycle) {
-				if startTime >= lastWindowEndUs(s.client.Lifecycle) {
-					s.exhausted = true
-					return nil, 0, false
-				}
-				continue // try next IAT (mirrors the lifecycle-skip
-				// branch in GenerateRequests' multi-session reasoning loop)
-			}
+		startTime := iat
+		if s.client.Lifecycle != nil && len(s.client.Lifecycle.Windows) > 0 {
+			startTime = s.client.Lifecycle.Windows[0].StartUs + iat
 		}
-
-		// Build this session. GenerateReasoningRequests takes the prefix
-		// and seeds it into the shared session buffer / prepends per-round
-		// as needed (#1445); we no longer prepend ourselves.
-		reasoningReqs, err := GenerateReasoningRequests(
-			s.clientRNG, s.client.Reasoning,
-			s.inputSampler, s.outputSampler,
-			startTime,
-			s.client.ID, s.client.TenantID, s.client.SLOClass, s.client.Model,
-			s.prefix,
-		)
-		if err != nil {
-			// spec.Validate() does NOT validate ReasoningSpec's distribution
-			// fields (e.g. ReasonRatioDist), so this path IS reachable.
-			// Record the error on the state and sticky-exhaust; the
-			// user-facing log happens on the Phase 3 pass only (skipped
-			// during the blueprint pre-pass to avoid double-logging).
-			// lazyRequestSource.Err() surfaces this to cmd/root.go so it
-			// can Fatalf and match the eager path's abort-on-invalid-spec.
-			s.recordError(fmt.Errorf("reasoning session generation at t=%d: %w", startTime, err))
+		s.singleSessionDone = true
+		if startTime >= s.horizon {
+			s.exhausted = true
 			return nil, 0, false
 		}
-		// Set Deadline + SLOTargetUs on every round (mirrors the
-		// per-round Deadline/SLOTargetUs assignment in GenerateRequests'
-		// reasoning path).
-		for _, req := range reasoningReqs {
-			req.Deadline = computeDeadline(req.ArrivalTime, s.client.Timeout, true)
-			req.SLOTargetUs = derefInt64(s.client.SLOTargetUs)
+		if s.client.Lifecycle != nil && !isInActiveWindow(startTime, s.client.Lifecycle) {
+			s.exhausted = true
+			return nil, 0, false
+		}
+
+		reasoningReqs, err := s.buildSession(startTime)
+		if err != nil {
+			return nil, 0, false // recordError already set exhausted + lastErr
 		}
 		s.pendingSession = reasoningReqs
 		s.pendingSessionIdx = 0
 		// Loop back to yield the first round.
 	}
+}
+
+// produceNextMultiSession streams a SingleSession=false reasoning client (#1458):
+// a traffic source that spawns many independent, OVERLAPPING sessions across the
+// horizon. It keeps a min-heap of live (built-but-not-drained) sessions keyed by
+// each session's next-round arrival, and yields the client's rounds in arrival
+// order so the client feeds the global heap an arrival-monotonic sub-stream
+// (BC-2), byte-identical to the set eager's global merge-sort produces (BC-1).
+//
+// Emit-safety gate: session start times increase strictly (currentTime grows by
+// each positive IAT), so any not-yet-built session starts strictly after
+// s.currentTime. A live head with arrival <= s.currentTime therefore cannot be
+// preceded by any future round and is safe to emit. A head with arrival >
+// s.currentTime might be preceded by a future session's round 0, so we build the
+// next session first and re-check. Once building is done (msBuildDone), every
+// remaining live head is safe to drain. This bounds resident sessions to the
+// concurrent working set (Little's law), independent of horizon.
+func (s *clientStreamState) produceNextMultiSession() (*sim.Request, int64, bool) {
+	for {
+		canEmit := s.liveSessions.Len() > 0
+		if canEmit && !s.msBuildDone && (*s.liveSessions)[0].head().ArrivalTime > s.currentTime {
+			// The earliest live round could still be preceded by a session we
+			// have not built yet — build more before emitting it.
+			canEmit = false
+		}
+		if canEmit {
+			top := (*s.liveSessions)[0]
+			req := top.head()
+			if req.ArrivalTime >= s.horizon {
+				// Rounds are chronological within a session; this and every
+				// later round of this session are past the horizon. Drop the
+				// whole session (mirrors eager's per-session round-loop break).
+				heap.Pop(s.liveSessions)
+				continue
+			}
+			// Consume this round from its session.
+			top.cursor++
+			if top.cursor >= len(top.rounds) {
+				heap.Pop(s.liveSessions)
+			} else {
+				heap.Fix(s.liveSessions, 0)
+			}
+			if s.client.Lifecycle != nil && !isInActiveWindow(req.ArrivalTime, s.client.Lifecycle) {
+				continue // suppress rounds outside lifecycle windows
+			}
+			s.perClientSeq++
+			return req, req.ArrivalTime, true
+		}
+		// Cannot emit yet. Build the next session if any remain.
+		if s.msBuildDone {
+			// Nothing safe to emit and nothing left to build — with the gate
+			// above this means the heap is empty. Client exhausted.
+			s.exhausted = true
+			return nil, 0, false
+		}
+		if !s.buildNextSession() && s.exhausted {
+			return nil, 0, false // buildNextSession recorded a terminal error
+		}
+		// Loop: re-evaluate emit eligibility (currentTime may have advanced,
+		// or a new session may now be the min head).
+	}
+}
+
+// buildNextSession replicates one iteration of eager's multi-session build loop
+// (GenerateRequests, generator.go): honor the per-client cap and horizon, draw
+// one IAT, apply lifecycle gating, build one session, and push it onto the live
+// heap. Returns false when no session was built. On the terminal no-build cases
+// (horizon reached, cap hit, sampler exhausted, lifecycle past the last window)
+// it sets msBuildDone; on a lifecycle-skip it returns false WITHOUT msBuildDone
+// (the caller loops and tries the next IAT); on a generator error it records the
+// error (sticky-exhausts) so lazyRequestSource.Err() can surface it.
+func (s *clientStreamState) buildNextSession() bool {
+	// Loop-top guards, in the same order as eager's build loop.
+	if s.currentTime >= s.horizon { // `for currentTime < horizon`
+		s.msBuildDone = true
+		return false
+	}
+	if s.msClientCap > 0 && s.msReqCount >= s.msClientCap { // perClientCap (R19)
+		s.msBuildDone = true
+		return false
+	}
+	iat := s.arrivalSampler.SampleIAT(s.clientRNG)
+	if iat == 0 {
+		s.msBuildDone = true
+		return false
+	}
+	s.currentTime += iat
+	if s.currentTime >= s.horizon {
+		s.msBuildDone = true
+		return false
+	}
+	if s.client.Lifecycle != nil && !isInActiveWindow(s.currentTime, s.client.Lifecycle) {
+		if s.currentTime >= lastWindowEndUs(s.client.Lifecycle) {
+			s.msBuildDone = true
+			return false
+		}
+		return false // lifecycle-skip: try the next IAT (no msBuildDone)
+	}
+	reasoningReqs, err := s.buildSession(s.currentTime)
+	if err != nil {
+		return false // recordError already set exhausted + lastErr
+	}
+	// Count ALL built rounds toward the per-client cap, matching eager's
+	// `clientReqCount += len(reasoningReqs)` (before horizon/lifecycle filter).
+	s.msReqCount += int64(len(reasoningReqs))
+	heap.Push(s.liveSessions, &liveSession{rounds: reasoningReqs, cursor: 0, sessionIdx: s.nextSessionIdx})
+	s.nextSessionIdx++
+	return true
+}
+
+// buildSession generates one reasoning session at startTime and sets the
+// per-round Deadline/SLOTargetUs (mirrors GenerateRequests' reasoning path).
+// GenerateReasoningRequests seeds/prepends the prefix internally (#1445).
+// On error it records the terminal error on the state and returns it; callers
+// stop producing so lazyRequestSource.Err() surfaces it to cmd for a Fatalf
+// matching eager's abort-on-invalid-spec behavior.
+func (s *clientStreamState) buildSession(startTime int64) ([]*sim.Request, error) {
+	reasoningReqs, err := GenerateReasoningRequests(
+		s.clientRNG, s.client.Reasoning,
+		s.inputSampler, s.outputSampler,
+		startTime,
+		s.client.ID, s.client.TenantID, s.client.SLOClass, s.client.Model,
+		s.prefix,
+	)
+	if err != nil {
+		// spec.Validate() does NOT validate ReasoningSpec's distribution fields
+		// (e.g. ReasonRatioDist), so this path IS reachable. The user-facing log
+		// happens on the Phase 3 pass only (dryRun suppresses it in the pre-pass).
+		s.recordError(fmt.Errorf("reasoning session generation at t=%d: %w", startTime, err))
+		return nil, err
+	}
+	for _, req := range reasoningReqs {
+		req.Deadline = computeDeadline(req.ArrivalTime, s.client.Timeout, true)
+		req.SLOTargetUs = derefInt64(s.client.SLOTargetUs)
+	}
+	return reasoningReqs, nil
 }
 
 // recordError marks the state as exhausted with a terminal error,
@@ -354,6 +471,45 @@ func (h heapByArrival) Less(i, j int) bool {
 func (h heapByArrival) Swap(i, j int)       { h[i], h[j] = h[j], h[i] }
 func (h *heapByArrival) Push(x interface{}) { *h = append(*h, x.(heapEntry)) }
 func (h *heapByArrival) Pop() interface{} {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[:n-1]
+	return x
+}
+
+// liveSession is one in-flight session of a multi-session reasoning client
+// (#1458). rounds holds that session's pre-computed rounds (already filtered
+// for nothing — filtering happens at emit time to mirror eager); cursor points
+// at the next round to emit. sessionIdx is the client's monotonic build index,
+// used as the deterministic tie-break when two sessions' next rounds share an
+// arrival time (matches eager's stable-sort-by-append-order).
+type liveSession struct {
+	rounds     []*sim.Request
+	cursor     int
+	sessionIdx int
+}
+
+// head returns the session's next round to emit. Callers must ensure cursor is
+// in range (the heap only holds sessions with a pending round).
+func (ls *liveSession) head() *sim.Request { return ls.rounds[ls.cursor] }
+
+// liveSessionHeap orders live sessions by (next-round arrival, sessionIdx).
+// The arrival key reproduces the global sort; the sessionIdx key reproduces
+// eager's within-client stable-sort tie-break (earlier-built session first).
+type liveSessionHeap []*liveSession
+
+func (h liveSessionHeap) Len() int { return len(h) }
+func (h liveSessionHeap) Less(i, j int) bool {
+	a, b := h[i].head(), h[j].head()
+	if a.ArrivalTime != b.ArrivalTime {
+		return a.ArrivalTime < b.ArrivalTime
+	}
+	return h[i].sessionIdx < h[j].sessionIdx
+}
+func (h liveSessionHeap) Swap(i, j int)       { h[i], h[j] = h[j], h[i] }
+func (h *liveSessionHeap) Push(x interface{}) { *h = append(*h, x.(*liveSession)) }
+func (h *liveSessionHeap) Pop() interface{} {
 	old := *h
 	n := len(old)
 	x := old[n-1]
@@ -517,17 +673,15 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 	}
 
 	// Fallback gates. The caller (cmd/root.go) catches these sentinel errors
-	// and switches to the eager generator with a one-line warning.
+	// and switches to the eager generator with a one-line warning. Multi-session
+	// reasoning (SingleSession=false) is NO LONGER a fallback case (#1458) — it
+	// is streamed via the per-client live-session merge in produceNextMultiSession.
 	if hasPerWindowParameters(allClients) {
 		return nil, nil, 0, ErrLazyUnsupportedTimeVarying
 	}
 	for i := range allClients {
 		if allClients[i].Concurrency > 0 {
 			return nil, nil, 0, ErrLazyUnsupportedConcurrency
-		}
-		if allClients[i].Reasoning != nil && allClients[i].Reasoning.MultiTurn != nil &&
-			!allClients[i].Reasoning.MultiTurn.SingleSession {
-			return nil, nil, 0, ErrLazyUnsupportedMultiSession
 		}
 	}
 
@@ -642,7 +796,7 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 	heap.Init(h)
 	states := make([]*clientStreamState, 0, len(preps))
 	for _, p := range preps {
-		state, err := buildClientStreamState(p, horizon)
+		state, err := buildClientStreamState(p, horizon, maxRequests)
 		if err != nil {
 			return nil, nil, 0, err
 		}
@@ -671,7 +825,14 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 // immediately after `clientRNG := newRandFromSeed(clientSeed)` in
 // GenerateRequests), including the CustomSamplerFactory
 // sub-RNG draw.
-func buildClientStreamState(p clientPrep, horizon int64) (*clientStreamState, error) {
+//
+// maxRequests seeds the multi-session per-client build cap (2*maxRequests),
+// mirroring eager's perClientCap. It is only consulted by multi-session
+// reasoning clients — single-shot and single-session lazy rely on the global
+// popped-cap in lazyRequestSource.Next (build order == arrival order there),
+// but multi-session build order != arrival order, so the per-client cap must
+// bound building exactly as eager does to keep byte-identity (#1458).
+func buildClientStreamState(p clientPrep, horizon int64, maxRequests int64) (*clientStreamState, error) {
 	clientRNG := newRandFromSeed(p.clientSeed)
 	var arrivalSampler ArrivalSampler
 	if p.client.CustomSamplerFactory != nil {
@@ -703,6 +864,18 @@ func buildClientStreamState(p clientPrep, horizon int64) (*clientStreamState, er
 		state.isReasoning = true
 		state.isSingleSession = p.client.Reasoning.MultiTurn.SingleSession
 		state.isClosedLoop = isClosedLoop(p.client)
+		if !state.isSingleSession {
+			state.liveSessions = &liveSessionHeap{}
+			// Per-client build cap = 2*maxRequests (eager's perClientCap, with
+			// the same int64-overflow guard). 0 means unbounded (maxRequests<=0).
+			if maxRequests > 0 {
+				perClientCap := 2 * maxRequests
+				if perClientCap < maxRequests { // overflow → treat as unbounded
+					perClientCap = math.MaxInt64
+				}
+				state.msClientCap = perClientCap
+			}
+		}
 	}
 	return state, nil
 }
@@ -737,8 +910,9 @@ func enumerateSurvivingSessionsPerClient(
 	for _, p := range preps {
 		// Mirror the prefix-binding rule of Phase 3 so the clone consumes
 		// identical RNG draws for prefix-prepending; p.prefix is already
-		// the per-prefix-group slice resolved in Phase 1.
-		state, err := buildClientStreamState(p, horizon)
+		// the per-prefix-group slice resolved in Phase 1. maxRequests is
+		// threaded so the clone's multi-session per-client cap matches Phase 3.
+		state, err := buildClientStreamState(p, horizon, maxRequests)
 		if err != nil {
 			return nil, fmt.Errorf("client %q: %w", p.client.ID, err)
 		}

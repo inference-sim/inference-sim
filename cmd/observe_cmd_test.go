@@ -863,7 +863,9 @@ func TestObserveLazyFallback_UnsupportedSpecSentinels(t *testing.T) {
 		t.Errorf("concurrency spec: got err %v, want ErrLazyUnsupportedConcurrency", err)
 	}
 
-	// Multi-session reasoning (SingleSession=false) → ErrLazyUnsupportedMultiSession.
+	// Multi-session reasoning (SingleSession=false) is now supported by lazy
+	// (#1458): GenerateWorkloadLazy must NOT return a sentinel — it returns a
+	// usable streaming source and a nil error (no eager fallback).
 	multiSessionSpec := &workload.WorkloadSpec{
 		Version:       "2",
 		Seed:          42,
@@ -886,8 +888,8 @@ func TestObserveLazyFallback_UnsupportedSpecSentinels(t *testing.T) {
 			},
 		},
 	}
-	if _, _, _, err := workload.GenerateWorkloadLazy(multiSessionSpec, 1_000_000, 10); !errors.Is(err, workload.ErrLazyUnsupportedMultiSession) {
-		t.Errorf("multi-session spec: got err %v, want ErrLazyUnsupportedMultiSession", err)
+	if src, _, _, err := workload.GenerateWorkloadLazy(multiSessionSpec, 1_000_000, 10); err != nil || src == nil {
+		t.Errorf("multi-session spec: got (src=%v, err=%v), want a usable source with nil error (#1458)", src, err)
 	}
 
 	// Per-window (time-varying) parameters → ErrLazyUnsupportedTimeVarying.
@@ -1524,7 +1526,6 @@ func TestClassifyLazyGenError(t *testing.T) {
 		{"nil uses streaming", nil, lazyUseStreaming, ""},
 		{"time-varying falls back", workload.ErrLazyUnsupportedTimeVarying, lazyFallbackToEager, "per-window"},
 		{"concurrency falls back", workload.ErrLazyUnsupportedConcurrency, lazyFallbackToEager, "concurrency"},
-		{"multi-session falls back", workload.ErrLazyUnsupportedMultiSession, lazyFallbackToEager, "multi-session"},
 		{"wrapped sentinel still falls back", fmt.Errorf("context: %w", workload.ErrLazyUnsupportedConcurrency), lazyFallbackToEager, "concurrency"},
 		{"other error is fatal", errors.New("boom"), lazyFatal, ""},
 	}

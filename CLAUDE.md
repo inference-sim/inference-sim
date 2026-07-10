@@ -124,15 +124,16 @@ go build -o blis main.go
 # Falls back to the eager generator with a one-line warning for:
 #   - workloads with per-window parameters (time-varying)
 #   - concurrency clients (Concurrency > 0)
-#   - reasoning clients with SingleSession=false (multi-session)
-# Supported: single-shot, single-session reasoning, prefix-group sharing,
-# multi-client / cohort workloads. Behavior with the flag off is unchanged.
+# Supported: single-shot, single-session AND multi-session reasoning
+# (SingleSession=false, #1458 — per-client live-session merge), prefix-group
+# sharing, multi-client / cohort workloads. Behavior with the flag off is unchanged.
 ./blis run --model qwen/qwen3-14b --lazy-generation
 
 # Observe with lazy request generation (alpha, #1443). Same flag, default, and
 # semantics as `blis run` — streams requests from the generator into the observe
 # dispatch loop instead of pre-generating the full slice, with the same eager
-# fallback (time-varying / concurrency / multi-session). Observe already paces
+# fallback (time-varying / concurrency; multi-session reasoning is supported,
+# #1458). Observe already paces
 # itself against the real server, so the memory win is smaller than run's; the
 # flag mainly makes run and observe share one generation pipeline (#1438). Default
 # (flag off) dispatch behavior is unchanged.
