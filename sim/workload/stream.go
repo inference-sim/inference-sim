@@ -395,8 +395,16 @@ func (s *clientStreamState) buildNextSession() bool {
 	// Count ALL built rounds toward the per-client cap, matching eager's
 	// `clientReqCount += len(reasoningReqs)` (before horizon/lifecycle filter).
 	s.msReqCount += int64(len(reasoningReqs))
-	heap.Push(s.liveSessions, &liveSession{rounds: reasoningReqs, cursor: 0, sessionIdx: s.nextSessionIdx})
-	s.nextSessionIdx++
+	// Only push sessions that actually produced rounds. A zero-round session is
+	// unreachable today (Validate() enforces MaxRounds >= 1, so
+	// GenerateReasoningRequests always returns >= 1 round), but pushing an empty
+	// session would panic in liveSessionHeap.Less via head()→rounds[0]. Eager
+	// is a no-op on an empty slice (it ranges over reasoningReqs); mirror that
+	// robustness. The session still counts toward the cap above (matching eager).
+	if len(reasoningReqs) > 0 {
+		heap.Push(s.liveSessions, &liveSession{rounds: reasoningReqs, cursor: 0, sessionIdx: s.nextSessionIdx})
+		s.nextSessionIdx++
+	}
 	return true
 }
 

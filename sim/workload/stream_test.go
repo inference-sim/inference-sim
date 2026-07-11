@@ -92,6 +92,11 @@ func assertRequestStreamsEqual(t *testing.T, eager, lazy []*sim.Request) {
 		if e.RoundIndex != l.RoundIndex {
 			t.Fatalf("request %d: RoundIndex eager=%d lazy=%d", i, e.RoundIndex, l.RoundIndex)
 		}
+		// ReasonRatio is drawn from the same RNG state in both paths; compare it
+		// so a future reordering of reasoning-round RNG draws is caught here too.
+		if e.ReasonRatio != l.ReasonRatio {
+			t.Fatalf("request %d (%s): ReasonRatio eager=%v lazy=%v", i, e.ID, e.ReasonRatio, l.ReasonRatio)
+		}
 		if e.Streaming != l.Streaming {
 			t.Fatalf("request %d: Streaming eager=%v lazy=%v", i, e.Streaming, l.Streaming)
 		}
@@ -907,6 +912,57 @@ func TestLazyRequestSource_MultiSession_MultiClientTightCap_MatchesEager(t *test
 	}
 	if len(clientIDs) < 2 {
 		t.Fatalf("multi-client test ineffective: expected >= 2 distinct client IDs in surviving stream, got %d", len(clientIDs))
+	}
+}
+
+// TestLazyRequestSource_MultiSession_Lifecycle_MatchesEager pins BC-1/BC-4 for
+// multi-session reasoning under a PLAIN lifecycle (two active windows with a
+// gap, no per-window parameter overrides — so this stays on the non-time-varying
+// path and is lazy-supported). This is the only committed test exercising the
+// new lifecycle branches in buildNextSession (skip-past-window, break-past-last-
+// window) and the emit-path per-round lifecycle filter for multi-session.
+// Open-loop so every round flows through the per-round window filter.
+func TestLazyRequestSource_MultiSession_Lifecycle_MatchesEager(t *testing.T) {
+	openLoop := false
+	mk := func() *WorkloadSpec {
+		s := reasoningMultiSessionSpec(6270)
+		s.Clients[0].ClosedLoop = &openLoop
+		// Two windows with a mid gap: [0,1s) active, [1s,2s) inactive, [2s,4s)
+		// active. Sessions starting in the gap are skipped (build branch);
+		// rounds that drift into the gap are suppressed (emit-path filter).
+		s.Clients[0].Lifecycle = &LifecycleSpec{
+			Windows: []ActiveWindow{
+				{StartUs: 0, EndUs: 1_000_000},
+				{StartUs: 2_000_000, EndUs: 4_000_000},
+			},
+		}
+		return s
+	}
+	// Horizon beyond the last window so the break-past-last-window branch fires.
+	eager, err := GenerateRequests(mk(), 5_000_000, 80)
+	if err != nil {
+		t.Fatalf("eager GenerateRequests: %v", err)
+	}
+	src, _, _, err := GenerateWorkloadLazy(mk(), 5_000_000, 80)
+	if err != nil {
+		t.Fatalf("lazy GenerateWorkloadLazy: %v", err)
+	}
+	lazyReqs := drainLazy(t, src)
+	assertRequestStreamsEqual(t, eager, lazyReqs)
+
+	// Sanity: the lifecycle must actually bind — every emitted round must fall
+	// inside an active window, and the stream must be non-empty.
+	if len(lazyReqs) == 0 {
+		t.Fatal("lifecycle multi-session test ineffective: empty stream")
+	}
+	inWindow := func(t int64) bool {
+		return (t >= 0 && t < 1_000_000) || (t >= 2_000_000 && t < 4_000_000)
+	}
+	for i, r := range lazyReqs {
+		if !inWindow(r.ArrivalTime) {
+			t.Fatalf("request %d (%s round %d): ArrivalTime %d outside all active windows",
+				i, r.SessionID, r.RoundIndex, r.ArrivalTime)
+		}
 	}
 }
 

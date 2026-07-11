@@ -116,11 +116,13 @@ go build -o blis main.go
 
 # Run with lazy request generation (alpha, #1441). Streams requests from the
 # workload generator into the cluster instead of pre-generating the full
-# slice — reduces peak generator memory from O(total_requests) to
-# O(num_clients + max_session_rounds): the heap holds one entry per client,
-# and per-client reasoning state holds at most one session's pending rounds.
-# (Cluster-side memory still scales with in-flight cluster requests, which
-# this PR does not change.)
+# slice — reduces peak generator memory from O(total_requests) to the
+# concurrent working set: the global heap holds one entry per client;
+# single-session reasoning holds at most one session's pending rounds, while
+# multi-session reasoning (#1458) holds its live (overlapping) sessions,
+# bounded by ~ arrival_rate x session_duration (Little's law) — independent
+# of horizon. (Cluster-side memory still scales with in-flight cluster
+# requests, which this PR does not change.)
 # Falls back to the eager generator with a one-line warning for:
 #   - workloads with per-window parameters (time-varying)
 #   - concurrency clients (Concurrency > 0)
