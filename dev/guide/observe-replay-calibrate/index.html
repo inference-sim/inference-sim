@@ -3585,7 +3585,7 @@
 <td><code>--lazy-generation</code></td>
 <td><code>bool</code></td>
 <td><code>false</code></td>
-<td>Alpha (#1441/#1443): stream requests from the generator instead of pre-generating the full slice (same flag/semantics as <code>blis run</code>). Falls back to eager mode with a warning for time-varying, concurrency, or multi-session (<code>SingleSession=false</code>) workloads. Default (off) dispatch behavior is unchanged</td>
+<td>Alpha (#1441/#1443): stream requests from the generator instead of pre-generating the full slice (same flag/semantics as <code>blis run</code>). Falls back to eager mode with a warning for time-varying or concurrency workloads. Multi-session reasoning (<code>SingleSession=false</code>) is supported (#1458). Default (off) dispatch behavior is unchanged</td>
 </tr>
 <tr>
 <td><code>--think-time-ms</code></td>
