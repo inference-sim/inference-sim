@@ -78,10 +78,11 @@ func pick[T any](rng *rand.Rand, opts []T) T {
 //     blueprint pre-pass truncation path)
 //   - input/output dists: gaussian / exponential with bounded params
 //   - optional shared prefix (PrefixGroup + PrefixLength)
-//   - optional single-session reasoning (MaxRounds 1–8, accumulate/none)
+//   - optional reasoning (MaxRounds 1–8, accumulate/none), single- OR
+//     multi-session (SingleSession true/false — both lazy-supported as of #1458)
 //
-// NEVER sampled (would trip the A3 fallback gates and make the comparison
-// vacuous): Lifecycle/per-window parameters, Concurrency>0, SingleSession=false.
+// NEVER sampled (would trip the remaining A3 fallback gates and make the
+// comparison vacuous): Lifecycle/per-window parameters, Concurrency>0.
 func genLazySupportedSpec(rng *rand.Rand) (spec *WorkloadSpec, label string, horizon, maxRequests int64) {
 	seed := rng.Int63()
 
@@ -91,6 +92,10 @@ func genLazySupportedSpec(rng *rand.Rand) (spec *WorkloadSpec, label string, hor
 	usePrefix := rng.Intn(2) == 0
 	useReasoning := rng.Intn(3) == 0 // ~1/3 of draws are reasoning
 	accumulate := rng.Intn(2) == 0
+	// SingleSession true/false are both lazy-supported (#1458). Sample both so
+	// the property covers the multi-session per-client merge, not just the
+	// single-session path.
+	singleSession := rng.Intn(2) == 0
 	process := pick(rng, []string{"poisson", "gamma", "weibull", "constant"})
 
 	// A shared prefix group string; per-client PrefixLength when usePrefix.
@@ -114,7 +119,7 @@ func genLazySupportedSpec(rng *rand.Rand) (spec *WorkloadSpec, label string, hor
 				MaxRounds:     maxRounds,
 				ContextGrowth: growth,
 				ThinkTimeUs:   50_000 + int64(rng.Intn(100_000)),
-				SingleSession: true, // lazy-supported reasoning only
+				SingleSession: singleSession, // both single- and multi-session are lazy-supported (#1458)
 			},
 		}
 	}
@@ -191,8 +196,8 @@ func genLazySupportedSpec(rng *rand.Rand) (spec *WorkloadSpec, label string, hor
 	}
 	horizon = 60_000_000 // 60s — ample for the sampled rates
 
-	label = fmt.Sprintf("clients=%d cohort=%d process=%s prefix=%v reasoning=%v(rounds=%d,accum=%v) maxReq=%d",
-		numClients, cohortMembers, process, usePrefix, useReasoning, maxRounds, accumulate, maxRequests)
+	label = fmt.Sprintf("clients=%d cohort=%d process=%s prefix=%v reasoning=%v(rounds=%d,accum=%v,single=%v) maxReq=%d",
+		numClients, cohortMembers, process, usePrefix, useReasoning, maxRounds, accumulate, singleSession, maxRequests)
 	return spec, label, horizon, maxRequests
 }
 
@@ -219,10 +224,11 @@ func TestProperty_EagerEqualsLazy_RequestStreams(t *testing.T) {
 	drawRNG := rand.New(rand.NewSource(propertyBaseSeed))
 
 	// Coverage guards: the suite must not pass vacuously. Track that we
-	// actually exercised non-empty streams and at least one reasoning draw
-	// (the trickiest path). If neither is ever hit the generator or caps
-	// regressed and the test is not testing what it claims.
-	var sawNonEmpty, sawReasoning, sawBlueprints bool
+	// actually exercised non-empty streams, at least one reasoning draw
+	// (the trickiest path), and — post #1458 — at least one MULTI-session
+	// reasoning draw (the per-client live-session merge). If any is never hit
+	// the generator or caps regressed and the test is not testing what it claims.
+	var sawNonEmpty, sawReasoning, sawBlueprints, sawMultiSession bool
 
 	for i := 0; i < draws; i++ {
 		drawSeed := drawRNG.Int63()
@@ -231,6 +237,10 @@ func TestProperty_EagerEqualsLazy_RequestStreams(t *testing.T) {
 		lazySpec, _, _, _ := buildSpec(drawSeed)
 
 		isReasoning := eagerSpec.Clients[0].Reasoning != nil
+		if isReasoning && eagerSpec.Clients[0].Reasoning.MultiTurn != nil &&
+			!eagerSpec.Clients[0].Reasoning.MultiTurn.SingleSession {
+			sawMultiSession = true
+		}
 
 		wl, err := GenerateWorkload(eagerSpec, horizon, maxReq)
 		if err != nil {
@@ -303,6 +313,10 @@ func TestProperty_EagerEqualsLazy_RequestStreams(t *testing.T) {
 	if !sawReasoning {
 		t.Fatalf("no reasoning draw occurred across %d draws — the trickiest lazy path "+
 			"(single-session blueprint pre-pass) is unexercised; adjust the generator's reasoning probability", draws)
+	}
+	if !sawMultiSession {
+		t.Fatalf("no multi-session (SingleSession=false) reasoning draw occurred across %d draws — "+
+			"the per-client live-session merge (#1458) is unexercised; adjust the generator's SingleSession probability", draws)
 	}
 	if !sawBlueprints {
 		t.Fatalf("reasoning draws occurred but none produced session blueprints across %d draws — "+

@@ -116,23 +116,26 @@ go build -o blis main.go
 
 # Run with lazy request generation (alpha, #1441). Streams requests from the
 # workload generator into the cluster instead of pre-generating the full
-# slice — reduces peak generator memory from O(total_requests) to
-# O(num_clients + max_session_rounds): the heap holds one entry per client,
-# and per-client reasoning state holds at most one session's pending rounds.
-# (Cluster-side memory still scales with in-flight cluster requests, which
-# this PR does not change.)
+# slice — reduces peak generator memory from O(total_requests) to the
+# concurrent working set: the global heap holds one entry per client;
+# single-session reasoning holds at most one session's pending rounds, while
+# multi-session reasoning (#1458) holds its live (overlapping) sessions,
+# bounded by ~ arrival_rate x session_duration (Little's law) — independent
+# of horizon. (Cluster-side memory still scales with in-flight cluster
+# requests, which this PR does not change.)
 # Falls back to the eager generator with a one-line warning for:
 #   - workloads with per-window parameters (time-varying)
 #   - concurrency clients (Concurrency > 0)
-#   - reasoning clients with SingleSession=false (multi-session)
-# Supported: single-shot, single-session reasoning, prefix-group sharing,
-# multi-client / cohort workloads. Behavior with the flag off is unchanged.
+# Supported: single-shot, single-session AND multi-session reasoning
+# (SingleSession=false, #1458 — per-client live-session merge), prefix-group
+# sharing, multi-client / cohort workloads. Behavior with the flag off is unchanged.
 ./blis run --model qwen/qwen3-14b --lazy-generation
 
 # Observe with lazy request generation (alpha, #1443). Same flag, default, and
 # semantics as `blis run` — streams requests from the generator into the observe
 # dispatch loop instead of pre-generating the full slice, with the same eager
-# fallback (time-varying / concurrency / multi-session). Observe already paces
+# fallback (time-varying / concurrency; multi-session reasoning is supported,
+# #1458). Observe already paces
 # itself against the real server, so the memory win is smaller than run's; the
 # flag mainly makes run and observe share one generation pipeline (#1438). Default
 # (flag off) dispatch behavior is unchanged.

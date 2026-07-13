@@ -58,16 +58,20 @@ type parityShape struct {
 	horizon int64
 }
 
-// paritySpecShapes returns the coverage matrix from issue #1442:
+// paritySpecShapes returns the coverage matrix from issue #1442 (+ #1458):
 //   - chatbot: single-turn, Poisson arrivals (the common case)
 //   - codegen-cohort: multi-turn accumulate, cohort-based, large shared prefix
 //     (the #1438 reproducer shape — where lazy's memory win matters most)
 //   - reasoning: single-session multi-turn (the trickiest generator path —
 //     round-0 emitted, follow-ups via the SessionManager at runtime)
+//   - reasoning-multi-session: multi-turn with single_session=false (#1458),
+//     where a client spawns many overlapping sessions merged per-client in the
+//     lazy path — CLI-layer regression protection for the multi-session merge
 //
-// All three are lazy-SUPPORTED (no per-window params, no concurrency, reasoning
-// is SingleSession). num_requests is small so runs are fast. seed is set via
-// the CLI --seed flag, not the YAML, so the matrix controls determinism.
+// All are lazy-SUPPORTED (no per-window params, no concurrency; multi-session
+// reasoning is streamed via the per-client live-session merge as of #1458).
+// num_requests is small so runs are fast. seed is set via the CLI --seed flag,
+// not the YAML, so the matrix controls determinism.
 func paritySpecShapes() []parityShape {
 	return []parityShape{
 		{
@@ -167,6 +171,36 @@ clients:
         context_growth: accumulate
         think_time_us: 60000
         single_session: true
+`,
+		},
+		{
+			name:    "reasoning-multi-session",
+			horizon: 60_000_000,
+			yaml: `version: "2"
+category: language
+aggregate_rate: 4.0
+num_requests: 24
+clients:
+  - id: ms1
+    tenant_id: mst1
+    slo_class: batch
+    rate_fraction: 1.0
+    prefix_group: sys
+    prefix_length: 64
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params: { mean: 80, std_dev: 16, min: 16, max: 300 }
+    output_distribution:
+      type: exponential
+      params: { mean: 48 }
+    reasoning:
+      multi_turn:
+        max_rounds: 3
+        context_growth: accumulate
+        think_time_us: 60000
+        single_session: false
 `,
 		},
 	}

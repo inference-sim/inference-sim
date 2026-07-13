@@ -92,6 +92,11 @@ func assertRequestStreamsEqual(t *testing.T, eager, lazy []*sim.Request) {
 		if e.RoundIndex != l.RoundIndex {
 			t.Fatalf("request %d: RoundIndex eager=%d lazy=%d", i, e.RoundIndex, l.RoundIndex)
 		}
+		// ReasonRatio is drawn from the same RNG state in both paths; compare it
+		// so a future reordering of reasoning-round RNG draws is caught here too.
+		if e.ReasonRatio != l.ReasonRatio {
+			t.Fatalf("request %d (%s): ReasonRatio eager=%v lazy=%v", i, e.ID, e.ReasonRatio, l.ReasonRatio)
+		}
 		if e.Streaming != l.Streaming {
 			t.Fatalf("request %d: Streaming eager=%v lazy=%v", i, e.Streaming, l.Streaming)
 		}
@@ -176,8 +181,11 @@ func reasoningSingleSessionSpec(seed int64) *WorkloadSpec {
 	}
 }
 
-// reasoningMultiSessionSpec is for the fallback test (SingleSession=false
-// is NOT in this PR's lazy scope — caller falls back to GenerateWorkload).
+// reasoningMultiSessionSpec builds a single multi-turn reasoning client with
+// SingleSession=false (the default): a traffic source that spawns many
+// independent, overlapping sessions over the horizon. Lazy supports this via
+// the per-client live-session merge (#1458); the multi-session parity tests
+// use it as the eager-vs-lazy oracle case.
 func reasoningMultiSessionSpec(seed int64) *WorkloadSpec {
 	return &WorkloadSpec{
 		Version: "1", Seed: seed, Category: "language", AggregateRate: 4.0,
@@ -558,9 +566,7 @@ func TestLazyRequestSource_Multimodal_MatchesEager(t *testing.T) {
 // to `l.yielded >= l.maxRequests` would yield extra round-0 requests
 // past the eager truncation point and break parity.
 //
-// Construction: 2 closed-loop SingleSession=true reasoning clients
-// (SingleSession is a lazy-supported shape; multi-session would trip
-// ErrLazyUnsupportedMultiSession before reaching the streaming path).
+// Construction: 2 closed-loop SingleSession=true reasoning clients.
 // Each client's one session has rounds 0, 1, 2 — all popped, only
 // round-0 yielded. With maxRequests = 4, eager truncates to first 4 in
 // arrival order (a mix of round-0 and intermediate rounds). Lazy must
@@ -703,13 +709,260 @@ func TestLazyRequestSource_Reasoning_TightMaxRequests_BlueprintParity(t *testing
 	}
 }
 
-// TestGenerateWorkloadLazy_FallsBackOnMultiSession pins the
-// SingleSession=false fallback: any reasoning client without
-// SingleSession=true forces the caller back to GenerateWorkload.
-func TestGenerateWorkloadLazy_FallsBackOnMultiSession(t *testing.T) {
-	_, _, _, err := GenerateWorkloadLazy(reasoningMultiSessionSpec(7), 5_000_000, 20)
-	if !errors.Is(err, ErrLazyUnsupportedMultiSession) {
-		t.Fatalf("want ErrLazyUnsupportedMultiSession, got %v", err)
+// TestLazyRequestSource_Reasoning_MultiSession_MatchesEager pins BC-1 for
+// SingleSession=false reasoning (issue #1458): a traffic source that spawns
+// many independent, overlapping sessions over the horizon. The lazy source
+// runs a per-client internal merge over its live sessions so its emitted
+// sub-stream is arrival-monotonic (BC-2), yet byte-identical to the eager
+// generator's globally-sorted stream. Covers closed-loop (default: only
+// round-0 emitted + blueprints) here; the open-loop variant is below.
+func TestLazyRequestSource_Reasoning_MultiSession_MatchesEager(t *testing.T) {
+	// A single multi-session client with a modest rate over a long horizon
+	// produces many overlapping sessions (each MaxRounds rounds). This is the
+	// exact shape that the old dead per-client cursor got wrong.
+	mk := func() *WorkloadSpec {
+		return reasoningMultiSessionSpec(2027)
+	}
+	wlEager, err := GenerateWorkload(mk(), 3_000_000, 40)
+	if err != nil {
+		t.Fatalf("eager GenerateWorkload: %v", err)
+	}
+	src, lazySessions, _, err := GenerateWorkloadLazy(mk(), 3_000_000, 40)
+	if err != nil {
+		t.Fatalf("lazy GenerateWorkloadLazy: %v", err)
+	}
+	lazyReqs := drainLazy(t, src)
+
+	// Sanity: the spec must actually produce multiple overlapping sessions,
+	// else the test degenerates to the single-session case and proves nothing.
+	sessionIDs := make(map[string]bool)
+	for _, r := range lazyReqs {
+		if r.SessionID != "" {
+			sessionIDs[r.SessionID] = true
+		}
+	}
+	if len(sessionIDs) < 2 {
+		t.Fatalf("multi-session test ineffective: expected >= 2 distinct sessions, got %d", len(sessionIDs))
+	}
+
+	assertRequestStreamsEqual(t, wlEager.Requests, lazyReqs)
+
+	// Blueprints (closed-loop default) must match count, order, SessionID,
+	// ClientID, and first RNG draw.
+	if len(wlEager.Sessions) != len(lazySessions) {
+		t.Fatalf("session count: eager=%d lazy=%d", len(wlEager.Sessions), len(lazySessions))
+	}
+	for i := range wlEager.Sessions {
+		if wlEager.Sessions[i].SessionID != lazySessions[i].SessionID {
+			t.Fatalf("session %d: SessionID eager=%q lazy=%q",
+				i, wlEager.Sessions[i].SessionID, lazySessions[i].SessionID)
+		}
+		if wlEager.Sessions[i].ClientID != lazySessions[i].ClientID {
+			t.Fatalf("session %d: ClientID eager=%q lazy=%q",
+				i, wlEager.Sessions[i].ClientID, lazySessions[i].ClientID)
+		}
+		if e, l := wlEager.Sessions[i].RNG.Int63(), lazySessions[i].RNG.Int63(); e != l {
+			t.Fatalf("session %d (%q): RNG draw diverged eager=%d lazy=%d",
+				i, wlEager.Sessions[i].SessionID, e, l)
+		}
+	}
+}
+
+// TestLazyRequestSource_Reasoning_MultiSession_OpenLoop_MatchesEager pins
+// BC-1 for open-loop (closed_loop=false) multi-session reasoning: ALL rounds
+// of every overlapping session are emitted (no round-0 filter, no blueprints),
+// so the interleaving across sessions is exercised most directly.
+func TestLazyRequestSource_Reasoning_MultiSession_OpenLoop_MatchesEager(t *testing.T) {
+	openLoop := false
+	mk := func() *WorkloadSpec {
+		s := reasoningMultiSessionSpec(3001)
+		s.Clients[0].ClosedLoop = &openLoop
+		return s
+	}
+	eager, err := GenerateRequests(mk(), 3_000_000, 40)
+	if err != nil {
+		t.Fatalf("eager GenerateRequests: %v", err)
+	}
+	src, _, _, err := GenerateWorkloadLazy(mk(), 3_000_000, 40)
+	if err != nil {
+		t.Fatalf("lazy GenerateWorkloadLazy: %v", err)
+	}
+	lazyReqs := drainLazy(t, src)
+
+	// Sanity: open-loop must emit non-round-0 rounds (otherwise the
+	// interleaving path is unexercised).
+	var sawIntermediate bool
+	for _, r := range lazyReqs {
+		if r.RoundIndex > 0 {
+			sawIntermediate = true
+			break
+		}
+	}
+	if !sawIntermediate {
+		t.Fatal("open-loop multi-session test ineffective: no round > 0 emitted")
+	}
+	assertRequestStreamsEqual(t, eager, lazyReqs)
+}
+
+// TestLazyRequestSource_MultiSession_PerClientMonotonic pins BC-2: a single
+// multi-session client feeds the global heap ONE entry at a time, and the
+// heap-merge is only correct if that per-client sub-stream is non-decreasing
+// in arrival time. Overlapping sessions make this non-trivial (session N+1's
+// round 0 can precede session N's later rounds). Drain a single-client spec
+// and assert monotonicity directly.
+func TestLazyRequestSource_MultiSession_PerClientMonotonic(t *testing.T) {
+	openLoop := false // open-loop so all rounds (not just round-0) are emitted
+	spec := reasoningMultiSessionSpec(4099)
+	spec.Clients[0].ClosedLoop = &openLoop
+	src, _, _, err := GenerateWorkloadLazy(spec, 3_000_000, 60)
+	if err != nil {
+		t.Fatalf("lazy: %v", err)
+	}
+	reqs := drainLazy(t, src)
+	if len(reqs) < 4 {
+		t.Fatalf("expected several requests to exercise ordering, got %d", len(reqs))
+	}
+	var prev int64 = -1
+	for i, r := range reqs {
+		if r.ArrivalTime < prev {
+			t.Fatalf("request %d (%s round %d): ArrivalTime %d < previous %d — per-client stream not arrival-monotonic",
+				i, r.SessionID, r.RoundIndex, r.ArrivalTime, prev)
+		}
+		prev = r.ArrivalTime
+	}
+}
+
+// TestLazyRequestSource_MultiSession_MultiClientTightCap_MatchesEager pins
+// BC-1/BC-4 for the hardest multi-session shape: MULTIPLE overlapping
+// multi-session clients (explicit + cohort-expanded) under a tight maxRequests
+// cap. This stresses (a) cross-client interleaving through the global heap,
+// (b) the per-client build cap (perClientCap parity), and (c) closed-loop
+// round-0 blueprint enumeration under truncation — all at once.
+func TestLazyRequestSource_MultiSession_MultiClientTightCap_MatchesEager(t *testing.T) {
+	mkClient := func(id string, frac float64) ClientSpec {
+		return ClientSpec{
+			ID: id, TenantID: id + "-t", SLOClass: "batch",
+			RateFraction: frac,
+			Arrival:      ArrivalSpec{Process: "poisson"},
+			InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 40, "std_dev": 8, "min": 10, "max": 120}},
+			OutputDist:   DistSpec{Type: "exponential", Params: map[string]float64{"mean": 20}},
+			PrefixGroup:  "shared",
+			PrefixLength: 48,
+			Reasoning: &ReasoningSpec{
+				MultiTurn: &MultiTurnSpec{
+					MaxRounds:     4,
+					ContextGrowth: "accumulate",
+					ThinkTimeUs:   80_000,
+					// SingleSession: false (multi-session)
+				},
+			},
+		}
+	}
+	mk := func() *WorkloadSpec {
+		return &WorkloadSpec{
+			Version: "1", Seed: 5150, Category: "language", AggregateRate: 6.0,
+			Clients: []ClientSpec{mkClient("a", 0.3), mkClient("b", 0.3)},
+			Cohorts: []CohortSpec{{
+				ID: "co", Population: 3, TenantID: "co-t", SLOClass: "batch",
+				RateFraction: 0.4,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 40, "std_dev": 8, "min": 10, "max": 120}},
+				OutputDist:   DistSpec{Type: "exponential", Params: map[string]float64{"mean": 20}},
+				PrefixGroup:  "shared",
+				PrefixLength: 48,
+				Reasoning: &ReasoningSpec{
+					MultiTurn: &MultiTurnSpec{
+						MaxRounds:     4,
+						ContextGrowth: "accumulate",
+						ThinkTimeUs:   80_000,
+					},
+				},
+			}},
+		}
+	}
+	const tightCap = int64(12)
+	wlEager, err := GenerateWorkload(mk(), 4_000_000, tightCap)
+	if err != nil {
+		t.Fatalf("eager: %v", err)
+	}
+	src, lazySessions, _, err := GenerateWorkloadLazy(mk(), 4_000_000, tightCap)
+	if err != nil {
+		t.Fatalf("lazy: %v", err)
+	}
+	lazyReqs := drainLazy(t, src)
+	assertRequestStreamsEqual(t, wlEager.Requests, lazyReqs)
+
+	// Blueprints must match under truncation (count, order, SessionID, ClientID).
+	if len(wlEager.Sessions) != len(lazySessions) {
+		t.Fatalf("session count under tight cap: eager=%d lazy=%d", len(wlEager.Sessions), len(lazySessions))
+	}
+	for i := range wlEager.Sessions {
+		if wlEager.Sessions[i].SessionID != lazySessions[i].SessionID {
+			t.Fatalf("blueprint %d: SessionID eager=%q lazy=%q", i, wlEager.Sessions[i].SessionID, lazySessions[i].SessionID)
+		}
+		if wlEager.Sessions[i].ClientID != lazySessions[i].ClientID {
+			t.Fatalf("blueprint %d: ClientID eager=%q lazy=%q", i, wlEager.Sessions[i].ClientID, lazySessions[i].ClientID)
+		}
+	}
+	// Sanity: multiple clients' sessions must survive so cross-client
+	// interleaving is actually exercised.
+	clientIDs := make(map[string]bool)
+	for _, r := range lazyReqs {
+		clientIDs[r.ClientID] = true
+	}
+	if len(clientIDs) < 2 {
+		t.Fatalf("multi-client test ineffective: expected >= 2 distinct client IDs in surviving stream, got %d", len(clientIDs))
+	}
+}
+
+// TestLazyRequestSource_MultiSession_Lifecycle_MatchesEager pins BC-1/BC-4 for
+// multi-session reasoning under a PLAIN lifecycle (two active windows with a
+// gap, no per-window parameter overrides — so this stays on the non-time-varying
+// path and is lazy-supported). This is the only committed test exercising the
+// new lifecycle branches in buildNextSession (skip-past-window, break-past-last-
+// window) and the emit-path per-round lifecycle filter for multi-session.
+// Open-loop so every round flows through the per-round window filter.
+func TestLazyRequestSource_MultiSession_Lifecycle_MatchesEager(t *testing.T) {
+	openLoop := false
+	mk := func() *WorkloadSpec {
+		s := reasoningMultiSessionSpec(6270)
+		s.Clients[0].ClosedLoop = &openLoop
+		// Two windows with a mid gap: [0,1s) active, [1s,2s) inactive, [2s,4s)
+		// active. Sessions starting in the gap are skipped (build branch);
+		// rounds that drift into the gap are suppressed (emit-path filter).
+		s.Clients[0].Lifecycle = &LifecycleSpec{
+			Windows: []ActiveWindow{
+				{StartUs: 0, EndUs: 1_000_000},
+				{StartUs: 2_000_000, EndUs: 4_000_000},
+			},
+		}
+		return s
+	}
+	// Horizon beyond the last window so the break-past-last-window branch fires.
+	eager, err := GenerateRequests(mk(), 5_000_000, 80)
+	if err != nil {
+		t.Fatalf("eager GenerateRequests: %v", err)
+	}
+	src, _, _, err := GenerateWorkloadLazy(mk(), 5_000_000, 80)
+	if err != nil {
+		t.Fatalf("lazy GenerateWorkloadLazy: %v", err)
+	}
+	lazyReqs := drainLazy(t, src)
+	assertRequestStreamsEqual(t, eager, lazyReqs)
+
+	// Sanity: the lifecycle must actually bind — every emitted round must fall
+	// inside an active window, and the stream must be non-empty.
+	if len(lazyReqs) == 0 {
+		t.Fatal("lifecycle multi-session test ineffective: empty stream")
+	}
+	inWindow := func(t int64) bool {
+		return (t >= 0 && t < 1_000_000) || (t >= 2_000_000 && t < 4_000_000)
+	}
+	for i, r := range lazyReqs {
+		if !inWindow(r.ArrivalTime) {
+			t.Fatalf("request %d (%s round %d): ArrivalTime %d outside all active windows",
+				i, r.SessionID, r.RoundIndex, r.ArrivalTime)
+		}
 	}
 }
 

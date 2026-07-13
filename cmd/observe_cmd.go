@@ -129,7 +129,7 @@ func init() {
 	observeCmd.Flags().BoolVar(&observeLazyGeneration, "lazy-generation", false,
 		"Alpha (#1441): stream requests from the workload generator instead of pre-generating "+
 			"the full slice. Default off. Falls back to eager mode (with a warning) for time-varying "+
-			"workloads, concurrency clients, and multi-session reasoning (SingleSession=false).")
+			"workloads and concurrency clients. Multi-session reasoning is supported (#1458).")
 
 	// Optional
 	observeCmd.Flags().StringVar(&observeAPIKey, "api-key", "", "Bearer token for server authentication")
@@ -250,8 +250,6 @@ func classifyLazyGenError(err error) (lazyGenDisposition, string) {
 		return lazyFallbackToEager, "workload has per-window parameters"
 	case errors.Is(err, workload.ErrLazyUnsupportedConcurrency):
 		return lazyFallbackToEager, "workload has concurrency clients"
-	case errors.Is(err, workload.ErrLazyUnsupportedMultiSession):
-		return lazyFallbackToEager, "workload has multi-session reasoning (SingleSession=false)"
 	default:
 		return lazyFatal, ""
 	}
@@ -447,7 +445,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	// streaming request source instead of materializing the full slice, mirroring
 	// blis run (cmd/root.go). Falls back to the eager generator (with a one-line
 	// warning) for specs the streaming source cannot handle yet (time-varying
-	// parameters, concurrency clients, multi-session reasoning).
+	// parameters, concurrency clients). Multi-session reasoning is supported (#1458).
 	//
 	// No spec pre-expand is needed here (unlike run): observe has no
 	// pre-generation applyTimeoutToSpec step, and both generators expand
