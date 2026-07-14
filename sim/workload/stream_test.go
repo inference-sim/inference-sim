@@ -494,43 +494,64 @@ func TestLazyRequestSource_TimeVarying_Reasoning_MatchesEager(t *testing.T) {
 	})
 }
 
-// TestLazyRequestSource_TimeVarying_InvalidWindowDist_SurfacesError pins BC-6:
-// per-window input/output distributions are NOT validated by spec.Validate, so a
-// window override that NewLengthSampler rejects is only discovered when the lazy
-// source builds that window. The error must be recorded and surfaced via Err()
-// (so cmd can Fatalf, matching eager's abort-on-invalid-spec) — never a panic or
-// silent traffic reduction.
-func TestLazyRequestSource_TimeVarying_InvalidWindowDist_SurfacesError(t *testing.T) {
+// TestLazyRequestSource_TimeVarying_InvalidWindowDist_Rejected pins BC-6: an
+// invalid per-window input/output distribution override is rejected up front by
+// spec.Validate (#1460), so BOTH GenerateWorkload (eager) and GenerateWorkloadLazy
+// return the same construction-time error — regardless of maxRequests. This closes
+// the parity gap where a late malformed window under a binding cap would abort the
+// eager path (which builds every window) but never be built by the lazy path.
+//
+// Two failure kinds are exercised: an unknown distribution TYPE and a valid type
+// with MISSING REQUIRED PARAMS (the subtler case — validateDistSpec accepts it,
+// but generateRequestsForWindow's NewLengthSampler would reject it, so Validate
+// must too). The bad window is placed SECOND with a tight maxRequests so that,
+// absent the validation, the lazy source would fill the cap from the first window
+// and never build the bad one — the exact silent-completion scenario prevented.
+func TestLazyRequestSource_TimeVarying_InvalidWindowDist_Rejected(t *testing.T) {
 	goodRate := 5.0
-	badDist := DistSpec{Type: "not_a_real_distribution", Params: map[string]float64{}}
-	spec := &WorkloadSpec{
-		Version: "2", Seed: 7, Category: "language", AggregateRate: 0,
-		Clients: []ClientSpec{{
-			ID: "tv", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
-			Arrival:    ArrivalSpec{Process: "poisson"},
-			InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 96, "std_dev": 20, "min": 16, "max": 400}},
-			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 48}},
-			Lifecycle: &LifecycleSpec{Windows: []ActiveWindow{
-				// First window valid; the overridden output dist in the second is invalid.
-				{StartUs: 0, EndUs: 2_000_000, TraceRate: &goodRate},
-				{StartUs: 2_000_000, EndUs: 4_000_000, TraceRate: &goodRate, OutputDist: &badDist},
-			}},
-		}},
+	cases := []struct {
+		name    string
+		badDist DistSpec
+	}{
+		{"unknown-type", DistSpec{Type: "not_a_real_distribution", Params: map[string]float64{}}},
+		// Valid type, but gaussian requires mean/std_dev/min/max — none supplied.
+		{"valid-type-missing-params", DistSpec{Type: "gaussian", Params: map[string]float64{}}},
 	}
-	// spec.Validate accepts this (per-window dists are unvalidated), so the source
-	// is constructed successfully; the error surfaces during draining.
-	src, _, _, err := GenerateWorkloadLazy(spec, 5_000_000, 100)
-	if err != nil {
-		t.Fatalf("construction should succeed (per-window dist unvalidated); got %v", err)
-	}
-	// Drain fully — must not panic — then Err() must be non-nil.
-	for {
-		if _, ok := src.Next(); !ok {
-			break
-		}
-	}
-	if src.Err() == nil {
-		t.Fatal("want non-nil Err() after draining a spec with an invalid per-window distribution")
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			bad := tc.badDist
+			mk := func() *WorkloadSpec {
+				return &WorkloadSpec{
+					Version: "2", Seed: 7, Category: "language", AggregateRate: 0,
+					Clients: []ClientSpec{{
+						ID: "tv", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+						Arrival:    ArrivalSpec{Process: "poisson"},
+						InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 96, "std_dev": 20, "min": 16, "max": 400}},
+						OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 48}},
+						Lifecycle: &LifecycleSpec{Windows: []ActiveWindow{
+							// First window valid; the overridden output dist in the second is invalid.
+							{StartUs: 0, EndUs: 2_000_000, TraceRate: &goodRate},
+							{StartUs: 2_000_000, EndUs: 4_000_000, TraceRate: &goodRate, OutputDist: &bad},
+						}},
+					}},
+				}
+			}
+			// Tight cap so an unvalidated bad late window would never be built by lazy.
+			const horizon, maxReq = int64(5_000_000), int64(3)
+			_, eagerErr := GenerateWorkload(mk(), horizon, maxReq)
+			if eagerErr == nil {
+				t.Fatal("eager: want a validation error for the invalid per-window output_distribution")
+			}
+			src, _, _, lazyErr := GenerateWorkloadLazy(mk(), horizon, maxReq)
+			if lazyErr == nil {
+				t.Fatalf("lazy: want the SAME validation error as eager (%v), got nil source=%v", eagerErr, src)
+			}
+			// Both must reject at construction; neither returns a usable source (parity).
+			if src != nil {
+				t.Errorf("lazy: source must be nil on a rejected spec, got %v", src)
+			}
+		})
 	}
 }
 

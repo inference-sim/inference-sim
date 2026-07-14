@@ -341,13 +341,22 @@ func genTimeVaryingSpec(rng *rand.Rand, seed int64) (spec *WorkloadSpec, label s
 
 	// Contiguous windows of ~1s each, each with a distinct per-window trace_rate;
 	// some windows also override the input distribution (exercises sampler swap).
+	// ~1/3 of draws use OVERLAPPING windows (a half-duration stride) so windows are
+	// co-active in arrival time — the regime where the emit-safety gate's build-ahead
+	// path does load-bearing work (a live window's head withheld until a co-active
+	// window is built). The rest are contiguous.
 	const windowDur = 1_000_000
+	overlap := rng.Intn(3) == 0
+	stride := int64(windowDur)
+	if overlap {
+		stride = windowDur / 2
+	}
 	windows := make([]ActiveWindow, numWindows)
 	for i := 0; i < numWindows; i++ {
 		rate := 2.0 + float64(rng.Intn(18)) // 2–19 req/s
 		w := ActiveWindow{
-			StartUs:   int64(i) * windowDur,
-			EndUs:     int64(i+1) * windowDur,
+			StartUs:   int64(i) * stride,
+			EndUs:     int64(i)*stride + windowDur,
 			TraceRate: &rate,
 		}
 		if rng.Intn(2) == 0 {
@@ -373,14 +382,14 @@ func genTimeVaryingSpec(rng *rand.Rand, seed int64) (spec *WorkloadSpec, label s
 			Lifecycle:    &LifecycleSpec{Windows: windows},
 		}},
 	}
-	// Horizon covers all windows; maxRequests occasionally tight for reasoning.
-	horizon = int64(numWindows)*windowDur + 500_000
+	// Horizon covers all windows (last window ends at (n-1)*stride + windowDur).
+	horizon = int64(numWindows-1)*stride + windowDur + 500_000
 	maxRequests = int64(10 + rng.Intn(80))
 	if useReasoning && rng.Intn(4) == 0 {
 		maxRequests = int64(2 + rng.Intn(8))
 	}
-	label = fmt.Sprintf("TIME-VARYING windows=%d process=%s prefix=%v reasoning=%v(rounds=%d,accum=%v,single=%v) maxReq=%d",
-		numWindows, process, usePrefix, useReasoning, maxRounds, accumulate, singleSession, maxRequests)
+	label = fmt.Sprintf("TIME-VARYING windows=%d overlap=%v process=%s prefix=%v reasoning=%v(rounds=%d,accum=%v,single=%v) maxReq=%d",
+		numWindows, overlap, process, usePrefix, useReasoning, maxRounds, accumulate, singleSession, maxRequests)
 	return spec, label, horizon, maxRequests
 }
 
@@ -461,8 +470,8 @@ func TestProperty_EagerEqualsLazy_RequestStreams(t *testing.T) {
 		src, lazySessions, lazyBudget, err := GenerateWorkloadLazy(lazySpec, horizon, maxReq)
 		if err != nil {
 			t.Fatalf("draw %d [base=%#x] lazy GenerateWorkloadLazy failed: %v\n  spec: %s\n  "+
-				"(a lazy sentinel error here means the generator emitted an unsupported "+
-				"shape — the generator must only produce lazy-supported specs)",
+				"(as of #1460 there are no unsupported-shape sentinels — an error here is a "+
+				"real generation bug, since eager accepted the same spec above)",
 				i, propertyBaseSeed, err, label)
 		}
 		// FollowUpBudget must match eager wherever it is observable — i.e. for
