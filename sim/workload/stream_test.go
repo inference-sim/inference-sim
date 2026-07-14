@@ -1168,6 +1168,17 @@ func TestGenerateWorkloadLazy_ConcurrencyClient_MatchesEager(t *testing.T) {
 			clients: []ClientSpec{conc("pool", 4, 100_000)},
 			aggRate: 0, horizon: 0, maxReqs: 10,
 		},
+		{
+			// Combined binding cap: open-loop is PARTIALLY kept AND seeds are
+			// PARTIALLY truncated in the same run (0 < alreadyKept(10) <
+			// maxRequests(15) < alreadyKept+users(20) → 10 open-loop + 5 seeds).
+			// Exercises the no-displacement invariant at the boundary where
+			// keptOpen>0 feeds the seed cap — the case the all-concurrency
+			// binding-cap sub-case (keptOpen==0) does not reach.
+			name:    "combined-cap",
+			clients: []ClientSpec{openLoop("ol", 1.0), conc("pool", 10, 120_000)},
+			aggRate: 4.0, horizon: 3_000_000, maxReqs: 15,
+		},
 	}
 
 	for _, tc := range cases {

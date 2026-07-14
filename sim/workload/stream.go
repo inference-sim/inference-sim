@@ -650,36 +650,45 @@ type clientPrep struct {
 //
 // Returns:
 //   - source: implements cluster.RequestSource via structural typing.
-//   - sessions: deterministic session blueprints for closed-loop clients,
-//     in the same (client-order, sorted-session-IDs) as GenerateWorkload.
-//   - followUpBudget: -1 in lazy mode (concurrency clients force eager fallback).
-//   - err: ErrLazyUnsupported* signals the caller to fall back; other errors
-//     are real spec/validation failures.
+//   - sessions: deterministic session blueprints for closed-loop reasoning AND
+//     concurrency clients (#1459), in the same order as GenerateWorkload.
+//   - followUpBudget: the shared concurrencyFollowUpBudget value — -1 when
+//     unbounded (maxRequests<=0) or there are no concurrency users; >=0 (the cap
+//     on follow-ups) for concurrency specs under a finite maxRequests (#1459).
+//   - err: ErrLazyUnsupportedTimeVarying signals the caller to fall back (the
+//     only remaining unsupported class); other errors are real spec/validation
+//     failures.
 //
 // Determinism: same seed produces the same source byte-identically to
 // GenerateWorkload's request stream (BC-3).
 func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) (
 	*lazyRequestSource, []SessionBlueprint, int64, error) {
 
-	if maxRequests < 0 {
-		return nil, nil, 0, fmt.Errorf("maxRequests must be non-negative, got %d", maxRequests)
-	}
+	// NOTE: the horizon<=0 check MUST come before the maxRequests<0 check to match
+	// eager's guard order exactly (GenerateRequests checks horizon<=0 first,
+	// returning before its maxRequests<0 check — generator.go). Reversing them
+	// would make lazy reject a horizon<=0 && maxRequests<0 spec that eager accepts.
 	if horizon <= 0 {
 		// Empty workload: return an immediately-exhausted source — UNLESS the
 		// spec has concurrency clients. Eager's concurrency seed loop is
 		// horizon-independent: GenerateRequests returns nil at horizon<=0 (before
-		// validateAndExpandSpec), but GenerateWorkload still emits the seed set.
-		// To match (BC-1/INV-6) we must too. Concurrency is a spec.Clients-only
-		// field (cohorts never carry it), so this check needs no expansion.
+		// validateAndExpandSpec AND before its maxRequests<0 check), but
+		// GenerateWorkload still emits the seed set (treating maxRequests<=0 as
+		// unbounded). To match (BC-1/INV-6) we must too. Concurrency is a
+		// spec.Clients-only field (cohorts never carry it), so this needs no expansion.
 		if !specHasConcurrencyClient(spec) {
 			return &lazyRequestSource{h: &heapByArrival{}, maxRequests: maxRequests}, nil, -1, nil
 		}
 		// Concurrency at horizon<=0: mirror eager's zero-horizon sequence, which
-		// does NOT run validateAndExpandSpec/UpgradeV1ToV2. Assemble allClients
-		// from the raw spec, emit only the (horizon-independent) concurrency seeds
-		// with keptOpen=0, and return. See GenerateWorkloadLazy's "Validation
-		// symmetry" note in the plan (#1459).
+		// does NOT run validateAndExpandSpec/UpgradeV1ToV2 and does NOT reject a
+		// negative maxRequests (the seed cap's `maxRequests > 0` guard treats it as
+		// unbounded). Assemble allClients from the raw spec, emit only the
+		// (horizon-independent) concurrency seeds with keptOpen=0, and return.
+		// See GenerateWorkloadLazy's "Validation symmetry" note in the plan (#1459).
 		return generateConcurrencyOnlyLazyAtZeroHorizon(spec, horizon, maxRequests)
+	}
+	if maxRequests < 0 {
+		return nil, nil, 0, fmt.Errorf("maxRequests must be non-negative, got %d", maxRequests)
 	}
 
 	// Shared spec prelude (mutual-exclusion, inference-perf expansion,
@@ -1012,11 +1021,22 @@ func buildClientStreamState(p clientPrep, horizon int64, maxRequests int64) (*cl
 // "produce all rounds, sort+truncate to maxRequests, then scan the truncated
 // slice for SessionIDs per closed-loop client" sequence.
 //
-// keptOpen == eager's len(reqs) after truncation: concurrency clients have
-// RateFraction == 0 and are never in `preps`, so the dry-run heap holds only
-// open-loop states and its pop count is exactly min(genOpen, maxRequests). The
-// concurrency seed phase (#1459) consumes keptOpen to reproduce eager's seed cap
+// keptOpen == eager's len(round0Only): concurrency clients have RateFraction == 0
+// and are never in `preps`, so the dry-run heap holds only open-loop states and
+// its pop count is exactly min(genOpen, maxRequests). The concurrency seed phase
+// (#1459) consumes keptOpen to reproduce eager's seed cap
 // (alreadyKept + len(seeds) >= maxRequests).
+//
+// LOAD-BEARING INVARIANT (INV-6): keptOpen counts ALL pops, including any
+// intermediate closed-loop reasoning rounds (RoundIndex > 0), whereas eager's
+// alreadyKept = len(round0Only) EXCLUDES those intermediate rounds. These two
+// counts are equal only because a spec can never contain both concurrency clients
+// and multi-turn/reasoning clients (spec.Validate hard-errors that mix — see
+// spec.go, `hasConcurrency && hasMultiTurn`). So whenever concurrency seeds are
+// being generated there are provably zero intermediate closed-loop rounds, and
+// keptOpen == len(round0Only). If that mutual-exclusion validation is ever
+// relaxed, this equality breaks and the seed cap would bind earlier in lazy than
+// eager — revisit the concurrency seed phase here and in GenerateWorkload.
 //
 // Uses CLONED per-client states with RNGs re-seeded from the same
 // clientSeeds, so the simulation does not advance the Phase 3
