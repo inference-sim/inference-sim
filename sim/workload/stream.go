@@ -863,6 +863,7 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 //   - isClosedLoop is false (zero value) — the intermediate-round suppression
 //     `e.state.isClosedLoop && e.req.RoundIndex != 0` is skipped, so the seed
 //     (RoundIndex == 0 anyway) emits directly.
+//
 // It holds no per-seed state (the seed is the heapEntry's req), so one instance
 // is safely shared across all seed entries; the exhausted path performs no writes.
 var exhaustedSentinelState = &clientStreamState{exhausted: true}
