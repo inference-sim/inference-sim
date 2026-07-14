@@ -487,23 +487,79 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 
 	// --- Handle concurrency clients ---
 	// Concurrency clients have RateFraction=0, so GenerateRequests skips them.
-	// We generate seed requests and SessionBlueprints here.
+	// We generate seed requests and SessionBlueprints via the shared helper
+	// (also used by GenerateWorkloadLazy, #1459) so the RNG-draw order and cap
+	// semantics are byte-identical between eager and lazy modes.
 	//
-	// concurrencyRNG drives per-user seed selection and blueprint RNG seeding.
-	// Uses spec.Seed + 10007, distinct from blueprintRNG's spec.Seed + 7919 above,
-	// so the two streams do not produce identical sequences for the same spec seed.
-	// If new per-client RNG streams are added here, choose an offset not already
-	// in use in this function and document it with the same pattern.
-	concurrencyRNG := rand.New(rand.NewSource(spec.Seed + 10007))
-
 	// Re-derive prefix tokens by initializing a fresh RNG from spec.Seed —
 	// same seed produces same prefix tokens as GenerateRequests produced.
 	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(spec.Seed))
 	workloadRNG := rng.ForSubsystem(sim.SubsystemWorkloadGen)
 	prefixes := generatePrefixTokens(allClients, workloadRNG)
 
-	var concurrencySeeds []*sim.Request
-	totalConcurrencyUsers := 0
+	concurrencySeeds, concurrencyBlueprints, totalConcurrencyUsers, err :=
+		generateConcurrencySeedsAndBlueprints(allClients, prefixes, spec.Seed, horizon, maxRequests, int64(len(round0Only)))
+	if err != nil {
+		return nil, err
+	}
+	sessions = append(sessions, concurrencyBlueprints...)
+
+	// Merge closed-loop round-0 requests with concurrency seeds
+	allReqs := append(round0Only, concurrencySeeds...)
+
+	// Sort by arrival time (stable sort preserves order for ties)
+	sort.SliceStable(allReqs, func(i, j int) bool {
+		return allReqs[i].ArrivalTime < allReqs[j].ArrivalTime
+	})
+
+	// Re-assign sequential IDs
+	for i, req := range allReqs {
+		req.ID = fmt.Sprintf("request_%d", i)
+	}
+
+	// Compute follow-up budget for concurrency sessions (shared with lazy).
+	followUpBudget := concurrencyFollowUpBudget(maxRequests, int64(len(allReqs)), totalConcurrencyUsers)
+
+	return &GeneratedWorkload{Requests: allReqs, Sessions: sessions, FollowUpBudget: followUpBudget}, nil
+}
+
+// generateConcurrencySeedsAndBlueprints produces the seed requests and session
+// blueprints for every concurrency client (Concurrency > 0) in allClients.
+// Extracted from GenerateWorkload (#1459) so the eager and lazy
+// (GenerateWorkloadLazy) paths share ONE construction site (R4) and are
+// byte-identical: same concurrencyRNG (spec.Seed + 10007), same per-user draw
+// order (userSeed → token samples → bpSeed), same stagger, and the same seed
+// cap that references alreadyKept.
+//
+// alreadyKept is the number of non-concurrency (open-loop / closed-loop round-0)
+// requests already retained under the maxRequests cap — eager passes
+// len(round0Only); lazy passes the count of open-loop requests its streaming
+// source will emit. The per-user cap breaks when
+// alreadyKept + len(seeds) >= maxRequests, matching eager's original
+// len(round0Only)+len(concurrencySeeds) check exactly.
+//
+// The returned seeds are in generation order (client-major, user-minor); the
+// caller owns final merge/sort/ID assignment. Blueprints are 1:1 with seeds in
+// the same order. totalUsers sums Concurrency across all concurrency clients
+// (matching eager's totalConcurrencyUsers, used for the follow-up budget).
+//
+// The cap-check MUST remain the first statement of the per-user loop and the
+// double-loop structure MUST be preserved: a huge Concurrency vs a small
+// maxRequests then terminates in O(cap), not O(Concurrency).
+func generateConcurrencySeedsAndBlueprints(
+	allClients []ClientSpec,
+	prefixes map[string][]sim.TokenID,
+	specSeed int64,
+	horizon int64,
+	maxRequests int64,
+	alreadyKept int64,
+) (seeds []*sim.Request, blueprints []SessionBlueprint, totalUsers int, err error) {
+	// concurrencyRNG drives per-user seed selection and blueprint RNG seeding.
+	// Uses specSeed + 10007, distinct from the closed-loop blueprintRNG's
+	// specSeed + 7919, so the two streams do not produce identical sequences for
+	// the same spec seed. If new per-client RNG streams are added here, choose an
+	// offset not already in use and document it with the same pattern.
+	concurrencyRNG := rand.New(rand.NewSource(specSeed + 10007))
 
 	for i := range allClients {
 		client := &allClients[i]
@@ -511,13 +567,13 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 			continue
 		}
 
-		inputSampler, err := NewLengthSampler(client.InputDist)
-		if err != nil {
-			return nil, fmt.Errorf("client %q input distribution: %w", client.ID, err)
+		inputSampler, sErr := NewLengthSampler(client.InputDist)
+		if sErr != nil {
+			return nil, nil, 0, fmt.Errorf("client %q input distribution: %w", client.ID, sErr)
 		}
-		outputSampler, err := NewLengthSampler(client.OutputDist)
-		if err != nil {
-			return nil, fmt.Errorf("client %q output distribution: %w", client.ID, err)
+		outputSampler, sErr := NewLengthSampler(client.OutputDist)
+		if sErr != nil {
+			return nil, nil, 0, fmt.Errorf("client %q output distribution: %w", client.ID, sErr)
 		}
 
 		var prefix []sim.TokenID
@@ -527,7 +583,8 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 
 		for u := 0; u < client.Concurrency; u++ {
 			// Never generate more seeds than the global request budget allows.
-			if maxRequests > 0 && int64(len(round0Only)+len(concurrencySeeds)) >= maxRequests {
+			// (cap-check MUST be the first statement — see godoc.)
+			if maxRequests > 0 && alreadyKept+int64(len(seeds)) >= maxRequests {
 				break
 			}
 			userSeed := concurrencyRNG.Int63()
@@ -572,11 +629,11 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 				SessionID:    sessionID,
 				RoundIndex:   0,
 			}
-			concurrencySeeds = append(concurrencySeeds, seed)
+			seeds = append(seeds, seed)
 
 			// Create blueprint for this virtual user's session
 			bpSeed := concurrencyRNG.Int63()
-			sessions = append(sessions, SessionBlueprint{
+			blueprints = append(blueprints, SessionBlueprint{
 				SessionID:       sessionID,
 				ClientID:        client.ID,
 				UnlimitedRounds: true,
@@ -594,34 +651,24 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 				SLOTargetUs:     derefInt64(client.SLOTargetUs),
 			})
 		}
-		totalConcurrencyUsers += client.Concurrency
+		totalUsers += client.Concurrency
 	}
+	return seeds, blueprints, totalUsers, nil
+}
 
-	// Merge closed-loop round-0 requests with concurrency seeds
-	allReqs := append(round0Only, concurrencySeeds...)
-
-	// Sort by arrival time (stable sort preserves order for ties)
-	sort.SliceStable(allReqs, func(i, j int) bool {
-		return allReqs[i].ArrivalTime < allReqs[j].ArrivalTime
-	})
-
-	// Re-assign sequential IDs
-	for i, req := range allReqs {
-		req.ID = fmt.Sprintf("request_%d", i)
-	}
-
-	// Compute follow-up budget for concurrency sessions.
-	// -1 = no cap (default); >= 0 = exact cap on follow-ups.
-	followUpBudget := int64(-1)
-	if maxRequests > 0 && totalConcurrencyUsers > 0 {
-		budget := maxRequests - int64(len(allReqs))
+// concurrencyFollowUpBudget computes the follow-up budget for concurrency
+// sessions, shared by eager and lazy so the formula cannot drift.
+// -1 = no cap (unbounded maxRequests, or no concurrency users). >=0 = exact cap.
+// totalRequests is the emitted request count (open-loop kept + concurrency seeds).
+func concurrencyFollowUpBudget(maxRequests, totalRequests int64, totalUsers int) int64 {
+	if maxRequests > 0 && totalUsers > 0 {
+		budget := maxRequests - totalRequests
 		if budget < 0 {
 			budget = 0
 		}
-		followUpBudget = budget
+		return budget
 	}
-
-	return &GeneratedWorkload{Requests: allReqs, Sessions: sessions, FollowUpBudget: followUpBudget}, nil
+	return -1
 }
 
 // isInActiveWindow checks if a timestamp falls within any active window.
