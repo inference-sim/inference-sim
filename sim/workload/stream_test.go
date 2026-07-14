@@ -313,25 +313,9 @@ func TestGenerateWorkloadLazy_FallsBackOnPerWindowParameters(t *testing.T) {
 	}
 }
 
-// TestGenerateWorkloadLazy_FallsBackOnConcurrencyClient pins BC-8's
-// concurrency fallback: any client with Concurrency > 0 forces the
-// caller to fall back to GenerateWorkload.
-func TestGenerateWorkloadLazy_FallsBackOnConcurrencyClient(t *testing.T) {
-	spec := &WorkloadSpec{
-		Version: "1", Seed: 1, Category: "language",
-		Clients: []ClientSpec{{
-			ID: "c1", TenantID: "t1", SLOClass: "batch",
-			Concurrency: 4,
-			ThinkTimeUs: 100_000,
-			InputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 10, "max": 500}},
-			OutputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
-		}},
-	}
-	_, _, _, err := GenerateWorkloadLazy(spec, 10_000_000, 10)
-	if !errors.Is(err, ErrLazyUnsupportedConcurrency) {
-		t.Fatalf("want ErrLazyUnsupportedConcurrency, got %v", err)
-	}
-}
+// (Concurrency clients are no longer a lazy fallback case as of #1459 — the
+// former TestGenerateWorkloadLazy_FallsBackOnConcurrencyClient was replaced by
+// the positive parity table TestGenerateWorkloadLazy_ConcurrencyClient_MatchesEager.)
 
 // TestGenerateWorkloadLazy_EmptyHorizon_ImmediatelyExhausted pins R20: a
 // zero/negative horizon must return an empty, immediately-exhausted source
@@ -1064,5 +1048,181 @@ func TestGenerateWorkloadLazy_InferencePerf_TimeoutAppliedAfterPreExpand(t *test
 			"A 300_000_000 timeout-µs value would indicate the inference-perf "+
 			"clients were built with nil Timeout — the bug fixed in PR #1453.",
 			r.Deadline, wantDeadline, r.ArrivalTime, wantTimeoutUs)
+	}
+}
+
+// assertBlueprintsEqual compares two SessionBlueprint slices field-by-field for
+// the fields the concurrency path controls, then compares one RNG draw from each
+// (blueprint RNGs seed the follow-up round stream; a shifted seed diverges here).
+// The RNG draw is destructive but both blueprints are discarded after.
+func assertBlueprintsEqual(t *testing.T, eager, lazy []SessionBlueprint) {
+	t.Helper()
+	if len(eager) != len(lazy) {
+		t.Fatalf("blueprint count: eager=%d lazy=%d", len(eager), len(lazy))
+	}
+	for i := range eager {
+		e, l := &eager[i], &lazy[i]
+		if e.SessionID != l.SessionID {
+			t.Fatalf("blueprint %d: SessionID eager=%q lazy=%q", i, e.SessionID, l.SessionID)
+		}
+		if e.ClientID != l.ClientID {
+			t.Fatalf("blueprint %d: ClientID eager=%q lazy=%q", i, e.ClientID, l.ClientID)
+		}
+		if e.UnlimitedRounds != l.UnlimitedRounds {
+			t.Fatalf("blueprint %d (%s): UnlimitedRounds eager=%v lazy=%v", i, e.SessionID, e.UnlimitedRounds, l.UnlimitedRounds)
+		}
+		if e.ThinkTimeUs != l.ThinkTimeUs {
+			t.Fatalf("blueprint %d (%s): ThinkTimeUs eager=%d lazy=%d", i, e.SessionID, e.ThinkTimeUs, l.ThinkTimeUs)
+		}
+		if e.SLOClass != l.SLOClass {
+			t.Fatalf("blueprint %d (%s): SLOClass eager=%q lazy=%q", i, e.SessionID, e.SLOClass, l.SLOClass)
+		}
+		if e.Model != l.Model {
+			t.Fatalf("blueprint %d (%s): Model eager=%q lazy=%q", i, e.SessionID, e.Model, l.Model)
+		}
+		if e.RNG == nil || l.RNG == nil {
+			t.Fatalf("blueprint %d (%s): nil RNG eager=%v lazy=%v", i, e.SessionID, e.RNG == nil, l.RNG == nil)
+		}
+		if ed, ld := e.RNG.Int63(), l.RNG.Int63(); ed != ld {
+			t.Fatalf("blueprint %d (%s): RNG draw diverged eager=%d lazy=%d — bpSeed shifted",
+				i, e.SessionID, ed, ld)
+		}
+	}
+}
+
+// TestGenerateWorkloadLazy_ConcurrencyClient_MatchesEager pins BC-1/BC-2/BC-3/
+// BC-4 for concurrency clients (#1459, AC2): the lazy streaming source must
+// produce byte-identical request streams + session blueprints + FollowUpBudget
+// to the eager GenerateWorkload across every concurrency shape. Before #1459
+// every sub-case returned ErrLazyUnsupportedConcurrency (RED).
+//
+// The five sub-cases are chosen to exercise the load-bearing correctness edges
+// the plan review surfaced:
+//   - mixed: one open-loop + one concurrency client (the common case).
+//   - multi-concurrency: TWO concurrency clients with DISTINCT Concurrency and
+//     ThinkTimeUs so their staggered seed arrivals interleave — the case a naive
+//     single-FIFO seed emitter mis-orders (CRITICAL-1). This is the regression
+//     test for the individual-seed-heap-entry design.
+//   - all-concurrency: zero open-loop clients (keptOpen==0, empty preps).
+//   - binding-cap: open-loop + seeds exceed maxRequests; asserts eager cap
+//     semantics + FollowUpBudget==0 (BC-4).
+//   - horizon-zero: horizon==0 with a concurrency client — eager still emits
+//     seeds (horizon-independent), so lazy must too (CRITICAL-2).
+func TestGenerateWorkloadLazy_ConcurrencyClient_MatchesEager(t *testing.T) {
+	openLoop := func(id string, frac float64) ClientSpec {
+		return ClientSpec{
+			ID: id, TenantID: id + "-t", SLOClass: "batch",
+			RateFraction: frac,
+			Arrival:      ArrivalSpec{Process: "poisson"},
+			InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 60, "std_dev": 10, "min": 8, "max": 300}},
+			OutputDist:   DistSpec{Type: "exponential", Params: map[string]float64{"mean": 40}},
+		}
+	}
+	conc := func(id string, users int, thinkUs int64) ClientSpec {
+		return ClientSpec{
+			ID: id, TenantID: id + "-t", SLOClass: "batch",
+			Concurrency: users,
+			ThinkTimeUs: thinkUs,
+			InputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 8, "min": 8, "max": 200}},
+			OutputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 30}},
+		}
+	}
+
+	cases := []struct {
+		name    string
+		clients []ClientSpec
+		aggRate float64 // AggregateRate; 0 for all-concurrency specs
+		horizon int64
+		maxReqs int64
+	}{
+		{
+			// Rate 4/s over 3s → ~10 open-loop kept, well under the cap, so the
+			// 5 concurrency seeds also survive (no-displacement invariant holds).
+			name:    "mixed",
+			clients: []ClientSpec{openLoop("ol", 1.0), conc("pool", 5, 200_000)},
+			aggRate: 4.0, horizon: 3_000_000, maxReqs: 60,
+		},
+		{
+			// Two concurrency pools with distinct stagger → interleaved seed
+			// arrivals. A single-FIFO seed emitter would mis-order these.
+			name:    "multi-concurrency",
+			clients: []ClientSpec{conc("poolA", 3, 300_000), conc("poolB", 2, 100_000)},
+			aggRate: 0, horizon: 30_000_000, maxReqs: 40,
+		},
+		{
+			name:    "all-concurrency",
+			clients: []ClientSpec{conc("only", 6, 150_000)},
+			aggRate: 0, horizon: 30_000_000, maxReqs: 40,
+		},
+		{
+			// Concurrency users (20) exceed the cap (10): eager generates only 10
+			// seeds and FollowUpBudget==0 (seeds consume the whole budget). Pins
+			// the seed cap parity (BC-4) — lazy must stop at the same 10 seeds.
+			name:    "binding-cap",
+			clients: []ClientSpec{conc("pool", 20, 120_000)},
+			aggRate: 0, horizon: 30_000_000, maxReqs: 10,
+		},
+		{
+			// horizon==0: eager's concurrency seed loop is horizon-independent.
+			name:    "horizon-zero",
+			clients: []ClientSpec{conc("pool", 4, 100_000)},
+			aggRate: 0, horizon: 0, maxReqs: 10,
+		},
+		{
+			// Combined binding cap: open-loop is PARTIALLY kept AND seeds are
+			// PARTIALLY truncated in the same run (0 < alreadyKept(10) <
+			// maxRequests(15) < alreadyKept+users(20) → 10 open-loop + 5 seeds).
+			// Exercises the no-displacement invariant at the boundary where
+			// keptOpen>0 feeds the seed cap — the case the all-concurrency
+			// binding-cap sub-case (keptOpen==0) does not reach.
+			name:    "combined-cap",
+			clients: []ClientSpec{openLoop("ol", 1.0), conc("pool", 10, 120_000)},
+			aggRate: 4.0, horizon: 3_000_000, maxReqs: 15,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			mk := func() *WorkloadSpec {
+				return &WorkloadSpec{
+					Version: "2", Seed: 4242, Category: "language",
+					AggregateRate: tc.aggRate,
+					Clients:       append([]ClientSpec{}, tc.clients...),
+				}
+			}
+			wlEager, err := GenerateWorkload(mk(), tc.horizon, tc.maxReqs)
+			if err != nil {
+				t.Fatalf("eager GenerateWorkload: %v", err)
+			}
+			src, lazySessions, lazyBudget, err := GenerateWorkloadLazy(mk(), tc.horizon, tc.maxReqs)
+			if err != nil {
+				t.Fatalf("lazy GenerateWorkloadLazy: %v (want nil — concurrency is supported as of #1459)", err)
+			}
+			lazyReqs := drainLazy(t, src)
+
+			assertRequestStreamsEqual(t, wlEager.Requests, lazyReqs)
+			assertBlueprintsEqual(t, wlEager.Sessions, lazySessions)
+			if wlEager.FollowUpBudget != lazyBudget {
+				t.Fatalf("FollowUpBudget: eager=%d lazy=%d", wlEager.FollowUpBudget, lazyBudget)
+			}
+
+			// Guard against a vacuous pass: every sub-case must emit at least one
+			// concurrency seed (SessionID prefixed "concurrency_").
+			sawSeed := false
+			for _, r := range lazyReqs {
+				if strings.HasPrefix(r.SessionID, "concurrency_") {
+					sawSeed = true
+					break
+				}
+			}
+			if !sawSeed {
+				t.Fatalf("no concurrency seed emitted in sub-case %q — test is vacuous", tc.name)
+			}
+			// binding-cap: seeds should consume the remaining budget → FollowUpBudget==0.
+			if tc.name == "binding-cap" && lazyBudget != 0 {
+				t.Fatalf("binding-cap: FollowUpBudget=%d, want 0 (seeds consume remainder)", lazyBudget)
+			}
+		})
 	}
 }

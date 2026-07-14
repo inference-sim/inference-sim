@@ -8,12 +8,14 @@ package cmd
 //  1. BC-3 (trace byte-identity): `blis run --trace-output` produces
 //     byte-identical TraceV2 files (header YAML + data CSV) whether run in
 //     eager or lazy mode, across a coverage matrix of workload shapes
-//     (single-turn chatbot, multi-turn accumulate cohort — the #1438
-//     reproducer shape, and single-session reasoning). Because the exported
-//     trace captures every fresh arrival at the cluster boundary (#1440),
-//     byte-identity here proves the two generation modes drive the cluster
-//     identically — including closed-loop follow-up rounds produced at runtime
-//     by the SessionManager.
+//     (single-turn chatbot; multi-turn accumulate cohort — the #1438
+//     reproducer shape; single-session reasoning; multi-session reasoning,
+//     #1458; and concurrency clients, #1459 — see paritySpecShapes for the
+//     authoritative, up-to-date list). Because the exported trace captures
+//     every fresh arrival at the cluster boundary (#1440), byte-identity here
+//     proves the two generation modes drive the cluster identically —
+//     including closed-loop follow-up rounds produced at runtime by the
+//     SessionManager.
 //
 //  2. BC-4 (INV-13 run/replay parity): a trace exported from a `blis run`
 //     replays (via `blis replay --session-mode fixed`) to identical per-request
@@ -67,9 +69,13 @@ type parityShape struct {
 //   - reasoning-multi-session: multi-turn with single_session=false (#1458),
 //     where a client spawns many overlapping sessions merged per-client in the
 //     lazy path — CLI-layer regression protection for the multi-session merge
+//   - concurrency: two closed-loop virtual-user pools with distinct
+//     concurrency/think_time (#1459), where each seed is streamed as its own
+//     heap entry — CLI-layer regression protection for the seed interleave
 //
-// All are lazy-SUPPORTED (no per-window params, no concurrency; multi-session
-// reasoning is streamed via the per-client live-session merge as of #1458).
+// All are lazy-SUPPORTED as of #1459 (no per-window params; multi-session
+// reasoning via the per-client live-session merge (#1458); concurrency via the
+// individual-seed-heap-entry merge (#1459)).
 // num_requests is small so runs are fast. seed is set via the CLI --seed flag,
 // not the YAML, so the matrix controls determinism.
 func paritySpecShapes() []parityShape {
@@ -201,6 +207,41 @@ clients:
         context_growth: accumulate
         think_time_us: 60000
         single_session: false
+`,
+		},
+		{
+			// Two closed-loop concurrency pools with distinct pool size + think
+			// time, so their staggered seed arrivals interleave (#1459). Exercises
+			// the individual-seed-heap-entry merge at the CLI/trace seam. All
+			// clients are concurrency (no aggregate_rate needed).
+			name:    "concurrency",
+			horizon: 60_000_000,
+			yaml: `version: "2"
+category: language
+num_requests: 24
+clients:
+  - id: poolA
+    tenant_id: ta
+    slo_class: batch
+    concurrency: 5
+    think_time_us: 300000
+    input_distribution:
+      type: gaussian
+      params: { mean: 90, std_dev: 20, min: 16, max: 400 }
+    output_distribution:
+      type: exponential
+      params: { mean: 64 }
+  - id: poolB
+    tenant_id: tb
+    slo_class: batch
+    concurrency: 3
+    think_time_us: 100000
+    input_distribution:
+      type: gaussian
+      params: { mean: 90, std_dev: 20, min: 16, max: 400 }
+    output_distribution:
+      type: exponential
+      params: { mean: 64 }
 `,
 		},
 	}

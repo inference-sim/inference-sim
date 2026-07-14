@@ -100,7 +100,7 @@ Four input modes are available. At least one must be provided per invocation:
 | `--seed` | `int64` | `42` | RNG seed for workload generation |
 | `--horizon` | `int64` | `0` | Observation horizon in microseconds (0 = from spec or unlimited) |
 | `--num-requests` | `int` | `0` | Maximum requests to generate (0 = from spec or unlimited) |
-| `--lazy-generation` | `bool` | `false` | Alpha (#1441/#1443): stream requests from the generator instead of pre-generating the full slice (same flag/semantics as `blis run`). Falls back to eager mode with a warning for time-varying or concurrency workloads. Multi-session reasoning (`SingleSession=false`) is supported (#1458). Default (off) dispatch behavior is unchanged |
+| `--lazy-generation` | `bool` | `false` | Alpha (#1441/#1443): stream requests from the generator instead of pre-generating the full slice (same flag/semantics as `blis run`). Falls back to eager mode with a warning only for time-varying (per-window) workloads. Multi-session reasoning (`SingleSession=false`, #1458) and concurrency clients (`concurrency > 0`, #1459) are supported. Default (off) dispatch behavior is unchanged |
 | `--think-time-ms` | `int` | `0` | Think time in ms between response and next request (concurrency mode only) |
 | `--api-format` | `string` | `"completions"` | API format: `completions` or `chat` |
 | `--unconstrained-output` | `bool` | `false` | Do not set `max_tokens` (let server decide output length) |

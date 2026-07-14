@@ -128,8 +128,9 @@ func init() {
 	observeCmd.Flags().Float64Var(&observeRate, "rate", 0, "Requests per second for distribution synthesis")
 	observeCmd.Flags().BoolVar(&observeLazyGeneration, "lazy-generation", false,
 		"Alpha (#1441): stream requests from the workload generator instead of pre-generating "+
-			"the full slice. Default off. Falls back to eager mode (with a warning) for time-varying "+
-			"workloads and concurrency clients. Multi-session reasoning is supported (#1458).")
+			"the full slice. Default off. Falls back to eager mode (with a warning) only for "+
+			"time-varying (per-window) workloads. Multi-session reasoning (#1458) and concurrency "+
+			"clients (#1459) are supported.")
 
 	// Optional
 	observeCmd.Flags().StringVar(&observeAPIKey, "api-key", "", "Bearer token for server authentication")
@@ -248,8 +249,6 @@ func classifyLazyGenError(err error) (lazyGenDisposition, string) {
 		return lazyUseStreaming, ""
 	case errors.Is(err, workload.ErrLazyUnsupportedTimeVarying):
 		return lazyFallbackToEager, "workload has per-window parameters"
-	case errors.Is(err, workload.ErrLazyUnsupportedConcurrency):
-		return lazyFallbackToEager, "workload has concurrency clients"
 	default:
 		return lazyFatal, ""
 	}

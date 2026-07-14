@@ -86,6 +86,16 @@ func pick[T any](rng *rand.Rand, opts []T) T {
 func genLazySupportedSpec(rng *rand.Rand) (spec *WorkloadSpec, label string, horizon, maxRequests int64) {
 	seed := rng.Int63()
 
+	// ~1/4 of draws are a CONCURRENCY shape (#1459). Concurrency clients cannot
+	// mix with reasoning/multi-turn (spec.Validate hard-errors that) and carry no
+	// RateFraction, so a concurrency draw builds its own spec — no cohorts, no
+	// reasoning, no prefix-group entanglement — and returns early. This keeps the
+	// draw byte-identical between eager and lazy while exercising the individual-
+	// seed-heap-entry merge, including the ≥2-concurrency-client interleave case.
+	if rng.Intn(4) == 0 {
+		return genConcurrencySpec(rng, seed)
+	}
+
 	// Decide overall shape once so eager and lazy specs are built identically.
 	numClients := 1 + rng.Intn(4) // 1–4 explicit clients
 	useCohort := rng.Intn(2) == 0
@@ -201,6 +211,84 @@ func genLazySupportedSpec(rng *rand.Rand) (spec *WorkloadSpec, label string, hor
 	return spec, label, horizon, maxRequests
 }
 
+// genConcurrencySpec samples a lazy-supported CONCURRENCY spec (#1459): 1–3
+// concurrency clients (distinct Concurrency and ThinkTimeUs so their staggered
+// seed arrivals interleave — the CRITICAL-1 case) plus 0–2 open-loop single-shot
+// clients. Never emits reasoning (mutually exclusive with concurrency per
+// spec.Validate) or cohorts (cohorts are always rate-based and would force an
+// AggregateRate requirement, hiding the all-concurrency path). The proportional
+// rate split covers only the open-loop clients; concurrency clients carry no
+// RateFraction. When there are zero open-loop clients the spec is all-concurrency
+// and AggregateRate is 0 (not required — spec.Validate allows it).
+func genConcurrencySpec(rng *rand.Rand, seed int64) (spec *WorkloadSpec, label string, horizon, maxRequests int64) {
+	numConc := 1 + rng.Intn(3)    // 1–3 concurrency pools
+	numOpen := rng.Intn(3)        // 0–2 open-loop clients
+	usePrefix := rng.Intn(2) == 0 // shared prefix group across both kinds
+	process := pick(rng, []string{"poisson", "gamma", "weibull", "constant"})
+
+	prefixGroup := ""
+	prefixLen := 0
+	if usePrefix {
+		prefixGroup = "grp"
+		prefixLen = 32 + rng.Intn(96)
+	}
+	inputDist := DistSpec{Type: "gaussian", Params: map[string]float64{
+		"mean": float64(40 + rng.Intn(80)), "std_dev": float64(5 + rng.Intn(15)),
+		"min": 8, "max": 400,
+	}}
+	outputDist := DistSpec{Type: "exponential", Params: map[string]float64{
+		"mean": float64(20 + rng.Intn(40)),
+	}}
+
+	clients := make([]ClientSpec, 0, numConc+numOpen)
+	// Concurrency clients first (matches allClients order = spec.Clients order).
+	for i := 0; i < numConc; i++ {
+		clients = append(clients, ClientSpec{
+			ID:           fmt.Sprintf("conc%d", i),
+			TenantID:     fmt.Sprintf("tconc%d", i),
+			SLOClass:     "batch",
+			Concurrency:  1 + rng.Intn(8),                   // 1–8 users; distinct across pools with high probability
+			ThinkTimeUs:  int64(50_000 + rng.Intn(250_000)), // distinct stagger cadence
+			InputDist:    inputDist,
+			OutputDist:   outputDist,
+			PrefixGroup:  prefixGroup,
+			PrefixLength: prefixLen,
+		})
+	}
+	// Open-loop clients share the aggregate rate equally.
+	aggRate := 0.0
+	if numOpen > 0 {
+		aggRate = 2.0 + float64(rng.Intn(18))
+		frac := 1.0 / float64(numOpen)
+		for i := 0; i < numOpen; i++ {
+			clients = append(clients, ClientSpec{
+				ID:           fmt.Sprintf("ol%d", i),
+				TenantID:     fmt.Sprintf("tol%d", i),
+				SLOClass:     "batch",
+				RateFraction: frac,
+				Arrival:      ArrivalSpec{Process: process},
+				InputDist:    inputDist,
+				OutputDist:   outputDist,
+				PrefixGroup:  prefixGroup,
+				PrefixLength: prefixLen,
+			})
+		}
+	}
+
+	spec = &WorkloadSpec{
+		Version:       "2",
+		Seed:          seed,
+		Category:      "language",
+		AggregateRate: aggRate, // 0 when all-concurrency (allowed)
+		Clients:       clients,
+	}
+	maxRequests = int64(10 + rng.Intn(110)) // 10–119
+	horizon = 60_000_000
+	label = fmt.Sprintf("CONCURRENCY conc=%d open=%d process=%s prefix=%v maxReq=%d",
+		numConc, numOpen, process, usePrefix, maxRequests)
+	return spec, label, horizon, maxRequests
+}
+
 // buildSpec reconstructs a spec deterministically from a per-draw seed so that
 // eager and lazy each receive their OWN independent instance. GenerateWorkload
 // and GenerateWorkloadLazy both run validateAndExpandSpec (which can mutate
@@ -225,10 +313,13 @@ func TestProperty_EagerEqualsLazy_RequestStreams(t *testing.T) {
 
 	// Coverage guards: the suite must not pass vacuously. Track that we
 	// actually exercised non-empty streams, at least one reasoning draw
-	// (the trickiest path), and — post #1458 — at least one MULTI-session
-	// reasoning draw (the per-client live-session merge). If any is never hit
-	// the generator or caps regressed and the test is not testing what it claims.
+	// (the trickiest path), at least one MULTI-session reasoning draw (#1458,
+	// the per-client live-session merge), at least one CONCURRENCY draw (#1459)
+	// and at least one MULTI-concurrency-client draw (the individual-seed-heap-
+	// entry interleave). If any is never hit the generator or caps regressed and
+	// the test is not testing what it claims.
 	var sawNonEmpty, sawReasoning, sawBlueprints, sawMultiSession bool
+	var sawConcurrency, sawMultiConcurrency bool
 
 	for i := 0; i < draws; i++ {
 		drawSeed := drawRNG.Int63()
@@ -241,18 +332,45 @@ func TestProperty_EagerEqualsLazy_RequestStreams(t *testing.T) {
 			!eagerSpec.Clients[0].Reasoning.MultiTurn.SingleSession {
 			sawMultiSession = true
 		}
+		// Count concurrency clients in this draw (spec.Clients-only field).
+		nConc := 0
+		for ci := range eagerSpec.Clients {
+			if eagerSpec.Clients[ci].Concurrency > 0 {
+				nConc++
+			}
+		}
+		if nConc > 0 {
+			sawConcurrency = true
+		}
+		if nConc >= 2 {
+			sawMultiConcurrency = true
+		}
 
 		wl, err := GenerateWorkload(eagerSpec, horizon, maxReq)
 		if err != nil {
 			t.Fatalf("draw %d [base=%#x] eager GenerateWorkload failed: %v\n  spec: %s",
 				i, propertyBaseSeed, err, label)
 		}
-		src, lazySessions, _, err := GenerateWorkloadLazy(lazySpec, horizon, maxReq)
+		src, lazySessions, lazyBudget, err := GenerateWorkloadLazy(lazySpec, horizon, maxReq)
 		if err != nil {
 			t.Fatalf("draw %d [base=%#x] lazy GenerateWorkloadLazy failed: %v\n  spec: %s\n  "+
 				"(a lazy sentinel error here means the generator emitted an unsupported "+
 				"shape — the generator must only produce lazy-supported specs)",
 				i, propertyBaseSeed, err, label)
+		}
+		// FollowUpBudget must match eager wherever it is observable — i.e. for
+		// concurrency specs (BC-3, this PR's contract) and for any spec that
+		// produced session blueprints (cmd only reads FollowUpBudget when
+		// len(Sessions) > 0). Pure open-loop specs with no sessions are excluded:
+		// eager's sessionless early return leaves the field at its Go zero value
+		// (0) while lazy returns -1 — a pre-existing, inert difference (the value
+		// is never read without sessions) that predates and is out of scope for
+		// #1459.
+		if nConc > 0 || len(wl.Sessions) > 0 {
+			if wl.FollowUpBudget != lazyBudget {
+				t.Fatalf("draw %d [base=%#x, seed=%d]: FollowUpBudget eager=%d lazy=%d\n  spec: %s",
+					i, propertyBaseSeed, eagerSpec.Seed, wl.FollowUpBudget, lazyBudget, label)
+			}
 		}
 		lazyReqs := drainLazy(t, src)
 
@@ -321,5 +439,13 @@ func TestProperty_EagerEqualsLazy_RequestStreams(t *testing.T) {
 	if !sawBlueprints {
 		t.Fatalf("reasoning draws occurred but none produced session blueprints across %d draws — "+
 			"blueprint parity is unexercised; adjust caps/horizon so round-0 requests survive", draws)
+	}
+	if !sawConcurrency {
+		t.Fatalf("no concurrency (Concurrency>0) draw occurred across %d draws — "+
+			"the lazy concurrency seed path (#1459) is unexercised; adjust genConcurrencySpec probability", draws)
+	}
+	if !sawMultiConcurrency {
+		t.Fatalf("no draw had ≥2 concurrency clients across %d draws — the individual-seed-heap-entry "+
+			"interleave (CRITICAL-1, #1459) is unexercised; adjust genConcurrencySpec's numConc distribution", draws)
 	}
 }

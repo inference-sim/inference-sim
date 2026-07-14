@@ -20,12 +20,15 @@ import (
 // terminate the process (R6, #1441).
 var ErrLazyUnsupportedTimeVarying = errors.New("lazy generation: time-varying workloads (per-window parameters) not supported in alpha")
 
-// ErrLazyUnsupportedConcurrency signals fallback for specs containing
-// concurrency clients (Concurrency > 0). Concurrency-driven workloads
-// generate their seed requests through a separate path in GenerateWorkload
-// (concurrencyRNG); lazy mode in this PR's alpha scope does not replicate
-// that path. Caller should fall back to GenerateWorkload.
-var ErrLazyUnsupportedConcurrency = errors.New("lazy generation: concurrency clients not supported in alpha")
+// Concurrency clients (Concurrency > 0) ARE supported by the lazy generator as
+// of #1459. Their seed requests + SessionBlueprints are produced by the shared
+// generateConcurrencySeedsAndBlueprints helper (also used by the eager
+// GenerateWorkload), and each seed is pushed onto the global arrival heap as its
+// own entry so the merge reproduces eager's stable-sort-by-arrival byte-for-byte
+// (see the concurrency seed phase in GenerateWorkloadLazy). By construction the
+// seed set is O(N virtual users), which exists up front in both modes — there is
+// no horizon-length pre-materialization to stream away — so the earlier
+// ErrLazyUnsupportedConcurrency fallback is gone.
 
 // Multi-session reasoning (SingleSession=false) IS supported by the lazy
 // generator as of #1458. Each such client is a traffic source that spawns
@@ -647,20 +650,42 @@ type clientPrep struct {
 //
 // Returns:
 //   - source: implements cluster.RequestSource via structural typing.
-//   - sessions: deterministic session blueprints for closed-loop clients,
-//     in the same (client-order, sorted-session-IDs) as GenerateWorkload.
-//   - followUpBudget: -1 in lazy mode (concurrency clients force eager fallback).
-//   - err: ErrLazyUnsupported* signals the caller to fall back; other errors
-//     are real spec/validation failures.
+//   - sessions: deterministic session blueprints for closed-loop reasoning AND
+//     concurrency clients (#1459), in the same order as GenerateWorkload.
+//   - followUpBudget: the shared concurrencyFollowUpBudget value — -1 when
+//     unbounded (maxRequests<=0) or there are no concurrency users; >=0 (the cap
+//     on follow-ups) for concurrency specs under a finite maxRequests (#1459).
+//   - err: ErrLazyUnsupportedTimeVarying signals the caller to fall back (the
+//     only remaining unsupported class); other errors are real spec/validation
+//     failures.
 //
 // Determinism: same seed produces the same source byte-identically to
 // GenerateWorkload's request stream (BC-3).
 func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) (
 	*lazyRequestSource, []SessionBlueprint, int64, error) {
 
+	// NOTE: the horizon<=0 check MUST come before the maxRequests<0 check to match
+	// eager's guard order exactly (GenerateRequests checks horizon<=0 first,
+	// returning before its maxRequests<0 check — generator.go). Reversing them
+	// would make lazy reject a horizon<=0 && maxRequests<0 spec that eager accepts.
 	if horizon <= 0 {
-		// Empty workload: return an immediately-exhausted source.
-		return &lazyRequestSource{h: &heapByArrival{}, maxRequests: maxRequests}, nil, -1, nil
+		// Empty workload: return an immediately-exhausted source — UNLESS the
+		// spec has concurrency clients. Eager's concurrency seed loop is
+		// horizon-independent: GenerateRequests returns nil at horizon<=0 (before
+		// validateAndExpandSpec AND before its maxRequests<0 check), but
+		// GenerateWorkload still emits the seed set (treating maxRequests<=0 as
+		// unbounded). To match (BC-1/INV-6) we must too. Concurrency is a
+		// spec.Clients-only field (cohorts never carry it), so this needs no expansion.
+		if !specHasConcurrencyClient(spec) {
+			return &lazyRequestSource{h: &heapByArrival{}, maxRequests: maxRequests}, nil, -1, nil
+		}
+		// Concurrency at horizon<=0: mirror eager's zero-horizon sequence, which
+		// does NOT run validateAndExpandSpec/UpgradeV1ToV2 and does NOT reject a
+		// negative maxRequests (the seed cap's `maxRequests > 0` guard treats it as
+		// unbounded). Assemble allClients from the raw spec, emit only the
+		// (horizon-independent) concurrency seeds with keptOpen=0, and return.
+		// See GenerateWorkloadLazy's "Validation symmetry" note in the plan (#1459).
+		return generateConcurrencyOnlyLazyAtZeroHorizon(spec, horizon, maxRequests)
 	}
 	if maxRequests < 0 {
 		return nil, nil, 0, fmt.Errorf("maxRequests must be non-negative, got %d", maxRequests)
@@ -680,17 +705,13 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 		allClients = append(allClients, ExpandCohorts(spec.Cohorts, spec.Seed)...)
 	}
 
-	// Fallback gates. The caller (cmd/root.go) catches these sentinel errors
-	// and switches to the eager generator with a one-line warning. Multi-session
-	// reasoning (SingleSession=false) is NO LONGER a fallback case (#1458) — it
-	// is streamed via the per-client live-session merge in produceNextMultiSession.
+	// Fallback gate. The caller (cmd/root.go) catches this sentinel error and
+	// switches to the eager generator with a one-line warning. Multi-session
+	// reasoning (SingleSession=false, #1458) and concurrency clients
+	// (Concurrency > 0, #1459) are NO LONGER fallback cases — the only remaining
+	// unsupported class is time-varying (per-window parameter) workloads.
 	if hasPerWindowParameters(allClients) {
 		return nil, nil, 0, ErrLazyUnsupportedTimeVarying
-	}
-	for i := range allClients {
-		if allClients[i].Concurrency > 0 {
-			return nil, nil, 0, ErrLazyUnsupportedConcurrency
-		}
 	}
 
 	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(spec.Seed))
@@ -737,7 +758,7 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 	// subsequent blueprint RNG seed — breaking INV-6 byte-identity and
 	// INV-13 run/replay parity for closed-loop reasoning under a tight
 	// cap. (Bug found in PR #1453 self-review.)
-	survivingPerClient, err := enumerateSurvivingSessionsPerClient(preps, prefixes, horizon, maxRequests)
+	survivingPerClient, keptOpen, err := enumerateSurvivingSessionsPerClient(preps, prefixes, horizon, maxRequests)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -820,11 +841,115 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 		}
 	}
 
-	// FollowUpBudget: lazy mode rejects concurrency specs above, so the
-	// eager codepath's "totalConcurrencyUsers > 0" condition is always
-	// false — budget stays at -1 (no cap), matching the
-	// `followUpBudget := int64(-1)` initialization in GenerateWorkload.
-	return &lazyRequestSource{h: h, maxRequests: maxRequests, states: states}, sessions, int64(-1), nil
+	// Phase 4: concurrency seed phase (#1459). Concurrency clients have
+	// RateFraction == 0, so they never appear in `preps` (Phase 1 skips them,
+	// exactly as GenerateRequests does), and `keptOpen` — the number of open-loop
+	// requests the source will emit under the cap — is the pop count from the
+	// Phase 2 dry-run. Push the seeds as individual heap entries (see the shared
+	// helper) so the global merge reproduces eager's stable-sort-by-arrival.
+	sessions, followUpBudget, err := appendConcurrencySeedsToHeap(
+		h, allClients, prefixes, spec.Seed, horizon, maxRequests, keptOpen, sessions)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	return &lazyRequestSource{h: h, maxRequests: maxRequests, states: states}, sessions, followUpBudget, nil
+}
+
+// exhaustedSentinelState is a single shared always-exhausted clientStreamState
+// carried by concurrency seed heap entries (#1459). It makes lazyRequestSource.Next
+// panic-free at both `e.state` dereference sites with zero Next() changes:
+//   - produceNext() returns (nil,0,false) immediately (sticky exhausted) — no
+//     successor is re-pushed for a seed (the seed set is fixed and fully pushed).
+//   - isClosedLoop is false (zero value) — the intermediate-round suppression
+//     `e.state.isClosedLoop && e.req.RoundIndex != 0` is skipped, so the seed
+//     (RoundIndex == 0 anyway) emits directly.
+//
+// It holds no per-seed state (the seed is the heapEntry's req), so one instance
+// is safely shared across all seed entries; the exhausted path performs no writes.
+var exhaustedSentinelState = &clientStreamState{exhausted: true}
+
+// appendConcurrencySeedsToHeap generates the concurrency seeds + blueprints via
+// the shared generateConcurrencySeedsAndBlueprints helper and pushes each seed
+// onto the global arrival heap as its own entry keyed
+// (arrival, len(allClients), generationIndex). len(allClients) is strictly
+// greater than every real client/cohort index (allClients is already fully
+// cohort-expanded here), so at equal arrival open-loop pops before seeds; the
+// generation index orders seeds among themselves — reproducing eager's
+// sort.SliceStable over [open-loop…, seed_0, seed_1, …] exactly.
+//
+// It returns the updated blueprint slice (concurrency blueprints appended after
+// any closed-loop reasoning blueprints — a concurrency spec has none, matching
+// eager) and the follow-up budget (shared formula with eager). This single site
+// is used by both the normal path and the horizon<=0 concurrency path so the
+// heap-wiring cannot drift.
+func appendConcurrencySeedsToHeap(
+	h *heapByArrival,
+	allClients []ClientSpec,
+	prefixes map[string][]sim.TokenID,
+	specSeed int64,
+	horizon int64,
+	maxRequests int64,
+	keptOpen int64,
+	sessions []SessionBlueprint,
+) ([]SessionBlueprint, int64, error) {
+	seeds, blueprints, totalUsers, err :=
+		generateConcurrencySeedsAndBlueprints(allClients, prefixes, specSeed, horizon, maxRequests, keptOpen)
+	if err != nil {
+		return nil, 0, err
+	}
+	for g, seed := range seeds {
+		heap.Push(h, heapEntry{
+			arrivalUs:    seed.ArrivalTime,
+			clientIdx:    len(allClients),
+			perClientSeq: int64(g),
+			req:          seed,
+			state:        exhaustedSentinelState,
+		})
+	}
+	sessions = append(sessions, blueprints...)
+	// keptOpen open-loop requests + len(seeds) seeds will be emitted (the
+	// no-displacement invariant guarantees the popped-cap is non-binding
+	// whenever a seed exists), so the emitted total is keptOpen+len(seeds).
+	budget := concurrencyFollowUpBudget(maxRequests, keptOpen+int64(len(seeds)), totalUsers)
+	return sessions, budget, nil
+}
+
+// generateConcurrencyOnlyLazyAtZeroHorizon mirrors eager's horizon<=0 behavior
+// for specs with concurrency clients (#1459): eager emits the horizon-independent
+// concurrency seed set even at horizon<=0, WITHOUT running
+// validateAndExpandSpec/UpgradeV1ToV2 (GenerateRequests returns first). We match
+// that exactly — no validate/expand — assembling allClients from the raw spec,
+// with keptOpen=0 (no open-loop requests exist at horizon<=0).
+func generateConcurrencyOnlyLazyAtZeroHorizon(spec *WorkloadSpec, horizon int64, maxRequests int64) (
+	*lazyRequestSource, []SessionBlueprint, int64, error) {
+	allClients := append([]ClientSpec{}, spec.Clients...)
+	if len(spec.Cohorts) > 0 {
+		allClients = append(allClients, ExpandCohorts(spec.Cohorts, spec.Seed)...)
+	}
+	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(spec.Seed))
+	workloadRNG := rng.ForSubsystem(sim.SubsystemWorkloadGen)
+	prefixes := generatePrefixTokens(allClients, workloadRNG)
+
+	h := &heapByArrival{}
+	heap.Init(h)
+	sessions, followUpBudget, err := appendConcurrencySeedsToHeap(
+		h, allClients, prefixes, spec.Seed, horizon, maxRequests, 0, nil)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	return &lazyRequestSource{h: h, maxRequests: maxRequests}, sessions, followUpBudget, nil
+}
+
+// specHasConcurrencyClient reports whether spec.Clients contains a concurrency
+// client (Concurrency > 0). Concurrency is a spec.Clients-only field; cohorts
+// never carry it, so no expansion is needed. Used by the horizon<=0 fast path.
+func specHasConcurrencyClient(spec *WorkloadSpec) bool {
+	for i := range spec.Clients {
+		if spec.Clients[i].Concurrency > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // buildClientStreamState constructs one client's streaming state. The
@@ -889,12 +1014,30 @@ func buildClientStreamState(p clientPrep, horizon int64, maxRequests int64) (*cl
 }
 
 // enumerateSurvivingSessionsPerClient simulates the streaming source's
-// global heap-pop order up to maxRequests pops and returns, for each
+// global heap-pop order up to maxRequests pops and returns (1) for each
 // closed-loop reasoning client (keyed by allClients index), the set of
-// SessionIDs whose round-0 emission survived the cap. This mirrors the
-// eager flow's "produce all rounds, sort+truncate to maxRequests, then
-// scan the truncated slice for SessionIDs per closed-loop client"
-// sequence (GenerateWorkload's closed-loop blueprint construction loop).
+// SessionIDs whose round-0 emission survived the cap, and (2) keptOpen —
+// the total number of pops (= the number of open-loop / non-concurrency
+// requests the source will emit under the cap). This mirrors the eager flow's
+// "produce all rounds, sort+truncate to maxRequests, then scan the truncated
+// slice for SessionIDs per closed-loop client" sequence.
+//
+// keptOpen == eager's len(round0Only): concurrency clients have RateFraction == 0
+// and are never in `preps`, so the dry-run heap holds only open-loop states and
+// its pop count is exactly min(genOpen, maxRequests). The concurrency seed phase
+// (#1459) consumes keptOpen to reproduce eager's seed cap
+// (alreadyKept + len(seeds) >= maxRequests).
+//
+// LOAD-BEARING INVARIANT (INV-6): keptOpen counts ALL pops, including any
+// intermediate closed-loop reasoning rounds (RoundIndex > 0), whereas eager's
+// alreadyKept = len(round0Only) EXCLUDES those intermediate rounds. These two
+// counts are equal only because a spec can never contain both concurrency clients
+// and multi-turn/reasoning clients (spec.Validate hard-errors that mix — see
+// spec.go, `hasConcurrency && hasMultiTurn`). So whenever concurrency seeds are
+// being generated there are provably zero intermediate closed-loop rounds, and
+// keptOpen == len(round0Only). If that mutual-exclusion validation is ever
+// relaxed, this equality breaks and the seed cap would bind earlier in lazy than
+// eager — revisit the concurrency seed phase here and in GenerateWorkload.
 //
 // Uses CLONED per-client states with RNGs re-seeded from the same
 // clientSeeds, so the simulation does not advance the Phase 3
@@ -910,7 +1053,7 @@ func enumerateSurvivingSessionsPerClient(
 	prefixes map[string][]sim.TokenID,
 	horizon int64,
 	maxRequests int64,
-) (map[int][]string, error) {
+) (map[int][]string, int64, error) {
 	// Clone per-client states (fresh RNGs from the same clientSeed).
 	// dryRun=true so sampler-error paths don't user-log twice (the Phase 3
 	// pass runs the same samplers and is authoritative for user feedback).
@@ -922,7 +1065,7 @@ func enumerateSurvivingSessionsPerClient(
 		// threaded so the clone's multi-session per-client cap matches Phase 3.
 		state, err := buildClientStreamState(p, horizon, maxRequests)
 		if err != nil {
-			return nil, fmt.Errorf("client %q: %w", p.client.ID, err)
+			return nil, 0, fmt.Errorf("client %q: %w", p.client.ID, err)
 		}
 		state.dryRun = true
 		cloneStates = append(cloneStates, state)
@@ -980,5 +1123,8 @@ func enumerateSurvivingSessionsPerClient(
 			surviving[idx] = append(surviving[idx], e.req.SessionID)
 		}
 	}
-	return surviving, nil
+	// popped is the number of open-loop / closed-loop-round-0-and-intermediate
+	// requests emitted under the cap == eager's len(reqs) after truncation.
+	// (Concurrency clients are absent from preps, so they never count here.)
+	return surviving, popped, nil
 }

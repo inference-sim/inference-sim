@@ -123,19 +123,22 @@ go build -o blis main.go
 # bounded by ~ arrival_rate x session_duration (Little's law) — independent
 # of horizon. (Cluster-side memory still scales with in-flight cluster
 # requests, which this PR does not change.)
-# Falls back to the eager generator with a one-line warning for:
+# Falls back to the eager generator with a one-line warning for the only
+# remaining unsupported class:
 #   - workloads with per-window parameters (time-varying)
-#   - concurrency clients (Concurrency > 0)
 # Supported: single-shot, single-session AND multi-session reasoning
-# (SingleSession=false, #1458 — per-client live-session merge), prefix-group
+# (SingleSession=false, #1458 — per-client live-session merge), concurrency
+# clients (Concurrency > 0, #1459 — seeds merged as individual heap entries;
+# seed set is O(N virtual users), so the win is modest for pure-concurrency
+# specs but a mixed spec is no longer disqualified from streaming), prefix-group
 # sharing, multi-client / cohort workloads. Behavior with the flag off is unchanged.
 ./blis run --model qwen/qwen3-14b --lazy-generation
 
 # Observe with lazy request generation (alpha, #1443). Same flag, default, and
 # semantics as `blis run` — streams requests from the generator into the observe
 # dispatch loop instead of pre-generating the full slice, with the same eager
-# fallback (time-varying / concurrency; multi-session reasoning is supported,
-# #1458). Observe already paces
+# fallback (time-varying only; multi-session reasoning #1458 and concurrency
+# clients #1459 are supported). Observe already paces
 # itself against the real server, so the memory win is smaller than run's; the
 # flag mainly makes run and observe share one generation pipeline (#1438). Default
 # (flag off) dispatch behavior is unchanged.

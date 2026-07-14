@@ -845,7 +845,9 @@ func TestObserveOrchestrator_EagerLazyParity_SameDispatchSequence(t *testing.T) 
 // returning them for these shapes, observe's fallback (and this PR's warning
 // path) would silently break.
 func TestObserveLazyFallback_UnsupportedSpecSentinels(t *testing.T) {
-	// Concurrency client → ErrLazyUnsupportedConcurrency.
+	// Concurrency clients are now supported by lazy (#1459):
+	// GenerateWorkloadLazy must NOT return a sentinel — it returns a usable
+	// streaming source and a nil error (no eager fallback).
 	concurrencySpec := &workload.WorkloadSpec{
 		Version:       "2",
 		Seed:          42,
@@ -859,8 +861,8 @@ func TestObserveLazyFallback_UnsupportedSpecSentinels(t *testing.T) {
 			},
 		},
 	}
-	if _, _, _, err := workload.GenerateWorkloadLazy(concurrencySpec, 1_000_000, 10); !errors.Is(err, workload.ErrLazyUnsupportedConcurrency) {
-		t.Errorf("concurrency spec: got err %v, want ErrLazyUnsupportedConcurrency", err)
+	if src, _, _, err := workload.GenerateWorkloadLazy(concurrencySpec, 1_000_000, 10); err != nil || src == nil {
+		t.Errorf("concurrency spec: got (src=%v, err=%v), want a usable source with nil error (#1459)", src, err)
 	}
 
 	// Multi-session reasoning (SingleSession=false) is now supported by lazy
@@ -1525,8 +1527,7 @@ func TestClassifyLazyGenError(t *testing.T) {
 	}{
 		{"nil uses streaming", nil, lazyUseStreaming, ""},
 		{"time-varying falls back", workload.ErrLazyUnsupportedTimeVarying, lazyFallbackToEager, "per-window"},
-		{"concurrency falls back", workload.ErrLazyUnsupportedConcurrency, lazyFallbackToEager, "concurrency"},
-		{"wrapped sentinel still falls back", fmt.Errorf("context: %w", workload.ErrLazyUnsupportedConcurrency), lazyFallbackToEager, "concurrency"},
+		{"wrapped sentinel still falls back", fmt.Errorf("context: %w", workload.ErrLazyUnsupportedTimeVarying), lazyFallbackToEager, "per-window"},
 		{"other error is fatal", errors.New("boom"), lazyFatal, ""},
 	}
 	for _, tt := range tests {
