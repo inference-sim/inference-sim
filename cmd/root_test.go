@@ -1647,13 +1647,13 @@ clients:
 	if err := testCmd.ParseFlags(args); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
 	}
-	// If the fallback path were promoted to logrus.Fatalf, the test
-	// process would exit here. A normal return = warning + eager fallback
-	// completed without aborting.
+	// If concurrency generation under --lazy-generation were broken (e.g. an
+	// accidental Fatalf), the test process would exit here. A normal return =
+	// the lazy streaming path built the source and the run completed.
 	runCmd.Run(testCmd, nil)
 
 	if _, err := os.Stat(tracePrefix + ".csv"); err != nil {
-		t.Fatalf("expected trace CSV to be written by eager fallback, got: %v", err)
+		t.Fatalf("expected trace CSV to be written by the lazy streaming path, got: %v", err)
 	}
 }
 

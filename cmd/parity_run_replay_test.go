@@ -8,12 +8,14 @@ package cmd
 //  1. BC-3 (trace byte-identity): `blis run --trace-output` produces
 //     byte-identical TraceV2 files (header YAML + data CSV) whether run in
 //     eager or lazy mode, across a coverage matrix of workload shapes
-//     (single-turn chatbot, multi-turn accumulate cohort — the #1438
-//     reproducer shape, and single-session reasoning). Because the exported
-//     trace captures every fresh arrival at the cluster boundary (#1440),
-//     byte-identity here proves the two generation modes drive the cluster
-//     identically — including closed-loop follow-up rounds produced at runtime
-//     by the SessionManager.
+//     (single-turn chatbot; multi-turn accumulate cohort — the #1438
+//     reproducer shape; single-session reasoning; multi-session reasoning,
+//     #1458; and concurrency clients, #1459 — see paritySpecShapes for the
+//     authoritative, up-to-date list). Because the exported trace captures
+//     every fresh arrival at the cluster boundary (#1440), byte-identity here
+//     proves the two generation modes drive the cluster identically —
+//     including closed-loop follow-up rounds produced at runtime by the
+//     SessionManager.
 //
 //  2. BC-4 (INV-13 run/replay parity): a trace exported from a `blis run`
 //     replays (via `blis replay --session-mode fixed`) to identical per-request
