@@ -324,6 +324,216 @@ func TestLazyRequestSource_TimeVarying_SingleWindow_MatchesEager(t *testing.T) {
 	}
 }
 
+// assertTimeVaryingParity generates spec eagerly and lazily and asserts the two
+// request streams (and, for reasoning specs, the session blueprints) are
+// byte-identical. mk must return a freshly-built spec on each call so the two
+// generators cannot cross-contaminate (both run validateAndExpandSpec in place).
+func assertTimeVaryingParity(t *testing.T, mk func() *WorkloadSpec, horizon, maxReq int64, wantNonEmpty bool) {
+	t.Helper()
+	eagerWl, err := GenerateWorkload(mk(), horizon, maxReq)
+	if err != nil {
+		t.Fatalf("eager GenerateWorkload: %v", err)
+	}
+	src, lazySessions, _, err := GenerateWorkloadLazy(mk(), horizon, maxReq)
+	if err != nil {
+		t.Fatalf("lazy GenerateWorkloadLazy: %v", err)
+	}
+	lazyReqs := drainLazy(t, src)
+	assertRequestStreamsEqual(t, eagerWl.Requests, lazyReqs)
+	if wantNonEmpty && len(lazyReqs) == 0 {
+		t.Fatal("time-varying parity test ineffective: empty stream")
+	}
+	if len(eagerWl.Sessions) != len(lazySessions) {
+		t.Fatalf("blueprint count eager=%d lazy=%d", len(eagerWl.Sessions), len(lazySessions))
+	}
+	for j := range eagerWl.Sessions {
+		if eagerWl.Sessions[j].SessionID != lazySessions[j].SessionID {
+			t.Fatalf("blueprint %d SessionID eager=%q lazy=%q", j, eagerWl.Sessions[j].SessionID, lazySessions[j].SessionID)
+		}
+		if eagerWl.Sessions[j].ClientID != lazySessions[j].ClientID {
+			t.Fatalf("blueprint %d ClientID eager=%q lazy=%q", j, eagerWl.Sessions[j].ClientID, lazySessions[j].ClientID)
+		}
+		// Identically-seeded blueprint RNGs must produce the same first draw.
+		if e, l := eagerWl.Sessions[j].RNG.Int63(), lazySessions[j].RNG.Int63(); e != l {
+			t.Fatalf("blueprint %d (session %q) RNG diverged eager=%d lazy=%d", j, eagerWl.Sessions[j].SessionID, e, l)
+		}
+	}
+}
+
+// TestLazyRequestSource_TimeVarying_MultiWindow_MatchesEager pins BC-1/BC-2 for a
+// client with multiple sequential windows carrying distinct per-window trace_rate
+// AND a per-window input_distribution override, with the horizon clipping the last
+// window. Exercises window-boundary handling, the EndUs clamp, and per-window
+// sampler switching.
+func TestLazyRequestSource_TimeVarying_MultiWindow_MatchesEager(t *testing.T) {
+	r1, r2, r3 := 4.0, 12.0, 6.0
+	windowInput := DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 200, "std_dev": 30, "min": 32, "max": 600}}
+	mk := func() *WorkloadSpec {
+		return &WorkloadSpec{
+			Version: "2", Seed: 77, Category: "language", AggregateRate: 0,
+			Clients: []ClientSpec{{
+				ID: "diurnal", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 96, "std_dev": 20, "min": 16, "max": 400}},
+				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 48}},
+				Lifecycle: &LifecycleSpec{Windows: []ActiveWindow{
+					{StartUs: 0, EndUs: 2_000_000, TraceRate: &r1},
+					{StartUs: 2_000_000, EndUs: 4_000_000, TraceRate: &r2, InputDist: &windowInput},
+					{StartUs: 4_000_000, EndUs: 8_000_000, TraceRate: &r3},
+				}},
+			}},
+		}
+	}
+	// Horizon clips the middle of the last window (4s..8s → clamped to 5s).
+	assertTimeVaryingParity(t, mk, 5_000_000, 60, true)
+}
+
+// TestLazyRequestSource_TimeVarying_OutOfOrderWindows_MatchesEager pins BC-2: the
+// suffix-min emit gate must reproduce eager's global stable sort even when a
+// client's lifecycle windows are listed OUT OF spec order (validation only checks
+// end > start, not ordering). A later-in-spec window starting EARLIER than an
+// earlier-in-spec window means the lazy source must build ahead before emitting.
+func TestLazyRequestSource_TimeVarying_OutOfOrderWindows_MatchesEager(t *testing.T) {
+	rA, rB, rC := 8.0, 5.0, 10.0
+	mk := func() *WorkloadSpec {
+		return &WorkloadSpec{
+			Version: "2", Seed: 99, Category: "language", AggregateRate: 0,
+			Clients: []ClientSpec{{
+				ID: "ooo", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 80, "std_dev": 16, "min": 16, "max": 300}},
+				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 40}},
+				// Spec order is [start=2s, start=4s, start=0s] — deliberately not sorted.
+				Lifecycle: &LifecycleSpec{Windows: []ActiveWindow{
+					{StartUs: 2_000_000, EndUs: 3_000_000, TraceRate: &rA},
+					{StartUs: 4_000_000, EndUs: 5_000_000, TraceRate: &rB},
+					{StartUs: 0, EndUs: 1_000_000, TraceRate: &rC},
+				}},
+			}},
+		}
+	}
+	assertTimeVaryingParity(t, mk, 6_000_000, 60, true)
+}
+
+// TestLazyRequestSource_TimeVarying_WithConcurrency_MatchesEager pins BC-1/BC-3:
+// a time-varying rate-based lifecycle client coexisting with a concurrency client
+// (no reasoning — spec.Validate forbids concurrency+multi-turn). The lazy TV path
+// must still append concurrency seeds through the shared helper so blueprints and
+// FollowUpBudget match eager.
+func TestLazyRequestSource_TimeVarying_WithConcurrency_MatchesEager(t *testing.T) {
+	tvRate := 6.0
+	mk := func() *WorkloadSpec {
+		return &WorkloadSpec{
+			Version: "2", Seed: 1234, Category: "language", AggregateRate: 0, // absolute mode
+			Clients: []ClientSpec{
+				{
+					ID: "tv", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+					Arrival:    ArrivalSpec{Process: "poisson"},
+					InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 90, "std_dev": 20, "min": 16, "max": 400}},
+					OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 48}},
+					Lifecycle: &LifecycleSpec{Windows: []ActiveWindow{
+						{StartUs: 0, EndUs: 3_000_000, TraceRate: &tvRate},
+					}},
+				},
+				{
+					ID: "pool", TenantID: "t2", SLOClass: "batch",
+					Concurrency: 4, ThinkTimeUs: 200_000,
+					InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 90, "std_dev": 20, "min": 16, "max": 400}},
+					OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 64}},
+				},
+			},
+		}
+	}
+	// Also assert FollowUpBudget parity (observable because concurrency present).
+	eagerWl, err := GenerateWorkload(mk(), 4_000_000, 40)
+	if err != nil {
+		t.Fatalf("eager GenerateWorkload: %v", err)
+	}
+	_, _, lazyBudget, err := GenerateWorkloadLazy(mk(), 4_000_000, 40)
+	if err != nil {
+		t.Fatalf("lazy GenerateWorkloadLazy: %v", err)
+	}
+	if eagerWl.FollowUpBudget != lazyBudget {
+		t.Fatalf("FollowUpBudget eager=%d lazy=%d", eagerWl.FollowUpBudget, lazyBudget)
+	}
+	assertTimeVaryingParity(t, mk, 4_000_000, 40, true)
+}
+
+// TestLazyRequestSource_TimeVarying_Reasoning_MatchesEager pins BC-1/BC-3 for
+// time-varying reasoning clients, both single-session and (crucially) MULTI-session
+// (single_session:false). Multi-session windows are NOT arrival-monotonic in build
+// order — the per-batch stable sort (D5) is what makes them byte-identical to
+// eager's global sort. Sub-case (ii) is the D5 regression guard.
+func TestLazyRequestSource_TimeVarying_Reasoning_MatchesEager(t *testing.T) {
+	traceRate := 5.0
+	mkReasoning := func(singleSession bool) func() *WorkloadSpec {
+		return func() *WorkloadSpec {
+			return &WorkloadSpec{
+				Version: "2", Seed: 555, Category: "language", AggregateRate: 0,
+				Clients: []ClientSpec{{
+					ID: "r", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+					PrefixGroup: "sys", PrefixLength: 48,
+					Arrival:    ArrivalSpec{Process: "poisson"},
+					InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 80, "std_dev": 16, "min": 16, "max": 300}},
+					OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 48}},
+					Reasoning: &ReasoningSpec{MultiTurn: &MultiTurnSpec{
+						MaxRounds: 3, ContextGrowth: "accumulate", ThinkTimeUs: 60_000, SingleSession: singleSession,
+					}},
+					Lifecycle: &LifecycleSpec{Windows: []ActiveWindow{
+						{StartUs: 0, EndUs: 4_000_000, TraceRate: &traceRate},
+					}},
+				}},
+			}
+		}
+	}
+	t.Run("single-session", func(t *testing.T) {
+		assertTimeVaryingParity(t, mkReasoning(true), 5_000_000, 40, true)
+	})
+	t.Run("multi-session", func(t *testing.T) {
+		assertTimeVaryingParity(t, mkReasoning(false), 5_000_000, 40, true)
+	})
+}
+
+// TestLazyRequestSource_TimeVarying_InvalidWindowDist_SurfacesError pins BC-6:
+// per-window input/output distributions are NOT validated by spec.Validate, so a
+// window override that NewLengthSampler rejects is only discovered when the lazy
+// source builds that window. The error must be recorded and surfaced via Err()
+// (so cmd can Fatalf, matching eager's abort-on-invalid-spec) — never a panic or
+// silent traffic reduction.
+func TestLazyRequestSource_TimeVarying_InvalidWindowDist_SurfacesError(t *testing.T) {
+	goodRate := 5.0
+	badDist := DistSpec{Type: "not_a_real_distribution", Params: map[string]float64{}}
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 7, Category: "language", AggregateRate: 0,
+		Clients: []ClientSpec{{
+			ID: "tv", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 96, "std_dev": 20, "min": 16, "max": 400}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 48}},
+			Lifecycle: &LifecycleSpec{Windows: []ActiveWindow{
+				// First window valid; the overridden output dist in the second is invalid.
+				{StartUs: 0, EndUs: 2_000_000, TraceRate: &goodRate},
+				{StartUs: 2_000_000, EndUs: 4_000_000, TraceRate: &goodRate, OutputDist: &badDist},
+			}},
+		}},
+	}
+	// spec.Validate accepts this (per-window dists are unvalidated), so the source
+	// is constructed successfully; the error surfaces during draining.
+	src, _, _, err := GenerateWorkloadLazy(spec, 5_000_000, 100)
+	if err != nil {
+		t.Fatalf("construction should succeed (per-window dist unvalidated); got %v", err)
+	}
+	// Drain fully — must not panic — then Err() must be non-nil.
+	for {
+		if _, ok := src.Next(); !ok {
+			break
+		}
+	}
+	if src.Err() == nil {
+		t.Fatal("want non-nil Err() after draining a spec with an invalid per-window distribution")
+	}
+}
+
 // (Concurrency clients are no longer a lazy fallback case as of #1459 — the
 // former TestGenerateWorkloadLazy_FallsBackOnConcurrencyClient was replaced by
 // the positive parity table TestGenerateWorkloadLazy_ConcurrencyClient_MatchesEager.)
