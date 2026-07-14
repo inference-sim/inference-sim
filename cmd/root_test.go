@@ -1572,20 +1572,21 @@ func TestRunCmd_LazyGeneration_SameSeed_Deterministic(t *testing.T) {
 	}
 }
 
-// TestRunCmd_LazyGeneration_ConcurrencyFallback_DoesNotFatal pins BC-8 at
-// the CLI seam (PR #1453 self-review minor #5): when --lazy-generation is
-// combined with a workload-spec containing a concurrency client (an
-// unsupported lazy shape), cmd/root.go MUST log a warning and fall back
-// to the eager GenerateWorkload rather than Fatalf-ing. The eager run
-// completes normally and produces a trace file. Regression coverage
-// against accidentally promoting the fallback warning to a fatal error.
+// TestRunCmd_LazyGeneration_Concurrency_Streams pins the CLI seam for #1459:
+// when --lazy-generation is combined with a workload-spec containing a
+// concurrency client, cmd/root.go MUST build the streaming source (concurrency
+// is now a supported lazy shape) and complete the run normally, producing a
+// trace file. Before #1459 this shape fell back to the eager generator; the run
+// still succeeds either way, so the observable CLI contract (run completes, no
+// Fatalf, trace written) is unchanged — this guards against a regression that
+// would break the run for concurrency specs under --lazy-generation.
 //
 // We use --workload-spec rather than --concurrency for control of the
 // per-flag interactions on the run command; the spec-based path is the
-// closest production path that exercises the concurrency-fallback.
+// closest production path that exercises concurrency under lazy generation.
 //
 // NOTE: Do NOT use t.Parallel() — mutates package-level vars.
-func TestRunCmd_LazyGeneration_ConcurrencyFallback_DoesNotFatal(t *testing.T) {
+func TestRunCmd_LazyGeneration_Concurrency_Streams(t *testing.T) {
 	tmpDir := t.TempDir()
 	tracePrefix := filepath.Join(tmpDir, "trace")
 	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)

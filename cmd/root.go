@@ -1490,9 +1490,10 @@ var runCmd = &cobra.Command{
 
 		// Lazy generation path (#1441, alpha). Default off. When set, build
 		// a streaming workload source instead of materializing the full
-		// request slice. Falls back to eager (with a warning) for specs
-		// the streaming source cannot handle yet (time-varying parameters,
-		// concurrency clients). Multi-session reasoning is supported (#1458).
+		// request slice. Falls back to eager (with a warning) for the only
+		// remaining unsupported class: time-varying (per-window) parameters.
+		// Multi-session reasoning (#1458) and concurrency clients (#1459) are
+		// supported by the streaming source.
 		var wl *workload.GeneratedWorkload
 		// lazyRequestSource is typed as the interface satisfied by
 		// *workload.lazyRequestSource: Next() delivers requests to the
@@ -1509,8 +1510,6 @@ var runCmd = &cobra.Command{
 			switch {
 			case errors.Is(lazyErr, workload.ErrLazyUnsupportedTimeVarying):
 				logrus.Warnf("[workload] --lazy-generation ignored: workload has per-window parameters; using eager generator (issue #1441)")
-			case errors.Is(lazyErr, workload.ErrLazyUnsupportedConcurrency):
-				logrus.Warnf("[workload] --lazy-generation ignored: workload has concurrency clients; using eager generator (issue #1441)")
 			case lazyErr != nil:
 				logrus.Fatalf("Failed to build lazy workload: %v", lazyErr)
 			default:

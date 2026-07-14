@@ -248,8 +248,6 @@ func classifyLazyGenError(err error) (lazyGenDisposition, string) {
 		return lazyUseStreaming, ""
 	case errors.Is(err, workload.ErrLazyUnsupportedTimeVarying):
 		return lazyFallbackToEager, "workload has per-window parameters"
-	case errors.Is(err, workload.ErrLazyUnsupportedConcurrency):
-		return lazyFallbackToEager, "workload has concurrency clients"
 	default:
 		return lazyFatal, ""
 	}
