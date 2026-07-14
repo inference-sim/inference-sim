@@ -2,7 +2,6 @@ package workload
 
 import (
 	"container/heap"
-	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -13,35 +12,35 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-// ErrLazyUnsupportedTimeVarying signals that lazy generation cannot handle
-// a spec with per-window parameter overrides. The caller (cmd/root.go) is
-// expected to log a warning and fall back to GenerateWorkload. The error
-// path is intentionally a value, not a Fatalf — library code does not
-// terminate the process (R6, #1441).
-var ErrLazyUnsupportedTimeVarying = errors.New("lazy generation: time-varying workloads (per-window parameters) not supported in alpha")
-
-// Concurrency clients (Concurrency > 0) ARE supported by the lazy generator as
-// of #1459. Their seed requests + SessionBlueprints are produced by the shared
-// generateConcurrencySeedsAndBlueprints helper (also used by the eager
-// GenerateWorkload), and each seed is pushed onto the global arrival heap as its
-// own entry so the merge reproduces eager's stable-sort-by-arrival byte-for-byte
-// (see the concurrency seed phase in GenerateWorkloadLazy). By construction the
-// seed set is O(N virtual users), which exists up front in both modes — there is
-// no horizon-length pre-materialization to stream away — so the earlier
-// ErrLazyUnsupportedConcurrency fallback is gone.
-
-// Multi-session reasoning (SingleSession=false) IS supported by the lazy
-// generator as of #1458. Each such client is a traffic source that spawns
-// many independent, overlapping sessions across the horizon. The eager
-// generator interleaves those sessions by arrival time through its global
-// merge-sort; the lazy generator reproduces the interleaving with a small
-// per-client internal merge over its LIVE sessions (see clientStreamState's
-// liveSessions field and produceNextReasoning). This bounds resident sessions
-// to the concurrent working set (≈ arrival_rate × session_duration, Little's
-// law) — independent of horizon — rather than materializing every session up
-// front. The earlier assumption that supporting this "would require pushing
-// every session's anchor onto the heap up front, defeating the memory
-// savings" was too pessimistic and no longer holds.
+// The lazy generator streams EVERY workload class — there is no remaining
+// ErrLazyUnsupported* fallback sentinel as of #1460:
+//
+//   - Concurrency clients (Concurrency > 0, #1459): seed requests +
+//     SessionBlueprints are produced by the shared
+//     generateConcurrencySeedsAndBlueprints helper (also used by the eager
+//     GenerateWorkload), and each seed is pushed onto the global arrival heap as
+//     its own entry so the merge reproduces eager's stable-sort-by-arrival
+//     byte-for-byte. The seed set is O(N virtual users), present up front in both
+//     modes — no horizon-length pre-materialization to stream away.
+//
+//   - Multi-session reasoning (SingleSession=false, #1458): each such client is a
+//     traffic source spawning many independent, overlapping sessions across the
+//     horizon. Eager interleaves them via its global merge-sort; the lazy
+//     generator reproduces the interleaving with a small per-client internal merge
+//     over its LIVE sessions (see clientStreamState.liveSessions and
+//     produceNextReasoning), bounding resident sessions to the concurrent working
+//     set (≈ arrival_rate × session_duration, Little's law) — independent of
+//     horizon.
+//
+//   - Time-varying / per-window workloads (#1460): clients whose lifecycle windows
+//     carry per-window trace_rate/arrival/input_distribution/output_distribution
+//     overrides. Eager (generateTimeVaryingRequests) generates each window as a
+//     self-contained batch in spec order, concatenates all, and stable-sorts by
+//     arrival; the lazy path (generateTimeVaryingWorkloadLazy) reuses the eager
+//     generateRequestsForWindow one window at a time, merging built window batches
+//     through a per-client live-window heap with a suffix-min emit gate (see
+//     clientStreamState.liveWindows and produceNextTimeVarying). Resident memory is
+//     the concurrent-window working set rather than all windows of all clients.
 
 // clientStreamState holds per-client streaming production state.
 // One per "live" client in the original allClients order (the order matters:
@@ -88,6 +87,27 @@ type clientStreamState struct {
 	msReqCount     int64 // count of ALL rounds built for this client (for msClientCap)
 	msBuildDone    bool  // true once no further session can be built (horizon/sampler/lifecycle/cap)
 
+	// Time-varying mode (per-window parameter overrides, #1460): a client whose
+	// lifecycle windows carry per-window trace_rate/arrival/input_distribution/
+	// output_distribution overrides. The eager path (generateTimeVaryingRequests)
+	// generates each window as a self-contained batch (all IATs sampled up front,
+	// rescaled to fill the window, then content) IN SPEC ORDER, concatenates all
+	// clients' all windows, and stable-sorts by arrival. Because windows can be
+	// overlapping or out-of-order in spec, the per-client concatenation is NOT
+	// arrival-monotonic. The lazy path reuses generateRequestsForWindow verbatim
+	// (one window at a time), keeps an internal min-heap of built-but-not-drained
+	// window batches, and applies an emit-safety gate keyed on the suffix-minimum
+	// window start — yielding the client's requests in arrival order so it feeds
+	// the global heap a monotonic sub-stream byte-identical to eager's global sort.
+	isTimeVarying  bool
+	allClients     []ClientSpec // shared read-only; needed by computeProportionalRate inside generateRequestsForWindow
+	aggregateRate  float64      // spec.AggregateRate (0 = absolute-rate mode)
+	windows        []ActiveWindow
+	windowBuildIdx int             // next window (spec order) to build
+	suffixMinStart []int64         // suffixMinStart[k] = min StartUs over windows[k:]; [len]=MaxInt64 sentinel
+	liveWindows    *liveWindowHeap // built-but-not-drained window batches
+	twBuildDone    bool            // true once every window has been built (or skipped)
+
 	// perClientSeq increments on every successful produceNext yield. Used as
 	// the tertiary heap tie-breaker so that even when two queue entries from
 	// the same client (theoretically impossible) would collide, the heap is
@@ -126,6 +146,13 @@ type clientStreamState struct {
 func (s *clientStreamState) produceNext() (*sim.Request, int64, bool) {
 	if s.exhausted {
 		return nil, 0, false
+	}
+	// Time-varying is checked FIRST: generateRequestsForWindow handles reasoning
+	// (single- and multi-session) INTERNALLY per window, so a TV+reasoning client
+	// must route here, not to produceNextReasoning. buildClientStreamState leaves
+	// isReasoning unset for TV clients, but the explicit ordering documents intent.
+	if s.isTimeVarying {
+		return s.produceNextTimeVarying()
 	}
 	if s.isReasoning {
 		return s.produceNextReasoning()
@@ -411,6 +438,133 @@ func (s *clientStreamState) buildNextSession() bool {
 	return true
 }
 
+// computeSuffixMinStart returns a slice of length len(windows)+1 where
+// element k is the minimum StartUs over windows[k:], and element len(windows)
+// is math.MaxInt64 (the sentinel read by produceNextTimeVarying's emit gate
+// after the last window is built, when windowBuildIdx == len(windows)). This is
+// the lower bound on all not-yet-built windows' earliest arrivals: windows are
+// built in spec order, so the unbuilt set is always a suffix.
+func computeSuffixMinStart(windows []ActiveWindow) []int64 {
+	n := len(windows)
+	suffix := make([]int64, n+1)
+	suffix[n] = math.MaxInt64
+	for k := n - 1; k >= 0; k-- {
+		suffix[k] = windows[k].StartUs
+		if suffix[k+1] < suffix[k] {
+			suffix[k] = suffix[k+1]
+		}
+	}
+	return suffix
+}
+
+// produceNextTimeVarying streams a time-varying client (#1460): one whose
+// lifecycle windows carry per-window parameter overrides. It keeps a min-heap of
+// live (built-but-not-drained) window batches keyed by each batch's next-request
+// arrival, and yields the client's requests in arrival order so the client feeds
+// the global heap an arrival-monotonic sub-stream (BC-2), byte-identical to the
+// set eager's global merge-sort produces (BC-1).
+//
+// Emit-safety gate: windows are built in SPEC order, so the not-yet-built windows
+// are exactly the suffix windows[windowBuildIdx:], and each such window's earliest
+// possible arrival is its StartUs (first request = StartUs + iats[0], iats[0] >= 0
+// after rescale). Therefore suffixMinStart[windowBuildIdx] is a valid lower bound
+// on every future request's arrival. A live head with arrival <= that bound cannot
+// be preceded by any future window's request and is safe to emit; the `<=` is
+// correct on ties because the future window is later in spec order (higher
+// windowIdx) and eager's stable sort orders the already-built (lower-windowIdx)
+// request first. A head with arrival > the bound might be preceded by a future
+// window's first request, so we build the next window first and re-check. Once
+// building is done (twBuildDone), every remaining live head is safe to drain.
+func (s *clientStreamState) produceNextTimeVarying() (*sim.Request, int64, bool) {
+	for {
+		canEmit := s.liveWindows.Len() > 0
+		if canEmit && !s.twBuildDone &&
+			(*s.liveWindows)[0].head().ArrivalTime > s.suffixMinStart[s.windowBuildIdx] {
+			// The earliest live request could still be preceded by a window we
+			// have not built yet — build more before emitting it.
+			canEmit = false
+		}
+		if canEmit {
+			top := (*s.liveWindows)[0]
+			req := top.head()
+			// Consume this request from its window batch.
+			top.cursor++
+			if top.cursor >= len(top.batch) {
+				heap.Pop(s.liveWindows)
+			} else {
+				heap.Fix(s.liveWindows, 0)
+			}
+			s.perClientSeq++
+			return req, req.ArrivalTime, true
+		}
+		// Cannot emit yet. Build the next window if any remain.
+		if s.twBuildDone {
+			// Nothing safe to emit and nothing left to build — with the gate above
+			// this means the heap is empty. Client exhausted.
+			s.exhausted = true
+			return nil, 0, false
+		}
+		if !s.buildNextTimeVaryingWindow() && s.exhausted {
+			return nil, 0, false // buildNextTimeVaryingWindow recorded a terminal error
+		}
+		// Loop: re-evaluate emit eligibility (windowBuildIdx advanced, so the
+		// suffix-min bound may have relaxed, or a new batch may now be the min head).
+	}
+}
+
+// buildNextTimeVaryingWindow builds the next lifecycle window (spec order) via the
+// reused eager generateRequestsForWindow, mirroring generateTimeVaryingRequests'
+// per-window loop: skip windows starting at/after the horizon (no RNG draw), clamp
+// the window end to the horizon, generate the window's request batch, stable-sort
+// it by arrival (multi-session batches are not arrival-monotonic — eager relies on
+// its global sort), and push it onto the live-window heap. Returns false when no
+// window was built this call. Sets twBuildDone once every window has been consumed;
+// a zero-request or skipped window returns false WITHOUT twBuildDone so the caller
+// loops to the next window. On a generator error it records the error
+// (sticky-exhausts) so lazyRequestSource.Err() can surface it (BC-6).
+func (s *clientStreamState) buildNextTimeVaryingWindow() bool {
+	for s.windowBuildIdx < len(s.windows) {
+		w := s.windows[s.windowBuildIdx]
+		s.windowBuildIdx++
+		// Skip windows that start beyond the horizon (mirrors eager's
+		// `if window.StartUs >= horizon { continue }` — no RNG draw).
+		if w.StartUs >= s.horizon {
+			continue
+		}
+		// Clamp window end to the horizon (mirrors eager's effectiveWindow clamp).
+		effWindow := w
+		if effWindow.EndUs > s.horizon {
+			effWindow.EndUs = s.horizon
+		}
+		batch, err := generateRequestsForWindow(
+			*s.client, effWindow, s.allClients, s.aggregateRate, s.clientRNG, s.prefix,
+		)
+		if err != nil {
+			s.recordError(fmt.Errorf("time-varying window [%d-%d]: %w",
+				effWindow.StartUs, effWindow.EndUs, err))
+			return false
+		}
+		if len(batch) == 0 {
+			// Zero-request window (rate too low, or every request past the window
+			// boundary): eager consumes no clientRNG entropy for it beyond what
+			// generateRequestsForWindow already did. Loop to the next window.
+			continue
+		}
+		// Multi-session reasoning appends session rounds in build order, not arrival
+		// order (session N+1's round 0 can precede session N's later rounds). Eager
+		// fixes this only in its global sort; reproduce that with a per-batch stable
+		// sort. No-op for single-shot (currentTime += iat is monotonic) and
+		// single-session (rounds are chronological).
+		sort.SliceStable(batch, func(i, j int) bool {
+			return batch[i].ArrivalTime < batch[j].ArrivalTime
+		})
+		heap.Push(s.liveWindows, &liveWindow{batch: batch, cursor: 0, windowIdx: s.windowBuildIdx - 1})
+		return true
+	}
+	s.twBuildDone = true
+	return false
+}
+
 // buildSession generates one reasoning session at startTime and sets the
 // per-round Deadline/SLOTargetUs (mirrors GenerateRequests' reasoning path).
 // GenerateReasoningRequests seeds/prepends the prefix internally (#1445).
@@ -521,6 +675,48 @@ func (h liveSessionHeap) Less(i, j int) bool {
 func (h liveSessionHeap) Swap(i, j int)       { h[i], h[j] = h[j], h[i] }
 func (h *liveSessionHeap) Push(x interface{}) { *h = append(*h, x.(*liveSession)) }
 func (h *liveSessionHeap) Pop() interface{} {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[:n-1]
+	return x
+}
+
+// liveWindow is one built-but-not-fully-drained lifecycle window batch of a
+// time-varying client (#1460). batch holds that window's requests, produced by
+// the reused eager generateRequestsForWindow and stable-sorted by ArrivalTime
+// (multi-session reasoning within a window is NOT arrival-monotonic — eager only
+// fixes this in its global sort — so the per-batch sort is load-bearing). cursor
+// points at the next request to emit. windowIdx is the client's window spec index,
+// used as the deterministic tie-break when two windows' next requests share an
+// arrival time (matches eager's stable-sort-by-concat-order: earlier spec window
+// first).
+type liveWindow struct {
+	batch     []*sim.Request
+	cursor    int
+	windowIdx int
+}
+
+// head returns the window's next request to emit. Callers must ensure cursor is
+// in range (the heap only holds windows with a pending request).
+func (lw *liveWindow) head() *sim.Request { return lw.batch[lw.cursor] }
+
+// liveWindowHeap orders live windows by (next-request arrival, windowIdx). The
+// arrival key reproduces eager's global sort; the windowIdx key reproduces
+// eager's within-client stable-sort tie-break (earlier-spec window first).
+type liveWindowHeap []*liveWindow
+
+func (h liveWindowHeap) Len() int { return len(h) }
+func (h liveWindowHeap) Less(i, j int) bool {
+	a, b := h[i].head(), h[j].head()
+	if a.ArrivalTime != b.ArrivalTime {
+		return a.ArrivalTime < b.ArrivalTime
+	}
+	return h[i].windowIdx < h[j].windowIdx
+}
+func (h liveWindowHeap) Swap(i, j int)       { h[i], h[j] = h[j], h[i] }
+func (h *liveWindowHeap) Push(x interface{}) { *h = append(*h, x.(*liveWindow)) }
+func (h *liveWindowHeap) Pop() interface{} {
 	old := *h
 	n := len(old)
 	x := old[n-1]
@@ -641,6 +837,17 @@ type clientPrep struct {
 	clientSeed int64
 	rate       float64
 	prefix     []sim.TokenID
+
+	// Time-varying context (#1460), populated only by the TV prelude in
+	// generateTimeVaryingWorkloadLazy. When isTimeVarying is set,
+	// buildClientStreamState constructs a time-varying state (per-window
+	// generation via the reused generateRequestsForWindow) instead of the
+	// single-shot/reasoning state; rate is unused (per-window proportional
+	// allocation uses allClients + aggregateRate instead). allClients is a
+	// shared read-only slice header (computeProportionalRate reads it).
+	isTimeVarying bool
+	allClients    []ClientSpec
+	aggregateRate float64
 }
 
 // GenerateWorkloadLazy mirrors GenerateWorkload's setup but returns a
@@ -655,9 +862,10 @@ type clientPrep struct {
 //   - followUpBudget: the shared concurrencyFollowUpBudget value — -1 when
 //     unbounded (maxRequests<=0) or there are no concurrency users; >=0 (the cap
 //     on follow-ups) for concurrency specs under a finite maxRequests (#1459).
-//   - err: ErrLazyUnsupportedTimeVarying signals the caller to fall back (the
-//     only remaining unsupported class); other errors are real spec/validation
-//     failures.
+//   - err: a real spec/validation failure. As of #1460 there is NO
+//     ErrLazyUnsupported* sentinel — every spec class (single-shot, single- and
+//     multi-session reasoning #1458, concurrency #1459, time-varying #1460) is
+//     streamed. Time-varying specs dispatch to generateTimeVaryingWorkloadLazy.
 //
 // Determinism: same seed produces the same source byte-identically to
 // GenerateWorkload's request stream (BC-3).
@@ -705,13 +913,14 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 		allClients = append(allClients, ExpandCohorts(spec.Cohorts, spec.Seed)...)
 	}
 
-	// Fallback gate. The caller (cmd/root.go) catches this sentinel error and
-	// switches to the eager generator with a one-line warning. Multi-session
-	// reasoning (SingleSession=false, #1458) and concurrency clients
-	// (Concurrency > 0, #1459) are NO LONGER fallback cases — the only remaining
-	// unsupported class is time-varying (per-window parameter) workloads.
+	// Time-varying dispatch. Clients with per-window parameter overrides
+	// (trace_rate/arrival/input_distribution/output_distribution) take a distinct
+	// generation path in eager (generateTimeVaryingRequests); the lazy path mirrors
+	// it in generateTimeVaryingWorkloadLazy. As of #1460 there is NO remaining
+	// unsupported class — multi-session reasoning (#1458), concurrency clients
+	// (#1459), and time-varying workloads (#1460) are all streamed.
 	if hasPerWindowParameters(allClients) {
-		return nil, nil, 0, ErrLazyUnsupportedTimeVarying
+		return generateTimeVaryingWorkloadLazy(spec, horizon, maxRequests, allClients)
 	}
 
 	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(spec.Seed))
@@ -738,6 +947,27 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 		})
 	}
 
+	// Phases 2–4 (blueprint pre-pass, streaming states, concurrency seeds) are
+	// identical for the time-varying and non-time-varying paths — they operate
+	// purely on preps/prefixes/allClients — so they live in one shared helper.
+	return assembleLazySourceFromPreps(preps, prefixes, allClients, spec.Seed, horizon, maxRequests)
+}
+
+// assembleLazySourceFromPreps runs the shared Phases 2–4 of lazy workload
+// construction (blueprint pre-pass, per-client streaming states, concurrency
+// seeds) given the Phase-1 preps. Both GenerateWorkloadLazy's non-time-varying
+// path and generateTimeVaryingWorkloadLazy call it — only the Phase-1 prelude
+// (which clients get a clientSeed, and whether each prep is time-varying)
+// differs between the two. buildClientStreamState branches on prep.isTimeVarying,
+// so the pre-pass and streaming pass transparently handle both kinds.
+func assembleLazySourceFromPreps(
+	preps []clientPrep,
+	prefixes map[string][]sim.TokenID,
+	allClients []ClientSpec,
+	specSeed int64,
+	horizon int64,
+	maxRequests int64,
+) (*lazyRequestSource, []SessionBlueprint, int64, error) {
 	// Phase 2: blueprint pre-pass (closed-loop reasoning clients only).
 	//
 	// Mirrors GenerateWorkload's blueprint construction at
@@ -762,7 +992,7 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	blueprintRNG := rand.New(rand.NewSource(spec.Seed + 7919))
+	blueprintRNG := rand.New(rand.NewSource(specSeed + 7919))
 	var sessions []SessionBlueprint
 	for _, p := range preps {
 		if !isClosedLoop(p.client) || p.client.Reasoning == nil || p.client.Reasoning.MultiTurn == nil {
@@ -848,11 +1078,65 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 	// Phase 2 dry-run. Push the seeds as individual heap entries (see the shared
 	// helper) so the global merge reproduces eager's stable-sort-by-arrival.
 	sessions, followUpBudget, err := appendConcurrencySeedsToHeap(
-		h, allClients, prefixes, spec.Seed, horizon, maxRequests, keptOpen, sessions)
+		h, allClients, prefixes, specSeed, horizon, maxRequests, keptOpen, sessions)
 	if err != nil {
 		return nil, nil, 0, err
 	}
 	return &lazyRequestSource{h: h, maxRequests: maxRequests, states: states}, sessions, followUpBudget, nil
+}
+
+// generateTimeVaryingWorkloadLazy is the lazy counterpart of eager's
+// generateTimeVaryingRequests (generator.go): it streams a workload whose clients
+// carry per-window parameter overrides. It mirrors that function's RNG-draw order
+// exactly — generatePrefixTokens on the workload RNG, then one clientSeed draw per
+// LIFECYCLE client (in allClients order; clients WITHOUT lifecycle windows are
+// warned and skipped WITHOUT a clientSeed draw, matching eager's
+// mixed-always-on-and-windowed handling) — then delegates Phases 2–4 to the shared
+// assembleLazySourceFromPreps. Per-client streaming is handled by
+// produceNextTimeVarying (see buildClientStreamState's time-varying branch), which
+// reuses the eager generateRequestsForWindow one window at a time.
+//
+// Determinism (INV-6): the only lazy-authored RNG draws are the prefix generation
+// and the per-lifecycle-client clientSeed — both identical to eager's TV path. The
+// per-window IAT/content draws happen inside the reused generateRequestsForWindow,
+// so they cannot diverge.
+func generateTimeVaryingWorkloadLazy(
+	spec *WorkloadSpec, horizon int64, maxRequests int64, allClients []ClientSpec,
+) (*lazyRequestSource, []SessionBlueprint, int64, error) {
+	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(spec.Seed))
+	workloadRNG := rng.ForSubsystem(sim.SubsystemWorkloadGen)
+	// generatePrefixTokens draws first — same as eager's TV path (generator.go),
+	// which calls it inside generateTimeVaryingRequests before the per-client loop.
+	prefixes := generatePrefixTokens(allClients, workloadRNG)
+
+	// Phase 1 (time-varying prelude): draw clientSeeds in allClients order. Unlike
+	// the non-TV prelude (gated on clientRate > 0), eager's TV path draws a
+	// clientSeed for every client WITH lifecycle windows and skips windowless
+	// clients with a warning BEFORE the draw (generateTimeVaryingRequests). We
+	// mirror that gating exactly so the workloadRNG draw sequence matches.
+	preps := make([]clientPrep, 0, len(allClients))
+	for i := range allClients {
+		client := &allClients[i]
+		if client.Lifecycle == nil || len(client.Lifecycle.Windows) == 0 {
+			// Windowless clients generate nothing on the TV path (mixed always-on +
+			// windowed clients are not supported). Warn and skip WITHOUT a clientSeed
+			// draw, matching generateTimeVaryingRequests.
+			logrus.Warnf("generateTimeVaryingWorkloadLazy: client %q has no lifecycle windows and will generate no requests (mixed always-on + windowed clients are not supported)", client.ID)
+			continue
+		}
+		clientSeed := workloadRNG.Int63()
+		preps = append(preps, clientPrep{
+			idx:           i,
+			client:        client,
+			clientSeed:    clientSeed,
+			prefix:        prefixes[client.PrefixGroup],
+			isTimeVarying: true,
+			allClients:    allClients,
+			aggregateRate: spec.AggregateRate,
+		})
+	}
+
+	return assembleLazySourceFromPreps(preps, prefixes, allClients, spec.Seed, horizon, maxRequests)
 }
 
 // exhaustedSentinelState is a single shared always-exhausted clientStreamState
@@ -967,6 +1251,35 @@ func specHasConcurrencyClient(spec *WorkloadSpec) bool {
 // bound building exactly as eager does to keep byte-identity (#1458).
 func buildClientStreamState(p clientPrep, horizon int64, maxRequests int64) (*clientStreamState, error) {
 	clientRNG := newRandFromSeed(p.clientSeed)
+
+	// Time-varying branch (#1460): the eager generateTimeVaryingRequests draws
+	// clientSeed then passes clientRNG STRAIGHT to generateRequestsForWindow with
+	// NO intervening draw — no client-level NewArrivalSampler and no
+	// CustomSamplerFactory sub-RNG (per-window samplers are built inside
+	// generateRequestsForWindow). Constructing them here would consume an extra
+	// clientRNG.Int63() and break byte-identity (INV-6). So the TV state carries
+	// no client-level samplers; it only needs the per-window context.
+	if p.isTimeVarying {
+		windows := p.client.Lifecycle.Windows
+		state := &clientStreamState{
+			clientIdx:      p.idx,
+			client:         p.client,
+			clientRNG:      clientRNG,
+			prefix:         p.prefix,
+			horizon:        horizon,
+			isTimeVarying:  true,
+			allClients:     p.allClients,
+			aggregateRate:  p.aggregateRate,
+			windows:        windows,
+			liveWindows:    &liveWindowHeap{},
+			suffixMinStart: computeSuffixMinStart(windows),
+			// isClosedLoop drives Next()'s round-0 suppression for closed-loop
+			// reasoning windows; generateRequestsForWindow sets SessionID/RoundIndex.
+			isClosedLoop: isClosedLoop(p.client),
+		}
+		return state, nil
+	}
+
 	var arrivalSampler ArrivalSampler
 	if p.client.CustomSamplerFactory != nil {
 		subSeed := clientRNG.Int63()

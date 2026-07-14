@@ -1,7 +1,6 @@
 package workload
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -289,27 +288,39 @@ func TestGenerateWorkloadLazy_StopsAtMaxRequests(t *testing.T) {
 	}
 }
 
-// TestGenerateWorkloadLazy_FallsBackOnPerWindowParameters pins BC-8's
-// time-varying fallback signal: when any client has a per-window
-// parameter override, the factory returns ErrLazyUnsupportedTimeVarying
-// (caller falls back to GenerateWorkload).
-func TestGenerateWorkloadLazy_FallsBackOnPerWindowParameters(t *testing.T) {
-	traceRate := 2.0
-	spec := &WorkloadSpec{
-		Version: "1", Seed: 1, Category: "language", AggregateRate: 4.0,
-		Clients: []ClientSpec{{
-			ID: "c1", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
-			Arrival:    ArrivalSpec{Process: "poisson"},
-			InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 10, "max": 500}},
-			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
-			Lifecycle: &LifecycleSpec{Windows: []ActiveWindow{
-				{StartUs: 0, EndUs: 5_000_000, TraceRate: &traceRate},
+// TestLazyRequestSource_TimeVarying_SingleWindow_MatchesEager pins BC-1/BC-4 for
+// the simplest time-varying shape: one client, one lifecycle window carrying a
+// per-window trace_rate in absolute-rate mode (aggregate_rate: 0). Before #1460
+// this spec fell back to eager (ErrLazyUnsupportedTimeVarying); now the lazy
+// streaming source must produce a byte-identical request stream.
+func TestLazyRequestSource_TimeVarying_SingleWindow_MatchesEager(t *testing.T) {
+	traceRate := 8.0
+	mk := func() *WorkloadSpec {
+		return &WorkloadSpec{
+			Version: "2", Seed: 4242, Category: "language", AggregateRate: 0, // absolute rate mode
+			Clients: []ClientSpec{{
+				ID: "tv", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 96, "std_dev": 20, "min": 16, "max": 400}},
+				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 48}},
+				Lifecycle: &LifecycleSpec{Windows: []ActiveWindow{
+					{StartUs: 0, EndUs: 5_000_000, TraceRate: &traceRate},
+				}},
 			}},
-		}},
+		}
 	}
-	_, _, _, err := GenerateWorkloadLazy(spec, 10_000_000, 10)
-	if !errors.Is(err, ErrLazyUnsupportedTimeVarying) {
-		t.Fatalf("want ErrLazyUnsupportedTimeVarying, got %v", err)
+	eager, err := GenerateRequests(mk(), 6_000_000, 40)
+	if err != nil {
+		t.Fatalf("eager GenerateRequests: %v", err)
+	}
+	src, _, _, err := GenerateWorkloadLazy(mk(), 6_000_000, 40)
+	if err != nil {
+		t.Fatalf("lazy GenerateWorkloadLazy: %v", err)
+	}
+	lazyReqs := drainLazy(t, src)
+	assertRequestStreamsEqual(t, eager, lazyReqs)
+	if len(lazyReqs) == 0 {
+		t.Fatal("time-varying single-window test ineffective: empty stream")
 	}
 }
 
