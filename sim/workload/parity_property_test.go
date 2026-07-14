@@ -11,13 +11,13 @@ package workload
 // puts it under randomized pressure, which is the maintainer's explicit ask
 // ("perhaps we can use go property testing to really guarantee this").
 //
-// The generator (genLazySupportedSpec) samples ONLY from the lazy-supported
-// space so the comparison is meaningful: if a draw produced an unsupported
-// shape (per-window parameters, Concurrency>0, or multi-session reasoning),
-// GenerateWorkloadLazy would return an ErrLazyUnsupported* sentinel and the
-// cmd-layer would silently fall back to the eager generator — comparing eager
-// to eager and proving nothing. The generator is constructed so it CANNOT emit
-// those shapes (no Lifecycle, no Concurrency, reasoning always SingleSession).
+// As of #1460 the lazy generator supports EVERY workload class, so
+// genLazySupportedSpec now spans the full space: single-shot, single- and
+// multi-session reasoning (#1458), concurrency clients (#1459), and time-varying
+// per-window workloads (#1460). GenerateWorkloadLazy returns no ErrLazyUnsupported*
+// sentinel for any of them, so every draw is a genuine eager-vs-lazy comparison
+// (not eager-vs-eager). Coverage guards below assert each hard shape was actually
+// exercised so the property cannot pass vacuously.
 //
 // This is a companion invariant test to A3's golden/unit tests (BDD/TDD rule
 // #4, R7): it asserts a law (eager output == lazy output), not a fixed value.
@@ -81,8 +81,9 @@ func pick[T any](rng *rand.Rand, opts []T) T {
 //   - optional reasoning (MaxRounds 1–8, accumulate/none), single- OR
 //     multi-session (SingleSession true/false — both lazy-supported as of #1458)
 //
-// NEVER sampled (would trip the remaining A3 fallback gates and make the
-// comparison vacuous): Lifecycle/per-window parameters, Concurrency>0.
+// Also dispatches (each ~1/4) to genConcurrencySpec (#1459) and genTimeVaryingSpec
+// (#1460), which build their own self-contained specs. As of #1460 EVERY shape is
+// lazy-supported — there is no unsupported class to avoid.
 func genLazySupportedSpec(rng *rand.Rand) (spec *WorkloadSpec, label string, horizon, maxRequests int64) {
 	seed := rng.Int63()
 
@@ -94,6 +95,14 @@ func genLazySupportedSpec(rng *rand.Rand) (spec *WorkloadSpec, label string, hor
 	// seed-heap-entry merge, including the ≥2-concurrency-client interleave case.
 	if rng.Intn(4) == 0 {
 		return genConcurrencySpec(rng, seed)
+	}
+
+	// ~1/4 of the remaining draws are a TIME-VARYING shape (#1460): clients with
+	// per-window trace_rate/input_distribution overrides, including single-shot,
+	// single-session, and multi-session reasoning variants. Built as its own spec
+	// (own RateFraction/lifecycle layout) and returned early.
+	if rng.Intn(4) == 0 {
+		return genTimeVaryingSpec(rng, seed)
 	}
 
 	// Decide overall shape once so eager and lazy specs are built identically.
@@ -289,6 +298,92 @@ func genConcurrencySpec(rng *rand.Rand, seed int64) (spec *WorkloadSpec, label s
 	return spec, label, horizon, maxRequests
 }
 
+// genTimeVaryingSpec samples a lazy-supported TIME-VARYING spec (#1460): a single
+// rate-based client whose lifecycle carries 1–4 windows, EACH with a per-window
+// trace_rate override (which is what trips hasPerWindowParameters), some windows
+// additionally overriding input/output distributions. Absolute-rate mode
+// (aggregate_rate: 0) so per-window trace_rate is used verbatim. Windows are
+// contiguous and non-overlapping here (the OutOfOrder/overlap cases are covered by
+// dedicated unit tests); this generator's job is randomized coverage of per-window
+// sampler switching + reasoning-under-TV. ~1/3 of TV draws are reasoning, split
+// between single- and multi-session so the D5 per-batch stable sort is exercised.
+func genTimeVaryingSpec(rng *rand.Rand, seed int64) (spec *WorkloadSpec, label string, horizon, maxRequests int64) {
+	numWindows := 1 + rng.Intn(4) // 1–4 windows
+	usePrefix := rng.Intn(2) == 0
+	useReasoning := rng.Intn(3) == 0
+	accumulate := rng.Intn(2) == 0
+	singleSession := rng.Intn(2) == 0
+	process := pick(rng, []string{"poisson", "gamma", "weibull", "constant"})
+
+	prefixGroup, prefixLen := "", 0
+	if usePrefix {
+		prefixGroup = "grp"
+		prefixLen = 32 + rng.Intn(96)
+	}
+	baseInput := DistSpec{Type: "gaussian", Params: map[string]float64{
+		"mean": float64(40 + rng.Intn(80)), "std_dev": float64(5 + rng.Intn(15)), "min": 8, "max": 400,
+	}}
+	baseOutput := DistSpec{Type: "exponential", Params: map[string]float64{"mean": float64(20 + rng.Intn(40))}}
+
+	var reasoning *ReasoningSpec
+	maxRounds := 0
+	if useReasoning {
+		maxRounds = 1 + rng.Intn(6)
+		growth := "none"
+		if accumulate {
+			growth = "accumulate"
+		}
+		reasoning = &ReasoningSpec{MultiTurn: &MultiTurnSpec{
+			MaxRounds: maxRounds, ContextGrowth: growth,
+			ThinkTimeUs: 50_000 + int64(rng.Intn(100_000)), SingleSession: singleSession,
+		}}
+	}
+
+	// Contiguous windows of ~1s each, each with a distinct per-window trace_rate;
+	// some windows also override the input distribution (exercises sampler swap).
+	const windowDur = 1_000_000
+	windows := make([]ActiveWindow, numWindows)
+	for i := 0; i < numWindows; i++ {
+		rate := 2.0 + float64(rng.Intn(18)) // 2–19 req/s
+		w := ActiveWindow{
+			StartUs:   int64(i) * windowDur,
+			EndUs:     int64(i+1) * windowDur,
+			TraceRate: &rate,
+		}
+		if rng.Intn(2) == 0 {
+			wIn := DistSpec{Type: "gaussian", Params: map[string]float64{
+				"mean": float64(60 + rng.Intn(120)), "std_dev": float64(8 + rng.Intn(20)), "min": 8, "max": 600,
+			}}
+			w.InputDist = &wIn
+		}
+		windows[i] = w
+	}
+
+	spec = &WorkloadSpec{
+		Version: "2", Seed: seed, Category: "language",
+		AggregateRate: 0, // absolute-rate mode: per-window trace_rate used verbatim
+		Clients: []ClientSpec{{
+			ID: "tv", TenantID: "t0", SLOClass: "batch", RateFraction: 1.0,
+			Arrival:      ArrivalSpec{Process: process},
+			InputDist:    baseInput,
+			OutputDist:   baseOutput,
+			PrefixGroup:  prefixGroup,
+			PrefixLength: prefixLen,
+			Reasoning:    reasoning,
+			Lifecycle:    &LifecycleSpec{Windows: windows},
+		}},
+	}
+	// Horizon covers all windows; maxRequests occasionally tight for reasoning.
+	horizon = int64(numWindows)*windowDur + 500_000
+	maxRequests = int64(10 + rng.Intn(80))
+	if useReasoning && rng.Intn(4) == 0 {
+		maxRequests = int64(2 + rng.Intn(8))
+	}
+	label = fmt.Sprintf("TIME-VARYING windows=%d process=%s prefix=%v reasoning=%v(rounds=%d,accum=%v,single=%v) maxReq=%d",
+		numWindows, process, usePrefix, useReasoning, maxRounds, accumulate, singleSession, maxRequests)
+	return spec, label, horizon, maxRequests
+}
+
 // buildSpec reconstructs a spec deterministically from a per-draw seed so that
 // eager and lazy each receive their OWN independent instance. GenerateWorkload
 // and GenerateWorkloadLazy both run validateAndExpandSpec (which can mutate
@@ -320,6 +415,7 @@ func TestProperty_EagerEqualsLazy_RequestStreams(t *testing.T) {
 	// the test is not testing what it claims.
 	var sawNonEmpty, sawReasoning, sawBlueprints, sawMultiSession bool
 	var sawConcurrency, sawMultiConcurrency bool
+	var sawTimeVarying, sawTimeVaryingMultiSession bool
 
 	for i := 0; i < draws; i++ {
 		drawSeed := drawRNG.Int63()
@@ -328,9 +424,20 @@ func TestProperty_EagerEqualsLazy_RequestStreams(t *testing.T) {
 		lazySpec, _, _, _ := buildSpec(drawSeed)
 
 		isReasoning := eagerSpec.Clients[0].Reasoning != nil
-		if isReasoning && eagerSpec.Clients[0].Reasoning.MultiTurn != nil &&
-			!eagerSpec.Clients[0].Reasoning.MultiTurn.SingleSession {
+		isMultiSession := isReasoning && eagerSpec.Clients[0].Reasoning.MultiTurn != nil &&
+			!eagerSpec.Clients[0].Reasoning.MultiTurn.SingleSession
+		if isMultiSession {
 			sawMultiSession = true
+		}
+		// Time-varying draws (#1460): per-window parameter overrides. Track the
+		// multi-session-under-TV combination separately — it is the D5 per-batch
+		// stable-sort path, which must not go unexercised (else the guard is vacuous).
+		isTimeVarying := hasPerWindowParameters(eagerSpec.Clients)
+		if isTimeVarying {
+			sawTimeVarying = true
+			if isMultiSession {
+				sawTimeVaryingMultiSession = true
+			}
 		}
 		// Count concurrency clients in this draw (spec.Clients-only field).
 		nConc := 0
@@ -447,5 +554,14 @@ func TestProperty_EagerEqualsLazy_RequestStreams(t *testing.T) {
 	if !sawMultiConcurrency {
 		t.Fatalf("no draw had ≥2 concurrency clients across %d draws — the individual-seed-heap-entry "+
 			"interleave (CRITICAL-1, #1459) is unexercised; adjust genConcurrencySpec's numConc distribution", draws)
+	}
+	if !sawTimeVarying {
+		t.Fatalf("no time-varying (per-window parameter) draw occurred across %d draws — "+
+			"the lazy time-varying path (#1460) is unexercised; adjust genTimeVaryingSpec probability", draws)
+	}
+	if !sawTimeVaryingMultiSession {
+		t.Fatalf("no time-varying + multi-session-reasoning draw occurred across %d draws — the "+
+			"per-batch stable-sort (D5, #1460) that makes non-monotonic multi-session windows "+
+			"byte-identical is unexercised; adjust genTimeVaryingSpec's reasoning/SingleSession probability", draws)
 	}
 }
