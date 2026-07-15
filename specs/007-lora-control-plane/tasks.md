@@ -33,8 +33,8 @@ registers into `sim/` via `init()` (no reverse import — Principle I).
 
 **Purpose**: Scaffolding with no observable behavior.
 
-- [ ] T001 [P] Create `sim/lora/` package skeleton with `sim/lora/doc.go` documenting the subsystem (no-op default, registers into `sim/` via `init()`, no RNG)
-- [ ] T002 [P] Capture pre-feature no-op golden baseline: run `./blis run --model qwen/qwen3-14b --seed 42` and store stdout as `specs/007-lora-control-plane/testdata/baseline_noop.json` for INV-6 regression
+- [X] T001 [P] Create `sim/lora/` package skeleton with `sim/lora/doc.go` documenting the subsystem (no-op default, registers into `sim/` via `init()`, no RNG)
+- [X] T002 [P] Capture pre-feature no-op golden baseline: run `./blis run --model qwen/qwen3-14b --seed 42` and store stdout as `specs/007-lora-control-plane/testdata/baseline_noop.json` for INV-6 regression
 
 **Checkpoint**: Package compiles; baseline captured.
 
@@ -46,17 +46,17 @@ registers into `sim/` via `init()` (no reverse import — Principle I).
 stories. No user story can start until this phase completes. All paths reduce to a
 no-op when adapters are unconfigured (INV-6).
 
-- [ ] T003 Write LoRAConfig validation contract tests in `sim/config_test.go`: adapters-present + `adapter_capacity==0` ⇒ error; `rank<=0` ⇒ error; `load_bandwidth_bytes_us<=0` ⇒ error (R11); request adapter id absent from registry ⇒ error; empty config ⇒ valid/inert (tests MUST fail first)
-- [ ] T004 Add `LoRAConfig` sub-config + `AdapterSpec{ID string; Rank int}` types in `sim/config.go` — pointer types where zero is meaningful (R9), yaml tags, no logic yet
-- [ ] T005 Implement `LoRAConfig.Validate()` in `sim/config.go` to pass T003 (R3 numeric guards; library returns error / factory panics, never `logrus.Fatalf` in `sim/` — Principle V)
-- [ ] T006 Embed `LoRAConfig` as the 7th sub-config in `SimConfig` (`sim/simulator.go`); update factory signatures to accept the narrowest sub-config; **R4: grep and update ALL `SimConfig` construction sites**
-- [ ] T007 Add inert `lora:` defaults to `defaults.yaml` (capacity nil/unset; coefficients present but only applied when adapters configured)
-- [ ] T007a Write CLI-flag contract test in `cmd/run_test.go`/`cmd/replay_test.go`: each `--lora-*` config flag maps onto `LoRAConfig`; unset flags do NOT override `defaults.yaml` (R18); `--lora-adapter-capacity 0` with adapters present ⇒ `logrus.Fatalf` (contracts/cli-flags.md) (fail first)
-- [ ] T007b Register `--lora-adapter-capacity`, `--lora-load-base-latency-us`, `--lora-load-bandwidth-bytes-us`, `--lora-footprint-bytes-per-rank` in `cmd/run.go` and `cmd/replay.go`, each guarded by `cmd.Flags().Changed(...)` before applying defaults (R18); bind onto `SimConfig.LoRAConfig`, to pass T007a. (The per-rank compute-overhead coefficients `step_overhead_tiers` and the adapter registry are **config-file only** — a scalar flag cannot express a per-rank map — so no `--lora-step-overhead-*` flags are registered.)
-- [ ] T008 [P] Write adapter-registry contract tests in `sim/lora/registry_test.go`: `id→rank` lookup; iteration is key-sorted (R2); completeness check flags unknown ids (tests MUST fail first)
-- [ ] T009 Implement adapter registry in `sim/lora/registry.go` (built from `LoRAConfig.Adapters`) + `init()` registration into `sim/`, to pass T008
-- [ ] T010 Add `Request.Adapter string` field in `sim/request.go`; **R4: grep and update ALL `Request{...}` literal construction sites**; zero value `""` MUST preserve byte-identity
-- [ ] T011 Write INV-6 no-op byte-identity test comparing an adapter-blind run against `testdata/baseline_noop.json` (companion invariant test; must pass after T010)
+- [X] T003 Write LoRAConfig validation contract tests in `sim/config_test.go`: adapters-present + `adapter_capacity==0` ⇒ error; `rank<=0` ⇒ error; `load_bandwidth_bytes_us<=0` ⇒ error (R11); request adapter id absent from registry ⇒ error; empty config ⇒ valid/inert (tests MUST fail first)
+- [X] T004 Add `LoRAConfig` sub-config + `AdapterSpec{ID string; Rank int}` types in `sim/config.go` — pointer types where zero is meaningful (R9), yaml tags, no logic yet
+- [X] T005 Implement `LoRAConfig.Validate()` in `sim/config.go` to pass T003 (R3 numeric guards; library returns error / factory panics, never `logrus.Fatalf` in `sim/` — Principle V)
+- [X] T006 Embed `LoRAConfig` as the 7th sub-config in `SimConfig` (`sim/simulator.go`); update factory signatures to accept the narrowest sub-config; **R4: grep and update ALL `SimConfig` construction sites**
+- [X] T007 Add inert `lora:` defaults to `defaults.yaml` (capacity nil/unset; coefficients present but only applied when adapters configured)
+- [X] T007a Write CLI-flag contract test in `cmd/run_test.go`/`cmd/replay_test.go`: each `--lora-*` config flag maps onto `LoRAConfig`; unset flags do NOT override `defaults.yaml` (R18); `--lora-adapter-capacity 0` with adapters present ⇒ `logrus.Fatalf` (contracts/cli-flags.md) (fail first)
+- [X] T007b Register `--lora-adapter-capacity`, `--lora-load-base-latency-us`, `--lora-load-bandwidth-bytes-us`, `--lora-footprint-bytes-per-rank` in `cmd/run.go` and `cmd/replay.go`, each guarded by `cmd.Flags().Changed(...)` before applying defaults (R18); bind onto `SimConfig.LoRAConfig`, to pass T007a. (The per-rank compute-overhead coefficients `step_overhead_tiers` and the adapter registry are **config-file only** — a scalar flag cannot express a per-rank map — so no `--lora-step-overhead-*` flags are registered.)
+- [X] T008 [P] Write adapter-registry contract tests in `sim/lora/registry_test.go`: `id→rank` lookup; iteration is key-sorted (R2); completeness check flags unknown ids (tests MUST fail first)
+- [X] T009 Implement adapter registry in `sim/lora/registry.go` (built from `LoRAConfig.Adapters`) + `init()` registration into `sim/`, to pass T008
+- [X] T010 Add `Request.Adapter string` field in `sim/request.go`; **R4: grep and update ALL `Request{...}` literal construction sites**; zero value `""` MUST preserve byte-identity
+- [X] T011 Write INV-6 no-op byte-identity test comparing an adapter-blind run against `testdata/baseline_noop.json` (companion invariant test; must pass after T010)
 
 **Checkpoint**: Config validates, registry resolves, `Request.Adapter` exists, adapter-blind output byte-identical to baseline. User stories can now begin.
 
@@ -72,14 +72,14 @@ throughput; run any adapter-free scenario → byte-identical to baseline.
 
 **Dependencies**: Phase 2.
 
-- [ ] T012 [US1] Write workload-threading contract test in `sim/workload/spec_test.go`: `ClientSpec`/`CohortSpec.Adapter` → `Request.Adapter`; omitted ⇒ `""`; id must be a registry key and base model must match client/cohort `model` (fail first)
-- [ ] T013 [P] [US1] Write per-adapter metrics contract test in `sim/metrics_test.go`: `adapters` block present with per-adapter TTFT/throughput when configured; ABSENT when unconfigured (INV-6); keys sorted (R2); base-model requests attributed to no adapter (fail first)
-- [ ] T014 [US1] Add `Adapter string` (yaml `omitempty`) to `ClientSpec` and `CohortSpec` in `sim/workload/spec.go`
-- [ ] T015 [US1] Thread `Adapter` through request generation into `Request.Adapter` in `sim/workload/` (generator), with registry+base-model validation, to pass T012
-- [ ] T016 [US1] Add `Adapter` field to `RequestMetrics` in `sim/metrics_utils.go` (per-request attribution)
-- [ ] T017 [US1] Add per-adapter aggregate section to `MetricsOutput` in `sim/metrics.go`: `TTFTByAdapter`, `ThroughputByAdapter`, `AdapterLoadCount` (0 for now), sorted keys, omitted when no adapters — to pass T013
-- [ ] T018 [US1] Companion invariant test in `sim/metrics_test.go`: INV-1 conservation holds with adapters; per-adapter counts partition (not duplicate) global request accounting
-- [ ] T019 [US1] Re-run T011 no-op byte-identity regression to confirm US1 additions stay inert when unconfigured
+- [X] T012 [US1] Write workload-threading contract test in `sim/workload/spec_test.go`: `ClientSpec`/`CohortSpec.Adapter` → `Request.Adapter`; omitted ⇒ `""`; id must be a registry key and base model must match client/cohort `model` (fail first)
+- [X] T013 [P] [US1] Write per-adapter metrics contract test in `sim/metrics_test.go`: `adapters` block present with per-adapter TTFT/throughput when configured; ABSENT when unconfigured (INV-6); keys sorted (R2); base-model requests attributed to no adapter (fail first)
+- [X] T014 [US1] Add `Adapter string` (yaml `omitempty`) to `ClientSpec` and `CohortSpec` in `sim/workload/spec.go`
+- [X] T015 [US1] Thread `Adapter` through request generation into `Request.Adapter` in `sim/workload/` (generator), with registry+base-model validation, to pass T012
+- [X] T016 [US1] Add `Adapter` field to `RequestMetrics` in `sim/metrics_utils.go` (per-request attribution)
+- [X] T017 [US1] Add per-adapter aggregate section to `MetricsOutput` in `sim/metrics.go`: `TTFTByAdapter`, `ThroughputByAdapter`, `AdapterLoadCount` (0 for now), sorted keys, omitted when no adapters — to pass T013
+- [X] T018 [US1] Companion invariant test in `sim/metrics_test.go`: INV-1 conservation holds with adapters; per-adapter counts partition (not duplicate) global request accounting
+- [X] T019 [US1] Re-run T011 no-op byte-identity regression to confirm US1 additions stay inert when unconfigured
 
 **Checkpoint**: MVP complete — per-adapter attribution works; no-op default proven byte-identical.
 

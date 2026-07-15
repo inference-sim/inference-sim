@@ -153,7 +153,49 @@ func (m *Metrics) BuildOutput(instanceID string, saturationDetector BatchClassif
 		output.Saturation = saturationDetector.Classify(completedReqs, totalArrivals)
 	}
 
+	// Per-adapter aggregate metrics (#1464, US1). Group COMPLETED requests by their
+	// non-empty adapter id; base-model requests (adapter == "") are attributed to no
+	// adapter and excluded. When no request carries an adapter the map stays nil and
+	// omitempty drops the block entirely, so an adapter-blind run is byte-identical to
+	// the pre-feature build (INV-6).
+	output.Adapters = buildAdapterMetrics(m, vllmRuntime)
+
 	return output
+}
+
+// buildAdapterMetrics computes the per-adapter aggregate block from completed requests.
+// Returns nil when no request is attributed to an adapter (INV-6 no-op). TTFT
+// percentiles are in microseconds; throughput is completed output tokens / runtime.
+func buildAdapterMetrics(m *Metrics, vllmRuntime float64) map[string]AdapterMetrics {
+	ttftsByAdapter := make(map[string][]float64)
+	outTokensByAdapter := make(map[string]int64)
+	for id, rm := range m.Requests {
+		if rm.Adapter == "" {
+			continue // base-model-only request: attributed to no adapter
+		}
+		if m.RequestE2Es[id] <= 0 {
+			continue // completed requests only (partitions global completed accounting, INV-1)
+		}
+		ttftsByAdapter[rm.Adapter] = append(ttftsByAdapter[rm.Adapter], m.RequestTTFTs[id])
+		outTokensByAdapter[rm.Adapter] += int64(rm.NumDecodeTokens)
+	}
+	if len(ttftsByAdapter) == 0 {
+		return nil
+	}
+	adapters := make(map[string]AdapterMetrics, len(ttftsByAdapter))
+	for adapter, ttfts := range ttftsByAdapter {
+		sort.Float64s(ttfts)
+		am := AdapterMetrics{
+			// CalculatePercentile returns ms (÷1000); ×1000 recovers µs for the _us fields.
+			TTFTP50Us: CalculatePercentile(ttfts, 50) * 1000,
+			TTFTP99Us: CalculatePercentile(ttfts, 99) * 1000,
+		}
+		if vllmRuntime > 0 {
+			am.ThroughputTokPerS = float64(outTokensByAdapter[adapter]) / vllmRuntime
+		}
+		adapters[adapter] = am
+	}
+	return adapters
 }
 
 // EmitOutput writes a populated MetricsOutput to stdout (always) and an

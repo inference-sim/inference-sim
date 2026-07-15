@@ -82,6 +82,13 @@ type Request struct {
 	// Phase 0: carried through the pipeline but not read by any routing policy.
 	Model string
 
+	// Adapter is the LoRA adapter id serving this request (registry key; #1464).
+	// Empty ("") = base-model-only request (no adapter) — the no-op default that
+	// preserves byte-identity for adapter-blind workloads (INV-6). When non-empty it
+	// MUST resolve to a declared adapter in the registry (validated at workload
+	// generation). Set from the owning client/cohort's Adapter during generation.
+	Adapter string
+
 	// Client timeout: absolute tick by which request must complete (0 = no timeout).
 	// Computed during workload generation as ArrivalTime + timeout.
 	Deadline int64

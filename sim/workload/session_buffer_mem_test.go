@@ -48,7 +48,7 @@ func TestReasoningAccumulate_PerSessionMemoryIsLinear(t *testing.T) {
 			inputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 0, "min": 100, "max": 100}})
 			outputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 0, "min": 50, "max": 50}})
 
-			reqs, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c", "t", "s", "", nil)
+			reqs, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c", "t", "s", "", "", nil)
 			if err != nil {
 				t.Fatalf("GenerateReasoningRequests: %v", err)
 			}
@@ -191,7 +191,7 @@ func TestReasoningAccumulate_WithPrefix_MemoryIsLinear(t *testing.T) {
 	outputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": float64(outputLen), "std_dev": 0, "min": float64(outputLen), "max": float64(outputLen)}})
 	prefix := sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(2)), prefixLen)
 
-	reqs, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c", "t", "s", "", prefix)
+	reqs, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c", "t", "s", "", "", prefix)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestReportMemoryWinForPR(t *testing.T) {
 		inputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 1500, "std_dev": 0, "min": 1500, "max": 1500}})
 		outputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 425, "std_dev": 0, "min": 425, "max": 425}})
 
-		reqs, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c", "t", "s", "", nil)
+		reqs, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c", "t", "s", "", "", nil)
 		if err != nil {
 			t.Fatal(err)
 		}

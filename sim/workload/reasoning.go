@@ -23,7 +23,7 @@ func GenerateReasoningRequests(
 	spec *ReasoningSpec,
 	inputSampler, outputSampler LengthSampler,
 	startTime int64,
-	clientID, tenantID, sloClass, model string,
+	clientID, tenantID, sloClass, model, adapter string,
 	prefix []sim.TokenID,
 ) ([]*sim.Request, error) {
 	if spec == nil || spec.MultiTurn == nil {
@@ -124,6 +124,7 @@ func GenerateReasoningRequests(
 			TenantID:     tenantID,
 			SLOClass:     sloClass,
 			Model:        model,
+			Adapter:      adapter,
 			ClientID:     clientID,
 			SessionID:    sessionID,
 			RoundIndex:   round,

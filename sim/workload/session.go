@@ -43,7 +43,8 @@ type SessionBlueprint struct {
 	TenantID         string
 	SLOClass         string
 	Model            string
-	SLOTargetUs      int64 // per-request SLO TTFT target in µs; 0 = no target
+	Adapter          string // LoRA adapter id (registry key; #1464). "" = base-model-only.
+	SLOTargetUs      int64  // per-request SLO TTFT target in µs; 0 = no target
 }
 
 // activeSession tracks mutable per-session lifecycle state.
@@ -283,6 +284,7 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 		TenantID:     bp.TenantID,
 		SLOClass:     bp.SLOClass,
 		Model:        bp.Model,
+		Adapter:      bp.Adapter,
 		ClientID:     bp.ClientID,
 		SessionID:    bp.SessionID,
 		RoundIndex:   sess.currentRound,
