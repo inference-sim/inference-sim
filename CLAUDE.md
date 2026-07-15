@@ -123,22 +123,26 @@ go build -o blis main.go
 # bounded by ~ arrival_rate x session_duration (Little's law) — independent
 # of horizon. (Cluster-side memory still scales with in-flight cluster
 # requests, which this PR does not change.)
-# Falls back to the eager generator with a one-line warning for the only
-# remaining unsupported class:
-#   - workloads with per-window parameters (time-varying)
-# Supported: single-shot, single-session AND multi-session reasoning
-# (SingleSession=false, #1458 — per-client live-session merge), concurrency
-# clients (Concurrency > 0, #1459 — seeds merged as individual heap entries;
-# seed set is O(N virtual users), so the win is modest for pure-concurrency
-# specs but a mixed spec is no longer disqualified from streaming), prefix-group
-# sharing, multi-client / cohort workloads. Behavior with the flag off is unchanged.
+# Supports EVERY workload class — there is NO eager fallback (#1460):
+# single-shot; single-session AND multi-session reasoning (SingleSession=false,
+# #1458 — per-client live-session merge); concurrency clients (Concurrency > 0,
+# #1459 — seeds merged as individual heap entries; the win is modest for
+# pure-concurrency specs since the seed set is O(N virtual users)); time-varying
+# / per-window workloads (trace_rate/arrival/input_distribution/output_distribution
+# overrides, #1460 — per-window batches merged via a live-window heap, so resident
+# memory is the concurrent-window working set rather than all windows at once, a
+# real win for the many-small-windows layout typical of spike/servegen/diurnal
+# schedules; note a single huge window materializes one full batch, so it yields
+# no memory win over eager); prefix-group sharing; multi-client / cohort workloads.
+# Behavior with the flag off is unchanged.
 ./blis run --model qwen/qwen3-14b --lazy-generation
 
 # Observe with lazy request generation (alpha, #1443). Same flag, default, and
 # semantics as `blis run` — streams requests from the generator into the observe
-# dispatch loop instead of pre-generating the full slice, with the same eager
-# fallback (time-varying only; multi-session reasoning #1458 and concurrency
-# clients #1459 are supported). Observe already paces
+# dispatch loop instead of pre-generating the full slice. As of #1460 there is no
+# eager fallback: every class blis run supports (multi-session reasoning #1458,
+# concurrency clients #1459, time-varying / per-window workloads #1460) is
+# streamed. Observe already paces
 # itself against the real server, so the memory win is smaller than run's; the
 # flag mainly makes run and observe share one generation pipeline (#1438). Default
 # (flag off) dispatch behavior is unchanged.

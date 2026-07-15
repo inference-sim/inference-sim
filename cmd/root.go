@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -1490,10 +1489,10 @@ var runCmd = &cobra.Command{
 
 		// Lazy generation path (#1441, alpha). Default off. When set, build
 		// a streaming workload source instead of materializing the full
-		// request slice. Falls back to eager (with a warning) for the only
-		// remaining unsupported class: time-varying (per-window) parameters.
-		// Multi-session reasoning (#1458) and concurrency clients (#1459) are
-		// supported by the streaming source.
+		// request slice. As of #1460 there is NO eager-fallback class — every
+		// spec the eager generator accepts is streamed: multi-session reasoning
+		// (#1458), concurrency clients (#1459), and time-varying / per-window
+		// workloads (#1460).
 		var wl *workload.GeneratedWorkload
 		// lazyRequestSource is typed as the interface satisfied by
 		// *workload.lazyRequestSource: Next() delivers requests to the
@@ -1507,15 +1506,14 @@ var runCmd = &cobra.Command{
 		}
 		if lazyGeneration {
 			src, sessions, followUpBudget, lazyErr := workload.GenerateWorkloadLazy(spec, simulationHorizon, maxRequests)
-			switch {
-			case errors.Is(lazyErr, workload.ErrLazyUnsupportedTimeVarying):
-				logrus.Warnf("[workload] --lazy-generation ignored: workload has per-window parameters; using eager generator (issue #1441)")
-			case lazyErr != nil:
+			// As of #1460 there is no ErrLazyUnsupported* fallback class — every
+			// spec the eager generator accepts is streamed. Any error is a real
+			// spec/validation failure → abort (matches eager's error handling).
+			if lazyErr != nil {
 				logrus.Fatalf("Failed to build lazy workload: %v", lazyErr)
-			default:
-				lazyRequestSource = src
-				wl = &workload.GeneratedWorkload{Sessions: sessions, FollowUpBudget: followUpBudget}
 			}
+			lazyRequestSource = src
+			wl = &workload.GeneratedWorkload{Sessions: sessions, FollowUpBudget: followUpBudget}
 		}
 		if wl == nil {
 			var err error
@@ -2356,7 +2354,7 @@ func init() {
 	runCmd.Flags().IntVar(&outputTokensMin, "output-tokens-min", defaultOutputMin, "Min Output Token Count")
 	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", defaultOutputMax, "Max Output Token Count")
 	runCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "Path to YAML workload specification file (overrides --workload)")
-	runCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", false, "Alpha (#1441): stream requests from the workload generator instead of pre-generating the full slice. Default off. Falls back to eager mode (with a warning) only for time-varying (per-window) workloads. Multi-session reasoning (#1458) and concurrency clients (#1459) are supported.")
+	runCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", false, "Alpha (#1441): stream requests from the workload generator instead of pre-generating the full slice. Default off. Supports every workload class — single-shot, single- and multi-session reasoning (#1458), concurrency clients (#1459), and time-varying / per-window workloads (#1460); no eager fallback.")
 	runCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "Per-request deadline in seconds (default 300s matches the session-client default in computeDeadline). Negative = disabled; 0 is rejected. Consistent with blis observe: both commands reject 0.")
 	runCmd.Flags().StringVar(&goodputSLOTTFT, "slo-ttft", "", "Per-class TTFT goodput thresholds (e.g. \"critical=100ms,standard=500ms\"). Precedence: CLI > trace header > workload spec.")
 	runCmd.Flags().StringVar(&goodputSLOITL, "slo-itl", "", "Per-class mean ITL goodput thresholds (e.g. \"critical=50ms,standard=150ms\").")

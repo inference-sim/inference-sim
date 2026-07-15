@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -128,9 +127,9 @@ func init() {
 	observeCmd.Flags().Float64Var(&observeRate, "rate", 0, "Requests per second for distribution synthesis")
 	observeCmd.Flags().BoolVar(&observeLazyGeneration, "lazy-generation", false,
 		"Alpha (#1441): stream requests from the workload generator instead of pre-generating "+
-			"the full slice. Default off. Falls back to eager mode (with a warning) only for "+
-			"time-varying (per-window) workloads. Multi-session reasoning (#1458) and concurrency "+
-			"clients (#1459) are supported.")
+			"the full slice. Default off. Supports every workload class — single-shot, single- and "+
+			"multi-session reasoning (#1458), concurrency clients (#1459), and time-varying / "+
+			"per-window workloads (#1460); no eager fallback.")
 
 	// Optional
 	observeCmd.Flags().StringVar(&observeAPIKey, "api-key", "", "Bearer token for server authentication")
@@ -224,34 +223,6 @@ func validateITLStreamingFlags(recordITL, noStreaming bool) string {
 		return "--record-itl and --no-streaming are mutually exclusive; ITL recording requires streaming responses"
 	}
 	return ""
-}
-
-// lazyGenDisposition tells runObserve how to react to a GenerateWorkloadLazy
-// result: use the streaming source, fall back to the eager generator, or abort.
-type lazyGenDisposition int
-
-const (
-	lazyUseStreaming    lazyGenDisposition = iota // err == nil: use the lazy source
-	lazyFallbackToEager                           // ErrLazyUnsupported*: warn + eager
-	lazyFatal                                     // any other error: abort
-)
-
-// classifyLazyGenError maps a GenerateWorkloadLazy error to a disposition and,
-// for the fallback case, the human-facing reason fragment. Extracted so the
-// sentinel matching — the part most prone to silent breakage (a wrong errors.Is
-// target or a missing case would route an unsupported spec to Fatal, or a real
-// error to eager) — is unit-testable independently of runObserve's HTTP/globals
-// (R14). The disposition→action mapping (warn / Fatalf / use) stays at the CLI
-// boundary in runObserve. Mirrors blis run's switch (cmd/root.go).
-func classifyLazyGenError(err error) (lazyGenDisposition, string) {
-	switch {
-	case err == nil:
-		return lazyUseStreaming, ""
-	case errors.Is(err, workload.ErrLazyUnsupportedTimeVarying):
-		return lazyFallbackToEager, "workload has per-window parameters"
-	default:
-		return lazyFatal, ""
-	}
 }
 
 // buildPresetSpec loads the named preset from defaults.yaml and synthesizes a WorkloadSpec.
@@ -442,16 +413,15 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	//
 	// Lazy generation path (#1441/#1443, alpha, default off). When set, build a
 	// streaming request source instead of materializing the full slice, mirroring
-	// blis run (cmd/root.go). Falls back to the eager generator (with a one-line
-	// warning) for specs the streaming source cannot handle yet (time-varying
-	// parameters, concurrency clients). Multi-session reasoning is supported (#1458).
+	// blis run (cmd/root.go). As of #1460 there is NO eager-fallback class — every
+	// spec the eager generator accepts is streamed: multi-session reasoning (#1458),
+	// concurrency clients (#1459), and time-varying / per-window workloads (#1460).
+	// Any error is a real spec/validation failure → abort.
 	//
 	// No spec pre-expand is needed here (unlike run): observe has no
 	// pre-generation applyTimeoutToSpec step, and both generators expand
 	// spec.Clients in place before the (post-generation) prefix-string loop
-	// reads it. Skipping run's ExpandClientsAndCohorts pre-expand keeps the
-	// eager-fallback path identical to eager-direct (that helper clears the
-	// inference-perf/servegen markers, which would perturb spec.Validate()).
+	// reads it.
 	var wl *workload.GeneratedWorkload
 	// lazySource is typed as the interface satisfied by *workload.lazyRequestSource:
 	// Next() feeds the orchestrator, Err() surfaces a terminal per-client sampler
@@ -462,15 +432,11 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	}
 	if observeLazyGeneration {
 		src, sessions, followUpBudget, lazyErr := workload.GenerateWorkloadLazy(spec, horizon, maxRequests)
-		switch disp, reason := classifyLazyGenError(lazyErr); disp {
-		case lazyFallbackToEager:
-			logrus.Warnf("[workload] --lazy-generation ignored: %s; using eager generator (issue #1441)", reason)
-		case lazyFatal:
+		if lazyErr != nil {
 			logrus.Fatalf("Failed to build lazy workload: %v", lazyErr)
-		default: // lazyUseStreaming
-			lazySource = src
-			wl = &workload.GeneratedWorkload{Sessions: sessions, FollowUpBudget: followUpBudget}
 		}
+		lazySource = src
+		wl = &workload.GeneratedWorkload{Sessions: sessions, FollowUpBudget: followUpBudget}
 	}
 	if wl == nil {
 		var err error

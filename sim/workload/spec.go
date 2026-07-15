@@ -505,6 +505,36 @@ func validateClient(c *ClientSpec, idx int) error {
 			if w.EndUs <= w.StartUs {
 				return fmt.Errorf("%s: lifecycle.windows[%d] has end_us (%d) <= start_us (%d)", prefix, j, w.EndUs, w.StartUs)
 			}
+			// Validate per-window distribution overrides up front (#1460). These
+			// are consumed by generateRequestsForWindow only when a window is built,
+			// so an invalid override would otherwise surface as a generation-time
+			// error — and under the lazy generator with a binding maxRequests cap a
+			// late malformed window may never be built, so eager (which builds every
+			// window) would abort while lazy silently completed. Validating here
+			// closes that parity gap: both paths reject a malformed spec at the same
+			// point, independent of cap or horizon.
+			//
+			// We attempt NewLengthSampler (the exact constructor
+			// generateRequestsForWindow calls) rather than the weaker
+			// validateDistSpec, so Validate rejects precisely what generation would:
+			// unknown type AND missing required params AND min>max. NewLengthSampler
+			// is a pure, side-effect-free constructor; the sampler is discarded.
+			if w.InputDist != nil {
+				if err := validateDistSpec(fmt.Sprintf("%s.lifecycle.windows[%d].input_distribution", prefix, j), w.InputDist); err != nil {
+					return err
+				}
+				if _, err := NewLengthSampler(*w.InputDist); err != nil {
+					return fmt.Errorf("%s.lifecycle.windows[%d].input_distribution: %w", prefix, j, err)
+				}
+			}
+			if w.OutputDist != nil {
+				if err := validateDistSpec(fmt.Sprintf("%s.lifecycle.windows[%d].output_distribution", prefix, j), w.OutputDist); err != nil {
+					return err
+				}
+				if _, err := NewLengthSampler(*w.OutputDist); err != nil {
+					return fmt.Errorf("%s.lifecycle.windows[%d].output_distribution: %w", prefix, j, err)
+				}
+			}
 		}
 	}
 	return nil

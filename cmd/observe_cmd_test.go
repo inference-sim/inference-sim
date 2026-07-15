@@ -839,12 +839,36 @@ func TestObserveOrchestrator_EagerLazyParity_SameDispatchSequence(t *testing.T) 
 	}
 }
 
-// TestObserveLazyFallback_UnsupportedSpecSentinels pins the sentinel contract
-// observe relies on to fall back to the eager generator (BC-4). observe matches
-// these via errors.Is exactly as blis run does; if GenerateWorkloadLazy stopped
-// returning them for these shapes, observe's fallback (and this PR's warning
-// path) would silently break.
-func TestObserveLazyFallback_UnsupportedSpecSentinels(t *testing.T) {
+// TestObserveLazyGeneration_AllShapesSupported pins BC-4: as of #1460 the lazy
+// generator streams every workload class (concurrency #1459, multi-session
+// reasoning #1458, time-varying #1460) — GenerateWorkloadLazy returns a usable
+// source and a nil error for each, with no eager-fallback sentinel remaining.
+// If a future change re-introduced a fallback sentinel for one of these shapes,
+// observe (and blis run) would silently degrade to the eager generator; this
+// test fails first.
+func TestObserveLazyGeneration_AllShapesSupported(t *testing.T) {
+	// assertStreams builds the lazy source and asserts it is usable AND actually
+	// produces at least one request — a stronger check than nil-err+non-nil-src
+	// (which a broken source returning immediate exhaustion would also pass).
+	assertStreams := func(name string, spec *workload.WorkloadSpec) {
+		t.Helper()
+		src, _, _, err := workload.GenerateWorkloadLazy(spec, 1_000_000, 10)
+		if err != nil || src == nil {
+			t.Errorf("%s: got (src=%v, err=%v), want a usable source with nil error", name, src, err)
+			return
+		}
+		n := 0
+		for {
+			if _, ok := src.Next(); !ok {
+				break
+			}
+			n++
+		}
+		if n == 0 {
+			t.Errorf("%s: source produced 0 requests; want ≥1 (streaming is a no-op)", name)
+		}
+	}
+
 	// Concurrency clients are now supported by lazy (#1459):
 	// GenerateWorkloadLazy must NOT return a sentinel — it returns a usable
 	// streaming source and a nil error (no eager fallback).
@@ -861,9 +885,7 @@ func TestObserveLazyFallback_UnsupportedSpecSentinels(t *testing.T) {
 			},
 		},
 	}
-	if src, _, _, err := workload.GenerateWorkloadLazy(concurrencySpec, 1_000_000, 10); err != nil || src == nil {
-		t.Errorf("concurrency spec: got (src=%v, err=%v), want a usable source with nil error (#1459)", src, err)
-	}
+	assertStreams("concurrency spec (#1459)", concurrencySpec)
 
 	// Multi-session reasoning (SingleSession=false) is now supported by lazy
 	// (#1458): GenerateWorkloadLazy must NOT return a sentinel — it returns a
@@ -890,11 +912,11 @@ func TestObserveLazyFallback_UnsupportedSpecSentinels(t *testing.T) {
 			},
 		},
 	}
-	if src, _, _, err := workload.GenerateWorkloadLazy(multiSessionSpec, 1_000_000, 10); err != nil || src == nil {
-		t.Errorf("multi-session spec: got (src=%v, err=%v), want a usable source with nil error (#1458)", src, err)
-	}
+	assertStreams("multi-session spec (#1458)", multiSessionSpec)
 
-	// Per-window (time-varying) parameters → ErrLazyUnsupportedTimeVarying.
+	// Per-window (time-varying) parameters are now supported by lazy (#1460):
+	// GenerateWorkloadLazy must NOT return a sentinel — it returns a usable
+	// streaming source and a nil error (no eager fallback).
 	perWindowRate := 5.0
 	timeVaryingSpec := &workload.WorkloadSpec{
 		Version:       "2",
@@ -915,9 +937,7 @@ func TestObserveLazyFallback_UnsupportedSpecSentinels(t *testing.T) {
 			},
 		},
 	}
-	if _, _, _, err := workload.GenerateWorkloadLazy(timeVaryingSpec, 1_000_000, 10); !errors.Is(err, workload.ErrLazyUnsupportedTimeVarying) {
-		t.Errorf("time-varying spec: got err %v, want ErrLazyUnsupportedTimeVarying", err)
-	}
+	assertStreams("time-varying spec (#1460)", timeVaryingSpec)
 }
 
 // Task 7: Error storm drain and context cancellation (BC-10, BC-12)
@@ -1507,40 +1527,6 @@ func TestValidateITLStreamingFlags(t *testing.T) {
 			}
 			if !tt.wantErr && msg != "" {
 				t.Errorf("recordITL=%v noStreaming=%v: expected no error, got %q", tt.recordITL, tt.noStreaming, msg)
-			}
-		})
-	}
-}
-
-// TestClassifyLazyGenError verifies runObserve routes each GenerateWorkloadLazy
-// result correctly: nil → use streaming, each ErrLazyUnsupported* sentinel →
-// eager fallback (with a reason), any other error → fatal. This guards the
-// sentinel-matching that a wrong errors.Is target or a missing case would break
-// silently (PR #1457 review, IMPORTANT-1). Uses errors.Is-wrapped sentinels to
-// confirm matching survives fmt.Errorf("%w") wrapping.
-func TestClassifyLazyGenError(t *testing.T) {
-	tests := []struct {
-		name      string
-		err       error
-		wantDisp  lazyGenDisposition
-		reasonSub string // substring the fallback reason must contain ("" = don't check)
-	}{
-		{"nil uses streaming", nil, lazyUseStreaming, ""},
-		{"time-varying falls back", workload.ErrLazyUnsupportedTimeVarying, lazyFallbackToEager, "per-window"},
-		{"wrapped sentinel still falls back", fmt.Errorf("context: %w", workload.ErrLazyUnsupportedTimeVarying), lazyFallbackToEager, "per-window"},
-		{"other error is fatal", errors.New("boom"), lazyFatal, ""},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			disp, reason := classifyLazyGenError(tt.err)
-			if disp != tt.wantDisp {
-				t.Errorf("classifyLazyGenError(%v) disposition = %d, want %d", tt.err, disp, tt.wantDisp)
-			}
-			if tt.reasonSub != "" && !strings.Contains(reason, tt.reasonSub) {
-				t.Errorf("classifyLazyGenError(%v) reason = %q, want substring %q", tt.err, reason, tt.reasonSub)
-			}
-			if tt.wantDisp != lazyFallbackToEager && reason != "" {
-				t.Errorf("classifyLazyGenError(%v) returned reason %q for non-fallback disposition", tt.err, reason)
 			}
 		})
 	}
