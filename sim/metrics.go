@@ -169,6 +169,11 @@ func (m *Metrics) BuildOutput(instanceID string, saturationDetector BatchClassif
 func buildAdapterMetrics(m *Metrics, vllmRuntime float64) map[string]AdapterMetrics {
 	ttftsByAdapter := make(map[string][]float64)
 	outTokensByAdapter := make(map[string]int64)
+	// R2/determinism note: this walks m.Requests in Go's non-deterministic map order,
+	// but the result is order-independent — throughput is a commutative token sum and
+	// each adapter's TTFT slice is sort.Float64s'd before percentiles. Any future
+	// order-sensitive accumulation added here (e.g. sequential load events) MUST sort
+	// the request ids first (see sortedRequestIDs).
 	for id, rm := range m.Requests {
 		if rm.Adapter == "" {
 			continue // base-model-only request: attributed to no adapter

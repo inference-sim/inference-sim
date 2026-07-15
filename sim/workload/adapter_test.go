@@ -88,6 +88,24 @@ func TestGenerateRequests_ThreadsCohortAdapter(t *testing.T) {
 	}
 }
 
+// TestSpecHasAdapterFields verifies the detection helper used by unsupported paths
+// (blis observe) to warn about adapter fields they cannot honor.
+func TestSpecHasAdapterFields(t *testing.T) {
+	if SpecHasAdapterFields(nil) {
+		t.Error("nil spec has no adapter fields")
+	}
+	if SpecHasAdapterFields(adapterTestSpec("m", "")) {
+		t.Error("adapter-free client spec should report false")
+	}
+	if !SpecHasAdapterFields(adapterTestSpec("m", "adapter_0")) {
+		t.Error("client with adapter should report true")
+	}
+	cohortSpec := &WorkloadSpec{Cohorts: []CohortSpec{{ID: "h", Adapter: "adapter_1"}}}
+	if !SpecHasAdapterFields(cohortSpec) {
+		t.Error("cohort with adapter should report true")
+	}
+}
+
 // mustRegistry builds a lora.Registry (a sim.AdapterRegistry) for validation tests.
 func mustRegistry(t *testing.T, specs ...sim.AdapterSpec) sim.AdapterRegistry {
 	t.Helper()
@@ -136,6 +154,18 @@ func TestValidateAdapterReferences(t *testing.T) {
 		spec := adapterTestSpec("qwen-2.5-7b", "adapter_0") // adapter_0 is for llama-3.1-8b
 		if err := ValidateAdapterReferences(spec, reg); err == nil {
 			t.Error("expected error for base-model mismatch")
+		}
+	})
+	t.Run("nil registry rejects any non-empty reference", func(t *testing.T) {
+		spec := adapterTestSpec("llama-3.1-8b", "adapter_0")
+		if err := ValidateAdapterReferences(spec, nil); err == nil {
+			t.Error("expected error: workload references an adapter but no registry is declared")
+		}
+	})
+	t.Run("nil registry accepts adapter-free spec", func(t *testing.T) {
+		spec := adapterTestSpec("llama-3.1-8b", "")
+		if err := ValidateAdapterReferences(spec, nil); err != nil {
+			t.Errorf("adapter-free spec with nil registry must be valid (inert), got %v", err)
 		}
 	})
 	t.Run("cohort adapter validated too", func(t *testing.T) {
