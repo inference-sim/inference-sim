@@ -132,8 +132,9 @@ go build -o blis main.go
 # overrides, #1460 — per-window batches merged via a live-window heap, so resident
 # memory is the concurrent-window working set rather than all windows at once, a
 # real win for the many-small-windows layout typical of spike/servegen/diurnal
-# schedules); prefix-group sharing; multi-client / cohort workloads. Behavior with
-# the flag off is unchanged.
+# schedules; note a single huge window materializes one full batch, so it yields
+# no memory win over eager); prefix-group sharing; multi-client / cohort workloads.
+# Behavior with the flag off is unchanged.
 ./blis run --model qwen/qwen3-14b --lazy-generation
 
 # Observe with lazy request generation (alpha, #1443). Same flag, default, and

@@ -40,7 +40,10 @@ import (
 //     generateRequestsForWindow one window at a time, merging built window batches
 //     through a per-client live-window heap with a suffix-min emit gate (see
 //     clientStreamState.liveWindows and produceNextTimeVarying). Resident memory is
-//     the concurrent-window working set rather than all windows of all clients.
+//     the concurrent-window working set rather than all windows of all clients — a
+//     win for the many-small-windows layout; a single huge window still materializes
+//     one full batch (generateRequestsForWindow is all-at-once), so it yields no
+//     memory advantage over eager.
 
 // clientStreamState holds per-client streaming production state.
 // One per "live" client in the original allClients order (the order matters:

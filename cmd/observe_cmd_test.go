@@ -847,6 +847,28 @@ func TestObserveOrchestrator_EagerLazyParity_SameDispatchSequence(t *testing.T) 
 // observe (and blis run) would silently degrade to the eager generator; this
 // test fails first.
 func TestObserveLazyGeneration_AllShapesSupported(t *testing.T) {
+	// assertStreams builds the lazy source and asserts it is usable AND actually
+	// produces at least one request — a stronger check than nil-err+non-nil-src
+	// (which a broken source returning immediate exhaustion would also pass).
+	assertStreams := func(name string, spec *workload.WorkloadSpec) {
+		t.Helper()
+		src, _, _, err := workload.GenerateWorkloadLazy(spec, 1_000_000, 10)
+		if err != nil || src == nil {
+			t.Errorf("%s: got (src=%v, err=%v), want a usable source with nil error", name, src, err)
+			return
+		}
+		n := 0
+		for {
+			if _, ok := src.Next(); !ok {
+				break
+			}
+			n++
+		}
+		if n == 0 {
+			t.Errorf("%s: source produced 0 requests; want ≥1 (streaming is a no-op)", name)
+		}
+	}
+
 	// Concurrency clients are now supported by lazy (#1459):
 	// GenerateWorkloadLazy must NOT return a sentinel — it returns a usable
 	// streaming source and a nil error (no eager fallback).
@@ -863,9 +885,7 @@ func TestObserveLazyGeneration_AllShapesSupported(t *testing.T) {
 			},
 		},
 	}
-	if src, _, _, err := workload.GenerateWorkloadLazy(concurrencySpec, 1_000_000, 10); err != nil || src == nil {
-		t.Errorf("concurrency spec: got (src=%v, err=%v), want a usable source with nil error (#1459)", src, err)
-	}
+	assertStreams("concurrency spec (#1459)", concurrencySpec)
 
 	// Multi-session reasoning (SingleSession=false) is now supported by lazy
 	// (#1458): GenerateWorkloadLazy must NOT return a sentinel — it returns a
@@ -892,9 +912,7 @@ func TestObserveLazyGeneration_AllShapesSupported(t *testing.T) {
 			},
 		},
 	}
-	if src, _, _, err := workload.GenerateWorkloadLazy(multiSessionSpec, 1_000_000, 10); err != nil || src == nil {
-		t.Errorf("multi-session spec: got (src=%v, err=%v), want a usable source with nil error (#1458)", src, err)
-	}
+	assertStreams("multi-session spec (#1458)", multiSessionSpec)
 
 	// Per-window (time-varying) parameters are now supported by lazy (#1460):
 	// GenerateWorkloadLazy must NOT return a sentinel — it returns a usable
@@ -919,9 +937,7 @@ func TestObserveLazyGeneration_AllShapesSupported(t *testing.T) {
 			},
 		},
 	}
-	if src, _, _, err := workload.GenerateWorkloadLazy(timeVaryingSpec, 1_000_000, 10); err != nil || src == nil {
-		t.Errorf("time-varying spec: got (src=%v, err=%v), want a usable source with nil error (#1460)", src, err)
-	}
+	assertStreams("time-varying spec (#1460)", timeVaryingSpec)
 }
 
 // Task 7: Error storm drain and context cancellation (BC-10, BC-12)

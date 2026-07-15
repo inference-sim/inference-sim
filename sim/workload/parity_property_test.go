@@ -368,19 +368,49 @@ func genTimeVaryingSpec(rng *rand.Rand, seed int64) (spec *WorkloadSpec, label s
 		windows[i] = w
 	}
 
+	// Rate mode: ~half absolute (aggregate_rate=0, per-window trace_rate used
+	// verbatim), ~half PROPORTIONAL (aggregate_rate>0, per-window trace_rate is a
+	// weight fed to computeProportionalRate's co-active summation). In proportional
+	// mode ~half of draws add a WINDOWLESS always-on client — legal only in
+	// proportional mode (absolute mode requires every rate-based client to carry
+	// per-window trace_rate) — which the TV path warns-and-skips (generating
+	// nothing) but which still contributes its RateFraction to the co-active
+	// denominator. This exercises both the proportional co-active path and the
+	// windowless-skip RNG-parity (windowless clients get NO clientSeed draw).
+	proportional := rng.Intn(2) == 0
+	aggregateRate := 0.0
+	addWindowless := false
+	if proportional {
+		aggregateRate = float64(50 + rng.Intn(150)) // 50–199 req/s
+		addWindowless = rng.Intn(2) == 0
+	}
+
+	clients := []ClientSpec{{
+		ID: "tv", TenantID: "t0", SLOClass: "batch", RateFraction: 1.0,
+		Arrival:      ArrivalSpec{Process: process},
+		InputDist:    baseInput,
+		OutputDist:   baseOutput,
+		PrefixGroup:  prefixGroup,
+		PrefixLength: prefixLen,
+		Reasoning:    reasoning,
+		Lifecycle:    &LifecycleSpec{Windows: windows},
+	}}
+	if addWindowless {
+		clients = append(clients, ClientSpec{
+			ID: "always-on", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: process},
+			InputDist:  baseInput,
+			OutputDist: baseOutput,
+			// No Lifecycle: an always-on client. In the TV path it is warned-and-
+			// skipped (generates nothing) but contributes RateFraction to the
+			// co-active denominator in computeProportionalRate.
+		})
+	}
+
 	spec = &WorkloadSpec{
 		Version: "2", Seed: seed, Category: "language",
-		AggregateRate: 0, // absolute-rate mode: per-window trace_rate used verbatim
-		Clients: []ClientSpec{{
-			ID: "tv", TenantID: "t0", SLOClass: "batch", RateFraction: 1.0,
-			Arrival:      ArrivalSpec{Process: process},
-			InputDist:    baseInput,
-			OutputDist:   baseOutput,
-			PrefixGroup:  prefixGroup,
-			PrefixLength: prefixLen,
-			Reasoning:    reasoning,
-			Lifecycle:    &LifecycleSpec{Windows: windows},
-		}},
+		AggregateRate: aggregateRate,
+		Clients:       clients,
 	}
 	// Horizon covers all windows (last window ends at (n-1)*stride + windowDur).
 	horizon = int64(numWindows-1)*stride + windowDur + 500_000
@@ -388,8 +418,8 @@ func genTimeVaryingSpec(rng *rand.Rand, seed int64) (spec *WorkloadSpec, label s
 	if useReasoning && rng.Intn(4) == 0 {
 		maxRequests = int64(2 + rng.Intn(8))
 	}
-	label = fmt.Sprintf("TIME-VARYING windows=%d overlap=%v process=%s prefix=%v reasoning=%v(rounds=%d,accum=%v,single=%v) maxReq=%d",
-		numWindows, overlap, process, usePrefix, useReasoning, maxRounds, accumulate, singleSession, maxRequests)
+	label = fmt.Sprintf("TIME-VARYING windows=%d overlap=%v proportional=%v windowless=%v process=%s prefix=%v reasoning=%v(rounds=%d,accum=%v,single=%v) maxReq=%d",
+		numWindows, overlap, proportional, addWindowless, process, usePrefix, useReasoning, maxRounds, accumulate, singleSession, maxRequests)
 	return spec, label, horizon, maxRequests
 }
 
@@ -425,6 +455,7 @@ func TestProperty_EagerEqualsLazy_RequestStreams(t *testing.T) {
 	var sawNonEmpty, sawReasoning, sawBlueprints, sawMultiSession bool
 	var sawConcurrency, sawMultiConcurrency bool
 	var sawTimeVarying, sawTimeVaryingMultiSession bool
+	var sawTimeVaryingProportional, sawTimeVaryingOverlap, sawTimeVaryingWindowless bool
 
 	for i := 0; i < draws; i++ {
 		drawSeed := drawRNG.Int63()
@@ -441,11 +472,34 @@ func TestProperty_EagerEqualsLazy_RequestStreams(t *testing.T) {
 		// Time-varying draws (#1460): per-window parameter overrides. Track the
 		// multi-session-under-TV combination separately — it is the D5 per-batch
 		// stable-sort path, which must not go unexercised (else the guard is vacuous).
+		// Also track proportional-mode, overlapping-window, and windowless-client
+		// sub-shapes so those distinct code paths (computeProportionalRate co-active
+		// summation, the build-ahead emit gate, and the windowless warn+skip) can't
+		// silently go uncovered.
 		isTimeVarying := hasPerWindowParameters(eagerSpec.Clients)
 		if isTimeVarying {
 			sawTimeVarying = true
 			if isMultiSession {
 				sawTimeVaryingMultiSession = true
+			}
+			if eagerSpec.AggregateRate > 0 {
+				sawTimeVaryingProportional = true
+			}
+			for ci := range eagerSpec.Clients {
+				c := &eagerSpec.Clients[ci]
+				if c.Lifecycle == nil || len(c.Lifecycle.Windows) == 0 {
+					sawTimeVaryingWindowless = true
+					continue
+				}
+				// Overlap: any two windows of this client whose [start,end) intersect.
+				for a := range c.Lifecycle.Windows {
+					for b := a + 1; b < len(c.Lifecycle.Windows); b++ {
+						wa, wb := c.Lifecycle.Windows[a], c.Lifecycle.Windows[b]
+						if wa.StartUs < wb.EndUs && wb.StartUs < wa.EndUs {
+							sawTimeVaryingOverlap = true
+						}
+					}
+				}
 			}
 		}
 		// Count concurrency clients in this draw (spec.Clients-only field).
@@ -572,5 +626,17 @@ func TestProperty_EagerEqualsLazy_RequestStreams(t *testing.T) {
 		t.Fatalf("no time-varying + multi-session-reasoning draw occurred across %d draws — the "+
 			"per-batch stable-sort (D5, #1460) that makes non-monotonic multi-session windows "+
 			"byte-identical is unexercised; adjust genTimeVaryingSpec's reasoning/SingleSession probability", draws)
+	}
+	if !sawTimeVaryingProportional {
+		t.Fatalf("no PROPORTIONAL-mode time-varying draw (aggregate_rate>0) occurred across %d draws — "+
+			"computeProportionalRate's co-active summation is unexercised; adjust genTimeVaryingSpec's proportional probability", draws)
+	}
+	if !sawTimeVaryingOverlap {
+		t.Fatalf("no OVERLAPPING-window time-varying draw occurred across %d draws — the emit-gate "+
+			"build-ahead path (#1460) is unexercised in the property loop; adjust genTimeVaryingSpec's overlap probability", draws)
+	}
+	if !sawTimeVaryingWindowless {
+		t.Fatalf("no time-varying draw with a WINDOWLESS always-on client occurred across %d draws — "+
+			"the warn+skip RNG-parity path (#1460) is unexercised; adjust genTimeVaryingSpec's windowless probability", draws)
 	}
 }
