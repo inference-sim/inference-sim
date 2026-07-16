@@ -74,6 +74,10 @@ type SimConfig struct {
 	ModelHardwareConfig
 	PolicyConfig
 	WorkloadConfig
+	// LoRAConfig is the 7th module sub-config (LoRA control-plane subsystem). Its
+	// zero value is inert: unset => the subsystem is a no-op and output is
+	// byte-identical to a pre-feature build (INV-6). See sim/lora.
+	LoRAConfig
 
 	// SLO priority overrides for preemption victim selection (--preemption-policy priority).
 	// nil = use GAIE defaults (critical=4, standard=3, batch=-1, sheddable=-2, background=-3).

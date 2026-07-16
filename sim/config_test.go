@@ -476,6 +476,163 @@ func TestHardwareCalib_MFUValidation(t *testing.T) {
 	}
 }
 
+// loraIntPtr is a local helper for building *int LoRAConfig fields in tests.
+func loraIntPtr(v int) *int { return &v }
+
+// TestLoRAConfig_Validate exercises the LoRAConfig validation contract
+// (contracts/config-schema.md). Behavioral GIVEN/WHEN/THEN scenarios:
+//   - adapters present + adapter_capacity == 0  => error (adapters forbidden)
+//   - any adapter rank <= 0                      => error (R3)
+//   - load_bandwidth_bytes_us <= 0               => error (R11 divisor guard)
+//   - load_base_latency_us < 0                   => error (R3)
+//   - footprint_bytes_per_rank <= 0              => error (R3)
+//   - step_overhead_tiers k7 <= 0 / k6 < 0       => error (R3/R11)
+//   - duplicate adapter id                       => error
+//   - empty config                               => valid / inert (INV-6)
+func TestLoRAConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     LoRAConfig
+		wantErr bool
+	}{
+		{
+			name:    "empty config is valid and inert",
+			cfg:     LoRAConfig{},
+			wantErr: false,
+		},
+		{
+			name: "valid populated config",
+			cfg: LoRAConfig{
+				AdapterCapacity:       loraIntPtr(8),
+				LoadBaseLatencyUs:     float64Ptr(1500.0),
+				LoadBandwidthBytesUs:  float64Ptr(2.0e6),
+				FootprintBytesPerRank: float64Ptr(2.0e6),
+				Adapters: []AdapterSpec{
+					{ID: "adapter_0", Rank: 8},
+					{ID: "adapter_1", Rank: 16},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "adapters present but zero capacity",
+			cfg: LoRAConfig{
+				AdapterCapacity: loraIntPtr(0),
+				Adapters:        []AdapterSpec{{ID: "adapter_0", Rank: 8}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "negative capacity",
+			cfg: LoRAConfig{
+				AdapterCapacity: loraIntPtr(-1),
+				Adapters:        []AdapterSpec{{ID: "adapter_0", Rank: 8}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "adapter rank zero",
+			cfg: LoRAConfig{
+				AdapterCapacity: loraIntPtr(4),
+				Adapters:        []AdapterSpec{{ID: "adapter_0", Rank: 0}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "adapter rank negative",
+			cfg: LoRAConfig{
+				AdapterCapacity: loraIntPtr(4),
+				Adapters:        []AdapterSpec{{ID: "adapter_0", Rank: -8}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "load bandwidth zero",
+			cfg: LoRAConfig{
+				AdapterCapacity:      loraIntPtr(4),
+				LoadBandwidthBytesUs: float64Ptr(0),
+				Adapters:             []AdapterSpec{{ID: "adapter_0", Rank: 8}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "load bandwidth negative",
+			cfg: LoRAConfig{
+				AdapterCapacity:      loraIntPtr(4),
+				LoadBandwidthBytesUs: float64Ptr(-1),
+				Adapters:             []AdapterSpec{{ID: "adapter_0", Rank: 8}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "load base latency negative",
+			cfg: LoRAConfig{
+				AdapterCapacity:   loraIntPtr(4),
+				LoadBaseLatencyUs: float64Ptr(-1),
+				Adapters:          []AdapterSpec{{ID: "adapter_0", Rank: 8}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "footprint per rank zero",
+			cfg: LoRAConfig{
+				AdapterCapacity:       loraIntPtr(4),
+				FootprintBytesPerRank: float64Ptr(0),
+				Adapters:              []AdapterSpec{{ID: "adapter_0", Rank: 8}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "step overhead tier k7 zero (divisor guard)",
+			cfg: LoRAConfig{
+				AdapterCapacity:   loraIntPtr(4),
+				StepOverheadTiers: map[int]StepOverheadTier{8: {K6: float64Ptr(0.02), K7: float64Ptr(0)}},
+				Adapters:          []AdapterSpec{{ID: "adapter_0", Rank: 8}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "step overhead tier k6 negative",
+			cfg: LoRAConfig{
+				AdapterCapacity:   loraIntPtr(4),
+				StepOverheadTiers: map[int]StepOverheadTier{8: {K6: float64Ptr(-0.1), K7: float64Ptr(1.0)}},
+				Adapters:          []AdapterSpec{{ID: "adapter_0", Rank: 8}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "duplicate adapter id",
+			cfg: LoRAConfig{
+				AdapterCapacity: loraIntPtr(4),
+				Adapters: []AdapterSpec{
+					{ID: "adapter_0", Rank: 8},
+					{ID: "adapter_0", Rank: 16},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty adapter id",
+			cfg: LoRAConfig{
+				AdapterCapacity: loraIntPtr(4),
+				Adapters:        []AdapterSpec{{ID: "", Rank: 8}},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.Validate()
+			if tt.wantErr {
+				assert.Error(t, err, "expected validation error")
+			} else {
+				assert.NoError(t, err, "expected config to be valid")
+			}
+		})
+	}
+}
+
 // validateHardwareCalib checks MFU value constraints for capacity planning.
 // Returns error if values are outside physically plausible bounds.
 func validateHardwareCalib(hw HardwareCalib) error {
