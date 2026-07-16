@@ -1709,6 +1709,17 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		}
 		merged.AllITLs = append(merged.AllITLs, m.AllITLs...)
 		merged.RequestStepCounters = append(merged.RequestStepCounters, m.RequestStepCounters...)
+
+		// Per-adapter resident-set counts are keyed by adapter id, which — unlike the
+		// globally-unique request ids above — legitimately recurs across instances (the
+		// same adapter can be loaded on many instances). Sum them for a cluster-wide
+		// total per adapter rather than merging (which would warn and overwrite).
+		for k, v := range m.AdapterLoadCounts {
+			merged.AdapterLoadCounts[k] += v
+		}
+		for k, v := range m.AdapterEvictionCounts {
+			merged.AdapterEvictionCounts[k] += v
+		}
 		merged.PreemptionCount += m.PreemptionCount
 		merged.KVAllocationFailures += m.KVAllocationFailures
 		merged.DroppedUnservable += m.DroppedUnservable

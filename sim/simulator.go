@@ -118,6 +118,12 @@ type Simulator struct {
 	sloMap *SLOPriorityMap // vLLM-convention priority mapping for instance-level scheduling
 	scheduler      InstanceScheduler
 	latencyModel           LatencyModel
+	// residentAdapters tracks this instance's finite resident LoRA adapter slots
+	// (capacity-bounded LRU). nil when the LoRA subsystem is inert (no adapters /
+	// capacity configured, or sim/lora not imported), in which case adapter handling
+	// is a no-op and output is byte-identical to a pre-feature build (INV-6). State
+	// only in this PR — updating it has no latency effect yet (#1465).
+	residentAdapters ResidentAdapterSet
 	seqCounter             int64 // monotonic counter for event queue seqID (deterministic ordering)
 	// OnRequestDone is an optional callback invoked when a request reaches a terminal
 	// state (completed, length-capped, or timed out). Returns follow-up requests to inject.
@@ -189,6 +195,21 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 	}
 	s.rng = NewPartitionedRNG(NewSimulationKey(cfg.Seed))
 	s.scheduler = NewScheduler(cfg.Scheduler)
+
+	// Defense-in-depth: reject a non-positive adapter capacity here rather than
+	// letting it reach newResidentSet as a panic. cmd/ validates via LoRAConfig.Validate,
+	// but NewSimulator is library code and must return an error, not terminate, for a
+	// caller that bypasses the CLI (R6). Mirrors the BatchConfig re-validation above.
+	if cfg.HasAdapters() && cfg.AdapterCapacity != nil && *cfg.AdapterCapacity <= 0 {
+		return nil, fmt.Errorf("NewSimulator: adapter_capacity must be > 0 when adapters are declared, got %d", *cfg.AdapterCapacity)
+	}
+	// Wire the per-instance resident-adapter set only when the LoRA subsystem is
+	// active — adapters declared with a positive capacity — and sim/lora is linked
+	// (NewResidentAdapterSetFunc registered). Otherwise it stays nil and adapter
+	// handling is a no-op (INV-6).
+	if cfg.HasAdapters() && cfg.AdapterCapacity != nil && NewResidentAdapterSetFunc != nil {
+		s.residentAdapters = NewResidentAdapterSetFunc(*cfg.AdapterCapacity)
+	}
 
 	return s, nil
 }
@@ -725,10 +746,45 @@ func (sim *Simulator) scheduleBatch(now int64) {
 			Request: s.Request,
 		})
 		sim.Metrics.RequestSchedulingDelays[s.Request.ID] = now - s.Request.ArrivalTime
+		sim.recordAdapterResidency(s.Request)
 	}
 
 	// Record queue depth observations after batch formation
 	sim.recordQueueSnapshots()
+}
+
+// recordAdapterResidency updates the per-instance resident-adapter set when a
+// request is scheduled onto the running batch: a warm adapter is moved to
+// most-recently-used, a cold adapter is loaded (evicting the LRU non-pinned entry
+// when at capacity, and counting the load / eviction). It is a no-op when the LoRA
+// subsystem is inert or the request targets the base model (empty Adapter), so an
+// adapter-blind run is byte-identical to a pre-feature build (INV-6).
+//
+// Recording residency at running-batch entry matches the design's "in use from the
+// moment a request enters the running batch" semantics. State only: residency has no
+// latency or gating effect here — a cold request still runs immediately. This PR
+// (#1465) wires the resident-set state and metrics; the cold-load pre-admission gate
+// that consumes them is a follow-up PR.
+func (sim *Simulator) recordAdapterResidency(req *Request) {
+	if sim.residentAdapters == nil || req.Adapter == "" {
+		return
+	}
+	if sim.residentAdapters.IsResident(req.Adapter) {
+		sim.residentAdapters.Touch(req.Adapter) // warm reference
+		return
+	}
+	// Cold: load the adapter (may evict the LRU non-pinned entry at capacity).
+	evicted, admitted := sim.residentAdapters.Store(req.Adapter)
+	if !admitted {
+		// Set full and every resident adapter pinned: nothing was loaded, so don't
+		// record a phantom load. Unreachable in this PR (pinning is not wired yet);
+		// the guard keeps the accounting correct once the cold-load gate lands.
+		return
+	}
+	sim.Metrics.AdapterLoadCounts[req.Adapter]++
+	if evicted != "" {
+		sim.Metrics.AdapterEvictionCounts[evicted]++
+	}
 }
 
 // executeBatchStep handles Phase 2: model execution (prefill + decode) for all requests
