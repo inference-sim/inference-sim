@@ -46,6 +46,19 @@ type Metrics struct {
 	NumWaitQRequests        []int                     // number of requests in waitQ over different steps
 	NumRunningBatchRequests []int                     // number of request in runningBatch over different steps
 	Requests                map[string]RequestMetrics // request metrics list
+
+	// Per-adapter resident-set event counts (#1464, LoRA). AdapterLoadCounts[id] is
+	// incremented each time id is cold-loaded into an instance's resident set;
+	// AdapterEvictionCounts[id] each time id is evicted. These are cumulative EVENT
+	// counts, not distinct-adapter or request counts — a hot adapter loaded/evicted
+	// repeatedly accrues one per transition, so totals scale with adapter churn (and
+	// thus horizon), not just the registry size. Bounded in size by the declared
+	// adapter registry. In cluster mode they are summed per adapter across instances
+	// (cluster.aggregateMetrics). Both are always non-nil (allocated in NewMetrics) but
+	// empty (a missing key reads as 0) unless the LoRA subsystem is active, so an
+	// adapter-blind run produces no adapter output (INV-6). Surfaced via buildAdapterMetrics.
+	AdapterLoadCounts     map[string]int64
+	AdapterEvictionCounts map[string]int64
 }
 
 func NewMetrics() *Metrics {
@@ -60,6 +73,8 @@ func NewMetrics() *Metrics {
 		NumWaitQRequests:        []int{},
 		NumRunningBatchRequests: []int{},
 		Requests:                make(map[string]RequestMetrics),
+		AdapterLoadCounts:       make(map[string]int64),
+		AdapterEvictionCounts:   make(map[string]int64),
 	}
 }
 
@@ -184,19 +199,45 @@ func buildAdapterMetrics(m *Metrics, vllmRuntime float64) map[string]AdapterMetr
 		ttftsByAdapter[rm.Adapter] = append(ttftsByAdapter[rm.Adapter], m.RequestTTFTs[id])
 		outTokensByAdapter[rm.Adapter] += int64(rm.NumDecodeTokens)
 	}
-	if len(ttftsByAdapter) == 0 {
+	// An adapter surfaces if it served a completed request OR saw a resident-set
+	// event (load/eviction), so counts appear even for an adapter loaded then
+	// evicted before any of its requests completed in-window. All three empty =>
+	// adapter-blind run => nil (INV-6 no-op).
+	if len(ttftsByAdapter) == 0 && len(m.AdapterLoadCounts) == 0 && len(m.AdapterEvictionCounts) == 0 {
 		return nil
 	}
-	adapters := make(map[string]AdapterMetrics, len(ttftsByAdapter))
-	for adapter, ttfts := range ttftsByAdapter {
-		sort.Float64s(ttfts)
+	idSet := make(map[string]struct{}, len(ttftsByAdapter)+len(m.AdapterLoadCounts))
+	for id := range ttftsByAdapter {
+		idSet[id] = struct{}{}
+	}
+	for id := range m.AdapterLoadCounts {
+		idSet[id] = struct{}{}
+	}
+	for id := range m.AdapterEvictionCounts {
+		idSet[id] = struct{}{}
+	}
+	// Build in sorted id order (R2). The output is a map (JSON marshals keys sorted),
+	// so this is defensive rather than load-bearing, but it keeps any future
+	// order-sensitive accumulation here deterministic without a second audit.
+	ids := make([]string, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	adapters := make(map[string]AdapterMetrics, len(ids))
+	for _, adapter := range ids {
 		am := AdapterMetrics{
-			// CalculatePercentile returns ms (÷1000); ×1000 recovers µs for the _us fields.
-			TTFTP50Us: CalculatePercentile(ttfts, 50) * 1000,
-			TTFTP99Us: CalculatePercentile(ttfts, 99) * 1000,
+			LoadCount:     m.AdapterLoadCounts[adapter],
+			EvictionCount: m.AdapterEvictionCounts[adapter],
 		}
-		if vllmRuntime > 0 {
-			am.ThroughputTokPerS = float64(outTokensByAdapter[adapter]) / vllmRuntime
+		if ttfts, ok := ttftsByAdapter[adapter]; ok {
+			sort.Float64s(ttfts)
+			// CalculatePercentile returns ms (÷1000); ×1000 recovers µs for the _us fields.
+			am.TTFTP50Us = CalculatePercentile(ttfts, 50) * 1000
+			am.TTFTP99Us = CalculatePercentile(ttfts, 99) * 1000
+			if vllmRuntime > 0 {
+				am.ThroughputTokPerS = float64(outTokensByAdapter[adapter]) / vllmRuntime
+			}
 		}
 		adapters[adapter] = am
 	}

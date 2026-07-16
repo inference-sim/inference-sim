@@ -51,9 +51,44 @@ func TestBuildOutput_PerAdapterMetrics(t *testing.T) {
 	if a0.ThroughputTokPerS <= 0 {
 		t.Errorf("adapter_0 throughput_tok_per_s should be > 0, got %v", a0.ThroughputTokPerS)
 	}
-	// LoadCount / EvictionCount are placeholders in PR1 (no resident set yet).
+	// This fixture records only request metrics — no resident-set events — so
+	// load/eviction counts are 0 (they are driven by the scheduling hook, exercised
+	// in the run-level tests). Counts surfacing from the maps is covered separately
+	// by TestBuildOutput_AdapterEventCountsSurface.
 	if a0.LoadCount != 0 || a0.EvictionCount != 0 {
-		t.Errorf("PR1 placeholder: load/eviction counts should be 0, got %d/%d", a0.LoadCount, a0.EvictionCount)
+		t.Errorf("no resident-set events in this fixture: counts should be 0, got %d/%d", a0.LoadCount, a0.EvictionCount)
+	}
+}
+
+// TestBuildOutput_AdapterEventCountsSurface verifies buildAdapterMetrics carries
+// per-adapter load/eviction counts into the output, including for an adapter that
+// saw resident-set events but completed no request in-window (loaded-then-evicted).
+func TestBuildOutput_AdapterEventCountsSurface(t *testing.T) {
+	m := newAdapterTestMetrics()
+	m.AdapterLoadCounts["adapter_0"] = 3
+	m.AdapterEvictionCounts["adapter_0"] = 1
+	// adapter_2 saw events but has no completed request attributed to it.
+	m.AdapterLoadCounts["adapter_2"] = 2
+	m.AdapterEvictionCounts["adapter_2"] = 2
+
+	out := m.BuildOutput("cluster", nil)
+
+	a0 := out.Adapters["adapter_0"]
+	if a0.LoadCount != 3 || a0.EvictionCount != 1 {
+		t.Errorf("adapter_0 counts = %d/%d, want 3/1", a0.LoadCount, a0.EvictionCount)
+	}
+	if a0.TTFTP50Us <= 0 {
+		t.Errorf("adapter_0 should still carry TTFT from its completed requests, got %v", a0.TTFTP50Us)
+	}
+	a2, ok := out.Adapters["adapter_2"]
+	if !ok {
+		t.Fatal("adapter_2 (events but no completion) must still surface in the adapters block")
+	}
+	if a2.LoadCount != 2 || a2.EvictionCount != 2 {
+		t.Errorf("adapter_2 counts = %d/%d, want 2/2", a2.LoadCount, a2.EvictionCount)
+	}
+	if a2.TTFTP50Us != 0 || a2.ThroughputTokPerS != 0 {
+		t.Errorf("adapter_2 has no completed request: TTFT/throughput should be 0, got %v/%v", a2.TTFTP50Us, a2.ThroughputTokPerS)
 	}
 }
 

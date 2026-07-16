@@ -106,8 +106,11 @@ type MetricsOutput struct {
 
 // AdapterMetrics is the per-adapter aggregate section (contracts/metrics.md). TTFT
 // percentiles are in microseconds (ticks); throughput is completed output tokens per
-// second. LoadCount/EvictionCount are populated by the resident set in a later PR and
-// are 0 here (PR1 has no per-instance adapter residency yet).
+// second. LoadCount/EvictionCount are cumulative resident-set event counts populated
+// by the per-instance resident set (#1465): LoadCount per cold load, EvictionCount per
+// LRU eviction. They are 0 for an adapter that was referenced but never triggered a
+// resident-set event (e.g. no capacity configured), and absent entirely on an
+// adapter-blind run (INV-6).
 type AdapterMetrics struct {
 	LoadCount         int64   `json:"load_count"`
 	EvictionCount     int64   `json:"eviction_count"`

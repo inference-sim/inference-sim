@@ -10,4 +10,7 @@ func init() {
 	sim.NewAdapterRegistryFunc = func(adapters []sim.AdapterSpec) (sim.AdapterRegistry, error) {
 		return NewRegistry(adapters)
 	}
+	sim.NewResidentAdapterSetFunc = func(capacity int) sim.ResidentAdapterSet {
+		return newResidentSet(capacity)
+	}
 }
