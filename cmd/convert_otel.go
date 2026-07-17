@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -58,10 +59,19 @@ token counts) rather than 'blis run' (distribution sampling).`,
 	},
 }
 
-// collectTraceInputs returns the raw bytes of each trace found at path. A
-// directory yields one entry per *.json file; a *.jsonl file yields one entry
-// per non-empty line; any other file is treated as a single trace.
-func collectTraceInputs(path string) ([][]byte, error) {
+// traceInput pairs a raw trace payload with a human-readable source label, so
+// skip/parse-error diagnostics can name the offending file (and line, for
+// .jsonl inputs) instead of failing silently.
+type traceInput struct {
+	name string
+	raw  []byte
+}
+
+// collectTraceInputs returns each trace found at path, paired with a source
+// label. A directory yields one entry per *.json file (name = filename); a
+// *.jsonl file yields one entry per non-empty line (name = "<path>:line<N>");
+// any other file is treated as a single trace (name = path).
+func collectTraceInputs(path string) ([]traceInput, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -78,13 +88,13 @@ func collectTraceInputs(path string) ([][]byte, error) {
 			}
 		}
 		sort.Strings(names) // deterministic corpus order (INV-6)
-		var out [][]byte
+		var out []traceInput
 		for _, n := range names {
 			b, err := os.ReadFile(filepath.Join(path, n))
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, b)
+			out = append(out, traceInput{name: n, raw: b})
 		}
 		return out, nil
 	}
@@ -93,16 +103,16 @@ func collectTraceInputs(path string) ([][]byte, error) {
 		return nil, err
 	}
 	if strings.HasSuffix(path, ".jsonl") {
-		var out [][]byte
-		for _, line := range strings.Split(string(b), "\n") {
+		var out []traceInput
+		for i, line := range strings.Split(string(b), "\n") {
 			line = strings.TrimSpace(line)
 			if line != "" {
-				out = append(out, []byte(line))
+				out = append(out, traceInput{name: fmt.Sprintf("%s:line%d", path, i+1), raw: []byte(line)})
 			}
 		}
 		return out, nil
 	}
-	return [][]byte{b}, nil
+	return []traceInput{{name: path, raw: b}}, nil
 }
 
 // runConvertOtel reads all traces at inputPath, converts each to session
@@ -123,14 +133,15 @@ func runConvertOtel(inputPath, outPrefix string, opts workload.OTelConvertOption
 	var allRecords []workload.TraceRecord
 	nextID := 0
 	skipped := 0
-	for _, raw := range inputs {
-		recs, err := workload.ConvertOTelTrace(raw, opts)
+	for _, in := range inputs {
+		recs, err := workload.ConvertOTelTrace(in.raw, opts)
 		if err != nil {
-			logrus.Warnf("skipping unparseable trace: %v", err)
+			logrus.Warnf("skipping unparseable trace %s: %v", in.name, err)
 			skipped++
 			continue
 		}
 		if recs == nil {
+			logrus.Debugf("skipping trace %s: below --min-rounds", in.name)
 			skipped++
 			continue // below MinRounds
 		}
