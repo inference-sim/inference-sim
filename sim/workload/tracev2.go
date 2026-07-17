@@ -86,6 +86,7 @@ type TraceRecord struct {
 	ErrorMessage      string
 	FinishReason      string // server-reported finish_reason ("stop", "length", "abort", etc.); empty = not recorded
 	XRequestID        string // client-generated UUID sent as x-request-id header (real-mode only); empty = not recorded
+	Adapter           string // LoRA adapter id serving this request (#1470); empty = base model. Trailing optional column.
 }
 
 // TraceV2 combines header and records for a complete trace.
@@ -163,6 +164,18 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 		}
 	}
 
+	// Conditionally include adapter column: present iff any record carries a LoRA
+	// adapter id (#1470). Trailing position (like x_request_id) avoids shifting the
+	// positional parser. Absent for adapter-free traces → byte-identical to the
+	// pre-LoRA format (INV-6, SC-001).
+	includeAdapter := false
+	for _, r := range records {
+		if r.Adapter != "" {
+			includeAdapter = true
+			break
+		}
+	}
+
 	// Build column header list
 	columns := make([]string, 0, len(traceV2Columns)+3)
 	for i, col := range traceV2Columns {
@@ -180,6 +193,10 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 	// indices in the positional parser.
 	if includeXRequestID {
 		columns = append(columns, "x_request_id")
+	}
+	// Append adapter after x_request_id (#1470): also trailing, header-index parsed.
+	if includeAdapter {
+		columns = append(columns, "adapter")
 	}
 
 	// Write header row
@@ -234,6 +251,10 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 		if includeXRequestID {
 			row = append(row, r.XRequestID)
 		}
+		// Append adapter at end (#1470), after x_request_id.
+		if includeAdapter {
+			row = append(row, r.Adapter)
+		}
 		if err := writer.Write(row); err != nil {
 			return fmt.Errorf("writing CSV row %d: %w", r.RequestID, err)
 		}
@@ -275,6 +296,7 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	hasVLLMPriority := false
 	hasSLOTarget := false
 	xRequestIDIdx := -1 // header-position lookup; -1 = absent (issue #1428)
+	adapterIdx := -1    // header-position lookup; -1 = absent (#1470)
 	for i, col := range headerRow {
 		switch col {
 		case "vllm_priority":
@@ -283,6 +305,8 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 			hasSLOTarget = true
 		case "x_request_id":
 			xRequestIDIdx = i
+		case "adapter":
+			adapterIdx = i
 		}
 	}
 
@@ -305,11 +329,14 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 		if xRequestIDIdx >= 0 {
 			minCols++
 		}
+		if adapterIdx >= 0 {
+			minCols++
+		}
 		if len(row) < minCols {
 			return nil, fmt.Errorf("CSV row has %d columns, expected at least %d", len(row), minCols)
 		}
 
-		r, err := parseTraceRecord(row, hasVLLMPriority, hasSLOTarget, xRequestIDIdx)
+		r, err := parseTraceRecord(row, hasVLLMPriority, hasSLOTarget, xRequestIDIdx, adapterIdx)
 		if err != nil {
 			return nil, err
 		}
@@ -320,10 +347,10 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 }
 
 // parseTraceRecord parses a CSV row. Handles optional columns vllm_priority
-// (after slo_class), slo_target_us (after deadline_us), and x_request_id
-// (trailing). xRequestIDIdx is the absolute column index in the row, or -1
-// if the column is absent.
-func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequestIDIdx int) (*TraceRecord, error) {
+// (after slo_class), slo_target_us (after deadline_us), and the trailing
+// x_request_id and adapter columns. xRequestIDIdx / adapterIdx are absolute
+// column indices in the row, or -1 if that column is absent.
+func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequestIDIdx, adapterIdx int) (*TraceRecord, error) {
 	// Column offset: optional columns shift subsequent indices.
 	// vllm_priority appears after slo_class (index 3) → shifts everything after by +1.
 	// slo_target_us appears after deadline_us → shifts everything after by +1.
@@ -481,6 +508,13 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 		xRequestID = strings.TrimSpace(row[xRequestIDIdx])
 	}
 
+	// Adapter is a trailing optional column (#1470) parsed by absolute header
+	// position, so the positional index math above is unaffected.
+	var adapter string
+	if adapterIdx >= 0 && adapterIdx < len(row) {
+		adapter = strings.TrimSpace(row[adapterIdx])
+	}
+
 	return &TraceRecord{
 		RequestID:         requestID,
 		ClientID:          row[1],
@@ -512,6 +546,7 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 		ErrorMessage:      strings.TrimSpace(row[25+offset]),
 		FinishReason:      finishReason,
 		XRequestID:        xRequestID,
+		Adapter:           adapter,
 	}, nil
 }
 
@@ -589,6 +624,7 @@ func RequestsToTraceRecords(requests []*sim.Request) []TraceRecord {
 			LastChunkTimeUs:  lastChunkUs,
 			NumChunks:        0, // not tracked in simulation
 			Status:           status,
+			Adapter:          req.Adapter, // #1470: per-request adapter id round-trips for replay parity (INV-13)
 		})
 	}
 	return records

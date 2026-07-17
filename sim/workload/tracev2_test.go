@@ -312,7 +312,7 @@ func TestParseTraceRecord_InvalidInteger_ReturnsError(t *testing.T) {
 	}
 
 	// WHEN parsing
-	_, err := parseTraceRecord(row, false, false, -1)
+	_, err := parseTraceRecord(row, false, false, -1, -1)
 
 	// THEN error about invalid value
 	if err == nil {
@@ -331,7 +331,7 @@ func TestParseTraceRecord_InvalidDeadlineUs_ReturnsError(t *testing.T) {
 	}
 	row[17] = "not_a_number" // deadline_us column (shifted +1 by prefix_length)
 
-	_, err := parseTraceRecord(row, false, false, -1)
+	_, err := parseTraceRecord(row, false, false, -1, -1)
 
 	if err == nil {
 		t.Fatal("expected error for non-numeric deadline_us, got nil")
@@ -349,7 +349,7 @@ func TestParseTraceRecord_InvalidServerInputTokens_ReturnsError(t *testing.T) {
 	}
 	row[18] = "not_a_number" // server_input_tokens column (shifted +1)
 
-	_, err := parseTraceRecord(row, false, false, -1)
+	_, err := parseTraceRecord(row, false, false, -1, -1)
 
 	if err == nil {
 		t.Fatal("expected error for non-numeric server_input_tokens, got nil")
@@ -369,7 +369,7 @@ func TestParseTraceRecord_InvalidVLLMPriority_ReturnsError(t *testing.T) {
 	row[4] = "not_a_number" // vllm_priority column (index 4)
 
 	// WHEN parsing with hasVLLMPriority=true
-	_, err := parseTraceRecord(row, true, false, -1)
+	_, err := parseTraceRecord(row, true, false, -1, -1)
 
 	// THEN error about invalid value
 	if err == nil {
@@ -390,7 +390,7 @@ func TestParseTraceRecord_NegativeVLLMPriority_ReturnsError(t *testing.T) {
 	row[4] = "-1" // negative vllm_priority
 
 	// WHEN parsing with hasVLLMPriority=true
-	_, err := parseTraceRecord(row, true, false, -1)
+	_, err := parseTraceRecord(row, true, false, -1, -1)
 
 	// THEN error about negative value
 	if err == nil {
@@ -412,7 +412,7 @@ func TestParseTraceRecord_NegativeDeadlineUs_ReturnsError(t *testing.T) {
 	}
 	row[17] = "-1" // negative deadline_us (shifted +1)
 
-	_, err := parseTraceRecord(row, false, false, -1)
+	_, err := parseTraceRecord(row, false, false, -1, -1)
 
 	if err == nil {
 		t.Fatal("expected error for negative deadline_us, got nil")
@@ -431,7 +431,7 @@ func TestParseTraceRecord_NegativeInputTokens_ReturnsError(t *testing.T) {
 	}
 	row[9] = "-1" // input_tokens column (shifted +1)
 
-	_, err := parseTraceRecord(row, false, false, -1)
+	_, err := parseTraceRecord(row, false, false, -1, -1)
 
 	if err == nil {
 		t.Fatal("expected error for negative input_tokens, got nil")
@@ -450,7 +450,7 @@ func TestParseTraceRecord_NegativeOutputTokens_ReturnsError(t *testing.T) {
 	}
 	row[10] = "-1" // output_tokens column (shifted +1)
 
-	_, err := parseTraceRecord(row, false, false, -1)
+	_, err := parseTraceRecord(row, false, false, -1, -1)
 
 	if err == nil {
 		t.Fatal("expected error for negative output_tokens, got nil")
@@ -469,7 +469,7 @@ func TestParseTraceRecord_NegativeServerInputTokens_ReturnsError(t *testing.T) {
 	}
 	row[18] = "-1" // server_input_tokens column (shifted +1)
 
-	_, err := parseTraceRecord(row, false, false, -1)
+	_, err := parseTraceRecord(row, false, false, -1, -1)
 
 	if err == nil {
 		t.Fatal("expected error for negative server_input_tokens, got nil")
@@ -489,7 +489,7 @@ func TestParseTraceRecord_DeadlineBeforeArrival_ReturnsError(t *testing.T) {
 	row[17] = "1000" // deadline_us = 1000 (shifted +1)
 	row[19] = "5000" // arrival_time_us = 5000 (shifted +1)
 
-	_, err := parseTraceRecord(row, false, false, -1)
+	_, err := parseTraceRecord(row, false, false, -1, -1)
 
 	if err == nil {
 		t.Fatal("expected error for deadline before arrival, got nil")
@@ -518,7 +518,7 @@ func TestParseTraceRecord_InvalidReasonRatio_ReturnsError(t *testing.T) {
 		}
 		row[15] = tc.value // reason_ratio column (shifted +1)
 
-		_, err := parseTraceRecord(row, false, false, -1)
+		_, err := parseTraceRecord(row, false, false, -1, -1)
 
 		if err == nil {
 			t.Errorf("reason_ratio=%q: expected error, got nil", tc.value)
@@ -610,6 +610,78 @@ func TestTraceV2_PrefixGroup_RoundTrip(t *testing.T) {
 	if loaded.Header.WorkloadSeed == nil || *loaded.Header.WorkloadSeed != 42 {
 		t.Errorf("WorkloadSeed = %v, want 42", loaded.Header.WorkloadSeed)
 	}
+}
+
+func TestTraceV2_Adapter_RoundTrip(t *testing.T) {
+	// PR7/#1470, INV-13: per-request adapter id survives export → load so a
+	// LoRA-tagged trace replays with identical per-adapter attribution.
+	header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "generated"}
+	records := []TraceRecord{
+		{RequestID: 0, Adapter: "adapter_0", InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, Adapter: "", InputTokens: 200, OutputTokens: 75, ArrivalTimeUs: 1000, Status: "ok"},
+		{RequestID: 2, Adapter: "adapter_12", InputTokens: 300, OutputTokens: 100, ArrivalTimeUs: 2000, Status: "ok"},
+	}
+
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "h.yaml")
+	dataPath := filepath.Join(dir, "d.csv")
+	if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Records) != 3 {
+		t.Fatalf("expected 3 records, got %d", len(loaded.Records))
+	}
+	for i, want := range []string{"adapter_0", "", "adapter_12"} {
+		if loaded.Records[i].Adapter != want {
+			t.Errorf("record %d Adapter = %q, want %q", i, loaded.Records[i].Adapter, want)
+		}
+	}
+}
+
+func TestExportTraceV2_Adapter_ConditionalColumn(t *testing.T) {
+	// INV-6: an adapter-free trace must NOT gain an `adapter` column, keeping
+	// stdout/trace byte-identical to the pre-LoRA format. The column appears
+	// only when at least one record carries an adapter id.
+	dir := t.TempDir()
+	readHeaderRow := func(dataPath string) string {
+		data, err := os.ReadFile(dataPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.Split(string(data), "\n")[0]
+	}
+
+	t.Run("no adapters → no column", func(t *testing.T) {
+		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "generated"}
+		records := []TraceRecord{
+			{RequestID: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, Status: "ok"},
+		}
+		dataPath := filepath.Join(dir, "noadapter.csv")
+		if err := ExportTraceV2(header, records, filepath.Join(dir, "noadapter.yaml"), dataPath); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(readHeaderRow(dataPath), "adapter") {
+			t.Errorf("adapter column must be absent when no record carries an adapter (INV-6 byte-identity)")
+		}
+	})
+
+	t.Run("adapters present → column added", func(t *testing.T) {
+		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "generated"}
+		records := []TraceRecord{
+			{RequestID: 0, Adapter: "adapter_3", InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, Status: "ok"},
+		}
+		dataPath := filepath.Join(dir, "adapter.csv")
+		if err := ExportTraceV2(header, records, filepath.Join(dir, "adapter.yaml"), dataPath); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(readHeaderRow(dataPath), "adapter") {
+			t.Errorf("adapter column must be present when a record carries an adapter id")
+		}
+	})
 }
 
 // --- RequestsToTraceRecords tests ---
