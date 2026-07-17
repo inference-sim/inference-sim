@@ -107,6 +107,7 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 			PrefixGroup:      rec.PrefixGroup,
 			PrefixLength:     rec.PrefixLength,
 			Streaming:        rec.Streaming,
+			Adapter:          rec.Adapter, // #1470: LoRA adapter id from trace (INV-13 parity)
 		}
 		requests = append(requests, req)
 	}
@@ -261,6 +262,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			PrefixGroup:     r0.PrefixGroup,
 			PrefixLength:    r0.PrefixLength,
 			Streaming:       r0.Streaming,
+			Adapter:         r0.Adapter, // #1470: round-0 adapter id from trace (INV-13 parity)
 		}
 		requests = append(requests, req)
 
@@ -277,6 +279,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			TenantID:         r0.TenantID,
 			SLOClass:         r0.SLOClass,
 			Model:            r0.Model,
+			Adapter:          r0.Adapter, // #1470: follow-up rounds inherit the round-0 adapter (INV-13 parity)
 			SLOTargetUs:      r0.SLOTargetUs,
 		}
 		blueprints = append(blueprints, bp)
@@ -314,6 +317,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			PrefixGroup:     rec.PrefixGroup,
 			PrefixLength:    rec.PrefixLength,
 			Streaming:       rec.Streaming,
+			Adapter:         rec.Adapter, // #1470: LoRA adapter id from trace (INV-13 parity)
 		}
 		requests = append(requests, req)
 	}
