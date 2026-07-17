@@ -17,9 +17,15 @@ func TestClusterSimulator_AdapterMetrics_AggregatedAcrossInstances_E2E(t *testin
 	config := newTestDeploymentConfig(2)
 	config.RoutingPolicy = "round-robin"
 	capVal := 8 // capacity >> 1 adapter, so no evictions
+	// Cost coefficients are required once the cold-load gate consumes them (#1466);
+	// production fills them from defaults.yaml when adapters are configured.
+	base, bw, fp := 1000.0, 2.0e6, 2.0e6
 	config.LoRAConfig = sim.LoRAConfig{
-		AdapterCapacity: &capVal,
-		Adapters:        []sim.AdapterSpec{{ID: "adapter_shared", Rank: 8}},
+		AdapterCapacity:       &capVal,
+		LoadBaseLatencyUs:     &base,
+		LoadBandwidthBytesUs:  &bw,
+		FootprintBytesPerRank: &fp,
+		Adapters:              []sim.AdapterSpec{{ID: "adapter_shared", Rank: 8}},
 	}
 
 	requests := newTestRequests(6)

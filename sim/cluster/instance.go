@@ -477,6 +477,10 @@ func (i *InstanceSimulator) DrainWaitQueue() []*sim.Request {
 func (i *InstanceSimulator) EvictRequest(req *sim.Request) bool {
 	if i.sim.WaitQ.Remove(req) {
 		i.sim.KVCache.ReleaseKVBlocks(req)
+		// Release the LoRA adapter pin (#1466): a queued request is not pinned, so
+		// this is a no-op here, but calling it keeps eviction symmetric with the
+		// running-batch branch below and robust if pinning semantics change.
+		i.sim.ReleaseAdapterPin(req)
 		req.State = sim.StateCompleted
 		return true
 	}
@@ -488,6 +492,11 @@ func (i *InstanceSimulator) EvictRequest(req *sim.Request) bool {
 					i.sim.RunningBatch.Requests[idx+1:]...,
 				)
 				i.sim.KVCache.ReleaseKVBlocks(req)
+				// Release the LoRA adapter pin (#1466): a running request WAS pinned
+				// on batch entry, and this gateway eviction is a terminal path outside
+				// completion/timeout, so it must free the slot or the pin leaks and
+				// eventually stalls all cold loads on this instance (INV-L5).
+				i.sim.ReleaseAdapterPin(req)
 				req.State = sim.StateCompleted
 				if len(i.sim.RunningBatch.Requests) == 0 {
 					i.sim.RunningBatch = nil

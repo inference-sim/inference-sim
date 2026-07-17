@@ -515,6 +515,14 @@ func TestLoRAConfig_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "adapters and positive capacity but no cost coefficients",
+			cfg: LoRAConfig{
+				AdapterCapacity: loraIntPtr(4),
+				Adapters:        []AdapterSpec{{ID: "adapter_0", Rank: 8}},
+			},
+			wantErr: true, // gate consumes cost coefficients; CLI must catch the gap here (#1466)
+		},
+		{
 			name: "adapters present but zero capacity",
 			cfg: LoRAConfig{
 				AdapterCapacity: loraIntPtr(0),

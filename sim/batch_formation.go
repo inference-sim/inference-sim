@@ -31,6 +31,14 @@ type BatchContext struct {
 	Now                   int64
 	StepCount             int
 	ComputedTokens        map[string]int64
+
+	// AdapterResident is the cold-load pre-admission gate predicate (#1466): it
+	// reports whether a request's LoRA adapter is currently resident on the
+	// instance. A new prefill request whose adapter is NOT resident is held out of
+	// the batch (blocking model: it also stalls the requests behind it) until the
+	// kernel-scheduled adapter load completes. nil ⇒ no LoRA gating; admission is
+	// byte-identical to a pre-feature build (INV-6).
+	AdapterResident func(id string) bool
 }
 
 // ScheduledRequest carries metadata about a newly scheduled request.
@@ -157,6 +165,17 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 	// Phase 2: Dequeue new requests from wait queue
 	for len(result.RunningBatch.Requests) < int(ctx.MaxRunningReqs) && ctx.WaitQ.Len() > 0 && tokenBudget > 0 && !result.PreemptionHappened {
 		next := ctx.WaitQ.Peek()
+
+		// Cold-load pre-admission gate (LoRA, #1466): a new prefill request whose
+		// adapter is not yet resident on this instance is held out of the batch
+		// until its adapter load completes (FR-007, §7). Because Phase 2 inspects
+		// only the queue head and breaks on the first non-admittable request, this
+		// realizes the DT-faithful blocking model — a gated head stalls the warm
+		// requests behind it for the load duration. Decode sub-requests (PD) are
+		// already past the gate (their prefill ran with the adapter resident).
+		if ctx.AdapterResident != nil && !next.IsDecodeSubRequest && next.Adapter != "" && !ctx.AdapterResident(next.Adapter) {
+			break
+		}
 
 		// Handle decode-only requests (PD disaggregation: KV pre-allocated by transfer).
 		// IsDecodeSubRequest is set exclusively by KVTransferStartedEvent when it

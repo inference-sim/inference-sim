@@ -89,6 +89,14 @@ type Request struct {
 	// generation). Set from the owning client/cohort's Adapter during generation.
 	Adapter string
 
+	// adapterPinned tracks whether this request currently holds a pin on its
+	// adapter's resident slot (cold-load gate, #1466). Set once when the request
+	// enters the running batch and cleared once at a terminal state, so a
+	// preempted-then-re-admitted request pins exactly once (the pin persists
+	// through preemption, INV-L5) rather than double-counting. Zero value (false)
+	// is correct for base-model requests and adapter-blind runs.
+	adapterPinned bool
+
 	// Client timeout: absolute tick by which request must complete (0 = no timeout).
 	// Computed during workload generation as ArrivalTime + timeout.
 	Deadline int64
