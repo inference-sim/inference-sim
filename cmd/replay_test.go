@@ -2874,3 +2874,62 @@ func TestReplayCmd_SessionPool_SelfDrainOverridesBlueprintHorizon(t *testing.T) 
 		t.Errorf("completed_requests = %d, want 2 (round 2 dropped — BC-19 guard fired against the 600s auto-horizon; blueprint-horizon self-drain override missing)", int(got))
 	}
 }
+
+// TestReplayCmd_SessionPool_AutoPromotePermitsThinkTime is a regression test for
+// the auto-promote ordering fix: --concurrent-sessions' help text promises it
+// "implies closed-loop session semantics", so pairing it with --think-time-ms
+// but WITHOUT an explicit --session-mode closed-loop must succeed rather than
+// fatal on "--think-time-ms requires --session-mode closed-loop".
+//
+// Before the fix, the think-time-requires-closed-loop check ran before the
+// --concurrent-sessions auto-promote assignment, so this exact flag
+// combination would call logrus.Fatalf (os.Exit) — which would kill the test
+// binary outright rather than fail a single test. This test therefore only
+// asserts the POSITIVE post-fix behavior (the run completes and produces the
+// expected session-pool output); running it against the pre-fix ordering is
+// not something a Go test can safely observe, since os.Exit during
+// replayCmd.Run would abort the whole `go test` process before any assertion
+// runs. The ordering itself is covered structurally by inspecting
+// cmd/replay.go: the auto-promote block precedes both think-time checks.
+//
+// One single-round session, --concurrent-sessions 1 --total-sessions 1, so a
+// successful run completes exactly 1 request.
+func TestReplayCmd_SessionPool_AutoPromotePermitsThinkTime(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "h.yaml")
+	dataPath := filepath.Join(dir, "d.csv")
+	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 50, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	// Deliberately omit --session-mode: --concurrent-sessions must auto-promote
+	// to closed-loop BEFORE --think-time-ms's "requires closed-loop" check runs.
+	out := runReplayCaptureStdout(t, []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000",
+		"--concurrent-sessions", "1", "--total-sessions", "1",
+		"--think-time-ms", "500",
+	})
+
+	var m map[string]any
+	if err := json.Unmarshal([]byte(extractMetricsJSON(t, out)), &m); err != nil {
+		t.Fatalf("parse metrics JSON: %v\nstdout:\n%s", err, out)
+	}
+	got, ok := m["completed_requests"].(float64)
+	if !ok {
+		t.Fatalf("completed_requests missing or not a number in metrics JSON: %v", m)
+	}
+	if int(got) != 1 {
+		t.Errorf("completed_requests = %d, want 1 (auto-promote to closed-loop should have let the single-round session complete)", int(got))
+	}
+}

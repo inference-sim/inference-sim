@@ -94,6 +94,25 @@ Example:
 		if replayThinkTimeMs < 0 {
 			logrus.Fatalf("--think-time-ms must be non-negative, got %d", replayThinkTimeMs)
 		}
+		if replayConcurrentSessions < 0 {
+			logrus.Fatalf("--concurrent-sessions must be >= 0, got %d", replayConcurrentSessions)
+		}
+		if replayTotalSessions < 0 {
+			logrus.Fatalf("--total-sessions must be >= 0, got %d", replayTotalSessions)
+		}
+		// Auto-promote BEFORE the think-time-requires-closed-loop checks below:
+		// --concurrent-sessions' help text promises it "implies closed-loop session
+		// semantics", so a caller pairing it with --think-time-ms/--think-time-dist
+		// but omitting --session-mode must not be fatal'd for missing a mode that
+		// this very flag is about to supply.
+		if replayConcurrentSessions > 0 && replaySessionMode != "closed-loop" {
+			// Pool mode requires closed-loop; promote automatically with a notice.
+			logrus.Infof("--concurrent-sessions set; forcing --session-mode closed-loop")
+			replaySessionMode = "closed-loop"
+		}
+		if replayTotalSessions > 0 && replayConcurrentSessions == 0 {
+			logrus.Fatalf("--total-sessions requires --concurrent-sessions > 0")
+		}
 		if replayThinkTimeMs > 0 && replaySessionMode != "closed-loop" {
 			logrus.Fatalf("--think-time-ms requires --session-mode closed-loop")
 		}
@@ -102,20 +121,6 @@ Example:
 		}
 		if cmd.Flags().Changed("think-time-ms") && cmd.Flags().Changed("think-time-dist") {
 			logrus.Fatalf("--think-time-ms and --think-time-dist are mutually exclusive")
-		}
-		if replayConcurrentSessions < 0 {
-			logrus.Fatalf("--concurrent-sessions must be >= 0, got %d", replayConcurrentSessions)
-		}
-		if replayTotalSessions < 0 {
-			logrus.Fatalf("--total-sessions must be >= 0, got %d", replayTotalSessions)
-		}
-		if replayConcurrentSessions > 0 && replaySessionMode != "closed-loop" {
-			// Pool mode requires closed-loop; promote automatically with a notice.
-			logrus.Infof("--concurrent-sessions set; forcing --session-mode closed-loop")
-			replaySessionMode = "closed-loop"
-		}
-		if replayTotalSessions > 0 && replayConcurrentSessions == 0 {
-			logrus.Fatalf("--total-sessions requires --concurrent-sessions > 0")
 		}
 
 		// Resolve think-time sampler: --think-time-dist takes the general distribution;
@@ -579,6 +584,11 @@ Example:
 			logrus.Fatalf("Replay simulation failed: %v", err)
 		}
 		if poolDriver != nil {
+			// KNOWN LIMITATION (follow-up): under an explicit --horizon hard cap that
+			// truncates mid-drain, a refill pushed by OnComplete but discarded by the
+			// cluster's horizon guard is still counted as started, so Unstarted() may
+			// undercount dropped sessions and this warning may not fire. The
+			// self-draining path (no --horizon) is exact. Tracked in <follow-up issue>.
 			if un := poolDriver.Unstarted(); un > 0 {
 				logrus.Warnf("--horizon cap reached before pool drained: %d of %d sessions never admitted (increase --horizon or omit it to self-drain)",
 					un, poolDriver.TotalSessions())
