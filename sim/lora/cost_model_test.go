@@ -2,6 +2,7 @@ package lora
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -249,5 +250,97 @@ func TestNewCostModel_RejectsMalformedConfig(t *testing.T) {
 				t.Errorf("NewCostModel(%s): expected error, got nil", tt.name)
 			}
 		})
+	}
+}
+
+// TestCostModel_AdapterReservedBytes verifies the static HBM reservation (PR5,
+// consumed by the KV-capacity module via the sim.AdapterCost seam) is the FIXED
+// capacity-based amount — adapter_capacity × per-slot footprint, where the
+// per-slot footprint is sized from the MAX declared rank
+// (footprint_bytes_per_rank × max_rank). It is a constant, NOT a running sum over
+// currently-resident adapters: this is the static model (design D2 / INV-L4), and
+// asserting the max-rank/full-capacity form guards against the rejected dynamic
+// running-sum model (which would nominally satisfy a laxer "shrinks KV" test).
+func TestCostModel_AdapterReservedBytes(t *testing.T) {
+	capacity := 4
+	cfg := sim.LoRAConfig{
+		AdapterCapacity:       &capacity,
+		LoadBaseLatencyUs:     fptr(1000.0),
+		LoadBandwidthBytesUs:  fptr(2.0e6),
+		FootprintBytesPerRank: fptr(2.0e6),
+		StepOverheadTiers:     map[int]sim.StepOverheadTier{8: {K6: fptr(0.02), K7: fptr(1.0)}},
+		Adapters: []sim.AdapterSpec{
+			{ID: "a8", Rank: 8},
+			{ID: "a16", Rank: 16},
+			{ID: "a32", Rank: 32}, // max rank sizes the per-slot footprint
+		},
+	}
+	cm, err := NewCostModel(cfg)
+	if err != nil {
+		t.Fatalf("NewCostModel: unexpected error: %v", err)
+	}
+
+	// reservation = capacity(4) × per-slot(maxRank 32 × 2e6 B/rank) = 2.56e8 bytes.
+	want := 4.0 * 32.0 * 2.0e6
+	if got := cm.AdapterReservedBytes(); got != want {
+		t.Errorf("AdapterReservedBytes = %v, want %v (capacity × maxRank × footprint_per_rank)", got, want)
+	}
+
+	// It is NOT the sum over declared adapter ranks ((8+16+32)×2e6 = 1.12e8) — the
+	// slots are provisioned uniformly at the largest declared rank so any adapter
+	// fits, so the reservation stays constant as adapters load/evict within slots.
+	sumOverAdapters := (8.0 + 16.0 + 32.0) * 2.0e6
+	if got := cm.AdapterReservedBytes(); got == sumOverAdapters {
+		t.Errorf("AdapterReservedBytes = %v = sum-over-adapter-ranks; expected the fixed capacity × maxRank reservation (not a per-adapter sum)", got)
+	}
+
+	// Purity: the reservation is a constant — repeated calls agree (no RNG, no
+	// dependence on mutable state; INV-6, R7).
+	if a, b := cm.AdapterReservedBytes(), cm.AdapterReservedBytes(); a != b {
+		t.Errorf("AdapterReservedBytes not constant across calls: %v vs %v", a, b)
+	}
+}
+
+// TestCostModel_AdapterReservedBytes_InertWhenNoCapacity verifies the reservation
+// is 0 when no capacity is configured, keeping KV capacity unaffected (INV-6 /
+// INV-L1 no-op default). testCostModel declares adapters but no AdapterCapacity.
+func TestCostModel_AdapterReservedBytes_InertWhenNoCapacity(t *testing.T) {
+	if got := testCostModel(t).AdapterReservedBytes(); got != 0 {
+		t.Errorf("AdapterReservedBytes with no capacity = %v, want 0 (inert)", got)
+	}
+}
+
+// TestCostModel_RejectsOverflowingReservation verifies a config whose static HBM
+// reservation (capacity × footprint × maxRank) is non-finite or exceeds the int64
+// conversion cap is rejected at construction (R3/R20 fail-fast), not silently
+// truncated at the KV-capacity boundary. The three factors are individually valid
+// (> 0) but their product overflows — this guards the float64→int64 conversion,
+// mirroring the maxLoadLatencyUs guard for LoadLatency.
+func TestCostModel_RejectsOverflowingReservation(t *testing.T) {
+	// capacity multiplies the reservation but NOT LoadLatency, so a huge capacity
+	// overflows the reservation while LoadLatency (base + footprint·rank/bandwidth)
+	// stays well under maxLoadLatencyUs — isolating the new reservation guard from
+	// the pre-existing LoadLatency guard.
+	hugeCapacity := 1 << 40 // ≈1.1e12
+	cfg := sim.LoRAConfig{
+		AdapterCapacity:       &hugeCapacity,
+		LoadBaseLatencyUs:     fptr(1000.0),
+		LoadBandwidthBytesUs:  fptr(1.0e6),
+		FootprintBytesPerRank: fptr(1.0e6),
+		StepOverheadTiers:     map[int]sim.StepOverheadTier{8: {K6: fptr(0.02), K7: fptr(1.0)}},
+		Adapters: []sim.AdapterSpec{
+			// LoadLatency = 1000 + ceil(1e6·2^20 / 1e6) ≈ 1.05e6 µs (< maxLoadLatencyUs);
+			// reservation = 2^40 · 1e6 · 2^20 ≈ 1.2e24 bytes (≫ maxReservedBytes).
+			{ID: "a", Rank: 1 << 20},
+		},
+	}
+	_, err := NewCostModel(cfg)
+	if err == nil {
+		t.Fatal("NewCostModel: expected error for an overflowing static HBM reservation, got nil")
+	}
+	// Pin that the RESERVATION guard fired, not the (earlier) LoadLatency guard —
+	// isolation is otherwise guaranteed only by the fixture's magnitudes.
+	if !strings.Contains(err.Error(), "HBM reservation") {
+		t.Errorf("error must identify the HBM reservation guard, got: %v", err)
 	}
 }

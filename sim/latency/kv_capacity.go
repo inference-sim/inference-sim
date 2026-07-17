@@ -118,10 +118,31 @@ func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
 	return perTokenKVBytesPerGPUF, nil
 }
 
+// kvCapacityOptions accumulates optional inputs to CalculateKVBlocks. Zero value
+// ⇒ no adapter reservation, so the block count is byte-identical to a pre-LoRA
+// build (INV-6). A variadic Option (mirroring latency.Option for NewLatencyModel,
+// #1467) keeps the existing positional call sites unchanged.
+type kvCapacityOptions struct {
+	adapterReservedBytes int64
+}
+
+// KVCapacityOption customizes CalculateKVBlocks.
+type KVCapacityOption func(*kvCapacityOptions)
+
+// WithAdapterReservedBytes reserves a fixed, capacity-based block of GPU HBM for
+// resident LoRA adapters, subtracted once at startup beside model weights (the
+// static memory model, design D2 / INV-L4). The value is the sim/lora cost model's
+// pure AdapterReservedBytes() query (capacity × per-slot footprint); 0 (or the
+// option absent) leaves KV capacity unchanged (INV-6 no-op). A negative value is
+// rejected by CalculateKVBlocks.
+func WithAdapterReservedBytes(bytes int64) KVCapacityOption {
+	return func(o *kvCapacityOptions) { o.adapterReservedBytes = bytes }
+}
+
 // CalculateKVBlocks computes the maximum number of KV cache blocks that fit
-// in GPU memory after accounting for model weights, activations, and
-// non-PyTorch overhead. The formula matches the llm-d-benchmark
-// capacity_planner.py reference.
+// in GPU memory after accounting for model weights, activations, non-PyTorch
+// overhead, and (optionally) the static LoRA adapter HBM reservation. The base
+// formula matches the llm-d-benchmark capacity_planner.py reference.
 //
 // Parameters:
 //
@@ -155,10 +176,18 @@ func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
 //
 // Returns the number of blocks, or an error if inputs are invalid or memory
 // budget is insufficient.
-func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, dp int, blockSize int64, gpuMemoryUtilization float64, params KVCapacityParams) (int64, error) {
+func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, dp int, blockSize int64, gpuMemoryUtilization float64, params KVCapacityParams, options ...KVCapacityOption) (int64, error) {
+	var opts kvCapacityOptions
+	for _, o := range options {
+		o(&opts)
+	}
+
 	// --- Input validation (R3, R11) ---
 	if gpuMemoryUtilization <= 0 || gpuMemoryUtilization > 1.0 || math.IsNaN(gpuMemoryUtilization) || math.IsInf(gpuMemoryUtilization, 0) {
 		return 0, fmt.Errorf("CalculateKVBlocks: gpuMemoryUtilization must be in (0, 1.0], got %v", gpuMemoryUtilization)
+	}
+	if opts.adapterReservedBytes < 0 {
+		return 0, fmt.Errorf("CalculateKVBlocks: adapterReservedBytes must be >= 0, got %d", opts.adapterReservedBytes)
 	}
 	if blockSize <= 0 {
 		return 0, fmt.Errorf("CalculateKVBlocks: block size must be > 0, got %d", blockSize)
@@ -232,12 +261,27 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, dp int,
 	}
 	nonTorchGiB := nonTorchPerGPU * float64(tp)
 
-	overheadGiB := modelWeightGiB + activationGiB + nonTorchGiB
+	// Static LoRA adapter HBM reservation (D2 / INV-L4): a fixed, capacity-based
+	// block of memory reserved once beside model weights. Treated EXACTLY like
+	// model weights: a per-DP-rank overhead that is NOT multiplied by dp here. Each
+	// DP rank is an independent EngineCore on its own GPUs that reserves its own
+	// adapter slots, so the per-rank budget subtracts the reservation once; the
+	// dp block-count scaling below then aggregates per-rank budgets into the
+	// instance total (multiplying the reservation by dp here as well would
+	// double-count it — same reasoning that keeps modelWeightGiB per-rank). The
+	// reservation is also TP-independent (a total across the rank's TP GPUs, since
+	// the adapter A/B matrices are sharded like weights). Zero when no
+	// adapters/capacity are configured (INV-6).
+	adapterReservedGiB := float64(opts.adapterReservedBytes) / float64(gibToBytes)
+
+	overheadGiB := modelWeightGiB + activationGiB + nonTorchGiB + adapterReservedGiB
 	if overheadGiB >= totalAvailableGiB {
 		perGPUAvailable := hc.MemoryGiB * gpuMemoryUtilization
 
-		// Calculate minimum TP needed: use TP-independent overhead (weights + activation)
-		// and subtract per-GPU non-torch overhead from available capacity.
+		// Calculate minimum TP needed: use TP-independent overhead (weights +
+		// activation + adapter reservation) and subtract per-GPU non-torch overhead
+		// from available capacity. The static adapter reservation is TP-independent
+		// (sharded like weights, total constant), so it raises the minimum TP.
 		// For TP>1, use nonTorchMemoryTPMultiGiB (0.6 GiB/GPU) to account for NCCL/CUDA overhead.
 		nonTorchPerGPUForMinTP := nonTorchMemoryTPMultiGiB
 		perGPUCapacity := perGPUAvailable - nonTorchPerGPUForMinTP
@@ -249,14 +293,14 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, dp int,
 				perGPUAvailable, nonTorchPerGPUForMinTP, perGPUCapacity)
 		}
 
-		tpIndependentOverhead := modelWeightGiB + activationGiB
+		tpIndependentOverhead := modelWeightGiB + activationGiB + adapterReservedGiB
 		minTP := int(math.Ceil(tpIndependentOverhead / perGPUCapacity))
 
 		return 0, fmt.Errorf(
-			"CalculateKVBlocks: model overhead (%.2f GiB = %.2f weights + %.2f activation + %.2f non-torch) "+
+			"CalculateKVBlocks: model overhead (%.2f GiB = %.2f weights + %.2f activation + %.2f non-torch + %.2f lora-adapter-reservation) "+
 				"exceeds available GPU memory (%.2f GiB = %.1f GiB × %.0f%% util × %d GPUs). "+
 				"Minimum GPUs required per instance: %d",
-			overheadGiB, modelWeightGiB, activationGiB, nonTorchGiB,
+			overheadGiB, modelWeightGiB, activationGiB, nonTorchGiB, adapterReservedGiB,
 			totalAvailableGiB, hc.MemoryGiB, gpuMemoryUtilization*100, tp, minTP)
 	}
 
