@@ -4,15 +4,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
 // OTelConvertOptions configures OTel-trace → TraceRecord conversion.
 type OTelConvertOptions struct {
-	ContextGrowth  string // "accumulate" (default) or "independent"
-	MaxThinkTimeUs int64  // cap on per-round arrival gap; 0 = no cap
-	IncludeErrors  bool   // keep spans with status.code == 2
-	MinRounds      int    // skip sessions with fewer usable calls (default 1)
+	// ContextGrowth is not read by ConvertOTelTrace itself; it is read by the
+	// caller (the `blis convert otel` command) to choose the exported trace
+	// header's session_context_growth value: "accumulate" (default) or
+	// "independent". See TraceHeader.SessionContextGrowth in tracev2.go.
+	ContextGrowth  string
+	MaxThinkTimeUs int64 // cap on per-round arrival gap; 0 = no cap
+	IncludeErrors  bool  // keep spans with status.code == 2
+	MinRounds      int   // skip sessions with fewer usable calls (default 1)
 }
 
 // otelSpan is the subset of an OTel span we read. Unknown fields are ignored
@@ -66,10 +71,25 @@ func parseOTelTime(s string) (int64, error) {
 
 // isLLMSpan reports whether a span is an LLM chat call.
 func isLLMSpan(sp *otelSpan) bool {
-	if len(sp.Name) >= 5 && sp.Name[:5] == "chat " {
+	if strings.HasPrefix(sp.Name, "chat ") {
 		return true
 	}
 	return sp.Attributes.InputMessages != nil
+}
+
+// sessionIDFromSpans extracts the session identifier from already-parsed OTel
+// spans. Prefers the top-level-per-span session_id, then trace_id. Errors if
+// neither is present on any span.
+func sessionIDFromSpans(spans []otelSpan) (string, error) {
+	for i := range spans {
+		if spans[i].SessionID != "" {
+			return spans[i].SessionID, nil
+		}
+		if spans[i].TraceID != "" {
+			return spans[i].TraceID, nil
+		}
+	}
+	return "", fmt.Errorf("no session_id or trace_id found in trace")
 }
 
 // OTelSessionID extracts the session identifier from a raw OTel trace.
@@ -80,15 +100,7 @@ func OTelSessionID(raw []byte) (string, error) {
 	if err := json.Unmarshal(raw, &tr); err != nil {
 		return "", fmt.Errorf("parsing OTel trace: %w", err)
 	}
-	for i := range tr.Spans {
-		if tr.Spans[i].SessionID != "" {
-			return tr.Spans[i].SessionID, nil
-		}
-		if tr.Spans[i].TraceID != "" {
-			return tr.Spans[i].TraceID, nil
-		}
-	}
-	return "", fmt.Errorf("no session_id or trace_id found in trace")
+	return sessionIDFromSpans(tr.Spans)
 }
 
 // ConvertOTelTrace converts one OTel trace (a single agent session) into ordered
@@ -105,7 +117,7 @@ func ConvertOTelTrace(raw []byte, opts OTelConvertOptions) ([]TraceRecord, error
 		return nil, fmt.Errorf("parsing OTel trace: %w", err)
 	}
 
-	sessionID, sidErr := OTelSessionID(raw)
+	sessionID, sidErr := sessionIDFromSpans(tr.Spans)
 	if sidErr != nil {
 		return nil, sidErr
 	}
@@ -116,6 +128,7 @@ func ConvertOTelTrace(raw []byte, opts OTelConvertOptions) ([]TraceRecord, error
 	type parsedSpan struct {
 		startUs int64
 		in, out int
+		isError bool
 	}
 	var spans []parsedSpan
 	for i := range tr.Spans {
@@ -137,6 +150,7 @@ func ConvertOTelTrace(raw []byte, opts OTelConvertOptions) ([]TraceRecord, error
 			startUs: startUs,
 			in:      *sp.Attributes.InputTokens,
 			out:     *sp.Attributes.OutputTokens,
+			isError: sp.Status.Code == 2,
 		})
 	}
 
@@ -181,6 +195,10 @@ func ConvertOTelTrace(raw []byte, opts OTelConvertOptions) ([]TraceRecord, error
 		// which is the intended behavior (all calls simulate under one model per
 		// #1477). The recorded source model name is pure provenance metadata and
 		// is dropped during conversion.
+		status := "ok"
+		if sp.isError {
+			status = "error"
+		}
 		recs = append(recs, TraceRecord{
 			SessionID:     sessionID,
 			RoundIndex:    round,
@@ -188,7 +206,7 @@ func ConvertOTelTrace(raw []byte, opts OTelConvertOptions) ([]TraceRecord, error
 			OutputTokens:  sp.out,
 			ArrivalTimeUs: arrival,
 			// Model: intentionally empty — see comment above.
-			Status: "ok",
+			Status: status,
 		})
 		prevIn, prevOut = sp.in, sp.out
 	}

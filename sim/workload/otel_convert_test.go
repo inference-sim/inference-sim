@@ -115,6 +115,49 @@ func TestConvertOTelTrace_CapsThinkTime(t *testing.T) {
 	}
 }
 
+func TestConvertOTelTrace_IncludeErrorsKeepsErrorStatus(t *testing.T) {
+	// One OK span + one error span (status.code:2) that still carries
+	// non-nil token counts. With IncludeErrors:true both are kept, and the
+	// error span's record MUST report Status "error", not "ok".
+	j := `{"spans":[
+	  {"span_id":"a","name":"chat m","start_time":"2026-01-01T00:00:00.000000","status":{"code":1},"attributes":{"gen_ai.usage.input_tokens":50,"gen_ai.usage.output_tokens":5},"trace_id":"s"},
+	  {"span_id":"e","name":"chat m","start_time":"2026-01-01T00:00:03.000000","status":{"code":2},"attributes":{"gen_ai.usage.input_tokens":10,"gen_ai.usage.output_tokens":2},"trace_id":"s"}
+	]}`
+	recs, err := ConvertOTelTrace([]byte(j), OTelConvertOptions{IncludeErrors: true, MinRounds: 1})
+	if err != nil {
+		t.Fatalf("ConvertOTelTrace: %v", err)
+	}
+	if len(recs) != 2 {
+		t.Fatalf("got %d records, want 2 (error span kept under IncludeErrors)", len(recs))
+	}
+	if recs[0].Status != "ok" {
+		t.Errorf("round0 Status = %q, want ok", recs[0].Status)
+	}
+	if recs[1].Status != "error" {
+		t.Errorf("round1 Status = %q, want error (span had status.code:2)", recs[1].Status)
+	}
+}
+
+func TestConvertOTelTrace_FiltersByInputMessagesAttr(t *testing.T) {
+	// "llm.call" does NOT have the "chat " name prefix, but carries
+	// gen_ai.input.messages — the isLLMSpan disjunct must keep it independent
+	// of the name-prefix check. A span with neither signal is dropped.
+	j := `{"spans":[
+	  {"span_id":"a","name":"llm.call","start_time":"2026-01-01T00:00:00.000000","status":{"code":1},"attributes":{"gen_ai.usage.input_tokens":50,"gen_ai.usage.output_tokens":5,"gen_ai.input.messages":"[]"},"trace_id":"s"},
+	  {"span_id":"x","name":"other.op","start_time":"2026-01-01T00:00:02.000000","status":{"code":1},"attributes":{"gen_ai.usage.input_tokens":999,"gen_ai.usage.output_tokens":999},"trace_id":"s"}
+	]}`
+	recs, err := ConvertOTelTrace([]byte(j), OTelConvertOptions{MinRounds: 1})
+	if err != nil {
+		t.Fatalf("ConvertOTelTrace: %v", err)
+	}
+	if len(recs) != 1 {
+		t.Fatalf("got %d records, want 1 (only the gen_ai.input.messages span kept)", len(recs))
+	}
+	if recs[0].InputTokens != 50 || recs[0].OutputTokens != 5 {
+		t.Errorf("round0 = in %d out %d, want 50/5", recs[0].InputTokens, recs[0].OutputTokens)
+	}
+}
+
 func TestConvertOTelTrace_NonMonotoneClampsToZero(t *testing.T) {
 	// Round 1's recorded input (120) is SMALLER than round 0's input+output
 	// (200+50=250) — e.g. the agent compacted/summarized context. The raw delta
