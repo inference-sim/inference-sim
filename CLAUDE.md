@@ -163,6 +163,9 @@ go build -o blis main.go
 
 # Replay a fixed pool of N concurrent closed-loop sessions from the corpus
 # (--total-sessions duplicates the corpus with cache-busting to fill the target)
+# Real agentic prompts can be huge (tens of thousands to >100K tokens) and grow
+# each round — raise --max-model-len (default ~41K) and scale --total-kv-blocks
+# accordingly, or every request drops as unservable (completed_requests: 0).
 ./blis replay --trace-header corpus.yaml --trace-data corpus.csv \
   --model qwen/qwen3-14b --concurrent-sessions 8 --total-sessions 200
 

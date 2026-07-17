@@ -283,6 +283,16 @@ if you want a hard wall-clock cap on the simulated run — sessions still queued
 the cap is reached are reported as un-admitted (a warning is logged) rather than
 silently dropped.
 
+!!! warning "Size the context window to the trace"
+    Real agentic traces (e.g. Exgentic `agent-llm-traces`) often carry very large
+    prompts — tens of thousands to well over 100K input tokens per call, growing
+    further each round as the shared prefix accumulates — which can exceed a
+    model's default `--max-model-len` (e.g. qwen3-14b defaults to ~41K). If the
+    run completes cleanly but reports `completed_requests: 0` with a matching
+    `dropped_unservable` count, the prompts didn't fit: raise `--max-model-len` to
+    cover the largest round, and scale `--total-kv-blocks` up proportionally so
+    the KV cache can hold the growing sessions.
+
 ---
 
 ## `blis calibrate`
