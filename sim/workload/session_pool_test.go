@@ -2,6 +2,7 @@ package workload
 
 import (
 	"fmt"
+	"math/rand"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -92,5 +93,54 @@ func TestSessionPool_RefillAndConservation(t *testing.T) {
 	// Conservation: every session started and terminated exactly once.
 	if d.totalStarted != 4 || d.totalTerm != 4 {
 		t.Errorf("started=%d terminated=%d, want 4/4", d.totalStarted, d.totalTerm)
+	}
+}
+
+// TestBuildSessionPool_ClonesHaveIndependentSamplers is a regression test for
+// the shared-cursor bug in cloneBlueprintForDup: a shallow `bp := src` struct
+// copy leaves InputSampler/OutputSampler/ThinkTimeSampler pointing at the SAME
+// underlying sampler object as the source for stateful sampler types like
+// *SequenceSampler (which carries a mutable per-call cursor). Without cloning
+// the sampler itself, a source session and its duplicate advance one shared
+// cursor and corrupt each other's per-round token-length sequence.
+//
+// BuildSessionPool's SessionManager keeps blueprints in an unexported map, so
+// there's no way to read back the clone's sampler through the public driver
+// API. cloneBlueprintForDup is unexported but same-package, so this test calls
+// it directly — the cleanest way to observe sampler independence: sample the
+// source's InputSampler twice, then the clone's once, and assert the clone
+// still returns the FIRST recorded value (10), not the third (30), which is
+// what a shared cursor would produce.
+func TestBuildSessionPool_ClonesHaveIndependentSamplers(t *testing.T) {
+	src := SessionBlueprint{
+		SessionID:     "s0",
+		MaxRounds:     3,
+		Horizon:       1 << 62,
+		InputSampler:  &SequenceSampler{values: []int{10, 20, 30}},
+		OutputSampler: &SequenceSampler{values: []int{1, 2, 3}},
+	}
+	srcR0 := &sim.Request{ID: "r_s0", SessionID: "s0", RoundIndex: 0, State: sim.StateQueued}
+
+	rng := rand.New(rand.NewSource(1))
+	clone, _ := cloneBlueprintForDup(src, srcR0, 1, rng)
+
+	// Pointer identity must differ: the clone must not alias the source's sampler.
+	if clone.InputSampler == src.InputSampler {
+		t.Fatalf("clone.InputSampler shares the same object as src.InputSampler")
+	}
+
+	// Advance the source's cursor two steps: 10, then 20.
+	if got := src.InputSampler.Sample(nil); got != 10 {
+		t.Fatalf("source InputSampler sample #1 = %d, want 10", got)
+	}
+	if got := src.InputSampler.Sample(nil); got != 20 {
+		t.Fatalf("source InputSampler sample #2 = %d, want 20", got)
+	}
+
+	// The clone's cursor must be independent: it should still yield the FIRST
+	// value (10). A shared cursor (the bug) would instead yield 30, since the
+	// source has already advanced past index 0 and 1.
+	if got := clone.InputSampler.Sample(nil); got != 10 {
+		t.Fatalf("clone InputSampler sample #1 = %d, want 10 (independent cursor) — got the source's advanced value, indicating a shared cursor", got)
 	}
 }
