@@ -13,4 +13,7 @@ func init() {
 	sim.NewResidentAdapterSetFunc = func(capacity int) sim.ResidentAdapterSet {
 		return newResidentSet(capacity)
 	}
+	sim.NewAdapterCostFunc = func(cfg sim.LoRAConfig) (sim.AdapterCost, error) {
+		return NewCostModel(cfg)
+	}
 }
