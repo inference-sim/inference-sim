@@ -397,6 +397,19 @@ func (sim *Simulator) buildInstanceSnapshot() InstanceSnapshot {
 // QueueDepth returns the number of requests in the wait queue.
 func (sim *Simulator) QueueDepth() int { return sim.WaitQ.Len() }
 
+// ResidentAdapterIDs returns the ids of LoRA adapters currently resident on this
+// instance, in a deterministic order (INV-6). Returns nil when the LoRA subsystem
+// is inert (no adapters/capacity configured, or sim/lora not imported), so the
+// snapshot's ResidentAdapters stays nil and the lora-affinity scorer is neutral
+// (INV-6). Read by the cluster snapshot provider to populate
+// RoutingSnapshot.ResidentAdapters (#1469).
+func (sim *Simulator) ResidentAdapterIDs() []string {
+	if sim.residentAdapters == nil {
+		return nil
+	}
+	return sim.residentAdapters.ResidentIDs()
+}
+
 // DrainWaitQueue removes and returns all requests currently in the wait queue.
 // Used by DrainRedirect policy to re-inject queued requests into the cluster router.
 // After this call, WaitQ.Len() == 0.

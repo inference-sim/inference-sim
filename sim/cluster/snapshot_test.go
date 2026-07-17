@@ -185,6 +185,7 @@ func TestSnapshotProvider_DefaultConfig_AllImmediate(t *testing.T) {
 		{"KVUtilization", config.KVUtilization},
 		{"CacheBlocks", config.CacheBlocks},
 		{"PreemptionCount", config.PreemptionCount},
+		{"ResidentAdapters", config.ResidentAdapters},
 	}
 
 	for _, tc := range tests {
@@ -213,6 +214,7 @@ func TestNewObservabilityConfig_ZeroAndNegativeInterval_AllImmediate(t *testing.
 				{"KVUtilization", config.KVUtilization},
 				{"CacheBlocks", config.CacheBlocks},
 				{"PreemptionCount", config.PreemptionCount},
+				{"ResidentAdapters", config.ResidentAdapters},
 			} {
 				if f.fc.Mode != Immediate {
 					t.Errorf("%s: Mode = %d, want Immediate (%d)", f.name, f.fc.Mode, Immediate)
@@ -238,6 +240,7 @@ func TestNewObservabilityConfig_NonZeroInterval_AllFieldsPeriodic(t *testing.T) 
 		{"BatchSize", config.BatchSize},
 		{"KVUtilization", config.KVUtilization},
 		{"PreemptionCount", config.PreemptionCount},
+		{"ResidentAdapters", config.ResidentAdapters},
 	}
 	for _, f := range fields {
 		t.Run(f.name, func(t *testing.T) {

@@ -574,3 +574,127 @@ func TestScoreVLLMDP_PileOnInPeriodicMode(t *testing.T) {
 		// see incremented counts and potentially route to "b" or "c".
 	}
 }
+
+// --- lora-affinity scorer (PR6, #1469) -------------------------------------
+//
+// Contract (contracts/routing-snapshot.md, spec US4):
+//   raw(instance)   = 1.0 if req.Adapter ∈ instance.ResidentAdapters else 0.0
+//   score(instance) = minMaxNormalize(raw over candidate instances)  (llm-d parity)
+
+func residentSetOf(ids ...string) map[string]bool {
+	m := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		m[id] = true
+	}
+	return m
+}
+
+// TestScoreLoRAAffinity_WarmScoresHigherThanCold is US4 scenario 1: an instance
+// that already holds req.Adapter must outscore one that does not, all else equal.
+func TestScoreLoRAAffinity_WarmScoresHigherThanCold(t *testing.T) {
+	req := &Request{Adapter: "sql-lora"}
+	snapshots := []RoutingSnapshot{
+		{ID: "warm", ResidentAdapters: residentSetOf("sql-lora", "other")},
+		{ID: "cold", ResidentAdapters: residentSetOf("other")},
+	}
+	scores := scoreLoRAAffinity(req, snapshots)
+	assert.Greater(t, scores["warm"], scores["cold"], "warm instance must outscore cold")
+	// min-max over {1.0, 0.0}: warm→1.0, cold→0.0.
+	assert.Equal(t, 1.0, scores["warm"])
+	assert.Equal(t, 0.0, scores["cold"])
+}
+
+// TestScoreLoRAAffinity_EmptyAdapterNeutral: base-model requests (no adapter)
+// must not bias routing — every instance scores equally (neutral).
+func TestScoreLoRAAffinity_EmptyAdapterNeutral(t *testing.T) {
+	req := &Request{Adapter: ""}
+	snapshots := []RoutingSnapshot{
+		{ID: "a", ResidentAdapters: residentSetOf("sql-lora")},
+		{ID: "b", ResidentAdapters: residentSetOf("other")},
+		{ID: "c"}, // nil ResidentAdapters
+	}
+	scores := scoreLoRAAffinity(req, snapshots)
+	assert.Equal(t, 1.0, scores["a"])
+	assert.Equal(t, 1.0, scores["b"])
+	assert.Equal(t, 1.0, scores["c"])
+}
+
+// TestScoreLoRAAffinity_NilResidentAdaptersNeutral: the zero value (nil set) on
+// every instance yields all-cold ⇒ min-max of all-equal ⇒ all score 1.0. This is
+// the no-op default that keeps routing unchanged when the LoRA subsystem is inert.
+func TestScoreLoRAAffinity_NilResidentAdaptersNeutral(t *testing.T) {
+	req := &Request{Adapter: "sql-lora"}
+	snapshots := []RoutingSnapshot{{ID: "a"}, {ID: "b"}}
+	scores := scoreLoRAAffinity(req, snapshots)
+	assert.Equal(t, 1.0, scores["a"], "all-cold ⇒ neutral")
+	assert.Equal(t, 1.0, scores["b"], "all-cold ⇒ neutral")
+}
+
+// TestScoreLoRAAffinity_AllWarmNeutral: when every candidate already holds the
+// adapter, min-max of all-equal raw scores ⇒ all 1.0 (no differentiation).
+func TestScoreLoRAAffinity_AllWarmNeutral(t *testing.T) {
+	req := &Request{Adapter: "sql-lora"}
+	snapshots := []RoutingSnapshot{
+		{ID: "a", ResidentAdapters: residentSetOf("sql-lora")},
+		{ID: "b", ResidentAdapters: residentSetOf("sql-lora")},
+	}
+	scores := scoreLoRAAffinity(req, snapshots)
+	assert.Equal(t, 1.0, scores["a"])
+	assert.Equal(t, 1.0, scores["b"])
+}
+
+// TestScoreLoRAAffinity_SingleInstance always scores 1.0 (min == max).
+func TestScoreLoRAAffinity_SingleInstance(t *testing.T) {
+	req := &Request{Adapter: "sql-lora"}
+	scores := scoreLoRAAffinity(req, []RoutingSnapshot{{ID: "a"}})
+	assert.Equal(t, 1.0, scores["a"], "single instance always scores 1.0")
+}
+
+// TestScoreLoRAAffinity_IgnoresOutputTokens enforces INV-9 (oracle knowledge
+// boundary): the scorer reads only Adapter/ResidentAdapters, never OutputTokens.
+// Scores must be identical whether OutputTokens is set or zero.
+func TestScoreLoRAAffinity_IgnoresOutputTokens(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "warm", ResidentAdapters: residentSetOf("sql-lora")},
+		{ID: "cold"},
+	}
+	base := scoreLoRAAffinity(&Request{Adapter: "sql-lora"}, snapshots)
+	withOut := scoreLoRAAffinity(&Request{Adapter: "sql-lora", OutputTokens: make([]TokenID, 4096)}, snapshots)
+	assert.Equal(t, base, withOut, "OutputTokens must not influence routing scores (INV-9)")
+}
+
+// TestLoRAAffinity_Registered verifies the scorer is a recognized name (R8) and
+// resolves to a stateless scorerFunc (nil observer) via newScorerWithObserver.
+func TestLoRAAffinity_Registered(t *testing.T) {
+	assert.True(t, IsValidScorer("lora-affinity"), "lora-affinity must be a valid scorer name")
+	assert.Contains(t, ValidScorerNames(), "lora-affinity")
+	scorer, observer := newScorerWithObserver("lora-affinity", 16, nil)
+	require.NotNil(t, scorer, "lora-affinity must resolve to a scorerFunc")
+	assert.Nil(t, observer, "lora-affinity is stateless (no observer)")
+}
+
+// TestLoRAAffinity_NotInProfile_RoutingUnchanged is US4 scenario 3 / INV-6: with
+// the scorer absent from the weighted profile, an adapter request routes exactly
+// as it would with no LoRA awareness. We assert the composite decision is
+// identical with and without ResidentAdapters populated, because the default
+// profile never consults them.
+func TestLoRAAffinity_NotInProfile_RoutingUnchanged(t *testing.T) {
+	configs := DefaultScorerConfigs() // precise-prefix-cache, queue-depth, kv-utilization
+	policyWithout := NewRoutingPolicy("weighted", configs, 16, nil)
+	req := &Request{Adapter: "sql-lora", InputTokens: make([]TokenID, 32)}
+
+	// Two snapshot sets identical except for ResidentAdapters (which the default
+	// profile ignores). Same routing decision proves the adapter field is inert.
+	bare := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 5, KVUtilization: 0.5},
+		{ID: "b", QueueDepth: 1, KVUtilization: 0.1},
+	}
+	withResident := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 5, KVUtilization: 0.5, ResidentAdapters: residentSetOf("sql-lora")},
+		{ID: "b", QueueDepth: 1, KVUtilization: 0.1},
+	}
+	dBare := policyWithout.Route(req, &RouterState{Snapshots: bare})
+	dResident := policyWithout.Route(req, &RouterState{Snapshots: withResident})
+	assert.Equal(t, dBare.TargetInstance, dResident.TargetInstance,
+		"default profile must ignore ResidentAdapters (INV-6)")
+}
