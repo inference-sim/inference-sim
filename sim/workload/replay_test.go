@@ -3,6 +3,8 @@ package workload
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 func TestLoadTraceV2Requests_CorrectTokenCounts(t *testing.T) {
@@ -805,5 +807,87 @@ func TestLoadTraceV2SessionBlueprints_NegativeSendTime(t *testing.T) {
 	// Non-session: must use ArrivalTimeUs (20000), not SendTimeUs (-100).
 	if nonSessionArrival != 20000 {
 		t.Errorf("non-session: ArrivalTime = %d, want 20000 (negative send_time must fall back)", nonSessionArrival)
+	}
+}
+
+func TestLoadTraceV2SessionBlueprints_AccumulateFromHeader(t *testing.T) {
+	trace := &TraceV2{
+		Header: TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
+		Records: []TraceRecord{
+			{RequestID: 0, SessionID: "s", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0},
+			{RequestID: 1, SessionID: "s", RoundIndex: 1, InputTokens: 40, OutputTokens: 20, ArrivalTimeUs: 8_000_000},
+		},
+	}
+	_, bps, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(bps) != 1 {
+		t.Fatalf("got %d blueprints, want 1", len(bps))
+	}
+	if bps[0].ContextGrowth != "accumulate" {
+		t.Errorf("ContextGrowth = %q, want accumulate", bps[0].ContextGrowth)
+	}
+}
+
+func TestLoadTraceV2SessionBlueprints_DefaultNoAccumulate(t *testing.T) {
+	trace := &TraceV2{
+		Header: TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}, // no growth field
+		Records: []TraceRecord{
+			{RequestID: 0, SessionID: "s", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0},
+			{RequestID: 1, SessionID: "s", RoundIndex: 1, InputTokens: 40, OutputTokens: 20, ArrivalTimeUs: 8_000_000},
+		},
+	}
+	_, bps, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if bps[0].ContextGrowth != "" {
+		t.Errorf("ContextGrowth = %q, want empty (unchanged default)", bps[0].ContextGrowth)
+	}
+}
+
+func TestAccumulateReplay_StrictPrefixIdentity(t *testing.T) {
+	trace := &TraceV2{
+		Header: TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
+		Records: []TraceRecord{
+			{RequestID: 0, SessionID: "s", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0},
+			{RequestID: 1, SessionID: "s", RoundIndex: 1, InputTokens: 40, OutputTokens: 20, ArrivalTimeUs: 8_000_000},
+		},
+	}
+	r0, bps, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	sm := NewSessionManager(bps)
+
+	// Round 0 input = 100 tokens (no prefix group).
+	round0 := r0[0]
+	if round0.InputLen() != 100 {
+		t.Fatalf("round0 input len = %d, want 100", round0.InputLen())
+	}
+	// Simulate round 0 completing: mark completed with full output generated so
+	// ProgressIndex - InputLen == actual output (accumulate uses actual output).
+	round0.State = sim.StateCompleted
+	round0.ProgressIndex = int64(round0.InputLen()) + 10 // 10 output tokens generated
+
+	// Capture round 0's input token IDs before follow-up assembly.
+	prefix := append([]sim.TokenID{}, round0.FullInputTokens()...)
+
+	followUps := sm.OnComplete(round0, 8_000_000)
+	if len(followUps) != 1 {
+		t.Fatalf("got %d follow-ups, want 1", len(followUps))
+	}
+	round1 := followUps[0]
+	// Round 1 total input = round0(100) + round0 output(10) + delta(40) = 150.
+	if round1.InputLen() != 150 {
+		t.Fatalf("round1 input len = %d, want 150", round1.InputLen())
+	}
+	// STRICT prefix identity: round1's first 100 tokens are byte-identical to round0's input.
+	got := round1.FullInputTokens()
+	for i := 0; i < 100; i++ {
+		if got[i] != prefix[i] {
+			t.Fatalf("round1 token[%d]=%d != round0 token[%d]=%d — prefix not strictly identical", i, got[i], i, prefix[i])
+		}
 	}
 }
