@@ -110,6 +110,17 @@ Example:
 			logrus.Infof("--concurrent-sessions set; forcing --session-mode closed-loop")
 			replaySessionMode = "closed-loop"
 		}
+		// blis convert otel writes session_context_growth=accumulate and encodes
+		// per-round input_tokens as DELTAS, which only reconstruct correctly via
+		// the closed-loop accumulate-buffer path. Fixed-mode replay reads
+		// input_tokens as absolute per-round counts and never consults
+		// SessionContextGrowth, so it would silently misinterpret the deltas and
+		// produce wrong-but-plausible-looking metrics. Fail fast instead. This
+		// check runs after the auto-promote block above, so a pool run
+		// (--concurrent-sessions > 0, already promoted to closed-loop) passes.
+		if traceData.Header.SessionContextGrowth == "accumulate" && replaySessionMode != "closed-loop" {
+			logrus.Fatalf("trace header has session_context_growth=accumulate (per-round input_tokens are deltas that only reconstruct correctly in closed-loop replay), but --session-mode is %q. Re-run with --session-mode closed-loop, or use --concurrent-sessions N for pooled replay.", replaySessionMode)
+		}
 		if replayTotalSessions > 0 && replayConcurrentSessions == 0 {
 			logrus.Fatalf("--total-sessions requires --concurrent-sessions > 0")
 		}

@@ -92,17 +92,6 @@ func sessionIDFromSpans(spans []otelSpan) (string, error) {
 	return "", fmt.Errorf("no session_id or trace_id found in trace")
 }
 
-// OTelSessionID extracts the session identifier from a raw OTel trace.
-// Prefers the top-level-per-span session_id, then trace_id. Errors if neither
-// is present on any span.
-func OTelSessionID(raw []byte) (string, error) {
-	var tr otelTrace
-	if err := json.Unmarshal(raw, &tr); err != nil {
-		return "", fmt.Errorf("parsing OTel trace: %w", err)
-	}
-	return sessionIDFromSpans(tr.Spans)
-}
-
 // ConvertOTelTrace converts one OTel trace (a single agent session) into ordered
 // TraceRecords with per-round input-token deltas. RoundIndex is 0..N in
 // start-time order. RequestID is left 0; the caller assigns global IDs. Returns
