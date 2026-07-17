@@ -169,11 +169,21 @@ func (c *CostModel) StepOverheadFactor(batch []*sim.Request) float64 {
 		if req == nil || req.Adapter == "" {
 			continue
 		}
+		rank, ok := c.ranks[req.Adapter]
+		if !ok {
+			// An unregistered id is treated as base-model — consistent with
+			// LoadLatency and FootprintBytes, which both return 0 for an
+			// unregistered id. It contributes to neither A_B nor r_max, so an
+			// unknown-rank adapter cannot inflate the factor with a rank it never
+			// declared. In practice requests carry only registered ids (validated
+			// at config load); this keeps the degenerate case consistent.
+			continue
+		}
 		if _, dup := seen[req.Adapter]; dup {
 			continue
 		}
 		seen[req.Adapter] = struct{}{}
-		if rank, ok := c.ranks[req.Adapter]; ok && rank > maxRank {
+		if rank > maxRank {
 			maxRank = rank
 		}
 	}
