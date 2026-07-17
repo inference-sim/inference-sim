@@ -1,0 +1,19 @@
+{
+  "adapter_aware": {
+    "output_throughput": 1027.2812777956847,
+    "total_throughput": 3119.2128503879776,
+    "ttft": 11224.791002375703
+  },
+  "adapter_blind": {
+    "output_throughput": 1148.340927242921,
+    "total_throughput": 3471.949005631099,
+    "ttft": 3086.5379769266524
+  },
+  "model": "llama-3.1-8b-instruct",
+  "provenance": {
+    "arxiv": "2508.08343",
+    "generator": "lora-control/experiments/export_dt_reference.py (seed 0, 16 adapters, 8 slots, 60s)",
+    "note": "DT simulate() workload-aggregate ttft(ms) + throughput(tok/s). H100/vLLM. adapter_blind = both DT overhead models off.",
+    "source_repo": "FerranAgulloLopez/GPULLMAdapterOptimization"
+  }
+}

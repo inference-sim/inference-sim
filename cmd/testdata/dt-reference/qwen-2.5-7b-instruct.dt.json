@@ -1,0 +1,19 @@
+{
+  "adapter_aware": {
+    "output_throughput": 1034.4976392657245,
+    "total_throughput": 3142.878699410052,
+    "ttft": 10696.262264198787
+  },
+  "adapter_blind": {
+    "output_throughput": 1144.6457211251018,
+    "total_throughput": 3463.765010593822,
+    "ttft": 3251.7368498961196
+  },
+  "model": "qwen-2.5-7b-instruct",
+  "provenance": {
+    "arxiv": "2508.08343",
+    "generator": "lora-control/experiments/export_dt_reference.py (seed 0, 16 adapters, 8 slots, 60s)",
+    "note": "DT simulate() workload-aggregate ttft(ms) + throughput(tok/s). H100/vLLM. adapter_blind = both DT overhead models off.",
+    "source_repo": "FerranAgulloLopez/GPULLMAdapterOptimization"
+  }
+}
