@@ -8,9 +8,10 @@ package sim
 // so sim/ can own the state without importing sim/lora (Principle I: no reverse
 // import).
 //
-// The interface is intentionally scoped to what the scheduling hook needs today
-// (R13). The concrete set additionally supports pin/unpin and explicit eviction;
-// those enter this interface when the cold-load gate (a later PR) consumes them.
+// The interface is scoped to what the scheduling hook and the cold-load
+// pre-admission gate consume (R13). The gate (#1466) added AtCapacity / EvictLRU
+// (to commit an eviction victim and reserve a slot at load-start) and Pin / Unpin
+// (to protect an adapter in use by an in-flight request from eviction, INV-L5).
 type ResidentAdapterSet interface {
 	// IsResident reports whether id currently occupies a slot.
 	IsResident(id string) bool
@@ -24,6 +25,20 @@ type ResidentAdapterSet interface {
 	Store(id string) (evicted string, admitted bool)
 	// Len returns the number of resident adapters (always ≤ capacity).
 	Len() int
+
+	// AtCapacity reports whether every slot is occupied (Len == capacity). The
+	// cold-load gate uses it to decide whether a slot must be freed before a load.
+	AtCapacity() bool
+	// EvictLRU removes the least-recently-used non-pinned adapter and returns its id
+	// and true, or ("", false) if the set is empty or every entry is pinned. The gate
+	// calls it at load-start to commit the eviction victim and reserve a slot (§7).
+	EvictLRU() (string, bool)
+	// Pin protects id from eviction while an in-flight request references it
+	// (reference-counted). No-op if id is absent.
+	Pin(id string)
+	// Unpin releases one reference; id becomes evictable once no in-flight request
+	// references it. No-op if id is absent or its count is already zero.
+	Unpin(id string)
 }
 
 // NewResidentAdapterSetFunc builds a ResidentAdapterSet with the given per-instance

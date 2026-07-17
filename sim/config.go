@@ -313,15 +313,17 @@ func (c LoRAConfig) Validate() error {
 	}
 
 	// Cost coefficients (validated whenever set, even absent adapters, so a malformed
-	// coefficient is caught at declaration time).
-	if c.LoadBaseLatencyUs != nil && *c.LoadBaseLatencyUs < 0 {
-		return fmt.Errorf("LoRAConfig: load_base_latency_us must be >= 0, got %v", *c.LoadBaseLatencyUs)
+	// coefficient is caught at declaration time). Non-finite values (NaN/±Inf) slip
+	// past the ordering guards below — NaN comparisons are always false and +Inf
+	// passes > 0 — and later poison the cost model's arithmetic, so reject them (R3/R20).
+	if c.LoadBaseLatencyUs != nil && (math.IsNaN(*c.LoadBaseLatencyUs) || math.IsInf(*c.LoadBaseLatencyUs, 0) || *c.LoadBaseLatencyUs < 0) {
+		return fmt.Errorf("LoRAConfig: load_base_latency_us must be finite and >= 0, got %v", *c.LoadBaseLatencyUs)
 	}
-	if c.LoadBandwidthBytesUs != nil && *c.LoadBandwidthBytesUs <= 0 {
-		return fmt.Errorf("LoRAConfig: load_bandwidth_bytes_us must be > 0 (divisor guard), got %v", *c.LoadBandwidthBytesUs)
+	if c.LoadBandwidthBytesUs != nil && (math.IsNaN(*c.LoadBandwidthBytesUs) || math.IsInf(*c.LoadBandwidthBytesUs, 0) || *c.LoadBandwidthBytesUs <= 0) {
+		return fmt.Errorf("LoRAConfig: load_bandwidth_bytes_us must be finite and > 0 (divisor guard), got %v", *c.LoadBandwidthBytesUs)
 	}
-	if c.FootprintBytesPerRank != nil && *c.FootprintBytesPerRank <= 0 {
-		return fmt.Errorf("LoRAConfig: footprint_bytes_per_rank must be > 0, got %v", *c.FootprintBytesPerRank)
+	if c.FootprintBytesPerRank != nil && (math.IsNaN(*c.FootprintBytesPerRank) || math.IsInf(*c.FootprintBytesPerRank, 0) || *c.FootprintBytesPerRank <= 0) {
+		return fmt.Errorf("LoRAConfig: footprint_bytes_per_rank must be finite and > 0, got %v", *c.FootprintBytesPerRank)
 	}
 
 	// Step-overhead tiers: rank key > 0, K6 >= 0, K7 > 0 (divisor).
@@ -329,11 +331,25 @@ func (c LoRAConfig) Validate() error {
 		if rank <= 0 {
 			return fmt.Errorf("LoRAConfig: step_overhead_tiers rank key must be > 0, got %d", rank)
 		}
-		if tier.K6 != nil && *tier.K6 < 0 {
-			return fmt.Errorf("LoRAConfig: step_overhead_tiers[%d].k6 must be >= 0, got %v", rank, *tier.K6)
+		if tier.K6 != nil && (math.IsNaN(*tier.K6) || math.IsInf(*tier.K6, 0) || *tier.K6 < 0) {
+			return fmt.Errorf("LoRAConfig: step_overhead_tiers[%d].k6 must be finite and >= 0, got %v", rank, *tier.K6)
 		}
-		if tier.K7 == nil || *tier.K7 <= 0 {
-			return fmt.Errorf("LoRAConfig: step_overhead_tiers[%d].k7 must be > 0 (divisor guard)", rank)
+		if tier.K7 == nil || math.IsNaN(*tier.K7) || math.IsInf(*tier.K7, 0) || *tier.K7 <= 0 {
+			return fmt.Errorf("LoRAConfig: step_overhead_tiers[%d].k7 must be finite and > 0 (divisor guard)", rank)
+		}
+	}
+
+	// Cost coefficients are REQUIRED once the subsystem is active (adapters declared
+	// with a positive capacity): the cold-load gate consumes them via the cost model
+	// (#1466), and NewSimulator hard-fails without them. Require them here so the CLI
+	// catches the gap at its validation gate with a clear message rather than
+	// surfacing a confusing constructor error later. The CLI backfills these from
+	// defaults.yaml before validating (resolveLoRAConfig), so a config that reaches
+	// here still missing them declared adapters with no cost source at all. Checked
+	// last so a malformed-but-present coefficient reports its own specific error first.
+	if c.HasAdapters() && c.AdapterCapacity != nil && *c.AdapterCapacity > 0 {
+		if c.LoadBaseLatencyUs == nil || c.LoadBandwidthBytesUs == nil || c.FootprintBytesPerRank == nil {
+			return fmt.Errorf("LoRAConfig: load_base_latency_us, load_bandwidth_bytes_us, and footprint_bytes_per_rank must all be set when adapters are declared with a positive capacity")
 		}
 	}
 

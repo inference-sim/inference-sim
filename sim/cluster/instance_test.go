@@ -637,3 +637,58 @@ func TestInstanceSimulator_MaxBatchSize_ReturnsConstructorValue(t *testing.T) {
 		t.Errorf("MaxBatchSize() = %d, want 128", got)
 	}
 }
+
+// TestInstanceSimulator_EvictRequest_ReleasesAdapterPin is a regression for the
+// cold-load gate pin leak (#1466): gateway in-flight eviction of a RUNNING adapter
+// request is a terminal path outside completion/timeout, so it must release the
+// request's adapter pin — otherwise the slot stays falsely pinned for the rest of
+// the run and blocks every future cold load on the instance (INV-L5). Capacity 1
+// makes the leak observable: after evicting a running a1, a cold a2 can only load
+// if a1's slot was unpinned (so EvictLRU can reclaim it).
+func TestInstanceSimulator_EvictRequest_ReleasesAdapterPin(t *testing.T) {
+	cfg := newTestSimConfig()
+	cfg.Horizon = 100_000_000 // bounded so a regression fails cleanly instead of spinning forever
+	capVal := 1
+	base, bw, fp := 1000.0, 2.0e6, 2.0e6
+	cfg.LoRAConfig = sim.LoRAConfig{
+		AdapterCapacity:       &capVal,
+		LoadBaseLatencyUs:     &base,
+		LoadBandwidthBytesUs:  &bw,
+		FootprintBytesPerRank: &fp,
+		Adapters:              []sim.AdapterSpec{{ID: "a1", Rank: 8}, {ID: "a2", Rank: 8}},
+	}
+	inst := NewInstanceSimulator(InstanceID("evict-pin"), cfg)
+
+	// a1 has a long output so it is still running (pinned) when we evict it.
+	a1 := &sim.Request{ID: "a1req", Adapter: "a1", ArrivalTime: 0, State: sim.StateQueued,
+		InputTokens: make([]sim.TokenID, 8), OutputTokens: make([]sim.TokenID, 100), MaxOutputLen: 100}
+	inst.InjectRequest(a1)
+
+	// Step until a1 is admitted to the running batch (past its cold load): now pinned.
+	for i := 0; i < 100000 && inst.BatchSize() == 0 && inst.HasPendingEvents(); i++ {
+		inst.ProcessNextEvent()
+	}
+	require.GreaterOrEqual(t, inst.BatchSize(), 1, "a1 should be running (pinned) before eviction")
+
+	// Gateway in-flight eviction of the running (pinned) a1.
+	if !inst.EvictRequest(a1) {
+		t.Fatal("EvictRequest(a1) returned false; expected the running request to be found")
+	}
+
+	// A cold a2 now arrives; with capacity 1 it must evict a1's freed slot to load.
+	a2 := &sim.Request{ID: "a2req", Adapter: "a2", ArrivalTime: inst.Clock(), State: sim.StateQueued,
+		InputTokens: make([]sim.TokenID, 8), OutputTokens: make([]sim.TokenID, 4), MaxOutputLen: 4}
+	inst.InjectRequest(a2)
+
+	// Drain (bounded): if the pin leaked, EvictLRU stays stuck and a2 never loads,
+	// so this loop hits the cap and the assertion below fails cleanly.
+	for i := 0; i < 500000 && inst.HasPendingEvents(); i++ {
+		inst.ProcessNextEvent()
+	}
+
+	out := inst.Metrics().BuildOutput("evict-pin", nil)
+	if lc := out.Adapters["a2"].LoadCount; lc != 1 {
+		t.Errorf("adapter a2 LoadCount = %d, want 1 — cold a2 could not load after a1 was evicted; "+
+			"the eviction leaked a1's adapter pin (EvictLRU stuck)", lc)
+	}
+}
