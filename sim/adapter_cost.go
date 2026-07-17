@@ -6,14 +6,20 @@ package sim
 // model (rank-derived cost terms) lives in sim/lora and is wired in via
 // NewAdapterCostFunc, mirroring NewAdapterRegistryFunc / NewResidentAdapterSetFunc.
 //
-// The interface is intentionally scoped to what the gate consumes today (R13):
-// only LoadLatency. The concrete cost model additionally derives the per-step
-// compute-overhead factor and the HBM footprint; those enter this interface when
-// the latency and memory PRs consume them.
+// The interface is scoped to what its consumers read today (R13): LoadLatency for
+// the cold-load gate (#1466) and StepOverheadFactor for the latency backends
+// (#1467). The concrete cost model additionally derives the HBM footprint; that
+// enters this interface when the memory PR consumes it.
 type AdapterCost interface {
 	// LoadLatency returns the one-time cold-load latency of an adapter id in µs
 	// (>= 0). An empty (base-model) or unregistered id returns 0 — it never gates.
 	LoadLatency(id string) float64
+
+	// StepOverheadFactor returns the multiplicative per-step compute-overhead
+	// factor for a batch (>= 1.0), applied identically by both latency backends
+	// (R23). It is exactly 1.0 when the batch carries no adapter ids, so a
+	// no-adapter step is byte-identical to a pre-feature build (INV-6).
+	StepOverheadFactor(batch []*Request) float64
 }
 
 // NewAdapterCostFunc builds an AdapterCost from a LoRAConfig (rank registry +
@@ -22,3 +28,23 @@ type AdapterCost interface {
 // (INV-6). Returns an error for a malformed config (missing/non-positive divisor
 // coefficients), which the caller maps to fatality.
 var NewAdapterCostFunc func(cfg LoRAConfig) (AdapterCost, error)
+
+// BuildAdapterCost constructs the adapter-cost accessor for a config, or returns
+// (nil, nil) when the LoRA subsystem is inert: no adapters declared, no capacity
+// set, or sim/lora not linked (registration funcs nil). It centralizes the
+// activation condition in one place (R4) so every consumer agrees on exactly when
+// adapter costs apply — the cold-load gate + resident set (NewSimulator) and the
+// per-step overhead factor threaded into the latency backends (sim/cluster).
+//
+// The returned accessor is a pure, stateless query object derived entirely from
+// the config; constructing two from the same config yields behaviorally identical
+// instances (which is why the gate and the latency model may each build their own
+// without shared state). The gating condition matches NewSimulator's resident-set
+// wiring exactly, so residentAdapters and adapterCost stay non-nil together.
+func BuildAdapterCost(cfg SimConfig) (AdapterCost, error) {
+	if !cfg.HasAdapters() || cfg.AdapterCapacity == nil ||
+		NewResidentAdapterSetFunc == nil || NewAdapterCostFunc == nil {
+		return nil, nil
+	}
+	return NewAdapterCostFunc(cfg.LoRAConfig)
+}

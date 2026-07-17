@@ -8,5 +8,15 @@ package latency
 import "github.com/inference-sim/inference-sim/sim"
 
 func init() {
-	sim.NewLatencyModelFunc = NewLatencyModel
+	// NewLatencyModel is variadic (accepts Options); the seam type is not, so wrap
+	// it. The seam is used only by MustNewLatencyModel (sim-package tests), which
+	// never wire an adapter accessor — production adapter wiring passes
+	// WithAdapterCost through latency.NewLatencyModel directly (sim/cluster).
+	// NOTE for future maintainers: this wrapper intentionally discards all Options.
+	// Any new Option that must take effect through the seam (e.g. for sim-package
+	// tests) has to be threaded onto the seam type explicitly here — it will NOT
+	// flow through this wrapper as written.
+	sim.NewLatencyModelFunc = func(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.LatencyModel, error) {
+		return NewLatencyModel(coeffs, hw)
+	}
 }
