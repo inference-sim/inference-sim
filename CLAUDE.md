@@ -114,6 +114,15 @@ go build -o blis main.go
 ./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json \
   --slo-ttft "critical=100ms" --slo-e2e "critical=5s" --report calibration.json
 
+# Compare LoRA adapter-cost fidelity vs a Digital Twin reference (#1470, US5).
+# Standalone mode: BLIS aggregate (from blis run --metrics-path) vs a committed DT
+# reference (per-config adapter_aware/adapter_blind), per-metric MAPE on TTFT +
+# throughput. --sim-metrics-blind enables the delta-normalized (aware/blind)
+# diagnostic that isolates the ported adapter physics. Does not use --trace-*.
+./blis calibrate --adapter-reference dt-ref.json \
+  --sim-metrics aware.json --sim-metrics-blind blind.json \
+  --adapter-mape-threshold 0.20 --report adapter-fidelity.json
+
 # Run with lazy request generation (alpha, #1441). Streams requests from the
 # workload generator into the cluster instead of pre-generating the full
 # slice — reduces peak generator memory from O(total_requests) to the
@@ -320,7 +329,9 @@ Full details: see [`docs/contributing/standards/principles.md`](docs/contributin
 
 ### Current Implementation Focus
 
-Composable Scorer Framework completed: PR17 (scorer framework + stateless scorers) and PR18 (prefix-affinity scorer + router-side cache). Default weighted routing profile: `precise-prefix-cache:2,queue-depth:1,kv-utilization:1` (llm-d parity). Precise prefix scoring (#883): `precise-prefix-cache` scorer queries actual instance KV cache state with min-max normalization (llm-d production parity); `no-hit-lru` scorer distributes cold requests to least-recently-used endpoints. Valid scorer names: `prefix-affinity`, `precise-prefix-cache`, `no-hit-lru`, `queue-depth`, `kv-utilization`, `load-balance`, `active-requests`, `running-requests`, `load-aware`, `vllm-dp`.
+Composable Scorer Framework completed: PR17 (scorer framework + stateless scorers) and PR18 (prefix-affinity scorer + router-side cache). Default weighted routing profile: `precise-prefix-cache:2,queue-depth:1,kv-utilization:1` (llm-d parity). Precise prefix scoring (#883): `precise-prefix-cache` scorer queries actual instance KV cache state with min-max normalization (llm-d production parity); `no-hit-lru` scorer distributes cold requests to least-recently-used endpoints. Valid scorer names: `prefix-affinity`, `precise-prefix-cache`, `no-hit-lru`, `queue-depth`, `kv-utilization`, `load-balance`, `active-requests`, `running-requests`, `load-aware`, `vllm-dp`, `lora-affinity` (#1469, off by default; scores instances with the request's adapter already resident higher, min-max normalized).
+
+LoRA control-plane subsystem (#1464, epic PRs 1–7): adapter identity + pre-declared `id→rank` registry, per-instance resident set (capacity-bounded LRU), three DT-derived cost terms (cold-load latency, per-step compute overhead, static HBM reservation), the `lora-affinity` scorer, and per-adapter metrics. No-op by default (`lora:` absent ⇒ byte-identical output, INV-6). Adapter ids round-trip through TraceV2 (trailing conditional `adapter` column) for run/replay parity (INV-13). Fidelity vs the Agullo Digital Twin (#1470, `blis calibrate --adapter-reference`): the compute-overhead (throughput) term validates ≤20% MAPE for both calibrated configs (Llama-3.1-8B-Instruct, Qwen-2.5-7B-Instruct); the absolute-TTFT leg is bounded but unsupported (BLIS ports adapter *deltas* onto its own separately-calibrated base, which differs from the DT's H100 base fit) — reported honestly, never silently passed.
 
 Phase 0 workload unification complete (see issue #420): W0-1 (spec v2 schema + SLO tiers), W0-2 (binary rename + converters), W0-3 (cohort population dynamics), W0-4 (legacy retirement). All workload generation now flows through `sim/workload/GenerateRequests()`. SLO tiers: critical, standard, sheddable, batch, background. Arrival processes: poisson, gamma, weibull, constant. CLI binary renamed from `simulation_worker` to `blis`.
 

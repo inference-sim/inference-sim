@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"sort"
 
+	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -25,6 +27,13 @@ var (
 	calibrateGoodputSLOTTFT string
 	calibrateGoodputSLOITL  string
 	calibrateGoodputSLOE2E  string
+	// Adapter-cost fidelity comparison vs the Digital Twin (US5, #1470). When
+	// --adapter-reference is set, calibrate runs a standalone per-config DT
+	// comparison (BLIS aggregate vs DT reference) instead of the real-vs-sim flow.
+	calibrateAdapterReference  string
+	calibrateSimMetrics        string
+	calibrateSimMetricsBlind   string
+	calibrateAdapterMAPEThresh float64
 )
 
 var calibrateCmd = &cobra.Command{
@@ -49,6 +58,13 @@ Example:
   blis calibrate --trace-header t.yaml --trace-data d.csv \
     --sim-results results.json --report calibration.json`,
 	Run: func(cmd *cobra.Command, args []string) {
+		// Adapter-cost fidelity comparison mode (US5, #1470): BLIS aggregate vs DT
+		// reference, per config. Standalone — does not use the real-vs-sim flow.
+		if calibrateAdapterReference != "" {
+			runAdapterReferenceComparison()
+			return
+		}
+
 		if calibrateTraceHeaderPath == "" {
 			logrus.Fatalf("--trace-header is required")
 		}
@@ -327,6 +343,99 @@ Example:
 	},
 }
 
+// loadBLISAggregate reads a BLIS MetricsOutput JSON file (from blis run/replay
+// --metrics-path) and distills the aggregate TTFT + output throughput needed for
+// the DT comparison. Output throughput = total_output_tokens / estimated duration.
+func loadBLISAggregate(path string) workload.BLISAggregate {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		logrus.Fatalf("Failed to read sim metrics from %s: %v", path, err)
+	}
+	var m sim.MetricsOutput
+	if err := json.Unmarshal(data, &m); err != nil {
+		logrus.Fatalf("Failed to parse sim metrics JSON from %s: %v", path, err)
+	}
+	if m.VllmDurationSec <= 0 {
+		logrus.Fatalf("sim metrics %s: vllm_estimated_duration_s must be > 0 to compute throughput, got %v", path, m.VllmDurationSec)
+	}
+	return workload.BLISAggregate{
+		TTFTMs:           m.TTFTMeanMs,
+		OutputThroughput: float64(m.TotalOutputTokens) / m.VllmDurationSec,
+	}
+}
+
+// runAdapterReferenceComparison implements the US5 (#1470) DT fidelity comparison:
+// BLIS aggregate (from --sim-metrics) vs a committed DT reference (--adapter-reference),
+// per config, on TTFT and output throughput. Writes the report JSON and logs a
+// per-metric pass/fail against --adapter-mape-threshold. Configs exceeding the bound
+// are reported honestly (never a silent pass); the mechanism ships regardless of the
+// empirical outcome (design §15).
+func runAdapterReferenceComparison() {
+	if calibrateSimMetrics == "" {
+		logrus.Fatalf("--sim-metrics is required with --adapter-reference (BLIS aggregate MetricsOutput from run/replay --metrics-path)")
+	}
+	if calibrateReportPath == "" {
+		logrus.Fatalf("--report is required")
+	}
+	if math.IsNaN(calibrateAdapterMAPEThresh) || math.IsInf(calibrateAdapterMAPEThresh, 0) || calibrateAdapterMAPEThresh <= 0 {
+		logrus.Fatalf("--adapter-mape-threshold must be a finite number > 0, got %v", calibrateAdapterMAPEThresh)
+	}
+
+	ref, err := workload.LoadDTReference(calibrateAdapterReference)
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	aware := loadBLISAggregate(calibrateSimMetrics)
+	var blind *workload.BLISAggregate
+	if calibrateSimMetricsBlind != "" {
+		b := loadBLISAggregate(calibrateSimMetricsBlind)
+		blind = &b
+	}
+
+	report := workload.CompareAdapterReference(ref, aware, blind, calibrateAdapterMAPEThresh)
+
+	reportData, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		logrus.Fatalf("Failed to marshal adapter-reference report: %v", err)
+	}
+	if err := os.WriteFile(calibrateReportPath, reportData, 0644); err != nil {
+		logrus.Fatalf("Failed to write adapter-reference report to %s: %v", calibrateReportPath, err)
+	}
+
+	logrus.Infof("Adapter-reference comparison (%s) written to %s (MAPE threshold %.0f%%)",
+		report.Model, calibrateReportPath, report.Threshold*100)
+	for _, m := range report.Metrics {
+		verdict := "WITHIN"
+		if !m.Within {
+			verdict = "EXCEEDS"
+		}
+		line := fmt.Sprintf("  %-11s BLIS=%.2f DT=%.2f MAPE=%.1f%% [%s]",
+			m.Metric, m.BLISValue, m.DTValue, m.MAPE*100, verdict)
+		if m.DeltaMAPE != nil {
+			line += fmt.Sprintf(" delta-normalized MAPE=%.1f%%", *m.DeltaMAPE*100)
+		}
+		if m.Within {
+			logrus.Info(line)
+		} else {
+			logrus.Warn(line)
+		}
+	}
+	// Surface silent degradation (R1): the user asked for the delta-normalized
+	// diagnostic (--sim-metrics-blind) but a zero blind denominator on either side
+	// prevented computing it for a metric.
+	if calibrateSimMetricsBlind != "" {
+		for _, m := range report.Metrics {
+			if m.DeltaMAPE == nil {
+				logrus.Warnf("delta-normalized diagnostic skipped for %q: the DT reference's adapter_blind %s is zero or the BLIS blind aggregate is zero (aware/blind ratio undefined).", m.Metric, m.Metric)
+			}
+		}
+	}
+	if !report.AllWithin {
+		logrus.Warnf("SC-007 not satisfied on all metrics for %s at MAPE<=%.0f%% — that dimension's fidelity claim is unsupported for this config (design §15 falsification path). The comparison mechanism succeeded; the bound was not met.",
+			report.Model, report.Threshold*100)
+	}
+}
+
 func init() {
 	calibrateCmd.Flags().StringVar(&calibrateTraceHeaderPath, "trace-header", "", "Path to TraceV2 header YAML file (from blis observe; required)")
 	calibrateCmd.Flags().StringVar(&calibrateTraceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (from blis observe; required)")
@@ -339,5 +448,10 @@ func init() {
 	calibrateCmd.Flags().StringVar(&calibrateGoodputSLOTTFT, "slo-ttft", "", "Per-class TTFT goodput thresholds (e.g. \"critical=100ms,standard=500ms\"). Precedence: CLI > trace header.")
 	calibrateCmd.Flags().StringVar(&calibrateGoodputSLOITL, "slo-itl", "", "Per-class mean ITL goodput thresholds. Skipped with a warning when ITL data is absent on either side.")
 	calibrateCmd.Flags().StringVar(&calibrateGoodputSLOE2E, "slo-e2e", "", "Per-class E2E goodput thresholds (e.g. \"critical=5s,standard=30s\").")
+	// Adapter-cost fidelity comparison vs the Digital Twin (US5, #1470).
+	calibrateCmd.Flags().StringVar(&calibrateAdapterReference, "adapter-reference", "", "Path to a DT reference JSON (per-config adapter_aware/adapter_blind aggregates). Enables standalone BLIS-vs-DT fidelity comparison; --trace-header/--trace-data/--sim-results are not used in this mode.")
+	calibrateCmd.Flags().StringVar(&calibrateSimMetrics, "sim-metrics", "", "Path to a BLIS aggregate MetricsOutput JSON (from blis run/replay --metrics-path) for the adapter-aware run. Required with --adapter-reference.")
+	calibrateCmd.Flags().StringVar(&calibrateSimMetricsBlind, "sim-metrics-blind", "", "Optional BLIS MetricsOutput JSON for the adapter-blind baseline run; enables the delta-normalized (aware/blind) diagnostic that isolates the ported adapter physics.")
+	calibrateCmd.Flags().Float64Var(&calibrateAdapterMAPEThresh, "adapter-mape-threshold", 0.20, "MAPE bound (fraction) for the adapter-reference comparison (SC-007 target 0.20).")
 	rootCmd.AddCommand(calibrateCmd)
 }
