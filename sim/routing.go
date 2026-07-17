@@ -32,6 +32,13 @@ type RoutingSnapshot struct {
 	AvgInTokens           float64 // average input tokens per completed request; 0 if not yet available
 	AvgOutTokens          float64 // average output tokens per completed request; 0 if not yet available
 	MaxBatchSize          float64 // server-configured max batch size; 0 if not yet available
+	// ResidentAdapters is the set of LoRA adapter ids currently resident on this
+	// instance (membership set; #1469, PR6). Consumed by the lora-affinity scorer
+	// for placement affinity. Freshness (R17, INV-7): Periodic — refreshed by
+	// CachedSnapshotProvider at --snapshot-refresh-interval (default 50ms), Immediate
+	// when the interval is 0. Zero value (nil) ⇒ no adapter resident ⇒ scorer neutral,
+	// preserving byte-identical routing when the LoRA subsystem is inert (INV-6).
+	ResidentAdapters map[string]bool
 }
 
 // EffectiveLoad returns the total effective load on this instance:

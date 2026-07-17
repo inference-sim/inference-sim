@@ -108,8 +108,9 @@ var (
 	gaieKVThreshold       float64            // GAIE-legacy KV cache utilization threshold (default 0.8)
 
 	// routing policy config (PR 6, evolved in PR17)
-	routingPolicy  string // Routing policy name
-	routingScorers string // Comma-separated name:weight pairs for weighted routing
+	routingPolicy    string  // Routing policy name
+	routingScorers   string  // Comma-separated name:weight pairs for weighted routing
+	loraScorerWeight float64 // Weight of the lora-affinity scorer; 0 (default) ⇒ off (#1469)
 
 	// Scheduler and preemption config
 	scheduler        string // Scheduler name
@@ -779,6 +780,31 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	}
 }
 
+// composeLoRAScorer appends the lora-affinity scorer at the given weight to the
+// effective weighted-routing profile (#1469). When base is empty (no explicit
+// --routing-scorers or bundle), it materializes the default profile first so the
+// LoRA scorer composes alongside the standard dimensions rather than replacing
+// them. Returns an error for a non-finite/non-positive weight or when base already
+// declares lora-affinity (double-specification via both --routing-scorers and
+// --lora-scorer-weight). The returned slice never aliases base's backing array.
+func composeLoRAScorer(base []sim.ScorerConfig, weight float64) ([]sim.ScorerConfig, error) {
+	if weight <= 0 || math.IsNaN(weight) || math.IsInf(weight, 0) {
+		return nil, fmt.Errorf("weight must be a finite positive number, got %v", weight)
+	}
+	if len(base) == 0 {
+		base = sim.DefaultScorerConfigs()
+	}
+	for _, sc := range base {
+		if sc.Name == "lora-affinity" {
+			return nil, fmt.Errorf("lora-affinity already present in the scorer profile; set its weight via --routing-scorers OR --lora-scorer-weight, not both")
+		}
+	}
+	composed := make([]sim.ScorerConfig, 0, len(base)+1)
+	composed = append(composed, base...)
+	composed = append(composed, sim.ScorerConfig{Name: "lora-affinity", Weight: weight})
+	return composed, nil
+}
+
 // resolvePolicies resolves admission/routing/priority/scheduler policy configuration
 // from CLI flags and an optional policy bundle YAML file. It is called by both runCmd
 // and replayCmd to ensure a single validation code path (R23: code path parity).
@@ -1037,6 +1063,19 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		} else if len(bundleScorerConfigs) > 0 {
 			parsedScorerConfigs = bundleScorerConfigs
 		}
+		// Compose the lora-affinity scorer (#1469). Left unset the flag is inert, so
+		// routing is byte-identical to today (INV-6). When set (to a positive weight;
+		// an explicit non-positive value is rejected by composeLoRAScorer), append it
+		// to the effective profile — materializing the default base when no explicit
+		// --routing-scorers/bundle profile was given — so the LoRA scorer participates
+		// alongside the existing dimensions.
+		if cmd.Flags().Changed("lora-scorer-weight") {
+			composed, err := composeLoRAScorer(parsedScorerConfigs, loraScorerWeight)
+			if err != nil {
+				logrus.Fatalf("Invalid --lora-scorer-weight: %v", err)
+			}
+			parsedScorerConfigs = composed
+		}
 		activeScorerConfigs := parsedScorerConfigs
 		if len(activeScorerConfigs) == 0 {
 			activeScorerConfigs = sim.DefaultScorerConfigs()
@@ -1049,6 +1088,9 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 	}
 	if routingPolicy != "weighted" && routingScorers != "" {
 		logrus.Warnf("--routing-scorers has no effect when routing policy is %q (only applies to 'weighted')", routingPolicy)
+	}
+	if routingPolicy != "weighted" && cmd.Flags().Changed("lora-scorer-weight") {
+		logrus.Warnf("--lora-scorer-weight has no effect when routing policy is %q (only applies to 'weighted')", routingPolicy)
 	}
 	if admissionPolicy == "token-bucket" {
 		logrus.Infof("Token bucket: capacity=%.0f, refill-rate=%.0f", tokenBucketCapacity, tokenBucketRefillRate)
@@ -1100,6 +1142,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// Routing policy config
 	cmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, always-busiest")
 	cmd.Flags().StringVar(&routingScorers, "routing-scorers", "", "Scorer weights for weighted routing (e.g., queue-depth:2,kv-utilization:2,load-balance:1). Default: precise-prefix-cache:2,queue-depth:1,kv-utilization:1")
+	cmd.Flags().Float64Var(&loraScorerWeight, "lora-scorer-weight", 0, "Weight of the lora-affinity routing scorer, composed into the weighted profile. Leave unset to keep routing unchanged; must be a finite positive number when set. Requires --routing-policy weighted (#1469)")
 
 	// Scheduler and preemption config
 	cmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf, reverse-priority")

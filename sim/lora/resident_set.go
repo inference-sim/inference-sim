@@ -56,6 +56,20 @@ func (s *residentSet) Len() int { return len(s.entries) }
 // cold-load gate uses it to decide whether a slot must be freed before a load.
 func (s *residentSet) AtCapacity() bool { return len(s.entries) >= s.capacity }
 
+// ResidentIDs returns the resident adapter ids in LRU→MRU order by walking the
+// doubly-linked list from head to tail. The list order is a pure function of the
+// access sequence, so the result is deterministic (INV-6). Returns nil when empty.
+func (s *residentSet) ResidentIDs() []string {
+	if len(s.entries) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(s.entries))
+	for e := s.lruHead; e != nil; e = e.next {
+		ids = append(ids, e.id)
+	}
+	return ids
+}
+
 // IsResident reports whether id currently occupies a slot.
 func (s *residentSet) IsResident(id string) bool {
 	_, ok := s.entries[id]
