@@ -239,6 +239,52 @@ Replay also accepts all shared simulation config flags (`--latency-model`, `--to
 
 ---
 
+## Replaying OTel agentic traces
+
+BLIS can replay captured OpenTelemetry agent traces (e.g. the Exgentic
+`agent-llm-traces` dataset) as a fixed pool of N concurrent closed-loop sessions.
+Each session is a linear chain of LLM calls: BLIS waits for call N to complete,
+applies the recorded think/tool gap, then sends call N+1 — whose prompt reuses
+call N's entire prompt plus its output plus new tokens (a strictly-growing shared
+prefix for realistic KV-cache reuse).
+
+The dataset ships as Parquet, so first explode it to per-session OTel JSON:
+
+```python
+import pyarrow.parquet as pq, json, os
+os.makedirs("otel_json", exist_ok=True)
+t = pq.read_table("data/train-00001-of-00039.parquet").to_pylist()
+for i, row in enumerate(t):
+    json.dump({"spans": row["spans"]}, open(f"otel_json/trace_{i:04d}.json", "w"))
+```
+
+Then convert and replay:
+
+```bash
+# Convert the trace corpus to a TraceV2 pair (accumulate = growing shared prefix).
+blis convert otel --input otel_json --trace-output corpus \
+  --context-growth accumulate --max-think-time 15s
+
+# Replay a fixed pool of 8 concurrent sessions, 200 total (corpus duplicated to fill).
+blis replay --trace-header corpus.yaml --trace-data corpus.csv \
+  --model qwen/qwen3-14b --concurrent-sessions 8 --total-sessions 200
+```
+
+The recorded source model names are pure provenance and are dropped during
+conversion — all calls are simulated under `--model`. (They are deliberately not
+written into the trace: `TraceRecord.Model` is routing-significant, and a name
+that differs from `--model` would filter out every request at routing.)
+`--concurrent-sessions` implies closed-loop session semantics; without it,
+replay behaves as a standard fixed/closed-loop replay.
+
+By default the pool is **self-draining**: it runs until all `--total-sessions`
+sessions complete, regardless of how many waves that takes. Pass `--horizon` only
+if you want a hard wall-clock cap on the simulated run — sessions still queued when
+the cap is reached are reported as un-admitted (a warning is logged) rather than
+silently dropped.
+
+---
+
 ## `blis calibrate`
 
 Compares real observed latencies (from `blis observe`) against simulator predictions (from `blis replay`) and produces a calibration report.
