@@ -26,6 +26,48 @@ func clampToInt64(v float64) int64 {
 	return int64(v)
 }
 
+// Option customizes a LatencyModel at construction. Used to inject optional
+// dependencies (currently the LoRA adapter-cost accessor) without churning the
+// NewLatencyModel signature at its many call sites (R4). Both backends receive
+// the same options, so an adapter effect applies identically (R23).
+type Option func(*latencyOptions)
+
+// latencyOptions accumulates the applied Options. Zero value ⇒ no adapter effect.
+type latencyOptions struct {
+	adapterCost sim.AdapterCost
+}
+
+// WithAdapterCost supplies the LoRA per-step compute-overhead accessor. A nil
+// accessor (or no option) leaves StepTime byte-identical to a pre-feature build
+// (INV-6). The concrete accessor lives in sim/lora and reaches here as the
+// sim.AdapterCost interface — sim/latency never imports sim/lora.
+func WithAdapterCost(ac sim.AdapterCost) Option {
+	return func(o *latencyOptions) { o.adapterCost = ac }
+}
+
+// applyAdapterOverhead multiplies a base step time by the batch's LoRA
+// compute-overhead factor (>= 1.0) from the accessor. It is the single shared
+// application point so both backends behave identically (R23). A nil accessor —
+// or a factor of exactly 1.0 (no adapter ids in batch) — returns base unchanged,
+// preserving byte-identity for a no-adapter step (INV-6/INV-BC-DP1).
+func applyAdapterOverhead(base int64, batch []*sim.Request, ac sim.AdapterCost) int64 {
+	if ac == nil {
+		return base
+	}
+	factor := ac.StepOverheadFactor(batch)
+	// The AdapterCost contract guarantees a finite factor >= 1.0 (enforced in
+	// sim/lora at construction), but this package is agnostic to that guarantee.
+	// A non-finite factor (NaN/±Inf) is NOT caught by `factor <= 1.0` — NaN
+	// comparisons are always false — and would reach clampToInt64 as NaN→MaxInt64,
+	// stalling the simulation clock (INV-3). Defend the clock at this boundary
+	// (R3/R20): treat any non-finite or <= 1.0 factor as "no overhead" and return
+	// base unchanged, mirroring clampToInt64's clamp-don't-panic philosophy.
+	if math.IsNaN(factor) || math.IsInf(factor, 0) || factor <= 1.0 {
+		return base
+	}
+	return max(1, clampToInt64(float64(base)*factor))
+}
+
 // RooflineLatencyModel estimates latency using analytical FLOPs/bandwidth roofline model.
 // Step time is computed via rooflineStepTime(); overhead estimates use alpha coefficients.
 type RooflineLatencyModel struct {
@@ -33,6 +75,10 @@ type RooflineLatencyModel struct {
 	hwConfig    sim.HardwareCalib
 	tp          int
 	alphaCoeffs []float64
+	// adapterCost supplies the per-step LoRA compute-overhead factor (#1467). nil
+	// when the LoRA subsystem is inert, in which case StepTime is byte-identical to
+	// a pre-feature build (INV-6). Set via WithAdapterCost at construction.
+	adapterCost sim.AdapterCost
 }
 
 func (m *RooflineLatencyModel) StepTime(batch []*sim.Request) int64 {
@@ -53,7 +99,7 @@ func (m *RooflineLatencyModel) StepTime(batch []*sim.Request) int64 {
 			})
 		}
 	}
-	return max(1, rooflineStepTime(m.modelConfig, m.hwConfig, stepConfig, m.tp))
+	return applyAdapterOverhead(max(1, rooflineStepTime(m.modelConfig, m.hwConfig, stepConfig, m.tp)), batch, m.adapterCost)
 }
 
 func (m *RooflineLatencyModel) QueueingTime(req *sim.Request) int64 {
@@ -89,7 +135,15 @@ func validateCoeffs(name string, coeffs []float64) error {
 // Dispatches on hw.Backend: "" or "roofline" → RooflineLatencyModel,
 // "trained-physics" → TrainedPhysicsModel.
 // Returns error if coefficient slices are too short, contain NaN/Inf, or config validation fails.
-func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.LatencyModel, error) {
+//
+// Options inject optional dependencies; the same options are applied to whichever
+// backend is selected, so an adapter-overhead accessor (WithAdapterCost) affects
+// both identically (R23). No options ⇒ pre-feature behavior (INV-6).
+func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig, opts ...Option) (sim.LatencyModel, error) {
+	var o latencyOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
 	// All implementations index alphaCoeffs[0..2]; validate upfront.
 	if len(coeffs.AlphaCoeffs) < 3 {
 		return nil, fmt.Errorf("latency model: AlphaCoeffs requires at least 3 elements, got %d", len(coeffs.AlphaCoeffs))
@@ -110,6 +164,7 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			hwConfig:    hw.HWConfig,
 			tp:          hw.TP,
 			alphaCoeffs: coeffs.AlphaCoeffs,
+			adapterCost: o.adapterCost,
 		}, nil
 	case "trained-physics":
 		// TrainedPhysicsModel: physics-informed roofline with architecture-aware MoE overhead.
@@ -119,6 +174,7 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 		if err != nil {
 			return nil, err
 		}
+		model.adapterCost = o.adapterCost
 		return model, nil
 	default:
 		return nil, fmt.Errorf("latency model: unknown backend %q; valid options: %s",

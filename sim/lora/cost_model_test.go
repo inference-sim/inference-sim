@@ -152,6 +152,27 @@ func TestCostModel_StepOverheadGrowsWithAdapters(t *testing.T) {
 	}
 }
 
+// TestCostModel_StepOverheadIgnoresUnregisteredAdapter verifies an unregistered
+// adapter id is treated as base-model in the compute-overhead factor — consistent
+// with LoadLatency and FootprintBytes, which both return 0 for an unregistered id.
+// It must not inflate A_B (nor contribute a phantom rank), so a batch of only
+// unregistered ids normalizes to 1.0 and adding an unregistered id alongside a
+// registered one leaves the factor unchanged.
+func TestCostModel_StepOverheadIgnoresUnregisteredAdapter(t *testing.T) {
+	cm := testCostModel(t)
+
+	ghostOnly := []*sim.Request{{ID: "r1", Adapter: "ghost"}, {ID: "r2", Adapter: "phantom"}}
+	if got := cm.StepOverheadFactor(ghostOnly); got != 1.0 {
+		t.Errorf("StepOverheadFactor(unregistered-only batch) = %v, want 1.0 (treated as base-model)", got)
+	}
+
+	one := []*sim.Request{{ID: "r1", Adapter: "a8"}}
+	oneWithGhost := []*sim.Request{{ID: "r1", Adapter: "a8"}, {ID: "r2", Adapter: "ghost"}}
+	if got, want := cm.StepOverheadFactor(oneWithGhost), cm.StepOverheadFactor(one); got != want {
+		t.Errorf("unregistered id inflated the factor: with-ghost=%v, registered-only=%v", got, want)
+	}
+}
+
 // TestCostModel_Deterministic verifies the queries are pure: repeated calls with
 // the same inputs return identical results and do not mutate the model (INV-6, R7).
 func TestCostModel_Deterministic(t *testing.T) {
