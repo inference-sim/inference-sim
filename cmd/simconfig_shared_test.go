@@ -105,7 +105,7 @@ func TestResolvePolicies_InvalidAdmissionPolicy_Fatal(t *testing.T) {
 func TestResolvePolicies_PolicyFlagsRegisteredInBothCommands(t *testing.T) {
 	policyFlags := []string{
 		"admission-policy", "routing-policy", "scheduler", "preemption-policy",
-		"routing-scorers", "token-bucket-capacity", "token-bucket-refill-rate",
+		"routing-scorers", "lora-scorer-weight", "token-bucket-capacity", "token-bucket-refill-rate",
 		"kv-cpu-blocks", "kv-offload-threshold", "kv-transfer-bandwidth",
 		"kv-transfer-base-latency", "snapshot-refresh-interval",
 		"admission-latency", "routing-latency", "trace-level",
@@ -157,7 +157,7 @@ func TestBothCommands_SimConfigFlagsHaveIdenticalDefaults(t *testing.T) {
 		"total-kv-blocks", "block-size-in-tokens", "max-model-len",
 		"gpu-memory-utilization", "model-config-folder", "hardware-config",
 		"admission-policy", "routing-policy", "scheduler", "preemption-policy",
-		"routing-scorers", "token-bucket-capacity", "token-bucket-refill-rate",
+		"routing-scorers", "lora-scorer-weight", "token-bucket-capacity", "token-bucket-refill-rate",
 		"kv-cpu-blocks", "kv-offload-threshold", "kv-transfer-bandwidth",
 		"kv-transfer-base-latency", "snapshot-refresh-interval",
 		"admission-latency", "routing-latency", "trace-level",

@@ -167,6 +167,16 @@ func (i *InstanceSimulator) BatchSize() int {
 	return i.sim.BatchSize()
 }
 
+// ResidentAdapterIDs returns the ids of LoRA adapters currently resident on this
+// instance, or nil when the LoRA subsystem is inert. Read by the snapshot provider
+// to populate RoutingSnapshot.ResidentAdapters for the lora-affinity scorer (#1469).
+func (i *InstanceSimulator) ResidentAdapterIDs() []string {
+	if i.sim == nil {
+		return nil
+	}
+	return i.sim.ResidentAdapterIDs()
+}
+
 // KVUtilization returns the fraction of KV cache blocks in use.
 // Returns 0 when TotalCapacity is 0 to avoid division by zero (R11 defensive guard).
 func (i *InstanceSimulator) KVUtilization() float64 {

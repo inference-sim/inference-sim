@@ -47,6 +47,54 @@ func TestClusterSimulator_AdapterMetrics_AggregatedAcrossInstances_E2E(t *testin
 	}
 }
 
+// TestBuildRouterState_PopulatesResidentAdapters verifies T037: after an adapter
+// is loaded on an instance, buildRouterState's snapshot for that instance reports
+// it in ResidentAdapters (the signal the lora-affinity scorer consumes). Under the
+// default Immediate freshness (SnapshotRefreshInterval unset ⇒ 0), the snapshot
+// reflects live resident state at build time.
+func TestBuildRouterState_PopulatesResidentAdapters(t *testing.T) {
+	config := newTestDeploymentConfig(1)
+	config.RoutingPolicy = "round-robin"
+	capVal := 8
+	base, bw, fp := 1000.0, 2.0e6, 2.0e6
+	config.LoRAConfig = sim.LoRAConfig{
+		AdapterCapacity:       &capVal,
+		LoadBaseLatencyUs:     &base,
+		LoadBandwidthBytesUs:  &bw,
+		FootprintBytesPerRank: &fp,
+		Adapters:              []sim.AdapterSpec{{ID: "adapter_x", Rank: 8}},
+	}
+	requests := newTestRequests(3)
+	for _, r := range requests {
+		r.Adapter = "adapter_x"
+	}
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	// After the run the adapter remains resident (capacity 8, never evicted).
+	state := buildRouterState(cs, nil)
+	if len(state.Snapshots) != 1 {
+		t.Fatalf("expected 1 snapshot, got %d", len(state.Snapshots))
+	}
+	if !state.Snapshots[0].ResidentAdapters["adapter_x"] {
+		t.Errorf("ResidentAdapters = %v, want it to contain adapter_x", state.Snapshots[0].ResidentAdapters)
+	}
+}
+
+// TestBuildRouterState_ResidentAdaptersNilWhenInert verifies the no-op default:
+// with no LoRA configured, ResidentAdapters stays nil so the lora-affinity scorer
+// is neutral and routing is byte-identical to a pre-feature build (INV-6).
+func TestBuildRouterState_ResidentAdaptersNilWhenInert(t *testing.T) {
+	cs := NewClusterSimulator(newTestDeploymentConfig(2), NewSliceRequestSource(newTestRequests(2)), nil)
+	mustRun(t, cs)
+	state := buildRouterState(cs, nil)
+	for _, snap := range state.Snapshots {
+		if snap.ResidentAdapters != nil {
+			t.Errorf("instance %s: ResidentAdapters = %v, want nil when LoRA inert", snap.ID, snap.ResidentAdapters)
+		}
+	}
+}
+
 // TestAggregateMetrics_AdapterCountsSummedAcrossInstances verifies that per-adapter
 // resident-set load/eviction counts (#1465) are summed across instances during
 // cluster aggregation. The same adapter can be resident on multiple instances, so
