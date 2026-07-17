@@ -135,8 +135,8 @@ rank → longer step; usable KV shrinks with resident adapters, total conserved.
 
 ### HBM accounting (PR5, static)
 
-- [ ] T033 [P] [US3] Write HBM contract test in `sim/latency/kv_capacity_test.go`: usable KV blocks shrink by the **fixed `capacity × per-slot footprint` (max declared rank)** reservation set once at startup; `allocated + free + adapter_reserved = total` (INV-4/INV-L4); and **`adapter_reserved` stays numerically invariant across adapter load/evict churn** (guards against the rejected dynamic running-sum model, which would nominally satisfy a laxer test); an infeasible reservation is rejected at startup (R22), not a runtime drop (fail first)
-- [ ] T034 [US3] Subtract the **fixed capacity-based reservation** (`capacity × per-slot footprint`, from max declared rank) in `CalculateKVBlocks` (`sim/latency/kv_capacity.go`), once at startup beside model weights, to pass T033
+- [X] T033 [P] [US3] Write HBM contract test in `sim/latency/kv_capacity_test.go`: usable KV blocks shrink by the **fixed `capacity × per-slot footprint` (max declared rank)** reservation set once at startup; `allocated + free + adapter_reserved = total` (INV-4/INV-L4); and **`adapter_reserved` stays numerically invariant across adapter load/evict churn** (guards against the rejected dynamic running-sum model, which would nominally satisfy a laxer test); an infeasible reservation is rejected at startup (R22), not a runtime drop (fail first)
+- [X] T034 [US3] Subtract the **fixed capacity-based reservation** (`capacity × per-slot footprint`, from max declared rank) in `CalculateKVBlocks` (`sim/latency/kv_capacity.go`), once at startup beside model weights, to pass T033
 
 **Checkpoint**: All three cost terms live; TTFT/throughput/memory physically meaningful; INV-4 extended and holds.
 

@@ -159,6 +159,14 @@ Example:
 		}
 		logrus.Infof("Simulation horizon: %d ticks", replayHorizon)
 
+		// LoRA control-plane (#1464): resolve ONCE (R4) so the KV auto-capacity path
+		// (resolveLatencyConfig + per-pool calc) subtracts the same static HBM
+		// reservation runCmd does (PR5 / INV-13 parity) and the SimConfig below reuses
+		// it. Reservation is 0 when the subsystem is inert (INV-6). Set before
+		// resolveLatencyConfig.
+		loraCfg := resolveLoRAConfig(cmd)
+		loraReservedBytesForKV = adapterReservedBytesFor(loraCfg)
+
 		// Resolve latency backend configuration (single code path shared with runCmd).
 		lr := resolveLatencyConfig(cmd)
 
@@ -318,7 +326,8 @@ Example:
 						} else {
 							// Per-pool TP but GLOBAL dp: per-pool DP is out of scope (#1420);
 							// --dp applies uniformly to all pools. Mirrors run (cmd/root.go).
-							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolPrefillTP, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParamsPool)
+							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolPrefillTP, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
+								latency.WithAdapterReservedBytes(loraReservedBytesForKV))
 							if calcErr != nil {
 								logrus.Fatalf("--prefill-tp/--prefill-hardware: KV capacity auto-calculation failed for prefill pool: %v", calcErr)
 							} else {
@@ -353,7 +362,8 @@ Example:
 							logrus.Warnf("--decode-hardware: GPU memory capacity not available for %q in hardware config; decode pool will use global total-kv-blocks=%d", poolDecodeGPU, totalKVBlocks)
 						} else {
 							// Per-pool TP, global dp (see prefill-pool note above; #1420).
-							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolDecodeTP, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParamsPool)
+							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolDecodeTP, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
+								latency.WithAdapterReservedBytes(loraReservedBytesForKV))
 							if calcErr != nil {
 								logrus.Fatalf("--decode-tp/--decode-hardware: KV capacity auto-calculation failed for decode pool: %v", calcErr)
 							} else {
@@ -467,7 +477,7 @@ Example:
 				LatencyCoeffs:        sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
 				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dataParallelism, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
-				LoRAConfig:           resolveLoRAConfig(cmd),
+				LoRAConfig:           loraCfg,
 				SLOPriorityOverrides: sloPriorityOverrides,
 			},
 			NumInstances:                    numInstances,

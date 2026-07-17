@@ -125,6 +125,13 @@ var (
 	loraLoadBandwidthBytesUs  float64 // --lora-load-bandwidth-bytes-us
 	loraFootprintBytesPerRank float64 // --lora-footprint-bytes-per-rank
 
+	// loraReservedBytesForKV carries the resolved static LoRA HBM reservation
+	// (bytes) into KV auto-capacity, mirroring how totalKVBlocks is threaded as a
+	// package var. Set once per command RunE from the single resolveLoRAConfig call
+	// (BEFORE resolveLatencyConfig, which reads it at the main auto-calc); 0 when the
+	// subsystem is inert, keeping KV capacity byte-identical to today (INV-6/PR5).
+	loraReservedBytesForKV int64
+
 	// Fitness evaluation config (PR9)
 	fitnessWeights string // Fitness weights string "key:val,key:val"
 
@@ -619,14 +626,17 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 			if kvParamsErr != nil {
 				logrus.Warnf("--latency-model: could not extract KV capacity params: %v. "+
 					"Using total-kv-blocks=%d. Set --total-kv-blocks explicitly to override", kvParamsErr, totalKVBlocks)
+				logAdapterHBMReservationNotApplied()
 			} else if hwConfig.MemoryGiB <= 0 {
 				logrus.Warnf("--latency-model: GPU memory capacity not available in hardware config; "+
 					"using current total-kv-blocks=%d. Add MemoryGiB to hardware_config.json or pass --total-kv-blocks explicitly", totalKVBlocks)
+				logAdapterHBMReservationNotApplied()
 			} else {
 				if kvParams.HiddenAct == "" {
 					logrus.Infof("--latency-model: hidden_act not set in config.json; assuming SwiGLU (3-matrix MLP) for weight estimation")
 				}
-				autoBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, hwConfig, tensorParallelism, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParams)
+				autoBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, hwConfig, tensorParallelism, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParams,
+					latency.WithAdapterReservedBytes(loraReservedBytesForKV))
 				if calcErr != nil {
 					logrus.Fatalf("--latency-model: KV capacity auto-calculation failed: %v", calcErr)
 				}
@@ -634,7 +644,17 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 				logrus.Infof("--gpu-memory-utilization: %.2f used for KV block auto-calculation", gpuMemoryUtilization)
 				logrus.Infof("--latency-model: auto-calculated total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d, block_size=%d, MoE=%v)",
 					totalKVBlocks, hwConfig.MemoryGiB, tensorParallelism, dataParallelism, blockSizeTokens, kvParams.IsMoE)
+				logAdapterHBMReservation("--latency-model")
 			}
+		} else if loraReservedBytesForKV > 0 {
+			// Explicit --total-kv-blocks bypasses the global auto-calc, so the static
+			// LoRA HBM reservation is NOT subtracted from that global count (it applies
+			// only on an auto-calc path). Surface this so a user who configured adapters
+			// is not surprised that usable KV did not shrink (matches the --lora-config
+			// flag help). Note: any per-pool auto-calc (--prefill-tp/--decode-tp etc.)
+			// still applies the reservation to its own pool block count.
+			logrus.Warnf("--total-kv-blocks set explicitly (%d blocks); the static LoRA adapter HBM reservation (%.2f GiB) is NOT applied to that explicit global block count (per-pool auto-calc, if any, still applies it) — omit --total-kv-blocks to let auto-calc subtract it",
+				totalKVBlocks, float64(loraReservedBytesForKV)/float64(1<<30))
 		}
 
 		// Auto-derive --max-model-len from HF config's max_position_embeddings.
@@ -1154,7 +1174,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// and per-rank step_overhead_tiers are config-file only (--lora-config); a scalar
 	// flag cannot express a per-rank map. Scalar coefficient flags compose with and
 	// override the file / defaults.yaml (R18: applied only when Changed).
-	cmd.Flags().StringVar(&loraConfigPath, "lora-config", "", "Path to YAML file with a top-level lora: block (adapter registry, capacity, cost coefficients). Absent => LoRA subsystem inert.")
+	cmd.Flags().StringVar(&loraConfigPath, "lora-config", "", "Path to YAML file with a top-level lora: block (adapter registry, capacity, cost coefficients). The static adapter HBM reservation is subtracted from KV capacity only on the auto-calc path; an explicit --total-kv-blocks is used as-is (reservation not applied). Absent => LoRA subsystem inert.")
 	cmd.Flags().IntVar(&loraAdapterCapacity, "lora-adapter-capacity", 0, "Per-instance resident adapter slots (0 with adapters declared => error). Applied only when set.")
 	cmd.Flags().Float64Var(&loraLoadBaseLatencyUs, "lora-load-base-latency-us", 0, "Cold adapter-load fixed latency in µs. Applied only when set; else --lora-config / defaults.yaml.")
 	cmd.Flags().Float64Var(&loraLoadBandwidthBytesUs, "lora-load-bandwidth-bytes-us", 0, "Cold adapter-load bandwidth in bytes/µs (>0). Applied only when set; else --lora-config / defaults.yaml.")
@@ -1251,6 +1271,79 @@ func resolveLoRAConfig(cmd *cobra.Command) sim.LoRAConfig {
 	return cfg
 }
 
+// adapterReservedBytesFor returns the static LoRA HBM reservation (bytes) to carve
+// out of the KV budget for a resolved config, obtained through the sim/lora cost
+// model's pure AdapterReservedBytes() query (design boundary #4 — the memory path
+// never reaches into sim/lora internals). It routes through sim.BuildAdapterCost so
+// the activation condition matches NewSimulator's resident-set/cost wiring exactly
+// (R4): 0 when the subsystem is inert (no adapters, no capacity, or sim/lora not
+// linked), leaving KV capacity byte-identical to today (INV-6). A malformed cost
+// config aborts at the CLI boundary (Principle V), the same check NewSimulator makes.
+//
+// This deliberately builds an adapter-cost model that sim.NewSimulator (the
+// cold-load gate) and sim/cluster.NewInstanceSimulator (the latency backends,
+// #1467) each also build from the same config via sim.BuildAdapterCost. The model
+// is a pure, stateless value object, so independent builds from one config are
+// behaviorally identical — the extra one-time O(adapters) construction at startup is
+// the established BuildAdapterCost pattern, not a caching bug.
+func adapterReservedBytesFor(cfg sim.LoRAConfig) int64 {
+	ac, err := sim.BuildAdapterCost(sim.SimConfig{LoRAConfig: cfg})
+	if err != nil {
+		logrus.Fatalf("Invalid LoRA configuration (HBM reservation): %v", err)
+	}
+	if ac == nil {
+		return 0
+	}
+	// Defense in depth: NewCostModel already rejects a non-finite reservation and
+	// caps it below maxReservedBytes (< math.MaxInt64), so this conversion is exact
+	// and non-negative for any model built through it. Guard the CLI boundary
+	// explicitly anyway — so a future construction path that bypasses that check can
+	// never silently truncate a huge/±Inf float64 to a garbage int64 (Go's
+	// out-of-range float→int conversion is implementation-defined). Principle V:
+	// fail at the CLI boundary, not deep in the KV-capacity library.
+	//
+	// int64(x) is well-defined and exact for every representable float64 strictly
+	// below 2^63. The trap is float64(math.MaxInt64): MaxInt64 (2^63-1) is not
+	// representable in float64 and rounds UP to 2^63, so it must NOT be used as the
+	// bound (int64(2^63) overflows). We reject at the comfortably-conservative,
+	// exactly-representable 2^62 (≈4.6e18) — far above any real reservation (the cost
+	// model caps at 1e18) — so the cast is provably safe without relying on the exact
+	// 2^63 edge.
+	const maxSafeReservedBytes = float64(int64(1) << 62)
+	reserved := ac.AdapterReservedBytes()
+	if math.IsNaN(reserved) || math.IsInf(reserved, 0) || reserved < 0 || reserved >= maxSafeReservedBytes {
+		logrus.Fatalf("Invalid LoRA configuration (HBM reservation): %v bytes is outside the representable range", reserved)
+	}
+	return int64(reserved)
+}
+
+// logAdapterHBMReservation surfaces the static LoRA HBM reservation once, on the
+// main auto-calculated KV-block path, so a user can see WHY usable KV shrank (the
+// success-path counterpart to the reservation term in CalculateKVBlocks'
+// insufficient-memory / infeasibility error). The reservation is a single per-instance constant applied identically to
+// every KV auto-calc (global and any per-pool), so logging it once conveys the full
+// picture without repetition. No-op when the subsystem is inert (reservation 0), so
+// non-LoRA runs log nothing new (INV-6). scope labels the originating flag/path.
+func logAdapterHBMReservation(scope string) {
+	if loraReservedBytesForKV > 0 {
+		logrus.Infof("%s: reserved %.2f GiB GPU HBM for LoRA adapters (static capacity × per-slot footprint); usable KV blocks reduced accordingly",
+			scope, float64(loraReservedBytesForKV)/float64(1<<30))
+	}
+}
+
+// logAdapterHBMReservationNotApplied warns that a configured LoRA HBM reservation
+// was NOT subtracted because auto-calc was abandoned (KV params unextractable or no
+// GPU-memory figure) and total-kv-blocks fell back to its default. Without this, a
+// user who configured adapters would see only the generic "couldn't auto-derive
+// capacity" warning and no LoRA-specific signal that the reservation was dropped
+// (silent-LoRA-misconfig class). No-op when the subsystem is inert (INV-6).
+func logAdapterHBMReservationNotApplied() {
+	if loraReservedBytesForKV > 0 {
+		logrus.Warnf("--lora-config: KV auto-calculation was skipped, so the static LoRA adapter HBM reservation (%.2f GiB) is NOT applied to the fallback total-kv-blocks=%d — fix the model/hardware config or set --total-kv-blocks with headroom for adapters",
+			float64(loraReservedBytesForKV)/float64(1<<30), totalKVBlocks)
+	}
+}
+
 // applyTimeoutToSpec sets ClientSpec.Timeout and CohortSpec.Timeout on every entry in spec.
 // timeoutSecs>0 converts to µs and sets a deadline; timeoutSecs<=0 sets an explicit *int64(0)
 // (disabled). Explicit zero is required so computeDeadline does not fall back to the 300s
@@ -1308,6 +1401,14 @@ var runCmd = &cobra.Command{
 		if model == "" { // model not provided, exit
 			logrus.Fatalf("LLM name not provided. Exiting simulation.")
 		}
+
+		// LoRA control-plane (#1464): resolve the config ONCE here (R4 single site) so
+		// both the KV auto-capacity path — resolveLatencyConfig and the per-pool calc
+		// below read the resulting static HBM reservation (PR5) — and the SimConfig
+		// literal further down share one resolution. The reservation is 0 (KV
+		// unaffected) when the subsystem is inert (INV-6). Set before resolveLatencyConfig.
+		loraCfg := resolveLoRAConfig(cmd)
+		loraReservedBytesForKV = adapterReservedBytesFor(loraCfg)
 
 		// Resolve latency backend configuration (single code path shared with replayCmd).
 		lr := resolveLatencyConfig(cmd)
@@ -1376,7 +1477,8 @@ var runCmd = &cobra.Command{
 						} else {
 							// Per-pool TP but GLOBAL dp: per-pool DP is out of scope (#1420);
 							// --dp applies uniformly to all pools. Not a bug — see issue #1420.
-							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolPrefillTP, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParamsPool)
+							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolPrefillTP, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
+								latency.WithAdapterReservedBytes(loraReservedBytesForKV))
 							if calcErr != nil {
 								logrus.Fatalf("--prefill-tp/--prefill-hardware: KV capacity auto-calculation failed for prefill pool: %v", calcErr)
 							} else {
@@ -1411,7 +1513,8 @@ var runCmd = &cobra.Command{
 							logrus.Warnf("--decode-hardware: GPU memory capacity not available for %q in hardware config; decode pool will use global total-kv-blocks=%d", poolDecodeGPU, totalKVBlocks)
 						} else {
 							// Per-pool TP, global dp (see prefill-pool note above; #1420).
-							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolDecodeTP, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParamsPool)
+							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolDecodeTP, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
+								latency.WithAdapterReservedBytes(loraReservedBytesForKV))
 							if calcErr != nil {
 								logrus.Fatalf("--decode-tp/--decode-hardware: KV capacity auto-calculation failed for decode pool: %v", calcErr)
 							} else {
@@ -1866,11 +1969,11 @@ var runCmd = &cobra.Command{
 		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v",
 			totalKVBlocks, simulationHorizon, lr.AlphaCoeffs, lr.BetaCoeffs)
 
-		// LoRA control-plane (#1464). Resolve once, then cross-validate every workload
-		// adapter reference against the declared registry (unknown id / base-model
-		// mismatch => Fatalf, never a silent no-op). With no adapters and no workload
-		// adapter references this is inert (INV-6).
-		loraCfg := resolveLoRAConfig(cmd)
+		// LoRA control-plane (#1464). loraCfg was resolved once at the top of RunE (for
+		// the KV HBM reservation); here we cross-validate every workload adapter
+		// reference against the declared registry (unknown id / base-model mismatch =>
+		// Fatalf, never a silent no-op). With no adapters and no workload adapter
+		// references this is inert (INV-6).
 		var loraRegistry sim.AdapterRegistry
 		if loraCfg.HasAdapters() {
 			r, regErr := sim.NewAdapterRegistryFunc(loraCfg.Adapters)

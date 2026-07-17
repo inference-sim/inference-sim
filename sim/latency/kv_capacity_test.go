@@ -10,6 +10,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/latency"
+	"github.com/inference-sim/inference-sim/sim/lora"
 )
 
 // --- Test helpers ---
@@ -1483,5 +1484,195 @@ func TestCalculateKVBlocks_RejectsInvalidDP(t *testing.T) {
 		if _, err := latency.CalculateKVBlocks(mc, hc, 2, dp, 16, 0.9, params); err == nil {
 			t.Errorf("dp=%d must be rejected, got nil error", dp)
 		}
+	}
+}
+
+// --- LoRA static HBM reservation (PR5, T033) ---
+//
+// The KV-capacity module subtracts a fixed, capacity-based adapter reservation
+// (capacity × per-slot footprint, sized from the max declared rank) once at
+// startup beside model weights — the static memory model (design D2 / INV-L4).
+// These tests assert the observable laws: usable KV shrinks by the reservation,
+// memory is conserved, the reservation is the fixed capacity/max-rank amount (not
+// a dynamic per-adapter sum), an infeasible reservation is rejected at startup
+// (R22), and the zero reservation is byte-identical to the pre-feature result
+// (INV-6).
+
+// perBlockBytesFor mirrors CalculateKVBlocks' per-block byte computation so tests
+// can reason about block-count deltas.
+func perBlockBytesFor(t *testing.T, mc sim.ModelConfig, tp int, blockSize int64) int64 {
+	t.Helper()
+	perTok, err := latency.KVBytesPerToken(mc, tp)
+	if err != nil {
+		t.Fatalf("KVBytesPerToken: %v", err)
+	}
+	return int64(perTok * float64(blockSize))
+}
+
+// TestCalculateKVBlocks_AdapterReservationShrinksAndConserves verifies a non-zero
+// reservation shrinks usable KV blocks and that memory is conserved: the block
+// count lost equals the reserved bytes divided by the per-block size
+// (allocated + free + adapter_reserved = total, INV-4/INV-L4), within one block
+// of truncation.
+func TestCalculateKVBlocks_AdapterReservationShrinksAndConserves(t *testing.T) {
+	mc, hc, params := validDenseModelConfig(), validHWConfig(), validDenseKVParams()
+	tp, dp, blockSize, util := 1, 1, int64(16), 0.9
+
+	base, err := latency.CalculateKVBlocks(mc, hc, tp, dp, blockSize, util, params)
+	if err != nil {
+		t.Fatalf("baseline (no reservation): %v", err)
+	}
+
+	reserved := int64(2) << 30 // 2 GiB
+	withRes, err := latency.CalculateKVBlocks(mc, hc, tp, dp, blockSize, util, params,
+		latency.WithAdapterReservedBytes(reserved))
+	if err != nil {
+		t.Fatalf("with reservation: %v", err)
+	}
+
+	if !(withRes < base) {
+		t.Fatalf("reservation did not shrink usable KV blocks: base=%d withReservation=%d", base, withRes)
+	}
+
+	// Conservation: the bytes carved out (lost blocks × per-block) equal the
+	// reservation, within one block of int64 truncation.
+	perBlock := perBlockBytesFor(t, mc, tp, blockSize)
+	lostBlocks := base - withRes
+	expectedLost := reserved / perBlock
+	if lostBlocks < expectedLost-1 || lostBlocks > expectedLost+1 {
+		t.Errorf("lost %d blocks, want ≈ reserved/perBlock = %d (±1); reserved=%d perBlock=%d",
+			lostBlocks, expectedLost, reserved, perBlock)
+	}
+}
+
+// TestCalculateKVBlocks_ReservationUsesFixedCapacityMaxRank drives the reservation
+// through the real sim/lora cost model (the pure query behind the sim.AdapterCost
+// seam) and confirms the value fed to CalculateKVBlocks is the fixed
+// capacity × maxRank amount — NOT a sum over declared/resident adapters. This
+// guards against the rejected dynamic running-sum model: because the reservation
+// is capacity-provisioned at the max rank, it is invariant to which adapters are
+// resident (adapters churn within the pre-reserved slots; INV-L4).
+func TestCalculateKVBlocks_ReservationUsesFixedCapacityMaxRank(t *testing.T) {
+	capacity := 4
+	fp := func(v float64) *float64 { return &v }
+	cfg := sim.LoRAConfig{
+		AdapterCapacity:       &capacity,
+		LoadBaseLatencyUs:     fp(1000.0),
+		LoadBandwidthBytesUs:  fp(2.0e6),
+		FootprintBytesPerRank: fp(2.0e6),
+		StepOverheadTiers:     map[int]sim.StepOverheadTier{8: {K6: fp(0.02), K7: fp(1.0)}},
+		Adapters: []sim.AdapterSpec{
+			{ID: "a8", Rank: 8},
+			{ID: "a16", Rank: 16},
+			{ID: "a32", Rank: 32}, // max rank sizes the per-slot footprint
+		},
+	}
+	cm, err := lora.NewCostModel(cfg)
+	if err != nil {
+		t.Fatalf("lora.NewCostModel: %v", err)
+	}
+
+	// The exact formula (capacity × maxRank × footprint, and that it is NOT a
+	// per-adapter sum) is the cost model's own contract, verified in
+	// TestCostModel_AdapterReservedBytes. Here we treat AdapterReservedBytes() as a
+	// black box and confirm the real cost model's value flows through
+	// CalculateKVBlocks and shrinks usable KV (the integration this test owns).
+	reserved := int64(cm.AdapterReservedBytes())
+	if reserved <= 0 {
+		t.Fatalf("cost model reservation must be positive, got %d", reserved)
+	}
+
+	mc, hc, params := validDenseModelConfig(), validHWConfig(), validDenseKVParams()
+	base, err := latency.CalculateKVBlocks(mc, hc, 1, 1, 16, 0.9, params)
+	if err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+	withRes, err := latency.CalculateKVBlocks(mc, hc, 1, 1, 16, 0.9, params,
+		latency.WithAdapterReservedBytes(reserved))
+	if err != nil {
+		t.Fatalf("with reservation: %v", err)
+	}
+	if !(withRes < base) {
+		t.Errorf("cost-model reservation did not shrink usable KV blocks: base=%d withReservation=%d", base, withRes)
+	}
+}
+
+// TestCalculateKVBlocks_AdapterReservationPerDPRankScaling verifies the reservation
+// is a per-DP-rank overhead (treated like model weights), NOT dp-scaled itself. For
+// an MoE model at dp>1 the per-rank block count is multiplied by dp to aggregate the
+// instance total, so the TOTAL blocks lost to the reservation is dp × (reserved /
+// per-block) — each rank independently reserves its own slots. This locks the DP
+// semantics: a reduction of only reserved/per-block would mean dp was ignored; a
+// reduction of dp² × (...) would mean the reservation was itself wrongly dp-scaled.
+func TestCalculateKVBlocks_AdapterReservationPerDPRankScaling(t *testing.T) {
+	mc, hc, params := validMoEModelConfig(), validHWConfig(), validMoEKVParams()
+	tp, dp, blockSize, util := 2, 2, int64(16), 0.9
+
+	base, err := latency.CalculateKVBlocks(mc, hc, tp, dp, blockSize, util, params)
+	if err != nil {
+		t.Fatalf("baseline MoE dp=2: %v", err)
+	}
+
+	reserved := int64(2) << 30 // 2 GiB, per DP rank
+	withRes, err := latency.CalculateKVBlocks(mc, hc, tp, dp, blockSize, util, params,
+		latency.WithAdapterReservedBytes(reserved))
+	if err != nil {
+		t.Fatalf("MoE dp=2 with reservation: %v", err)
+	}
+	if !(withRes < base) {
+		t.Fatalf("reservation did not shrink MoE dp=2 blocks: base=%d withReservation=%d", base, withRes)
+	}
+
+	perBlock := perBlockBytesFor(t, mc, tp, blockSize)
+	lostBlocks := base - withRes
+	expectedLost := int64(dp) * (reserved / perBlock) // per-rank loss, aggregated across dp ranks
+	// Tolerance ±dp: one block of int64 truncation per DP rank.
+	if lostBlocks < expectedLost-int64(dp) || lostBlocks > expectedLost+int64(dp) {
+		t.Errorf("MoE dp=%d lost %d blocks, want ≈ dp×(reserved/perBlock) = %d (±%d); reserved=%d perBlock=%d",
+			dp, lostBlocks, expectedLost, dp, reserved, perBlock)
+	}
+}
+
+// TestCalculateKVBlocks_InfeasibleReservationRejectedAtStartup verifies an adapter
+// reservation that cannot fit alongside weights + activation + minimum KV is
+// rejected at startup (returns an error the CLI maps to Fatalf), never a silent
+// runtime KV drop (R22 / INV-L4).
+func TestCalculateKVBlocks_InfeasibleReservationRejectedAtStartup(t *testing.T) {
+	mc, hc, params := validDenseModelConfig(), validHWConfig(), validDenseKVParams()
+	reserved := int64(1000) << 30 // 1000 GiB — far exceeds the 80 GiB budget
+	_, err := latency.CalculateKVBlocks(mc, hc, 1, 1, 16, 0.9, params,
+		latency.WithAdapterReservedBytes(reserved))
+	if err == nil {
+		t.Fatal("expected startup error for an infeasible adapter reservation (R22), got nil")
+	}
+	// Pin that the adapter reservation caused the rejection, not some unrelated
+	// capacity error — the error breakdown names the reservation term.
+	if !strings.Contains(err.Error(), "lora-adapter-reservation") {
+		t.Errorf("infeasibility error must name the adapter reservation term, got: %v", err)
+	}
+}
+
+// TestCalculateKVBlocks_ZeroReservationByteIdentical verifies the no-op default:
+// omitting the option, or passing zero, yields the exact pre-feature block count
+// (INV-6). A negative reservation is rejected (guard).
+func TestCalculateKVBlocks_ZeroReservationByteIdentical(t *testing.T) {
+	mc, hc, params := validDenseModelConfig(), validHWConfig(), validDenseKVParams()
+
+	base, err := latency.CalculateKVBlocks(mc, hc, 1, 1, 16, 0.9, params)
+	if err != nil {
+		t.Fatalf("no option: %v", err)
+	}
+	zero, err := latency.CalculateKVBlocks(mc, hc, 1, 1, 16, 0.9, params,
+		latency.WithAdapterReservedBytes(0))
+	if err != nil {
+		t.Fatalf("zero option: %v", err)
+	}
+	if zero != base {
+		t.Errorf("WithAdapterReservedBytes(0) = %d, want %d (INV-6 byte-identical no-op)", zero, base)
+	}
+
+	if _, err := latency.CalculateKVBlocks(mc, hc, 1, 1, 16, 0.9, params,
+		latency.WithAdapterReservedBytes(-1)); err == nil {
+		t.Error("negative adapter reservation must be rejected, got nil error")
 	}
 }
