@@ -17,13 +17,27 @@ import (
 // (corpus order, then round-robin clones); admission is strictly in that order.
 type SessionPoolDriver struct {
 	mgr          *SessionManager
-	queued       []*sim.Request // round-0 requests not yet injected, in admission order
+	queued       []*sim.Request // all total round-0 requests (originals + clones), in admission order
 	nextQueued   int            // index into queued of the next session to admit
 	activeCount  int
-	concurrent   int // max concurrently-active sessions (pool size N)
 	totalStarted int // sessions injected so far (initial pool + admitted)
 	totalTerm    int // sessions that have reached a terminal state
 	totalCount   int // total sessions in the pool (== len of all round-0 requests)
+}
+
+// cloneSampler returns a sampler independent of s for stateful sampler types.
+// SequenceSampler carries a mutable per-call cursor (index) and replays a fixed
+// recorded sequence, so each cloned session needs its own cursor over the same
+// values — otherwise a source session and its duplicate corrupt each other's
+// per-round sequence via the shared cursor. Stateless samplers (which derive all
+// randomness from the *rand.Rand passed to Sample) are safe to share and are
+// returned unchanged.
+func cloneSampler(s LengthSampler) LengthSampler {
+	if seq, ok := s.(*SequenceSampler); ok {
+		// Fresh cursor (index=0); the values slice is immutable after construction, so sharing it is safe.
+		return &SequenceSampler{values: seq.values}
+	}
+	return s
 }
 
 // cloneBlueprintForDup produces a duplicated blueprint + round-0 request with a
@@ -31,10 +45,18 @@ type SessionPoolDriver struct {
 // share KV cache with its source. dupIdx is the global clone index (>=1).
 func cloneBlueprintForDup(src SessionBlueprint, srcR0 *sim.Request, dupIdx int, rng *rand.Rand) (SessionBlueprint, *sim.Request) {
 	newID := fmt.Sprintf("%s_dup%d", src.SessionID, dupIdx)
-	bp := src // shallow copy; samplers are replayed read-only per-session
+	bp := src // shallow copy; stateful samplers are independently re-cloned below via cloneSampler
 	bp.SessionID = newID
 	// Fresh per-session RNG so token IDs differ deterministically from the source.
 	bp.RNG = rand.New(rand.NewSource(rng.Int63()))
+	// Give the clone independent sampler state. Interface fields copied by the
+	// shallow `bp := src` above still point at the SAME underlying sampler
+	// object as src for stateful types (e.g. *SequenceSampler's mutable index
+	// cursor) — without this, the source and its clone would corrupt each
+	// other's per-round sequence by advancing a shared cursor.
+	bp.InputSampler = cloneSampler(src.InputSampler)
+	bp.OutputSampler = cloneSampler(src.OutputSampler)
+	bp.ThinkTimeSampler = cloneSampler(src.ThinkTimeSampler)
 
 	// Cache-busting token prepended to the clone's round-0 input so the block
 	// hash chain diverges immediately from the source session (design §6).
@@ -97,7 +119,6 @@ func BuildSessionPool(blueprints []SessionBlueprint, r0Requests []*sim.Request, 
 	d := &SessionPoolDriver{
 		mgr:        mgr,
 		queued:     allR0,
-		concurrent: concurrent,
 		totalCount: total,
 	}
 	// Inject the first concurrent sessions immediately.
@@ -111,7 +132,7 @@ func BuildSessionPool(blueprints []SessionBlueprint, r0Requests []*sim.Request, 
 	return d, initial, nil
 }
 
-// terminalMarker reports whether a completion drove its session to a terminal
+// isSessionRequest reports whether a completion drove its session to a terminal
 // state. The wrapped SessionManager returns nil follow-ups on every terminal
 // path (timeout, dropped, final round, budget, horizon). A round that continues
 // returns exactly one follow-up. So: nil follow-ups AND this was a session
