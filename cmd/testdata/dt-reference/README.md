@@ -62,7 +62,17 @@ BLIS's faster base never enters. TTFT is also the DT's own weakest axis (~17–2
 SMAPE vs real; throughput ~5%, §15). The comparison mechanism ships regardless; the
 TTFT fidelity claim is withheld, not silently passed.
 
-**Caveat:** the canonical DT workload does not saturate BLIS, so the throughput
-agreement partly reflects both systems tracking offered load (BLIS aware/blind
-throughput ratio ≈0.999 vs DT ≈0.90). A saturating-workload validation of the D4
-compute-overhead term is future work.
+**Caveat (workload):** the canonical DT workload does not saturate BLIS, so the
+throughput agreement partly reflects both systems tracking offered load (BLIS
+aware/blind throughput ratio ≈0.999 vs DT ≈0.90). A saturating-workload validation
+of the D4 compute-overhead term is future work.
+
+**Caveat (rank-blind coefficients):** the DT overhead fit used here
+(`predictor_latency_overhead_small`) is linear in the unique-adapter count and
+**ignores rank**, so the LoRAConfig coefficients are mapped rank-blind
+(`k6/k7 = slope/intercept`, identical across the {8,16,32} rank tiers). This
+comparison therefore does **not** exercise BLIS's rank-tiered overhead
+(FR-009 / D4's max-rank-in-batch term) — with a single rank per adapter the tier
+key is fixed. Validating the rank dependence would require a rank-dependent DT fit
+(the `_small` variant's commented-out sigmoid, or a re-profile); BLIS's rank
+tiering is instead covered by the PR4 rank/uniqueness-sensitivity unit test.
