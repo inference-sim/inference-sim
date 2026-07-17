@@ -16,23 +16,36 @@ import (
 //     pre-admission gate (PR3): base + ceil(footprint(rank)/bandwidth).
 //   - StepOverheadFactor(b)  — multiplicative per-step compute overhead >= 1.0,
 //     1 + (K6(r_max)/K7(r_max))·A_B, applied by both latency backends (PR4).
-//   - FootprintBytes(id)     — per-adapter HBM footprint, summed into the KV
-//     reservation (PR5).
+//   - FootprintBytes(id)     — per-adapter HBM footprint (footprint_bytes_per_rank
+//     · rank); an input to LoadLatency, not itself a KV-reservation term.
+//   - AdapterReservedBytes() — the FIXED, capacity-based static HBM reservation
+//     (adapter_capacity × per-slot footprint, sized from the max declared rank)
+//     subtracted from the KV budget once at startup (PR5). A constant, NOT a
+//     running sum over currently-resident adapters (D2 / INV-L4).
 //
 // All methods are pure queries (Principle III): they never mutate the model and
 // return identical results for identical inputs (INV-6, no RNG — R7). Ranks are
 // resolved from the pre-declared registry built once at construction; requests
 // carry only the adapter id.
 //
-// It satisfies sim.AdapterCost (via the LoadLatency method); the type stays
-// exported so PR4/PR5 can consume StepOverheadFactor / FootprintBytes directly
-// while the sim/ seam interface grows only as each term is wired (R13).
+// It satisfies sim.AdapterCost; the type stays exported so the latency backends
+// consume StepOverheadFactor and the KV-capacity path consumes AdapterReservedBytes
+// through that seam (each term wired as its PR landed — PR3/PR4/PR5; R13).
 type CostModel struct {
 	loadBaseLatencyUs     float64
 	loadBandwidthBytesUs  float64 // > 0, divisor guard enforced at construction (R11)
 	footprintBytesPerRank float64
 
 	ranks map[string]int // adapter id -> declared rank (registry projection)
+
+	// adapterCapacity and maxRank size the static HBM reservation (PR5): the
+	// resident-slot count and the largest declared rank, resolved once at
+	// construction. per-slot footprint = footprintBytesPerRank · maxRank, so the
+	// reservation (capacity × per-slot) is a constant regardless of which adapters
+	// are resident (D2 / INV-L4). Both are 0 when no capacity / no adapters are
+	// declared, making the reservation 0 (INV-6 no-op).
+	adapterCapacity int
+	maxRank         int
 
 	// tiers holds the per-rank compute-overhead coefficients; tierRanks is the
 	// sorted key list used to clamp an out-of-envelope max rank to the nearest
@@ -70,11 +83,23 @@ func NewCostModel(cfg sim.LoRAConfig) (*CostModel, error) {
 	}
 
 	ranks := make(map[string]int, len(cfg.Adapters))
+	maxRank := 0
 	for _, a := range cfg.Adapters {
 		if a.ID == "" || a.Rank <= 0 {
 			return nil, fmt.Errorf("lora.NewCostModel: adapter %q must have non-empty id and rank > 0", a.ID)
 		}
 		ranks[a.ID] = a.Rank
+		if a.Rank > maxRank {
+			maxRank = a.Rank
+		}
+	}
+
+	// AdapterCapacity may be nil when adapters are absent (the config is inert);
+	// the reservation is 0 in that case. A declared-but-non-positive capacity is
+	// rejected by LoRAConfig.Validate upstream, so a set value is > 0 here.
+	adapterCapacity := 0
+	if cfg.AdapterCapacity != nil {
+		adapterCapacity = *cfg.AdapterCapacity
 	}
 
 	tiers := make(map[int]tierCoeff, len(cfg.StepOverheadTiers))
@@ -99,6 +124,8 @@ func NewCostModel(cfg sim.LoRAConfig) (*CostModel, error) {
 		loadBandwidthBytesUs:  *cfg.LoadBandwidthBytesUs,
 		footprintBytesPerRank: *cfg.FootprintBytesPerRank,
 		ranks:                 ranks,
+		adapterCapacity:       adapterCapacity,
+		maxRank:               maxRank,
 		tiers:                 tiers,
 		tierRanks:             tierRanks,
 	}
@@ -117,8 +144,26 @@ func NewCostModel(cfg sim.LoRAConfig) (*CostModel, error) {
 		}
 	}
 
+	// Fail fast if the static HBM reservation (capacity × footprint × maxRank) is
+	// non-finite (±Inf from a huge footprint/rank) or too large to convert to an
+	// int64 byte count. Its three factors are each individually bounded > 0 but
+	// their product is unbounded (R3/R20 — capacity and rank are unbounded ints).
+	// int64(x) for x ≥ 2^63 or ±Inf is implementation-defined (a garbage/negative
+	// value on some platforms), which would corrupt the KV-capacity subtraction
+	// rather than fail cleanly. maxReservedBytes bounds it below MaxInt64 with
+	// generous headroom, mirroring the maxLoadLatencyUs guard above.
+	if reserved := cm.AdapterReservedBytes(); !isFinite(reserved) || reserved > maxReservedBytes {
+		return nil, fmt.Errorf("lora.NewCostModel: static HBM reservation (capacity %d × footprint_bytes_per_rank %g × max rank %d = %v bytes) is unusable — reduce adapter_capacity, footprint_bytes_per_rank, or the maximum declared rank", adapterCapacity, cm.footprintBytesPerRank, maxRank, reserved)
+	}
+
 	return cm, nil
 }
+
+// maxReservedBytes caps the static adapter HBM reservation well below
+// math.MaxInt64 so the float64→int64 conversion at the KV-capacity boundary is
+// always exact and non-negative. 1e18 bytes = 1 exabyte — orders of magnitude
+// beyond any real GPU HBM, so any config exceeding it is degenerate.
+const maxReservedBytes = 1e18
 
 // maxLoadLatencyUs caps a single adapter load latency well below math.MaxInt64
 // ticks (µs), leaving headroom so now+loadTicks cannot overflow int64 for any
@@ -140,6 +185,19 @@ func (c *CostModel) FootprintBytes(id string) float64 {
 		return 0
 	}
 	return c.footprintBytesPerRank * float64(rank)
+}
+
+// AdapterReservedBytes returns the fixed, capacity-based HBM reservation in bytes
+// (>= 0): adapter_capacity × per-slot footprint, where the per-slot footprint is
+// sized from the MAX declared rank (footprintBytesPerRank · maxRank) so any adapter
+// fits any slot. This is the static memory model (design D2 / INV-L4): the value is
+// a constant for the model's lifetime — adapters load and evict WITHIN the
+// pre-reserved slots without changing it — as opposed to a dynamic running sum over
+// currently-resident adapters. Returns 0 when no capacity or no adapters are
+// configured (INV-6 / INV-L1 no-op). The KV-capacity module subtracts this once at
+// startup beside model weights (PR5). Pure and deterministic (R7).
+func (c *CostModel) AdapterReservedBytes() float64 {
+	return float64(c.adapterCapacity) * c.footprintBytesPerRank * float64(c.maxRank)
 }
 
 // LoadLatency returns the one-time cold-load latency of an adapter id in µs (>= 0):

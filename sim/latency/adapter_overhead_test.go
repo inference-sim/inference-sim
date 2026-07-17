@@ -28,6 +28,7 @@ type fakeAdapterCost struct{ factor float64 }
 
 func (f fakeAdapterCost) LoadLatency(string) float64                { return 0 }
 func (f fakeAdapterCost) StepOverheadFactor([]*sim.Request) float64 { return f.factor }
+func (f fakeAdapterCost) AdapterReservedBytes() float64             { return 0 }
 
 // newAdapterCost builds a real *lora.CostModel (satisfying sim.AdapterCost) with
 // the given rank tiers and adapter registry. Load-cost coefficients are inert
