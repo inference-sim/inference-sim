@@ -599,7 +599,7 @@ Example:
 			// truncates mid-drain, a refill pushed by OnComplete but discarded by the
 			// cluster's horizon guard is still counted as started, so Unstarted() may
 			// undercount dropped sessions and this warning may not fire. The
-			// self-draining path (no --horizon) is exact. Tracked in <follow-up issue>.
+			// self-draining path (no --horizon) is exact. Tracked in #1483.
 			if un := poolDriver.Unstarted(); un > 0 {
 				logrus.Warnf("--horizon cap reached before pool drained: %d of %d sessions never admitted (increase --horizon or omit it to self-drain)",
 					un, poolDriver.TotalSessions())
