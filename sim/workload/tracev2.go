@@ -28,6 +28,14 @@ type TraceHeader struct {
 	//   - empty (omitted) when distribution synthesis or concurrency mode is used
 	WorkloadSpec   string `yaml:"workload_spec,omitempty"`
 
+	// SessionContextGrowth controls per-round input assembly in closed-loop
+	// replay. "accumulate" makes each session reuse a single growing token
+	// buffer so round N+1's input is byte-identical to round N's plus new
+	// tokens (strict prefix reuse for KV-cache modeling; see design §5).
+	// Empty (default) = each round's input is generated independently
+	// (pre-existing behavior). Set by `blis convert otel`.
+	SessionContextGrowth string `yaml:"session_context_growth,omitempty"`
+
 	Server  *TraceServerConfig  `yaml:"server,omitempty"`
 	Network *TraceNetworkConfig `yaml:"network,omitempty"`
 	// GoodputSLOTargets: per-SLO-class TTFT/ITL/E2E thresholds for goodput

@@ -185,6 +185,9 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 	var requests []*sim.Request
 	var blueprints []SessionBlueprint
 
+	// Growth mode from header (design §5): "accumulate" → strict growing prefix.
+	contextGrowth := trace.Header.SessionContextGrowth
+
 	for _, sessionID := range sessionOrder {
 		sr := sessionMap[sessionID]
 		rounds := sr.records
@@ -268,6 +271,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			SessionID:        sessionID,
 			ClientID:         r0.ClientID,
 			MaxRounds:        len(rounds),
+			ContextGrowth:    contextGrowth,
 			ThinkTimeSampler: sessionThinkTimeSampler,
 			Horizon:          horizon,
 			InputSampler:     &SequenceSampler{values: inputSeq[1:]},  // rounds 1..N
