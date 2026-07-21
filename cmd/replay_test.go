@@ -2587,3 +2587,496 @@ func TestSimResult_NewFields_JSONOmitWhenEmpty(t *testing.T) {
 		t.Errorf("ITLMeanUs round-trip: got %f, want 5000.0", got.ITLMeanUs)
 	}
 }
+
+// TestReplayCmd_SessionPoolFlags verifies BC (Task 4, Step 1): --concurrent-sessions
+// and --total-sessions are registered on replayCmd with default value 0 (disabled).
+func TestReplayCmd_SessionPoolFlags(t *testing.T) {
+	poolFlag := replayCmd.Flags().Lookup("concurrent-sessions")
+	if poolFlag == nil {
+		t.Fatal("flag --concurrent-sessions not registered")
+	}
+	if poolFlag.DefValue != "0" {
+		t.Errorf("--concurrent-sessions default = %q, want \"0\"", poolFlag.DefValue)
+	}
+	numFlag := replayCmd.Flags().Lookup("total-sessions")
+	if numFlag == nil {
+		t.Fatal("flag --total-sessions not registered")
+	}
+	if numFlag.DefValue != "0" {
+		t.Errorf("--total-sessions default = %q, want \"0\"", numFlag.DefValue)
+	}
+}
+
+// runReplayCaptureStdout runs replayCmd with the given flags and returns
+// everything written to os.Stdout during the run. Replay's deterministic
+// metrics go to os.Stdout, not cmd.OutOrStdout() — this reuses the os.Pipe
+// swap pattern already established in this file (see the capture block
+// around TestReplayCmd_AnomalyCounters, ~line 1490): swap os.Stdout for a
+// pipe writer, run, restore, drain the reader.
+//
+// Before building the command this resets every package-level global that
+// replayCmd.Run reads but that registerSimConfigFlags does NOT rebind on a
+// fresh flag registration (results/report file paths, goodput SLO strings,
+// and policy-bundle-derived maps/thresholds that only ever get set from a
+// --policy-config bundle elsewhere in this file's other tests). Without this,
+// state left behind by an earlier test in this package — which mutates these
+// same package-level vars directly — could leak into this run. The reset is
+// restored via t.Cleanup so this helper does not itself become a polluter
+// for tests that run after it.
+//
+// registerSimConfigFlags(testCmd) on a fresh *cobra.Command DOES reset its
+// own bound globals (model, hardware, tp, latency-model, num-instances,
+// admission/routing policy, scheduler, PD/encode/flow-control fields, etc.)
+// to their registration-time defaults as a side effect of pflag's *Var
+// constructors — so those do not need manual resetting here.
+func runReplayCaptureStdout(t *testing.T, args []string) string {
+	t.Helper()
+
+	origResultsPath := resultsPath
+	origTraceOutput := replayTraceOutput
+	origSaturationReport := saturationReport
+	origPostHocDetector := postHocDetector
+	origSaturationThreshold := saturationThreshold
+	origGoodputTTFT := goodputSLOTTFT
+	origGoodputITL := goodputSLOITL
+	origGoodputE2E := goodputSLOE2E
+	origTenantBudgets := tenantBudgets
+	origSLOPriorityOverrides := sloPriorityOverrides
+	origSLOTargetsMap := sloTargetsMap
+	origTierShedThreshold := tierShedThreshold
+	origTierShedMinPriority := tierShedMinPriority
+	origSessionMode := replaySessionMode
+	origThinkTimeMs := replayThinkTimeMs
+	origThinkTimeDist := replayThinkTimeDist
+	origConcurrentSessions := replayConcurrentSessions
+	origTotalSessions := replayTotalSessions
+	t.Cleanup(func() {
+		resultsPath = origResultsPath
+		replayTraceOutput = origTraceOutput
+		saturationReport = origSaturationReport
+		postHocDetector = origPostHocDetector
+		saturationThreshold = origSaturationThreshold
+		goodputSLOTTFT = origGoodputTTFT
+		goodputSLOITL = origGoodputITL
+		goodputSLOE2E = origGoodputE2E
+		tenantBudgets = origTenantBudgets
+		sloPriorityOverrides = origSLOPriorityOverrides
+		sloTargetsMap = origSLOTargetsMap
+		tierShedThreshold = origTierShedThreshold
+		tierShedMinPriority = origTierShedMinPriority
+		replaySessionMode = origSessionMode
+		replayThinkTimeMs = origThinkTimeMs
+		replayThinkTimeDist = origThinkTimeDist
+		replayConcurrentSessions = origConcurrentSessions
+		replayTotalSessions = origTotalSessions
+	})
+
+	resultsPath = ""
+	replayTraceOutput = ""
+	saturationReport = ""
+	postHocDetector = "none"
+	saturationThreshold = 5000.0
+	goodputSLOTTFT, goodputSLOITL, goodputSLOE2E = "", "", ""
+	tenantBudgets = nil
+	sloPriorityOverrides = nil
+	sloTargetsMap = nil
+	tierShedThreshold, tierShedMinPriority = 0, 0
+	replaySessionMode = "fixed"
+	replayThinkTimeMs = 0
+	replayThinkTimeDist = ""
+	replayConcurrentSessions, replayTotalSessions = 0, 0
+
+	testCmd := &cobra.Command{}
+	registerSimConfigFlags(testCmd)
+	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+	testCmd.Flags().StringVar(&resultsPath, "results-path", "", "")
+	testCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", "")
+	testCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "")
+	testCmd.Flags().IntVar(&replayConcurrentSessions, "concurrent-sessions", 0, "")
+	testCmd.Flags().IntVar(&replayTotalSessions, "total-sessions", 0, "")
+	if err := testCmd.ParseFlags(args); err != nil {
+		t.Fatalf("ParseFlags failed: %v", err)
+	}
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	replayCmd.Run(testCmd, nil)
+	_ = w.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	return buf.String()
+}
+
+// extractMetricsJSON extracts the first top-level JSON object from replay's
+// stdout (the "=== Simulation Metrics ===" block emitted by Metrics.EmitOutput),
+// ignoring any human-readable text that follows (anomaly counters, per-SLO
+// metrics, session metrics, etc.). Uses brace balancing rather than a fixed
+// end marker since the amount of trailing text varies by run.
+func extractMetricsJSON(t *testing.T, out string) string {
+	t.Helper()
+	start := strings.Index(out, "{")
+	if start < 0 {
+		t.Fatalf("no JSON object found in stdout:\n%s", out)
+	}
+	depth := 0
+	for i := start; i < len(out); i++ {
+		switch out[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return out[start : i+1]
+			}
+		}
+	}
+	t.Fatalf("unbalanced JSON object in stdout:\n%s", out)
+	return ""
+}
+
+// TestReplayCmd_SessionPool_Deterministic verifies INV-6 (Task 4, Step 8):
+// two identical --concurrent-sessions/--total-sessions replay runs against the
+// same trace and seed produce byte-identical stdout.
+func TestReplayCmd_SessionPool_Deterministic(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "h.yaml")
+	dataPath := filepath.Join(dir, "d.csv")
+	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s0", RoundIndex: 1, InputTokens: 40, OutputTokens: 20, ArrivalTimeUs: 8_000_000, Status: "ok"},
+		{RequestID: 2, SessionID: "s1", RoundIndex: 0, InputTokens: 120, OutputTokens: 15, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 3, SessionID: "s1", RoundIndex: 1, InputTokens: 50, OutputTokens: 25, ArrivalTimeUs: 9_000_000, Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	args := []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000",
+		"--concurrent-sessions", "2", "--total-sessions", "4",
+	}
+	a := runReplayCaptureStdout(t, args)
+	b := runReplayCaptureStdout(t, args)
+	if a != b {
+		t.Errorf("stdout not deterministic across identical --concurrent-sessions runs (INV-6)")
+	}
+}
+
+// TestReplayCmd_SessionPool_SelfDrainsAllWaves proves the pool drains all
+// `--total-sessions` with --horizon UNSET — i.e. the self-drain horizon
+// override (Task 4, Step 5) is not truncated to the first wave by the 600s
+// auto-fallback (computeHorizonFromMaxArrival returns 600s when every
+// injected arrival is at t=0, which every OTel-derived corpus is). Uses a
+// 2-session corpus of single-round sessions and --total-sessions 8 (4 waves
+// at --concurrent-sessions 2): total sessions == total rounds == total
+// completed requests, so completed_requests in the metrics JSON must be 8.
+func TestReplayCmd_SessionPool_SelfDrainsAllWaves(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "h.yaml")
+	dataPath := filepath.Join(dir, "d.csv")
+	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
+	// 2 single-round sessions; round-0 arrivals at 0 (auto-horizon would be 600s).
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s1", RoundIndex: 0, InputTokens: 120, OutputTokens: 15, ArrivalTimeUs: 0, Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	// --horizon unset → self-draining. 4 waves of 2 sessions each = 8 total.
+	out := runReplayCaptureStdout(t, []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000",
+		"--concurrent-sessions", "2", "--total-sessions", "8",
+	})
+
+	var m map[string]any
+	if err := json.Unmarshal([]byte(extractMetricsJSON(t, out)), &m); err != nil {
+		t.Fatalf("parse metrics JSON: %v\nstdout:\n%s", err, out)
+	}
+	got, ok := m["completed_requests"].(float64)
+	if !ok {
+		t.Fatalf("completed_requests missing or not a number in metrics JSON: %v", m)
+	}
+	if int(got) != 8 {
+		t.Errorf("completed_requests = %d, want 8 (pool truncated — self-drain horizon override missing)", int(got))
+	}
+}
+
+// TestReplayCmd_SessionPool_SelfDrainOverridesBlueprintHorizon targets the
+// FIRST self-drain override site specifically (Task 4, Step 5's
+// replayHorizonPrelim edit, which becomes each SessionBlueprint's bp.Horizon).
+// It complements TestReplayCmd_SessionPool_SelfDrainsAllWaves (which exercises
+// the wiring end-to-end but never actually approaches a 600s wall-clock, so it
+// cannot by itself distinguish "override applied" from "override no-op").
+//
+// One 2-round session, round-0 arriving at t=0 (so the un-overridden auto
+// horizon — computeHorizonFromMaxArrival(0) — is exactly 600s, matching every
+// OTel-derived corpus where every round-0 arrival is 0). --think-time-ms
+// forces the round-1 -> round-2 think-time gap to 700s, past that 600s
+// auto-horizon. Per session.go's BC-19 guard (arrivalTime > bp.Horizon), round
+// 2 is silently dropped (session state -> horizon_interrupted) unless
+// bp.Horizon was overridden to math.MaxInt64 — so completed_requests is 1
+// (blueprint-horizon override missing) vs 2 (override applied).
+func TestReplayCmd_SessionPool_SelfDrainOverridesBlueprintHorizon(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "h.yaml")
+	dataPath := filepath.Join(dir, "d.csv")
+	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 50, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s0", RoundIndex: 1, InputTokens: 20, OutputTokens: 5, ArrivalTimeUs: 700_000_000, Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	out := runReplayCaptureStdout(t, []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000",
+		"--session-mode", "closed-loop", "--think-time-ms", "700000",
+		"--concurrent-sessions", "1", "--total-sessions", "1",
+	})
+
+	var m map[string]any
+	if err := json.Unmarshal([]byte(extractMetricsJSON(t, out)), &m); err != nil {
+		t.Fatalf("parse metrics JSON: %v\nstdout:\n%s", err, out)
+	}
+	got, ok := m["completed_requests"].(float64)
+	if !ok {
+		t.Fatalf("completed_requests missing or not a number in metrics JSON: %v", m)
+	}
+	if int(got) != 2 {
+		t.Errorf("completed_requests = %d, want 2 (round 2 dropped — BC-19 guard fired against the 600s auto-horizon; blueprint-horizon self-drain override missing)", int(got))
+	}
+}
+
+// TestReplayCmd_SessionPool_AutoPromotePermitsThinkTime is a regression test for
+// the auto-promote ordering fix: --concurrent-sessions' help text promises it
+// "implies closed-loop session semantics", so pairing it with --think-time-ms
+// but WITHOUT an explicit --session-mode closed-loop must succeed rather than
+// fatal on "--think-time-ms requires --session-mode closed-loop".
+//
+// Before the fix, the think-time-requires-closed-loop check ran before the
+// --concurrent-sessions auto-promote assignment, so this exact flag
+// combination would call logrus.Fatalf (os.Exit) — which would kill the test
+// binary outright rather than fail a single test. This test therefore only
+// asserts the POSITIVE post-fix behavior (the run completes and produces the
+// expected session-pool output); running it against the pre-fix ordering is
+// not something a Go test can safely observe, since os.Exit during
+// replayCmd.Run would abort the whole `go test` process before any assertion
+// runs. The ordering itself is covered structurally by inspecting
+// cmd/replay.go: the auto-promote block precedes both think-time checks.
+//
+// One single-round session, --concurrent-sessions 1 --total-sessions 1, so a
+// successful run completes exactly 1 request.
+func TestReplayCmd_SessionPool_AutoPromotePermitsThinkTime(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "h.yaml")
+	dataPath := filepath.Join(dir, "d.csv")
+	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 50, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	// Deliberately omit --session-mode: --concurrent-sessions must auto-promote
+	// to closed-loop BEFORE --think-time-ms's "requires closed-loop" check runs.
+	out := runReplayCaptureStdout(t, []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000",
+		"--concurrent-sessions", "1", "--total-sessions", "1",
+		"--think-time-ms", "500",
+	})
+
+	var m map[string]any
+	if err := json.Unmarshal([]byte(extractMetricsJSON(t, out)), &m); err != nil {
+		t.Fatalf("parse metrics JSON: %v\nstdout:\n%s", err, out)
+	}
+	got, ok := m["completed_requests"].(float64)
+	if !ok {
+		t.Fatalf("completed_requests missing or not a number in metrics JSON: %v", m)
+	}
+	if int(got) != 1 {
+		t.Errorf("completed_requests = %d, want 1 (auto-promote to closed-loop should have let the single-round session complete)", int(got))
+	}
+}
+
+// TestReplayCmd_AccumulateHeaderRequiresClosedLoop is a regression test for the
+// accumulate-header guard: `blis convert otel` writes
+// session_context_growth=accumulate and encodes per-round input_tokens as
+// DELTAS, which only reconstruct correctly via the closed-loop
+// accumulate-buffer path (LoadTraceV2SessionBlueprints). Fixed-mode replay
+// (the default — LoadTraceV2Requests) reads input_tokens as absolute
+// per-round counts and never consults SessionContextGrowth, so it would
+// silently misinterpret the deltas and produce wrong-but-plausible metrics.
+// The guard in cmd/replay.go Fatalfs instead.
+//
+// The negative case (fixed mode, no --concurrent-sessions) must Fatalf, which
+// os.Exit's — so, following the same pattern as TestReplayCmd_AutoscalerBundleFatal
+// and TestReplayCmd_NodePoolsBundleFatal, it is exercised in a subprocess re-run
+// of this same test (BLIS_TEST_SUBPROCESS=1) and asserted via exit code +
+// stderr content. The positive case (--concurrent-sessions auto-promotes to
+// closed-loop before the guard runs) is asserted in-process: if the guard
+// mis-fired here, logrus.Fatalf would os.Exit and kill the whole test binary,
+// so this test function returning at all is itself part of the proof.
+func TestReplayCmd_AccumulateHeaderRequiresClosedLoop(t *testing.T) {
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		// Running as subprocess: set up an accumulate-header trace with
+		// delta-encoded per-round input_tokens, and replay it in (default)
+		// fixed mode. Must Fatalf before completing.
+		dir := t.TempDir()
+		headerPath := filepath.Join(dir, "trace.yaml")
+		dataPath := filepath.Join(dir, "trace.csv")
+		header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+		records := []workload.TraceRecord{
+			{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 10, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
+			{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 4, OutputTokens: 5, ArrivalTimeUs: 100_000, Status: "ok"},
+		}
+		if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			os.Exit(2)
+		}
+
+		mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+		model = "test-model"
+		latencyModelBackend = "trained-physics"
+		totalKVBlocks = 1000
+		blockSizeTokens = 16
+		maxRunningReqs = 64
+		maxScheduledTokens = 2048
+		numInstances = 1
+		seed = 42
+		longPrefillTokenThreshold = 0
+		kvCPUBlocks = 0
+		kvOffloadThreshold = 0.9
+		kvTransferBandwidth = 100.0
+		kvTransferBaseLatency = 0
+		snapshotRefreshInterval = 0
+		admissionPolicy = "always-admit"
+		routingPolicy = "round-robin"
+		scheduler = "fcfs"
+		policyConfigPath = ""
+		maxModelLen = 0
+		traceLevel = "none"
+		counterfactualK = 0
+		traceHeaderPath = headerPath
+		traceDataPath = dataPath
+		modelConfigFolder = mcFolder
+		hwConfigPath = hwPath
+		gpu = "H100"
+		tensorParallelism = 1
+		defaultsFilePath = defaultsPath
+		replaySessionMode = "fixed"
+		replayConcurrentSessions = 0
+		replayTotalSessions = 0
+		replayThinkTimeMs = 0
+		replayThinkTimeDist = ""
+		resultsPath = ""
+		replayTraceOutput = ""
+
+		testCmd := &cobra.Command{}
+		registerSimConfigFlags(testCmd)
+		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+		if err := testCmd.ParseFlags([]string{
+			"--model", "test-model", "--latency-model", "trained-physics",
+			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+			"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+			"--trace-header", headerPath, "--trace-data", dataPath,
+			"--defaults-filepath", defaultsPath,
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)
+			os.Exit(2) // distinct from logrus.Fatalf exit code (1)
+		}
+		replayCmd.Run(testCmd, nil) // must Fatalf before here
+		os.Exit(0)                  // reached only if no fatal = parent test failure
+	}
+
+	// Parent: re-run this test as subprocess and expect exit code 1 (logrus.Fatalf).
+	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_AccumulateHeaderRequiresClosedLoop", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("expected non-zero exit when replaying an accumulate-header trace in fixed mode, got exit 0")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("unexpected error type: %v", err)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("expected exit code 1 (logrus.Fatalf), got %d; output:\n%s", exitErr.ExitCode(), out)
+	}
+	if !strings.Contains(string(out), "session_context_growth=accumulate") {
+		t.Errorf("fatal message should mention 'session_context_growth=accumulate', got:\n%s", out)
+	}
+
+	// Positive control: the SAME accumulate-header trace shape, replayed with
+	// --concurrent-sessions 1 (which auto-promotes --session-mode to
+	// closed-loop before the guard runs), must NOT trip the guard.
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	// Single-round session (matches TestReplayCmd_SessionPool_AutoPromotePermitsThinkTime's
+	// shape): completed_requests == 1 is an unambiguous "the guard let this run
+	// proceed to completion" signal, independent of round-index/think-time bookkeeping.
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 10, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	out2 := runReplayCaptureStdout(t, []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000",
+		"--concurrent-sessions", "1", "--total-sessions", "1",
+	})
+	var m2 map[string]any
+	if err := json.Unmarshal([]byte(extractMetricsJSON(t, out2)), &m2); err != nil {
+		t.Fatalf("positive control: parse metrics JSON: %v\nstdout:\n%s", err, out2)
+	}
+	got2, ok := m2["completed_requests"].(float64)
+	if !ok {
+		t.Fatalf("positive control: completed_requests missing or not a number in metrics JSON: %v", m2)
+	}
+	if int(got2) != 1 {
+		t.Errorf("positive control: completed_requests = %d, want 1 (guard must not fire once auto-promoted to closed-loop)", int(got2))
+	}
+}

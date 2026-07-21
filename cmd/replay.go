@@ -30,6 +30,9 @@ var (
 	replayThinkTimeMs   int
 	replayThinkTimeDist string // distribution spec for think time (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s")
 	// saturationReport is declared in root.go and shared across run, replay, observe
+
+	replayConcurrentSessions int // >0 enables fixed-pool closed-loop replay (N concurrent sessions)
+	replayTotalSessions      int // total sessions to replay when pooling (0 = corpus size)
 )
 
 var replayCmd = &cobra.Command{
@@ -91,6 +94,36 @@ Example:
 		if replayThinkTimeMs < 0 {
 			logrus.Fatalf("--think-time-ms must be non-negative, got %d", replayThinkTimeMs)
 		}
+		if replayConcurrentSessions < 0 {
+			logrus.Fatalf("--concurrent-sessions must be >= 0, got %d", replayConcurrentSessions)
+		}
+		if replayTotalSessions < 0 {
+			logrus.Fatalf("--total-sessions must be >= 0, got %d", replayTotalSessions)
+		}
+		// Auto-promote BEFORE the think-time-requires-closed-loop checks below:
+		// --concurrent-sessions' help text promises it "implies closed-loop session
+		// semantics", so a caller pairing it with --think-time-ms/--think-time-dist
+		// but omitting --session-mode must not be fatal'd for missing a mode that
+		// this very flag is about to supply.
+		if replayConcurrentSessions > 0 && replaySessionMode != "closed-loop" {
+			// Pool mode requires closed-loop; promote automatically with a notice.
+			logrus.Infof("--concurrent-sessions set; forcing --session-mode closed-loop")
+			replaySessionMode = "closed-loop"
+		}
+		// blis convert otel writes session_context_growth=accumulate and encodes
+		// per-round input_tokens as DELTAS, which only reconstruct correctly via
+		// the closed-loop accumulate-buffer path. Fixed-mode replay reads
+		// input_tokens as absolute per-round counts and never consults
+		// SessionContextGrowth, so it would silently misinterpret the deltas and
+		// produce wrong-but-plausible-looking metrics. Fail fast instead. This
+		// check runs after the auto-promote block above, so a pool run
+		// (--concurrent-sessions > 0, already promoted to closed-loop) passes.
+		if traceData.Header.SessionContextGrowth == "accumulate" && replaySessionMode != "closed-loop" {
+			logrus.Fatalf("trace header has session_context_growth=accumulate (per-round input_tokens are deltas that only reconstruct correctly in closed-loop replay), but --session-mode is %q. Re-run with --session-mode closed-loop, or use --concurrent-sessions N for pooled replay.", replaySessionMode)
+		}
+		if replayTotalSessions > 0 && replayConcurrentSessions == 0 {
+			logrus.Fatalf("--total-sessions requires --concurrent-sessions > 0")
+		}
 		if replayThinkTimeMs > 0 && replaySessionMode != "closed-loop" {
 			logrus.Fatalf("--think-time-ms requires --session-mode closed-loop")
 		}
@@ -122,6 +155,7 @@ Example:
 		// Build requests from trace — mode selects pre-baked vs closed-loop (BC-8, BC-9)
 		var requests []*sim.Request
 		var sessionMgr *workload.SessionManager
+		var poolDriver *workload.SessionPoolDriver
 		if replaySessionMode == "closed-loop" {
 			// Closed-loop: inject only round-0 requests; SessionManager drives follow-ups.
 			// Compute the preliminary horizon from trace records directly (O(n)) so we can
@@ -130,15 +164,30 @@ Example:
 			if cmd.Flags().Changed("horizon") {
 				replayHorizonPrelim = simulationHorizon
 			}
+			// Pool mode drains on session count, not wall-clock. Unless the user set an
+			// explicit --horizon cap, run the blueprints with an unbounded horizon so no
+			// session is horizon-interrupted mid-drain (INV-11 / conservation).
+			if replayConcurrentSessions > 0 && !cmd.Flags().Changed("horizon") {
+				replayHorizonPrelim = math.MaxInt64
+			}
 			r0Requests, blueprints, bErr := workload.LoadTraceV2SessionBlueprints(traceData, seed, thinkTimeSampler, replayHorizonPrelim)
 			if bErr != nil {
 				logrus.Fatalf("Failed to build session blueprints from trace: %v", bErr)
 			}
-			requests = r0Requests
 			if len(blueprints) == 0 {
-				// BC-12: warning path — no automated unit test (integration-level only)
 				logrus.Warnf("--session-mode closed-loop: no session records found in trace; all requests injected with fixed timing")
+				requests = r0Requests
+			} else if replayConcurrentSessions > 0 {
+				driver, initial, pErr := workload.BuildSessionPool(blueprints, r0Requests, replayConcurrentSessions, replayTotalSessions, seed)
+				if pErr != nil {
+					logrus.Fatalf("Failed to build session pool: %v", pErr)
+				}
+				poolDriver = driver
+				requests = initial
+				logrus.Infof("Session-pool mode: pool=%d total=%d, %d round-0 requests injected initially",
+					replayConcurrentSessions, driver.TotalSessions(), len(initial))
 			} else {
+				requests = r0Requests
 				sessionMgr = workload.NewSessionManager(blueprints)
 				logrus.Infof("Closed-loop mode: %d session blueprints, %d round-0 requests", len(blueprints), len(requests))
 			}
@@ -156,6 +205,9 @@ Example:
 		replayHorizon := computeReplayHorizon(requests)
 		if cmd.Flags().Changed("horizon") {
 			replayHorizon = simulationHorizon
+		}
+		if replayConcurrentSessions > 0 && !cmd.Flags().Changed("horizon") {
+			replayHorizon = math.MaxInt64 // self-draining pool; cluster horizon unbounded
 		}
 		logrus.Infof("Simulation horizon: %d ticks", replayHorizon)
 
@@ -522,7 +574,15 @@ Example:
 		// Collect follow-ups for saturation analysis in closed-loop mode (BC-12, issue #1298)
 		var followUpRequests []*sim.Request
 		var onRequestDone func(*sim.Request, int64) []*sim.Request
-		if sessionMgr != nil {
+		switch {
+		case poolDriver != nil:
+			baseCb := poolDriver.OnComplete
+			onRequestDone = func(req *sim.Request, clock int64) []*sim.Request {
+				followUps := baseCb(req, clock)
+				followUpRequests = append(followUpRequests, followUps...)
+				return followUps
+			}
+		case sessionMgr != nil:
 			baseCb := sessionMgr.OnComplete
 			onRequestDone = func(req *sim.Request, clock int64) []*sim.Request {
 				followUps := baseCb(req, clock)
@@ -533,6 +593,17 @@ Example:
 		cs := cluster.NewClusterSimulator(config, cluster.NewSliceRequestSource(requests), onRequestDone)
 		if err := cs.Run(); err != nil {
 			logrus.Fatalf("Replay simulation failed: %v", err)
+		}
+		if poolDriver != nil {
+			// KNOWN LIMITATION (follow-up): under an explicit --horizon hard cap that
+			// truncates mid-drain, a refill pushed by OnComplete but discarded by the
+			// cluster's horizon guard is still counted as started, so Unstarted() may
+			// undercount dropped sessions and this warning may not fire. The
+			// self-draining path (no --horizon) is exact. Tracked in #1483.
+			if un := poolDriver.Unstarted(); un > 0 {
+				logrus.Warnf("--horizon cap reached before pool drained: %d of %d sessions never admitted (increase --horizon or omit it to self-drain)",
+					un, poolDriver.TotalSessions())
+			}
 		}
 
 		logrus.Infof("Replay wall-clock time: %.3fs", time.Since(startTime).Seconds())
@@ -781,6 +852,8 @@ func init() {
 	replayCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", `Session replay mode: "fixed" (pre-baked arrivals from trace) or "closed-loop" (load-adaptive follow-ups via SessionManager)`)
 	replayCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "Override think time between session rounds in milliseconds (0 = derive from trace inter-round arrival gaps; mutually exclusive with --think-time-dist; requires --session-mode closed-loop)")
 	replayCmd.Flags().StringVar(&replayThinkTimeDist, "think-time-dist", "", `Think-time distribution spec for closed-loop replay (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s" or "constant:value=500ms"). Mutually exclusive with --think-time-ms. Requires --session-mode closed-loop.`)
+	replayCmd.Flags().IntVar(&replayConcurrentSessions, "concurrent-sessions", 0, "Replay a fixed pool of N concurrent closed-loop sessions drawn from the trace corpus (0 = disabled). Implies closed-loop session semantics.")
+	replayCmd.Flags().IntVar(&replayTotalSessions, "total-sessions", 0, "Total sessions to replay under --concurrent-sessions; duplicates the corpus (with cache-busting) to fill. 0 = replay each corpus session once.")
 	replayCmd.Flags().StringVar(&goodputSLOTTFT, "slo-ttft", "", "Per-class TTFT goodput thresholds (e.g. \"critical=100ms,standard=500ms\"). Precedence: CLI > trace header > workload spec.")
 	replayCmd.Flags().StringVar(&goodputSLOITL, "slo-itl", "", "Per-class mean ITL goodput thresholds (e.g. \"critical=50ms,standard=150ms\").")
 	replayCmd.Flags().StringVar(&goodputSLOE2E, "slo-e2e", "", "Per-class E2E goodput thresholds (e.g. \"critical=5s,standard=30s\").")

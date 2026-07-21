@@ -157,6 +157,18 @@ go build -o blis main.go
 ./blis convert inference-perf --spec spec.yaml
 ./blis compose --from spec1.yaml --from spec2.yaml
 
+# Convert OTel agentic trace JSON to a TraceV2 corpus (accumulate = strict growing prefix)
+./blis convert otel --input otel_json/ --trace-output corpus \
+  --context-growth accumulate --max-think-time 15s
+
+# Replay a fixed pool of N concurrent closed-loop sessions from the corpus
+# (--total-sessions duplicates the corpus with cache-busting to fill the target)
+# Real agentic prompts can be huge (tens of thousands to >100K tokens) and grow
+# each round — raise --max-model-len (default ~41K) and scale --total-kv-blocks
+# accordingly, or every request drops as unservable (completed_requests: 0).
+./blis replay --trace-header corpus.yaml --trace-data corpus.csv \
+  --model qwen/qwen3-14b --concurrent-sessions 8 --total-sessions 200
+
 # Run with gateway queue flow control (utilization-based saturation gating)
 ./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
   --queue-depth-threshold 5 --kv-cache-util-threshold 0.8
