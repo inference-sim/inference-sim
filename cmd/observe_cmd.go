@@ -541,9 +541,17 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		observeSource = cluster.NewSliceRequestSource(wl.Requests)
 	}
 
+	// Box into the interface only when non-nil, so the orchestrator's
+	// `handler != nil` guard is correct (a typed-nil *SessionManager boxed into
+	// an interface would be non-nil and wrongly enable the serializer).
+	var completionHandler workload.CompletionHandler
+	if sessionMgr != nil {
+		completionHandler = sessionMgr
+	}
+
 	// Run orchestrator
 	startTime := time.Now()
-	runObserveOrchestrator(ctx, client, recorder, sessionMgr, observeSource, observeNoStreaming, observeMaxConcur, observeWarmup, prefixes, prefixLengths, observeUnconstrainedOutput, observeRecordITL, tokensPerWord)
+	runObserveOrchestrator(ctx, client, recorder, completionHandler, observeSource, observeNoStreaming, observeMaxConcur, observeWarmup, prefixes, prefixLengths, observeUnconstrainedOutput, observeRecordITL, tokensPerWord)
 	logrus.Infof("Observation wall-clock time: %.3fs", time.Since(startTime).Seconds())
 
 	// Surface any terminal sampler/generator error the lazy source recorded on a
@@ -960,7 +968,7 @@ func runObserveOrchestrator(
 	ctx context.Context,
 	client *RealClient,
 	recorder *Recorder,
-	sessionMgr *workload.SessionManager,
+	handler workload.CompletionHandler,
 	source cluster.RequestSource,
 	noStreaming bool,
 	maxConcurrency int,
@@ -991,19 +999,19 @@ func runObserveOrchestrator(
 	// they cannot double-count.
 	activeSessionCount := int64(0)
 	var seenSessions map[string]bool
-	if sessionMgr != nil {
+	if handler != nil {
 		seenSessions = make(map[string]bool)
 	}
 
 	// Session serializer goroutine (BC-8: single-threaded OnComplete)
 	var serializerDone chan struct{}
-	if sessionMgr != nil {
+	if handler != nil {
 		serializerDone = make(chan struct{})
 		go func() {
 			defer close(serializerDone)
 			for ce := range completionCh {
 				adapted := adaptForSessionManager(ce.req, ce.record)
-				followUps := sessionMgr.OnComplete(adapted, ce.wallClock)
+				followUps := handler.OnComplete(adapted, ce.wallClock)
 				for _, fu := range followUps {
 					followUpCh <- fu
 				}
@@ -1043,7 +1051,7 @@ func runObserveOrchestrator(
 		}
 
 		// Session completion (BC-3)
-		if sessionMgr != nil && req.SessionID != "" {
+		if handler != nil && req.SessionID != "" {
 			completionCh <- completionEvent{
 				req:       req,
 				record:    record,
@@ -1076,7 +1084,7 @@ func runObserveOrchestrator(
 	// deref of req.SessionID below assumes a buffered request is present.
 	takePreGen := func() *sim.Request {
 		req := nextPreGen
-		if sessionMgr != nil && req.SessionID != "" && !seenSessions[req.SessionID] {
+		if handler != nil && req.SessionID != "" && !seenSessions[req.SessionID] {
 			seenSessions[req.SessionID] = true
 			atomic.AddInt64(&activeSessionCount, 1)
 		}
@@ -1126,7 +1134,7 @@ func runObserveOrchestrator(
 			nextReq = pendingFollowUps[0]
 			pendingFollowUps = pendingFollowUps[1:]
 
-		} else if sessionMgr != nil && atomic.LoadInt64(&activeSessionCount) > 0 {
+		} else if handler != nil && atomic.LoadInt64(&activeSessionCount) > 0 {
 			// No pre-generated or buffered follow-ups — wait for new follow-up or drain
 			select {
 			case fu, ok := <-followUpCh:
@@ -1184,7 +1192,7 @@ drain:
 	wg.Wait()
 
 	// Close session channels
-	if sessionMgr != nil {
+	if handler != nil {
 		close(completionCh)
 		<-serializerDone
 	}
