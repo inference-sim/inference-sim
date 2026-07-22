@@ -169,6 +169,16 @@ go build -o blis main.go
 ./blis replay --trace-header corpus.yaml --trace-data corpus.csv \
   --model qwen/qwen3-14b --concurrent-sessions 8 --total-sessions 200
 
+# Observe corpus-mode: drive the SAME corpus as a fixed session pool against a
+# LIVE server (observe-side twin of `blis replay --concurrent-sessions`), so
+# `blis calibrate` can compare real vs simulated over the same session set.
+# --corpus-* are the INPUT corpus; --trace-* remain the OUTPUT observed trace.
+# Corpus-mode is mutually exclusive with --workload/--workload-spec/--rate/--concurrency.
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --corpus-header corpus.yaml --corpus-data corpus.csv \
+  --concurrent-sessions 8 --total-sessions 200 \
+  --trace-header observed.yaml --trace-data observed.csv
+
 # Run with gateway queue flow control (utilization-based saturation gating)
 ./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
   --queue-depth-threshold 5 --kv-cache-util-threshold 0.8
