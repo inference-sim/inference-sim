@@ -249,8 +249,10 @@ in the PR that first makes it enforceable:
 admission (D9) touch the admission/routing path, so conservation is re-verified per §11), INV-6
 (determinism / no-op byte-identity — the primary safety property, via INV-L1 and D8), INV-8
 (work-conserving — the eviction no-victim path, §6.2), INV-9 / INV-L6 (oracle boundary), INV-13
-(run/replay parity), and INV-L1/L2/L5 (LoRA no-op inertness, capacity bound, no eviction of in-use).
-All hold under every policy selection.
+(run/replay parity), INV-L1/L2/L3/L5 (LoRA no-op inertness, capacity bound, cold-load-charged-once —
+including that D4's t=0 seeding is *not* a charged load, §11 — and no eviction of in-use), and INV-7
+(signal freshness — preserved for all signals except the `ResidentAdapters` Immediate override under
+route-to-holder, D7). All hold under every policy selection.
 
 ## 7. Decisions with Trade-offs
 
@@ -370,7 +372,7 @@ initial-topology instances pass through the pending-placement queue; autoscaler 
 the seeding hook **must be placed at the deferred path's caller site (after construction returns), not
 inside the shared constructor** — otherwise seeding leaks onto autoscaler-added instances, violating §2.
 This is exactly the canonical-constructor / R4 "shotgun surgery" trap the guidelines flag. Because seeding
-must run at both initial-topology sites (and be gated against the shared constructor's third caller),
+must run at both initial-topology sites (and be gated so it does not fire in the shared constructor's other, autoscaler-scale-up caller),
 Creation's touch-point count carries a further +1–2 (§8/§10). §11's pre-placement + live-autoscaler
 validation item is the guard that would catch a wrong placement.
 
@@ -476,10 +478,12 @@ byte-identity constraint on this field.
 
 **Problem.** route-to-holder converts the resident-adapter membership set from a *soft bias*
 (as the `lora-affinity` scorer uses it) into a *hard candidate filter* that INV-PS1 depends on. That
-signal has **tiered freshness**: it is **Immediate** by default but becomes **Periodic** under
-`--snapshot-refresh-interval > 0` (R17/INV-7). Under Periodic freshness the router's cached view can
-claim an instance is a holder after it has evicted the adapter (or miss one it just loaded), which
-would let a strict route land on a non-holder — breaking INV-PS1.
+signal has **tiered freshness**: it is **Periodic by default** (the `--snapshot-refresh-interval` flag
+defaults to 50000µs = 50ms, matching CLAUDE.md INV-7 "Periodic by default at 50ms"), and only
+**Immediate** when `--snapshot-refresh-interval 0` is explicitly passed (R17/INV-7). So the stale-view
+risk is present in the **default** configuration, not merely an opt-in: under Periodic freshness the
+router's cached view can claim an instance is a holder after it has evicted the adapter (or miss one it
+just loaded), which would let a strict route land on a non-holder — breaking INV-PS1.
 
 **Decision.** When route-to-holder is active, `ResidentAdapters` is read at **Immediate** freshness
 (synchronous re-read at the routing decision, like `InFlightRequests`) **regardless** of the global
@@ -596,12 +600,12 @@ policy-template target for two of three seams. Justification:
 | Over-target area | Extra cost | Why justified |
 |---|---|---|
 | Eviction rank plumbing (D2) | +1 file (eviction context + registry wiring) | Rank is genuinely unreachable at the eviction site today; the alternative (mutating the frozen cost accessor) is worse. One-time cost; every future eviction policy reuses the context. |
-| Cluster-scoped pre-placement (D3) | +1–2 files (deployment-config field + resolution at **both** initial-topology construction sites — up-front loop and deferred node-ready path — with seeding gated at the deferred *caller* site so it does not fire in the shared constructor's autoscaler-scale-up caller) | Per-instance targeting is a cluster-topology concern with no home in instance-agnostic config; seeding both construction sites (while excluding the shared constructor's out-of-scope third caller) is required for correctness (INV-PS2) under NodePool capacity pressure. |
+| Cluster-scoped pre-placement (D3) | +1–2 files (deployment-config field + resolution at **both** initial-topology construction sites — up-front loop and deferred node-ready path — with seeding gated at the deferred *caller* site so it does not fire in the shared constructor's autoscaler-scale-up caller) | Per-instance targeting is a cluster-topology concern with no home in instance-agnostic config; seeding both construction sites (while the shared low-level constructor has exactly two callers — the deferred node-ready path and the out-of-scope autoscaler scale-up — so the hook goes at the deferred *caller*, not inside the shared constructor) is required for correctness (INV-PS2) under NodePool capacity pressure. |
+| Strict-routing freshness override (D7) | +1 touch (cluster-layer `ResidentAdapters` freshness override when route-to-holder is active) | route-to-holder's selection logic is a pure Policy Template, but the Immediate-freshness guarantee (INV-PS1 ground truth) requires a narrow, policy-conditioned change in the cluster snapshot layer, similar in spirit to how `InFlightRequests` is exempt from periodic staleness by construction. One-time; the mechanism choice is deferred to micro-plan (§14). |
 
-(Touch-point targets: design-guidelines §4.5 publishes a numeric reference only for Policy Template
+**Touch-point yardstick.** Design-guidelines §4.5 publishes a numeric reference only for Policy Template
 (~3 files); Backend Swap and Subsystem Module have no published number, so the ~3-file bar is borrowed
-as the nearest available yardstick, not an official target for those two types.)
-| Strict-routing freshness override (D7) | +1 touch (cluster-layer `ResidentAdapters` freshness override when route-to-holder is active) | route-to-holder's selection logic is a pure Policy Template, but the Immediate-freshness guarantee (INV-PS1 ground truth) requires a narrow, policy-conditioned change in the cluster snapshot layer — mirroring how `InFlightRequests` is forced Immediate there today. One-time; the mechanism choice is deferred to micro-plan (§14). |
+as the nearest available yardstick, not an official target for those two types.
 
 These are one-time structural costs paid once per seam, not per policy. After they land, adding a
 further eviction, creation, or routing policy returns to the ~2–3-file target.
@@ -613,9 +617,9 @@ further eviction, creation, or routing policy returns to the ~2–3-file target.
   **unchanged** — guaranteed by D8 (provenance omitted when all-baseline). A companion test asserts
   byte-identity when every seam is *explicitly* set to baseline. First test written per PR (TDD).
 - **Strict routing (INV-PS1):** given a holder exists, a request is never routed to a non-holder —
-  tested under **both** freshness modes, including a forced Periodic-mode scenario where a concurrent
-  eviction would stale the snapshot, asserting D7's Immediate override holds the invariant in ground
-  truth; given no holder, the D1 fallback applies. A **property test** (≥100 random
+  tested under **both** freshness modes, including the **default Periodic-freshness** scenario where a
+  concurrent eviction would stale the snapshot, asserting D7's Immediate override (which route-to-holder
+  forces) holds the invariant in ground truth; given no holder, the D1 fallback applies. A **property test** (≥100 random
   holder-configurations, per the repo's `TestProperty_*` precedent) complements the example-based tests.
 - **Eviction pin-safety + no-deadlock (INV-L5, INV-L2, INV-8):** given a full set with one unpinned
   candidate, only that candidate can be evicted under any policy; given several unpinned candidates of
@@ -699,9 +703,9 @@ experiment** above, which is the cross-run comparison in `lora-control`).
 | How do new events interact with tie-breaking? | None scheduled this round → no ordering guarantee needed. A future periodic policy reuses `ScalingTickEvent`'s pattern and gets a deliberately-assigned priority (packed within 0–9; scheme extends to negatives, so a low-risk extension). |
 | What new state is introduced? Who owns it? | Cluster-scoped adapter→instance assignment (deployment config), resolved to per-instance subsets (D3); the eviction context (instance simulator, D2); seeded residency (resident set, already owned). No new per-request state. |
 | What new metrics are derived? Incremental or on-demand? | Run-level effective policy triple (provenance), **computed once at policy resolution before the event loop — not accumulated per-event** (D6). Per-adapter load/eviction counts already exist. |
-| How will correctness be verified? | §11 verification: no-op golden + per-seam behavioral + property + determinism + parity + conservation, INV-1 + INV-L1/L2/L5/L6 + INV-6/8/9/13 + INV-PS1/PS2/PS3. |
+| How will correctness be verified? | §11 verification: no-op golden + per-seam behavioral + property + determinism + parity + conservation, INV-1 + INV-L1/L2/L3/L5/L6 + INV-6/7/8/9/13 + INV-PS1/PS2/PS3. |
 | How will fidelity be validated? | §11 validation: mechanism-fidelity reproduction vs `llmd-affinity-baseline` (explicitly not paper-number validation). |
-| New randomness? Which subsystem? | **None new.** Eviction deterministic by id; creation deterministic by ordered seeding; routing reuses the existing `SubsystemRouter` tie-break. A future randomized policy would add a named subsystem then. **CRN (common random numbers, §2.5):** the design is CRN-*capable* because it adds no new RNG stream — but strict CRN validity for the paired comparisons (static vs. emergent, LRU vs. rank-aware) requires **positional (RNG-free) router tie-breaking**. In cluster mode the router's `SubsystemRouter` tie-break RNG is non-nil by default, and route-to-holder's candidate-set restriction changes tie multiplicity, which desynchronizes that shared stream between arms — so downstream differences would no longer be cleanly policy-attributable. Recommendation: `lora-control` paired experiments should force positional tie-breaking (a known caveat, not a correctness issue — INV-6/INV-PS1 hold within any single run regardless). |
+| New randomness? Which subsystem? | **None new.** Eviction deterministic by id; creation deterministic by ordered seeding; routing reuses the existing `SubsystemRouter` tie-break. A future randomized policy would add a named subsystem then. **CRN (common random numbers, §2.5):** the design adds no new RNG stream, but it is not automatically CRN-valid — in cluster mode the existing `SubsystemRouter` tie-break RNG is active by default, and route-to-holder's candidate-set restriction changes router tie multiplicity (and, for the AQ2 eviction ablation, differing residency histories feed the `lora-affinity` score and change ties indirectly), desynchronizing the shared stream between arms. Strict CRN would need RNG-free (positional) router tie-breaking, which BLIS does not expose today — tracked as a §14 item, not something `lora-control` can enable now. This is a comparison-hygiene caveat, not a correctness issue: INV-6/INV-PS1 hold within any single run regardless. |
 | Simplest version that answers the same questions? | Baseline defaults byte-identical; each seam ships exactly one real policy beyond baseline; periodic trigger scaffolded but fires nothing. |
 
 ## 13. Suggested PR Roadmap (Small-tier, each no-op-safe)
@@ -746,3 +750,14 @@ generated by `/speckit.taskstoissues` from `tasks.md`.
 - Confirm whether route-to-holder's Immediate-freshness override (D7) is wired per-field at policy
   selection or via a dedicated snapshot mode — a micro-plan mechanism choice; the behavioral contract
   (ground-truth residency at the routing event) is fixed here.
+- **CRN lever does not exist yet.** Strict common-random-numbers validity for the paired experiments
+  (§12) needs RNG-free/positional router tie-breaking, but BLIS currently always wires the
+  `SubsystemRouter` RNG into the router (no CLI flag or exported constructor exposes a positional mode).
+  Enabling the §12 recommendation requires net-new BLIS plumbing (a flag or constructor option) — a
+  separate change, not assumed available to `lora-control` today.
+- **Deferred-construction reachability.** The deferred node-ready construction site (D3's second
+  initial-topology site) is not triggered by any live `blis run`/`replay`/`observe` today — initial
+  nodes are constructed Ready with no provisioning delay, and the node-provisioning path is exercised
+  only via test-harness injection. So an INV-PS2-under-NodePool-pressure test uses the same fixture
+  pattern as the existing `TestNodeReadyEvent_*` tests, not an end-to-end CLI run. The caller-site
+  seeding fix (D3) is correct regardless of what triggers that caller.
