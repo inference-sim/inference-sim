@@ -277,6 +277,41 @@ that differs from `--model` would filter out every request at routing.)
 `--concurrent-sessions` implies closed-loop session semantics; without it,
 replay behaves as a standard fixed/closed-loop replay.
 
+### Driving the corpus against a real server (`blis observe`)
+
+The same corpus can be driven against a **live inference server** — the
+observe-side twin of `blis replay --concurrent-sessions`. This records real
+observed timing so `blis calibrate` can compare the real server against the
+simulator over the *identical* session set:
+
+```bash
+# Drive the corpus as a fixed pool of 8 concurrent sessions, 200 total, against
+# a live server, recording observed timing into observed.{yaml,csv}.
+blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --corpus-header corpus.yaml --corpus-data corpus.csv \
+  --concurrent-sessions 8 --total-sessions 200 \
+  --trace-header observed.yaml --trace-data observed.csv
+```
+
+`--corpus-header` / `--corpus-data` name the **input** corpus (the pair produced
+by `convert otel`); `--trace-header` / `--trace-data` remain the **output**
+observed trace. Corpus-mode (`--concurrent-sessions > 0`) is mutually exclusive
+with the spec-mode inputs (`--workload`, `--workload-spec`, `--rate`,
+`--concurrency`) — a corpus *is* the workload. `--max-concurrency` is
+auto-raised to the pool size if set lower, so the pool is never throttled. The
+pool self-drains all `--total-sessions` sessions (observe bounds the run by the
+session count, not a clock).
+
+To calibrate real vs simulated over the same corpus:
+
+```bash
+blis replay --trace-header corpus.yaml --trace-data corpus.csv \
+  --model qwen/qwen3-14b --concurrent-sessions 8 --total-sessions 200 \
+  --trace-output sim
+blis calibrate --trace-header observed.yaml --trace-data observed.csv \
+  --sim-results sim.results.json --report calibration.json
+```
+
 By default the pool is **self-draining**: it runs until all `--total-sessions`
 sessions complete, regardless of how many waves that takes. Pass `--horizon` only
 if you want a hard wall-clock cap on the simulated run — sessions still queued when
