@@ -70,13 +70,18 @@ not one bundled comparison.
 **Explicitly out:**
 - Migration and scaling *policies* (the periodic trigger is scaffolded; no policy consumes
   it this round).
-- **Cross-scale adapter re-placement.** Pre-placement (D3) assumes a **fixed instance
-  topology** for the run's lifetime — the adapter→instance assignment is resolved once, in
-  the instance-construction loop. Interaction with the (planned, not-yet-built) AutoScaler
-  module — re-placing adapters when instances are added/removed mid-run — is deferred and
-  must be revisited when AutoScaler lands. This inherits the same documented scope boundary
-  the control-plane design set for LoRA + autoscaler composability (2026-07-15 §"Autoscaler
-  composability").
+- **Cross-scale adapter re-placement.** The AutoScaler is **merged and operational** today
+  (self-rescheduling `ScalingTickEvent`/`ScaleActuationEvent`; enabled via
+  `--model-autoscaler-interval-us`), so a run can combine LoRA pre-placement with live
+  scaling *now*. What this feature defers is **cross-scale re-placement**: keeping the
+  *declared* adapter→instance assignment synchronized as the topology changes mid-run. This
+  is safe to defer because **per-instance composition already works without modification** —
+  an instance scaled in mid-run starts with an empty resident set and falls through to
+  normal Creation admit-on-miss (the D1 fallback stance), exactly as the control-plane design
+  established (2026-07-15, the "Autoscaler / horizontal-scaling composability" bullet: new
+  instance = empty residency, per-instance invariants unmodified). Because the pre-placement +
+  autoscaler combination is reachable today, §11 adds a validation item for it rather than
+  gating it behind a future module.
 - Any runtime policy language / DSL or out-of-process policy server — policies are named
   entries in a compiled catalog.
 - Dynamic (runtime-negotiated) adapter↔KV memory tradeoffs — HBM accounting stays static.
@@ -119,9 +124,11 @@ policies: the taxonomy (§9) names reactive triggers (start-of-run, on-route,
 on-resident-miss, on-capacity-pressure) and a periodic (interval-driven) trigger, so a
 future proactive policy attaches to the periodic trigger without repainting the framework.
 
-**Parallel development.** The three seams share no mutable state (§5), so once each seam's
+**Parallel development.** The three seams share no *runtime* mutable state (per the §6 contracts), so once each seam's
 registry PR lands, its seed-policy PR can proceed concurrently with the others, coordinated
-only by that seam's behavioral-contract tests (§13 sequences this explicitly).
+only by that seam's behavioral-contract tests (§13 sequences this explicitly). (The eviction and
+creation *registry* PRs, B-3/B-5, land in the same instance-construction region of code, so they
+carry ordinary file-level merge coordination — not shared runtime state.)
 
 ## 4. Modeling Decisions
 
@@ -130,12 +137,13 @@ Each "loses:" clause names the real-system behavior the simplification foregoes
 
 | Concern | Modeled | Simplified | Omitted (this round) |
 |---|---|---|---|
-| Routing strictness | route-to-holder forbids non-holders when a holder exists | best-scored holder reuses existing scorer composition among holders (loses: a source policy's own multi-holder tie-break rule, e.g. least-loaded-holder, if it differs from the configured scorer profile) | soft/probabilistic strictness knobs |
-| Eviction cost | victim chosen by adapter rank→reload-cost from the existing cost model | cost ranking is a pure function of static rank; deterministic tie-break by id (loses: observed/variable reload latency and access-frequency weighting) | dynamic/learned cost models |
-| Pre-placement | declared adapter→instance-index assignment, resident at t=0 with no cold-load charge (D4) | seeding bypasses the load event entirely — instantaneous at t=0 (loses: real one-time provisioning/weight-transfer latency at startup) | mid-run migration, replication |
-| Triggers | reactive triggers invoke policies at their existing decision points | periodic trigger is a declared, deterministic interval, inert this round (loses: nothing this round — no action fires) | any periodic *action* (prefetch/migrate/scale) |
-| Provenance | run-level effective triple recorded in output, omitted when all-baseline (D8) | one triple per run — policies are run-scoped (loses: per-request policy attribution) | per-request policy attribution |
-| Randomness | none new — eviction/creation deterministic by id; routing reuses the existing `SubsystemRouter` tie-break | — | randomized tie-breaking in the new policies |
+| Routing strictness | route-to-holder forbids non-holders when a holder exists | best-scored holder reuses existing scorer composition among holders (loses: a source policy's own multi-holder tie-break rule, e.g. least-loaded-holder, if it differs from the configured scorer profile); no-holder → unconstrained fallback (D1) | soft/probabilistic strictness knobs (loses: tunable holder-preference weighting between "always" and "never") |
+| Eviction cost | victim chosen by adapter rank→reload-cost from the existing cost model | cost ranking is a pure function of static rank; deterministic tie-break by id (loses: observed/variable reload latency and access-frequency weighting) | dynamic/learned cost models (loses: victim selection that adapts to measured reload latency or request-recency beyond the static rank proxy) |
+| Pre-placement | declared adapter→instance-index assignment, resident at t=0 with no cold-load charge (D4) | seeding bypasses the load event entirely — instantaneous at t=0 (loses: real one-time provisioning/weight-transfer latency at startup) | mid-run migration, replication (loses: adapters moving/copying between instances after t=0 in response to load) |
+| Signal freshness (D7) | ground-truth-immediate residency for the strict routing decision | route-to-holder pins `ResidentAdapters` to Immediate freshness, overriding the tiered Periodic default (loses: propagation-delay fidelity for this one field — a real distributed gateway could mis-route on a stale view, which BLIS's single-threaded Immediate read makes structurally impossible) | modeling stale-view mis-routing as an experimental variable |
+| Triggers | reactive triggers invoke policies at their existing decision points | periodic trigger is a declared, deterministic interval, inert this round (loses: nothing this round — no action fires) | any periodic *action* (prefetch/migrate/scale) (loses: proactive, request-independent placement adjustments) |
+| Provenance | run-level effective triple recorded in output, omitted when all-baseline (D8) | one triple per run — policies are run-scoped | per-request policy attribution (loses: the ability to attribute a specific request's routing/eviction outcome to a per-request policy decision — not modeled, as policies are run-scoped) |
+| Randomness | none new — routing reuses the existing `SubsystemRouter` tie-break; eviction is deterministic by id tie-break; creation is deterministic by declared, ordered seeding (no tie to break) | — | randomized tie-breaking in the new policies (loses: stochastic exploration a search agent might later want — would add a named RNG subsystem then) |
 
 **Per-seam model scoping (Banks et al. six criteria).** Each seed policy is defended below;
 criteria 1 (accuracy impact), 5 (what breaks if omitted), and 6 (simplest version) are the
@@ -167,7 +175,7 @@ This table makes the distinction explicit (design-guidelines §4.4).
 | Routing: existing scorers | Endpoint Picker (biasing) | N/A (single instance, no cross-instance routing) | Reproduces llm-d EPP bias |
 | Routing: route-to-holder | strict gateway placement | N/A | Reproduces a **gateway/control-plane** concept (`Tantawi2025`); not an engine concept |
 | Eviction: LRU | N/A (engine-internal) | S-LoRA / Punica use LRU-style adapter eviction | Reproduces mainstream engine practice |
-| Eviction: rank/cost-aware | N/A | departs from LRU norm | **Research proposal** (`Li2025`, Toppings) — a departure from mainstream practice, not a reproduction |
+| Eviction: rank/cost-aware | N/A | departs from LRU norm | **Research proposal**, BLIS-native — *inspired by* the rank-aware signal in `Li2025` (Toppings), applied to the eviction seam. Note: the merged 2026-07-15 design characterizes Toppings as rank-aware *routing*; whether the paper prescribes a victim/eviction rule is confirmed in §14. This is a repurposing of the rank-aware idea into eviction, **not a direct reproduction** of a published evictor. |
 | Creation: on-demand | dynamic load | vLLM/S-LoRA dynamic adapter loading | Reproduces engine default |
 | Creation: pre-placement | static offline placement | N/A (engines load on demand) | Reproduces a **control-plane** concept (`Tantawi2025`) |
 
@@ -189,9 +197,9 @@ events / extension friction). Extension-type attribution per seam is in §8.
 | **Observes** | Request adapter identity; per-instance routing snapshots including the resident-adapter membership set (at **Immediate** freshness for the strict policy — D7); existing routing signals (queue depth, KV utilization, cache hit rate, in-flight). |
 | **Controls** | Target-instance selection. route-to-holder restricts the candidate set to holders when non-empty; among holders, selection reuses the existing scorer composition (including its existing `SubsystemRouter` tie-break). |
 | **Owns** | No mutable state (stateless policy; consistent with the existing Router contract). |
-| **Invariants** | Selects from the non-empty candidate list; when ≥1 holder exists, never selects a non-holder (**INV-PS1**); reads adapter id/rank/residency only, never `OutputTokens` (**INV-L6**/INV-9); deterministic given inputs + RNG state. |
+| **Invariants** | Selects from the non-empty candidate list; **when route-to-holder is the active policy and ≥1 holder exists, never selects a non-holder (INV-PS1)** — the baseline weighted-routing policy is unaffected and may route to a non-holder (it biases, never forbids); reads adapter id/rank/residency only, never `OutputTokens` (**INV-L6**/INV-9); deterministic given inputs + RNG state. |
 | **Events** | Consumes the routing-decision point; produces the target selection. No new event type. |
-| **Extension friction** | A biasing scorer = ~2 touch points (registry entry + validation name). A *strict* candidate-constraining policy = ~3 touch points (policy + selection wiring + validation). |
+| **Extension friction** | A biasing scorer = ~2 touch points (registry entry + validation name). A *strict* candidate-constraining policy = ~3–4 touch points (policy + selection wiring + validation + the D7 cluster-layer freshness override; see §10). |
 | **Failure modes** | No holder for the requested adapter → documented fallback (D1). Empty candidate list → existing router error path, unchanged. |
 
 ### 6.2 Eviction policy — Backend Swap extracting a seam from the hardcoded LRU
@@ -201,10 +209,10 @@ events / extension friction). Extension-type attribution per seam is in §8.
 | **Observes** | The set of currently-resident, **unpinned** adapters and their eviction-relevant attributes (recency for LRU; rank→reload-cost, via the eviction context of D2, for rank-aware). |
 | **Controls** | The victim id when a slot is needed. |
 | **Owns** | No policy state; recency ordering remains owned by the resident set. The **eviction context** (D2) is owned/constructed by the instance simulator (which already owns the resident set and cost model) and read by the policy. |
-| **Invariants** | Never selects a pinned adapter (**INV-L5**); preserves `\|resident\| ≤ capacity` (**INV-L2**); returns "no victim" iff every candidate is pinned; deterministic (explicit id tie-break). |
+| **Invariants** | Never selects a pinned adapter (**INV-L5**); preserves `\|resident\| ≤ capacity` (**INV-L2**); returns "no victim" iff every candidate is pinned; reads adapter id/rank/residency only, never `Request.OutputTokens` (**INV-L6**/INV-9 — the eviction context's rank data is a new surface that must not leak the oracle); deterministic (explicit id tie-break). |
 | **Events** | Invoked synchronously at the capacity-pressure decision point inside the cold-load path; produces no new event. |
 | **Extension friction** | ~3–4 touch points (policy + eviction-context/rank plumbing + validation). Over the ~3-file target by ~1 because rank is not reachable at the eviction site today (D2); justified in §10. |
-| **Failure modes** | **No victim (all candidates pinned)** → the cold-load does **not** proceed this tick; the waiting request stays queued and **INV-8 (work-conserving)** guarantees a later `StepEvent` retries once a pin clears — the no-deadlock guarantee already tested for LRU (2026-07-15 §"INV-L5(a)"). A rank-aware policy with a degenerate comparator must still terminate and must still return "no victim" only when all are pinned. |
+| **Failure modes** | **No victim (all candidates pinned)** → the cold-load does **not** proceed this tick; the waiting request stays queued and **INV-8 (work-conserving)** guarantees a later `StepEvent` retries once a pin clears — the no-deadlock guarantee already tested for LRU (2026-07-15 §15, INV-L5 verification scenario (a)). A rank-aware policy with a degenerate comparator must still terminate and must still return "no victim" only when all are pinned. |
 
 ### 6.3 Creation policy — Subsystem Module over start-of-run residency + admit-on-miss
 
@@ -213,11 +221,34 @@ events / extension friction). Extension-type attribution per seam is in §8.
 | **Observes** | The declared adapter→instance assignment (pre-placement) and the adapter registry; at miss time, the routed request and instance snapshot. |
 | **Controls** | Which adapters are resident at t=0 on each instance (via the `Initial` trigger); whether to admit an adapter on a resident miss (via `OnResidentMiss`). |
 | **Owns** | No mutable state beyond the residency it seeds into the resident set. |
-| **Invariants** | Seeded residency respects per-instance capacity (**INV-L2**; rejected at startup otherwise, **INV-PS2**); seeded adapters must be registered; on-demand default seeds nothing and always admits (today's behavior, **INV-L1**); a pre-placed adapter incurs no cold-load latency and no load-count (D4). |
-| **Events** | `Initial` runs at simulator build (a construction-time seeding hook, before the event queue exists — not an event-loop trigger). `OnResidentMiss` runs at the existing cold-load decision. No new event type this round. |
-| **Extension friction** | ~4 touch points (policy + cluster-scoped placement config + per-instance seeding wiring + validation). Over target by ~1 because per-instance targeting is a cluster-topology concern absent from today's instance-agnostic config (D3); justified in §10. |
+| **Invariants** | Seeded residency respects per-instance capacity (**INV-L2**; rejected at startup otherwise, **INV-PS2**); seeded adapters must be registered; on-demand default seeds nothing and always admits (today's behavior, **INV-L1**); a pre-placed adapter incurs no cold-load latency and no load-count (D4); reads adapter id/registry/residency only, never `Request.OutputTokens` (**INV-L6**/INV-9). |
+| **Events** | `Initial` runs at instance construction (a seeding hook, not an event-loop trigger) — at **both** the up-front build loop and the deferred node-ready construction of initial-topology instances (D3). `OnResidentMiss` runs at the existing cold-load decision. No new event type this round. |
+| **Extension friction** | ~4–5 touch points (policy + cluster-scoped placement config + seeding at both initial-topology construction sites + validation). Over target by ~1–2 because per-instance targeting is a cluster-topology concern absent from today's instance-agnostic config, and correctness requires seeding both construction sites (D3); justified in §10. |
 | **Multi-method justification** | Creation is deliberately a **two-entry-point** contract (`Initial` seeding + `OnResidentMiss` admission) rather than two separate seams because both express one coherent *placement stance* — static vs. on-demand. Splitting them would allow an incoherent mix (e.g. pre-placement seeding coexisting with an on-demand admit that re-loads elsewhere), which no experiment wants. The baseline pairs (nothing seeded, always admit); pre-placement pairs (seed the assignment, admit-on-miss per D1's fallback stance). |
 | **Failure modes** | Over-capacity or unregistered assignment, or an out-of-range instance index → **rejected at startup** with a clear error (INV-PS2). |
+
+### 6.4 Invariants introduced & preserved
+
+**New invariants (canonical statements).** Each is added to `docs/contributing/standards/invariants.md`
+in the PR that first makes it enforceable:
+
+- **INV-PS1 (strict-routing honesty).** *When route-to-holder is the active routing policy and at least
+  one instance holds the requested adapter at the routing-decision instant, the served instance is a
+  holder.* Scoped to the selection instant (ground-truth residency via D7's Immediate freshness); an
+  eviction on the chosen instance *after* selection but *before* service is **not** a violation — it is
+  handled by the ordinary `OnResidentMiss` admit-on-miss path. The baseline routing policy is exempt
+  (it biases, never forbids). *Added in B-2.*
+- **INV-PS2 (pre-placement conservation).** *Every declared (adapter, instance) pre-placement pair for an
+  initial-topology instance is resident on that instance at its construction, or the configuration is
+  rejected at startup.* No pre-placement is silently dropped or truncated — including for deferred
+  initial-topology instances (D3). *Added in B-5/B-6.*
+- **INV-PS3 (periodic-trigger inertness).** *A declared periodic trigger produces output byte-identical to
+  a run without it, this round.* Trivial: no event is scheduled (D5). *Added in B-7.*
+
+**Preserved invariants.** INV-6 (determinism / no-op byte-identity — the primary safety property, via
+INV-L1 and D8), INV-8 (work-conserving — the eviction no-victim path, §6.2), INV-9 / INV-L6 (oracle
+boundary), INV-13 (run/replay parity), and INV-L1/L2/L5 (LoRA no-op inertness, capacity bound, no
+eviction of in-use). All hold under every policy selection.
 
 ## 7. Decisions with Trade-offs
 
@@ -229,13 +260,14 @@ anti-pattern for a multi-PR rollout.
 | # | Decision | Status |
 |---|---|---|
 | D1 | route-to-holder is a routing *policy* (candidate-set restriction), not a scorer | Proposed (fallback provisional — §14) |
-| D2 | rank-aware eviction consumes an eviction context wired from the adapter registry | Proposed |
+| D2 | rank-aware eviction consumes an eviction context wired from the adapter registry | Proposed (victim tie-break provisional — §14) |
 | D3 | pre-placement assignment is cluster-scoped, resolved to per-instance subsets | Proposed |
 | D4 | pre-placed adapters resident at t=0 with no load latency and no load count | Proposed |
 | D5 | periodic trigger reuses the existing self-rescheduling clock pattern; inert this round | Proposed |
 | D6 | provenance is a run-level effective triple | Proposed |
 | D7 | route-to-holder pins `ResidentAdapters` to Immediate freshness | Proposed |
 | D8 | provenance field omitted for all-baseline runs (INV-6 byte-identity) | Proposed |
+| D9 | Creation is one two-entry-point seam (`Initial` + `OnResidentMiss`), not two seams | Proposed |
 
 ### D1 — route-to-holder is a routing *policy*, not merely a scorer
 
@@ -267,6 +299,10 @@ keeps tie-breaking and determinism identical to today.
 - *Reject the request outright when no holder exists (no fallback)* — rejected: breaks liveness
   and makes the reproduction experiment un-runnable for any adapter not pre-placed; the fallback
   is the liveness-preserving choice.
+- *Defer/queue the request until some instance becomes a holder* — rejected: adds a new blocking
+  state and starvation risk for no benefit this round (the first request to any not-yet-placed
+  adapter would stall indefinitely absent a loader); the unconstrained fallback (which triggers a
+  normal cold-load) achieves placement without a new queue.
 
 **What breaks if wrong.** If strictness were a scorer, INV-PS1 could not be guaranteed and the
 reproduction experiment (US1) would be invalid.
@@ -283,7 +319,9 @@ candidate ids together with the rank/reload-cost needed to order them — source
 already-defined adapter registry, wired into the instance simulator alongside the existing cost
 model. Baseline LRU ignores the context (byte-identical); rank-aware consumes it. The rank→cost
 relationship is **not a new fidelity claim** — it reuses the cost model fitted in the merged
-control-plane work (load latency = base + ⌈footprint/bandwidth⌉, footprint ∝ rank).
+control-plane work (load latency = base + ⌈footprint/bandwidth⌉, footprint ∝ rank). (The exact
+victim-selection criterion and tie-break for the rank-aware policy are **provisional** pending
+paper confirmation against `Li2025` — tracked in §14.)
 
 **Rationale.** Extending the *narrow* cost accessor with a rank method would change a frozen
 production contract and its test doubles; wiring the existing registry interface is additive and
@@ -306,12 +344,23 @@ instance at construction. "Assign adapter X to instance i" cannot be expressed t
 every instance seeing every other instance's assignment.
 
 **Decision.** The adapter→instance assignment lives at **cluster/deployment scope** (beside node
-pools and the routing profile). The **cluster layer resolves each instance's own subset** in the
-per-instance construction loop (the one place instance index/identity is known) and hands only
-that subset across the boundary into instance-local state — mirroring the existing precedent where
-the cluster resolves a per-instance GPU type from the node-pool placement and never embeds the
-full node-pool slice into every instance. Instance-level (`sim/`) code never receives the full
-cross-instance map (principles.md: "never leak cluster state to instance-level code").
+pools and the routing profile). The **cluster layer resolves each instance's own subset** wherever
+an instance belonging to the **initial topology** is constructed, and hands only that subset across
+the boundary into instance-local state — mirroring the existing precedent where the cluster resolves
+a per-instance GPU type from the node-pool placement and never embeds the full node-pool slice into
+every instance. Instance-level (`sim/`) code never receives the full cross-instance map
+(principles.md: "never leak cluster state to instance-level code").
+
+**Two initial-topology construction sites (both must seed).** Instance identity/index is resolved
+in **two** places, not one: (1) the up-front construction loop at build time, and (2) the deferred
+path for instances whose placement waits on node-pool capacity, constructed mid-event-loop when the
+node becomes ready. **Both build instances of the *initial, fixed* topology** and both must apply
+pre-placement seeding — otherwise a deferred instance silently drops its pre-placed adapters
+(violating INV-PS2 and defeating SC-002 in exactly the NodePools + capacity-pressure configuration
+the feature must support). This is distinct from the genuinely-scaled path (autoscaler scale-up),
+which stays out of scope (§2, cross-scale re-placement): a scaled-in instance starts empty and falls
+through to admit-on-miss. Because seeding must run at both initial-topology sites, Creation's
+touch-point count carries a further +1 (§8/§10).
 
 **Rationale.** Placement is inherently a cluster-topology decision; the deployment config already
 hosts sibling cluster-scoped concerns (instance count, node pools, routing profile). Resolving to
@@ -332,8 +381,7 @@ targeting impossible and silently seeds every adapter on every instance.
 
 **Decision.** Pre-placement seeds residency directly at t=0, before any request, incurring
 **neither** cold-load latency **nor** a load-count increment. Load counts remain a measure of
-*demand-driven* cold loads (the quantity the reproduction experiment compares). (Paper-criterion
-confirmation for the rank-aware victim rule tie-break is tracked provisional in §14.)
+*demand-driven* cold loads (the quantity the reproduction experiment compares).
 
 **Rationale.** The value of static placement is precisely that it *avoids* demand cold loads;
 counting seeding as a load would mask that in the headline metric (SC-002). t=0 seeding is
@@ -353,7 +401,11 @@ reproduction comparison misleading.
 
 **Prior art (corrected).** BLIS **already has** such a mechanism: `ScalingTickEvent` (a
 self-rescheduling clock event driving the autoscaler pipeline on declared simulation-time
-intervals). The cluster event-priority space is currently packed 0–9. The periodic *trigger* this
+intervals). The cluster event-priority space is currently packed **within 0–9**, though the same
+`ClusterEvent` scheme already extends below zero for infra-lifecycle events
+(`priorityNodeLifecycle = -2`, `priorityInstanceLifecycle = -1`) — so a new slot is a
+deliberate-but-low-risk *extension* (below 0 or above 9), not a scarce resource requiring
+renumbering of existing constants. The periodic *trigger* this
 round is therefore **not a novel event mechanism** — it is the taxonomy slot that a future
 placement periodic policy would fill by **reusing/generalizing the `ScalingTickEvent`
 self-rescheduling pattern**.
@@ -362,7 +414,8 @@ self-rescheduling pattern**.
 schedule **no event** — nothing is inserted into the event heap, so no priority constant is
 consumed and INV-PS3 (byte-identity) holds trivially. When a future policy activates the periodic
 trigger, it reuses the `ScalingTickEvent` pattern and must be assigned a **deliberate** priority
-slot (the space is packed 0–9, so this is not free — flagged now).
+slot (packed within 0–9, but the scheme already extends to negatives — a low-risk extension, not a
+renumbering; flagged now).
 
 **Rationale.** Defining the taxonomy is cheap; retrofitting the trigger→policy framework later is
 expensive. Scheduling no event this round means the scaffold is provably inert (no ordering
@@ -459,6 +512,27 @@ Omission-when-inert is the same convention the control-plane subsystem already u
 **What breaks if wrong.** An always-present field silently breaks the INV-6 golden — the exact
 regression this feature's first test exists to catch.
 
+### D9 — Creation is one two-entry-point seam, not two seams
+
+**Problem.** Creation governs two behaviors — `Initial` (t=0 seeding) and `OnResidentMiss` (admit-on-miss).
+Should these be one policy with two entry points, or two orthogonal single-method seams?
+
+**Decision.** One **two-entry-point** Creation policy (design-guidelines §5.3 item 2 asks that a
+multi-method interface be justified). Both entry points express one coherent *placement stance*: baseline
+pairs (seed nothing, always admit); pre-placement pairs (seed the declared assignment, admit-on-miss per
+D1's fallback stance).
+
+**Rationale.** Splitting them would allow an incoherent mix (e.g. pre-placement seeding coexisting with an
+on-demand admit that re-loads the same adapter elsewhere), which no experiment wants. Coupling them under
+one named policy keeps the stance internally consistent.
+
+**Alternatives considered.**
+- *Two separate seams (seeding policy + admission policy)* — rejected: permits incoherent combinations and
+  doubles the config surface for no experimental benefit this round.
+
+**What breaks if wrong.** Two independent seams could be configured into a self-contradictory stance
+(seed-static + admit-and-reload-elsewhere), producing placement behavior that matches no intended policy.
+
 ## 8. Extension Points & Types (registries)
 
 Each seam becomes a **named registry** so adding a policy is a localized, additive change — the
@@ -481,7 +555,8 @@ process/complexity purposes (§10).
 | Routing (biasing scorer) | ~2 files | Meets/beats target (mature seam). |
 | Routing (strict/candidate-constraining) | ~3 files | Meets target. |
 | Eviction | ~3–4 files | Exceeds by ~1 (eviction-context/rank plumbing, D2); justified §10. |
-| Creation | ~4 files | Exceeds by ~1 (cluster-scoped placement config, D3); justified §10. |
+| Creation | ~4–5 files | Exceeds by ~1–2 (cluster-scoped placement config + seeding at both initial-topology construction sites, D3); justified §10. |
+| Routing (strict, incl. D7 freshness) | ~3–4 files | The strict policy adds a narrow cluster-layer freshness override (D7) beyond the pure policy file; justified §10. |
 
 ## 9. Trigger Taxonomy
 
@@ -489,7 +564,7 @@ process/complexity purposes (§10).
 
 | Trigger | Fires when | Class | Policy invoked |
 |---|---|---|---|
-| `Initial` (t=0) | simulator build, before the event queue exists | **construction-time seeding hook** (not an event-loop trigger; needs no priority) | Creation → seed residency |
+| `Initial` | instance construction — the up-front build loop, **and** the deferred-instance path (node-ready) for initial-topology instances awaiting capacity (D3) | **construction-time seeding hook** (not an event-loop trigger; needs no priority) | Creation → seed residency |
 | `OnRoute` | request routing (existing decision point) | reactive/endogenous | Routing → select instance |
 | `OnResidentMiss` | routed request needs an absent adapter (existing cold-load decision) | reactive/endogenous | Creation → admit-on-miss |
 | `OnCapacityPressure` | slot needed and resident set full (existing eviction point) | reactive/endogenous | Eviction → pick victim |
@@ -500,7 +575,7 @@ No new *reactive* event type is introduced — reactive triggers reuse existing 
 
 | Trigger | Fires when | This round |
 |---|---|---|
-| `Periodic` (interval Δt) | every Δt of simulation time, request-independent | **type + config only; no event scheduled** (INV-PS3). Future activation reuses the `ScalingTickEvent` self-rescheduling pattern and needs a deliberately-assigned priority (space packed 0–9). Unlocks proactive eviction, prefetch, migration, scaling. |
+| `Periodic` (interval Δt) | every Δt of simulation time, request-independent | **type + config only; no event scheduled** (INV-PS3). Future activation reuses the `ScalingTickEvent` self-rescheduling pattern and needs a deliberately-assigned priority (packed within 0–9, but the scheme extends to negatives — a low-risk extension). Unlocks proactive eviction, prefetch, migration, scaling. |
 
 ## 10. Complexity Tracking
 
@@ -510,10 +585,11 @@ policy-template target for two of three seams. Justification:
 | Over-target area | Extra cost | Why justified |
 |---|---|---|
 | Eviction rank plumbing (D2) | +1 file (eviction context + registry wiring) | Rank is genuinely unreachable at the eviction site today; the alternative (mutating the frozen cost accessor) is worse. One-time cost; every future eviction policy reuses the context. |
-| Cluster-scoped pre-placement (D3) | +1 file (deployment-config field + construction-loop resolution) | Per-instance targeting is a cluster-topology concern with no home in instance-agnostic config; placing it correctly now avoids a later re-layering. |
+| Cluster-scoped pre-placement (D3) | +1–2 files (deployment-config field + resolution at **both** initial-topology construction sites — up-front loop and deferred node-ready path) | Per-instance targeting is a cluster-topology concern with no home in instance-agnostic config; seeding both construction sites is required for correctness (INV-PS2) under NodePool capacity pressure. |
+| Strict-routing freshness override (D7) | +1 touch (cluster-layer `ResidentAdapters` freshness override when route-to-holder is active) | route-to-holder's selection logic is a pure Policy Template, but the Immediate-freshness guarantee (INV-PS1 ground truth) requires a narrow, policy-conditioned change in the cluster snapshot layer — mirroring how `InFlightRequests` is forced Immediate there today. One-time; the mechanism choice is deferred to micro-plan (§14). |
 
-Both are one-time structural costs paid once per seam, not per policy. After they land, adding a
-further eviction or creation policy returns to the ~3-file target.
+These are one-time structural costs paid once per seam, not per policy. After they land, adding a
+further eviction, creation, or routing policy returns to the ~2–3-file target.
 
 ## 11. Validation Strategy
 
@@ -548,11 +624,17 @@ further eviction or creation policy returns to the ~3-file target.
 - **Conservation (INV-1):** a request-conservation matrix check across {routing, eviction, creation}
   selections (precedent: the H12 conservation-across-routing-policies check), since the new routing
   fallback and creation admission touch the admission/routing path.
+- **Pre-placement + live autoscaler (reachable today):** with pre-placement configured *and* the
+  autoscaler enabled (`--model-autoscaler-interval-us`), a run in which an instance is added or drained
+  mid-run must preserve INV-PS2/INV-1/INV-L2 — a scaled-in instance starts empty and admits on-miss
+  (no seeding of the *declared* assignment onto it this round; cross-scale re-placement is out of
+  scope, §2). This case is verified now because the combination is reachable via existing flags, not
+  gated behind a future module.
 - **Determinism:** same seed + same policy selection → identical routes, victims, seedings across two
   runs.
 
-**Validation (fidelity — mechanism, not published numbers):** the reproduction experiment
-(SC-002, in `lora-control`) compares static pre-placement + route-to-holder against the landed
+**Validation (fidelity — mechanism, not published numbers):** the **AQ1 reproduction experiment**
+(in `lora-control`) compares static pre-placement + route-to-holder against the landed
 `llmd-affinity-baseline`. Because that baseline is itself a BLIS-simulated bundle (not real telemetry
 or the papers' reported figures), this is **structural/mechanism fidelity** — it confirms the seams
 implement the *algorithm* the cited policies describe (each seed policy traces to a cited passage in
@@ -566,10 +648,17 @@ validation.
 adapter (note: the *first* request to a **non**-pre-placed adapter is D1's fallback path — an expected
 cold-load, **not** an SC-002 violation); SC-003 by the quantitative threshold below.
 
-**Measurable success criteria** (tightening the spec where "measurably" was vague): SC-003 —
-"swapping LRU→rank-aware, holding routing/creation fixed and seed fixed, changes the eviction count of at
-least one adapter" (deterministic, so a single seed suffices; no statistical machinery needed). SC-002 —
-100% of requests for pre-placed adapters served by a holder AND zero cold-loads for pre-placed adapters.
+**Measurable success criteria** (tightening the spec where "measurably" was vague): SC-003 — in a
+scenario **deliberately constructed so LRU-recency order and rank/cost order disagree** (skewed
+adapter popularity + adapters of differing rank, per spec.md's precondition), holding routing/creation
+fixed and seed fixed, the rank-aware policy's chosen victim **tracks the cost criterion** (a
+monotonicity assertion: the victim is the highest-cost-to-*retain* / lowest-reload-cost unpinned
+candidate, not merely "differs from LRU"). This mirrors the control-plane design's rank-sensitivity
+gate (2026-07-15 §15, "Rank/uniqueness sensitivity") and specifically defeats a rank-*ignoring* bug
+that a mere "differs from LRU" check would pass. Deterministic, so a single seed suffices. SC-002 —
+100% of requests for pre-placed adapters served by a holder AND zero cold-loads for pre-placed
+adapters (an in-repo, comparison-free check; distinct from the **AQ1 reproduction experiment** below,
+which is the cross-run comparison in `lora-control`).
 
 ## 12. DES Design Review Checklist
 
@@ -578,12 +667,12 @@ least one adapter" (deterministic, so a single seed suffices; no statistical mac
 | What analysis questions does this design help answer? | Two, stated in §1: static-placement comparison, and eviction-policy ablation under skew. |
 | What is modeled, simplified, omitted? | §4 table, each Simplified/Omitted cell naming the behavior lost. |
 | What events are introduced/modified? Exogenous/endogenous? | No new reactive event (reuses existing decision points). `Initial` is a construction-time hook. Periodic trigger is scaffolded taxonomy only — **no event scheduled** this round. |
-| How do new events interact with tie-breaking? | None scheduled this round → no ordering guarantee needed. A future periodic policy reuses `ScalingTickEvent`'s pattern and gets a deliberately-assigned priority (space packed 0–9). |
+| How do new events interact with tie-breaking? | None scheduled this round → no ordering guarantee needed. A future periodic policy reuses `ScalingTickEvent`'s pattern and gets a deliberately-assigned priority (packed within 0–9; scheme extends to negatives, so a low-risk extension). |
 | What new state is introduced? Who owns it? | Cluster-scoped adapter→instance assignment (deployment config), resolved to per-instance subsets (D3); the eviction context (instance simulator, D2); seeded residency (resident set, already owned). No new per-request state. |
 | What new metrics are derived? Incremental or on-demand? | Run-level effective policy triple (provenance), **computed once at policy resolution before the event loop — not accumulated per-event** (D6). Per-adapter load/eviction counts already exist. |
-| How will correctness be verified? | §11 verification: no-op golden + per-seam behavioral + property + determinism + parity, INV-L1/L2/L5/L6 + INV-6/8/9/13 + INV-PS1/PS2/PS3. |
+| How will correctness be verified? | §11 verification: no-op golden + per-seam behavioral + property + determinism + parity + conservation, INV-1 + INV-L1/L2/L5/L6 + INV-6/8/9/13 + INV-PS1/PS2/PS3. |
 | How will fidelity be validated? | §11 validation: mechanism-fidelity reproduction vs `llmd-affinity-baseline` (explicitly not paper-number validation). |
-| New randomness? Which subsystem? | **None new.** Eviction/creation deterministic by id; routing reuses the existing `SubsystemRouter` tie-break. A future randomized policy would add a named subsystem then. |
+| New randomness? Which subsystem? | **None new.** Eviction deterministic by id; creation deterministic by ordered seeding; routing reuses the existing `SubsystemRouter` tie-break. A future randomized policy would add a named subsystem then. Because no new RNG is introduced, the design is **common-random-numbers friendly** (§2.5): the paired comparisons this feature exists for — static vs. emergent placement, LRU vs. rank-aware — run on the same seed/underlying draws, so outcome differences are attributable to the policy, not RNG divergence. |
 | Simplest version that answers the same questions? | Baseline defaults byte-identical; each seam ships exactly one real policy beyond baseline; periodic trigger scaffolded but fires nothing. |
 
 ## 13. Suggested PR Roadmap (Small-tier, each no-op-safe)
@@ -608,10 +697,12 @@ generated by `/speckit.taskstoissues` from `tasks.md`.
 ## 14. Open Items to Resolve at Micro-Plan Time
 
 - **Paper confirmation (provisional decisions):** confirm the route-to-holder no-holder fallback (D1)
-  against `Tantawi2025`, and the rank/cost-aware victim criterion/tie-break (D2/D4) against `Li2025`
-  (Toppings). D1's fallback and D4's rule are written as provisional; a check must trace the implemented
-  mechanism to a cited passage from each paper. If either paper prescribes different behavior, update the
-  decision and its Status.
+  against `Tantawi2025`, and the rank/cost-aware victim criterion/tie-break (D2) against `Li2025`
+  (Toppings) — including whether Toppings prescribes an *eviction* rule at all, or only rank-aware
+  *routing* (per the 2026-07-15 design's characterization); if the latter, D2/§5 stay labeled a
+  BLIS-native repurposing rather than a reproduction. D1's fallback and D2's victim rule are written as
+  provisional; a check must trace the implemented mechanism to a cited passage from each paper. If either
+  paper prescribes different behavior, update the decision and its Status.
 - Finalize the eviction-context contents against the real eviction call site (exact rank source, id
   tie-break key).
 - Confirm the deployment-config shape for the adapter→instance assignment and the exact startup-validation
