@@ -1,10 +1,16 @@
 package cmd
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -78,5 +84,71 @@ func TestBuildObserveCorpusPool_EmptyCorpusErrors(t *testing.T) {
 	_, _, err := buildObserveCorpusPool(headerPath, dataPath, 2, 4, 42)
 	if err == nil {
 		t.Fatal("expected error for empty corpus, got nil")
+	}
+}
+
+// TestObserveCorpusMode_DrainsAllSessions is the load-bearing corpus-mode test:
+// a 2-session corpus scaled to --total-sessions 6 at --concurrent-sessions 2
+// must dispatch and complete exactly 6 sessions against the (mock) server, with
+// the dispatch loop draining to completion (not hanging). Single-round sessions
+// ⇒ sessions == distinct recorded SessionIDs. This proves refill-on-terminate:
+// the initial 2 are counted via takePreGen, each terminating session's refill
+// replaces it (serializer does not decrement while a follow-up is returned), and
+// only the final 2 decrement to 0 — so all 6 run and the loop exits.
+func TestObserveCorpusMode_DrainsAllSessions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{"text": "hello"}},
+			"usage":   map[string]interface{}{"prompt_tokens": 100, "completion_tokens": 10},
+		})
+	}))
+	defer server.Close()
+
+	// 2 single-round sessions → pool duplicates to 6.
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "corpus.yaml")
+	dataPath := filepath.Join(dir, "corpus.csv")
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s1", RoundIndex: 0, InputTokens: 120, OutputTokens: 12, ArrivalTimeUs: 0, Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export corpus: %v", err)
+	}
+
+	driver, initial, err := buildObserveCorpusPool(headerPath, dataPath, 2, 6, 42)
+	if err != nil {
+		t.Fatalf("buildObserveCorpusPool: %v", err)
+	}
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	recorder := &Recorder{}
+
+	// Guard against a hang (the failure mode a broken active-session count would
+	// cause): run the orchestrator in a goroutine and fail if it does not return.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runObserveOrchestrator(context.Background(), client, recorder, driver,
+			cluster.NewSliceRequestSource(initial), true, 2, 0, nil, nil, false, false, 1.0)
+	}()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("orchestrator did not drain within 30s — pool likely stalled (active-session accounting)")
+	}
+
+	// Exactly 6 distinct sessions must have completed.
+	sessions := make(map[string]bool)
+	for _, rec := range recorder.Records() {
+		if rec.SessionID != "" {
+			sessions[rec.SessionID] = true
+		}
+	}
+	if len(sessions) != 6 {
+		t.Errorf("distinct completed sessions = %d, want 6 (duplicate-to-fill + refill drain)", len(sessions))
 	}
 }

@@ -362,89 +362,12 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Fatalf("--timeout must be between 1 and 86400 seconds (1 day), got %d", observeTimeout)
 	}
 
-	// Generate workload
+	// Workload source: corpus-mode (OTel session pool, PR-D) or spec-mode
+	// (generated). spec/wl/lazySource are hoisted so the shared setup below
+	// (client, prefixes, session manager, orchestrator) works for both. In
+	// corpus-mode spec stays nil and wl is an empty GeneratedWorkload so the
+	// spec-guarded blocks below are no-ops.
 	var spec *workload.WorkloadSpec
-	if observeWorkloadSpec != "" {
-		if observeConcurrency > 0 {
-			logrus.Fatalf("--concurrency cannot be used with --workload-spec; " +
-				"define concurrency in the spec file using clients[].concurrency instead")
-		}
-		var err error
-		spec, err = workload.LoadWorkloadSpec(observeWorkloadSpec)
-		if err != nil {
-			logrus.Fatalf("Failed to load workload spec: %v", err)
-		}
-		if cmd.Flags().Changed("seed") {
-			spec.Seed = observeSeed
-		}
-	} else if observeWorkload != "" {
-		// Preset synthesis — BC-1: same token distribution as blis run --workload <preset>
-		// Rate was validated finite+positive by the earlier rate validation above (defense-in-depth:
-		// also guarded by validateObserveWorkloadFlags above, which requires rateChanged to be true).
-		// Use separate errMsg var + = (not :=) to avoid shadowing the outer spec variable.
-		var errMsg string
-		spec, errMsg = buildPresetSpec(observeWorkload, observeDefaultsFilePath, observeRate, observeNumRequests)
-		if errMsg != "" {
-			logrus.Fatalf("%s", errMsg)
-		}
-		spec.Seed = observeSeed
-	} else {
-		// Distribution or concurrency synthesis
-		// R3: Validate distribution token bounds before synthesis.
-		if msg := validateDistributionParams(observePromptMin, observePromptMax, observeOutputMin, observeOutputMax,
-			observePromptStdDev, observeOutputStdDev, observePromptTokens, observeOutputTokens); msg != "" {
-			logrus.Fatalf("%s", msg)
-		}
-		spec = workload.SynthesizeFromDistribution(workload.DistributionParams{
-			Rate:               observeRate,
-			Concurrency:        observeConcurrency,
-			ThinkTimeMs:        observeThinkTimeMs,
-			NumRequests:        observeNumRequests,
-			PrefixTokens:       observePrefixTokens,
-			PromptTokensMean:   observePromptTokens,
-			PromptTokensStdDev: observePromptStdDev,
-			PromptTokensMin:    observePromptMin,
-			PromptTokensMax:    observePromptMax,
-			OutputTokensMean:   observeOutputTokens,
-			OutputTokensStdDev: observeOutputStdDev,
-			OutputTokensMin:    observeOutputMin,
-			OutputTokensMax:    observeOutputMax,
-		})
-		spec.Seed = observeSeed
-	}
-
-	// Resolve horizon
-	horizon := int64(math.MaxInt64)
-	if cmd.Flags().Changed("horizon") && observeHorizon > 0 {
-		horizon = observeHorizon
-	} else if spec.Horizon > 0 {
-		horizon = spec.Horizon
-	}
-
-	// Resolve max requests
-	maxRequests := spec.NumRequests
-	if cmd.Flags().Changed("num-requests") && observeNumRequests > 0 {
-		maxRequests = int64(observeNumRequests)
-	}
-
-	// Guard unbounded generation
-	if maxRequests <= 0 && horizon == math.MaxInt64 {
-		logrus.Fatalf("Workload requires either num_requests, --num-requests, or --horizon to bound generation")
-	}
-
-	// Generate requests and session blueprints (BC-1, BC-2, D1).
-	//
-	// Lazy generation path (#1441/#1443, alpha, default off). When set, build a
-	// streaming request source instead of materializing the full slice, mirroring
-	// blis run (cmd/root.go). As of #1460 there is NO eager-fallback class — every
-	// spec the eager generator accepts is streamed: multi-session reasoning (#1458),
-	// concurrency clients (#1459), and time-varying / per-window workloads (#1460).
-	// Any error is a real spec/validation failure → abort.
-	//
-	// No spec pre-expand is needed here (unlike run): observe has no
-	// pre-generation applyTimeoutToSpec step, and both generators expand
-	// spec.Clients in place before the (post-generation) prefix-string loop
-	// reads it.
 	var wl *workload.GeneratedWorkload
 	// lazySource is typed as the interface satisfied by *workload.lazyRequestSource:
 	// Next() feeds the orchestrator, Err() surfaces a terminal per-client sampler
@@ -453,19 +376,125 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		Next() (*sim.Request, bool)
 		Err() error
 	}
-	if observeLazyGeneration {
-		src, sessions, followUpBudget, lazyErr := workload.GenerateWorkloadLazy(spec, horizon, maxRequests)
-		if lazyErr != nil {
-			logrus.Fatalf("Failed to build lazy workload: %v", lazyErr)
+	var poolDriver *workload.SessionPoolDriver
+	var corpusInitial []*sim.Request
+
+	if observeConcurrentSessions > 0 {
+		// Corpus-mode: load the TraceV2 corpus into a fixed session pool.
+		var perr error
+		poolDriver, corpusInitial, perr = buildObserveCorpusPool(
+			observeCorpusHeader, observeCorpusData,
+			observeConcurrentSessions, observeTotalSessions, observeSeed,
+		)
+		if perr != nil {
+			logrus.Fatalf("Failed to build corpus pool: %v", perr)
 		}
-		lazySource = src
-		wl = &workload.GeneratedWorkload{Sessions: sessions, FollowUpBudget: followUpBudget}
-	}
-	if wl == nil {
-		var err error
-		wl, err = workload.GenerateWorkload(spec, horizon, maxRequests)
-		if err != nil {
-			logrus.Fatalf("Failed to generate workload: %v", err)
+		wl = &workload.GeneratedWorkload{} // empty; corpus drives dispatch via corpusInitial + poolDriver
+		logrus.Infof("Corpus-mode: pool=%d total=%d, %d initial sessions",
+			observeConcurrentSessions, poolDriver.TotalSessions(), len(corpusInitial))
+		// Auto-raise the HTTP socket cap so the pool is never throttled below N.
+		if observeMaxConcur < observeConcurrentSessions {
+			logrus.Infof("Auto-raising --max-concurrency %d → %d to match --concurrent-sessions",
+				observeMaxConcur, observeConcurrentSessions)
+			observeMaxConcur = observeConcurrentSessions
+		}
+	} else {
+		// Spec-mode: generate the workload from a WorkloadSpec.
+		if observeWorkloadSpec != "" {
+			if observeConcurrency > 0 {
+				logrus.Fatalf("--concurrency cannot be used with --workload-spec; " +
+					"define concurrency in the spec file using clients[].concurrency instead")
+			}
+			var err error
+			spec, err = workload.LoadWorkloadSpec(observeWorkloadSpec)
+			if err != nil {
+				logrus.Fatalf("Failed to load workload spec: %v", err)
+			}
+			if cmd.Flags().Changed("seed") {
+				spec.Seed = observeSeed
+			}
+		} else if observeWorkload != "" {
+			// Preset synthesis — BC-1: same token distribution as blis run --workload <preset>
+			// Rate was validated finite+positive by the earlier rate validation above (defense-in-depth:
+			// also guarded by validateObserveWorkloadFlags above, which requires rateChanged to be true).
+			// Use separate errMsg var + = (not :=) to avoid shadowing the outer spec variable.
+			var errMsg string
+			spec, errMsg = buildPresetSpec(observeWorkload, observeDefaultsFilePath, observeRate, observeNumRequests)
+			if errMsg != "" {
+				logrus.Fatalf("%s", errMsg)
+			}
+			spec.Seed = observeSeed
+		} else {
+			// Distribution or concurrency synthesis
+			// R3: Validate distribution token bounds before synthesis.
+			if msg := validateDistributionParams(observePromptMin, observePromptMax, observeOutputMin, observeOutputMax,
+				observePromptStdDev, observeOutputStdDev, observePromptTokens, observeOutputTokens); msg != "" {
+				logrus.Fatalf("%s", msg)
+			}
+			spec = workload.SynthesizeFromDistribution(workload.DistributionParams{
+				Rate:               observeRate,
+				Concurrency:        observeConcurrency,
+				ThinkTimeMs:        observeThinkTimeMs,
+				NumRequests:        observeNumRequests,
+				PrefixTokens:       observePrefixTokens,
+				PromptTokensMean:   observePromptTokens,
+				PromptTokensStdDev: observePromptStdDev,
+				PromptTokensMin:    observePromptMin,
+				PromptTokensMax:    observePromptMax,
+				OutputTokensMean:   observeOutputTokens,
+				OutputTokensStdDev: observeOutputStdDev,
+				OutputTokensMin:    observeOutputMin,
+				OutputTokensMax:    observeOutputMax,
+			})
+			spec.Seed = observeSeed
+		}
+
+		// Resolve horizon
+		horizon := int64(math.MaxInt64)
+		if cmd.Flags().Changed("horizon") && observeHorizon > 0 {
+			horizon = observeHorizon
+		} else if spec.Horizon > 0 {
+			horizon = spec.Horizon
+		}
+
+		// Resolve max requests
+		maxRequests := spec.NumRequests
+		if cmd.Flags().Changed("num-requests") && observeNumRequests > 0 {
+			maxRequests = int64(observeNumRequests)
+		}
+
+		// Guard unbounded generation
+		if maxRequests <= 0 && horizon == math.MaxInt64 {
+			logrus.Fatalf("Workload requires either num_requests, --num-requests, or --horizon to bound generation")
+		}
+
+		// Generate requests and session blueprints (BC-1, BC-2, D1).
+		//
+		// Lazy generation path (#1441/#1443, alpha, default off). When set, build a
+		// streaming request source instead of materializing the full slice, mirroring
+		// blis run (cmd/root.go). As of #1460 there is NO eager-fallback class — every
+		// spec the eager generator accepts is streamed: multi-session reasoning (#1458),
+		// concurrency clients (#1459), and time-varying / per-window workloads (#1460).
+		// Any error is a real spec/validation failure → abort.
+		//
+		// No spec pre-expand is needed here (unlike run): observe has no
+		// pre-generation applyTimeoutToSpec step, and both generators expand
+		// spec.Clients in place before the (post-generation) prefix-string loop
+		// reads it.
+		if observeLazyGeneration {
+			src, sessions, followUpBudget, lazyErr := workload.GenerateWorkloadLazy(spec, horizon, maxRequests)
+			if lazyErr != nil {
+				logrus.Fatalf("Failed to build lazy workload: %v", lazyErr)
+			}
+			lazySource = src
+			wl = &workload.GeneratedWorkload{Sessions: sessions, FollowUpBudget: followUpBudget}
+		}
+		if wl == nil {
+			var err error
+			wl, err = workload.GenerateWorkload(spec, horizon, maxRequests)
+			if err != nil {
+				logrus.Fatalf("Failed to generate workload: %v", err)
+			}
 		}
 	}
 
@@ -554,22 +583,32 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		runPrewarm(ctx, client, observePrewarmDuration)
 	}
 
-	// RequestSource: streaming in lazy mode, eager-slice adapter otherwise.
+	// RequestSource + completion handler selection:
+	//   - corpus-mode: the pool's initial round-0 requests seed dispatch; the
+	//     SessionPoolDriver admits refills on termination (self-draining).
+	//   - spec-mode: streaming in lazy mode, eager-slice adapter otherwise.
 	// The workload package's lazy source satisfies cluster.RequestSource via
 	// structural typing (same Next() method), mirroring blis run.
-	var observeSource cluster.RequestSource
-	if lazySource != nil {
-		observeSource = lazySource
-	} else {
-		observeSource = cluster.NewSliceRequestSource(wl.Requests)
-	}
-
-	// Box into the interface only when non-nil, so the orchestrator's
-	// `handler != nil` guard is correct (a typed-nil *SessionManager boxed into
+	//
+	// Box the handler into the interface only when non-nil, so the orchestrator's
+	// `handler != nil` guard is correct (a typed-nil concrete pointer boxed into
 	// an interface would be non-nil and wrongly enable the serializer).
+	var observeSource cluster.RequestSource
 	var completionHandler workload.CompletionHandler
-	if sessionMgr != nil {
-		completionHandler = sessionMgr
+	switch {
+	case poolDriver != nil:
+		observeSource = cluster.NewSliceRequestSource(corpusInitial)
+		completionHandler = poolDriver
+	case lazySource != nil:
+		observeSource = lazySource
+		if sessionMgr != nil {
+			completionHandler = sessionMgr
+		}
+	default:
+		observeSource = cluster.NewSliceRequestSource(wl.Requests)
+		if sessionMgr != nil {
+			completionHandler = sessionMgr
+		}
 	}
 
 	// Run orchestrator
