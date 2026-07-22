@@ -71,6 +71,13 @@ var (
 	observeScrapeKVMetrics bool
 	observeVLLMCommit      string
 	observeKVMetricsURL    string
+	// Corpus-mode (OTel session-pool replay against a real server, PR-D #1487). These
+	// select a second input mode mutually exclusive with the spec-mode flags above;
+	// a corpus IS the workload. --corpus-* are INPUT, distinct from --trace-* OUTPUT.
+	observeCorpusHeader       string
+	observeCorpusData         string
+	observeConcurrentSessions int
+	observeTotalSessions      int
 	// saturationReport is declared in root.go and shared across run, replay, observe
 )
 
@@ -154,6 +161,11 @@ func init() {
 	observeCmd.Flags().IntVar(&observeConcurrency, "concurrency", 0, "Number of concurrent virtual users (closed-loop, mutually exclusive with --rate)")
 	observeCmd.Flags().IntVar(&observeThinkTimeMs, "think-time-ms", 0, "Think time in ms between response and next request (concurrency mode; mutually exclusive with --think-time-dist)")
 	observeCmd.Flags().StringVar(&observeThinkTimeDist, "think-time-dist", "", `Think-time distribution spec for closed-loop observe (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s" or "constant:value=500ms"). Mutually exclusive with --think-time-ms. Requires --concurrency.`)
+	// Corpus-mode (PR-D): replay an OTel corpus as a fixed session pool against the server.
+	observeCmd.Flags().StringVar(&observeCorpusHeader, "corpus-header", "", "Input TraceV2 corpus header YAML (corpus-mode; typically from `blis convert otel`). Distinct from the --trace-header OUTPUT.")
+	observeCmd.Flags().StringVar(&observeCorpusData, "corpus-data", "", "Input TraceV2 corpus data CSV (corpus-mode). Distinct from the --trace-data OUTPUT.")
+	observeCmd.Flags().IntVar(&observeConcurrentSessions, "concurrent-sessions", 0, "Replay a fixed pool of N concurrent closed-loop sessions from --corpus-* against the server (0 = disabled). Mutually exclusive with spec-mode inputs (--workload/--workload-spec/--rate/--concurrency).")
+	observeCmd.Flags().IntVar(&observeTotalSessions, "total-sessions", 0, "Total sessions to replay under --concurrent-sessions; duplicates the corpus (with cache-busting) to fill. 0 = replay each corpus session once.")
 
 	// Distribution synthesis flags — same names AND defaults as blis run.
 	// Default values are defined in root.go (distDefaults const block).
@@ -279,9 +291,19 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	if msg := validateITLStreamingFlags(observeRecordITL, observeNoStreaming); msg != "" {
 		logrus.Fatalf("%s", msg)
 	}
-	// BC-7: at least one workload input mode must be provided
-	if observeWorkload == "" && observeWorkloadSpec == "" && !cmd.Flags().Changed("rate") && observeConcurrency <= 0 {
-		logrus.Fatalf("Either --workload, --workload-spec, --rate, or --concurrency is required")
+	// Corpus-mode (OTel session-pool replay, PR-D) vs spec-mode split. Runs
+	// before BC-7 so a corpus-mode/spec-mode collision is reported specifically.
+	if msg := validateObserveCorpusFlags(
+		observeConcurrentSessions, observeTotalSessions,
+		observeCorpusHeader, observeCorpusData,
+		observeWorkload, observeWorkloadSpec,
+		cmd.Flags().Changed("rate"), observeConcurrency,
+	); msg != "" {
+		logrus.Fatalf("%s", msg)
+	}
+	// BC-7: at least one workload input mode must be provided (corpus-mode counts).
+	if observeConcurrentSessions == 0 && observeWorkload == "" && observeWorkloadSpec == "" && !cmd.Flags().Changed("rate") && observeConcurrency <= 0 {
+		logrus.Fatalf("Either --workload, --workload-spec, --rate, --concurrency, or --concurrent-sessions is required")
 	}
 	// BC-2/3/4: preset-mode constraint check (extracted for testability, R14).
 	// Runs before the existing concurrency/rate exclusion so preset errors are shown first.
