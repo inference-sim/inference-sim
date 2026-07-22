@@ -1,7 +1,7 @@
 # LoRA Placement-Policy Seams — Design
 
 **Date:** 2026-07-22
-**Status:** Draft (pending convergence review + human approval)
+**Status:** Convergence review PASSED (6 rounds, converged 0 CRITICAL / 0 IMPORTANT, 8 perspectives on sonnet) — pending human approval
 **Species:** System Overview (multi-PR feature spanning Routing, Eviction, Creation modules)
 **Feature branch:** `008-lora-policy-seams`
 **Spec:** [`specs/008-lora-policy-seams/spec.md`](../../specs/008-lora-policy-seams/spec.md)
@@ -81,8 +81,8 @@ not one bundled comparison.
   D1 applies to routing), exactly as the control-plane design
   established (2026-07-15, the "Autoscaler / horizontal-scaling composability" bullet: new
   instance = empty residency, per-instance invariants unmodified). Because the pre-placement +
-  autoscaler combination is reachable today, §11 adds a validation item for it rather than
-  gating it behind a future module.
+  autoscaler combination is reachable via existing flags (no future scaling-integration PR needed),
+  §11 adds a validation item for it rather than deferring it.
 - Any runtime policy language / DSL or out-of-process policy server — policies are named
   entries in a compiled catalog.
 - Dynamic (runtime-negotiated) adapter↔KV memory tradeoffs — HBM accounting stays static.
@@ -225,7 +225,7 @@ events / extension friction). Extension-type attribution per seam is in §8.
 | **Invariants** | Seeded residency respects per-instance capacity (**INV-L2**; rejected at startup otherwise, **INV-PS2**); seeded adapters must be registered; on-demand default seeds nothing and always admits (today's behavior, **INV-L1**); a pre-placed adapter incurs no cold-load latency and no load-count (D4; **INV-L3** — t=0 seeding is not a charged cold load); reads adapter id/registry/residency only, never `Request.OutputTokens` (**INV-L6**/INV-9). |
 | **Events** | `Initial` runs at instance construction (a seeding hook, not an event-loop trigger) — at **both** the up-front build loop and the deferred node-ready construction of initial-topology instances (D3). `OnResidentMiss` runs at the existing cold-load decision. No new event type this round. |
 | **Extension friction** | ~4–5 touch points (policy + cluster-scoped placement config + seeding at both initial-topology construction sites + validation). Over target by ~1–2 because per-instance targeting is a cluster-topology concern absent from today's instance-agnostic config, and correctness requires seeding both construction sites (D3); justified in §10. |
-| **Multi-method justification** | Creation is deliberately a **two-entry-point** contract (`Initial` seeding + `OnResidentMiss` admission) rather than two separate seams because both express one coherent *placement stance* — static vs. on-demand. Splitting them would allow an incoherent mix (e.g. pre-placement seeding coexisting with an on-demand admit that re-loads elsewhere), which no experiment wants. The baseline pairs (nothing seeded, always admit); pre-placement pairs (seed the assignment, then admit-on-miss for any non-seeded adapter — the same liveness-preserving stance D1 applies to routing). |
+| **Multi-method justification** | Creation is deliberately a **two-entry-point** contract (`Initial` seeding + `OnResidentMiss` admission) rather than two separate seams because both express one coherent *placement stance* — static vs. on-demand. Splitting them would allow an incoherent mix (e.g. pre-placement seeding coexisting with an on-demand admit that re-loads elsewhere), which no experiment wants. The baseline pairs (nothing seeded, always admit); pre-placement pairs (seed the assignment, then admit-on-miss for any non-seeded adapter — the same liveness-preserving stance that D1 applies to routing). |
 | **Failure modes** | Over-capacity or unregistered assignment, or an out-of-range instance index → **rejected at startup** with a clear error (INV-PS2). |
 
 ### 6.4 Invariants introduced & preserved
@@ -268,7 +268,7 @@ anti-pattern for a multi-PR rollout.
 | # | Decision | Status |
 |---|---|---|
 | D1 | route-to-holder is a routing *policy* (candidate-set restriction), not a scorer | Proposed (fallback provisional — §14) |
-| D2 | rank-aware eviction consumes an eviction context wired from the adapter registry | Proposed (victim tie-break provisional — §14) |
+| D2 | rank-aware eviction consumes an eviction context wired from the adapter registry | Proposed (victim criterion/tie-break provisional — §14) |
 | D3 | pre-placement assignment is cluster-scoped, resolved to per-instance subsets | Proposed |
 | D4 | pre-placed adapters resident at t=0 with no load latency and no load count | Proposed |
 | D5 | periodic trigger reuses the existing self-rescheduling clock pattern; inert this round | Proposed |
@@ -540,7 +540,7 @@ Should these be one policy with two entry points, or two orthogonal single-metho
 **Decision.** One **two-entry-point** Creation policy (design-guidelines §5.3 item 2 asks that a
 multi-method interface be justified). Both entry points express one coherent *placement stance*: baseline
 pairs (seed nothing, always admit); pre-placement pairs (seed the declared assignment, then admit-on-miss
-for any non-seeded adapter — the same liveness-preserving stance D1 applies to routing).
+for any non-seeded adapter — the same liveness-preserving stance that D1 applies to routing).
 
 **Rationale.** Splitting them would allow an incoherent mix (e.g. pre-placement seeding coexisting with an
 on-demand admit that re-loads the same adapter elsewhere), which no experiment wants. Coupling them under
@@ -655,11 +655,11 @@ further eviction, creation, or routing policy returns to the ~2–3-file target.
 - **Conservation (INV-1):** a request-conservation matrix check across {routing, eviction, creation}
   selections (precedent: the H12 conservation-across-routing-policies check), since the new routing
   fallback and creation admission touch the admission/routing path.
-- **Pre-placement + live autoscaler (reachable today):** with pre-placement configured *and* the
+- **Pre-placement + live autoscaler (reachable via existing flags once shipped):** with pre-placement configured *and* the
   autoscaler enabled (`--model-autoscaler-interval-us`), a run in which an instance is added or drained
   mid-run must preserve INV-PS2/INV-1/INV-L2 — a scaled-in instance starts empty and admits on-miss
   (no seeding of the *declared* assignment onto it this round; cross-scale re-placement is out of
-  scope, §2). This case is verified now because the combination is reachable via existing flags, not
+  scope, §2). This case is verified as part of this rollout because the combination is reachable via existing flags, not
   gated behind a future module.
 - **Registry validation (FR-004):** selecting an unregistered policy name for any seam — or an unknown
   bundle name — fails at startup with a clear error listing the valid names for that seam.
