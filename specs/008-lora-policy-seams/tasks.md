@@ -86,10 +86,10 @@
 
 **Independent Test**: in a scenario where LRU-order and rank/cost-order provably disagree, the victim tracks the reload-cost criterion (monotonic), never a pinned adapter.
 
-- [ ] T017 [US2] Write failing rank-sensitivity contract test (skewed popularity + differing ranks ⇒ victim = lowest-reload-cost unpinned, monotonic; not merely "differs from LRU"; deterministic id tie-break) — `sim/lora/eviction/*_test.go`
-- [ ] T018 [P] [US2] Implement `rank/cost-aware` eviction policy + registration — `sim/lora/eviction/`
-- [ ] T019 [US2] Add `--eviction-policy rank-aware` CLI wiring (run + replay); reject unknown names — `cmd/root.go`, `cmd/replay.go`
-- [ ] T020 [US4] Confirm no-op golden holds; verification gate
+- [x] T017 [US2] Write failing rank-sensitivity contract test (skewed popularity + differing ranks ⇒ victim = lowest-reload-cost unpinned, monotonic; not merely "differs from LRU"; deterministic id tie-break) — `sim/lora/eviction/*_test.go`
+- [x] T018 [P] [US2] Implement `rank/cost-aware` eviction policy + registration — `sim/lora/eviction/`
+- [x] T019 [US2] Add `--eviction-policy rank-aware` CLI wiring (run + replay); reject unknown names — `cmd/root.go`, `cmd/replay.go`
+- [x] T020 [US4] Confirm no-op golden holds; verification gate
 
 **Checkpoint**: Eviction ablation (US2) runnable end-to-end.
 

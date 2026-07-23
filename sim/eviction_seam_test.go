@@ -208,3 +208,86 @@ func TestEvictionContext_RankAccessorMatchesRegistry(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// B-4 (#1492) rank-aware policy integration tests, routed through the same seam.
+// ---------------------------------------------------------------------------
+
+// TestEvictionSeam_RankAwareEvictsLowestRank is the B-4 end-to-end proof: with a
+// skewed-rank resident set the rank-aware policy evicts the LOWEST-rank (cheapest to
+// reload) adapter — a DIFFERENT victim than lru chooses — so the test pins the
+// policy's effect, not merely that some adapter was evicted.
+//
+// Capacity 2, staggered arrivals A(rank 32), B(rank 8), C(rank 16): A then B fill the
+// slots; when C needs one, lru evicts A (LRU, oldest) but rank-aware evicts B (rank 8,
+// lowest). Running the SAME scenario under both policies and asserting the victims
+// differ defeats a structural / LRU-equivalent implementation (refactor-survival).
+func TestEvictionSeam_RankAwareEvictsLowestRank(t *testing.T) {
+	newCfg := func(policy string) SimConfig {
+		cfg := gateTestConfig(2,
+			AdapterSpec{ID: "A", Rank: 32},
+			AdapterSpec{ID: "B", Rank: 8},
+			AdapterSpec{ID: "C", Rank: 16},
+		)
+		cfg.EvictionPolicy = policy
+		return cfg
+	}
+
+	lruSim := injectStaggered(t, newCfg("lru"), "A", "B", "C")        // B-3 behavior: evicts A
+	rankSim := injectStaggered(t, newCfg("rank-aware"), "A", "B", "C") // evicts B (rank 8)
+
+	if lruSim.Metrics.CompletedRequests != 3 || rankSim.Metrics.CompletedRequests != 3 {
+		t.Fatalf("CompletedRequests: lru=%d rank-aware=%d, want 3 each",
+			lruSim.Metrics.CompletedRequests, rankSim.Metrics.CompletedRequests)
+	}
+
+	// lru evicts the least-recently-used adapter: A.
+	if got := lruSim.Metrics.AdapterEvictionCounts["A"]; got != 1 {
+		t.Errorf("lru: AdapterEvictionCounts[A] = %d, want 1 (LRU victim)", got)
+	}
+	// rank-aware evicts the lowest-rank adapter (B), sparing the older-but-higher-rank A.
+	if got := rankSim.Metrics.AdapterEvictionCounts["B"]; got != 1 {
+		t.Errorf("rank-aware: AdapterEvictionCounts[B] = %d, want 1 (lowest rank)", got)
+	}
+	if got := rankSim.Metrics.AdapterEvictionCounts["A"]; got != 0 {
+		t.Errorf("rank-aware: AdapterEvictionCounts[A] = %d, want 0 (high rank, spared despite being LRU)", got)
+	}
+	if !rankSim.residentAdapters.IsResident("A") {
+		t.Errorf("rank-aware: A (rank 32) should remain resident")
+	}
+	if rankSim.residentAdapters.IsResident("B") {
+		t.Errorf("rank-aware: B (rank 8) should have been evicted")
+	}
+	// The crux of B-4: the two policies disagree on the victim (lru evicts A, so
+	// count[A]=1; rank-aware spares A, so count[A]=0). Equal counts would mean
+	// rank-aware collapsed to LRU.
+	if lruSim.Metrics.AdapterEvictionCounts["A"] == rankSim.Metrics.AdapterEvictionCounts["A"] {
+		t.Errorf("lru and rank-aware chose the same victim for A — rank-aware not distinct from LRU")
+	}
+}
+
+// TestEvictionContext_RankAccessorDeterministicAcrossInstances verifies the INV-6 /
+// INV-13 basis rank-aware relies on: two independent simulators built from the SAME
+// immutable LoRAConfig.Adapters expose byte-identical ranks through the context
+// accessor. Because rank is a pure function of static metadata, every instance in a
+// cluster ranks adapters identically — so a rank-aware eviction decision is
+// reproducible across instances and across run/replay.
+func TestEvictionContext_RankAccessorDeterministicAcrossInstances(t *testing.T) {
+	newCfg := func() SimConfig {
+		return gateTestConfig(2,
+			AdapterSpec{ID: "a8", Rank: 8},
+			AdapterSpec{ID: "a16", Rank: 16},
+			AdapterSpec{ID: "a32", Rank: 32},
+		)
+	}
+	ctx1 := mustNewSimulator(t, newCfg()).buildEvictionContext()
+	ctx2 := mustNewSimulator(t, newCfg()).buildEvictionContext()
+
+	for _, id := range []string{"a8", "a16", "a32", "", "unknown"} {
+		r1, ok1 := ctx1.RankOf(id)
+		r2, ok2 := ctx2.RankOf(id)
+		if r1 != r2 || ok1 != ok2 {
+			t.Errorf("RankOf(%q) differs across instances: (%d,%v) vs (%d,%v)", id, r1, ok1, r2, ok2)
+		}
+	}
+}
