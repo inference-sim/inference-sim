@@ -214,6 +214,17 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		panic("ClusterSimulator: PDTransferContention requires PD disaggregation (--prefill-instances, --decode-instances, or --prefill-decode-instances must be set)")
 	}
 
+	// Validate cluster-scoped LoRA adapter placement early (B-5, #1493, INV-PS2):
+	// build the read-only adapter registry once (nil when LoRA is off) and reject an
+	// invalid placement before any instance is constructed. Fails via panic (library
+	// layer, Principle V) mirroring ValidatePoolTopology above. The registry is not
+	// retained — instances build their own; this call only checks the placement map.
+	if placementRegistry, err := sim.BuildAdapterRegistry(config.ToSimConfig()); err != nil {
+		panic(fmt.Sprintf("ClusterSimulator: %v", err))
+	} else if err := ValidateLoRAPlacement(config, placementRegistry); err != nil {
+		panic(fmt.Sprintf("ClusterSimulator: %v", err))
+	}
+
 	// Build pre-construction pool membership so instance construction can resolve per-pool config.
 	// When disaggregation is disabled (all pool counts are 0), prePoolMembership is nil
 	// and all instances use the global config (backward-compatible).
@@ -336,7 +347,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			if err != nil {
 				// No capacity — defer construction until NodeReadyEvent.
 				// Pass "" as gpuType (any pool) to match AddPending's placement semantics.
-				cs.placement.AddPending(id, config.Model, "", tpDegree, simCfg)
+				cs.placement.AddPending(id, config.Model, "", tpDegree, simCfg, config.LoRAAdapterPlacement[idx])
 				continue
 			}
 			// Placement succeeded: use pool's GPU type (SC-004: pool-authoritative, not CLI flag).
@@ -360,6 +371,11 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			}
 			inst := NewInstanceSimulator(id, simCfg)
 			inst.Model = config.Model
+			// B-5 (#1493): seed the cluster-assigned resident adapters via the
+			// CreationPolicy.Initial seam (uncharged). Keyed by the live
+			// construction-loop counter idx — never re-derived elsewhere. No-op
+			// when placement is absent or the subsystem is inert.
+			inst.ApplyInitialCreation(config.LoRAAdapterPlacement[idx])
 			inst.nodeID = nodeID
 			inst.allocatedGPUIDs = gpuIDs
 			inst.TPDegree = tpDegree
@@ -387,6 +403,10 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			// for the default role, preserving ModelHardwareConfig.GPU from the CLI flag.
 			inst := NewInstanceSimulator(id, simCfg)
 			inst.Model = config.Model
+			// B-5 (#1493): seed cluster-assigned resident adapters (uncharged),
+			// keyed by the live construction-loop counter idx (DD-B5-g). No-op
+			// when placement is absent or the subsystem is inert.
+			inst.ApplyInitialCreation(config.LoRAAdapterPlacement[idx])
 			inst.warmUpRemaining = config.InstanceLifecycle.WarmUpRequestCount
 			if inst.warmUpRemaining > 0 {
 				inst.TransitionTo(sim.InstanceStateWarmingUp)
@@ -1102,6 +1122,18 @@ func (c *ClusterSimulator) preemptionsTotal() int64 {
 		total += inst.Metrics().PreemptionCount
 	}
 	return total
+}
+
+// instanceByID returns the live InstanceSimulator with the given id, or nil if
+// none is registered. Linear scan over cs.instances — used only on rare paths
+// (e.g. B-5 deferred-placement adapter seeding), not in the request hot path.
+func (cs *ClusterSimulator) instanceByID(id InstanceID) *InstanceSimulator {
+	for _, inst := range cs.instances {
+		if inst.ID() == id {
+			return inst
+		}
+	}
+	return nil
 }
 
 // addLiveInstance constructs, registers, and activates an InstanceSimulator for a

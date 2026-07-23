@@ -1,0 +1,15 @@
+# B-5 (#1493) C-8 case (b) liveness fixture: a valid-but-oversized LoRA subsystem
+# whose static adapter HBM reservation (capacity 64 × maxRank 64 × 5e7 bytes/rank
+# ≈ 190 GiB) exceeds the available GPU memory on the default qwen/qwen3-14b + H100
+# auto-calc path. Loading it MUST make `blis run` fatal ("... lora-adapter-reservation
+# ... exceeds available GPU memory ..."). That fatal is a workload-independent proof
+# that --lora-config genuinely threads into KV capacity auto-calculation — i.e. the
+# subsystem is active, not silently ignored. See cmd/lora_noop_test.go.
+lora:
+  adapter_capacity: 64
+  load_base_latency_us: 1000.0
+  load_bandwidth_bytes_us: 2.0e6
+  footprint_bytes_per_rank: 5.0e7
+  adapters:
+    - id: adapter-a
+      rank: 64

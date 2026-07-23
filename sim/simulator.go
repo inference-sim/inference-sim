@@ -136,6 +136,12 @@ type Simulator struct {
 	// (#1491). Hardwired to "lru" in B-3 (byte-identical to the former EvictLRU);
 	// non-nil together with residentAdapters, nil when LoRA is inactive.
 	evictionPolicy EvictionPolicy
+	// creationPolicy decides adapter residency creation at the two entry points
+	// (#1493): Initial (t=0 seeding via ApplyInitialCreation) and OnResidentMiss
+	// (admit at the cold-load gate). Hardwired to "on-demand" in B-5 (byte-identical
+	// to pre-seam behavior: seeds nothing, always admits); non-nil together with
+	// residentAdapters, nil when LoRA is inactive.
+	creationPolicy CreationPolicy
 	// loadingAdapter is the id of the adapter whose load is currently in flight on
 	// this instance, or "" when none. Loads serialize per instance: the gate starts
 	// a new load only when this is "" (§7 serialization).
@@ -263,9 +269,44 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 			return nil, fmt.Errorf("NewSimulator: eviction policy: %w", err)
 		}
 		s.evictionPolicy = pol
+		// B-5: hardwire the creation policy to on-demand (byte-identical to pre-seam
+		// behavior). No LoRAConfig.CreationPolicy field / --creation-policy flag exists
+		// yet; B-6 introduces selection. Guard the hook like the eviction one (R6).
+		if NewCreationPolicyFunc == nil {
+			return nil, fmt.Errorf("NewSimulator: creation policy func not registered (import sim/lora)")
+		}
+		cp, err := NewCreationPolicyFunc("on-demand")
+		if err != nil {
+			return nil, fmt.Errorf("NewSimulator: creation policy: %w", err)
+		}
+		s.creationPolicy = cp
 	}
 
 	return s, nil
+}
+
+// ApplyInitialCreation seeds the instance's resident adapter set at t=0 from the
+// creation policy's Initial decision (D3/D4). It is the state-mutating boundary
+// for initial-topology seeding: the cluster resolves this instance's assigned
+// subset and passes it in; ApplyInitialCreation runs creationPolicy.Initial and
+// Stores each returned id WITHOUT a load-count increment and WITHOUT cold-load
+// latency (INV-L3 — t=0 seeding is not a charged load). It is a no-op when the
+// LoRA subsystem is inert (residentAdapters or creationPolicy nil). For on-demand,
+// Initial returns nothing, so this is a verified no-op even when the subsystem is
+// active (C-4).
+func (s *Simulator) ApplyInitialCreation(assigned []string) {
+	if s.residentAdapters == nil || s.creationPolicy == nil {
+		return
+	}
+	seed := s.creationPolicy.Initial(CreationContext{
+		Assigned: assigned,
+		Registry: s.adapterRegistry,
+	})
+	for _, id := range seed {
+		// Store bypasses the cold-load metric/latency path (that lives at the
+		// cold-load completion in maybeStartAdapterLoad), so seeding is uncharged.
+		s.residentAdapters.Store(id)
+	}
 }
 
 // WorkloadRNG returns the RNG for workload generation.
@@ -913,6 +954,20 @@ func (sim *Simulator) maybeStartAdapterLoad(now int64) {
 	}
 	head := sim.WaitQ.Peek()
 	if head == nil || head.IsDecodeSubRequest || head.Adapter == "" || sim.residentAdapters.IsResident(head.Adapter) {
+		return
+	}
+	// Cold miss: route the admit decision through the creation seam (B-5, #1493).
+	// on-demand always admits (pre-B-5 behavior, no change). A policy returning
+	// false holds the request at the gate this step without starting a load — not a
+	// stall (INV-8): the request is a deliberately not-yet-runnable gate-blocked
+	// request, re-evaluated on the next maybeStartAdapterLoad call, and the gate does
+	// not reschedule an immediate retry (no busy-loop). creationPolicy is wired
+	// together with the fields guarded above, so it is non-nil here; the guard is
+	// defensive and, if ever nil, defaults to admit (on-demand).
+	if sim.creationPolicy != nil && !sim.creationPolicy.OnResidentMiss(CreationContext{
+		MissedAdapter: head.Adapter,
+		Registry:      sim.adapterRegistry,
+	}) {
 		return
 	}
 	// Cold head: reserve a slot by committing the seam-selected non-pinned victim now (§7).

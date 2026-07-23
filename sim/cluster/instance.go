@@ -138,6 +138,13 @@ func (i *InstanceSimulator) InjectRequest(req *sim.Request) {
 	i.sim.InjectArrival(req)
 }
 
+// ApplyInitialCreation seeds this instance's resident adapter set at t=0 from its
+// assigned adapter subset (B-5, #1493), delegating to the wrapped Simulator's
+// creation seam. No-op when the LoRA subsystem is inert or the subset is empty.
+func (i *InstanceSimulator) ApplyInitialCreation(assigned []string) {
+	i.sim.ApplyInitialCreation(assigned)
+}
+
 // HasPendingEvents returns true if the instance has pending events.
 func (i *InstanceSimulator) HasPendingEvents() bool { return i.sim.HasPendingEvents() }
 

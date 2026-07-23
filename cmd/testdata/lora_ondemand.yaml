@@ -1,0 +1,16 @@
+# B-5 (#1493) C-8 case (b) fixture: a valid LoRA subsystem configuration used to
+# prove the creation seam is inert when the subsystem is ACTIVE. Adapters and a
+# resident capacity are declared (so HasAdapters() is true and the registry /
+# resident set are built), but no workload request targets an adapter and no
+# placement is declared, so on-demand seeds nothing and the run is byte-identical
+# across invocations. See cmd/lora_noop_test.go.
+lora:
+  adapter_capacity: 4
+  load_base_latency_us: 1000.0
+  load_bandwidth_bytes_us: 2.0e6
+  footprint_bytes_per_rank: 2.0e6
+  adapters:
+    - id: adapter-a
+      rank: 8
+    - id: adapter-b
+      rank: 8
