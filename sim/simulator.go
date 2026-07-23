@@ -269,13 +269,18 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 			return nil, fmt.Errorf("NewSimulator: eviction policy: %w", err)
 		}
 		s.evictionPolicy = pol
-		// B-5: hardwire the creation policy to on-demand (byte-identical to pre-seam
-		// behavior). No LoRAConfig.CreationPolicy field / --creation-policy flag exists
-		// yet; B-6 introduces selection. Guard the hook like the eviction one (R6).
+		// B-6: the config selects the creation policy; empty resolves to on-demand
+		// (New also maps ""→on-demand, but naming it here keeps the default explicit
+		// at the call site and byte-identical to B-5). Guard the hook like the
+		// eviction one (R6).
 		if NewCreationPolicyFunc == nil {
 			return nil, fmt.Errorf("NewSimulator: creation policy func not registered (import sim/lora)")
 		}
-		cp, err := NewCreationPolicyFunc("on-demand")
+		creationName := cfg.CreationPolicy
+		if creationName == "" {
+			creationName = "on-demand"
+		}
+		cp, err := NewCreationPolicyFunc(creationName)
 		if err != nil {
 			return nil, fmt.Errorf("NewSimulator: creation policy: %w", err)
 		}

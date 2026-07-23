@@ -280,6 +280,15 @@ type LoRAConfig struct {
 	// deliberately does NOT check the name here, to keep sim free of the eviction
 	// import — the CLI fails fast against sim.ValidEvictionPolicyNames.
 	EvictionPolicy string `yaml:"eviction_policy,omitempty"`
+
+	// CreationPolicy names the adapter-creation policy (B-6): the t=0 seeding and
+	// cold-load-gate admit decisions behind the CreationPolicy seam. Empty =>
+	// on-demand (the no-op default, byte-identical to pre-B-5: seeds nothing, always
+	// admits). Resolution and name validation live in sim/lora/creation.New
+	// (cross-package registry); as with EvictionPolicy, Validate deliberately does
+	// NOT check the name here — that keeps sim free of the creation import, and the
+	// CLI fails fast against sim.ValidCreationPolicyNames.
+	CreationPolicy string `yaml:"creation_policy,omitempty"`
 }
 
 // HasAdapters reports whether any adapter is declared. When false the subsystem is

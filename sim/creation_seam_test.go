@@ -115,6 +115,46 @@ func TestApplyInitialCreation_InertSubsystemNoOp(t *testing.T) {
 	s.ApplyInitialCreation([]string{"A"}) // must be a safe no-op
 }
 
+// TestPrePlacementSelected_SeedsResidentsUncharged pins C-B6-1/INV-L3 end-to-end
+// through the REAL pre-placement policy selected via cfg.CreationPolicy (not a
+// stub): a "pre-placement"-configured Simulator seeds its assigned subset resident
+// at t=0 with NO load-count increment. This exercises the T026 config-driven
+// selection (NewSimulator reads cfg.CreationPolicy) plus the shipped policy.
+func TestPrePlacementSelected_SeedsResidentsUncharged(t *testing.T) {
+	cfg := gateTestConfig(2, AdapterSpec{ID: "A", Rank: 8}, AdapterSpec{ID: "B", Rank: 8})
+	cfg.CreationPolicy = "pre-placement"
+	s := mustNewSimulator(t, cfg)
+
+	s.ApplyInitialCreation([]string{"A", "B"})
+
+	for _, id := range []string{"A", "B"} {
+		if !s.residentAdapters.IsResident(id) {
+			t.Errorf("adapter %s should be resident after pre-placement seeding", id)
+		}
+		if got := s.Metrics.AdapterLoadCounts[id]; got != 0 {
+			t.Errorf("AdapterLoadCounts[%s] = %d after seeding, want 0 (INV-L3: seeding is uncharged)", id, got)
+		}
+	}
+}
+
+// TestOnDemandSelected_SeedsNothing pins the regression guard for the T026
+// selection change: an explicit CreationPolicy "on-demand" (like the empty
+// default) still seeds nothing, so selecting the shipped default byte-identically
+// preserves pre-B-6 behavior (INV-L1).
+func TestOnDemandSelected_SeedsNothing(t *testing.T) {
+	for _, name := range []string{"", "on-demand"} {
+		cfg := gateTestConfig(2, AdapterSpec{ID: "A", Rank: 8})
+		cfg.CreationPolicy = name
+		s := mustNewSimulator(t, cfg)
+
+		s.ApplyInitialCreation([]string{"A"})
+
+		if s.residentAdapters.IsResident("A") {
+			t.Errorf("CreationPolicy %q seeded adapter A; want empty resident set (INV-L1)", name)
+		}
+	}
+}
+
 // TestOnResidentMissFalse_HoldsRequestInert pins C-9/INV-8: a policy returning
 // OnResidentMiss=false starts no cold load, leaves the adapter non-resident, and
 // does not busy-loop — the request is simply held (not completed) without the

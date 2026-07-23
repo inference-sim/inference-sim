@@ -126,6 +126,8 @@ var (
 	loraLoadBandwidthBytesUs  float64 // --lora-load-bandwidth-bytes-us
 	loraFootprintBytesPerRank float64 // --lora-footprint-bytes-per-rank
 	loraEvictionPolicy        string  // --eviction-policy (applied only when Changed; empty => lru default, B-4)
+	loraCreationPolicy        string  // --creation-policy (applied only when Changed; empty => on-demand default, B-6)
+	loraAdapterPlacement      string  // --lora-adapter-placement (idx=id[,id...];... construction-index→adapter ids, B-6)
 
 	// loraReservedBytesForKV carries the resolved static LoRA HBM reservation
 	// (bytes) into KV auto-capacity, mirroring how totalKVBlocks is threaded as a
@@ -1224,6 +1226,8 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&loraLoadBandwidthBytesUs, "lora-load-bandwidth-bytes-us", 0, "Cold adapter-load bandwidth in bytes/µs (>0). Applied only when set; else --lora-config / defaults.yaml.")
 	cmd.Flags().Float64Var(&loraFootprintBytesPerRank, "lora-footprint-bytes-per-rank", 0, "Adapter HBM footprint per rank unit in bytes (>0). Applied only when set; else --lora-config / defaults.yaml.")
 	cmd.Flags().StringVar(&loraEvictionPolicy, "eviction-policy", "", fmt.Sprintf("Resident-adapter eviction policy at the cold-load gate. Valid: %s. Applied only when set; empty/default => lru (byte-identical to no LoRA).", strings.Join(sim.ValidEvictionPolicyNames(), ", ")))
+	cmd.Flags().StringVar(&loraCreationPolicy, "creation-policy", "", fmt.Sprintf("Adapter-creation policy (t=0 seeding + cold-load-gate admit). Valid: %s. Applied only when set; empty/default => on-demand (byte-identical to no LoRA).", strings.Join(sim.ValidCreationPolicyNames(), ", ")))
+	cmd.Flags().StringVar(&loraAdapterPlacement, "lora-adapter-placement", "", "Static per-instance adapter placement for the pre-placement creation policy, as \"idx=id[,id...];idx=id...\" (construction-index => adapter ids), e.g. \"0=A,B;1=C\". Adapters are seeded resident at t=0. Empty => no placement.")
 }
 
 // loraConfigFile is the on-disk shape of a --lora-config YAML file: a single
@@ -1314,6 +1318,11 @@ func resolveLoRAConfig(cmd *cobra.Command) sim.LoRAConfig {
 	if cmd.Flags().Changed("eviction-policy") {
 		cfg.EvictionPolicy = loraEvictionPolicy
 	}
+	// --creation-policy override (R18: only when explicitly set); empty (unset flag,
+	// no file value) => on-demand. A file-supplied creation_policy survives an unset flag.
+	if cmd.Flags().Changed("creation-policy") {
+		cfg.CreationPolicy = loraCreationPolicy
+	}
 
 	if err := cfg.Validate(); err != nil {
 		logrus.Fatalf("Invalid LoRA configuration: %v", err)
@@ -1336,7 +1345,78 @@ func resolveLoRAConfig(cmd *cobra.Command) sim.LoRAConfig {
 			logrus.Fatalf("Invalid --eviction-policy %q; valid options: %s", cfg.EvictionPolicy, strings.Join(valid, ", "))
 		}
 	}
+	// Fail fast on an unknown creation-policy name (B-6), mirroring the eviction check
+	// above: sim.LoRAConfig.Validate deliberately omits it (the valid-names registry
+	// lives in sim/lora/creation, which package sim must not import), so the CLI
+	// boundary enforces it (Principle V). Empty => on-demand, so it is exempt.
+	if cfg.CreationPolicy != "" {
+		valid := sim.ValidCreationPolicyNames()
+		known := false
+		for _, name := range valid {
+			if name == cfg.CreationPolicy {
+				known = true
+				break
+			}
+		}
+		if !known {
+			logrus.Fatalf("Invalid --creation-policy %q; valid options: %s", cfg.CreationPolicy, strings.Join(valid, ", "))
+		}
+	}
 	return cfg
+}
+
+// parseLoRAAdapterPlacement parses the --lora-adapter-placement grammar
+// "idx=id[,id...];idx=id..." into a construction-index → adapter-id-list map (the
+// cluster-scoped DeploymentConfig.LoRAAdapterPlacement shape). An empty spec yields
+// a nil map (no placement). It validates shape only — index range, adapter-id
+// registration, and per-instance capacity are enforced later by the cluster's
+// ValidateLoRAPlacement at NewClusterSimulator (B-5). Errors on: a chunk missing
+// '=', a non-integer or empty index, an empty adapter id, or a duplicate index.
+func parseLoRAAdapterPlacement(spec string) (map[int][]string, error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return nil, nil
+	}
+	out := map[int][]string{}
+	for _, chunk := range strings.Split(spec, ";") {
+		chunk = strings.TrimSpace(chunk)
+		if chunk == "" {
+			continue
+		}
+		key, rest, found := strings.Cut(chunk, "=")
+		if !found {
+			return nil, fmt.Errorf("malformed placement chunk %q: expected \"idx=id[,id...]\"", chunk)
+		}
+		idx, err := strconv.Atoi(strings.TrimSpace(key))
+		if err != nil {
+			return nil, fmt.Errorf("malformed placement index %q: %w", strings.TrimSpace(key), err)
+		}
+		if _, dup := out[idx]; dup {
+			return nil, fmt.Errorf("duplicate placement index %d", idx)
+		}
+		var ids []string
+		for _, id := range strings.Split(rest, ",") {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				return nil, fmt.Errorf("empty adapter id in placement chunk %q", chunk)
+			}
+			ids = append(ids, id)
+		}
+		out[idx] = ids
+	}
+	return out, nil
+}
+
+// resolveLoRAAdapterPlacement parses --lora-adapter-placement into the
+// cluster-scoped placement map, aborting at the CLI boundary (logrus.Fatalf,
+// Principle V) on a malformed spec. Shared by runCmd and replayCmd so both set the
+// same DeploymentConfig field (INV-13 parity).
+func resolveLoRAAdapterPlacement() map[int][]string {
+	placement, err := parseLoRAAdapterPlacement(loraAdapterPlacement)
+	if err != nil {
+		logrus.Fatalf("Invalid --lora-adapter-placement: %v", err)
+	}
+	return placement
 }
 
 // adapterReservedBytesFor returns the static LoRA HBM reservation (bytes) to carve
@@ -2073,6 +2153,7 @@ var runCmd = &cobra.Command{
 				SLOPriorityOverrides: sloPriorityOverrides,
 			},
 			NumInstances:                    numInstances,
+			LoRAAdapterPlacement:            resolveLoRAAdapterPlacement(),
 			AdmissionPolicy:                 admissionPolicy,
 			AdmissionLatency:                admissionLatency,
 			RoutingLatency:                  routingLatency,

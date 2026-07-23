@@ -73,4 +73,5 @@ func validNames() string {
 
 func init() {
 	register("on-demand", func() sim.CreationPolicy { return onDemand{} })
+	register("pre-placement", func() sim.CreationPolicy { return prePlacement{} })
 }

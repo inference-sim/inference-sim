@@ -125,6 +125,52 @@ func TestCreationSeamInert_LoRAActiveOnDemandByteIdentity(t *testing.T) {
 	}
 }
 
+// TestPrePlacementCLI_PlumbingDeterministic is the B-6 CLI plumbing smoke: a
+// --creation-policy pre-placement --lora-adapter-placement run on the
+// lora_ondemand.yaml adapters starts successfully (the flags parse, the placement
+// validates against the registry, and the pre-placement policy seeds instance_0)
+// and is byte-identical across two invocations (INV-6 determinism). It does NOT
+// assert a zero-cold-load count — the default run workload targets no adapter, so
+// a stdout load-count check would be vacuously 0; the SC-002 residency /
+// zero-cold-load law is pinned in the sim/cluster test
+// (TestPrePlacement_ZeroColdLoadForSeededAdapter), where an adapter-targeting
+// request source can be constructed directly.
+func TestPrePlacementCLI_PlumbingDeterministic(t *testing.T) {
+	if os.Getenv("BLIS_NOOP_SUBPROCESS") == "1" {
+		rootCmd.SetArgs([]string{
+			"run", "--model", "qwen/qwen3-14b", "--seed", "42",
+			"--defaults-filepath", "../defaults.yaml",
+			"--lora-config", "testdata/lora_ondemand.yaml",
+			"--creation-policy", "pre-placement",
+			"--lora-adapter-placement", "0=adapter-a",
+		})
+		_ = rootCmd.Execute()
+		os.Exit(0)
+	}
+
+	run := func() (string, bool) {
+		t.Helper()
+		cmd := exec.Command(os.Args[0], "-test.run=TestPrePlacementCLI_PlumbingDeterministic")
+		cmd.Env = append(os.Environ(), "BLIS_NOOP_SUBPROCESS=1")
+		var stdout bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = io.Discard // logrus diagnostics go to stderr (INV-6)
+		err := cmd.Run()
+		return stdout.String(), err == nil
+	}
+
+	first, ok1 := run()
+	second, ok2 := run()
+	if !ok1 || !ok2 {
+		t.Fatalf("pre-placement CLI run exited non-zero (ok1=%v ok2=%v); the flags must parse and the "+
+			"placement must validate against the registry", ok1, ok2)
+	}
+	if first != second {
+		t.Errorf("INV-6 VIOLATION: pre-placement CLI run is non-deterministic across invocations.\n"+
+			"--- first ---\n%s\n--- second ---\n%s", first, second)
+	}
+}
+
 // TestNoOpByteIdentity_MultiInstanceEvictionPolicyInert is the B-4 T020 / D-4-3
 // cluster-scope INV-6 proof: across a 2-instance cluster with no LoRA configured,
 // leaving --eviction-policy unset, selecting the default lru, and selecting rank-aware
