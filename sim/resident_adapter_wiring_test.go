@@ -180,6 +180,13 @@ func TestResidentAdapterSet_PreemptionDoesNotDoubleCountLoad(t *testing.T) {
 		t.Fatal("precondition violated: expected at least one preemption, got 0")
 	}
 
+	// Positive confirmation the warm path was reachable: "a" stayed resident through
+	// the preemption, so the reschedule took Touch (not a skipped recordAdapterResidency,
+	// which would also leave LoadCount == 1 and mask a regression).
+	if !s.residentAdapters.IsResident("a") {
+		t.Error("adapter \"a\" not resident after run: warm Touch path on reschedule was not exercised")
+	}
+
 	out := s.Metrics.BuildOutput("test-instance", nil)
 	if got := out.Adapters["a"].LoadCount; got != 1 {
 		t.Errorf("adapter \"a\" LoadCount = %d, want 1 (preempt+reschedule must not re-count a resident adapter)", got)

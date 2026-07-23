@@ -207,7 +207,15 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 	// (NewResidentAdapterSetFunc registered). Otherwise it stays nil and adapter
 	// handling is a no-op (INV-6).
 	if cfg.HasAdapters() && cfg.AdapterCapacity != nil && NewResidentAdapterSetFunc != nil {
-		s.residentAdapters = NewResidentAdapterSetFunc(*cfg.AdapterCapacity)
+		// Guard against a factory that returns a nil interface value: the concrete
+		// sim/lora set never does (it returns a valid set or panics on bad capacity),
+		// but a test double or future implementation might, and a typed-nil interface
+		// would slip past the sim.residentAdapters == nil guard and panic on first use.
+		rs := NewResidentAdapterSetFunc(*cfg.AdapterCapacity)
+		if rs == nil {
+			return nil, fmt.Errorf("NewSimulator: NewResidentAdapterSetFunc returned nil for capacity %d", *cfg.AdapterCapacity)
+		}
+		s.residentAdapters = rs
 	} else if cfg.HasAdapters() && cfg.AdapterCapacity == nil {
 		// Adapters declared but no capacity: the resident set stays inert and every
 		// adapter metric reports zero. Warn rather than fail silently (R1) — a run
@@ -218,6 +226,9 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		// Adapters + capacity configured but sim/lora was never linked, so the seam
 		// factory is unregistered. Only reachable from a non-CLI caller (cmd/root.go
 		// imports sim/lora); warn so that path does not silently drop adapter tracking.
+		// This branch is not unit-testable from within package sim: the blank import in
+		// lora_import_test.go always registers the factory, so there is no way to
+		// observe NewResidentAdapterSetFunc == nil in a sim test.
 		logrus.Warnf("adapters and adapter_capacity are configured but sim/lora is not linked (NewResidentAdapterSetFunc unregistered); resident-adapter tracking is disabled and adapter metrics will be zero")
 	}
 
@@ -785,12 +796,13 @@ func (sim *Simulator) recordAdapterResidency(req *Request) {
 	evicted, admitted := sim.residentAdapters.Store(req.Adapter)
 	if !admitted {
 		// Set full and every resident adapter pinned: nothing was loaded, so don't
-		// record a phantom load. Unreachable in this PR (pinning is not wired yet);
-		// the guard keeps the accounting correct once the cold-load gate lands. Warn
-		// so that, once pinning is wired, a failed cold load surfaces as a logged
-		// event rather than silently missing adapter metrics (R1).
-		logrus.Warnf("recordAdapterResidency: adapter %q could not be loaded "+
-			"(resident set full, all slots pinned); no load counted", req.Adapter)
+		// record a phantom load. Unreachable until pin/unpin are wired (LoRA cold-load
+		// gate); the guard keeps the accounting correct once that lands. Warn so that,
+		// once pinning is wired, a failed cold load surfaces as a logged event rather
+		// than silently missing adapter metrics (R1). Include req.ID so a multi-instance
+		// cluster trace can correlate which request hit the all-pinned condition.
+		logrus.Warnf("recordAdapterResidency: adapter %q (req %s) could not be loaded "+
+			"(resident set full, all slots pinned); no load counted", req.Adapter, req.ID)
 		return
 	}
 	sim.Metrics.AdapterLoadCounts[req.Adapter]++

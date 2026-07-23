@@ -1,16 +1,16 @@
 package sim
 
 // ResidentAdapterSet is the per-instance view of the finite resident LoRA adapter
-// slots: a capacity-bounded LRU over adapter ids. The Simulator uses it to track
-// which adapters are "loaded" on the instance as requests are scheduled. The
-// concrete implementation (the LRU) lives in sim/lora and is wired in via
+// slots: a capacity-bounded resident set of adapter ids. The Simulator uses it to
+// track which adapters are "loaded" on the instance as requests are scheduled. The
+// concrete implementation (an LRU) lives in sim/lora and is wired in via
 // NewResidentAdapterSetFunc, mirroring NewAdapterRegistryFunc / NewLatencyModelFunc,
 // so sim/ can own the state without importing sim/lora (Principle I: no reverse
 // import).
 //
-// The interface is intentionally scoped to what the scheduling hook needs today
-// (R13). The concrete set additionally supports pin/unpin and explicit eviction;
-// those enter this interface when the cold-load gate (#1464) consumes them.
+// The interface is intentionally scoped to what the scheduling hook needs (R13).
+// The concrete set additionally supports pin/unpin and explicit eviction; those
+// enter this interface when the LoRA cold-load gate consumes them.
 type ResidentAdapterSet interface {
 	// IsResident reports whether id currently occupies a slot.
 	IsResident(id string) bool

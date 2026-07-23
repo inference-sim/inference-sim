@@ -47,7 +47,8 @@ type Metrics struct {
 	NumRunningBatchRequests []int                     // number of request in runningBatch over different steps
 	Requests                map[string]RequestMetrics // request metrics list
 
-	// Per-adapter resident-set event counts (#1464, LoRA). AdapterLoadCounts[id] is
+	// Per-adapter resident-set event counts (LoRA control-plane subsystem).
+	// AdapterLoadCounts[id] is
 	// incremented each time id is cold-loaded into an instance's resident set;
 	// AdapterEvictionCounts[id] each time id is evicted. These are cumulative EVENT
 	// counts, not distinct-adapter or request counts — a hot adapter loaded/evicted
@@ -206,7 +207,7 @@ func buildAdapterMetrics(m *Metrics, vllmRuntime float64) map[string]AdapterMetr
 	if len(ttftsByAdapter) == 0 && len(m.AdapterLoadCounts) == 0 && len(m.AdapterEvictionCounts) == 0 {
 		return nil
 	}
-	idSet := make(map[string]struct{}, len(ttftsByAdapter)+len(m.AdapterLoadCounts))
+	idSet := make(map[string]struct{}, len(ttftsByAdapter)+len(m.AdapterLoadCounts)+len(m.AdapterEvictionCounts))
 	for id := range ttftsByAdapter {
 		idSet[id] = struct{}{}
 	}

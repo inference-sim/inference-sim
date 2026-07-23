@@ -95,9 +95,9 @@ func (s *residentSet) Store(id string) (evicted string, ok bool) {
 // Returns the evicted id and true, or ("", false) if the set is empty or every
 // entry is pinned.
 //
-// Exported (unlike the enclosing unexported residentSet) because the cold-load
+// Exported (unlike the enclosing unexported residentSet) because the LoRA cold-load
 // gate will drive eviction directly once pin/unpin join the ResidentAdapterSet
-// interface (#1464); the uppercase name is deliberate, not an accidental export.
+// interface; the uppercase name is deliberate, not an accidental export.
 func (s *residentSet) EvictLRU() (string, bool) {
 	for e := s.lruHead; e != nil; e = e.next {
 		if e.pinCount == 0 {
