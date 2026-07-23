@@ -28,15 +28,22 @@ type DisaggregationDecision struct {
 // use len(req.InputTokens) and req.MaxOutputLen only.
 //
 // req is guaranteed non-nil; implementations may assume a non-nil pointer.
-// state carries the decode-pool RouterState — the same snapshots used to
-// pre-select the decode pod. state.SelectedInstance holds the ID of the pod
-// chosen by the decode routing policy. Implementations may read any field of
-// state except Request.OutputTokens. state is guaranteed non-nil at runtime
+// state carries the RouterState built for the disagg-decider path:
+// state.Snapshots is filtered to the decode pool (same snapshots used to
+// pre-select the decode pod), state.PrefillSnapshots carries the prefill pool
+// (empty when no prefill pool is configured; issue #1339 G1), and each
+// snapshot's CachedBlocks field carries cacheQueryFn(req.InputTokens) for
+// that pod (zero when cache-query wiring is not available; issue #1339 G5).
+// state.SelectedDecodeInstance holds the ID of the pod chosen by the decode
+// routing policy. Implementations may read any field of state except
+// Request.OutputTokens. state is guaranteed non-nil at runtime
 // (executeDisaggregatedRouting returns at the empty-decode-pool guard before
 // calling Decide), but implementations must still tolerate a nil pointer for
 // unit-test convenience. Passing the full RouterState (rather than a single
 // snapshot) lets joint D+P policies reconsider the decode pod via
-// DisaggregationDecision.DecodePodOverride.
+// DisaggregationDecision.DecodePodOverride. The three built-in deciders
+// (never, always, prefix-threshold) do not read PrefillSnapshots or
+// CachedBlocks; those fields exist for future cross-pool-aware policies.
 type DisaggregationDecider interface {
 	Decide(req *Request, state *RouterState) DisaggregationDecision
 }
@@ -91,7 +98,7 @@ func NewDisaggregationDecider(name string) DisaggregationDecider {
 //	nonCachedTokens = len(req.InputTokens) − cachedBlocks × blockSize
 //	Disaggregate    = (nonCachedTokens > threshold)
 //
-// where cachedBlocks is obtained by calling cacheQuery[state.SelectedInstance]
+// where cachedBlocks is obtained by calling cacheQuery[state.SelectedDecodeInstance]
 // on req.InputTokens. threshold and blockSize are in token counts, not bytes.
 //
 // cacheQuery shares the same map used by the precise-prefix-cache scorer
@@ -107,7 +114,7 @@ type PrefixThresholdDecider struct {
 // threshold, block size, and per-pod cache-query map.
 // threshold must be >= 0; blockSize must be > 0. Panics otherwise (R3).
 // cacheQuery may be nil (e.g. unit tests without cluster state); when nil or
-// when state.SelectedInstance is missing from the map, Decide returns
+// when state.SelectedDecodeInstance is missing from the map, Decide returns
 // Disaggregate=false (conservative fallback, consistent with llm-d's
 // nil-endpoint guard at prefix_based_pd_decider.go:108-111).
 func NewPrefixThresholdDecider(threshold, blockSize int, cacheQuery map[string]func([]TokenID) int) *PrefixThresholdDecider {
@@ -130,17 +137,17 @@ func NewPrefixThresholdDecider(threshold, blockSize int, cacheQuery map[string]f
 // Early returns (all yielding Disaggregate=false):
 //   - len(req.InputTokens) == 0
 //   - state == nil
-//   - state.SelectedInstance == "" (no upstream selection)
+//   - state.SelectedDecodeInstance == "" (no upstream selection)
 //   - cacheQuery is nil, or the selected instance is missing from the map,
 //     or its closure is nil (pod not yet registered / just removed)
 func (p *PrefixThresholdDecider) Decide(req *Request, state *RouterState) DisaggregationDecision {
 	if req.InputLen() == 0 {
 		return DisaggregationDecision{Disaggregate: false}
 	}
-	if state == nil || state.SelectedInstance == "" || p.cacheQuery == nil {
+	if state == nil || state.SelectedDecodeInstance == "" || p.cacheQuery == nil {
 		return DisaggregationDecision{Disaggregate: false}
 	}
-	fn, ok := p.cacheQuery[state.SelectedInstance]
+	fn, ok := p.cacheQuery[state.SelectedDecodeInstance]
 	if !ok || fn == nil {
 		return DisaggregationDecision{Disaggregate: false}
 	}

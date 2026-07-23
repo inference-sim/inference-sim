@@ -81,4 +81,7 @@ func TestNewRoutingSnapshot_Fields(t *testing.T) {
 	if snap.InFlightRequests != 0 {
 		t.Errorf("InFlightRequests = %d, want 0", snap.InFlightRequests)
 	}
+	if snap.CachedBlocks != 0 {
+		t.Errorf("CachedBlocks = %d, want 0", snap.CachedBlocks)
+	}
 }

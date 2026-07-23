@@ -1232,6 +1232,32 @@ func (c *ClusterSimulator) buildPoolFilteredSnapshots(role PoolRole) []sim.Routi
 	return FilterSnapshotsByPool(allSnapshots, c.poolMembership, role)
 }
 
+// annotateCachedBlocks populates RoutingSnapshot.CachedBlocks in place with the
+// per-pod cached-block count for the given request's input tokens (issue #1339 G5).
+// Intended for the disaggregation-decider path only; the standard routing path
+// constructs RouterState via buildRouterState, which does not call this helper.
+//
+// When tokens is empty or cacheFn is nil, the helper is a no-op (every snapshot
+// keeps CachedBlocks = 0). For each snapshot whose instance ID is missing from
+// cacheFn or whose closure is nil, CachedBlocks remains zero — this is the same
+// conservative fallback used by PrefixThresholdDecider.Decide.
+//
+// R2/INV-6 determinism: the helper is a pure function of (cacheFn, tokens) and
+// does not reorder snaps. Callers are responsible for passing a deterministically
+// ordered slice (buildPoolFilteredSnapshots preserves c.instances traversal order).
+func annotateCachedBlocks(snaps []sim.RoutingSnapshot, cacheFn map[string]func([]int) int, tokens []int) {
+	if len(tokens) == 0 || cacheFn == nil {
+		return
+	}
+	for i := range snaps {
+		fn, ok := cacheFn[snaps[i].ID]
+		if !ok || fn == nil {
+			continue
+		}
+		snaps[i].CachedBlocks = fn(tokens)
+	}
+}
+
 // detectPrefillCompletions checks for newly completed prefill sub-requests on the given instance
 // and schedules KV transfer events for each.
 // R2/INV-6: Collects completed IDs into a sorted slice before processing to ensure
@@ -1944,13 +1970,29 @@ func (cs *ClusterSimulator) executeStandardRouting(req *sim.Request, time int64)
 // fire at `time` — no additional offset.
 func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time int64) {
 	// Step 1: route to decode pool first (llm-d parity: decode pod always selected first).
-	filteredSnapshots := cs.buildPoolFilteredSnapshots(PoolRoleDecode)
-	if len(filteredSnapshots) == 0 {
+	decodeSnapshots := cs.buildPoolFilteredSnapshots(PoolRoleDecode)
+	if len(decodeSnapshots) == 0 {
 		logrus.Warnf("[cluster] req %s: no routable instances in decode pool — request rejected at routing", req.ID)
 		cs.routingRejections++
 		return
 	}
-	state := &sim.RouterState{Snapshots: filteredSnapshots, Clock: cs.clock}
+	// Prefill-pool snapshots expose cross-pool state to the disagg decider
+	// (issue #1339 G1). Empty when no prefill pool is configured; built-in
+	// deciders ignore this slice. Order follows c.instances for R2/INV-6
+	// determinism (same traversal as buildPoolFilteredSnapshots for decode).
+	prefillSnapshots := cs.buildPoolFilteredSnapshots(PoolRolePrefill)
+	// Annotate each snapshot with the per-pod cached-block count for this
+	// request (issue #1339 G5). Populated only on the disagg-decider path so
+	// the standard-routing hot path (buildRouterState) remains allocation-
+	// identical to pre-PR. Zero when cache-query wiring is missing — same
+	// conservative fallback as PrefixThresholdDecider.Decide.
+	annotateCachedBlocks(decodeSnapshots, cs.cacheQueryFn, req.InputTokens)
+	annotateCachedBlocks(prefillSnapshots, cs.cacheQueryFn, req.InputTokens)
+	state := &sim.RouterState{
+		Snapshots:        decodeSnapshots,
+		PrefillSnapshots: prefillSnapshots,
+		Clock:            cs.clock,
+	}
 	policy := cs.decodeRoutingPolicy
 	if policy == nil {
 		policy = cs.routingPolicy
@@ -1961,11 +2003,11 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 	// Step 2: disaggregation decision with decode pod known. Pass the full decode-pool
 	// RouterState so the decider can query per-pod state (cache presence, load) and
 	// optionally reconsider the decode pod via DisaggregationDecision.DecodePodOverride.
-	// state.SelectedInstance tells the decider which snapshot was pre-selected by
+	// state.SelectedDecodeInstance tells the decider which snapshot was pre-selected by
 	// the decode routing policy — PrefixThresholdDecider queries the selected
 	// pod's cacheQueryFn closure for per-pod prefix cache state (matches llm-d's
 	// PrefixBasedPDDecider reading endpoint.Get(PrefixCacheMatchInfoKey)).
-	state.SelectedInstance = decodeDecision.TargetInstance
+	state.SelectedDecodeInstance = decodeDecision.TargetInstance
 	disaggDecision := cs.disaggregationDecider.Decide(req, state)
 	logrus.Debugf("[cluster] req %s: disaggregate=%v", req.ID, disaggDecision.Disaggregate)
 
@@ -2058,7 +2100,7 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 			if cs.trace.Config.CounterfactualK > 0 {
 				record.Candidates, record.Regret = computeCounterfactual(
 					decodeDecision.TargetInstance, decodeDecision.Scores,
-					filteredSnapshots, cs.trace.Config.CounterfactualK,
+					decodeSnapshots, cs.trace.Config.CounterfactualK,
 				)
 			}
 			cs.trace.RecordRouting(record)

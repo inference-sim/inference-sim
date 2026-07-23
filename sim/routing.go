@@ -32,6 +32,15 @@ type RoutingSnapshot struct {
 	AvgInTokens           float64 // average input tokens per completed request; 0 if not yet available
 	AvgOutTokens          float64 // average output tokens per completed request; 0 if not yet available
 	MaxBatchSize          float64 // server-configured max batch size; 0 if not yet available
+	// CachedBlocks is the number of consecutive cached prefix blocks for a
+	// specific request on this instance. Populated only by the disaggregation-
+	// decider code path (executeDisaggregatedRouting) from
+	// cacheQueryFn(req.InputTokens); zero elsewhere. Scoped to one request —
+	// do not read from snapshots produced by buildRouterState or
+	// CachedSnapshotProvider.Snapshot (their values are always zero). This is
+	// the G5 signal from issue #1339 (per-pod prefix-cache hit count exposed
+	// to DisaggregationDecider implementations).
+	CachedBlocks int
 }
 
 // EffectiveLoad returns the total effective load on this instance:
