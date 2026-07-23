@@ -3,6 +3,7 @@ package sim
 import (
 	"fmt"
 	"math"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -697,4 +698,205 @@ func TestLoRAAffinity_NotInProfile_RoutingUnchanged(t *testing.T) {
 	dResident := policyWithout.Route(req, &RouterState{Snapshots: withResident})
 	assert.Equal(t, dBare.TargetInstance, dResident.TargetInstance,
 		"default profile must ignore ResidentAdapters (INV-6)")
+}
+
+// === B-1: scorer registry contract tests (#1489) ===
+
+const registryBlockSize = 16
+
+// registryTestFixture returns the shared (req, snapshots, cacheFn) fixture for
+// BC-1. The cacheFn keys MUST match the snapshot IDs so the two cache-backed
+// scorers (precise-prefix-cache, no-hit-lru) exercise their real
+// min-max-normalized path rather than the missing-key scores[snap.ID]=1.0
+// default branch — which would hollow out BC-1's byte-identity guard for exactly
+// the two param-sensitive scorers.
+func registryTestFixture(t *testing.T) (*Request, []RoutingSnapshot, cacheQueryFn) {
+	t.Helper()
+	snapshots := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 10, BatchSize: 2, KVUtilization: 0.5},
+		{ID: "b", QueueDepth: 5, BatchSize: 3, KVUtilization: 0.8},
+	}
+	cacheFn := cacheQueryFn{
+		"a": func([]TokenID) int { return 4 },
+		"b": func([]TokenID) int { return 1 },
+	}
+	// Self-enforcing guard: fail loudly at setup if a future edit adds a snapshot
+	// ID or drops a cacheFn key, rather than silently degrading to the 1.0 path.
+	require.Equal(t, len(cacheFn), len(snapshots))
+	for _, snap := range snapshots {
+		require.Contains(t, cacheFn, snap.ID)
+	}
+	req := &Request{ID: "r1", InputTokens: []TokenID{1, 2, 3, 4, 5, 6, 7, 8}}
+	return req, snapshots, cacheFn
+}
+
+// cloneRegistry makes a shallow copy of the scorer registry. scorerConstructor
+// is a func value (immutable), so a shallow copy fully isolates the clone; the
+// registry-mutating tests mutate the clone and t.Cleanup restores the original.
+func cloneRegistry(src map[string]scorerConstructor) map[string]scorerConstructor {
+	dst := make(map[string]scorerConstructor, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+// stubScorerCtor is a minimal constructor used by the registration guard tests.
+func stubScorerCtor(_ int, _ cacheQueryFn) (scorerFunc, observerFunc) {
+	return scoreQueueDepth, nil
+}
+
+// TestScorerRegistry_ReproducesSwitchSelection (BC-1): the registry must map
+// each built-in name to the same underlying scorer the pre-conversion switch
+// did. Equality against a reference built from the same constructor/func tests
+// the name→func WIRING (a mis-wire, e.g. queue-depth→scoreKVUtilization, would
+// diverge). Observer is non-nil for exactly {prefix-affinity, no-hit-lru}.
+func TestScorerRegistry_ReproducesSwitchSelection(t *testing.T) {
+	req, snapshots, cacheFn := registryTestFixture(t)
+
+	prefixRef, _ := newPrefixAffinityScorer(registryBlockSize)
+	preciseRef, _ := newPrecisePrefixCacheScorer(cacheFn)
+	noHitRef, _ := newNoHitLRUScorer(cacheFn)
+
+	cases := []struct {
+		name         string
+		ref          scorerFunc
+		wantObserver bool
+	}{
+		{"prefix-affinity", prefixRef, true},
+		{"precise-prefix-cache", preciseRef, false}, // stateless ground-truth: (scorer, nil)
+		{"no-hit-lru", noHitRef, true},
+		{"queue-depth", scoreQueueDepth, false},
+		{"kv-utilization", scoreKVUtilization, false},
+		{"load-balance", scoreLoadBalance, false},
+		{"active-requests", scoreActiveRequests, false},
+		{"running-requests", scoreRunningRequests, false},
+		{"load-aware", scoreLoadAware, false},
+		{"vllm-dp", scoreVLLMDP, false},
+		{"lora-affinity", scoreLoRAAffinity, false},
+	}
+	require.Len(t, cases, 11, "all 11 built-in scorers must be covered (BC-1)")
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotScorer, gotObserver := newScorerWithObserver(tc.name, registryBlockSize, cacheFn)
+			require.NotNil(t, gotScorer)
+			// exact assert.Equal, not InDelta: byte-identity guard.
+			assert.Equal(t, tc.ref(req, snapshots), gotScorer(req, snapshots))
+			if tc.wantObserver {
+				assert.NotNil(t, gotObserver, "expected non-nil observer for %q", tc.name)
+			} else {
+				assert.Nil(t, gotObserver, "expected nil observer for %q", tc.name)
+			}
+		})
+	}
+}
+
+// TestScorerRegistry_UnknownPanics (BC-2): unknown name panics (R1, no silent
+// nil-return — same failure mode as the old default: arm).
+func TestScorerRegistry_UnknownPanics(t *testing.T) {
+	_, _, cacheFn := registryTestFixture(t)
+	assert.Panics(t, func() {
+		newScorerWithObserver("definitely-not-a-scorer", registryBlockSize, cacheFn)
+	})
+}
+
+// TestScorerRegistry_ValidityDerivedFromRegistry (BC-3): validity ≡ the live
+// registry keys, and every valid name is constructible. Bidirectional
+// set-equality closes the validity/constructibility drift gap in one assertion.
+func TestScorerRegistry_ValidityDerivedFromRegistry(t *testing.T) {
+	_, _, cacheFn := registryTestFixture(t)
+
+	want := make([]string, 0, len(scorerRegistry))
+	for n := range scorerRegistry {
+		want = append(want, n)
+	}
+	sort.Strings(want)
+	assert.Equal(t, want, ValidScorerNames(),
+		"ValidScorerNames must return exactly the registry keys, sorted")
+
+	for _, name := range ValidScorerNames() {
+		assert.True(t, IsValidScorer(name), "ValidScorerNames returned non-valid %q", name)
+		assert.NotPanics(t, func() {
+			newScorerWithObserver(name, registryBlockSize, cacheFn)
+		}, "valid scorer %q must be constructible", name)
+	}
+	assert.False(t, IsValidScorer("definitely-not-a-scorer"), "unregistered name must be rejected")
+}
+
+// TestScorerRegistry_DefaultsRegistered (BC-6 hardening): every default scorer
+// name validates and constructs, closing the gap where a default could drift out
+// of the registry and only fail at runtime policy-build.
+func TestScorerRegistry_DefaultsRegistered(t *testing.T) {
+	_, _, cacheFn := registryTestFixture(t)
+	for _, cfg := range DefaultScorerConfigs() {
+		assert.True(t, IsValidScorer(cfg.Name), "default scorer %q must be valid", cfg.Name)
+		assert.NotPanics(t, func() {
+			newScorerWithObserver(cfg.Name, registryBlockSize, cacheFn)
+		}, "default scorer %q must construct", cfg.Name)
+	}
+}
+
+// TestScorerRegistry_RegisterAddsName (BC-4): adding a scorer is one localized
+// registerScorer call — the name validates and constructs with no other edits.
+func TestScorerRegistry_RegisterAddsName(t *testing.T) {
+	// no t.Parallel: mutates package-global scorerRegistry
+	old := scorerRegistry
+	t.Cleanup(func() { scorerRegistry = old })
+	scorerRegistry = cloneRegistry(old)
+
+	const name = "test-dummy-scorer"
+	require.False(t, IsValidScorer(name), "dummy must not pre-exist")
+	registerScorer(name, stubScorerCtor)
+	assert.True(t, IsValidScorer(name))
+
+	_, _, cacheFn := registryTestFixture(t)
+	assert.NotPanics(t, func() {
+		newScorerWithObserver(name, registryBlockSize, cacheFn)
+	})
+}
+
+// TestRegisterScorer_DuplicateNamePanics (BC-4 guard): duplicate registration
+// panics with the duplicate-scorer message (R4). Message-asserting makes this a
+// genuine fail-first test against the "unimplemented" skeleton.
+func TestRegisterScorer_DuplicateNamePanics(t *testing.T) {
+	// no t.Parallel: mutates package-global scorerRegistry
+	old := scorerRegistry
+	t.Cleanup(func() { scorerRegistry = old })
+	scorerRegistry = cloneRegistry(old)
+
+	registerScorer("dup", stubScorerCtor)
+	defer func() {
+		r := recover()
+		require.NotNil(t, r, "second registration must panic")
+		assert.Contains(t, fmt.Sprint(r), "duplicate scorer")
+	}()
+	registerScorer("dup", stubScorerCtor)
+}
+
+// TestRegisterScorer_EmptyNamePanics (BC-4 guard): empty-name registration
+// panics (an empty name would make IsValidScorer("") true, breaking parity).
+func TestRegisterScorer_EmptyNamePanics(t *testing.T) {
+	// no t.Parallel: mutates package-global scorerRegistry
+	old := scorerRegistry
+	t.Cleanup(func() { scorerRegistry = old })
+	scorerRegistry = cloneRegistry(old)
+
+	defer func() {
+		r := recover()
+		require.NotNil(t, r, "empty-name registration must panic")
+		assert.Contains(t, fmt.Sprint(r), "empty scorer name")
+	}()
+	registerScorer("", stubScorerCtor)
+}
+
+// TestParseScorerConfigs_InvalidNameErrorIsDeterministic (INV-6): the "valid: …"
+// list in the error comes from sorted ValidScorerNames(), so the message is
+// stable run-to-run.
+func TestParseScorerConfigs_InvalidNameErrorIsDeterministic(t *testing.T) {
+	_, err1 := ParseScorerConfigs("bad-name:1")
+	require.Error(t, err1)
+	_, err2 := ParseScorerConfigs("bad-name:1")
+	require.Error(t, err2)
+	assert.Equal(t, err1.Error(), err2.Error())
 }
