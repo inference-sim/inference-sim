@@ -1657,3 +1657,37 @@ clients:
 	}
 }
 
+// TestRunCmd_RouteToHolder_SelectableAndConstructs verifies B-2 T11 (run side): the
+// shared --routing-policy flag accepts route-to-holder, it passes the CLI validation
+// gate (sim.IsValidRoutingPolicy, root.go:923), and the shared factory builds a
+// *sim.RouteToHolder — no new command wiring (§5.5, DV-1). An unknown name is rejected
+// by the same gate (the condition that triggers logrus.Fatalf; testing the Fatalf itself
+// needs a subprocess and is out of scope, per the convention noted around BC-5).
+func TestRunCmd_RouteToHolder_SelectableAndConstructs(t *testing.T) {
+	testCmd := &cobra.Command{}
+	registerSimConfigFlags(testCmd) // binds &routingPolicy, resets to default
+	if err := testCmd.ParseFlags([]string{"--routing-policy", "route-to-holder"}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	assert.Equal(t, "route-to-holder", routingPolicy, "flag value must bind to routingPolicy")
+	assert.True(t, sim.IsValidRoutingPolicy(routingPolicy), "CLI validation gate must accept route-to-holder")
+	assert.False(t, sim.IsValidRoutingPolicy("bogus-policy"), "unknown name must be rejected by the same gate")
+
+	policy := sim.NewRoutingPolicyWithCache(routingPolicy, sim.DefaultScorerConfigs(), 16, nil, nil)
+	assert.IsType(t, &sim.RouteToHolder{}, policy, "route-to-holder must construct a *sim.RouteToHolder")
+}
+
+// TestRunCmd_RoutingPolicyHelp_ListsRouteToHolder verifies B-2 T12: the shared
+// --routing-policy usage string lists route-to-holder so `--help` advertises the new
+// value. registerSimConfigFlags is the single registration path for both run and replay
+// (root.go:2610 / replay.go:779), so this covers the help text on both commands.
+func TestRunCmd_RoutingPolicyHelp_ListsRouteToHolder(t *testing.T) {
+	testCmd := &cobra.Command{}
+	registerSimConfigFlags(testCmd)
+	f := testCmd.Flags().Lookup("routing-policy")
+	if f == nil {
+		t.Fatal("flag --routing-policy not found")
+	}
+	assert.Contains(t, f.Usage, "route-to-holder", "--routing-policy help must list route-to-holder")
+}
+

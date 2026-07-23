@@ -2587,3 +2587,31 @@ func TestSimResult_NewFields_JSONOmitWhenEmpty(t *testing.T) {
 		t.Errorf("ITLMeanUs round-trip: got %f, want 5000.0", got.ITLMeanUs)
 	}
 }
+
+// TestReplayCmd_RouteToHolder_SelectableAndConstructs verifies B-2 T11 (replay side,
+// INV-13 parity): replay registers --routing-policy via the SAME registerSimConfigFlags
+// path as run (replay.go:779), accepts route-to-holder, and flows it into
+// config.RoutingPolicy (replay.go:489) → the shared NewClusterSimulator factory, which
+// builds a *sim.RouteToHolder. This is the run/replay-parity half of the selectability
+// contract, so the D7 override fires identically on both paths (INV-13, §5.4).
+func TestReplayCmd_RouteToHolder_SelectableAndConstructs(t *testing.T) {
+	testCmd := &cobra.Command{}
+	registerSimConfigFlags(testCmd)
+	if err := testCmd.ParseFlags([]string{"--routing-policy", "route-to-holder"}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	if routingPolicy != "route-to-holder" {
+		t.Fatalf("routingPolicy = %q, want route-to-holder", routingPolicy)
+	}
+	if !sim.IsValidRoutingPolicy(routingPolicy) {
+		t.Fatalf("route-to-holder must be a valid routing policy")
+	}
+	policy := sim.NewRoutingPolicyWithCache(routingPolicy, sim.DefaultScorerConfigs(), 16, nil, nil)
+	if _, ok := policy.(*sim.RouteToHolder); !ok {
+		t.Fatalf("route-to-holder must construct a *sim.RouteToHolder, got %T", policy)
+	}
+	// The flag must be genuinely present on the real replayCmd (shared registration).
+	if replayCmd.Flags().Lookup("routing-policy") == nil {
+		t.Fatal("replayCmd must expose --routing-policy")
+	}
+}
