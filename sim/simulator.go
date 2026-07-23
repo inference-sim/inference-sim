@@ -127,6 +127,15 @@ type Simulator struct {
 	// (#1466). Non-nil exactly when residentAdapters is (both wired together from
 	// the same sim/lora registration); nil ⇒ no gating.
 	adapterCost AdapterCost
+	// adapterRegistry is the read-only rank source for the eviction context (D2,
+	// #1491). Non-nil together with residentAdapters/adapterCost; nil when LoRA is
+	// inactive. lru ignores rank, but the context builder reads it every eviction so
+	// B-4's rank-aware policy has a live source.
+	adapterRegistry AdapterRegistry
+	// evictionPolicy selects the victim when the cold-load gate must free a slot
+	// (#1491). Hardwired to "lru" in B-3 (byte-identical to the former EvictLRU);
+	// non-nil together with residentAdapters, nil when LoRA is inactive.
+	evictionPolicy EvictionPolicy
 	// loadingAdapter is the id of the adapter whose load is currently in flight on
 	// this instance, or "" when none. Loads serialize per instance: the gate starts
 	// a new load only when this is "" (§7 serialization).
@@ -214,13 +223,14 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 	// active — adapters declared with a positive capacity — and sim/lora is linked
 	// (NewResidentAdapterSetFunc registered). Otherwise it stays nil and adapter
 	// handling is a no-op (INV-6).
-	// Wire the resident set AND the cost model together (both from sim/lora's single
-	// init, so both registration funcs are non-nil or both nil). Requiring both here
-	// guarantees the invariant the gate relies on: whenever residentAdapters != nil,
-	// adapterCost != nil too. If only the resident set were wired, FormBatch would
-	// gate cold requests (AdapterResident predicate set) but maybeStartAdapterLoad
-	// could never start a load (adapterCost nil) — stranding them. A malformed cost
-	// config is a library-boundary error (R6), not a panic.
+	// Wire the resident set, cost model, adapter registry, AND eviction policy
+	// together — all four registration funcs come from sim/lora's single init(), so
+	// they are non-nil or nil as a set. Requiring the cost model here guarantees the
+	// invariant the gate relies on: whenever residentAdapters != nil, adapterCost !=
+	// nil too. If only the resident set were wired, FormBatch would gate cold
+	// requests (AdapterResident predicate set) but maybeStartAdapterLoad could never
+	// start a load (adapterCost nil) — stranding them. A malformed cost config is a
+	// library-boundary error (R6), not a panic.
 	ac, err := BuildAdapterCost(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("NewSimulator: adapter cost model: %w", err)
@@ -228,6 +238,24 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 	if ac != nil {
 		s.residentAdapters = NewResidentAdapterSetFunc(*cfg.AdapterCapacity)
 		s.adapterCost = ac
+		reg, err := BuildAdapterRegistry(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("NewSimulator: adapter registry: %w", err)
+		}
+		s.adapterRegistry = reg
+		// NewEvictionPolicyFunc is wired in the same sim/lora init() as the funcs
+		// gating this block, so reaching here implies it is non-nil. Guard it
+		// explicitly anyway, matching BuildAdapterCost / BuildAdapterRegistry, so a
+		// future registration change surfaces as a library-boundary error (R6)
+		// rather than a nil-deref panic.
+		if NewEvictionPolicyFunc == nil {
+			return nil, fmt.Errorf("NewSimulator: eviction policy func not registered (import sim/lora)")
+		}
+		pol, err := NewEvictionPolicyFunc("lru") // B-3: hardwired default; selector lands in B-4 (D-1)
+		if err != nil {
+			return nil, fmt.Errorf("NewSimulator: eviction policy: %w", err)
+		}
+		s.evictionPolicy = pol
 	}
 
 	return s, nil
@@ -844,33 +872,64 @@ func (sim *Simulator) releaseAdapterPin(req *Request) {
 	req.adapterPinned = false
 }
 
+// buildEvictionContext snapshots the unpinned candidates (LRU→MRU) and a rank
+// accessor over the registry (D2). Called at each eviction decision. The rank
+// accessor is nil-safe: with no registry it reports every id as unregistered, so
+// lru (which ignores rank) is unaffected and B-4's rank-aware policy sees a
+// well-defined empty-rank world when the registry is absent. The closure captures
+// the registry value (not the receiver) so it reads a stable, per-instance rank
+// source (INV-6 / INV-13).
+func (sim *Simulator) buildEvictionContext() EvictionContext {
+	registry := sim.adapterRegistry
+	return EvictionContext{
+		Candidates: sim.residentAdapters.UnpinnedCandidates(),
+		RankOf: func(id string) (int, bool) {
+			if registry == nil {
+				return 0, false
+			}
+			return registry.RankOf(id)
+		},
+	}
+}
+
 // maybeStartAdapterLoad begins a serialized cold-adapter load when the wait-queue
 // head is a new prefill request whose adapter is not yet resident (§7). It runs
 // before batch formation each step. Loads serialize per instance: it starts at
 // most one at a time (guarded by loadingAdapter). At load-start it commits the
-// eviction victim and reserves a slot (EvictLRU when at capacity), then schedules
-// an AdapterLoadCompletionEvent at now + LoadLatency; residency is committed at
-// completion, so the gate keeps holding the request until then. No-op when the
-// subsystem is inert (INV-6).
+// eviction victim and reserves a slot (via the eviction seam when at capacity),
+// then schedules an AdapterLoadCompletionEvent at now + LoadLatency; residency is
+// committed at completion, so the gate keeps holding the request until then. No-op
+// when the subsystem is inert (INV-6).
 func (sim *Simulator) maybeStartAdapterLoad(now int64) {
-	if sim.residentAdapters == nil || sim.adapterCost == nil || sim.loadingAdapter != "" {
+	if sim.residentAdapters == nil || sim.adapterCost == nil || sim.evictionPolicy == nil || sim.loadingAdapter != "" {
 		return
 	}
 	head := sim.WaitQ.Peek()
 	if head == nil || head.IsDecodeSubRequest || head.Adapter == "" || sim.residentAdapters.IsResident(head.Adapter) {
 		return
 	}
-	// Cold head: reserve a slot by committing the LRU non-pinned victim now (§7).
+	// Cold head: reserve a slot by committing the seam-selected non-pinned victim now (§7).
 	if sim.residentAdapters.AtCapacity() {
-		evicted, ok := sim.residentAdapters.EvictLRU()
+		victim, ok := sim.evictionPolicy.SelectVictim(sim.buildEvictionContext())
 		if !ok {
-			// Every slot is pinned by an in-flight request; cannot start a load this
-			// step. A running request will complete and unpin, and the INV-8 guard
-			// will re-form a step to retry. (Guaranteed reachable: pins come from
-			// running requests, which make progress.)
+			// Every resident adapter is pinned by an in-flight request: start no load
+			// this tick. This is not a stall — the work-conserving guard in
+			// scheduleNextStep (WaitQ.Len() > 0 && loadingAdapter == "") re-forms a
+			// step, and once any in-flight request completes it unpins a slot and the
+			// retry evicts + loads (INV-8). Pins are released by requests that
+			// themselves make progress, so the retry is guaranteed reachable.
 			return
 		}
-		sim.Metrics.AdapterEvictionCounts[evicted]++
+		if !sim.residentAdapters.Evict(victim) {
+			// Defensive (INV-L5): the seam only ever hands back an id drawn from
+			// UnpinnedCandidates, and nothing runs between enumeration and Evict on the
+			// single simulation goroutine, so a well-behaved policy makes this branch
+			// unreachable. Log rather than swallow (R1) so a future policy bug that
+			// returns a pinned/absent victim is diagnosable; start no load.
+			logrus.Errorf("maybeStartAdapterLoad: eviction policy selected non-removable victim %q (pinned or absent); skipping load this tick", victim)
+			return
+		}
+		sim.Metrics.AdapterEvictionCounts[victim]++
 	}
 	sim.loadingAdapter = head.Adapter
 	loadTicks := max(1, int64(math.Ceil(sim.adapterCost.LoadLatency(head.Adapter))))
@@ -887,7 +946,7 @@ func (sim *Simulator) completeAdapterLoad(now int64, adapter string) {
 	if sim.residentAdapters == nil {
 		return
 	}
-	// A slot was reserved at load-start (EvictLRU when at capacity), so Store adds
+	// A slot was reserved at load-start (via the eviction seam when at capacity), so Store adds
 	// the adapter without further eviction and must succeed. A false result would
 	// mean the set filled and fully pinned during the load — impossible under the
 	// blocking model (no admissions occur mid-load) — so surface it loudly (R1)

@@ -1,6 +1,12 @@
 package lora
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+
+	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/lora/eviction"
+)
 
 // The resident-adapter set models the finite per-instance GPU adapter slots
 // (data-model.md "Resident-Adapter Set"): a capacity-bounded LRU over adapter
@@ -190,4 +196,134 @@ func TestResidentSet_ZeroCapacityPanics(t *testing.T) {
 		}
 	}()
 	newResidentSet(0)
+}
+
+// --- B-3 (#1491): eviction-seam support methods ---
+
+// TestResidentSet_UnpinnedCandidates_RecencyOrder verifies the candidate list the
+// eviction seam consumes is exactly the resident ids in LRU→MRU (eviction-priority)
+// order, so a policy that picks candidates[0] evicts the least-recently-used id.
+func TestResidentSet_UnpinnedCandidates_RecencyOrder(t *testing.T) {
+	s := newResidentSet(3)
+	s.Store("a")
+	s.Store("b")
+	s.Store("c") // LRU→MRU: a, b, c
+	s.Touch("a") // promote a to MRU: b, c, a
+
+	got := s.UnpinnedCandidates()
+	want := []string{"b", "c", "a"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("UnpinnedCandidates() = %v, want %v (LRU→MRU)", got, want)
+	}
+}
+
+// TestResidentSet_UnpinnedCandidates_ExcludesPinned verifies a pinned adapter is
+// never offered as an eviction candidate (INV-L5): the seam cannot select it.
+func TestResidentSet_UnpinnedCandidates_ExcludesPinned(t *testing.T) {
+	s := newResidentSet(3)
+	s.Store("a")
+	s.Store("b")
+	s.Store("c") // LRU→MRU: a, b, c
+	s.Pin("b")   // b is in-flight — must be excluded
+
+	got := s.UnpinnedCandidates()
+	want := []string{"a", "c"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("UnpinnedCandidates() with b pinned = %v, want %v", got, want)
+	}
+}
+
+// TestResidentSet_Evict_RemovesUnpinned verifies Evict removes a named unpinned id
+// and reports success, shrinking the resident set.
+func TestResidentSet_Evict_RemovesUnpinned(t *testing.T) {
+	s := newResidentSet(2)
+	s.Store("a")
+	s.Store("b")
+
+	if !s.Evict("a") {
+		t.Fatalf("Evict(a) = false, want true (a is unpinned)")
+	}
+	if s.IsResident("a") {
+		t.Fatalf("a still resident after Evict(a)")
+	}
+	if s.Len() != 1 {
+		t.Fatalf("len = %d after Evict(a), want 1", s.Len())
+	}
+}
+
+// TestResidentSet_Evict_RefusesPinned verifies Evict refuses a pinned id (INV-L5)
+// — pin-safety is enforced at the data structure, not just by policy discipline.
+func TestResidentSet_Evict_RefusesPinned(t *testing.T) {
+	s := newResidentSet(2)
+	s.Store("a")
+	s.Pin("a")
+
+	if s.Evict("a") {
+		t.Fatalf("Evict(a) = true, want false (a is pinned)")
+	}
+	if !s.IsResident("a") {
+		t.Fatalf("pinned a was removed by a refused Evict")
+	}
+}
+
+// TestResidentSet_Evict_AbsentReturnsFalse verifies evicting an id that is not
+// resident is a no-op that reports failure rather than panicking.
+func TestResidentSet_Evict_AbsentReturnsFalse(t *testing.T) {
+	s := newResidentSet(2)
+	if s.Evict("nope") {
+		t.Fatalf("Evict(nope) = true, want false (absent id)")
+	}
+}
+
+// TestLRU_ByteIdenticalToEvictLRU is the crux of B-3 (BC-1): routing victim
+// selection through the seam's lru policy picks the SAME victim as the resident
+// set's former EvictLRU scan, across several recency permutations. For each op
+// sequence it builds two independent sets from identical ops, then compares the
+// policy's SelectVictim(candidates) against EvictLRU's victim. Equal victims for
+// every sequence prove candidates[0] == first-unpinned-in-LRU→MRU == EvictLRU.
+func TestLRU_ByteIdenticalToEvictLRU(t *testing.T) {
+	pol, err := eviction.New("lru")
+	if err != nil {
+		t.Fatalf("eviction.New(lru): %v", err)
+	}
+
+	// Each apply mutates a fresh set; two identical applies feed the two paths.
+	sequences := map[string]func(s *residentSet){
+		"plain-fill": func(s *residentSet) {
+			s.Store("a")
+			s.Store("b")
+			s.Store("c")
+		},
+		"touch-promotes-lru": func(s *residentSet) {
+			s.Store("a")
+			s.Store("b")
+			s.Store("c")
+			s.Touch("a") // a → MRU, so b is now the victim
+		},
+		"one-pinned": func(s *residentSet) {
+			s.Store("a")
+			s.Store("b")
+			s.Store("c")
+			s.Pin("a") // a protected, so b is the victim
+		},
+	}
+
+	for name, apply := range sequences {
+		t.Run(name, func(t *testing.T) {
+			seamSet := newResidentSet(3)
+			apply(seamSet)
+			seamVictim, seamOK := pol.SelectVictim(sim.EvictionContext{
+				Candidates: seamSet.UnpinnedCandidates(),
+			})
+
+			evictSet := newResidentSet(3)
+			apply(evictSet)
+			evictVictim, evictOK := evictSet.EvictLRU()
+
+			if seamOK != evictOK || seamVictim != evictVictim {
+				t.Fatalf("seam vs EvictLRU victim mismatch: seam=(%q,%v) evictLRU=(%q,%v)",
+					seamVictim, seamOK, evictVictim, evictOK)
+			}
+		})
+	}
 }

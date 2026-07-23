@@ -121,6 +121,34 @@ func (s *residentSet) EvictLRU() (string, bool) {
 	return "", false
 }
 
+// UnpinnedCandidates returns the resident, unpinned adapter ids in LRU→MRU
+// (eviction-priority) order — the eviction seam chooses a victim only from
+// these, so a pinned adapter is never offered (INV-L5). Deterministic (INV-6).
+// Returns nil when nothing is evictable (empty set or every entry pinned).
+func (s *residentSet) UnpinnedCandidates() []string {
+	var ids []string
+	for e := s.lruHead; e != nil; e = e.next {
+		if e.pinCount == 0 {
+			ids = append(ids, e.id)
+		}
+	}
+	return ids
+}
+
+// Evict removes an unpinned resident id, returning true on removal. It refuses
+// (returns false) if id is absent OR pinned — enforcing INV-L5 at the data
+// structure regardless of policy correctness. The seam passes only ids drawn
+// from UnpinnedCandidates; the pin guard is defense-in-depth.
+func (s *residentSet) Evict(id string) bool {
+	e, ok := s.entries[id]
+	if !ok || e.pinCount > 0 {
+		return false
+	}
+	s.unlink(e)
+	delete(s.entries, id)
+	return true
+}
+
 // Pin increments the in-flight reference count protecting id from eviction.
 // No-op if id is not resident.
 func (s *residentSet) Pin(id string) {

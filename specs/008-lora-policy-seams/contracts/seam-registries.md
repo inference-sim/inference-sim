@@ -12,6 +12,7 @@ micro-plan time against the real call sites; this fixes the observable behavior.
 ## Eviction registry (`sim/lora/eviction`, extracted from hardcoded LRU — Backend Swap)
 - **Selection**: name → eviction policy. Baseline `lru` registered by default.
 - **Phase-A gate (B-3)**: extract the seam; `lru` default is byte-identical (all existing tests pass, no behavior change).
+- **Interface reshape (B-3, expected for a Backend Swap)**: victim SELECTION moves out of `residentSet.EvictLRU` into the policy seam; the resident set gains `UnpinnedCandidates()` + `Evict(id)` and `EvictLRU` is removed from the `sim.ResidentAdapterSet` *interface* (retained as a concrete method for `Store` + unit tests). Byte-identity is a property of observable output (victim order, eviction/load counts, TTFT), not of the interface shape.
 - **`rank/cost-aware` (B-4)**: given unpinned candidates + eviction context (rank/reload-cost), return the lowest-reload-cost victim (provisional criterion, §14); deterministic id tie-break.
 - **Contract tests**: (a) full set, one unpinned ⇒ only that one evictable (any policy); (b) differing ranks ⇒ rank-aware picks declared victim, monotonic in reload-cost (mirrors 2026-07-15 rank-sensitivity gate); (c) all pinned ⇒ no victim, waiting request runs once a pin clears (INV-L5/INV-8 no-deadlock); never evicts a pinned adapter under any policy.
 
