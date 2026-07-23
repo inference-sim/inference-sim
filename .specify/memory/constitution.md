@@ -1,6 +1,18 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+Version change: 1.0.0 → 1.1.0 (MINOR — Principle VI amendment, C1 prerequisite of #1464)
+Modified principles:
+  - Principle VI (Configuration Discipline): "SimConfig is composed of exactly 6
+    embedded sub-configs" → "one embedded sub-config per module (currently 7)",
+    admitting LoRAConfig as the 7th (LoRA control-plane subsystem, #1464 / PR1 #1472).
+    Ratified 2026-07-22 (human design gate, tantawi), clearing the C1 prerequisite
+    of #1464 for PR1 (#1472) merge.
+Templates requiring updates:
+  ✅ CLAUDE.md / docs — "SimConfig composed of 6 embedded sub-configs" prose is
+     descriptive, not normative; update opportunistically when LoRA docs land.
+
+---- prior report (1.0.0) ----
 Version change: (unversioned template) → 1.0.0
 Modified principles: N/A (initial population from template)
 Added sections:
@@ -150,7 +162,9 @@ is meaningful.
 
 Non-negotiable rules:
 - Configuration MUST be grouped by module, not in monolithic structs.
-- `SimConfig` is composed of exactly 6 embedded sub-configs; factory signatures
+- `SimConfig` is composed of one embedded sub-config per module (currently 7:
+  `KVCacheConfig`, `BatchConfig`, `LatencyCoeffs`, `ModelHardwareConfig`,
+  `PolicyConfig`, `WorkloadConfig`, `LoRAConfig`); factory signatures
   MUST accept the narrowest sub-config (e.g., `NewKVStore(KVCacheConfig)`).
 - New config parameters MUST go into the appropriate module sub-config, not directly
   into `SimConfig`.
@@ -297,4 +311,4 @@ No runtime C bindings, no CGO, no Python. Dependencies: `cobra`, `logrus`,
 `gopkg.in/yaml.v3`, `gonum`. Build: `go build -o blis main.go`.
 Lint: `golangci-lint run ./...` (v2.9.0, zero tolerance).
 
-**Version**: 1.0.0 | **Ratified**: 2026-03-13 | **Last Amended**: 2026-03-13
+**Version**: 1.1.0 | **Ratified**: 2026-03-13 | **Last Amended**: 2026-07-22
