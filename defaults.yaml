@@ -184,4 +184,17 @@ trained_physics_coefficients:
   #   The comm-family VOLUME difference lives in the dispatch basis, not this coefficient.
   #   Per-family efficiency refit is deferred to #E; omitting the 11th value defaults to β₄.
   beta_coeffs: [0.152128, 0.0, 1.36252915, 0.752037, 32.09546717, 4.41684444, 126.024825, 481.8613888, 0.0, 1.94710771, 0.752037]
+# LoRA control-plane defaults (#1464). INERT: these seed the --lora-* flag defaults
+# but are only applied to a run when adapters are configured. With no adapters
+# declared, the subsystem is a no-op and output is byte-identical to a pre-feature
+# build (INV-6). adapter_capacity is intentionally absent (nil => inert); the adapter
+# registry is declared per-run via a config file, not here.
+lora:
+  load_base_latency_us: 1500.0
+  load_bandwidth_bytes_us: 2.0e6
+  footprint_bytes_per_rank: 2.0e6
+  step_overhead_tiers:
+    8: {k6: 0.02, k7: 1.0}
+    16: {k6: 0.035, k7: 1.0}
+    32: {k6: 0.06, k7: 1.0}
 version: 0.0.1

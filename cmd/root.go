@@ -19,6 +19,7 @@ import (
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/latency"
+	_ "github.com/inference-sim/inference-sim/sim/lora" // registers sim.NewAdapterRegistryFunc via init()
 	"github.com/inference-sim/inference-sim/sim/saturation"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/inference-sim/inference-sim/sim/workload"
@@ -116,6 +117,13 @@ var (
 
 	// Policy bundle config
 	policyConfigPath string // Path to YAML policy configuration file
+
+	// LoRA control-plane config (#1464). All optional; absence => subsystem inert (INV-6).
+	loraConfigPath            string  // Path to YAML file with a top-level lora: block (adapter registry + capacity + coefficients)
+	loraAdapterCapacity       int     // --lora-adapter-capacity (applied only when Changed; 0 is meaningful => adapters forbidden)
+	loraLoadBaseLatencyUs     float64 // --lora-load-base-latency-us
+	loraLoadBandwidthBytesUs  float64 // --lora-load-bandwidth-bytes-us
+	loraFootprintBytesPerRank float64 // --lora-footprint-bytes-per-rank
 
 	// Fitness evaluation config (PR9)
 	fitnessWeights string // Fitness weights string "key:val,key:val"
@@ -1141,6 +1149,106 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&prefillMaxModelLen, "prefill-max-model-len", 0, "Max model length for prefill pool instances (0 = use global --max-model-len)")
 	cmd.Flags().Int64Var(&decodeMaxModelLen, "decode-max-model-len", 0, "Max model length for decode pool instances (0 = use global --max-model-len)")
 
+	// LoRA control-plane config (#1464). Registered on both run and replay (INV-13
+	// parity). All optional; absence => subsystem inert (INV-6). The adapter registry
+	// and per-rank step_overhead_tiers are config-file only (--lora-config); a scalar
+	// flag cannot express a per-rank map. Scalar coefficient flags compose with and
+	// override the file / defaults.yaml (R18: applied only when Changed).
+	cmd.Flags().StringVar(&loraConfigPath, "lora-config", "", "Path to YAML file with a top-level lora: block (adapter registry, capacity, cost coefficients). Absent => LoRA subsystem inert.")
+	cmd.Flags().IntVar(&loraAdapterCapacity, "lora-adapter-capacity", 0, "Per-instance resident adapter slots (0 with adapters declared => error). Applied only when set.")
+	cmd.Flags().Float64Var(&loraLoadBaseLatencyUs, "lora-load-base-latency-us", 0, "Cold adapter-load fixed latency in µs. Applied only when set; else --lora-config / defaults.yaml.")
+	cmd.Flags().Float64Var(&loraLoadBandwidthBytesUs, "lora-load-bandwidth-bytes-us", 0, "Cold adapter-load bandwidth in bytes/µs (>0). Applied only when set; else --lora-config / defaults.yaml.")
+	cmd.Flags().Float64Var(&loraFootprintBytesPerRank, "lora-footprint-bytes-per-rank", 0, "Adapter HBM footprint per rank unit in bytes (>0). Applied only when set; else --lora-config / defaults.yaml.")
+}
+
+// loraConfigFile is the on-disk shape of a --lora-config YAML file: a single
+// top-level lora: block matching contracts/config-schema.md. Strict-parsed (R10).
+type loraConfigFile struct {
+	LoRA sim.LoRAConfig `yaml:"lora"`
+}
+
+// loadLoRAConfigFile parses a --lora-config YAML file's lora: block into a
+// sim.LoRAConfig. Strict field checking (R10). CLI boundary => logrus.Fatalf on any
+// read/parse error so a typo never silently no-ops.
+func loadLoRAConfigFile(path string) sim.LoRAConfig {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		logrus.Fatalf("Failed to read --lora-config file %q: %v", path, err)
+	}
+	var f loraConfigFile
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&f); err != nil {
+		logrus.Fatalf("Failed to parse --lora-config file %q: %v", path, err)
+	}
+	return f.LoRA
+}
+
+// resolveLoRAConfig assembles the final sim.LoRAConfig from three composable sources,
+// in increasing precedence: defaults.yaml (cost-coefficient fallback), the optional
+// --lora-config file (adapter registry + any coefficients it sets), and the scalar
+// --lora-* flags (applied only when Changed, R18). It is the single LoRAConfig
+// construction site (R4), called by BOTH runCmd and replayCmd (INV-13 parity).
+//
+// The resolved config is validated at the CLI boundary; an invalid config aborts with
+// logrus.Fatalf (Principle V) — e.g. adapters declared with adapter_capacity 0.
+//
+// With no --lora-config and no --lora-* flags set, the returned config still carries
+// the defaults.yaml cost coefficients but declares no adapters, so HasAdapters() is
+// false and the subsystem is inert (INV-6 no-op default; coefficients are unused
+// until adapters exist).
+func resolveLoRAConfig(cmd *cobra.Command) sim.LoRAConfig {
+	var cfg sim.LoRAConfig
+	if loraConfigPath != "" {
+		cfg = loadLoRAConfigFile(loraConfigPath)
+	}
+
+	// defaults.yaml cost-coefficient fallback: fill only fields the file did not set,
+	// so an unset flag defers to the file/defaults rather than clobbering it (R18).
+	if defs := loadDefaultsConfig(defaultsFilePath).LoRADefaults; defs != nil {
+		if cfg.LoadBaseLatencyUs == nil {
+			v := defs.LoadBaseLatencyUs
+			cfg.LoadBaseLatencyUs = &v
+		}
+		if cfg.LoadBandwidthBytesUs == nil {
+			v := defs.LoadBandwidthBytesUs
+			cfg.LoadBandwidthBytesUs = &v
+		}
+		if cfg.FootprintBytesPerRank == nil {
+			v := defs.FootprintBytesPerRank
+			cfg.FootprintBytesPerRank = &v
+		}
+		if len(cfg.StepOverheadTiers) == 0 && len(defs.StepOverheadTiers) > 0 {
+			cfg.StepOverheadTiers = make(map[int]sim.StepOverheadTier, len(defs.StepOverheadTiers))
+			for rank, t := range defs.StepOverheadTiers {
+				k6, k7 := t.K6, t.K7
+				cfg.StepOverheadTiers[rank] = sim.StepOverheadTier{K6: &k6, K7: &k7}
+			}
+		}
+	}
+
+	// Scalar flag overrides (R18: only when explicitly set).
+	if cmd.Flags().Changed("lora-adapter-capacity") {
+		v := loraAdapterCapacity
+		cfg.AdapterCapacity = &v
+	}
+	if cmd.Flags().Changed("lora-load-base-latency-us") {
+		v := loraLoadBaseLatencyUs
+		cfg.LoadBaseLatencyUs = &v
+	}
+	if cmd.Flags().Changed("lora-load-bandwidth-bytes-us") {
+		v := loraLoadBandwidthBytesUs
+		cfg.LoadBandwidthBytesUs = &v
+	}
+	if cmd.Flags().Changed("lora-footprint-bytes-per-rank") {
+		v := loraFootprintBytesPerRank
+		cfg.FootprintBytesPerRank = &v
+	}
+
+	if err := cfg.Validate(); err != nil {
+		logrus.Fatalf("Invalid LoRA configuration: %v", err)
+	}
+	return cfg
 }
 
 // applyTimeoutToSpec sets ClientSpec.Timeout and CohortSpec.Timeout on every entry in spec.
@@ -1758,6 +1866,23 @@ var runCmd = &cobra.Command{
 		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v",
 			totalKVBlocks, simulationHorizon, lr.AlphaCoeffs, lr.BetaCoeffs)
 
+		// LoRA control-plane (#1464). Resolve once, then cross-validate every workload
+		// adapter reference against the declared registry (unknown id / base-model
+		// mismatch => Fatalf, never a silent no-op). With no adapters and no workload
+		// adapter references this is inert (INV-6).
+		loraCfg := resolveLoRAConfig(cmd)
+		var loraRegistry sim.AdapterRegistry
+		if loraCfg.HasAdapters() {
+			r, regErr := sim.NewAdapterRegistryFunc(loraCfg.Adapters)
+			if regErr != nil {
+				logrus.Fatalf("Invalid LoRA adapter registry: %v", regErr)
+			}
+			loraRegistry = r
+		}
+		if err := workload.ValidateAdapterReferences(spec, loraRegistry); err != nil {
+			logrus.Fatalf("LoRA workload validation: %v", err)
+		}
+
 		startTime := time.Now() // Get current time (start)
 
 		// Unified cluster path (used for all values of numInstances).
@@ -1773,6 +1898,7 @@ var runCmd = &cobra.Command{
 				LatencyCoeffs:        sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
 				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dataParallelism, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
+				LoRAConfig:           loraCfg,
 				SLOPriorityOverrides: sloPriorityOverrides,
 			},
 			NumInstances:                    numInstances,
