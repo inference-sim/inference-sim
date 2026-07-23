@@ -38,8 +38,14 @@ func register(name string, c constructor) {
 	registry[name] = c
 }
 
-// New builds the named eviction policy, or an error listing valid names.
+// New builds the named eviction policy, or an error listing valid names. The
+// empty name resolves to lru — the single canonical empty→lru fallback site, so
+// LoRAConfig{EvictionPolicy:""} (the default) never surfaces an "unknown policy"
+// error (R20).
 func New(name string) (sim.EvictionPolicy, error) {
+	if name == "" {
+		name = "lru"
+	}
 	c, ok := registry[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown eviction policy %q; valid options: %s", name, validNames())
@@ -47,20 +53,28 @@ func New(name string) (sim.EvictionPolicy, error) {
 	return c(), nil
 }
 
-// validNames returns the registered policy names as a deterministic,
-// comma-separated string (R2 / INV-6): a given registry always yields the same
-// error text, so New("bogus") is reproducible run-to-run.
-func validNames() string {
+// ValidNames returns the registered policy names, sorted. It is the source for
+// the --eviction-policy help text and the CLI fail-fast valid-names check, and is
+// reached from package sim via the sim.ValidEvictionPolicyNamesFunc hook.
+func ValidNames() []string {
 	names := make([]string, 0, len(registry))
 	for name := range registry {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	return strings.Join(names, ", ")
+	return names
+}
+
+// validNames returns ValidNames() as a deterministic, comma-separated string
+// (R2 / INV-6): a given registry always yields the same error text, so
+// New("bogus") is reproducible run-to-run.
+func validNames() string {
+	return strings.Join(ValidNames(), ", ")
 }
 
 func init() {
 	register("lru", func() sim.EvictionPolicy { return lru{} })
+	register("rank-aware", func() sim.EvictionPolicy { return rankAware{} })
 }
 
 // lru evicts the least-recently-used unpinned adapter — byte-identical to the

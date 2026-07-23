@@ -50,3 +50,54 @@ func TestNoOpByteIdentity_AdapterBlindRunMatchesBaseline(t *testing.T) {
 			"--- got ---\n%s\n--- want (golden) ---\n%s", stdout.String(), string(golden))
 	}
 }
+
+// TestNoOpByteIdentity_MultiInstanceEvictionPolicyInert is the B-4 T020 / D-4-3
+// cluster-scope INV-6 proof: across a 2-instance cluster with no LoRA configured,
+// leaving --eviction-policy unset, selecting the default lru, and selecting rank-aware
+// all produce byte-identical stdout. This closes the cluster-scope concern that the
+// selector might introduce divergence — rank-aware is inert unless the LoRA subsystem
+// is active, and --eviction-policy is one cluster-global name (not a per-pool
+// override). Runs are compared to one another rather than to a stored golden, since no
+// multi-instance baseline is tracked; the single-instance baseline golden above pins
+// the absolute output.
+func TestNoOpByteIdentity_MultiInstanceEvictionPolicyInert(t *testing.T) {
+	if os.Getenv("BLIS_NOOP_SUBPROCESS") == "1" {
+		args := []string{
+			"run", "--model", "qwen/qwen3-14b", "--seed", "42",
+			"--num-instances", "2",
+			"--defaults-filepath", "../defaults.yaml",
+		}
+		if pol := os.Getenv("BLIS_NOOP_EVICTION_POLICY"); pol != "" {
+			args = append(args, "--eviction-policy", pol)
+		}
+		rootCmd.SetArgs(args)
+		_ = rootCmd.Execute()
+		os.Exit(0)
+	}
+
+	run := func(policy string) string {
+		t.Helper()
+		cmd := exec.Command(os.Args[0], "-test.run=TestNoOpByteIdentity_MultiInstanceEvictionPolicyInert")
+		cmd.Env = append(os.Environ(), "BLIS_NOOP_SUBPROCESS=1", "BLIS_NOOP_EVICTION_POLICY="+policy)
+		var stdout bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = io.Discard // logrus diagnostics go to stderr (INV-6: not part of deterministic output)
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("subprocess run (policy=%q) failed: %v\nstdout:\n%s", policy, err, stdout.String())
+		}
+		return stdout.String()
+	}
+
+	unset := run("")     // flag not passed → EvictionPolicy "" → lru
+	lru := run("lru")    // explicit default
+	rank := run("rank-aware")
+
+	if unset != lru {
+		t.Errorf("INV-6 VIOLATION (cluster): unset --eviction-policy differs from explicit lru.\n"+
+			"--- unset ---\n%s\n--- lru ---\n%s", unset, lru)
+	}
+	if unset != rank {
+		t.Errorf("INV-6 VIOLATION (cluster): selecting rank-aware changed stdout on a LoRA-inert run.\n"+
+			"--- unset ---\n%s\n--- rank-aware ---\n%s", unset, rank)
+	}
+}

@@ -251,7 +251,14 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		if NewEvictionPolicyFunc == nil {
 			return nil, fmt.Errorf("NewSimulator: eviction policy func not registered (import sim/lora)")
 		}
-		pol, err := NewEvictionPolicyFunc("lru") // B-3: hardwired default; selector lands in B-4 (D-1)
+		// B-4: the config selects the policy; empty resolves to lru (New also maps
+		// ""→lru, but naming it here keeps the default explicit at the call site and
+		// byte-identical to B-3).
+		policyName := cfg.EvictionPolicy
+		if policyName == "" {
+			policyName = "lru"
+		}
+		pol, err := NewEvictionPolicyFunc(policyName)
 		if err != nil {
 			return nil, fmt.Errorf("NewSimulator: eviction policy: %w", err)
 		}

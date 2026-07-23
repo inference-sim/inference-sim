@@ -41,3 +41,20 @@ type EvictionContext struct {
 // cycle — package sim never imports the implementation. Returns an error for an
 // unknown name.
 var NewEvictionPolicyFunc func(name string) (EvictionPolicy, error)
+
+// ValidEvictionPolicyNamesFunc returns the registered eviction-policy names,
+// sorted. Registered by sim/lora/eviction via the same init()-time inversion as
+// NewEvictionPolicyFunc — package sim never imports the implementation. Nil when
+// LoRA is not linked in; call ValidEvictionPolicyNames for the nil-safe accessor.
+var ValidEvictionPolicyNamesFunc func() []string
+
+// ValidEvictionPolicyNames returns the registered eviction-policy names, or a nil
+// slice when the LoRA package is not linked in (hook unset). Nil-safe: callers
+// building help text or a fail-fast valid-names check need no nil guard, and
+// strings.Join(nil, ", ") is "".
+func ValidEvictionPolicyNames() []string {
+	if ValidEvictionPolicyNamesFunc == nil {
+		return nil
+	}
+	return ValidEvictionPolicyNamesFunc()
+}

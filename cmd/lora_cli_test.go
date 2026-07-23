@@ -22,6 +22,7 @@ func TestLoRAFlags_RegisteredOnRunAndReplay(t *testing.T) {
 		"lora-load-base-latency-us",
 		"lora-load-bandwidth-bytes-us",
 		"lora-footprint-bytes-per-rank",
+		"eviction-policy",
 	}
 	for _, name := range []string{"run", "replay"} {
 		c := &cobra.Command{}
@@ -108,6 +109,112 @@ func TestResolveLoRAConfig_ConfigFileAdapters(t *testing.T) {
 		t.Errorf("want adapter_capacity 4 from file, got %v", cfg.AdapterCapacity)
 	}
 	loraConfigPath = "" // reset shared state
+}
+
+// TestResolveLoRAConfig_EvictionPolicy pins the --eviction-policy resolution and
+// precedence (B-4): an unset flag leaves EvictionPolicy "" (empty => lru, the no-op
+// default, byte-identical to B-3); a --lora-config value survives an unset flag; and
+// a set flag overrides the file value (flags win over file, matching the other
+// --lora-* scalars, R18).
+func TestResolveLoRAConfig_EvictionPolicy(t *testing.T) {
+	defaultsFilePath = "../defaults.yaml"
+
+	// (1) Unset flag, no file => "" (lru default).
+	c := &cobra.Command{}
+	registerSimConfigFlags(c)
+	if err := c.ParseFlags([]string{"--defaults-filepath", "../defaults.yaml"}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	loraConfigPath = ""
+	if got := resolveLoRAConfig(c).EvictionPolicy; got != "" {
+		t.Errorf("unset flag: EvictionPolicy = %q, want \"\" (empty => lru default)", got)
+	}
+
+	// (2) Set flag => flag value.
+	c = &cobra.Command{}
+	registerSimConfigFlags(c)
+	if err := c.ParseFlags([]string{"--defaults-filepath", "../defaults.yaml", "--eviction-policy", "rank-aware"}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	loraConfigPath = ""
+	if got := resolveLoRAConfig(c).EvictionPolicy; got != "rank-aware" {
+		t.Errorf("set flag: EvictionPolicy = %q, want \"rank-aware\"", got)
+	}
+
+	// (3) File value survives an unset flag.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "lora.yaml")
+	content := "lora:\n  adapter_capacity: 4\n  eviction_policy: rank-aware\n  adapters:\n    - id: adapter_0\n      rank: 8\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	c = &cobra.Command{}
+	registerSimConfigFlags(c)
+	if err := c.ParseFlags([]string{"--defaults-filepath", "../defaults.yaml", "--lora-config", path}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	loraConfigPath = path
+	if got := resolveLoRAConfig(c).EvictionPolicy; got != "rank-aware" {
+		t.Errorf("file value, unset flag: EvictionPolicy = %q, want \"rank-aware\" (file survives)", got)
+	}
+
+	// (4) Set flag overrides the file value.
+	c = &cobra.Command{}
+	registerSimConfigFlags(c)
+	if err := c.ParseFlags([]string{"--defaults-filepath", "../defaults.yaml", "--lora-config", path, "--eviction-policy", "lru"}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	loraConfigPath = path
+	if got := resolveLoRAConfig(c).EvictionPolicy; got != "lru" {
+		t.Errorf("flag over file: EvictionPolicy = %q, want \"lru\" (flag overrides file)", got)
+	}
+	loraConfigPath = "" // reset shared state
+}
+
+// evictionFatalSubprocess drives resolveLoRAConfig with an unknown --eviction-policy
+// in a subprocess; the CLI boundary must Fatalf (Principle V) rather than defer the
+// error to NewSimulator.
+func evictionFatalSubprocess(t *testing.T) {
+	t.Helper()
+	if os.Getenv("BLIS_TEST_SUBPROCESS") != "1" {
+		return
+	}
+	c := &cobra.Command{}
+	registerSimConfigFlags(c)
+	args := []string{"--defaults-filepath", "../defaults.yaml", "--eviction-policy", "bogus"}
+	if err := c.ParseFlags(args); err != nil {
+		os.Exit(2)
+	}
+	defaultsFilePath = "../defaults.yaml"
+	loraConfigPath = ""
+	resolveLoRAConfig(c) // must Fatalf before returning
+	os.Exit(0)
+}
+
+// TestResolveLoRAConfig_UnknownEvictionPolicyRejected verifies an unknown
+// --eviction-policy name aborts at the CLI boundary (exit 1) with a message listing
+// the valid names — never a silent no-op or a deferred NewSimulator error.
+func TestResolveLoRAConfig_UnknownEvictionPolicyRejected(t *testing.T) {
+	evictionFatalSubprocess(t)
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestResolveLoRAConfig_UnknownEvictionPolicyRejected", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected logrus.Fatalf (exit 1), got err=%v; output:\n%s", err, out)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("expected exit 1, got %d; output:\n%s", exitErr.ExitCode(), out)
+	}
+	if !strings.Contains(string(out), "eviction-policy") {
+		t.Errorf("fatal message must mention eviction-policy; output:\n%s", out)
+	}
+	if !strings.Contains(string(out), "rank-aware") {
+		t.Errorf("fatal message must list valid names (rank-aware); output:\n%s", out)
+	}
 }
 
 // loraFatalSubprocess drives resolveLoRAConfig in a subprocess for the

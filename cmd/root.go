@@ -125,6 +125,7 @@ var (
 	loraLoadBaseLatencyUs     float64 // --lora-load-base-latency-us
 	loraLoadBandwidthBytesUs  float64 // --lora-load-bandwidth-bytes-us
 	loraFootprintBytesPerRank float64 // --lora-footprint-bytes-per-rank
+	loraEvictionPolicy        string  // --eviction-policy (applied only when Changed; empty => lru default, B-4)
 
 	// loraReservedBytesForKV carries the resolved static LoRA HBM reservation
 	// (bytes) into KV auto-capacity, mirroring how totalKVBlocks is threaded as a
@@ -1222,6 +1223,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&loraLoadBaseLatencyUs, "lora-load-base-latency-us", 0, "Cold adapter-load fixed latency in µs. Applied only when set; else --lora-config / defaults.yaml.")
 	cmd.Flags().Float64Var(&loraLoadBandwidthBytesUs, "lora-load-bandwidth-bytes-us", 0, "Cold adapter-load bandwidth in bytes/µs (>0). Applied only when set; else --lora-config / defaults.yaml.")
 	cmd.Flags().Float64Var(&loraFootprintBytesPerRank, "lora-footprint-bytes-per-rank", 0, "Adapter HBM footprint per rank unit in bytes (>0). Applied only when set; else --lora-config / defaults.yaml.")
+	cmd.Flags().StringVar(&loraEvictionPolicy, "eviction-policy", "", fmt.Sprintf("Resident-adapter eviction policy at the cold-load gate. Valid: %s. Applied only when set; empty/default => lru (byte-identical to no LoRA).", strings.Join(sim.ValidEvictionPolicyNames(), ", ")))
 }
 
 // loraConfigFile is the on-disk shape of a --lora-config YAML file: a single
@@ -1307,9 +1309,32 @@ func resolveLoRAConfig(cmd *cobra.Command) sim.LoRAConfig {
 		v := loraFootprintBytesPerRank
 		cfg.FootprintBytesPerRank = &v
 	}
+	// --eviction-policy override (R18: only when explicitly set); empty (unset flag,
+	// no file value) => lru. A file-supplied eviction_policy survives an unset flag.
+	if cmd.Flags().Changed("eviction-policy") {
+		cfg.EvictionPolicy = loraEvictionPolicy
+	}
 
 	if err := cfg.Validate(); err != nil {
 		logrus.Fatalf("Invalid LoRA configuration: %v", err)
+	}
+	// Fail fast on an unknown eviction-policy name (B-4). sim.LoRAConfig.Validate
+	// deliberately omits this check — the valid-names registry lives in
+	// sim/lora/eviction, which package sim must not import — so the CLI boundary
+	// enforces it (Principle V), giving the same rejection NewEvictionPolicyFunc would
+	// return, but at startup with a listed set. Empty => lru, so it is exempt.
+	if cfg.EvictionPolicy != "" {
+		valid := sim.ValidEvictionPolicyNames()
+		known := false
+		for _, name := range valid {
+			if name == cfg.EvictionPolicy {
+				known = true
+				break
+			}
+		}
+		if !known {
+			logrus.Fatalf("Invalid --eviction-policy %q; valid options: %s", cfg.EvictionPolicy, strings.Join(valid, ", "))
+		}
 	}
 	return cfg
 }
