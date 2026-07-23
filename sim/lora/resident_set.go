@@ -52,6 +52,10 @@ func newResidentSet(capacity int) *residentSet {
 // Len reports the number of currently resident adapters.
 func (s *residentSet) Len() int { return len(s.entries) }
 
+// AtCapacity reports whether every slot is occupied (Len == capacity). The
+// cold-load gate uses it to decide whether a slot must be freed before a load.
+func (s *residentSet) AtCapacity() bool { return len(s.entries) >= s.capacity }
+
 // IsResident reports whether id currently occupies a slot.
 func (s *residentSet) IsResident(id string) bool {
 	_, ok := s.entries[id]

@@ -8,12 +8,16 @@ import (
 // This ensures deterministic same-tick ordering (INV-6 improvement over
 // timestamp-only heap). Matches cluster event queue's (timestamp, priority, seqID) scheme.
 const (
-	PriorityArrival      = 0 // External input enters system first
-	PriorityQueued       = 1 // Request enters queue after arrival processing
-	PriorityStep         = 2 // Batch processing (may complete requests)
-	PriorityScheduled    = 3 // Observational (no state mutation)
-	PriorityRequestLeft  = 4 // Observational (no state mutation)
-	PriorityTimeout      = 5 // Client-side cancellation fires last (BC-12: completion wins)
+	PriorityArrival     = 0 // External input enters system first
+	PriorityQueued      = 1 // Request enters queue after arrival processing
+	PriorityAdapterLoad = 2 // LoRA adapter-load completion: makes a gated adapter resident
+	//                        BEFORE a co-timed step forms its batch (§7 ordering
+	//                        contract), so the newly-loaded adapter's request is
+	//                        batch-eligible that same tick.
+	PriorityStep        = 3 // Batch processing (may complete requests)
+	PriorityScheduled   = 4 // Observational (no state mutation)
+	PriorityRequestLeft = 5 // Observational (no state mutation)
+	PriorityTimeout     = 6 // Client-side cancellation fires last (BC-12: completion wins)
 )
 
 // Event defines the interface for all simulation events.
@@ -120,6 +124,29 @@ func (e *StepEvent) Execute(sim *Simulator) {
 	sim.Step(e.time)
 }
 
+// AdapterLoadCompletionEvent fires when a per-instance LoRA adapter load finishes.
+// It is endogenous — the cold-load pre-admission gate schedules it at
+// now + LoadLatency when a cold request reaches the wait-queue head (§7). On
+// completion the adapter becomes resident and the gated request(s) become
+// batch-eligible; the event is ordered ahead of a co-timed StepEvent
+// (PriorityAdapterLoad < PriorityStep) so the request is admitted that same tick.
+// Loads serialize per instance: the gate starts at most one at a time.
+type AdapterLoadCompletionEvent struct {
+	time    int64  // Scheduled completion time (in ticks) = load-start + LoadLatency
+	Adapter string // Adapter id being loaded
+}
+
+func (e *AdapterLoadCompletionEvent) Timestamp() int64 { return e.time }
+func (e *AdapterLoadCompletionEvent) Priority() int    { return PriorityAdapterLoad }
+
+// Execute makes the loaded adapter resident, charges the one-time load (INV-L3),
+// clears the in-flight-load marker so the next serialized load can start, and
+// ensures a step forms so the gated request is admitted (INV-8).
+func (e *AdapterLoadCompletionEvent) Execute(sim *Simulator) {
+	logrus.Debugf("<< AdapterLoadCompletion: %s at %d ticks", e.Adapter, e.time)
+	sim.completeAdapterLoad(e.time, e.Adapter)
+}
+
 // TimeoutEvent models client-side request cancellation at the deadline tick.
 // Classification: mixed exogenous/endogenous (round-0 exogenous, follow-up endogenous).
 // Priority 5: fires after all other event types at equal timestamps (BC-12).
@@ -143,6 +170,11 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 	wasRunning := e.Request.State == StateRunning
 	e.Request.State = StateTimedOut
 	sim.Metrics.TimedOutRequests++
+
+	// Release the adapter pin (cold-load gate, #1466) for a request cancelled while
+	// running: it no longer uses its adapter. A queued/gated request never pinned,
+	// so releaseAdapterPin is a no-op there (guarded by the per-request flag).
+	sim.releaseAdapterPin(e.Request)
 
 	// Release KV blocks (safe for zero-block queued requests per BC-15)
 	sim.KVCache.ReleaseKVBlocks(e.Request)

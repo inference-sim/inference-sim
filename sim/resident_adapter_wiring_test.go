@@ -30,7 +30,13 @@ func TestResidentAdapterSet_CapacityBoundAcrossRun(t *testing.T) {
 	for i := range adapters {
 		adapters[i] = AdapterSpec{ID: fmt.Sprintf("adapter_%d", i), Rank: 8}
 	}
-	cfg.LoRAConfig = LoRAConfig{AdapterCapacity: &capVal, Adapters: adapters}
+	cfg.LoRAConfig = LoRAConfig{
+		AdapterCapacity:       &capVal,
+		LoadBaseLatencyUs:     fptrGate(1000.0),
+		LoadBandwidthBytesUs:  fptrGate(2.0e6),
+		FootprintBytesPerRank: fptrGate(2.0e6),
+		Adapters:              adapters,
+	}
 
 	sim := mustNewSimulator(t, cfg)
 	if sim.residentAdapters == nil {
@@ -98,8 +104,11 @@ func TestResidentAdapterSet_MixedBaseAndAdapterTraffic(t *testing.T) {
 	capVal := 4
 	cfg := newTestSimConfig()
 	cfg.LoRAConfig = LoRAConfig{
-		AdapterCapacity: &capVal,
-		Adapters:        []AdapterSpec{{ID: "adapter_0", Rank: 8}},
+		AdapterCapacity:       &capVal,
+		LoadBaseLatencyUs:     fptrGate(1000.0),
+		LoadBandwidthBytesUs:  fptrGate(2.0e6),
+		FootprintBytesPerRank: fptrGate(2.0e6),
+		Adapters:              []AdapterSpec{{ID: "adapter_0", Rank: 8}},
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -152,7 +161,13 @@ func TestResidentAdapterSet_PreemptionDoesNotDoubleCountLoad(t *testing.T) {
 		BatchConfig:         NewBatchConfig(10, 10_000, 16),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 1, 0}, []float64{0, 0, 0}),
 		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
-		LoRAConfig:          LoRAConfig{AdapterCapacity: &capVal, Adapters: []AdapterSpec{{ID: "a", Rank: 8}}},
+		LoRAConfig: LoRAConfig{
+			AdapterCapacity:       &capVal,
+			LoadBaseLatencyUs:     fptrGate(1000.0),
+			LoadBandwidthBytesUs:  fptrGate(2.0e6),
+			FootprintBytesPerRank: fptrGate(2.0e6),
+			Adapters:              []AdapterSpec{{ID: "a", Rank: 8}},
+		},
 	}
 	s := mustNewSimulator(t, cfg)
 	if s.residentAdapters == nil {
