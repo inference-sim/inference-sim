@@ -259,10 +259,10 @@ func TestColdLoadGate_INV8_NoDeadlockUnderCapacityPressure(t *testing.T) {
 	}
 }
 
-// TestColdLoadGate_INV3_LoadCompletionInFuture verifies determinism and that the
-// gate never stalls the simulator (INV-8: a gated request's load is scheduled
-// work, so the run always drains). Two identical seeds produce identical TTFT
-// (INV-6 determinism, no RNG in the cost path — R7).
+// TestColdLoadGate_Determinism verifies determinism and that the gate never stalls
+// the simulator (INV-8: a gated request's load is scheduled work, so the run always
+// drains). Two identical seeds produce identical TTFT (INV-6 determinism, no RNG in
+// the cost path — R7).
 func TestColdLoadGate_Determinism(t *testing.T) {
 	run := func() int64 {
 		return runSingleTTFT(t, gateTestConfig(2, AdapterSpec{ID: "a8", Rank: 8}), "a8")

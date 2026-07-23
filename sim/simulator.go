@@ -900,7 +900,10 @@ func (sim *Simulator) completeAdapterLoad(now int64, adapter string) {
 	// the adapter without further eviction and must succeed. A false result would
 	// mean the set filled and fully pinned during the load — impossible under the
 	// blocking model (no admissions occur mid-load) — so surface it loudly (R1)
-	// rather than silently dropping the load accounting.
+	// rather than silently dropping the load accounting. Store's evicted-id return
+	// is intentionally discarded: the eviction (and its AdapterEvictionCounts
+	// increment) already happened at load-start, so it is always "" here; any future
+	// path that calls Store at capacity would need to account for that eviction.
 	if _, admitted := sim.residentAdapters.Store(adapter); admitted {
 		sim.Metrics.AdapterLoadCounts[adapter]++ // charged once per cold transition (INV-L3)
 	} else {
