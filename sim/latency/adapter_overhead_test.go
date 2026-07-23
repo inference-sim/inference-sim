@@ -175,6 +175,30 @@ func TestStepTime_StrictlyIncreasingInMaxRank(t *testing.T) {
 	}
 }
 
+// T030: the factor is keyed on the max rank's TIER, not on rank magnitude. With an
+// INVERTED table — the lower rank carrying the larger K6/K7 ratio — a lower-max-rank
+// batch must yield the LARGER factor. This fails any implementation that assumes
+// "higher rank ⇒ higher factor" instead of selecting K6/K7 by r_max (FR-009). It is
+// the discriminating complement to TestStepTime_StrictlyIncreasingInMaxRank, whose
+// monotonic-ratio table cannot tell tier-selection apart from rank-magnitude.
+func TestStepTime_FactorTracksRankTierNotMagnitude(t *testing.T) {
+	// ratios: rank 8 → 2/1 = 2.0 (factor 3.0); rank 64 → 1/2 = 0.5 (factor 1.5).
+	ac := newAdapterCost(t,
+		map[int]sim.StepOverheadTier{
+			8:  {K6: f64(2), K7: f64(1)},
+			64: {K6: f64(1), K7: f64(2)},
+		},
+		[]sim.AdapterSpec{{ID: "low", Rank: 8}, {ID: "high", Rank: 64}},
+	)
+	for name, model := range backends(t, ac) {
+		low := model.StepTime([]*sim.Request{prefillReq(200, "low")})   // r_max=8  → factor 3.0
+		high := model.StepTime([]*sim.Request{prefillReq(200, "high")}) // r_max=64 → factor 1.5
+		if low <= high {
+			t.Errorf("%s: lower-rank (higher-ratio tier) StepTime %d not > higher-rank %d — factor not keyed on r_max tier (FR-009)", name, low, high)
+		}
+	}
+}
+
 // T030: an out-of-envelope rank is clamped to the nearest calibrated tier — the
 // factor stays >= 1 (no inversion below the base) and equals the nearest-tier
 // factor rather than extrapolating.

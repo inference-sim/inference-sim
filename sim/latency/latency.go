@@ -48,7 +48,8 @@ func WithAdapterCost(ac sim.AdapterCost) Option {
 // applyAdapterOverhead multiplies a base step time by the batch's LoRA
 // compute-overhead factor (>= 1.0) from the accessor. It is the single shared
 // application point so both backends behave identically (R23). A nil accessor —
-// or a factor of exactly 1.0 (no adapter ids in batch) — returns base unchanged,
+// or a factor of 1.0 or below (a batch with no adapter ids normalizes to exactly
+// 1.0; sub-unit values are rejected by the guard below) — returns base unchanged,
 // preserving byte-identity for a no-adapter step (INV-6/INV-BC-DP1).
 func applyAdapterOverhead(base int64, batch []*sim.Request, ac sim.AdapterCost) int64 {
 	if ac == nil {

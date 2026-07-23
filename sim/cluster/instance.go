@@ -57,8 +57,8 @@ func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	// Build the LoRA adapter-cost accessor (nil when the subsystem is inert) and
 	// supply it to the latency model at construction so the per-step compute
 	// overhead applies to both backends (#1467, R23). BuildAdapterCost is pure and
-	// stateless; NewSimulator (below) builds its own instance for the cold-load
-	// gate from the same config — two behaviorally identical accessors, no shared
+	// stateless; sim.NewSimulator (called below) builds its own instance for the
+	// cold-load gate from the same config — two behaviorally identical accessors, no shared
 	// state. A nil accessor leaves StepTime byte-identical to pre-feature (INV-6).
 	adapterCost, err := sim.BuildAdapterCost(cfg)
 	if err != nil {

@@ -184,8 +184,9 @@ const bytesPerKVElement = 2.0
 //
 // Single O(batch_size) pass, zero heap allocations on the base path. When a LoRA
 // adapter-cost accessor is wired (adapters active, #1467), the trailing
-// applyAdapterOverhead call adds one O(batch_size) pass with a single small map
-// allocation to count distinct adapters; the base (no-LoRA) path is unchanged.
+// applyAdapterOverhead call invokes the accessor's StepOverheadFactor, which adds
+// one O(batch_size) pass and a single small map allocation to count distinct
+// adapters; the base (no-LoRA) path is unchanged.
 func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	if len(batch) == 0 {
 		return 1
