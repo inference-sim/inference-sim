@@ -16,8 +16,9 @@ type residentEntry struct {
 // bounded LRU over adapter ids (specs/007-lora-control-plane/data-model.md
 // §"Entity: Resident-Adapter Set (per instance)"). It reuses the cpuTier map +
 // doubly-linked-list pattern (sim/kv/tiered.go): O(1) store
-// and touch; eviction is O(1) amortized, scanning from the LRU head past any
-// pinned entries. Adapters required by in-flight requests are pinned
+// and touch; eviction scans from the LRU head past pinned entries — O(1) in the
+// common case (few or no pins), O(capacity) worst-case (all entries pinned).
+// Adapters required by in-flight requests are pinned
 // (reference-counted) and are never chosen as an eviction victim, so the
 // capacity bound len(entries) ≤ capacity holds at all times.
 //
@@ -93,6 +94,10 @@ func (s *residentSet) Store(id string) (evicted string, ok bool) {
 // LRU head toward the tail so pinned entries are skipped in recency order.
 // Returns the evicted id and true, or ("", false) if the set is empty or every
 // entry is pinned.
+//
+// Exported (unlike the enclosing unexported residentSet) because the cold-load
+// gate will drive eviction directly once pin/unpin join the ResidentAdapterSet
+// interface (#1464); the uppercase name is deliberate, not an accidental export.
 func (s *residentSet) EvictLRU() (string, bool) {
 	for e := s.lruHead; e != nil; e = e.next {
 		if e.pinCount == 0 {

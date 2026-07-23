@@ -132,6 +132,94 @@ func TestResidentAdapterSet_MixedBaseAndAdapterTraffic(t *testing.T) {
 	}
 }
 
+// TestResidentAdapterSet_PreemptionDoesNotDoubleCountLoad verifies that a request
+// preempted and rescheduled does not double-count its adapter's cold load. When the
+// request re-enters the running batch its adapter is still resident, so
+// recordAdapterResidency takes the warm (Touch) path — LoadCount stays 1.
+//
+// Scenario mirrors TestSimulator_TotalOutputTokens_NoDoubleCountAfterPreemption:
+// 4 KV blocks × 16 tokens. B (32 input, base model) is injected first and sits at
+// the batch head; A (16 input, adapter "a") is injected second at the tail and is
+// the eviction victim. A is preempted, re-queued, re-prefills, and completes. With
+// capacity 2 and a single adapter, "a" is never evicted from the resident set, so
+// A's reschedule is a warm Touch, not a second cold load.
+func TestResidentAdapterSet_PreemptionDoesNotDoubleCountLoad(t *testing.T) {
+	capVal := 2
+	cfg := SimConfig{
+		Horizon:             1_000_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(4, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(10, 10_000, 16),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 1, 0}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+		LoRAConfig:          LoRAConfig{AdapterCapacity: &capVal, Adapters: []AdapterSpec{{ID: "a", Rank: 8}}},
+	}
+	s := mustNewSimulator(t, cfg)
+	if s.residentAdapters == nil {
+		t.Fatal("residentAdapters is nil: LoRA subsystem not wired")
+	}
+
+	// Distinct non-zero token slices prevent prefix-cache sharing between A and B.
+	bInput := make([]TokenID, 32)
+	for i := range bInput {
+		bInput[i] = TokenID(i + 1)
+	}
+	aInput := make([]TokenID, 16)
+	for i := range aInput {
+		aInput[i] = TokenID(1000 + i)
+	}
+
+	// B first → batch head (never evicted, base model). A second → tail, adapter "a".
+	s.InjectArrival(&Request{ID: "B", ArrivalTime: 0, InputTokens: bInput, OutputTokens: make([]TokenID, 5)})
+	s.InjectArrival(&Request{ID: "A", ArrivalTime: 0, InputTokens: aInput, OutputTokens: make([]TokenID, 5), Adapter: "a"})
+
+	s.Run()
+
+	// Precondition: the scenario must actually exercise a preemption, else it proves nothing.
+	if s.Metrics.PreemptionCount == 0 {
+		t.Fatal("precondition violated: expected at least one preemption, got 0")
+	}
+
+	out := s.Metrics.BuildOutput("test-instance", nil)
+	if got := out.Adapters["a"].LoadCount; got != 1 {
+		t.Errorf("adapter \"a\" LoadCount = %d, want 1 (preempt+reschedule must not re-count a resident adapter)", got)
+	}
+	if got := out.Adapters["a"].EvictionCount; got != 0 {
+		t.Errorf("adapter \"a\" EvictionCount = %d, want 0 (single adapter, never evicted)", got)
+	}
+}
+
+// TestNewSimulator_AdaptersWithoutCapacity verifies the silent-inert-with-warning
+// path: a caller that declares adapters but leaves AdapterCapacity nil gets a
+// successful construction (no error, no panic) with the resident set left nil, so
+// residency events never fire and per-adapter LoadCount/EvictionCount stay 0. This
+// guards the logrus.Warnf branch in NewSimulator against a regression that turns it
+// into a Fatalf or removes the nil-capacity handling.
+func TestNewSimulator_AdaptersWithoutCapacity(t *testing.T) {
+	cfg := newTestSimConfig()
+	cfg.LoRAConfig = LoRAConfig{Adapters: []AdapterSpec{{ID: "a", Rank: 8}}} // AdapterCapacity nil
+	sim := mustNewSimulator(t, cfg)
+	if sim.residentAdapters != nil {
+		t.Fatal("residentAdapters must be nil when adapter_capacity is unset")
+	}
+
+	for i := 0; i < 3; i++ {
+		req := newTestRequest(fmt.Sprintf("r%d", i), int64(i), 8, 4)
+		req.Adapter = "a"
+		sim.InjectArrival(req)
+	}
+	sim.Run()
+
+	// The adapter may still surface via PR1's per-adapter TTFT/throughput metrics,
+	// but no cold loads or evictions are ever recorded without a resident set.
+	out := sim.Metrics.BuildOutput("test-instance", nil)
+	for id, am := range out.Adapters {
+		if am.LoadCount != 0 || am.EvictionCount != 0 {
+			t.Errorf("adapter %q: LoadCount=%d EvictionCount=%d, want 0/0 (resident set inert)", id, am.LoadCount, am.EvictionCount)
+		}
+	}
+}
+
 // TestNewSimulator_InvalidAdapterCapacity verifies NewSimulator returns an error
 // (not a panic) when adapters are declared with a non-positive capacity — the
 // library-boundary defense-in-depth for a caller that bypasses the CLI's

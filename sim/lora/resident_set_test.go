@@ -199,6 +199,23 @@ func TestResidentSet_EvictLRUAllPinned(t *testing.T) {
 	}
 }
 
+// TestResidentSet_UnpinAtZeroIsNoop verifies the Unpin guard: unpinning more
+// times than an id was pinned neither wraps the count (uint underflow) nor leaves
+// the entry stuck pinned — after balancing the single Pin, a second Unpin is a
+// no-op and the adapter remains evictable.
+func TestResidentSet_UnpinAtZeroIsNoop(t *testing.T) {
+	s := newResidentSet(1)
+	s.Store("a")
+	s.Pin("a")
+	s.Unpin("a") // balances the pin
+	s.Unpin("a") // extra unpin: must be a no-op, not an underflow
+
+	// The adapter is now unpinned, so it is a valid eviction victim.
+	if evicted, ok := s.EvictLRU(); !ok || evicted != "a" {
+		t.Fatalf("EvictLRU after balanced+extra Unpin: got (%q, %v), want (\"a\", true)", evicted, ok)
+	}
+}
+
 // TestResidentSet_ZeroCapacityPanics verifies the constructor rejects a
 // non-positive capacity (mirrors newCpuTier; capacity is validated > 0 upstream).
 func TestResidentSet_ZeroCapacityPanics(t *testing.T) {

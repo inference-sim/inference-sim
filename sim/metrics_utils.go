@@ -104,7 +104,8 @@ type MetricsOutput struct {
 	Adapters map[string]AdapterMetrics `json:"adapters,omitempty"`
 }
 
-// AdapterMetrics is the per-adapter aggregate section (contracts/metrics.md). TTFT
+// AdapterMetrics is the per-adapter aggregate section
+// (specs/007-lora-control-plane/contracts/metrics.md). TTFT
 // percentiles are in microseconds (ticks); throughput is completed output tokens per
 // second. LoadCount/EvictionCount are cumulative resident-set event counts populated
 // by the per-instance resident set (#1465): LoadCount per cold load, EvictionCount per

@@ -27,7 +27,7 @@ func newAdapterTestMetrics() *Metrics {
 
 // TestBuildOutput_PerAdapterMetrics verifies the per-adapter aggregate block (US1):
 // present with per-adapter TTFT/throughput when adapters are attributed; base-model
-// requests attributed to no adapter (contracts/metrics.md).
+// requests attributed to no adapter (specs/007-lora-control-plane/contracts/metrics.md).
 func TestBuildOutput_PerAdapterMetrics(t *testing.T) {
 	m := newAdapterTestMetrics()
 	out := m.BuildOutput("cluster", nil)

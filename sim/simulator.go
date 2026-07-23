@@ -772,9 +772,7 @@ func (sim *Simulator) scheduleBatch(now int64) {
 //
 // Recording residency at running-batch entry matches the design's "in use from the
 // moment a request enters the running batch" semantics. State only: residency has no
-// latency or gating effect here — a cold request still runs immediately. This PR
-// (#1465) wires the resident-set state and metrics; the cold-load pre-admission gate
-// that consumes them is tracked under #1464.
+// latency or gating effect here — a cold request still runs immediately.
 func (sim *Simulator) recordAdapterResidency(req *Request) {
 	if sim.residentAdapters == nil || req.Adapter == "" {
 		return
@@ -788,7 +786,11 @@ func (sim *Simulator) recordAdapterResidency(req *Request) {
 	if !admitted {
 		// Set full and every resident adapter pinned: nothing was loaded, so don't
 		// record a phantom load. Unreachable in this PR (pinning is not wired yet);
-		// the guard keeps the accounting correct once the cold-load gate lands.
+		// the guard keeps the accounting correct once the cold-load gate lands. Warn
+		// so that, once pinning is wired, a failed cold load surfaces as a logged
+		// event rather than silently missing adapter metrics (R1).
+		logrus.Warnf("recordAdapterResidency: adapter %q could not be loaded "+
+			"(resident set full, all slots pinned); no load counted", req.Adapter)
 		return
 	}
 	sim.Metrics.AdapterLoadCounts[req.Adapter]++
