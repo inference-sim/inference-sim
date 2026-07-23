@@ -121,8 +121,7 @@ type Simulator struct {
 	// residentAdapters tracks this instance's finite resident LoRA adapter slots
 	// (capacity-bounded LRU). nil when the LoRA subsystem is inert (no adapters /
 	// capacity configured, or sim/lora not imported), in which case adapter handling
-	// is a no-op and output is byte-identical to a pre-feature build (INV-6). State
-	// only in this PR — updating it has no latency effect yet (#1465).
+	// is a no-op and output is byte-identical to a pre-feature build (INV-6).
 	residentAdapters ResidentAdapterSet
 	seqCounter             int64 // monotonic counter for event queue seqID (deterministic ordering)
 	// OnRequestDone is an optional callback invoked when a request reaches a terminal
@@ -209,6 +208,17 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 	// handling is a no-op (INV-6).
 	if cfg.HasAdapters() && cfg.AdapterCapacity != nil && NewResidentAdapterSetFunc != nil {
 		s.residentAdapters = NewResidentAdapterSetFunc(*cfg.AdapterCapacity)
+	} else if cfg.HasAdapters() && cfg.AdapterCapacity == nil {
+		// Adapters declared but no capacity: the resident set stays inert and every
+		// adapter metric reports zero. Warn rather than fail silently (R1) — a run
+		// that completes with zeroed adapter counts is otherwise indistinguishable
+		// from a working one.
+		logrus.Warnf("adapters declared but adapter_capacity is not set; per-instance resident-adapter tracking is disabled and adapter metrics will be zero")
+	} else if cfg.HasAdapters() && cfg.AdapterCapacity != nil && NewResidentAdapterSetFunc == nil {
+		// Adapters + capacity configured but sim/lora was never linked, so the seam
+		// factory is unregistered. Only reachable from a non-CLI caller (cmd/root.go
+		// imports sim/lora); warn so that path does not silently drop adapter tracking.
+		logrus.Warnf("adapters and adapter_capacity are configured but sim/lora is not linked (NewResidentAdapterSetFunc unregistered); resident-adapter tracking is disabled and adapter metrics will be zero")
 	}
 
 	return s, nil
@@ -764,7 +774,7 @@ func (sim *Simulator) scheduleBatch(now int64) {
 // moment a request enters the running batch" semantics. State only: residency has no
 // latency or gating effect here — a cold request still runs immediately. This PR
 // (#1465) wires the resident-set state and metrics; the cold-load pre-admission gate
-// that consumes them is a follow-up PR.
+// that consumes them is tracked under #1464.
 func (sim *Simulator) recordAdapterResidency(req *Request) {
 	if sim.residentAdapters == nil || req.Adapter == "" {
 		return

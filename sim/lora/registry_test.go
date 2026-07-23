@@ -117,3 +117,20 @@ func TestNewAdapterRegistryFunc_Registered(t *testing.T) {
 		t.Errorf("factory-built registry RankOf(a) = (%d,%v), want (8,true)", r, ok)
 	}
 }
+
+// TestNewResidentAdapterSetFunc_Registered verifies sim/lora's init() wired the
+// resident-set factory into the sim package (mirrors NewAdapterRegistryFunc). A
+// refactor that breaks this seam would otherwise silently leave the Simulator's
+// resident set nil and zero every adapter metric with no test failure.
+func TestNewResidentAdapterSetFunc_Registered(t *testing.T) {
+	if sim.NewResidentAdapterSetFunc == nil {
+		t.Fatalf("sim.NewResidentAdapterSetFunc must be registered by sim/lora init()")
+	}
+	set := sim.NewResidentAdapterSetFunc(2)
+	if set == nil {
+		t.Fatalf("factory returned nil resident set")
+	}
+	if set.Len() != 0 {
+		t.Errorf("fresh resident set Len() = %d, want 0", set.Len())
+	}
+}

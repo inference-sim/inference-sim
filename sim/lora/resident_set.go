@@ -7,14 +7,15 @@ import "fmt"
 // adapter; a positive count protects the entry from eviction.
 type residentEntry struct {
 	id       string
-	pinCount int
+	pinCount uint
 	prev     *residentEntry // older — toward the LRU head (evicted first)
 	next     *residentEntry // newer — toward the MRU tail
 }
 
 // residentSet models the finite per-instance GPU adapter slots as a capacity-
-// bounded LRU over adapter ids (data-model.md "Resident-Adapter Set"). It reuses
-// the cpuTier hash + doubly-linked-list pattern (sim/kv/tiered.go): O(1) store
+// bounded LRU over adapter ids (specs/007-lora-control-plane/data-model.md
+// §"Entity: Resident-Adapter Set (per instance)"). It reuses the cpuTier map +
+// doubly-linked-list pattern (sim/kv/tiered.go): O(1) store
 // and touch; eviction is O(1) amortized, scanning from the LRU head past any
 // pinned entries. Adapters required by in-flight requests are pinned
 // (reference-counted) and are never chosen as an eviction victim, so the

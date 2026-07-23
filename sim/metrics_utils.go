@@ -108,9 +108,9 @@ type MetricsOutput struct {
 // percentiles are in microseconds (ticks); throughput is completed output tokens per
 // second. LoadCount/EvictionCount are cumulative resident-set event counts populated
 // by the per-instance resident set (#1465): LoadCount per cold load, EvictionCount per
-// LRU eviction. They are 0 for an adapter that was referenced but never triggered a
-// resident-set event (e.g. no capacity configured), and absent entirely on an
-// adapter-blind run (INV-6).
+// LRU eviction. They are 0 for an adapter whose requests all hit a warm slot (touch
+// only — no cold loads or evictions), and absent entirely on an adapter-blind run
+// (INV-6).
 type AdapterMetrics struct {
 	LoadCount         int64   `json:"load_count"`
 	EvictionCount     int64   `json:"eviction_count"`

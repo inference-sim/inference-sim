@@ -10,14 +10,14 @@ package sim
 //
 // The interface is intentionally scoped to what the scheduling hook needs today
 // (R13). The concrete set additionally supports pin/unpin and explicit eviction;
-// those enter this interface when the cold-load gate (a later PR) consumes them.
+// those enter this interface when the cold-load gate (#1464) consumes them.
 type ResidentAdapterSet interface {
 	// IsResident reports whether id currently occupies a slot.
 	IsResident(id string) bool
 	// Touch moves a resident id to most-recently-used. No-op if id is absent.
 	Touch(id string)
 	// Store makes id resident at most-recently-used, evicting an entry per the set's
-	// replacement policy (LRU here), skipping pinned entries, when it is at capacity.
+	// replacement policy when at capacity, skipping pinned entries.
 	// Returns the evicted id ("" if none) and whether id is now resident (false only
 	// when the set is full and every slot is pinned). Storing an already-resident id
 	// is equivalent to Touch.

@@ -3,7 +3,8 @@ package lora
 import "testing"
 
 // The resident-adapter set models the finite per-instance GPU adapter slots
-// (data-model.md "Resident-Adapter Set"): a capacity-bounded LRU over adapter
+// (specs/007-lora-control-plane/data-model.md §"Entity: Resident-Adapter Set
+// (per instance)"): a capacity-bounded LRU over adapter
 // ids with pinning for in-flight requests. These contract tests assert the
 // observable laws — capacity bound, LRU eviction order, and pin protection —
 // independent of the internal linked-list representation.
@@ -172,12 +173,29 @@ func TestResidentSet_PinRefcount(t *testing.T) {
 	}
 }
 
-// TestResidentSet_EvictLRUEmpty verifies evictLRU on an empty (or fully pinned)
-// set reports no victim rather than panicking.
+// TestResidentSet_EvictLRUEmpty verifies EvictLRU on an empty set reports no victim
+// rather than panicking (the lruHead == nil immediate-return path).
 func TestResidentSet_EvictLRUEmpty(t *testing.T) {
 	s := newResidentSet(2)
 	if evicted, ok := s.EvictLRU(); ok || evicted != "" {
 		t.Fatalf("evictLRU on empty set: got (%q, %v), want (\"\", false)", evicted, ok)
+	}
+}
+
+// TestResidentSet_EvictLRUAllPinned verifies EvictLRU on a full set whose every
+// entry is pinned reports no victim (the loop scans the whole list, skipping all
+// pinned entries — distinct from the empty-set immediate return).
+func TestResidentSet_EvictLRUAllPinned(t *testing.T) {
+	s := newResidentSet(2)
+	s.Store("a")
+	s.Store("b")
+	s.Pin("a")
+	s.Pin("b")
+	if evicted, ok := s.EvictLRU(); ok || evicted != "" {
+		t.Fatalf("evictLRU on fully pinned set: got (%q, %v), want (\"\", false)", evicted, ok)
+	}
+	if s.Len() != 2 {
+		t.Fatalf("Len after failed eviction = %d, want 2 (no entry removed)", s.Len())
 	}
 }
 
