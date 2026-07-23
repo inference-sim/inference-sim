@@ -1114,7 +1114,9 @@ func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*
 		//
 		// Exception (cold-load gate, #1466): when a per-instance adapter load is in
 		// flight, the wait-queue head is gated (held out of the batch) for the load
-		// duration and nothing else can be admitted (blocking model). The scheduled
+		// duration and nothing else can be admitted (blocking model) — including any
+		// warm-adapter or base-model requests queued behind it (intentional
+		// head-of-line blocking, DT-faithful; design §7/D1). The scheduled
 		// work IS the load, so INV-8 is satisfied by the pending
 		// AdapterLoadCompletionEvent — which re-forms a step on completion via
 		// ScheduleStepIfIdle. Scheduling an empty step here instead would spin one

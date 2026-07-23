@@ -83,13 +83,23 @@ func NewCostModel(cfg sim.LoRAConfig) (*CostModel, error) {
 		if rank <= 0 {
 			return nil, fmt.Errorf("lora.NewCostModel: step_overhead_tiers rank key must be > 0, got %d", rank)
 		}
-		if t.K6 == nil || !isFinite(*t.K6) || *t.K6 < 0 {
-			return nil, fmt.Errorf("lora.NewCostModel: step_overhead_tiers[%d].k6 must be finite and >= 0", rank)
+		// K6 (the numerator coefficient) is optional and defaults to 0 — a tier with
+		// no K6 contributes no per-step overhead (factor stays 1.0). This mirrors
+		// LoRAConfig.Validate, which requires K7 (the divisor) but only validates K6
+		// when present, so any config that passes the CLI gate also builds here
+		// rather than surfacing a confusing constructor error. When present, K6 must
+		// be finite and >= 0.
+		k6 := 0.0
+		if t.K6 != nil {
+			if !isFinite(*t.K6) || *t.K6 < 0 {
+				return nil, fmt.Errorf("lora.NewCostModel: step_overhead_tiers[%d].k6 must be finite and >= 0", rank)
+			}
+			k6 = *t.K6
 		}
 		if t.K7 == nil || !isFinite(*t.K7) || *t.K7 <= 0 {
 			return nil, fmt.Errorf("lora.NewCostModel: step_overhead_tiers[%d].k7 must be finite and > 0 (divisor guard)", rank)
 		}
-		tiers[rank] = tierCoeff{k6: *t.K6, k7: *t.K7}
+		tiers[rank] = tierCoeff{k6: k6, k7: *t.K7}
 		tierRanks = append(tierRanks, rank)
 	}
 	sort.Ints(tierRanks) // deterministic clamp lookup (R2)

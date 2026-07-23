@@ -166,6 +166,31 @@ func TestCostModel_Deterministic(t *testing.T) {
 	}
 }
 
+// TestNewCostModel_NilK6DefaultsToZero verifies the constructor accepts a tier
+// with K7 set but K6 omitted (nil), mirroring LoRAConfig.Validate — which requires
+// K7 but leaves K6 optional. A config that passes the CLI validation gate must also
+// build here rather than failing with a confusing constructor error. A nil K6
+// defaults to 0, so the tier contributes no per-step overhead: the factor stays
+// exactly 1.0 for any batch, distinct adapters included.
+func TestNewCostModel_NilK6DefaultsToZero(t *testing.T) {
+	cfg := sim.LoRAConfig{
+		LoadBaseLatencyUs:     fptr(1000.0),
+		LoadBandwidthBytesUs:  fptr(2.0e6),
+		FootprintBytesPerRank: fptr(2.0e6),
+		StepOverheadTiers:     map[int]sim.StepOverheadTier{8: {K7: fptr(1.0)}}, // K6 omitted
+		Adapters:              []sim.AdapterSpec{{ID: "a8", Rank: 8}},
+	}
+	cm, err := NewCostModel(cfg)
+	if err != nil {
+		t.Fatalf("NewCostModel with nil K6: unexpected error %v (must match Validate, which permits nil K6)", err)
+	}
+	// K6==0 ⇒ 1 + (0/K7)·A_B == 1.0 even with a distinct adapter in the batch.
+	batch := []*sim.Request{{ID: "r1", Adapter: "a8"}}
+	if got := cm.StepOverheadFactor(batch); got != 1.0 {
+		t.Errorf("StepOverheadFactor with nil (=0) K6 = %v, want 1.0 (no overhead contribution)", got)
+	}
+}
+
 // TestNewCostModel_RejectsMalformedConfig verifies the constructor guards missing
 // or non-positive divisor coefficients (R3/R11), mirroring LoRAConfig.Validate so
 // a directly-built model is as safe as one from a validated config.
