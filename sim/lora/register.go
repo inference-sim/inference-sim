@@ -6,6 +6,7 @@ package lora
 
 import (
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/lora/creation"
 	"github.com/inference-sim/inference-sim/sim/lora/eviction"
 )
 
@@ -21,4 +22,6 @@ func init() {
 	}
 	sim.NewEvictionPolicyFunc = eviction.New
 	sim.ValidEvictionPolicyNamesFunc = eviction.ValidNames
+	sim.NewCreationPolicyFunc = creation.New
+	sim.ValidCreationPolicyNamesFunc = creation.ValidNames
 }

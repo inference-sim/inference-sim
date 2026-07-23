@@ -144,6 +144,18 @@ type DeploymentConfig struct {
 	// (TFlopsPeak, BwPeakTBs) rather than the CLI --gpu calibration.
 	// Zero value (nil) is safe: no override, backward-compatible with all existing callers.
 	HWConfigByGPU map[string]sim.HardwareCalib `yaml:"hw_config_by_gpu,omitempty"`
+
+	// LoRAAdapterPlacement is the cluster-scoped LoRA adapter pre-placement (B-5,
+	// #1493, D3): construction-index → adapter ids seeded resident on that instance
+	// at t=0. The key is the initial-topology construction-loop counter idx ∈ [0,
+	// NumInstances) (DD-B5-g), never a slice position. Cluster-scoped because
+	// LoRAConfig is instance-agnostic; the cluster resolves each instance's own
+	// subset and hands only that []string to the instance (Principle I). Validated
+	// at construction (ValidateLoRAPlacement, INV-PS2). The shipped on-demand policy
+	// ignores the seed (seeds nothing); B-6's pre-placement consumes it.
+	// omitempty ⇒ an absent field is byte-identical to pre-B-5 (INV-6). Map value
+	// semantics: instance config, validated then read-only (R8).
+	LoRAAdapterPlacement map[int][]string `yaml:"lora_adapter_placement,omitempty"`
 }
 
 // ToSimConfig returns the embedded SimConfig for per-instance construction.
