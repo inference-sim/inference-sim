@@ -6,7 +6,7 @@ at micro-plan time. All default to baseline so the no-op golden is byte-identica
 | Flag | Purpose | Default | Notes |
 |---|---|---|---|
 | `--routing-policy` / existing `--routing-scorers` | select routing policy (incl. `route-to-holder`) | existing profile | route-to-holder pins `ResidentAdapters` Immediate freshness (D7) |
-| `--eviction-policy` | select eviction policy (`lru` \| `rank-aware`) | `lru` | B-3/B-4 |
+| `--eviction-policy` | select eviction policy (`lru` \| `rank-aware`) | `lru` | ✅ delivered B-3 (seam+lru) / B-4 (`rank-aware`) |
 | `--creation-policy` | select creation policy (`on-demand` \| `pre-placement`) | `on-demand` | B-5/B-6 |
 | `--lora-adapter-placement` (or in `--lora-config`/deployment YAML) | adapter→instance assignment | none | cluster-scoped (D3); startup-validated (INV-PS2) |
 | `--lora-bundle` | select a named strategy bundle (expands to a triple) | none | per-knob flags override (FR-015) |

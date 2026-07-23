@@ -20,4 +20,5 @@ func init() {
 		return NewCostModel(cfg)
 	}
 	sim.NewEvictionPolicyFunc = eviction.New
+	sim.ValidEvictionPolicyNamesFunc = eviction.ValidNames
 }
