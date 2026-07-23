@@ -1140,7 +1140,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&tokenBucketRefillRate, "token-bucket-refill-rate", 1000, "Token bucket refill rate (tokens/second)")
 
 	// Routing policy config
-	cmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, always-busiest")
+	cmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, always-busiest, route-to-holder")
 	cmd.Flags().StringVar(&routingScorers, "routing-scorers", "", "Scorer weights for weighted routing (e.g., queue-depth:2,kv-utilization:2,load-balance:1). Default: precise-prefix-cache:2,queue-depth:1,kv-utilization:1")
 	cmd.Flags().Float64Var(&loraScorerWeight, "lora-scorer-weight", 0, "Weight of the lora-affinity routing scorer, composed into the weighted profile. Leave unset to keep routing unchanged; must be a finite positive number when set. Requires --routing-policy weighted (#1469)")
 

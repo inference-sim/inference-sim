@@ -402,7 +402,14 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	// Initialize snapshot provider with exactly the placed instances.
 	// Deferred instances are registered via CachedSnapshotProvider.AddInstance
 	// when NodeReadyEvent.Execute constructs them (Phase 4, T017).
-	cs.snapshotProvider = NewCachedSnapshotProvider(instanceMap, newObservabilityConfig(config.SnapshotRefreshInterval, config.CacheSignalDelay))
+	obsConfig := newObservabilityConfig(config.SnapshotRefreshInterval, config.CacheSignalDelay)
+	if config.RoutingPolicy == "route-to-holder" {
+		// D7 (#1490): route-to-holder needs live holder truth at routing time, so
+		// pin ResidentAdapters to Immediate regardless of the global refresh interval.
+		// Narrow, single-field override — all other signals keep their global mode.
+		obsConfig.PinResidentAdaptersImmediate()
+	}
+	cs.snapshotProvider = NewCachedSnapshotProvider(instanceMap, obsConfig)
 
 	// Build cacheQueryFn from the unified snapshot provider (#1060).
 	// When CacheSignalDelay > 0, CachedSnapshotProvider manages stale snapshots.
