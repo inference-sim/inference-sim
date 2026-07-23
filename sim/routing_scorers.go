@@ -155,37 +155,30 @@ func normalizeScorerWeights(configs []ScorerConfig) []float64 {
 	return weights
 }
 
+// scorerConstructor builds a (scorer, observer) pair for a named scorer.
+// blockSize is used by block-hash-backed scorers (prefix-affinity); cacheFn by
+// cache-backed scorers (precise-prefix-cache, no-hit-lru); stateless scorers
+// ignore both. The registry maps names to these constructors (B-1, #1489).
+type scorerConstructor func(blockSize int, cacheFn cacheQueryFn) (scorerFunc, observerFunc)
+
+// scorerRegistry maps scorer names to their constructors. Unexported (R8) — all
+// access is via IsValidScorer / ValidScorerNames / newScorerWithObserver.
+// Populated by init() in this file (the single registration site, R4).
+var scorerRegistry = map[string]scorerConstructor{}
+
+// registerScorer adds a scorer constructor under name. Panics on empty or
+// duplicate name (R4 — guards double-registration; empty name would make
+// IsValidScorer("") true, breaking parity).
+func registerScorer(name string, c scorerConstructor) {
+	panic("unimplemented")
+}
+
 // newScorerWithObserver creates a scorer function and optional observer for a named scorer.
 // Returns (scorer, observer) where observer is nil for stateless scorers.
 // blockSize is used by stateful scorers (e.g., prefix-affinity) for block hash computation.
 // Panics on unknown name (validation should catch this before reaching here).
 func newScorerWithObserver(name string, blockSize int, cacheFn cacheQueryFn) (scorerFunc, observerFunc) {
-	switch name {
-	case "prefix-affinity":
-		return newPrefixAffinityScorer(blockSize)
-	case "precise-prefix-cache":
-		return newPrecisePrefixCacheScorer(cacheFn)
-	case "no-hit-lru":
-		return newNoHitLRUScorer(cacheFn)
-	case "queue-depth":
-		return scoreQueueDepth, nil
-	case "kv-utilization":
-		return scoreKVUtilization, nil
-	case "load-balance":
-		return scoreLoadBalance, nil
-	case "active-requests":
-		return scoreActiveRequests, nil
-	case "running-requests":
-		return scoreRunningRequests, nil
-	case "load-aware":
-		return scoreLoadAware, nil
-	case "vllm-dp":
-		return scoreVLLMDP, nil
-	case "lora-affinity":
-		return scoreLoRAAffinity, nil
-	default:
-		panic(fmt.Sprintf("unknown scorer %q", name))
-	}
+	panic("unimplemented")
 }
 
 // scoreQueueDepth computes per-instance queue depth scores using min-max normalization.
