@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -23,6 +24,8 @@ func TestLoRAFlags_RegisteredOnRunAndReplay(t *testing.T) {
 		"lora-load-bandwidth-bytes-us",
 		"lora-footprint-bytes-per-rank",
 		"eviction-policy",
+		"creation-policy",
+		"lora-adapter-placement",
 	}
 	for _, name := range []string{"run", "replay"} {
 		c := &cobra.Command{}
@@ -214,6 +217,163 @@ func TestResolveLoRAConfig_UnknownEvictionPolicyRejected(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "rank-aware") {
 		t.Errorf("fatal message must list valid names (rank-aware); output:\n%s", out)
+	}
+}
+
+// TestResolveLoRAConfig_CreationPolicy pins the --creation-policy resolution and
+// precedence (B-6), mirroring the eviction-policy test: an unset flag leaves
+// CreationPolicy "" (empty => on-demand, the byte-identical default); a set flag
+// wins; a --lora-config file value survives an unset flag; and a set flag
+// overrides the file value (flags win over file, R18).
+func TestResolveLoRAConfig_CreationPolicy(t *testing.T) {
+	defaultsFilePath = "../defaults.yaml"
+
+	// (1) Unset flag, no file => "" (on-demand default).
+	c := &cobra.Command{}
+	registerSimConfigFlags(c)
+	if err := c.ParseFlags([]string{"--defaults-filepath", "../defaults.yaml"}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	loraConfigPath = ""
+	if got := resolveLoRAConfig(c).CreationPolicy; got != "" {
+		t.Errorf("unset flag: CreationPolicy = %q, want \"\" (empty => on-demand default)", got)
+	}
+
+	// (2) Set flag => flag value.
+	c = &cobra.Command{}
+	registerSimConfigFlags(c)
+	if err := c.ParseFlags([]string{"--defaults-filepath", "../defaults.yaml", "--creation-policy", "pre-placement"}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	loraConfigPath = ""
+	if got := resolveLoRAConfig(c).CreationPolicy; got != "pre-placement" {
+		t.Errorf("set flag: CreationPolicy = %q, want \"pre-placement\"", got)
+	}
+
+	// (3) File value survives an unset flag.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "lora.yaml")
+	content := "lora:\n  adapter_capacity: 4\n  creation_policy: pre-placement\n  adapters:\n    - id: adapter_0\n      rank: 8\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	c = &cobra.Command{}
+	registerSimConfigFlags(c)
+	if err := c.ParseFlags([]string{"--defaults-filepath", "../defaults.yaml", "--lora-config", path}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	loraConfigPath = path
+	if got := resolveLoRAConfig(c).CreationPolicy; got != "pre-placement" {
+		t.Errorf("file value, unset flag: CreationPolicy = %q, want \"pre-placement\" (file survives)", got)
+	}
+
+	// (4) Set flag overrides the file value.
+	c = &cobra.Command{}
+	registerSimConfigFlags(c)
+	if err := c.ParseFlags([]string{"--defaults-filepath", "../defaults.yaml", "--lora-config", path, "--creation-policy", "on-demand"}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	loraConfigPath = path
+	if got := resolveLoRAConfig(c).CreationPolicy; got != "on-demand" {
+		t.Errorf("flag over file: CreationPolicy = %q, want \"on-demand\" (flag overrides file)", got)
+	}
+	loraConfigPath = "" // reset shared state
+}
+
+// creationFatalSubprocess drives resolveLoRAConfig with an unknown
+// --creation-policy in a subprocess; the CLI boundary must Fatalf (Principle V).
+func creationFatalSubprocess(t *testing.T) {
+	t.Helper()
+	if os.Getenv("BLIS_TEST_SUBPROCESS") != "1" {
+		return
+	}
+	c := &cobra.Command{}
+	registerSimConfigFlags(c)
+	args := []string{"--defaults-filepath", "../defaults.yaml", "--creation-policy", "bogus"}
+	if err := c.ParseFlags(args); err != nil {
+		os.Exit(2)
+	}
+	defaultsFilePath = "../defaults.yaml"
+	loraConfigPath = ""
+	resolveLoRAConfig(c) // must Fatalf before returning
+	os.Exit(0)
+}
+
+// TestResolveLoRAConfig_UnknownCreationPolicyRejected verifies an unknown
+// --creation-policy name aborts at the CLI boundary (exit 1) with a message
+// listing the valid names — never a silent no-op or a deferred NewSimulator error.
+func TestResolveLoRAConfig_UnknownCreationPolicyRejected(t *testing.T) {
+	creationFatalSubprocess(t)
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestResolveLoRAConfig_UnknownCreationPolicyRejected", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected logrus.Fatalf (exit 1), got err=%v; output:\n%s", err, out)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("expected exit 1, got %d; output:\n%s", exitErr.ExitCode(), out)
+	}
+	if !strings.Contains(string(out), "creation-policy") {
+		t.Errorf("fatal message must mention creation-policy; output:\n%s", out)
+	}
+	if !strings.Contains(string(out), "pre-placement") {
+		t.Errorf("fatal message must list valid names (pre-placement); output:\n%s", out)
+	}
+}
+
+// TestParseLoRAAdapterPlacement pins C-B6-7: the placement-string grammar
+// idx=id[,id...];idx=id... parses to the construction-index→ids map, and
+// malformed specs return an error (surfaced as logrus.Fatalf at the CLI).
+func TestParseLoRAAdapterPlacement(t *testing.T) {
+	ok := []struct {
+		name string
+		spec string
+		want map[int][]string
+	}{
+		{"empty", "", nil},
+		{"single", "0=A", map[int][]string{0: {"A"}}},
+		{"multi_ids", "0=A,B", map[int][]string{0: {"A", "B"}}},
+		{"multi_indices", "0=A,B;1=C", map[int][]string{0: {"A", "B"}, 1: {"C"}}},
+		{"whitespace_trimmed", " 0 = A , B ; 1 = C ", map[int][]string{0: {"A", "B"}, 1: {"C"}}},
+	}
+	for _, tc := range ok {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseLoRAAdapterPlacement(tc.spec)
+			if err != nil {
+				t.Fatalf("parseLoRAAdapterPlacement(%q) unexpected error: %v", tc.spec, err)
+			}
+			if len(tc.want) == 0 {
+				if len(got) != 0 {
+					t.Errorf("parseLoRAAdapterPlacement(%q) = %v, want empty", tc.spec, got)
+				}
+				return
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("parseLoRAAdapterPlacement(%q) = %v, want %v", tc.spec, got, tc.want)
+			}
+		})
+	}
+
+	bad := []struct {
+		name string
+		spec string
+	}{
+		{"missing_equals", "0A,B"},
+		{"non_integer_index", "x=A"},
+		{"empty_id", "0=A,"},
+		{"empty_index", "=A"},
+		{"duplicate_index", "0=A;0=B"},
+	}
+	for _, tc := range bad {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := parseLoRAAdapterPlacement(tc.spec); err == nil {
+				t.Errorf("parseLoRAAdapterPlacement(%q) = nil error, want error (malformed spec)", tc.spec)
+			}
+		})
 	}
 }
 

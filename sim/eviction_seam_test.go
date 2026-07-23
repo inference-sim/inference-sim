@@ -121,7 +121,7 @@ func TestEvictionSeam_AllPinnedNoDeadlock(t *testing.T) {
 	if s.Metrics.CompletedRequests != 3 {
 		t.Fatalf("CompletedRequests = %d, want 3 (no deadlock, INV-11)", s.Metrics.CompletedRequests)
 	}
-	out := s.Metrics.BuildOutput("test-instance", nil)
+	out := s.Metrics.BuildOutput("test-instance")
 	for _, id := range []string{"A", "B", "C"} {
 		if lc := out.Adapters[id].LoadCount; lc != 1 {
 			t.Errorf("adapter %s LoadCount = %d, want 1", id, lc)

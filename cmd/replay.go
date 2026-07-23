@@ -731,6 +731,7 @@ Example:
 				SLOPriorityOverrides: sloPriorityOverrides,
 			},
 			NumInstances:                    numInstances,
+			LoRAAdapterPlacement:            resolveLoRAAdapterPlacement(),
 			AdmissionPolicy:                 admissionPolicy,
 			AdmissionLatency:                admissionLatency,
 			RoutingLatency:                  routingLatency,
