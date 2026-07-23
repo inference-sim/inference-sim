@@ -137,7 +137,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 					clientRNG, client.Reasoning,
 					inputSampler, outputSampler,
 					startTime,
-					client.ID, client.TenantID, client.SLOClass, client.Model,
+					client.ID, client.TenantID, client.SLOClass, client.Model, client.Adapter,
 					prefix,
 				)
 				if err != nil {
@@ -189,7 +189,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 					clientRNG, client.Reasoning,
 					inputSampler, outputSampler,
 					currentTime,
-					client.ID, client.TenantID, client.SLOClass, client.Model,
+					client.ID, client.TenantID, client.SLOClass, client.Model, client.Adapter,
 					prefix,
 				)
 				if err != nil {
@@ -286,6 +286,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				TenantID:         client.TenantID,
 				SLOClass:         client.SLOClass,
 				Model:            client.Model,
+				Adapter:          client.Adapter,
 				TextTokenCount:   textCount,
 				ImageTokenCount:  imageCount,
 				AudioTokenCount:  audioCount,
@@ -467,6 +468,7 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 				TenantID:      client.TenantID,
 				SLOClass:      client.SLOClass,
 				Model:         client.Model,
+				Adapter:       client.Adapter,
 				SLOTargetUs:   derefInt64(client.SLOTargetUs),
 			})
 		}
@@ -622,6 +624,7 @@ func generateConcurrencySeedsAndBlueprints(
 				TenantID:     client.TenantID,
 				SLOClass:     client.SLOClass,
 				Model:        client.Model,
+				Adapter:      client.Adapter,
 				ClientID:     client.ID,
 				PrefixGroup:  client.PrefixGroup,
 				PrefixLength: prefixLength,
@@ -648,6 +651,7 @@ func generateConcurrencySeedsAndBlueprints(
 				TenantID:        client.TenantID,
 				SLOClass:        client.SLOClass,
 				Model:           client.Model,
+				Adapter:         client.Adapter,
 				SLOTargetUs:     derefInt64(client.SLOTargetUs),
 			})
 		}
@@ -1022,7 +1026,7 @@ func generateRequestsForWindow(
 				rng, client.Reasoning,
 				inputSampler, outputSampler,
 				startTime,
-				client.ID, client.TenantID, client.SLOClass, client.Model,
+				client.ID, client.TenantID, client.SLOClass, client.Model, client.Adapter,
 				prefix,
 			)
 			if err != nil {
@@ -1062,7 +1066,7 @@ func generateRequestsForWindow(
 				rng, client.Reasoning,
 				inputSampler, outputSampler,
 				currentTime,
-				client.ID, client.TenantID, client.SLOClass, client.Model,
+				client.ID, client.TenantID, client.SLOClass, client.Model, client.Adapter,
 				prefix,
 			)
 			if err != nil {
@@ -1117,6 +1121,7 @@ func generateRequestsForWindow(
 			TenantID:     client.TenantID,
 			SLOClass:     client.SLOClass,
 			Model:        client.Model,
+			Adapter:      client.Adapter,
 			ClientID:     client.ID,
 			Streaming:    client.Streaming,
 			Deadline:     0, // Set by caller if needed.

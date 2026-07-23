@@ -45,6 +45,7 @@ func ExpandCohorts(cohorts []CohortSpec, seed int64) []ClientSpec {
 				TenantID:     cohort.TenantID,
 				SLOClass:     cohort.SLOClass,
 				Model:        cohort.Model,
+				Adapter:      cohort.Adapter,
 				RateFraction: perMemberFraction,
 				Arrival:      cohort.Arrival,
 				InputDist:    cohort.InputDist,

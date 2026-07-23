@@ -68,6 +68,7 @@ type CohortSpec struct {
 	TenantID      string          `yaml:"tenant_id,omitempty"`
 	SLOClass      string          `yaml:"slo_class,omitempty"`
 	Model         string          `yaml:"model,omitempty"`
+	Adapter       string          `yaml:"adapter,omitempty"` // LoRA adapter id (registry key; #1464). omitempty => base-model-only (no-op).
 	Arrival       ArrivalSpec     `yaml:"arrival"`
 	InputDist     DistSpec        `yaml:"input_distribution"`
 	OutputDist    DistSpec        `yaml:"output_distribution"`
@@ -114,6 +115,7 @@ type ClientSpec struct {
 	TenantID     string          `yaml:"tenant_id"`
 	SLOClass     string          `yaml:"slo_class"`
 	Model        string          `yaml:"model,omitempty"`
+	Adapter      string          `yaml:"adapter,omitempty"` // LoRA adapter id (registry key; #1464). omitempty => base-model-only (no-op).
 	RateFraction float64         `yaml:"rate_fraction"`
 	Concurrency  int             `yaml:"concurrency,omitempty"`
 	ThinkTimeUs  int64           `yaml:"think_time_us,omitempty"`

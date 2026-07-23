@@ -107,6 +107,7 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 			PrefixGroup:      rec.PrefixGroup,
 			PrefixLength:     rec.PrefixLength,
 			Streaming:        rec.Streaming,
+			Adapter:          rec.Adapter, // #1464: adapter identity from trace; "" = base-model-only
 		}
 		requests = append(requests, req)
 	}
@@ -261,6 +262,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			PrefixGroup:     r0.PrefixGroup,
 			PrefixLength:    r0.PrefixLength,
 			Streaming:       r0.Streaming,
+			Adapter:         r0.Adapter, // #1464: adapter identity from trace; "" = base-model-only
 		}
 		requests = append(requests, req)
 
@@ -278,6 +280,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			SLOClass:         r0.SLOClass,
 			Model:            r0.Model,
 			SLOTargetUs:      r0.SLOTargetUs,
+			Adapter:          r0.Adapter, // #1464: adapter threads through session follow-up rounds
 		}
 		blueprints = append(blueprints, bp)
 	}
@@ -314,6 +317,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			PrefixGroup:     rec.PrefixGroup,
 			PrefixLength:    rec.PrefixLength,
 			Streaming:       rec.Streaming,
+			Adapter:         rec.Adapter, // #1464: adapter identity from trace; "" = base-model-only
 		}
 		requests = append(requests, req)
 	}

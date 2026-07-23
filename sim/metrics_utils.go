@@ -23,6 +23,7 @@ type RequestMetrics struct {
 	TenantID         string  `json:"tenant_id,omitempty"`  // PR10: for per-tenant fairness
 	HandledBy        string  `json:"handled_by,omitempty"` // #181: instance that processed this request
 	Model            string  `json:"model,omitempty"`      // W0-1: model tag for per-model metrics
+	Adapter          string  `json:"adapter,omitempty"`    // #1464: LoRA adapter id serving this request ("" = base model)
 	LengthCapped      bool    `json:"length_capped,omitempty"`          // #588: per-request indicator for BC-5 force-completion
 	GatewayQueueDelay float64 `json:"gateway_queue_delay_ms,omitempty"` // #882: time spent in gateway queue (ms)
 	SessionID         string  `json:"session_id,omitempty"`             // #1058: session context for multi-turn metrics
@@ -42,6 +43,7 @@ func NewRequestMetrics(req *Request, arrivedAt float64) RequestMetrics {
 		TenantID:         req.TenantID,
 		HandledBy:        req.AssignedInstance,
 		Model:            req.Model,
+		Adapter:          req.Adapter,
 		LengthCapped:     req.LengthCapped,
 		SessionID:        req.SessionID,
 		RoundIndex:       req.RoundIndex,
@@ -94,6 +96,24 @@ type MetricsOutput struct {
 	GoodputRPS    float64     `json:"goodput_rps,omitempty"`
 	SLOAttainment float64     `json:"slo_attainment,omitempty"`
 	PerClass      interface{} `json:"per_class,omitempty"`
+
+	// Adapters holds per-LoRA-adapter aggregate metrics, keyed by adapter id
+	// (#1464). omitempty: absent when no request is attributed to an adapter, so an
+	// adapter-blind run adds no stdout fields (INV-6, SC-001). encoding/json emits
+	// map string keys in sorted order, giving deterministic output (R2).
+	Adapters map[string]AdapterMetrics `json:"adapters,omitempty"`
+}
+
+// AdapterMetrics is the per-adapter aggregate section (contracts/metrics.md). TTFT
+// percentiles are in microseconds (ticks); throughput is completed output tokens per
+// second. LoadCount/EvictionCount are populated by the resident set in a later PR and
+// are 0 here (PR1 has no per-instance adapter residency yet).
+type AdapterMetrics struct {
+	LoadCount         int64   `json:"load_count"`
+	EvictionCount     int64   `json:"eviction_count"`
+	TTFTP50Us         float64 `json:"ttft_p50_us"`
+	TTFTP99Us         float64 `json:"ttft_p99_us"`
+	ThroughputTokPerS float64 `json:"throughput_tok_per_s"`
 }
 
 // CalculatePercentile is a util function that calculates the p-th percentile of a data list

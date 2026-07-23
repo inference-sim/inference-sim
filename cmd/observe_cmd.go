@@ -390,6 +390,16 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		spec.Seed = observeSeed
 	}
 
+	// LoRA adapter fields are not supported by `blis observe`: it dispatches to a
+	// real server that manages its own adapter loading, so there is no registry to
+	// validate against and no in-simulator adapter state (#1464). Warn loudly rather
+	// than silently thread dangling adapter ids onto every dispatched request.
+	if workload.SpecHasAdapterFields(spec) {
+		logrus.Warnf("workload spec declares LoRA adapter fields, but `blis observe` does not " +
+			"model the LoRA control plane (the target server manages adapter loading); adapter " +
+			"ids are ignored here. Use `blis run`/`blis replay` with --lora-config for adapter-aware simulation.")
+	}
+
 	// Resolve horizon
 	horizon := int64(math.MaxInt64)
 	if cmd.Flags().Changed("horizon") && observeHorizon > 0 {

@@ -236,6 +236,7 @@ func (s *clientStreamState) produceNextSingleShot() (*sim.Request, int64, bool) 
 			TenantID:         s.client.TenantID,
 			SLOClass:         s.client.SLOClass,
 			Model:            s.client.Model,
+			Adapter:          s.client.Adapter,
 			TextTokenCount:   textCount,
 			ImageTokenCount:  imageCount,
 			AudioTokenCount:  audioCount,
@@ -579,7 +580,7 @@ func (s *clientStreamState) buildSession(startTime int64) ([]*sim.Request, error
 		s.clientRNG, s.client.Reasoning,
 		s.inputSampler, s.outputSampler,
 		startTime,
-		s.client.ID, s.client.TenantID, s.client.SLOClass, s.client.Model,
+		s.client.ID, s.client.TenantID, s.client.SLOClass, s.client.Model, s.client.Adapter,
 		s.prefix,
 	)
 	if err != nil {
@@ -1043,6 +1044,7 @@ func assembleLazySourceFromPreps(
 				TenantID:      p.client.TenantID,
 				SLOClass:      p.client.SLOClass,
 				Model:         p.client.Model,
+				Adapter:       p.client.Adapter,
 				SLOTargetUs:   derefInt64(p.client.SLOTargetUs),
 			})
 		}
