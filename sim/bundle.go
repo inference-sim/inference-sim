@@ -128,7 +128,7 @@ func LoadPolicyBundle(path string) (*PolicyBundle, error) {
 // Used by Validate(), factory functions, and ValidatePolicyName().
 var (
 	validAdmissionPolicies = map[string]bool{"": true, "always-admit": true, "token-bucket": true, "reject-all": true, "tier-shed": true, "gaie-legacy": true}
-	validRoutingPolicies   = map[string]bool{"": true, "round-robin": true, "least-loaded": true, "weighted": true, "always-busiest": true}
+	validRoutingPolicies   = map[string]bool{"": true, "round-robin": true, "least-loaded": true, "weighted": true, "always-busiest": true, "route-to-holder": true}
 	validSchedulers        = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
 	validPreemptionPolicies  = map[string]bool{"": true, "fcfs": true, "priority": true}
 	validLatencyBackends          = map[string]bool{"": true, "roofline": true, "trained-physics": true}

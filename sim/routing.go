@@ -242,6 +242,64 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 	)
 }
 
+// RouteToHolder is a strict LoRA-affinity routing policy. It restricts the routing
+// candidate set to instances that already hold the request's adapter
+// (ResidentAdapters[req.Adapter]) and then delegates selection to an inner
+// weighted-scoring policy over that restricted set. When no instance holds the
+// adapter — or the request targets the base model (empty Adapter) — it falls back to
+// unconstrained routing over all instances (D1). INV-PS1: whenever ≥1 holder exists,
+// the selected instance is a holder. Correct holder truth at routing time requires
+// Immediate ResidentAdapters freshness (D7), pinned at cluster construction.
+//
+// Nil-safety: a snapshot's ResidentAdapters is nil when no adapter is resident
+// (see RoutingSnapshot doc); a read from a nil Go map returns the zero value
+// (false) and never panics, so a nil holder-set simply contributes no holder and
+// the request takes the unconstrained fallback — no explicit nil guard needed.
+type RouteToHolder struct {
+	inner RoutingPolicy
+}
+
+// Route implements RoutingPolicy for RouteToHolder.
+func (r *RouteToHolder) Route(req *Request, state *RouterState) RoutingDecision {
+	if len(state.Snapshots) == 0 {
+		panic("RouteToHolder.Route: empty snapshots")
+	}
+	adapter := ""
+	if req != nil {
+		adapter = req.Adapter
+	}
+	if adapter != "" {
+		// Ranges the Snapshots SLICE (not a map), so holders preserves the original
+		// snapshot order — the inner weighted argmax/tie-break sees a deterministic
+		// order, upholding INV-6 (BC-4). The only map access is the single-key lookup
+		// snap.ResidentAdapters[adapter] (never a map RANGE), so map-iteration
+		// nondeterminism cannot arise here.
+		holders := make([]RoutingSnapshot, 0, len(state.Snapshots))
+		for _, snap := range state.Snapshots {
+			if snap.ResidentAdapters[adapter] { // nil map ⇒ false ⇒ not a holder (no panic)
+				holders = append(holders, snap)
+			}
+		}
+		if len(holders) > 0 {
+			// Restrict only the routable candidate set (Snapshots). Clock,
+			// SelectedInstance, and LoadingSnapshots are forwarded verbatim: the
+			// inner WeightedScoring reads none of them for candidate selection
+			// (it scores state.Snapshots only), and Loading instances never carry
+			// ResidentAdapters (RouterState doc), so they can never be holders.
+			// All fields are treated read-only within the single DES event.
+			restricted := &RouterState{
+				Snapshots:        holders,
+				LoadingSnapshots: state.LoadingSnapshots,
+				Clock:            state.Clock,
+				SelectedInstance: state.SelectedInstance,
+			}
+			return r.inner.Route(req, restricted)
+		}
+	}
+	// No holder (or base-model request) → unconstrained fallback (D1).
+	return r.inner.Route(req, state)
+}
+
 // AlwaysBusiest routes requests to the instance with maximum (QueueDepth + BatchSize + InFlightRequests).
 // Pathological template for testing load imbalance detection.
 // Ties broken by first occurrence in snapshot order (lowest index).
@@ -314,6 +372,14 @@ func newRoutingPolicyInternal(name string, scorerConfigs []ScorerConfig, blockSi
 		}
 		weights := normalizeScorerWeights(scorerConfigs)
 		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers, rng: rng}
+	case "route-to-holder":
+		// D1 (#1490): strict LoRA-affinity routing. Delegates to an inner "weighted"
+		// policy built via the SAME canonical construction path (R4) — same
+		// scorerConfigs, blockSize, rng, and cacheFn — so the restricted-set scoring is
+		// byte-identical to unconstrained weighted scoring over the holder subset. The
+		// RouteToHolder wrapper only narrows the candidate set; it adds no scoring of
+		// its own.
+		return &RouteToHolder{inner: newRoutingPolicyInternal("weighted", scorerConfigs, blockSize, rng, cacheFn)}
 	case "always-busiest":
 		return &AlwaysBusiest{}
 	default:
