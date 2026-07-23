@@ -97,17 +97,21 @@ type MetricsOutput struct {
 	SLOAttainment float64     `json:"slo_attainment,omitempty"`
 	PerClass      interface{} `json:"per_class,omitempty"`
 
-	// Adapters holds per-LoRA-adapter aggregate metrics, keyed by adapter id
-	// (#1464). omitempty: absent when no request is attributed to an adapter, so an
+	// Adapters holds per-LoRA-adapter aggregate metrics, keyed by adapter id.
+	// omitempty: absent when no request is attributed to an adapter, so an
 	// adapter-blind run adds no stdout fields (INV-6, SC-001). encoding/json emits
 	// map string keys in sorted order, giving deterministic output (R2).
 	Adapters map[string]AdapterMetrics `json:"adapters,omitempty"`
 }
 
-// AdapterMetrics is the per-adapter aggregate section (contracts/metrics.md). TTFT
+// AdapterMetrics is the per-adapter aggregate section
+// (specs/007-lora-control-plane/contracts/metrics.md). TTFT
 // percentiles are in microseconds (ticks); throughput is completed output tokens per
-// second. LoadCount/EvictionCount are populated by the resident set in a later PR and
-// are 0 here (PR1 has no per-instance adapter residency yet).
+// second. LoadCount/EvictionCount are cumulative resident-set event counts populated
+// by the per-instance resident set: LoadCount per cold load, EvictionCount per
+// eviction. They are 0 for an adapter whose requests all hit a warm slot (touch
+// only — no cold loads or evictions), and absent entirely on an adapter-blind run
+// (INV-6).
 type AdapterMetrics struct {
 	LoadCount         int64   `json:"load_count"`
 	EvictionCount     int64   `json:"eviction_count"`

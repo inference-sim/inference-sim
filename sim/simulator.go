@@ -118,6 +118,11 @@ type Simulator struct {
 	sloMap *SLOPriorityMap // vLLM-convention priority mapping for instance-level scheduling
 	scheduler      InstanceScheduler
 	latencyModel           LatencyModel
+	// residentAdapters tracks this instance's finite resident LoRA adapter slots
+	// (capacity-bounded LRU). nil when the LoRA subsystem is inert (no adapters /
+	// capacity configured, or sim/lora not imported), in which case adapter handling
+	// is a no-op and output is byte-identical to a pre-feature build (INV-6).
+	residentAdapters ResidentAdapterSet
 	seqCounter             int64 // monotonic counter for event queue seqID (deterministic ordering)
 	// OnRequestDone is an optional callback invoked when a request reaches a terminal
 	// state (completed, length-capped, or timed out). Returns follow-up requests to inject.
@@ -189,6 +194,43 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 	}
 	s.rng = NewPartitionedRNG(NewSimulationKey(cfg.Seed))
 	s.scheduler = NewScheduler(cfg.Scheduler)
+
+	// Defense-in-depth: reject a non-positive adapter capacity here rather than
+	// letting it reach newResidentSet as a panic. cmd/ validates via LoRAConfig.Validate,
+	// but NewSimulator is library code and must return an error, not terminate, for a
+	// caller that bypasses the CLI (R6). Mirrors the BatchConfig re-validation above.
+	if cfg.HasAdapters() && cfg.AdapterCapacity != nil && *cfg.AdapterCapacity <= 0 {
+		return nil, fmt.Errorf("NewSimulator: adapter_capacity must be > 0 when adapters are declared, got %d", *cfg.AdapterCapacity)
+	}
+	// Wire the per-instance resident-adapter set only when the LoRA subsystem is
+	// active — adapters declared with a positive capacity — and sim/lora is linked
+	// (NewResidentAdapterSetFunc registered). Otherwise it stays nil and adapter
+	// handling is a no-op (INV-6).
+	if cfg.HasAdapters() && cfg.AdapterCapacity != nil && NewResidentAdapterSetFunc != nil {
+		// Guard against a factory that returns a nil interface value: the concrete
+		// sim/lora set never does (it returns a valid set or panics on bad capacity),
+		// but a test double or future implementation might, and a typed-nil interface
+		// would slip past the sim.residentAdapters == nil guard and panic on first use.
+		rs := NewResidentAdapterSetFunc(*cfg.AdapterCapacity)
+		if rs == nil {
+			return nil, fmt.Errorf("NewSimulator: NewResidentAdapterSetFunc returned nil for capacity %d", *cfg.AdapterCapacity)
+		}
+		s.residentAdapters = rs
+	} else if cfg.HasAdapters() && cfg.AdapterCapacity == nil {
+		// Adapters declared but no capacity: the resident set stays inert and every
+		// adapter metric reports zero. Warn rather than fail silently (R1) — a run
+		// that completes with zeroed adapter counts is otherwise indistinguishable
+		// from a working one.
+		logrus.Warnf("adapters declared but adapter_capacity is not set; per-instance resident-adapter tracking is disabled and adapter metrics will be zero")
+	} else if cfg.HasAdapters() && cfg.AdapterCapacity != nil && NewResidentAdapterSetFunc == nil {
+		// Adapters + capacity configured but sim/lora was never linked, so the seam
+		// factory is unregistered. Only reachable from a non-CLI caller (cmd/root.go
+		// imports sim/lora); warn so that path does not silently drop adapter tracking.
+		// This branch is not unit-testable from within package sim: the blank import in
+		// lora_import_test.go always registers the factory, so there is no way to
+		// observe NewResidentAdapterSetFunc == nil in a sim test.
+		logrus.Warnf("adapters and adapter_capacity are configured but sim/lora is not linked (NewResidentAdapterSetFunc unregistered); resident-adapter tracking is disabled and adapter metrics will be zero")
+	}
 
 	return s, nil
 }
@@ -725,10 +767,48 @@ func (sim *Simulator) scheduleBatch(now int64) {
 			Request: s.Request,
 		})
 		sim.Metrics.RequestSchedulingDelays[s.Request.ID] = now - s.Request.ArrivalTime
+		sim.recordAdapterResidency(s.Request)
 	}
 
 	// Record queue depth observations after batch formation
 	sim.recordQueueSnapshots()
+}
+
+// recordAdapterResidency updates the per-instance resident-adapter set when a
+// request is scheduled onto the running batch: a warm adapter is moved to
+// most-recently-used, a cold adapter is loaded (evicting the LRU non-pinned entry
+// when at capacity, and counting the load / eviction). It is a no-op when the LoRA
+// subsystem is inert or the request targets the base model (empty Adapter), so an
+// adapter-blind run is byte-identical to a pre-feature build (INV-6).
+//
+// Recording residency at running-batch entry matches the design's "in use from the
+// moment a request enters the running batch" semantics. State only: residency has no
+// latency or gating effect here — a cold request still runs immediately.
+func (sim *Simulator) recordAdapterResidency(req *Request) {
+	if sim.residentAdapters == nil || req.Adapter == "" {
+		return
+	}
+	if sim.residentAdapters.IsResident(req.Adapter) {
+		sim.residentAdapters.Touch(req.Adapter) // warm reference
+		return
+	}
+	// Cold: load the adapter (may evict the LRU non-pinned entry at capacity).
+	evicted, admitted := sim.residentAdapters.Store(req.Adapter)
+	if !admitted {
+		// Set full and every resident adapter pinned: nothing was loaded, so don't
+		// record a phantom load. Unreachable until pin/unpin are wired (LoRA cold-load
+		// gate); the guard keeps the accounting correct once that lands. Warn so that,
+		// once pinning is wired, a failed cold load surfaces as a logged event rather
+		// than silently missing adapter metrics (R1). Include req.ID so a multi-instance
+		// cluster trace can correlate which request hit the all-pinned condition.
+		logrus.Warnf("recordAdapterResidency: adapter %q (req %s) could not be loaded "+
+			"(resident set full, all slots pinned); no load counted", req.Adapter, req.ID)
+		return
+	}
+	sim.Metrics.AdapterLoadCounts[req.Adapter]++
+	if evicted != "" {
+		sim.Metrics.AdapterEvictionCounts[evicted]++
+	}
 }
 
 // executeBatchStep handles Phase 2: model execution (prefill + decode) for all requests
