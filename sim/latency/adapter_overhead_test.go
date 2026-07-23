@@ -129,6 +129,7 @@ func TestStepTime_AdapterBatch_SlowerThanBase(t *testing.T) {
 		[]sim.AdapterSpec{{ID: "a1", Rank: 8}},
 	)
 	for name, model := range backends(t, ac) {
+		// Both requests carry "a1", so the distinct-count A_B is 1 (not 2) → factor 2.0.
 		withAdapter := model.StepTime([]*sim.Request{prefillReq(100, "a1"), prefillReq(100, "a1")})
 		bare := model.StepTime([]*sim.Request{prefillReq(100, ""), prefillReq(100, "")})
 		if withAdapter <= bare {
