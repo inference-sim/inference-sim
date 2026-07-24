@@ -25,6 +25,13 @@ type ResidentAdapterSet interface {
 	Store(id string) (evicted string, admitted bool)
 	// Len returns the number of resident adapters (always ≤ capacity).
 	Len() int
+	// ResidentIDs returns the ids currently resident. The order is stable and
+	// deterministic (LRU→MRU — INV-6); the current sole consumer (the snapshot
+	// provider, which collapses the result into RoutingSnapshot.ResidentAdapters as a
+	// membership set for the lora-affinity scorer, #1469) does not depend on order,
+	// so implementations must not be constrained to preserve it beyond determinism.
+	// Returns nil when empty.
+	ResidentIDs() []string
 
 	// AtCapacity reports whether every slot is occupied (Len == capacity). The
 	// cold-load gate uses it to decide whether a slot must be freed before a load.

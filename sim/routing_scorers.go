@@ -84,6 +84,7 @@ var validScorerNames = map[string]bool{
 	"running-requests":     true,
 	"load-aware":           true,
 	"vllm-dp":              true,
+	"lora-affinity":        true,
 }
 
 // IsValidScorer returns true if name is a recognized scorer.
@@ -180,6 +181,8 @@ func newScorerWithObserver(name string, blockSize int, cacheFn cacheQueryFn) (sc
 		return scoreLoadAware, nil
 	case "vllm-dp":
 		return scoreVLLMDP, nil
+	case "lora-affinity":
+		return scoreLoRAAffinity, nil
 	default:
 		panic(fmt.Sprintf("unknown scorer %q", name))
 	}
@@ -331,6 +334,65 @@ func scoreLoadAware(_ *Request, snapshots []RoutingSnapshot) map[string]float64 
 			}
 			scores[snap.ID] = 0.5 * (1.0 - float64(clamped)/float64(loadAwareQueueThreshold))
 		}
+	}
+	return scores
+}
+
+// scoreLoRAAffinity computes per-instance scores favoring instances that already
+// hold the request's LoRA adapter resident, avoiding a cold-load elsewhere (#1469,
+// spec US4). Raw score is 1.0 when req.Adapter is resident on the instance, else
+// 0.0; raw scores are then min-max normalized (llm-d parity), so with a mix of
+// warm and cold candidates warm instances score 1.0 and cold instances 0.0.
+//
+// Neutral (all instances score 1.0, no routing bias) whenever raw scores are
+// uniform: an empty req.Adapter (base-model request), no instance holding the
+// adapter (all cold), every instance holding it (all warm), or a single candidate.
+// This keeps base-model traffic and inert-LoRA deployments byte-identical to
+// today (INV-6).
+//
+// INV-9 (oracle knowledge boundary): reads only req.Adapter and
+// snapshot.ResidentAdapters — never the request's oracle output length.
+//
+// Signal freshness (R17, INV-7):
+//
+//	Reads: ResidentAdapters (Periodic when --snapshot-refresh-interval>0, else Immediate).
+func scoreLoRAAffinity(req *Request, snapshots []RoutingSnapshot) map[string]float64 {
+	scores := make(map[string]float64, len(snapshots))
+	adapter := ""
+	if req != nil {
+		adapter = req.Adapter
+	}
+	// Empty adapter (base-model request) ⇒ neutral: every instance scores 1.0.
+	if adapter == "" {
+		for _, snap := range snapshots {
+			scores[snap.ID] = 1.0
+		}
+		return scores
+	}
+	raw := make(map[string]float64, len(snapshots))
+	minRaw, maxRaw := 1.0, 0.0
+	for _, snap := range snapshots {
+		r := 0.0
+		if snap.ResidentAdapters[adapter] {
+			r = 1.0
+		}
+		raw[snap.ID] = r
+		if r < minRaw {
+			minRaw = r
+		}
+		if r > maxRaw {
+			maxRaw = r
+		}
+	}
+	// Uniform raw (all warm, all cold, or single instance) ⇒ neutral: all 1.0.
+	if maxRaw == minRaw {
+		for _, snap := range snapshots {
+			scores[snap.ID] = 1.0
+		}
+		return scores
+	}
+	for _, snap := range snapshots {
+		scores[snap.ID] = (raw[snap.ID] - minRaw) / (maxRaw - minRaw)
 	}
 	return scores
 }
