@@ -221,11 +221,16 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 	// gate cold requests (AdapterResident predicate set) but maybeStartAdapterLoad
 	// could never start a load (adapterCost nil) — stranding them. A malformed cost
 	// config is a library-boundary error (R6), not a panic.
-	if cfg.HasAdapters() && cfg.AdapterCapacity != nil && NewResidentAdapterSetFunc != nil && NewAdapterCostFunc != nil {
-		ac, err := NewAdapterCostFunc(cfg.LoRAConfig)
-		if err != nil {
-			return nil, fmt.Errorf("NewSimulator: adapter cost model: %w", err)
-		}
+	// BuildAdapterCost centralizes the activation condition (R4) so NewSimulator and
+	// the sim/cluster latency backend agree on exactly when adapter costs apply; it
+	// returns (nil, nil) when the LoRA subsystem is inert (no adapters, no capacity,
+	// or sim/lora unlinked). A non-nil ac therefore stands in for the full
+	// HasAdapters && capacity != nil && factories-registered condition.
+	ac, err := BuildAdapterCost(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("NewSimulator: adapter cost model: %w", err)
+	}
+	if ac != nil {
 		// Guard against a factory that returns a nil interface value: the concrete
 		// sim/lora set never does (it returns a valid set or panics on bad capacity),
 		// but a test double or future implementation might, and a typed-nil interface

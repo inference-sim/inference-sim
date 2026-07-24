@@ -168,6 +168,11 @@ type TrainedPhysicsModel struct {
 	// Pre-converted hardware specs for hot-path efficiency.
 	flopsPeakUs float64 // FLOP/µs (divide FLOPs by this → µs)
 	bwHbmUs     float64 // bytes/µs (divide bytes by this → µs)
+
+	// adapterCost supplies the per-step LoRA compute-overhead factor (#1467). nil
+	// when the LoRA subsystem is inert, in which case StepTime is byte-identical to
+	// a pre-feature build (INV-6/INV-BC-DP1). Set via WithAdapterCost at construction.
+	adapterCost sim.AdapterCost
 }
 
 // bytesPerKVElement is 2 bytes (FP16) for KV cache, matching vLLM's default.
@@ -177,7 +182,11 @@ const bytesPerKVElement = 2.0
 // StepTime computes vLLM step execution time using roofline basis functions
 // with learned correction coefficients.
 //
-// Single O(batch_size) pass, zero heap allocations.
+// Single O(batch_size) pass, zero heap allocations on the base path. When a LoRA
+// adapter-cost accessor is wired (adapters active, #1467), the trailing
+// applyAdapterOverhead call invokes the accessor's StepOverheadFactor, which adds
+// one O(batch_size) pass and a single small map allocation to count distinct
+// adapters; the base (no-LoRA) path is unchanged.
 func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	if len(batch) == 0 {
 		return 1
@@ -422,7 +431,7 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 		m.Beta[6] +
 		m.Beta[7]*moeScaling*float64(m.numMoELayers) // β₈: per-MoE-layer overhead (interleaved archs only)
 
-	return max(1, clampToInt64(stepTime))
+	return applyAdapterOverhead(max(1, clampToInt64(stepTime)), batch, m.adapterCost)
 }
 
 // sharedExpertCompute returns the shared-expert FFN compute basis (raw FLOPs) for

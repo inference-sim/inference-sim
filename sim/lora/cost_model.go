@@ -170,8 +170,8 @@ func (c *CostModel) LoadLatency(id string) float64 {
 // DISTINCT non-empty adapter ids in the batch and r_max is their maximum rank.
 // The K6/K7 coefficients are selected by r_max's tier (rank enters here — FR-009),
 // clamped to the nearest calibrated tier when out of envelope. Normalized so the
-// factor is exactly 1.0 when A_B==0 for any fitted K7 (INV-6). Consumed by the
-// latency backends in a later PR.
+// factor is exactly 1.0 when A_B==0 for any fitted K7 (INV-6). Applied to the base
+// step time by both latency backends via applyAdapterOverhead (#1467).
 func (c *CostModel) StepOverheadFactor(batch []*sim.Request) float64 {
 	seen := make(map[string]struct{}, len(batch))
 	maxRank := 0
@@ -179,11 +179,21 @@ func (c *CostModel) StepOverheadFactor(batch []*sim.Request) float64 {
 		if req == nil || req.Adapter == "" {
 			continue
 		}
+		rank, ok := c.ranks[req.Adapter]
+		if !ok {
+			// An unregistered id is treated as base-model — consistent with
+			// LoadLatency and FootprintBytes, which both return 0 for an
+			// unregistered id. It contributes to neither A_B nor r_max, so an
+			// unknown-rank adapter cannot inflate the factor with a rank it never
+			// declared. In practice requests carry only registered ids (validated
+			// at config load); this keeps the degenerate case consistent.
+			continue
+		}
 		if _, dup := seen[req.Adapter]; dup {
 			continue
 		}
 		seen[req.Adapter] = struct{}{}
-		if rank, ok := c.ranks[req.Adapter]; ok && rank > maxRank {
+		if rank > maxRank {
 			maxRank = rank
 		}
 	}
