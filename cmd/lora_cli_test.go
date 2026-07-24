@@ -26,6 +26,8 @@ func TestLoRAFlags_RegisteredOnRunAndReplay(t *testing.T) {
 		"eviction-policy",
 		"creation-policy",
 		"lora-adapter-placement",
+		"lora-bundle",
+		"lora-periodic-interval-us",
 	}
 	for _, name := range []string{"run", "replay"} {
 		c := &cobra.Command{}

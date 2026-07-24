@@ -102,6 +102,16 @@ type MetricsOutput struct {
 	// adapter-blind run adds no stdout fields (INV-6, SC-001). encoding/json emits
 	// map string keys in sorted order, giving deterministic output (R2).
 	Adapters map[string]AdapterMetrics `json:"adapters,omitempty"`
+
+	// PolicyProvenance records the resolved effective {routing, eviction, creation}
+	// LoRA-seam policy triple actually used (B-7, FR-016/D6/D8), so any result is
+	// reproducible from its record alone (SC-006). Run-level: set once by the CLI at
+	// policy resolution (before the event loop) on the aggregated cluster output —
+	// never in a per-event path (state/statistics separation). Pointer + omitempty:
+	// nil ⇒ the key is absent whenever every seam is at baseline and no bundle was
+	// selected, mirroring the adapter-metrics omit-when-inert pattern above so an
+	// all-baseline / adapter-blind run is byte-identical (INV-6).
+	PolicyProvenance *PolicyTriple `json:"policy_provenance,omitempty"`
 }
 
 // AdapterMetrics is the per-adapter aggregate section (contracts/metrics.md). TTFT

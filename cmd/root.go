@@ -128,6 +128,8 @@ var (
 	loraEvictionPolicy        string  // --eviction-policy (applied only when Changed; empty => lru default, B-4)
 	loraCreationPolicy        string  // --creation-policy (applied only when Changed; empty => on-demand default, B-6)
 	loraAdapterPlacement      string  // --lora-adapter-placement (idx=id[,id...];... construction-index→adapter ids, B-6)
+	loraBundle                string  // --lora-bundle (named strategy bundle => {routing,eviction,creation} triple; empty => none, B-7)
+	loraPeriodicInterval      int64   // --lora-periodic-interval-us (periodic-trigger scaffold interval, µs; 0 => off; inert this round, B-7)
 
 	// loraReservedBytesForKV carries the resolved static LoRA HBM reservation
 	// (bytes) into KV auto-capacity, mirroring how totalKVBlocks is threaded as a
@@ -895,6 +897,26 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		}
 	}
 
+	// LoRA strategy bundle (B-7, #1495, FR-015): expand --lora-bundle to its
+	// {routing, eviction, creation} triple and resolve the ROUTING knob here.
+	// The name is validated independently in both resolvePolicies and
+	// resolveLoRAConfig because neither resolver is reliably called first
+	// (DD-B7-2a: resolveLoRAConfig actually runs before resolvePolicies in both
+	// commands) — the fail-fast is idempotent and order-insensitive. Precedence
+	// (FR-015): explicit --routing-policy flag > bundle value > baseline default,
+	// so the bundle fills routingPolicy only when the user did not set the flag.
+	// The eviction/creation knobs resolve from the same LoRABundleTriple source in
+	// resolveLoRAConfig.
+	if loraBundle != "" {
+		triple, ok := sim.LoRABundleTriple(loraBundle)
+		if !ok {
+			logrus.Fatalf("Unknown LoRA strategy bundle %q. Valid: %s", loraBundle, strings.Join(sim.ValidLoRABundleNames(), ", "))
+		}
+		if !cmd.Flags().Changed("routing-policy") {
+			routingPolicy = triple.Routing
+		}
+	}
+
 	// Apply defaults for GAIE-legacy thresholds (not set via CLI flags, only via bundle).
 	if gaieQDThreshold == 0 {
 		gaieQDThreshold = 5
@@ -1228,6 +1250,8 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&loraEvictionPolicy, "eviction-policy", "", fmt.Sprintf("Resident-adapter eviction policy at the cold-load gate. Valid: %s. Applied only when set; empty/default => lru (byte-identical to no LoRA).", strings.Join(sim.ValidEvictionPolicyNames(), ", ")))
 	cmd.Flags().StringVar(&loraCreationPolicy, "creation-policy", "", fmt.Sprintf("Adapter-creation policy (t=0 seeding + cold-load-gate admit). Valid: %s. Applied only when set; empty/default => on-demand (byte-identical to no LoRA).", strings.Join(sim.ValidCreationPolicyNames(), ", ")))
 	cmd.Flags().StringVar(&loraAdapterPlacement, "lora-adapter-placement", "", "Static per-instance adapter placement for the pre-placement creation policy, as \"idx=id[,id...];idx=id...\" (construction-index => adapter ids), e.g. \"0=A,B;1=C\". Adapters are seeded resident at t=0. Empty => no placement.")
+	cmd.Flags().StringVar(&loraBundle, "lora-bundle", "", fmt.Sprintf("Named LoRA strategy bundle expanding to a {routing, eviction, creation} policy triple. Valid: %s. Per-knob flags (--routing-policy/--eviction-policy/--creation-policy) override their knob; empty => no bundle (byte-identical to no LoRA).", strings.Join(sim.ValidLoRABundleNames(), ", ")))
+	cmd.Flags().Int64Var(&loraPeriodicInterval, "lora-periodic-interval-us", 0, "Simulation-time interval (µs) for the periodic LoRA-seam re-resolution trigger. SCAFFOLD this round: any value is inert (no event scheduled, byte-identical to unset, INV-PS3); reserves future wiring. Must be >= 0.")
 }
 
 // loraConfigFile is the on-disk shape of a --lora-config YAML file: a single
@@ -1324,6 +1348,27 @@ func resolveLoRAConfig(cmd *cobra.Command) sim.LoRAConfig {
 		cfg.CreationPolicy = loraCreationPolicy
 	}
 
+	// LoRA strategy bundle (B-7, #1495, FR-015): resolve the EVICTION and CREATION
+	// knobs from --lora-bundle. Validated here independently of resolvePolicies
+	// (DD-B7-2a: neither resolver is reliably first; the fail-fast is idempotent and
+	// order-insensitive). Precedence (FR-015): explicit flag > file (LoRAConfig) >
+	// bundle > baseline default — so the bundle fills a knob only when NEITHER the
+	// flag (Changed, applied above) NOR the file (cfg.<knob> already non-empty) set
+	// it. The routing knob resolves from the same LoRABundleTriple source in
+	// resolvePolicies.
+	if loraBundle != "" {
+		triple, ok := sim.LoRABundleTriple(loraBundle)
+		if !ok {
+			logrus.Fatalf("Unknown LoRA strategy bundle %q. Valid: %s", loraBundle, strings.Join(sim.ValidLoRABundleNames(), ", "))
+		}
+		if !cmd.Flags().Changed("eviction-policy") && cfg.EvictionPolicy == "" {
+			cfg.EvictionPolicy = triple.Eviction
+		}
+		if !cmd.Flags().Changed("creation-policy") && cfg.CreationPolicy == "" {
+			cfg.CreationPolicy = triple.Creation
+		}
+	}
+
 	if err := cfg.Validate(); err != nil {
 		logrus.Fatalf("Invalid LoRA configuration: %v", err)
 	}
@@ -1417,6 +1462,66 @@ func resolveLoRAAdapterPlacement() map[int][]string {
 		logrus.Fatalf("Invalid --lora-adapter-placement: %v", err)
 	}
 	return placement
+}
+
+// resolveLoRAPeriodicInterval validates and returns the periodic-trigger scaffold
+// interval (µs) for DeploymentConfig.LoRAPeriodicIntervalUs (B-7, D5/INV-PS3). It
+// fail-fasts at the CLI boundary (logrus.Fatalf, Principle V, R3) on a negative
+// value. Shared by runCmd and replayCmd so both set the same field (INV-13 parity).
+// The returned interval is inert this round — NewClusterSimulator never schedules a
+// LoRAPeriodicTriggerEvent — so any non-negative value is byte-identical to 0.
+func resolveLoRAPeriodicInterval() int64 {
+	if loraPeriodicInterval < 0 {
+		logrus.Fatalf("--lora-periodic-interval-us must be >= 0, got %d", loraPeriodicInterval)
+	}
+	return loraPeriodicInterval
+}
+
+// computeLoRAProvenance returns the run-level effective LoRA-seam policy triple to
+// record in MetricsOutput.PolicyProvenance (B-7, #1495, FR-016/D6/D8), or nil when
+// every seam is at baseline and no bundle was selected. It is the SINGLE
+// construction site for the provenance value (R4), called once after policy
+// resolution (before the event loop) and attached to the aggregated cluster output
+// at emit in both runCmd and replayCmd (INV-13 value parity).
+//
+// Emission rule (DD-B7-4, INV-6, contracts/metrics.md): provenance is present iff
+// the LoRA subsystem is ACTIVE (cfg.HasAdapters()) AND a non-baseline seam or bundle
+// is selected. The adapter gate is load-bearing: it upholds INV-L1 (the B-3/B-4/B-5
+// inertness law) and the contract's explicit "adapter-blind run ⇒ absent" clause — a
+// LoRA seam policy (rank-aware eviction, pre-placement creation, route-to-holder
+// routing) is inert without adapters, so recording it would break the byte-identity a
+// LoRA policy selection must preserve on an adapter-blind run
+// (TestNoOpByteIdentity_MultiInstanceEvictionPolicyInert). Given adapters, the
+// non-baseline test is: routingPolicy=="route-to-holder" (the LoRA-specific routing
+// policy; a weighted/round-robin profile is NOT a LoRA seam selection), OR eviction ∉
+// {"", "lru"}, OR creation ∉ {"", "on-demand"}, OR loraBundle != "". When present,
+// all three knobs record their effective CANONICAL names (empty normalized:
+// eviction→lru, creation→on-demand, routing kept as-is) so the run is reproducible
+// from the record alone (SC-006). An adapter-blind or all-baseline run returns nil ⇒
+// the key is omitted ⇒ byte-identical stdout (INV-6).
+func computeLoRAProvenance(cfg sim.LoRAConfig) *sim.PolicyTriple {
+	// Adapter gate (INV-L1): without an active LoRA subsystem every seam is inert,
+	// so provenance is absent — a LoRA policy/bundle selection on an adapter-blind
+	// run stays byte-identical to no-LoRA.
+	if !cfg.HasAdapters() {
+		return nil
+	}
+	eviction := cfg.EvictionPolicy
+	if eviction == "" {
+		eviction = "lru"
+	}
+	creation := cfg.CreationPolicy
+	if creation == "" {
+		creation = "on-demand"
+	}
+	nonBaseline := routingPolicy == "route-to-holder" ||
+		eviction != "lru" ||
+		creation != "on-demand" ||
+		loraBundle != ""
+	if !nonBaseline {
+		return nil
+	}
+	return &sim.PolicyTriple{Routing: routingPolicy, Eviction: eviction, Creation: creation}
 }
 
 // adapterReservedBytesFor returns the static LoRA HBM reservation (bytes) to carve
@@ -2154,6 +2259,7 @@ var runCmd = &cobra.Command{
 			},
 			NumInstances:                    numInstances,
 			LoRAAdapterPlacement:            resolveLoRAAdapterPlacement(),
+			LoRAPeriodicIntervalUs:          resolveLoRAPeriodicInterval(),
 			AdmissionPolicy:                 admissionPolicy,
 			AdmissionLatency:                admissionLatency,
 			RoutingLatency:                  routingLatency,
@@ -2416,6 +2522,9 @@ var runCmd = &cobra.Command{
 		clusterOutput := aggregated.BuildOutput("cluster", saturationDetector)
 		emitGoodput(&clusterOutput, aggregated, cs.InjectedByClass(),
 			float64(aggregated.SimEndedTime)/1e6, goodputTargets)
+		// Attach run-level LoRA-seam provenance (B-7, FR-016; nil ⇒ key omitted for
+		// an all-baseline run, INV-6). Value parity with replay (INV-13).
+		clusterOutput.PolicyProvenance = computeLoRAProvenance(loraCfg)
 		if err := aggregated.EmitOutput(clusterOutput, metricsPath); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}

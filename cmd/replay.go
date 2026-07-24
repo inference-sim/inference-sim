@@ -210,6 +210,18 @@ Example:
 		// Resolve policy configuration (single code path shared with runCmd).
 		// Autoscaler and node-pool configs are not supported in replay — fail fast
 		// rather than silently producing divergent results (INV-13, Track B).
+		//
+		// INV-13 sync point (B-7, #1495): the LoRA-seam selections — routing
+		// (--routing-policy/--lora-bundle, via resolvePolicies), eviction/creation
+		// (--eviction-policy/--creation-policy/--lora-bundle, via resolveLoRAConfig),
+		// placement (--lora-adapter-placement), and the periodic-trigger scaffold
+		// interval (--lora-periodic-interval-us) — all flow through this SAME shared
+		// resolution path and are set identically in the run and replay
+		// DeploymentConfig literals. All are replay-supported: the seams build
+		// identical clusters in both commands, and the periodic scaffold is inert (no
+		// event scheduled in either command, INV-PS3), so NO new fail-fast is
+		// warranted for them (DD-B7-7). The autoscaler/node-pool fatals below remain
+		// the fail-fast mechanism for the genuinely unsupported cases.
 		parsedScorerConfigs, bundle := resolvePolicies(cmd)
 		if cmd.Flags().Changed("model-autoscaler-interval-us") {
 			logrus.Fatalf("--model-autoscaler-interval-us is not supported in blis replay; remove this flag or use blis run instead")
@@ -482,6 +494,7 @@ Example:
 			},
 			NumInstances:                    numInstances,
 			LoRAAdapterPlacement:            resolveLoRAAdapterPlacement(),
+			LoRAPeriodicIntervalUs:          resolveLoRAPeriodicInterval(),
 			AdmissionPolicy:                 admissionPolicy,
 			AdmissionLatency:                admissionLatency,
 			RoutingLatency:                  routingLatency,
@@ -603,6 +616,10 @@ Example:
 		clusterOutput := aggregated.BuildOutput("cluster", saturationDetector)
 		emitGoodput(&clusterOutput, aggregated, cs.InjectedByClass(),
 			float64(aggregated.SimEndedTime)/1e6, goodputTargets)
+		// Attach run-level LoRA-seam provenance (B-7, FR-016; nil ⇒ key omitted for
+		// an all-baseline run, INV-6). Value parity with run (INV-13): the same
+		// resolved triple is recorded from the shared resolution path.
+		clusterOutput.PolicyProvenance = computeLoRAProvenance(loraCfg)
 		if err := aggregated.EmitOutput(clusterOutput, ""); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
