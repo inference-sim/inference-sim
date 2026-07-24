@@ -385,7 +385,7 @@ func TestScoreLoadAware_ScoreRange_MaxIsHalf(t *testing.T) {
 
 func TestAllScorers_ReturnScoreForEveryInstance(t *testing.T) {
 	snapshots := []RoutingSnapshot{
-		{ID: "a", QueueDepth: 1, KVUtilization: 0.3},
+		{ID: "a", QueueDepth: 1, KVUtilization: 0.3, ResidentAdapters: map[string]bool{"x": true}},
 		{ID: "b", QueueDepth: 2, KVUtilization: 0.7},
 		{ID: "c", QueueDepth: 0, KVUtilization: 0.0},
 	}
@@ -409,8 +409,12 @@ func TestAllScorers_ReturnScoreForEveryInstance(t *testing.T) {
 		{"vllm-dp", scoreVLLMDP},
 		{"precise-prefix-cache", precisePrefixScorer},
 		{"no-hit-lru", noHitLRUScorer},
+		{"lora-affinity", scoreLoRAAffinity},
 	}
-	req := &Request{ID: "r1", InputTokens:  []TokenID{1, 2, 3}}
+	// req carries an adapter resident only on "a" so lora-affinity exercises its
+	// min-max normalization branch (warm vs cold), not just the neutral path.
+	// Other scorers ignore Adapter/ResidentAdapters, so the shared fixture is unaffected.
+	req := &Request{ID: "r1", InputTokens: []TokenID{1, 2, 3}, Adapter: "x"}
 	for _, sf := range scorerFns {
 		t.Run(sf.name, func(t *testing.T) {
 			scores := sf.fn(req, snapshots)

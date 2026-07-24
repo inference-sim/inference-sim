@@ -1,0 +1,9 @@
+{
+  "completed_requests": 451,
+  "injected_requests": 451,
+  "tokens_per_sec": 1181.4224339843784,
+  "total_input_tokens": 146521,
+  "total_output_tokens": 72234,
+  "ttft_mean_ms": 163.7778514412417,
+  "vllm_estimated_duration_s": 61.141551
+}

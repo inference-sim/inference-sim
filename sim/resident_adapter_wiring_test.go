@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 )
@@ -268,6 +269,67 @@ func TestNewSimulator_InvalidAdapterCapacity(t *testing.T) {
 // TestResidentAdapterSet_InertWhenNoLoRA verifies the no-op default: with no
 // LoRA config, the resident set is not constructed and no adapter metrics are
 // emitted (INV-6, SC-001). Requests without an adapter run exactly as before.
+// TestResidentAdapterSet_ActiveRun_Deterministic (#1470, T045, INV-6/SC-006)
+// asserts byte-identical output across two runs of an *active* adapter workload
+// (adapters loading and evicting, M > N) with the same seed — deliberately
+// including co-arriving requests (same arrival tick) and a repeated adapter to
+// exercise simultaneous-touch and same-timestamp tie conditions. LRU ties are
+// broken by insertion order; any map-iteration-order nondeterminism leaking into
+// output would diverge the two JSON blobs.
+func TestResidentAdapterSet_ActiveRun_Deterministic(t *testing.T) {
+	const (
+		capacity    = 2
+		numAdapters = 5 // M > N → active load/evict churn
+	)
+	build := func() string {
+		cfg := newTestSimConfig()
+		capVal := capacity
+		adapters := make([]AdapterSpec, numAdapters)
+		for i := range adapters {
+			adapters[i] = AdapterSpec{ID: fmt.Sprintf("adapter_%d", i), Rank: 8}
+		}
+		cfg.LoRAConfig = LoRAConfig{
+			AdapterCapacity:       &capVal,
+			LoadBaseLatencyUs:     fptrGate(1000.0),
+			LoadBandwidthBytesUs:  fptrGate(2.0e6),
+			FootprintBytesPerRank: fptrGate(2.0e6),
+			Adapters:              adapters,
+		}
+		s := mustNewSimulator(t, cfg)
+		// Co-arriving requests (same tick 0) + a repeated adapter to hit tie paths.
+		arrivals := []struct {
+			id      string
+			t       int64
+			adapter string
+		}{
+			{"r0", 0, "adapter_0"},
+			{"r1", 0, "adapter_1"}, // co-arrival tie with r0
+			{"r2", 0, "adapter_0"}, // same adapter, same tick (coalesce/touch tie)
+			{"r3", 10, "adapter_2"},
+			{"r4", 10, "adapter_3"}, // co-arrival tie
+			{"r5", 20, "adapter_4"},
+		}
+		for _, a := range arrivals {
+			req := newTestRequest(a.id, a.t, 8, 4)
+			req.Adapter = a.adapter
+			s.InjectArrival(req)
+		}
+		s.Run()
+		out := s.Metrics.BuildOutput("test-instance", nil)
+		b, err := json.Marshal(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+
+	first := build()
+	second := build()
+	if first != second {
+		t.Errorf("active-adapter run output not byte-identical across two runs (INV-6/SC-006 determinism)\nfirst:  %s\nsecond: %s", first, second)
+	}
+}
+
 func TestResidentAdapterSet_InertWhenNoLoRA(t *testing.T) {
 	cfg := newTestSimConfig() // no LoRAConfig
 	sim := mustNewSimulator(t, cfg)
