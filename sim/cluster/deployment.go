@@ -156,6 +156,17 @@ type DeploymentConfig struct {
 	// omitempty ⇒ an absent field is byte-identical to pre-B-5 (INV-6). Map value
 	// semantics: instance config, validated then read-only (R8).
 	LoRAAdapterPlacement map[int][]string `yaml:"lora_adapter_placement,omitempty"`
+
+	// LoRAPeriodicIntervalUs declares the simulation-time interval (microseconds)
+	// for a future periodic LoRA-seam re-resolution tick (B-7, #1495, D5). It is a
+	// SCAFFOLD this round: 0 = off/unset (the default), and NewClusterSimulator NEVER
+	// schedules a LoRAPeriodicTriggerEvent regardless of this value — a set interval
+	// is byte-identical to unset (INV-PS3, proven by
+	// TestPeriodicInterval_ByteIdenticalToUnset). A follow-up PR wires activation at
+	// the reserved point. int64 (not *int64) because 0 is the natural "off" sentinel,
+	// matching the ModelAutoscalerIntervalUs idiom (R9). omitempty ⇒ absent when unset
+	// (INV-6). CLI validates it is >= 0 (R3).
+	LoRAPeriodicIntervalUs int64 `yaml:"lora_periodic_interval_us,omitempty"`
 }
 
 // ToSimConfig returns the embedded SimConfig for per-instance construction.

@@ -194,6 +194,57 @@ func IsValidBacklogClassifier(name string) bool { return validBacklogClassifiers
 // ValidBacklogClassifierNames returns sorted valid backlog classifier names (excluding empty).
 func ValidBacklogClassifierNames() []string { return validNamesList(validBacklogClassifiers) }
 
+// PolicyTriple is the resolved {routing, eviction, creation} LoRA-seam policy
+// selection (B-7, FR-015/FR-016). It is the expansion target of a named strategy
+// bundle and the shape recorded as run-level provenance in MetricsOutput. The three
+// fields hold seam-policy NAMES (not code); empty means "seam left at baseline".
+type PolicyTriple struct {
+	Routing  string `json:"routing"`
+	Eviction string `json:"eviction"`
+	Creation string `json:"creation"`
+}
+
+// loraStrategyBundles maps a named strategy bundle to the {routing, eviction,
+// creation} triple it expands to (B-7, FR-015). Data, not code: adding a bundle is a
+// single map entry. Every referenced name must be registered in its seam's validity
+// set — enforced by TestLoRAStrategyBundles_AllNamesRegistered. Unexported to prevent
+// external mutation (R8); read via LoRABundleTriple / IsValidLoRABundle.
+//
+// Shipped bundle:
+//   - "lora-affinity": composes the delivered non-baseline seams — route-to-holder
+//     routing (B-2), rank-aware eviction (B-4), and pre-placement creation (B-6). It
+//     sets the policies; the caller still supplies --lora-adapter-placement for
+//     pre-placement to seed anything.
+var loraStrategyBundles = map[string]PolicyTriple{
+	"lora-affinity": {Routing: "route-to-holder", Eviction: "rank-aware", Creation: "pre-placement"},
+}
+
+// IsValidLoRABundle reports whether name is a registered strategy bundle. The empty
+// string is NOT a valid bundle (it means "no bundle selected"), unlike the seam
+// validity maps where "" denotes the baseline default.
+func IsValidLoRABundle(name string) bool {
+	_, ok := loraStrategyBundles[name]
+	return ok
+}
+
+// ValidLoRABundleNames returns the sorted registered strategy-bundle names.
+func ValidLoRABundleNames() []string {
+	names := make([]string, 0, len(loraStrategyBundles))
+	for k := range loraStrategyBundles {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// LoRABundleTriple returns the triple a bundle name expands to. ok is false for an
+// unknown name and for the empty string, so callers can fail fast (CLI boundary) and
+// never silently apply a zero triple.
+func LoRABundleTriple(name string) (PolicyTriple, bool) {
+	t, ok := loraStrategyBundles[name]
+	return t, ok
+}
+
 // validNamesList returns sorted non-empty keys from a validity map.
 func validNamesList(m map[string]bool) []string {
 	names := make([]string, 0, len(m))
