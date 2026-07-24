@@ -565,3 +565,36 @@ func (e *ScaleActuationEvent) Execute(cs *ClusterSimulator) {
 	}
 	cs.autoscaler.actuate(cs, e.Decisions)
 }
+
+// ---------------------------------------------------------------------------
+// Phase 9 (B-7): LoRA periodic-trigger scaffold — inert this round (D5, INV-PS3)
+// ---------------------------------------------------------------------------
+
+// LoRAPeriodicTriggerEvent is the scaffold for a future periodic LoRA-seam
+// re-resolution tick (D5). It mirrors the ScalingTickEvent shape (a declared
+// simulation-time interval → a self-scheduling tick) so a follow-up PR can wire
+// activation without reshaping the event model.
+//
+// INV-PS3 (periodic inertness): this round NewClusterSimulator NEVER enqueues it,
+// so a set DeploymentConfig.LoRAPeriodicIntervalUs yields byte-identical output to
+// an unset one (proven by TestPeriodicInterval_ByteIdenticalToUnset). The
+// compile-time assertion below pins the ClusterEvent shape; Execute is a documented
+// no-op that is unreached until a future PR schedules the first tick.
+//
+// Priority 8 reuses the ScalingTickEvent band (after request-path events 0–7 at the
+// same timestamp) — the natural slot for a control-plane tick once activated.
+type LoRAPeriodicTriggerEvent struct {
+	At int64 // simulation timestamp in microseconds
+}
+
+func (e *LoRAPeriodicTriggerEvent) Timestamp() int64 { return e.At }
+func (e *LoRAPeriodicTriggerEvent) Priority() int    { return 8 }
+
+// Execute is an intentionally-unreached no-op scaffold (INV-PS3). A future PR will
+// re-resolve LoRA-seam placement here and self-schedule the next tick; until then
+// the event is never enqueued, so this body never runs.
+func (e *LoRAPeriodicTriggerEvent) Execute(*ClusterSimulator) {}
+
+// Compile-time assertion that the scaffold satisfies ClusterEvent, so the wiring
+// point is type-correct even though no instance is enqueued this round.
+var _ ClusterEvent = (*LoRAPeriodicTriggerEvent)(nil)

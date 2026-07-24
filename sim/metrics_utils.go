@@ -111,6 +111,16 @@ type MetricsOutput struct {
 	// map string keys in sorted order, giving deterministic output (R2).
 	Adapters map[string]AdapterMetrics `json:"adapters,omitempty"`
 
+	// PolicyProvenance records the resolved effective {routing, eviction, creation}
+	// LoRA-seam policy triple actually used (B-7, FR-016/D6/D8), so any result is
+	// reproducible from its record alone (SC-006). Run-level: set once by the CLI at
+	// policy resolution (before the event loop) on the aggregated cluster output —
+	// never in a per-event path (state/statistics separation). Pointer + omitempty:
+	// nil ⇒ the key is absent whenever every seam is at baseline and no bundle was
+	// selected, mirroring the adapter-metrics omit-when-inert pattern above so an
+	// all-baseline / adapter-blind run is byte-identical (INV-6).
+	PolicyProvenance *PolicyTriple `json:"policy_provenance,omitempty"`
+
 	// Catalog records WHICH model catalog produced this result (#1732, R1/S5).
 	// Populated ONLY into the --metrics-path file, via EmitOutput's
 	// WithCatalogProvenance option — never onto stdout, exactly like CacheHitRate
