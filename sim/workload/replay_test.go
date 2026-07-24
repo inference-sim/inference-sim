@@ -3,6 +3,8 @@ package workload
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 func TestLoadTraceV2Requests_CorrectTokenCounts(t *testing.T) {
@@ -56,6 +58,62 @@ func TestLoadTraceV2Requests_CorrectTokenCounts(t *testing.T) {
 	}
 	if requests[1].MaxOutputLen != len(requests[1].OutputTokens) {
 		t.Errorf("request 1 MaxOutputLen = %d, want %d", requests[1].MaxOutputLen, len(requests[1].OutputTokens))
+	}
+}
+
+// TestRunReplayParity_Adapter_INV13 (#1470, T044) verifies the full run→replay
+// adapter round-trip that INV-13 (per-adapter metric parity) rests on: a request's
+// adapter id survives Request → RequestsToTraceRecords → Export/Load →
+// LoadTraceV2Requests unchanged. Without adapter round-tripping through TraceV2, an
+// adapter-blind replay of a LoRA trace would silently attribute those requests to
+// the base model and per-adapter metrics would diverge.
+func TestRunReplayParity_Adapter_INV13(t *testing.T) {
+	// Build requests as `blis run` would produce them, carrying adapter ids.
+	orig := []*sim.Request{
+		{ID: "request_0", ArrivalTime: 0, InputTokens: make([]sim.TokenID, 100),
+			OutputTokens: make([]sim.TokenID, 50), State: sim.StateCompleted, Adapter: "adapter_0"},
+		{ID: "request_1", ArrivalTime: 1000, InputTokens: make([]sim.TokenID, 80),
+			OutputTokens: make([]sim.TokenID, 40), State: sim.StateCompleted, Adapter: ""},
+		{ID: "request_2", ArrivalTime: 2000, InputTokens: make([]sim.TokenID, 120),
+			OutputTokens: make([]sim.TokenID, 60), State: sim.StateCompleted, Adapter: "adapter_7"},
+	}
+	// Mark TTFT so timing fields are emitted (mimics a completed run).
+	for _, r := range orig {
+		r.TTFTSet = true
+		r.FirstTokenTime = 500
+		r.ITL = []int64{10, 10}
+	}
+
+	records := RequestsToTraceRecords(orig)
+	for i, want := range []string{"adapter_0", "", "adapter_7"} {
+		if records[i].Adapter != want {
+			t.Fatalf("record %d Adapter = %q, want %q (request→record mapping)", i, records[i].Adapter, want)
+		}
+	}
+
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "h.yaml")
+	dataPath := filepath.Join(dir, "d.csv")
+	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated"}
+	if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatal(err)
+	}
+	trace, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := LoadTraceV2Requests(trace, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(replayed) != len(orig) {
+		t.Fatalf("replayed %d requests, want %d", len(replayed), len(orig))
+	}
+	// INV-13 mechanism: adapter id survives the full cycle for every request.
+	for i, r := range replayed {
+		if r.Adapter != orig[i].Adapter {
+			t.Errorf("request %d Adapter = %q after replay, want %q (INV-13 adapter round-trip)", i, r.Adapter, orig[i].Adapter)
+		}
 	}
 }
 
