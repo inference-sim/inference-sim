@@ -7,9 +7,8 @@ package sim
 // NewAdapterCostFunc, mirroring NewAdapterRegistryFunc / NewResidentAdapterSetFunc.
 //
 // The interface is scoped to what its consumers read today (R13): LoadLatency for
-// the cold-load gate (#1466) and StepOverheadFactor for the latency backends
-// (#1467). The concrete cost model additionally derives the HBM footprint; that
-// enters this interface when the memory PR consumes it.
+// the cold-load gate (#1466), StepOverheadFactor for the latency backends
+// (#1467), and AdapterReservedBytes for the KV-capacity module (#1468).
 type AdapterCost interface {
 	// LoadLatency returns the one-time cold-load latency of an adapter id in µs
 	// (>= 0). An empty (base-model) or unregistered id returns 0 — it never gates.
@@ -20,6 +19,13 @@ type AdapterCost interface {
 	// (R23). It is exactly 1.0 when the batch carries no adapter ids, so a
 	// no-adapter step is byte-identical to a pre-feature build (INV-6).
 	StepOverheadFactor(batch []*Request) float64
+
+	// AdapterReservedBytes returns the fixed, capacity-based HBM reservation in
+	// bytes (>= 0): adapter_capacity × per-slot footprint (sized from the max
+	// declared rank). Constant for the model's lifetime (static reservation,
+	// D2/INV-L4) — the KV-capacity module subtracts it once at startup. Returns 0
+	// when no adapters or no capacity are configured (INV-6 no-op).
+	AdapterReservedBytes() float64
 }
 
 // NewAdapterCostFunc builds an AdapterCost from a LoRAConfig (rank registry +
