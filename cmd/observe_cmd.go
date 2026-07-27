@@ -76,6 +76,7 @@ var (
 	// a corpus IS the workload. --corpus-* are INPUT, distinct from --trace-* OUTPUT.
 	observeCorpusHeader       string
 	observeCorpusData         string
+	observeSessionIDHeader    string
 	observeConcurrentSessions int
 	observeTotalSessions      int
 	// saturationReport is declared in root.go and shared across run, replay, observe
@@ -166,6 +167,7 @@ func init() {
 	observeCmd.Flags().StringVar(&observeCorpusData, "corpus-data", "", "Input TraceV2 corpus data CSV (corpus-mode). Distinct from the --trace-data OUTPUT.")
 	observeCmd.Flags().IntVar(&observeConcurrentSessions, "concurrent-sessions", 0, "Replay a fixed pool of N concurrent closed-loop sessions from --corpus-* against the server (0 = disabled). Mutually exclusive with spec-mode inputs (--workload/--workload-spec/--rate/--concurrency).")
 	observeCmd.Flags().IntVar(&observeTotalSessions, "total-sessions", 0, "Total sessions to replay under --concurrent-sessions; duplicates the corpus (with cache-busting) to fill. 0 = replay each corpus session once.")
+	observeCmd.Flags().StringVar(&observeSessionIDHeader, "session-id-header", defaultSessionIDHeader, "Request header carrying the closed-loop session id for session-aware EPP routing (session-affinity / predictive pinning). Must match the deployment's session-id-producer. Empty disables emission (issue #1505).")
 
 	// Distribution synthesis flags — same names AND defaults as blis run.
 	// Default values are defined in root.go (distDefaults const block).
@@ -532,7 +534,8 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	// Setup
 	client := NewRealClient(observeServerURL, observeAPIKey, observeModel, observeServerType,
 		WithAPIFormat(observeAPIFormat),
-		WithHTTPTimeout(time.Duration(observeTimeout)*time.Second))
+		WithHTTPTimeout(time.Duration(observeTimeout)*time.Second),
+		WithSessionIDHeader(observeSessionIDHeader))
 	recorder := &Recorder{}
 
 	// Calibrate tokens-per-word ratio for the server's tokenizer (BC-6).
@@ -1356,6 +1359,7 @@ func requestToPending(req *sim.Request, reqIndex int, noStreaming, unconstrained
 		MinTokens:       minTokens,
 		DeadlineUs:      req.Deadline,
 		SLOTargetUs:     req.SLOTargetUs,
+		SessionID:       req.SessionID,
 	}
 }
 
