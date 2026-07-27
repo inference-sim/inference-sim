@@ -24,15 +24,23 @@ import (
 const defaultMaxOutputTokens = 2048
 const defaultHTTPTimeoutSeconds = 300
 
+// defaultSessionIDHeader is the request header carrying the closed-loop session
+// id, so a session-aware EPP (session-affinity / predictive-least-loaded) can
+// pin a session's rounds to one instance. Overridable via --session-id-header
+// to match whatever the deployment's session-id-producer is configured to read
+// (issue #1505).
+const defaultSessionIDHeader = "x-session-id"
+
 // RealClient sends requests to an OpenAI-compatible inference server.
 type RealClient struct {
-	baseURL    string
-	apiKey     string
-	modelName  string
-	serverType string
-	apiFormat  string // "completions" or "chat" (default: "completions")
-	httpClient *http.Client
-	sloMap     *sim.SLOPriorityMap
+	baseURL         string
+	apiKey          string
+	modelName       string
+	serverType      string
+	apiFormat       string // "completions" or "chat" (default: "completions")
+	httpClient      *http.Client
+	sloMap          *sim.SLOPriorityMap
+	sessionIDHeader string // request header carrying the session id (issue #1505); "" disables emission
 }
 
 // RealClientOption configures optional RealClient behavior.
@@ -46,6 +54,12 @@ func WithAPIFormat(format string) RealClientOption {
 // WithHTTPTimeout sets the HTTP client timeout for requests.
 func WithHTTPTimeout(d time.Duration) RealClientOption {
 	return func(c *RealClient) { c.httpClient.Timeout = d }
+}
+
+// WithSessionIDHeader sets the request header used to carry the session id
+// (issue #1505). An empty name disables session-id emission.
+func WithSessionIDHeader(name string) RealClientOption {
+	return func(c *RealClient) { c.sessionIDHeader = name }
 }
 
 // WithSLOPriorityMap sets a custom SLO priority map for vLLM priority translation.
@@ -71,13 +85,14 @@ func isTimeoutError(err error) bool {
 // NewRealClient creates a new real mode HTTP client.
 func NewRealClient(baseURL, apiKey, modelName, serverType string, opts ...RealClientOption) *RealClient {
 	c := &RealClient{
-		baseURL:    strings.TrimRight(baseURL, "/"),
-		apiKey:     apiKey,
-		modelName:  modelName,
-		serverType: serverType,
-		apiFormat:  "completions",
-		httpClient: &http.Client{Timeout: defaultHTTPTimeoutSeconds * time.Second},
-		sloMap:     sim.DefaultSLOPriorityMap(),
+		baseURL:         strings.TrimRight(baseURL, "/"),
+		apiKey:          apiKey,
+		modelName:       modelName,
+		serverType:      serverType,
+		apiFormat:       "completions",
+		httpClient:      &http.Client{Timeout: defaultHTTPTimeoutSeconds * time.Second},
+		sloMap:          sim.DefaultSLOPriorityMap(),
+		sessionIDHeader: defaultSessionIDHeader,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -102,6 +117,7 @@ type PendingRequest struct {
 	MinTokens       int
 	DeadlineUs      int64
 	SLOTargetUs     int64
+	SessionID       string // closed-loop session id, emitted as the session-id header (issue #1505)
 }
 
 // RequestRecord captures one request-response cycle.
@@ -222,6 +238,12 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 	if req.SLOTargetUs > 0 {
 		ms := (req.SLOTargetUs + 999) / 1000 // ceiling division: µs→ms
 		httpReq.Header.Set("x-slo-ttft-ms", strconv.FormatInt(ms, 10))
+	}
+	// Session id for session-aware EPP routing (session-affinity / predictive
+	// pinning). Closed-loop replay is the only producer of the wire header —
+	// real clients carry the session in telemetry, not on the request (#1505).
+	if req.SessionID != "" && c.sessionIDHeader != "" {
+		httpReq.Header.Set(c.sessionIDHeader, req.SessionID)
 	}
 
 	// Record send time
