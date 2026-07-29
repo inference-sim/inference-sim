@@ -434,6 +434,32 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	return applyAdapterOverhead(max(1, clampToInt64(stepTime)), batch, m.adapterCost)
 }
 
+// applyConstantNoise perturbs the model's purely-additive constant coefficients —
+// α₀ (Alpha[0]), α₁ (Alpha[1]), and β₇ (Beta[6]) — by a tiny multiplicative Gaussian
+// factor drawn ONCE at construction. These are exactly the terms that enter the
+// latency formula unmultiplied by any basis function or count (see WithConstantNoise);
+// perturbing them shifts the model's fixed-overhead floor without touching the
+// physics-correction (β₁–β₄, β_EP) or count-scaled (α₂, β₅, β₆, β₈) terms.
+//
+// relStdDev ≤ 0 is a no-op: the coefficients are left untouched and StepTime stays
+// byte-identical to a pre-feature build (INV-6). The draw uses an isolated
+// PartitionedRNG substream (SubsystemLatencyNoise), so enabling noise never perturbs
+// any other subsystem's random sequence. Each perturbed coefficient is clamped to
+// ≥ 0, preserving the non-negativity that validateCoeffs enforces at construction.
+func (m *TrainedPhysicsModel) applyConstantNoise(relStdDev float64, seed int64) {
+	if relStdDev <= 0 {
+		return
+	}
+	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(seed)).ForSubsystem(sim.SubsystemLatencyNoise)
+	jitter := func(c float64) float64 {
+		return math.Max(0, c*(1+rng.NormFloat64()*relStdDev))
+	}
+	// Order is fixed (α₀, α₁, β₇) so the draw sequence is reproducible for a seed.
+	m.Alpha[0] = jitter(m.Alpha[0])
+	m.Alpha[1] = jitter(m.Alpha[1])
+	m.Beta[6] = jitter(m.Beta[6])
+}
+
 // sharedExpertCompute returns the shared-expert FFN compute basis (raw FLOPs) for
 // the given token population (B3, #1419). Shared experts run for EVERY token on
 // every MoE layer (DeepSeek/Qwen-style), structured as a dense FFN of dimension

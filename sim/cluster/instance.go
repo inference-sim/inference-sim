@@ -64,7 +64,12 @@ func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	if err != nil {
 		panic(fmt.Sprintf("NewInstanceSimulator(%s): adapter cost model: %v", id, err))
 	}
-	latencyModel, err := latency.NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig, latency.WithAdapterCost(adapterCost))
+	// Constant-coefficient noise (--latency-constant-noise) is seeded from cfg.Seed
+	// via an isolated substream, so it is reproducible and does not disturb other
+	// subsystems. A zero relStdDev is a no-op (INV-6).
+	latencyModel, err := latency.NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig,
+		latency.WithAdapterCost(adapterCost),
+		latency.WithConstantNoise(cfg.LatencyConstantNoise, cfg.Seed))
 	if err != nil {
 		panic(fmt.Sprintf("NewInstanceSimulator(%s): NewLatencyModel: %v", id, err))
 	}

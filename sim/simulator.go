@@ -67,6 +67,14 @@ type SimConfig struct {
 	Horizon int64
 	Seed    int64
 
+	// LatencyConstantNoise is the relative std-dev of a tiny additive Gaussian
+	// perturbation applied ONCE, at model construction, to the trained-physics
+	// backend's purely-additive constant coefficients (α₀, α₁, β₇). 0 (default) ⇒
+	// no perturbation and byte-identical output (INV-6). The draw is seeded from
+	// Seed via an isolated RNG substream, so it never disturbs other subsystems.
+	// See latency.WithConstantNoise. Ignored by the roofline backend.
+	LatencyConstantNoise float64
+
 	// Module-scoped sub-configs (R16)
 	KVCacheConfig
 	BatchConfig
@@ -100,7 +108,7 @@ type Simulator struct {
 	// Requests are ordered by First-Come-First-Served in WaitQ, and the same order is maintained
 	// while adding requests to RunningBatch
 	RunningBatch *Batch
-	Metrics *Metrics
+	Metrics      *Metrics
 	// max number of requests RunningBatch can hold
 	maxRunningReqs int64
 	// max total number of new tokens across all requests in RunningBatch
@@ -111,13 +119,13 @@ type Simulator struct {
 	// map of request IDs to total num computed tokens (including cached tokens)
 	reqNumComputedTokens map[string]int64
 	batchFormation       BatchFormation
-	model                  string
-	gpu                    string
-	maxModelLen            int64 // max total sequence length (0 = unlimited)
-	rng                    *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
-	sloMap *SLOPriorityMap // vLLM-convention priority mapping for instance-level scheduling
-	scheduler      InstanceScheduler
-	latencyModel           LatencyModel
+	model                string
+	gpu                  string
+	maxModelLen          int64           // max total sequence length (0 = unlimited)
+	rng                  *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
+	sloMap               *SLOPriorityMap // vLLM-convention priority mapping for instance-level scheduling
+	scheduler            InstanceScheduler
+	latencyModel         LatencyModel
 	// residentAdapters tracks this instance's finite resident LoRA adapter slots
 	// (capacity-bounded LRU). nil when the LoRA subsystem is inert (no adapters /
 	// capacity configured, or sim/lora not imported), in which case adapter handling
@@ -131,13 +139,13 @@ type Simulator struct {
 	// this instance, or "" when none. Loads serialize per instance: the gate starts
 	// a new load only when this is "" (§7 serialization).
 	loadingAdapter string
-	seqCounter             int64 // monotonic counter for event queue seqID (deterministic ordering)
+	seqCounter     int64 // monotonic counter for event queue seqID (deterministic ordering)
 	// OnRequestDone is an optional callback invoked when a request reaches a terminal
 	// state (completed, length-capped, or timed out). Returns follow-up requests to inject.
 	// Set by the caller (cmd/root.go or ClusterSimulator). Nil = no callback.
 	OnRequestDone func(req *Request, tick int64) []*Request
 
-	progressHook                ProgressHook
+	progressHook               ProgressHook
 	simClockProgressIntervalUs int64
 	nextSnapshotClockUs        int64
 }

@@ -32,9 +32,16 @@ func clampToInt64(v float64) int64 {
 // the same options, so an adapter effect applies identically (R23).
 type Option func(*latencyOptions)
 
-// latencyOptions accumulates the applied Options. Zero value ⇒ no adapter effect.
+// latencyOptions accumulates the applied Options. Zero value ⇒ no adapter effect
+// and no constant-coefficient noise (relStdDev 0 ⇒ byte-identical to pre-feature).
 type latencyOptions struct {
 	adapterCost sim.AdapterCost
+
+	// constNoiseRelStdDev is the relative standard deviation of the Gaussian
+	// perturbation applied ONCE, at construction, to the purely-additive constant
+	// coefficients (α₀, α₁, β₇). 0 ⇒ no perturbation (default). See WithConstantNoise.
+	constNoiseRelStdDev float64
+	constNoiseSeed      int64
 }
 
 // WithAdapterCost supplies the LoRA per-step compute-overhead accessor. A nil
@@ -43,6 +50,27 @@ type latencyOptions struct {
 // sim.AdapterCost interface — sim/latency never imports sim/lora.
 func WithAdapterCost(ac sim.AdapterCost) Option {
 	return func(o *latencyOptions) { o.adapterCost = ac }
+}
+
+// WithConstantNoise applies a tiny additive Gaussian perturbation, drawn ONCE at
+// construction, to the trained-physics model's purely-additive *constant*
+// coefficients — the terms that enter the latency formula unmultiplied by any
+// basis function or count: α₀ (queueing), α₁ (post-decode fixed overhead), and β₇
+// (per-step constant). Multiplicative corrections (β₁–β₄, β_EP) and count-scaled
+// overheads (α₂·tokens, β₅·L, β₆·B, β₈·nMoE) are left untouched.
+//
+// relStdDev is the noise magnitude as a fraction of each coefficient (e.g. 0.02 =
+// 2%); each coefficient c is perturbed to c·(1 + N(0, relStdDev)), then clamped to
+// ≥ 0. relStdDev ≤ 0 ⇒ no perturbation, leaving the model byte-identical to a
+// pre-feature build (INV-6). seed is folded into a dedicated, isolated RNG stream
+// so the perturbation is reproducible and does NOT disturb any other subsystem's
+// draw sequence. Only the trained-physics backend honors this; the roofline
+// backend has no β₇ intercept and ignores it.
+func WithConstantNoise(relStdDev float64, seed int64) Option {
+	return func(o *latencyOptions) {
+		o.constNoiseRelStdDev = relStdDev
+		o.constNoiseSeed = seed
+	}
 }
 
 // applyAdapterOverhead multiplies a base step time by the batch's LoRA
@@ -176,6 +204,9 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig, opts 
 			return nil, err
 		}
 		model.adapterCost = o.adapterCost
+		// Perturb the purely-additive constant coefficients (α₀, α₁, β₇) once, from a
+		// dedicated isolated RNG stream. A relStdDev ≤ 0 is a no-op (INV-6).
+		model.applyConstantNoise(o.constNoiseRelStdDev, o.constNoiseSeed)
 		return model, nil
 	default:
 		return nil, fmt.Errorf("latency model: unknown backend %q; valid options: %s",

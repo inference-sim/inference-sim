@@ -35,6 +35,12 @@ const (
 	// XOR-derived stream. Existing code in sim/cluster/workload.go continues
 	// using SubsystemWorkload unchanged.
 	SubsystemWorkloadGen = "workload-gen"
+
+	// SubsystemLatencyNoise is the RNG subsystem for the trained-physics latency
+	// model's constant-coefficient perturbation (--latency-constant-noise). Its
+	// XOR-derived stream is isolated from every other subsystem, so drawing noise
+	// never shifts the workload/router/instance draw sequences (INV-6 isolation).
+	SubsystemLatencyNoise = "latency-constant-noise"
 )
 
 // SubsystemInstance returns the subsystem name for instance N.

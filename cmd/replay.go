@@ -469,8 +469,9 @@ Example:
 		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
 		config := cluster.DeploymentConfig{
 			SimConfig: sim.SimConfig{
-				Horizon: replayHorizon,
-				Seed:    seed,
+				Horizon:              replayHorizon,
+				Seed:                 seed,
+				LatencyConstantNoise: latencyConstantNoise,
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
 				BatchConfig:          sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),

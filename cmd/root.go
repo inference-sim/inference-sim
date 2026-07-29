@@ -54,6 +54,7 @@ const (
 var (
 	// CLI flags for vllm server configs
 	seed                      int64     // Seed for random token generation
+	latencyConstantNoise      float64   // Relative std-dev of additive noise on trained-physics constant coeffs (α₀,α₁,β₇); 0 = off
 	simulationHorizon         int64     // Total simulation time (in ticks)
 	logLevel                  string    // Log verbosity level
 	totalKVBlocks             int64     // Total number of KV blocks available on GPU
@@ -1104,6 +1105,7 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 // duplicating ~50 flag registrations.
 func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&seed, "seed", 42, "Seed for random request generation")
+	cmd.Flags().Float64Var(&latencyConstantNoise, "latency-constant-noise", 0.0, "Relative std-dev of tiny additive Gaussian noise applied once to the trained-physics constant coefficients (α₀, α₁, β₇); 0 = disabled (byte-identical output)")
 	cmd.Flags().Int64Var(&simulationHorizon, "horizon", math.MaxInt64, "Total simulation horizon (in ticks)")
 	cmd.Flags().StringVar(&logLevel, "log", "warn", "Log level for diagnostic messages (trace, debug, info, warn, error, fatal, panic). Simulation results always print to stdout regardless of this setting.")
 	cmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained coefficients, default specs and workloads")
@@ -2036,8 +2038,9 @@ var runCmd = &cobra.Command{
 		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
 		config := cluster.DeploymentConfig{
 			SimConfig: sim.SimConfig{
-				Horizon: simulationHorizon,
-				Seed:    seed,
+				Horizon:              simulationHorizon,
+				Seed:                 seed,
+				LatencyConstantNoise: latencyConstantNoise,
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
 				BatchConfig:          sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
