@@ -26,3 +26,17 @@ type AdapterRegistry interface {
 // cycle between sim/ (interface owner) and sim/lora/ (implementation). Returns an
 // error for a malformed registry (duplicate/empty id, non-positive rank).
 var NewAdapterRegistryFunc func(adapters []AdapterSpec) (AdapterRegistry, error)
+
+// BuildAdapterRegistry builds the read-only adapter registry when the LoRA
+// subsystem is active and sim/lora is linked; otherwise returns (nil, nil) so
+// adapter handling stays a no-op (INV-6). The gating condition matches
+// NewSimulator's resident-set wiring so the registry is non-nil exactly when the
+// resident set and cost model are — the eviction context (D2) can then always
+// resolve ranks whenever an eviction can occur.
+func BuildAdapterRegistry(cfg SimConfig) (AdapterRegistry, error) {
+	if !cfg.HasAdapters() || cfg.AdapterCapacity == nil ||
+		NewResidentAdapterSetFunc == nil || NewAdapterRegistryFunc == nil {
+		return nil, nil
+	}
+	return NewAdapterRegistryFunc(cfg.Adapters)
+}

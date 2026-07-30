@@ -36,6 +36,10 @@ type pendingInstance struct {
 	gpuType  string
 	tpDegree int
 	simCfg   sim.SimConfig // per-instance simulator configuration
+	// seedAdapters is the cluster-assigned resident adapter set for this instance
+	// (B-5, #1493), captured at construction and applied via the CreationPolicy
+	// seam once the node is ready. nil for instances with no placement (on-demand).
+	seedAdapters []string
 }
 
 // placedInstance records a successfully placed instance with its node and GPU assignments.
@@ -46,6 +50,10 @@ type placedInstance struct {
 	gpuType  string        // gpu_type from the matched pool config
 	tpDegree int           // tensor-parallel degree from the pending instance request
 	simCfg   sim.SimConfig // per-instance simulator configuration
+	// seedAdapters carries the cluster-assigned resident adapters (B-5, #1493)
+	// forwarded from the pending record, applied via the CreationPolicy seam when
+	// the deferred instance goes live. nil for unplaced instances.
+	seedAdapters []string
 }
 
 // NewPlacementManager creates a PlacementManager from the given node pool configs.
@@ -366,7 +374,7 @@ func (pm *PlacementManager) RetryPendingInstances() []placedInstance {
 		p := pm.pendingInsts[i]
 		nodeID, gpuIDs, matchedGPUType, err := pm.PlaceInstance(p.id, p.model, p.gpuType, p.tpDegree)
 		if err == nil {
-			nowPlaced = append(nowPlaced, placedInstance{id: p.id, nodeID: nodeID, gpuIDs: gpuIDs, gpuType: matchedGPUType, tpDegree: p.tpDegree, simCfg: p.simCfg})
+			nowPlaced = append(nowPlaced, placedInstance{id: p.id, nodeID: nodeID, gpuIDs: gpuIDs, gpuType: matchedGPUType, tpDegree: p.tpDegree, simCfg: p.simCfg, seedAdapters: p.seedAdapters})
 			// Remove from pending: swap with last and shrink (R21).
 			// Swap-remove pattern: move last element to position i, then truncate.
 			// This is O(1) removal vs O(N) for shifting all elements left.
@@ -382,13 +390,16 @@ func (pm *PlacementManager) RetryPendingInstances() []placedInstance {
 }
 
 // AddPending registers an instance as pending (placement deferred until a node is ready).
-func (pm *PlacementManager) AddPending(id InstanceID, model, gpuType string, tpDegree int, simCfg sim.SimConfig) {
+// seedAdapters carries the instance's cluster-assigned resident adapters (B-5, #1493),
+// applied via the CreationPolicy seam at NodeReadyEvent; pass nil when unplaced.
+func (pm *PlacementManager) AddPending(id InstanceID, model, gpuType string, tpDegree int, simCfg sim.SimConfig, seedAdapters []string) {
 	pm.pendingInsts = append(pm.pendingInsts, pendingInstance{
-		id:       id,
-		model:    model,
-		gpuType:  gpuType,
-		tpDegree: tpDegree,
-		simCfg:   simCfg,
+		id:           id,
+		model:        model,
+		gpuType:      gpuType,
+		tpDegree:     tpDegree,
+		simCfg:       simCfg,
+		seedAdapters: seedAdapters,
 	})
 }
 
