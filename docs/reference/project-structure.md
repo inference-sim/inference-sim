@@ -151,8 +151,10 @@ inference-sim/
 │   │       ├── micro-plan.md         # Single-PR template (human-readable)
 │   │       ├── micro-plan-prompt.md  # Agent preamble for writing-plans skill
 │   │       └── hypothesis.md         # Experiment FINDINGS.md template
-│   └── plans/                 # Active implementation plans (excluded from MkDocs)
-│       └── archive/           # Completed design docs (architectural reference)
+│   └── plans/                 # Local-only scratch: design/implementation plans.
+│                              # GITIGNORED since #1322 — never committed. Excluded
+│                              # from MkDocs. Committed feature artifacts belong in
+│                              # specs/<NNN>-<feature>/ instead.
 ├── CONTRIBUTING.md            # Contributor guide (references docs/contributing/standards/)
 └── mkdocs.yml                 # MkDocs Material site configuration
 ```
