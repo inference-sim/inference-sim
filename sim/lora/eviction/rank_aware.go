@@ -24,8 +24,16 @@ func (rankAware) SelectVictim(ctx sim.EvictionContext) (string, bool) {
 	}
 	// Single linear scan over candidates tracking argmin(rank ASC, id ASC). An
 	// unregistered candidate (RankOf ok=false) is treated as rank +∞ (math.MaxInt),
-	// so it is never chosen ahead of any registered adapter (D-4-2). Candidate order
-	// does not affect the result — the total order is strict on (rank, id).
+	// so it is never chosen ahead of any registered adapter (D-4-2) — the registry
+	// rejects rank <= 0 and no declared rank approaches MaxInt, so the sentinel stays
+	// strictly above every real rank. Candidate order does not affect the result —
+	// the total order is strict on (rank, id).
+	//
+	// SEVERAL unregistered candidates therefore tie at +∞; they are separated by the
+	// same lexicographic id tie-break as any other rank tie (C-2), so the victim stays
+	// deterministic (INV-6). When NO candidate is registered the policy degenerates to
+	// smallest-id: with no ranks there is no reload-cost signal to act on, and recency
+	// is deliberately not consulted (that is lru's job, and lru remains the default).
 	minID := ""
 	minRank := 0
 	first := true
