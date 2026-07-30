@@ -441,13 +441,17 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 // perturbing them shifts the model's fixed-overhead floor without touching the
 // physics-correction (β₁–β₄, β_EP) or count-scaled (α₂, β₅, β₆, β₈) terms.
 //
-// relStdDev ≤ 0 is a no-op: the coefficients are left untouched and StepTime stays
-// byte-identical to a pre-feature build (INV-6). The draw uses an isolated
+// A non-finite or ≤ 0 relStdDev is a no-op: the coefficients are left untouched and
+// StepTime stays byte-identical to a pre-feature build (INV-6). The NaN/Inf guard is
+// explicit because IEEE-754 comparisons against NaN are always false (so `relStdDev
+// <= 0` alone would let NaN through) and math.Max(0, NaN) == NaN would then launder a
+// poisoned coefficient into the clock (INV-3) — the same defense clampToInt64 and
+// applyAdapterOverhead already apply at their boundaries. The draw uses an isolated
 // PartitionedRNG substream (SubsystemLatencyNoise), so enabling noise never perturbs
 // any other subsystem's random sequence. Each perturbed coefficient is clamped to
 // ≥ 0, preserving the non-negativity that validateCoeffs enforces at construction.
 func (m *TrainedPhysicsModel) applyConstantNoise(relStdDev float64, seed int64) {
-	if relStdDev <= 0 {
+	if math.IsNaN(relStdDev) || math.IsInf(relStdDev, 0) || relStdDev <= 0 {
 		return
 	}
 	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(seed)).ForSubsystem(sim.SubsystemLatencyNoise)
