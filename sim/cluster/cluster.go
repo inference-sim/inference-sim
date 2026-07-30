@@ -25,20 +25,20 @@ type ClusterSimulator struct {
 	aggregatedMetrics *sim.Metrics
 
 	// Online routing pipeline fields
-	clusterEvents         ClusterEventQueue
-	seqCounter            int64
-	admissionLatency      int64
-	routingLatency        int64
-	admissionPolicy       sim.AdmissionPolicy
-	priorityMap           *sim.SLOPriorityMap
-	snapshotProvider      *CachedSnapshotProvider
-	routingPolicy         sim.RoutingPolicy
-	rejectedRequests      int                       // EC-2: count of requests rejected by admission policy
-	routingRejections     int                       // I13: count of requests rejected at routing (no routable instances)
-	shedByTier            map[string]int            // per-SLOClass shedding: admission rejections + gateway queue shed + in-flight evictions
+	clusterEvents     ClusterEventQueue
+	seqCounter        int64
+	admissionLatency  int64
+	routingLatency    int64
+	admissionPolicy   sim.AdmissionPolicy
+	priorityMap       *sim.SLOPriorityMap
+	snapshotProvider  *CachedSnapshotProvider
+	routingPolicy     sim.RoutingPolicy
+	rejectedRequests  int            // EC-2: count of requests rejected by admission policy
+	routingRejections int            // I13: count of requests rejected at routing (no routable instances)
+	shedByTier        map[string]int // per-SLOClass shedding: admission rejections + gateway queue shed + in-flight evictions
 	// injectedByClass: per-SLOClass arrival counter. Incremented in ClusterArrivalEvent.Execute
 	// before any drop/route/admission decision. Goodput denominator (issue #1409, BC-5).
-	injectedByClass map[string]int64
+	injectedByClass       map[string]int64
 	trace                 *trace.SimulationTrace    // nil when trace-level is "none" (BC-1: zero overhead)
 	requestSource         RequestSource             // Source of requests to inject as arrival events. Drained once by Run().
 	inFlightRequests      map[string]int            // instance ID → dispatched-but-not-completed count (#463)
@@ -121,6 +121,14 @@ type ClusterSimulator struct {
 	progressHook               sim.ProgressHook
 	simClockProgressIntervalUs int64
 	nextSnapshotClockUs        int64
+
+	// Live saturation timeline (--saturation-interval). liveSat is the shared
+	// observer wired into every instance's Simulator (so arrivals/completions across
+	// instances aggregate into one timeline); the cluster loop drives EmitPoint at
+	// satIntervalUs boundaries. nil ⇒ disabled (default, byte-identical output).
+	liveSat         sim.LiveSaturationObserver
+	satIntervalUs   int64
+	nextSatBoundary int64
 
 	// arrivalHook fires once per fresh arrival (initial workload and
 	// follow-ups from closed-loop sessions). It does NOT fire for requests
@@ -266,21 +274,21 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	}
 
 	cs := &ClusterSimulator{
-		config:               config,
-		instances:            make([]*InstanceSimulator, 0, config.NumInstances),
-		rng:                  rng,
-		requestSource:        requestSource,
-		clusterEvents:        make(ClusterEventQueue, 0),
-		admissionLatency:     config.AdmissionLatency,
-		routingLatency:       config.RoutingLatency,
-		admissionPolicy:      admissionPolicy,
-		priorityMap:          priorityMap,
-		snapshotProvider:     nil, // set after unified construction loop below
-		routingPolicy:        nil, // set after instance construction (needs cacheQueryFn from instances)
-		trace:                simTrace,
-		inFlightRequests:     make(map[string]int, config.NumInstances),
-		shedByTier:           make(map[string]int),
-		injectedByClass:      make(map[string]int64),
+		config:           config,
+		instances:        make([]*InstanceSimulator, 0, config.NumInstances),
+		rng:              rng,
+		requestSource:    requestSource,
+		clusterEvents:    make(ClusterEventQueue, 0),
+		admissionLatency: config.AdmissionLatency,
+		routingLatency:   config.RoutingLatency,
+		admissionPolicy:  admissionPolicy,
+		priorityMap:      priorityMap,
+		snapshotProvider: nil, // set after unified construction loop below
+		routingPolicy:    nil, // set after instance construction (needs cacheQueryFn from instances)
+		trace:            simTrace,
+		inFlightRequests: make(map[string]int, config.NumInstances),
+		shedByTier:       make(map[string]int),
+		injectedByClass:  make(map[string]int64),
 	}
 
 	// PD disaggregation: set pool membership (topology already validated above).
@@ -849,9 +857,11 @@ func (c *ClusterSimulator) Run() error {
 		}
 
 		c.maybeDeliverProgressSnapshot(false)
+		c.maybeEmitSaturationPoints(false)
 	}
 
 	c.maybeDeliverProgressSnapshot(true)
+	c.maybeEmitSaturationPoints(true)
 
 	// 4. Finalize all instances (populates StillQueued/StillRunning)
 	for _, inst := range c.instances {
@@ -969,6 +979,51 @@ func (c *ClusterSimulator) SetProgressHook(hook sim.ProgressHook, simClockInterv
 	if simClockIntervalUs > 0 {
 		c.simClockProgressIntervalUs = simClockIntervalUs
 		c.nextSnapshotClockUs = simClockIntervalUs
+	}
+}
+
+// SetLiveSaturation registers the live saturation observer and its interval. Must be
+// called before Run(). The SAME observer is wired into every instance's Simulator so
+// arrivals/completions across all instances feed one shared timeline; the cluster
+// loop then drives EmitPoint at each intervalUs boundary. obs nil or intervalUs <= 0
+// disables live detection (default) with zero behavioral impact (INV-6).
+func (c *ClusterSimulator) SetLiveSaturation(obs sim.LiveSaturationObserver, intervalUs int64) {
+	if obs == nil || intervalUs <= 0 {
+		return
+	}
+	c.liveSat = obs
+	c.satIntervalUs = intervalUs
+	c.nextSatBoundary = intervalUs
+	for _, inst := range c.instances {
+		inst.sim.SetLiveSaturation(obs)
+	}
+}
+
+// maybeEmitSaturationPoints emits one timeline point per interval boundary the clock
+// has crossed. Called each event iteration (mirrors maybeDeliverProgressSnapshot).
+// On the final call it appends a terminal point at the true end clock — unless that
+// clock exactly coincides with the last boundary already emitted (avoid a duplicate).
+func (c *ClusterSimulator) maybeEmitSaturationPoints(isFinal bool) {
+	if c.liveSat == nil {
+		return
+	}
+	for c.satIntervalUs > 0 && c.clock >= c.nextSatBoundary {
+		c.liveSat.EmitPoint(c.nextSatBoundary)
+		c.nextSatBoundary += c.satIntervalUs
+	}
+	if isFinal {
+		// Terminal point at the true end clock (clamped to horizon), so the timeline
+		// always ends exactly at sim end regardless of interval alignment.
+		end := c.clock
+		if end > c.config.Horizon {
+			end = c.config.Horizon
+		}
+		// lastBoundary is the highest boundary already emitted (nextSatBoundary is one
+		// step past it). Skip the terminal point if it lands on that exact clock.
+		lastBoundary := c.nextSatBoundary - c.satIntervalUs
+		if end != lastBoundary {
+			c.liveSat.EmitPoint(end)
+		}
 	}
 }
 

@@ -170,6 +170,14 @@ type BacklogDriftReport struct {
 	Windows        []WindowMetrics `json:"windows"`
 	Note           string          `json:"note,omitempty"`           // Explanation (e.g., "observation too short")
 	Recommendation string          `json:"recommendation,omitempty"` // User-facing guidance
+
+	// SaturationTimeline carries the optional per-interval saturation timeline
+	// (--saturation-interval). Typed interface{} — the concrete type is
+	// []saturation.TimelinePoint, set from cmd/ — to avoid a workload → saturation
+	// import (saturation already imports workload, which would cycle). nil +
+	// omitempty ⇒ the field is absent, so reports are byte-identical when the
+	// feature is off (INV-6).
+	SaturationTimeline interface{} `json:"saturation_timeline,omitempty"`
 }
 
 // RequestsToIntervals converts sim.Request slices to RequestInterval slices for

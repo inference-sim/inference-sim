@@ -234,6 +234,11 @@ var (
 	postHocDetector     string  // Post-hoc saturation detector: "composite", "threshold", "none" (--post-hoc-detector)
 	saturationThreshold float64 // Threshold in ms for threshold detector (--saturation-threshold-ms)
 
+	// per-interval saturation timeline configuration
+	saturationInterval          time.Duration // Interval between timeline points; 0 = disabled (--saturation-interval)
+	saturationUnsureMinRequests int           // Below this cumulative arrival count a timeline point is UNSURE (--saturation-unsure-min-requests)
+	saturationUnsureMinConf     float64       // Below this detector confidence a timeline point is UNSURE (--saturation-unsure-min-confidence)
+
 	// trace export
 	traceOutput string // File prefix for TraceV2 export (<prefix>.yaml + <prefix>.csv)
 )
@@ -256,6 +261,88 @@ func registerSaturationFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&saturationTailWindows, "saturation-tail-windows", 1, "Inject windows skipped as tail boundary (drain-ratio classifier only)")
 	cmd.Flags().Float64Var(&saturationSaturatedRatio, "saturation-drain-ratio-saturated", 0.95, "Mean DrainRatio threshold below which run is PERSISTENTLY_SATURATED (drain-ratio classifier only)")
 	cmd.Flags().Float64Var(&saturationTransientRatio, "saturation-drain-ratio-transient", 0.98, "Mean DrainRatio threshold below which run is TRANSIENT_BACKLOG (drain-ratio classifier only)")
+}
+
+// registerSaturationTimelineFlags registers the per-interval saturation timeline
+// flags. Shared across run, replay, and observe so the flag set stays identical
+// (parallel to the per-command --post-hoc-detector registration). The timeline is
+// emitted into the --saturation-report file; --saturation-interval 0 (default)
+// disables it, leaving output byte-identical to a pre-feature build (INV-6).
+func registerSaturationTimelineFlags(cmd *cobra.Command) {
+	cmd.Flags().DurationVar(&saturationInterval, "saturation-interval", 0,
+		"Emit a cumulative saturation label (SATURATED/UNSATURATED/UNSURE) every INTERVAL of simulation time into the --saturation-report file (e.g. 2s, 500ms); 0 = disabled. Requires --post-hoc-detector and --saturation-report.")
+	cmd.Flags().IntVar(&saturationUnsureMinRequests, "saturation-unsure-min-requests", 20,
+		"A timeline point with fewer than this many cumulative arrivals is labeled UNSURE")
+	cmd.Flags().Float64Var(&saturationUnsureMinConf, "saturation-unsure-min-confidence", 0.5,
+		"A timeline point whose detector confidence is below this is labeled UNSURE")
+}
+
+// validateSaturationTimelineFlags validates the timeline flags and their cross-flag
+// requirements. A zero interval disables the timeline and skips all other checks.
+// Shared across run, replay, and observe (CLI gate → logrus.Fatalf on misuse).
+func validateSaturationTimelineFlags() {
+	if saturationInterval == 0 {
+		return // disabled — default, byte-identical output (INV-6)
+	}
+	if saturationInterval < 0 {
+		logrus.Fatalf("--saturation-interval must be non-negative, got %s", saturationInterval)
+	}
+	if postHocDetector == "none" {
+		logrus.Fatalf("--saturation-interval requires --post-hoc-detector (composite, threshold, or backlog-drift)")
+	}
+	if saturationReport == "" {
+		logrus.Fatalf("--saturation-interval requires --saturation-report (the timeline is written into that file)")
+	}
+	if saturationUnsureMinRequests < 0 {
+		logrus.Fatalf("--saturation-unsure-min-requests must be non-negative, got %d", saturationUnsureMinRequests)
+	}
+	if saturationUnsureMinConf < 0 || saturationUnsureMinConf > 1 {
+		logrus.Fatalf("--saturation-unsure-min-confidence must be in [0,1], got %.2f", saturationUnsureMinConf)
+	}
+	// backlog-drift builds its live detector from the classifier flag before Run, so
+	// validate the name up front (the library factory panics on an unknown name).
+	if postHocDetector == "backlog-drift" && !sim.IsValidBacklogClassifier(saturationClassifier) {
+		logrus.Fatalf("Unknown --saturation-classifier %q. Valid: %s",
+			saturationClassifier, strings.Join(sim.ValidBacklogClassifierNames(), ", "))
+	}
+}
+
+// saturationTimelineConfig builds a saturation.TimelineConfig from the CLI flags.
+func saturationTimelineConfig() saturation.TimelineConfig {
+	return saturation.TimelineConfig{
+		IntervalUs:    saturationInterval.Microseconds(),
+		MinRequests:   saturationUnsureMinRequests,
+		MinConfidence: saturationUnsureMinConf,
+	}
+}
+
+// saturationBacklogDriftConfig builds a workload.BacklogDriftConfig from the CLI
+// saturation flags. Shared by the end-of-run report and the live per-interval
+// backlog-drift detector so both use identical window/classifier settings.
+func saturationBacklogDriftConfig() workload.BacklogDriftConfig {
+	return workload.NewBacklogDriftConfig(
+		time.Duration(saturationWindowSec)*time.Second,
+		saturationMinWindows,
+		saturationPeakRatio,
+		saturationPeakBand,
+		saturationConfidence,
+		saturationWarmupWindows,
+		saturationTailWindows,
+		saturationSaturatedRatio,
+		saturationTransientRatio,
+	)
+}
+
+// liveSaturationDetectorOpts builds DetectorOpts for the live per-interval detector,
+// including the backlog-drift config/classifier so the live path matches the
+// end-of-run report configuration (not library defaults).
+func liveSaturationDetectorOpts() saturation.DetectorOpts {
+	cfg := saturationBacklogDriftConfig()
+	return saturation.DetectorOpts{
+		ThresholdMs:       saturationThreshold,
+		BacklogConfig:     &cfg,
+		BacklogClassifier: workload.NewBacklogClassifier(saturationClassifier),
+	}
 }
 
 // applyRopeScaling applies rope_scaling factor to maxPosEmb if applicable.
@@ -1447,6 +1534,8 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("LLM name not provided. Exiting simulation.")
 		}
 
+		validateSaturationTimelineFlags()
+
 		// LoRA control-plane (#1464): resolve the config ONCE here (R4 single site) so
 		// both the KV auto-capacity path — resolveLatencyConfig and the per-pool calc
 		// below read the resulting static HBM reservation (PR5) — and the SimConfig
@@ -2162,6 +2251,15 @@ var runCmd = &cobra.Command{
 				traceArrivals = append(traceArrivals, req)
 			})
 		}
+		// Live saturation timeline (--saturation-interval): wire the detector into the
+		// event loop BEFORE Run so it observes arrivals/completions as they happen.
+		// Flags validated at startup (validateSaturationTimelineFlags).
+		var liveSatTimeline *saturation.LiveTimeline
+		if saturationInterval > 0 && postHocDetector != "none" {
+			det := saturation.NewLiveDetector(postHocDetector, liveSaturationDetectorOpts())
+			liveSatTimeline = saturation.NewLiveTimeline(det, saturationTimelineConfig())
+			cs.SetLiveSaturation(liveSatTimeline, saturationInterval.Microseconds())
+		}
 		if err := cs.Run(); err != nil {
 			logrus.Fatalf("Simulation failed: %v", err)
 		}
@@ -2264,19 +2362,17 @@ var runCmd = &cobra.Command{
 			}
 			classifier := workload.NewBacklogClassifier(saturationClassifier)
 
-			// Build saturation analysis config from flags (or defaults if not set)
-			cfg := workload.NewBacklogDriftConfig(
-				time.Duration(saturationWindowSec)*time.Second,
-				saturationMinWindows,
-				saturationPeakRatio,
-				saturationPeakBand,
-				saturationConfidence,
-				saturationWarmupWindows,
-				saturationTailWindows,
-				saturationSaturatedRatio,
-				saturationTransientRatio,
-			)
+			// Build saturation analysis config from flags (shared with the live detector).
+			cfg := saturationBacklogDriftConfig()
 			report := workload.AnalyzeBacklogDriftWithClassifier(allRequests, simEndUs, cfg, classifier)
+
+			// Per-interval saturation timeline (--saturation-interval): collected LIVE
+			// during the run by the detector wired into the event loop above; attach the
+			// points to the report. nil when the feature is off (byte-identical output).
+			if liveSatTimeline != nil {
+				report.SaturationTimeline = liveSatTimeline.Points()
+			}
+
 			if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
 				logrus.Fatalf("Failed to write saturation report: %v", err)
 			}
@@ -2643,6 +2739,7 @@ func init() {
 	// Post-hoc saturation detector flags (#1369)
 	runCmd.Flags().StringVar(&postHocDetector, "post-hoc-detector", "none", "Post-hoc saturation detector: composite, threshold, none")
 	runCmd.Flags().Float64Var(&saturationThreshold, "saturation-threshold-ms", 5000.0, "Threshold in ms for threshold detector (default 5000ms)")
+	registerSaturationTimelineFlags(runCmd)
 
 	registerSaturationFlags(runCmd)
 

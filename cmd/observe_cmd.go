@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -179,6 +180,7 @@ func init() {
 	// Post-hoc saturation detector flags (same as blis run/replay; #1379)
 	observeCmd.Flags().StringVar(&postHocDetector, "post-hoc-detector", "none", "Post-hoc saturation detector: composite, threshold, none")
 	observeCmd.Flags().Float64Var(&saturationThreshold, "saturation-threshold-ms", 5000.0, "Threshold in ms for threshold detector (default 5000ms)")
+	registerSaturationTimelineFlags(observeCmd)
 
 	// Backlog-drift saturation flags (run/replay parity)
 	registerSaturationFlags(observeCmd)
@@ -270,6 +272,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	if observeTraceData == "" {
 		logrus.Fatalf("--trace-data is required")
 	}
+	validateSaturationTimelineFlags()
 	// Warn if --itl-output is set without --record-itl (no ITL data will be written)
 	if observeITLOutput != "" && !observeRecordITL {
 		logrus.Warnf("--itl-output is set but --record-itl is not enabled; no ITL data will be written")
@@ -646,6 +649,18 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		})
 		saturationResult = detector.Classify(requestMetrics, totalArrivals)
 
+		// Per-interval saturation timeline (--saturation-interval). observe has no DES
+		// loop (it drives a real server), so we replay the recorded trace through the
+		// SAME LiveDetector/LiveTimeline the simulated commands use, feeding arrival and
+		// completion events in clock order. This reuses one live-detection path across
+		// all commands rather than a separate reconstruction routine.
+		var saturationTimeline interface{}
+		if saturationInterval > 0 {
+			tlDet := saturation.NewLiveDetector(postHocDetector, liveSaturationDetectorOpts())
+			lt := saturation.NewLiveTimeline(tlDet, saturationTimelineConfig())
+			saturationTimeline = driveTimelineFromRecords(lt, records, saturationInterval.Microseconds())
+		}
+
 		// If --saturation-report is also specified, write the result to file (cluster pod use case).
 		// In production, observe runs in cluster pods where parsing stdout from logs is impractical;
 		// file output enables direct artifact collection without log scraping.
@@ -654,7 +669,16 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		// is enabled, the result ALWAYS appears in stdout JSON, regardless of --saturation-report.
 		// This ensures scripts consuming stdout.saturation work identically across run/replay/observe.
 		if saturationReport != "" {
-			satBytes, err := json.MarshalIndent(saturationResult, "", "  ")
+			// When a timeline is present, wrap the result so the report file carries both
+			// the single end-of-run result and the timeline under stable keys.
+			var payload interface{} = saturationResult
+			if saturationTimeline != nil {
+				payload = struct {
+					Result             interface{} `json:"result"`
+					SaturationTimeline interface{} `json:"saturation_timeline"`
+				}{Result: saturationResult, SaturationTimeline: saturationTimeline}
+			}
+			satBytes, err := json.MarshalIndent(payload, "", "  ")
 			if err != nil {
 				logrus.Fatalf("Failed to marshal saturation result: %v", err)
 			}
@@ -1442,4 +1466,68 @@ func applyThinkTimeSampler(sessions []workload.SessionBlueprint, s workload.Leng
 	for i := range sessions {
 		sessions[i].ThinkTimeSampler = s
 	}
+}
+
+// driveTimelineFromRecords replays observed trace records through a LiveTimeline in
+// simulation-clock order and returns the collected points. observe has no DES loop,
+// so this reconstructs the event stream: each record contributes an arrival (at
+// ArrivalTimeUs) and, if it completed "ok", a completion (at LastChunkTimeUs, with
+// E2E = LastChunkTimeUs - SendTimeUs). Events are merged and replayed in timestamp
+// order, emitting a timeline point at each interval boundary and once at the end —
+// the same cadence the cluster loop drives for run/replay.
+func driveTimelineFromRecords(lt *saturation.LiveTimeline, records []workload.TraceRecord, intervalUs int64) []saturation.TimelinePoint {
+	if intervalUs <= 0 {
+		return nil
+	}
+	type ev struct {
+		clockUs int64
+		e2eMs   float64
+		id      string
+		arrival bool
+	}
+	events := make([]ev, 0, len(records)*2)
+	var endUs int64
+	for _, rec := range records {
+		id := strconv.Itoa(rec.RequestID)
+		events = append(events, ev{clockUs: rec.ArrivalTimeUs, id: id, arrival: true})
+		if rec.ArrivalTimeUs > endUs {
+			endUs = rec.ArrivalTimeUs
+		}
+		if rec.Status == "ok" {
+			e2eMs := float64(rec.LastChunkTimeUs-rec.SendTimeUs) / 1000.0
+			if e2eMs > 0 {
+				events = append(events, ev{clockUs: rec.LastChunkTimeUs, e2eMs: e2eMs, id: id})
+				if rec.LastChunkTimeUs > endUs {
+					endUs = rec.LastChunkTimeUs
+				}
+			}
+		}
+	}
+	// Stable order: by clock, arrivals before completions at the same instant.
+	sort.SliceStable(events, func(i, j int) bool {
+		if events[i].clockUs != events[j].clockUs {
+			return events[i].clockUs < events[j].clockUs
+		}
+		return events[i].arrival && !events[j].arrival
+	})
+
+	nextBoundary := intervalUs
+	for _, e := range events {
+		for e.clockUs >= nextBoundary {
+			lt.EmitPoint(nextBoundary)
+			nextBoundary += intervalUs
+		}
+		if e.arrival {
+			lt.ObserveArrival(e.id, e.clockUs)
+		} else {
+			lt.ObserveCompletion(e.id, e.clockUs, e.e2eMs)
+		}
+	}
+	// Remaining boundaries up to end, then a terminal point at end.
+	for endUs >= nextBoundary {
+		lt.EmitPoint(nextBoundary)
+		nextBoundary += intervalUs
+	}
+	lt.EmitPoint(endUs)
+	return lt.Points()
 }

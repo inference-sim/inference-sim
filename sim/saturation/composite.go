@@ -93,6 +93,23 @@ func (c *CompositeDetector) Reset() {
 	c.completions = make([]Event, 0)
 }
 
+// LabelAt implements LiveDetector: the composite detector streams genuinely, so the
+// cumulative verdict at clockUs is just its running Detect() (which classifies all
+// events observed so far) mapped to a TimelineLabel. Events arrive in clock order,
+// so at boundary clockUs it has observed exactly the events with Timestamp <= clockUs.
+func (c *CompositeDetector) LabelAt(clockUs int64, arrivals, completions int, cfg TimelineConfig) TimelinePoint {
+	res := c.Detect()
+	return TimelinePoint{
+		ClockUs:     clockUs,
+		Label:       LabelFromResult(res, arrivals, cfg),
+		Level:       res.Level,
+		Score:       res.Score,
+		Confidence:  res.Confidence,
+		Arrivals:    arrivals,
+		Completions: completions,
+	}
+}
+
 // computeComposite is the core validated algorithm from the empirical spec.
 // Issues #1-3: Uses max() composition, quartile filter, and noise-floor thresholds.
 func computeComposite(arrivals, completions int, sortedLatencies []float64) Result {

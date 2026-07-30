@@ -60,6 +60,8 @@ Example:
 		}
 		logrus.SetLevel(level)
 
+		validateSaturationTimelineFlags()
+
 		// Validate required inputs (BC-6, BC-8)
 		if traceHeaderPath == "" {
 			logrus.Fatalf("--trace-header is required")
@@ -543,6 +545,15 @@ Example:
 			}
 		}
 		cs := cluster.NewClusterSimulator(config, cluster.NewSliceRequestSource(requests), onRequestDone)
+
+		// Live saturation timeline (--saturation-interval), wired before Run for
+		// run/replay parity with cmd/root.go (INV-13). nil when disabled.
+		var liveSatTimeline *saturation.LiveTimeline
+		if saturationInterval > 0 && postHocDetector != "none" {
+			det := saturation.NewLiveDetector(postHocDetector, liveSaturationDetectorOpts())
+			liveSatTimeline = saturation.NewLiveTimeline(det, saturationTimelineConfig())
+			cs.SetLiveSaturation(liveSatTimeline, saturationInterval.Microseconds())
+		}
 		if err := cs.Run(); err != nil {
 			logrus.Fatalf("Replay simulation failed: %v", err)
 		}
@@ -766,6 +777,13 @@ Example:
 				saturationTransientRatio,
 			)
 			report := workload.AnalyzeBacklogDriftWithClassifier(allRequests, simEndUs, cfg, classifier)
+
+			// Per-interval saturation timeline (--saturation-interval): collected LIVE
+			// during replay, same wiring as cmd/root.go (INV-13). nil when disabled.
+			if liveSatTimeline != nil {
+				report.SaturationTimeline = liveSatTimeline.Points()
+			}
+
 			if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
 				logrus.Fatalf("Failed to write saturation report: %v", err)
 			}
@@ -787,6 +805,7 @@ func init() {
 	// Post-hoc saturation detector flags (#1369)
 	replayCmd.Flags().StringVar(&postHocDetector, "post-hoc-detector", "none", "Post-hoc saturation detector: composite, threshold, none")
 	replayCmd.Flags().Float64Var(&saturationThreshold, "saturation-threshold-ms", 5000.0, "Threshold in ms for threshold detector (default 5000ms)")
+	registerSaturationTimelineFlags(replayCmd)
 
 	registerSaturationFlags(replayCmd)
 

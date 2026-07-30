@@ -94,6 +94,21 @@ func (t *ThresholdDetector) Reset() {
 	t.completions = make([]Event, 0)
 }
 
+// LabelAt implements LiveDetector: threshold streams via Observe, so the cumulative
+// verdict at clockUs is its running Detect() mapped to a TimelineLabel.
+func (t *ThresholdDetector) LabelAt(clockUs int64, arrivals, completions int, cfg TimelineConfig) TimelinePoint {
+	res := t.Detect()
+	return TimelinePoint{
+		ClockUs:     clockUs,
+		Label:       LabelFromResult(res, arrivals, cfg),
+		Level:       res.Level,
+		Score:       res.Score,
+		Confidence:  res.Confidence,
+		Arrivals:    arrivals,
+		Completions: completions,
+	}
+}
+
 // classifyThreshold determines level and score from mean E2E vs threshold.
 // BC-4: STABLE when mean E2E < threshold (score < 0.5)
 // BC-5: OVERLOADED when mean E2E > threshold (score >= 0.75)

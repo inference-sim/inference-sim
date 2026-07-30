@@ -148,6 +148,19 @@ type Simulator struct {
 	progressHook               ProgressHook
 	simClockProgressIntervalUs int64
 	nextSnapshotClockUs        int64
+
+	// liveSat observes arrivals/completions for the live saturation timeline
+	// (--saturation-interval). nil when disabled (default) ⇒ zero overhead and
+	// byte-identical output (INV-6). Read-only observer; never mutates sim state.
+	// In cluster mode every instance shares the SAME observer pointer so events
+	// aggregate across instances in the cluster's single-goroutine event order.
+	liveSat LiveSaturationObserver
+}
+
+// SetLiveSaturation registers a live saturation observer. Must be called before Run.
+// nil (default) disables live detection with zero behavioral impact (INV-6).
+func (sim *Simulator) SetLiveSaturation(obs LiveSaturationObserver) {
+	sim.liveSat = obs
 }
 
 // NewSimulator creates a Simulator from a SimConfig struct and pre-built dependencies.
@@ -346,6 +359,9 @@ func (sim *Simulator) InjectArrival(req *Request) {
 	}
 	sim.Schedule(&ArrivalEvent{time: req.ArrivalTime, Request: req})
 	sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, float64(req.ArrivalTime)/1e6)
+	if sim.liveSat != nil {
+		sim.liveSat.ObserveArrival(req.ID, req.ArrivalTime)
+	}
 }
 
 // InjectArrivalAt schedules an ArrivalEvent at eventTime (not req.ArrivalTime).
@@ -354,6 +370,9 @@ func (sim *Simulator) InjectArrival(req *Request) {
 func (sim *Simulator) InjectArrivalAt(req *Request, eventTime int64) {
 	sim.Schedule(&ArrivalEvent{time: eventTime, Request: req})
 	sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, float64(req.ArrivalTime)/1e6)
+	if sim.liveSat != nil {
+		sim.liveSat.ObserveArrival(req.ID, req.ArrivalTime)
+	}
 }
 
 func (sim *Simulator) Run() {
@@ -728,6 +747,10 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	lat := req.FirstTokenTime + itlSum + postDecodeOverhead
 	sim.Metrics.RequestE2Es[req.ID] = float64(lat)
 	logrus.Debugf("Finished req: ID: %s at time: %d", req.ID, lat+req.ArrivalTime)
+	if sim.liveSat != nil {
+		// Completion clock = arrival + E2E (µs); latency reported in ms.
+		sim.liveSat.ObserveCompletion(req.ID, req.ArrivalTime+lat, float64(lat)/1e3)
+	}
 	if len(req.OutputTokens) > 0 {
 		// Compute average ITL from itlSum directly (not from lat - FirstTokenTime)
 		// to avoid contaminating per-token ITL with the fixed post-decode overhead.
