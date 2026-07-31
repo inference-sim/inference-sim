@@ -895,8 +895,8 @@ func TestDisaggregation_MetricProjection_E2ECorrectness(t *testing.T) {
 // (prefillTTFT + transferDuration + firstDecodeStep), which double-counted OTPT and
 // omitted the decode-queue wait.
 //
-// Test independence (see docs/plans/pr1510-pd-ttft-plan.md Part 3): the assertions never
-// recompute the production formula. Instead they use two orthogonal guards —
+// Test independence: the assertions never recompute the production formula (the pre-#1510
+// test did, making it a tautology). Instead they use two orthogonal guards —
 //  (1) a residual reconstructed from ParentRequest phase timestamps
 //      (DecodeEnqueueTime − ArrivalTime), recorded by a different mechanism than the
 //      RequestSchedulingDelays map the fix reads; and
@@ -1164,11 +1164,17 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 	tests := []struct {
 		name           string
 		parent         *ParentRequest
-		skipPrefill    bool  // omit prefill TTFT key → Branch C
-		setDecodeDelay bool  // set RequestSchedulingDelays[dec]
-		decodeDelay    int64 // value for the decode scheduling delay
-		wantEntry      bool  // whether a parent-keyed TTFT entry is expected
-		wantTTFT       float64
+		skipPrefill    bool    // omit prefill TTFT key → Branch C
+		setDecodeDelay bool    // set RequestSchedulingDelays[dec]
+		decodeDelay    int64   // value for the decode scheduling delay
+		wantEntry      bool    // whether a parent-keyed TTFT entry is expected
+		wantTTFT       float64 // expected projected TTFT (when wantEntry)
+		// wantSum is the expected TTFTSum after projection (pre-projection baseline is 0
+		// in these stubs). It is stated explicitly per case rather than derived, so it
+		// models production exactly: the delta is applied ONLY when the primary branch
+		// takes the newTTFT path; every fallback (incl. the negative-TTFT guard) leaves
+		// TTFTSum at 0.
+		wantSum int64
 	}{
 		{
 			// PRIMARY: full decode data present ⇒ TTFT = decodeDelay + ITL[0].
@@ -1182,6 +1188,7 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 			},
 			setDecodeDelay: true, decodeDelay: 4000,
 			wantEntry: true, wantTTFT: 4000 + 300, // = 4300
+			wantSum: 4300 - 2500,                  // primary branch: newTTFT − prefillTTFT = 1800
 		},
 		{
 			// FALLBACK: decode scheduling delay never recorded ⇒ prefill-only.
@@ -1254,6 +1261,28 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 			},
 			setDecodeDelay: true, decodeDelay: -5000, // newTTFT = -5000 + 100 = -4900 < 0
 			wantEntry: true, wantTTFT: prefillTTFT,
+			wantSum: 0, // negative guard falls back to prefillTTFT WITHOUT the delta: TTFTSum stays 0
+		},
+		{
+			// TIMED-OUT WITH PARTIAL ITL: a decode sub-request that emitted a first token
+			// and then timed out mid-generation still carries a scheduling delay and a
+			// non-empty ITL, so it takes the PRIMARY branch and reports a real TTFT. This is
+			// intentional and correct — the user did receive that first token, so its
+			// arrival→first-token span is a genuine measurement. Pinned here so the behavior
+			// (which the guard makes implicit) cannot silently regress. Modeled with a
+			// State=StateTimedOut decode sub-request; projectPDMetrics does not inspect State,
+			// exactly as intended.
+			name: "timed-out with partial ITL ⇒ primary branch (real TTFT)",
+			parent: &ParentRequest{
+				ID: "p6", PrefillSubReqID: "p6_prefill", DecodeSubReqID: "p6_decode",
+				OriginalRequest: origReq,
+				ArrivalTime:     0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				TransferStartTime: 100, TransferCompleteTime: 200,
+				DecodeSubReq: &sim.Request{State: sim.StateTimedOut, ITL: []int64{300}},
+			},
+			setDecodeDelay: true, decodeDelay: 4000,
+			wantEntry: true, wantTTFT: 4000 + 300, // = 4300, same as a normal primary parent
+			wantSum: 4300 - 2500,                  // primary branch delta = 1800
 		},
 	}
 
@@ -1282,17 +1311,22 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 				if math.Abs(got-tc.wantTTFT) > 1e-9 {
 					t.Errorf("parent %s: TTFT = %.1f, want %.1f", tc.parent.ID, got, tc.wantTTFT)
 				}
-				// TTFTSum delta: pre-projection TTFTSum was 0 in this stub; the primary
-				// branch adds (newTTFT − prefillTTFT); the fallback branch adds nothing.
-				var wantSum int64
-				if tc.setDecodeDelay && tc.parent.DecodeSubReq != nil && len(tc.parent.DecodeSubReq.ITL) > 0 {
-					wantSum = int64(tc.wantTTFT - prefillTTFT) // primary branch
+				// TTFTSum after projection: pre-projection baseline is 0 in these stubs.
+				// wantSum is stated explicitly per case (delta applied only when the primary
+				// branch takes the newTTFT path; every fallback — incl. the negative-TTFT
+				// guard — leaves TTFTSum at 0), so it models production exactly rather than
+				// re-deriving it from the input presence.
+				if m.TTFTSum != tc.wantSum {
+					t.Errorf("parent %s: TTFTSum = %d, want %d", tc.parent.ID, m.TTFTSum, tc.wantSum)
 				}
-				if m.TTFTSum != wantSum {
-					t.Errorf("parent %s: TTFTSum = %d, want %d", tc.parent.ID, m.TTFTSum, wantSum)
+			} else {
+				if ok {
+					t.Errorf("Branch C: unexpected TTFT entry for parent %s (no prefill key)", tc.parent.ID)
 				}
-			} else if ok {
-				t.Errorf("Branch C: unexpected TTFT entry for parent %s (no prefill key)", tc.parent.ID)
+				// Branch C also makes no TTFTSum contribution.
+				if m.TTFTSum != tc.wantSum {
+					t.Errorf("Branch C: parent %s: TTFTSum = %d, want %d", tc.parent.ID, m.TTFTSum, tc.wantSum)
+				}
 			}
 
 			// Sub-request keys must be deleted (INV-PD-6).

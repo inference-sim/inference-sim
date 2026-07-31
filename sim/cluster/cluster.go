@@ -1844,6 +1844,13 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		delete(m.RequestTTFTs, pfx)
 		delete(m.RequestTTFTs, dec)
 		if completed {
+			// A decode sub-request that emitted a first token and THEN timed out mid-generation
+			// still has a recorded scheduling delay and a non-empty ITL, so it takes this
+			// primary branch and reports a real TTFT. That is intentional and correct: the user
+			// did receive that first token, so its arrival→first-token span is a genuine
+			// measurement (INV-5 holds — the first token preceded the timeout ≤ completion). A
+			// decode sub-request that timed out while still queued has an empty ITL and falls to
+			// the prefill fallback below. Both match the pre-#1510 behavior.
 			if hasPrefillTTFT && hasDecodeDelay && parent.DecodeSubReq != nil && len(parent.DecodeSubReq.ITL) > 0 {
 				firstDecodeStep := float64(parent.DecodeSubReq.ITL[0])
 				newTTFT := float64(decodeDelay) + firstDecodeStep
