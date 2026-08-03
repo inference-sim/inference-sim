@@ -3695,7 +3695,7 @@
 </tr>
 <tr>
 <td><strong>Parent TTFT</strong></td>
-<td>Client-visible TTFT (prefill TTFT + KV transfer duration + first decode step); distribution in microseconds</td>
+<td>Client-visible TTFT (decode-sub-request scheduling delay + first decode step) — the arrival → first-token-emitted-by-decode span, including the decode-queue wait and exactly one output-token processing overhead (#1510); distribution in microseconds</td>
 </tr>
 <tr>
 <td><strong>KV Transfer Duration</strong></td>
