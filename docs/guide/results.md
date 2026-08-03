@@ -232,7 +232,7 @@ When PD disaggregation is active (`--prefill-instances > 0`), BLIS prints a `===
 | **Prefill Throughput** | Sub-request completion rate on prefill instances (sub-req/s) |
 | **Decode Throughput** | Sub-request completion rate on decode instances (sub-req/s) |
 | **Load Imbalance Ratio** | `max(prefill_load, decode_load) / min(...)` — `1.0` = perfectly balanced; `inf` = one pool has no completions |
-| **Parent TTFT** | Client-visible TTFT (prefill TTFT + KV transfer duration + first decode step); distribution in microseconds |
+| **Parent TTFT** | Client-visible TTFT (decode-sub-request scheduling delay + first decode step) — the arrival → first-token-emitted-by-decode span, including the decode-queue wait and exactly one output-token processing overhead (#1510); distribution in microseconds |
 | **KV Transfer Duration** | Time to transfer KV blocks from prefill to decode instance; distribution in microseconds |
 | **Peak Concurrent Transfers** | Maximum simultaneous in-flight KV transfers (only with `--pd-transfer-contention`) |
 | **Mean Transfer Queue Depth** | Average queue depth at the transfer bandwidth bottleneck (only with `--pd-transfer-contention`) |

@@ -112,8 +112,10 @@ func CollectPDMetrics(
 
 		// BC-1: parent TTFT from the aggregated TTFT map, keyed by parent ID.
 		// After projectPDMetrics(), the user-visible TTFT is stored under the parent ID.
-		// Value = prefillTTFT + KV transfer duration + first decode step — the full
-		// time from arrival to the first token reaching the user (issue #930).
+		// Value = decodeSchedulingDelay + first decode step — the full arrival →
+		// first-token-emitted-by-decode span, carrying exactly one OutputTokenProcessingTime
+		// (issue #1510, correcting the earlier prefillTTFT+transfer+decode composition of
+		// #930 which double-counted OTPT and omitted the decode-queue wait).
 		// Missing key returns 0.0 in Go maps; exclude 0.0 values (BC-11).
 		if ttft := aggregated.RequestTTFTs[p.ID]; ttft > 0 {
 			ttftValues = append(ttftValues, ttft)

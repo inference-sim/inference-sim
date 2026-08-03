@@ -1805,29 +1805,76 @@ func (c *ClusterSimulator) projectPDMetrics() {
 			}
 		}
 
-		// TTFT: user-visible time-to-first-token for PD disaggregation.
-		// In llm-d, the first token reaches the user from the decode pod, not
-		// prefill: prefill completes → KV transfers → decode pod recomputes last
-		// prompt token and samples first output token. User-visible TTFT =
-		// prefillTTFT + transferDuration + firstDecodeStep. See issue #930.
+		// TTFT: user-visible time-to-first-token for PD disaggregation (issue #1510,
+		// correcting the earlier #930 composition). In llm-d the first token reaches the
+		// user from the decode pod, not prefill: prefill completes → KV transfers →
+		// decode pod queues, recomputes the last prompt token, and samples the first
+		// output token. The correct user-visible TTFT is the arrival → first-token-emitted
+		// span:
+		//
+		//   TTFT = decodeSchedulingDelay + firstDecodeStep
+		//
+		// where decodeSchedulingDelay = RequestSchedulingDelays[decodeSubReqID] = the
+		// decode sub-request's (schedule − arrival). Because the decode sub-request's
+		// ArrivalTime is the parent's original arrival time (pd_events.go), that delay
+		// already spans prefill_queue + prefill_step + kv_transfer + decode_queue_wait —
+		// including the decode-queue wait that the previous
+		// (prefillTTFT + transferDuration + firstDecodeStep) formula omitted. It also
+		// carries exactly ONE OutputTokenProcessingTime: prefillTTFT (dropped here) held a
+		// second, phantom copy; firstDecodeStep = ITL[0] contributes the single legitimate
+		// one (the decode pod streams the first real token exactly once). This is
+		// structurally identical to the non-PD TTFT (scheduling_delay + first-token step).
 		//
 		// Read prefill TTFT before deleting sub-request keys (R1: no silent data loss).
-		// Gate on completed: dropped-request TTFTs must not enter the distribution.
+		// prefillTTFT is retained as the TTFTSum baseline: pre-projection TTFTSum holds
+		// exactly prefillTTFT for this parent (the decode sub-request never sets
+		// FirstTokenTime, so it contributes 0). Read the decode scheduling delay here too,
+		// before the scheduling-delay block below deletes it.
+		//
+		// Gate on `completed` (CompletionTime > 0 && DecodeInstanceID != ""). A
+		// late-drop (decode pod unroutable at transfer complete) leaves DecodeInstanceID
+		// set but nils DecodeSubReq, so it fails the primary guard and takes the
+		// prefill-only fallback. NOTE: a drop-at-transfer-start parent is still
+		// `completed == true` (DecodeInstanceID is set upfront at routing and dropAtStart
+		// stamps CompletionTime), so it too receives a prefill-only TTFT here — a
+		// pre-existing behavior unchanged by this fix (the old guard also routed these to
+		// the same fallback). Tracked separately in issue #1511.
 		prefillTTFT, hasPrefillTTFT := m.RequestTTFTs[pfx]
+		decodeDelay, hasDecodeDelay := m.RequestSchedulingDelays[dec]
 		delete(m.RequestTTFTs, pfx)
 		delete(m.RequestTTFTs, dec)
 		if completed {
-			if hasPrefillTTFT && parent.TransferStartTime > 0 && parent.TransferCompleteTime >= parent.TransferStartTime && parent.DecodeSubReq != nil && len(parent.DecodeSubReq.ITL) > 0 {
-				transferDuration := float64(parent.TransferCompleteTime - parent.TransferStartTime)
+			// A decode sub-request that emitted a first token and THEN timed out mid-generation
+			// still has a recorded scheduling delay and a non-empty ITL, so it takes this
+			// primary branch and reports a real TTFT. That is intentional and correct: the user
+			// did receive that first token, so its arrival→first-token span is a genuine
+			// measurement (INV-5 holds — the first token preceded the timeout ≤ completion). A
+			// decode sub-request that timed out while still queued has an empty ITL and falls to
+			// the prefill fallback below. Both match the pre-#1510 behavior.
+			if hasPrefillTTFT && hasDecodeDelay && parent.DecodeSubReq != nil && len(parent.DecodeSubReq.ITL) > 0 {
 				firstDecodeStep := float64(parent.DecodeSubReq.ITL[0])
-				newTTFT := prefillTTFT + transferDuration + firstDecodeStep
-				m.RequestTTFTs[pid] = newTTFT
-				// BC-3: Keep TTFTSum consistent with the TTFT adjustment.
-				m.TTFTSum += int64(newTTFT - prefillTTFT)
+				newTTFT := float64(decodeDelay) + firstDecodeStep
+				if newTTFT < 0 {
+					// Defensive parity with the E2E block above: never emit a negative
+					// TTFT (a headline SLO metric). Unreachable in normal operation —
+					// decodeDelay ≥ 0 by shared-clock event ordering and firstDecodeStep > 0
+					// — but guards against a hypothetical clock regression rather than
+					// silently reporting a negative value.
+					logrus.Errorf("[cluster] projectPDMetrics: negative TTFT for %s (decodeDelay=%d firstDecodeStep=%.0f); using prefill TTFT",
+						pid, decodeDelay, firstDecodeStep)
+					m.RequestTTFTs[pid] = prefillTTFT // delta 0 vs baseline: TTFTSum untouched
+				} else {
+					m.RequestTTFTs[pid] = newTTFT
+					// BC-3: Keep TTFTSum consistent with the TTFT adjustment. The baseline
+					// prefillTTFT is replaced by newTTFT for this parent.
+					m.TTFTSum += int64(newTTFT - prefillTTFT)
+				}
 			} else if hasPrefillTTFT {
-				// Defensive fallback: use prefill-only TTFT if decode data unavailable.
+				// Defensive fallback: use prefill-only TTFT if decode data unavailable
+				// (no decode scheduling delay, nil DecodeSubReq, or empty ITL). TTFTSum
+				// unchanged (projected value equals the baseline).
 				m.RequestTTFTs[pid] = prefillTTFT
-				logrus.Warnf("[cluster] projectPDMetrics: parent %s missing decode ITL or TransferCompleteTime; using prefill TTFT", pid)
+				logrus.Warnf("[cluster] projectPDMetrics: parent %s missing decode scheduling delay, DecodeSubReq, or ITL; using prefill TTFT", pid)
 			} else {
 				logrus.Warnf("[cluster] projectPDMetrics: completed parent %s has no prefill TTFT (key %s)", pid, pfx)
 			}
