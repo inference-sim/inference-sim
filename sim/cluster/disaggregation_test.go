@@ -853,8 +853,17 @@ func TestDisaggregation_MetricProjection_E2ECount(t *testing.T) {
 	}
 }
 
-// TestDisaggregation_MetricProjection_E2ECorrectness verifies that each
-// parent E2E = CompletionTime - ArrivalTime, and E2E > TTFT.
+// TestDisaggregation_MetricProjection_E2ECorrectness verifies the projected
+// parent E2E against INDEPENDENT laws rather than the production formula.
+//
+// The pre-#1513 version asserted E2E == parent.CompletionTime − ArrivalTime,
+// which was both the bug (parent.CompletionTime omits the decode step advance,
+// under-counting E2E below TTFT for short outputs) and a tautology (it re-derived
+// the reported value from the same source). This version asserts:
+//   - E2E ≥ TTFT (INV-5 causality); and
+//   - E2E == decodeSchedulingDelay + decodeOwnE2E, reconstructed from the decode
+//     sub-request's per-instance metrics (a different mechanism than the
+//     aggregated parent E2E), so the assertion is not circular.
 func TestDisaggregation_MetricProjection_E2ECorrectness(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(5)
@@ -863,28 +872,42 @@ func TestDisaggregation_MetricProjection_E2ECorrectness(t *testing.T) {
 	mustRun(t, cs)
 
 	m := cs.AggregatedMetrics()
+	reconstructed := 0
 	for _, parent := range cs.parentRequests {
 		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
 			continue // skip incomplete/dropped
 		}
 		pid := parent.ID
-		expectedE2E := float64(parent.CompletionTime - parent.ArrivalTime)
-
 		e2e, ok := m.RequestE2Es[pid]
 		if !ok {
 			t.Errorf("parent %s: missing RequestE2Es entry", pid)
 			continue
 		}
-		if math.Abs(e2e-expectedE2E) > 1e-9 {
-			t.Errorf("parent %s: E2E = %.0f, want %.0f (CompletionTime-ArrivalTime)",
-				pid, e2e, expectedE2E)
+
+		// Independent reconstruction from decode sub-request per-instance metrics.
+		decodeOwnE2E, decodeDelay, hasDecode := pdDecodeOwnE2E(cs, parent.DecodeSubReqID)
+		if hasDecode {
+			want := float64(decodeDelay) + decodeOwnE2E
+			if math.Abs(e2e-want) > 1e-9 {
+				t.Errorf("parent %s: E2E = %.0f, want %.0f (decodeSchedulingDelay %d + decodeOwnE2E %.0f)",
+					pid, e2e, want, decodeDelay, decodeOwnE2E)
+			}
+			reconstructed++
 		}
 
+		// INV-5: E2E must not fall below TTFT.
 		ttft, hasTTFT := m.RequestTTFTs[pid]
-		if hasTTFT && e2e <= ttft {
-			t.Errorf("parent %s: E2E (%.0f) <= TTFT (%.0f), E2E must exceed TTFT (includes decode)",
+		if hasTTFT && e2e < ttft {
+			t.Errorf("parent %s: E2E (%.0f) < TTFT (%.0f), INV-5 causality violated",
 				pid, e2e, ttft)
 		}
+	}
+	// Guard against a vacuous pass: if the decode sub-request E2E were never recorded
+	// (e.g. a data-flow bug), the reconstruction assertion would silently skip for
+	// every parent. This workload's parents all complete via a normal decode path, so
+	// at least one must have been reconstructed.
+	if reconstructed == 0 {
+		t.Fatal("no parent E2E was reconstructed from decode sub-request metrics — data flow drifted or projection changed")
 	}
 }
 
@@ -1369,8 +1392,16 @@ func TestDisaggregation_MetricProjection_SchedulingDelay(t *testing.T) {
 	}
 }
 
-// TestDisaggregation_MetricProjection_CompletionTimes verifies that the
-// projected completion time matches the parent's CompletionTime.
+// TestDisaggregation_MetricProjection_CompletionTimes verifies that the projected
+// completion-time METRIC is consistent with the projected E2E, satisfying the
+// non-PD identity completion_metric == ArrivalTime + E2E.
+//
+// The pre-#1513 version asserted RequestCompletionTimes[pid] ==
+// parent.CompletionTime, which under-counted for the same reason as the E2E bug
+// (parent.CompletionTime is stamped on the cluster clock at the completion-
+// detection tick and omits the decode step advance). The metric is now derived
+// from the fixed E2E; the lifecycle field parent.CompletionTime is unchanged and
+// is intentionally NOT the reference here.
 func TestDisaggregation_MetricProjection_CompletionTimes(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(5)
@@ -1389,10 +1420,11 @@ func TestDisaggregation_MetricProjection_CompletionTimes(t *testing.T) {
 			t.Errorf("parent %s: missing RequestCompletionTimes entry", pid)
 			continue
 		}
-		expected := float64(parent.CompletionTime)
+		e2e := m.RequestE2Es[pid]
+		expected := float64(parent.ArrivalTime) + e2e
 		if math.Abs(ct-expected) > 1e-9 {
-			t.Errorf("parent %s: RequestCompletionTimes = %.0f, want %.0f",
-				pid, ct, expected)
+			t.Errorf("parent %s: RequestCompletionTimes = %.0f, want %.0f (ArrivalTime %d + E2E %.0f)",
+				pid, ct, expected, parent.ArrivalTime, e2e)
 		}
 	}
 }
@@ -1537,12 +1569,15 @@ func mapKeysRM(m map[string]sim.RequestMetrics) []string {
 	return keys
 }
 
-// BC-3b: detectDecodeCompletions adds PostDecodeFixedOverhead to parent.CompletionTime.
+// BC-3b: PostDecodeFixedOverhead flows into the client-visible E2E metric.
 // Law: for matching completed parents across two runs (zero vs non-zero overhead),
 // E2E_with_overhead - E2E_without_overhead == wantOverhead exactly.
-// This is the only cluster-level test that exercises overhead > 0, directly
-// verifying the line `parent.CompletionTime = c.clock + inst.PostDecodeFixedOverhead()`
-// that was the bug site fixed in issue #846.
+// After issue #1513 the parent E2E is reconstructed as decodeSchedulingDelay +
+// decodeOwnE2E; the overhead flows through decodeOwnE2E (recordRequestCompletion
+// adds PostDecodeFixedOverhead) while decodeSchedulingDelay is independent of it,
+// so the differential still isolates the overhead exactly. The direct assertion
+// on the lifecycle field `parent.CompletionTime = c.clock + PostDecodeFixedOverhead()`
+// lives in TestDisaggregation_CompletionTime_LifecycleField_IncludesOverhead.
 func TestDisaggregation_CompletionTime_IncludesNonZeroOverhead(t *testing.T) {
 	const wantOverheadUs = int64(1000) // 1ms overhead, chosen to be clearly distinguishable
 
@@ -1582,6 +1617,53 @@ func TestDisaggregation_CompletionTime_IncludesNonZeroOverhead(t *testing.T) {
 	}
 }
 
+// INV-PD-6b lifecycle field: parent.CompletionTime == cluster-clock-at-decode-completion
+// + PostDecodeFixedOverhead. This pins the lifecycle field DIRECTLY (not via the E2E
+// metric), so it survives even though the #1513 E2E fix stopped deriving E2E from
+// parent.CompletionTime. Revert `parent.CompletionTime = c.clock + overhead` to bare
+// `c.clock` in detectDecodeCompletions and this test fails; the E2E-metric differential
+// test above would not (overhead flows through decodeOwnE2E there).
+//
+// Law: for matching completed parents across two runs (zero vs non-zero overhead),
+// CompletionTime_with_overhead − CompletionTime_without_overhead == wantOverhead exactly.
+func TestDisaggregation_CompletionTime_LifecycleField_IncludesOverhead(t *testing.T) {
+	const wantOverheadUs = int64(1000) // 1ms, clearly distinguishable
+
+	requests := newTestRequests(3)
+	cs0 := NewClusterSimulator(newTestDisaggDeploymentConfigWithOverhead(0), NewSliceRequestSource(requests), nil)
+	mustRun(t, cs0)
+	cs1 := NewClusterSimulator(newTestDisaggDeploymentConfigWithOverhead(float64(wantOverheadUs)), NewSliceRequestSource(requests), nil)
+	mustRun(t, cs1)
+
+	// Index run-1 parents by ID for matching.
+	byID1 := make(map[string]*ParentRequest)
+	for _, p := range cs1.parentRequests {
+		byID1[p.ID] = p
+	}
+
+	completed := 0
+	for _, p0 := range cs0.parentRequests {
+		if p0.CompletionTime == 0 || p0.DecodeInstanceID == "" {
+			continue // dropped or horizon-interrupted
+		}
+		p1, ok := byID1[p0.ID]
+		if !ok || p1.CompletionTime == 0 {
+			t.Errorf("parent %s: missing matching completed parent in overhead run", p0.ID)
+			continue
+		}
+		// Law: the lifecycle field carries exactly the configured overhead delta.
+		gotDiff := p1.CompletionTime - p0.CompletionTime
+		if gotDiff != wantOverheadUs {
+			t.Errorf("parent %s: CompletionTime diff = %d µs, want %d µs (overhead not stamped into lifecycle field)",
+				p0.ID, gotDiff, wantOverheadUs)
+		}
+		completed++
+	}
+	if completed == 0 {
+		t.Fatal("no completed parents in baseline run — test is vacuously passing, check config")
+	}
+}
+
 // BC-3: parent.CompletionTime is >= all prior phase timestamps.
 // Law: CompletionTime >= DecodeEnqueueTime >= TransferCompleteTime (phase causality).
 // For roofline (overhead=0): CompletionTime == cluster clock at decode completion tick.
@@ -1606,8 +1688,13 @@ func TestDisaggregation_CompletionTime_GeqAllPriorPhaseTimestamps(t *testing.T) 
 	}
 }
 
-// BC-4 regression: With roofline (overhead=0), RequestE2Es[parentID] equals
-// parent.CompletionTime - parent.ArrivalTime, and E2E >= TTFT (causality law).
+// BC-4 regression: the projected parent E2E reconstructs the arrival→completion
+// span (decodeSchedulingDelay + decodeOwnE2E) and satisfies E2E >= TTFT (INV-5).
+//
+// Pre-#1513 this asserted E2E == parent.CompletionTime − ArrivalTime; that formula
+// under-counted the decode step advance (the #1513 bug). The reconstruction below
+// reads the decode sub-request's per-instance metrics — an independent mechanism
+// from the aggregated parent E2E — so it is not circular.
 func TestDisaggregation_E2E_IncludesOverhead_ZeroOverheadRegression(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(3)
@@ -1624,10 +1711,14 @@ func TestDisaggregation_E2E_IncludesOverhead_ZeroOverheadRegression(t *testing.T
 			t.Errorf("parent %s: no RequestE2Es entry after projectPDMetrics", parent.ID)
 			continue
 		}
-		wantE2E := float64(parent.CompletionTime - parent.ArrivalTime)
-		if e2e != wantE2E {
-			t.Errorf("parent %s: RequestE2Es = %.0f, want %.0f (CompletionTime-ArrivalTime)",
-				parent.ID, e2e, wantE2E)
+		// Reconstruct from decode sub-request per-instance metrics.
+		decodeOwnE2E, decodeDelay, hasDecode := pdDecodeOwnE2E(cs, parent.DecodeSubReqID)
+		if hasDecode {
+			wantE2E := float64(decodeDelay) + decodeOwnE2E
+			if e2e != wantE2E {
+				t.Errorf("parent %s: RequestE2Es = %.0f, want %.0f (decodeSchedulingDelay %d + decodeOwnE2E %.0f)",
+					parent.ID, e2e, wantE2E, decodeDelay, decodeOwnE2E)
+			}
 		}
 		// Law: E2E >= TTFT (first token precedes full decode completion)
 		ttft, hasTTFT := m.RequestTTFTs[parent.ID]
