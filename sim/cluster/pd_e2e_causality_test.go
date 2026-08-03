@@ -3,6 +3,7 @@ package cluster
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"testing"
 
 	sim "github.com/inference-sim/inference-sim/sim"
@@ -274,6 +275,21 @@ func newTestColocatedTrainedPhysicsConfig() DeploymentConfig {
 // would confound the two. The out=1 case has no such confound (0 extra decode
 // steps either way), giving a clean, exact decomposition.
 func TestPDParentE2E_GeqNonPDBaseline_OneToken(t *testing.T) {
+	// Guard the parity premise: the PD and co-located configs must use identical
+	// latency parameters, otherwise a PD-vs-non-PD E2E comparison is meaningless.
+	// This enforces the "same betas/alphas/model/hardware" claim in
+	// newTestColocatedTrainedPhysicsConfig's doc comment rather than trusting it,
+	// so the two helpers cannot silently drift apart.
+	pdCfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	coloCfg := newTestColocatedTrainedPhysicsConfig()
+	if !reflect.DeepEqual(pdCfg.LatencyCoeffs, coloCfg.LatencyCoeffs) {
+		t.Fatalf("PD and co-located configs have diverging latency coefficients (%+v vs %+v) — parity comparison invalid",
+			pdCfg.LatencyCoeffs, coloCfg.LatencyCoeffs)
+	}
+	if !reflect.DeepEqual(pdCfg.ModelHardwareConfig, coloCfg.ModelHardwareConfig) {
+		t.Fatalf("PD and co-located configs have diverging model/hardware config — parity comparison invalid")
+	}
+
 	// PD run (single request so there is no queueing skew vs the baseline).
 	mPD, csPD := runShortOutputPD(t, 1, 1)
 	var pdE2E, transferCost float64
