@@ -853,8 +853,17 @@ func TestDisaggregation_MetricProjection_E2ECount(t *testing.T) {
 	}
 }
 
-// TestDisaggregation_MetricProjection_E2ECorrectness verifies that each
-// parent E2E = CompletionTime - ArrivalTime, and E2E > TTFT.
+// TestDisaggregation_MetricProjection_E2ECorrectness verifies the projected
+// parent E2E against INDEPENDENT laws rather than the production formula.
+//
+// The pre-#1513 version asserted E2E == parent.CompletionTime − ArrivalTime,
+// which was both the bug (parent.CompletionTime omits the decode step advance,
+// under-counting E2E below TTFT for short outputs) and a tautology (it re-derived
+// the reported value from the same source). This version asserts:
+//   - E2E ≥ TTFT (INV-5 causality); and
+//   - E2E == decodeSchedulingDelay + decodeOwnE2E, reconstructed from the decode
+//     sub-request's per-instance metrics (a different mechanism than the
+//     aggregated parent E2E), so the assertion is not circular.
 func TestDisaggregation_MetricProjection_E2ECorrectness(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(5)
@@ -868,21 +877,26 @@ func TestDisaggregation_MetricProjection_E2ECorrectness(t *testing.T) {
 			continue // skip incomplete/dropped
 		}
 		pid := parent.ID
-		expectedE2E := float64(parent.CompletionTime - parent.ArrivalTime)
-
 		e2e, ok := m.RequestE2Es[pid]
 		if !ok {
 			t.Errorf("parent %s: missing RequestE2Es entry", pid)
 			continue
 		}
-		if math.Abs(e2e-expectedE2E) > 1e-9 {
-			t.Errorf("parent %s: E2E = %.0f, want %.0f (CompletionTime-ArrivalTime)",
-				pid, e2e, expectedE2E)
+
+		// Independent reconstruction from decode sub-request per-instance metrics.
+		decodeOwnE2E, decodeDelay, hasDecode := pdDecodeOwnE2E(cs, parent.DecodeSubReqID)
+		if hasDecode {
+			want := float64(decodeDelay) + decodeOwnE2E
+			if math.Abs(e2e-want) > 1e-9 {
+				t.Errorf("parent %s: E2E = %.0f, want %.0f (decodeSchedulingDelay %d + decodeOwnE2E %.0f)",
+					pid, e2e, want, decodeDelay, decodeOwnE2E)
+			}
 		}
 
+		// INV-5: E2E must not fall below TTFT.
 		ttft, hasTTFT := m.RequestTTFTs[pid]
-		if hasTTFT && e2e <= ttft {
-			t.Errorf("parent %s: E2E (%.0f) <= TTFT (%.0f), E2E must exceed TTFT (includes decode)",
+		if hasTTFT && e2e < ttft {
+			t.Errorf("parent %s: E2E (%.0f) < TTFT (%.0f), INV-5 causality violated",
 				pid, e2e, ttft)
 		}
 	}
@@ -1369,8 +1383,16 @@ func TestDisaggregation_MetricProjection_SchedulingDelay(t *testing.T) {
 	}
 }
 
-// TestDisaggregation_MetricProjection_CompletionTimes verifies that the
-// projected completion time matches the parent's CompletionTime.
+// TestDisaggregation_MetricProjection_CompletionTimes verifies that the projected
+// completion-time METRIC is consistent with the projected E2E, satisfying the
+// non-PD identity completion_metric == ArrivalTime + E2E.
+//
+// The pre-#1513 version asserted RequestCompletionTimes[pid] ==
+// parent.CompletionTime, which under-counted for the same reason as the E2E bug
+// (parent.CompletionTime is stamped on the cluster clock at the completion-
+// detection tick and omits the decode step advance). The metric is now derived
+// from the fixed E2E; the lifecycle field parent.CompletionTime is unchanged and
+// is intentionally NOT the reference here.
 func TestDisaggregation_MetricProjection_CompletionTimes(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(5)
@@ -1389,10 +1411,11 @@ func TestDisaggregation_MetricProjection_CompletionTimes(t *testing.T) {
 			t.Errorf("parent %s: missing RequestCompletionTimes entry", pid)
 			continue
 		}
-		expected := float64(parent.CompletionTime)
+		e2e := m.RequestE2Es[pid]
+		expected := float64(parent.ArrivalTime) + e2e
 		if math.Abs(ct-expected) > 1e-9 {
-			t.Errorf("parent %s: RequestCompletionTimes = %.0f, want %.0f",
-				pid, ct, expected)
+			t.Errorf("parent %s: RequestCompletionTimes = %.0f, want %.0f (ArrivalTime %d + E2E %.0f)",
+				pid, ct, expected, parent.ArrivalTime, e2e)
 		}
 	}
 }
@@ -1606,8 +1629,13 @@ func TestDisaggregation_CompletionTime_GeqAllPriorPhaseTimestamps(t *testing.T) 
 	}
 }
 
-// BC-4 regression: With roofline (overhead=0), RequestE2Es[parentID] equals
-// parent.CompletionTime - parent.ArrivalTime, and E2E >= TTFT (causality law).
+// BC-4 regression: the projected parent E2E reconstructs the arrival→completion
+// span (decodeSchedulingDelay + decodeOwnE2E) and satisfies E2E >= TTFT (INV-5).
+//
+// Pre-#1513 this asserted E2E == parent.CompletionTime − ArrivalTime; that formula
+// under-counted the decode step advance (the #1513 bug). The reconstruction below
+// reads the decode sub-request's per-instance metrics — an independent mechanism
+// from the aggregated parent E2E — so it is not circular.
 func TestDisaggregation_E2E_IncludesOverhead_ZeroOverheadRegression(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(3)
@@ -1624,10 +1652,14 @@ func TestDisaggregation_E2E_IncludesOverhead_ZeroOverheadRegression(t *testing.T
 			t.Errorf("parent %s: no RequestE2Es entry after projectPDMetrics", parent.ID)
 			continue
 		}
-		wantE2E := float64(parent.CompletionTime - parent.ArrivalTime)
-		if e2e != wantE2E {
-			t.Errorf("parent %s: RequestE2Es = %.0f, want %.0f (CompletionTime-ArrivalTime)",
-				parent.ID, e2e, wantE2E)
+		// Reconstruct from decode sub-request per-instance metrics.
+		decodeOwnE2E, decodeDelay, hasDecode := pdDecodeOwnE2E(cs, parent.DecodeSubReqID)
+		if hasDecode {
+			wantE2E := float64(decodeDelay) + decodeOwnE2E
+			if e2e != wantE2E {
+				t.Errorf("parent %s: RequestE2Es = %.0f, want %.0f (decodeSchedulingDelay %d + decodeOwnE2E %.0f)",
+					parent.ID, e2e, wantE2E, decodeDelay, decodeOwnE2E)
+			}
 		}
 		// Law: E2E >= TTFT (first token precedes full decode completion)
 		ttft, hasTTFT := m.RequestTTFTs[parent.ID]
