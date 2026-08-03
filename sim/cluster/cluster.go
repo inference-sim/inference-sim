@@ -1805,18 +1805,39 @@ func (c *ClusterSimulator) projectPDMetrics() {
 
 		// E2E: user-visible arrival → last-token span for PD disaggregation
 		// (issue #1513). The decode sub-request's own per-instance E2E
-		// (decodeOwnE2E = FirstTokenTime + Σ ITL + PostDecodeFixedOverhead)
-		// correctly captures the decode execution span INCLUDING the decode step's
-		// own advance, but is measured from the decode SCHEDULE instant: a decode
-		// sub-request never sets FirstTokenTime because it starts at
-		// ProgressIndex == InputLen (batch_formation.go / simulator.go), so its own
-		// E2E omits the arrival → decode-schedule wait. Adding decodeDelay
-		// reconstitutes the full arrival → completion span:
+		// (decodeOwnE2E = FirstTokenTime + Σ ITL + PostDecodeFixedOverhead, all
+		// measured relative to the decode sub-request's ArrivalTime = the parent's
+		// original arrival, pd_events.go) correctly captures the decode execution
+		// span INCLUDING the decode step's own advance. Two clock frames apply,
+		// discriminated by whether the decode sub-request ever ran prefill:
 		//
-		//   E2E = decodeSchedulingDelay + decodeOwnE2E
+		//   - Normal PD decode sub-request: it starts at ProgressIndex == InputLen
+		//     (batch_formation.go), so the FirstTokenTime block (simulator.go) never
+		//     fires and FirstTokenTime stays 0. Its own E2E is therefore measured
+		//     from the decode SCHEDULE instant and omits the arrival → decode-schedule
+		//     wait. Add decodeDelay to reconstitute the full arrival → completion span:
 		//
-		// This is the E2E-analog of the TTFT fix below and guarantees INV-5 by
-		// construction: decodeOwnE2E ≥ ITL[0] = firstDecodeStep, so E2E ≥ TTFT.
+		//       E2E = decodeSchedulingDelay + decodeOwnE2E
+		//
+		//   - Preempted-and-re-prefilled decode sub-request: preemption resets
+		//     ProgressIndex to 0 and clears TTFTSet (batch_formation.go), so on
+		//     re-prefill the FirstTokenTime block fires and stamps FirstTokenTime as
+		//     an ARRIVAL-relative offset (simulator.go: now + step + OTPT − ArrivalTime).
+		//     decodeOwnE2E is then ALREADY the full arrival → completion span, and
+		//     decodeDelay (re-stamped to reschedule − arrival on re-admission,
+		//     simulator.go) must NOT be added or E2E double-counts the pre-decode wait.
+		//     Discriminate on FirstTokenTime != 0 and use decodeOwnE2E directly.
+		//
+		// On the primary path this is the E2E-analog of the TTFT fix below and
+		// guarantees INV-5 by construction: decodeOwnE2E ≥ ITL[0] = firstDecodeStep,
+		// so E2E ≥ TTFT. (The fallback branch below inherits the pre-#1513
+		// parent.CompletionTime-based value; INV-5 there is not guaranteed by
+		// construction — e.g. a decode sub-request that emits a first token and then
+		// times out mid-generation takes the TTFT primary path but the E2E fallback,
+		// so a deadline landing inside the post-first-token OTPT window can leave
+		// TTFT slightly above E2E. This is unchanged from main and orthogonal to the
+		// short-output under-count fixed here; tracked with the other drop/timeout
+		// edge cases in issue #1511.)
 		//
 		// The previous formula (parent.CompletionTime − ArrivalTime) under-counted:
 		// parent.CompletionTime is stamped on the CLUSTER clock at the
@@ -1832,15 +1853,22 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		var haveParentE2E bool
 		if completed {
 			if hasDecodeDelay && hasDecodeOwnE2E {
-				e2e := float64(decodeDelay) + decodeOwnE2E
+				// decodeOwnE2E is schedule-relative on the normal path (FirstTokenTime
+				// unset) and arrival-relative after a re-prefill (FirstTokenTime set);
+				// only add decodeDelay in the former case (issue #1513 preemption fix).
+				e2e := decodeOwnE2E
+				preempted := parent.DecodeSubReq != nil && parent.DecodeSubReq.FirstTokenTime != 0
+				if !preempted {
+					e2e += float64(decodeDelay)
+				}
 				if e2e < 0 {
 					// Defensive parity with the TTFT block: never emit a negative E2E
 					// (a headline SLO metric). Unreachable in normal operation
 					// (decodeDelay ≥ 0 by shared-clock event ordering, decodeOwnE2E > 0),
 					// but guards a hypothetical clock regression rather than silently
 					// reporting a negative value.
-					logrus.Errorf("[cluster] projectPDMetrics: negative reconstructed E2E for %s (decodeDelay=%d decodeOwnE2E=%.0f); skipping",
-						pid, decodeDelay, decodeOwnE2E)
+					logrus.Errorf("[cluster] projectPDMetrics: negative reconstructed E2E for %s (decodeDelay=%d decodeOwnE2E=%.0f preempted=%v); skipping",
+						pid, decodeDelay, decodeOwnE2E, preempted)
 				} else {
 					parentE2E = e2e
 					haveParentE2E = true

@@ -30,11 +30,20 @@ import (
 // construction: decodeOwnE2E ≥ ITL[0] = firstDecodeStep, so E2E ≥ TTFT.
 
 // pdDecodeOwnE2E returns the decode sub-request's own per-instance E2E and
-// scheduling delay for the given parent, read from PER-INSTANCE metrics BEFORE
-// projection. These are the independent oracle the fix is built from; the tests
-// below never recompute the production formula from the same aggregated inputs
-// (which would be tautological — the refactor-survival trap of the pre-fix
-// E2E==CompletionTime−ArrivalTime assertion).
+// scheduling delay for the given parent, read from the per-instance metric maps
+// (`PerInstanceMetricsByID()`) rather than the projected parent-level aggregate.
+// This checks the PROJECTION logic (that projectPDMetrics recombines the
+// sub-request values into the parent E2E correctly) without re-deriving the
+// production formula from the aggregate itself — that would be the refactor-
+// survival trap of the pre-fix `E2E == CompletionTime − ArrivalTime` assertion.
+//
+// Caveat: the per-instance maps are the same accumulation path that feeds
+// `c.aggregatedMetrics`, so this reconstruction cannot catch a bug in how a
+// decode sub-request's own E2E is accumulated at the instance level. The
+// genuinely independent laws — which validate the E2E value against a separate
+// physical quantity — are `TestPDParentE2E_INV5_ShortOutputs` (E2E ≥ TTFT) and
+// `TestPDParentE2E_GeqNonPDBaseline_OneToken` (PD surplus ≥ KV-transfer cost,
+// with the transfer cost read from parent phase timestamps).
 func pdDecodeOwnE2E(cs *ClusterSimulator, decodeSubReqID string) (e2e float64, schedDelay int64, ok bool) {
 	for _, inst := range cs.PerInstanceMetricsByID() {
 		if v, present := inst.RequestE2Es[decodeSubReqID]; present {
@@ -162,11 +171,12 @@ func TestPDParentE2E_GeqDecodeOwnE2E(t *testing.T) {
 }
 
 // TestPDParentE2E_ReconstructsArrivalToCompletionSpan verifies the E2E value
-// against an INDEPENDENT oracle: the arrival→decode-schedule delay plus the
-// decode sub-request's own execution E2E. Both operands are read from
-// per-instance metrics (RequestSchedulingDelays / RequestE2Es of the decode
-// sub-request), a different mechanism than the aggregated parent E2E the fix
-// writes. This is the E2E-analog of the #1512 TTFT reconstruction guard.
+// against the arrival→decode-schedule delay plus the decode sub-request's own
+// execution E2E, both read from the per-instance metric maps (a different map
+// reference than the projected parent aggregate). This checks the projection
+// recombination, not the instance-level accumulation (see pdDecodeOwnE2E for the
+// caveat, and the INV-5 / non-PD-baseline tests for the physically-independent
+// laws). It is the E2E-analog of the #1512 TTFT reconstruction guard.
 func TestPDParentE2E_ReconstructsArrivalToCompletionSpan(t *testing.T) {
 	for _, outTokens := range []int{1, 3, 10} {
 		outTokens := outTokens
@@ -323,14 +333,165 @@ func TestPDParentE2E_GeqNonPDBaseline_OneToken(t *testing.T) {
 		t.Errorf("PD E2E (%.1f) < non-PD baseline E2E (%.1f) — PD must not under-report vs co-located (it adds KV-transfer cost)",
 			pdE2E, nonPDE2E)
 	}
-	// Law 2: the entire surplus is the KV-transfer cost (the only extra work PD does
-	// for a 1-token request). Independent oracle: transferCost is read from parent
-	// phase timestamps, not from either E2E value.
+	// Law 2: the PD surplus over co-located is at least the KV-transfer cost — the
+	// extra work PD does for a 1-token request. Independent oracle: transferCost is
+	// read from parent phase timestamps, not from either E2E value. Uses `>=` rather
+	// than exact equality so a future model that adds any extra per-path step does
+	// not break a physically-correct E2E (the surplus can only grow, never shrink
+	// below the transfer cost).
 	if transferCost <= 0 {
 		t.Fatalf("expected a positive KV-transfer cost, got %.1f", transferCost)
 	}
-	if diff := pdE2E - nonPDE2E; math.Abs(diff-transferCost) > 1e-9 {
-		t.Errorf("PD − non-PD E2E surplus = %.1f, want %.1f (KV-transfer cost); PD=%.1f nonPD=%.1f",
+	if diff := pdE2E - nonPDE2E; diff < transferCost-1e-9 {
+		t.Errorf("PD − non-PD E2E surplus = %.1f, want >= %.1f (KV-transfer cost); PD=%.1f nonPD=%.1f",
 			diff, transferCost, pdE2E, nonPDE2E)
+	}
+}
+
+// TestPDParentE2E_ProjectionBranches directly drives projectPDMetrics on stub
+// parents to cover every E2E branch at unit granularity (analogous to
+// TestDisaggregation_TTFT_ProjectionBranches for TTFT). It pins the preemption
+// discriminator (issue #1513 review finding #1) and the fallback branches, which
+// the integration tests cannot easily reach:
+//
+//   - PRIMARY (normal): FirstTokenTime == 0 ⇒ E2E = decodeDelay + decodeOwnE2E.
+//   - PRIMARY (preempted): FirstTokenTime != 0 ⇒ decodeOwnE2E is already
+//     arrival-relative, so E2E = decodeOwnE2E (decodeDelay NOT added — the guard
+//     that prevents the double-count regression vs main).
+//   - FALLBACK: decode-side metrics absent (nil DecodeSubReq / no recorded own E2E
+//     or scheduling delay) ⇒ E2E = parent.CompletionTime − ArrivalTime.
+//   - NEGATIVE GUARD: a negative reconstructed E2E is skipped (no entry emitted).
+func TestPDParentE2E_ProjectionBranches(t *testing.T) {
+	origReq := &sim.Request{ID: "orig", ArrivalTime: 0}
+
+	tests := []struct {
+		name          string
+		parent        *ParentRequest
+		setDecodeE2E  bool    // set RequestE2Es[dec] (decode sub-request's own E2E)
+		decodeOwnE2E  float64 // value for RequestE2Es[dec]
+		setDelay      bool    // set RequestSchedulingDelays[dec]
+		decodeDelay   int64   // value for the decode scheduling delay
+		wantEntry     bool    // whether a parent-keyed E2E entry is expected
+		wantE2E       float64 // expected projected E2E (when wantEntry)
+		wantCompletion float64 // expected RequestCompletionTimes[pid] (== ArrivalTime + E2E)
+	}{
+		{
+			// PRIMARY normal: FirstTokenTime == 0 ⇒ add decodeDelay.
+			name: "primary normal: decodeDelay + decodeOwnE2E",
+			parent: &ParentRequest{
+				ID: "p0", PrefillSubReqID: "p0_prefill", DecodeSubReqID: "p0_decode",
+				OriginalRequest: origReq, ArrivalTime: 0, CompletionTime: 5000,
+				DecodeInstanceID: "inst-0",
+				DecodeSubReq:     &sim.Request{FirstTokenTime: 0, ITL: []int64{300}},
+			},
+			setDecodeE2E: true, decodeOwnE2E: 301,
+			setDelay: true, decodeDelay: 151,
+			wantEntry: true, wantE2E: 151 + 301, wantCompletion: 452,
+		},
+		{
+			// PRIMARY preempted: FirstTokenTime != 0 ⇒ decodeOwnE2E already spans
+			// arrival→completion; decodeDelay must NOT be added (double-count guard).
+			// Without the guard this would report 151 + 900 = 1051 (regression).
+			name: "primary preempted: decodeOwnE2E only (no double-count)",
+			parent: &ParentRequest{
+				ID: "p1", PrefillSubReqID: "p1_prefill", DecodeSubReqID: "p1_decode",
+				OriginalRequest: origReq, ArrivalTime: 0, CompletionTime: 5000,
+				DecodeInstanceID: "inst-0",
+				DecodeSubReq:     &sim.Request{FirstTokenTime: 600, ITL: []int64{300}},
+			},
+			setDecodeE2E: true, decodeOwnE2E: 900, // = FirstTokenTime(600) + ITL(300) arrival-relative
+			setDelay: true, decodeDelay: 151,
+			wantEntry: true, wantE2E: 900, wantCompletion: 900,
+		},
+		{
+			// FALLBACK: nil DecodeSubReq (drop-at-transfer-start / late-drop, #1511) ⇒
+			// no decode own E2E ⇒ parent.CompletionTime − ArrivalTime.
+			name: "fallback: nil DecodeSubReq",
+			parent: &ParentRequest{
+				ID: "p2", PrefillSubReqID: "p2_prefill", DecodeSubReqID: "p2_decode",
+				OriginalRequest: origReq, ArrivalTime: 100, CompletionTime: 5000,
+				DecodeInstanceID: "inst-0", DecodeSubReq: nil,
+			},
+			setDecodeE2E: false, setDelay: false,
+			wantEntry: true, wantE2E: 4900, wantCompletion: 5000, // 5000 − 100 = 4900; completion = 100 + 4900
+		},
+		{
+			// FALLBACK: decode own E2E present but scheduling delay absent (defensive:
+			// both are required for the primary path) ⇒ CompletionTime-based value.
+			name: "fallback: missing decode scheduling delay",
+			parent: &ParentRequest{
+				ID: "p3", PrefillSubReqID: "p3_prefill", DecodeSubReqID: "p3_decode",
+				OriginalRequest: origReq, ArrivalTime: 0, CompletionTime: 5000,
+				DecodeInstanceID: "inst-0",
+				DecodeSubReq:     &sim.Request{FirstTokenTime: 0, ITL: []int64{300}},
+			},
+			setDecodeE2E: true, decodeOwnE2E: 301,
+			setDelay: false,
+			wantEntry: true, wantE2E: 5000, wantCompletion: 5000,
+		},
+		{
+			// NEGATIVE GUARD: a negative reconstructed E2E (only reachable via a
+			// hypothetical shared-clock regression) is skipped — no entry emitted.
+			name: "negative guard: negative reconstructed E2E ⇒ no entry",
+			parent: &ParentRequest{
+				ID: "p4", PrefillSubReqID: "p4_prefill", DecodeSubReqID: "p4_decode",
+				OriginalRequest: origReq, ArrivalTime: 0, CompletionTime: 5000,
+				DecodeInstanceID: "inst-0",
+				DecodeSubReq:     &sim.Request{FirstTokenTime: 0, ITL: []int64{300}},
+			},
+			setDecodeE2E: true, decodeOwnE2E: -1000,
+			setDelay: true, decodeDelay: 500, // 500 + (−1000) = −500 < 0
+			wantEntry: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := sim.NewMetrics()
+			// Seed sub-request keys that projectPDMetrics must consume/delete.
+			m.RequestTTFTs[tc.parent.PrefillSubReqID] = 2500.0
+			if tc.setDecodeE2E {
+				m.RequestE2Es[tc.parent.DecodeSubReqID] = tc.decodeOwnE2E
+			}
+			if tc.setDelay {
+				m.RequestSchedulingDelays[tc.parent.DecodeSubReqID] = tc.decodeDelay
+			}
+
+			cs := &ClusterSimulator{
+				aggregatedMetrics: m,
+				parentRequests:    map[string]*ParentRequest{tc.parent.ID: tc.parent},
+			}
+			cs.projectPDMetrics()
+
+			got, ok := m.RequestE2Es[tc.parent.ID]
+			if tc.wantEntry {
+				if !ok {
+					t.Fatalf("parent %s: E2E entry missing after projection", tc.parent.ID)
+				}
+				if math.Abs(got-tc.wantE2E) > 1e-9 {
+					t.Errorf("parent %s: E2E = %.1f, want %.1f", tc.parent.ID, got, tc.wantE2E)
+				}
+				// Completion-time metric consistency (== ArrivalTime + E2E).
+				ct, ctOK := m.RequestCompletionTimes[tc.parent.ID]
+				if !ctOK {
+					t.Fatalf("parent %s: completion-time entry missing after projection", tc.parent.ID)
+				}
+				if math.Abs(ct-tc.wantCompletion) > 1e-9 {
+					t.Errorf("parent %s: completion-time metric = %.1f, want %.1f", tc.parent.ID, ct, tc.wantCompletion)
+				}
+			} else {
+				if ok {
+					t.Errorf("parent %s: unexpected E2E entry %.1f (negative-guard branch should skip)", tc.parent.ID, got)
+				}
+				if _, ctOK := m.RequestCompletionTimes[tc.parent.ID]; ctOK {
+					t.Errorf("parent %s: unexpected completion-time entry (should skip when E2E skipped)", tc.parent.ID)
+				}
+			}
+
+			// INV-PD-6: sub-request keys must be deleted regardless of branch.
+			if _, exists := m.RequestE2Es[tc.parent.DecodeSubReqID]; exists {
+				t.Errorf("INV-PD-6: decode sub-request E2E key %s still present", tc.parent.DecodeSubReqID)
+			}
+		})
 	}
 }

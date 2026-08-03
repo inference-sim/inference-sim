@@ -872,6 +872,7 @@ func TestDisaggregation_MetricProjection_E2ECorrectness(t *testing.T) {
 	mustRun(t, cs)
 
 	m := cs.AggregatedMetrics()
+	reconstructed := 0
 	for _, parent := range cs.parentRequests {
 		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
 			continue // skip incomplete/dropped
@@ -891,6 +892,7 @@ func TestDisaggregation_MetricProjection_E2ECorrectness(t *testing.T) {
 				t.Errorf("parent %s: E2E = %.0f, want %.0f (decodeSchedulingDelay %d + decodeOwnE2E %.0f)",
 					pid, e2e, want, decodeDelay, decodeOwnE2E)
 			}
+			reconstructed++
 		}
 
 		// INV-5: E2E must not fall below TTFT.
@@ -899,6 +901,13 @@ func TestDisaggregation_MetricProjection_E2ECorrectness(t *testing.T) {
 			t.Errorf("parent %s: E2E (%.0f) < TTFT (%.0f), INV-5 causality violated",
 				pid, e2e, ttft)
 		}
+	}
+	// Guard against a vacuous pass: if the decode sub-request E2E were never recorded
+	// (e.g. a data-flow bug), the reconstruction assertion would silently skip for
+	// every parent. This workload's parents all complete via a normal decode path, so
+	// at least one must have been reconstructed.
+	if reconstructed == 0 {
+		t.Fatal("no parent E2E was reconstructed from decode sub-request metrics — data flow drifted or projection changed")
 	}
 }
 
@@ -1560,12 +1569,15 @@ func mapKeysRM(m map[string]sim.RequestMetrics) []string {
 	return keys
 }
 
-// BC-3b: detectDecodeCompletions adds PostDecodeFixedOverhead to parent.CompletionTime.
+// BC-3b: PostDecodeFixedOverhead flows into the client-visible E2E metric.
 // Law: for matching completed parents across two runs (zero vs non-zero overhead),
 // E2E_with_overhead - E2E_without_overhead == wantOverhead exactly.
-// This is the only cluster-level test that exercises overhead > 0, directly
-// verifying the line `parent.CompletionTime = c.clock + inst.PostDecodeFixedOverhead()`
-// that was the bug site fixed in issue #846.
+// After issue #1513 the parent E2E is reconstructed as decodeSchedulingDelay +
+// decodeOwnE2E; the overhead flows through decodeOwnE2E (recordRequestCompletion
+// adds PostDecodeFixedOverhead) while decodeSchedulingDelay is independent of it,
+// so the differential still isolates the overhead exactly. The direct assertion
+// on the lifecycle field `parent.CompletionTime = c.clock + PostDecodeFixedOverhead()`
+// lives in TestDisaggregation_CompletionTime_LifecycleField_IncludesOverhead.
 func TestDisaggregation_CompletionTime_IncludesNonZeroOverhead(t *testing.T) {
 	const wantOverheadUs = int64(1000) // 1ms overhead, chosen to be clearly distinguishable
 
@@ -1597,6 +1609,53 @@ func TestDisaggregation_CompletionTime_IncludesNonZeroOverhead(t *testing.T) {
 		if gotDiff != float64(wantOverheadUs) {
 			t.Errorf("parent %s: E2E diff = %.0f µs, want %d µs (overhead not stamped into CompletionTime)",
 				parent.ID, gotDiff, wantOverheadUs)
+		}
+		completed++
+	}
+	if completed == 0 {
+		t.Fatal("no completed parents in baseline run — test is vacuously passing, check config")
+	}
+}
+
+// INV-PD-6b lifecycle field: parent.CompletionTime == cluster-clock-at-decode-completion
+// + PostDecodeFixedOverhead. This pins the lifecycle field DIRECTLY (not via the E2E
+// metric), so it survives even though the #1513 E2E fix stopped deriving E2E from
+// parent.CompletionTime. Revert `parent.CompletionTime = c.clock + overhead` to bare
+// `c.clock` in detectDecodeCompletions and this test fails; the E2E-metric differential
+// test above would not (overhead flows through decodeOwnE2E there).
+//
+// Law: for matching completed parents across two runs (zero vs non-zero overhead),
+// CompletionTime_with_overhead − CompletionTime_without_overhead == wantOverhead exactly.
+func TestDisaggregation_CompletionTime_LifecycleField_IncludesOverhead(t *testing.T) {
+	const wantOverheadUs = int64(1000) // 1ms, clearly distinguishable
+
+	requests := newTestRequests(3)
+	cs0 := NewClusterSimulator(newTestDisaggDeploymentConfigWithOverhead(0), NewSliceRequestSource(requests), nil)
+	mustRun(t, cs0)
+	cs1 := NewClusterSimulator(newTestDisaggDeploymentConfigWithOverhead(float64(wantOverheadUs)), NewSliceRequestSource(requests), nil)
+	mustRun(t, cs1)
+
+	// Index run-1 parents by ID for matching.
+	byID1 := make(map[string]*ParentRequest)
+	for _, p := range cs1.parentRequests {
+		byID1[p.ID] = p
+	}
+
+	completed := 0
+	for _, p0 := range cs0.parentRequests {
+		if p0.CompletionTime == 0 || p0.DecodeInstanceID == "" {
+			continue // dropped or horizon-interrupted
+		}
+		p1, ok := byID1[p0.ID]
+		if !ok || p1.CompletionTime == 0 {
+			t.Errorf("parent %s: missing matching completed parent in overhead run", p0.ID)
+			continue
+		}
+		// Law: the lifecycle field carries exactly the configured overhead delta.
+		gotDiff := p1.CompletionTime - p0.CompletionTime
+		if gotDiff != wantOverheadUs {
+			t.Errorf("parent %s: CompletionTime diff = %d µs, want %d µs (overhead not stamped into lifecycle field)",
+				p0.ID, gotDiff, wantOverheadUs)
 		}
 		completed++
 	}
