@@ -148,11 +148,11 @@ func (m *Metrics) BuildOutput(instanceID string, saturationDetector BatchClassif
 		}
 	}
 
-	// Run post-hoc saturation detection if a batch classifier is provided (#1369).
-	// As of #1516 run/replay pass nil here (stdout carries no saturation; the
-	// per-event trace is produced by the streaming replay pipeline instead), so
-	// this block is dormant — the seam is retained for #1517, which repopulates
-	// output.Saturation through the same param for the stdout final label.
+	// Run post-hoc saturation detection if a batch classifier is provided.
+	// Introduced by #1369; as of #1516 run/replay pass nil here (stdout carries no
+	// saturation; the per-event trace is produced by the streaming replay pipeline
+	// instead), so this block is dormant. The seam is retained for #1517, which
+	// repopulates output.Saturation through the same param for the stdout final label.
 	if saturationDetector != nil {
 		// Calculate total arrivals (Issue #4: needed for rate deficit in batch mode)
 		totalArrivals := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests
