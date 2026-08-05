@@ -111,6 +111,27 @@ func TestResolveSaturation_ValidSingleDetector(t *testing.T) {
 	}
 }
 
+// TestResolveSaturation_CompositeWithEmptyConfig verifies the integration path
+// --detectors composite + an empty --saturation-config round-trips cleanly
+// (composite has no block; an empty file = all defaults, not an error).
+func TestResolveSaturation_CompositeWithEmptyConfig(t *testing.T) {
+	resetSaturationGlobals()
+	cfgPath := filepath.Join(t.TempDir(), "empty.yaml")
+	if err := os.WriteFile(cfgPath, []byte(""), 0644); err != nil {
+		t.Fatalf("write empty config: %v", err)
+	}
+	detectorName = "composite"
+	saturationConfigPath = cfgPath
+	saturationReport = filepath.Join(t.TempDir(), "x.json")
+	det, coll, err := resolveSaturation()
+	if err != nil {
+		t.Fatalf("composite + empty config should succeed, got: %v", err)
+	}
+	if det == nil || coll == nil || det.Name() != "composite" {
+		t.Errorf("expected composite detector + collector, got det=%v coll=%v", det, coll)
+	}
+}
+
 // TestRunSaturationTrace_NoOpWhenOff verifies runSaturationTrace writes nothing
 // when the detector is nil or no report path is set (INV-6 no-op).
 func TestRunSaturationTrace_NoOpWhenOff(t *testing.T) {

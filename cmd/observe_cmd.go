@@ -776,7 +776,7 @@ func printObserveMetrics(w io.Writer, records []workload.TraceRecord, wallClockD
 		ITLMeanMs:         itlMeanMs,
 		ResponsesPerSec:   responsesPerSec,
 		TokensPerSec:      tokensPerSec,
-		Saturation:        saturationResult, // #1379: populated when --post-hoc-detector is specified
+		Saturation:        saturationResult, // always nil as of #1516 (observe writes the per-event trace to --saturation-report, not stdout); #1517 repopulates this for the stdout final label
 	}
 
 	// Compute percentiles if data available
