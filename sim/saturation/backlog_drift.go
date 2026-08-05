@@ -201,6 +201,14 @@ func (b *BacklogDriftDetector) Detect() Result {
 	// so it crosses ~1.0 exactly as the level reaches OVERLOADED. Draining
 	// (negative slope) ⇒ 0. Mirrors Classify's "normalized slope magnitude,
 	// capped at 1.0" convention.
+	//
+	// Note the shared boundary: at exactly slope == K·noiseFloor the band switch
+	// (<=) still reports BACKLOGGED while the score reaches 1.0, so Score==1.0 can
+	// co-occur with Level==BACKLOGGED. This is a measure-zero float coincidence,
+	// and both the band inequality and the score formula are pinned verbatim by
+	// #1515 — kept as-is so callers get the contracted values rather than a
+	// locally-nudged epsilon; Score is a magnitude, Level is the authoritative
+	// band.
 	score := 0.0
 	denom := backlogDriftSlopeK * noiseFloor
 	if denom > 0 {
