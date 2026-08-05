@@ -19,8 +19,11 @@ const backlogDriftSlopeK = 3.0
 
 // BacklogDriftDetector wraps the workload.AnalyzeBacklogDriftWithClassifier logic
 // as a post-hoc saturation detector (Issue #7).
-// This detector is stateless - it performs regression analysis over
-// completed request intervals during Classify().
+//
+// Two independent paths: the Classify (batch) path is stateless — it performs
+// whole-trace regression over completed request intervals on each call. The
+// Observe/Detect streaming path (#1515) carries incremental per-event state (the
+// fields below).
 //
 // The classifier is configurable (#1392): defaults to drain-ratio (matching the
 // CLI default for --saturation-classifier) so that the post-hoc detector path
@@ -37,12 +40,17 @@ type BacklogDriftDetector struct {
 	arrivals    int64 // running count of Arrival events
 	completions int64 // running count of Completion events
 
-	// Bounded trailing window of in-flight samples, one per WindowSize bucket.
-	// The last in-flight value is carried forward across empty buckets so memory
-	// is O(windows), not O(events). buckets holds the in-flight value at the end
-	// of each observed bucket; empty intervening buckets are forward-filled so
-	// the samples stay evenly spaced, letting Detect use bucket position as the
-	// OLS x-axis (scale-stable, independent of absolute timestamp magnitude).
+	// In-flight samples, one per WindowSize bucket spanned. buckets[i] holds the
+	// in-flight value at the end of bucket i; empty intervening buckets are
+	// forward-filled with the last value so the samples stay evenly spaced,
+	// letting Detect use bucket position as the OLS x-axis (scale-stable,
+	// independent of absolute timestamp magnitude).
+	//
+	// Memory is O(buckets spanned) = O(elapsed_span / WindowSize), i.e. it grows
+	// with the observation horizon, not the event count — a saving over O(events)
+	// when buckets are densely populated, but NOT a fixed bound (a sparse stream
+	// over a long horizon forward-fills many empty buckets). #1516 may add a
+	// trailing cap when it wires this to output; today the whole span is kept.
 	buckets       []int64
 	curBucketIdx  int64 // absolute index of the bucket currently being filled
 	curBucketInit bool  // whether curBucketIdx has been established yet
@@ -130,10 +138,9 @@ func (b *BacklogDriftDetector) Observe(event Event) {
 	}
 
 	// Advanced to a later bucket. Carry the last value forward across any empty
-	// intervening buckets so samples stay evenly spaced (one per bucket), keeping
-	// memory at O(windows). Events must arrive in non-decreasing timestamp order;
-	// an out-of-order earlier event folds into the current bucket rather than
-	// rewriting history.
+	// intervening buckets so samples stay evenly spaced (one per bucket spanned).
+	// Events must arrive in non-decreasing timestamp order; an out-of-order
+	// earlier event folds into the current bucket rather than rewriting history.
 	if bucketIdx > b.curBucketIdx {
 		lastVal := b.buckets[len(b.buckets)-1]
 		for gap := b.curBucketIdx + 1; gap < bucketIdx; gap++ {
