@@ -68,6 +68,16 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 		if !cs.addLiveInstance(p.id, cs.config.Model, p.simCfg, p.nodeID, p.gpuIDs, p.tpDegree, poolCostPerHour) {
 			continue // GPU release already handled by addLiveInstance
 		}
+		// B-5 (#1493): seed the cluster-assigned resident adapters for this
+		// deferred instance via the CreationPolicy seam (uncharged). Kept OUT of
+		// addLiveInstance so the autoscaler scale-up path (which never carries a
+		// placement assignment) inherits an empty resident set (C-5). No-op when
+		// unplaced (seedAdapters nil).
+		if len(p.seedAdapters) > 0 {
+			if inst := cs.instanceByID(p.id); inst != nil {
+				inst.ApplyInitialCreation(p.seedAdapters)
+			}
+		}
 	}
 }
 
