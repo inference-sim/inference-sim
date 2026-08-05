@@ -4,8 +4,6 @@ package saturation
 import (
 	"math"
 	"sort"
-
-	"github.com/inference-sim/inference-sim/sim"
 )
 
 // CompositeDetector combines rate deficit and latency trend signals using max() composition
@@ -60,31 +58,6 @@ func (c *CompositeDetector) Detect() Result {
 	}
 
 	return computeComposite(arrivals, completions, sortedLatencies)
-}
-
-// Classify performs batch post-hoc classification on completed requests.
-// Issue #4: Now accepts totalArrivals to compute rate deficit in batch mode.
-func (c *CompositeDetector) Classify(requests []sim.RequestMetrics, totalArrivals int) interface{} {
-	completions := len(requests)
-
-	if completions == 0 {
-		return Result{Level: Stable, Score: 0, Confidence: 0, Signals: make(map[string]float64)}
-	}
-
-	// Issue #5: Sort by completion time, not arrival time
-	sort.Slice(requests, func(i, j int) bool {
-		completionI := requests[i].ArrivedAt + requests[i].E2E/1000.0
-		completionJ := requests[j].ArrivedAt + requests[j].E2E/1000.0
-		return completionI < completionJ
-	})
-
-	// Extract latencies (already in completion order)
-	sortedLatencies := make([]float64, completions)
-	for i, r := range requests {
-		sortedLatencies[i] = r.E2E
-	}
-
-	return computeComposite(totalArrivals, completions, sortedLatencies)
 }
 
 // Reset clears accumulated state for fresh detection.

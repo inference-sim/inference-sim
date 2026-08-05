@@ -17,7 +17,6 @@ import (
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/latency"
-	"github.com/inference-sim/inference-sim/sim/saturation"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -542,6 +541,14 @@ Example:
 			}
 		}
 		cs := cluster.NewClusterSimulator(config, cluster.NewSliceRequestSource(requests), onRequestDone)
+
+		// Resolve the saturation detector + trace collector BEFORE the run so a
+		// bad flag / config / report path fails fast (#1516).
+		saturationDet, saturationCollector, satErr := resolveSaturation()
+		if satErr != nil {
+			logrus.Fatalf("%v", satErr)
+		}
+
 		if err := cs.Run(); err != nil {
 			logrus.Fatalf("Replay simulation failed: %v", err)
 		}
@@ -571,39 +578,30 @@ Example:
 			logrus.Infof("Trace exported: %s.yaml, %s.csv (%d records)", replayTraceOutput, replayTraceOutput, len(records))
 		}
 
-		// Validate and instantiate post-hoc saturation detector from CLI flags (#1369, C3)
-		if !saturation.ValidDetectorNames()[postHocDetector] {
-			logrus.Fatalf("--post-hoc-detector %q not recognized. Valid: composite, threshold, none", postHocDetector)
-		}
-
-		// Validate saturation threshold for negative values (I4)
-		if saturationThreshold < 0 {
-			logrus.Fatalf("--saturation-threshold-ms must be non-negative, got %.2f", saturationThreshold)
-		}
-
-		var saturationDetector sim.BatchClassifier
-		if postHocDetector != "none" {
-			saturationDetector = saturation.NewDetector(postHocDetector, saturation.DetectorOpts{
-				ThresholdMs: saturationThreshold,
-			})
-		}
-
-		// Save aggregate metrics to stdout (same as runCmd)
+		// Save aggregate metrics to stdout (same as runCmd).
+		// nil saturation arg (#1516): stdout carries no saturation field.
 		if numInstances > 1 {
 			for _, inst := range cs.Instances() {
-				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, "", saturationDetector); err != nil {
+				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, "", nil); err != nil {
 					logrus.Fatalf("SaveResults for instance %s: %v", inst.ID(), err)
 				}
 			}
 		}
 		// Save aggregate (always print to stdout; SimResult output uses separate file)
 		// goodputTargets resolved above for trace re-export; reused here (#1413, BC-1, BC-4).
+		// nil saturation arg (#1516): the per-event trace is streamed below.
 		aggregated := cs.AggregatedMetrics()
-		clusterOutput := aggregated.BuildOutput("cluster", saturationDetector)
+		clusterOutput := aggregated.BuildOutput("cluster", nil)
 		emitGoodput(&clusterOutput, aggregated, cs.InjectedByClass(),
 			float64(aggregated.SimEndedTime)/1e6, goodputTargets)
 		if err := aggregated.EmitOutput(clusterOutput, ""); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
+		}
+
+		// Saturation trace (#1516): same pipeline as run/observe, sim-derived
+		// input. run → replay of the same trace is byte-identical (INV-13).
+		if err := runSaturationTrace(saturationDet, saturationCollector, aggregated.CompletedRequestMetrics()); err != nil {
+			logrus.Fatalf("Saturation trace: %v", err)
 		}
 
 		rawMetrics := cluster.CollectRawMetrics(
@@ -733,44 +731,6 @@ Example:
 			logrus.Infof("SimResults written to %s (%d entries)", resultsPath, len(simResults))
 		}
 
-		// Saturation analysis if requested (issue #1298, #1391, #1392)
-		if saturationReport != "" {
-			// Assemble all requests (original + follow-ups)
-			allRequests := make([]*sim.Request, 0, len(requests)+len(followUpRequests))
-			allRequests = append(allRequests, requests...)
-			allRequests = append(allRequests, followUpRequests...)
-			sort.SliceStable(allRequests, func(i, j int) bool {
-				return allRequests[i].ArrivalTime < allRequests[j].ArrivalTime
-			})
-
-			simEndUs := workload.ComputeSimEndUs(allRequests, config.Horizon)
-
-			// Validate classifier name (CLI gate; library factory panics on unknown).
-			if !sim.IsValidBacklogClassifier(saturationClassifier) {
-				logrus.Fatalf("Unknown --saturation-classifier %q. Valid: %s",
-					saturationClassifier, strings.Join(sim.ValidBacklogClassifierNames(), ", "))
-			}
-			classifier := workload.NewBacklogClassifier(saturationClassifier)
-
-			// Build saturation analysis config from flags (or defaults if not set)
-			cfg := workload.NewBacklogDriftConfig(
-				time.Duration(saturationWindowSec)*time.Second,
-				saturationMinWindows,
-				saturationPeakRatio,
-				saturationPeakBand,
-				saturationConfidence,
-				saturationWarmupWindows,
-				saturationTailWindows,
-				saturationSaturatedRatio,
-				saturationTransientRatio,
-			)
-			report := workload.AnalyzeBacklogDriftWithClassifier(allRequests, simEndUs, cfg, classifier)
-			if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
-				logrus.Fatalf("Failed to write saturation report: %v", err)
-			}
-			logrus.Infof("Saturation report written to %s (classification: %s)", saturationReport, report.Classification)
-		}
-
 		logrus.Info("Replay complete.")
 	},
 }
@@ -781,13 +741,9 @@ func init() {
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
 	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us) for blis calibrate consumption.")
 	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\"")
-	replayCmd.Flags().StringVar(&saturationReport, "saturation-report", "", "File to write saturation analysis JSON (backlog-drift classification)")
 
-	// Post-hoc saturation detector flags (#1369)
-	replayCmd.Flags().StringVar(&postHocDetector, "post-hoc-detector", "none", "Post-hoc saturation detector: composite, threshold, none")
-	replayCmd.Flags().Float64Var(&saturationThreshold, "saturation-threshold-ms", 5000.0, "Threshold in ms for threshold detector (default 5000ms)")
-
-	registerSaturationFlags(replayCmd)
+	// Saturation trace flags (#1516): --detectors + --saturation-config + --saturation-report.
+	registerDetectorFlags(replayCmd)
 
 	replayCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", `Session replay mode: "fixed" (pre-baked arrivals from trace) or "closed-loop" (load-adaptive follow-ups via SessionManager)`)
 	replayCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "Override think time between session rounds in milliseconds (0 = derive from trace inter-round arrival gaps; mutually exclusive with --think-time-dist; requires --session-mode closed-loop)")

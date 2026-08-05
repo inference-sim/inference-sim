@@ -2201,9 +2201,9 @@ func setObserveGlobalsForSubprocess(serverURL, header, data string) {
 	observeThinkTimeDist = ""
 	observeUnconstrainedOutput = false
 	observeDefaultsFilePath = "../defaults.yaml"
-	// Shared post-hoc/saturation/goodput globals (declared in root.go).
-	postHocDetector = "none"
-	saturationThreshold = 5000.0
+	// Shared saturation/goodput globals (#1516: --detectors / --saturation-config / --saturation-report).
+	detectorName = ""
+	saturationConfigPath = ""
 	saturationReport = ""
 	goodputSLOTTFT = ""
 	goodputSLOITL = ""

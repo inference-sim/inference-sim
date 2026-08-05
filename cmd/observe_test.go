@@ -2123,64 +2123,11 @@ func TestPrintObserveMetrics_SaturationAbsentByDefault(t *testing.T) {
 	}
 }
 
-func TestPrintObserveMetrics_EmptyRecordsWithDetector(t *testing.T) {
-	// S-3: Edge case - all records time out, verify no panic when detector is specified
-	// TraceRecordsToRequestMetrics returns empty slice, totalArrivals=0
-	records := []workload.TraceRecord{
-		{RequestID: 1, Status: "timeout", ArrivalTimeUs: 1000000, SendTimeUs: 1000000, LastChunkTimeUs: 1100000},
-		{RequestID: 2, Status: "error", ArrivalTimeUs: 2000000, SendTimeUs: 2000000, LastChunkTimeUs: 2050000},
-	}
-
-	// Simulate what observe_cmd.go does with detector
-	requestMetrics := workload.TraceRecordsToRequestMetrics(records)
-	if len(requestMetrics) != 0 {
-		t.Fatalf("Expected empty metrics for all-timeout records, got %d", len(requestMetrics))
-	}
-	totalArrivals := len(records) // 2
-
-	// Create detector and classify (should not panic)
-	detector := saturation.NewDetector("composite", saturation.DetectorOpts{})
-	satResult := detector.Classify(requestMetrics, totalArrivals)
-
-	// Type assert to verify structure
-	result, ok := satResult.(saturation.Result)
-	if !ok {
-		t.Fatalf("Expected saturation.Result, got %T", satResult)
-	}
-
-	// Composite detector with 0 completions should return Stable (rate_deficit=1.0, latency_trend=0)
-	if result.Level != saturation.Stable {
-		t.Errorf("Expected Stable for 0 completions, got %v", result.Level)
-	}
-
-	// Verify printObserveMetrics doesn't panic with empty metrics + saturation result
-	var buf bytes.Buffer
-	printObserveMetrics(&buf, records, 1.0, nil, satResult, nil)
-
-	// Parse JSON and verify saturation field is present
-	var metrics map[string]interface{}
-	lines := strings.Split(buf.String(), "\n")
-	jsonStart := -1
-	for i, line := range lines {
-		if strings.Contains(line, "=== Simulation Metrics ===") {
-			jsonStart = i + 1
-			break
-		}
-	}
-	jsonStr := strings.Join(lines[jsonStart:], "\n")
-	if err := json.Unmarshal([]byte(jsonStr), &metrics); err != nil {
-		t.Fatalf("Failed to parse JSON: %v", err)
-	}
-
-	// Verify saturation field exists
-	if _, exists := metrics["saturation"]; !exists {
-		t.Errorf("Expected saturation field even with 0 completions")
-	}
-}
-
-func TestObservePostHocDetector_RateDeficitUsesAllArrivals(t *testing.T) {
-	// R-3: Integration test verifying rate_deficit uses len(records), not len(metrics)
-	// This is a regression test for the calling convention in observe_cmd.go:522
+// TestObserveSaturationTrace_StreamsCompletedMetrics verifies the observe leg of
+// the #1516 pipeline: TraceRecordsToRequestMetrics feeds ReplayOneDetector, which
+// writes a per-event trace. Only "ok" records contribute events (2 completed of 4
+// arrivals here → 4 events); timeouts/errors are dropped by the extractor.
+func TestObserveSaturationTrace_StreamsCompletedMetrics(t *testing.T) {
 	records := []workload.TraceRecord{
 		{RequestID: 1, Status: "ok", ArrivalTimeUs: 1000000, SendTimeUs: 1000000, LastChunkTimeUs: 1100000},
 		{RequestID: 2, Status: "ok", ArrivalTimeUs: 2000000, SendTimeUs: 2000000, LastChunkTimeUs: 2100000},
@@ -2188,35 +2135,22 @@ func TestObservePostHocDetector_RateDeficitUsesAllArrivals(t *testing.T) {
 		{RequestID: 4, Status: "error", ArrivalTimeUs: 4000000, SendTimeUs: 4000000, LastChunkTimeUs: 4100000},
 	}
 
-	// Simulate observe_cmd.go logic
 	requestMetrics := workload.TraceRecordsToRequestMetrics(records)
 	if len(requestMetrics) != 2 {
-		t.Fatalf("Expected 2 metrics, got %d", len(requestMetrics))
+		t.Fatalf("Expected 2 completed metrics, got %d", len(requestMetrics))
 	}
 
-	totalArrivals := len(records) // CORRECT: 4 (all arrivals)
-
-	// Call composite detector
-	detector := saturation.NewDetector("composite", saturation.DetectorOpts{})
-	satResult := detector.Classify(requestMetrics, totalArrivals)
-
-	// Type assert to extract signals
-	result, ok := satResult.(saturation.Result)
-	if !ok {
-		t.Fatalf("Expected saturation.Result, got %T", satResult)
+	det, err := saturation.BuildDetector("composite", saturation.SaturationConfig{})
+	if err != nil {
+		t.Fatalf("BuildDetector: %v", err)
 	}
+	collector := saturation.NewInMemoryCollector()
+	saturation.ReplayOneDetector(det, requestMetrics, collector)
 
-	// Verify rate_deficit reflects all 4 arrivals
-	// rate_deficit = 1 - (completions / totalArrivals) = 1 - (2 / 4) = 0.5
-	rateDeficit := result.Signals["rate_deficit"]
-	expectedDeficit := 0.5
-	if rateDeficit != expectedDeficit {
-		t.Errorf("rate_deficit = %f, want %f (2 completions / 4 total arrivals)", rateDeficit, expectedDeficit)
+	// 2 completed requests → 2 arrivals + 2 completions → 4 verdict records.
+	if got := len(collector.Records()); got != 4 {
+		t.Errorf("Expected 4 trace records (2 events × 2 completed), got %d", got)
 	}
-
-	// If observe_cmd.go incorrectly passed len(requestMetrics) instead of len(records):
-	// rate_deficit = 1 - (2 / 2) = 0.0 (WRONG - hides the 2 failures)
-	// This test would catch that regression.
 }
 
 // TestRealClient_SetsXRequestIDHeader verifies issue #1428 AC: every outgoing

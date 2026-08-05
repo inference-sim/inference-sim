@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -31,65 +30,31 @@ func smallWindowConfig() workload.BacklogDriftConfig {
 // bucketUs is the 100ms window from smallWindowConfig expressed in microseconds.
 const bucketUs = int64(100 * time.Millisecond / time.Microsecond)
 
-// TestBacklogDriftDetector_Stable verifies UNSATURATED classification
+// TestBacklogDriftDetector_Stable verifies STABLE via the streaming path when
+// arrivals and completions stay balanced (flat in-flight → zero slope). This
+// replaces the removed batch Classify path (#1516); the streaming signals are
+// running_slope/in_flight, not the batch slope/num_windows.
 func TestBacklogDriftDetector_Stable(t *testing.T) {
-	// Create 10 requests with stable latency (no backlog growth)
-	requests := make([]sim.RequestMetrics, 10)
+	det := NewBacklogDriftDetectorWithConfig(smallWindowConfig())
+
+	// Each arrival is immediately followed by a completion in the same bucket, so
+	// in-flight stays flat at ~0 across buckets → running_slope ≈ 0 → STABLE.
 	for i := 0; i < 10; i++ {
-		requests[i] = sim.RequestMetrics{
-			ID:        "r" + string(rune(i)),
-			ArrivedAt: float64(i * 10), // Arrive every 10 seconds
-			E2E:       100.0,           // Constant 100ms latency
-		}
+		ts := int64(i) * bucketUs
+		det.Observe(Event{Timestamp: ts, Type: Arrival, RequestID: "r" + strconv.Itoa(i)})
+		det.Observe(Event{Timestamp: ts, Type: Completion, RequestID: "r" + strconv.Itoa(i), LatencyMs: 100})
 	}
+	result := det.Detect()
 
-	det := NewBacklogDriftDetector()
-	result := det.Classify(requests, len(requests)).(Result)
-
-	// Should classify as STABLE (UNSATURATED)
 	if result.Level != Stable {
-		t.Errorf("Expected Stable for stable latency, got %v", result.Level)
+		t.Errorf("Expected Stable for flat in-flight, got %v (running_slope=%.4f)", result.Level, result.Signals["running_slope"])
 	}
-
-	// Verify signals are present
-	if _, ok := result.Signals["slope"]; !ok {
-		t.Error("Missing slope signal")
+	// Verify streaming signals are present
+	if _, ok := result.Signals["running_slope"]; !ok {
+		t.Error("Missing running_slope signal")
 	}
-}
-
-// TestBacklogDriftDetector_Overloaded verifies PERSISTENTLY_SATURATED classification
-func TestBacklogDriftDetector_Overloaded(t *testing.T) {
-	// Create realistic backlog growth: arrivals accumulate faster than completions
-	// Arrivals: 1 per second, Completions: getting slower over time
-	// This creates overlapping requests → growing backlog
-	requests := make([]sim.RequestMetrics, 200)
-	for i := 0; i < 200; i++ {
-		requests[i] = sim.RequestMetrics{
-			ID:        "r" + string(rune(i)),
-			ArrivedAt: float64(i),            // Arrive every second
-			E2E:       float64(5000 + i*100), // Latency: 5s → 25s (growing queue)
-		}
-	}
-
-	// For backlog-drift to detect saturation, need many arrivals to trigger rate deficit
-	// Pass totalArrivals > completions to simulate dropped/timed-out requests
-	det := NewBacklogDriftDetector()
-	result := det.Classify(requests, 300).(Result) // 300 arrivals, 200 completions
-
-	// With long, growing latencies and incomplete arrivals, should detect saturation
-	// Classification depends on slope CI and peak/mean ratio
-	// Just verify it's not stable
-	if result.Level == Stable && result.Signals["slope"] == 0 {
-		t.Log("Note: Backlog-drift may classify as stable if windows are too short")
-		t.Log("This is expected behavior - the detector needs sufficient observation time")
-	}
-
-	// Verify signals are populated
-	if _, ok := result.Signals["slope"]; !ok {
-		t.Error("Missing slope signal")
-	}
-	if _, ok := result.Signals["num_windows"]; !ok {
-		t.Error("Missing num_windows signal")
+	if _, ok := result.Signals["in_flight"]; !ok {
+		t.Error("Missing in_flight signal")
 	}
 }
 

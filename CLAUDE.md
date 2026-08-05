@@ -197,30 +197,36 @@ go build -o blis main.go
 ./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
   --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 --in-flight-eviction
 
-# Run with post-hoc saturation detection (composite detector, #1369)
-./blis run --model qwen/qwen3-14b --post-hoc-detector composite
+# Run with a single saturation detector, writing its per-event verdict trace (#1516).
+# --detectors takes EXACTLY ONE of composite, threshold, backlog-drift (empty = off;
+# "all"/comma-lists error — the bank is #1519). --saturation-report writes a
+# {"trace":[...]} JSON file (one record per event). Nothing saturation-related goes
+# to stdout (the final label returns in #1517).
+./blis run --model qwen/qwen3-14b --detectors composite --saturation-report sat.json
 
-# Run with post-hoc saturation detection (threshold detector with custom threshold)
-./blis run --model qwen/qwen3-14b --post-hoc-detector threshold --saturation-threshold-ms 3000
+# Tune a detector via a strict-YAML config file (#1516). composite has no params
+# (a composite: block errors). threshold has one knob; backlog-drift mirrors
+# workload.BacklogDriftConfig. Absent block = defaults; partial block overrides
+# only named fields; unknown key / bad value errors naming the field.
+cat > sat-config.yaml <<'YAML'
+threshold:
+  threshold_ms: 3000
+backlog_drift:
+  window_size_sec: 30
+  min_windows: 5
+YAML
+./blis run --model qwen/qwen3-14b --detectors threshold \
+  --saturation-config sat-config.yaml --saturation-report sat.json
 
-# Replay with post-hoc saturation detection
+# Replay writes the same {"trace":[...]} format (run→replay byte-identical, INV-13)
 ./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
-  --post-hoc-detector composite
+  --detectors composite --saturation-report sat.json
 
-# Observe with post-hoc saturation detection - stdout JSON (interactive, #1379)
+# Observe writes the same format over REAL-server latencies (same pipeline,
+# different input; #1516)
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --workload-spec workload.yaml --trace-header trace.yaml --trace-data trace.csv \
-  --post-hoc-detector composite
-
-# Observe with post-hoc saturation detection - file output (cluster pods, #1379)
-./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
-  --rate 10 --num-requests 100 --trace-header trace.yaml --trace-data trace.csv \
-  --post-hoc-detector composite --saturation-report saturation.json
-
-# Observe with backlog-drift detector - file output (run/replay parity)
-./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
-  --workload-spec workload.yaml --trace-header trace.yaml --trace-data trace.csv \
-  --saturation-report saturation.json
+  --detectors backlog-drift --saturation-report sat.json
 ```
 
 ## Testing
@@ -407,40 +413,50 @@ Speckit does not affect Go build, test, or lint. All `.specify/` artifacts are o
 
 ## Post-Hoc Saturation Detection
 
-BLIS includes post-hoc saturation detection for analyzing completed simulation runs (#1369). This is distinct from the real-time flow control saturation detector used for admission control.
+BLIS includes post-hoc saturation detection for analyzing completed runs. This is distinct from the real-time flow control saturation detector used for admission control.
 
 **Package**: `sim/saturation/`
 
-**Detectors**:
-- **composite**: Combines rate deficit (1 - completions/arrivals) and latency trend (second-half vs first-half mean). Zero parameters. Classifies as STABLE (score < 0.5), BACKLOGGED (0.5 ≤ score < 0.75), or OVERLOADED (score ≥ 0.75).
-- **threshold**: Simple mean E2E latency comparison. Configurable threshold (default 5000ms). STABLE when mean < threshold, OVERLOADED when mean > threshold.
-- **none**: No-op detector (default). Always returns STABLE with zero score.
+**Streaming detectors** (all stream via `Observe`/`Detect`; the batch `Classify` path was removed in #1516):
+- **composite**: Combines rate deficit (1 - completions/arrivals) and a quartile-filtered latency trend. Zero parameters (a `composite:` config block errors). STABLE / BACKLOGGED / OVERLOADED by score vs a 1/√arrivals noise floor.
+- **threshold**: Mean E2E latency vs a configurable threshold (default 5000ms). STABLE when mean < threshold, OVERLOADED when mean > threshold.
+- **backlog-drift**: Online OLS slope of in-flight over a trailing window (became streaming in #1515), banded against the noise floor.
 
-**CLI flags** (available on `run`, `observe`, `replay`):
-- `--post-hoc-detector <name>`: Detector to use (composite, threshold, none)
-- `--saturation-threshold-ms <ms>`: Threshold for threshold detector (default 5000)
-- `--saturation-report <path>`: Write saturation analysis to file (optional). **File format varies by command:**
-  - On `run`/`replay`: always writes BacklogDriftReport JSON (regardless of `--post-hoc-detector`)
-  - On `observe`: writes BacklogDriftReport when `--post-hoc-detector=none`, else writes saturation.Result JSON
+**CLI flags** (`run`, `observe`, `replay`; #1516):
+- `--detectors <name>`: EXACTLY ONE of `composite`, `threshold`, `backlog-drift` (empty = off). `all` or a comma-list errors — the detector bank is #1519.
+- `--saturation-config <path>`: strict-YAML tuning file with optional `threshold:` and `backlog_drift:` blocks. composite has no block. Absent block = defaults; a partial block overrides only named fields; an unknown key or out-of-range value errors naming the field; an empty file = all defaults.
+- `--saturation-report <path>`: writes the selected detector's **per-event verdict trace** as one `{"trace":[...]}` JSON object (one record per event, map keys sorted so repeated runs are byte-identical). Requires `--detectors`. Both `--saturation-config` and `--saturation-report` without `--detectors` are hard errors, as is an unwritable report path (checked up front).
 
-**Output**: Saturation results appear in `MetricsOutput.saturation` field as JSON with `level`, `score`, `confidence`, and `signals` (detector-specific metrics). This stdout JSON format is consistent across all three commands (INV-13 parity).
+**One pipeline, three input adapters**: run/replay/observe all produce the trace through the same `ReplayOneDetector → TraceSink → WriteCombinedReport` path. The only difference is the `[]RequestMetrics` input — run/replay from the sim (`Metrics.CompletedRequestMetrics()`), observe from the real server (`workload.TraceRecordsToRequestMetrics`). run→replay of the same trace is byte-identical (INV-13); observe's trace reflects real-server latencies by design.
 
-**Example**:
+**stdout**: nothing saturation-related — a run with `--detectors` is byte-identical on stdout to one without (the `saturation` field stays dropped by `omitempty`). The `sim.BatchClassifier` seam and `BuildOutput`'s signature are retained (param passed `nil`); the stdout final label returns in #1517.
+
+**Trace file example**:
 ```json
 {
-  "saturation": {
-    "level": "STABLE",
-    "score": 0.35,
-    "confidence": 0.95,
-    "signals": {
-      "rate_deficit": 0.0,
-      "latency_trend": 0.12
+  "trace": [
+    {
+      "timestamp": 150000,
+      "detector": "composite",
+      "result": {
+        "level": "STABLE",
+        "score": 0.35,
+        "confidence": 0.95,
+        "signals": { "latency_trend": 0.12, "rate_deficit": 0.0 }
+      }
     }
-  }
+  ]
 }
 ```
 
-**Use cases**: Automated classification of simulation runs, detecting queue buildup or throughput saturation in capacity planning experiments.
+**Migration from the pre-#1516 flags**:
+- `--post-hoc-detector X` → `--detectors X`
+- `--saturation-threshold-ms N` → `--saturation-config` `threshold: {threshold_ms: N}`
+- the 10 backlog-drift tuning flags (`--saturation-window`, `--saturation-min-windows`, `--saturation-classifier`, …) → `--saturation-config` `backlog_drift:` block
+- the standalone `--saturation-report` (per-window `BacklogDriftReport`) is removed; `--saturation-report` now writes the per-event trace
+- detector `Classify` is removed from the `Detector` interface (streaming-only: `Name`/`Observe`/`Detect`/`Reset`); `workload.AnalyzeBacklogDrift*` stays in the library (used by the backlog-drift detector)
+
+**Use cases**: per-event saturation trajectories for completed runs — detecting queue buildup or throughput saturation in capacity-planning experiments.
 
 ## File Organization
 

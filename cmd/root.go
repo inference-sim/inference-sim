@@ -20,7 +20,6 @@ import (
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/latency"
 	_ "github.com/inference-sim/inference-sim/sim/lora" // registers sim.NewAdapterRegistryFunc via init()
-	"github.com/inference-sim/inference-sim/sim/saturation"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -211,51 +210,14 @@ var (
 	goodputSLOE2E  string
 
 	// output file paths
-	metricsPath      string // File to write MetricsOutput JSON for blis run (--metrics-path)
-	resultsPath      string // File to write []SimResult JSON for blis replay (--results-path)
-	saturationReport string // File to write BacklogDriftReport JSON for saturation analysis (--saturation-report)
-
-	// saturation analysis configuration
-	saturationWindowSec  int     // Window size in seconds for backlog-drift analysis (--saturation-window)
-	saturationMinWindows int     // Minimum number of windows required for classification (--saturation-min-windows)
-	saturationPeakRatio  float64 // Peak/mean ratio threshold for transient backlog detection (--saturation-peak-ratio)
-	saturationPeakBand   float64 // Confidence band around peak ratio threshold (--saturation-peak-band)
-	saturationConfidence float64 // Confidence level for slope CI (--saturation-ci)
-
-	// post-hoc backlog classifier policy (#1391, #1392)
-	saturationClassifier     string  // Classifier name: "drain-ratio" (default) or "slope-based" (--saturation-classifier)
-	saturationWarmupWindows  int     // Inject windows skipped as warmup (drain-ratio only) (--saturation-warmup-windows)
-	saturationTailWindows    int     // Inject windows skipped as tail (drain-ratio only) (--saturation-tail-windows)
-	saturationSaturatedRatio float64 // DrainRatio < this → PERSISTENTLY_SATURATED (--saturation-drain-ratio-saturated)
-	saturationTransientRatio float64 // DrainRatio < this → TRANSIENT_BACKLOG (--saturation-drain-ratio-transient)
-
-	// post-hoc saturation detector configuration (#1369)
-	postHocDetector     string  // Post-hoc saturation detector: "composite", "threshold", "none" (--post-hoc-detector)
-	saturationThreshold float64 // Threshold in ms for threshold detector (--saturation-threshold-ms)
+	metricsPath string // File to write MetricsOutput JSON for blis run (--metrics-path)
+	resultsPath string // File to write []SimResult JSON for blis replay (--results-path)
+	// saturationReport (--saturation-report): per-event verdict trace file (#1516).
+	// Declared in saturation.go alongside --detectors / --saturation-config.
 
 	// trace export
 	traceOutput string // File prefix for TraceV2 export (<prefix>.yaml + <prefix>.csv)
 )
-
-// registerSaturationFlags registers backlog-drift analysis flags on the given command.
-// These flags control post-hoc saturation classification and are shared across run, replay, and observe.
-//
-// Two classifier families are supported (#1391, #1392):
-//   - "drain-ratio" (default): mean per-window NumLeft/NumEntered → quantified ρ = 1/DrainRatio
-//   - "slope-based": OLS regression CI on ActiveEnd over inject-phase windows
-func registerSaturationFlags(cmd *cobra.Command) {
-	cmd.Flags().IntVar(&saturationWindowSec, "saturation-window", 60, "Window size in seconds for backlog-drift analysis")
-	cmd.Flags().IntVar(&saturationMinWindows, "saturation-min-windows", 5, "Minimum number of complete windows required for reliable classification")
-	cmd.Flags().Float64Var(&saturationPeakRatio, "saturation-peak-ratio", 2.0, "Peak/mean in-flight ratio threshold for TRANSIENT_BACKLOG detection (slope-based classifier only)")
-	cmd.Flags().Float64Var(&saturationPeakBand, "saturation-peak-band", 0.2, "Confidence band around peak-ratio threshold (slope-based classifier only)")
-	cmd.Flags().Float64Var(&saturationConfidence, "saturation-ci", 0.95, "Confidence level for slope significance test (0.90, 0.95, or 0.99) (slope-based classifier only)")
-	cmd.Flags().StringVar(&saturationClassifier, "saturation-classifier", "drain-ratio",
-		"Backlog classifier: "+strings.Join(sim.ValidBacklogClassifierNames(), ", "))
-	cmd.Flags().IntVar(&saturationWarmupWindows, "saturation-warmup-windows", 2, "Inject windows skipped as warmup (drain-ratio classifier only)")
-	cmd.Flags().IntVar(&saturationTailWindows, "saturation-tail-windows", 1, "Inject windows skipped as tail boundary (drain-ratio classifier only)")
-	cmd.Flags().Float64Var(&saturationSaturatedRatio, "saturation-drain-ratio-saturated", 0.95, "Mean DrainRatio threshold below which run is PERSISTENTLY_SATURATED (drain-ratio classifier only)")
-	cmd.Flags().Float64Var(&saturationTransientRatio, "saturation-drain-ratio-transient", 0.98, "Mean DrainRatio threshold below which run is TRANSIENT_BACKLOG (drain-ratio classifier only)")
-}
 
 // applyRopeScaling applies rope_scaling factor to maxPosEmb if applicable.
 // Returns the (possibly scaled) value and whether scaling was applied.
@@ -2146,19 +2108,27 @@ var runCmd = &cobra.Command{
 		// non-empty means the install branch was dropped — we fail loudly
 		// rather than write a silent empty trace (R1).
 		// The arrival hook captures fresh-arrival references at the single
-		// cluster boundary. It powers trace export (#1440) and, in lazy mode
-		// where preGeneratedRequests is nil, also feeds saturation analysis.
-		// In eager mode without --trace-output, the hook stays uninstalled
-		// (BC-1 zero overhead) and saturation falls back to the
-		// preGeneratedRequests + followUpRequests path.
+		// cluster boundary. It powers trace export (#1440). As of #1516 the
+		// saturation trace is streamed over BuildOutput's completed-request
+		// metrics, not over the arrival list, so the hook is needed only for
+		// --trace-output (BC-1 zero overhead otherwise).
 		var traceArrivals []*sim.Request
-		arrivalHookNeeded := traceOutput != "" || (lazyRequestSource != nil && saturationReport != "")
+		arrivalHookNeeded := traceOutput != ""
 		if arrivalHookNeeded {
 			traceArrivals = make([]*sim.Request, 0)
 			cs.SetArrivalHook(func(req *sim.Request) {
 				traceArrivals = append(traceArrivals, req)
 			})
 		}
+
+		// Resolve the saturation detector + trace collector from --detectors /
+		// --saturation-config / --saturation-report BEFORE the run so an unknown
+		// name, bad config, or unwritable report path fails fast (#1516).
+		saturationDet, saturationCollector, satErr := resolveSaturation()
+		if satErr != nil {
+			logrus.Fatalf("%v", satErr)
+		}
+
 		if err := cs.Run(); err != nil {
 			logrus.Fatalf("Simulation failed: %v", err)
 		}
@@ -2190,41 +2160,6 @@ var runCmd = &cobra.Command{
 		}
 		goodputTargets := mergeGoodputTargets(cliTTFT, cliITL, cliE2E, nil, specTargets)
 
-		// Assemble allRequests for saturation analysis (BC-12, issue #1298).
-		// Trace export is now driven by the arrival hook above and no longer
-		// shares this slice (issue #1440). allRequests is nil when
-		// --saturation-report is not set.
-		//
-		// In lazy mode (#1441), preGeneratedRequests is nil — the arrival hook
-		// captures every fresh arrival in clock-monotonic order (already sorted
-		// by INV-3), so we use traceArrivals directly. In eager mode we keep
-		// the existing append+sort path for backward compatibility.
-		var allRequests []*sim.Request
-		if saturationReport != "" {
-			if lazyRequestSource != nil {
-				// traceArrivals already contains every fresh arrival in
-				// clock-monotonic order — no separate followUpRequests merge
-				// or post-sort required (the cluster delivers them in arrival
-				// order via the hook).
-				//
-				// SAFETY: allRequests aliases the same backing array as
-				// traceArrivals. Both downstream consumers (trace export
-				// below + saturation analysis) MUST be read-only of this
-				// slice — neither appends, reorders, nor mutates element
-				// contents. If a future consumer needs to mutate, copy
-				// first: `allRequests = append([]*sim.Request(nil), traceArrivals...)`.
-				allRequests = traceArrivals
-			} else {
-				allRequests = make([]*sim.Request, 0, len(preGeneratedRequests)+len(followUpRequests))
-				allRequests = append(allRequests, preGeneratedRequests...)
-				allRequests = append(allRequests, followUpRequests...)
-				// Sort by arrival time so RequestIDs (array indices) are arrival-ordered
-				sort.SliceStable(allRequests, func(i, j int) bool {
-					return allRequests[i].ArrivalTime < allRequests[j].ArrivalTime
-				})
-			}
-		}
-
 		// Export trace if requested (BC-1, BC-7). Records are sourced from
 		// the arrival hook (issue #1440) — already in clock-monotonic order
 		// per INV-3, so no sort is required.
@@ -2250,68 +2185,33 @@ var runCmd = &cobra.Command{
 			logrus.Infof("Trace exported: %s.yaml, %s.csv (%d records)", traceOutput, traceOutput, len(records))
 		}
 
-		// Saturation analysis if requested (issue #1298, #1391, #1392)
-		if saturationReport != "" {
-			simEndUs := workload.ComputeSimEndUs(allRequests, config.Horizon)
-
-			// Validate classifier name (CLI gate; library factory panics on unknown).
-			if !sim.IsValidBacklogClassifier(saturationClassifier) {
-				logrus.Fatalf("Unknown --saturation-classifier %q. Valid: %s",
-					saturationClassifier, strings.Join(sim.ValidBacklogClassifierNames(), ", "))
-			}
-			classifier := workload.NewBacklogClassifier(saturationClassifier)
-
-			// Build saturation analysis config from flags (or defaults if not set)
-			cfg := workload.NewBacklogDriftConfig(
-				time.Duration(saturationWindowSec)*time.Second,
-				saturationMinWindows,
-				saturationPeakRatio,
-				saturationPeakBand,
-				saturationConfidence,
-				saturationWarmupWindows,
-				saturationTailWindows,
-				saturationSaturatedRatio,
-				saturationTransientRatio,
-			)
-			report := workload.AnalyzeBacklogDriftWithClassifier(allRequests, simEndUs, cfg, classifier)
-			if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
-				logrus.Fatalf("Failed to write saturation report: %v", err)
-			}
-			logrus.Infof("Saturation report written to %s (classification: %s)", saturationReport, report.Classification)
-		}
-
-		// Validate and instantiate post-hoc saturation detector from CLI flags (#1369, C3)
-		if !saturation.ValidDetectorNames()[postHocDetector] {
-			logrus.Fatalf("--post-hoc-detector %q not recognized. Valid: composite, threshold, none", postHocDetector)
-		}
-
-		// Validate saturation threshold for negative values (I4)
-		if saturationThreshold < 0 {
-			logrus.Fatalf("--saturation-threshold-ms must be non-negative, got %.2f", saturationThreshold)
-		}
-
-		var saturationDetector sim.BatchClassifier
-		if postHocDetector != "none" {
-			saturationDetector = saturation.NewDetector(postHocDetector, saturation.DetectorOpts{
-				ThresholdMs: saturationThreshold,
-			})
-		}
-
 		if numInstances > 1 {
-			// Print per-instance metrics to stdout (multi-instance only)
+			// Print per-instance metrics to stdout (multi-instance only).
+			// nil saturation arg (#1516): stdout carries no saturation field.
 			for _, inst := range cs.Instances() {
-				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, "", saturationDetector); err != nil {
+				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, "", nil); err != nil {
 					logrus.Fatalf("SaveResults for instance %s: %v", inst.ID(), err)
 				}
 			}
 		}
 		// Build aggregate output, inject goodput, then emit (#1413).
+		// nil saturation arg (#1516): the per-event trace is produced by the
+		// streaming replay below, not through BuildOutput's stdout field.
 		aggregated := cs.AggregatedMetrics()
-		clusterOutput := aggregated.BuildOutput("cluster", saturationDetector)
+		clusterOutput := aggregated.BuildOutput("cluster", nil)
 		emitGoodput(&clusterOutput, aggregated, cs.InjectedByClass(),
 			float64(aggregated.SimEndedTime)/1e6, goodputTargets)
 		if err := aggregated.EmitOutput(clusterOutput, metricsPath); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
+		}
+
+		// Saturation trace (#1516): stream the selected detector over the
+		// aggregate's completed-request metrics and write its per-event verdict
+		// trace to --saturation-report. No-op when no detector was selected or no
+		// report path was given. Same pipeline as replay/observe; only the input
+		// slice differs (here it is sim-derived, INV-13).
+		if err := runSaturationTrace(saturationDet, saturationCollector, aggregated.CompletedRequestMetrics()); err != nil {
+			logrus.Fatalf("Saturation trace: %v", err)
 		}
 
 		// Collect RawMetrics and compute fitness (PR9)
@@ -2635,13 +2535,9 @@ func init() {
 	// Run-specific export
 	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")
 	runCmd.Flags().StringVar(&metricsPath, "metrics-path", "", "File to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats). Use --results-path on blis replay for per-request SimResult JSON.")
-	runCmd.Flags().StringVar(&saturationReport, "saturation-report", "", "File to write saturation analysis JSON (backlog-drift classification)")
 
-	// Post-hoc saturation detector flags (#1369)
-	runCmd.Flags().StringVar(&postHocDetector, "post-hoc-detector", "none", "Post-hoc saturation detector: composite, threshold, none")
-	runCmd.Flags().Float64Var(&saturationThreshold, "saturation-threshold-ms", 5000.0, "Threshold in ms for threshold detector (default 5000ms)")
-
-	registerSaturationFlags(runCmd)
+	// Saturation trace flags (#1516): --detectors + --saturation-config + --saturation-report.
+	registerDetectorFlags(runCmd)
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)

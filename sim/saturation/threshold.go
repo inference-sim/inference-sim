@@ -3,8 +3,6 @@ package saturation
 
 import (
 	"math"
-
-	"github.com/inference-sim/inference-sim/sim"
 )
 
 // ThresholdDetector uses a simple mean E2E latency threshold.
@@ -65,30 +63,6 @@ func (t *ThresholdDetector) Detect() Result {
 	}
 }
 
-// Classify performs batch post-hoc classification on completed requests (Issue #6: returns Result).
-// totalArrivals parameter is unused by threshold detector but required by interface.
-func (t *ThresholdDetector) Classify(requests []sim.RequestMetrics, totalArrivals int) interface{} {
-	if len(requests) == 0 {
-		return Result{Level: Stable, Score: 0, Confidence: 0, Signals: make(map[string]float64)}
-	}
-
-	meanE2E := meanE2E(requests)
-	score, level := classifyThreshold(meanE2E, t.thresholdMs)
-
-	// Confidence formula: 1 - 1/sqrt(N+1), increases with sample size (C5 fix)
-	confidence := 1.0 - 1.0/math.Sqrt(float64(len(requests))+1.0)
-
-	return Result{
-		Level:      level,
-		Score:      score,
-		Confidence: confidence,
-		Signals: map[string]float64{
-			"mean_e2e":  meanE2E,
-			"threshold": t.thresholdMs,
-		},
-	}
-}
-
 // Reset clears accumulated state for fresh detection.
 func (t *ThresholdDetector) Reset() {
 	t.completions = make([]Event, 0)
@@ -121,14 +95,3 @@ func meanLatency(events []Event) float64 {
 	return sum / float64(len(events))
 }
 
-// meanE2E calculates mean E2E from request metrics (batch mode).
-func meanE2E(requests []sim.RequestMetrics) float64 {
-	if len(requests) == 0 {
-		return 0
-	}
-	sum := 0.0
-	for _, r := range requests {
-		sum += r.E2E
-	}
-	return sum / float64(len(requests))
-}

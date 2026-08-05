@@ -3,6 +3,7 @@ package workload
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -1672,6 +1673,92 @@ func TestTraceRecordsToRequestMetrics_RateDeficitSemantics(t *testing.T) {
 	}
 	if rateDeficitCorrect == rateDeficitWrong {
 		t.Errorf("Correct and wrong totalArrivals should produce different rate_deficit values")
+	}
+}
+
+// TestExtractorParity_BuildOutputVsTraceRecords verifies the #1516 cross-command
+// parity requirement: the two saturation input adapters produce identical
+// (ArrivedAt, E2E, ID) triples for the same completed requests. run/replay derive
+// the triples from Metrics.CompletedRequestMetrics(); observe derives them from
+// TraceRecordsToRequestMetrics(RequestsToTraceRecords(...)). If they disagreed,
+// observe→replay traces would diverge (INV-13). The round-trip must preserve the
+// triple with the same rounding (ticks→ms via /1e3 vs (last-send)/1000) and the
+// same request-id form (request_<i>).
+func TestExtractorParity_BuildOutputVsTraceRecords(t *testing.T) {
+	// Build a set of completed requests with integer-millisecond E2Es so the two
+	// rounding paths (Metrics stores ticks; trace stores absolute µs timestamps)
+	// land on identical values. E2E in µs is a multiple of 1000.
+	type reqSpec struct {
+		id        int
+		arrivalUs int64
+		e2eUs     int64
+	}
+	specs := []reqSpec{
+		{0, 1_000_000, 150_000}, // arrive 1s, E2E 150ms
+		{1, 2_500_000, 300_000}, // arrive 2.5s, E2E 300ms
+		{2, 500_000, 50_000},    // arrive 0.5s, E2E 50ms (out of arrival order to exercise sort)
+	}
+
+	// --- run/replay side: build a sim.Metrics as the simulator would ---
+	m := &sim.Metrics{
+		Requests:     make(map[string]sim.RequestMetrics),
+		RequestE2Es:  make(map[string]float64),
+		RequestTTFTs: make(map[string]float64),
+	}
+	// --- observe side: build the equivalent completed sim.Requests for trace export ---
+	simReqs := make([]*sim.Request, 0, len(specs))
+	for _, s := range specs {
+		id := "request_" + strconv.Itoa(s.id)
+		m.CompletedRequests++
+		m.Requests[id] = sim.RequestMetrics{ID: id, ArrivedAt: float64(s.arrivalUs) / 1e6}
+		m.RequestE2Es[id] = float64(s.e2eUs) // ticks (µs); CompletedRequestMetrics divides by 1e3 → ms
+		m.RequestTTFTs[id] = 0
+
+		// A completed request whose full E2E lands in FirstTokenTime, so
+		// RequestsToTraceRecords computes LastChunkTimeUs = arrival + e2e and
+		// SendTimeUs = arrival (send time defaults to arrival in generated traces).
+		simReqs = append(simReqs, &sim.Request{
+			ID:             id,
+			ArrivalTime:    s.arrivalUs,
+			TTFTSet:        true,
+			FirstTokenTime: s.e2eUs,
+			ITL:            []int64{},
+			State:          sim.StateCompleted,
+		})
+	}
+
+	runSide := m.CompletedRequestMetrics()
+
+	records := RequestsToTraceRecords(simReqs)
+	// RequestsToTraceRecords sets SendTimeUs from arrival? Confirm the E2E it yields
+	// matches: observe computes E2E = (LastChunkTimeUs - SendTimeUs)/1000. For the
+	// parity to hold, SendTimeUs must equal ArrivalTimeUs for these generated
+	// records (no network send offset).
+	observeSide := TraceRecordsToRequestMetrics(records)
+
+	if len(runSide) != len(observeSide) {
+		t.Fatalf("triple count mismatch: run=%d observe=%d", len(runSide), len(observeSide))
+	}
+
+	// Index observe side by ID for order-independent comparison (run side is
+	// sorted by id; observe side follows trace-record order).
+	byID := make(map[string]sim.RequestMetrics, len(observeSide))
+	for _, o := range observeSide {
+		byID[o.ID] = o
+	}
+
+	for _, r := range runSide {
+		o, ok := byID[r.ID]
+		if !ok {
+			t.Errorf("run-side id %q missing from observe side", r.ID)
+			continue
+		}
+		if r.ArrivedAt != o.ArrivedAt {
+			t.Errorf("id %q: ArrivedAt run=%v observe=%v", r.ID, r.ArrivedAt, o.ArrivedAt)
+		}
+		if r.E2E != o.E2E {
+			t.Errorf("id %q: E2E run=%v observe=%v", r.ID, r.E2E, o.E2E)
+		}
 	}
 }
 

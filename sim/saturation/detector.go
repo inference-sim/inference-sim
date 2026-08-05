@@ -8,8 +8,6 @@
 // Import as "github.com/inference-sim/inference-sim/sim/saturation" to disambiguate.
 package saturation
 
-import "github.com/inference-sim/inference-sim/sim"
-
 type EventType int
 
 const (
@@ -80,12 +78,15 @@ type Result struct {
 	Signals    map[string]float64 `json:"signals"`
 }
 
+// Detector is a streaming saturation detector (#1515, #1516). All detectors
+// stream: Observe folds one event into internal state and Detect returns the
+// current verdict. Reset returns the detector to its initial state so it can be
+// reused across replay legs. The batch Classify path was removed in #1516 once
+// its last callers (run/replay's BuildOutput and observe) stopped emitting a
+// stdout saturation field.
 type Detector interface {
 	Name() string
 	Observe(event Event)
 	Detect() Result
-	// Classify performs batch classification with total arrivals for rate deficit computation (Issue #4).
-	// Returns interface{} for BatchClassifier compatibility (Result in practice).
-	Classify(requests []sim.RequestMetrics, totalArrivals int) interface{}
 	Reset()
 }
