@@ -621,10 +621,10 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	// field (passed nil to printObserveMetrics below) — the final label returns in
 	// #1517. No-op when no detector was selected or no report path was given.
 	if saturationDet != nil {
+		// runSaturationTrace emits the shared "0 completed requests" warning
+		// (consistent across run/replay/observe). TraceRecordsToRequestMetrics
+		// drops non-"ok" records, so all-failed dispatch yields 0 metrics here.
 		requestMetrics := workload.TraceRecordsToRequestMetrics(records)
-		if len(requestMetrics) == 0 && len(records) > 0 {
-			logrus.Warnf("--detectors %q: 0 completed requests out of %d arrivals; saturation trace will be empty", detectorName, len(records))
-		}
 		if err := runSaturationTrace(saturationDet, saturationCollector, requestMetrics); err != nil {
 			logrus.Fatalf("Saturation trace: %v", err)
 		}

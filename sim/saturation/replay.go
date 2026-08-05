@@ -99,17 +99,30 @@ func WriteCombinedReport(path string, collector *InMemoryCollector) error {
 
 // ValidateReportPath checks up front that path is writable, so an unwritable
 // destination fails fast (before the simulation runs) rather than after. It
-// opens the path for writing (creating an empty file if absent, without
-// truncating an existing one — the final WriteCombinedReport overwrites it).
-// An empty path is a no-op.
+// opens the path for writing; if the file did not already exist, the probe file
+// it creates is removed so a later Fatalf can't leave a confusing 0-byte
+// artifact. An empty path is a no-op.
+//
+// This is a fast-fail convenience, not a guarantee — a standard TOCTOU window
+// remains between validation and the final WriteCombinedReport (permissions or
+// disk state can change), whose own error is still surfaced by the caller. The
+// point is to catch the common misconfiguration (bad dir, no permission) early.
 func ValidateReportPath(path string) error {
 	if path == "" {
 		return nil
 	}
+	_, statErr := os.Stat(path)
+	preexisting := statErr == nil
+
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("saturation report path %s is not writable: %w", path, err)
 	}
 	_ = f.Close()
+
+	// Remove the probe file only if we created it (don't touch a pre-existing one).
+	if !preexisting {
+		_ = os.Remove(path)
+	}
 	return nil
 }

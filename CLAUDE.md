@@ -206,16 +206,16 @@ go build -o blis main.go
 
 # Tune a detector via a strict-YAML config file (#1516). composite has no params
 # (a composite: block errors). threshold has one knob; backlog-drift mirrors
-# workload.BacklogDriftConfig. Absent block = defaults; partial block overrides
-# only named fields; unknown key / bad value errors naming the field.
+# workload.BacklogDriftConfig. The config must carry ONLY the selected detector's
+# block — a block for another detector errors (no silent drop). Absent block =
+# defaults; partial block overrides only named fields; unknown key / bad value
+# errors naming the field.
 cat > sat-config.yaml <<'YAML'
-threshold:
-  threshold_ms: 3000
 backlog_drift:
   window_size_sec: 30
   min_windows: 5
 YAML
-./blis run --model qwen/qwen3-14b --detectors threshold \
+./blis run --model qwen/qwen3-14b --detectors backlog-drift \
   --saturation-config sat-config.yaml --saturation-report sat.json
 
 # Replay writes the same {"trace":[...]} format (run→replay byte-identical, INV-13)
@@ -424,7 +424,7 @@ BLIS includes post-hoc saturation detection for analyzing completed runs. This i
 
 **CLI flags** (`run`, `observe`, `replay`; #1516):
 - `--detectors <name>`: EXACTLY ONE of `composite`, `threshold`, `backlog-drift` (empty = off). `all` or a comma-list errors — the detector bank is #1519.
-- `--saturation-config <path>`: strict-YAML tuning file with optional `threshold:` and `backlog_drift:` blocks. composite has no block. Absent block = defaults; a partial block overrides only named fields; an unknown key or out-of-range value errors naming the field; an empty file = all defaults.
+- `--saturation-config <path>`: strict-YAML tuning file with optional `threshold:` and `backlog_drift:` blocks. composite has no block. The config must carry only the selected detector's block — a block belonging to another detector errors (no silent drop, R1). Absent block = defaults; a partial block overrides only named fields; an unknown key or out-of-range value errors naming the field; an empty file = all defaults.
 - `--saturation-report <path>`: writes the selected detector's **per-event verdict trace** as one `{"trace":[...]}` JSON object (one record per event, map keys sorted so repeated runs are byte-identical). Requires `--detectors`. Both `--saturation-config` and `--saturation-report` without `--detectors` are hard errors, as is an unwritable report path (checked up front).
 
 **One pipeline, three input adapters**: run/replay/observe all produce the trace through the same `ReplayOneDetector → TraceSink → WriteCombinedReport` path. The only difference is the `[]RequestMetrics` input — run/replay from the sim (`Metrics.CompletedRequestMetrics()`), observe from the real server (`workload.TraceRecordsToRequestMetrics`). run→replay of the same trace is byte-identical (INV-13); observe's trace reflects real-server latencies by design.

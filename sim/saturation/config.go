@@ -77,18 +77,32 @@ func LoadSaturationConfig(path string) (SaturationConfig, error) {
 	return cfg, nil
 }
 
+// defaultThresholdMs is the ThresholdDetector's default mean-E2E threshold when
+// no threshold.threshold_ms override is supplied (matches the retired
+// --saturation-threshold-ms default and NewThresholdDetector's own fallback).
+const defaultThresholdMs = 5000.0
+
 // BuildDetector constructs the named detector, applying any relevant overrides
-// from cfg. Returns an error (never panics — R6) when a name is unknown or a
-// supplied parameter is out of range; the error names the offending field.
+// from cfg. Returns an error (never panics — R6) when a name is unknown, a
+// supplied parameter is out of range, or a config block is present that does not
+// belong to the selected detector; the error names the offending field.
 //
 // The bank / multi-detector selection (`all`, comma-lists) is intentionally not
 // handled here — that belongs to #1519. Callers must pass exactly one name.
 func BuildDetector(name string, cfg SaturationConfig) (Detector, error) {
+	// Reject config blocks that do not belong to the selected detector rather
+	// than silently dropping the user's tuning (R1). SaturationConfig always
+	// knows both keys (strict parsing can't tell which detector is active), so
+	// the block↔detector match is enforced here.
+	if err := checkBlockOwnership(name, cfg); err != nil {
+		return nil, err
+	}
+
 	switch name {
 	case "composite":
 		return NewCompositeDetector(), nil
 	case "threshold":
-		thresholdMs := 5000.0
+		thresholdMs := defaultThresholdMs
 		if cfg.Threshold != nil && cfg.Threshold.ThresholdMs != nil {
 			thresholdMs = *cfg.Threshold.ThresholdMs
 			if thresholdMs <= 0 || math.IsNaN(thresholdMs) || math.IsInf(thresholdMs, 0) {
@@ -105,6 +119,31 @@ func BuildDetector(name string, cfg SaturationConfig) (Detector, error) {
 	default:
 		return nil, fmt.Errorf("unknown saturation detector %q; valid: composite, threshold, backlog-drift", name)
 	}
+}
+
+// checkBlockOwnership rejects a config that carries a tuning block for a detector
+// other than the selected one. composite has no tunable params, so ANY block is
+// a mistake when composite is selected; threshold accepts only threshold:;
+// backlog-drift accepts only backlog_drift:.
+func checkBlockOwnership(name string, cfg SaturationConfig) error {
+	switch name {
+	case "composite":
+		if cfg.Threshold != nil {
+			return fmt.Errorf("saturation config: threshold block is not valid for --detectors composite (composite has no tunable parameters)")
+		}
+		if cfg.BacklogDrift != nil {
+			return fmt.Errorf("saturation config: backlog_drift block is not valid for --detectors composite (composite has no tunable parameters)")
+		}
+	case "threshold":
+		if cfg.BacklogDrift != nil {
+			return fmt.Errorf("saturation config: backlog_drift block is not valid for --detectors threshold")
+		}
+	case "backlog-drift":
+		if cfg.Threshold != nil {
+			return fmt.Errorf("saturation config: threshold block is not valid for --detectors backlog-drift")
+		}
+	}
+	return nil
 }
 
 // resolveBacklogDriftConfig merges a BacklogDriftBlock over the defaults and

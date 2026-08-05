@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -71,6 +72,13 @@ func resolveSaturation() (saturation.Detector, *saturation.InMemoryCollector, er
 		return nil, nil, err
 	}
 
+	// A detector was selected but no report path given: the per-event trace is the
+	// only output in this PR (the stdout final label lands in #1517), so this
+	// combination produces nothing. Warn rather than silently discard the work.
+	if saturationReport == "" {
+		logrus.Warnf("--detectors %q selected but --saturation-report not set; no saturation output will be produced (the trace file is the only output until #1517 adds the stdout label)", detectorName)
+	}
+
 	// Validate the report path up front so an unwritable destination fails before
 	// the (expensive) simulation runs rather than after.
 	if err := saturation.ValidateReportPath(saturationReport); err != nil {
@@ -90,6 +98,12 @@ func resolveSaturation() (saturation.Detector, *saturation.InMemoryCollector, er
 func runSaturationTrace(detector saturation.Detector, collector *saturation.InMemoryCollector, requests []sim.RequestMetrics) error {
 	if detector == nil || saturationReport == "" {
 		return nil
+	}
+	// Zero completed requests writes a valid but empty {"trace":[]}. Warn so the
+	// empty file isn't mistaken for a detector bug — consistent across run,
+	// replay, and observe (the input source differs, this signal does not).
+	if len(requests) == 0 {
+		logrus.Warnf("--detectors %q: 0 completed requests; saturation trace will be empty", detectorName)
 	}
 	saturation.ReplayOneDetector(detector, requests, collector)
 	return saturation.WriteCombinedReport(saturationReport, collector)

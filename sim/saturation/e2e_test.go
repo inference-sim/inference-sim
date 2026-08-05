@@ -5,11 +5,81 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/saturation"
+	"github.com/inference-sim/inference-sim/sim/workload"
 )
+
+// TestE2E_ExtractorParity_ByteIdenticalTrace closes the INV-13 loop hermetically:
+// the sim-side extractor (Metrics.CompletedRequestMetrics) and the observe-side
+// extractor (workload.TraceRecordsToRequestMetrics ∘ RequestsToTraceRecords) must
+// feed ReplayOneDetector to produce BYTE-IDENTICAL trace files. This proves the
+// "same (ArrivedAt,E2E,ID) triples ⇒ same trace bytes" implication directly,
+// rather than only asserting the triples match (tracev2_test) and the pipeline is
+// deterministic (replay_test) separately.
+func TestE2E_ExtractorParity_ByteIdenticalTrace(t *testing.T) {
+	type spec struct {
+		id        int
+		arrivalUs int64
+		e2eUs     int64
+	}
+	specs := []spec{
+		{0, 1_000_000, 150_000},
+		{1, 2_500_000, 300_000},
+		{2, 500_000, 50_000}, // out of arrival order
+	}
+
+	// Sim side: a Metrics as run/replay would populate.
+	m := &sim.Metrics{
+		Requests:     make(map[string]sim.RequestMetrics),
+		RequestE2Es:  make(map[string]float64),
+		RequestTTFTs: make(map[string]float64),
+	}
+	simReqs := make([]*sim.Request, 0, len(specs))
+	for _, s := range specs {
+		id := fmt.Sprintf("request_%d", s.id)
+		m.CompletedRequests++
+		m.Requests[id] = sim.RequestMetrics{ID: id, ArrivedAt: float64(s.arrivalUs) / 1e6}
+		m.RequestE2Es[id] = float64(s.e2eUs) // ticks; /1e3 → ms in CompletedRequestMetrics
+		m.RequestTTFTs[id] = 0
+		simReqs = append(simReqs, &sim.Request{
+			ID:             id,
+			ArrivalTime:    s.arrivalUs,
+			TTFTSet:        true,
+			FirstTokenTime: s.e2eUs,
+			ITL:            []int64{},
+			State:          sim.StateCompleted,
+		})
+	}
+
+	writeTrace := func(reqs []sim.RequestMetrics) []byte {
+		det, err := saturation.BuildDetector("composite", saturation.SaturationConfig{})
+		if err != nil {
+			t.Fatalf("BuildDetector: %v", err)
+		}
+		c := saturation.NewInMemoryCollector()
+		saturation.ReplayOneDetector(det, reqs, c)
+		path := filepath.Join(t.TempDir(), "t.json")
+		if err := saturation.WriteCombinedReport(path, c); err != nil {
+			t.Fatalf("WriteCombinedReport: %v", err)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		return data
+	}
+
+	runBytes := writeTrace(m.CompletedRequestMetrics())
+	observeBytes := writeTrace(workload.TraceRecordsToRequestMetrics(workload.RequestsToTraceRecords(simReqs)))
+
+	if string(runBytes) != string(observeBytes) {
+		t.Errorf("run-side and observe-side traces differ:\n--- run ---\n%s\n--- observe ---\n%s", runBytes, observeBytes)
+	}
+}
 
 // TestE2E_ReplayComposite_WritesTrace verifies the full replay → collect → write
 // pipeline (#1516): a composite detector streamed over completed requests writes

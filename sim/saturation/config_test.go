@@ -116,6 +116,31 @@ func TestBuildDetector_BadParam_ErrorsNamingField(t *testing.T) {
 	}
 }
 
+// TestBuildDetector_BlockOwnershipMismatch verifies a config block for a
+// detector other than the selected one is rejected (not silently dropped, R1).
+func TestBuildDetector_BlockOwnershipMismatch(t *testing.T) {
+	tests := []struct {
+		name     string
+		contents string
+		wantSub  string
+	}{
+		{"composite", "threshold:\n  threshold_ms: 3000\n", "threshold block is not valid for --detectors composite"},
+		{"composite", "backlog_drift:\n  window_size_sec: 30\n", "backlog_drift block is not valid for --detectors composite"},
+		{"threshold", "backlog_drift:\n  window_size_sec: 30\n", "backlog_drift block is not valid for --detectors threshold"},
+		{"backlog-drift", "threshold:\n  threshold_ms: 3000\n", "threshold block is not valid for --detectors backlog-drift"},
+	}
+	for _, tc := range tests {
+		cfg, err := LoadSaturationConfig(writeTempConfig(t, tc.contents))
+		if err != nil {
+			t.Fatalf("load %q: %v", tc.contents, err)
+		}
+		_, err = BuildDetector(tc.name, cfg)
+		if err == nil || !strings.Contains(err.Error(), tc.wantSub) {
+			t.Errorf("detector %q with %q: expected error containing %q, got: %v", tc.name, tc.contents, tc.wantSub, err)
+		}
+	}
+}
+
 // TestBuildDetector_BacklogDriftPartialOverride verifies a partial backlog_drift
 // block keeps defaults for unnamed fields and succeeds.
 func TestBuildDetector_BacklogDriftPartialOverride(t *testing.T) {
