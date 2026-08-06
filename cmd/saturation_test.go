@@ -177,22 +177,59 @@ func TestResolveSaturation_SingleDetectorBlockOwnership(t *testing.T) {
 	}
 }
 
-// TestResolveSaturation_BankIgnoresForeignBlock verifies the bank path does NOT
-// enforce single-detector ownership: a threshold: block is fine when the
-// selection is a subset that happens to exclude threshold, because another
-// detector could own it. Here composite+backlog-drift + a threshold block succeeds.
-func TestResolveSaturation_BankIgnoresForeignBlock(t *testing.T) {
+// TestResolveSaturation_BankUnselectedBlockErrors verifies the bank path enforces
+// block ownership over the SELECTED SET: a threshold: block errors when the
+// selection excludes threshold, matching the single-detector path (R1 — no silent
+// drop of user tuning). Here composite,backlog-drift omits threshold, so the
+// threshold block is invalid.
+func TestResolveSaturation_BankUnselectedBlockErrors(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "cfg.yaml")
 	if err := os.WriteFile(cfgPath, []byte("threshold:\n  threshold_ms: 1234\n"), 0644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 	resetSaturationGlobals()
-	detectorName = "composite,backlog-drift" // bank path; threshold block is foreign but ignored
+	detectorName = "composite,backlog-drift" // bank path; threshold NOT selected
+	saturationConfigPath = cfgPath
+	saturationReport = filepath.Join(dir, "x.json")
+	if _, err := resolveSaturation(); err == nil {
+		t.Error("expected error: threshold block supplied but threshold not among selected detectors")
+	}
+}
+
+// TestResolveSaturation_BankTrailingCommaEnforcesOwnership verifies the trailing-
+// comma edge case can no longer bypass ownership: `--detectors composite,` still
+// routes through the bank, and a foreign threshold: block errors just as it does
+// for the bare `--detectors composite` single-detector spelling.
+func TestResolveSaturation_BankTrailingCommaEnforcesOwnership(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.yaml")
+	if err := os.WriteFile(cfgPath, []byte("threshold:\n  threshold_ms: 1234\n"), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	resetSaturationGlobals()
+	detectorName = "composite," // trailing comma → bank path, effective selection {composite}
+	saturationConfigPath = cfgPath
+	saturationReport = filepath.Join(dir, "x.json")
+	if _, err := resolveSaturation(); err == nil {
+		t.Error("expected error: trailing-comma selection must still enforce block ownership")
+	}
+}
+
+// TestResolveSaturation_BankSelectedBlockAccepted verifies a block IS accepted
+// when its owner is in the selection.
+func TestResolveSaturation_BankSelectedBlockAccepted(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.yaml")
+	if err := os.WriteFile(cfgPath, []byte("threshold:\n  threshold_ms: 1234\n"), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	resetSaturationGlobals()
+	detectorName = "composite,threshold" // threshold selected → block valid
 	saturationConfigPath = cfgPath
 	saturationReport = filepath.Join(dir, "x.json")
 	if _, err := resolveSaturation(); err != nil {
-		t.Errorf("bank should ignore a foreign threshold block, got: %v", err)
+		t.Errorf("threshold block should be valid when threshold is selected, got: %v", err)
 	}
 }
 
@@ -236,6 +273,34 @@ func TestSaturationTracer_SingleWritesTrace(t *testing.T) {
 		if r.Detector != "composite" {
 			t.Errorf("single-detector trace should only contain composite records, got %q", r.Detector)
 		}
+	}
+}
+
+// TestSaturationTracer_ZeroRequestsWritesEmptyTrace verifies the degenerate-input
+// contract (R20) through the CLI tracer: zero completed requests writes a valid
+// {"trace":[]} file (not {"trace":null}, not an error), for both the single and
+// bank paths.
+func TestSaturationTracer_ZeroRequestsWritesEmptyTrace(t *testing.T) {
+	for _, sel := range []string{"composite", "all"} {
+		t.Run(sel, func(t *testing.T) {
+			resetSaturationGlobals()
+			detectorName = sel
+			saturationReport = filepath.Join(t.TempDir(), "empty.json")
+			tracer, err := resolveSaturation()
+			if err != nil {
+				t.Fatalf("resolveSaturation(%q): %v", sel, err)
+			}
+			if err := tracer.trace(nil); err != nil { // zero requests
+				t.Fatalf("trace(nil): %v", err)
+			}
+			data, err := os.ReadFile(saturationReport)
+			if err != nil {
+				t.Fatalf("read: %v", err)
+			}
+			if got, want := string(data), "{\n  \"trace\": []\n}\n"; got != want {
+				t.Errorf("detectors=%q: empty trace = %q, want %q", sel, got, want)
+			}
+		})
 	}
 }
 

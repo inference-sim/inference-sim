@@ -19,9 +19,11 @@ type CombinedReport struct {
 }
 
 // ReplayOneDetector streams one detector over completed request metrics and
-// records its verdict after every event to the sink. It is the single uniform
-// loop the whole feature relies on: every detector is a streaming detector
-// (#1515), so there is no per-detector special case.
+// records its verdict after every event to the sink. It is the SINGLE-detector
+// drive loop (#1516); the multi-detector Bank (#1519) has its own fanout loop but
+// shares buildSortedEvents, so both consume a byte-identical event sequence.
+// Every detector is a streaming detector (#1515), so there is no per-detector
+// special case in either loop.
 //
 // Each request contributes two events — an Arrival at its arrival time and a
 // Completion at arrival+E2E — ordered deterministically by

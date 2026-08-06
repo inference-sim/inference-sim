@@ -50,6 +50,12 @@ func (t *saturationTracer) trace(requests []sim.RequestMetrics) error {
 	if saturationReport == "" {
 		return nil
 	}
+	// Enforce the exactly-one-path invariant loudly rather than relying on the
+	// branch below to nil-deref. resolveSaturation always sets exactly one of
+	// bank/detector; a violation here means a construction bug, not user input.
+	if (t.bank == nil) == (t.detector == nil) {
+		return fmt.Errorf("saturation tracer: exactly one of bank/detector must be set (bank=%v, detector=%v) — construction bug", t.bank != nil, t.detector != nil)
+	}
 	// Zero completed requests writes a valid but empty {"trace":[]}. Warn so the
 	// empty file isn't mistaken for a detector bug — consistent across run,
 	// replay, and observe (the input source differs, this signal does not).
@@ -58,10 +64,14 @@ func (t *saturationTracer) trace(requests []sim.RequestMetrics) error {
 	}
 	if t.bank != nil {
 		// The bank was constructed with the collector as its sink. Classify replays
-		// once and fans out to every detector; totalArrivals is unused by the
-		// streaming replay in this PR (the detectors derive rate from arrival
-		// events), so len(requests) — the completed count, matching what the
-		// single-detector path sees — is passed for interface conformance.
+		// once and fans out to every detector, then Close flushes the sink.
+		//
+		// totalArrivals is IGNORED by the streaming replay in this PR (the detectors
+		// derive rate from the arrival events they observe). We pass len(requests) as
+		// a placeholder. NOTE: this is the COMPLETED count, not the injected total
+		// (completed + timed-out + dropped) that sim.BatchClassifier documents for
+		// totalArrivals — #1517 must supply the true arrival total before it wires
+		// this into the stdout label.
 		t.bank.Classify(requests, len(requests))
 		t.bank.Close()
 	} else {
@@ -74,11 +84,12 @@ func (t *saturationTracer) trace(requests []sim.RequestMetrics) error {
 // nil when saturation is off. It is the ONE shared helper (R23) run, replay, and
 // observe route through so the pipeline is identical across commands.
 //
-// Selection grammar for --detectors:
+// Selection grammar for --detectors (isBankSelection routes on the presence of a
+// comma, so ANY comma — even a trailing one — takes the bank path):
 //   - ""                              → off (nil tracer)
-//   - a single name                  → #1516 single streaming detector (byte-identical continuity)
+//   - a single bare name             → #1516 single streaming detector (byte-identical continuity)
 //   - "all"                          → #1519 bank over the full roster
-//   - a comma-list of ≥2 names        → #1519 bank over exactly those detectors
+//   - any value containing a comma    → #1519 bank over the named subset (empty entries trimmed)
 //
 // Errors (returned, not fatal — the caller decides how to surface):
 //   - --saturation-config / --saturation-report given without --detectors.

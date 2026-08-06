@@ -2,6 +2,8 @@
 package saturation
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -52,6 +54,34 @@ func TestBank_ClassifyActuallyReplaysEvents(t *testing.T) {
 	}
 	if spy.resets != 1 {
 		t.Errorf("detector Reset called %d times, want exactly 1", spy.resets)
+	}
+}
+
+// TestBank_ZeroRequestsEmptyTrace verifies the degenerate-input contract (R20):
+// zero requests produce zero events and thus zero records, but the detectors are
+// still Reset() and the sink still Closed — a valid empty trace, not a panic.
+func TestBank_ZeroRequestsEmptyTrace(t *testing.T) {
+	c := NewInMemoryCollector()
+	bank, err := NewBank(AllDetectorNames(), SaturationConfig{}, c)
+	if err != nil {
+		t.Fatalf("NewBank: %v", err)
+	}
+	bank.Classify(nil, 0) // zero requests
+	bank.Close()
+	if got := len(c.Records()); got != 0 {
+		t.Errorf("expected 0 records for zero requests, got %d", got)
+	}
+	// WriteCombinedReport must still emit a valid {"trace":[]} (not {"trace":null}).
+	path := filepath.Join(t.TempDir(), "empty.json")
+	if err := WriteCombinedReport(path, c); err != nil {
+		t.Fatalf("WriteCombinedReport: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if got, want := string(data), "{\n  \"trace\": []\n}\n"; got != want {
+		t.Errorf("empty bank trace = %q, want %q", got, want)
 	}
 }
 
@@ -175,14 +205,44 @@ func TestBank_Deterministic(t *testing.T) {
 	assertRecordsEqual(t, run(), run())
 }
 
-// TestNewBank_ForeignBlockIgnored verifies a config block for a detector NOT in
-// the selection is ignored (not an error) — several detectors share one config.
-// A threshold: block is present but only composite is selected.
-func TestNewBank_ForeignBlockIgnored(t *testing.T) {
+// TestNewBank_UnselectedBlockErrors verifies a config block whose owning detector
+// is NOT in the selection is a hard error (R1), matching the single-detector
+// path — never a silent drop. A threshold: block is present but only composite is
+// selected, so threshold is not among the selected detectors.
+func TestNewBank_UnselectedBlockErrors(t *testing.T) {
 	thr := 1234.0
 	cfg := SaturationConfig{Threshold: &ThresholdBlock{ThresholdMs: &thr}}
-	if _, err := NewBank([]string{"composite"}, cfg, NewNoOpSink()); err != nil {
-		t.Errorf("threshold block should be ignored when composite-only, got: %v", err)
+	_, err := NewBank([]string{"composite"}, cfg, NewNoOpSink())
+	if err == nil {
+		t.Fatal("expected error: threshold block supplied but threshold not selected")
+	}
+	if !strings.Contains(err.Error(), "threshold") {
+		t.Errorf("error should name the threshold block, got: %v", err)
+	}
+}
+
+// TestNewBank_SelectedBlockAccepted verifies a block IS accepted when its owning
+// detector is in the selection — including when other detectors ride along. A
+// threshold: block with threshold selected (alongside composite) is valid.
+func TestNewBank_SelectedBlockAccepted(t *testing.T) {
+	thr := 1234.0
+	cfg := SaturationConfig{Threshold: &ThresholdBlock{ThresholdMs: &thr}}
+	if _, err := NewBank([]string{"composite", "threshold"}, cfg, NewNoOpSink()); err != nil {
+		t.Errorf("threshold block should be valid when threshold is selected, got: %v", err)
+	}
+}
+
+// TestNewBank_AllAcceptsEveryBlock verifies `all` selects every owner, so a config
+// carrying every block is valid (the shared-config convenience the bank enables).
+func TestNewBank_AllAcceptsEveryBlock(t *testing.T) {
+	thr := 1234.0
+	win := 30
+	cfg := SaturationConfig{
+		Threshold:    &ThresholdBlock{ThresholdMs: &thr},
+		BacklogDrift: &BacklogDriftBlock{WindowSizeSec: &win},
+	}
+	if _, err := NewBank(AllDetectorNames(), cfg, NewNoOpSink()); err != nil {
+		t.Errorf("all blocks should be valid under `all`, got: %v", err)
 	}
 }
 

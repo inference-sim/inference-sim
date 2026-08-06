@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -88,11 +89,11 @@ const defaultThresholdMs = 5000.0
 // belong to the selected detector; the error names the offending field.
 //
 // This is the SINGLE-detector entry point (#1516): it enforces block↔detector
-// ownership because exactly one detector runs, so any foreign block is a user
-// mistake. The bank (#1519) drives several detectors from one shared config and
-// therefore calls buildDetector directly (no ownership check) — a block for a
-// detector the bank is not running is ignored, not an error, since another
-// detector in the same run may legitimately own a different block.
+// ownership (checkBlockOwnership) because exactly one detector runs, so any
+// foreign block is a user mistake. The bank (#1519) drives several detectors and
+// enforces ownership over the selected SET once (checkBlockOwnershipSet in
+// NewBank), then calls buildDetector per detector — so a block whose owner is not
+// in the bank's selection is likewise a hard error, not a silent drop (R1).
 func BuildDetector(name string, cfg SaturationConfig) (Detector, error) {
 	// Reject config blocks that do not belong to the selected detector rather
 	// than silently dropping the user's tuning (R1). SaturationConfig always
@@ -106,10 +107,10 @@ func BuildDetector(name string, cfg SaturationConfig) (Detector, error) {
 
 // buildDetector constructs the named detector, applying only the block that
 // belongs to name and ignoring the rest of cfg. It does NOT enforce block
-// ownership — that is BuildDetector's job for the single-detector path. It still
-// validates the values of the block it reads (range/finiteness), so a selected
-// detector with an out-of-range parameter errors (never panics — R6). Callers
-// that need ownership enforcement must call BuildDetector.
+// ownership — that is the caller's job (checkBlockOwnership for the single-detector
+// path, checkBlockOwnershipSet for the bank). It still validates the values of the
+// block it reads (range/finiteness), so a selected detector with an out-of-range
+// parameter errors (never panics — R6).
 func buildDetector(name string, cfg SaturationConfig) (Detector, error) {
 	switch name {
 	case "composite":
@@ -155,6 +156,31 @@ func checkBlockOwnership(name string, cfg SaturationConfig) error {
 		if cfg.Threshold != nil {
 			return fmt.Errorf("saturation config: threshold block is not valid for --detectors backlog-drift")
 		}
+	}
+	return nil
+}
+
+// checkBlockOwnershipSet is the multi-detector generalization of
+// checkBlockOwnership for the bank (#1519). A tuning block is valid only if the
+// detector that owns it is among the selected names; a block whose owner is NOT
+// selected is a hard error rather than a silent drop (R1), matching the
+// single-detector path's contract. `--detectors all` selects every owner, so it
+// trivially passes; the check bites only on subset selections that omit a
+// detector whose block the user nonetheless supplied.
+//
+// composite owns no block, so it never appears here as an owner — a threshold:
+// or backlog_drift: block is justified purely by threshold / backlog-drift being
+// in the selection.
+func checkBlockOwnershipSet(names []string, cfg SaturationConfig) error {
+	selected := make(map[string]bool, len(names))
+	for _, n := range names {
+		selected[n] = true
+	}
+	if cfg.Threshold != nil && !selected["threshold"] {
+		return fmt.Errorf("saturation config: threshold block is not valid for --detectors %q (threshold is not among the selected detectors)", strings.Join(names, ","))
+	}
+	if cfg.BacklogDrift != nil && !selected["backlog-drift"] {
+		return fmt.Errorf("saturation config: backlog_drift block is not valid for --detectors %q (backlog-drift is not among the selected detectors)", strings.Join(names, ","))
 	}
 	return nil
 }

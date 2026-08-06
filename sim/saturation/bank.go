@@ -39,12 +39,13 @@ func rosterRank(name string) int {
 }
 
 // Bank holds and drives a roster of streaming detectors over ONE deterministic
-// replay of a completed run's events, so every selected detector is scored on a
-// byte-identical event sequence in a single pass (#1519). It reimplements no
-// Detector method — it only multiplexes #1516's streaming replay across N
-// detectors — and it satisfies sim.BatchClassifier so #1517 can later surface a
-// per-detector stdout label through the same seam. In this PR Classify returns
-// nil (the trace file is the only output).
+// replay of completed request metrics (sourced from run/replay's sim or observe's
+// real server), so every selected detector is scored on a byte-identical event
+// sequence in a single pass (#1519). It reimplements no Detector method — it only
+// multiplexes the streaming replay across N detectors — and it satisfies
+// sim.BatchClassifier so #1517 can later surface a per-detector stdout label
+// through the same seam. In this PR Classify returns nil (the trace file is the
+// only output).
 type Bank struct {
 	detectors []Detector
 	sink      TraceSink
@@ -65,11 +66,14 @@ var _ sim.BatchClassifier = (*Bank)(nil)
 //   - An unknown name is a hard error listing the valid names (R1) — never a
 //     silent drop.
 //   - An empty selection is an error: the bank must drive at least one detector.
-//   - Each detector is built via buildDetector, which applies only the block that
-//     belongs to it and ignores foreign blocks. A config block for a detector NOT
-//     in the selection is therefore ignored (not an error) — several detectors
-//     legitimately share one SaturationConfig. Value errors within a selected
-//     detector's own block still surface (range/finiteness), never a panic (R6).
+//   - Config-block ownership is enforced over the selected SET
+//     (checkBlockOwnershipSet): a tuning block whose owning detector is NOT among
+//     the selected names is a hard error (R1), mirroring the single-detector
+//     path — never a silent drop. `all` selects every owner, so a shared config
+//     is fine; a subset that omits a detector whose block was supplied errors.
+//   - Each selected detector is then built via buildDetector, which applies the
+//     block that belongs to it. Value errors within a selected detector's own
+//     block still surface (range/finiteness), never a panic (R6).
 func NewBank(names []string, cfg SaturationConfig, sink TraceSink) (*Bank, error) {
 	if len(names) == 0 {
 		return nil, fmt.Errorf("saturation bank: no detectors selected; valid: %s", strings.Join(rosterOrder, ", "))
@@ -93,6 +97,14 @@ func NewBank(names []string, cfg SaturationConfig, sink TraceSink) (*Bank, error
 	sort.Slice(unique, func(i, j int) bool {
 		return rosterRank(unique[i]) < rosterRank(unique[j])
 	})
+
+	// Reject a tuning block whose owning detector is not in the selection (R1),
+	// matching the single-detector path's ownership contract. `all` selects every
+	// owner so it passes trivially; the check bites only on a subset that omits a
+	// detector whose block the user supplied.
+	if err := checkBlockOwnershipSet(unique, cfg); err != nil {
+		return nil, err
+	}
 
 	detectors := make([]Detector, 0, len(unique))
 	for _, name := range unique {
