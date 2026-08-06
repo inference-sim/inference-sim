@@ -333,6 +333,96 @@ func TestAutoscalerScaleUp_PerGPUKVCapacity(t *testing.T) {
 	}
 }
 
+// TestApplyPerInstanceKVCapacity_AdapterReservedForwarded verifies that
+// AdapterReservedBytes is forwarded to CalculateKVBlocks: a positive reservation
+// yields fewer blocks than none (LoRA static HBM reservation shrinks usable KV).
+// Guards against a future refactor silently dropping the reservation.
+func TestApplyPerInstanceKVCapacity_AdapterReservedForwarded(t *testing.T) {
+	const gpuMem = 48.0
+	base := KVAutoCalcConfig{Enabled: true, GPUMemoryUtilization: 0.9, Params: kvAutoCalcTestParams()}
+
+	noReserve := baseSimCfgForKV(1, 16, 0)
+	applyPerInstanceKVCapacity(&noReserve, gpuMem, base, "L40S")
+
+	withReserve := baseSimCfgForKV(1, 16, 0)
+	rcfg := base
+	rcfg.AdapterReservedBytes = 2 << 30 // 2 GiB
+	applyPerInstanceKVCapacity(&withReserve, gpuMem, rcfg, "L40S")
+
+	// Independent expectation: the reserved path must match CalculateKVBlocks with the option.
+	want, err := latency.CalculateKVBlocks(kvAutoCalcTestModel(), sim.HardwareCalib{MemoryGiB: gpuMem},
+		1, 1, 16, 0.9, kvAutoCalcTestParams(), latency.WithAdapterReservedBytes(2<<30))
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if withReserve.TotalKVBlocks != want {
+		t.Errorf("reserved TotalKVBlocks = %d, want %d (CalculateKVBlocks with reservation)", withReserve.TotalKVBlocks, want)
+	}
+	if withReserve.TotalKVBlocks >= noReserve.TotalKVBlocks {
+		t.Errorf("AdapterReservedBytes not forwarded: reserved=%d not fewer than unreserved=%d",
+			withReserve.TotalKVBlocks, noReserve.TotalKVBlocks)
+	}
+}
+
+// TestApplyPerInstanceKVCapacity_MaxModelLenZeroUnchanged verifies BC-6 boundary:
+// MaxModelLen=0 (unconstrained) is left at 0 after a successful recalc — the guard
+// `if simCfg.MaxModelLen > 0` must not turn an unconstrained instance into a
+// block-capacity-limited one.
+func TestApplyPerInstanceKVCapacity_MaxModelLenZeroUnchanged(t *testing.T) {
+	simCfg := baseSimCfgForKV(1, 16, 0) // MaxModelLen=0 (unconstrained)
+	cfg := KVAutoCalcConfig{Enabled: true, GPUMemoryUtilization: 0.9, Params: kvAutoCalcTestParams()}
+	applyPerInstanceKVCapacity(&simCfg, 48.0, cfg, "L40S")
+	if simCfg.MaxModelLen != 0 {
+		t.Errorf("MaxModelLen = %d after recalc, want 0 (unconstrained must stay unconstrained)", simCfg.MaxModelLen)
+	}
+	// Capacity should still have been recomputed.
+	if simCfg.TotalKVBlocks == 1 {
+		t.Error("TotalKVBlocks unchanged; recalc did not run")
+	}
+}
+
+// TestDeferredPlacement_DistinctPerGPU verifies BC-2 with TWO distinct pools: a
+// pool-lookup bug in the deferred path (picking the wrong GPU memory) would surface
+// as equal or swapped capacities. Both pools start deferred (InitialNodes=0).
+func TestDeferredPlacement_DistinctPerGPU(t *testing.T) {
+	pools := []NodePoolConfig{
+		{Name: "h100", GPUType: "H100", GPUsPerNode: 1, InitialNodes: 0, MinNodes: 0, MaxNodes: 1, GPUMemoryGiB: 80},
+		{Name: "l40s", GPUType: "L40S", GPUsPerNode: 1, InitialNodes: 0, MinNodes: 0, MaxNodes: 1, GPUMemoryGiB: 48},
+	}
+	cfg := deploymentForPlacement(2, true, pools, 9999)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+	if len(cs.instances) != 0 {
+		t.Fatalf("precondition: expected 0 instances before NodeReadyEvent, got %d", len(cs.instances))
+	}
+
+	// Provision both nodes and fire their NodeReadyEvents.
+	for _, poolName := range []string{"h100", "l40s"} {
+		node, _ := cs.placement.ProvisionNode(poolName, 0)
+		(&NodeReadyEvent{timestamp: 0, nodeID: node.ID}).Execute(cs)
+	}
+	if len(cs.instances) != 2 {
+		t.Fatalf("expected 2 deferred instances after NodeReadyEvents, got %d", len(cs.instances))
+	}
+
+	byGPU := map[string]*InstanceSimulator{}
+	for _, inst := range cs.instances {
+		byGPU[inst.GPU()] = inst
+	}
+	h, okH := byGPU["H100"]
+	l, okL := byGPU["L40S"]
+	if !okH || !okL {
+		t.Fatalf("expected deferred instances on both H100 and L40S pools, got GPUs %v", byGPU)
+	}
+	wantH, _ := latency.CalculateKVBlocks(kvAutoCalcTestModel(), sim.HardwareCalib{MemoryGiB: 80}, 1, 1, 16, 0.9, kvAutoCalcTestParams())
+	wantL, _ := latency.CalculateKVBlocks(kvAutoCalcTestModel(), sim.HardwareCalib{MemoryGiB: 48}, 1, 1, 16, 0.9, kvAutoCalcTestParams())
+	if got := h.TotalKVBlocks(); got != wantH {
+		t.Errorf("deferred H100 instance TotalKVBlocks = %d, want %d (a wrong-pool-memory lookup would surface here)", got, wantH)
+	}
+	if got := l.TotalKVBlocks(); got != wantL {
+		t.Errorf("deferred L40S instance TotalKVBlocks = %d, want %d", got, wantL)
+	}
+}
+
 // TestNoNodePools_EnabledIsInert verifies BC-5 boundary: even with KVAutoCalc.Enabled=true,
 // a deployment with NO node pools never invokes the per-instance recalc (the recalc sites
 // live only in the node-pool placement branch), so every instance keeps the global capacity.
