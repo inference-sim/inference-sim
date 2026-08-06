@@ -333,6 +333,32 @@ func TestAutoscalerScaleUp_PerGPUKVCapacity(t *testing.T) {
 	}
 }
 
+// TestNoNodePools_EnabledIsInert verifies BC-5 boundary: even with KVAutoCalc.Enabled=true,
+// a deployment with NO node pools never invokes the per-instance recalc (the recalc sites
+// live only in the node-pool placement branch), so every instance keeps the global capacity.
+// This guards the "inert by design" contract for the no-pool path.
+func TestNoNodePools_EnabledIsInert(t *testing.T) {
+	cfg := DeploymentConfig{
+		SimConfig:    baseSimCfgForKV(1234, 16, 0),
+		NumInstances: 2,
+		// No NodePools.
+		KVAutoCalc: KVAutoCalcConfig{
+			Enabled:              true, // enabled, but must be inert without node pools
+			GPUMemoryUtilization: 0.9,
+			Params:               kvAutoCalcTestParams(),
+		},
+	}
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+	if len(cs.instances) != 2 {
+		t.Fatalf("expected 2 instances, got %d", len(cs.instances))
+	}
+	for _, inst := range cs.instances {
+		if got := inst.TotalKVBlocks(); got != 1234 {
+			t.Errorf("no-node-pools instance TotalKVBlocks = %d, want 1234 (global preserved; recalc must not fire without node pools)", got)
+		}
+	}
+}
+
 // TestKVAutoCalcConfig_ZeroValueDisabled verifies the zero value is inert (BC-5).
 func TestKVAutoCalcConfig_ZeroValueDisabled(t *testing.T) {
 	var cfg KVAutoCalcConfig
