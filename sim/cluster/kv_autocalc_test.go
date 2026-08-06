@@ -275,6 +275,34 @@ func TestStartupPlacement_DisabledKeepsGlobal(t *testing.T) {
 	}
 }
 
+// TestDeferredPlacement_PerGPUKVCapacity verifies BC-2: an instance constructed in the
+// deferred NodeReadyEvent path (InitialNodes=0) receives its pool's per-GPU KV capacity.
+func TestDeferredPlacement_PerGPUKVCapacity(t *testing.T) {
+	pools := []NodePoolConfig{
+		{Name: "l40s", GPUType: "L40S", GPUsPerNode: 1, InitialNodes: 0, MinNodes: 0, MaxNodes: 1, GPUMemoryGiB: 48},
+	}
+	cfg := deploymentForPlacement(1, true, pools, 9999)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+	if len(cs.instances) != 0 {
+		t.Fatalf("precondition: expected 0 instances before NodeReadyEvent (InitialNodes=0), got %d", len(cs.instances))
+	}
+
+	// Trigger deferred construction.
+	node, _ := cs.placement.ProvisionNode("l40s", 0)
+	(&NodeReadyEvent{timestamp: 0, nodeID: node.ID}).Execute(cs)
+	if len(cs.instances) != 1 {
+		t.Fatalf("NodeReadyEvent.Execute constructed %d instances, want 1", len(cs.instances))
+	}
+
+	want, err := latency.CalculateKVBlocks(kvAutoCalcTestModel(), sim.HardwareCalib{MemoryGiB: 48}, 1, 1, 16, 0.9, kvAutoCalcTestParams())
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if got := cs.instances[0].TotalKVBlocks(); got != want {
+		t.Errorf("deferred L40S instance TotalKVBlocks = %d, want %d (per-GPU); global was 9999", got, want)
+	}
+}
+
 // TestKVAutoCalcConfig_ZeroValueDisabled verifies the zero value is inert (BC-5).
 func TestKVAutoCalcConfig_ZeroValueDisabled(t *testing.T) {
 	var cfg KVAutoCalcConfig

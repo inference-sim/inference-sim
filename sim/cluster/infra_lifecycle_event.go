@@ -57,13 +57,19 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 		}
 
 		// Phase 1C: look up CostPerHour for this GPU type (mirrors cluster.go startup path).
+		// Also capture the pool's GPU memory for per-instance KV auto-calc (#1522).
 		var poolCostPerHour float64
+		var poolGPUMemoryGiB float64
 		for i := range cs.config.NodePools {
 			if cs.config.NodePools[i].GPUType == p.gpuType {
 				poolCostPerHour = cs.config.NodePools[i].CostPerHour
+				poolGPUMemoryGiB = cs.config.NodePools[i].GPUMemoryGiB
 				break
 			}
 		}
+		// Issue #1522: recompute KV capacity from the placed GPU memory in the deferred
+		// path too (mirrors the startup path). No-op when KVAutoCalc.Enabled is false.
+		applyPerInstanceKVCapacity(&p.simCfg, poolGPUMemoryGiB, cs.config.KVAutoCalc, p.gpuType)
 
 		if !cs.addLiveInstance(p.id, cs.config.Model, p.simCfg, p.nodeID, p.gpuIDs, p.tpDegree, poolCostPerHour) {
 			continue // GPU release already handled by addLiveInstance
