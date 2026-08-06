@@ -253,6 +253,38 @@ func TestSaturationTracer_TraceNoOpWhenNoReport(t *testing.T) {
 	// error occurs and the call is inert.
 }
 
+// TestSaturationTracer_DecoupledFromGlobals is the regression guard for the
+// field-capture refactor: once resolveSaturation returns, the tracer must be
+// self-contained and NOT re-read the saturationReport/detectorName flag globals in
+// trace(). We resolve, then CLEAR the globals, then trace — the trace must still be
+// written to the report path captured at construction. If a future edit reverted
+// trace() to read the globals, it would see "" and silently no-op, and this test
+// would fail (no file written).
+func TestSaturationTracer_DecoupledFromGlobals(t *testing.T) {
+	resetSaturationGlobals()
+	detectorName = "all"
+	capturedReport := filepath.Join(t.TempDir(), "captured.json")
+	saturationReport = capturedReport
+	tracer, err := resolveSaturation()
+	if err != nil {
+		t.Fatalf("resolveSaturation: %v", err)
+	}
+
+	// Simulate a future cobra-lifecycle change that clears the globals between
+	// construction and use. The tracer must not depend on them any more.
+	resetSaturationGlobals()
+
+	if err := tracer.trace(twoRequests()); err != nil {
+		t.Fatalf("trace after clearing globals: %v", err)
+	}
+	// The trace must have been written to the path captured at construction, even
+	// though saturationReport is now "".
+	report := readReport(t, capturedReport)
+	if len(report.Trace) == 0 {
+		t.Error("expected records written to the captured report path after globals were cleared; got empty trace (trace() may be re-reading the globals)")
+	}
+}
+
 // TestSaturationTracer_SingleWritesTrace verifies the single-detector happy path
 // writes a {"trace":[...]} file with one record per event.
 func TestSaturationTracer_SingleWritesTrace(t *testing.T) {
