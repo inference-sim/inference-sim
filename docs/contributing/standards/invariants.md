@@ -271,9 +271,9 @@ Note (issue #1513): the client-visible parent E2E metric is **not** `parent.Comp
 
 **Statement:** Per-pool hardware overrides produce a valid `SimConfig` for each pool role: zero-valued `PoolOverrides` is a no-op (backward-compatible), non-nil fields override only the specified fields, and the global `SimConfig` is never mutated.
 
-**Verification:** `sim/cluster/resolve_test.go` — `TestINV_P2_1_PoolConfigConsistency` verifies observable KV capacity differences between pools pre-simulation via `FreeKVBlocks()`; `TestINV_P2_1_RequestConservation` verifies INV-1 holds under heterogeneous pool configuration.
+**Verification:** `sim/cluster/resolve_test.go` — `TestINV_P2_1_PoolConfigConsistency` verifies observable KV capacity differences between pools pre-simulation via `FreeKVBlocks()`; `TestINV_P2_1_RequestConservation` verifies INV-1 holds under heterogeneous pool configuration. `sim/cluster/kv_autocalc_test.go` — `TestStartupPlacement_PerGPUKVCapacity`, `TestDeferredPlacement_PerGPUKVCapacity`, and `TestAutoscalerScaleUp_PerGPUKVCapacity` verify that node-pool-placed instances size KV capacity from their actual placed GPU (#1522).
 
-**Evidence:** `ResolvePoolConfig` performs a struct copy and applies only non-nil/non-zero overrides. `resolveConfigForRole` is called in the instance construction loop in `NewClusterSimulator`, before any simulation state is created.
+**Evidence:** `ResolvePoolConfig` performs a struct copy and applies only non-nil/non-zero overrides. `resolveConfigForRole` is called in the instance construction loop in `NewClusterSimulator`, before any simulation state is created. For node-pool placement (#1522), `applyPerInstanceKVCapacity` recomputes each placed instance's `TotalKVBlocks` from its pool's `gpu_memory_gib` at all three placement sites (startup, deferred `NodeReadyEvent`, autoscaler scale-up), immediately after the `HWConfigByGPU` execution-calibration override (#893) — so an instance's GPU calibration and KV capacity describe the same device. Gated by `KVAutoCalcConfig.Enabled` (off ⇒ no-op, INV-6); an explicit `--total-kv-blocks` disables it (uniform global capacity).
 
 ---
 

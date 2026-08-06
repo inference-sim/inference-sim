@@ -351,13 +351,22 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 				simCfg.HWConfig = hc
 			}
 			// Phase 1C: look up CostPerHour for this matched GPU type (issue #692).
+			// Also capture the pool's GPU memory for per-instance KV auto-calc (#1522).
 			var poolCostPerHour float64
+			var poolGPUMemoryGiB float64
 			for i := range config.NodePools {
 				if config.NodePools[i].GPUType == matchedGPUType {
 					poolCostPerHour = config.NodePools[i].CostPerHour
+					poolGPUMemoryGiB = config.NodePools[i].GPUMemoryGiB
 					break
 				}
 			}
+			// Issue #1522: recompute KV-block capacity from the ACTUAL placed GPU
+			// memory so a mixed-GPU pool no longer forces every instance onto the
+			// global capacity. Runs after the HWConfigByGPU execution-calibration
+			// override above, giving the placed GPU authority over KV capacity too.
+			// No-op when KVAutoCalc.Enabled is false (INV-6).
+			applyPerInstanceKVCapacity(&simCfg, poolGPUMemoryGiB, config.KVAutoCalc, matchedGPUType)
 			inst := NewInstanceSimulator(id, simCfg)
 			inst.Model = config.Model
 			inst.nodeID = nodeID

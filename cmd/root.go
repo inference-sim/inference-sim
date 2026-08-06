@@ -403,6 +403,13 @@ type latencyResolution struct {
 	HWConfig    sim.HardwareCalib // hardware calibration config
 	AlphaCoeffs []float64         // resolved alpha coefficients (local copy, not package-level)
 	BetaCoeffs  []float64         // resolved beta coefficients (local copy, not package-level)
+
+	// KVParams / KVParamsOK carry the HF-derived KV capacity params so the cluster
+	// can recompute per-instance KV-block capacity for node-pool placement (#1522).
+	// KVParamsOK is true only when an analytical backend parsed the HF config AND
+	// extraction succeeded AND --total-kv-blocks was not explicitly set (auto-calc path).
+	KVParams   latency.KVCapacityParams
+	KVParamsOK bool
 }
 
 // resolveLatencyConfig resolves the latency backend configuration from CLI flags and
@@ -480,6 +487,12 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 
 	var modelConfig sim.ModelConfig
 	var hwConfig sim.HardwareCalib
+	// KV capacity params extracted from the HF config (analytical backends only).
+	// Retained on latencyResolution so the cluster can recompute per-instance KV
+	// capacity for node-pool placement (#1522). kvParamsOK is false when extraction
+	// failed or the backend is non-analytical (no HF config parsed).
+	var kvParams latency.KVCapacityParams
+	var kvParamsOK bool
 
 	// Early defaults resolution: load hardware/TP from defaults.yaml
 	// when not explicitly set via CLI flags.
@@ -623,7 +636,9 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		// KV capacity auto-calculation. Precedence: (1) --total-kv-blocks CLI flag,
 		// (2) auto-calculate from model architecture + GPU memory, (3) default value.
 		if !cmd.Flags().Changed("total-kv-blocks") {
-			kvParams, kvParamsErr := latency.ExtractKVCapacityParams(hfConfig)
+			var kvParamsErr error
+			kvParams, kvParamsErr = latency.ExtractKVCapacityParams(hfConfig)
+			kvParamsOK = kvParamsErr == nil
 			if kvParamsErr != nil {
 				logrus.Warnf("--latency-model: could not extract KV capacity params: %v. "+
 					"Using total-kv-blocks=%d. Set --total-kv-blocks explicitly to override", kvParamsErr, totalKVBlocks)
@@ -777,6 +792,8 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		HWConfig:    hwConfig,
 		AlphaCoeffs: alpha,
 		BetaCoeffs:  beta,
+		KVParams:    kvParams,
+		KVParamsOK:  kvParamsOK,
 	}
 }
 
@@ -2100,6 +2117,18 @@ var runCmd = &cobra.Command{
 			AutoscalerAnalyzerConfig:        bundleAnalyzerCfg,
 			NodePools:                       bundleNodePools,
 			InstanceLifecycle:               bundleInstanceLifecycle,
+			// Issue #1522: enable per-instance KV auto-calc for node-pool placement so
+			// each instance sizes KV capacity from its ACTUAL placed GPU memory.
+			// Precedence: an explicit --total-kv-blocks disables this (uniform global
+			// capacity wins); only analytical backends with extractable KV params qualify.
+			// Inert when no node pools are configured (the recalc sites are node-pool-only).
+			KVAutoCalc: cluster.KVAutoCalcConfig{
+				Enabled: !cmd.Flags().Changed("total-kv-blocks") && lr.KVParamsOK &&
+					(lr.Backend == "roofline" || lr.Backend == "trained-physics"),
+				GPUMemoryUtilization: gpuMemoryUtilization,
+				Params:               lr.KVParams,
+				AdapterReservedBytes: loraReservedBytesForKV,
+			},
 		}
 		// Session callback installation (Constraint 3 fix):
 		// Follow-up collection must be UNCONDITIONAL for saturation analysis correctness.
