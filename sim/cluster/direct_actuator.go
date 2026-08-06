@@ -89,13 +89,20 @@ func (a *DirectActuator) scaleUp(d ScaleDecision) error {
 		}
 
 		// Look up CostPerHour for this GPU type (mirrors NodeReadyEvent and startup path).
+		// Also capture the pool's GPU memory for per-instance KV auto-calc (#1522).
 		var costPerHour float64
+		var poolGPUMemoryGiB float64
 		for i := range a.cluster.config.NodePools {
 			if a.cluster.config.NodePools[i].GPUType == matchedGPU {
 				costPerHour = a.cluster.config.NodePools[i].CostPerHour
+				poolGPUMemoryGiB = a.cluster.config.NodePools[i].GPUMemoryGiB
 				break
 			}
 		}
+		// Issue #1522: recompute KV capacity from the placed GPU memory for autoscaler-
+		// created instances too (mirrors startup + deferred paths). No-op when
+		// KVAutoCalc.Enabled is false.
+		applyPerInstanceKVCapacity(&simCfg, poolGPUMemoryGiB, a.cluster.config.KVAutoCalc, matchedGPU)
 
 		// Construct, register, and activate the instance. GPU release on snapshotProvider
 		// failure is handled inside addLiveInstance.

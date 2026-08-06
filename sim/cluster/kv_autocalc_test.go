@@ -303,6 +303,36 @@ func TestDeferredPlacement_PerGPUKVCapacity(t *testing.T) {
 	}
 }
 
+// TestAutoscalerScaleUp_PerGPUKVCapacity verifies BC-3: an instance created by the
+// autoscaler DirectActuator.scaleUp receives its placed pool's per-GPU KV capacity.
+func TestAutoscalerScaleUp_PerGPUKVCapacity(t *testing.T) {
+	pools := []NodePoolConfig{
+		{Name: "l40s", GPUType: "L40S", GPUsPerNode: 2, InitialNodes: 1, MinNodes: 1, MaxNodes: 2, GPUMemoryGiB: 48},
+	}
+	cfg := deploymentForPlacement(1, true, pools, 9999)
+	cfg.Model = "test-model"
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+	cs.instances = []*InstanceSimulator{} // clear startup instance to simulate scale-up from empty
+
+	actuator := NewDirectActuator(cs)
+	if err := actuator.Apply([]ScaleDecision{
+		{ModelID: "test-model", Variant: NewVariantSpec("L40S", 1), Delta: 1},
+	}); err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+	if len(cs.instances) != 1 {
+		t.Fatalf("scaleUp created %d instances, want 1", len(cs.instances))
+	}
+
+	want, err := latency.CalculateKVBlocks(kvAutoCalcTestModel(), sim.HardwareCalib{MemoryGiB: 48}, 1, 1, 16, 0.9, kvAutoCalcTestParams())
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if got := cs.instances[0].TotalKVBlocks(); got != want {
+		t.Errorf("autoscaler L40S instance TotalKVBlocks = %d, want %d (per-GPU); global was 9999", got, want)
+	}
+}
+
 // TestKVAutoCalcConfig_ZeroValueDisabled verifies the zero value is inert (BC-5).
 func TestKVAutoCalcConfig_ZeroValueDisabled(t *testing.T) {
 	var cfg KVAutoCalcConfig
