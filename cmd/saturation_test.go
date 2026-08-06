@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -392,11 +393,12 @@ func TestSaturationTracer_SubsetMatchesRecordsUnderAll(t *testing.T) {
 	}
 	for i := range underAll {
 		// TraceRecord embeds a map (Result.Signals) so it is not comparable with
-		// ==; compare the observable scalar fields directly.
+		// ==; compare the scalar fields directly and the Signals map via DeepEqual.
 		a, b := underAll[i], alone[i]
 		if a.Timestamp != b.Timestamp || a.Detector != b.Detector ||
 			a.Result.Level != b.Result.Level || a.Result.Score != b.Result.Score ||
-			a.Result.Confidence != b.Result.Confidence {
+			a.Result.Confidence != b.Result.Confidence ||
+			!reflect.DeepEqual(a.Result.Signals, b.Result.Signals) {
 			t.Errorf("threshold record %d differs under all vs alone: %+v vs %+v", i, a, b)
 		}
 	}

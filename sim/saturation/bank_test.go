@@ -4,6 +4,7 @@ package saturation
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -257,7 +258,10 @@ func TestNewBank_SelectedBlockValueErrorSurfaces(t *testing.T) {
 }
 
 // assertRecordsEqual fails the test if two record slices differ in any observable
-// field (the fields WriteCombinedReport serializes).
+// field (every field WriteCombinedReport serializes, including the Signals map).
+// The Signals comparison via reflect.DeepEqual makes the unit-level byte-identity
+// tests self-sufficient — they no longer rely on the CLI-level serialized-JSON
+// comparison to catch a signal-value divergence.
 func assertRecordsEqual(t *testing.T, a, b []TraceRecord) {
 	t.Helper()
 	if len(a) != len(b) {
@@ -266,7 +270,8 @@ func assertRecordsEqual(t *testing.T, a, b []TraceRecord) {
 	for i := range a {
 		if a[i].Timestamp != b[i].Timestamp || a[i].Detector != b[i].Detector ||
 			a[i].Result.Level != b[i].Result.Level || a[i].Result.Score != b[i].Result.Score ||
-			a[i].Result.Confidence != b[i].Result.Confidence {
+			a[i].Result.Confidence != b[i].Result.Confidence ||
+			!reflect.DeepEqual(a[i].Result.Signals, b[i].Result.Signals) {
 			t.Errorf("record %d differs: %+v vs %+v", i, a[i], b[i])
 		}
 	}

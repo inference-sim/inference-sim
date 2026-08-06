@@ -35,19 +35,27 @@ func registerDetectorFlags(cmd *cobra.Command) {
 // streaming detector or #1519's multi-detector bank, so run/replay/observe share
 // ONE call site (R23) — they build a tracer with resolveSaturation and, if it is
 // non-nil, call trace(requests). Exactly one of detector/bank is set.
+//
+// reportPath and selection are CAPTURED at construction from the flag globals
+// rather than re-read from them in trace(): once resolveSaturation returns, the
+// tracer is self-contained and does not depend on the flag globals still holding
+// their values (they otherwise couple construction to a later call across the
+// cobra lifecycle — fragile if a future refactor clears them between the two).
 type saturationTracer struct {
-	collector *saturation.InMemoryCollector
-	detector  saturation.Detector // single-detector path (#1516); nil when the bank is used
-	bank      *saturation.Bank    // multi-detector path (#1519); nil when a single detector is used
+	collector  *saturation.InMemoryCollector
+	detector   saturation.Detector // single-detector path (#1516); nil when the bank is used
+	bank       *saturation.Bank    // multi-detector path (#1519); nil when a single detector is used
+	reportPath string              // --saturation-report captured at construction ("" ⇒ trace is a no-op)
+	selection  string              // --detectors value captured at construction (for warning messages)
 }
 
 // trace streams the resolved selection over requests and writes the per-event
-// trace to --saturation-report. It is a no-op when no report path was given (the
-// trace would be discarded anyway), mirroring #1516. The []sim.RequestMetrics
+// trace to the captured report path. It is a no-op when no report path was given
+// (the trace would be discarded anyway), mirroring #1516. The []sim.RequestMetrics
 // input is the only per-command difference (sim-derived for run/replay,
 // server-derived for observe); the pipeline is identical.
 func (t *saturationTracer) trace(requests []sim.RequestMetrics) error {
-	if saturationReport == "" {
+	if t.reportPath == "" {
 		return nil
 	}
 	// Enforce the exactly-one-path invariant loudly rather than relying on the
@@ -60,7 +68,7 @@ func (t *saturationTracer) trace(requests []sim.RequestMetrics) error {
 	// empty file isn't mistaken for a detector bug — consistent across run,
 	// replay, and observe (the input source differs, this signal does not).
 	if len(requests) == 0 {
-		logrus.Warnf("--detectors %q: 0 completed requests; saturation trace will be empty", detectorName)
+		logrus.Warnf("--detectors %q: 0 completed requests; saturation trace will be empty", t.selection)
 	}
 	if t.bank != nil {
 		// The bank was constructed with the collector as its sink. Classify replays
@@ -77,7 +85,7 @@ func (t *saturationTracer) trace(requests []sim.RequestMetrics) error {
 	} else {
 		saturation.ReplayOneDetector(t.detector, requests, t.collector)
 	}
-	return saturation.WriteCombinedReport(saturationReport, t.collector)
+	return saturation.WriteCombinedReport(t.reportPath, t.collector)
 }
 
 // resolveSaturation turns the three saturation flags into a saturationTracer, or
@@ -117,7 +125,9 @@ func resolveSaturation() (*saturationTracer, error) {
 	}
 
 	collector := saturation.NewInMemoryCollector()
-	tracer := &saturationTracer{collector: collector}
+	// Capture the flag values now so the tracer is self-contained and does not
+	// re-read the globals in trace() (see the type doc).
+	tracer := &saturationTracer{collector: collector, reportPath: saturationReport, selection: detectorName}
 
 	if isBankSelection(detectorName) {
 		names, err := parseDetectorSelection(detectorName)
@@ -125,8 +135,9 @@ func resolveSaturation() (*saturationTracer, error) {
 			return nil, err
 		}
 		// NewBank validates names, de-dups, canonicalizes order, and builds each
-		// detector; a foreign config block (for an unselected detector) is ignored,
-		// while a value error in a selected detector's own block surfaces (R1/R6).
+		// detector; a config block whose owning detector is not in the selection is
+		// a hard error (R1 — checkBlockOwnershipSet), as is a value error in a
+		// selected detector's own block (R6).
 		bank, err := saturation.NewBank(names, cfg, collector)
 		if err != nil {
 			return nil, err

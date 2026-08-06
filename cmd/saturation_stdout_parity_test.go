@@ -44,7 +44,12 @@ func TestSaturationBC8_StdoutByteIdenticalWithoutAndWithDetectors(t *testing.T) 
 			args = append(args, "--detectors", "all", "--saturation-report", os.Getenv("BLIS_BC8_REPORT"))
 		}
 		rootCmd.SetArgs(args)
-		_ = rootCmd.Execute()
+		// Exit non-zero on a non-fatal Execute error (e.g. cobra flag parsing) so the
+		// parent sees a failed subprocess rather than silently comparing partial or
+		// empty stdout against the other variants.
+		if err := rootCmd.Execute(); err != nil {
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 
