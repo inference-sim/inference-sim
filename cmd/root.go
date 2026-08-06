@@ -2207,11 +2207,16 @@ var runCmd = &cobra.Command{
 
 		// Saturation trace (#1516): stream the selected detector over the
 		// aggregate's completed-request metrics and write its per-event verdict
-		// trace to --saturation-report. No-op when no detector was selected or no
-		// report path was given. Same pipeline as replay/observe; only the input
-		// slice differs (here it is sim-derived, INV-13).
-		if err := runSaturationTrace(saturationDet, saturationCollector, aggregated.CompletedRequestMetrics()); err != nil {
-			logrus.Fatalf("Saturation trace: %v", err)
+		// trace to --saturation-report. Same pipeline as replay/observe; only the
+		// input slice differs (here it is sim-derived, INV-13).
+		//
+		// Guard on saturationDet so the common no-detector path skips the
+		// O(n log n) sort + O(n) copy in CompletedRequestMetrics() — the argument
+		// would otherwise be evaluated before runSaturationTrace could no-op.
+		if saturationDet != nil {
+			if err := runSaturationTrace(saturationDet, saturationCollector, aggregated.CompletedRequestMetrics()); err != nil {
+				logrus.Fatalf("Saturation trace: %v", err)
+			}
 		}
 
 		// Collect RawMetrics and compute fitness (PR9)

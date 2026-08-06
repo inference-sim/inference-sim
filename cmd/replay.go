@@ -600,8 +600,12 @@ Example:
 
 		// Saturation trace (#1516): same pipeline as run/observe, sim-derived
 		// input. run → replay of the same trace is byte-identical (INV-13).
-		if err := runSaturationTrace(saturationDet, saturationCollector, aggregated.CompletedRequestMetrics()); err != nil {
-			logrus.Fatalf("Saturation trace: %v", err)
+		// Guard on saturationDet so the common no-detector path skips the
+		// O(n log n) sort + O(n) copy in CompletedRequestMetrics().
+		if saturationDet != nil {
+			if err := runSaturationTrace(saturationDet, saturationCollector, aggregated.CompletedRequestMetrics()); err != nil {
+				logrus.Fatalf("Saturation trace: %v", err)
+			}
 		}
 
 		rawMetrics := cluster.CollectRawMetrics(
