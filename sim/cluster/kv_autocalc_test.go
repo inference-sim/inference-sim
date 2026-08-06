@@ -189,6 +189,92 @@ func TestApplyPerInstanceKVCapacity_MaxModelLenNotCappedWhenFits(t *testing.T) {
 	}
 }
 
+// deploymentForPlacement builds a DeploymentConfig with two node pools of the given
+// GPU memories and a global KVCacheConfig, for exercising per-instance KV recalc
+// across placement paths. numInstances instances are placed (round-robin across pools
+// by first-fit). Auto-calc is enabled iff enabled is true.
+func deploymentForPlacement(numInstances int, enabled bool, pools []NodePoolConfig, globalBlocks int64) DeploymentConfig {
+	return DeploymentConfig{
+		SimConfig:    baseSimCfgForKV(globalBlocks, 16, 0),
+		NumInstances: numInstances,
+		NodePools:    pools,
+		KVAutoCalc: KVAutoCalcConfig{
+			Enabled:              enabled,
+			GPUMemoryUtilization: 0.9,
+			Params:               kvAutoCalcTestParams(),
+		},
+	}
+}
+
+// TestStartupPlacement_PerGPUKVCapacity verifies BC-1: at startup, instances placed
+// on pools of different gpu_memory_gib receive different TotalKVBlocks, each equal to
+// an independent CalculateKVBlocks for its own pool GPU.
+func TestStartupPlacement_PerGPUKVCapacity(t *testing.T) {
+	pools := []NodePoolConfig{
+		{Name: "h100", GPUType: "H100", GPUsPerNode: 1, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80},
+		{Name: "l40s", GPUType: "L40S", GPUsPerNode: 1, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 48},
+	}
+	cfg := deploymentForPlacement(2, true, pools, 9999)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+
+	// Map placed instances by their GPU type.
+	byGPU := map[string]*InstanceSimulator{}
+	for _, inst := range cs.instances {
+		byGPU[inst.GPU()] = inst
+	}
+	h100, okH := byGPU["H100"]
+	l40s, okL := byGPU["L40S"]
+	if !okH || !okL {
+		t.Fatalf("expected instances placed on both H100 and L40S pools, got GPUs %v", func() []string {
+			var g []string
+			for k := range byGPU {
+				g = append(g, k)
+			}
+			return g
+		}())
+	}
+
+	wantH, err := latency.CalculateKVBlocks(kvAutoCalcTestModel(), sim.HardwareCalib{MemoryGiB: 80}, 1, 1, 16, 0.9, kvAutoCalcTestParams())
+	if err != nil {
+		t.Fatalf("setup H100: %v", err)
+	}
+	wantL, err := latency.CalculateKVBlocks(kvAutoCalcTestModel(), sim.HardwareCalib{MemoryGiB: 48}, 1, 1, 16, 0.9, kvAutoCalcTestParams())
+	if err != nil {
+		t.Fatalf("setup L40S: %v", err)
+	}
+
+	if got := h100.TotalKVBlocks(); got != wantH {
+		t.Errorf("H100 instance TotalKVBlocks = %d, want %d (per-GPU CalculateKVBlocks)", got, wantH)
+	}
+	if got := l40s.TotalKVBlocks(); got != wantL {
+		t.Errorf("L40S instance TotalKVBlocks = %d, want %d (per-GPU CalculateKVBlocks)", got, wantL)
+	}
+	if h100.TotalKVBlocks() == l40s.TotalKVBlocks() {
+		t.Errorf("H100 and L40S instances got the same capacity %d — mixed-GPU bug not fixed", h100.TotalKVBlocks())
+	}
+	if h100.TotalKVBlocks() == 9999 || l40s.TotalKVBlocks() == 9999 {
+		t.Errorf("an instance kept the global capacity 9999 instead of its per-GPU value")
+	}
+}
+
+// TestStartupPlacement_DisabledKeepsGlobal verifies BC-4: with auto-calc disabled
+// (explicit --total-kv-blocks), every placed instance keeps the global capacity even
+// on pools of differing memory.
+func TestStartupPlacement_DisabledKeepsGlobal(t *testing.T) {
+	pools := []NodePoolConfig{
+		{Name: "h100", GPUType: "H100", GPUsPerNode: 1, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80},
+		{Name: "l40s", GPUType: "L40S", GPUsPerNode: 1, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 48},
+	}
+	cfg := deploymentForPlacement(2, false, pools, 9999) // disabled
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+
+	for _, inst := range cs.instances {
+		if got := inst.TotalKVBlocks(); got != 9999 {
+			t.Errorf("instance on GPU %q: TotalKVBlocks = %d, want 9999 (global preserved when auto-calc disabled)", inst.GPU(), got)
+		}
+	}
+}
+
 // TestKVAutoCalcConfig_ZeroValueDisabled verifies the zero value is inert (BC-5).
 func TestKVAutoCalcConfig_ZeroValueDisabled(t *testing.T) {
 	var cfg KVAutoCalcConfig
