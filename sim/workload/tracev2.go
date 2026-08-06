@@ -706,8 +706,9 @@ func TraceRecordsToRequestMetrics(records []TraceRecord) []sim.RequestMetrics {
 			continue // Skip records with non-positive E2E (matches printObserveMetrics filter)
 		}
 		metrics = append(metrics, sim.RequestMetrics{
-			ArrivedAt: float64(rec.ArrivalTimeUs) / 1e6, // µs → seconds (CRITICAL: not ms!)
-			E2E:       e2eMs,                            // µs → ms
+			ID:        fmt.Sprintf("request_%d", rec.RequestID), // matches sim's request_%d ids (extractor parity, #1516)
+			ArrivedAt: float64(rec.ArrivalTimeUs) / 1e6,         // µs → seconds (CRITICAL: not ms!)
+			E2E:       e2eMs,                                    // µs → ms
 		})
 	}
 	return metrics

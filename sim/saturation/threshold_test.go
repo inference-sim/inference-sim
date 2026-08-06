@@ -2,24 +2,31 @@
 package saturation
 
 import (
+	"fmt"
 	"testing"
-
-	"github.com/inference-sim/inference-sim/sim"
 )
 
+// streamThreshold feeds a threshold detector one completion per latency (via the
+// surviving Observe/Detect path) and returns its verdict. It reconstructs, for
+// the shared classifyThreshold algorithm, the same mean-E2E input the removed
+// Classify path took directly (#1516). The threshold detector ignores arrivals,
+// so only completions are fed.
+func streamThreshold(thresholdMs float64, latencies []float64) Result {
+	det := NewThresholdDetector(thresholdMs)
+	for i, lat := range latencies {
+		det.Observe(Event{
+			Timestamp: int64(i+1) * 1_000_000,
+			Type:      Completion,
+			RequestID: fmt.Sprintf("r%d", i),
+			LatencyMs: lat,
+		})
+	}
+	return det.Detect()
+}
 
 // TestThresholdDetector_BelowThreshold verifies BC-4: STABLE when mean E2E < threshold
 func TestThresholdDetector_BelowThreshold(t *testing.T) {
-	requests := []sim.RequestMetrics{
-		{E2E: 3000},
-		{E2E: 3500},
-		{E2E: 4000},
-		{E2E: 4500},
-	}
-
-	det := NewThresholdDetector(5000.0)
-	rawResult := det.Classify(requests, len(requests)) // Issue #4: pass totalArrivals
-	result := asResult(t, rawResult)
+	result := streamThreshold(5000.0, []float64{3000, 3500, 4000, 4500})
 
 	if result.Level != Stable {
 		t.Errorf("Expected STABLE, got %v", result.Level)
@@ -37,16 +44,7 @@ func TestThresholdDetector_BelowThreshold(t *testing.T) {
 
 // TestThresholdDetector_AboveThreshold verifies BC-5: OVERLOADED when mean E2E > threshold
 func TestThresholdDetector_AboveThreshold(t *testing.T) {
-	requests := []sim.RequestMetrics{
-		{E2E: 6000},
-		{E2E: 7000},
-		{E2E: 8000},
-		{E2E: 9000},
-	}
-
-	det := NewThresholdDetector(5000.0)
-	rawResult := det.Classify(requests, len(requests)) // Issue #4: pass totalArrivals
-	result := asResult(t, rawResult)
+	result := streamThreshold(5000.0, []float64{6000, 7000, 8000, 9000})
 
 	if result.Level != Overloaded {
 		t.Errorf("Expected OVERLOADED, got %v", result.Level)
@@ -58,19 +56,11 @@ func TestThresholdDetector_AboveThreshold(t *testing.T) {
 
 // TestThresholdDetector_DefaultThreshold verifies default 5000ms threshold
 func TestThresholdDetector_DefaultThreshold(t *testing.T) {
-	det := NewThresholdDetector(0) // 0 means use default
+	result := streamThreshold(0, []float64{4500, 4500}) // 0 means use default
 
-	requests := []sim.RequestMetrics{
-		{E2E: 4500},
-		{E2E: 4500},
-	}
-
-	rawResult := det.Classify(requests, len(requests)) // Issue #4: pass totalArrivals
-	result := asResult(t, rawResult)
 	if result.Level != Stable {
 		t.Errorf("Expected STABLE with default threshold, got %v", result.Level)
 	}
-
 	// Verify threshold signal shows 5000
 	if threshold, ok := result.Signals["threshold"]; !ok || threshold != 5000.0 {
 		t.Errorf("Expected threshold signal = 5000.0, got %.2f", threshold)

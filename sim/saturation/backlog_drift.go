@@ -5,7 +5,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -17,19 +16,14 @@ import (
 // the two computations may legitimately disagree.
 const backlogDriftSlopeK = 3.0
 
-// BacklogDriftDetector wraps the workload.AnalyzeBacklogDriftWithClassifier logic
-// as a post-hoc saturation detector (Issue #7).
+// BacklogDriftDetector is a streaming saturation detector (#1515): Observe folds
+// each event into an incremental in-flight estimate and Detect bands the online
+// OLS slope of in-flight against a noise floor. The batch Classify path was
+// removed in #1516; the detector now streams exclusively.
 //
-// Two independent paths: the Classify (batch) path is stateless — it performs
-// whole-trace regression over completed request intervals on each call. The
-// Observe/Detect streaming path (#1515) carries incremental per-event state (the
-// fields below).
-//
-// The classifier is configurable (#1392): defaults to drain-ratio (matching the
-// CLI default for --saturation-classifier) so that the post-hoc detector path
-// stays consistent with the primary --saturation-report path. Pass an explicit
-// classifier via NewBacklogDriftDetectorWithClassifier when slope-based behavior
-// is preferred.
+// The classifier field is retained for the online band computation's config
+// (#1392); it defaults to drain-ratio. Pass an explicit classifier via
+// NewBacklogDriftDetectorWithClassifier when slope-based behavior is preferred.
 type BacklogDriftDetector struct {
 	config     workload.BacklogDriftConfig
 	classifier workload.BacklogClassifier
@@ -252,105 +246,8 @@ func onlineSlope(samples []int64) float64 {
 	return (fn*sumXY - sumX*sumY) / denom
 }
 
-// Classify performs backlog-drift saturation analysis on completed requests.
-// Converts RequestMetrics to Request format, calls AnalyzeBacklogDrift,
-// and maps the classification to Level enum.
-//
-// Classification mapping:
-//   - "UNSATURATED" → Stable
-//   - "TRANSIENT_BACKLOG" → Backlogged
-//   - "PERSISTENTLY_SATURATED" → Overloaded
-func (b *BacklogDriftDetector) Classify(requests []sim.RequestMetrics, totalArrivals int) interface{} {
-	// Convert RequestMetrics to Request format for AnalyzeBacklogDrift
-	// We need to construct requests with timing information
-	reqs := make([]*sim.Request, len(requests))
-	simEndUs := int64(0)
-
-	for i, rm := range requests {
-		// Compute completion time from arrival + E2E latency
-		arrivalUs := int64(rm.ArrivedAt * 1e6) // Convert seconds to microseconds
-		e2eUs := int64(rm.E2E * 1e3)           // Convert milliseconds to microseconds
-		completionUs := arrivalUs + e2eUs
-
-		if completionUs > simEndUs {
-			simEndUs = completionUs
-		}
-
-		// Create a minimal Request with timing info
-		// AnalyzeBacklogDrift only needs ArrivalTime, TTFTSet, and FirstTokenTime + ITL
-		// For completed requests, set TTFTSet=true and put all latency in FirstTokenTime
-		reqs[i] = &sim.Request{
-			ID:             rm.ID,
-			ArrivalTime:    arrivalUs,
-			TTFTSet:        true,
-			FirstTokenTime: e2eUs, // Put entire E2E latency in FirstTokenTime
-			ITL:            []int64{},
-			State:          sim.StateCompleted,
-		}
-	}
-
-	// Run backlog-drift analysis with the configured classifier (#1392).
-	report := workload.AnalyzeBacklogDriftWithClassifier(reqs, simEndUs, b.config, b.classifier)
-
-	// Map classification to Level
-	var level Level
-	switch report.Classification {
-	case "UNSATURATED":
-		level = Stable
-	case "TRANSIENT_BACKLOG":
-		level = Backlogged
-	case "PERSISTENTLY_SATURATED":
-		level = Overloaded
-	default:
-		level = Stable // Conservative fallback
-	}
-
-	// Compute confidence based on number of windows analyzed
-	// confidence = min(1.0, windows / MinWindows)
-	confidence := 0.0
-	if len(report.Windows) >= b.config.MinWindows {
-		confidence = 1.0
-	} else if b.config.MinWindows > 0 {
-		confidence = float64(len(report.Windows)) / float64(b.config.MinWindows)
-	}
-
-	// Build signals map from report metrics
-	signals := map[string]float64{
-		"slope":           report.Slope,
-		"slope_lower":     report.SlopeLower,
-		"slope_upper":     report.SlopeUpper,
-		"initial_backlog": float64(report.InitialBacklog),
-		"final_backlog":   float64(report.FinalBacklog),
-		"peak_in_flight":  float64(report.PeakInFlight),
-		"mean_in_flight":  report.MeanInFlight,
-		"num_windows":     float64(len(report.Windows)),
-	}
-
-	// Score: Use normalized slope magnitude (absolute value, capped at 1.0)
-	// Positive slope → overload, negative slope → recovery, zero → stable
-	score := 0.0
-	if report.Slope > 0 {
-		// Normalize slope to [0, 1] range
-		// Use slopeUpper as reference for scaling (upper bound of CI)
-		if report.SlopeUpper > 0 {
-			score = report.Slope / report.SlopeUpper
-			if score > 1.0 {
-				score = 1.0
-			}
-		}
-	}
-
-	return Result{
-		Level:      level,
-		Score:      score,
-		Confidence: confidence,
-		Signals:    signals,
-	}
-}
-
 // Reset clears the streaming state (#1515), returning the detector to its
-// initial state: next Detect() on no events → STABLE, zero confidence. The batch
-// Classify path is stateless, so it is unaffected.
+// initial state: next Detect() on no events → STABLE, zero confidence.
 func (b *BacklogDriftDetector) Reset() {
 	b.arrivals = 0
 	b.completions = 0

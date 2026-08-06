@@ -148,25 +148,18 @@ func (m *Metrics) BuildOutput(instanceID string, saturationDetector BatchClassif
 		}
 	}
 
-	// Run post-hoc saturation detection if detector provided (#1369)
+	// Run post-hoc saturation detection if a batch classifier is provided.
+	// Introduced by #1369; as of #1516 run/replay pass nil here (stdout carries no
+	// saturation; the per-event trace is produced by the streaming replay pipeline
+	// instead), so this block is dormant. The seam is retained for #1517, which
+	// repopulates output.Saturation through the same param for the stdout final label.
 	if saturationDetector != nil {
-		// Extract completed request metrics for classification
-		completedReqs := make([]RequestMetrics, 0, m.CompletedRequests)
-		for _, id := range sortedRequestIDs(m.Requests) {
-			if m.RequestE2Es[id] > 0 { // Only completed requests
-				rm := m.Requests[id]
-				rm.E2E = m.RequestE2Es[id] / 1e3    // ticks → ms
-				rm.TTFT = m.RequestTTFTs[id] / 1e3  // ticks → ms
-				completedReqs = append(completedReqs, rm)
-			}
-		}
-
 		// Calculate total arrivals (Issue #4: needed for rate deficit in batch mode)
 		totalArrivals := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests
 
 		// Call Classify with total arrivals (Issues #4, #6: typed interface, rate deficit available)
 		// Note: Sorting by completion time is now handled inside Classify (Issue #5)
-		output.Saturation = saturationDetector.Classify(completedReqs, totalArrivals)
+		output.Saturation = saturationDetector.Classify(m.CompletedRequestMetrics(), totalArrivals)
 	}
 
 	// Per-adapter aggregate metrics (#1464, US1). Group COMPLETED requests by their
@@ -177,6 +170,26 @@ func (m *Metrics) BuildOutput(instanceID string, saturationDetector BatchClassif
 	output.Adapters = buildAdapterMetrics(m, vllmRuntime)
 
 	return output
+}
+
+// CompletedRequestMetrics returns the per-request metrics for completed requests
+// (RequestE2Es[id] > 0), sorted by request id, with E2E and TTFT converted from
+// ticks to milliseconds. This is the exact extraction the batch classifier and
+// the #1516 streaming replay both consume; exposing it as one method keeps the
+// run/replay saturation input identical to what BuildOutput historically built
+// internally (extractor parity — the observe leg's TraceRecordsToRequestMetrics
+// must produce the same (ArrivedAt, E2E, ID) triples for INV-13).
+func (m *Metrics) CompletedRequestMetrics() []RequestMetrics {
+	completedReqs := make([]RequestMetrics, 0, m.CompletedRequests)
+	for _, id := range sortedRequestIDs(m.Requests) {
+		if m.RequestE2Es[id] > 0 { // Only completed requests
+			rm := m.Requests[id]
+			rm.E2E = m.RequestE2Es[id] / 1e3   // ticks → ms
+			rm.TTFT = m.RequestTTFTs[id] / 1e3 // ticks → ms
+			completedReqs = append(completedReqs, rm)
+		}
+	}
+	return completedReqs
 }
 
 // buildAdapterMetrics computes the per-adapter aggregate block from completed requests.

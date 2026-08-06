@@ -5,141 +5,195 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/saturation"
+	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
+// TestE2E_ExtractorParity_ByteIdenticalTrace closes the INV-13 loop hermetically:
+// the sim-side extractor (Metrics.CompletedRequestMetrics) and the observe-side
+// extractor (workload.TraceRecordsToRequestMetrics ∘ RequestsToTraceRecords) must
+// feed ReplayOneDetector to produce BYTE-IDENTICAL trace files. This proves the
+// "same (ArrivedAt,E2E,ID) triples ⇒ same trace bytes" implication directly,
+// rather than only asserting the triples match (tracev2_test) and the pipeline is
+// deterministic (replay_test) separately.
+func TestE2E_ExtractorParity_ByteIdenticalTrace(t *testing.T) {
+	type spec struct {
+		id        int
+		arrivalUs int64
+		e2eUs     int64
+	}
+	specs := []spec{
+		{0, 1_000_000, 150_000},
+		{1, 2_500_000, 300_000},
+		{2, 500_000, 50_000}, // out of arrival order
+	}
 
-// TestE2E_CompositeDetector_WithMetrics verifies BC-6: end-to-end flow
-// with CompositeDetector via SaveResults integration (C6: with behavioral assertions)
-func TestE2E_CompositeDetector_WithMetrics(t *testing.T) {
-	// Create metrics with 24 completed requests showing smooth monotonic increase
-	// This ensures quartile monotonicity: Q1 < Q2 < Q3 < Q4
-	// Latencies: 100, 105, 110, ..., 215 (24 values, increasing by 5ms each)
+	// Sim side: a Metrics as run/replay would populate.
 	m := &sim.Metrics{
-		CompletedRequests:       24,
-		SimEndedTime:            5000000, // 5 seconds
-		Requests:                make(map[string]sim.RequestMetrics),
-		RequestE2Es:             make(map[string]float64),
-		RequestTTFTs:            make(map[string]float64),
-		RequestITLs:             make(map[string]float64),
-		RequestSchedulingDelays: make(map[string]int64),
+		Requests:     make(map[string]sim.RequestMetrics),
+		RequestE2Es:  make(map[string]float64),
+		RequestTTFTs: make(map[string]float64),
+	}
+	simReqs := make([]*sim.Request, 0, len(specs))
+	for _, s := range specs {
+		id := fmt.Sprintf("request_%d", s.id)
+		m.CompletedRequests++
+		m.Requests[id] = sim.RequestMetrics{ID: id, ArrivedAt: float64(s.arrivalUs) / 1e6}
+		m.RequestE2Es[id] = float64(s.e2eUs) // ticks; /1e3 → ms in CompletedRequestMetrics
+		m.RequestTTFTs[id] = 0
+		simReqs = append(simReqs, &sim.Request{
+			ID:             id,
+			ArrivalTime:    s.arrivalUs,
+			TTFTSet:        true,
+			FirstTokenTime: s.e2eUs,
+			ITL:            []int64{},
+			State:          sim.StateCompleted,
+		})
 	}
 
-	// 24 requests with smoothly increasing latency (100, 105, 110, ..., 215)
+	writeTrace := func(reqs []sim.RequestMetrics) []byte {
+		det, err := saturation.BuildDetector("composite", saturation.SaturationConfig{})
+		if err != nil {
+			t.Fatalf("BuildDetector: %v", err)
+		}
+		c := saturation.NewInMemoryCollector()
+		saturation.ReplayOneDetector(det, reqs, c)
+		path := filepath.Join(t.TempDir(), "t.json")
+		if err := saturation.WriteCombinedReport(path, c); err != nil {
+			t.Fatalf("WriteCombinedReport: %v", err)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		return data
+	}
+
+	runBytes := writeTrace(m.CompletedRequestMetrics())
+	observeBytes := writeTrace(workload.TraceRecordsToRequestMetrics(workload.RequestsToTraceRecords(simReqs)))
+
+	if string(runBytes) != string(observeBytes) {
+		t.Errorf("run-side and observe-side traces differ:\n--- run ---\n%s\n--- observe ---\n%s", runBytes, observeBytes)
+	}
+}
+
+// TestE2E_ReplayComposite_WritesTrace verifies the full replay → collect → write
+// pipeline (#1516): a composite detector streamed over completed requests writes
+// a non-empty {"trace":[...]} file whose last verdict reflects a rising latency
+// trend. Smoothly increasing latency across 24 completions satisfies the
+// quartile-monotone filter → OVERLOADED.
+func TestE2E_ReplayComposite_WritesTrace(t *testing.T) {
+	requests := make([]sim.RequestMetrics, 24)
 	for i := 0; i < 24; i++ {
-		id := fmt.Sprintf("r%d", i)
-		m.Requests[id] = sim.RequestMetrics{ID: id, ArrivedAt: float64(i)}
-		m.RequestE2Es[id] = float64(100000 + i*5000) // 100ms + i*5ms in ticks
+		requests[i] = sim.RequestMetrics{
+			ID:        fmt.Sprintf("request_%d", i),
+			ArrivedAt: float64(i),
+			E2E:       float64(100 + i*5), // 100ms → 215ms
+		}
 	}
 
-	// Create detector
-	det := saturation.NewDetector("composite", saturation.DetectorOpts{})
+	det, err := saturation.BuildDetector("composite", saturation.SaturationConfig{})
+	if err != nil {
+		t.Fatalf("BuildDetector: %v", err)
+	}
+	collector := saturation.NewInMemoryCollector()
+	saturation.ReplayOneDetector(det, requests, collector)
 
-	// Write to temp file and verify JSON output (C6: behavioral assertion)
-	tmpFile := t.TempDir() + "/metrics.json"
-	if err := m.SaveResults("test", 5000000, 1000, tmpFile, det); err != nil {
-		t.Fatalf("SaveResults failed: %v", err)
+	tmpFile := t.TempDir() + "/trace.json"
+	if err := saturation.WriteCombinedReport(tmpFile, collector); err != nil {
+		t.Fatalf("WriteCombinedReport: %v", err)
 	}
 
-	// Read and parse the output JSON
 	data, err := os.ReadFile(tmpFile)
 	if err != nil {
-		t.Fatalf("Failed to read output file: %v", err)
+		t.Fatalf("read trace: %v", err)
+	}
+	var report saturation.CombinedReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatalf("unmarshal trace: %v", err)
 	}
 
-	var output struct {
-		Saturation *saturation.Result `json:"saturation"`
+	// 24 requests → 48 events → 48 verdict records.
+	if len(report.Trace) != 48 {
+		t.Fatalf("expected 48 trace records (2 events × 24 requests), got %d", len(report.Trace))
 	}
-	if err := json.Unmarshal(data, &output); err != nil {
-		t.Fatalf("Failed to unmarshal JSON: %v", err)
+	last := report.Trace[len(report.Trace)-1]
+	if last.Detector != "composite" {
+		t.Errorf("expected detector=composite, got %q", last.Detector)
 	}
-
-	// Verify saturation field is populated
-	if output.Saturation == nil {
-		t.Fatal("Saturation field is nil in output JSON")
-	}
-
-	// With 24 requests (smoothly increasing 100→215ms), quartile monotonicity satisfied
-	// Actual calculation will depend on Classify sorting by completion time (Issue #5)
-	// Noise floor = 1/sqrt(24) = 0.204
-	// Classification: score >= noise_floor and lt > noise_floor → OVERLOADED
-	if output.Saturation.Level != saturation.Overloaded {
-		t.Errorf("Expected Overloaded from latency trend, got %v (score=%.2f, lt=%.2f)",
-			output.Saturation.Level, output.Saturation.Score, output.Saturation.Signals["latency_trend"])
-	}
-
-	// Verify score above noise floor
-	noiseFloor := output.Saturation.Signals["noise_floor"]
-	if output.Saturation.Score < noiseFloor {
-		t.Errorf("Expected score >= noise_floor (%.2f) for detectable trend, got %.2f", noiseFloor, output.Saturation.Score)
-	}
-
-	// Verify latency trend was detected (quartile_monotone should be 1)
-	if output.Saturation.Signals["quartile_monotone"] != 1.0 {
-		t.Errorf("Expected quartile_monotone=1 for smooth increase, got %.2f", output.Saturation.Signals["quartile_monotone"])
-	}
-
-	// Verify latency trend above noise floor (needed for OVERLOADED classification)
-	if output.Saturation.Signals["latency_trend"] <= noiseFloor {
-		t.Errorf("Expected latency_trend > noise_floor for OVERLOADED, got lt=%.2f, noise=%.2f",
-			output.Saturation.Signals["latency_trend"], noiseFloor)
+	if last.Result.Level != saturation.Overloaded {
+		t.Errorf("expected final verdict OVERLOADED for rising latency, got %v (lt=%.3f)",
+			last.Result.Level, last.Result.Signals["latency_trend"])
 	}
 }
 
-// TestE2E_ThresholdDetector_BelowThreshold verifies threshold detector
-// correctly classifies stable workload
-func TestE2E_ThresholdDetector_BelowThreshold(t *testing.T) {
-	requests := []sim.RequestMetrics{
-		{E2E: 3000, ArrivedAt: 0}, // All below 5000ms threshold
-		{E2E: 4000, ArrivedAt: 1},
-		{E2E: 3500, ArrivedAt: 2},
+// TestE2E_ReplayThreshold_BelowAndAbove verifies the threshold detector's final
+// verdict through the replay pipeline for stable vs overloaded latency.
+func TestE2E_ReplayThreshold_BelowAndAbove(t *testing.T) {
+	below := []sim.RequestMetrics{
+		{ID: "request_0", ArrivedAt: 0, E2E: 3000},
+		{ID: "request_1", ArrivedAt: 1, E2E: 4000},
+		{ID: "request_2", ArrivedAt: 2, E2E: 3500},
+	}
+	above := []sim.RequestMetrics{
+		{ID: "request_0", ArrivedAt: 0, E2E: 6000},
+		{ID: "request_1", ArrivedAt: 1, E2E: 7000},
+		{ID: "request_2", ArrivedAt: 2, E2E: 8000},
 	}
 
-	det := saturation.NewDetector("threshold", saturation.DetectorOpts{ThresholdMs: 5000})
-	result := det.Classify(requests, len(requests)).(saturation.Result) // Issue #4: pass totalArrivals
-
-	if result.Level != saturation.Stable {
-		t.Errorf("Expected STABLE for mean < threshold, got %v", result.Level)
+	for _, tc := range []struct {
+		name  string
+		reqs  []sim.RequestMetrics
+		level saturation.Level
+	}{
+		{"below", below, saturation.Stable},
+		{"above", above, saturation.Overloaded},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			det, err := saturation.BuildDetector("threshold", saturation.SaturationConfig{})
+			if err != nil {
+				t.Fatalf("BuildDetector: %v", err)
+			}
+			collector := saturation.NewInMemoryCollector()
+			saturation.ReplayOneDetector(det, tc.reqs, collector)
+			recs := collector.Records()
+			if len(recs) == 0 {
+				t.Fatal("expected non-empty trace")
+			}
+			if got := recs[len(recs)-1].Result.Level; got != tc.level {
+				t.Errorf("expected final level %v, got %v", tc.level, got)
+			}
+		})
 	}
 }
 
-// TestE2E_ThresholdDetector_AboveThreshold verifies threshold detector
-// correctly classifies overloaded workload
-func TestE2E_ThresholdDetector_AboveThreshold(t *testing.T) {
-	requests := []sim.RequestMetrics{
-		{E2E: 6000, ArrivedAt: 0}, // All above 5000ms threshold
-		{E2E: 7000, ArrivedAt: 1},
-		{E2E: 8000, ArrivedAt: 2},
+// TestE2E_ReplayEmptyInput_WritesEmptyTrace verifies the empty-input contract:
+// zero completed requests writes a valid {"trace":[]} file, not an error.
+func TestE2E_ReplayEmptyInput_WritesEmptyTrace(t *testing.T) {
+	det, err := saturation.BuildDetector("backlog-drift", saturation.SaturationConfig{})
+	if err != nil {
+		t.Fatalf("BuildDetector: %v", err)
 	}
+	collector := saturation.NewInMemoryCollector()
+	saturation.ReplayOneDetector(det, nil, collector)
 
-	det := saturation.NewDetector("threshold", saturation.DetectorOpts{ThresholdMs: 5000})
-	result := det.Classify(requests, len(requests)).(saturation.Result) // Issue #4: pass totalArrivals
-
-	if result.Level != saturation.Overloaded {
-		t.Errorf("Expected OVERLOADED for mean > threshold, got %v", result.Level)
+	tmpFile := t.TempDir() + "/empty.json"
+	if err := saturation.WriteCombinedReport(tmpFile, collector); err != nil {
+		t.Fatalf("WriteCombinedReport: %v", err)
 	}
-	if result.Score < 0.75 {
-		t.Errorf("Expected score >= 0.75 for overloaded, got %.2f", result.Score)
+	data, err := os.ReadFile(tmpFile)
+	if err != nil {
+		t.Fatalf("read trace: %v", err)
 	}
-}
-
-// TestE2E_NoOpDetector verifies "none" detector always returns stable
-func TestE2E_NoOpDetector(t *testing.T) {
-	requests := []sim.RequestMetrics{
-		{E2E: 10000, ArrivedAt: 0}, // High latencies
-		{E2E: 10000, ArrivedAt: 1},
+	var report saturation.CombinedReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatalf("unmarshal trace: %v", err)
 	}
-
-	det := saturation.NewDetector("none", saturation.DetectorOpts{})
-	result := det.Classify(requests, len(requests)).(saturation.Result) // Issue #4: pass totalArrivals
-
-	if result.Level != saturation.Stable {
-		t.Errorf("NoOp detector should always return STABLE, got %v", result.Level)
-	}
-	if result.Score != 0 {
-		t.Errorf("NoOp detector should return score=0, got %.2f", result.Score)
+	if len(report.Trace) != 0 {
+		t.Errorf("expected empty trace, got %d records", len(report.Trace))
 	}
 }
