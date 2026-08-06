@@ -144,6 +144,18 @@ type DeploymentConfig struct {
 	// (TFlopsPeak, BwPeakTBs) rather than the CLI --gpu calibration.
 	// Zero value (nil) is safe: no override, backward-compatible with all existing callers.
 	HWConfigByGPU map[string]sim.HardwareCalib `yaml:"hw_config_by_gpu,omitempty"`
+
+	// Issue #1522: per-instance KV-block capacity for node-pool placement. When
+	// KVAutoCalc.Enabled is true, each node-pool-placed instance recomputes its
+	// TotalKVBlocks from its ACTUAL placed GPU memory (node_pools[].gpu_memory_gib),
+	// TP, DP, block size, memory utilization, and weight precision — instead of
+	// inheriting the single global capacity computed from the --hardware GPU. Applied
+	// at all three placement sites (startup, deferred NodeReadyEvent, autoscaler
+	// scale-up), immediately after the HWConfigByGPU execution-calibration override,
+	// so the placed GPU is authoritative for KV capacity just as it is for execution
+	// coefficients (SC-004). Zero value (Enabled=false) is inert and backward-compatible
+	// (INV-6). See KVAutoCalcConfig and applyPerInstanceKVCapacity.
+	KVAutoCalc KVAutoCalcConfig `yaml:"-"`
 }
 
 // ToSimConfig returns the embedded SimConfig for per-instance construction.
