@@ -87,8 +87,12 @@ const defaultThresholdMs = 5000.0
 // supplied parameter is out of range, or a config block is present that does not
 // belong to the selected detector; the error names the offending field.
 //
-// The bank / multi-detector selection (`all`, comma-lists) is intentionally not
-// handled here — that belongs to #1519. Callers must pass exactly one name.
+// This is the SINGLE-detector entry point (#1516): it enforces block↔detector
+// ownership because exactly one detector runs, so any foreign block is a user
+// mistake. The bank (#1519) drives several detectors from one shared config and
+// therefore calls buildDetector directly (no ownership check) — a block for a
+// detector the bank is not running is ignored, not an error, since another
+// detector in the same run may legitimately own a different block.
 func BuildDetector(name string, cfg SaturationConfig) (Detector, error) {
 	// Reject config blocks that do not belong to the selected detector rather
 	// than silently dropping the user's tuning (R1). SaturationConfig always
@@ -97,7 +101,16 @@ func BuildDetector(name string, cfg SaturationConfig) (Detector, error) {
 	if err := checkBlockOwnership(name, cfg); err != nil {
 		return nil, err
 	}
+	return buildDetector(name, cfg)
+}
 
+// buildDetector constructs the named detector, applying only the block that
+// belongs to name and ignoring the rest of cfg. It does NOT enforce block
+// ownership — that is BuildDetector's job for the single-detector path. It still
+// validates the values of the block it reads (range/finiteness), so a selected
+// detector with an out-of-range parameter errors (never panics — R6). Callers
+// that need ownership enforcement must call BuildDetector.
+func buildDetector(name string, cfg SaturationConfig) (Detector, error) {
 	switch name {
 	case "composite":
 		return NewCompositeDetector(), nil

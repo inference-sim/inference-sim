@@ -542,9 +542,9 @@ Example:
 		}
 		cs := cluster.NewClusterSimulator(config, cluster.NewSliceRequestSource(requests), onRequestDone)
 
-		// Resolve the saturation detector + trace collector BEFORE the run so a
-		// bad flag / config / report path fails fast (#1516).
-		saturationDet, saturationCollector, satErr := resolveSaturation()
+		// Resolve the saturation tracer BEFORE the run so a bad flag / config /
+		// report path fails fast (#1516 single detector, #1519 bank).
+		satTracer, satErr := resolveSaturation()
 		if satErr != nil {
 			logrus.Fatalf("%v", satErr)
 		}
@@ -598,12 +598,12 @@ Example:
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
-		// Saturation trace (#1516): same pipeline as run/observe, sim-derived
-		// input. run → replay of the same trace is byte-identical (INV-13).
-		// Guard on saturationDet so the common no-detector path skips the
-		// O(n log n) sort + O(n) copy in CompletedRequestMetrics().
-		if saturationDet != nil {
-			if err := runSaturationTrace(saturationDet, saturationCollector, aggregated.CompletedRequestMetrics()); err != nil {
+		// Saturation trace (#1516 single detector / #1519 bank): same pipeline as
+		// run/observe, sim-derived input. run → replay of the same trace is
+		// byte-identical (INV-13). Guard on the tracer so the common no-detector
+		// path skips the O(n log n) sort + O(n) copy in CompletedRequestMetrics().
+		if satTracer != nil {
+			if err := satTracer.trace(aggregated.CompletedRequestMetrics()); err != nil {
 				logrus.Fatalf("Saturation trace: %v", err)
 			}
 		}

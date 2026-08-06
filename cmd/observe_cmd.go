@@ -540,9 +540,10 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		observeSource = cluster.NewSliceRequestSource(wl.Requests)
 	}
 
-	// Resolve the saturation detector + trace collector BEFORE dispatch so a bad
-	// flag / config / report path fails fast rather than after the run (#1516).
-	saturationDet, saturationCollector, satErr := resolveSaturation()
+	// Resolve the saturation tracer BEFORE dispatch so a bad flag / config /
+	// report path fails fast rather than after the run (#1516 single detector,
+	// #1519 bank).
+	satTracer, satErr := resolveSaturation()
 	if satErr != nil {
 		logrus.Fatalf("%v", satErr)
 	}
@@ -614,18 +615,19 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		itlRecords = recorder.ITLRecords()
 	}
 
-	// Saturation trace (#1516): stream the selected detector over the real-server
-	// request metrics and write its per-event verdict trace to --saturation-report.
-	// Same pipeline as run/replay; the only difference is the input source
-	// (TraceRecordsToRequestMetrics, real-server latencies). No stdout saturation
-	// field (passed nil to printObserveMetrics below) — the final label returns in
-	// #1517. No-op when no detector was selected or no report path was given.
-	if saturationDet != nil {
-		// runSaturationTrace emits the shared "0 completed requests" warning
-		// (consistent across run/replay/observe). TraceRecordsToRequestMetrics
-		// drops non-"ok" records, so all-failed dispatch yields 0 metrics here.
+	// Saturation trace (#1516 single detector / #1519 bank): stream the selected
+	// detector(s) over the real-server request metrics and write the per-event
+	// verdict trace to --saturation-report. Same pipeline as run/replay; the only
+	// difference is the input source (TraceRecordsToRequestMetrics, real-server
+	// latencies). No stdout saturation field (passed nil to printObserveMetrics
+	// below) — the final label returns in #1517. No-op when no detector was
+	// selected or no report path was given.
+	if satTracer != nil {
+		// trace emits the shared "0 completed requests" warning (consistent across
+		// run/replay/observe). TraceRecordsToRequestMetrics drops non-"ok" records,
+		// so all-failed dispatch yields 0 metrics here.
 		requestMetrics := workload.TraceRecordsToRequestMetrics(records)
-		if err := runSaturationTrace(saturationDet, saturationCollector, requestMetrics); err != nil {
+		if err := satTracer.trace(requestMetrics); err != nil {
 			logrus.Fatalf("Saturation trace: %v", err)
 		}
 	}

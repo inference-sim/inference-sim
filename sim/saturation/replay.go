@@ -34,9 +34,36 @@ type CombinedReport struct {
 func ReplayOneDetector(detector Detector, requests []sim.RequestMetrics, sink TraceSink) {
 	detector.Reset()
 
+	events := buildSortedEvents(requests)
+
+	name := detector.Name()
+	for _, e := range events {
+		detector.Observe(e)
+		sink.Record(e.Timestamp, name, detector.Detect())
+	}
+	sink.Close()
+}
+
+// buildSortedEvents turns completed request metrics into the deterministic event
+// stream every replay path consumes: each request contributes an Arrival at its
+// arrival time and a Completion at arrival+E2E, sorted by
+// (timestamp, event-type, request-id).
+//
+// It is shared by ReplayOneDetector (single-detector, #1516) and the Bank
+// (multi-detector, #1519) so both fan out over a byte-identical event sequence —
+// the guarantee that a subset detector's records match its records under `all`
+// (INV-6) and that run/replay parity holds (INV-13). Zero requests yield zero
+// events.
+//
+// Arrival (0) sorts before Completion (1) at an equal timestamp; request-id
+// breaks any remaining tie. sort.Slice is not stable, but the three-key
+// comparator is a total order (request-ids are unique per request, and a
+// request's own arrival precedes its completion by construction), so the result
+// is fully determined.
+func buildSortedEvents(requests []sim.RequestMetrics) []Event {
 	events := make([]Event, 0, 2*len(requests))
 	for _, r := range requests {
-		arrivalUs := int64(r.ArrivedAt * 1e6)   // seconds → µs
+		arrivalUs := int64(r.ArrivedAt * 1e6)        // seconds → µs
 		completionUs := arrivalUs + int64(r.E2E*1e3) // + E2E (ms → µs)
 		events = append(events,
 			Event{
@@ -53,11 +80,6 @@ func ReplayOneDetector(detector Detector, requests []sim.RequestMetrics, sink Tr
 		)
 	}
 
-	// Deterministic order: (timestamp, event-type, request-id). Arrival (0) sorts
-	// before Completion (1) at an equal timestamp; request-id breaks any remaining
-	// tie. sort.Slice is not stable, but the three-key comparator is a total order
-	// (request-ids are unique per request, and a request's own arrival precedes its
-	// completion by construction), so the result is fully determined.
 	sort.Slice(events, func(i, j int) bool {
 		if events[i].Timestamp != events[j].Timestamp {
 			return events[i].Timestamp < events[j].Timestamp
@@ -67,13 +89,7 @@ func ReplayOneDetector(detector Detector, requests []sim.RequestMetrics, sink Tr
 		}
 		return events[i].RequestID < events[j].RequestID
 	})
-
-	name := detector.Name()
-	for _, e := range events {
-		detector.Observe(e)
-		sink.Record(e.Timestamp, name, detector.Detect())
-	}
-	sink.Close()
+	return events
 }
 
 // WriteCombinedReport serializes the collected verdicts as a {"trace":[...]}
