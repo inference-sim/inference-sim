@@ -127,11 +127,11 @@ The goal was a single set of coefficients that holds up across three axes at onc
 With those covered, a single fit lets BLIS predict any new model / GPU / TP combination from
 its config and datasheet.
 
-### The data is just client-side latency
+### No kernel- or operator-level profiling
 
-What's striking is how little the fit needs: nothing beyond what any client measures from an
-ordinary endpoint, per-request TTFT, ITL, throughput, and end-to-end latency. Most other
-simulators are built differently:
+BLIS never uses per-operator or per-kernel timing. Training runs on batch-step traces,
+KV-cache events, and request-level latency metrics; evaluation uses only the request-level
+metrics (TTFT, ITL, throughput, E2E). Most other simulators are built the other way:
 
 - [AIConfigurator](https://github.com/ai-dynamo/aiconfigurator) profiles individual operators
   (GEMM, attention, communication) on the target hardware.
@@ -143,20 +143,18 @@ simulators are built differently:
   no measurement at all, but it also can't see continuous batching, queueing, or KV-cache
   pressure.
 
-The first three need runtimes measured from inside vLLM or the GPU. BLIS sits between the
-extremes: it neither instruments the engine nor predicts from specs alone. We collect traces
-by pointing BLIS's own `observe` command at an unmodified vLLM or llm-d deployment and
-recording the response timings, with no profiling hooks or kernel timers involved. Any
-endpoint that accepts requests can produce training data, which keeps the process cheap, and
-it's the same machinery we later use to evaluate the model.
+The first three depend on operator- or kernel-level timings measured from inside vLLM or the
+GPU, exactly what BLIS avoids. That instrumentation also has to be redone for each new model,
+GPU, and sometimes workload before those tools can simulate it. BLIS fits once and then
+predicts new combinations from published parameters, no fresh profiling required.
 
 ### Training data
 
-We collected fifteen experiments this way on H100s, spanning dense, grouped-query-attention,
-and MoE models at TP degrees 1, 2, and 4. The mix forces one coefficient set to satisfy several
-regimes at once: dense models where the MoE terms drop out, MoE models where interleave
-overhead dominates, single-GPU where the all-reduce term is zero, and multi-GPU where
-communication matters.
+The [training set](https://github.com/inference-sim/inference-sim/tree/training/training/trainval_data)
+is fifteen serving runs on H100s, spanning dense, grouped-query-attention, and MoE models at TP
+degrees 1, 2, and 4. The mix forces one coefficient set to satisfy several regimes at once:
+dense models where the MoE terms drop out, MoE models where interleave overhead dominates,
+single-GPU where the all-reduce term is zero, and multi-GPU where communication matters.
 
 ### A two-loop fit
 
@@ -222,17 +220,21 @@ server produced rather than instrumented kernel timings. Three commands do it:
   error as MAPE.
 
 We ran this comparison 36 times, each a different point in the evaluation space: six models,
-three GPU types, and a sweep of serving configurations on top. The set deliberately doesn't
-overlap the training data. None of the six models were used to fit the coefficients, and two
-of the three GPUs (the A100 and L40S) weren't in the training set either, so the results are
-generalization to unseen configurations rather than a fit recalling its own data.
+three GPU types, and a sweep of serving configurations on top (the full
+[evaluation matrix](https://github.com/inference-sim/inference-sim/discussions/598) is laid
+out separately).
+The set deliberately doesn't overlap the training data. None of the six models were used to fit
+the coefficients, and two of the three GPUs (the A100 and L40S) weren't in the training set
+either, so the results are generalization to unseen configurations rather than a fit recalling
+its own data.
 
 ---
 
 ## How accurate is it
 
 Every number here is a prediction against a real server, on configurations BLIS never trained
-on.
+on. The scripts that reproduce these BLIS accuracy results are
+[here](https://github.com/inference-sim/sim-to-real-accuracy-validation).
 
 ### Where it's strong
 
