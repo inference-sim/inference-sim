@@ -49,7 +49,14 @@ var swiGLUActivations = map[string]bool{
 	"silu":   true,
 	"swiglu": true,
 	"geglu":  true,
-	"":       true,
+	// "situ" is Kimi-K3's SiTU-GLU (Sigmoid Tanh Unit), the successor to K2's
+	// SwiGLU. It is a 3-matrix gated GLU (gate + up + down) with the identical
+	// weight/FLOP shape as SwiGLU — only the pointwise gate nonlinearity differs
+	// (parameterized by activation_situ_beta / activation_situ_linear_beta). BLIS's
+	// capacity and compute models depend only on the MLP matrix count, not the gate
+	// function, so SiTU-GLU is SwiGLU-family here. See issue #1526.
+	"situ": true,
+	"":     true,
 }
 
 // KVBytesPerToken computes the per-GPU KV cache bytes per token for a given
@@ -214,7 +221,7 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, dp int,
 
 	// Only SwiGLU-family activations are supported (3-matrix MLP).
 	if !swiGLUActivations[params.HiddenAct] {
-		return 0, fmt.Errorf("CalculateKVBlocks: unsupported activation %q; only SwiGLU-family activations (silu, swiglu, geglu) are supported", params.HiddenAct)
+		return 0, fmt.Errorf("CalculateKVBlocks: unsupported activation %q; only SwiGLU-family activations (silu, swiglu, geglu, situ) are supported", params.HiddenAct)
 	}
 
 	// --- Step 1-2: Per-token KV bytes per GPU ---

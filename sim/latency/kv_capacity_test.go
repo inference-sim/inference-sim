@@ -560,6 +560,54 @@ func TestCalculateKVBlocks_NonSwiGLU_ReturnError(t *testing.T) {
 	}
 }
 
+// TestCalculateKVBlocks_SiTU_Accepted verifies that SiTU-GLU ("situ", Kimi-K3's
+// successor to K2's SwiGLU) is admitted by the SwiGLU-family allowlist. SiTU-GLU
+// is a 3-matrix gated GLU (gate + up + down) with the identical weight/FLOP shape
+// as SwiGLU — only the pointwise gate nonlinearity differs — so BLIS's
+// matrix-count-based capacity math applies unchanged. Regression test for #1526.
+func TestCalculateKVBlocks_SiTU_Accepted(t *testing.T) {
+	mc := validDenseModelConfig()
+	hc := validHWConfig()
+	params := validDenseKVParams()
+	params.HiddenAct = "situ"
+
+	blocks, err := latency.CalculateKVBlocks(mc, hc, 1, 1, 16, 0.9, params)
+	if err != nil {
+		t.Fatalf("expected SiTU-GLU to be accepted, got error: %v", err)
+	}
+	if blocks <= 0 {
+		t.Errorf("expected positive KV block count, got %d", blocks)
+	}
+}
+
+// TestCalculateKVBlocks_SiTU_ByteIdenticalToSwiGLU verifies the correctness law
+// from #1526: because no capacity arithmetic branches on the activation name
+// (matrix count is hardcoded to 3 for the SwiGLU family), the SiTU-GLU block
+// count MUST equal the SwiGLU ("silu") count for an otherwise-identical config.
+func TestCalculateKVBlocks_SiTU_ByteIdenticalToSwiGLU(t *testing.T) {
+	mc := validDenseModelConfig()
+	hc := validHWConfig()
+
+	siluParams := validDenseKVParams()
+	siluParams.HiddenAct = "silu"
+	situParams := validDenseKVParams()
+	situParams.HiddenAct = "situ"
+
+	siluBlocks, err := latency.CalculateKVBlocks(mc, hc, 1, 1, 16, 0.9, siluParams)
+	if err != nil {
+		t.Fatalf("unexpected error for silu: %v", err)
+	}
+	situBlocks, err := latency.CalculateKVBlocks(mc, hc, 1, 1, 16, 0.9, situParams)
+	if err != nil {
+		t.Fatalf("unexpected error for situ: %v", err)
+	}
+
+	if situBlocks != siluBlocks {
+		t.Errorf("SiTU-GLU block count %d must equal SwiGLU count %d (activation name must not affect capacity math)",
+			situBlocks, siluBlocks)
+	}
+}
+
 func TestCalculateKVBlocks_TPDivisibility_ReturnError(t *testing.T) {
 	mc := validDenseModelConfig()
 	mc.NumKVHeads = 8
