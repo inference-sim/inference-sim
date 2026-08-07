@@ -221,10 +221,11 @@ server produced rather than instrumented kernel timings. Three commands do it:
 - **`calibrate`** compares the simulated latencies against the observed ones and reports the
   error as MAPE.
 
-The evaluation set deliberately doesn't overlap the training set. None of the six models we
-report on were used to fit the coefficients, and two of the three evaluation GPUs (the A100
-and L40S) weren't in the training set either, so what follows is generalization to unseen
-configurations rather than a fit recalling its own data.
+We ran this comparison 36 times, each a different point in the evaluation space: six models,
+three GPU types, and a sweep of serving configurations on top. The set deliberately doesn't
+overlap the training data. None of the six models were used to fit the coefficients, and two
+of the three GPUs (the A100 and L40S) weren't in the training set either, so the results are
+generalization to unseen configurations rather than a fit recalling its own data.
 
 ---
 
@@ -235,8 +236,7 @@ on.
 
 ### Where it's strong
 
-
-- **6.7% median E2E error** across 36 experiments (six models, three GPU types)
+- **6.7% median E2E error** across those 36 experiments
 - **~200× faster** than real execution
 - **P90 within 7.5% and P99 within 9.2%**, so the tail percentiles a capacity search relies
   on hold up, not just the mean
@@ -268,9 +268,9 @@ scale in the middle panel).*
 
 ??? note "For the curious: tail-latency table"
 
-    Trained-physics error, taken as the median across the 36 experiments (median rather than
-    mean so a couple of hard configs don't drag the number away from the typical case). The row
-    label is the latency statistic within each experiment.
+    Trained-physics error, taken as the median across the 36 eval experiments (median rather
+    than mean so a couple of hard configs don't drag the number away from the typical case). The
+    row label is the latency statistic within each experiment.
 
     | Statistic | Median MAPE |
     |-----------|-------------|
