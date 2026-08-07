@@ -349,6 +349,16 @@ func TestEffectiveHeadDim_ZeroHeads_NoPanic(t *testing.T) {
 	}
 }
 
+func TestIsMLA(t *testing.T) {
+	// F2: IsMLA is true iff a positive compressed-KV latent rank is present.
+	if (ModelConfig{KVLoraRank: 512}).IsMLA() != true {
+		t.Error("expected IsMLA()=true when KVLoraRank>0")
+	}
+	if (ModelConfig{KVLoraRank: 0}).IsMLA() != false {
+		t.Error("expected IsMLA()=false when KVLoraRank==0 (standard MHA/GQA)")
+	}
+}
+
 func TestNewBatchConfig_PanicsOnInvalid(t *testing.T) {
 	tests := []struct {
 		name          string

@@ -88,6 +88,16 @@ func (mc ModelConfig) IsMoE() bool {
 	return mc.NumLocalExperts >= MoEMinExperts
 }
 
+// IsMLA reports whether the model uses Multi-head Latent Attention (a positive
+// compressed-KV latent rank), e.g. DeepSeek-V2/V3, Kimi-K3, GLM-5.2 glm_moe_dsa.
+// This is the canonical MLA-detection predicate — prefer it over inline
+// KVLoraRank comparisons so future MLA-aware paths share one definition (mirrors
+// IsMoE). When true, the KV cache stores a compressed latent of
+// KVLoraRank+QKRopeHeadDim scalars per token per layer (see KVBytesPerToken).
+func (mc ModelConfig) IsMLA() bool {
+	return mc.KVLoraRank > 0
+}
+
 // HardwareCalib holds GPU hardware calibration parameters.
 // Used by the roofline latency model for compute/memory bandwidth estimation.
 // Parsing functions are in sim/latency/config.go.

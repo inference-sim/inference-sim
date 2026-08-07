@@ -1314,6 +1314,34 @@ func TestGetModelConfig_FirstKDenseReplace_Parsed(t *testing.T) {
 	}
 }
 
+func TestGetModelConfig_NegativeShapeFields_Rejected(t *testing.T) {
+	// MINOR-2 (blis-pr-review, R1): a negative value for any of the new shape keys
+	// must error at parse time rather than silently fall through (e.g. a negative
+	// kv_lora_rank would otherwise take the standard MHA path and mis-size KV with
+	// no error).
+	for _, key := range []string{"head_dim", "kv_lora_rank", "qk_rope_head_dim", "first_k_dense_replace"} {
+		t.Run(key, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			configFile := filepath.Join(tmpDir, "config.json")
+			content := `{
+				"num_hidden_layers": 32,
+				"hidden_size": 4096,
+				"num_attention_heads": 32,
+				"vocab_size": 128256,
+				"intermediate_size": 14336,
+				"torch_dtype": "bfloat16",
+				"` + key + `": -5
+			}`
+			if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+				t.Fatalf("failed to create test file: %v", err)
+			}
+			if _, err := latency.GetModelConfig(configFile); err == nil {
+				t.Errorf("expected error for negative %s, got nil", key)
+			}
+		})
+	}
+}
+
 func TestValidateRooflineConfig_MoE_ValidConfig_ReturnsNil(t *testing.T) {
 	mc := sim.ModelConfig{
 		NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2,

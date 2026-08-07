@@ -595,6 +595,22 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 				modelConfig.NumLocalExperts, modelConfig.NumExpertsPerTok)
 		}
 
+		// MLA models (#1527): KV capacity now uses the compressed-latent footprint,
+		// but the step-time (trained-physics/roofline) decode bandwidth term still
+		// sizes KV reads as the standard 2 × num_kv_heads × head_dim per token/layer
+		// — much larger than the MLA latent (kv_lora_rank + qk_rope_head_dim), so
+		// step time is PESSIMISTIC for MLA. Surface this so a user planning capacity
+		// vs latency for an MLA model is not misled by an order-of-magnitude-off
+		// step time (correct KV block counts, pessimistic step time). See
+		// docs/reference/models.md "known approximations".
+		if modelConfig.IsMLA() {
+			logrus.Warnf("--latency-model: MLA model detected (kv_lora_rank=%d). KV capacity uses the "+
+				"compressed-latent footprint (kv_lora_rank+qk_rope_head_dim), but step-time estimation "+
+				"still uses the standard 2×num_kv_heads×head_dim KV-read term — step time is PESSIMISTIC "+
+				"for MLA (KV block counts are correct). See docs/reference/models.md known approximations",
+				modelConfig.KVLoraRank)
+		}
+
 		// KV capacity auto-calculation. Precedence: (1) --total-kv-blocks CLI flag,
 		// (2) auto-calculate from model architecture + GPU memory, (3) default value.
 		if !cmd.Flags().Changed("total-kv-blocks") {

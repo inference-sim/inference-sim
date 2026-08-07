@@ -269,6 +269,29 @@ func TestKVBytesPerToken_MLA_LawInvariances(t *testing.T) {
 	}
 }
 
+func TestKVBytesPerToken_MLA_RejectsDegenerateHeadsAndHidden(t *testing.T) {
+	// IMPORTANT-2 (blis-pr-review): the NumHeads>0 and HiddenDim>0 guards must gate
+	// the MLA path too — CalculateKVBlocks calls computeModelWeightBytes for MLA
+	// configs, and that weight estimate reads NumHeads/HiddenDim. An MLA config with
+	// NumHeads==0 or HiddenDim==0 must ERROR here rather than silently succeed and
+	// let the weight estimate run on garbage (kvDim=0 → under-count; hidden=0 →
+	// ~0 weight → inflated block count).
+	cases := []struct {
+		name string
+		mc   sim.ModelConfig
+	}{
+		{"MLA zero NumHeads", sim.ModelConfig{NumLayers: 27, HiddenDim: 2048, NumHeads: 0, BytesPerParam: 2.0, KVLoraRank: 512, QKRopeHeadDim: 64}},
+		{"MLA zero HiddenDim", sim.ModelConfig{NumLayers: 27, HiddenDim: 0, NumHeads: 16, BytesPerParam: 2.0, KVLoraRank: 512, QKRopeHeadDim: 64}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := latency.KVBytesPerToken(tc.mc, 1); err == nil {
+				t.Errorf("expected error for %s, got nil", tc.name)
+			}
+		})
+	}
+}
+
 func TestKVBytesPerToken_MLA_ZeroRopeHeadDim(t *testing.T) {
 	// F2 edge case: an MLA config where qk_rope_head_dim is absent/0. The latent
 	// width is then kv_lora_rank alone (still > 0 because the MLA branch requires

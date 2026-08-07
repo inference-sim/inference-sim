@@ -343,6 +343,26 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	// prefix (INV-6: all-MoE weight accounting unchanged when absent).
 	firstKDenseReplace := getInt("first_k_dense_replace")
 
+	// Reject negative values for the shape fields parsed above (#1527). getInt
+	// returns the raw JSON number, so a negative would otherwise pass silently: a
+	// negative kv_lora_rank would fall through to the standard MHA path (wrong KV
+	// capacity, no error), and a negative first_k_dense_replace would clamp to 0. A
+	// negative head_dim / qk_rope_head_dim is equally nonsensical. Fail fast at
+	// parse time (R1: no silent acceptance of bad input) rather than at use time.
+	for _, f := range []struct {
+		name string
+		val  int
+	}{
+		{"head_dim", headDim},
+		{"kv_lora_rank", kvLoraRank},
+		{"qk_rope_head_dim", qkRopeHeadDim},
+		{"first_k_dense_replace", firstKDenseReplace},
+	} {
+		if f.val < 0 {
+			return nil, fmt.Errorf("GetModelConfigFromHF: %s must be >= 0, got %d", f.name, f.val)
+		}
+	}
+
 	modelConfig := &sim.ModelConfig{
 		NumLayers:              getInt("num_hidden_layers"),
 		HiddenDim:              getInt("hidden_size"),
