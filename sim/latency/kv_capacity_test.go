@@ -269,6 +269,26 @@ func TestKVBytesPerToken_MLA_LawInvariances(t *testing.T) {
 	}
 }
 
+func TestKVBytesPerToken_MLA_ZeroRopeHeadDim(t *testing.T) {
+	// F2 edge case: an MLA config where qk_rope_head_dim is absent/0. The latent
+	// width is then kv_lora_rank alone (still > 0 because the MLA branch requires
+	// KVLoraRank > 0), so the computation is well-defined and TP-invariant.
+	mc := sim.ModelConfig{
+		NumLayers: 27, HiddenDim: 2048, NumHeads: 16, NumKVHeads: 16,
+		IntermediateDim: 10944, BytesPerParam: 2.0, KVLoraRank: 512, QKRopeHeadDim: 0,
+	}
+	want := float64(512 * 27 * 2) // latentWidth == kv_lora_rank == 512
+	for _, tp := range []int{1, 2, 4} {
+		got, err := latency.KVBytesPerToken(mc, tp)
+		if err != nil {
+			t.Fatalf("unexpected error at TP=%d: %v", tp, err)
+		}
+		if got != want {
+			t.Errorf("MLA KVBytesPerToken(QKRopeHeadDim=0, TP=%d) = %v, want %v", tp, got, want)
+		}
+	}
+}
+
 func TestKVBytesPerToken_MLA_IgnoresIndivisibleHiddenHeads(t *testing.T) {
 	// F2 (R2): the MLA branch must be reached BEFORE the hidden%heads divisibility
 	// guard — the latent path never uses that quotient. A config where hidden is
