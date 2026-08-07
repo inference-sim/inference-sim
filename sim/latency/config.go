@@ -325,6 +325,24 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	// 0 = use IntermediateDim for both MoE and dense layers
 	denseIntermediateDim := getInt("intermediate_size_mlp")
 
+	// Explicit attention head dimension (F1, #1527). Modern MLA/GQA models declare
+	// a head_dim that differs from hidden/heads (e.g. GLM-5.2: 192 vs 6144/64=96).
+	// 0 = absent → EffectiveHeadDim falls back to HiddenDim/NumHeads (INV-6).
+	headDim := getInt("head_dim")
+
+	// MLA compressed-KV latent shape (F2, #1527). kv_lora_rank > 0 marks a
+	// Multi-head Latent Attention model (DeepSeek-V2/V3, Kimi-K3, GLM-5.2); the KV
+	// cache then stores a compressed latent of kv_lora_rank + qk_rope_head_dim
+	// scalars per token per layer. Both 0 for standard MHA/GQA (INV-6).
+	kvLoraRank := getInt("kv_lora_rank")
+	qkRopeHeadDim := getInt("qk_rope_head_dim")
+
+	// Dense-layer prefix count for MoE models (F3, #1527). first_k_dense_replace = K
+	// means the first K layers are dense and the remainder are MoE (a prefix split,
+	// distinct from InterleaveMoELayerStep's every-Nth interleave). 0 = no dense
+	// prefix (INV-6: all-MoE weight accounting unchanged when absent).
+	firstKDenseReplace := getInt("first_k_dense_replace")
+
 	modelConfig := &sim.ModelConfig{
 		NumLayers:              getInt("num_hidden_layers"),
 		HiddenDim:              getInt("hidden_size"),
@@ -341,6 +359,10 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 		DenseIntermediateDim:   denseIntermediateDim,
 		HiddenAct:              hiddenAct,
 		WeightBytesPerParam:    weightBytesPerParam,
+		HeadDim:                headDim,
+		KVLoraRank:             kvLoraRank,
+		QKRopeHeadDim:          qkRopeHeadDim,
+		FirstKDenseReplace:     firstKDenseReplace,
 	}
 	return modelConfig, nil
 }
