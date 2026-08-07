@@ -268,7 +268,9 @@ scale in the middle panel).*
 
 ??? note "For the curious: tail-latency table"
 
-    Median MAPE across the 36 experiments:
+    Trained-physics error, taken as the median across the 36 experiments (median rather than
+    mean so a couple of hard configs don't drag the number away from the typical case). The row
+    label is the latency statistic within each experiment.
 
     | Statistic | Median MAPE |
     |-----------|-------------|
