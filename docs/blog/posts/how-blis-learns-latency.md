@@ -268,9 +268,10 @@ scale in the middle panel).*
 
 ??? note "For the curious: tail-latency table"
 
-    Trained-physics error, taken as the median across the 36 eval experiments (median rather
-    than mean so a couple of hard configs don't drag the number away from the typical case). The
-    row label is the latency statistic within each experiment.
+    Since trained-physics is the clearly stronger model above, we report tail-latency accuracy
+    for it alone. The figures are its error, taken as the median across the 36 eval experiments
+    (median rather than mean so a couple of hard configs don't drag the number away from the
+    typical case). The row label is the latency statistic within each experiment.
 
     | Statistic | Median MAPE |
     |-----------|-------------|
