@@ -50,6 +50,15 @@ The `--tp` flag sets the tensor parallelism degree for all instances. TP affects
 !!! note "Homogeneous instances"
     All instances share the same SimConfig (model, GPU, TP, KV blocks). BLIS does not currently model heterogeneous fleets (mixed GPU types or TP configurations).
 
+### Multi-node tensor parallelism
+
+When node pools are configured (`--policy-config` with `node_pools`), an instance whose `--tp` exceeds a pool's `gpus_per_node` can reserve its GPUs **across more than one node of the same pool** — enabling multi-node TP for models too large for a single node (e.g. TP=16 on 2×8 H100). This happens automatically and only as a fallback: BLIS first tries to fit the instance on a single node in any matching pool, and spans nodes only when no single node can host the full TP group. Single-node placement is unchanged.
+
+A spanning instance is billed for every node it occupies (`cost_per_hour × nodes_spanned`).
+
+!!! warning "Cross-node interconnect not yet priced"
+    The TP all-reduce latency term currently assumes intra-node NVLink and does not add a cross-node network penalty (tracked by [#1530](https://github.com/inference-sim/inference-sim/issues/1530)). Latency and throughput for a multi-node instance are therefore **optimistic** until that lands; BLIS emits a one-time warning when an instance first spans nodes. Multi-node placement is `blis run` only (`blis replay`/`observe` reject node pools). Pipeline parallelism is not yet modeled (tracked by [#1535](https://github.com/inference-sim/inference-sim/issues/1535)).
+
 ## Scaling and Saturation
 
 Instance scaling produces **super-linear** TTFT improvement near saturation. With the default model (Qwen3-14B / H100 / TP=1, ~17 req/s per instance at saturation), scaling from 4→12 instances at rate=200 improves TTFT p99 from ~1,500ms to ~54ms.

@@ -372,7 +372,9 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			inst.nodeID = nodeID
 			inst.allocatedGPUIDs = gpuIDs
 			inst.TPDegree = tpDegree
-			inst.CostPerHour = poolCostPerHour
+			// #1529: cost = distinct-nodes-spanned × pool cost_per_hour. Single-node
+			// instances are 1× (unchanged); a multi-node TP instance is billed per node.
+			inst.CostPerHour = cs.placement.InstanceCostPerHour(gpuIDs, poolCostPerHour)
 			inst.warmUpRemaining = config.InstanceLifecycle.WarmUpRequestCount
 			if config.InstanceLifecycle.WarmStartInitialInstances {
 				// Pre-deployed cluster: startup instances skip loading delay and start Active.

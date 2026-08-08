@@ -104,9 +104,13 @@ func (a *DirectActuator) scaleUp(d ScaleDecision) error {
 		// KVAutoCalc.Enabled is false.
 		applyPerInstanceKVCapacity(&simCfg, poolGPUMemoryGiB, a.cluster.config.KVAutoCalc, matchedGPU)
 
+		// #1529: cost = distinct-nodes-spanned × pool cost_per_hour (mirrors startup +
+		// deferred paths). Single-node instances are unchanged (1×).
+		instCost := a.cluster.placement.InstanceCostPerHour(gpuIDs, costPerHour)
+
 		// Construct, register, and activate the instance. GPU release on snapshotProvider
 		// failure is handled inside addLiveInstance.
-		if !a.cluster.addLiveInstance(id, d.ModelID, simCfg, nodeID, gpuIDs, d.Variant.TPDegree, costPerHour) {
+		if !a.cluster.addLiveInstance(id, d.ModelID, simCfg, nodeID, gpuIDs, d.Variant.TPDegree, instCost) {
 			lastErr = fmt.Errorf("scale-up for model %q: instance %s could not be registered (snapshotProvider nil)", d.ModelID, id)
 			continue
 		}
