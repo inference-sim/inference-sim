@@ -86,12 +86,19 @@ func NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshol
 // GLM-5.2 MTP is 5) while leaving a wide safety margin.
 const MaxSpeculativeTokens = 1024
 
-// validSpeculativeMethods is the set of accepted --speculative-method labels. The
-// value does not change the step-time math in the current model (throughput and
-// verify-width cost are driven by K and α); the label is informational provenance
-// and the extension point for future per-method behavior.
-var validSpeculativeMethods = map[string]struct{}{
-	"mtp": {}, "eagle": {}, "medusa": {}, "ngram": {}, "draft": {},
+// isValidSpeculativeMethod reports whether label is an accepted --speculative-method
+// value. The label does not change the step-time math in the current model
+// (throughput and verify-width cost are driven by K and α); it is informational
+// provenance and the extension point for future per-method behavior. Implemented as
+// a function over a switch (not a package-level map) so there is no shared mutable
+// state (R8).
+func isValidSpeculativeMethod(label string) bool {
+	switch label {
+	case "mtp", "eagle", "medusa", "ngram", "draft":
+		return true
+	default:
+		return false
+	}
 }
 
 // SpeculativeConfig groups speculative-decoding / Multi-Token-Prediction (MTP)
@@ -147,7 +154,7 @@ func (c SpeculativeConfig) Validate() error {
 		return nil
 	}
 	if c.Method != "" {
-		if _, ok := validSpeculativeMethods[c.Method]; !ok {
+		if !isValidSpeculativeMethod(c.Method) {
 			return fmt.Errorf("speculative: unknown method %q (valid: mtp, eagle, medusa, ngram, draft)", c.Method)
 		}
 	}

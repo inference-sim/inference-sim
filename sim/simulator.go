@@ -763,6 +763,11 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 			sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(denom)
 		} else {
 			// TPOT calculation in vLLM excludes the first generated token.
+			// No spec-decode branch needed here: a normally-completed request generated
+			// exactly len(OutputTokens) tokens, so len(OutputTokens)-1 is already the
+			// correct per-token denominator regardless of how many decode STEPS it took
+			// (steps < tokens under spec-decode). Only the LengthCapped branch above
+			// must switch to a token-derived count, because there len(ITL)=steps≠tokens.
 			sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1))
 		}
 	} else {
