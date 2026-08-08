@@ -1,5 +1,6 @@
 // infra_placement.go implements PlacementManager: node/GPU inventory management
-// and first-fit bin-packing instance placement. Phase 1A.
+// and two-pass instance placement (single-node first-fit; whole-node cross-node
+// fallback for multi-node TP). Phase 1A.
 package cluster
 
 import (
@@ -13,7 +14,9 @@ import (
 )
 
 // PlacementManager manages node/GPU inventory and instance placement decisions.
-// Uses first-fit bin-packing within matching pools (pool declaration order, then node index order).
+// Two-pass placement within matching pools (pool declaration order, then node index
+// order): Pass 1 is single-node first-fit; Pass 2 is whole-node cross-node placement
+// for multi-node TP when no single node fits (see PlaceInstance).
 //
 // Thread-safety: NOT goroutine-safe. All calls must come from the simulation event loop.
 type PlacementManager struct {
@@ -192,12 +195,18 @@ func (pm *PlacementManager) VerifyConservation() error {
 // onto a single Ready node. Tried across ALL matching pools first; on success the
 // instance occupies exactly one node.
 //
-// Pass 2 (cross-node packing): reached ONLY when no single node in any matching
-// pool can satisfy tpDegree. Packs tpDegree GPUs across multiple Ready nodes of a
-// single pool (multi-node tensor parallelism). Because Pass 1 runs to completion
-// across all pools before Pass 2 begins, single-node placement is strictly
-// preferred to spanning anywhere — an instance spans only when nothing fits on one
-// node (BC-1, BC-2). Cross-pool spanning is not attempted; a spanning instance
+// Pass 2 (whole-node cross-node placement): reached ONLY when no single node in any
+// matching pool can satisfy tpDegree. Places the instance across exactly
+// tpDegree/GPUsPerNode fully-free Ready nodes of a single pool, each node contributing
+// all its GPUs — the only physically-realizable multi-node tensor-parallel shape (a
+// uniform per-node rank count). A pool is eligible only when tpDegree > GPUsPerNode
+// (spanning is physically necessary) AND tpDegree % GPUsPerNode == 0 (ranks divide
+// evenly across whole nodes). The fragmentation case (tpDegree ≤ GPUsPerNode but no
+// single node momentarily has room) is deliberately NOT spanned — it would fabricate
+// an asymmetric TP group (e.g. 2+1 for TP=3) that cannot exist; such an instance stays
+// pending exactly as before this feature. Because Pass 1 runs to completion across all
+// pools before Pass 2 begins, single-node placement is strictly preferred to spanning
+// anywhere (BC-1, BC-2). Cross-pool spanning is not attempted; a spanning instance
 // stays within one pool (homogeneous interconnect domain).
 //
 // When gpuType is empty (""), all pools are considered (match-any semantics) — used
@@ -233,7 +242,7 @@ func (pm *PlacementManager) PlaceInstance(id InstanceID, model, gpuType string, 
 				continue
 			}
 
-			// Phase 1 — select tpDegree free GPUs (no mutation yet)
+			// Select tpDegree free GPUs (no mutation yet)
 			selected := make([]*GPU, 0, tpDegree)
 			for _, gpu := range node.GPUs {
 				if gpu.AllocatedTo == "" {
@@ -248,7 +257,7 @@ func (pm *PlacementManager) PlaceInstance(id InstanceID, model, gpuType string, 
 				continue
 			}
 
-			// Phase 2 — commit: mark GPUs as allocated
+			// Commit — mark GPUs as allocated
 			resultIDs := make([]string, tpDegree)
 			for i, gpu := range selected {
 				gpu.AllocatedTo = id
@@ -258,56 +267,75 @@ func (pm *PlacementManager) PlaceInstance(id InstanceID, model, gpuType string, 
 		}
 	}
 
-	// ── Pass 2: cross-node packing within a single pool (multi-node TP) ──
+	// ── Pass 2: whole-node cross-node placement within a single pool (multi-node TP) ──
 	// Reached only when Pass 1 found no single-node fit in any matching pool.
+	//
+	// Multi-node TP is modeled as WHOLE-NODE occupancy: an instance spans exactly
+	// tpDegree/GPUsPerNode fully-free nodes, each contributing all its GPUs (an equal
+	// rank count per node). This is the only physically-realizable multi-node TP shape
+	// — a real NCCL/vLLM TP group has a uniform per-node rank count, so tpDegree must
+	// be an exact multiple of the pool's GPUsPerNode. This deliberately EXCLUDES the
+	// fragmentation case (tpDegree ≤ GPUsPerNode but no single node momentarily has
+	// room): packing an odd remainder across nodes (e.g. 2+1 for TP=3) would fabricate
+	// an asymmetric TP group that cannot exist, silently converting a visible "pending"
+	// outcome into optimistic capacity. Such an instance stays pending, exactly as
+	// before this feature. A pool is eligible only when tpDegree > GPUsPerNode AND
+	// tpDegree % GPUsPerNode == 0.
 	for _, poolState := range pm.pools {
 		if gpuType != "" && poolState.config.GPUType != gpuType {
 			continue // type mismatch — skip pool
 		}
 
-		// Select-then-commit: gather free GPUs from Ready nodes of THIS pool in node
-		// index order until tpDegree is reached. Only Ready nodes and only free GPUs
-		// are eligible (never pack onto a Draining/Provisioning node). If the pool
-		// cannot reach tpDegree, nothing is mutated and we try the next pool.
+		gpn := poolState.config.GPUsPerNode
+		// Only physically-necessary, evenly-divisible spans are eligible. A pool that
+		// fails either test is skipped (the instance may still place in another pool or
+		// remain pending) — never a fragmentation span.
+		if gpn <= 0 || tpDegree <= gpn || tpDegree%gpn != 0 {
+			continue
+		}
+		nodesNeeded := tpDegree / gpn
+
+		// Select-then-commit (R5): gather nodesNeeded FULLY-FREE Ready nodes of this
+		// pool in index order. Only fully-free Ready nodes qualify (a partially-used or
+		// Draining/Provisioning node cannot contribute a whole node's worth of ranks).
+		// Nothing is mutated until nodesNeeded whole nodes are secured.
 		nodes := pm.nodesByPool[poolState.config.Name]
-		selected := make([]*GPU, 0, tpDegree)
+		selectedNodes := make([]*Node, 0, nodesNeeded)
 		for _, node := range nodes {
 			if node.State != NodeStateReady {
 				continue
 			}
-			for _, gpu := range node.GPUs {
-				if gpu.AllocatedTo == "" {
-					selected = append(selected, gpu)
-					if len(selected) == tpDegree {
-						break
-					}
-				}
+			if node.freeCount() != node.TotalGPUs {
+				continue // not fully free — cannot contribute a whole node
 			}
-			if len(selected) == tpDegree {
+			selectedNodes = append(selectedNodes, node)
+			if len(selectedNodes) == nodesNeeded {
 				break
 			}
 		}
-		if len(selected) < tpDegree {
-			continue // this pool cannot satisfy tpDegree even by spanning — no mutation
+		if len(selectedNodes) < nodesNeeded {
+			continue // this pool cannot supply enough whole nodes — no mutation
 		}
 
-		// Commit: mark all selected GPUs as allocated (atomic — we reached tpDegree).
-		resultIDs := make([]string, tpDegree)
-		for i, gpu := range selected {
-			gpu.AllocatedTo = id
-			resultIDs[i] = gpu.ID
+		// Commit: allocate every GPU on each selected node (whole-node occupancy).
+		resultIDs := make([]string, 0, tpDegree)
+		for _, node := range selectedNodes {
+			for _, gpu := range node.GPUs {
+				gpu.AllocatedTo = id
+				resultIDs = append(resultIDs, gpu.ID)
+			}
 		}
-		// selected[0] is on the lowest-index touched node (nodes walked in order) —
+		// selectedNodes[0] is the lowest-index touched node (nodes walked in order) —
 		// report it as the primary node for bookkeeping/logging.
-		primaryNode := selected[0].NodeID
+		primaryNode := selectedNodes[0].ID
 
 		// One-time warning: a spanning instance's TP all-reduce is priced with the
 		// intra-node NVLink term until #1530 prices the cross-node interconnect.
-		if !pm.spanWarned && len(pm.distinctNodesForGPUs(resultIDs)) > 1 {
+		if !pm.spanWarned {
 			pm.spanWarned = true
-			logrus.Warnf("[cluster] instance %s spans multiple nodes for TP=%d: cross-node TP "+
+			logrus.Warnf("[cluster] instance %s spans %d nodes for TP=%d: cross-node TP "+
 				"all-reduce is priced with the intra-node term until #1530 prices the interconnect; "+
-				"latency/throughput for spanning instances is optimistic", id, tpDegree)
+				"latency/throughput for spanning instances is optimistic", id, nodesNeeded, tpDegree)
 		}
 		return primaryNode, resultIDs, poolState.config.GPUType, nil
 	}
@@ -324,14 +352,20 @@ func (pm *PlacementManager) PlaceInstance(id InstanceID, model, gpuType string, 
 // instance spans — for cost accounting and the cross-node latency warning —
 // without parsing GPU-ID strings (a node ID itself contains "-", so the
 // "{nodeID}-gpu-{i}" format is not safely splittable). Resolution goes through
-// the authoritative gpusByID index. An unknown GPU ID is skipped defensively;
-// this never happens for GPUs that were actually placed. Sorted output is
-// required for deterministic cost/logging (R2).
+// the authoritative gpusByID index. A GPU ID missing from the index (which cannot
+// happen for a GPU that was actually placed — the index is populated at the single
+// construction site, R4) is logged as an invariant violation and skipped (R1: never
+// a silent drop). Sorted output is required for deterministic cost/logging (R2).
 func (pm *PlacementManager) distinctNodesForGPUs(gpuIDs []string) []string {
 	seen := make(map[string]struct{}, len(gpuIDs))
 	for _, id := range gpuIDs {
 		gpu, ok := pm.gpusByID[id]
 		if !ok {
+			// A placed GPU must always be in the index (populated at the single
+			// construction site, R4). A miss means the placement invariant is broken
+			// and span/cost accounting will be wrong — never silently drop it (R1).
+			logrus.Errorf("[cluster] distinctNodesForGPUs: GPU ID %q not found in index — "+
+				"span/cost accounting will be undercounted; placement invariant violated (R4)", id)
 			continue
 		}
 		seen[gpu.NodeID] = struct{}{}
@@ -354,7 +388,12 @@ func (pm *PlacementManager) InstanceCostPerHour(gpuIDs []string, poolCostPerHour
 	nodes := pm.distinctNodesForGPUs(gpuIDs)
 	span := len(nodes)
 	if span < 1 {
-		span = 1 // defensive: an unplaced/empty GPU set bills as a single node, never zero
+		// An empty/unresolvable GPU set means the caller passed a non-placed instance
+		// — a placement-path bug. Return an obviously-wrong 0 (which fails fast) rather
+		// than a plausible 1×cost that would hide the bug (R1: no silent wrong result).
+		logrus.Errorf("[cluster] InstanceCostPerHour: no nodes resolved from %d GPU ID(s) — "+
+			"returning 0; this is a placement-path bug", len(gpuIDs))
+		return 0
 	}
 	return poolCostPerHour * float64(span)
 }

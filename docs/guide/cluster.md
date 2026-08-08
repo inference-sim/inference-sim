@@ -52,7 +52,9 @@ The `--tp` flag sets the tensor parallelism degree for all instances. TP affects
 
 ### Multi-node tensor parallelism
 
-When node pools are configured (`--policy-config` with `node_pools`), an instance whose `--tp` exceeds a pool's `gpus_per_node` can reserve its GPUs **across more than one node of the same pool** — enabling multi-node TP for models too large for a single node (e.g. TP=16 on 2×8 H100). This happens automatically and only as a fallback: BLIS first tries to fit the instance on a single node in any matching pool, and spans nodes only when no single node can host the full TP group. Single-node placement is unchanged.
+When node pools are configured (`--policy-config` with `node_pools`), an instance whose `--tp` exceeds a pool's `gpus_per_node` can occupy **whole nodes across the same pool** — enabling multi-node TP for models too large for a single node (e.g. TP=16 on 2×8 H100). This happens automatically and only as a fallback: BLIS first tries to fit the instance on a single node in any matching pool, and spans nodes only when no single node can host the full TP group.
+
+Multi-node TP is modeled as **whole-node occupancy**: it engages only when `tp` is a whole multiple of `gpus_per_node` (e.g. `tp=16` on 8-GPU nodes → 2 nodes), and the instance takes complete nodes so every node carries an equal TP rank count — the only shape a real NCCL/vLLM TP group can take. If `tp ≤ gpus_per_node` but the pool is merely fragmented (no single node momentarily has room), the instance is **not** spanned (an asymmetric rank split is not physically realizable); it stays pending, exactly as before. Single-node placement is unchanged.
 
 A spanning instance is billed for every node it occupies (`cost_per_hour × nodes_spanned`).
 
