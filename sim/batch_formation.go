@@ -210,14 +210,29 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			// stays 1 and every line below is unchanged (BC-1/INV-6).
 			if ctx.DecodeTokensPerStep != nil {
 				decodeTokens = ctx.DecodeTokensPerStep(next)
+				// Cap the multi-token advance so it can't overshoot the model-length
+				// window by more than the single token the pre-feature (k=0) PD path
+				// already allowed.
 				if ctx.MaxModelLen > 0 {
-					decodeTokens = min(decodeTokens, max(ctx.MaxModelLen-1-next.ProgressIndex, 0))
+					room := max(ctx.MaxModelLen-1-next.ProgressIndex, 0)
+					if room >= 1 {
+						decodeTokens = min(decodeTokens, room)
+					} else {
+						// At/past the boundary: emit exactly one final token — identical
+						// to the k=0 PD path, which never capped here — so
+						// processCompletions force-completes it next step. Flooring at 1
+						// (never 0) is essential: a PD decode sub-request is NOT yet in
+						// RunningBatch, so a 0-token break would strand it in WaitQ forever
+						// (unlike Phase 1, where a boundary request already sits in the
+						// batch and is force-completed at zero work). INV-8/INV-11.
+						decodeTokens = 1
+					}
 				}
+				// Token-budget cap: this alone may hit 0, which is transient (next step
+				// has fresh budget), so breaking here — like the KV-alloc-failure break
+				// below — is safe and does not strand the request.
 				decodeTokens = min(decodeTokens, tokenBudget)
 				if decodeTokens < 1 {
-					// No room this step (boundary/budget). Mirror the KV-alloc-failure
-					// break below: leave the request queued rather than admit a 0-token
-					// request (INV-12). Only reachable with the feature on.
 					break
 				}
 			}
