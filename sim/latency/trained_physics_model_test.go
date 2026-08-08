@@ -478,3 +478,80 @@ func TestTrainedPhysicsModel_GQA_ReducesKVBandwidth(t *testing.T) {
 	assert.Less(t, gqaTime, mhaTime,
 		"GQA step time (%d µs) must be less than MHA (%d µs): fewer KV heads → lower bandwidth", gqaTime, mhaTime)
 }
+
+// newTestTrainedPhysicsModelSpec builds a trained-physics model with a given
+// num_speculative_tokens (K) for spec-decode verify-width tests (#1528).
+func newTestTrainedPhysicsModelSpec(t *testing.T, k int) *TrainedPhysicsModel {
+	t.Helper()
+	mhw := sim.ModelHardwareConfig{
+		Backend:     "trained-physics",
+		TP:          1,
+		ModelConfig: *trainedPhysicsTestModelConfig(),
+		HWConfig:    testHardwareConfig(),
+	}
+	m, err := NewLatencyModel(*testCoeffs(), mhw, WithSpeculativeDecode(k))
+	require.NoError(t, err)
+	tp, ok := m.(*TrainedPhysicsModel)
+	require.True(t, ok, "expected trained-physics backend")
+	return tp
+}
+
+// BC-1 / BC-3 (trained-physics): verify width scales decode step cost. K=0 is
+// byte-identical to a model built with no spec-decode option; K>0 is strictly
+// costlier and monotone in K; the growth is sublinear in w (weight-load amortized).
+func TestTrainedPhysicsModel_SpecDecodeVerifyWidthCost(t *testing.T) {
+	base := newTestTrainedPhysicsModel(t, trainedPhysicsTestModelConfig(), testHardwareConfig(), testCoeffs())
+	k0 := newTestTrainedPhysicsModelSpec(t, 0)
+	k1 := newTestTrainedPhysicsModelSpec(t, 1)
+	k4 := newTestTrainedPhysicsModelSpec(t, 4)
+
+	// Use a batch large enough that the per-token verify-width term is above the
+	// integer-microsecond rounding floor. At tiny batch (count=4) decode is so
+	// weight-load-dominated that verifying a few extra positions rounds away — which
+	// is itself the physical reason MTP is nearly free at low occupancy — so a
+	// meaningful cost law needs a decode-heavy batch (count=256).
+	const count, seqLen = 256, 512
+	tBase := base.StepTime(makeDecodeBatch(count, seqLen))
+	t0 := k0.StepTime(makeDecodeBatch(count, seqLen))
+	t1 := k1.StepTime(makeDecodeBatch(count, seqLen))
+	t4 := k4.StepTime(makeDecodeBatch(count, seqLen))
+
+	// K=0 (WithSpeculativeDecode(0) is a no-op) equals a model with no option (BC-1).
+	assert.Equal(t, tBase, t0, "K=0 must be byte-identical to no spec-decode")
+	// Verifying more drafts costs strictly more, monotone in K (BC-3).
+	assert.Greater(t, t1, t0, "K=1 verify width must cost more than K=0")
+	assert.Greater(t, t4, t1, "step cost must be monotone in K")
+	// Sublinear: going from w=1 to w=5 (K=4) must not multiply cost by 5 — the fixed
+	// per-step terms (weight load, batch/layer/const overhead) are amortized. This
+	// sublinearity is exactly why MTP is a net throughput win.
+	assert.Less(t, t4, 5*t0, "verify-width cost must be sublinear in w (amortized fixed terms)")
+}
+
+// newTestRooflineModelSpec builds a roofline model with a given K for spec-decode tests.
+func newTestRooflineModelSpec(t *testing.T, k int) sim.LatencyModel {
+	t.Helper()
+	mhw := sim.ModelHardwareConfig{
+		Backend:     "roofline",
+		TP:          1,
+		ModelConfig: *trainedPhysicsTestModelConfig(),
+		HWConfig:    testHardwareConfig(),
+	}
+	m, err := NewLatencyModel(*testCoeffs(), mhw, WithSpeculativeDecode(k))
+	require.NoError(t, err)
+	return m
+}
+
+// BC-1 / BC-3 (roofline): same laws as trained-physics.
+func TestRoofline_SpecDecodeVerifyWidthCost(t *testing.T) {
+	k0 := newTestRooflineModelSpec(t, 0)
+	k1 := newTestRooflineModelSpec(t, 1)
+	k4 := newTestRooflineModelSpec(t, 4)
+
+	const count, seqLen = 256, 512
+	t0 := k0.StepTime(makeDecodeBatch(count, seqLen))
+	t1 := k1.StepTime(makeDecodeBatch(count, seqLen))
+	t4 := k4.StepTime(makeDecodeBatch(count, seqLen))
+
+	assert.Greater(t, t1, t0, "K=1 verify width must cost more than K=0 (roofline)")
+	assert.Greater(t, t4, t1, "step cost must be monotone in K (roofline)")
+}
