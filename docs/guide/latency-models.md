@@ -220,6 +220,17 @@ Because the dispatch term is the *only* term gated on `DP > 1`, the residual iso
 !!! warning "Current limitations"
     All analytical latency models support tensor parallelism (TP). Data parallelism (DP) and expert parallelism (EP) scheduling overhead are not yet modeled. Quantized weight precision (GPTQ, AWQ, FP8, compressed-tensors) is auto-detected from `quantization_config`, model name conventions (e.g., `w4a16`, `FP8`), or `torch_dtype` fallback, and is used for weight bandwidth and KV capacity calculations. MFU calibration values are still derived from FP16/BF16 measurements.
 
+## Speculative Decoding / MTP (#1528)
+
+Both backends model the decode-throughput effect of speculative decoding / Multi-Token Prediction (GLM-5.2's 5-token MTP, DeepSeek-V3, EAGLE, Medusa). Enable it with `--num-speculative-tokens K` (draft tokens per step, `0` = off) and the **required** `--speculative-acceptance-rate α` (mean fraction accepted, `[0,1]`); `--speculative-method` optionally labels the scheme.
+
+The model splits the effect into two decoupled quantities:
+
+- **Verify width `w = K+1`** — the target verifies `K` drafts plus 1 bonus token in a single forward pass. This drives the per-step **cost**: the decode compute-FLOPs and KV-bandwidth terms scale by `w`, while the once-per-step weight-load, TP/EP communication, and constant overhead terms do **not**. Cost is therefore *sublinear* in `w` — the physics that makes speculative decoding a net win. Verifying drafts is not free (a config with more drafts has a strictly higher per-step time), but it is cheap relative to the tokens it can produce.
+- **Accepted tokens `g = 1 + α·K`** — the sequence advances by `g` tokens per step (mean). This raises throughput and lowers the decode-step count by ≈`g`. It is applied deterministically via a per-request fractional carry (no RNG), so runs stay byte-identical for a seed (INV-6) and every metric is the expectation.
+
+`K=0` (the default) leaves step time and progress byte-identical to a pre-feature build. The feature is model-level and supplied by identical flags to `blis run` and `blis replay`, so traces round-trip under INV-13 with no schema change. `α` is user-supplied — BLIS does not predict acceptance (it does not run a real draft model). Under spec-decode the raw ITL percentiles are per-verification-step; use TPOT for per-token latency.
+
 ## Pluggable Architecture
 
 The `LatencyModel` interface (defined in `sim/latency_model.go`) has four methods:
