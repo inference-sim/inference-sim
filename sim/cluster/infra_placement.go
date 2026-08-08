@@ -289,7 +289,9 @@ func (pm *PlacementManager) PlaceInstance(id InstanceID, model, gpuType string, 
 		gpn := poolState.config.GPUsPerNode
 		// Only physically-necessary, evenly-divisible spans are eligible. A pool that
 		// fails either test is skipped (the instance may still place in another pool or
-		// remain pending) — never a fragmentation span.
+		// remain pending) — never a fragmentation span. The gpn <= 0 check is defensive
+		// and unreachable: NodePoolConfig.IsValid rejects gpus_per_node < 1 and
+		// NewPlacementManager panics on an invalid pool.
 		if gpn <= 0 || tpDegree <= gpn || tpDegree%gpn != 0 {
 			continue
 		}
@@ -344,7 +346,44 @@ func (pm *PlacementManager) PlaceInstance(id InstanceID, model, gpuType string, 
 	if gpuTypeDisplay == "" {
 		gpuTypeDisplay = "any"
 	}
-	return "", nil, "", fmt.Errorf("PlaceInstance %s: no Ready node has %d free %s GPUs (single-node or spanning within a pool)", id, tpDegree, gpuTypeDisplay)
+	// Distinguish a permanently-unsatisfiable request from a transient
+	// capacity shortfall (#1529, IMP-1): if no matching pool can EVER host this
+	// tpDegree — every matching pool has tpDegree > GPUsPerNode (needs spanning)
+	// yet tpDegree is not a whole multiple of that pool's GPUsPerNode — then no
+	// amount of added capacity will help. Surface that explicitly so the caller's
+	// deferral warning is actionable.
+	if !pm.tpDegreeSatisfiableByShape(gpuType, tpDegree) {
+		return "", nil, "", fmt.Errorf("PlaceInstance %s: tpDegree %d cannot be placed on any matching %s pool — "+
+			"it exceeds every pool's gpus_per_node but is not a whole multiple of it (multi-node TP requires "+
+			"tpDegree %% gpus_per_node == 0); this is unsatisfiable regardless of capacity", id, tpDegree, gpuTypeDisplay)
+	}
+	return "", nil, "", fmt.Errorf("PlaceInstance %s: no Ready node has %d free %s GPUs (single-node or whole-node spanning within a pool)", id, tpDegree, gpuTypeDisplay)
+}
+
+// tpDegreeSatisfiableByShape reports whether SOME matching pool could, at full
+// capacity, host an instance of the given tpDegree — ignoring current free space.
+// A pool can host tpDegree when it fits on one node (tpDegree <= GPUsPerNode) or
+// spans whole nodes evenly (tpDegree % GPUsPerNode == 0). Used only to produce a
+// clearer error when a request is structurally impossible vs merely out of capacity.
+// Returns true when there is NO matching pool at all — the "no such pool" case is
+// better described by the generic capacity error, not the shape error.
+func (pm *PlacementManager) tpDegreeSatisfiableByShape(gpuType string, tpDegree int) bool {
+	matched := false
+	for _, poolState := range pm.pools {
+		if gpuType != "" && poolState.config.GPUType != gpuType {
+			continue
+		}
+		matched = true
+		gpn := poolState.config.GPUsPerNode
+		if gpn <= 0 {
+			continue
+		}
+		if tpDegree <= gpn || tpDegree%gpn == 0 {
+			return true
+		}
+	}
+	// No matching pool → not a shape problem; let the generic error describe it.
+	return !matched
 }
 
 // distinctNodesForGPUs resolves each GPU ID to its owning node and returns the

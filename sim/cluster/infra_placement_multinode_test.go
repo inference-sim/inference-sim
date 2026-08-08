@@ -82,6 +82,51 @@ func sortedStrings(s ...string) []string {
 	return out
 }
 
+// TestDistinctNodesForGPUs_UnknownIDLogsAndSkips (MIN-2, I-2 branch): an unknown GPU
+// ID resolves to no node and emits an error log — never silently dropped.
+func TestDistinctNodesForGPUs_UnknownIDLogsAndSkips(t *testing.T) {
+	pm := newTestPM([]NodePoolConfig{newTestPool("h100", "H100", 8, 1)})
+	out := captureLogWarn(t, func() {
+		nodes := pm.distinctNodesForGPUs([]string{"does-not-exist-gpu-0"})
+		if len(nodes) != 0 {
+			t.Errorf("unknown GPU ID should resolve to 0 nodes, got %v", nodes)
+		}
+	})
+	if countSubstr(out, "not found in index") == 0 {
+		t.Errorf("expected an error log for the unknown GPU ID; captured:\n%s", out)
+	}
+}
+
+// TestInstanceCostPerHour_EmptySetLogsAndReturnsZero (MIN-2, I-3 branch): an empty GPU
+// set logs a placement-path bug and returns 0 (not a plausible 1× cost).
+func TestInstanceCostPerHour_EmptySetLogsAndReturnsZero(t *testing.T) {
+	pm := newTestPM([]NodePoolConfig{newTestPool("h100", "H100", 8, 1)})
+	var got float64
+	out := captureLogWarn(t, func() {
+		got = pm.InstanceCostPerHour(nil, 10)
+	})
+	if got != 0 {
+		t.Errorf("InstanceCostPerHour(nil) = %v, want 0", got)
+	}
+	if countSubstr(out, "placement-path bug") == 0 {
+		t.Errorf("expected an error log for the empty GPU set; captured:\n%s", out)
+	}
+}
+
+// TestPlaceInstance_UnsatisfiableTPReportsShapeError (IMP-1): a tpDegree that exceeds
+// gpus_per_node but is not a whole multiple of it can never place on that pool shape;
+// the error must say so (distinct from a transient capacity shortfall).
+func TestPlaceInstance_UnsatisfiableTPReportsShapeError(t *testing.T) {
+	pm := newTestPM([]NodePoolConfig{newTestPool("h100", "H100", 8, 4)}) // plenty of nodes
+	_, _, _, err := pm.PlaceInstance("inst-0", "m", "H100", 12)          // 12 > 8, 12 % 8 = 4
+	if err == nil {
+		t.Fatal("tp=12 on 8-GPU nodes must fail (not a whole multiple)")
+	}
+	if !strings.Contains(err.Error(), "unsatisfiable") {
+		t.Errorf("error should flag the request as structurally unsatisfiable, got: %v", err)
+	}
+}
+
 // captureLogWarn redirects logrus output to a buffer for the duration of fn and
 // returns the captured text. Restores the previous output afterward.
 func captureLogWarn(t *testing.T, fn func()) string {
@@ -262,8 +307,8 @@ func TestPlaceInstance_SingleNodeNoWarning(t *testing.T) {
 // TestPlaceInstance_DoesNotSpanAcrossPools (BC-2 contract guard): spanning stays
 // within a single pool. Two single-node Ready pools each with 8 free GPUs cannot be
 // combined into one tp=16 placement — the request must fail, and both pools stay
-// fully free. Guards against a future refactor hoisting the Pass-2 `selected` slice
-// out of the per-pool loop (which would wrongly combine GPUs across pools).
+// fully free. Guards against a future refactor hoisting the Pass-2 `selectedNodes`
+// slice out of the per-pool loop (which would wrongly combine nodes across pools).
 func TestPlaceInstance_DoesNotSpanAcrossPools(t *testing.T) {
 	pm := newTestPM([]NodePoolConfig{
 		newTestPool("poolA", "H100", 8, 1),
@@ -301,9 +346,19 @@ func TestPlaceInstance_SpansThreeNodes(t *testing.T) {
 	if len(span) != 3 {
 		t.Errorf("expected 3-node span, got %v", span)
 	}
-	// Primary node is the lowest-index touched node = first in the sorted span.
-	if primary != span[0] {
-		t.Errorf("primary node = %q, want lowest-index touched node %q", primary, span[0])
+	// Primary is the lowest-INDEX touched node; span is lexicographically sorted, so
+	// asserting primary == span[0] would encode a false "index order == lex order"
+	// invariant (diverges at ≥10 nodes, e.g. "h100-10" < "h100-2"). primary is
+	// logging-only; assert it is one of the spanned nodes.
+	found := false
+	for _, n := range span {
+		if n == primary {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("primary node %q not among spanned nodes %v", primary, span)
 	}
 	for _, n := range pm.nodesByPool["h100"] {
 		if free := pm.FreeGPUCount(n.ID); free != 0 {
@@ -560,10 +615,11 @@ func TestAutoscalerScaleUp_SpanningInstanceCost(t *testing.T) {
 	pools := []NodePoolConfig{
 		{Name: "h100", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 2, MinNodes: 2, MaxNodes: 2, GPUMemoryGiB: 80, CostPerHour: 10},
 	}
-	// NumInstances=1 (>=1 required); TP=1 so the startup instance uses a single GPU.
-	// Clear it and release its GPU so scale-up sees two fully-free nodes.
+	// TP=16 matches the scale-up variant (realizable config); the startup instance
+	// spans both nodes, so release it and clear the list to give scale-up a clean pool.
 	cfg := deploymentForPlacement(1, false, pools, 9999)
 	cfg.Model = "test-model"
+	cfg.TP = 16
 	cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
 	for _, inst := range cs.instances {
 		if err := cs.placement.ReleaseInstance(inst.ID()); err != nil {
