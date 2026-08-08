@@ -655,3 +655,59 @@ func validateHardwareCalib(hw HardwareCalib) error {
 	}
 	return nil
 }
+
+func TestNewSpeculativeConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name       string
+		k          int
+		acceptance float64
+		method     string
+		wantErr    bool
+	}{
+		{name: "inert zero value", k: 0, acceptance: 0, method: "", wantErr: false},
+		{name: "valid mtp", k: 5, acceptance: 0.8, method: "mtp", wantErr: false},
+		{name: "valid no method", k: 3, acceptance: 0.5, method: "", wantErr: false},
+		{name: "valid alpha zero with k", k: 5, acceptance: 0.0, method: "eagle", wantErr: false},
+		{name: "valid alpha one", k: 4, acceptance: 1.0, method: "", wantErr: false},
+		{name: "valid at ceiling", k: MaxSpeculativeTokens, acceptance: 0.5, method: "", wantErr: false},
+		{name: "negative k", k: -1, acceptance: 0, method: "", wantErr: true},
+		{name: "k above ceiling", k: MaxSpeculativeTokens + 1, acceptance: 0.5, method: "", wantErr: true},
+		{name: "alpha above one", k: 3, acceptance: 1.5, method: "", wantErr: true},
+		{name: "alpha negative", k: 3, acceptance: -0.1, method: "", wantErr: true},
+		{name: "alpha NaN", k: 3, acceptance: math.NaN(), method: "", wantErr: true},
+		{name: "alpha Inf", k: 3, acceptance: math.Inf(1), method: "", wantErr: true},
+		{name: "dangling acceptance k zero", k: 0, acceptance: 0.5, method: "", wantErr: true},
+		{name: "dangling method k zero", k: 0, acceptance: 0, method: "mtp", wantErr: true},
+		{name: "unknown method", k: 5, acceptance: 0.5, method: "bogus", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewSpeculativeConfig(tt.k, tt.acceptance, tt.method)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestSpeculativeConfig_Helpers(t *testing.T) {
+	off := SpeculativeConfig{}
+	assert.False(t, off.IsEnabled())
+	// Off ⇒ one token per step, verify width 1 (byte-identity foundation).
+	assert.Equal(t, 1.0, off.EffectiveTokensPerStep())
+	assert.Equal(t, 1, off.VerifyWidth())
+
+	on := SpeculativeConfig{K: 5, Acceptance: 0.8}
+	assert.True(t, on.IsEnabled())
+	// 1 + 0.8*5 = 5.0 mean accepted tokens/step.
+	assert.InDelta(t, 5.0, on.EffectiveTokensPerStep(), 1e-9)
+	// K+1 = 6 verified positions per forward pass.
+	assert.Equal(t, 6, on.VerifyWidth())
+
+	// α=0 with K>0: no throughput gain (g=1) but verify width still k+1 (cost applies).
+	noGain := SpeculativeConfig{K: 4, Acceptance: 0.0}
+	assert.InDelta(t, 1.0, noGain.EffectiveTokensPerStep(), 1e-9)
+	assert.Equal(t, 5, noGain.VerifyWidth())
+}

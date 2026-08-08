@@ -78,6 +78,13 @@ type SimConfig struct {
 	// zero value is inert: unset => the subsystem is a no-op and output is
 	// byte-identical to a pre-feature build (INV-6). See sim/lora.
 	LoRAConfig
+	// SpeculativeConfig is the 8th module sub-config (speculative decoding / MTP,
+	// #1528). Its zero value (K=0) is inert: the feature is off and output is
+	// byte-identical to a pre-feature build (INV-6). Note: its Validate() is NOT
+	// promoted to SimConfig (LoRAConfig already promotes a Validate() at the same
+	// depth, making SimConfig.Validate ambiguous); call cfg.SpeculativeConfig.Validate()
+	// explicitly if ever needed.
+	SpeculativeConfig
 
 	// SLO priority overrides for preemption victim selection (--preemption-policy priority).
 	// nil = use GAIE defaults (critical=4, standard=3, batch=-1, sheddable=-2, background=-3).
@@ -114,6 +121,12 @@ type Simulator struct {
 	model                  string
 	gpu                    string
 	maxModelLen            int64 // max total sequence length (0 = unlimited)
+	// Speculative decoding / MTP (#1528). specEnabled gates ALL spec-decode behavior;
+	// when false every decode path is byte-identical to a pre-feature build (INV-6).
+	// specTokensPerStep is the mean accepted tokens/step (1+α·K) consumed by the
+	// per-request fractional carry.
+	specEnabled       bool
+	specTokensPerStep float64
 	rng                    *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
 	sloMap *SLOPriorityMap // vLLM-convention priority mapping for instance-level scheduling
 	scheduler      InstanceScheduler
@@ -197,6 +210,8 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		model:                     cfg.Model,
 		gpu:                       cfg.GPU,
 		maxModelLen:               cfg.MaxModelLen,
+		specEnabled:               cfg.IsEnabled(),
+		specTokensPerStep:         cfg.EffectiveTokensPerStep(),
 		latencyModel:              latencyModel,
 		sloMap:                    NewSLOPriorityMap(cfg.SLOPriorityOverrides),
 	}

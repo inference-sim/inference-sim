@@ -79,6 +79,96 @@ func NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshol
 	}
 }
 
+// MaxSpeculativeTokens bounds SpeculativeConfig.K so verify width (K+1) and the
+// mean tokens/step (1+α·K) stay well within int/int64 range and can never produce an
+// int overflow or an undefined int64(float64) conversion (#1528). 1024 is far above
+// any real spec-decode config (vLLM's num_speculative_tokens is single digits;
+// GLM-5.2 MTP is 5) while leaving a wide safety margin.
+const MaxSpeculativeTokens = 1024
+
+// validSpeculativeMethods is the set of accepted --speculative-method labels. The
+// value does not change the step-time math in the current model (throughput and
+// verify-width cost are driven by K and α); the label is informational provenance
+// and the extension point for future per-method behavior.
+var validSpeculativeMethods = map[string]struct{}{
+	"mtp": {}, "eagle": {}, "medusa": {}, "ngram": {}, "draft": {},
+}
+
+// SpeculativeConfig groups speculative-decoding / Multi-Token-Prediction (MTP)
+// parameters (#1528). It is a MODEL-LEVEL attribute (one speculative config per
+// served model), not per-request. Its zero value (K=0) is inert: the feature is off
+// and simulator output is byte-identical to a pre-feature build (INV-6).
+//
+// Model: a decode step verifies K draft tokens plus 1 always-generated bonus token
+// in a single target forward pass. Two decoupled quantities follow:
+//   - VerifyWidth() = K+1 positions processed per forward pass — drives the per-step
+//     COST (verifying drafts is not free).
+//   - EffectiveTokensPerStep() = 1 + α·K mean accepted tokens — drives sequence
+//     PROGRESS (throughput). Modeled as a deterministic mean (no per-step RNG), so
+//     determinism (INV-6) holds and metrics are expectations.
+type SpeculativeConfig struct {
+	K          int     // num_speculative_tokens: draft tokens proposed per decode step. 0 = off.
+	Acceptance float64 // α: mean fraction of the K drafts accepted, in [0,1]. Read only when K>0.
+	Method     string  // informational label: "mtp","eagle","medusa","ngram","draft". "" when off.
+}
+
+// NewSpeculativeConfig is the canonical constructor (R4). Returns the config and a
+// validation error; CLI callers Fatalf on error, library callers propagate it. The
+// "α must be supplied explicitly when K>0" rule is a CLI concern (it needs
+// cmd.Flags().Changed) enforced at flag resolution, NOT here — a library caller
+// passing (K=5, α=0) legitimately means "0% acceptance".
+func NewSpeculativeConfig(k int, acceptance float64, method string) (SpeculativeConfig, error) {
+	c := SpeculativeConfig{K: k, Acceptance: acceptance, Method: method}
+	return c, c.Validate()
+}
+
+// Validate enforces the SpeculativeConfig constraints (R1, R3, R20).
+func (c SpeculativeConfig) Validate() error {
+	if c.K < 0 {
+		return fmt.Errorf("speculative: num-speculative-tokens must be >= 0, got %d", c.K)
+	}
+	if c.K > MaxSpeculativeTokens {
+		return fmt.Errorf("speculative: num-speculative-tokens must be <= %d, got %d", MaxSpeculativeTokens, c.K)
+	}
+	if math.IsNaN(c.Acceptance) || math.IsInf(c.Acceptance, 0) {
+		return fmt.Errorf("speculative: acceptance-rate must be finite, got %v", c.Acceptance)
+	}
+	if c.Acceptance < 0 || c.Acceptance > 1 {
+		return fmt.Errorf("speculative: acceptance-rate must be in [0,1], got %v", c.Acceptance)
+	}
+	if c.K == 0 {
+		// Feature off: reject dangling knobs rather than silently ignore them (R1).
+		if c.Acceptance != 0 {
+			return fmt.Errorf("speculative: acceptance-rate set (%v) but num-speculative-tokens is 0", c.Acceptance)
+		}
+		if c.Method != "" {
+			return fmt.Errorf("speculative: method %q set but num-speculative-tokens is 0", c.Method)
+		}
+		return nil
+	}
+	if c.Method != "" {
+		if _, ok := validSpeculativeMethods[c.Method]; !ok {
+			return fmt.Errorf("speculative: unknown method %q (valid: mtp, eagle, medusa, ngram, draft)", c.Method)
+		}
+	}
+	return nil
+}
+
+// IsEnabled reports whether speculative decoding is active (K>0).
+func (c SpeculativeConfig) IsEnabled() bool { return c.K > 0 }
+
+// EffectiveTokensPerStep is the mean accepted tokens per decode step: 1 + α·K.
+// Returns 1.0 when off (K=0), so the fractional carry advances exactly one token.
+func (c SpeculativeConfig) EffectiveTokensPerStep() float64 {
+	return 1.0 + c.Acceptance*float64(c.K)
+}
+
+// VerifyWidth is the number of token positions the target processes per decode
+// forward pass: K+1 (K drafts + 1 bonus). Returns 1 when off.
+func (c SpeculativeConfig) VerifyWidth() int {
+	return c.K + 1
+}
+
 // LatencyCoeffs groups regression coefficients for the latency model.
 type LatencyCoeffs struct {
 	BetaCoeffs  []float64 // regression coefficients for step time (≥3 elements required)
