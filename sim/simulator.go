@@ -750,13 +750,15 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 			// #588: Use actual decode step count for length-capped requests.
 			// len(req.OutputTokens) is the pre-determined count; len(req.ITL) is actual.
 			// TPOT convention: exclude first generated token → denominator is len(ITL)-1.
-			denom := max(len(req.ITL)-1, 1)
+			var denom int
 			if sim.specEnabled {
 				// Under speculative decoding / MTP, each ITL entry covers g tokens, so
 				// len(ITL) counts STEPS, not tokens — using it would inflate TPOT by ~g.
 				// Use the token-derived count (ProgressIndex advance + prefill token).
 				tokCount := int(req.ProgressIndex) - int(req.InputLen()) + 1
 				denom = max(tokCount-1, 1)
+			} else {
+				denom = max(len(req.ITL)-1, 1)
 			}
 			sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(denom)
 		} else {

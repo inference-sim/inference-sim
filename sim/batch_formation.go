@@ -361,7 +361,7 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 			preemptedRequest.ProgressIndex = 0
 			preemptedRequest.ITL = nil
 			preemptedRequest.specDecodeCarry = 0 // reset spec-decode carry with progress; re-prefill starts a fresh decode phase (#1528)
-			preemptedRequest.TTFTSet = false // lets the !TTFTSet guard in executeBatchStep fire on re-prefill, updating FirstTokenTime (#1122)
+			preemptedRequest.TTFTSet = false     // lets the !TTFTSet guard in executeBatchStep fire on re-prefill, updating FirstTokenTime (#1122)
 			ctx.KVCache.ReleaseKVBlocks(preemptedRequest)
 			delete(ctx.ComputedTokens, preemptedRequest.ID)
 			ctx.WaitQ.PrependFront(preemptedRequest)
