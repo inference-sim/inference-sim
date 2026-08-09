@@ -509,8 +509,8 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 
 ### Per-Feature Plans
 
-- **Active plans:** `docs/plans/` (implementation plans for in-progress work)
-- **Archived design docs:** `docs/plans/archive/` (completed design docs for architectural reference)
+- **Active plans:** `docs/plans/` (design and implementation plans for in-progress work). **Gitignored since #1322 — never commit these.** They are local scratch artifacts; `git add` of a path there requires `-f`, and once a file is force-added `git check-ignore` goes silent on it forever (use `git check-ignore -v --no-index <path>` to see the real rule).
+- **Committed feature artifacts:** `specs/<NNN>-<feature>/` (spec, plan, research, data-model, contracts, quickstart, checklists). This is the tracked home for anything that must survive in the repo.
 - **PR history:** Use `git log --oneline main` for the definitive commit history
 
 ## Active Technologies
