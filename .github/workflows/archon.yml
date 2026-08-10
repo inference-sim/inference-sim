@@ -80,8 +80,9 @@ jobs:
           BASE_SHA: ${{ steps.refs.outputs.base_sha }}
           HEAD_SHA: ${{ steps.refs.outputs.head_sha }}
         run: |
+          MERGE_BASE=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
           EXIT_CODE=0
-          OUTPUT=$(scripts/archon-ci.sh . "$BASE_SHA" "$HEAD_SHA") || EXIT_CODE=$?
+          OUTPUT=$(scripts/archon-ci.sh . "$MERGE_BASE" "$HEAD_SHA") || EXIT_CODE=$?
           if [[ $EXIT_CODE -gt 1 ]]; then
             OUTPUT="## Archon Error
 
