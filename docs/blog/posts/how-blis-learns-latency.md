@@ -26,6 +26,14 @@ estimate of how long a single **forward pass** takes, so if that's off, nothing 
 be right. This post is about how we estimate it, how well it holds up, and where it falls
 short.
 
+The headline, up front: fit once on H100, BLIS predicts held-out configurations (six models
+across three GPU types) at **6.7% median end-to-end error**, roughly **200× faster** than
+running them for real, and those predictions have already steered serving policies we later
+confirmed on a physical cluster: a
+[better admission controller](https://ai-native-systems-research.github.io/ai-native-systems-research/blog/2026/05/13/from-simulation-to-production-how-an-ai-native-pipeline-discovered-a-better-admission-controller-for-llm-d/)
+and [soft reflective flow control](https://ai-native-systems-research.github.io/ai-native-systems-research/blog/2026/07/27/from-simulation-to-production-part-ii-soft-reflective-flow-control-for-llm-d/)
+for llm-d. The rest of this post is how we get there, and where it still falls short.
+
 <!-- more -->
 
 ---
@@ -299,36 +307,24 @@ we confirmed on a real 8×H100 cluster.
 
 ## Where this goes: coefficients as distributions
 
-Today the α and β coefficients are point estimates, one value apiece, so every prediction is a
-single number with no sense of how much to trust it. That matters most where the decisions
-are: when a predicted P99 sits just under an SLO, a point estimate can't say whether that's a
-comfortable margin or a coin flip.
-
-A Bayesian posterior over the coefficients, carried and updated rather than fixed, would
-change that. Predictions would arrive as ranges instead of bare numbers; each `observe` or
-`calibrate` trace would tighten the posterior instead of forcing a periodic re-fit, handling
-drift as vLLM and hardware change; and in the agentic loop that produced our deployed
-admission and flow-control policies, a per-candidate error bar would let us promote on
-evidence rather than a point score.
-
-It has a limit, the same one the roofline ablation exposes: a posterior only captures
-uncertainty about effects inside the model, so anything outside the basis functions needs a
-new term, not more sampling. And BLIS's step time is linear with roughly Gaussian noise, where
-a closed-form posterior works; modeling something like NVLink contention properly would break
-that linearity and call for likelihood-free inference (ABC, or particle filters), which suits
-BLIS well since it's a deterministic forward model whose observe-calibrate loop already
-produces the residuals those methods need. When a real run is worth paying for, and when to
-stop probing, is the subject of a separate companion paper.
+Today the α and β coefficients are point estimates, so every prediction is a single number
+with no sense of how much to trust it. That matters most when a predicted P99 sits just under
+an SLO and you can't tell a comfortable margin from a coin flip. Putting a Bayesian posterior
+over the coefficients would turn predictions into ranges, let each `observe` trace tighten the
+fit instead of forcing a periodic re-fit, and give the policy-search loop a per-candidate error
+bar to promote on. How to do that, including the likelihood-free inference the non-linear
+effects like NVLink contention call for, is the subject of a forthcoming companion paper.
 
 ---
 
 ## The bottom line
 
-A physics prior plus a learned correction, fit a single time, generalizes to unseen models and
-GPUs at 6.7% median error and roughly 200× the speed of real execution, and its predictions
-have already steered serving policies we validated on real hardware. Plenty is still open,
-from the TTFT and long-decode weak spots to putting distributions on the coefficients, and
-we'll write more as it develops.
+A physics prior plus a learned correction, fit a single time, lands at 6.7% median E2E error
+across all 36 held-out experiments and runs roughly 200× faster than real execution. Even
+on the A100 and L40S, which never appeared in training, it holds cross-GPU error to 15.7% and
+13.3% from the datasheet alone. Its predictions have already steered serving policies we
+validated on real hardware. Plenty is still open, from the TTFT and long-decode weak spots to
+putting distributions on the coefficients, and we'll write more as it develops.
 
 ---
 
