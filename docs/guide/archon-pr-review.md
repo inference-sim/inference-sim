@@ -56,7 +56,7 @@ If the PR changes package boundaries, Archon reports three sections:
 
 - The repository must be a Go module
 - The commenter must have write access to the repository
-- Archon is built from [repoevolve v0.1.0](https://github.ibm.com/ai-native-systems/repoevolve/releases/tag/v0.1.0) during the CI run
+- Archon is built from [archon v0.1.0](https://github.com/AI-native-Systems-Research/archon/releases/tag/v0.1.0) during the CI run
 
 ## Related
 

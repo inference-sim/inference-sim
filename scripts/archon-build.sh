@@ -10,7 +10,7 @@
 set -euo pipefail
 
 VERSION="${1:-v0.1.0}"
-ARCHON_REPO="git@github.ibm.com:ai-native-systems/repoevolve.git"
+ARCHON_REPO="https://github.com/AI-native-Systems-Research/archon.git"
 BUILD_DIR="${RUNNER_TEMP:-/tmp}/archon-build"
 
 rm -rf "$BUILD_DIR"
