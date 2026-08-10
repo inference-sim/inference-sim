@@ -1452,6 +1452,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#attention-kv-cache-shape-mla-head_dim-dense-prefix-moe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Attention &amp; KV-Cache Shape (MLA, head_dim, dense-prefix MoE)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#removed-backends" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2693,6 +2704,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#attention-kv-cache-shape-mla-head_dim-dense-prefix-moe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Attention &amp; KV-Cache Shape (MLA, head_dim, dense-prefix MoE)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#removed-backends" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2760,6 +2782,28 @@
 <div class="admonition info">
 <p class="admonition-title">MFU Calibration (Updated March 2026)</p>
 <p>Hardware MFU (Model FLOPs Utilization) values in <code>hardware_config.json</code> were recalibrated based on empirical measurements and roofline theory. The updated values (H100: prefill=0.45/decode=0.30, A100: prefill=0.38/decode=0.18, L40S: prefill=0.32/decode=0.08) reflect conservative estimates for capacity planning. For detailed justification including evidence from FlashAttention-3, NVIDIA MLPerf, and production deployments, see <a href="https://github.com/inference-sim/inference-sim/discussions/589">Discussion #589</a>. If you have existing capacity planning results, consider re-running simulations with the updated values for more accurate estimates.</p>
+</div>
+<h2 id="attention-kv-cache-shape-mla-head_dim-dense-prefix-moe">Attention &amp; KV-Cache Shape (MLA, head_dim, dense-prefix MoE)<a class="headerlink" href="#attention-kv-cache-shape-mla-head_dim-dense-prefix-moe" title="Permanent link">&para;</a></h2>
+<p>BLIS derives KV-cache block capacity and total model-weight bytes from the HuggingFace <code>config.json</code>. As of #1527 the shape model represents the modern MLA MoE family (DeepSeek-V2/V3, Kimi-K3, GLM-5.2 <code>glm_moe_dsa</code>):</p>
+<ul>
+<li><strong>Explicit <code>head_dim</code>.</strong> When a config declares <code>head_dim</code> (common in modern MLA/GQA designs where it differs from <code>hidden_size / num_attention_heads</code> — e.g. GLM-5.2: <code>head_dim=192</code> while <code>6144/64=96</code>), it is used for KV-cache and weight sizing. Absent the key, BLIS falls back to <code>hidden/heads</code> (unchanged behavior). <em>Note:</em> the step-time (latency) models still use <code>hidden/heads</code>; <code>head_dim</code> currently affects capacity only.</li>
+<li><strong>MLA compressed-KV.</strong> For Multi-head Latent Attention models (<code>kv_lora_rank</code> present), the KV cache stores a single compressed latent of <code>kv_lora_rank + qk_rope_head_dim</code> scalars per token per layer (e.g. DeepSeek <code>512 + 64 = 576</code>), <strong>not</strong> the standard MHA/GQA <code>2 × head_dim × num_kv_heads</code>. The latent is replicated across tensor-parallel ranks (not sharded), matching vLLM's MLA cache. This corrects both KV capacity and PD KV-transfer sizing for the whole MLA family.</li>
+<li><strong>Dense-prefix MoE (<code>first_k_dense_replace</code>).</strong> MoE models that run their first <em>K</em> layers as dense MLP (e.g. GLM-5.2: 3 of 78 dense; DeepSeek-V2-Lite: 1 of 27) have their weight estimate split into <em>K</em> dense layers + remaining MoE layers, instead of counting every layer as MoE. This is a prefix split, distinct from the every-Nth <code>interleave_moe_layer_step</code> pattern.</li>
+</ul>
+<div class="admonition warning">
+<p class="admonition-title">Known approximations for MLA / FP8 / DSA models</p>
+<ul>
+<li><strong>Step-time KV-read term is not MLA-aware (pessimistic).</strong> The MLA compressed-KV shape above corrects <strong>capacity</strong> (KV block counts, PD transfer sizing), but the trained-physics/roofline <strong>step-time</strong> decode-bandwidth term still sizes KV reads as the standard <code>2 × num_kv_heads × head_dim</code> per token per layer — much larger than the MLA latent <code>kv_lora_rank + qk_rope_head_dim</code> (e.g. GLM-5.2: <code>12288</code> vs <code>576</code>, ~21×). So for MLA models BLIS reports <strong>correct KV block counts but a pessimistic (over-estimated) decode step time / TTFT</strong>. <code>blis run</code> emits a warning when an MLA model is detected. Making step time MLA-aware is a separate follow-up (its own calibration surface).</li>
+<li><strong><code>first_k_dense_replace</code> affects weight accounting only, not step time.</strong> The dense/MoE weight split is applied to the capacity estimate; the step-time MoE-layer count does not yet consume <code>first_k_dense_replace</code> (it uses the pre-existing <code>interleave_moe_layer_step</code> heuristic).</li>
+<li><strong>Block-wise FP8</strong> (<code>weight_block_size</code>, e.g. GLM-5.2-FP8) is treated as a flat <code>1.0</code> byte/param. The per-block scale overhead and the <code>modules_to_not_convert</code> set (layernorms, gates, indexer, <code>lm_head</code>, embeddings, MTP modules kept at bf16) are <strong>not</strong> modeled, giving a slightly <strong>optimistic</strong> (low) weight estimate.</li>
+<li>The <strong>DeepSeek sparse-attention (DSA) indexer</strong> (<code>index_n_heads</code>, <code>index_topk</code>) contributes no weight or index-KV — a second-order optimistic gap.</li>
+<li><strong>MLA attention weight projections</strong> (<code>q_lora_rank</code>/<code>kv_lora_rank</code> down/up matrices) keep the standard dense-attention weight approximation; only the KV <em>footprint</em> uses the compressed-latent shape.</li>
+<li><strong>Speculative decoding / MTP throughput</strong> is not modeled (decode is one token per step); this is tracked separately in <a href="https://github.com/inference-sim/inference-sim/issues/1528">#1528</a>.</li>
+</ul>
+</div>
+<div class="admonition info">
+<p class="admonition-title">Capacity numbers change for MLA / explicit-<code>head_dim</code> models (#1527)</p>
+<p>Models whose <code>config.json</code> carries the newly-parsed keys get <strong>more accurate</strong> auto-calculated KV capacity than before #1527 — so pre- vs post-#1527 capacity numbers will differ for them. Affected committed configs: <code>deepseek-v2-lite</code> (MLA + dense prefix — its correct compressed-KV footprint yields substantially more KV blocks at a given TP), <code>mistral-nemo-instruct-2407</code> and <code>qwen3-30b-a3b</code> (explicit <code>head_dim</code> ≠ <code>hidden/heads</code>). If you have saved capacity-planning results for these models, re-run to pick up the corrected sizing.</p>
 </div>
 <h2 id="removed-backends">Removed Backends<a class="headerlink" href="#removed-backends" title="Permanent link">&para;</a></h2>
 <h3 id="blackbox-backend-removed-april-2026">Blackbox Backend (removed April 2026)<a class="headerlink" href="#blackbox-backend-removed-april-2026" title="Permanent link">&para;</a></h3>
