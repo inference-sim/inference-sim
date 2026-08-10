@@ -78,14 +78,9 @@ var swiGLUActivations = map[string]bool{
 func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
 	// Validations common to both the MLA and standard paths. NumHeads and HiddenDim
 	// are validated here (not only on the standard path) because CalculateKVBlocks
-	// calls computeModelWeightBytes for ALL configs — including MLA — and that
-	// weight estimate reads NumHeads/HiddenDim (via EffectiveHeadDim and the
-	// attention/embedding terms). A degenerate MLA config that returned a valid KV
-	// value here but then silently under-counted (NumHeads==0 → kvDim 0) or wildly
-	// inflated (HiddenDim==0 → ~0 weight → huge block count) weight would run on
-	// garbage with no error, so these guards must gate the MLA path too. Only the
-	// HiddenDim%NumHeads divisibility check is MLA-exempt (the latent path never
-	// uses that quotient) and stays on the standard path below.
+	// also calls computeModelWeightBytes for MLA configs, and that weight estimate
+	// reads NumHeads/HiddenDim — a degenerate MLA config must error here, not run on
+	// garbage. Only the HiddenDim%NumHeads divisibility check is MLA-exempt (below).
 	if tp <= 0 {
 		return 0, fmt.Errorf("KVBytesPerToken: TP must be > 0, got %d", tp)
 	}
@@ -103,27 +98,19 @@ func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
 	}
 
 	// --- MLA (Multi-head Latent Attention) path (F2, #1527) ---
-	// MLA models (DeepSeek-V2/V3, Kimi-K3, GLM-5.2 `glm_moe_dsa`) store a single
-	// compressed latent KV vector per token per layer of width
-	// (kv_lora_rank + qk_rope_head_dim) — NOT the standard 2 × headDim × numKVHeads.
-	// The latent is shared across all heads (so it does not scale with numKVHeads
-	// or headDim) and is REPLICATED across TP ranks rather than sharded, so the
-	// per-GPU value is the full latent width and is NOT divided by TP (design D2;
-	// matches vLLM's MLA cache, e.g. DeepSeek (512+64)×2 bytes/token/layer). This
-	// branch is selected only when KVLoraRank > 0; a standard MHA/GQA config
-	// (KVLoraRank == 0) takes the byte-identical standard path below (INV-6). Only
-	// the hidden%heads divisibility guard is skipped here (the latent path never
-	// uses the hidden/heads quotient); NumHeads>0 and HiddenDim>0 are validated in
-	// the common block above so computeModelWeightBytes stays protected for MLA too.
+	// See ModelConfig.IsMLA / the field comments: KV is a single compressed latent
+	// of (kv_lora_rank + qk_rope_head_dim) per token per layer, replicated across TP
+	// ranks (NOT divided by TP), and independent of numKVHeads/headDim. The
+	// hidden%heads guard is skipped (the latent path never uses that quotient).
 	if mc.IsMLA() {
-		if mc.QKRopeHeadDim < 0 {
-			return 0, fmt.Errorf("KVBytesPerToken: qk_rope_head_dim must be >= 0, got %d", mc.QKRopeHeadDim)
-		}
 		latentWidth := mc.KVLoraRank + mc.QKRopeHeadDim
 		perTokenKVBytesF := float64(mc.NumLayers) * float64(latentWidth) * mc.BytesPerParam
+		// Public-API boundary guard: normal configs are validated at parse time
+		// (config.go rejects negative shape fields), but a hand-built ModelConfig
+		// with a negative QKRopeHeadDim could make latentWidth <= 0.
 		if perTokenKVBytesF <= 0 {
-			return 0, fmt.Errorf("KVBytesPerToken: MLA computed value is %.4f (expected > 0); check BytesPerParam=%.4f, kv_lora_rank=%d, qk_rope_head_dim=%d",
-				perTokenKVBytesF, mc.BytesPerParam, mc.KVLoraRank, mc.QKRopeHeadDim)
+			return 0, fmt.Errorf("KVBytesPerToken: MLA latent width must be > 0, got kv_lora_rank=%d + qk_rope_head_dim=%d",
+				mc.KVLoraRank, mc.QKRopeHeadDim)
 		}
 		return perTokenKVBytesF, nil
 	}
