@@ -212,16 +212,20 @@ func (pm *PlacementManager) VerifyConservation() error {
 // Pass 2 (whole-node cross-node placement): reached ONLY when no single node in any
 // matching pool can satisfy tpDegree. Places the instance across exactly
 // tpDegree/GPUsPerNode fully-free Ready nodes of a single pool, each node contributing
-// all its GPUs — the only physically-realizable multi-node tensor-parallel shape (a
-// uniform per-node rank count). A pool is eligible only when tpDegree > GPUsPerNode
+// all its GPUs — a uniform per-node rank count. This is the shape vLLM's multiprocessing
+// (mp) executor enforces (it asserts world_size % nnodes == 0 and derives an equal
+// local_world_size per node) and the one vLLM's docs recommend ("set TP to the number
+// of GPUs in each node"). vLLM's Ray backend permits an asymmetric spread (it only warns
+// and uses best-effort PACK), so this is deliberately stricter than the most permissive
+// backend — a safe modeling choice. A pool is eligible only when tpDegree > GPUsPerNode
 // (spanning is physically necessary) AND tpDegree % GPUsPerNode == 0 (ranks divide
 // evenly across whole nodes). The fragmentation case (tpDegree ≤ GPUsPerNode but no
-// single node momentarily has room) is deliberately NOT spanned — it would fabricate
-// an asymmetric TP group (e.g. 2+1 for TP=3) that cannot exist; such an instance stays
-// pending exactly as before this feature. Because Pass 1 runs to completion across all
-// pools before Pass 2 begins, single-node placement is strictly preferred to spanning
-// anywhere (BC-1, BC-2). Cross-pool spanning is not attempted; a spanning instance
-// stays within one pool (homogeneous interconnect domain).
+// single node momentarily has room) is deliberately NOT spanned — it would produce an
+// asymmetric TP group (e.g. 2+1 for TP=3) that, while Ray tolerates it, is discouraged
+// and not modeled here; such an instance stays pending exactly as before this feature.
+// Because Pass 1 runs to completion across all pools before Pass 2 begins, single-node
+// placement is strictly preferred to spanning anywhere (BC-1, BC-2). Cross-pool spanning
+// is not attempted; a spanning instance stays within one pool (homogeneous interconnect domain).
 //
 // When gpuType is empty (""), all pools are considered (match-any semantics) — used
 // by the NodePools construction path (SC-004) where the pool's gpu_type is
