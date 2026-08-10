@@ -1173,6 +1173,175 @@ func TestGetModelConfig_NonQuantized_BytesPerParamUnchanged(t *testing.T) {
 	}
 }
 
+func TestGetModelConfig_HeadDim_ExplicitParsed(t *testing.T) {
+	// F1 (BC-1): GIVEN a config with an explicit head_dim that differs from
+	// hidden_size/num_attention_heads (GLM-5.2: 192 vs 6144/64=96), THEN
+	// ModelConfig.HeadDim == 192.
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 78,
+		"hidden_size": 6144,
+		"num_attention_heads": 64,
+		"num_key_value_heads": 64,
+		"head_dim": 192,
+		"vocab_size": 154880,
+		"intermediate_size": 12288,
+		"dtype": "bfloat16"
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.HeadDim != 192 {
+		t.Errorf("expected HeadDim=192 (explicit), got %d", cfg.HeadDim)
+	}
+	if cfg.EffectiveHeadDim() != 192 {
+		t.Errorf("expected EffectiveHeadDim()=192, got %d", cfg.EffectiveHeadDim())
+	}
+}
+
+func TestGetModelConfig_HeadDim_AbsentIsZero(t *testing.T) {
+	// F1 (BC-1, INV-6): GIVEN no head_dim key, THEN HeadDim == 0 (sentinel) and
+	// EffectiveHeadDim falls back to hidden/heads.
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 32,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"vocab_size": 128256,
+		"intermediate_size": 14336,
+		"torch_dtype": "bfloat16"
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.HeadDim != 0 {
+		t.Errorf("expected HeadDim=0 when key absent, got %d", cfg.HeadDim)
+	}
+	if cfg.EffectiveHeadDim() != 128 {
+		t.Errorf("expected EffectiveHeadDim()=128 (4096/32 fallback), got %d", cfg.EffectiveHeadDim())
+	}
+}
+
+func TestGetModelConfig_MLAFields_Parsed(t *testing.T) {
+	// F2 (BC-3): GIVEN an MLA config (kv_lora_rank + qk_rope_head_dim), THEN
+	// those fields are parsed onto ModelConfig.
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 27,
+		"hidden_size": 2048,
+		"num_attention_heads": 16,
+		"num_key_value_heads": 16,
+		"vocab_size": 102400,
+		"intermediate_size": 10944,
+		"kv_lora_rank": 512,
+		"qk_rope_head_dim": 64,
+		"torch_dtype": "bfloat16"
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.KVLoraRank != 512 {
+		t.Errorf("expected KVLoraRank=512, got %d", cfg.KVLoraRank)
+	}
+	if cfg.QKRopeHeadDim != 64 {
+		t.Errorf("expected QKRopeHeadDim=64, got %d", cfg.QKRopeHeadDim)
+	}
+}
+
+func TestGetModelConfig_MLAFields_AbsentAreZero(t *testing.T) {
+	// F2 (INV-6): GIVEN a non-MLA config, THEN MLA fields are 0 (standard KV path).
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 32,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"vocab_size": 128256,
+		"intermediate_size": 14336,
+		"torch_dtype": "bfloat16"
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.KVLoraRank != 0 || cfg.QKRopeHeadDim != 0 {
+		t.Errorf("expected MLA fields 0 for non-MLA config, got KVLoraRank=%d QKRopeHeadDim=%d", cfg.KVLoraRank, cfg.QKRopeHeadDim)
+	}
+}
+
+func TestGetModelConfig_FirstKDenseReplace_Parsed(t *testing.T) {
+	// F3 (BC-5): GIVEN first_k_dense_replace, THEN it is parsed onto ModelConfig.
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 78,
+		"hidden_size": 6144,
+		"num_attention_heads": 64,
+		"vocab_size": 154880,
+		"intermediate_size": 12288,
+		"first_k_dense_replace": 3,
+		"n_routed_experts": 256,
+		"num_experts_per_tok": 8,
+		"dtype": "bfloat16"
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.FirstKDenseReplace != 3 {
+		t.Errorf("expected FirstKDenseReplace=3, got %d", cfg.FirstKDenseReplace)
+	}
+}
+
+func TestGetModelConfig_NegativeShapeFields_Rejected(t *testing.T) {
+	// MINOR-2 (blis-pr-review, R1): a negative value for any of the new shape keys
+	// must error at parse time rather than silently fall through (e.g. a negative
+	// kv_lora_rank would otherwise take the standard MHA path and mis-size KV with
+	// no error).
+	for _, key := range []string{"head_dim", "kv_lora_rank", "qk_rope_head_dim", "first_k_dense_replace"} {
+		t.Run(key, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			configFile := filepath.Join(tmpDir, "config.json")
+			content := `{
+				"num_hidden_layers": 32,
+				"hidden_size": 4096,
+				"num_attention_heads": 32,
+				"vocab_size": 128256,
+				"intermediate_size": 14336,
+				"torch_dtype": "bfloat16",
+				"` + key + `": -5
+			}`
+			if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+				t.Fatalf("failed to create test file: %v", err)
+			}
+			if _, err := latency.GetModelConfig(configFile); err == nil {
+				t.Errorf("expected error for negative %s, got nil", key)
+			}
+		})
+	}
+}
+
 func TestValidateRooflineConfig_MoE_ValidConfig_ReturnsNil(t *testing.T) {
 	mc := sim.ModelConfig{
 		NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2,
