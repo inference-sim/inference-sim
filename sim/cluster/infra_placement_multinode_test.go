@@ -576,6 +576,38 @@ func TestStartupPlacement_SpanningInstanceCost(t *testing.T) {
 	}
 }
 
+// TestStartupPlacement_UnplacedEmitsOneSummaryWarning: when instances cannot be
+// placed at startup, NewClusterSimulator emits exactly ONE summary warning (not one
+// per instance), and it carries the actionable first error — here the structurally-
+// unsatisfiable shape message (tp=12 is not a whole multiple of gpus_per_node=8),
+// not a generic capacity message. Guards the "first error, once" behavior.
+func TestStartupPlacement_UnplacedEmitsOneSummaryWarning(t *testing.T) {
+	pools := []NodePoolConfig{
+		{Name: "h100", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 4, MinNodes: 4, MaxNodes: 4, GPUMemoryGiB: 80, CostPerHour: 10},
+	}
+	cfg := deploymentForPlacement(3, false, pools, 9999)
+	cfg.TP = 12 // 12 > 8 and 12 % 8 != 0 → structurally unsatisfiable on this pool
+	var cs *ClusterSimulator
+	out := captureLogWarn(t, func() {
+		cs = NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+	})
+	if len(cs.instances) != 0 {
+		t.Fatalf("expected 0 placed instances (tp=12 unsatisfiable), got %d", len(cs.instances))
+	}
+	// Exactly one summary line, not one per instance.
+	if n := countSubstr(out, "not placed at startup"); n != 1 {
+		t.Errorf("expected exactly 1 summary warning, got %d\ncaptured:\n%s", n, out)
+	}
+	// It reports the count across all instances.
+	if countSubstr(out, "3 of 3") == 0 {
+		t.Errorf("summary should report 3 of 3 unplaced; captured:\n%s", out)
+	}
+	// The reported error is the actionable structural one, not a generic capacity error.
+	if countSubstr(out, "unsatisfiable") == 0 {
+		t.Errorf("summary should carry the structurally-unsatisfiable error; captured:\n%s", out)
+	}
+}
+
 // TestDeferredPlacement_SpanningInstanceCost (T-1, BC-5): the deferred NodeReadyEvent
 // path computes spanning cost too. InitialNodes=0 defers the tp=16 instance; once two
 // nodes are Ready, RetryPendingInstances places it spanning both, and its CostPerHour

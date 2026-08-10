@@ -344,8 +344,13 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 				// Pass "" as gpuType (any pool) to match AddPending's placement semantics.
 				// Collect deferrals here and warn ONCE after the loop (a cluster with
 				// InitialNodes=0 defers every instance — one summary, not N copies).
+				// Keep the FIRST error: instance_0's error is the most actionable (e.g.
+				// the structurally-unsatisfiable "regardless of capacity" message would
+				// otherwise be masked by a later instance's generic capacity error).
 				unplacedCount++
-				unplacedFirstErr = err
+				if unplacedFirstErr == nil {
+					unplacedFirstErr = err
+				}
 				cs.placement.AddPending(id, config.Model, "", tpDegree, simCfg)
 				continue
 			}
