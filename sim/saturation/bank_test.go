@@ -58,6 +58,31 @@ func TestBank_ClassifyActuallyReplaysEvents(t *testing.T) {
 	}
 }
 
+// TestBank_SatisfiesBatchClassifierContract binds *Bank to sim.BatchClassifier
+// inside a test (the production assertion in bank.go is not attributed to the
+// contract by coverage tooling) AND drives Classify through the interface-typed
+// variable — proving the polymorphic contract, not just the concrete method.
+// Independent of the #1517 SaveResults wiring: it exercises the seam directly.
+func TestBank_SatisfiesBatchClassifierContract(t *testing.T) {
+	c := NewInMemoryCollector()
+	bank, err := NewBank(AllDetectorNames(), SaturationConfig{}, c)
+	if err != nil {
+		t.Fatalf("NewBank: %v", err)
+	}
+
+	// Drive Classify strictly through the interface, never the concrete type.
+	var classifier sim.BatchClassifier = bank
+	reqs := threeRequests()
+	classifier.Classify(reqs, len(reqs))
+	bank.Close()
+
+	// The interface call must produce the same non-empty trace the concrete
+	// path does — a nil/no-op interface impl would leave zero records.
+	if len(c.Records()) == 0 {
+		t.Fatal("Classify via sim.BatchClassifier produced no records; the interface seam is a no-op")
+	}
+}
+
 // TestBank_ZeroRequestsEmptyTrace verifies the degenerate-input contract (R20):
 // zero requests produce zero events and thus zero records, but the detectors are
 // still Reset() and the sink still Closed — a valid empty trace, not a panic.
