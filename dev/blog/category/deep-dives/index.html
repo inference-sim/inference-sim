@@ -2634,6 +2634,69 @@
     <div class="md-post__meta md-meta">
       <ul class="md-meta__list">
         <li class="md-meta__item">
+          <time datetime="2026-08-06 00:00:00+00:00">August 6, 2026</time></li>
+        
+          <li class="md-meta__item">
+            in
+            
+              <a href="./" class="md-meta__link">Deep Dives</a>, 
+              <a href="../what-is-blis/" class="md-meta__link">What is BLIS?</a></li>
+        
+        
+          
+          <li class="md-meta__item">
+            
+              10 min read
+            
+          </li>
+        
+        
+      </ul>
+      
+    </div>
+  </header>
+  <div class="md-post__content md-typeset">
+    <h2 id="what-weve-learned-about-modeling-llm-latency"><a class="toclink" href="../../2026/08/06/what-weve-learned-about-modeling-llm-latency/">What We've Learned About Modeling LLM Latency</a></h2>
+<p>The <a href="../../2026/04/09/the-physics-of-high-fidelity-distributed-inference-platform-simulation/">last post</a> covered how BLIS models the engine,
+data plane, and control plane to predict full-pipeline latency without touching a GPU. What it
+didn't answer is whether the predictions can be trusted.</p>
+<p>That comes down to one number. Everything BLIS reports at the cluster level rests on its
+estimate of how long a single <strong>forward pass</strong> takes, so if that's off, nothing above it can
+be right. This post is about how we estimate it, how well it holds up, and where it falls
+short.</p>
+<p>The headline, up front: fit once on H100, BLIS predicts held-out configurations (six models
+across three GPU types) at <strong>6.7% median end-to-end error</strong>, roughly <strong>200× faster</strong> than
+running them for real, and those predictions have already steered serving policies we later
+confirmed on a physical cluster: a
+<a href="https://ai-native-systems-research.github.io/ai-native-systems-research/blog/2026/05/13/from-simulation-to-production-how-an-ai-native-pipeline-discovered-a-better-admission-controller-for-llm-d/">better admission controller</a>
+and <a href="https://ai-native-systems-research.github.io/ai-native-systems-research/blog/2026/07/27/from-simulation-to-production-part-ii-soft-reflective-flow-control-for-llm-d/">soft reflective flow control</a>
+for llm-d. The rest of this post is how we get there, and where it still falls short.</p>
+
+    
+      <nav class="md-post__action">
+        <a href="../../2026/08/06/what-weve-learned-about-modeling-llm-latency/">
+          Continue reading
+        </a>
+      </nav>
+    
+    
+  </div>
+</article>
+      
+        <article class="md-post md-post--excerpt">
+  <header class="md-post__header">
+    
+      <nav class="md-post__authors md-typeset">
+        
+          <span class="md-author">
+            <img src="https://github.com/susiejojo.png" alt="Dipanwita Guhathakurta">
+          </span>
+        
+      </nav>
+    
+    <div class="md-post__meta md-meta">
+      <ul class="md-meta__list">
+        <li class="md-meta__item">
           <time datetime="2026-04-09 00:00:00+00:00">April 9, 2026</time></li>
         
           <li class="md-meta__item">

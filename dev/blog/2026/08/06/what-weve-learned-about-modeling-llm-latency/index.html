@@ -11,10 +11,8 @@
       
       
       
-        <link rel="prev" href="../../../03/05/why-simulate-before-you-scale/">
+        <link rel="prev" href="../../../04/09/the-physics-of-high-fidelity-distributed-inference-platform-simulation/">
       
-      
-        <link rel="next" href="../../../08/06/what-weve-learned-about-modeling-llm-latency/">
       
       
         
@@ -25,7 +23,7 @@
     
     
       
-        <title>The Physics of High-Fidelity Distributed Inference Platform Simulation - BLIS — Blackbox Inference Simulator</title>
+        <title>What We've Learned About Modeling LLM Latency - BLIS — Blackbox Inference Simulator</title>
       
     
     
@@ -78,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#the-physics-of-high-fidelity-distributed-inference-platform-simulation" class="md-skip">
+        <a href="#what-weve-learned-about-modeling-llm-latency" class="md-skip">
           Skip to content
         </a>
       
@@ -116,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              The Physics of High-Fidelity Distributed Inference Platform Simulation
+              What We've Learned About Modeling LLM Latency
             
           </span>
         </div>
@@ -2606,10 +2604,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#building-fidelity-from-first-principles" class="md-nav__link">
+  <a href="#the-problem" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Building Fidelity from First Principles
+        The problem
       
     </span>
   </a>
@@ -2617,22 +2615,33 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#a-requests-journey-the-hidden-complexity" class="md-nav__link">
+  <a href="#two-models-one-basis" class="md-nav__link">
     <span class="md-ellipsis">
       
-        A Request's Journey: The Hidden Complexity
+        Two models, one basis
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="A Request&#39;s Journey: The Hidden Complexity">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-we-trained-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How we trained it
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How we trained it">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#layer-1-the-engine-vllm" class="md-nav__link">
+  <a href="#no-kernel-or-operator-level-profiling" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Layer 1: The Engine (vLLM)
+        No kernel- or operator-level profiling
       
     </span>
   </a>
@@ -2640,10 +2649,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#layer-2-the-data-plane-cluster-orchestration" class="md-nav__link">
+  <a href="#training-data" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Layer 2: The Data Plane (Cluster Orchestration)
+        Training data
       
     </span>
   </a>
@@ -2651,10 +2660,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#layer-3-the-control-plane-autoscaling" class="md-nav__link">
+  <a href="#a-two-loop-fit" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Layer 3: The Control Plane (Autoscaling)
+        A two-loop fit
       
     </span>
   </a>
@@ -2667,10 +2676,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#blis-in-action-simulating-a-configuration-decision" class="md-nav__link">
+  <a href="#how-we-evaluate-it" class="md-nav__link">
     <span class="md-ellipsis">
       
-        BLIS in Action: Simulating a Configuration Decision
+        How we evaluate it
       
     </span>
   </a>
@@ -2678,10 +2687,71 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#from-modeling-to-validation" class="md-nav__link">
+  <a href="#how-accurate-is-it" class="md-nav__link">
     <span class="md-ellipsis">
       
-        From Modeling to Validation
+        How accurate is it
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How accurate is it">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#where-its-strong" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where it's strong
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-its-weaker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where it's weaker
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#putting-it-to-work" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Putting it to work
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#where-this-goes-coefficients-as-distributions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where this goes: coefficients as distributions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-bottom-line" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The bottom line
       
     </span>
   </a>
@@ -2864,7 +2934,7 @@
                     <li class="md-nav__item">
                       <div class="md-nav__link">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 19H5V8h14m-3-7v2H8V1H6v2H5c-1.11 0-2 .89-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-1V1m-1 11h-5v5h5z"/></svg>
-                        <time datetime="2026-04-09 00:00:00+00:00" class="md-ellipsis">April 9, 2026</time>
+                        <time datetime="2026-08-06 00:00:00+00:00" class="md-ellipsis">August 6, 2026</time>
                       </div>
                     </li>
                     
@@ -2875,8 +2945,8 @@
                           <span class="md-ellipsis">
                             in
                             
-                              <a href="../../../../category/architecture/">Architecture</a>, 
-                              <a href="../../../../category/deep-dives/">Deep Dives</a></span>
+                              <a href="../../../../category/deep-dives/">Deep Dives</a>, 
+                              <a href="../../../../category/what-is-blis/">What is BLIS?</a></span>
                         </div>
                       </li>
                     
@@ -2887,7 +2957,7 @@
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 20a8 8 0 0 0 8-8 8 8 0 0 0-8-8 8 8 0 0 0-8 8 8 8 0 0 0 8 8m0-18a10 10 0 0 1 10 10 10 10 0 0 1-10 10C6.47 22 2 17.5 2 12A10 10 0 0 1 12 2m.5 5v5.25l4.5 2.67-.75 1.23L11 13V7z"/></svg>
                           <span class="md-ellipsis">
                             
-                              7 min read
+                              10 min read
                             
                           </span>
                         </div>
@@ -2914,180 +2984,299 @@
   
 
 
-<h1 id="the-physics-of-high-fidelity-distributed-inference-platform-simulation">The Physics of High-Fidelity Distributed Inference Platform Simulation<a class="headerlink" href="#the-physics-of-high-fidelity-distributed-inference-platform-simulation" title="Permanent link">&para;</a></h1>
-<p>Production LLM inference platforms are distributed systems where routing policies, admission control, autoscaling, and engine-level scheduling all interact to determine latencies and throughput. How do you explore how different policies and configurations affect these KPIs before deploying to production? Testing a new routing policy or autoscaling threshold on live traffic risks cascading bugs across the fleet, while building separate test environments burns GPU-hours and still cannot predict interactions between cluster-level policies and engine-level batch dynamics.</p>
-<p>The answer is <strong>end-to-end simulation</strong>: model the entire distributed inference stack to explore how policies and configurations affect latencies and throughput for your workloads. <em>What does it take to build a simulator accurate enough to guide these decisions?</em> The challenge lies in capturing the right mechanisms. At the engine level, batches process together — all requests wait for the slowest operation to finish, so KV cache fills trigger preemptions and long prompts stall short decodes. At the cluster level, routing policies operate on stale cache state, admission control gates overload, and prefill/decode disaggregation trades utilization for latency. At the control plane, autoscalers react to lagged metrics, creating oscillations. When these couplings are not modeled, predictions diverge: a back-of-the-envelope model might predict 50ms time-to-first-token while production measures 200ms.</p>
+<h1 id="what-weve-learned-about-modeling-llm-latency">What We've Learned About Modeling LLM Latency<a class="headerlink" href="#what-weve-learned-about-modeling-llm-latency" title="Permanent link">&para;</a></h1>
+<p>The <a href="../../../04/09/the-physics-of-high-fidelity-distributed-inference-platform-simulation/">last post</a> covered how BLIS models the engine,
+data plane, and control plane to predict full-pipeline latency without touching a GPU. What it
+didn't answer is whether the predictions can be trusted.</p>
+<p>That comes down to one number. Everything BLIS reports at the cluster level rests on its
+estimate of how long a single <strong>forward pass</strong> takes, so if that's off, nothing above it can
+be right. This post is about how we estimate it, how well it holds up, and where it falls
+short.</p>
+<p>The headline, up front: fit once on H100, BLIS predicts held-out configurations (six models
+across three GPU types) at <strong>6.7% median end-to-end error</strong>, roughly <strong>200× faster</strong> than
+running them for real, and those predictions have already steered serving policies we later
+confirmed on a physical cluster: a
+<a href="https://ai-native-systems-research.github.io/ai-native-systems-research/blog/2026/05/13/from-simulation-to-production-how-an-ai-native-pipeline-discovered-a-better-admission-controller-for-llm-d/">better admission controller</a>
+and <a href="https://ai-native-systems-research.github.io/ai-native-systems-research/blog/2026/07/27/from-simulation-to-production-part-ii-soft-reflective-flow-control-for-llm-d/">soft reflective flow control</a>
+for llm-d. The rest of this post is how we get there, and where it still falls short.</p>
 <!-- more -->
 
-<h2 id="building-fidelity-from-first-principles">Building Fidelity from First Principles<a class="headerlink" href="#building-fidelity-from-first-principles" title="Permanent link">&para;</a></h2>
-<p><a href="https://github.com/inference-sim/inference-sim">BLIS</a> (Blackbox Inference Simulator) models inference serving through discrete-event simulation, advancing from event to event rather than stepping through continuous time. This approach runs orders of magnitude faster than real-time, requires no GPUs, and evaluates hours of production traffic in seconds.</p>
-<p>BLIS uses discrete-event simulation to model the full stack. This full-stack fidelity enables <strong>capacity planning</strong> (instance count, GPU type, TP degree) and <strong>configuration search</strong> (routing weights, admission thresholds). Without modeling distributed system couplings, planners predict linear scaling where production saturates, miss SLO violations from routing pile-on, or deploy autoscalers that oscillate.</p>
-<p>By modeling the behavior of production systems at the server (<a href="https://github.com/vllm-project/vllm">vLLM</a>) and platform (<a href="https://llm-d.ai">llm-d</a>) layers, BLIS enables safe experimentation before deployment:</p>
+<hr />
+<h2 id="the-problem">The problem<a class="headerlink" href="#the-problem" title="Permanent link">&para;</a></h2>
+<p>An LLM deployment has a lot of knobs that don't move independently:</p>
 <ul>
-<li><strong>Routing policies</strong> — Test new scorer combinations and weights</li>
-<li><strong>Admission control</strong> — Explore saturation thresholds and flow control strategies</li>
-<li><strong>Capacity planning</strong> — Compare model/GPU/TP configurations</li>
-<li><strong>Workload analysis</strong> — Test how switching from TP=2 to TP=4 affects tail latency under production traffic patterns</li>
+<li>tensor-parallel degree</li>
+<li>replica count</li>
+<li>chunk size (<code>max_num_batched_tokens</code>)</li>
+<li>KV-cache budget</li>
+<li>routing and admission policies</li>
 </ul>
-<p>This article walks through what it takes to build that level of fidelity — from token batching physics to distributed orchestration, by following a request's end-to-end journey through the system to see where every millisecond of complexity originates.</p>
-<h2 id="a-requests-journey-the-hidden-complexity">A Request's Journey: The Hidden Complexity<a class="headerlink" href="#a-requests-journey-the-hidden-complexity" title="Permanent link">&para;</a></h2>
-<p>A user hits enter, and 50ms later the first token appears. What happened in between? Three architectural layers working together: the inference engine (vLLM), the data plane (cluster orchestration), and the control plane (autoscaling), all of which high-fidelity simulation must model.</p>
-<pre class="mermaid"><code>flowchart TB
-    Request([Request])
-
-    subgraph Layer2["Layer 2: Data Plane"]
-        Admit[Admission]
-        Route[Routing]
-        PD{P/D Split?}
-        Admit --&gt; Route
-        Route --&gt; PD
-    end
-
-    subgraph Layer1["Layer 1: Engine"]
-        Sched[Scheduling]
-        KV[KV Cache]
-        Batch[Batch Formation]
-        Step[Forward Pass]
-        Sched --&gt; KV --&gt; Batch --&gt; Step
-    end
-
-    subgraph Disagg["Prefill/Decode Disaggregation"]
-        PF[Prefill Pool]
-        Dec[Decode Pool]
-        PF --&gt;|KV Transfer| Dec
-    end
-
-    Response([Response])
-
-    subgraph Layer3["Layer 3: Control Plane"]
-        Monitor[Monitor Metrics]
-        Scale[Autoscaling Decisions]
-        Monitor --&gt; Scale
-    end
-
-    Request --&gt; Admit
-    PD --&gt;|Aggregate| Sched
-    PD --&gt;|Disaggregated| PF
-    Step --&gt; Response
-    Dec --&gt; Response
-    Scale -.-&gt;|add/remove instances| Admit</code></pre>
-<h3 id="layer-1-the-engine-vllm">Layer 1: The Engine (vLLM)<a class="headerlink" href="#layer-1-the-engine-vllm" title="Permanent link">&para;</a></h3>
+<p>Changing one shifts the others, and tail latency especially can't be read off a datasheet:
+it comes out of queueing, continuous batching, and KV-cache pressure interacting under real
+traffic. Measuring it reliably means running the configuration on real GPUs, but for a 70B
+model that's around 18 minutes per configuration, and a capacity study runs hundreds of them.</p>
+<p>BLIS avoids that cost by predicting a single batch step on a CPU from the model's
+<code>config.json</code> and the GPU's datasheet, then letting a discrete-event simulator stitch those
+steps into end-to-end latency.</p>
 <blockquote>
-<p><strong>TL;DR:</strong> Batched execution couples requests together - a heavy prompt in the batch slows down fast decodes running alongside it. BLIS models the full vLLM pipeline (continuous batching, request scheduling and preemption, KV cache pressure, chunked prefill) and predicts forward pass timing using a generalizable model that runs on CPUs without needing real GPUs.</p>
+<p>The property we care about most: the latency model is fit once, then reused on models,
+GPUs, and TP degrees it never saw during training, with no per-configuration profiling.</p>
 </blockquote>
-<p>The inference engine does not process requests individually. It processes them in continuously evolving batches. A <strong>step</strong> is one GPU forward pass that advances every request in the batch, either processing prompt tokens (prefill) or generating the next output token (decode). The slowest operation determines when the step completes.</p>
-<p>Why does this matter? Consider a batch with three requests decoding single tokens (fast, memory-bound) and one request processing a 512-token prompt (slow, compute-bound). Everyone waits for the slowest. This is not an edge case — batch composition constantly shifts as new requests arrive and completed ones leave.</p>
-<p><strong>What BLIS captures.</strong> vLLM's complexity: continuous batching (requests join and leave mid-flight), mixed prefill-decode execution, block-level KV cache management (prefix reuse, preemption, CPU offloading), and chunked prefill. BLIS models these mechanisms because they determine when requests complete.</p>
-<p><strong>How BLIS predicts step time without GPUs.</strong> BLIS combines physics-based latency models with learned corrections:</p>
-<pre class="mermaid"><code>flowchart LR
-    subgraph Inputs["📊 &lt;b&gt;Inputs&lt;/b&gt;"]
-        Batch["Batch State&lt;br/&gt;(size, sequences)"]
-        LLM["Model Architecture&lt;br/&gt;(layers, params)"]
-        HW["Hardware Specs&lt;br/&gt;(TFLOPs, bandwidth)"]
-    end
-
-    subgraph Physics["⚡ &lt;b&gt;Physics-Based Latency Model&lt;/b&gt;"]
-        Compute["Compute Bound&lt;br/&gt;Compute Operations / GPU Speed"]
-        Memory["Memory Bound&lt;br/&gt;Bytes Transferred / GPU Bandwidth"]
-    end
-
-    subgraph Learned["🎯 &lt;b&gt;Learned Corrections&lt;/b&gt;"]
-        Coeffs["Trained on&lt;br/&gt;Real vLLM Traces"]
-    end
-
-    Batch --&gt; Physics
-    LLM --&gt; Physics
-    HW --&gt; Physics
-
-    Compute --&gt; StepTime["⏱️ Predicted Step Time"]
-    Memory --&gt; StepTime
-    Coeffs --&gt; StepTime</code></pre>
-<p>This approach is intended to generalize across LLM architectures, hardware configurations, and tensor parallelism degrees, enabling seamless experimentation with any model-GPU-TP combination without per-configuration calibration. Accurate forward pass predictions drive accurate end-to-end latency metrics.</p>
-<h3 id="layer-2-the-data-plane-cluster-orchestration">Layer 2: The Data Plane (Cluster Orchestration)<a class="headerlink" href="#layer-2-the-data-plane-cluster-orchestration" title="Permanent link">&para;</a></h3>
+<hr />
+<h2 id="two-models-one-basis">Two models, one basis<a class="headerlink" href="#two-models-one-basis" title="Permanent link">&para;</a></h2>
+<p>Both models are built on the same set of basis functions.</p>
+<p><strong>Roofline model.</strong> The analytical one, with no training. It expresses a batch step as
+roofline bounds grouped by phase: a compute term (operations over peak FLOP/s) and a memory
+term (bytes over bandwidth) for prefill and decode, plus terms for weight loading and the
+tensor-parallel all-reduce. Since peak bounds overstate what real hardware hits, it scales
+each by a fixed Model-FLOPs-Utilization factor from published benchmarks (roughly 0.45 prefill,
+0.30 decode on an H100), and it's selected with <code>--latency-model roofline</code>.</p>
+<p><strong>Trained-physics model.</strong> This is the default. It keeps those same basis functions but
+replaces the fixed utilization factors with coefficients learned from data, and adds the costs
+the roofline leaves out: per-layer, per-request, and per-step overheads, a term for MoE layers,
+and CPU-side costs for request ingestion, detokenization, and token streaming. This is what
+the last post called the physics-based model with learned corrections.</p>
+<p>The reasoning behind the split:</p>
 <blockquote>
-<p><strong>TL;DR:</strong> Production clusters run multiple vLLM instances behind a routing gateway. BLIS models saturation-based admission control, composable weighted routing with in-flight tracking, configurable cache signal staleness, and prefill/decode disaggregation. Pluggable interfaces enable algorithm discovery — test new serving policies without writing production code.</p>
+<p>The basis functions know the shape of the computation; the coefficients only correct for
+how far real kernels run below the ideal roofline bound.</p>
 </blockquote>
-<pre class="mermaid"><code>flowchart TB
-    A[Request Arrives]
-    B{Admission Control}
-    C[Routing]
-    D{Disaggregation?}
-    E[Aggregated vLLM Processing]
-    F[Prefill Pool]
-    G[Decode Pool]
-    X[Drop]
-
-    A --&gt; B
-    B -- Rejected --&gt; X
-    B -- Admitted --&gt; C
-    C --&gt; D
-    D -- No --&gt; E
-    D -- Yes --&gt; F
-    F -- KV Transfer --&gt; G</code></pre>
-<p><strong>Admission control</strong> determines whether requests enter the system. BLIS models saturation-based admit/reject decisions, the default behavior in llm-d: when cluster load exceeds thresholds, incoming requests are rejected or queued rather than overwhelming instances. This prevents queue explosion during traffic spikes and avoids pile-on where burst arrivals flood the same "best" instance.</p>
-<p><strong>Routing</strong> assigns each request to an instance by scoring on weighted signals - prefix cache hits, queue depth, KV utilization. The challenge: burst arrivals cause all routing decisions to see the same stale state and pick the same "best" instance. BLIS models in-flight tracking (counting already-dispatched requests) and signal staleness (cache state queries a 2-second-old snapshot, matching llm-d's ZMQ propagation delay).</p>
-<p><strong>Prefill/decode disaggregation</strong> separates compute-bound prefill from memory-bound decode onto dedicated GPU pools, allowing each to be sized for its bottleneck. Requests process prefill first, then transfer their KV cache over the network to a decode instance. BLIS models the full pipeline: prefill routing, KV transfer, decode routing, and fair-share bandwidth contention when multiple transfers run concurrently.</p>
-<h3 id="layer-3-the-control-plane-autoscaling">Layer 3: The Control Plane (Autoscaling)<a class="headerlink" href="#layer-3-the-control-plane-autoscaling" title="Permanent link">&para;</a></h3>
-<blockquote>
-<p><strong>TL;DR:</strong> Real autoscaling experiments are expensive—feedback loops spanning minutes (HPA scrapes, pod scheduling, VM provisioning, model loading) require 30+ minutes and 10+ GPU replicas per test. BLIS models llm-d's <a href="https://github.com/inference-sim/llm-d-workload-variant-autoscaler">WVA</a> (Workload Variant Autoscaler) four-stage pipeline with pluggable Collector/Analyzer/Optimizer/Actuator interfaces, compressing experiments to seconds on a laptop.</p>
-</blockquote>
-<p>Autoscaling dynamically adjusts instance count to match demand. In production, this happens through feedback loops where HPA scrapes, Kubernetes scheduling, VM provisioning, and model loading all add latency before a new replica serves traffic.</p>
-<p><strong>What BLIS captures.</strong> BLIS models llm-d's <a href="https://github.com/inference-sim/llm-d-workload-variant-autoscaler">WVA</a> (Workload Variant Autoscaler) four-stage pipeline — Collect, Analyze, Optimize, Actuate, with pluggable interfaces. <strong>Collector</strong> observes per-replica metrics, <strong>Analyzer</strong> detects saturation and emits scaling signals, <strong>Optimizer</strong> decides which GPU types to add/remove respecting multi-model inventory constraints, and <strong>Actuator</strong> applies decisions with configurable delay.</p>
-<p><strong>What BLIS enables.</strong> Researchers can sweep scaling thresholds, compare analyzer strategies under identical workloads, and test multi-model scenarios where scaling one model steals GPUs from another. Each pluggable interface becomes a research hook: swap in a cost-aware Optimizer or an Analyzer that predicts load spikes. The result: discover and validate better autoscaling policies before deployment, with full control over feedback delays and provisioning latencies.</p>
-<h2 id="blis-in-action-simulating-a-configuration-decision">BLIS in Action: Simulating a Configuration Decision<a class="headerlink" href="#blis-in-action-simulating-a-configuration-decision" title="Permanent link">&para;</a></h2>
-<p>Consider a configuration decision: you are deploying Qwen3-14B for chatbot workloads at 50 req/s with 8 instances. Does routing policy matter? What about hardware choice?</p>
-<p>Testing this in production means provisioning separate GPU pools, running 30+ minutes of traffic per setup and burning GPU-hours to discover the answer. With BLIS, you can simulate these configurations in seconds on a laptop:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Install and build BLIS</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/inference-sim/inference-sim.git
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>go<span class="w"> </span>build<span class="w"> </span>-o<span class="w"> </span>blis<span class="w"> </span>main.go
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># H100 with round-robin routing</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--workload<span class="w"> </span>chatbot<span class="w"> </span>--rate<span class="w"> </span><span class="m">50</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span><span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--routing-policy<span class="w"> </span>round-robin
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="c1"># H100 with prefix-aware routing</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--workload<span class="w"> </span>chatbot<span class="w"> </span>--rate<span class="w"> </span><span class="m">50</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span><span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span>--routing-scorers<span class="w"> </span><span class="s2">&quot;prefix-affinity:2,queue-depth:1&quot;</span>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="c1"># A100-80 with prefix-aware routing</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--workload<span class="w"> </span>chatbot<span class="w"> </span>--rate<span class="w"> </span><span class="m">50</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span><span class="w"> </span>--hardware<span class="w"> </span>A100-80<span class="w"> </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">  </span>--routing-scorers<span class="w"> </span><span class="s2">&quot;prefix-affinity:2,queue-depth:1&quot;</span>
+<p>That shortfall comes from memory-access patterns, kernel launch overhead, synchronization, and
+scheduling. Because the basis functions read everything they need from published architecture
+parameters, applying the model to a new architecture just means plugging in new numbers.</p>
+<details class="note">
+<summary>For the curious: the equations</summary>
+<p>Six roofline basis functions cover the dominant costs of a step, grouped by phase: prefill
+(pf), decode (dc), weight loading, and tensor-parallel (tp) communication. Compute terms
+divide floating-point operations <span class="arithmatex">\(F\)</span> by peak throughput <span class="arithmatex">\(P\)</span>; memory terms divide the bytes
+moved <span class="arithmatex">\(M\)</span> by HBM bandwidth <span class="arithmatex">\(W\)</span>, or interconnect bandwidth <span class="arithmatex">\(W_{\text{net}}\)</span> across shards.</p>
+<div class="arithmatex">\[
+\begin{aligned}
+T_{\text{comp}}^{\text{pf}} &amp;= F^{\text{pf}} / P, &amp;
+T_{\text{kv}}^{\text{pf}} &amp;= M_{\text{kv}}^{\text{pf}} / W, &amp;
+T_{\text{weight}} &amp;= M_{\text{w}} / W, \\[2pt]
+T_{\text{comp}}^{\text{dc}} &amp;= F^{\text{dc}} / P, &amp;
+T_{\text{kv}}^{\text{dc}} &amp;= M_{\text{kv}}^{\text{dc}} / W, &amp;
+T_{\text{tp}} &amp;= M_{\text{tp}} / W_{\text{net}}.
+\end{aligned}
+\]</div>
+<p>The trained-physics step time combines them with learned scaling coefficients and additive
+overhead terms:</p>
+<div class="arithmatex">\[
+\begin{aligned}
+T_{\text{step}} = {} &amp; \beta_{1a} T_{\text{comp}}^{\text{pf}} + \beta_{1b} T_{\text{kv}}^{\text{pf}} + \beta_{2a} T_{\text{comp}}^{\text{dc}} + \beta_{2b} T_{\text{kv}}^{\text{dc}} \\
+&amp; + \beta_3 T_{\text{weight}} + \beta_4 T_{\text{tp}} + \beta_5 L + \beta_6 B + \beta_7 + \beta_8 n_{\text{MoE}},
+\end{aligned}
+\]</div>
+<p>where <span class="arithmatex">\(L\)</span> is the number of layers, <span class="arithmatex">\(B\)</span> the batch size, and <span class="arithmatex">\(n_{\text{MoE}}\)</span> the number of
+interleaved MoE layers. The scaling factors <span class="arithmatex">\(\beta_{1a}\)</span>–<span class="arithmatex">\(\beta_{2b}\)</span> are dimensionless,
+while <span class="arithmatex">\(\beta_5\)</span>–<span class="arithmatex">\(\beta_8\)</span> and the per-request overheads <span class="arithmatex">\(\alpha_0\)</span>–<span class="arithmatex">\(\alpha_2\)</span> (ingestion,
+detokenization, per-token streaming) carry units of time. The fit drives
+<span class="arithmatex">\(\beta_{1b} = 0\)</span> (prefill is compute-bound) and <span class="arithmatex">\(\beta_{2a} = 0\)</span> (decode is memory-bound).</p>
+</details>
+<hr />
+<h2 id="how-we-trained-it">How we trained it<a class="headerlink" href="#how-we-trained-it" title="Permanent link">&para;</a></h2>
+<p>The goal was a single set of coefficients that holds up across three axes at once:</p>
+<ul>
+<li><strong>model architecture</strong>: dense, grouped-query-attention, mixture-of-experts</li>
+<li><strong>GPU type</strong>: different compute, bandwidth, and interconnect</li>
+<li><strong>tensor-parallel degree</strong>: single-GPU up through multi-GPU with all-reduce</li>
+</ul>
+<p>With those covered, a single fit lets BLIS predict any new model / GPU / TP combination from
+its config and datasheet.</p>
+<h3 id="no-kernel-or-operator-level-profiling">No kernel- or operator-level profiling<a class="headerlink" href="#no-kernel-or-operator-level-profiling" title="Permanent link">&para;</a></h3>
+<p>BLIS never uses per-operator or per-kernel timing. Training runs on batch-step traces,
+KV-cache events, and request-level latency metrics; evaluation uses only the request-level
+metrics (TTFT, ITL, throughput, E2E). Most other simulators are built the other way:</p>
+<ul>
+<li><a href="https://github.com/ai-dynamo/aiconfigurator">AIConfigurator</a> profiles individual operators
+  (GEMM, attention, communication) on the target hardware.</li>
+<li><a href="https://github.com/microsoft/vidur">Vidur</a> fits a per-operator random-forest model from
+  profiled runtimes, one per (model, GPU, TP) configuration.</li>
+<li><a href="https://github.com/casys-kaist/LLMServingSim">LLMServingSim</a> runs a layer-wise profiler
+  inside the engine.</li>
+<li><a href="https://github.com/bentoml/llm-optimizer">llm-optimizer</a> is purely analytical, so it needs
+  no measurement at all, but it also can't see continuous batching, queueing, or KV-cache
+  pressure.</li>
+</ul>
+<p>The first three depend on operator- or kernel-level timings measured from inside vLLM or the
+GPU, exactly what BLIS avoids. That instrumentation also has to be redone for each new model,
+GPU, and sometimes workload before those tools can simulate it. BLIS fits once and then
+predicts new combinations from published parameters, no fresh profiling required.</p>
+<h3 id="training-data">Training data<a class="headerlink" href="#training-data" title="Permanent link">&para;</a></h3>
+<p>The <a href="https://github.com/inference-sim/inference-sim/tree/training/training/trainval_data">training set</a>
+is fifteen serving runs on H100s, spanning dense, grouped-query-attention, and MoE models at TP
+degrees 1, 2, and 4. The mix forces one coefficient set to satisfy several regimes at once:
+dense models where the MoE terms drop out, MoE models where interleave overhead dominates,
+single-GPU where the all-reduce term is zero, and multi-GPU where communication matters.</p>
+<h3 id="a-two-loop-fit">A two-loop fit<a class="headerlink" href="#a-two-loop-fit" title="Permanent link">&para;</a></h3>
+<p>The fit runs two nested loops. An <strong>outer loop</strong> changes the model's structure (adding,
+splitting, or correcting terms), but only when the residuals show a consistent pattern rather
+than noise; the per-MoE-layer term, for example, came from watching MoE models under-predict
+across the board. An <strong>inner loop</strong> then fits the coefficients for that fixed structure with
+Bayesian optimization, then CMA-ES, then a golden-section polish. What kept this honest was
+refusing to make a structural change we couldn't justify physically, just because it lowered
+the loss.</p>
+<details class="note">
+<summary>For the curious: loss and training loop</summary>
+<p>The objective sums the RMSE of absolute-percentage-error across the 15 experiments, for
+both mean TTFT and mean E2E latency:</p>
+<div class="arithmatex">\[
+\mathcal{L} = \mathrm{RMSE}\big[\mathrm{APE}(\text{TTFT}_i)\big] + \mathrm{RMSE}\big[\mathrm{APE}(\text{E2E}_i)\big]
+\]</div>
+<p>Taking the RMSE over per-experiment APEs (rather than a pooled mean) penalizes variance
+across architectures, so a coefficient set that is accurate on one model family but poor on
+another still incurs a high loss.</p>
+<p>The fit itself is two nested loops: an outer loop that evolves the model's <em>structure</em> and
+an inner loop that fits its <em>coefficients</em>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Input:  initial model form f₀,  training experiments {E₁, …, E₁₅}
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>Output: final structure f*  and coefficients (α*, β*)
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>for each outer iteration k = 1, 2, …            # structural evolution
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    examine per-experiment errors from iteration k−1
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    identify systematic residuals   (e.g. MoE under-prediction)
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    hypothesize a physics-motivated structural change → new form fₖ
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    define coefficient search bounds Bₖ
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    for each candidate (α, β) ∈ Bₖ proposed by the optimizer   # inner loop
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>        compile BLIS with fₖ and (α, β)
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>        run BLIS on all 15 experiments in parallel
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>        L ← RMSE[APE(TTFT)] + RMSE[APE(E2E)]
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    (αₖ*, βₖ*) ← argmin L
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    if loss converged: break
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>return (fₖ, αₖ*, βₖ*)
 </code></pre></div>
-<p><strong>Simulated Results:</strong></p>
+<p>The inner-loop optimizer starts with TPE Bayesian search for wide exploration, then narrows
+to CMA-ES and a golden-section polish as the structure stabilizes.</p>
+</details>
+<hr />
+<h2 id="how-we-evaluate-it">How we evaluate it<a class="headerlink" href="#how-we-evaluate-it" title="Permanent link">&para;</a></h2>
+<p>Evaluation uses the same client-side approach, checking BLIS against the latencies a real
+server produced rather than instrumented kernel timings. Three commands do it:</p>
+<ul>
+<li><strong><code>observe</code></strong> sends a workload to a real vLLM or llm-d deployment and records per-request
+  TTFT, ITL, and E2E into a portable trace (TraceV2), the ground truth.</li>
+<li><strong><code>replay</code></strong> pushes that trace back through the simulator with the timing fixed, so the
+  comparison is on identical inputs (run and replay are byte-identical by construction).</li>
+<li><strong><code>calibrate</code></strong> compares the simulated latencies against the observed ones and reports the
+  error as MAPE.</li>
+</ul>
+<p>We ran this comparison 36 times, each a different point in the evaluation space: six models,
+three GPU types, and a sweep of serving configurations on top (the full
+<a href="https://github.com/inference-sim/inference-sim/discussions/598">evaluation matrix</a> is laid
+out separately).
+The set deliberately doesn't overlap the training data. None of the six models were used to fit
+the coefficients, and two of the three GPUs (the A100 and L40S) weren't in the training set
+either, so the results are generalization to unseen configurations rather than a fit recalling
+its own data.</p>
+<hr />
+<h2 id="how-accurate-is-it">How accurate is it<a class="headerlink" href="#how-accurate-is-it" title="Permanent link">&para;</a></h2>
+<p>Every number here is a prediction against a real server, on configurations BLIS never trained
+on. The scripts that reproduce these BLIS accuracy results are
+<a href="https://github.com/inference-sim/sim-to-real-accuracy-validation">here</a>.</p>
+<h3 id="where-its-strong">Where it's strong<a class="headerlink" href="#where-its-strong" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>6.7% median E2E error</strong> across those 36 experiments</li>
+<li><strong>~200× faster</strong> than real execution</li>
+<li><strong>P90 within 7.5% and P99 within 9.2%</strong>, so the tail percentiles a capacity search relies
+  on hold up, not just the mean</li>
+<li><strong>ITL 7.1%</strong>, unsurprisingly, since decode is the memory-bound regime the model captures
+  best</li>
+</ul>
+<p>The cross-GPU picture is the one the design is aimed at: fit on H100 (5.5% E2E error), the
+model still lands at 15.7% and 13.3% on the unprofiled A100 and L40S from the datasheet alone.
+The learned terms matter, too. Strip them out and fall back to fixed utilization factors, and
+the roofline-only model is consistently less accurate, with the gap widest on TTFT.</p>
+<p><img alt="Per-model MAPE for BLIS trained-physics versus the roofline-only ablation, on E2E, TTFT (log
+scale), and ITL across six models." src="../../../../images/roofline-vs-trained-physics.png" /></p>
+<p><em>Trained-physics (magenta) against roofline-only (blue) on the six evaluation models. The
+learned coefficients cut error on every metric, with the largest gains on TTFT (note the log
+scale in the middle panel).</em></p>
+<h3 id="where-its-weaker">Where it's weaker<a class="headerlink" href="#where-its-weaker" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>TTFT is the hardest metric, ~17.6% mean.</strong> It's where queueing and scheduling-order
+  effects dominate, and small per-step errors have room to compound.</li>
+<li><strong>A couple of regimes break hardest.</strong> Long-decode reasoning (~1,450 output tokens) pushes
+  E2E error to ~25% as per-step timing errors accumulate, and NVLink all-reduce contention is
+  under-accounted for, enough that TP=2 can take a small dense model from 2.5% up to 15.5%.</li>
+</ul>
+<blockquote>
+<p>Stay tuned for a full-length research paper with a head-to-head against other predictive
+tools on accuracy, speed, and search fidelity.</p>
+</blockquote>
+<details class="note">
+<summary>For the curious: tail-latency table</summary>
+<p>Since trained-physics is the clearly stronger model above, we report tail-latency accuracy
+for it alone. The figures are its error, taken as the median across the 36 eval experiments
+(median rather than mean so a couple of hard configs don't drag the number away from the
+typical case). The row label is the latency statistic within each experiment.</p>
 <table>
 <thead>
 <tr>
-<th>Configuration</th>
-<th>Predicted P99 TTFT</th>
-<th>Key Finding</th>
+<th>Statistic</th>
+<th>Median MAPE</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>H100 (round-robin)</td>
-<td>12.1ms</td>
-<td>Baseline with naive routing</td>
+<td>E2E mean</td>
+<td>6.7%</td>
 </tr>
 <tr>
-<td>H100 (prefix-aware)</td>
-<td>11.3ms</td>
-<td><strong>7% improvement</strong> from KV cache reuse</td>
+<td>E2E P90</td>
+<td>7.5%</td>
 </tr>
 <tr>
-<td>A100-80 (prefix-aware)</td>
-<td>45.8ms</td>
-<td><strong>4× slower than H100</strong> — hardware choice dominates</td>
+<td>E2E P99</td>
+<td>9.2%</td>
+</tr>
+<tr>
+<td>TTFT mean</td>
+<td>17.6%</td>
+</tr>
+<tr>
+<td>TTFT P90</td>
+<td>21.3%</td>
+</tr>
+<tr>
+<td>TTFT P99</td>
+<td>29.0%</td>
+</tr>
+<tr>
+<td>ITL mean</td>
+<td>7.1%</td>
 </tr>
 </tbody>
 </table>
-<p><strong>What the simulation predicts:</strong> Prefix-aware routing delivers measurable gains on H100, but hardware choice has far greater impact. These simulated predictions guide configuration decisions without provisioning real GPUs.</p>
-<h2 id="from-modeling-to-validation">From Modeling to Validation<a class="headerlink" href="#from-modeling-to-validation" title="Permanent link">&para;</a></h2>
-<p>We have covered what it takes to build a high-fidelity distributed platform simulator: modeling engine physics, data plane coordination, and control plane feedback loops. But <strong>how do we know this modeling is accurate?</strong></p>
-<p>We have validated BLIS against production workloads and compared its accuracy to commercial simulators. The methodology and results — cross-system benchmarks and achievable accuracy without per-configuration tuning — are covered in a subsequent article.</p>
+</details>
 <hr />
-<p><em>Next in this series: </em><em><a href="../../../08/06/what-weve-learned-about-modeling-llm-latency/">What We've Learned About Predicting LLM Latency</a></em><em> — the latency model under the hood, how we trained it, and how accurate it is on real workloads without per-configuration tuning.</em></p>
+<h2 id="putting-it-to-work">Putting it to work<a class="headerlink" href="#putting-it-to-work" title="Permanent link">&para;</a></h2>
+<p>That same loop also reveals whether the fit still holds when vLLM, the hardware, or the
+workload moves. Once it's trusted, <code>run</code> sweeps hundreds of configurations on a CPU in minutes,
+treating P90 and P99 as first-class search dimensions. In one sweep of 1,100 Llama-2-70B
+configurations, it found a 4-GPU deployment that held a 300 ms mean-TTFT SLO under load, which
+we confirmed on a real 8×H100 cluster.</p>
+<hr />
+<h2 id="where-this-goes-coefficients-as-distributions">Where this goes: coefficients as distributions<a class="headerlink" href="#where-this-goes-coefficients-as-distributions" title="Permanent link">&para;</a></h2>
+<p>Today the α and β coefficients are point estimates, so every prediction is a single number
+with no sense of how much to trust it. That matters most when a predicted P99 sits just under
+an SLO and you can't tell a comfortable margin from a coin flip. Putting a Bayesian posterior
+over the coefficients would turn predictions into ranges, let each <code>observe</code> trace tighten the
+fit instead of forcing a periodic re-fit, and give the policy-search loop a per-candidate error
+bar to promote on. How to do that, including the likelihood-free inference the non-linear
+effects like NVLink contention call for, is the subject of a forthcoming companion paper.</p>
+<hr />
+<h2 id="the-bottom-line">The bottom line<a class="headerlink" href="#the-bottom-line" title="Permanent link">&para;</a></h2>
+<p>A physics prior plus a learned correction, fit a single time, lands at 6.7% median E2E error
+across all 36 held-out experiments and runs roughly 200× faster than real execution. Even
+on the A100 and L40S, which never appeared in training, it holds cross-GPU error to 15.7% and
+13.3% from the datasheet alone. Its predictions have already steered serving policies we
+validated on real hardware. Plenty is still open, from the TTFT and long-decode weak spots to
+putting distributions on the coefficients, and we'll write more as it develops.</p>
+<hr />
+<p><em>Earlier in this series: </em><em><a href="../../../03/05/why-simulate-before-you-scale/">Why Simulate Before You Scale</a></em><em>
+and </em><em><a href="../../../04/09/the-physics-of-high-fidelity-distributed-inference-platform-simulation/">The Physics of High-Fidelity Distributed Inference Platform Simulation</a></em><em>.</em></p>
 
 
 
@@ -3130,7 +3319,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../../../03/05/why-simulate-before-you-scale/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Why Simulate Before You Scale">
+          <a href="../../../04/09/the-physics-of-high-fidelity-distributed-inference-platform-simulation/" class="md-footer__link md-footer__link--prev" aria-label="Previous: The Physics of High-Fidelity Distributed Inference Platform Simulation">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -3140,27 +3329,11 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Why Simulate Before You Scale
+                The Physics of High-Fidelity Distributed Inference Platform Simulation
               </div>
             </div>
           </a>
         
-        
-          
-          <a href="../../../08/06/what-weve-learned-about-modeling-llm-latency/" class="md-footer__link md-footer__link--next" aria-label="Next: What We&#39;ve Learned About Modeling LLM Latency">
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Next
-              </span>
-              <div class="md-ellipsis">
-                What We've Learned About Modeling LLM Latency
-              </div>
-            </div>
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
-            </div>
-          </a>
         
       </nav>
     
