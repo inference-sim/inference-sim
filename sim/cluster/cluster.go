@@ -320,6 +320,12 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	if tpDegree < 1 {
 		tpDegree = 1 // default to TP=1 when not explicitly set (R3: defensive correction with comment)
 	}
+	// Deferral accounting (#1529): count instances that fail startup placement so we
+	// warn once after the loop instead of once per instance. NodeReadyEvent (the only
+	// path that retries pending instances) has no production caller in blis run, so a
+	// startup deferral means the instance is effectively dropped — surface it (R1).
+	var unplacedCount int
+	var unplacedFirstErr error
 	for idx := 0; idx < config.NumInstances; idx++ {
 		id := InstanceID(fmt.Sprintf("instance_%d", idx))
 		role := PoolRole(0)
@@ -336,15 +342,10 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			if err != nil {
 				// No capacity — defer construction until NodeReadyEvent.
 				// Pass "" as gpuType (any pool) to match AddPending's placement semantics.
-				// R1: surface the failure. NodeReadyEvent (the only path that retries
-				// pending instances) has no production caller in blis run today, so a
-				// startup deferral means this instance is effectively dropped — never
-				// silent. This matters more since #1529's whole-node constraint creates
-				// configs that can NEVER place (e.g. tp not divisible by any pool's
-				// gpus_per_node); PlaceInstance's error names that case.
-				logrus.Warnf("[cluster] instance %s not placed at startup (tp=%d): %v — deferred to "+
-					"pending, but NodeReady is not wired in blis run, so it will not be placed later",
-					id, tpDegree, err)
+				// Collect deferrals here and warn ONCE after the loop (a cluster with
+				// InitialNodes=0 defers every instance — one summary, not N copies).
+				unplacedCount++
+				unplacedFirstErr = err
 				cs.placement.AddPending(id, config.Model, "", tpDegree, simCfg)
 				continue
 			}
@@ -417,6 +418,17 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			instanceMap[id] = inst
 			cs.inFlightRequests[string(id)] = 0
 		}
+	}
+
+	// One summary warning for all startup placement deferrals (#1529). The first
+	// error text distinguishes a structurally-unsatisfiable request ("unsatisfiable
+	// regardless of capacity" — a config error worth fixing) from a transient
+	// shortfall; either way, NodeReady is not wired in blis run, so these instances
+	// will not be placed later.
+	if unplacedCount > 0 {
+		logrus.Warnf("[cluster] %d of %d instance(s) not placed at startup (first error: %v) — deferred to "+
+			"pending, but NodeReady is not wired in blis run, so they will not be placed later",
+			unplacedCount, config.NumInstances, unplacedFirstErr)
 	}
 
 	// Initialize snapshot provider with exactly the placed instances.

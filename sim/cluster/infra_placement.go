@@ -268,19 +268,10 @@ func (pm *PlacementManager) PlaceInstance(id InstanceID, model, gpuType string, 
 	}
 
 	// ── Pass 2: whole-node cross-node placement within a single pool (multi-node TP) ──
-	// Reached only when Pass 1 found no single-node fit in any matching pool.
-	//
-	// Multi-node TP is modeled as WHOLE-NODE occupancy: an instance spans exactly
-	// tpDegree/GPUsPerNode fully-free nodes, each contributing all its GPUs (an equal
-	// rank count per node). This is the only physically-realizable multi-node TP shape
-	// — a real NCCL/vLLM TP group has a uniform per-node rank count, so tpDegree must
-	// be an exact multiple of the pool's GPUsPerNode. This deliberately EXCLUDES the
-	// fragmentation case (tpDegree ≤ GPUsPerNode but no single node momentarily has
-	// room): packing an odd remainder across nodes (e.g. 2+1 for TP=3) would fabricate
-	// an asymmetric TP group that cannot exist, silently converting a visible "pending"
-	// outcome into optimistic capacity. Such an instance stays pending, exactly as
-	// before this feature. A pool is eligible only when tpDegree > GPUsPerNode AND
-	// tpDegree % GPUsPerNode == 0.
+	// Reached only when Pass 1 found no single-node fit in any matching pool. See the
+	// method docblock for the whole-node rationale; in short, a pool is eligible only
+	// when tpDegree > GPUsPerNode and tpDegree % GPUsPerNode == 0, and the instance
+	// takes whole fully-free nodes (uniform per-node rank count).
 	for _, poolState := range pm.pools {
 		if gpuType != "" && poolState.config.GPUType != gpuType {
 			continue // type mismatch — skip pool
@@ -351,7 +342,9 @@ func (pm *PlacementManager) PlaceInstance(id InstanceID, model, gpuType string, 
 	// tpDegree — every matching pool has tpDegree > GPUsPerNode (needs spanning)
 	// yet tpDegree is not a whole multiple of that pool's GPUsPerNode — then no
 	// amount of added capacity will help. Surface that explicitly so the caller's
-	// deferral warning is actionable.
+	// deferral warning is actionable. Note tpDegreeSatisfiableByShape returns true
+	// when NO matching pool exists (a "no such GPU type" problem, not a shape one),
+	// so that case falls through to the generic capacity error below.
 	if !pm.tpDegreeSatisfiableByShape(gpuType, tpDegree) {
 		return "", nil, "", fmt.Errorf("PlaceInstance %s: tpDegree %d cannot be placed on any matching %s pool — "+
 			"it exceeds every pool's gpus_per_node but is not a whole multiple of it (multi-node TP requires "+
