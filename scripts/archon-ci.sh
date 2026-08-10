@@ -18,10 +18,31 @@ if [[ -z "$REPO_DIR" || -z "$BASE_SHA" || -z "$HEAD_SHA" ]]; then
   exit 1
 fi
 
+if ! command -v python3 &>/dev/null; then
+  echo "Error: python3 is required but not found on PATH." >&2
+  exit 1
+fi
+
 ARCHON="${ARCHON_BIN:-archon-go}"
 
-if ! command -v "$ARCHON" &>/dev/null; then
-  echo "Error: archon-go binary not found. Set ARCHON_BIN or add to PATH." >&2
+if [[ ! -x "$ARCHON" ]]; then
+  echo "Error: archon-go binary not found or not executable at '$ARCHON'." >&2
+  echo "Set ARCHON_BIN to the path of the archon-go binary." >&2
+  exit 1
+fi
+
+if [[ ! -f "$REPO_DIR/go.mod" ]]; then
+  echo "## Archon Error"
+  echo ""
+  echo "No \`go.mod\` found in \`$REPO_DIR\`. Archon requires a Go module."
+  exit 1
+fi
+
+GO_MODULE=$(awk '/^module /{print $2; exit}' "$REPO_DIR/go.mod")
+if [[ -z "$GO_MODULE" ]]; then
+  echo "## Archon Error"
+  echo ""
+  echo "Could not parse module path from \`go.mod\`."
   exit 1
 fi
 
@@ -36,7 +57,20 @@ DELTA_JSON=$("$ARCHON" delta --json "$REPO_DIR" "$BASE_SHA" "$HEAD_SHA" 2>&1) ||
   exit 1
 }
 
-EMPTY=$(echo "$DELTA_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print('true' if d.get('emptyAtPackageAltitude', False) else 'false')")
+EMPTY=$(echo "$DELTA_JSON" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    print('true' if d.get('emptyAtPackageAltitude', False) else 'false')
+except (json.JSONDecodeError, AttributeError) as e:
+    print(f'Error parsing delta JSON: {e}', file=sys.stderr)
+    sys.exit(1)
+") || {
+  echo "## Archon Error"
+  echo ""
+  echo "Failed to parse architectural delta JSON."
+  exit 1
+}
 
 if [[ "$EMPTY" == "true" ]]; then
   echo "## Archon Architectural Review"
@@ -46,21 +80,24 @@ if [[ "$EMPTY" == "true" ]]; then
   # Still report invariant changes if any.
   INVARIANTS=$(echo "$DELTA_JSON" | python3 -c "
 import json, sys
-d = json.load(sys.stdin)
-invs = d.get('invariants', [])
-if not invs:
-    sys.exit(0)
-print('### Invariants Touched')
-print('')
-for inv in invs:
-    pkg = inv['package'].split('/')[-1]
-    for a in inv.get('added', []):
-        print(f'- + {pkg}.{a}')
-    for r in inv.get('removed', []):
-        print(f'- - {pkg}.{r}')
-    for m in inv.get('modified', []):
-        print(f'- ~ {pkg}.{m}')
-" 2>/dev/null || true)
+try:
+    d = json.load(sys.stdin)
+    invs = d.get('invariants', [])
+    if not invs:
+        sys.exit(0)
+    print('### Invariants Touched')
+    print('')
+    for inv in invs:
+        pkg = inv['package'].split('/')[-1]
+        for a in inv.get('added', []):
+            print(f'- + {pkg}.{a}')
+        for r in inv.get('removed', []):
+            print(f'- - {pkg}.{r}')
+        for m in inv.get('modified', []):
+            print(f'- ~ {pkg}.{m}')
+except Exception as e:
+    print(f'### Invariants\n\n(Failed to parse invariant data: {e})')
+" 2>&1) || true
   if [[ -n "$INVARIANTS" ]]; then
     echo "$INVARIANTS"
   fi
@@ -75,12 +112,9 @@ echo ""
 echo "### Architectural Delta"
 echo ""
 echo '```'
-"$ARCHON" delta "$REPO_DIR" "$BASE_SHA" "$HEAD_SHA" 2>/dev/null || echo "(delta render failed)"
+"$ARCHON" delta "$REPO_DIR" "$BASE_SHA" "$HEAD_SHA" 2>&1 || echo "(delta render failed)"
 echo '```'
 echo ""
-
-# Get the Go module path from go.mod.
-GO_MODULE=$(head -1 "$REPO_DIR/go.mod" | awk '{print $2}')
 
 # Extract changed internal packages for impact analysis.
 CHANGED_PKGS=$(echo "$DELTA_JSON" | python3 -c "
@@ -103,7 +137,7 @@ for b in d.get('boxesRemoved', []):
         pkgs.add(b)
 for p in sorted(pkgs):
     print(p)
-" "$GO_MODULE" 2>/dev/null)
+" "$GO_MODULE") || CHANGED_PKGS=""
 
 # Blast radius per changed package.
 if [[ -n "$CHANGED_PKGS" ]]; then
@@ -111,7 +145,7 @@ if [[ -n "$CHANGED_PKGS" ]]; then
   echo ""
   echo '```'
   while IFS= read -r pkg; do
-    "$ARCHON" impact "$REPO_DIR" "$pkg" "$HEAD_SHA" 2>/dev/null || true
+    "$ARCHON" impact "$REPO_DIR" "$pkg" "$HEAD_SHA" 2>&1 || echo "(impact analysis failed for $pkg)"
     echo ""
   done <<< "$CHANGED_PKGS"
   echo '```'
@@ -122,5 +156,5 @@ fi
 echo "### Contract Evidence"
 echo ""
 echo '```'
-"$ARCHON" evidence "$REPO_DIR" "$HEAD_SHA" 2>/dev/null || echo "(evidence analysis failed)"
+"$ARCHON" evidence "$REPO_DIR" "$HEAD_SHA" 2>&1 || echo "(evidence analysis failed)"
 echo '```'

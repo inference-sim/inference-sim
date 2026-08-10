@@ -57,6 +57,7 @@ jobs:
         id: build
         run: |
           ARCHON_BIN=$(scripts/archon-build.sh v0.1.0)
+          [[ -n "$ARCHON_BIN" && -x "$ARCHON_BIN" ]] || { echo "::error::archon-build.sh produced no valid binary"; exit 1; }
           echo "archon_bin=$ARCHON_BIN" >> "$GITHUB_OUTPUT"
 
       - name: Resolve PR refs
@@ -76,14 +77,26 @@ jobs:
         id: archon
         env:
           ARCHON_BIN: ${{ steps.build.outputs.archon_bin }}
+          BASE_SHA: ${{ steps.refs.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.refs.outputs.head_sha }}
         run: |
-          OUTPUT=$(scripts/archon-ci.sh . "${{ steps.refs.outputs.base_sha }}" "${{ steps.refs.outputs.head_sha }}" 2>&1) || true
+          EXIT_CODE=0
+          OUTPUT=$(scripts/archon-ci.sh . "$BASE_SHA" "$HEAD_SHA") || EXIT_CODE=$?
+          if [[ $EXIT_CODE -gt 1 ]]; then
+            OUTPUT="## Archon Error
+
+          Script exited with unexpected code $EXIT_CODE. Check the workflow logs."
+          fi
           echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
-          # Write to file for comment posting (handles multiline).
           echo "$OUTPUT" > /tmp/archon-output.md
 
       - name: Post PR comment
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.issue.number }}
         run: |
-          gh pr comment "${{ github.event.issue.number }}" --body-file /tmp/archon-output.md
+          if [[ ! -s /tmp/archon-output.md ]]; then
+            echo "::warning::Archon produced no output. Skipping PR comment."
+            exit 0
+          fi
+          gh pr comment "$PR_NUMBER" --body-file /tmp/archon-output.md
