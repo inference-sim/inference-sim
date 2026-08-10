@@ -103,27 +103,56 @@ func TestGLM52FP8_WeightSplit(t *testing.T) {
 	}
 
 	// GLM-5.2-FP8 (~743B) requires very high TP to fit; use TP=64 to leave a
-	// positive KV budget so the two block counts are both computable.
+	// positive KV budget so the block counts are all computable.
 	hc := validHWConfig()
 	const tp = 64
 
-	withSplit := *cfg // FirstKDenseReplace = 3
-	allMoE := *cfg
-	allMoE.FirstKDenseReplace = 0
+	// Sweep FirstKDenseReplace = 0..4 and record the resulting block counts. This
+	// pins the EXACT K=3 split, not merely "split > all-MoE": each dense-prefix
+	// layer replaces one 256-expert MoE layer with a cheap dense layer, removing a
+	// fixed weight delta, so the KV-block gain per dense layer must be CONSTANT
+	// (block count linear in K). A wrong dense-layer count (off-by-one, wrong
+	// clamp, or nonlinear split) would break the equal-marginals law by thousands
+	// of blocks. This is a first-principles law, robust to the CalculateKVBlocks
+	// overhead/truncation constants (they cancel in the per-layer differences).
+	blocks := make([]int64, 5)
+	for k := 0; k <= 4; k++ {
+		mc := *cfg
+		mc.FirstKDenseReplace = k
+		b, err := latency.CalculateKVBlocks(mc, hc, tp, 1, 16, 0.9, params)
+		if err != nil {
+			t.Fatalf("K=%d CalculateKVBlocks: %v", k, err)
+		}
+		blocks[k] = b
+	}
+	t.Logf("GLM-5.2-FP8 TP=%d blocks by FirstKDenseReplace: %v", tp, blocks)
 
-	blocksSplit, errSplit := latency.CalculateKVBlocks(withSplit, hc, tp, 1, 16, 0.9, params)
-	blocksAllMoE, errAll := latency.CalculateKVBlocks(allMoE, hc, tp, 1, 16, 0.9, params)
-	if errSplit != nil {
-		t.Fatalf("with-split CalculateKVBlocks: %v", errSplit)
+	// The committed fixture has first_k_dense_replace=3, so K=3 must land strictly
+	// between all-MoE (K=0) and K=4.
+	if blocks[0] >= blocks[3] || blocks[3] >= blocks[4] {
+		t.Errorf("F3: block count must be strictly increasing in K around K=3; got K0=%d K3=%d K4=%d",
+			blocks[0], blocks[3], blocks[4])
 	}
-	if errAll != nil {
-		t.Fatalf("all-MoE CalculateKVBlocks: %v", errAll)
+
+	// Equal-marginals law: blocks[k]-blocks[k-1] is constant (±1 for the two integer
+	// truncations inside CalculateKVBlocks). Verifies each dense layer contributes the
+	// SAME weight delta ⇒ exactly K layers are converted, linearly.
+	perLayer := blocks[1] - blocks[0]
+	if perLayer <= 0 {
+		t.Fatalf("F3: one dense layer must add KV blocks, got marginal %d", perLayer)
 	}
-	if blocksSplit <= blocksAllMoE {
-		t.Errorf("F3: 3 dense + 75 MoE must fit more KV blocks than all-78-MoE; got split=%d <= all-MoE=%d",
-			blocksSplit, blocksAllMoE)
+	for k := 2; k <= 4; k++ {
+		marginal := blocks[k] - blocks[k-1]
+		if diff := marginal - perLayer; diff < -1 || diff > 1 {
+			t.Errorf("F3: per-dense-layer block gain must be constant (linear split); marginal at K=%d was %d, first-layer marginal was %d",
+				k, marginal, perLayer)
+		}
 	}
-	t.Logf("GLM-5.2-FP8 TP=%d: split(3 dense)=%d blocks, all-MoE=%d blocks", tp, blocksSplit, blocksAllMoE)
+
+	// And the K=3 total gain equals 3× the per-layer marginal (±1 per truncation).
+	if got, want := blocks[3]-blocks[0], 3*perLayer; got < want-2 || got > want+2 {
+		t.Errorf("F3: K=3 gain (%d) must equal 3 dense layers × per-layer gain (%d)±2", got, want)
+	}
 }
 
 // TestDeepSeekV2Lite_MLAAndDenseSplit exercises the committed deepseek-v2-lite
