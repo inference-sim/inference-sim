@@ -12,7 +12,8 @@ jobs:
   check-permissions:
     if: |
       github.event.issue.pull_request &&
-      contains(github.event.comment.body, '/archon-pr-review')
+      contains(github.event.comment.body, '/archon-pr-review') &&
+      !contains(github.event.comment.body, '/archon-pr-review-claude')
     runs-on: ubuntu-latest
     outputs:
       allowed: ${{ steps.check.outputs.allowed }}
@@ -51,7 +52,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.24'
 
       - name: Build archon-go
         id: build

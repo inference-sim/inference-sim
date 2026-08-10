@@ -47,15 +47,17 @@ if [[ -z "$GO_MODULE" ]]; then
 fi
 
 # Step 1: Run delta (JSON) to determine if architecture changed.
-DELTA_JSON=$("$ARCHON" delta --json "$REPO_DIR" "$BASE_SHA" "$HEAD_SHA" 2>&1) || {
+# Capture stdout only — archon may print warnings to stderr (e.g. partial extraction)
+# which would corrupt the JSON if merged. Stderr goes to the GHA log.
+ARCHON_EXIT=0
+DELTA_JSON=$("$ARCHON" delta --json "$REPO_DIR" "$BASE_SHA" "$HEAD_SHA") || ARCHON_EXIT=$?
+if [[ $ARCHON_EXIT -ne 0 ]]; then
   echo "## Archon Error"
   echo ""
-  echo "Failed to compute architectural delta:"
-  echo '```'
-  echo "$DELTA_JSON"
-  echo '```'
+  echo "Failed to compute architectural delta (archon-go exited $ARCHON_EXIT)."
+  echo "Check the workflow log for details."
   exit 1
-}
+fi
 
 EMPTY=$(echo "$DELTA_JSON" | python3 -c "
 import json, sys
@@ -117,11 +119,13 @@ echo '```'
 echo ""
 
 # Extract changed internal packages for impact analysis.
+# Only include packages that exist at HEAD (skip removed packages — impact can't resolve them).
 CHANGED_PKGS=$(echo "$DELTA_JSON" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
 mod = sys.argv[1]
 pkgs = set()
+removed = set()
 for e in d.get('edgesAdded', []) + d.get('edgesRemoved', []):
     for k in ('from', 'to'):
         if e[k].startswith(mod):
@@ -129,13 +133,15 @@ for e in d.get('edgesAdded', []) + d.get('edgesRemoved', []):
 for s in d.get('surface', []):
     if s['package'].startswith(mod):
         pkgs.add(s['package'])
-for b in d.get('boxesAdded', []):
-    if b.startswith(mod):
-        pkgs.add(b)
-for b in d.get('boxesRemoved', []):
-    if b.startswith(mod):
-        pkgs.add(b)
-for p in sorted(pkgs):
+for p in d.get('packagesAdded', []):
+    path = p.get('path', '') if isinstance(p, dict) else p
+    if path.startswith(mod):
+        pkgs.add(path)
+for p in d.get('packagesRemoved', []):
+    path = p.get('path', '') if isinstance(p, dict) else p
+    if path.startswith(mod):
+        removed.add(path)
+for p in sorted(pkgs - removed):
     print(p)
 " "$GO_MODULE") || CHANGED_PKGS=""
 
