@@ -58,6 +58,12 @@ Multi-node TP is modeled as **whole-node occupancy**: it engages only when `tp` 
 
 A spanning instance is billed for every node it occupies (`cost_per_hour × nodes_spanned`).
 
+!!! note "Configuration constraints"
+    Two node-pool configurations are rejected at startup (with a clear panic) because they would otherwise produce silently-wrong span/cost numbers — both tracked for proper support by [#1543](https://github.com/inference-sim/inference-sim/issues/1543):
+
+    - A per-role tensor-parallel override (`--prefill-tp` / `--decode-tp`) that **differs from the global `--tp`** is not supported with `node_pools`: placement, node-span, and cost all use the global `--tp`, so a differing per-role TP would be simulated at one degree but placed and billed at another. Use a uniform `--tp`.
+    - Every pool must have a **distinct `gpu_type`**: cost (`cost_per_hour`) and capacity (`gpu_memory_gib`) are resolved by first-match on `gpu_type`, so two pools sharing a type would resolve ambiguously.
+
 !!! warning "Cross-node interconnect not yet priced"
     The TP all-reduce latency term currently assumes intra-node NVLink and does not add a cross-node network penalty (tracked by [#1530](https://github.com/inference-sim/inference-sim/issues/1530)). Latency and throughput for a multi-node instance are therefore **optimistic** until that lands; BLIS emits a one-time warning when an instance first spans nodes. Multi-node placement is `blis run` only (`blis replay`/`observe` reject node pools). Pipeline parallelism is not yet modeled (tracked by [#1535](https://github.com/inference-sim/inference-sim/issues/1535)).
 

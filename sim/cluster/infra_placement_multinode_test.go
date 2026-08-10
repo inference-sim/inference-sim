@@ -157,6 +157,28 @@ func TestNewClusterSimulator_RejectsPerRoleTPWithNodePools(t *testing.T) {
 	_ = NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
 }
 
+// TestNewClusterSimulator_RejectsDecodeTPWithNodePools (round-5 IMP-1, decode path):
+// the same guard covers a --decode-tp override diverging from the global TP.
+func TestNewClusterSimulator_RejectsDecodeTPWithNodePools(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic on per-role (decode) TP override + node_pools, got none")
+		}
+		if !strings.Contains(fmt.Sprint(r), "decode pool TP") {
+			t.Errorf("panic message should name the decode pool, got: %v", r)
+		}
+	}()
+	pools := []NodePoolConfig{
+		{Name: "h100", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 10},
+	}
+	cfg := deploymentForPlacement(1, false, pools, 9999)
+	cfg.TP = 8
+	decodeTP := 16
+	cfg.DecodeOverrides = PoolOverrides{TP: &decodeTP} // diverges from global TP=8
+	_ = NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+}
+
 // TestPlaceInstance_UnsatisfiableTPReportsShapeError (IMP-1): a tpDegree that exceeds
 // gpus_per_node but is not a whole multiple of it can never place on that pool shape;
 // the error must say so (distinct from a transient capacity shortfall).
