@@ -7,6 +7,7 @@ package cluster
 
 import (
 	"bytes"
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
@@ -111,6 +112,49 @@ func TestInstanceCostPerHour_EmptySetLogsAndReturnsZero(t *testing.T) {
 	if countSubstr(out, "placement-path bug") == 0 {
 		t.Errorf("expected an error log for the empty GPU set; captured:\n%s", out)
 	}
+}
+
+// TestNewPlacementManager_RejectsDuplicateGPUType (round-5 IMP-2): two pools sharing a
+// gpu_type make cost/capacity resolution ambiguous (cost is looked up by first-match on
+// gpu_type), which the nodes-spanned × cost_per_hour multiplier would then mis-bill.
+// NewPlacementManager must reject the ambiguity at construction.
+func TestNewPlacementManager_RejectsDuplicateGPUType(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic on two pools sharing a gpu_type, got none")
+		}
+		if !strings.Contains(fmt.Sprint(r), "gpu_type") {
+			t.Errorf("panic message should mention gpu_type, got: %v", r)
+		}
+	}()
+	newTestPM([]NodePoolConfig{
+		{Name: "h100-8g", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 0, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 10},
+		{Name: "h100-4g", GPUType: "H100", GPUsPerNode: 4, InitialNodes: 1, MinNodes: 0, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 5},
+	})
+}
+
+// TestNewClusterSimulator_RejectsPerRoleTPWithNodePools (round-5 IMP-1): a per-role TP
+// override (--prefill-tp/--decode-tp) differing from the global TP would make the
+// simulated TP diverge from the placed/billed TP under node_pools. Reject the combo.
+func TestNewClusterSimulator_RejectsPerRoleTPWithNodePools(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic on per-role TP override + node_pools, got none")
+		}
+		if !strings.Contains(fmt.Sprint(r), "per-role tensor parallelism") {
+			t.Errorf("panic message should mention per-role tensor parallelism, got: %v", r)
+		}
+	}()
+	pools := []NodePoolConfig{
+		{Name: "h100", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 10},
+	}
+	cfg := deploymentForPlacement(1, false, pools, 9999)
+	cfg.TP = 8
+	prefillTP := 4
+	cfg.PrefillOverrides = PoolOverrides{TP: &prefillTP} // diverges from global TP=8
+	_ = NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
 }
 
 // TestPlaceInstance_UnsatisfiableTPReportsShapeError (IMP-1): a tpDegree that exceeds
@@ -578,9 +622,12 @@ func TestStartupPlacement_SpanningInstanceCost(t *testing.T) {
 
 // TestStartupPlacement_UnplacedEmitsOneSummaryWarning: when instances cannot be
 // placed at startup, NewClusterSimulator emits exactly ONE summary warning (not one
-// per instance), and it carries the actionable first error — here the structurally-
-// unsatisfiable shape message (tp=12 is not a whole multiple of gpus_per_node=8),
-// not a generic capacity message. Guards the "first error, once" behavior.
+// per instance), with the correct count and the structurally-unsatisfiable shape
+// message (tp=12 is not a whole multiple of gpus_per_node=8). NOTE: this does NOT
+// exercise the first-vs-last-error ordering of the `unplacedFirstErr == nil` guard —
+// with a single global config.TP every instance fails with the same error kind, so
+// first == last here. That ordering scenario (heterogeneous per-instance errors) is
+// not reachable through NewClusterSimulator today, so it is not separately tested.
 func TestStartupPlacement_UnplacedEmitsOneSummaryWarning(t *testing.T) {
 	pools := []NodePoolConfig{
 		{Name: "h100", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 4, MinNodes: 4, MaxNodes: 4, GPUMemoryGiB: 80, CostPerHour: 10},

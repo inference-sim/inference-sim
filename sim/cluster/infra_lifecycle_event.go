@@ -37,7 +37,11 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 		return
 	}
 	if err := cs.placement.MarkNodeReady(e.nodeID); err != nil {
-		// Node may have been terminated before becoming ready — not a fatal error
+		// Two cases: (1) node terminated before becoming ready (a legitimate race), or
+		// (2) unknown node ID (a bookkeeping bug). Either way, pending instances awaiting
+		// this node are not retried here — log it rather than return silently (R1). Debug
+		// level: case (1) is expected and can be frequent under churn.
+		logrus.Debugf("[cluster] NodeReadyEvent: MarkNodeReady(%s): %v — pending retries skipped", e.nodeID, err)
 		return
 	}
 

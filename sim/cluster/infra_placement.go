@@ -71,8 +71,9 @@ func NewPlacementManager(pools []NodePoolConfig, provisionRng, loadingRng *rand.
 		loadingRng:   loadingRng,
 	}
 
-	// Validate and store pools; check for duplicate names.
+	// Validate and store pools; check for duplicate names and duplicate GPU types.
 	seen := make(map[string]struct{})
+	seenGPUType := make(map[string]string) // gpu_type → first pool name that used it
 	for i := range pools {
 		if err := pools[i].IsValid(); err != nil {
 			panic(fmt.Sprintf("NewPlacementManager: pool[%d]: %v", i, err))
@@ -80,7 +81,20 @@ func NewPlacementManager(pools []NodePoolConfig, provisionRng, loadingRng *rand.
 		if _, dup := seen[pools[i].Name]; dup {
 			panic(fmt.Sprintf("NewPlacementManager: duplicate pool name %q", pools[i].Name))
 		}
+		// #1529: instances are matched to pools by gpu_type (PlaceInstance returns the
+		// matched gpu_type, and the three placement sites resolve cost_per_hour /
+		// gpu_memory_gib by first-match on that type). Two pools sharing a gpu_type but
+		// differing in cost or memory would make that lookup ambiguous — and the new
+		// nodes-spanned × cost_per_hour multiplier would then bill the wrong rate. Reject
+		// the ambiguity up front rather than silently pick the first pool. Making
+		// duplicate gpu_type legal (via pool-identity lookup) is tracked by #1543.
+		if first, dup := seenGPUType[pools[i].GPUType]; dup {
+			panic(fmt.Sprintf("NewPlacementManager: pools %q and %q share gpu_type %q — "+
+				"gpu_type must be unique across pools so cost/capacity resolve unambiguously (#1529)",
+				first, pools[i].Name, pools[i].GPUType))
+		}
 		seen[pools[i].Name] = struct{}{}
+		seenGPUType[pools[i].GPUType] = pools[i].Name
 		pm.pools = append(pm.pools, &nodePoolState{config: pools[i]})
 		pm.nodesByPool[pools[i].Name] = nil
 		pm.nextNodeIdx[pools[i].Name] = 0

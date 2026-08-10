@@ -308,6 +308,25 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	// Phase 1A: initialize PlacementManager when node pools are configured.
 	// Must happen BEFORE the unified construction loop so cs.placement is set.
 	if len(config.NodePools) > 0 {
+		// #1529: placement uses the GLOBAL config.TP to decide single-node vs
+		// whole-node spanning and to bill nodes-spanned × cost. A per-role TP
+		// override (--prefill-tp/--decode-tp) would make the simulated TP diverge
+		// from the placed/billed TP — wrong span decision, wrong cost, wrong KV
+		// capacity. Per-role placement does not exist yet, so reject the combination
+		// loudly rather than produce silently-wrong numbers (mirrors the INV-13
+		// Fatalf-on-unsupported-combination policy). Lifting this guard (a per-role
+		// placement path) is tracked by #1543.
+		for _, ov := range []struct {
+			name string
+			po   PoolOverrides
+		}{{"prefill", config.PrefillOverrides}, {"decode", config.DecodeOverrides}} {
+			if ov.po.TP != nil && *ov.po.TP != config.TP {
+				panic(fmt.Sprintf("ClusterSimulator: per-role tensor parallelism (%s pool TP=%d) is not supported with "+
+					"node_pools (global TP=%d): placement, node-span, and cost use the global TP, so a differing per-role "+
+					"TP would be simulated at one degree but placed/billed at another. Use a uniform --tp, or drop node_pools.",
+					ov.name, *ov.po.TP, config.TP))
+			}
+		}
 		provisionRng := rng.ForSubsystem(subsystemNodeProvisioning)
 		loadingRng := rng.ForSubsystem(subsystemInstanceLoading)
 		cs.placement = NewPlacementManager(config.NodePools, provisionRng, loadingRng, 0)
