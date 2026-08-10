@@ -25,6 +25,20 @@ go build -o blis main.go
   --slo-itl  "critical=50ms,standard=150ms" \
   --slo-e2e  "critical=5s,standard=30s"
 
+# Run with speculative decoding / MTP (#1528). Models the throughput of a model that
+# verifies K draft tokens per decode step (MTP/EAGLE/Medusa; GLM-5.2 ships 5-token MTP).
+# --num-speculative-tokens K: draft tokens proposed per step (0 = off, the default).
+# --speculative-acceptance-rate α: mean fraction of the K drafts accepted, in [0,1];
+#   REQUIRED when K>0 (α defaulting to 0 would model pure slowdown). Decode advances by
+#   ~1+α·K tokens/step (throughput) while each step pays the K+1-position verify cost
+#   (so accepting isn't free). --speculative-method labels the scheme (mtp|eagle|medusa|
+#   ngram|draft). K=0 ⇒ byte-identical to a run without the flags (INV-6). α is
+#   user-supplied, not predicted. Same flags on `blis replay` (INV-13, model-level so no
+#   trace change). Note: under spec-decode the raw ITL percentiles are per-verification-
+#   step; use TPOT for per-token latency (SLO-ITL attainment reads TPOT, unaffected).
+./blis run --model zai-org/GLM-5.2 \
+  --num-speculative-tokens 5 --speculative-acceptance-rate 0.7 --speculative-method mtp
+
 # Run and export workload as TraceV2 (prefix auto-appends .yaml/.csv)
 ./blis run --model qwen/qwen3-14b --trace-output traces/run1
 
@@ -475,6 +489,8 @@ Two latency model modes (trained-physics, roofline), selected via `--latency-mod
 See [`docs/guide/latency-models.md`](docs/guide/latency-models.md) for details.
 
 **Quantized model support**: Three-tier auto-detection of weight precision: (1) `quantization_config` in HF `config.json` — GPTQ/AWQ (`bits`), FP8 (implicit), compressed-tensors (`config_groups.*.weights.num_bits`); (2) model name conventions (`w4a16` → 0.5, `FP8` → 1.0 via `InferWeightBytesFromModelName`); (3) fallback to `BytesPerParam` from `torch_dtype`. Uses quantized weight precision for weight bandwidth and KV capacity calculations while keeping compute dtype for KV cache and activations. `ModelConfig.WeightBytesPerParam` (0=fallback to `BytesPerParam`) with `EffectiveWeightBytesPerParam()` accessor decouples weight storage precision from compute/KV dtype.
+
+**Speculative decoding / MTP (#1528)**: Models the decode-throughput effect of speculative decoding / Multi-Token Prediction (GLM-5.2's 5-token MTP, DeepSeek-V3, EAGLE, Medusa). Off by default (`--num-speculative-tokens 0`) ⇒ byte-identical output (INV-6). The `SpeculativeConfig` sub-config (8th `SimConfig` module) decouples two quantities: **verify width** `w = K+1` (the target processes K drafts + 1 bonus token per forward pass) drives the per-step **cost** — the decode token-population terms of both latency backends scale by `w` while the once-per-step weight-load/comm/const terms do not, so cost is sublinear in `w` (the physics behind the speedup); **accepted tokens** `g = 1 + α·K` (α = user-supplied mean acceptance rate) drives **progress** — a per-request deterministic fractional carry advances `ProgressIndex` by `g` tokens/step (no RNG, so INV-6 holds and metrics are expectations; capping defers rather than drops tokens, no drift). `--speculative-acceptance-rate` is **required** when `K>0` (α defaulting to 0 would model MTP as pure slowdown). Model-level, supplied identically to `blis run` and `blis replay` (INV-13; no TraceV2 change). Output-token count is clamped to the assigned length so a multi-token overshoot never over-counts (INV-1). Raw ITL percentiles (`AllITLs`) are per-verification-step under spec-decode; TPOT (`RequestITLs`) is the amortized per-token metric and is what SLO-ITL goodput reads. `K` capped at `MaxSpeculativeTokens=1024`. Deferred (design §9): per-step acceptance distribution, per-request heterogeneity, acceptance-rate prediction, a separate draft-model engine.
 
 **Per-instance KV capacity for mixed-GPU node pools (#1522)**: When node pools are configured (`--policy-config` with `node_pools`) and `--total-kv-blocks` is NOT explicitly set, each placed instance auto-calculates its KV-block capacity from its ACTUAL placed GPU's `gpu_memory_gib` (plus TP, DP, block size, `--gpu-memory-utilization`, and weight precision) — so an H100 pool and an L40S pool no longer share one global capacity (restores INV-P2-1: an instance's GPU calibration and KV capacity describe the same device). Applied at all three placement sites (startup, deferred `NodeReadyEvent`, autoscaler scale-up) via `cluster.applyPerInstanceKVCapacity`, immediately after the `HWConfigByGPU` execution-calibration override (issue #893) so the placed GPU is authoritative for capacity as well. **Precedence**: an explicit `--total-kv-blocks` disables per-instance recalc (every instance keeps that uniform global capacity); when both node pools and PD per-pool KV overrides are present, the placement-derived per-GPU capacity wins (mirrors how `HWConfigByGPU` overrides the resolved `HWConfig`). A per-GPU capacity smaller than the configured `--max-model-len` auto-caps that instance's `MaxModelLen` to the KV-feasible maximum. Missing pool memory or a capacity-calc error falls back to the inherited global capacity with a warning (never a panic). `blis replay`/`observe` reject node pools, so this is `blis run` only (INV-13 parity N/A). Distinct from #1315 (role-specific capacity correct, latency coefficients wrong) and #633 (per-role overrides that can't express mixed hardware within one role).
 

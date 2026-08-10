@@ -322,12 +322,28 @@ func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, s
 		totalDynamicBytes += (m.Total - m.ModelWeights) / tpFactor
 	}
 
-	// 2. DECODE FLOPs + dynamic memory (KV cache, activations)
+	// 2. DECODE FLOPs + dynamic memory (KV cache, activations). Under speculative
+	// decoding / MTP (#1528), the target verifies w = K+1 token positions in a single
+	// decode forward pass, so decode FLOPs and dynamic KV/activation bytes use w new
+	// tokens per decode request instead of 1. w is carried per-request in
+	// NumNewDecodeTokens (set to K+1 by RooflineLatencyModel.StepTime — the COST
+	// quantity, distinct from the accepted-token count that drives progress). Defaults
+	// to 1 (verify width off / pre-feature callers) ⇒ byte-identical (INV-6).
 	for _, req := range stepConfig.DecodeRequests {
-		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, 1, true, true)
+		// The floor is unreachable from the production caller — RooflineLatencyModel.StepTime
+		// always sets NumNewDecodeTokens = specTokens+1 (≥ 1). It defends only against a
+		// direct DecodeRequestConfig literal (the struct is exported and used in tests) that
+		// leaves the field zero; without it a 0 would flow into the FLOPs/bytes helpers as a
+		// degenerate "no new tokens" decode. Cheap belt-and-suspenders, matching the max(1,…)
+		// philosophy elsewhere in this package.
+		w := int64(req.NumNewDecodeTokens)
+		if w < 1 {
+			w = 1
+		}
+		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, w, true, true)
 		totalComputeS += f.Total / tpFactor / (peakFlops * hwConfig.MfuDecode)
 
-		m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, 1, true)
+		m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, w, true)
 		totalDynamicBytes += (m.Total - m.ModelWeights) / tpFactor
 	}
 
@@ -337,7 +353,20 @@ func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, s
 	for _, req := range stepConfig.PrefillRequests {
 		totalNewTokens += int64(req.NumNewPrefillTokens)
 	}
-	totalNewTokens += int64(len(stepConfig.DecodeRequests))
+	// Each decode request contributes w = verify-width new tokens under spec-decode
+	// (NumNewDecodeTokens, w=1 when off ⇒ byte-identical). For MoE this grows the
+	// batch-dependent active-expert count nEff with w, which is correct physics (more
+	// verified tokens activate more experts); the per-expert weight bytes are still
+	// shared across those tokens, so cost stays far sublinear in w.
+	for _, req := range stepConfig.DecodeRequests {
+		// Same defensive floor as the decode loop above (unreachable from the production
+		// caller; guards a direct zero-valued DecodeRequestConfig literal).
+		w := int64(req.NumNewDecodeTokens)
+		if w < 1 {
+			w = 1
+		}
+		totalNewTokens += w
+	}
 
 	baseMem := calculateMemoryAccessBytes(modelConfig, 0, totalNewTokens, false)
 	weightBytes := baseMem.ModelWeights / tpFactor

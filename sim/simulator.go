@@ -78,6 +78,13 @@ type SimConfig struct {
 	// zero value is inert: unset => the subsystem is a no-op and output is
 	// byte-identical to a pre-feature build (INV-6). See sim/lora.
 	LoRAConfig
+	// SpeculativeConfig is the 8th module sub-config (speculative decoding / MTP,
+	// #1528). Its zero value (K=0) is inert: the feature is off and output is
+	// byte-identical to a pre-feature build (INV-6). Note: its Validate() is NOT
+	// promoted to SimConfig (LoRAConfig already promotes a Validate() at the same
+	// depth, making SimConfig.Validate ambiguous); call cfg.SpeculativeConfig.Validate()
+	// explicitly if ever needed.
+	SpeculativeConfig
 
 	// SLO priority overrides for preemption victim selection (--preemption-policy priority).
 	// nil = use GAIE defaults (critical=4, standard=3, batch=-1, sheddable=-2, background=-3).
@@ -114,6 +121,12 @@ type Simulator struct {
 	model                  string
 	gpu                    string
 	maxModelLen            int64 // max total sequence length (0 = unlimited)
+	// Speculative decoding / MTP (#1528). specEnabled gates ALL spec-decode behavior;
+	// when false every decode path is byte-identical to a pre-feature build (INV-6).
+	// specTokensPerStep is the mean accepted tokens/step (1+α·K) consumed by the
+	// per-request fractional carry.
+	specEnabled       bool
+	specTokensPerStep float64
 	rng                    *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
 	sloMap *SLOPriorityMap // vLLM-convention priority mapping for instance-level scheduling
 	scheduler      InstanceScheduler
@@ -197,6 +210,8 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		model:                     cfg.Model,
 		gpu:                       cfg.GPU,
 		maxModelLen:               cfg.MaxModelLen,
+		specEnabled:               cfg.IsEnabled(),
+		specTokensPerStep:         cfg.EffectiveTokensPerStep(),
 		latencyModel:              latencyModel,
 		sloMap:                    NewSLOPriorityMap(cfg.SLOPriorityOverrides),
 	}
@@ -702,6 +717,13 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	if decodeTokens < len(req.OutputTokens) {
 		decodeTokens++ // prefill-generated first token (vLLM parity)
 	}
+	// Speculative decoding / MTP overshoot clamp (#1528, BC-4): a multi-token step
+	// can carry ProgressIndex past the target, making (PI-InputLen) exceed the
+	// pre-specified output length. Clamp so a request never counts MORE output tokens
+	// than it was assigned (INV-1 conservation). No-op for g=1 (feature off).
+	if decodeTokens > len(req.OutputTokens) {
+		decodeTokens = len(req.OutputTokens)
+	}
 	if decodeTokens > 0 {
 		sim.Metrics.TotalOutputTokens += decodeTokens
 	}
@@ -728,9 +750,32 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 			// #588: Use actual decode step count for length-capped requests.
 			// len(req.OutputTokens) is the pre-determined count; len(req.ITL) is actual.
 			// TPOT convention: exclude first generated token → denominator is len(ITL)-1.
-			sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.ITL)-1, 1))
+			var denom int
+			if sim.specEnabled {
+				// Under speculative decoding / MTP, each ITL entry covers g tokens, so
+				// len(ITL) counts STEPS, not tokens — using it would inflate TPOT by ~g.
+				// Use the token-derived count (ProgressIndex advance + prefill token).
+				//
+				// Caveat (PD): a PD decode sub-request at the MaxModelLen boundary emits
+				// its one final token even past MaxModelLen-1 (batch_formation.go floors
+				// the cap at 1, matching the pre-feature PD path, which never capped), so
+				// its ProgressIndex can land at MaxModelLen — one higher than a non-PD
+				// length-capped request, giving tokCount one larger. This asymmetry is
+				// pre-existing (PD emitted its final token unconditionally before this PR);
+				// it affects only the length-capped PD TPOT denominator by one token.
+				tokCount := int(req.ProgressIndex) - int(req.InputLen()) + 1
+				denom = max(tokCount-1, 1)
+			} else {
+				denom = max(len(req.ITL)-1, 1)
+			}
+			sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(denom)
 		} else {
 			// TPOT calculation in vLLM excludes the first generated token.
+			// No spec-decode branch needed here: a normally-completed request generated
+			// exactly len(OutputTokens) tokens, so len(OutputTokens)-1 is already the
+			// correct per-token denominator regardless of how many decode STEPS it took
+			// (steps < tokens under spec-decode). Only the LengthCapped branch above
+			// must switch to a token-derived count, because there len(ITL)=steps≠tokens.
 			sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1))
 		}
 	} else {
@@ -739,6 +784,9 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	sim.Metrics.RequestStepCounters = append(sim.Metrics.RequestStepCounters, req.FinishedStepIdx-req.ScheduledStepIdx)
 	sim.Metrics.RequestCompletionTimes[req.ID] = float64(lat + req.ArrivalTime)
 	sim.Metrics.AllITLs = append(sim.Metrics.AllITLs, req.ITL...)
+	// Terminal state: reset the spec-decode carry so no stale fraction survives if
+	// this Request struct is ever reused (#1528). No-op when the feature is off.
+	req.specDecodeCarry = 0
 }
 
 // Step simulates a single vllm step(): batch scheduling, model execution, mirroring, and completion.
@@ -803,6 +851,11 @@ func (sim *Simulator) scheduleBatch(now int64) {
 	}
 	if sim.residentAdapters != nil {
 		batchCtx.AdapterResident = sim.residentAdapters.IsResident
+	}
+	if sim.specEnabled {
+		// Pure peek: FormBatch sizes the decode step and caps g; the carry is
+		// committed with the granted count in executeBatchStep (#1528).
+		batchCtx.DecodeTokensPerStep = sim.peekDecodeTokens
 	}
 	batchResult := sim.batchFormation.FormBatch(batchCtx)
 
@@ -934,6 +987,37 @@ func (sim *Simulator) completeAdapterLoad(now int64, adapter string) {
 	sim.ScheduleStepIfIdle(now)
 }
 
+// peekDecodeTokens returns this step's PROPOSED accepted-token count g for a decode
+// request under speculative decoding / MTP (#1528): floor(carry + mean-rate), floored
+// at 1 (the always-generated bonus token, so INV-12 NumNewTokens>0 holds). PURE — it
+// does NOT mutate the carry, so FormBatch may call it while sizing the step and then
+// cap g by KV budget / MaxModelLen without desyncing the carry (the Simulator commits
+// the granted count afterward in executeBatchStep). Oracle-blind: reads only the mean
+// rate and the request's carry, never OutputTokens (INV-9). Only wired into FormBatch
+// when specEnabled; feature off ⇒ the caller uses the literal 1 (byte-identical).
+func (sim *Simulator) peekDecodeTokens(req *Request) int64 {
+	proposed := int64(req.specDecodeCarry + sim.specTokensPerStep) // floor of accumulated
+	if proposed < 1 {
+		proposed = 1 // guarantee the bonus token (INV-12)
+	}
+	return proposed
+}
+
+// commitDecodeTokens advances the carry by the mean rate and debits the tokens
+// ACTUALLY granted this step (req.NumNewTokens, after FormBatch's KV/MaxModelLen caps).
+// The net carry delta is (rate − granted): a capped step keeps the ungranted fraction
+// for later, so the long-run mean advance is exactly EffectiveTokensPerStep (=1+α·K)
+// with no drift and no RNG (INV-6). Called once per decode step in executeBatchStep,
+// only for requests that actually decoded this step (past prefill, NumNewTokens>0).
+func (sim *Simulator) commitDecodeTokens(req *Request) {
+	req.specDecodeCarry += sim.specTokensPerStep - float64(req.NumNewTokens)
+	if req.specDecodeCarry < 0 {
+		// Defensive: granted more than proposed (no current cap raises g). Clamp to 0
+		// so the carry can never fund a phantom future token.
+		req.specDecodeCarry = 0
+	}
+}
+
 // executeBatchStep handles Phase 2: model execution (prefill + decode) for all requests
 // in the running batch. Returns the step time advance in ticks.
 func (sim *Simulator) executeBatchStep(now int64) int64 {
@@ -978,13 +1062,22 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 			// ToDo: Go through the newly allocated blocks for this request;
 			// Make sure they are cached, if they're full
 		} else {
-			// Decode phase: only generate a token if FormBatch allocated one.
+			// Decode phase: only generate tokens if FormBatch allocated any.
 			// Without this guard, a request at the MaxModelLen boundary (NumNewTokens=0
 			// from proactive cap) would get a phantom ProgressIndex increment.
 			// Also prevents phantom tokens from token budget exhaustion (pre-existing edge case).
 			if req.NumNewTokens > 0 {
-				req.ProgressIndex++
-				req.ITL = append(req.ITL, currStepAdvance+sim.latencyModel.OutputTokenProcessingTime())
+				// Advance by the accepted-token count (1 for normal decode; g=1+accepted
+				// under speculative decoding / MTP, #1528). Detokenization overhead is
+				// per output token, so a step emitting g tokens pays g×OTPT. At the
+				// feature-off default NumNewTokens==1 ⇒ +=1 and 1×OTPT ⇒ byte-identical.
+				req.ProgressIndex += int64(req.NumNewTokens)
+				req.ITL = append(req.ITL, currStepAdvance+int64(req.NumNewTokens)*sim.latencyModel.OutputTokenProcessingTime())
+				if sim.specEnabled {
+					// Commit the carry with the GRANTED count (after FormBatch caps), so a
+					// budget/MaxModelLen-capped step keeps the ungranted fraction — no drift.
+					sim.commitDecodeTokens(req)
+				}
 			}
 		}
 		// !req.TTFTSet guard: fires once per prefill completion (including re-prefill after
