@@ -92,6 +92,12 @@ const MaxSpeculativeTokens = 1024
 // provenance and the extension point for future per-method behavior. Implemented as
 // a function over a switch (not a package-level map) so there is no shared mutable
 // state (R8).
+//
+// These are BLIS labels, not verbatim vLLM method strings. "mtp", "eagle", "medusa",
+// and "ngram" match vLLM's SpeculativeMethod literals exactly; "draft" is a BLIS
+// shorthand for vLLM's "draft_model". Since the label is pure provenance today, the
+// abbreviation is harmless — but this is the spot to reconcile names if a future
+// per-method cost model needs to key off the exact vLLM string.
 func isValidSpeculativeMethod(label string) bool {
 	switch label {
 	case "mtp", "eagle", "medusa", "ngram", "draft":

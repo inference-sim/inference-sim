@@ -1214,7 +1214,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// trace round-trips under identical flags (INV-13). Default off => byte-identical.
 	cmd.Flags().IntVar(&numSpeculativeTokens, "num-speculative-tokens", 0, "Speculative decoding: draft tokens proposed per decode step (MTP/EAGLE/Medusa). 0 = off. When >0, --speculative-acceptance-rate is required (#1528).")
 	cmd.Flags().Float64Var(&speculativeAcceptance, "speculative-acceptance-rate", 0.0, "Speculative decoding: mean fraction of draft tokens accepted, in [0,1]. Required when --num-speculative-tokens > 0.")
-	cmd.Flags().StringVar(&speculativeMethod, "speculative-method", "", "Speculative decoding method label: mtp|eagle|medusa|ngram|draft. Optional; requires --num-speculative-tokens > 0.")
+	cmd.Flags().StringVar(&speculativeMethod, "speculative-method", "", "Speculative decoding method label (informational; BLIS labels, not verbatim vLLM strings — 'draft' is shorthand for vLLM's 'draft_model'): mtp|eagle|medusa|ngram|draft. Optional; requires --num-speculative-tokens > 0.")
 }
 
 // loraConfigFile is the on-disk shape of a --lora-config YAML file: a single

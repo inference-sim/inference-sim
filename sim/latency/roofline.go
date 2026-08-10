@@ -330,9 +330,15 @@ func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, s
 	// quantity, distinct from the accepted-token count that drives progress). Defaults
 	// to 1 (verify width off / pre-feature callers) ⇒ byte-identical (INV-6).
 	for _, req := range stepConfig.DecodeRequests {
+		// The floor is unreachable from the production caller — RooflineLatencyModel.StepTime
+		// always sets NumNewDecodeTokens = specTokens+1 (≥ 1). It defends only against a
+		// direct DecodeRequestConfig literal (the struct is exported and used in tests) that
+		// leaves the field zero; without it a 0 would flow into the FLOPs/bytes helpers as a
+		// degenerate "no new tokens" decode. Cheap belt-and-suspenders, matching the max(1,…)
+		// philosophy elsewhere in this package.
 		w := int64(req.NumNewDecodeTokens)
 		if w < 1 {
-			w = 1 // defensive: never fewer than the 1 bonus token
+			w = 1
 		}
 		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, w, true, true)
 		totalComputeS += f.Total / tpFactor / (peakFlops * hwConfig.MfuDecode)
@@ -353,6 +359,8 @@ func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, s
 	// verified tokens activate more experts); the per-expert weight bytes are still
 	// shared across those tokens, so cost stays far sublinear in w.
 	for _, req := range stepConfig.DecodeRequests {
+		// Same defensive floor as the decode loop above (unreachable from the production
+		// caller; guards a direct zero-valued DecodeRequestConfig literal).
 		w := int64(req.NumNewDecodeTokens)
 		if w < 1 {
 			w = 1

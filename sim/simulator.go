@@ -755,6 +755,14 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 				// Under speculative decoding / MTP, each ITL entry covers g tokens, so
 				// len(ITL) counts STEPS, not tokens — using it would inflate TPOT by ~g.
 				// Use the token-derived count (ProgressIndex advance + prefill token).
+				//
+				// Caveat (PD): a PD decode sub-request at the MaxModelLen boundary emits
+				// its one final token even past MaxModelLen-1 (batch_formation.go floors
+				// the cap at 1, matching the pre-feature PD path, which never capped), so
+				// its ProgressIndex can land at MaxModelLen — one higher than a non-PD
+				// length-capped request, giving tokCount one larger. This asymmetry is
+				// pre-existing (PD emitted its final token unconditionally before this PR);
+				// it affects only the length-capped PD TPOT denominator by one token.
 				tokCount := int(req.ProgressIndex) - int(req.InputLen()) + 1
 				denom = max(tokCount-1, 1)
 			} else {

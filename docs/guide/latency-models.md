@@ -231,6 +231,15 @@ The model splits the effect into two decoupled quantities:
 
 `K=0` (the default) leaves step time and progress byte-identical to a pre-feature build. The feature is model-level and supplied by identical flags to `blis run` and `blis replay`, so traces round-trip under INV-13 with no schema change. `α` is user-supplied — BLIS does not predict acceptance (it does not run a real draft model). Under spec-decode the raw ITL percentiles are per-verification-step; use TPOT for per-token latency.
 
+The `--speculative-method` values (`mtp`, `eagle`, `medusa`, `ngram`, `draft`) are BLIS labels, not verbatim vLLM method strings — the first four match vLLM's literals exactly, while `draft` is BLIS shorthand for vLLM's `draft_model`. The label is informational provenance today (it does not change the step-time math, which is driven entirely by `K` and `α`).
+
+**Backend note — verify-width attention.** The two backends scale the decode **attention** term differently under `w`, and both are physically defensible:
+
+- **trained-physics** keeps decode attention on `sumCtx` (per active sequence) and deliberately does **not** scale it by `w`: the `w` verified positions are contiguous and attend the same shared KV context, read once per step. This is the more accurate model for MTP.
+- **roofline** routes `w` through its per-request FLOPs helper, so the decode attention-score ops scale with `w` (and its `effectiveCtx` picks up a small prefill-style `(w-1)/2` term).
+
+Both preserve `K=0` byte-identity and monotonicity in `K`; they differ only in the *shape* of the cost-vs-`w` curve, not in correctness. Keep this in mind when calibrating verify-width cost against a specific backend.
+
 ## Pluggable Architecture
 
 The `LatencyModel` interface (defined in `sim/latency_model.go`) has four methods:
