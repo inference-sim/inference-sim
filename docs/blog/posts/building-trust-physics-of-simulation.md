@@ -208,4 +208,4 @@ We have validated BLIS against production workloads and compared its accuracy to
 
 ---
 
-*Next in this series: **Validating Against Ground Truth** — Quantifying BLIS accuracy on real workloads, how validation catches regressions, and the methodology behind single-digit percent error.*
+*Next in this series: **[What We've Learned About Predicting LLM Latency](how-blis-learns-latency.md)** — the latency model under the hood, how we trained it, and how accurate it is on real workloads without per-configuration tuning.*
