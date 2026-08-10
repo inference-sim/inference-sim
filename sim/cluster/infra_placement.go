@@ -214,10 +214,11 @@ func (pm *PlacementManager) VerifyConservation() error {
 // tpDegree/GPUsPerNode fully-free Ready nodes of a single pool, each node contributing
 // all its GPUs — a uniform per-node rank count. This is the shape vLLM's multiprocessing
 // (mp) executor enforces (it asserts world_size % nnodes == 0 and derives an equal
-// local_world_size per node) and the one vLLM's docs recommend ("set TP to the number
-// of GPUs in each node"). vLLM's Ray backend permits an asymmetric spread (it only warns
-// and uses best-effort PACK), so this is deliberately stricter than the most permissive
-// backend — a safe modeling choice. A pool is eligible only when tpDegree > GPUsPerNode
+// local_world_size per node). vLLM's Ray backend permits an asymmetric spread (it only
+// warns and uses best-effort PACK), so this is deliberately stricter than the most
+// permissive backend — a safe modeling choice. (Note: vLLM's own docs actually recommend
+// TP-within-node + PP-across-nodes rather than multi-node TP at all; see #1530.)
+// A pool is eligible only when tpDegree > GPUsPerNode
 // (spanning is physically necessary) AND tpDegree % GPUsPerNode == 0 (ranks divide
 // evenly across whole nodes). The fragmentation case (tpDegree ≤ GPUsPerNode but no
 // single node momentarily has room) is deliberately NOT spanned — it would produce an

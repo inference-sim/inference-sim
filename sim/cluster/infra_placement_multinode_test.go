@@ -179,6 +179,24 @@ func TestNewClusterSimulator_RejectsDecodeTPWithNodePools(t *testing.T) {
 	_ = NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
 }
 
+// TestNewClusterSimulator_PerRoleTPEqualToGlobalOK (round-8 M-5): the per-role-TP guard
+// must only fire when the override DIFFERS from the global TP. A per-role TP override
+// equal to the global TP is a no-op and must NOT panic — guards the boundary of the
+// cluster.go guard loop.
+func TestNewClusterSimulator_PerRoleTPEqualToGlobalOK(t *testing.T) {
+	pools := []NodePoolConfig{
+		{Name: "h100", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 10},
+	}
+	cfg := deploymentForPlacement(1, false, pools, 9999)
+	cfg.TP = 8
+	sameTP := 8
+	cfg.PrefillOverrides = PoolOverrides{TP: &sameTP}               // equal to global — must be accepted
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil) // must not panic
+	if len(cs.instances) != 1 {
+		t.Fatalf("expected 1 placed instance, got %d", len(cs.instances))
+	}
+}
+
 // TestPlaceInstance_UnsatisfiableTPReportsShapeError (IMP-1): a tpDegree that exceeds
 // gpus_per_node but is not a whole multiple of it can never place on that pool shape;
 // the error must say so (distinct from a transient capacity shortfall).
@@ -333,8 +351,10 @@ func TestPlaceInstance_SingleNodeFitInLaterPoolBeatsSpanningEarlierPool(t *testi
 // ─── Task 5: one-time optimistic-latency warning (BC-6) ──────────────────────
 
 // TestPlaceInstance_SpanningWarnsOnce (BC-6): a spanning placement emits exactly one
-// stderr warning naming #1530, no matter how many instances span. Captured-log
-// assertion (behavioral, survives a sync.Once refactor — does not read spanWarned).
+// stderr warning, no matter how many instances span. Captured-log assertion
+// (behavioral, survives a sync.Once refactor — does not read spanWarned). Keys on the
+// stable "spans" token rather than "#1530" so the test doesn't break when #1530 later
+// rewrites the message.
 func TestPlaceInstance_SpanningWarnsOnce(t *testing.T) {
 	pm := newTestPM([]NodePoolConfig{newTestPool("h100", "H100", 8, 4)}) // 4×8 = 32 GPUs
 	out := captureLogWarn(t, func() {
@@ -346,8 +366,8 @@ func TestPlaceInstance_SpanningWarnsOnce(t *testing.T) {
 			t.Fatalf("second spanning PlaceInstance: %v", err)
 		}
 	})
-	if n := countSubstr(out, "#1530"); n != 1 {
-		t.Errorf("expected exactly 1 warning mentioning #1530, got %d\ncaptured:\n%s", n, out)
+	if n := countSubstr(out, "spans"); n != 1 {
+		t.Errorf("expected exactly 1 spanning warning, got %d\ncaptured:\n%s", n, out)
 	}
 	// T-3: two sequential spanning placements are the case most likely to expose a
 	// double-allocation bug — assert GPU-level conservation.
@@ -365,8 +385,8 @@ func TestPlaceInstance_SingleNodeNoWarning(t *testing.T) {
 			t.Fatalf("PlaceInstance: %v", err)
 		}
 	})
-	if n := countSubstr(out, "#1530"); n != 0 {
-		t.Errorf("single-node placement must not warn about spanning; got %d mentions of #1530\ncaptured:\n%s", n, out)
+	if n := countSubstr(out, "spans"); n != 0 {
+		t.Errorf("single-node placement must not emit a spanning warning; got %d\ncaptured:\n%s", n, out)
 	}
 }
 
@@ -412,19 +432,12 @@ func TestPlaceInstance_SpansThreeNodes(t *testing.T) {
 	if len(span) != 3 {
 		t.Errorf("expected 3-node span, got %v", span)
 	}
-	// Primary is the lowest-INDEX touched node; span is lexicographically sorted, so
-	// asserting primary == span[0] would encode a false "index order == lex order"
-	// invariant (diverges at ≥10 nodes, e.g. "h100-10" < "h100-2"). primary is
-	// logging-only; assert it is one of the spanned nodes.
-	found := false
-	for _, n := range span {
-		if n == primary {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("primary node %q not among spanned nodes %v", primary, span)
+	// PlaceInstance's contract: nodeID is the lowest-INDEX node the instance occupies.
+	// Assert against the index-ordered nodesByPool slice (NOT the lexicographically
+	// sorted span — those diverge at ≥10 nodes, e.g. "h100-10" < "h100-2"). With 3
+	// index-ordered nodes filled in order, the primary must be the first one.
+	if want := pm.nodesByPool["h100"][0].ID; primary != want {
+		t.Errorf("primary node = %q, want lowest-index node %q", primary, want)
 	}
 	for _, n := range pm.nodesByPool["h100"] {
 		if free := pm.FreeGPUCount(n.ID); free != 0 {
