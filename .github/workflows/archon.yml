@@ -1,0 +1,89 @@
+name: Archon PR Review
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  check-permissions:
+    if: |
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/archon-pr-review')
+    runs-on: ubuntu-latest
+    outputs:
+      allowed: ${{ steps.check.outputs.allowed }}
+    steps:
+      - name: Check invoker permissions
+        id: check
+        uses: actions/github-script@v8
+        with:
+          script: |
+            try {
+              const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                username: context.actor
+              });
+              const allowed = ['admin', 'write', 'maintain'].includes(data.permission);
+              core.setOutput('allowed', allowed ? 'true' : 'false');
+              if (!allowed) {
+                core.info(`User ${context.actor} has '${data.permission}' permission — skipping.`);
+              }
+            } catch (e) {
+              core.setOutput('allowed', 'false');
+              core.info(`User ${context.actor} is not a collaborator — skipping.`);
+            }
+
+  archon-review:
+    needs: check-permissions
+    if: needs.check-permissions.outputs.allowed == 'true'
+    runs-on: [self-hosted]
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build archon-go
+        id: build
+        run: |
+          ARCHON_BIN=$(scripts/archon-build.sh v0.1.0)
+          echo "archon_bin=$ARCHON_BIN" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve PR refs
+        id: refs
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            core.setOutput('base_sha', pr.base.sha);
+            core.setOutput('head_sha', pr.head.sha);
+
+      - name: Run Archon analysis
+        id: archon
+        env:
+          ARCHON_BIN: ${{ steps.build.outputs.archon_bin }}
+        run: |
+          OUTPUT=$(scripts/archon-ci.sh . "${{ steps.refs.outputs.base_sha }}" "${{ steps.refs.outputs.head_sha }}" 2>&1) || true
+          echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+          # Write to file for comment posting (handles multiline).
+          echo "$OUTPUT" > /tmp/archon-output.md
+
+      - name: Post PR comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment "${{ github.event.issue.number }}" --body-file /tmp/archon-output.md
