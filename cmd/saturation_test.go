@@ -100,6 +100,25 @@ func TestResolveSaturation_EmptySelection(t *testing.T) {
 	}
 }
 
+// TestResolveSaturation_AllMixedWithNames verifies "all" combined with individual
+// detector names in a comma-list is a hard error naming the "all" conflict, rather
+// than the misleading "unknown detector \"all\"" that NewBank would otherwise emit.
+func TestResolveSaturation_AllMixedWithNames(t *testing.T) {
+	for _, sel := range []string{"composite,all", "all,threshold", "composite, all , threshold"} {
+		resetSaturationGlobals()
+		detectorName = sel
+		saturationReport = filepath.Join(t.TempDir(), "x.json")
+		_, err := resolveSaturation()
+		if err == nil {
+			t.Errorf("detectors=%q: expected error for \"all\" mixed with names", sel)
+			continue
+		}
+		if !strings.Contains(err.Error(), "\"all\"") || strings.Contains(err.Error(), "unknown saturation detector") {
+			t.Errorf("detectors=%q: expected targeted \"all\"-conflict error, got: %v", sel, err)
+		}
+	}
+}
+
 // TestResolveSaturation_UnwritableReportPath verifies the report path is validated
 // up front (fast-fail before the run), for both single and bank selections.
 func TestResolveSaturation_UnwritableReportPath(t *testing.T) {

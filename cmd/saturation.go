@@ -180,8 +180,12 @@ func isBankSelection(sel string) bool {
 // "all" becomes the full roster; a comma-list is split, trimmed, and stripped of
 // empty entries (so a trailing comma or stray whitespace is tolerated). An
 // all-empty list (e.g. "," or ", ,") is a hard error — the bank must drive at
-// least one detector. Unknown names are left for NewBank to reject so the valid
-// list is reported from one place (R1).
+// least one detector. "all" mixed into a comma-list (e.g. "composite,all") is a
+// hard error naming the conflict: "all" is a roster keyword, not a detector name,
+// so combining it with individual names is ambiguous — caught here rather than
+// letting NewBank reject the literal "all" with a misleading "unknown detector"
+// message. Other unknown names are left for NewBank to reject so the valid list
+// is reported from one place (R1).
 func parseDetectorSelection(sel string) ([]string, error) {
 	if sel == "all" {
 		return saturation.AllDetectorNames(), nil
@@ -190,6 +194,9 @@ func parseDetectorSelection(sel string) ([]string, error) {
 	names := make([]string, 0, len(parts))
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
+		if p == "all" {
+			return nil, fmt.Errorf("--detectors %q: \"all\" cannot be combined with individual detector names; use \"--detectors all\" alone to select the full roster", sel)
+		}
 		if p != "" {
 			names = append(names, p)
 		}
