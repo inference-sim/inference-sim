@@ -82,7 +82,7 @@ if [[ -n "$GO_MODULE" ]] && command -v python3 &>/dev/null; then
     echo ""
     echo "_Unavailable — delta JSON extraction failed. See workflow log._"
     echo ""
-  elif [[ -n "$DELTA_JSON" ]]; then
+  else
     CHANGED_PKGS=$(echo "$DELTA_JSON" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)

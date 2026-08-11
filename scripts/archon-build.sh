@@ -5,7 +5,7 @@
 # Usage: scripts/archon-build.sh [version]
 #
 # Outputs the path to the built binary on stdout.
-# Requires: git, go (1.24+)
+# Requires: git, go (1.26+)
 
 set -euo pipefail
 
