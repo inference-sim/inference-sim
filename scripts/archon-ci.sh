@@ -18,11 +18,6 @@ if [[ -z "$REPO_DIR" || -z "$BASE_SHA" || -z "$HEAD_SHA" ]]; then
   exit 1
 fi
 
-if ! command -v python3 &>/dev/null; then
-  echo "Error: python3 is required but not found on PATH." >&2
-  exit 1
-fi
-
 ARCHON="${ARCHON_BIN:-archon-go}"
 
 if [[ ! -x "$ARCHON" ]]; then
@@ -38,19 +33,9 @@ if [[ ! -f "$REPO_DIR/go.mod" ]]; then
   exit 1
 fi
 
-GO_MODULE=$(awk '/^module /{print $2; exit}' "$REPO_DIR/go.mod")
-if [[ -z "$GO_MODULE" ]]; then
-  echo "## Archon Error"
-  echo ""
-  echo "Could not parse module path from \`go.mod\`."
-  exit 1
-fi
-
-# Step 1: Run delta (JSON) to determine if architecture changed.
-# Capture stdout only — archon may print warnings to stderr (e.g. partial extraction)
-# which would corrupt the JSON if merged. Stderr goes to the GHA log.
+# Step 1: Run delta (human-readable) for triage and reporting.
 ARCHON_EXIT=0
-DELTA_JSON=$("$ARCHON" delta --json "$REPO_DIR" "$BASE_SHA" "$HEAD_SHA") || ARCHON_EXIT=$?
+DELTA_OUTPUT=$("$ARCHON" delta "$REPO_DIR" "$BASE_SHA" "$HEAD_SHA") || ARCHON_EXIT=$?
 if [[ $ARCHON_EXIT -ne 0 ]]; then
   echo "## Archon Error"
   echo ""
@@ -59,72 +44,41 @@ if [[ $ARCHON_EXIT -ne 0 ]]; then
   exit 1
 fi
 
-EMPTY=$(echo "$DELTA_JSON" | python3 -c "
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    empty = d.get('emptyAtPackageAltitude', False)
-    has_schema = bool(d.get('schema'))
-    has_contracts = bool(d.get('contracts')) or bool(d.get('contractViolations'))
-    # A delta is only truly safe to fast-track if no structural, schema, or contract changes exist.
-    print('true' if (empty and not has_schema and not has_contracts) else 'false')
-except (json.JSONDecodeError, AttributeError) as e:
-    print(f'Error parsing delta JSON: {e}', file=sys.stderr)
-    sys.exit(1)
-") || {
-  echo "## Archon Error"
-  echo ""
-  echo "Failed to parse architectural delta JSON."
-  exit 1
-}
-
-if [[ "$EMPTY" == "true" ]]; then
+# Step 2: Triage — fast-track only if structurally empty AND no schema/contract changes.
+if echo "$DELTA_OUTPUT" | grep -q "empty at package altitude" \
+   && ! echo "$DELTA_OUTPUT" | grep -q "SCHEMA CHANGED" \
+   && ! echo "$DELTA_OUTPUT" | grep -q "CONTRACT COVERAGE"; then
   echo "## Archon Architectural Review"
   echo ""
   echo "**No architectural change detected.** Internal-only PR — fast-track eligible."
   echo ""
-  # Still report invariant changes if any.
-  INVARIANTS=$(echo "$DELTA_JSON" | python3 -c "
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    invs = d.get('invariants', [])
-    if not invs:
-        sys.exit(0)
-    print('### Invariants Touched')
-    print('')
-    for inv in invs:
-        pkg = inv['package'].split('/')[-1]
-        for a in inv.get('added', []):
-            print(f'- + {pkg}.{a}')
-        for r in inv.get('removed', []):
-            print(f'- - {pkg}.{r}')
-        for m in inv.get('modified', []):
-            print(f'- ~ {pkg}.{m}')
-except Exception as e:
-    print(f'### Invariants\n\n(Failed to parse invariant data: {e})')
-" 2>&1) || true
-  if [[ -n "$INVARIANTS" ]]; then
-    echo "$INVARIANTS"
+  # Show invariant/other info from the delta if present (after the first line).
+  REST=$(echo "$DELTA_OUTPUT" | tail -n +3)
+  if [[ -n "$REST" ]]; then
+    echo '```'
+    echo "$REST"
+    echo '```'
   fi
   exit 0
 fi
 
-# Step 2: Non-empty delta. Gather full analysis.
+# Step 3: Non-empty delta. Gather full analysis.
 echo "## Archon Architectural Review"
 echo ""
 
-# Human-readable delta.
 echo "### Architectural Delta"
 echo ""
 echo '```'
-"$ARCHON" delta "$REPO_DIR" "$BASE_SHA" "$HEAD_SHA" 2>&1 || echo "(delta render failed)"
+echo "$DELTA_OUTPUT"
 echo '```'
 echo ""
 
-# Extract changed internal packages for impact analysis.
-# Only include packages that exist at HEAD (skip removed packages — impact can't resolve them).
-CHANGED_PKGS=$(echo "$DELTA_JSON" | python3 -c "
+# Extract changed internal packages for blast radius.
+GO_MODULE=$(awk '/^module /{print $2; exit}' "$REPO_DIR/go.mod")
+if [[ -n "$GO_MODULE" ]] && command -v python3 &>/dev/null; then
+  DELTA_JSON=$("$ARCHON" delta --json "$REPO_DIR" "$BASE_SHA" "$HEAD_SHA") || true
+  if [[ -n "$DELTA_JSON" ]]; then
+    CHANGED_PKGS=$(echo "$DELTA_JSON" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
 mod = sys.argv[1]
@@ -155,19 +109,20 @@ for c in d.get('contracts', []):
         pkgs.add(pkg)
 for p in sorted(pkgs - removed):
     print(p)
-" "$GO_MODULE") || CHANGED_PKGS=""
+" "$GO_MODULE" 2>/dev/null) || CHANGED_PKGS=""
 
-# Blast radius per changed package.
-if [[ -n "$CHANGED_PKGS" ]]; then
-  echo "### Blast Radius"
-  echo ""
-  echo '```'
-  while IFS= read -r pkg; do
-    "$ARCHON" impact "$REPO_DIR" "$pkg" "$HEAD_SHA" 2>&1 || echo "(impact analysis failed for $pkg)"
-    echo ""
-  done <<< "$CHANGED_PKGS"
-  echo '```'
-  echo ""
+    if [[ -n "$CHANGED_PKGS" ]]; then
+      echo "### Blast Radius"
+      echo ""
+      echo '```'
+      while IFS= read -r pkg; do
+        "$ARCHON" impact "$REPO_DIR" "$pkg" "$HEAD_SHA" 2>&1 || echo "(impact analysis failed for $pkg)"
+        echo ""
+      done <<< "$CHANGED_PKGS"
+      echo '```'
+      echo ""
+    fi
+  fi
 fi
 
 # Contract evidence.
