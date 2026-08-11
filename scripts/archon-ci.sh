@@ -63,7 +63,11 @@ EMPTY=$(echo "$DELTA_JSON" | python3 -c "
 import json, sys
 try:
     d = json.load(sys.stdin)
-    print('true' if d.get('emptyAtPackageAltitude', False) else 'false')
+    empty = d.get('emptyAtPackageAltitude', False)
+    has_schema = bool(d.get('schema'))
+    has_contracts = bool(d.get('contracts')) or bool(d.get('contractViolations'))
+    # A delta is only truly safe to fast-track if no structural, schema, or contract changes exist.
+    print('true' if (empty and not has_schema and not has_contracts) else 'false')
 except (json.JSONDecodeError, AttributeError) as e:
     print(f'Error parsing delta JSON: {e}', file=sys.stderr)
     sys.exit(1)

@@ -74,6 +74,12 @@ jobs:
             core.setOutput('base_sha', pr.base.sha);
             core.setOutput('head_sha', pr.head.sha);
 
+      - name: Fetch PR head ref
+        env:
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          git fetch origin "pull/$PR_NUMBER/head"
+
       - name: Run Archon analysis
         id: archon
         env:
