@@ -88,7 +88,14 @@ jobs:
           HEAD_SHA: ${{ steps.refs.outputs.head_sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          MERGE_BASE=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
+          MERGE_BASE=$(git merge-base "$BASE_SHA" "$HEAD_SHA" 2>/dev/null) || {
+            OUTPUT="## Archon Error
+
+          Could not compute merge-base between base ($BASE_SHA) and head ($HEAD_SHA). The PR head may not be reachable — check that the fetch step succeeded."
+            echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+            echo "$OUTPUT" > /tmp/archon-output.md
+            exit 0
+          }
           EXIT_CODE=0
           OUTPUT=$(scripts/archon-ci.sh . "$MERGE_BASE" "$HEAD_SHA") || EXIT_CODE=$?
           if [[ $EXIT_CODE -gt 1 ]]; then

@@ -76,8 +76,13 @@ echo ""
 # Extract changed internal packages for blast radius.
 GO_MODULE=$(awk '/^module /{print $2; exit}' "$REPO_DIR/go.mod")
 if [[ -n "$GO_MODULE" ]] && command -v python3 &>/dev/null; then
-  DELTA_JSON=$("$ARCHON" delta --json "$REPO_DIR" "$BASE_SHA" "$HEAD_SHA") || true
-  if [[ -n "$DELTA_JSON" ]]; then
+  DELTA_JSON=$("$ARCHON" delta --json "$REPO_DIR" "$BASE_SHA" "$HEAD_SHA") || DELTA_JSON=""
+  if [[ -z "$DELTA_JSON" ]]; then
+    echo "### Blast Radius"
+    echo ""
+    echo "_Unavailable — delta JSON extraction failed. See workflow log._"
+    echo ""
+  elif [[ -n "$DELTA_JSON" ]]; then
     CHANGED_PKGS=$(echo "$DELTA_JSON" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
