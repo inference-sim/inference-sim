@@ -52,7 +52,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.26'
 
       - name: Build archon-go
         id: build
@@ -86,6 +86,7 @@ jobs:
           ARCHON_BIN: ${{ steps.build.outputs.archon_bin }}
           BASE_SHA: ${{ steps.refs.outputs.base_sha }}
           HEAD_SHA: ${{ steps.refs.outputs.head_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           MERGE_BASE=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
           EXIT_CODE=0
@@ -96,6 +97,13 @@ jobs:
           Script exited with unexpected code $EXIT_CODE. Check the workflow logs."
           fi
           echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+          # GitHub PR comments have a 65536 char limit. Truncate if needed.
+          if [[ ${#OUTPUT} -gt 60000 ]]; then
+            FULL_LEN=${#OUTPUT}
+            OUTPUT="${OUTPUT:0:60000}
+
+          _Output truncated (${FULL_LEN} chars). See the [workflow run](${RUN_URL}) for the full report._"
+          fi
           echo "$OUTPUT" > /tmp/archon-output.md
 
       - name: Post PR comment
