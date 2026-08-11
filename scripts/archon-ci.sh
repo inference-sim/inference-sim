@@ -145,6 +145,14 @@ for p in d.get('packagesRemoved', []):
     path = p.get('path', '') if isinstance(p, dict) else p
     if path.startswith(mod):
         removed.add(path)
+for s in d.get('schema', []):
+    if s.get('package', '').startswith(mod):
+        pkgs.add(s['package'])
+for c in d.get('contracts', []):
+    iface = c.get('interface', '')
+    pkg = iface.rsplit('.', 1)[0]
+    if pkg.startswith(mod):
+        pkgs.add(pkg)
 for p in sorted(pkgs - removed):
     print(p)
 " "$GO_MODULE") || CHANGED_PKGS=""
