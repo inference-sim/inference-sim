@@ -2166,10 +2166,10 @@ var runCmd = &cobra.Command{
 			})
 		}
 
-		// Resolve the saturation detector + trace collector from --detectors /
-		// --saturation-config / --saturation-report BEFORE the run so an unknown
-		// name, bad config, or unwritable report path fails fast (#1516).
-		saturationDet, saturationCollector, satErr := resolveSaturation()
+		// Resolve the saturation tracer from --detectors / --saturation-config /
+		// --saturation-report BEFORE the run so an unknown name, bad config, or
+		// unwritable report path fails fast (#1516 single detector, #1519 bank).
+		satTracer, satErr := resolveSaturation()
 		if satErr != nil {
 			logrus.Fatalf("%v", satErr)
 		}
@@ -2250,16 +2250,17 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
-		// Saturation trace (#1516): stream the selected detector over the
-		// aggregate's completed-request metrics and write its per-event verdict
-		// trace to --saturation-report. Same pipeline as replay/observe; only the
-		// input slice differs (here it is sim-derived, INV-13).
+		// Saturation trace (#1516 single detector / #1519 bank): stream the selected
+		// detector(s) over the aggregate's completed-request metrics and write the
+		// per-event verdict trace to --saturation-report. Same pipeline as
+		// replay/observe; only the input slice differs (here it is sim-derived,
+		// INV-13).
 		//
-		// Guard on saturationDet so the common no-detector path skips the
+		// Guard on the tracer so the common no-detector path skips the
 		// O(n log n) sort + O(n) copy in CompletedRequestMetrics() — the argument
-		// would otherwise be evaluated before runSaturationTrace could no-op.
-		if saturationDet != nil {
-			if err := runSaturationTrace(saturationDet, saturationCollector, aggregated.CompletedRequestMetrics()); err != nil {
+		// would otherwise be evaluated before trace could no-op.
+		if satTracer != nil {
+			if err := satTracer.trace(aggregated.CompletedRequestMetrics()); err != nil {
 				logrus.Fatalf("Saturation trace: %v", err)
 			}
 		}
