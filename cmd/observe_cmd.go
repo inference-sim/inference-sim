@@ -788,7 +788,7 @@ func printObserveMetrics(w io.Writer, records []workload.TraceRecord, wallClockD
 		ITLMeanMs:         itlMeanMs,
 		ResponsesPerSec:   responsesPerSec,
 		TokensPerSec:      tokensPerSec,
-		Saturation:        saturationResult, // always nil as of #1516 (observe writes the per-event trace to --saturation-report, not stdout); #1517 repopulates this for the stdout final label
+		Saturation:        saturationResult, // #1517: per-detector final-label map when --detectors is set; nil otherwise (omitempty drops the field)
 	}
 
 	// Compute percentiles if data available
