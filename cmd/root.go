@@ -2112,6 +2112,16 @@ var runCmd = &cobra.Command{
 			logrus.Infof("[cluster] DP-as-placement: --dp %d (MoE) → %d single-node engine replicas per logical instance "+
 				"(%d logical × %d = %d instances), each per-rank (DP=1, %d KV blocks/replica)",
 				dataParallelism, dpPlan.Replicas, logicalInstances, dpPlan.Replicas, numInstances, totalKVBlocks)
+			// --moe-comm-backend selects the DP>1 dispatch/combine cost; under DP-as-placement
+			// each replica is DP=1, so that term is inert (the MoE FFN all-reduces over the TP
+			// group instead — correct EP-off physics). The resolveLatencyConfig no-op warning
+			// does not fire here (it gates on the CLI dataParallelism, which is >1), so warn
+			// explicitly to avoid a user believing the backend choice affects this run.
+			if moeCommBackend != "" {
+				logrus.Warnf("--moe-comm-backend=%s is inert under DP-as-placement: each of the %d DP replicas runs "+
+					"at DP=1, so the MoE FFN all-reduces over the TP group (no cross-DP dispatch/combine). The DP>1 "+
+					"dispatch term belongs to EP-on placement, deferred to #1548.", moeCommBackend, dpPlan.Replicas)
+			}
 		}
 
 		// Unified cluster path (used for all values of numInstances).

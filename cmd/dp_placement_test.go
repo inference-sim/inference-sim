@@ -378,14 +378,16 @@ func TestRunCmd_MoEDPPlacement_SpawnsReplicas(t *testing.T) {
 // dp²·perRank. It resolves the same MoE fixture auto-KV at dp=1 and dp=2 (the
 // auto-capacity path scales the total by dp; #1420 / kv_capacity.go Step 6), then
 // applies the run-body per-rank division and checks the two laws directly.
-func TestDPPlacement_PerRankKV_NoDoubleCount(t *testing.T) {
+// writeCompleteMoEFixture writes a complete MoE config.json (with vocab_size and
+// realistic dims so the KV auto-capacity path yields a positive block count on an
+// 80 GiB GPU) plus a hardware config, returning their paths.
+func writeCompleteMoEFixture(t *testing.T) (mcDir, hwPath string) {
+	t.Helper()
 	dir := t.TempDir()
-	mcDir := filepath.Join(dir, "config")
+	mcDir = filepath.Join(dir, "config")
 	if err := os.MkdirAll(mcDir, 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	// A complete MoE fixture: the auto-capacity path needs vocab_size and realistic
-	// dims so the derived block count is comfortably positive on an 80 GiB GPU.
 	configJSON := `{
   "architectures": ["MixtralForCausalLM"],
   "num_attention_heads": 32,
@@ -403,10 +405,15 @@ func TestDPPlacement_PerRankKV_NoDoubleCount(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(mcDir, "config.json"), []byte(configJSON), 0644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	hwPath := filepath.Join(dir, "hw.json")
+	hwPath = filepath.Join(dir, "hw.json")
 	if err := os.WriteFile(hwPath, []byte(`{"H100": {"MemoryGiB": 80.0, "TFlopsPeak": 989.5, "BwPeakTBs": 3.35}}`), 0644); err != nil {
 		t.Fatalf("write hw: %v", err)
 	}
+	return mcDir, hwPath
+}
+
+func TestDPPlacement_PerRankKV_NoDoubleCount(t *testing.T) {
+	mcDir, hwPath := writeCompleteMoEFixture(t)
 
 	resolveAutoKV := func(dp int) int64 {
 		model = "test-model"
@@ -457,5 +464,62 @@ func TestDPPlacement_PerRankKV_NoDoubleCount(t *testing.T) {
 	if perReplica*2 != lumped {
 		t.Errorf("BC-2: aggregate KV (perReplica×dp = %d) must equal the lumped dp-multiplied total (%d); "+
 			"a dp² double-count would give %d", perReplica*2, lumped, lumped*2)
+	}
+}
+
+// TestDPPlacement_ExplicitKV_SkipsPerRankDivision covers the BC-2 explicit-KV
+// branch: the run-body per-rank division is gated on `lr.KVParamsOK && MemoryGiB>0`
+// (auto-calc succeeded ⇒ the total was dp-scaled), so an explicit --total-kv-blocks
+// (which sets KVParamsOK=false) is NOT divided — each replica keeps the operator's
+// per-instance value (aggregate dp×value). This asserts the gating signal directly:
+// explicit ⇒ KVParamsOK false (no division); auto ⇒ KVParamsOK true (division applies).
+func TestDPPlacement_ExplicitKV_SkipsPerRankDivision(t *testing.T) {
+	mcDir, hwPath := writeCompleteMoEFixture(t)
+
+	resolve := func(explicitKV bool) latencyResolution {
+		model = "test-model"
+		latencyModelBackend = "trained-physics"
+		gpu = "H100"
+		tensorParallelism = 2
+		dataParallelism = 2
+		enableExpertParallel = false
+		moeCommBackend = ""
+		totalKVBlocks = 0
+		blockSizeTokens = 16
+		maxModelLen = 0
+		gpuMemoryUtilization = 0.9
+		modelConfigFolder = mcDir
+		hwConfigPath = hwPath
+		defaultsFilePath = "../defaults.yaml"
+
+		testCmd := &cobra.Command{}
+		registerSimConfigFlags(testCmd)
+		args := []string{
+			"--model", "test-model", "--latency-model", "trained-physics",
+			"--hardware", "H100", "--tp", "2", "--dp", "2",
+			"--model-config-folder", mcDir, "--hardware-config", hwPath,
+			"--defaults-filepath", "../defaults.yaml",
+		}
+		if explicitKV {
+			args = append(args, "--total-kv-blocks", "12345")
+		}
+		if err := testCmd.ParseFlags(args); err != nil {
+			t.Fatalf("ParseFlags: %v", err)
+		}
+		return resolveLatencyConfig(testCmd)
+	}
+
+	// Explicit --total-kv-blocks ⇒ auto-calc skipped ⇒ KVParamsOK false ⇒ the run body
+	// does NOT divide (each replica keeps the operator's value).
+	if lrExplicit := resolve(true); lrExplicit.KVParamsOK {
+		t.Errorf("explicit --total-kv-blocks must yield KVParamsOK=false (division skipped), got true")
+	}
+	if totalKVBlocks != 12345 {
+		t.Errorf("explicit --total-kv-blocks must be preserved unchanged, got %d", totalKVBlocks)
+	}
+	// Auto-calc (no --total-kv-blocks) with a valid GPU ⇒ KVParamsOK true ⇒ the run
+	// body divides by dp to yield the per-rank budget.
+	if lrAuto := resolve(false); !lrAuto.KVParamsOK {
+		t.Errorf("auto KV path must yield KVParamsOK=true (division applies), got false")
 	}
 }
