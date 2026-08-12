@@ -178,7 +178,8 @@ Example:
 		if lr.ModelConfig.IsMoE() && dataParallelism > 1 {
 			logrus.Fatalf("--dp %d on an MoE model is not supported in blis replay: DP-as-placement is a "+
 				"run-only feature (blis run spawns %d real engine replicas). Replay keeps the single-instance "+
-				"DP model, so the two paths would diverge for identical flags (INV-13). Use blis run instead.",
+				"DP model, so the two paths would diverge for identical flags (INV-13). Use blis run instead; "+
+				"replay parity is tracked by #1556.",
 				dataParallelism, dataParallelism)
 		}
 

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/inference-sim/sim"
 	"github.com/spf13/cobra"
 )
 
@@ -27,6 +28,7 @@ func TestPlanDPPlacement(t *testing.T) {
 		epOn             bool
 		pdActive         bool
 		autoscalerActive bool
+		nodePoolsActive  bool
 		wantActive       bool
 		wantReplicas     int
 		wantPerRankDP    int
@@ -77,11 +79,18 @@ func TestPlanDPPlacement(t *testing.T) {
 			autoscalerActive: true,
 			wantErrContains:  "autoscaler",
 		},
+		{
+			name:            "MoE dp>1 with node pools is guarded",
+			isMoE:           true,
+			dp:              2,
+			nodePoolsActive: true,
+			wantErrContains: "node pools",
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			plan, err := planDPPlacement(tc.isMoE, tc.dp, tc.epOn, tc.pdActive, tc.autoscalerActive)
+			plan, err := planDPPlacement(tc.isMoE, tc.dp, tc.epOn, tc.pdActive, tc.autoscalerActive, tc.nodePoolsActive)
 			if tc.wantErrContains != "" {
 				if err == nil {
 					t.Fatalf("expected an error containing %q, got nil (plan=%+v)", tc.wantErrContains, plan)
@@ -104,6 +113,84 @@ func TestPlanDPPlacement(t *testing.T) {
 				t.Errorf("PerRankDP: got %d, want %d", plan.PerRankDP, tc.wantPerRankDP)
 			}
 		})
+	}
+}
+
+// TestApplyDPPlacement is the BC-2 formula contract for the production per-rank
+// KV division + instance expansion. It exercises applyDPPlacement directly (the
+// exact statement the run body calls), so deleting, inverting, or mis-gating the
+// division fails here — the dp² double-count BC-2 exists to prevent.
+func TestApplyDPPlacement(t *testing.T) {
+	active := dpPlacementPlan{Active: true, Replicas: 4, PerRankDP: 1}
+	inactive := dpPlacementPlan{Active: false, Replicas: 1, PerRankDP: 1}
+
+	// Active + auto-scaled: the dp-multiplied auto total divides back to one rank,
+	// and the instance count expands ×Replicas. Aggregate is preserved (no dp²).
+	const inNumInst, inTotalKV = 2, int64(40000) // 40000 = perRank(10000) × dp(4)
+	gotN, gotKV := applyDPPlacement(active, 4, inNumInst, inTotalKV, true)
+	if gotN != 8 {
+		t.Errorf("auto: numInstances got %d, want 8 (2×4)", gotN)
+	}
+	if gotKV != 10000 {
+		t.Errorf("auto: per-rank KV got %d, want 10000 (40000/4)", gotKV)
+	}
+	// Aggregate over all replicas (newN × per-rank) equals the pre-#1531 lumped total
+	// (inNumInst × dp-multiplied total). No dp² double-count.
+	if int64(gotN)*gotKV != int64(inNumInst)*inTotalKV {
+		t.Errorf("auto: aggregate KV (%d×%d=%d) must equal the lumped total (%d×%d=%d)",
+			gotN, gotKV, int64(gotN)*gotKV, inNumInst, inTotalKV, int64(inNumInst)*inTotalKV)
+	}
+
+	// Active + NOT auto-scaled (explicit --total-kv-blocks): each replica keeps the
+	// operator value; the count still expands.
+	gotN, gotKV = applyDPPlacement(active, 4, 1, 12345, false)
+	if gotN != 4 {
+		t.Errorf("explicit: numInstances got %d, want 4", gotN)
+	}
+	if gotKV != 12345 {
+		t.Errorf("explicit: per-rank KV must be preserved (no division), got %d, want 12345", gotKV)
+	}
+
+	// Inactive plan is the identity.
+	gotN, gotKV = applyDPPlacement(inactive, 1, 3, 5000, true)
+	if gotN != 3 || gotKV != 5000 {
+		t.Errorf("inactive: expected identity (3, 5000), got (%d, %d)", gotN, gotKV)
+	}
+}
+
+// TestDPPlacement_PerRankDP_ConfiguresConstructor is the behavioral companion to
+// the source-level wiring guard: it proves the plan's PerRankDP, threaded through
+// the canonical NewModelHardwareConfig, yields a config that reports DP=1 and
+// moeGroup=TP (experts replicated per rank — EP-off physics) for an active MoE
+// plan, and leaves DP=1 for the dp=1 no-op. Refactor-safe (asserts observable
+// config behavior, not source text).
+func TestDPPlacement_PerRankDP_ConfiguresConstructor(t *testing.T) {
+	moe := sim.ModelConfig{NumLocalExperts: 8} // >= MoEMinExperts ⇒ IsMoE
+	hw := sim.HardwareCalib{}
+	const tp = 2
+
+	// Active plan (MoE, dp=4): PerRankDP=1 ⇒ each replica's config is DP=1, moeGroup=TP.
+	planActive, err := planDPPlacement(true, 4, false, false, false, false)
+	if err != nil {
+		t.Fatalf("planDPPlacement(active): %v", err)
+	}
+	mhcActive := sim.NewModelHardwareConfig(moe, hw, "m", "H100", tp, planActive.PerRankDP, false, "", "trained-physics", 0)
+	if mhcActive.EffectiveDP() != 1 {
+		t.Errorf("active plan: EffectiveDP got %d, want 1 (per-rank)", mhcActive.EffectiveDP())
+	}
+	if mhcActive.EffectiveMoEGroupSize() != tp {
+		t.Errorf("active plan: EffectiveMoEGroupSize got %d, want %d (TP; experts replicated per DP rank)",
+			mhcActive.EffectiveMoEGroupSize(), tp)
+	}
+
+	// dp=1 no-op: PerRankDP=1 ⇒ unchanged DP=1 behavior.
+	planNoop, err := planDPPlacement(true, 1, false, false, false, false)
+	if err != nil {
+		t.Fatalf("planDPPlacement(noop): %v", err)
+	}
+	mhcNoop := sim.NewModelHardwareConfig(moe, hw, "m", "H100", tp, planNoop.PerRankDP, false, "", "trained-physics", 0)
+	if mhcNoop.EffectiveDP() != 1 {
+		t.Errorf("dp=1 no-op: EffectiveDP got %d, want 1", mhcNoop.EffectiveDP())
 	}
 }
 
@@ -369,6 +456,114 @@ func TestRunCmd_MoEDPPlacement_SpawnsReplicas(t *testing.T) {
 	outA2 := runBlisRunSubprocess(t, "TestRunCmd_MoEDPPlacement_SpawnsReplicas", 1, 2)
 	if outA != outA2 {
 		t.Errorf("INV-6: two identical DP-placement runs produced different stdout")
+	}
+}
+
+// dpRunBaseArgs returns the offline-safe `blis run` args for the deepseek-v2-lite
+// MoE fixture (paths relative to the cmd/ test cwd), minus the DP/KV/topology
+// flags each test appends.
+func dpRunBaseArgs() []string {
+	return []string{
+		"run",
+		"--model", "deepseek-ai/deepseek-v2-lite",
+		"--model-config-folder", "../model_configs/deepseek-v2-lite",
+		"--hardware", "H100",
+		"--hardware-config", "../hardware_config.json",
+		"--tp", "1",
+		"--rate", "10",
+		"--num-requests", "40",
+		"--seed", "42",
+		"--defaults-filepath", "../defaults.yaml",
+	}
+}
+
+// TestRunCmd_MoEDPPlacement_AutoKV_NoPanic exercises the auto-KV path
+// (KVParamsOK=true) end-to-end — the production per-rank division at the run body
+// actually fires (Issue #1531 review Finding 2) — and confirms the max-model-len
+// re-cap prevents the per-replica "KV cache too small for MaxModelLen" panic
+// (Finding 1). A huge --max-model-len is capped to the aggregate by
+// resolveLatencyConfig, then must be re-capped to the per-rank budget after the
+// division; without the re-cap each replica's NewSimulator panics (non-zero exit).
+func TestRunCmd_MoEDPPlacement_AutoKV_NoPanic(t *testing.T) {
+	if os.Getenv("BLIS_RUN_DP_AUTOKV") == "1" {
+		args := append(dpRunBaseArgs(),
+			"--dp", "2", "--num-instances", "1",
+			"--max-model-len", "10000000", // forces the per-rank re-cap after auto-KV division
+		)
+		rootCmd.SetArgs(args)
+		_ = rootCmd.Execute()
+		os.Exit(0)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRunCmd_MoEDPPlacement_AutoKV_NoPanic$")
+	cmd.Env = append(os.Environ(), "BLIS_RUN_DP_AUTOKV=1")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("auto-KV DP-placement run must not panic/fatal (per-rank max-model-len re-cap); err=%v\nstderr:\n%s",
+			err, stderr.String())
+	}
+	out := stdout.String()
+	// instance_1 present ⇒ the auto path reached applyDPPlacement (expansion + division).
+	if !strings.Contains(out, `"instance_id": "instance_1"`) {
+		t.Errorf("auto-KV: expected 2 replicas (instance_1 present); stdout:\n%s", out)
+	}
+	clusterConservationHolds(t, out)
+}
+
+// TestRunCmd_MoEDP1_ByteIdentical is the BC-6 (INV-6 no-op) system guard: an MoE
+// run with --dp 1 (the default, planDPPlacement inactive) is deterministic across
+// runs. Catches a future regression that adds nondeterministic code to the DP path.
+func TestRunCmd_MoEDP1_ByteIdentical(t *testing.T) {
+	if os.Getenv("BLIS_RUN_DP1") == "1" {
+		args := append(dpRunBaseArgs(), "--dp", "1", "--num-instances", "1", "--total-kv-blocks", "20000")
+		rootCmd.SetArgs(args)
+		_ = rootCmd.Execute()
+		os.Exit(0)
+	}
+	run := func() string {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestRunCmd_MoEDP1_ByteIdentical$")
+		cmd.Env = append(os.Environ(), "BLIS_RUN_DP1=1")
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("--dp 1 run failed: %v\nstderr:\n%s", err, stderr.String())
+		}
+		return stdout.String()
+	}
+	first, second := run(), run()
+	if first != second {
+		t.Errorf("BC-6/INV-6: two --dp 1 MoE runs produced different stdout")
+	}
+}
+
+// TestRunCmd_MoEDPPlacement_GuardedCombo_Rejected is the BC-7 system guard: the
+// planDPPlacement error for an unsupported combo (here --enable-expert-parallel +
+// MoE --dp>1) is actually converted to a logrus.Fatalf by runCmd (exit 1), not
+// merely returned. Complements the pure-function TestPlanDPPlacement guard cases.
+func TestRunCmd_MoEDPPlacement_GuardedCombo_Rejected(t *testing.T) {
+	if os.Getenv("BLIS_RUN_DP_EPGUARD") == "1" {
+		args := append(dpRunBaseArgs(),
+			"--dp", "2", "--num-instances", "1", "--total-kv-blocks", "20000",
+			"--enable-expert-parallel",
+		)
+		rootCmd.SetArgs(args)
+		_ = rootCmd.Execute()
+		os.Exit(0)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRunCmd_MoEDPPlacement_GuardedCombo_Rejected$")
+	cmd.Env = append(os.Environ(), "BLIS_RUN_DP_EPGUARD=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected non-zero exit (Fatalf) for --enable-expert-parallel + MoE --dp>1, got exit 0; output:\n%s", out)
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+		t.Fatalf("expected exit code 1 (logrus.Fatalf), got %v; output:\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "1548") {
+		t.Errorf("EP-on guard message should reference #1548; got:\n%s", out)
 	}
 }
 
