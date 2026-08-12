@@ -358,8 +358,12 @@ func TestPDParentE2E_GeqNonPDBaseline_OneToken(t *testing.T) {
 //   - PRIMARY (preempted): FirstTokenTime != 0 ⇒ decodeOwnE2E is already
 //     arrival-relative, so E2E = decodeOwnE2E (decodeDelay NOT added — the guard
 //     that prevents the double-count regression vs main).
-//   - FALLBACK: decode-side metrics absent (nil DecodeSubReq / no recorded own E2E
-//     or scheduling delay) ⇒ E2E = parent.CompletionTime − ArrivalTime.
+//   - FALLBACK: a parent that served a token but has no recorded decode own E2E /
+//     scheduling delay (e.g. timeout AFTER the first token) ⇒ E2E =
+//     parent.CompletionTime − ArrivalTime.
+//   - NO-TOKEN (issue #1511): a terminal parent that emitted no token (nil
+//     DecodeSubReq, or non-nil with empty ITL) contributes NO E2E entry — it is a
+//     drop/timeout, counted only in DroppedUnservable / TimedOutRequests (INV-PD-6).
 //   - NEGATIVE GUARD: a negative reconstructed E2E is skipped (no entry emitted).
 func TestPDParentE2E_ProjectionBranches(t *testing.T) {
 	origReq := &sim.Request{ID: "orig", ArrivalTime: 0}
@@ -404,16 +408,32 @@ func TestPDParentE2E_ProjectionBranches(t *testing.T) {
 			wantEntry: true, wantE2E: 900, wantCompletion: 900,
 		},
 		{
-			// FALLBACK: nil DecodeSubReq (drop-at-transfer-start / late-drop, #1511) ⇒
-			// no decode own E2E ⇒ parent.CompletionTime − ArrivalTime.
-			name: "fallback: nil DecodeSubReq",
+			// NO-TOKEN DROP: nil DecodeSubReq (drop-at-transfer-start / late-drop, #1511).
+			// The parent reached a terminal CompletionTime but emitted no token, so it
+			// contributes NO E2E entry (INV-PD-6) — it is a drop, counted only in
+			// DroppedUnservable. (Before #1511 this took the CompletionTime-based fallback
+			// and polluted the E2E distribution with a phantom 4900.)
+			name: "no-token drop: nil DecodeSubReq ⇒ no entry",
 			parent: &ParentRequest{
 				ID: "p2", PrefillSubReqID: "p2_prefill", DecodeSubReqID: "p2_decode",
 				OriginalRequest: origReq, ArrivalTime: 100, CompletionTime: 5000,
 				DecodeInstanceID: "inst-0", DecodeSubReq: nil,
 			},
 			setDecodeE2E: false, setDelay: false,
-			wantEntry: true, wantE2E: 4900, wantCompletion: 5000, // 5000 − 100 = 4900; completion = 100 + 4900
+			wantEntry: false,
+		},
+		{
+			// NO-TOKEN TIMEOUT-WHILE-QUEUED: non-nil DecodeSubReq but empty ITL (never
+			// ran a decode step). Also emitted no token ⇒ no E2E entry (#1511).
+			name: "no-token timeout while queued: empty ITL ⇒ no entry",
+			parent: &ParentRequest{
+				ID: "p5", PrefillSubReqID: "p5_prefill", DecodeSubReqID: "p5_decode",
+				OriginalRequest: origReq, ArrivalTime: 0, CompletionTime: 5000,
+				DecodeInstanceID: "inst-0",
+				DecodeSubReq:     &sim.Request{FirstTokenTime: 0, ITL: []int64{}},
+			},
+			setDecodeE2E: false, setDelay: false,
+			wantEntry: false,
 		},
 		{
 			// FALLBACK: decode own E2E present but scheduling delay absent (defensive:
@@ -493,5 +513,219 @@ func TestPDParentE2E_ProjectionBranches(t *testing.T) {
 				t.Errorf("INV-PD-6: decode sub-request E2E key %s still present", tc.parent.DecodeSubReqID)
 			}
 		})
+	}
+}
+
+// TestPDParentMetrics_NoTokenExcludedFromLatency is the companion invariant test
+// for issue #1511. A PD-disaggregated parent that reaches a terminal CompletionTime
+// but emitted NO token — the three no-token outcomes of the drop/timeout taxonomy —
+// must contribute NO per-request metric entry (INV-PD-6): it is represented only by
+// the drop/timeout counters. A parent whose decode sub-request emitted ≥1 token
+// (successful decode, or a timeout AFTER the first token) keeps its entries.
+//
+// Discriminator: parent.DecodeSubReq != nil && len(parent.DecodeSubReq.ITL) > 0.
+//
+//	| outcome                       | DecodeSubReq | ITL | served token | parent entries |
+//	| successful decode             | non-nil      | ≥1  | yes          | present        |
+//	| timeout AFTER first token     | non-nil      | ≥1  | yes          | present        |
+//	| drop at transfer start        | nil          | —   | no           | ABSENT         |
+//	| drop at transfer complete     | nil          | —   | no           | ABSENT         |
+//	| timeout WHILE queued          | non-nil      | 0   | no           | ABSENT         |
+//
+// Each case also asserts the aggregate law TTFTSum == Σ RequestTTFTs (BC-3): the
+// deleted prefill sub-request TTFT is rolled out of TTFTSum for the no-token cases,
+// so the reported mean TTFT never counts a request that produced no token.
+func TestPDParentMetrics_NoTokenExcludedFromLatency(t *testing.T) {
+	origReq := &sim.Request{ID: "orig", ArrivalTime: 0}
+	const prefillTTFT = 2500.0
+
+	tests := []struct {
+		name          string
+		parent        *ParentRequest
+		setDecodeMaps bool // seed decode-side own E2E / scheduling delay / ITL (served path)
+		wantEntries   bool // whether parent-keyed latency entries are expected
+	}{
+		{
+			name: "successful decode: served a token",
+			parent: &ParentRequest{
+				ID: "s0", PrefillSubReqID: "s0_prefill", DecodeSubReqID: "s0_decode",
+				OriginalRequest: origReq, ArrivalTime: 0, CompletionTime: 5000,
+				TransferCompleteTime: 151, DecodeInstanceID: "inst-0",
+				DecodeSubReq:         &sim.Request{FirstTokenTime: 0, ITL: []int64{300}},
+			},
+			setDecodeMaps: true, wantEntries: true,
+		},
+		{
+			name: "timeout after first token: served a token",
+			parent: &ParentRequest{
+				ID: "s1", PrefillSubReqID: "s1_prefill", DecodeSubReqID: "s1_decode",
+				OriginalRequest: origReq, ArrivalTime: 0, CompletionTime: 5000,
+				DecodeInstanceID: "inst-0",
+				DecodeSubReq:     &sim.Request{FirstTokenTime: 0, ITL: []int64{300}},
+			},
+			// No decode own-E2E (timed out, never recorded completion): E2E takes the
+			// CompletionTime-based fallback, TTFT the primary path. Still served → kept.
+			setDecodeMaps: false, wantEntries: true,
+		},
+		{
+			name: "drop at transfer start: nil DecodeSubReq",
+			parent: &ParentRequest{
+				ID: "d0", PrefillSubReqID: "d0_prefill", DecodeSubReqID: "d0_decode",
+				OriginalRequest: origReq, ArrivalTime: 0,
+				TransferStartTime: 100, CompletionTime: 100, TransferCompleteTime: 0,
+				DecodeInstanceID: "inst-0", DecodeSubReq: nil,
+			},
+			setDecodeMaps: false, wantEntries: false,
+		},
+		{
+			name: "drop at transfer complete (late-drop): nil DecodeSubReq",
+			parent: &ParentRequest{
+				ID: "d1", PrefillSubReqID: "d1_prefill", DecodeSubReqID: "d1_decode",
+				OriginalRequest: origReq, ArrivalTime: 0,
+				TransferCompleteTime: 200, CompletionTime: 200,
+				DecodeInstanceID: "inst-0", DecodeSubReq: nil,
+			},
+			setDecodeMaps: false, wantEntries: false,
+		},
+		{
+			name: "timeout while queued: non-nil DecodeSubReq, empty ITL",
+			parent: &ParentRequest{
+				ID: "d2", PrefillSubReqID: "d2_prefill", DecodeSubReqID: "d2_decode",
+				OriginalRequest: origReq, ArrivalTime: 0, CompletionTime: 5000,
+				DecodeInstanceID: "inst-0",
+				DecodeSubReq:     &sim.Request{FirstTokenTime: 0, ITL: []int64{}},
+			},
+			setDecodeMaps: false, wantEntries: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := sim.NewMetrics()
+			pfx := tc.parent.PrefillSubReqID
+			dec := tc.parent.DecodeSubReqID
+			pid := tc.parent.ID
+
+			// Pre-projection state: the prefill sub-request completed and recorded its
+			// TTFT + scheduling delay; TTFTSum holds exactly that prefill TTFT for this
+			// parent (the decode sub-request contributes 0, simulator.go).
+			m.RequestTTFTs[pfx] = prefillTTFT
+			m.TTFTSum = int64(prefillTTFT)
+			m.RequestSchedulingDelays[pfx] = 100
+			if tc.setDecodeMaps {
+				m.RequestSchedulingDelays[dec] = 151
+				m.RequestE2Es[dec] = 301
+				m.RequestITLs[dec] = 300
+			}
+
+			cs := &ClusterSimulator{
+				aggregatedMetrics: m,
+				parentRequests:    map[string]*ParentRequest{pid: tc.parent},
+			}
+			cs.projectPDMetrics()
+
+			// The six per-request maps INV-PD-6 governs.
+			_, hasTTFT := m.RequestTTFTs[pid]
+			_, hasE2E := m.RequestE2Es[pid]
+			_, hasCompletion := m.RequestCompletionTimes[pid]
+			_, hasDelay := m.RequestSchedulingDelays[pid]
+			_, hasReq := m.Requests[pid]
+			_, hasITL := m.RequestITLs[pid]
+
+			if tc.wantEntries {
+				if !hasTTFT || !hasE2E || !hasCompletion || !hasReq || !hasDelay {
+					t.Errorf("served parent %s: expected latency entries, got TTFT=%v E2E=%v completion=%v req=%v delay=%v",
+						pid, hasTTFT, hasE2E, hasCompletion, hasReq, hasDelay)
+				}
+			} else {
+				if hasTTFT || hasE2E || hasCompletion || hasDelay || hasReq || hasITL {
+					t.Errorf("no-token parent %s: expected NO parent entries (INV-PD-6), got TTFT=%v E2E=%v completion=%v delay=%v req=%v itl=%v",
+						pid, hasTTFT, hasE2E, hasCompletion, hasDelay, hasReq, hasITL)
+				}
+			}
+
+			// BC-3: TTFTSum must equal Σ RequestTTFTs after projection (the deleted
+			// prefill TTFT is rolled out of TTFTSum for the no-token cases).
+			var sumTTFT float64
+			for _, v := range m.RequestTTFTs {
+				sumTTFT += v
+			}
+			if math.Abs(float64(m.TTFTSum)-sumTTFT) > 1.0 {
+				t.Errorf("BC-3: TTFTSum (%d) != Σ RequestTTFTs (%.1f) after projecting %s", m.TTFTSum, sumTTFT, pid)
+			}
+
+			// INV-PD-6 first clause: no sub-request suffix keys survive.
+			for _, subKey := range []string{pfx, dec} {
+				if _, ok := m.RequestTTFTs[subKey]; ok {
+					t.Errorf("sub-request TTFT key %s still present", subKey)
+				}
+				if _, ok := m.RequestE2Es[subKey]; ok {
+					t.Errorf("sub-request E2E key %s still present", subKey)
+				}
+			}
+		})
+	}
+}
+
+// TestPDParentMetrics_TTFTSumConsistentAcrossDrop proves the aggregate TTFTSum stays
+// consistent with the per-request RequestTTFTs map (BC-3) when a run mixes a served
+// parent with a no-token drop (issue #1511). Before the fix the dropped parent kept a
+// phantom prefill-only TTFT and TTFTSum double-counted it; after the fix the reported
+// mean TTFT (TTFTSum / n) reflects only the served parent.
+func TestPDParentMetrics_TTFTSumConsistentAcrossDrop(t *testing.T) {
+	origReq := &sim.Request{ID: "orig", ArrivalTime: 0}
+	const servedPrefillTTFT, dropPrefillTTFT = 2500.0, 1800.0
+
+	served := &ParentRequest{
+		ID: "served", PrefillSubReqID: "served_prefill", DecodeSubReqID: "served_decode",
+		OriginalRequest: origReq, ArrivalTime: 0, CompletionTime: 5000,
+		TransferCompleteTime: 151, DecodeInstanceID: "inst-0",
+		DecodeSubReq:         &sim.Request{FirstTokenTime: 0, ITL: []int64{300}},
+	}
+	dropped := &ParentRequest{
+		ID: "dropped", PrefillSubReqID: "dropped_prefill", DecodeSubReqID: "dropped_decode",
+		OriginalRequest: origReq, ArrivalTime: 0,
+		TransferStartTime: 100, CompletionTime: 100, TransferCompleteTime: 0,
+		DecodeInstanceID: "inst-0", DecodeSubReq: nil,
+	}
+
+	m := sim.NewMetrics()
+	// Pre-projection: both prefills recorded a TTFT; TTFTSum is their sum.
+	m.RequestTTFTs[served.PrefillSubReqID] = servedPrefillTTFT
+	m.RequestTTFTs[dropped.PrefillSubReqID] = dropPrefillTTFT
+	m.TTFTSum = int64(servedPrefillTTFT + dropPrefillTTFT)
+	m.RequestSchedulingDelays[served.DecodeSubReqID] = 151
+	m.RequestE2Es[served.DecodeSubReqID] = 301
+
+	cs := &ClusterSimulator{
+		aggregatedMetrics: m,
+		parentRequests: map[string]*ParentRequest{
+			served.ID: served, dropped.ID: dropped,
+		},
+	}
+	cs.projectPDMetrics()
+
+	// Only the served parent has a projected TTFT (= decodeDelay 151 + ITL[0] 300).
+	if _, ok := m.RequestTTFTs["dropped"]; ok {
+		t.Error("dropped parent must not have a projected TTFT (issue #1511)")
+	}
+	wantTTFT, ok := m.RequestTTFTs["served"]
+	if !ok {
+		t.Fatal("served parent lost its TTFT entry")
+	}
+	if math.Abs(wantTTFT-451.0) > 1e-9 {
+		t.Errorf("served TTFT = %.1f, want 451 (decodeDelay 151 + firstDecodeStep 300)", wantTTFT)
+	}
+
+	// BC-3: TTFTSum == Σ RequestTTFTs == the single served value.
+	var sumTTFT float64
+	for _, v := range m.RequestTTFTs {
+		sumTTFT += v
+	}
+	if math.Abs(float64(m.TTFTSum)-sumTTFT) > 1.0 {
+		t.Errorf("BC-3: TTFTSum (%d) != Σ RequestTTFTs (%.1f)", m.TTFTSum, sumTTFT)
+	}
+	if math.Abs(float64(m.TTFTSum)-wantTTFT) > 1.0 {
+		t.Errorf("mean TTFT law: TTFTSum (%d) must equal the single served TTFT (%.1f)", m.TTFTSum, wantTTFT)
 	}
 }

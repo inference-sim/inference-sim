@@ -1779,11 +1779,15 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 
 // projectPDMetrics replaces sub-request entries in per-request metric maps
 // with parent-level entries. For each ParentRequest:
-//   - Completed parents (CompletionTime > 0, DecodeInstanceID != ""):
+//   - Served parents (terminal AND the decode sub-request emitted ≥1 token):
 //     sub-request entries are replaced with parent-keyed entries using
-//     true user-facing values (e.g., E2E = CompletionTime - ArrivalTime).
-//   - Incomplete/dropped parents: sub-request entries are removed
-//     (these requests did not complete successfully).
+//     true user-facing values (e.g., E2E = decodeSchedulingDelay + decodeOwnE2E).
+//   - Incomplete parents, and terminal-but-no-token parents (decode-side drops
+//     with nil DecodeSubReq, or decode-timeout-while-queued with empty ITL): the
+//     sub-request entries are removed and NO parent entry is created. These
+//     requests produced no output; they are accounted for by the drop/timeout
+//     counters only (DroppedUnservable / TimedOutRequests), never by the latency
+//     distributions (issue #1511, INV-PD-6).
 //
 // This is a no-op when disaggregation is not active (parentRequests is empty).
 func (c *ClusterSimulator) projectPDMetrics() {
@@ -1797,6 +1801,25 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		dec := parent.DecodeSubReqID  // "req_N_decode"
 		pid := parent.ID              // "req_N"
 		completed := parent.CompletionTime > 0 && parent.DecodeInstanceID != ""
+
+		// servedFirstToken: the decode sub-request actually emitted ≥1 token. It is
+		// false for all three no-token TERMINAL outcomes (issue #1511):
+		//   - decode-side drop at transfer start / transfer complete — DecodeSubReq is
+		//     nil (nilled by dropAtStart / the late-drop path before the decode sub-request
+		//     runs); and
+		//   - decode-timeout-while-queued — DecodeSubReq != nil but its ITL is empty
+		//     (it never ran a decode step).
+		// Each of these reaches a terminal CompletionTime with a DecodeInstanceID assigned
+		// (so `completed` is true) yet produced no output. Such a parent belongs to the
+		// drop/timeout counters (DroppedUnservable via droppedAtDecodeKV; TimedOutRequests
+		// via pdDecodeTimedOutCount) ONLY and must contribute NO per-request metric entry —
+		// otherwise it is double-represented as both a drop and a latency sample, polluting
+		// the TTFT/E2E/scheduling-delay distributions (INV-PD-6). `served` folds that
+		// requirement into the projection gate below. A decode sub-request that emitted a
+		// first token and THEN timed out mid-generation has a non-empty ITL, so it is still
+		// served and keeps its entries (the user did receive that token).
+		servedFirstToken := parent.DecodeSubReq != nil && len(parent.DecodeSubReq.ITL) > 0
+		served := completed && servedFirstToken
 
 		// Read the decode sub-request's own per-instance measurements before the
 		// per-metric delete/rekey blocks below consume them (R1: no silent data
@@ -1844,9 +1867,10 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// construction — e.g. a decode sub-request that emits a first token and then
 		// times out mid-generation takes the TTFT primary path but the E2E fallback,
 		// so a deadline landing inside the post-first-token OTPT window can leave
-		// TTFT slightly above E2E. This is unchanged from main and orthogonal to the
-		// short-output under-count fixed here; tracked with the other drop/timeout
-		// edge cases in issue #1511.)
+		// TTFT slightly above E2E. This is unchanged from main and orthogonal to both
+		// the short-output under-count fixed in #1513 and the no-token exclusion fixed
+		// in #1511 — that request DID serve a token, so it legitimately keeps its
+		// TTFT/E2E entries; the residual TTFT>E2E micro-edge is a separate concern.)
 		//
 		// The previous formula (parent.CompletionTime − ArrivalTime) under-counted:
 		// parent.CompletionTime is stamped on the CLUSTER clock at the
@@ -1860,7 +1884,7 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		delete(m.RequestE2Es, dec)
 		var parentE2E float64
 		var haveParentE2E bool
-		if completed {
+		if served {
 			if hasDecodeDelay && hasDecodeOwnE2E {
 				// decodeOwnE2E is schedule-relative on the normal path (FirstTokenTime
 				// unset) and arrival-relative after a re-prefill (FirstTokenTime set);
@@ -1883,13 +1907,13 @@ func (c *ClusterSimulator) projectPDMetrics() {
 					haveParentE2E = true
 				}
 			} else {
-				// Fallback: decode-side metrics unavailable. A drop-at-transfer-start
-				// or late-drop parent (issue #1511) nils DecodeSubReq before the decode
-				// sub-request runs, so it recorded neither an own E2E nor a scheduling
-				// delay; a decode sub-request that timed out while still queued likewise
-				// has no recorded own E2E. Use the parent.CompletionTime-based value
-				// (cluster clock), matching the pre-#1513 behavior for these edge cases
-				// (no regression).
+				// Fallback: this parent served a first token (guaranteed by `served`) but
+				// its decode sub-request has no recorded own E2E — e.g. it emitted the first
+				// token and THEN timed out mid-generation, so recordRequestCompletion never
+				// ran. Use the parent.CompletionTime-based value (cluster clock), matching
+				// the pre-#1513 behavior for this edge case (no regression). The no-token
+				// terminal outcomes (decode-side drops, timeout-while-queued) never reach
+				// here — `served` excludes them (issue #1511).
 				e2e := parent.CompletionTime - parent.ArrivalTime
 				if e2e < 0 {
 					// INV-3/INV-5 violation: completion before arrival. Should never occur
@@ -1933,26 +1957,23 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// above (shared with the E2E block); RequestSchedulingDelays[dec] is not
 		// deleted until the scheduling-delay block below.
 		//
-		// Gate on `completed` (CompletionTime > 0 && DecodeInstanceID != ""). A
-		// late-drop (decode pod unroutable at transfer complete) leaves DecodeInstanceID
-		// set but nils DecodeSubReq, so it fails the primary guard and takes the
-		// prefill-only fallback. NOTE: a drop-at-transfer-start parent is still
-		// `completed == true` (DecodeInstanceID is set upfront at routing and dropAtStart
-		// stamps CompletionTime), so it too receives a prefill-only TTFT here — a
-		// pre-existing behavior unchanged by this fix (the old guard also routed these to
-		// the same fallback). Tracked separately in issue #1511.
+		// Gate on `served` (terminal AND the decode sub-request emitted ≥1 token). A
+		// terminal-but-no-token parent — a decode-side drop (nil DecodeSubReq, both the
+		// transfer-start and late-drop paths) or a decode-timeout-while-queued (non-nil
+		// DecodeSubReq with empty ITL) — contributes NO parent TTFT (issue #1511,
+		// INV-PD-6). Before this fix such a parent was `completed == true` and fell to the
+		// prefill-only fallback, polluting the TTFT distribution with a phantom entry.
 		prefillTTFT, hasPrefillTTFT := m.RequestTTFTs[pfx]
 		delete(m.RequestTTFTs, pfx)
 		delete(m.RequestTTFTs, dec)
-		if completed {
-			// A decode sub-request that emitted a first token and THEN timed out mid-generation
-			// still has a recorded scheduling delay and a non-empty ITL, so it takes this
-			// primary branch and reports a real TTFT. That is intentional and correct: the user
-			// did receive that first token, so its arrival→first-token span is a genuine
-			// measurement (INV-5 holds — the first token preceded the timeout ≤ completion). A
-			// decode sub-request that timed out while still queued has an empty ITL and falls to
-			// the prefill fallback below. Both match the pre-#1510 behavior.
-			if hasPrefillTTFT && hasDecodeDelay && parent.DecodeSubReq != nil && len(parent.DecodeSubReq.ITL) > 0 {
+		if served {
+			// `served` guarantees DecodeSubReq != nil && len(ITL) > 0, so the decode
+			// sub-request emitted a first token — including the case where it emitted that
+			// token and THEN timed out mid-generation (a genuine arrival→first-token span;
+			// the user did receive the token). The primary branch additionally needs the
+			// recorded decode scheduling delay; without it, fall back to the prefill-only
+			// TTFT (defensive — decode data partially unavailable).
+			if hasPrefillTTFT && hasDecodeDelay {
 				firstDecodeStep := float64(parent.DecodeSubReq.ITL[0])
 				newTTFT := float64(decodeDelay) + firstDecodeStep
 				if newTTFT < 0 {
@@ -1971,29 +1992,41 @@ func (c *ClusterSimulator) projectPDMetrics() {
 					m.TTFTSum += int64(newTTFT - prefillTTFT)
 				}
 			} else if hasPrefillTTFT {
-				// Defensive fallback: use prefill-only TTFT if decode data unavailable
-				// (no decode scheduling delay, nil DecodeSubReq, or empty ITL). TTFTSum
-				// unchanged (projected value equals the baseline).
+				// Defensive fallback: served a token but the decode scheduling delay is
+				// unavailable; use the prefill-only TTFT. TTFTSum unchanged (projected
+				// value equals the baseline).
 				m.RequestTTFTs[pid] = prefillTTFT
-				logrus.Warnf("[cluster] projectPDMetrics: parent %s missing decode scheduling delay, DecodeSubReq, or ITL; using prefill TTFT", pid)
+				logrus.Warnf("[cluster] projectPDMetrics: parent %s served a token but is missing its decode scheduling delay; using prefill TTFT", pid)
 			} else {
-				logrus.Warnf("[cluster] projectPDMetrics: completed parent %s has no prefill TTFT (key %s)", pid, pfx)
+				logrus.Warnf("[cluster] projectPDMetrics: served parent %s has no prefill TTFT (key %s)", pid, pfx)
 			}
+		} else if completed && hasPrefillTTFT {
+			// Terminal-but-no-token parent (decode-side drop / timeout-while-queued, #1511):
+			// it emitted no token, so it contributes NO parent TTFT. The prefill
+			// sub-request's TTFT key was deleted above, but its value is still summed into
+			// the aggregate TTFTSum; roll it back so TTFTSum stays consistent with the
+			// (now parent-less) RequestTTFTs map — the reported mean TTFT (TTFTSum / n)
+			// must not count a request that produced no token (BC-3).
+			m.TTFTSum -= int64(prefillTTFT)
 		}
 
 		// Scheduling delay = prefill sub-request's delay
 		// (the real user-facing delay, not the decode pipeline cumulative latency).
+		// Gated on `served`: a no-token terminal parent contributes no scheduling-delay
+		// sample either, so it does not pollute the scheduling-delay distribution (#1511).
 		prefillDelay, hasPrefillDelay := m.RequestSchedulingDelays[pfx]
 		delete(m.RequestSchedulingDelays, pfx)
 		delete(m.RequestSchedulingDelays, dec)
-		if completed && hasPrefillDelay {
+		if served && hasPrefillDelay {
 			m.RequestSchedulingDelays[pid] = prefillDelay
 		}
 
 		// Requests metadata keyed by parent ID, HandledBy set to decode instance.
+		// Gated on `served`: a no-token terminal parent (drop/timeout) contributes no
+		// entry (INV-PD-6); it is represented by the drop/timeout counters (#1511).
 		delete(m.Requests, pfx)
 		delete(m.Requests, dec)
-		if completed {
+		if served {
 			if parent.OriginalRequest == nil {
 				panic(fmt.Sprintf("projectPDMetrics: parent %s has nil OriginalRequest", pid))
 			}
@@ -2006,7 +2039,7 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		decodeITL, hasDecodeITL := m.RequestITLs[dec]
 		delete(m.RequestITLs, pfx)
 		delete(m.RequestITLs, dec)
-		if completed && hasDecodeITL {
+		if served && hasDecodeITL {
 			m.RequestITLs[pid] = decodeITL
 		}
 
@@ -2026,7 +2059,7 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// reduces to the pre-#1513 value for those edge cases.
 		delete(m.RequestCompletionTimes, pfx)
 		delete(m.RequestCompletionTimes, dec)
-		if completed && haveParentE2E {
+		if served && haveParentE2E {
 			m.RequestCompletionTimes[pid] = float64(parent.ArrivalTime) + parentE2E
 		}
 	}
