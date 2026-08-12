@@ -374,6 +374,63 @@ type latencyResolution struct {
 	KVParamsOK bool
 }
 
+// dpPlacementPlan describes how an MoE `--dp N` deployment expands into real
+// single-node engine replicas (#1531, DP-as-real-placement). The zero-expansion
+// case (Active=false, Replicas=1, PerRankDP=dp) covers the default (`--dp 1`),
+// dense models (dp>1 rejected earlier in resolveLatencyConfig), and any config
+// planDPPlacement declines to expand.
+type dpPlacementPlan struct {
+	Active    bool // true ⇒ expand into Replicas engine replicas, each configured DP=1
+	Replicas  int  // engine replicas per logical --num-instances (dp when Active, else 1)
+	PerRankDP int  // DP to configure on each replica's latency+KV model (1 when Active, else dp)
+}
+
+// planDPPlacement decides DP-as-real-placement expansion for `blis run` and
+// rejects placement combinations #1531 does not yet model. It is pure (no
+// package state) so the decision is unit-testable independently of the runCmd
+// wiring that applies it.
+//
+// DP-as-placement applies only to an MoE model with dp>1, expert parallelism
+// OFF, no PD disaggregation, and no autoscaler; each replica is then a
+// standalone TP engine sized per-rank (DP=1). vLLM data parallelism is N
+// independent EngineCores with an internal load balancer distributing requests
+// disjointly — the BLIS equivalent is N real instances behind the existing
+// cluster router. The lumped single-instance DP model divided token work by dp
+// precisely because it held every request; once the router splits requests
+// across N instances each replica must be DP=1 or the /dp factor double-counts.
+//
+// Guarded combinations fail fast (never silently mis-modeled):
+//   - EP on (--enable-expert-parallel): #1531 models EP-off physics (experts
+//     replicated per DP rank). EP-on placement (experts sharded across the DP
+//     group + inter-node network cost #1530) is #1548.
+//   - PD disaggregation / autoscaler: out of scope for the independent DP slice
+//     (pool-topology arithmetic and dynamic-scaling semantics); tracked by #1553.
+//
+// Dense dp>1 is rejected earlier (resolveLatencyConfig, cmd/root.go), so here it
+// is simply a no-op.
+func planDPPlacement(isMoE bool, dp int, epOn, pdActive, autoscalerActive bool) (dpPlacementPlan, error) {
+	if !isMoE || dp <= 1 {
+		return dpPlacementPlan{Active: false, Replicas: 1, PerRankDP: dp}, nil
+	}
+	if epOn {
+		return dpPlacementPlan{}, fmt.Errorf("--dp > 1 with --enable-expert-parallel is not yet supported: " +
+			"DP-as-placement (#1531) models expert-parallel-OFF physics (experts replicated per DP rank); " +
+			"EP-on placement (experts sharded across the DP group + inter-node network cost) is tracked by #1548. " +
+			"Disable --enable-expert-parallel, or use --dp 1")
+	}
+	if pdActive {
+		return dpPlacementPlan{}, fmt.Errorf("--dp > 1 (MoE) is not yet supported with prefill/decode/encode " +
+			"disaggregation: DP-as-placement (#1531) reuses the --num-instances placement path, not the PD pools (#1553). " +
+			"Use --dp 1 with PD disaggregation, or remove the PD flags")
+	}
+	if autoscalerActive {
+		return dpPlacementPlan{}, fmt.Errorf("--dp > 1 (MoE) is not yet supported with the model autoscaler: " +
+			"DP-as-placement (#1531) spawns a fixed set of dp engine replicas (#1553). " +
+			"Use --dp 1 with the autoscaler, or disable the autoscaler")
+	}
+	return dpPlacementPlan{Active: true, Replicas: dp, PerRankDP: 1}, nil
+}
+
 // resolveLatencyConfig resolves the latency backend configuration from CLI flags and
 // defaults.yaml. It is called by both runCmd and replayCmd to ensure a single code path
 // (R23: code path parity). This eliminates the R23 comment-sync markers in replay.go.
@@ -1118,7 +1175,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&model, "model", "", "LLM name")
 	cmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
 	cmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
-	cmd.Flags().IntVar(&dataParallelism, "dp", 1, "Data parallelism degree (MoE models only; --latency-model trained-physics only)")
+	cmd.Flags().IntVar(&dataParallelism, "dp", 1, "Data parallelism degree (MoE models only; --latency-model trained-physics only). On `blis run`, --dp N spawns N real single-node engine replicas per --num-instances, each sized per-rank; run-only (blis replay rejects --dp>1 for MoE). Not yet supported with --enable-expert-parallel (#1548), PD disaggregation, or the autoscaler (#1553)")
 	cmd.Flags().BoolVar(&enableExpertParallel, "enable-expert-parallel", false, "Enable expert parallelism for MoE models (mirrors vLLM --enable-expert-parallel; --latency-model trained-physics only)")
 	cmd.Flags().StringVar(&moeCommBackend, "moe-comm-backend", "", "MoE all-to-all comm backend for dispatch/combine cost (mirrors vLLM VLLM_ALL2ALL_BACKEND: naive, allgather_reducescatter [default], pplx, deepep_high_throughput, deepep_low_latency, mori, flashinfer_all2allv; MoE + --latency-model trained-physics + --dp > 1)")
 	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "trained-physics", "Latency model backend: trained-physics (default), roofline")
@@ -2026,6 +2083,37 @@ var runCmd = &cobra.Command{
 
 		startTime := time.Now() // Get current time (start)
 
+		// DP-as-real-placement (#1531): on an MoE model, `--dp N` means N independent
+		// single-node engine replicas (vLLM's internal DP EngineCores), not one lumped
+		// instance. Expand to numInstances × N real replicas — reusing the existing
+		// per-instance placement path — and configure each replica per-rank (DP=1) so its
+		// latency + KV model describe one rank. Guarded combos (EP-on, PD, autoscaler)
+		// fail fast rather than being silently mis-modeled. Run-only: `blis replay`
+		// Fatalf's on the same config (INV-13). A no-op for --dp 1 and dense models.
+		dpPlan, dpErr := planDPPlacement(lr.ModelConfig.IsMoE(), dataParallelism, enableExpertParallel,
+			prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0,
+			bundleAutoscalerIntervalUs > 0)
+		if dpErr != nil {
+			logrus.Fatalf("%v", dpErr)
+		}
+		if dpPlan.Active {
+			logicalInstances := numInstances
+			// Per-rank KV: divide the DP-scaled auto total back to one rank. Only the
+			// successful global auto-calc path multiplied by dp (kv_capacity.go Step 6),
+			// which is exactly (lr.KVParamsOK && lr.HWConfig.MemoryGiB > 0) — see the
+			// KV auto-calc gate in resolveLatencyConfig. The division is exact
+			// (perRank×dp)/dp. An explicit --total-kv-blocks is per-instance already, so
+			// each replica keeps it (aggregate dp×value); the node-pool per-instance
+			// recalc re-derives per-rank from EffectiveDP()==1 regardless.
+			if lr.KVParamsOK && lr.HWConfig.MemoryGiB > 0 {
+				totalKVBlocks /= int64(dataParallelism)
+			}
+			numInstances *= dpPlan.Replicas
+			logrus.Infof("[cluster] DP-as-placement: --dp %d (MoE) → %d single-node engine replicas per logical instance "+
+				"(%d logical × %d = %d instances), each per-rank (DP=1, %d KV blocks/replica)",
+				dataParallelism, dpPlan.Replicas, logicalInstances, dpPlan.Replicas, numInstances, totalKVBlocks)
+		}
+
 		// Unified cluster path (used for all values of numInstances).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/replay.go (replayCmd
 		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
@@ -2107,6 +2195,19 @@ var runCmd = &cobra.Command{
 				Params:               lr.KVParams,
 				AdapterReservedBytes: loraReservedBytesForKV,
 			},
+		}
+		// DP-as-real-placement (#1531): configure each replica as one rank. The
+		// NewModelHardwareConfig call above intentionally still receives the CLI
+		// dataParallelism (preserving run/replay wiring parity at the constructor);
+		// this post-construction override sets the actual per-rank DP so every
+		// instance's latency model uses moeGroup=TP (experts replicated per rank,
+		// EP-off) and no /dp token division. DP is a plain field with on-the-fly
+		// derivations read at per-instance model construction inside NewClusterSimulator,
+		// so the override is authoritative for all replicas (incl. the node-pool
+		// per-instance KV recalc, which reads EffectiveDP()).
+		if dpPlan.Active {
+			// config.DP is the promoted SimConfig.ModelHardwareConfig.DP field.
+			config.DP = dpPlan.PerRankDP
 		}
 		// Session callback installation (Constraint 3 fix):
 		// Follow-up collection must be UNCONDITIONAL for saturation analysis correctness.

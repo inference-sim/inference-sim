@@ -169,6 +169,19 @@ Example:
 		// Resolve latency backend configuration (single code path shared with runCmd).
 		lr := resolveLatencyConfig(cmd)
 
+		// DP-as-real-placement is run-only (#1531, INV-13). On an MoE model `--dp N`
+		// makes `blis run` spawn N real engine replicas (changing routing/queueing/
+		// batching, hence per-request metrics), while replay keeps the single-instance
+		// DP-math model — so the two paths would diverge for identical flags. Fail fast
+		// rather than silently degrade, mirroring the autoscaler/node-pool guards below.
+		// (Dense --dp>1 and roofline --dp>1 are already rejected in resolveLatencyConfig.)
+		if lr.ModelConfig.IsMoE() && dataParallelism > 1 {
+			logrus.Fatalf("--dp %d on an MoE model is not supported in blis replay: DP-as-placement is a "+
+				"run-only feature (blis run spawns %d real engine replicas). Replay keeps the single-instance "+
+				"DP model, so the two paths would diverge for identical flags (INV-13). Use blis run instead.",
+				dataParallelism, dataParallelism)
+		}
+
 		// Numeric flag validation (same as runCmd)
 		if numInstances < 1 {
 			logrus.Fatalf("num-instances must be >= 1")

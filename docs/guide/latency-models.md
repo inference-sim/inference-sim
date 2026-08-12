@@ -177,6 +177,9 @@ Trained-physics uses up to **14 coefficients** (11 beta: prefill compute/memory 
 
 ### Data + Expert Parallelism for MoE (trained-physics only)
 
+!!! note "DP-as-placement (#1531): `blis run` feeds DP=1 per replica"
+    Since #1531, `blis run` models MoE `--dp N` as **N real single-node engine replicas** (DP-as-placement), each configured at **DP=1**. So the per-replica step time uses `moeGroup = TP` (experts replicated per DP rank — expert-parallel-OFF physics) and the DP>1 dispatch term below does **not** fire per replica (the all-reduce at `DP=1, TP>1` does). The `moeGroup = TP·DP` / `/dp` / DP>1-dispatch math described in this section is the per-instance latency model's response to a DP>1 `ModelHardwareConfig` — the basis for EP-on placement (#1548), and still reached when a config sets DP>1 directly (e.g. tests). `blis run` with `--enable-expert-parallel` + `--dp>1` (MoE) currently fails fast, deferring true EP placement to #1548; `blis replay` rejects MoE `--dp>1` (run-only, INV-13).
+
 For MoE deployments, trained-physics models data parallelism (`--dp`) and expert parallelism (`--enable-expert-parallel`) the way vLLM does (mirrors `vllm-project/vllm`):
 
 - **Routed-expert weight/compute** are scoped to the flattened MoE group `moeGroup = TP·DP` via the `ExpertPlacement` seam: each GPU holds `numExperts/moeGroup` full-expert-equivalents (EP-off tensor-shards them; EP-on owns whole experts — the per-GPU bytes are identical). This replaces a batch-dependent heuristic and is **EP-mode-agnostic**, so MoE step time at `DP=1` intentionally differs from pre-DP/EP BLIS (a deliberate fidelity fix). Dense models at `DP=1` are byte-identical (INV-BC-DP1).
