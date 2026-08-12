@@ -2231,38 +2231,44 @@ var runCmd = &cobra.Command{
 		}
 
 		if numInstances > 1 {
-			// Print per-instance metrics to stdout (multi-instance only).
-			// nil saturation arg (#1516): stdout carries no saturation field.
+			// Print per-instance metrics to stdout (multi-instance only). Per-instance
+			// output carries no saturation field — the final label is a cluster-level
+			// verdict, emitted on the aggregate below (#1517).
 			for _, inst := range cs.Instances() {
-				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, "", nil); err != nil {
+				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, ""); err != nil {
 					logrus.Fatalf("SaveResults for instance %s: %v", inst.ID(), err)
 				}
 			}
 		}
-		// Build aggregate output, inject goodput, then emit (#1413).
-		// nil saturation arg (#1516): the per-event trace is produced by the
-		// streaming replay below, not through BuildOutput's stdout field.
+		// Build aggregate output, inject goodput, run the saturation reducer, then
+		// emit (#1413 goodput / #1517 saturation share the build-then-mutate-then-emit
+		// pattern). The saturation label must reach stdout, so the tracer runs BEFORE
+		// EmitOutput and mutates clusterOutput.Saturation — sim/ builds the struct and
+		// knows nothing about saturation; cmd/ sets the field.
 		aggregated := cs.AggregatedMetrics()
-		clusterOutput := aggregated.BuildOutput("cluster", nil)
+		clusterOutput := aggregated.BuildOutput("cluster")
 		emitGoodput(&clusterOutput, aggregated, cs.InjectedByClass(),
 			float64(aggregated.SimEndedTime)/1e6, goodputTargets)
-		if err := aggregated.EmitOutput(clusterOutput, metricsPath); err != nil {
-			logrus.Fatalf("SaveResults: %v", err)
+
+		// Saturation (#1516 single detector / #1519 bank / #1517 final label): stream
+		// the selected detector(s) over the aggregate's completed-request metrics,
+		// write the per-event verdict trace to --saturation-report (if given), and
+		// splice the per-detector final label onto stdout. Same pipeline as
+		// replay/observe; only the input slice differs (here it is sim-derived,
+		// INV-13). Guard on the tracer so the common no-detector path skips the
+		// O(n log n) sort + O(n) copy in CompletedRequestMetrics().
+		if satTracer != nil {
+			final, err := satTracer.run(aggregated.CompletedRequestMetrics())
+			if err != nil {
+				logrus.Fatalf("Saturation: %v", err)
+			}
+			if len(final) > 0 {
+				clusterOutput.Saturation = final
+			}
 		}
 
-		// Saturation trace (#1516 single detector / #1519 bank): stream the selected
-		// detector(s) over the aggregate's completed-request metrics and write the
-		// per-event verdict trace to --saturation-report. Same pipeline as
-		// replay/observe; only the input slice differs (here it is sim-derived,
-		// INV-13).
-		//
-		// Guard on the tracer so the common no-detector path skips the
-		// O(n log n) sort + O(n) copy in CompletedRequestMetrics() — the argument
-		// would otherwise be evaluated before trace could no-op.
-		if satTracer != nil {
-			if err := satTracer.trace(aggregated.CompletedRequestMetrics()); err != nil {
-				logrus.Fatalf("Saturation trace: %v", err)
-			}
+		if err := aggregated.EmitOutput(clusterOutput, metricsPath); err != nil {
+			logrus.Fatalf("SaveResults: %v", err)
 		}
 
 		// Collect RawMetrics and compute fitness (PR9)

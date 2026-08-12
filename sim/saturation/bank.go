@@ -42,19 +42,14 @@ func rosterRank(name string) int {
 // replay of completed request metrics (sourced from run/replay's sim or observe's
 // real server), so every selected detector is scored on a byte-identical event
 // sequence in a single pass (#1519). It reimplements no Detector method — it only
-// multiplexes the streaming replay across N detectors — and it satisfies
-// sim.BatchClassifier so #1517 can later surface a per-detector stdout label
-// through the same seam. In this PR Classify returns nil (the trace file is the
-// only output).
+// multiplexes the streaming replay across N detectors, recording every
+// (event, detector) verdict to the shared sink. The collected records are reduced
+// to a per-detector stdout label by saturation.ReduceAll in cmd (#1517); the bank
+// itself only produces the trace.
 type Bank struct {
 	detectors []Detector
 	sink      TraceSink
 }
-
-// Compile-time assertion that Bank satisfies the sim/ seam. The bank is the only
-// BatchClassifier implementation on main; keeping the assertion here fails the
-// build if the interface drifts.
-var _ sim.BatchClassifier = (*Bank)(nil)
 
 // NewBank builds a bank driving exactly the named detectors over the shared sink,
 // in canonical roster order. names is the already-resolved selection: `all`
@@ -118,16 +113,18 @@ func NewBank(names []string, cfg SaturationConfig, sink TraceSink) (*Bank, error
 	return &Bank{detectors: detectors, sink: sink}, nil
 }
 
-// Classify replays the completed requests once and fans every event out to every
+// Run replays the completed requests once and fans every event out to every
 // detector, recording one verdict per (event, detector) to the sink in roster
-// order. It is the sole public driver and satisfies sim.BatchClassifier.
+// order. It is the bank's sole public driver (the multi-detector analogue of
+// ReplayOneDetector). The collected records are read back from the sink and
+// reduced to a per-detector stdout label by saturation.ReduceAll (#1517).
 //
-// The return value is nil in this PR: the bank's output is the per-event trace
-// written to the sink, and stdout carries nothing saturation-related (#1519).
-// totalArrivals is accepted for interface conformance (and #1517's stdout label)
-// but unused here — the streaming detectors derive rate from the arrival events
-// themselves. Zero requests produce zero events and an empty (valid) trace.
-func (b *Bank) Classify(requests []sim.RequestMetrics, _ int) interface{} {
+// The streaming detectors derive rate from the arrival events themselves, so
+// there is no total-arrivals parameter (the retired sim.BatchClassifier seam
+// carried one that was never read). Zero requests produce zero events and an
+// empty (valid) trace. The nil return is retained for symmetry with a future
+// fallible driver and for a uniform call shape; it never fails today.
+func (b *Bank) Run(requests []sim.RequestMetrics) error {
 	for _, det := range b.detectors {
 		det.Reset()
 	}
@@ -155,7 +152,7 @@ func (b *Bank) fanout(e Event) {
 	}
 }
 
-// Close signals end-of-stream to the sink. Separate from Classify so a caller can
+// Close signals end-of-stream to the sink. Separate from Run so a caller can
 // replay, read the collected records, and then flush — mirroring how
 // ReplayOneDetector closes its sink after the single-detector stream.
 func (b *Bank) Close() { b.sink.Close() }
