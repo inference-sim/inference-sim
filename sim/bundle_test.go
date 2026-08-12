@@ -355,6 +355,15 @@ func TestValidRoutingPolicyNames_Sorted(t *testing.T) {
 	}
 }
 
+// T10 / B-2: route-to-holder must be a registered, valid routing policy name so the
+// factory arm is reachable and the CLI accepts --routing-policy route-to-holder.
+func TestRouteToHolder_IsValidRoutingPolicy(t *testing.T) {
+	assert.True(t, IsValidRoutingPolicy("route-to-holder"),
+		"route-to-holder must be a valid routing policy")
+	assert.Contains(t, ValidRoutingPolicyNames(), "route-to-holder",
+		"route-to-holder must appear in ValidRoutingPolicyNames()")
+}
+
 
 func TestValidSchedulerNames_ReturnsAllNames(t *testing.T) {
 	names := ValidSchedulerNames()
