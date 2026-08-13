@@ -80,12 +80,18 @@ func NewMetrics() *Metrics {
 }
 
 // BuildOutput populates and returns a MetricsOutput from m, including aggregate
-// percentiles, per-request rows (sorted by arrival), and an optional saturation
-// classification when saturationDetector is non-nil. It does NOT write anywhere
-// — callers (SaveResults, cmd/-side goodput emitters) handle stdout and file
-// output. Splitting build-from-emit lets cmd/ inject goodput fields between the
-// two steps without changing SaveResults's signature (#1413).
-func (m *Metrics) BuildOutput(instanceID string, saturationDetector BatchClassifier) MetricsOutput {
+// percentiles and per-request rows (sorted by arrival). It does NOT write
+// anywhere — callers (SaveResults, cmd/-side goodput and saturation emitters)
+// handle stdout and file output. Splitting build-from-emit lets cmd/ inject
+// goodput (#1413) and the saturation final label (#1517) into the returned struct
+// between the two steps without changing SaveResults's signature.
+//
+// The output.Saturation field is left nil here; cmd/ populates it from the
+// detector-agnostic reducer (saturation.ReduceAll) via the same
+// build-then-mutate-then-emit pattern goodput uses (#1517). This removed the
+// former sim.BatchClassifier seam — sim/ no longer knows anything about
+// saturation.
+func (m *Metrics) BuildOutput(instanceID string) MetricsOutput {
 	vllmRuntime := float64(m.SimEndedTime) / float64(1e6)
 
 	output := MetricsOutput{
@@ -146,20 +152,6 @@ func (m *Metrics) BuildOutput(instanceID string, saturationDetector BatchClassif
 			output.ResponsesPerSec = float64(m.CompletedRequests) / vllmRuntime
 			output.TokensPerSec = float64(m.TotalOutputTokens) / vllmRuntime
 		}
-	}
-
-	// Run post-hoc saturation detection if a batch classifier is provided.
-	// Introduced by #1369; as of #1516 run/replay pass nil here (stdout carries no
-	// saturation; the per-event trace is produced by the streaming replay pipeline
-	// instead), so this block is dormant. The seam is retained for #1517, which
-	// repopulates output.Saturation through the same param for the stdout final label.
-	if saturationDetector != nil {
-		// Calculate total arrivals (Issue #4: needed for rate deficit in batch mode)
-		totalArrivals := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests
-
-		// Call Classify with total arrivals (Issues #4, #6: typed interface, rate deficit available)
-		// Note: Sorting by completion time is now handled inside Classify (Issue #5)
-		output.Saturation = saturationDetector.Classify(m.CompletedRequestMetrics(), totalArrivals)
 	}
 
 	// Per-adapter aggregate metrics (#1464, US1). Group COMPLETED requests by their
@@ -304,16 +296,15 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string) error 
 	return nil
 }
 
-// SaveResults computes aggregate metrics and optionally runs post-hoc saturation detection.
-// saturationDetector should be a saturation.Detector or nil to skip saturation analysis.
-// This is a thin wrapper around BuildOutput + EmitOutput; see those methods for the
-// extension hook used by goodput wiring (#1413). The horizon and totalBlocks parameters
-// are retained for backwards compatibility with existing callers but are unused — they
-// were never read by SaveResults.
-func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int64, outputFilePath string, saturationDetector BatchClassifier) error {
+// SaveResults computes aggregate metrics and emits them to stdout and an optional
+// file. This is a thin wrapper around BuildOutput + EmitOutput; see those methods
+// for the extension hook used by goodput (#1413) and saturation (#1517) wiring.
+// The horizon and totalBlocks parameters are retained for backwards compatibility
+// with existing callers but are unused — they were never read by SaveResults.
+func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int64, outputFilePath string) error {
 	_ = horizon
 	_ = totalBlocks
-	output := m.BuildOutput(instanceID, saturationDetector)
+	output := m.BuildOutput(instanceID)
 	return m.EmitOutput(output, outputFilePath)
 }
 

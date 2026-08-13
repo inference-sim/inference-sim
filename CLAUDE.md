@@ -197,11 +197,17 @@ go build -o blis main.go
 ./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
   --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 --in-flight-eviction
 
-# Run with a single saturation detector, writing its per-event verdict trace (#1516).
-# --detectors takes one of composite, threshold, backlog-drift (empty = off).
-# --saturation-report writes a {"trace":[...]} JSON file (one record per event).
-# Nothing saturation-related goes to stdout (the final label returns in #1517).
+# Run with a single saturation detector (#1516). --detectors takes one of
+# composite, threshold, backlog-drift (empty = off). --saturation-report writes a
+# {"final":{...},"trace":[...]} JSON file (per-detector final label + one record
+# per event). stdout regains a per-detector "saturation" final-label map (#1517),
+# derived uniformly from the trace by the last-window plurality reducer.
 ./blis run --model qwen/qwen3-14b --detectors composite --saturation-report sat.json
+
+# Tune the final-label trailing window (#1517). --saturation-final-window takes a
+# Go duration for the last-window plurality vote (default: backlog_drift.window_size_sec
+# if configured, else 30s). Same value for every detector; requires --detectors.
+./blis run --model qwen/qwen3-14b --detectors all --saturation-final-window 10s
 
 # Run the detector BANK over ONE deterministic replay (#1519). --detectors "all"
 # runs the full roster; a comma-list runs exactly the named subset. The bank fans
@@ -228,7 +234,8 @@ YAML
 ./blis run --model qwen/qwen3-14b --detectors backlog-drift \
   --saturation-config sat-config.yaml --saturation-report sat.json
 
-# Replay writes the same {"trace":[...]} format (run→replay byte-identical, INV-13)
+# Replay writes the same {"final":{...},"trace":[...]} format and emits the same
+# stdout saturation map (run→replay byte-identical, INV-13)
 ./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
   --detectors composite --saturation-report sat.json
 
@@ -432,20 +439,24 @@ BLIS includes post-hoc saturation detection for analyzing completed runs. This i
 - **threshold**: Mean E2E latency vs a configurable threshold (default 5000ms). STABLE when mean < threshold, OVERLOADED when mean > threshold.
 - **backlog-drift**: Online OLS slope of in-flight over a trailing window (became streaming in #1515), banded against the noise floor.
 
-**CLI flags** (`run`, `observe`, `replay`; #1516, #1519):
+**CLI flags** (`run`, `observe`, `replay`; #1516, #1519, #1517):
 - `--detectors <selection>`: empty = off. A single name (`composite`, `threshold`, `backlog-drift`) runs #1516's single-detector streaming path. `all` runs the full roster; a comma-list (e.g. `composite,threshold`) runs exactly the named subset. `all` and comma-lists route through the **detector bank** (#1519). Unknown name — single or inside a list — is a hard error listing valid names (R1).
 - `--saturation-config <path>`: strict-YAML tuning file with optional `threshold:` and `backlog_drift:` blocks. composite has no block. For a **single** detector the config must carry only that detector's block — a foreign block errors (no silent drop, R1). For the **bank**, ownership is enforced over the selected SET (`checkBlockOwnershipSet`): a block whose owning detector is not among the selected names is a hard error (R1), same as the single-detector path — `--detectors all` selects every owner so a full shared config is fine, but a subset that omits a detector whose block was supplied errors. A value error inside a *selected* detector's own block also errors. Absent block = defaults; a partial block overrides only named fields; an unknown key or out-of-range value errors naming the field; an empty file = all defaults.
-- `--saturation-report <path>`: writes the selected detector(s)' **per-event verdict trace** as one `{"trace":[...]}` JSON object (one record per event, tagged by detector name; map keys sorted so repeated runs are byte-identical). Requires `--detectors`. Both `--saturation-config` and `--saturation-report` without `--detectors` are hard errors, as is an unwritable report path (checked up front).
+- `--saturation-report <path>`: writes the selected detector(s)' **final label + per-event verdict trace** as one `{"final":{...},"trace":[...]}` JSON object (one trace record per event, tagged by detector name; map keys sorted so repeated runs are byte-identical). Requires `--detectors`. Optional — the stdout final label (#1517) is emitted regardless. `--saturation-config`, `--saturation-report`, and `--saturation-final-window` without `--detectors` are hard errors, as is an unwritable report path (checked up front).
+- `--saturation-final-window <duration>` (#1517): Go duration for the trailing window of the stdout final-label plurality vote. Resolution: this flag if set → else `backlog_drift.window_size_sec` from `--saturation-config` → else 30s. Same value for every detector; a non-positive or unparseable value is a hard error. Requires `--detectors`.
 
-**Detector bank** (`sim/saturation/bank.go`, #1519): `Bank` holds and drives a roster of streaming detectors over ONE deterministic replay, fanning each event out to every selected detector (`fanout`) so all are scored on a byte-identical event sequence in a single pass. It reimplements no `Detector` method — it only multiplexes the shared `buildSortedEvents` (a #1519 extraction) + #1516's `TraceSink` + `WriteCombinedReport` — and satisfies `sim.BatchClassifier` (`Classify(requests, totalArrivals) interface{}`, returns `nil` in this PR; #1517 uses the seam for the stdout label). `NewBank(names, cfg, sink)` validates/de-dups names and orders the roster canonically (`composite`, `threshold`, `backlog-drift`), so selection order and spelling never change output: `all` ≡ the full comma-list byte-identically, and a subset detector's records are byte-identical to its records under `all` (selection filters WHICH detectors run, never HOW they see traffic — INV-6/INV-13).
+**Final label reducer** (`sim/saturation/reduce.go`, #1517): `ReduceOne(records, windowUs) Level` collapses ONE detector's per-event trace into a headline label by a **last-window plurality** rule — keep records within `windowUs` of the max timestamp, take the most-frequent `Level`, break count-ties toward the more severe level (`OVERLOADED > BACKLOGGED > STABLE`), empty group → `STABLE` (R20). `ReduceAll(records, windowUs) map[string]Level` groups by detector name and reduces each group. It is a **pure function, not a `Detector` method** — so every detector is collapsed identically (fair cross-detector comparison) and new detectors get final labeling for free. The rule is order-independent (INV-6) and identical traces yield identical maps (INV-13). `cmd` calls `ReduceAll` for every selection: a single detector yields a one-key map, `all` the full map. There is exactly one stdout shape — a `map[string]Level` (`--detectors composite` → `{"composite":"STABLE"}`, never a bare label).
 
-**One pipeline, three input adapters**: run/replay/observe all produce the trace through the same shared `resolveSaturation → saturationTracer.trace` path (single detector via `ReplayOneDetector`, bank via `Bank.Classify`), both writing through `TraceSink → WriteCombinedReport` (R23). The only difference is the `[]RequestMetrics` input — run/replay from the sim (`Metrics.CompletedRequestMetrics()`), observe from the real server (`workload.TraceRecordsToRequestMetrics`). run→replay of the same trace is byte-identical (INV-13); observe's trace reflects real-server latencies by design.
+**Detector bank** (`sim/saturation/bank.go`, #1519): `Bank` holds and drives a roster of streaming detectors over ONE deterministic replay, fanning each event out to every selected detector (`fanout`) so all are scored on a byte-identical event sequence in a single pass. It reimplements no `Detector` method — it only multiplexes the shared `buildSortedEvents` (a #1519 extraction) + #1516's `TraceSink` + `WriteCombinedReport`. Its sole public driver is `Run(requests) error` (the multi-detector analogue of `ReplayOneDetector`); the collected records are reduced to the stdout label by `saturation.ReduceAll` in `cmd` (#1517). `NewBank(names, cfg, sink)` validates/de-dups names and orders the roster canonically (`composite`, `threshold`, `backlog-drift`), so selection order and spelling never change output: `all` ≡ the full comma-list byte-identically, and a subset detector's records are byte-identical to its records under `all` (selection filters WHICH detectors run, never HOW they see traffic — INV-6/INV-13).
 
-**stdout**: nothing saturation-related — a run with `--detectors` (single or `all`) is byte-identical on stdout to one without (the `saturation` field stays dropped by `omitempty`). The `sim.BatchClassifier` seam and `BuildOutput`'s signature are retained (param passed `nil`); the stdout final label returns in #1517.
+**One pipeline, three input adapters**: run/replay/observe all produce the trace through the same shared `resolveSaturation → saturationTracer.run` path (single detector via `ReplayOneDetector`, bank via `Bank.Run`), reducing to the final label via `ReduceAll` and writing the report via `TraceSink → WriteCombinedReport` (R23). The only difference is the `[]RequestMetrics` input — run/replay from the sim (`Metrics.CompletedRequestMetrics()`), observe from the real server (`workload.TraceRecordsToRequestMetrics`). run→replay of the same trace is byte-identical (INV-13); observe's trace reflects real-server latencies by design.
+
+**stdout** (#1517): a run WITH `--detectors` regains a `"saturation"` field — a per-detector `map[string]Level` final label spliced onto the metrics JSON via the goodput build-then-mutate-then-emit pattern (`cmd` sets `MetricsOutput.Saturation`; `sim` stays saturation-agnostic). A run WITHOUT `--detectors` is byte-identical to the historical no-feature output (the field stays dropped by `omitempty`, BC-8). The former `sim.BatchClassifier` seam was retired (`sim/classifier.go` deleted; `BuildOutput`/`SaveResults` lost their detector param) since `cmd` imports both `sim` and `sim/saturation` and wires the reducer directly.
 
 **Trace file example**:
 ```json
 {
+  "final": { "composite": "STABLE" },
   "trace": [
     {
       "timestamp": 150000,
@@ -465,10 +476,10 @@ BLIS includes post-hoc saturation detection for analyzing completed runs. This i
 - `--post-hoc-detector X` → `--detectors X`
 - `--saturation-threshold-ms N` → `--saturation-config` `threshold: {threshold_ms: N}`
 - the 10 backlog-drift tuning flags (`--saturation-window`, `--saturation-min-windows`, `--saturation-classifier`, …) → `--saturation-config` `backlog_drift:` block
-- the standalone `--saturation-report` (per-window `BacklogDriftReport`) is removed; `--saturation-report` now writes the per-event trace
+- the standalone `--saturation-report` (per-window `BacklogDriftReport`) is removed; `--saturation-report` now writes the `{"final":{...},"trace":[...]}` object (final label + per-event trace)
 - detector `Classify` is removed from the `Detector` interface (streaming-only: `Name`/`Observe`/`Detect`/`Reset`); `workload.AnalyzeBacklogDrift*` stays in the library (used by the backlog-drift detector)
 
-**Use cases**: per-event saturation trajectories for completed runs — detecting queue buildup or throughput saturation in capacity-planning experiments. The bank (`--detectors all`) additionally lets you compare detectors head-to-head on byte-identical traffic in a single run, instead of separate runs where each detector sees different traffic.
+**Use cases**: a one-line end-of-run saturation verdict per detector on stdout (#1517) for quick capacity-planning answers, plus per-event saturation trajectories (the trace file) for detecting queue buildup or throughput saturation over time. The bank (`--detectors all`) additionally lets you compare detectors head-to-head on byte-identical traffic in a single run — both the final labels and the trajectories — instead of separate runs where each detector sees different traffic.
 
 ## File Organization
 

@@ -578,34 +578,41 @@ Example:
 			logrus.Infof("Trace exported: %s.yaml, %s.csv (%d records)", replayTraceOutput, replayTraceOutput, len(records))
 		}
 
-		// Save aggregate metrics to stdout (same as runCmd).
-		// nil saturation arg (#1516): stdout carries no saturation field.
+		// Save aggregate metrics to stdout (same as runCmd). Per-instance output
+		// carries no saturation field — the final label is a cluster-level verdict
+		// emitted on the aggregate below (#1517).
 		if numInstances > 1 {
 			for _, inst := range cs.Instances() {
-				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, "", nil); err != nil {
+				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, ""); err != nil {
 					logrus.Fatalf("SaveResults for instance %s: %v", inst.ID(), err)
 				}
 			}
 		}
 		// Save aggregate (always print to stdout; SimResult output uses separate file)
 		// goodputTargets resolved above for trace re-export; reused here (#1413, BC-1, BC-4).
-		// nil saturation arg (#1516): the per-event trace is streamed below.
+		// The saturation reducer runs BEFORE EmitOutput and mutates clusterOutput.Saturation
+		// (#1517), mirroring goodput's build-then-mutate-then-emit pattern.
 		aggregated := cs.AggregatedMetrics()
-		clusterOutput := aggregated.BuildOutput("cluster", nil)
+		clusterOutput := aggregated.BuildOutput("cluster")
 		emitGoodput(&clusterOutput, aggregated, cs.InjectedByClass(),
 			float64(aggregated.SimEndedTime)/1e6, goodputTargets)
-		if err := aggregated.EmitOutput(clusterOutput, ""); err != nil {
-			logrus.Fatalf("SaveResults: %v", err)
-		}
 
-		// Saturation trace (#1516 single detector / #1519 bank): same pipeline as
-		// run/observe, sim-derived input. run → replay of the same trace is
-		// byte-identical (INV-13). Guard on the tracer so the common no-detector
+		// Saturation (#1516 single detector / #1519 bank / #1517 final label): same
+		// pipeline as run/observe, sim-derived input. run → replay of the same trace
+		// is byte-identical (INV-13). Guard on the tracer so the common no-detector
 		// path skips the O(n log n) sort + O(n) copy in CompletedRequestMetrics().
 		if satTracer != nil {
-			if err := satTracer.trace(aggregated.CompletedRequestMetrics()); err != nil {
-				logrus.Fatalf("Saturation trace: %v", err)
+			final, err := satTracer.run(aggregated.CompletedRequestMetrics())
+			if err != nil {
+				logrus.Fatalf("Saturation: %v", err)
 			}
+			if len(final) > 0 {
+				clusterOutput.Saturation = final
+			}
+		}
+
+		if err := aggregated.EmitOutput(clusterOutput, ""); err != nil {
+			logrus.Fatalf("SaveResults: %v", err)
 		}
 
 		rawMetrics := cluster.CollectRawMetrics(

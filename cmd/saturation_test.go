@@ -12,15 +12,16 @@ import (
 	"github.com/inference-sim/inference-sim/sim/saturation"
 )
 
-// resetSaturationGlobals clears the three shared saturation flag globals so each
-// test starts from "off". Callers set what they need afterwards.
+// resetSaturationGlobals clears the shared saturation flag globals so each test
+// starts from "off". Callers set what they need afterwards.
 func resetSaturationGlobals() {
 	detectorName = ""
 	saturationConfigPath = ""
 	saturationReport = ""
+	saturationFinalWindow = ""
 }
 
-// twoRequests is the shared fixture for tracer trace() assertions.
+// twoRequests is the shared fixture for tracer run() assertions.
 func twoRequests() []sim.RequestMetrics {
 	return []sim.RequestMetrics{
 		{ID: "request_0", ArrivedAt: 0, E2E: 100},
@@ -56,6 +57,95 @@ func TestResolveSaturation_ConfigOrReportWithoutDetectors(t *testing.T) {
 		saturationReport = "some.json"
 		if _, err := resolveSaturation(); err == nil || !strings.Contains(err.Error(), "--saturation-report requires --detectors") {
 			t.Errorf("expected 'requires --detectors' error, got: %v", err)
+		}
+	})
+	t.Run("final-window without detectors", func(t *testing.T) {
+		resetSaturationGlobals()
+		saturationFinalWindow = "30s"
+		if _, err := resolveSaturation(); err == nil || !strings.Contains(err.Error(), "--saturation-final-window requires --detectors") {
+			t.Errorf("expected 'requires --detectors' error, got: %v", err)
+		}
+	})
+}
+
+// TestResolveSaturation_FinalWindowErrors verifies the --saturation-final-window
+// value is validated when a detector IS selected (#1517): an unparseable Go
+// duration and a non-positive duration are both hard errors (R1/R3), never
+// silently defaulted. A detector + report path are set so the ONLY thing under
+// test is the window value.
+func TestResolveSaturation_FinalWindowErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		window     string
+		wantSubstr string
+	}{
+		{"unparseable", "not-a-duration", "not a valid Go duration"},
+		{"negative", "-30s", "must be > 0"},
+		{"zero", "0s", "must be > 0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetSaturationGlobals()
+			detectorName = "composite"
+			saturationReport = filepath.Join(t.TempDir(), "x.json")
+			saturationFinalWindow = tt.window
+			_, err := resolveSaturation()
+			if err == nil {
+				t.Fatalf("window=%q: expected error, got nil", tt.window)
+			}
+			if !strings.Contains(err.Error(), tt.wantSubstr) {
+				t.Errorf("window=%q: error %q should contain %q", tt.window, err.Error(), tt.wantSubstr)
+			}
+		})
+	}
+}
+
+// TestResolveSaturation_FinalWindowResolutionOrder verifies the windowUs
+// resolution precedence (#1517): the --saturation-final-window flag wins; else
+// backlog_drift.window_size_sec (whole seconds → µs); else the 30s default. The
+// resolved value is captured on the tracer, so we assert tracer.windowUs directly.
+func TestResolveSaturation_FinalWindowResolutionOrder(t *testing.T) {
+	t.Run("flag wins", func(t *testing.T) {
+		resetSaturationGlobals()
+		detectorName = "composite"
+		saturationReport = filepath.Join(t.TempDir(), "x.json")
+		saturationFinalWindow = "10s"
+		tracer, err := resolveSaturation()
+		if err != nil {
+			t.Fatalf("resolveSaturation: %v", err)
+		}
+		if tracer.windowUs != 10_000_000 {
+			t.Errorf("windowUs = %d, want 10_000_000 (flag)", tracer.windowUs)
+		}
+	})
+	t.Run("config window_size_sec when no flag", func(t *testing.T) {
+		dir := t.TempDir()
+		cfgPath := filepath.Join(dir, "cfg.yaml")
+		if err := os.WriteFile(cfgPath, []byte("backlog_drift:\n  window_size_sec: 45\n"), 0644); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+		resetSaturationGlobals()
+		detectorName = "backlog-drift"
+		saturationConfigPath = cfgPath
+		saturationReport = filepath.Join(dir, "x.json")
+		tracer, err := resolveSaturation()
+		if err != nil {
+			t.Fatalf("resolveSaturation: %v", err)
+		}
+		if tracer.windowUs != 45_000_000 {
+			t.Errorf("windowUs = %d, want 45_000_000 (config window_size_sec)", tracer.windowUs)
+		}
+	})
+	t.Run("default when neither set", func(t *testing.T) {
+		resetSaturationGlobals()
+		detectorName = "composite"
+		saturationReport = filepath.Join(t.TempDir(), "x.json")
+		tracer, err := resolveSaturation()
+		if err != nil {
+			t.Fatalf("resolveSaturation: %v", err)
+		}
+		if tracer.windowUs != defaultFinalWindowUs {
+			t.Errorf("windowUs = %d, want %d (default 30s)", tracer.windowUs, defaultFinalWindowUs)
 		}
 	})
 }
@@ -253,11 +343,13 @@ func TestResolveSaturation_BankSelectedBlockAccepted(t *testing.T) {
 	}
 }
 
-// TestSaturationTracer_TraceNoOpWhenNoReport verifies trace() writes nothing when
-// no report path is set (the trace would be discarded anyway).
-func TestSaturationTracer_TraceNoOpWhenNoReport(t *testing.T) {
+// TestSaturationTracer_RunNoReportStillReturnsFinal verifies that when no report
+// path is set, run() writes no trace file but STILL returns the per-detector final
+// label (#1517) — unlike #1516's trace(), the reducer runs regardless so the stdout
+// label is produced even without a --saturation-report.
+func TestSaturationTracer_RunNoReportStillReturnsFinal(t *testing.T) {
 	resetSaturationGlobals()
-	detectorName = "composite" // triggers the no-report warning path
+	detectorName = "composite" // no saturationReport set
 	tracer, err := resolveSaturation()
 	if err != nil {
 		t.Fatalf("resolveSaturation: %v", err)
@@ -265,11 +357,18 @@ func TestSaturationTracer_TraceNoOpWhenNoReport(t *testing.T) {
 	if tracer == nil {
 		t.Fatal("expected non-nil tracer")
 	}
-	if err := tracer.trace(twoRequests()); err != nil {
-		t.Fatalf("trace: %v", err)
+	final, err := tracer.run(twoRequests())
+	if err != nil {
+		t.Fatalf("run: %v", err)
 	}
-	// saturationReport is "" — nothing to check on disk; the assertion is that no
-	// error occurs and the call is inert.
+	// The final map must be populated (one key: composite) even though no trace
+	// file was requested.
+	if len(final) != 1 {
+		t.Fatalf("expected a 1-key final map, got %v", final)
+	}
+	if _, ok := final["composite"]; !ok {
+		t.Errorf("expected final map keyed by 'composite', got %v", final)
+	}
 }
 
 // TestSaturationTracer_DecoupledFromGlobals is the regression guard for the
@@ -293,7 +392,7 @@ func TestSaturationTracer_DecoupledFromGlobals(t *testing.T) {
 	// construction and use. The tracer must not depend on them any more.
 	resetSaturationGlobals()
 
-	if err := tracer.trace(twoRequests()); err != nil {
+	if _, err := tracer.run(twoRequests()); err != nil {
 		t.Fatalf("trace after clearing globals: %v", err)
 	}
 	// The trace must have been written to the path captured at construction, even
@@ -314,7 +413,7 @@ func TestSaturationTracer_SingleWritesTrace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveSaturation: %v", err)
 	}
-	if err := tracer.trace(twoRequests()); err != nil {
+	if _, err := tracer.run(twoRequests()); err != nil {
 		t.Fatalf("trace: %v", err)
 	}
 	report := readReport(t, saturationReport)
@@ -342,7 +441,7 @@ func TestSaturationTracer_ZeroRequestsWritesEmptyTrace(t *testing.T) {
 			if err != nil {
 				t.Fatalf("resolveSaturation(%q): %v", sel, err)
 			}
-			if err := tracer.trace(nil); err != nil { // zero requests
+			if _, err := tracer.run(nil); err != nil { // zero requests
 				t.Fatalf("trace(nil): %v", err)
 			}
 			data, err := os.ReadFile(saturationReport)
@@ -366,7 +465,7 @@ func TestSaturationTracer_BankWritesAllDetectors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveSaturation: %v", err)
 	}
-	if err := tracer.trace(twoRequests()); err != nil {
+	if _, err := tracer.run(twoRequests()); err != nil {
 		t.Fatalf("trace: %v", err)
 	}
 	report := readReport(t, saturationReport)
@@ -397,7 +496,7 @@ func TestSaturationTracer_AllEqualsExplicitList(t *testing.T) {
 		if err != nil {
 			t.Fatalf("resolveSaturation(%q): %v", sel, err)
 		}
-		if err := tracer.trace(twoRequests()); err != nil {
+		if _, err := tracer.run(twoRequests()); err != nil {
 			t.Fatalf("trace(%q): %v", sel, err)
 		}
 		data, err := os.ReadFile(saturationReport)
@@ -425,7 +524,7 @@ func TestSaturationTracer_SubsetMatchesRecordsUnderAll(t *testing.T) {
 		if err != nil {
 			t.Fatalf("resolveSaturation(%q): %v", sel, err)
 		}
-		if err := tracer.trace(twoRequests()); err != nil {
+		if _, err := tracer.run(twoRequests()); err != nil {
 			t.Fatalf("trace(%q): %v", sel, err)
 		}
 		report := readReport(t, saturationReport)

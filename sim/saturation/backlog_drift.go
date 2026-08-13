@@ -12,25 +12,22 @@ import (
 // classifier (#1515): running_slope in (noiseFloor, K*noiseFloor] → BACKLOGGED,
 // running_slope > K*noiseFloor → OVERLOADED. It is a tunable heuristic constant,
 // NOT an empirically calibrated value. The streaming bands are an online
-// heuristic and are explicitly NOT the drain-ratio classifier used by Classify;
-// the two computations may legitimately disagree.
+// heuristic and are explicitly NOT the drain-ratio/slope-based batch classifiers
+// in sim/workload (workload.AnalyzeBacklogDrift*); the two computations may
+// legitimately disagree.
 const backlogDriftSlopeK = 3.0
 
 // BacklogDriftDetector is a streaming saturation detector (#1515): Observe folds
 // each event into an incremental in-flight estimate and Detect bands the online
 // OLS slope of in-flight against a noise floor. The batch Classify path was
-// removed in #1516; the detector now streams exclusively.
-//
-// The classifier field is retained for the online band computation's config
-// (#1392); it defaults to drain-ratio. Pass an explicit classifier via
-// NewBacklogDriftDetectorWithClassifier when slope-based behavior is preferred.
+// removed in #1516; the detector now streams exclusively and holds no
+// workload.BacklogClassifier (the online band is self-contained; #1517).
 type BacklogDriftDetector struct {
-	config     workload.BacklogDriftConfig
-	classifier workload.BacklogClassifier
+	config workload.BacklogDriftConfig
 
 	// Streaming state (#1515). Populated by Observe, read by Detect, cleared by
-	// Reset. This is a separate, causal computation from the non-causal batch
-	// Classify path (which needs the whole trace including the tail).
+	// Reset. This is a causal computation, distinct from the non-causal batch
+	// analysis in sim/workload (which needs the whole trace including the tail).
 	arrivals    int64 // running count of Arrival events
 	completions int64 // running count of Completion events
 
@@ -51,40 +48,28 @@ type BacklogDriftDetector struct {
 	windowSizeUs  int64 // WindowSize in microseconds, cached from config
 }
 
-// NewBacklogDriftDetector creates a BacklogDriftDetector with default configuration
-// and the default classifier (drain-ratio, matching --saturation-classifier default).
+// NewBacklogDriftDetector creates a BacklogDriftDetector with default configuration.
 func NewBacklogDriftDetector() Detector {
-	return newBacklogDriftDetector(workload.DefaultBacklogDriftConfig(), nil)
-}
-
-// NewBacklogDriftDetectorWithClassifier creates a BacklogDriftDetector with an
-// explicit classifier. Use this for callers that want to opt into slope-based
-// or any future BacklogClassifier implementation.
-func NewBacklogDriftDetectorWithClassifier(classifier workload.BacklogClassifier) Detector {
-	return newBacklogDriftDetector(workload.DefaultBacklogDriftConfig(), classifier)
+	return newBacklogDriftDetector(workload.DefaultBacklogDriftConfig())
 }
 
 // NewBacklogDriftDetectorWithConfig creates a BacklogDriftDetector with an
-// explicit config and the default classifier (#1515). The config's WindowSize
-// governs the streaming bucket width; the two default-config constructors
-// hardwire the 60s production window, which is impractical for driving the
-// streaming slope in a unit test. Callers (and #1516) pass a small WindowSize
-// via workload.NewBacklogDriftConfig so a handful of directly-fed events span
-// enough buckets to exercise the online slope deterministically.
+// explicit config (#1515). The config's WindowSize governs the streaming bucket
+// width; the default-config constructor hardwires the 60s production window, which
+// is impractical for driving the streaming slope in a unit test. Callers (and
+// #1516) pass a small WindowSize via workload.NewBacklogDriftConfig so a handful
+// of directly-fed events span enough buckets to exercise the online slope
+// deterministically.
 func NewBacklogDriftDetectorWithConfig(config workload.BacklogDriftConfig) Detector {
-	return newBacklogDriftDetector(config, nil)
+	return newBacklogDriftDetector(config)
 }
 
 // newBacklogDriftDetector is the canonical constructor (R4): all exported
 // constructors route through it so streaming state (windowSizeUs) is initialized
-// in exactly one place. A nil classifier defaults to drain-ratio.
-func newBacklogDriftDetector(config workload.BacklogDriftConfig, classifier workload.BacklogClassifier) Detector {
-	if classifier == nil {
-		classifier = workload.NewBacklogClassifier("") // empty string → drain-ratio default
-	}
+// in exactly one place.
+func newBacklogDriftDetector(config workload.BacklogDriftConfig) Detector {
 	return &BacklogDriftDetector{
 		config:       config,
-		classifier:   classifier,
 		windowSizeUs: int64(config.WindowSize / time.Microsecond),
 	}
 }
@@ -150,8 +135,8 @@ func (b *BacklogDriftDetector) Observe(event Event) {
 
 // Detect computes an evolving per-event verdict from the streaming state (#1515):
 // an online OLS slope of in-flight over the trailing window, banded against a
-// noise floor. This is an online heuristic, explicitly NOT the drain-ratio
-// classifier that Classify runs — the two may legitimately disagree.
+// noise floor. This is an online heuristic, explicitly NOT the batch drain-ratio/
+// slope-based analysis in sim/workload — the two may legitimately disagree.
 func (b *BacklogDriftDetector) Detect() Result {
 	signals := make(map[string]float64)
 

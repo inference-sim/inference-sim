@@ -61,7 +61,7 @@ func TestResidentAdapterSet_CapacityBoundAcrossRun(t *testing.T) {
 		t.Fatalf("resident set size = %d, want %d (full after M>N distinct adapters)", got, capacity)
 	}
 
-	out := sim.Metrics.BuildOutput("test-instance", nil)
+	out := sim.Metrics.BuildOutput("test-instance")
 	if len(out.Adapters) != numAdapters {
 		t.Fatalf("expected %d adapters in metrics, got %d", numAdapters, len(out.Adapters))
 	}
@@ -122,7 +122,7 @@ func TestResidentAdapterSet_MixedBaseAndAdapterTraffic(t *testing.T) {
 	}
 	sim.Run()
 
-	out := sim.Metrics.BuildOutput("test-instance", nil)
+	out := sim.Metrics.BuildOutput("test-instance")
 	// Only adapter_0 surfaces; the base ("") requests form no adapter entry.
 	if _, ok := out.Adapters[""]; ok {
 		t.Fatal("base-model (empty adapter) requests must not form an adapter entry")
@@ -203,7 +203,7 @@ func TestResidentAdapterSet_PreemptionDoesNotDoubleCountLoad(t *testing.T) {
 		t.Error("adapter \"a\" not resident after run: warm Touch path on reschedule was not exercised")
 	}
 
-	out := s.Metrics.BuildOutput("test-instance", nil)
+	out := s.Metrics.BuildOutput("test-instance")
 	if got := out.Adapters["a"].LoadCount; got != 1 {
 		t.Errorf("adapter \"a\" LoadCount = %d, want 1 (preempt+reschedule must not re-count a resident adapter)", got)
 	}
@@ -235,7 +235,7 @@ func TestNewSimulator_AdaptersWithoutCapacity(t *testing.T) {
 
 	// The adapter may still surface via PR1's per-adapter TTFT/throughput metrics,
 	// but no cold loads or evictions are ever recorded without a resident set.
-	out := sim.Metrics.BuildOutput("test-instance", nil)
+	out := sim.Metrics.BuildOutput("test-instance")
 	for id, am := range out.Adapters {
 		if am.LoadCount != 0 || am.EvictionCount != 0 {
 			t.Errorf("adapter %q: LoadCount=%d EvictionCount=%d, want 0/0 (resident set inert)", id, am.LoadCount, am.EvictionCount)
@@ -312,7 +312,7 @@ func TestResidentAdapterSet_ActiveRun_Deterministic(t *testing.T) {
 			s.InjectArrival(req)
 		}
 		s.Run()
-		out := s.Metrics.BuildOutput("test-instance", nil)
+		out := s.Metrics.BuildOutput("test-instance")
 		b, err := json.Marshal(out)
 		if err != nil {
 			t.Fatal(err)
@@ -342,7 +342,7 @@ func TestResidentAdapterSet_InertWhenNoLoRA(t *testing.T) {
 	}
 	sim.Run()
 
-	out := sim.Metrics.BuildOutput("test-instance", nil)
+	out := sim.Metrics.BuildOutput("test-instance")
 	if out.Adapters != nil {
 		t.Fatalf("adapter-blind run emitted adapters block: %v", out.Adapters)
 	}

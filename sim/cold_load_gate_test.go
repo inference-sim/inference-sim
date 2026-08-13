@@ -98,7 +98,7 @@ func TestColdLoadGate_WarmIncursNoLoadLatency(t *testing.T) {
 	}
 
 	// The adapter is cold-loaded exactly once across both requests (INV-L3).
-	out := s.Metrics.BuildOutput("test-instance", nil)
+	out := s.Metrics.BuildOutput("test-instance")
 	if lc := out.Adapters["a8"].LoadCount; lc != 1 {
 		t.Errorf("adapter a8 LoadCount = %d, want 1 (charged once; second use warm)", lc)
 	}
@@ -130,7 +130,7 @@ func TestColdLoadGate_LoadsSerializePerInstance(t *testing.T) {
 		t.Errorf("both requests share TTFT %d: loads did not serialize (blocking model)", r1.FirstTokenTime)
 	}
 
-	out := s.Metrics.BuildOutput("test-instance", nil)
+	out := s.Metrics.BuildOutput("test-instance")
 	for _, id := range []string{"a8", "b8"} {
 		if lc := out.Adapters[id].LoadCount; lc != 1 {
 			t.Errorf("adapter %s LoadCount = %d, want 1", id, lc)
@@ -160,7 +160,7 @@ func TestColdLoadGate_SameAdapterCoalesces(t *testing.T) {
 	if s.Metrics.CompletedRequests != 2 {
 		t.Errorf("CompletedRequests = %d, want 2", s.Metrics.CompletedRequests)
 	}
-	out := s.Metrics.BuildOutput("test-instance", nil)
+	out := s.Metrics.BuildOutput("test-instance")
 	if lc := out.Adapters["a8"].LoadCount; lc != 1 {
 		t.Errorf("adapter a8 LoadCount = %d, want 1 (both requests coalesce onto one load, INV-L3)", lc)
 	}
@@ -246,7 +246,7 @@ func TestColdLoadGate_INV8_NoDeadlockUnderCapacityPressure(t *testing.T) {
 	if s.Metrics.CompletedRequests != 2 {
 		t.Errorf("CompletedRequests = %d, want 2 (both drain, INV-11)", s.Metrics.CompletedRequests)
 	}
-	out := s.Metrics.BuildOutput("test-instance", nil)
+	out := s.Metrics.BuildOutput("test-instance")
 	for _, id := range []string{"a8", "b8"} {
 		if lc := out.Adapters[id].LoadCount; lc != 1 {
 			t.Errorf("adapter %s LoadCount = %d, want 1", id, lc)

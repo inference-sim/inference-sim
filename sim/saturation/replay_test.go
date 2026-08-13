@@ -97,7 +97,7 @@ func TestReplayOneDetector_ResetsDetector(t *testing.T) {
 func TestWriteCombinedReport_EmptyInput_WritesEmptyTrace(t *testing.T) {
 	c := NewInMemoryCollector()
 	path := filepath.Join(t.TempDir(), "empty.json")
-	if err := WriteCombinedReport(path, c); err != nil {
+	if err := WriteCombinedReport(path, c, nil); err != nil {
 		t.Fatalf("WriteCombinedReport: %v", err)
 	}
 	data, err := os.ReadFile(path)
@@ -108,6 +108,38 @@ func TestWriteCombinedReport_EmptyInput_WritesEmptyTrace(t *testing.T) {
 	want := "{\n  \"trace\": []\n}\n"
 	if got != want {
 		t.Errorf("empty trace output = %q, want %q", got, want)
+	}
+}
+
+// TestWriteCombinedReport_FinalBlock verifies a non-empty final map is emitted as
+// a "final" object before "trace", with keys sorted (byte-identity, INV-6) and
+// each Level rendered as its bare string via Level.MarshalJSON (#1517).
+func TestWriteCombinedReport_FinalBlock(t *testing.T) {
+	c := NewInMemoryCollector()
+	path := filepath.Join(t.TempDir(), "final.json")
+	final := map[string]Level{
+		"threshold":     Overloaded,
+		"composite":     Stable,
+		"backlog-drift": Backlogged,
+	}
+	if err := WriteCombinedReport(path, c, final); err != nil {
+		t.Fatalf("WriteCombinedReport: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	// Keys sorted by encoding/json; "final" precedes "trace" by struct field order.
+	want := "{\n" +
+		"  \"final\": {\n" +
+		"    \"backlog-drift\": \"BACKLOGGED\",\n" +
+		"    \"composite\": \"STABLE\",\n" +
+		"    \"threshold\": \"OVERLOADED\"\n" +
+		"  },\n" +
+		"  \"trace\": []\n" +
+		"}\n"
+	if got := string(data); got != want {
+		t.Errorf("final-block report =\n%q\nwant\n%q", got, want)
 	}
 }
 
@@ -123,7 +155,7 @@ func TestWriteCombinedReport_ByteIdentical(t *testing.T) {
 		c := NewInMemoryCollector()
 		ReplayOneDetector(det, reqs, c)
 		path := filepath.Join(t.TempDir(), "t.json")
-		if err := WriteCombinedReport(path, c); err != nil {
+		if err := WriteCombinedReport(path, c, nil); err != nil {
 			t.Fatalf("write: %v", err)
 		}
 		data, err := os.ReadFile(path)

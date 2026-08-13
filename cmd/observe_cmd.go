@@ -20,6 +20,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
+	"github.com/inference-sim/inference-sim/sim/saturation"
 	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -615,20 +616,25 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		itlRecords = recorder.ITLRecords()
 	}
 
-	// Saturation trace (#1516 single detector / #1519 bank): stream the selected
-	// detector(s) over the real-server request metrics and write the per-event
-	// verdict trace to --saturation-report. Same pipeline as run/replay; the only
+	// Saturation (#1516 single detector / #1519 bank / #1517 final label): stream
+	// the selected detector(s) over the real-server request metrics, write the
+	// per-event verdict trace to --saturation-report (if given), and surface the
+	// per-detector final label on stdout. Same pipeline as run/replay; the only
 	// difference is the input source (TraceRecordsToRequestMetrics, real-server
-	// latencies). No stdout saturation field (passed nil to printObserveMetrics
-	// below) — the final label returns in #1517. No-op when no detector was
-	// selected or no report path was given.
+	// latencies) — observe's trace reflects real-server latencies by design. No-op
+	// when no detector was selected.
+	var saturationFinal map[string]saturation.Level
 	if satTracer != nil {
-		// trace emits the shared "0 completed requests" warning (consistent across
+		// run emits the shared "0 completed requests" warning (consistent across
 		// run/replay/observe). TraceRecordsToRequestMetrics drops non-"ok" records,
 		// so all-failed dispatch yields 0 metrics here.
 		requestMetrics := workload.TraceRecordsToRequestMetrics(records)
-		if err := satTracer.trace(requestMetrics); err != nil {
-			logrus.Fatalf("Saturation trace: %v", err)
+		final, err := satTracer.run(requestMetrics)
+		if err != nil {
+			logrus.Fatalf("Saturation: %v", err)
+		}
+		if len(final) > 0 {
+			saturationFinal = final
 		}
 	}
 
@@ -640,10 +646,14 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Warnf("--slo-itl set without --record-itl: ITL goodput attainment cannot be computed; using TTFT/E2E only for in-process goodput. Trace header still carries the original ITL thresholds for downstream replay/calibrate.")
 	}
 
-	// nil saturation arg (#1516): observe's stdout carries no saturation field;
-	// the per-event trace is written to --saturation-report above. #1517 restores
-	// the stdout final label.
-	printObserveMetrics(os.Stdout, records, wallClockDurationSec, itlRecords, nil, inProcGoodputTargets)
+	// #1517: observe's stdout regains the per-detector saturation final label
+	// (nil when no detector was selected ⇒ omitempty drops the field). The
+	// per-event trace is written to --saturation-report above.
+	var saturationResult interface{}
+	if saturationFinal != nil {
+		saturationResult = saturationFinal
+	}
+	printObserveMetrics(os.Stdout, records, wallClockDurationSec, itlRecords, saturationResult, inProcGoodputTargets)
 
 	// Print session metrics if any record carries a session label (#1058)
 	sessionMetrics := computeSessionMetricsFromTrace(records)
@@ -778,7 +788,7 @@ func printObserveMetrics(w io.Writer, records []workload.TraceRecord, wallClockD
 		ITLMeanMs:         itlMeanMs,
 		ResponsesPerSec:   responsesPerSec,
 		TokensPerSec:      tokensPerSec,
-		Saturation:        saturationResult, // always nil as of #1516 (observe writes the per-event trace to --saturation-report, not stdout); #1517 repopulates this for the stdout final label
+		Saturation:        saturationResult, // #1517: per-detector final-label map when --detectors is set; nil otherwise (omitempty drops the field)
 	}
 
 	// Compute percentiles if data available

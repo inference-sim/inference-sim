@@ -686,7 +686,7 @@ func TestInstanceSimulator_EvictRequest_ReleasesAdapterPin(t *testing.T) {
 		inst.ProcessNextEvent()
 	}
 
-	out := inst.Metrics().BuildOutput("evict-pin", nil)
+	out := inst.Metrics().BuildOutput("evict-pin")
 	if lc := out.Adapters["a2"].LoadCount; lc != 1 {
 		t.Errorf("adapter a2 LoadCount = %d, want 1 — cold a2 could not load after a1 was evicted; "+
 			"the eviction leaked a1's adapter pin (EvictLRU stuck)", lc)
