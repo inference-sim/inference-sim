@@ -196,7 +196,7 @@ have invariant tests verifying them.
 | **INV-10** | Session causality: for all rounds N in a closed-loop session, `round[N+1].ArrivalTime >= round[N].CompletionTime + ThinkTimeUs`. |
 | **INV-11** | Session completeness: every session reaches exactly one terminal state (completed, cancelled, horizon-interrupted, or budget-exhausted). No session is silently abandoned. |
 | **INV-12** | Phase 1 completeness under priority preemption: after Phase 1 of `FormBatch`, every non-preempted running request in decode phase has `NumNewTokens > 0` (token budget / `MaxModelLen` permitting). No request silently skipped due to index drift from non-tail eviction. Trivially satisfied for FCFS. |
-| **INV-13** | Run/replay parity: a trace exported via `blis run --trace-output` and replayed with identical flags MUST produce identical per-request metrics. Unsupported replay features (autoscaler, node pools) MUST `logrus.Fatalf` at startup — never silent degradation. |
+| **INV-13** | Run/replay parity: a trace exported via `blis run --trace-output` and replayed with identical flags MUST produce identical per-request metrics. Unsupported replay features (autoscaler, node pools, MoE `--dp>1` as placement #1531) MUST `logrus.Fatalf` at startup — never silent degradation. |
 
 *Rationale*: Invariants are the ground truth for correctness. Golden tests verify
 output stability; invariant tests verify semantic correctness.
