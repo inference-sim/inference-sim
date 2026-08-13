@@ -64,6 +64,20 @@ func newObservabilityConfig(refreshInterval int64, cacheDelay int64) Observabili
 	return config
 }
 
+// PinResidentAdaptersImmediate forces the ResidentAdapters field to Immediate
+// freshness, overriding whatever mode newObservabilityConfig selected from the
+// global --snapshot-refresh-interval. The route-to-holder routing policy (B-2,
+// #1490, D7) requires holder truth to be live at routing time: a stale (Periodic)
+// ResidentAdapters set could hide a just-loaded adapter and let the strict-affinity
+// restriction pick the wrong instance or spuriously fall back, violating INV-PS1.
+// This is a narrow, single-field override — every other field keeps the mode the
+// global interval assigned, so unrelated signals (QueueDepth, KVUtilization, …) stay
+// Periodic and the determinism/perf characteristics of the rest of the snapshot are
+// unchanged.
+func (c *ObservabilityConfig) PinResidentAdaptersImmediate() {
+	c.ResidentAdapters = FieldConfig{Mode: Immediate}
+}
+
 // SnapshotProvider produces instance snapshots with configurable staleness.
 // Returns sim.RoutingSnapshot directly — no intermediate type translation needed.
 type SnapshotProvider interface {

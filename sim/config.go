@@ -273,6 +273,13 @@ type LoRAConfig struct {
 
 	// Adapters is the pre-declared registry (id -> rank[, base model]). Empty => inert.
 	Adapters []AdapterSpec `yaml:"adapters,omitempty"`
+
+	// EvictionPolicy names the resident-adapter eviction policy at the cold-load gate
+	// (B-4). Empty => lru (the no-op default, byte-identical to B-3). Resolution and
+	// name validation live in sim/lora/eviction.New (cross-package registry); Validate
+	// deliberately does NOT check the name here, to keep sim free of the eviction
+	// import — the CLI fails fast against sim.ValidEvictionPolicyNames.
+	EvictionPolicy string `yaml:"eviction_policy,omitempty"`
 }
 
 // HasAdapters reports whether any adapter is declared. When false the subsystem is
