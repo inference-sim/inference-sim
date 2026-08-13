@@ -12,22 +12,23 @@ import (
 // classifier (#1515): running_slope in (noiseFloor, K*noiseFloor] → BACKLOGGED,
 // running_slope > K*noiseFloor → OVERLOADED. It is a tunable heuristic constant,
 // NOT an empirically calibrated value. The streaming bands are an online
-// heuristic and are explicitly NOT the drain-ratio/slope-based batch classifiers
-// in sim/workload (workload.AnalyzeBacklogDrift*); the two computations may
-// legitimately disagree.
+// heuristic; the former drain-ratio/slope-based post-hoc batch classifiers (once
+// in sim/workload) were removed in #1547, so this detector is now the only
+// backlog-drift saturation computation.
 const backlogDriftSlopeK = 3.0
 
 // BacklogDriftDetector is a streaming saturation detector (#1515): Observe folds
 // each event into an incremental in-flight estimate and Detect bands the online
 // OLS slope of in-flight against a noise floor. The batch Classify path was
-// removed in #1516; the detector now streams exclusively and holds no
-// workload.BacklogClassifier (the online band is self-contained; #1517).
+// removed in #1516 and the post-hoc batch classifier library in #1547; the
+// detector now streams exclusively (the online band is self-contained; #1517).
 type BacklogDriftDetector struct {
 	config workload.BacklogDriftConfig
 
 	// Streaming state (#1515). Populated by Observe, read by Detect, cleared by
-	// Reset. This is a causal computation, distinct from the non-causal batch
-	// analysis in sim/workload (which needs the whole trace including the tail).
+	// Reset. This is a causal computation: it consumes events in order and never
+	// looks ahead, distinct from the removed non-causal batch analysis (#1547)
+	// which needed the whole trace including the tail.
 	arrivals    int64 // running count of Arrival events
 	completions int64 // running count of Completion events
 
