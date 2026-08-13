@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
-
-	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
 // SaturationConfig is the strict-YAML replacement for the 11 saturation tuning
@@ -19,7 +17,7 @@ import (
 //
 //   - threshold:      the ThresholdDetector's single knob (threshold_ms)
 //   - backlog_drift:  the BacklogDriftDetector's tuning knobs (mirrors
-//     workload.BacklogDriftConfig)
+//     BacklogDriftConfig)
 //
 // composite has no tunable parameters, so it has no block — a "composite:" key
 // therefore fails strict parsing (KnownFields), which is the intended contract.
@@ -38,7 +36,7 @@ type ThresholdBlock struct {
 	ThresholdMs *float64 `yaml:"threshold_ms"`
 }
 
-// BacklogDriftBlock overrides fields of workload.BacklogDriftConfig. Each field
+// BacklogDriftBlock overrides fields of BacklogDriftConfig. Each field
 // is optional; absent fields keep DefaultBacklogDriftConfig's value.
 // window_size_sec is expressed in whole seconds (matching the retired
 // --saturation-window flag, which was also seconds).
@@ -188,9 +186,9 @@ func checkBlockOwnershipSet(names []string, cfg SaturationConfig) error {
 // resolveBacklogDriftConfig merges a BacklogDriftBlock over the defaults and
 // validates the result, returning errors (naming the YAML field) rather than
 // panicking so the library boundary stays panic-free (R6). Bounds mirror
-// workload.NewBacklogDriftConfig so the subsequent construction cannot panic.
-func resolveBacklogDriftConfig(block *BacklogDriftBlock) (workload.BacklogDriftConfig, error) {
-	def := workload.DefaultBacklogDriftConfig()
+// NewBacklogDriftConfig so the subsequent construction cannot panic.
+func resolveBacklogDriftConfig(block *BacklogDriftBlock) (BacklogDriftConfig, error) {
+	def := DefaultBacklogDriftConfig()
 
 	windowSize := def.WindowSize
 	minWindows := def.MinWindows
@@ -205,55 +203,55 @@ func resolveBacklogDriftConfig(block *BacklogDriftBlock) (workload.BacklogDriftC
 	if block != nil {
 		if block.WindowSizeSec != nil {
 			if *block.WindowSizeSec <= 0 {
-				return workload.BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.window_size_sec must be > 0, got %d", *block.WindowSizeSec)
+				return BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.window_size_sec must be > 0, got %d", *block.WindowSizeSec)
 			}
 			windowSize = time.Duration(*block.WindowSizeSec) * time.Second
 		}
 		if block.MinWindows != nil {
 			if *block.MinWindows <= 0 {
-				return workload.BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.min_windows must be > 0, got %d", *block.MinWindows)
+				return BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.min_windows must be > 0, got %d", *block.MinWindows)
 			}
 			minWindows = *block.MinWindows
 		}
 		if block.PeakRatio != nil {
 			if *block.PeakRatio <= 0 || math.IsNaN(*block.PeakRatio) || math.IsInf(*block.PeakRatio, 0) {
-				return workload.BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.peak_ratio must be a finite value > 0, got %v", *block.PeakRatio)
+				return BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.peak_ratio must be a finite value > 0, got %v", *block.PeakRatio)
 			}
 			peakRatio = *block.PeakRatio
 		}
 		if block.PeakRatioBand != nil {
 			if *block.PeakRatioBand < 0 || math.IsNaN(*block.PeakRatioBand) || math.IsInf(*block.PeakRatioBand, 0) {
-				return workload.BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.peak_ratio_band must be >= 0, got %v", *block.PeakRatioBand)
+				return BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.peak_ratio_band must be >= 0, got %v", *block.PeakRatioBand)
 			}
 			peakRatioBand = *block.PeakRatioBand
 		}
 		if block.ConfidenceCI != nil {
 			if *block.ConfidenceCI <= 0 || *block.ConfidenceCI >= 1 || math.IsNaN(*block.ConfidenceCI) || math.IsInf(*block.ConfidenceCI, 0) {
-				return workload.BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.confidence_ci must be in (0, 1), got %v", *block.ConfidenceCI)
+				return BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.confidence_ci must be in (0, 1), got %v", *block.ConfidenceCI)
 			}
 			confidenceCI = *block.ConfidenceCI
 		}
 		if block.WarmupWindows != nil {
 			if *block.WarmupWindows < 0 {
-				return workload.BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.warmup_windows must be >= 0, got %d", *block.WarmupWindows)
+				return BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.warmup_windows must be >= 0, got %d", *block.WarmupWindows)
 			}
 			warmupWindows = *block.WarmupWindows
 		}
 		if block.TailWindows != nil {
 			if *block.TailWindows < 0 {
-				return workload.BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.tail_windows must be >= 0, got %d", *block.TailWindows)
+				return BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.tail_windows must be >= 0, got %d", *block.TailWindows)
 			}
 			tailWindows = *block.TailWindows
 		}
 		if block.SaturatedDrainRatio != nil {
 			if *block.SaturatedDrainRatio <= 0 || *block.SaturatedDrainRatio > 1 || math.IsNaN(*block.SaturatedDrainRatio) || math.IsInf(*block.SaturatedDrainRatio, 0) {
-				return workload.BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.saturated_drain_ratio must be in (0, 1], got %v", *block.SaturatedDrainRatio)
+				return BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.saturated_drain_ratio must be in (0, 1], got %v", *block.SaturatedDrainRatio)
 			}
 			saturatedDrainRatio = *block.SaturatedDrainRatio
 		}
 		if block.TransientDrainRatio != nil {
 			if *block.TransientDrainRatio <= 0 || *block.TransientDrainRatio > 1 || math.IsNaN(*block.TransientDrainRatio) || math.IsInf(*block.TransientDrainRatio, 0) {
-				return workload.BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.transient_drain_ratio must be in (0, 1], got %v", *block.TransientDrainRatio)
+				return BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.transient_drain_ratio must be in (0, 1], got %v", *block.TransientDrainRatio)
 			}
 			transientDrainRatio = *block.TransientDrainRatio
 		}
@@ -263,12 +261,12 @@ func resolveBacklogDriftConfig(block *BacklogDriftBlock) (workload.BacklogDriftC
 	// thresholds must not overlap. Checked here so we return an error instead of
 	// letting NewBacklogDriftConfig panic.
 	if saturatedDrainRatio > transientDrainRatio {
-		return workload.BacklogDriftConfig{}, fmt.Errorf(
+		return BacklogDriftConfig{}, fmt.Errorf(
 			"saturation config: backlog_drift.saturated_drain_ratio (%v) must be <= transient_drain_ratio (%v); regions would overlap",
 			saturatedDrainRatio, transientDrainRatio)
 	}
 
-	return workload.NewBacklogDriftConfig(
+	return NewBacklogDriftConfig(
 		windowSize, minWindows, peakRatio, peakRatioBand, confidenceCI,
 		warmupWindows, tailWindows, saturatedDrainRatio, transientDrainRatio,
 	), nil

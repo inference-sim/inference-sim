@@ -4,8 +4,6 @@ package saturation
 import (
 	"math"
 	"time"
-
-	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
 // backlogDriftSlopeK is the "clearly rising" multiplier for the streaming band
@@ -23,7 +21,7 @@ const backlogDriftSlopeK = 3.0
 // removed in #1516 and the post-hoc batch classifier library in #1547; the
 // detector now streams exclusively (the online band is self-contained; #1517).
 type BacklogDriftDetector struct {
-	config workload.BacklogDriftConfig
+	config BacklogDriftConfig
 
 	// Streaming state (#1515). Populated by Observe, read by Detect, cleared by
 	// Reset. This is a causal computation: it consumes events in order and never
@@ -51,24 +49,24 @@ type BacklogDriftDetector struct {
 
 // NewBacklogDriftDetector creates a BacklogDriftDetector with default configuration.
 func NewBacklogDriftDetector() Detector {
-	return newBacklogDriftDetector(workload.DefaultBacklogDriftConfig())
+	return newBacklogDriftDetector(DefaultBacklogDriftConfig())
 }
 
 // NewBacklogDriftDetectorWithConfig creates a BacklogDriftDetector with an
 // explicit config (#1515). The config's WindowSize governs the streaming bucket
 // width; the default-config constructor hardwires the 60s production window, which
 // is impractical for driving the streaming slope in a unit test. Callers (and
-// #1516) pass a small WindowSize via workload.NewBacklogDriftConfig so a handful
-// of directly-fed events span enough buckets to exercise the online slope
+// #1516) pass a small WindowSize via NewBacklogDriftConfig so a handful of
+// directly-fed events span enough buckets to exercise the online slope
 // deterministically.
-func NewBacklogDriftDetectorWithConfig(config workload.BacklogDriftConfig) Detector {
+func NewBacklogDriftDetectorWithConfig(config BacklogDriftConfig) Detector {
 	return newBacklogDriftDetector(config)
 }
 
 // newBacklogDriftDetector is the canonical constructor (R4): all exported
 // constructors route through it so streaming state (windowSizeUs) is initialized
 // in exactly one place.
-func newBacklogDriftDetector(config workload.BacklogDriftConfig) Detector {
+func newBacklogDriftDetector(config BacklogDriftConfig) Detector {
 	return &BacklogDriftDetector{
 		config:       config,
 		windowSizeUs: int64(config.WindowSize / time.Microsecond),

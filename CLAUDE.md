@@ -222,7 +222,7 @@ go build -o blis main.go
 
 # Tune a detector via a strict-YAML config file (#1516). composite has no params
 # (a composite: block errors). threshold has one knob; backlog-drift mirrors
-# workload.BacklogDriftConfig. The config must carry ONLY the selected detector's
+# saturation.BacklogDriftConfig (#1547). The config must carry ONLY the selected detector's
 # block — a block for another detector errors (no silent drop). Absent block =
 # defaults; partial block overrides only named fields; unknown key / bad value
 # errors naming the field.
@@ -477,7 +477,7 @@ BLIS includes post-hoc saturation detection for analyzing completed runs. This i
 - `--saturation-threshold-ms N` → `--saturation-config` `threshold: {threshold_ms: N}`
 - the 10 backlog-drift tuning flags (`--saturation-window`, `--saturation-min-windows`, `--saturation-classifier`, …) → `--saturation-config` `backlog_drift:` block
 - the standalone `--saturation-report` (per-window `BacklogDriftReport`) is removed; `--saturation-report` now writes the `{"final":{...},"trace":[...]}` object (final label + per-event trace)
-- detector `Classify` is removed from the `Detector` interface (streaming-only: `Name`/`Observe`/`Detect`/`Reset`); `workload.AnalyzeBacklogDrift*` stays in the library (used by the backlog-drift detector)
+- detector `Classify` is removed from the `Detector` interface (streaming-only: `Name`/`Observe`/`Detect`/`Reset`); the post-hoc batch analysis library (`workload.AnalyzeBacklogDrift*`, the `slope-based`/`drain-ratio` classifiers, `BacklogDriftReport`) was fully removed in #1547 — it had no live-path caller once the streaming detectors (#1515/#1516) and the reducer (#1517) landed. `BacklogDriftConfig` was relocated verbatim into `sim/saturation` in the same PR, fully decoupling `sim/saturation` from `sim/workload` (the config type was the last import edge)
 
 **Use cases**: a one-line end-of-run saturation verdict per detector on stdout (#1517) for quick capacity-planning answers, plus per-event saturation trajectories (the trace file) for detecting queue buildup or throughput saturation over time. The bank (`--detectors all`) additionally lets you compare detectors head-to-head on byte-identical traffic in a single run — both the final labels and the trajectories — instead of separate runs where each detector sees different traffic.
 

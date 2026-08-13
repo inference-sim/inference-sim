@@ -5,16 +5,14 @@ import (
 	"strconv"
 	"testing"
 	"time"
-
-	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
 // smallWindowConfig returns a BacklogDriftConfig with a 100ms window so a handful
 // of directly-fed events span several buckets and the streaming slope is
 // deterministically exercised (see #1515 "Testing note"). All other fields keep
 // the production defaults.
-func smallWindowConfig() workload.BacklogDriftConfig {
-	return workload.NewBacklogDriftConfig(
+func smallWindowConfig() BacklogDriftConfig {
+	return NewBacklogDriftConfig(
 		100*time.Millisecond, // WindowSize (small, for streaming tests)
 		5,                    // MinWindows
 		2.0,                  // PeakRatio
