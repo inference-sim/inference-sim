@@ -17,6 +17,7 @@ This guide covers how BLIS distributes incoming requests across instances in clu
 | **Least-loaded** | `least-loaded` | Send to the instance with lowest `EffectiveLoad` |
 | **Weighted** | `weighted` | Composable multi-scorer pipeline (default: llm-d parity) |
 | **Always-busiest** | `always-busiest` | Pathological template — sends to the most loaded instance (for testing) |
+| **Route-to-holder** | `route-to-holder` | Strict LoRA affinity — restricts candidates to instances already holding the request's adapter, then scores that subset with the weighted pipeline; falls back to unconstrained weighted routing when no instance holds the adapter or the request targets the base model |
 
 ## Weighted Scoring (Composable Pipeline)
 
@@ -98,6 +99,9 @@ BLIS models three signal freshness tiers:
 | **Instance-reported (Immediate/Periodic)** | QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate, PreemptionCount | Instance-internal state (scheduler queue, running batch, KV cache) | Default (`--snapshot-refresh-interval 50000`): Periodic at 50ms (llm-d parity). When `--snapshot-refresh-interval 0`: Immediate (read from instance at routing time). All Prometheus-sourced signals share the same refresh interval, matching real vLLM's single `/metrics` endpoint. |
 | **Periodic (precise prefix-cache query)** | `precise-prefix-cache` / `no-hit-lru` cache-block hit counts | Actual instance KV cache state (via `CachedSnapshotProvider`) | Governed by `--cache-signal-delay` (default 50ms; set to 0 for synchronous ground-truth queries). Distinct from the router-local `prefix-affinity` index above. |
 
+!!! note "`route-to-holder` pins `ResidentAdapters` to Immediate"
+    When `--routing-policy route-to-holder` is active, the `ResidentAdapters` signal is forced to Immediate freshness regardless of `--snapshot-refresh-interval`. Strict affinity is a correctness gate — a stale holder set could hide a just-loaded adapter and misroute or spuriously fall back — so holder membership must be read live at routing time. This is a narrow, single-field override; every other signal keeps the mode the global interval assigned.
+
 !!! info "DES semantics of 'Immediate' mode"
     "Immediate" means "re-read from the instance object at query time" — NOT "perfectly synchronized with the simulation clock." At the same clock tick, cluster events are processed before instance events (determinism rule). So a routing decision at time T sees QueueDepth that hasn't yet processed instance events at time T. This is a determinism mechanism (INV-6), not a freshness guarantee.
 
@@ -116,6 +120,7 @@ At high request rates, many routing decisions occur between KV utilization updat
 | RAG with shared system prompts | `weighted` default or `precise-prefix-cache:3,queue-depth:1` | Prefix-aware scoring maximizes KV cache reuse |
 | Mixed SLO classes | `weighted` default + [priority scheduling](scheduling.md) | Routing distributes load; scheduling prioritizes critical requests |
 | Low traffic (< 10 req/s) | Any | All policies produce equivalent results within 5% |
+| LoRA workloads needing strict adapter locality | `route-to-holder` | Keeps each request on an instance already holding its adapter, maximizing adapter-cache reuse and avoiding redundant loads; base-model requests and adapters no instance holds fall back to unconstrained weighted routing |
 
 ## Example: Comparing Policies
 
