@@ -155,6 +155,23 @@ func TestReduceOne_ExactWindowBoundaryInclusive(t *testing.T) {
 	}
 }
 
+// TestReduceOne_AllLevelsOutOfRange_DefaultsToStable is the defensive-guard
+// regression (PR #1546 review): if every in-window record carries a Level outside
+// [Stable, Overloaded], the bounds check drops them all, leaving zero counts. The
+// reducer must then fall back to the "empty group → STABLE" default rather than
+// returning the most-severe level with a zero count. Unreachable with real
+// detectors (they only emit valid levels), but locks the guard.
+func TestReduceOne_AllLevelsOutOfRange_DefaultsToStable(t *testing.T) {
+	const bogus Level = 99 // outside [Stable=0, Overloaded=2]
+	records := []TraceRecord{
+		rec(0, "composite", bogus),
+		rec(10, "composite", bogus),
+	}
+	if got := ReduceOne(records, 100); got != Stable {
+		t.Errorf("ReduceOne() with only out-of-range levels = %v, want STABLE (all filtered ⇒ degenerate default)", got)
+	}
+}
+
 // TestReduceAll_GroupsByDetector verifies ReduceAll splits a flat slice by the
 // Detector field and reduces each group independently.
 func TestReduceAll_GroupsByDetector(t *testing.T) {

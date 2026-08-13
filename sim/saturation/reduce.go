@@ -54,8 +54,15 @@ func ReduceOne(records []TraceRecord, windowUs int64) Level {
 	// Most severe level with the maximum count wins. Scanning severity-descending
 	// and using strict `>` means the first (most severe) level holding the max is
 	// selected, so a tie resolves toward the more severe level.
+	//
+	// bestCount starts at 0 (not -1) so that when every kept record was filtered
+	// out by the bounds check above (all counts zero — a group of only
+	// out-of-range levels), no level clears the bar and the default Stable is
+	// returned, staying consistent with the "empty group → STABLE" contract.
+	// Unreachable with current detectors (they only emit valid levels), but keeps
+	// the degenerate default honest.
 	best := Stable
-	bestCount := -1
+	bestCount := 0
 	for lvl := Overloaded; lvl >= Stable; lvl-- {
 		if counts[lvl] > bestCount {
 			bestCount = counts[lvl]
