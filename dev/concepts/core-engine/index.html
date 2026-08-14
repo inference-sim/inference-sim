@@ -3631,7 +3631,7 @@ Process requests already in the running batch:
 Dequeue requests from the wait queue:
 - Compute cached prefix blocks (prefix caching reduces allocation needs)
 - Allocate KV blocks for uncached prefix tokens being processed this step (bounded by chunked prefill threshold and remaining token budget)
-- Stop dequeuing when: max batch size reached (<code>--max-num-running-reqs</code>), allocation fails (cache full), token budget exhausted, or a preemption occurred during Phase 1</p>
+- Stop dequeuing when: max batch size reached (<code>--max-num-seqs</code>), allocation fails (cache full), token budget exhausted, or a preemption occurred during Phase 1</p>
 <h3 id="constraints">Constraints<a class="headerlink" href="#constraints" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -3644,13 +3644,13 @@ Dequeue requests from the wait queue:
 <tbody>
 <tr>
 <td>Max batch size</td>
-<td><code>--max-num-running-reqs</code></td>
-<td>Limits number of concurrent requests in the running batch</td>
+<td><code>--max-num-seqs</code></td>
+<td>Limits number of concurrent requests in the running batch (deprecated alias: <code>--max-num-running-reqs</code>)</td>
 </tr>
 <tr>
 <td>Token budget</td>
-<td><code>--max-num-scheduled-tokens</code></td>
-<td>Limits total new tokens across all running requests per step</td>
+<td><code>--max-num-batched-tokens</code></td>
+<td>Limits total new tokens across all running requests per step (deprecated alias: <code>--max-num-scheduled-tokens</code>)</td>
 </tr>
 <tr>
 <td>Chunked prefill</td>

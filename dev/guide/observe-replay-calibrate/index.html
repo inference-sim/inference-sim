@@ -3840,7 +3840,7 @@
 </tr>
 </tbody>
 </table>
-<p>Replay also accepts all shared simulation config flags (<code>--latency-model</code>, <code>--total-kv-blocks</code>, <code>--max-num-running-reqs</code>, etc.) — the same flags available in <code>blis run</code>. See <a href="../../reference/configuration/">Configuration</a> for the full list.</p>
+<p>Replay also accepts all shared simulation config flags (<code>--latency-model</code>, <code>--total-kv-blocks</code>, <code>--max-num-seqs</code>, etc.) — the same flags available in <code>blis run</code>. See <a href="../../reference/configuration/">Configuration</a> for the full list.</p>
 <h3 id="how-replay-differs-from-blis-run">How Replay Differs from <code>blis run</code><a class="headerlink" href="#how-replay-differs-from-blis-run" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -4178,7 +4178,7 @@ instrumentation outside BLIS's scope.</p>
 <p>If calibration quality is poor, try:</p>
 <ol>
 <li><strong>Different latency model:</strong> Switch from <code>roofline</code> to <code>trained-physics</code> (see <a href="../latency-models/">Latency Models</a>)</li>
-<li><strong>Adjust server config flags:</strong> Match <code>--max-num-running-reqs</code> and <code>--max-num-scheduled-tokens</code> to the real server's settings</li>
+<li><strong>Adjust server config flags:</strong> Match <code>--max-num-seqs</code> and <code>--max-num-batched-tokens</code> to the real server's settings</li>
 <li><strong>Increase sample size:</strong> Use more requests (<code>--num-requests</code>) for statistical stability</li>
 </ol>
 <hr />

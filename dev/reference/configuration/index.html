@@ -3810,7 +3810,7 @@
 <li><code>--policy-config</code> YAML bundle — loads all policy settings from one file</li>
 <li>Hardcoded defaults — <code>round-robin</code>, <code>always-admit</code>, <code>fcfs</code></li>
 </ol>
-<p><strong>Batch formation</strong> (<code>--max-num-running-reqs</code>, <code>--max-num-scheduled-tokens</code>, etc.):</p>
+<p><strong>Batch formation</strong> (<code>--max-num-seqs</code>, <code>--max-num-batched-tokens</code>, etc.):</p>
 <ol>
 <li>Explicit CLI flags</li>
 <li>Hardcoded defaults — 256 running reqs, 2048 scheduled tokens</li>
@@ -3983,16 +3983,16 @@
 </thead>
 <tbody>
 <tr>
-<td><code>--max-num-running-reqs</code></td>
+<td><code>--max-num-seqs</code></td>
 <td>int64</td>
 <td>256</td>
-<td>Maximum requests in the running batch simultaneously.</td>
+<td>Maximum requests in the running batch simultaneously (vLLM parity). Deprecated alias: <code>--max-num-running-reqs</code>.</td>
 </tr>
 <tr>
-<td><code>--max-num-scheduled-tokens</code></td>
+<td><code>--max-num-batched-tokens</code></td>
 <td>int64</td>
 <td>2048</td>
-<td>Maximum total new tokens across all running requests per step (token budget).</td>
+<td>Maximum total new tokens across all running requests per step (token budget; vLLM parity). Deprecated alias: <code>--max-num-scheduled-tokens</code>.</td>
 </tr>
 <tr>
 <td><code>--long-prefill-token-threshold</code></td>
@@ -4338,7 +4338,7 @@
 <td><code>tenant_budgets</code></td>
 <td>map[string]float64</td>
 <td>nil</td>
-<td>Per-tenant fraction of total cluster capacity (NumInstances × MaxRunningReqs). Absent key = unlimited. 0.0 = effectively zero concurrent slots (one request may slip through per admission tick due to DES admission-before-routing event ordering; see IsOverBudget docstring). Values must be in [0, 1].</td>
+<td>Per-tenant fraction of total cluster capacity (NumInstances × MaxNumSeqs). Absent key = unlimited. 0.0 = effectively zero concurrent slots (one request may slip through per admission tick due to DES admission-before-routing event ordering; see IsOverBudget docstring). Values must be in [0, 1].</td>
 </tr>
 </tbody>
 </table>
@@ -4767,7 +4767,7 @@
 <a id="__codelineno-5-71" name="__codelineno-5-71" href="#__codelineno-5-71"></a><span class="c1">#     batch: 0    # make batch non-sheddable</span>
 <a id="__codelineno-5-72" name="__codelineno-5-72" href="#__codelineno-5-72"></a>
 <a id="__codelineno-5-73" name="__codelineno-5-73" href="#__codelineno-5-73"></a><span class="c1"># Per-tenant fair-share budgets (Phase 1B — optional; omit for no tenant enforcement)</span>
-<a id="__codelineno-5-74" name="__codelineno-5-74" href="#__codelineno-5-74"></a><span class="c1"># Each value is a fraction of total cluster capacity (NumInstances × MaxRunningReqs).</span>
+<a id="__codelineno-5-74" name="__codelineno-5-74" href="#__codelineno-5-74"></a><span class="c1"># Each value is a fraction of total cluster capacity (NumInstances × MaxNumSeqs).</span>
 <a id="__codelineno-5-75" name="__codelineno-5-75" href="#__codelineno-5-75"></a><span class="c1"># Absent key = unlimited. 0.0 = effectively zero concurrent slots (DES ordering caveat: see IsOverBudget docstring). Values must be in [0, 1].</span>
 <a id="__codelineno-5-76" name="__codelineno-5-76" href="#__codelineno-5-76"></a><span class="c1"># Non-sheddable traffic (priority &gt;= 0: critical, standard) is always protected from budget shedding.</span>
 <a id="__codelineno-5-77" name="__codelineno-5-77" href="#__codelineno-5-77"></a><span class="nt">tenant_budgets</span><span class="p">:</span>
@@ -4910,7 +4910,7 @@
 </tr>
 <tr>
 <td><strong>BatchConfig</strong></td>
-<td><code>--max-num-running-reqs</code>, <code>--max-num-scheduled-tokens</code>, <code>--long-prefill-token-threshold</code></td>
+<td><code>--max-num-seqs</code>, <code>--max-num-batched-tokens</code>, <code>--long-prefill-token-threshold</code></td>
 </tr>
 <tr>
 <td><strong>LatencyCoeffs</strong></td>
