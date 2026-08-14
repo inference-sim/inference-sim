@@ -54,10 +54,20 @@ jobs:
         with:
           go-version: '1.26'
 
+      - name: Parse archon ref
+        id: parse
+        run: |
+          COMMENT="${{ github.event.comment.body }}"
+          if [[ "$COMMENT" =~ --archon-ref[[:space:]]+([^[:space:]]+) ]]; then
+            echo "ref=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=v0.2.0" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build archon-go
         id: build
         run: |
-          ARCHON_BIN=$(scripts/archon-build.sh v0.1.0)
+          ARCHON_BIN=$(scripts/archon-build.sh ${{ steps.parse.outputs.ref }})
           [[ -n "$ARCHON_BIN" && -x "$ARCHON_BIN" ]] || { echo "::error::archon-build.sh produced no valid binary"; exit 1; }
           echo "archon_bin=$ARCHON_BIN" >> "$GITHUB_OUTPUT"
 
@@ -75,12 +85,9 @@ jobs:
             core.setOutput('head_sha', pr.head.sha);
 
       - name: Fetch PR head ref
-        env:
-          PR_NUMBER: ${{ github.event.issue.number }}
-        run: |
-          git fetch origin "pull/$PR_NUMBER/head"
+        run: git fetch origin "pull/${{ github.event.issue.number }}/head"
 
-      - name: Run Archon analysis
+      - name: Run archon pr-review
         id: archon
         env:
           ARCHON_BIN: ${{ steps.build.outputs.archon_bin }}
@@ -96,14 +103,19 @@ jobs:
             echo "$OUTPUT" > /tmp/archon-output.md
             exit 0
           }
-          EXIT_CODE=0
-          OUTPUT=$(scripts/archon-ci.sh . "$MERGE_BASE" "$HEAD_SHA") || EXIT_CODE=$?
-          if [[ $EXIT_CODE -gt 1 ]]; then
+
+          "$ARCHON_BIN" pr-review . "$MERGE_BASE" "$HEAD_SHA" --out .archon || {
             OUTPUT="## Archon Error
 
-          Script exited with unexpected code $EXIT_CODE. Check the workflow logs."
-          fi
+          archon-go pr-review failed. Check the workflow logs."
+            echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+            echo "$OUTPUT" > /tmp/archon-output.md
+            exit 0
+          }
+
+          OUTPUT=$(cat .archon/review.md)
           echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+
           # GitHub PR comments have a 65536 char limit. Truncate if needed.
           if [[ ${#OUTPUT} -gt 60000 ]]; then
             FULL_LEN=${#OUTPUT}
