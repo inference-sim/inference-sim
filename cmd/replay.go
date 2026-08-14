@@ -176,11 +176,11 @@ Example:
 		if totalKVBlocks <= 0 {
 			logrus.Fatalf("--total-kv-blocks must be > 0, got %d", totalKVBlocks)
 		}
-		if maxRunningReqs <= 0 {
-			logrus.Fatalf("--max-num-running-reqs must be > 0, got %d", maxRunningReqs)
+		if maxNumSeqs <= 0 {
+			logrus.Fatalf("--max-num-seqs must be > 0, got %d", maxNumSeqs)
 		}
-		if maxScheduledTokens <= 0 {
-			logrus.Fatalf("--max-num-scheduled-tokens must be > 0, got %d", maxScheduledTokens)
+		if maxNumBatchedTokens <= 0 {
+			logrus.Fatalf("--max-num-batched-tokens must be > 0, got %d", maxNumBatchedTokens)
 		}
 		if longPrefillTokenThreshold < 0 {
 			logrus.Fatalf("--long-prefill-token-threshold must be >= 0, got %d", longPrefillTokenThreshold)
@@ -472,7 +472,7 @@ Example:
 				Seed:    seed,
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
-				BatchConfig:          sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
+				BatchConfig:          sim.NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:        sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
 				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dataParallelism, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),

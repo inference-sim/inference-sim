@@ -238,7 +238,7 @@ func TestSimulator_PriorityFCFS_SchedulesHighPriorityFirst(t *testing.T) {
 	// BC-2: With equal SLOClass (both empty → Priority=1.0), arrival-time tiebreak applies.
 	// priority-fcfs sorts ascending (lower Priority first), then earlier ArrivalTime first.
 	// reqOlder (ArrivalTime=0) beats reqNewer (ArrivalTime=500000) via tiebreak.
-	// Uses MaxRunningReqs=1 to force sequential scheduling so step index proves ordering.
+	// Uses MaxNumSeqs=1 to force sequential scheduling so step index proves ordering.
 	cfg := SimConfig{
 		Horizon:             10000000,
 		Seed:                42,
@@ -356,7 +356,7 @@ func TestScheduler_EmptyQueue_NoOp(t *testing.T) {
 func TestSimulator_SJF_SchedulesShortJobFirst(t *testing.T) {
 	// BC-4 + BC-5: SJF should schedule shorter input request first.
 	// Uses zero alpha delay so both requests queue simultaneously at tick 0,
-	// and MaxRunningReqs=256 so both enter the batch in the same step.
+	// and MaxNumSeqs=256 so both enter the batch in the same step.
 	// SJF sorts short before long; short request gets lower E2E latency
 	// because it has fewer prefill tokens to process.
 	cfg := SimConfig{

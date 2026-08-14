@@ -56,8 +56,8 @@ var (
 	simulationHorizon         int64     // Total simulation time (in ticks)
 	logLevel                  string    // Log verbosity level
 	totalKVBlocks             int64     // Total number of KV blocks available on GPU
-	maxRunningReqs            int64     // Maximum number of requests in the Running batch
-	maxScheduledTokens        int64     // Maximum total number of tokens across requests in the Running batch
+	maxNumSeqs                int64     // Maximum number of requests in the Running batch (vLLM: --max-num-seqs)
+	maxNumBatchedTokens       int64     // Maximum total number of tokens across requests in the Running batch (vLLM: --max-num-batched-tokens)
 	blockSizeTokens           int64     // Number of tokens per KV block
 	betaCoeffs                []float64 // List of beta coeffs corresponding to step features
 	alphaCoeffs               []float64 // List of alpha coeffs corresponding to pre, postprocessing delays
@@ -1107,8 +1107,18 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 
 	// vLLM server configs
 	cmd.Flags().Int64Var(&totalKVBlocks, "total-kv-blocks", 1000000, "Total number of KV cache blocks")
-	cmd.Flags().Int64Var(&maxRunningReqs, "max-num-running-reqs", 256, "Maximum number of requests running together")
-	cmd.Flags().Int64Var(&maxScheduledTokens, "max-num-scheduled-tokens", 2048, "Maximum total number of new tokens across running requests")
+	cmd.Flags().Int64Var(&maxNumSeqs, "max-num-seqs", 256, "Maximum number of requests running together (vLLM parity)")
+	cmd.Flags().Int64Var(&maxNumBatchedTokens, "max-num-batched-tokens", 2048, "Maximum total number of new tokens across running requests (vLLM parity)")
+	// Deprecated aliases bound to the same vars for backward compatibility (issue #1570).
+	// pflag emits the deprecation warning to stderr, so stdout stays byte-identical (INV-6).
+	cmd.Flags().Int64Var(&maxNumSeqs, "max-num-running-reqs", 256, "Deprecated: use --max-num-seqs")
+	cmd.Flags().Int64Var(&maxNumBatchedTokens, "max-num-scheduled-tokens", 2048, "Deprecated: use --max-num-batched-tokens")
+	if err := cmd.Flags().MarkDeprecated("max-num-running-reqs", "use --max-num-seqs"); err != nil {
+		logrus.Fatalf("failed to mark --max-num-running-reqs deprecated: %v", err)
+	}
+	if err := cmd.Flags().MarkDeprecated("max-num-scheduled-tokens", "use --max-num-batched-tokens"); err != nil {
+		logrus.Fatalf("failed to mark --max-num-scheduled-tokens deprecated: %v", err)
+	}
 	cmd.Flags().Float64SliceVar(&betaCoeffs, "beta-coeffs", []float64{0.0, 0.0, 0.0}, "Comma-separated list of beta coefficients")
 	cmd.Flags().Float64SliceVar(&alphaCoeffs, "alpha-coeffs", []float64{0.0, 0.0, 0.0}, "Comma-separated alpha coefficients (alpha0,alpha1) for processing delays")
 	cmd.Flags().Int64Var(&blockSizeTokens, "block-size-in-tokens", 16, "Number of tokens contained in a KV cache block")
@@ -1802,11 +1812,11 @@ var runCmd = &cobra.Command{
 		if totalKVBlocks <= 0 {
 			logrus.Fatalf("--total-kv-blocks must be > 0, got %d", totalKVBlocks)
 		}
-		if maxRunningReqs <= 0 {
-			logrus.Fatalf("--max-num-running-reqs must be > 0, got %d", maxRunningReqs)
+		if maxNumSeqs <= 0 {
+			logrus.Fatalf("--max-num-seqs must be > 0, got %d", maxNumSeqs)
 		}
-		if maxScheduledTokens <= 0 {
-			logrus.Fatalf("--max-num-scheduled-tokens must be > 0, got %d", maxScheduledTokens)
+		if maxNumBatchedTokens <= 0 {
+			logrus.Fatalf("--max-num-batched-tokens must be > 0, got %d", maxNumBatchedTokens)
 		}
 		if longPrefillTokenThreshold < 0 {
 			logrus.Fatalf("--long-prefill-token-threshold must be >= 0, got %d", longPrefillTokenThreshold)
@@ -2035,7 +2045,7 @@ var runCmd = &cobra.Command{
 				Seed:    seed,
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
-				BatchConfig:          sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
+				BatchConfig:          sim.NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:        sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
 				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dataParallelism, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),

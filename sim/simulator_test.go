@@ -215,7 +215,7 @@ func TestRegenGoldenDataset(t *testing.T) {
 			Horizon:             math.MaxInt64,
 			Seed:                tc.Seed,
 			KVCacheConfig:       NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
-			BatchConfig:         NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
+			BatchConfig:         NewBatchConfig(tc.MaxNumSeqs, tc.MaxNumBatchedTokens, tc.LongPrefillTokenThreshold),
 			LatencyCoeffs:       NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
 			ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, 1, false, "", "roofline", tc.MaxModelLen),
 		}
@@ -311,7 +311,7 @@ func TestSimulator_GoldenDataset(t *testing.T) {
 				Horizon:             math.MaxInt64,
 				Seed:                tc.Seed,
 				KVCacheConfig:       NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
-				BatchConfig:         NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
+				BatchConfig:         NewBatchConfig(tc.MaxNumSeqs, tc.MaxNumBatchedTokens, tc.LongPrefillTokenThreshold),
 				LatencyCoeffs:       NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
 				ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, 1, false, "", "roofline", tc.MaxModelLen),
 			})
@@ -545,10 +545,10 @@ func TestNewSimulator_BatchConfigValidation(t *testing.T) {
 		prefillThresh  int64
 		wantErrContain string
 	}{
-		{"zero_max_running", 0, 2048, 0, "MaxRunningReqs"},
-		{"negative_max_running", -1, 2048, 0, "MaxRunningReqs"},
-		{"zero_max_tokens", 256, 0, 0, "MaxScheduledTokens"},
-		{"negative_max_tokens", 256, -1, 0, "MaxScheduledTokens"},
+		{"zero_max_running", 0, 2048, 0, "MaxNumSeqs"},
+		{"negative_max_running", -1, 2048, 0, "MaxNumSeqs"},
+		{"zero_max_tokens", 256, 0, 0, "MaxNumBatchedTokens"},
+		{"negative_max_tokens", 256, -1, 0, "MaxNumBatchedTokens"},
 		{"negative_prefill_threshold", 256, 2048, -1, "LongPrefillTokenThreshold"},
 	}
 	for _, tc := range tests {
@@ -557,8 +557,8 @@ func TestNewSimulator_BatchConfigValidation(t *testing.T) {
 			// Use struct literal to bypass NewBatchConfig validation — this tests
 			// NewSimulator's defense-in-depth, not the constructor.
 			cfg.BatchConfig = BatchConfig{
-				MaxRunningReqs:            tc.maxRunning,
-				MaxScheduledTokens:        tc.maxTokens,
+				MaxNumSeqs:                tc.maxRunning,
+				MaxNumBatchedTokens:       tc.maxTokens,
 				LongPrefillTokenThreshold: tc.prefillThresh,
 			}
 			kvStore := MustNewKVStoreFromConfig(cfg.KVCacheConfig)
@@ -938,8 +938,8 @@ func TestSimulator_RequestConservation_FiniteHorizon_ThreeTermEquation(t *testin
 		sim.InjectArrival(&Request{
 			ID:           fmt.Sprintf("late_%d", i),
 			ArrivalTime:  int64(300_000 + i*40_000), // 300,000 to 460,000 (all < 500k horizon)
-			InputTokens:  make([]TokenID, 200),          // large prefill
-			OutputTokens: make([]TokenID, 100),          // many decode tokens
+			InputTokens:  make([]TokenID, 200),      // large prefill
+			OutputTokens: make([]TokenID, 100),      // many decode tokens
 			State:        StateQueued,
 		})
 	}
@@ -1243,7 +1243,7 @@ func TestSimulator_ObservationMethods_MatchDirectAccess(t *testing.T) {
 }
 
 // TestWorkConserving_StepRestartsWhenWaitQNonEmpty verifies INV-8:
-// GIVEN a simulator with MaxRunningReqs=1 and two requests arriving at t=0 and t=1
+// GIVEN a simulator with MaxNumSeqs=1 and two requests arriving at t=0 and t=1
 // WHEN the simulation runs to completion (infinite horizon, no further arrivals)
 // THEN both requests complete (the second is not stranded when the first finishes)
 // AND the second request's scheduling delay is bounded by the first's service time.
@@ -1511,7 +1511,7 @@ func TestEnqueueRequest_MaxOutputLen_OracleKnowledgeBoundary(t *testing.T) {
 		ID:           "input_fits_oracle",
 		InputTokens:  make([]TokenID, 200),
 		OutputTokens: make([]TokenID, 1000), // actual output exceeds context, but control plane can't see this
-		MaxOutputLen: 0,                 // auto-filled to maxModelLen - input = 312
+		MaxOutputLen: 0,                     // auto-filled to maxModelLen - input = 312
 		State:        StateQueued,
 	}
 	sim.EnqueueRequest(reqFits)

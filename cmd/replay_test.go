@@ -92,7 +92,9 @@ func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
 		"model-config-folder", "hardware-config",
 
 		// registerSimConfigFlags: vLLM server configs
-		"total-kv-blocks", "max-num-running-reqs", "max-num-scheduled-tokens",
+		"total-kv-blocks", "max-num-seqs", "max-num-batched-tokens",
+		// Deprecated aliases (issue #1570).
+		"max-num-running-reqs", "max-num-scheduled-tokens",
 		"beta-coeffs", "alpha-coeffs", "block-size-in-tokens",
 		"long-prefill-token-threshold",
 
@@ -508,8 +510,8 @@ warm_up_requests: 0
 	origAlpha := alphaCoeffs
 	origTotalKV := totalKVBlocks
 	origBlockSize := blockSizeTokens
-	origMaxRunning := maxRunningReqs
-	origMaxSched := maxScheduledTokens
+	origMaxRunning := maxNumSeqs
+	origMaxSched := maxNumBatchedTokens
 	origInstances := numInstances
 	origSeed := seed
 	origResults := resultsPath
@@ -553,8 +555,8 @@ warm_up_requests: 0
 		alphaCoeffs = origAlpha
 		totalKVBlocks = origTotalKV
 		blockSizeTokens = origBlockSize
-		maxRunningReqs = origMaxRunning
-		maxScheduledTokens = origMaxSched
+		maxNumSeqs = origMaxRunning
+		maxNumBatchedTokens = origMaxSched
 		numInstances = origInstances
 		seed = origSeed
 		resultsPath = origResults
@@ -599,8 +601,8 @@ warm_up_requests: 0
 	// Note: betaCoeffs and alphaCoeffs NOT set → auto-loads from defaults.yaml trained_physics_coefficients
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
-	maxRunningReqs = 64
-	maxScheduledTokens = 2048
+	maxNumSeqs = 64
+	maxNumBatchedTokens = 2048
 	numInstances = 1
 	seed = 42
 	resultsPath = ""
@@ -736,8 +738,8 @@ warm_up_requests: 0
 	origAlpha := alphaCoeffs
 	origTotalKV := totalKVBlocks
 	origBlockSize := blockSizeTokens
-	origMaxRunning := maxRunningReqs
-	origMaxSched := maxScheduledTokens
+	origMaxRunning := maxNumSeqs
+	origMaxSched := maxNumBatchedTokens
 	origInstances := numInstances
 	origSeed := seed
 	origResults := resultsPath
@@ -781,8 +783,8 @@ warm_up_requests: 0
 		alphaCoeffs = origAlpha
 		totalKVBlocks = origTotalKV
 		blockSizeTokens = origBlockSize
-		maxRunningReqs = origMaxRunning
-		maxScheduledTokens = origMaxSched
+		maxNumSeqs = origMaxRunning
+		maxNumBatchedTokens = origMaxSched
 		numInstances = origInstances
 		seed = origSeed
 		resultsPath = origResults
@@ -860,8 +862,8 @@ warm_up_requests: 0
 	// Note: betaCoeffs and alphaCoeffs NOT set → auto-loads from defaults.yaml
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
-	maxRunningReqs = 64
-	maxScheduledTokens = 2048
+	maxNumSeqs = 64
+	maxNumBatchedTokens = 2048
 	numInstances = 1
 	seed = 42
 	resultsPath = resultsFilePath
@@ -978,8 +980,8 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	origAlpha := alphaCoeffs
 	origTotalKV := totalKVBlocks
 	origBlockSize := blockSizeTokens
-	origMaxRunning := maxRunningReqs
-	origMaxSched := maxScheduledTokens
+	origMaxRunning := maxNumSeqs
+	origMaxSched := maxNumBatchedTokens
 	origInstances := numInstances
 	origSeed := seed
 	origResults := resultsPath
@@ -1023,8 +1025,8 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 		alphaCoeffs = origAlpha
 		totalKVBlocks = origTotalKV
 		blockSizeTokens = origBlockSize
-		maxRunningReqs = origMaxRunning
-		maxScheduledTokens = origMaxSched
+		maxNumSeqs = origMaxRunning
+		maxNumBatchedTokens = origMaxSched
 		numInstances = origInstances
 		seed = origSeed
 		resultsPath = origResults
@@ -1068,8 +1070,8 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	// Note: betaCoeffs and alphaCoeffs NOT set → auto-loads from defaults.yaml
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
-	maxRunningReqs = 64
-	maxScheduledTokens = 2048
+	maxNumSeqs = 64
+	maxNumBatchedTokens = 2048
 	numInstances = 1
 	seed = 42
 	resultsPath = ""
@@ -1153,8 +1155,8 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		origAlpha := alphaCoeffs
 		origTotalKV := totalKVBlocks
 		origBlockSize := blockSizeTokens
-		origMaxRunning := maxRunningReqs
-		origMaxSched := maxScheduledTokens
+		origMaxRunning := maxNumSeqs
+		origMaxSched := maxNumBatchedTokens
 		origInstances := numInstances
 		origSeed := seed
 		origResults := resultsPath
@@ -1198,8 +1200,8 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 			alphaCoeffs = origAlpha
 			totalKVBlocks = origTotalKV
 			blockSizeTokens = origBlockSize
-			maxRunningReqs = origMaxRunning
-			maxScheduledTokens = origMaxSched
+			maxNumSeqs = origMaxRunning
+			maxNumBatchedTokens = origMaxSched
 			numInstances = origInstances
 			seed = origSeed
 			resultsPath = origResults
@@ -1243,8 +1245,8 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		// Note: betaCoeffs and alphaCoeffs NOT set → auto-loads from defaults.yaml
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
-		maxRunningReqs = 64
-		maxScheduledTokens = 2048
+		maxNumSeqs = 64
+		maxNumBatchedTokens = 2048
 		numInstances = 1
 		seed = 42
 		resultsPath = ""
@@ -1342,8 +1344,8 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	origAlpha := alphaCoeffs
 	origTotalKV := totalKVBlocks
 	origBlockSize := blockSizeTokens
-	origMaxRunning := maxRunningReqs
-	origMaxSched := maxScheduledTokens
+	origMaxRunning := maxNumSeqs
+	origMaxSched := maxNumBatchedTokens
 	origInstances := numInstances
 	origSeed := seed
 	origResults := resultsPath
@@ -1387,8 +1389,8 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 		alphaCoeffs = origAlpha
 		totalKVBlocks = origTotalKV
 		blockSizeTokens = origBlockSize
-		maxRunningReqs = origMaxRunning
-		maxScheduledTokens = origMaxSched
+		maxNumSeqs = origMaxRunning
+		maxNumBatchedTokens = origMaxSched
 		numInstances = origInstances
 		seed = origSeed
 		resultsPath = origResults
@@ -1431,8 +1433,8 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	latencyModelBackend = "trained-physics"
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
-	maxRunningReqs = 64
-	maxScheduledTokens = 2048
+	maxNumSeqs = 64
+	maxNumBatchedTokens = 2048
 	numInstances = 1
 	seed = 42
 	resultsPath = ""
@@ -1527,8 +1529,8 @@ func TestReplayCmd_AutoscalerBundleFatal(t *testing.T) {
 		latencyModelBackend = "trained-physics"
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
-		maxRunningReqs = 64
-		maxScheduledTokens = 2048
+		maxNumSeqs = 64
+		maxNumBatchedTokens = 2048
 		numInstances = 1
 		seed = 42
 		longPrefillTokenThreshold = 0
@@ -1612,8 +1614,8 @@ func TestReplayCmd_NodePoolsBundleFatal(t *testing.T) {
 		latencyModelBackend = "trained-physics"
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
-		maxRunningReqs = 64
-		maxScheduledTokens = 2048
+		maxNumSeqs = 64
+		maxNumBatchedTokens = 2048
 		numInstances = 1
 		seed = 42
 		longPrefillTokenThreshold = 0
@@ -1726,8 +1728,8 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	origAlpha := alphaCoeffs
 	origTotalKV := totalKVBlocks
 	origBlockSize := blockSizeTokens
-	origMaxRunning := maxRunningReqs
-	origMaxSched := maxScheduledTokens
+	origMaxRunning := maxNumSeqs
+	origMaxSched := maxNumBatchedTokens
 	origInstances := numInstances
 	origSeed := seed
 	origResults := resultsPath
@@ -1771,8 +1773,8 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 		alphaCoeffs = origAlpha
 		totalKVBlocks = origTotalKV
 		blockSizeTokens = origBlockSize
-		maxRunningReqs = origMaxRunning
-		maxScheduledTokens = origMaxSched
+		maxNumSeqs = origMaxRunning
+		maxNumBatchedTokens = origMaxSched
 		numInstances = origInstances
 		seed = origSeed
 		resultsPath = origResults
@@ -1816,8 +1818,8 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	latencyModelBackend = "trained-physics"
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
-	maxRunningReqs = 64
-	maxScheduledTokens = 2048
+	maxNumSeqs = 64
+	maxNumBatchedTokens = 2048
 	numInstances = 2
 	seed = 42
 	resultsPath = ""
@@ -2140,8 +2142,8 @@ func TestINV13_RunReplayParity_PD_CLI(t *testing.T) {
 	origAlpha := alphaCoeffs
 	origTotalKV := totalKVBlocks
 	origBlockSize := blockSizeTokens
-	origMaxRunning := maxRunningReqs
-	origMaxSched := maxScheduledTokens
+	origMaxRunning := maxNumSeqs
+	origMaxSched := maxNumBatchedTokens
 	origInstances := numInstances
 	origSeedV := seed
 	origResults := resultsPath
@@ -2185,8 +2187,8 @@ func TestINV13_RunReplayParity_PD_CLI(t *testing.T) {
 		alphaCoeffs = origAlpha
 		totalKVBlocks = origTotalKV
 		blockSizeTokens = origBlockSize
-		maxRunningReqs = origMaxRunning
-		maxScheduledTokens = origMaxSched
+		maxNumSeqs = origMaxRunning
+		maxNumBatchedTokens = origMaxSched
 		numInstances = origInstances
 		seed = origSeedV
 		resultsPath = origResults
@@ -2229,8 +2231,8 @@ func TestINV13_RunReplayParity_PD_CLI(t *testing.T) {
 	latencyModelBackend = "trained-physics"
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
-	maxRunningReqs = 64
-	maxScheduledTokens = 2048
+	maxNumSeqs = 64
+	maxNumBatchedTokens = 2048
 	numInstances = 2
 	seed = fixedSeed
 	resultsPath = resultsFile
@@ -2344,8 +2346,8 @@ func TestReplayCmd_AutoscalerFlagFatal(t *testing.T) {
 		latencyModelBackend = "trained-physics"
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
-		maxRunningReqs = 64
-		maxScheduledTokens = 2048
+		maxNumSeqs = 64
+		maxNumBatchedTokens = 2048
 		numInstances = 1
 		seed = 42
 		longPrefillTokenThreshold = 0
@@ -2425,8 +2427,8 @@ func TestReplayCmd_PDTopologyFatal(t *testing.T) {
 		latencyModelBackend = "trained-physics"
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
-		maxRunningReqs = 64
-		maxScheduledTokens = 2048
+		maxNumSeqs = 64
+		maxNumBatchedTokens = 2048
 		numInstances = 2 // 4 prefill + 0 decode > 2 total: invalid topology
 		seed = 42
 		longPrefillTokenThreshold = 0

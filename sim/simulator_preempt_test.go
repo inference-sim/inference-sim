@@ -33,8 +33,8 @@ func TestPreempt_EmptyBatch_ReturnsFalse(t *testing.T) {
 		RunningBatch:          &Batch{Requests: []*Request{}},
 		WaitQ:                 wq,
 		KVCache:               kvCache,
-		MaxScheduledTokens:    10000,
-		MaxRunningReqs:        10,
+		MaxNumBatchedTokens:   10000,
+		MaxNumSeqs:            10,
 		PrefillTokenThreshold: 0,
 		MaxModelLen:           0,
 		Now:                   0,
@@ -99,8 +99,8 @@ func TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse(t *testing.T) {
 		RunningBatch:          &Batch{Requests: []*Request{huge, existing}},
 		WaitQ:                 &WaitQueue{},
 		KVCache:               kvCache,
-		MaxScheduledTokens:    10000,
-		MaxRunningReqs:        10,
+		MaxNumBatchedTokens:   10000,
+		MaxNumSeqs:            10,
 		PrefillTokenThreshold: 0,
 		MaxModelLen:           0,
 		Now:                   0,
@@ -189,13 +189,13 @@ func TestNewSimulator_CustomSLOPriorityMap_AffectsPreemption(t *testing.T) {
 	s.WaitQ.Enqueue(&Request{ID: "new", InputTokens: make([]TokenID, 16), OutputTokens: make([]TokenID, 1), State: StateQueued})
 
 	result := s.batchFormation.FormBatch(BatchContext{
-		RunningBatch:       s.RunningBatch,
-		WaitQ:              s.WaitQ,
-		KVCache:            s.KVCache,
-		MaxScheduledTokens: 10000,
-		MaxRunningReqs:     10,
-		Now:                1000,
-		ComputedTokens:     make(map[string]int64),
+		RunningBatch:        s.RunningBatch,
+		WaitQ:               s.WaitQ,
+		KVCache:             s.KVCache,
+		MaxNumBatchedTokens: 10000,
+		MaxNumSeqs:          10,
+		Now:                 1000,
+		ComputedTokens:      make(map[string]int64),
 	})
 
 	// With background=10 override: batch(-1) is least urgent → batch-req must be evicted.

@@ -95,8 +95,8 @@ KV cache pressure is directly coupled to batch formation:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--max-num-running-reqs` | 256 | Maximum requests in the running batch |
-| `--max-num-scheduled-tokens` | 2048 | Token budget per step |
+| `--max-num-seqs` | 256 | Maximum requests in the running batch (vLLM parity; deprecated alias `--max-num-running-reqs`) |
+| `--max-num-batched-tokens` | 2048 | Token budget per step (vLLM parity; deprecated alias `--max-num-scheduled-tokens`) |
 
 These are the primary capacity knobs — in vLLM terms, `max_num_seqs` and `max_num_batched_tokens`. Reducing them decreases KV cache pressure but also reduces throughput.
 
