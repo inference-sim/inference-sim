@@ -61,12 +61,17 @@ jobs:
           script: |
             const body = context.payload.comment.body;
             const match = body.match(/--archon-ref\s+(\S+)/);
-            core.setOutput('ref', match ? match[1] : 'v0.2.0');
+            const ref = match ? match[1] : 'v0.2.0';
+            if (!/^[a-zA-Z0-9._\/-]+$/.test(ref)) {
+              core.setFailed(`Invalid archon ref: ${ref}`);
+              return;
+            }
+            core.setOutput('ref', ref);
 
       - name: Build archon-go
         id: build
         run: |
-          ARCHON_BIN=$(scripts/archon-build.sh ${{ steps.parse.outputs.ref }})
+          ARCHON_BIN=$(scripts/archon-build.sh "${{ steps.parse.outputs.ref }}")
           [[ -n "$ARCHON_BIN" && -x "$ARCHON_BIN" ]] || { echo "::error::archon-build.sh produced no valid binary"; exit 1; }
           echo "archon_bin=$ARCHON_BIN" >> "$GITHUB_OUTPUT"
 
@@ -111,6 +116,15 @@ jobs:
             echo "$OUTPUT" > /tmp/archon-output.md
             exit 0
           }
+
+          if [[ ! -f .archon/review.md ]]; then
+            OUTPUT="## Archon Error
+
+          archon-go exited 0 but did not produce .archon/review.md."
+            echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+            echo "$OUTPUT" > /tmp/archon-output.md
+            exit 0
+          fi
 
           OUTPUT=$(cat .archon/review.md)
           echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
