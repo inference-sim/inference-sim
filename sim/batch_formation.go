@@ -24,8 +24,8 @@ type BatchContext struct {
 	RunningBatch          *Batch
 	WaitQ                 *WaitQueue
 	KVCache               KVStore
-	MaxScheduledTokens    int64
-	MaxRunningReqs        int64
+	MaxNumBatchedTokens   int64
+	MaxNumSeqs            int64
 	PrefillTokenThreshold int64
 	MaxModelLen           int64 // 0 = unlimited (proactive cap disabled)
 	Now                   int64
@@ -87,7 +87,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		RunningBatch: ctx.RunningBatch,
 	}
 
-	tokenBudget := ctx.MaxScheduledTokens
+	tokenBudget := ctx.MaxNumBatchedTokens
 
 	// Zero NumNewTokens for all running requests at the start of each scheduling pass.
 	// This prevents stale values from the prior step from causing phantom budget
@@ -163,7 +163,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 	}
 
 	// Phase 2: Dequeue new requests from wait queue
-	for len(result.RunningBatch.Requests) < int(ctx.MaxRunningReqs) && ctx.WaitQ.Len() > 0 && tokenBudget > 0 && !result.PreemptionHappened {
+	for len(result.RunningBatch.Requests) < int(ctx.MaxNumSeqs) && ctx.WaitQ.Len() > 0 && tokenBudget > 0 && !result.PreemptionHappened {
 		next := ctx.WaitQ.Peek()
 
 		// Cold-load pre-admission gate (LoRA, #1466): a new prefill request whose

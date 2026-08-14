@@ -115,24 +115,43 @@ func TestRunCmd_SnapshotRefreshInterval_FlagRegistered(t *testing.T) {
 		"default snapshot-refresh-interval must be >= 0")
 }
 
-// TestRunCmd_MaxRunningReqs_FlagRegistered verifies BC-1:
-// --max-num-running-reqs flag exists with a positive default.
-func TestRunCmd_MaxRunningReqs_FlagRegistered(t *testing.T) {
-	flag := runCmd.Flags().Lookup("max-num-running-reqs")
-	assert.NotNil(t, flag, "max-num-running-reqs flag must be registered")
+// TestRunCmd_MaxNumSeqs_FlagRegistered verifies BC-1:
+// --max-num-seqs flag exists with a positive default (vLLM parity, issue #1570).
+func TestRunCmd_MaxNumSeqs_FlagRegistered(t *testing.T) {
+	flag := runCmd.Flags().Lookup("max-num-seqs")
+	assert.NotNil(t, flag, "max-num-seqs flag must be registered")
 	defVal, err := strconv.ParseInt(flag.DefValue, 10, 64)
 	assert.NoError(t, err)
 	assert.Greater(t, defVal, int64(0), "default must be > 0 (passes validation)")
 }
 
-// TestRunCmd_MaxScheduledTokens_FlagRegistered verifies BC-2:
-// --max-num-scheduled-tokens flag exists with a positive default.
-func TestRunCmd_MaxScheduledTokens_FlagRegistered(t *testing.T) {
-	flag := runCmd.Flags().Lookup("max-num-scheduled-tokens")
-	assert.NotNil(t, flag, "max-num-scheduled-tokens flag must be registered")
+// TestRunCmd_MaxNumBatchedTokens_FlagRegistered verifies BC-2:
+// --max-num-batched-tokens flag exists with a positive default (vLLM parity, issue #1570).
+func TestRunCmd_MaxNumBatchedTokens_FlagRegistered(t *testing.T) {
+	flag := runCmd.Flags().Lookup("max-num-batched-tokens")
+	assert.NotNil(t, flag, "max-num-batched-tokens flag must be registered")
 	defVal, err := strconv.ParseInt(flag.DefValue, 10, 64)
 	assert.NoError(t, err)
 	assert.Greater(t, defVal, int64(0), "default must be > 0 (passes validation)")
+}
+
+// TestRunCmd_DeprecatedBatchFlagAliases_Registered verifies issue #1570:
+// the old flag names remain registered as deprecated aliases for backward
+// compatibility. pflag marks a deprecated flag by populating Deprecated and
+// hiding it from help; the alias binds to the same var so behavior is identical.
+func TestRunCmd_DeprecatedBatchFlagAliases_Registered(t *testing.T) {
+	for old, replacement := range map[string]string{
+		"max-num-running-reqs":     "max-num-seqs",
+		"max-num-scheduled-tokens": "max-num-batched-tokens",
+	} {
+		flag := runCmd.Flags().Lookup(old)
+		assert.NotNil(t, flag, "deprecated alias %q must remain registered", old)
+		if flag != nil {
+			assert.NotEmpty(t, flag.Deprecated, "%q must be marked deprecated", old)
+			assert.Contains(t, flag.Deprecated, replacement,
+				"deprecation message for %q should point to %q", old, replacement)
+		}
+	}
 }
 
 // TestApplyRopeScaling validates the pure function extraction of rope_scaling logic.
@@ -332,11 +351,11 @@ func TestValidateDistributionParams(t *testing.T) {
 	)
 
 	tests := []struct {
-		name      string
-		promptMin int
-		promptMax int
-		outputMin int
-		outputMax int
+		name        string
+		promptMin   int
+		promptMax   int
+		outputMin   int
+		outputMax   int
 		promptStdev int
 		outputStdev int
 		promptMean  int
@@ -344,7 +363,7 @@ func TestValidateDistributionParams(t *testing.T) {
 		wantErr     bool
 	}{
 		{
-			name:        "valid defaults produce no error",
+			name:      "valid defaults produce no error",
 			promptMin: validMin, promptMax: validMax,
 			outputMin: validOMin, outputMax: validOMax,
 			promptStdev: validStdev, outputStdev: validOStdev,
@@ -352,7 +371,7 @@ func TestValidateDistributionParams(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:        "prompt-tokens-min zero is rejected",
+			name:      "prompt-tokens-min zero is rejected",
 			promptMin: 0, promptMax: validMax,
 			outputMin: validOMin, outputMax: validOMax,
 			promptStdev: validStdev, outputStdev: validOStdev,
@@ -360,7 +379,7 @@ func TestValidateDistributionParams(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "prompt-tokens-min negative is rejected",
+			name:      "prompt-tokens-min negative is rejected",
 			promptMin: -5, promptMax: validMax,
 			outputMin: validOMin, outputMax: validOMax,
 			promptStdev: validStdev, outputStdev: validOStdev,
@@ -368,7 +387,7 @@ func TestValidateDistributionParams(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "prompt-tokens-max zero is rejected",
+			name:      "prompt-tokens-max zero is rejected",
 			promptMin: validMin, promptMax: 0,
 			outputMin: validOMin, outputMax: validOMax,
 			promptStdev: validStdev, outputStdev: validOStdev,
@@ -376,7 +395,7 @@ func TestValidateDistributionParams(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "output-tokens-min zero is rejected",
+			name:      "output-tokens-min zero is rejected",
 			promptMin: validMin, promptMax: validMax,
 			outputMin: 0, outputMax: validOMax,
 			promptStdev: validStdev, outputStdev: validOStdev,
@@ -384,7 +403,7 @@ func TestValidateDistributionParams(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "output-tokens-max zero is rejected",
+			name:      "output-tokens-max zero is rejected",
 			promptMin: validMin, promptMax: validMax,
 			outputMin: validOMin, outputMax: 0,
 			promptStdev: validStdev, outputStdev: validOStdev,
@@ -392,7 +411,7 @@ func TestValidateDistributionParams(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "negative prompt stdev is rejected",
+			name:      "negative prompt stdev is rejected",
 			promptMin: validMin, promptMax: validMax,
 			outputMin: validOMin, outputMax: validOMax,
 			promptStdev: -1, outputStdev: validOStdev,
@@ -400,7 +419,7 @@ func TestValidateDistributionParams(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "negative output stdev is rejected",
+			name:      "negative output stdev is rejected",
 			promptMin: validMin, promptMax: validMax,
 			outputMin: validOMin, outputMax: validOMax,
 			promptStdev: validStdev, outputStdev: -1,
@@ -408,7 +427,7 @@ func TestValidateDistributionParams(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "prompt min greater than max is rejected",
+			name:      "prompt min greater than max is rejected",
 			promptMin: 500, promptMax: 100,
 			outputMin: validOMin, outputMax: validOMax,
 			promptStdev: 50, outputStdev: validOStdev,
@@ -416,7 +435,7 @@ func TestValidateDistributionParams(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "output min greater than max is rejected",
+			name:      "output min greater than max is rejected",
 			promptMin: validMin, promptMax: validMax,
 			outputMin: 500, outputMax: 100,
 			promptStdev: validStdev, outputStdev: 50,
@@ -424,7 +443,7 @@ func TestValidateDistributionParams(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "prompt mean above max is rejected",
+			name:      "prompt mean above max is rejected",
 			promptMin: 10, promptMax: 100,
 			outputMin: validOMin, outputMax: validOMax,
 			promptStdev: 10, outputStdev: validOStdev,
@@ -432,7 +451,7 @@ func TestValidateDistributionParams(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "output mean below min is rejected",
+			name:      "output mean below min is rejected",
 			promptMin: validMin, promptMax: validMax,
 			outputMin: 100, outputMax: 500,
 			promptStdev: validStdev, outputStdev: 50,
@@ -441,7 +460,7 @@ func TestValidateDistributionParams(t *testing.T) {
 		},
 		// stdev=0 is a valid deterministic distribution; lower-bound check must be skipped
 		{
-			name:        "prompt stdev 0 with min 1 is accepted",
+			name:      "prompt stdev 0 with min 1 is accepted",
 			promptMin: 1, promptMax: validMax,
 			outputMin: validOMin, outputMax: validOMax,
 			promptStdev: 0, outputStdev: validOStdev,
@@ -449,7 +468,7 @@ func TestValidateDistributionParams(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:        "output stdev 0 with min 1 is accepted",
+			name:      "output stdev 0 with min 1 is accepted",
 			promptMin: validMin, promptMax: validMax,
 			outputMin: 1, outputMax: validOMax,
 			promptStdev: validStdev, outputStdev: 0,
@@ -457,7 +476,7 @@ func TestValidateDistributionParams(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:        "both stddevs 0 with large mins are accepted",
+			name:      "both stddevs 0 with large mins are accepted",
 			promptMin: 100, promptMax: 1024,
 			outputMin: 50, outputMax: 512,
 			promptStdev: 0, outputStdev: 0,
@@ -579,7 +598,7 @@ func TestAutoCalcKVBlocks_RespectsBlockSizeAndGPUMemUtil(t *testing.T) {
 	mc := sim.ModelConfig{
 		NumLayers:       32,
 		NumHeads:        32,
-		NumKVHeads:      8,  // GQA
+		NumKVHeads:      8, // GQA
 		HiddenDim:       4096,
 		IntermediateDim: 14336,
 		VocabSize:       128256,
@@ -595,12 +614,12 @@ func TestAutoCalcKVBlocks_RespectsBlockSizeAndGPUMemUtil(t *testing.T) {
 
 	// KV capacity params for dense SwiGLU model
 	params := latency.NewKVCapacityParams(
-		false, // isMoE
-		0,     // numLocalExperts
-		false, // tieWordEmbeddings
+		false,  // isMoE
+		0,      // numLocalExperts
+		false,  // tieWordEmbeddings
 		"silu", // hiddenAct
-		0,     // moeExpertFFNDim
-		0,     // sharedExpertFFNDim
+		0,      // moeExpertFFNDim
+		0,      // sharedExpertFFNDim
 	)
 
 	const tp = 1
@@ -786,7 +805,9 @@ func TestApplyTimeoutToSpec_NegativeMeansDisabled(t *testing.T) {
 //
 // GIVEN the package-level workloadSpecPath is non-empty and --timeout was not explicitly set
 // WHEN the real guard condition (workloadSpecPath == "" || cmd.Flags().Changed("timeout"))
-//      is evaluated
+//
+//	is evaluated
+//
 // THEN the client Timeout is unchanged (applyTimeoutToSpec was not called)
 func TestApplyTimeoutToSpec_NotCalledForSpecFile(t *testing.T) {
 	origPath := workloadSpecPath
@@ -997,8 +1018,8 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	origAlpha := alphaCoeffs
 	origTotalKV := totalKVBlocks
 	origBlockSize := blockSizeTokens
-	origMaxRunning := maxRunningReqs
-	origMaxSched := maxScheduledTokens
+	origMaxRunning := maxNumSeqs
+	origMaxSched := maxNumBatchedTokens
 	origInstances := numInstances
 	origSeed := seed
 	origResults := resultsPath
@@ -1047,8 +1068,8 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 		alphaCoeffs = origAlpha
 		totalKVBlocks = origTotalKV
 		blockSizeTokens = origBlockSize
-		maxRunningReqs = origMaxRunning
-		maxScheduledTokens = origMaxSched
+		maxNumSeqs = origMaxRunning
+		maxNumBatchedTokens = origMaxSched
 		numInstances = origInstances
 		seed = origSeed
 		resultsPath = origResults
@@ -1168,8 +1189,8 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 	origAlpha := alphaCoeffs
 	origTotalKV := totalKVBlocks
 	origBlockSize := blockSizeTokens
-	origMaxRunning := maxRunningReqs
-	origMaxSched := maxScheduledTokens
+	origMaxRunning := maxNumSeqs
+	origMaxSched := maxNumBatchedTokens
 	origInstances := numInstances
 	origSeed := seed
 	origResults := resultsPath
@@ -1217,8 +1238,8 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 		alphaCoeffs = origAlpha
 		totalKVBlocks = origTotalKV
 		blockSizeTokens = origBlockSize
-		maxRunningReqs = origMaxRunning
-		maxScheduledTokens = origMaxSched
+		maxNumSeqs = origMaxRunning
+		maxNumBatchedTokens = origMaxSched
 		numInstances = origInstances
 		seed = origSeed
 		resultsPath = origResults
@@ -1432,27 +1453,27 @@ func runRunCmdAndCaptureTraces(t *testing.T, seedVal int64, numReq int, lazyFlag
 // helper to keep the lazy-generation tests short.
 type origCmdLevelVars struct {
 	metrics, model, backend, results, policyConfig, traceOut, logLvl, mcFolder, hwCfg, gpuVal string
-	defaultsFile                                                                               string
-	beta, alpha                                                                                []float64
-	totalKV, blockSize, maxRunning, maxSched, simHorizon, snapRefresh, kvCPU, baseLatency      int64
-	threshold, maxModelLen                                                                     int64
-	offload, bandwidth                                                                          float64
-	instances, tp, counterfactualK, numReqs, concurrencyV, thinkTime, prefix                    int
-	rateV                                                                                       float64
-	seedV                                                                                       int64
-	traceLvl, workloadT, admission, routing, sched, workloadSpec                                string
-	promptMean, promptStdev, promptMin, promptMax                                              int
-	outputMean, outputStdev, outputMin, outputMax                                              int
-	requestTimeout                                                                              int
-	lazy                                                                                        bool
+	defaultsFile                                                                              string
+	beta, alpha                                                                               []float64
+	totalKV, blockSize, maxRunning, maxSched, simHorizon, snapRefresh, kvCPU, baseLatency     int64
+	threshold, maxModelLen                                                                    int64
+	offload, bandwidth                                                                        float64
+	instances, tp, counterfactualK, numReqs, concurrencyV, thinkTime, prefix                  int
+	rateV                                                                                     float64
+	seedV                                                                                     int64
+	traceLvl, workloadT, admission, routing, sched, workloadSpec                              string
+	promptMean, promptStdev, promptMin, promptMax                                             int
+	outputMean, outputStdev, outputMin, outputMax                                             int
+	requestTimeout                                                                            int
+	lazy                                                                                      bool
 }
 
 func captureCmdLevelVars() origCmdLevelVars {
 	return origCmdLevelVars{
 		metrics: metricsPath, model: model, backend: latencyModelBackend,
 		beta: betaCoeffs, alpha: alphaCoeffs,
-		totalKV: totalKVBlocks, blockSize: blockSizeTokens, maxRunning: maxRunningReqs,
-		maxSched: maxScheduledTokens, instances: numInstances, seedV: seed, results: resultsPath,
+		totalKV: totalKVBlocks, blockSize: blockSizeTokens, maxRunning: maxNumSeqs,
+		maxSched: maxNumBatchedTokens, instances: numInstances, seedV: seed, results: resultsPath,
 		threshold: longPrefillTokenThreshold, kvCPU: kvCPUBlocks, offload: kvOffloadThreshold,
 		bandwidth: kvTransferBandwidth, baseLatency: kvTransferBaseLatency,
 		snapRefresh: snapshotRefreshInterval, admission: admissionPolicy,
@@ -1479,8 +1500,8 @@ func (o origCmdLevelVars) restore() {
 	alphaCoeffs = o.alpha
 	totalKVBlocks = o.totalKV
 	blockSizeTokens = o.blockSize
-	maxRunningReqs = o.maxRunning
-	maxScheduledTokens = o.maxSched
+	maxNumSeqs = o.maxRunning
+	maxNumBatchedTokens = o.maxSched
 	numInstances = o.instances
 	seed = o.seedV
 	resultsPath = o.results
@@ -1543,7 +1564,7 @@ func TestRunCmd_LazyGeneration_FlagRegistered(t *testing.T) {
 //
 // NOTE: Do NOT use t.Parallel() — mutates package-level vars.
 func TestRunCmd_LazyVsEager_Distribution_ByteIdentical(t *testing.T) {
-	hdrEager, dataEager := runRunCmdAndCaptureTraces(t, /*seed=*/1234, /*numReq=*/8, /*lazy=*/false)
+	hdrEager, dataEager := runRunCmdAndCaptureTraces(t /*seed=*/, 1234 /*numReq=*/, 8 /*lazy=*/, false)
 	hdrLazy, dataLazy := runRunCmdAndCaptureTraces(t, 1234, 8, true)
 	if !bytes.Equal(hdrEager, hdrLazy) {
 		t.Fatalf("trace header diverged between eager and lazy modes\nEAGER:\n%s\nLAZY:\n%s", hdrEager, hdrLazy)
@@ -1562,7 +1583,7 @@ func TestRunCmd_LazyVsEager_Distribution_ByteIdentical(t *testing.T) {
 //
 // NOTE: Do NOT use t.Parallel() — mutates package-level vars.
 func TestRunCmd_LazyGeneration_SameSeed_Deterministic(t *testing.T) {
-	hdrA, dataA := runRunCmdAndCaptureTraces(t, /*seed=*/2026, /*numReq=*/6, /*lazy=*/true)
+	hdrA, dataA := runRunCmdAndCaptureTraces(t /*seed=*/, 2026 /*numReq=*/, 6 /*lazy=*/, true)
 	hdrB, dataB := runRunCmdAndCaptureTraces(t, 2026, 6, true)
 	if !bytes.Equal(hdrA, hdrB) {
 		t.Fatalf("lazy trace header non-deterministic across runs with seed 2026")
@@ -1656,4 +1677,3 @@ clients:
 		t.Fatalf("expected trace CSV to be written by the lazy streaming path, got: %v", err)
 	}
 }
-

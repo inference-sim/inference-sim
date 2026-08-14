@@ -53,28 +53,28 @@ func NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks int64,
 
 // BatchConfig groups batch formation parameters.
 type BatchConfig struct {
-	MaxRunningReqs            int64 // max requests in RunningBatch
-	MaxScheduledTokens        int64 // max total new tokens across all requests in RunningBatch
+	MaxNumSeqs                int64 // max requests in RunningBatch (vLLM: --max-num-seqs)
+	MaxNumBatchedTokens       int64 // max total new tokens across all requests in RunningBatch (vLLM: --max-num-batched-tokens)
 	LongPrefillTokenThreshold int64 // threshold for long prefill chunking
 }
 
 // NewBatchConfig creates a BatchConfig with all fields explicitly set.
 // This is the canonical constructor — all construction sites must use it (R4).
-// Panics on invalid values: MaxRunningReqs and MaxScheduledTokens must be > 0,
+// Panics on invalid values: MaxNumSeqs and MaxNumBatchedTokens must be > 0,
 // LongPrefillTokenThreshold must be >= 0 (0 means disabled).
-func NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold int64) BatchConfig {
-	if maxRunningReqs <= 0 {
-		panic(fmt.Sprintf("NewBatchConfig: MaxRunningReqs must be > 0, got %d", maxRunningReqs))
+func NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold int64) BatchConfig {
+	if maxNumSeqs <= 0 {
+		panic(fmt.Sprintf("NewBatchConfig: MaxNumSeqs must be > 0, got %d", maxNumSeqs))
 	}
-	if maxScheduledTokens <= 0 {
-		panic(fmt.Sprintf("NewBatchConfig: MaxScheduledTokens must be > 0, got %d", maxScheduledTokens))
+	if maxNumBatchedTokens <= 0 {
+		panic(fmt.Sprintf("NewBatchConfig: MaxNumBatchedTokens must be > 0, got %d", maxNumBatchedTokens))
 	}
 	if longPrefillTokenThreshold < 0 {
 		panic(fmt.Sprintf("NewBatchConfig: LongPrefillTokenThreshold must be >= 0, got %d", longPrefillTokenThreshold))
 	}
 	return BatchConfig{
-		MaxRunningReqs:            maxRunningReqs,
-		MaxScheduledTokens:        maxScheduledTokens,
+		MaxNumSeqs:                maxNumSeqs,
+		MaxNumBatchedTokens:       maxNumBatchedTokens,
 		LongPrefillTokenThreshold: longPrefillTokenThreshold,
 	}
 }

@@ -220,7 +220,7 @@ Replays a captured TraceV2 file through the BLIS discrete-event simulator. Inste
 | `--model` | `string` | `""` | LLM name (required) |
 | `--trace-output` | `string` | `""` | Export replay results as TraceV2 files (`<prefix>.yaml` + `<prefix>.csv`); header `mode: "replayed"` |
 
-Replay also accepts all shared simulation config flags (`--latency-model`, `--total-kv-blocks`, `--max-num-running-reqs`, etc.) — the same flags available in `blis run`. See [Configuration](../reference/configuration.md) for the full list.
+Replay also accepts all shared simulation config flags (`--latency-model`, `--total-kv-blocks`, `--max-num-seqs`, etc.) — the same flags available in `blis run`. See [Configuration](../reference/configuration.md) for the full list.
 
 ### How Replay Differs from `blis run`
 
@@ -464,7 +464,7 @@ Low MAPE with high `mean_percent_error` indicates low per-request variance but a
 If calibration quality is poor, try:
 
 1. **Different latency model:** Switch from `roofline` to `trained-physics` (see [Latency Models](latency-models.md))
-2. **Adjust server config flags:** Match `--max-num-running-reqs` and `--max-num-scheduled-tokens` to the real server's settings
+2. **Adjust server config flags:** Match `--max-num-seqs` and `--max-num-batched-tokens` to the real server's settings
 3. **Increase sample size:** Use more requests (`--num-requests`) for statistical stability
 
 ---

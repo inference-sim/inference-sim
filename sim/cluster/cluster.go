@@ -25,20 +25,20 @@ type ClusterSimulator struct {
 	aggregatedMetrics *sim.Metrics
 
 	// Online routing pipeline fields
-	clusterEvents         ClusterEventQueue
-	seqCounter            int64
-	admissionLatency      int64
-	routingLatency        int64
-	admissionPolicy       sim.AdmissionPolicy
-	priorityMap           *sim.SLOPriorityMap
-	snapshotProvider      *CachedSnapshotProvider
-	routingPolicy         sim.RoutingPolicy
-	rejectedRequests      int                       // EC-2: count of requests rejected by admission policy
-	routingRejections     int                       // I13: count of requests rejected at routing (no routable instances)
-	shedByTier            map[string]int            // per-SLOClass shedding: admission rejections + gateway queue shed + in-flight evictions
+	clusterEvents     ClusterEventQueue
+	seqCounter        int64
+	admissionLatency  int64
+	routingLatency    int64
+	admissionPolicy   sim.AdmissionPolicy
+	priorityMap       *sim.SLOPriorityMap
+	snapshotProvider  *CachedSnapshotProvider
+	routingPolicy     sim.RoutingPolicy
+	rejectedRequests  int            // EC-2: count of requests rejected by admission policy
+	routingRejections int            // I13: count of requests rejected at routing (no routable instances)
+	shedByTier        map[string]int // per-SLOClass shedding: admission rejections + gateway queue shed + in-flight evictions
 	// injectedByClass: per-SLOClass arrival counter. Incremented in ClusterArrivalEvent.Execute
 	// before any drop/route/admission decision. Goodput denominator (issue #1409, BC-5).
-	injectedByClass map[string]int64
+	injectedByClass       map[string]int64
 	trace                 *trace.SimulationTrace    // nil when trace-level is "none" (BC-1: zero overhead)
 	requestSource         RequestSource             // Source of requests to inject as arrival events. Drained once by Run().
 	inFlightRequests      map[string]int            // instance ID → dispatched-but-not-completed count (#463)
@@ -266,21 +266,21 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	}
 
 	cs := &ClusterSimulator{
-		config:               config,
-		instances:            make([]*InstanceSimulator, 0, config.NumInstances),
-		rng:                  rng,
-		requestSource:        requestSource,
-		clusterEvents:        make(ClusterEventQueue, 0),
-		admissionLatency:     config.AdmissionLatency,
-		routingLatency:       config.RoutingLatency,
-		admissionPolicy:      admissionPolicy,
-		priorityMap:          priorityMap,
-		snapshotProvider:     nil, // set after unified construction loop below
-		routingPolicy:        nil, // set after instance construction (needs cacheQueryFn from instances)
-		trace:                simTrace,
-		inFlightRequests:     make(map[string]int, config.NumInstances),
-		shedByTier:           make(map[string]int),
-		injectedByClass:      make(map[string]int64),
+		config:           config,
+		instances:        make([]*InstanceSimulator, 0, config.NumInstances),
+		rng:              rng,
+		requestSource:    requestSource,
+		clusterEvents:    make(ClusterEventQueue, 0),
+		admissionLatency: config.AdmissionLatency,
+		routingLatency:   config.RoutingLatency,
+		admissionPolicy:  admissionPolicy,
+		priorityMap:      priorityMap,
+		snapshotProvider: nil, // set after unified construction loop below
+		routingPolicy:    nil, // set after instance construction (needs cacheQueryFn from instances)
+		trace:            simTrace,
+		inFlightRequests: make(map[string]int, config.NumInstances),
+		shedByTier:       make(map[string]int),
+		injectedByClass:  make(map[string]int64),
 	}
 
 	// PD disaggregation: set pool membership (topology already validated above).
@@ -550,13 +550,13 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	}
 
 	// Phase 1B-2a: initialize TenantTracker when TenantBudgets is configured (issue #811).
-	// totalCapacity = NumInstances × MaxRunningReqs (batch size proxy for cluster-wide capacity).
+	// totalCapacity = NumInstances × MaxNumSeqs (batch size proxy for cluster-wide capacity).
 	// Wraps whichever admission policy is active (including FlowControlAdmission when flow control enabled).
 	if config.TenantBudgets != nil {
-		totalCapacity := config.NumInstances * int(config.MaxRunningReqs)
+		totalCapacity := config.NumInstances * int(config.MaxNumSeqs)
 		if len(config.TenantBudgets) > 0 && totalCapacity == 0 {
-			logrus.Warnf("[cluster] tenant_budgets configured but totalCapacity=0 (NumInstances=%d, MaxRunningReqs=%d); all budgeted tenants will be immediately over-budget — set max_running_reqs > 0",
-				config.NumInstances, config.MaxRunningReqs)
+			logrus.Warnf("[cluster] tenant_budgets configured but totalCapacity=0 (NumInstances=%d, MaxNumSeqs=%d); all budgeted tenants will be immediately over-budget — set --max-num-seqs > 0",
+				config.NumInstances, config.MaxNumSeqs)
 		}
 		cs.tenantTracker = NewTenantTracker(config.TenantBudgets, totalCapacity)
 		cs.admissionPolicy = sim.NewTenantBudgetAdmission(cs.admissionPolicy, cs.tenantTracker, cs.priorityMap)

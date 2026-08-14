@@ -100,24 +100,24 @@ type Simulator struct {
 	// Requests are ordered by First-Come-First-Served in WaitQ, and the same order is maintained
 	// while adding requests to RunningBatch
 	RunningBatch *Batch
-	Metrics *Metrics
+	Metrics      *Metrics
 	// max number of requests RunningBatch can hold
-	maxRunningReqs int64
+	maxNumSeqs int64
 	// max total number of new tokens across all requests in RunningBatch
-	maxScheduledTokens        int64
+	maxNumBatchedTokens       int64
 	longPrefillTokenThreshold int64
 	stepEvent                 Event
 	stepCount                 int
 	// map of request IDs to total num computed tokens (including cached tokens)
 	reqNumComputedTokens map[string]int64
 	batchFormation       BatchFormation
-	model                  string
-	gpu                    string
-	maxModelLen            int64 // max total sequence length (0 = unlimited)
-	rng                    *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
-	sloMap *SLOPriorityMap // vLLM-convention priority mapping for instance-level scheduling
-	scheduler      InstanceScheduler
-	latencyModel           LatencyModel
+	model                string
+	gpu                  string
+	maxModelLen          int64           // max total sequence length (0 = unlimited)
+	rng                  *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
+	sloMap               *SLOPriorityMap // vLLM-convention priority mapping for instance-level scheduling
+	scheduler            InstanceScheduler
+	latencyModel         LatencyModel
 	// residentAdapters tracks this instance's finite resident LoRA adapter slots
 	// (capacity-bounded LRU). nil when the LoRA subsystem is inert (no adapters /
 	// capacity configured, or sim/lora not imported), in which case adapter handling
@@ -131,13 +131,13 @@ type Simulator struct {
 	// this instance, or "" when none. Loads serialize per instance: the gate starts
 	// a new load only when this is "" (§7 serialization).
 	loadingAdapter string
-	seqCounter             int64 // monotonic counter for event queue seqID (deterministic ordering)
+	seqCounter     int64 // monotonic counter for event queue seqID (deterministic ordering)
 	// OnRequestDone is an optional callback invoked when a request reaches a terminal
 	// state (completed, length-capped, or timed out). Returns follow-up requests to inject.
 	// Set by the caller (cmd/root.go or ClusterSimulator). Nil = no callback.
 	OnRequestDone func(req *Request, tick int64) []*Request
 
-	progressHook                ProgressHook
+	progressHook               ProgressHook
 	simClockProgressIntervalUs int64
 	nextSnapshotClockUs        int64
 }
@@ -151,11 +151,11 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 	if latencyModel == nil {
 		return nil, fmt.Errorf("NewSimulator: latencyModel must not be nil")
 	}
-	if cfg.MaxRunningReqs <= 0 {
-		return nil, fmt.Errorf("NewSimulator: MaxRunningReqs must be > 0, got %d", cfg.MaxRunningReqs)
+	if cfg.MaxNumSeqs <= 0 {
+		return nil, fmt.Errorf("NewSimulator: MaxNumSeqs must be > 0, got %d", cfg.MaxNumSeqs)
 	}
-	if cfg.MaxScheduledTokens <= 0 {
-		return nil, fmt.Errorf("NewSimulator: MaxScheduledTokens must be > 0, got %d", cfg.MaxScheduledTokens)
+	if cfg.MaxNumBatchedTokens <= 0 {
+		return nil, fmt.Errorf("NewSimulator: MaxNumBatchedTokens must be > 0, got %d", cfg.MaxNumBatchedTokens)
 	}
 	if cfg.LongPrefillTokenThreshold < 0 {
 		return nil, fmt.Errorf("NewSimulator: LongPrefillTokenThreshold must be >= 0, got %d", cfg.LongPrefillTokenThreshold)
@@ -187,8 +187,8 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		KVCache:                   kvStore,
 		RunningBatch:              &Batch{},
 		Metrics:                   NewMetrics(),
-		maxRunningReqs:            cfg.MaxRunningReqs,
-		maxScheduledTokens:        cfg.MaxScheduledTokens,
+		maxNumSeqs:                cfg.MaxNumSeqs,
+		maxNumBatchedTokens:       cfg.MaxNumBatchedTokens,
 		longPrefillTokenThreshold: cfg.LongPrefillTokenThreshold,
 		stepEvent:                 nil,
 		stepCount:                 0,
@@ -793,8 +793,8 @@ func (sim *Simulator) scheduleBatch(now int64) {
 		RunningBatch:          sim.RunningBatch,
 		WaitQ:                 sim.WaitQ,
 		KVCache:               sim.KVCache,
-		MaxScheduledTokens:    sim.maxScheduledTokens,
-		MaxRunningReqs:        sim.maxRunningReqs,
+		MaxNumBatchedTokens:   sim.maxNumBatchedTokens,
+		MaxNumSeqs:            sim.maxNumSeqs,
 		PrefillTokenThreshold: sim.longPrefillTokenThreshold,
 		MaxModelLen:           sim.maxModelLen,
 		Now:                   now,

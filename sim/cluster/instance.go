@@ -42,9 +42,9 @@ type InstanceSimulator struct {
 	TPDegree    int     // tensor-parallel degree; 0 = unplaced/unknown
 	CostPerHour float64 // $/hr from NodePool.CostPerHour; 0 = unplaced/free tier
 
-	// maxRunningReqs stores cfg.BatchConfig.MaxRunningReqs at construction time.
+	// maxNumSeqs stores cfg.BatchConfig.MaxNumSeqs at construction time.
 	// Exposed via MaxBatchSize() for the autoscaler pipeline.
-	maxRunningReqs int64
+	maxNumSeqs int64
 }
 
 // NewInstanceSimulator creates an InstanceSimulator from a SimConfig struct.
@@ -73,10 +73,10 @@ func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 		panic(fmt.Sprintf("NewInstanceSimulator(%s): %v", id, err))
 	}
 	return &InstanceSimulator{
-		id:             id,
-		sim:            s,
-		gpu:            cfg.GPU,
-		maxRunningReqs: cfg.MaxRunningReqs,
+		id:         id,
+		sim:        s,
+		gpu:        cfg.GPU,
+		maxNumSeqs: cfg.MaxNumSeqs,
 	}
 }
 
@@ -305,12 +305,12 @@ func (i *InstanceSimulator) LatencyStats() InstanceLatencyStats {
 }
 
 // MaxBatchSize returns the simulator's configured maximum number of concurrent requests
-// (BatchConfig.MaxRunningReqs). Returns 0 when the instance has no underlying simulator.
+// (BatchConfig.MaxNumSeqs). Returns 0 when the instance has no underlying simulator.
 func (i *InstanceSimulator) MaxBatchSize() int {
 	if i.sim == nil {
 		return 0
 	}
-	return int(i.maxRunningReqs)
+	return int(i.maxNumSeqs)
 }
 
 // GetCachedBlockCount returns the number of consecutive cached prefix blocks
