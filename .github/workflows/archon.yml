@@ -56,13 +56,12 @@ jobs:
 
       - name: Parse archon ref
         id: parse
-        run: |
-          COMMENT="${{ github.event.comment.body }}"
-          if [[ "$COMMENT" =~ --archon-ref[[:space:]]+([^[:space:]]+) ]]; then
-            echo "ref=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=v0.2.0" >> "$GITHUB_OUTPUT"
-          fi
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const body = context.payload.comment.body;
+            const match = body.match(/--archon-ref\s+(\S+)/);
+            core.setOutput('ref', match ? match[1] : 'v0.2.0');
 
       - name: Build archon-go
         id: build
