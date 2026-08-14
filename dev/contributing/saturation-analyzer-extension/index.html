@@ -21,7 +21,7 @@
     
     
       
-        <title>Saturation Analyzer Extension Guide - BLIS — Blackbox Inference Simulator</title>
+        <title>Saturation Detector Extension Guide - BLIS — Blackbox Inference Simulator</title>
       
     
     
@@ -74,7 +74,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#saturation-analyzer-extension-guide" class="md-skip">
+        <a href="#saturation-detector-extension-guide" class="md-skip">
           Skip to content
         </a>
       
@@ -112,7 +112,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Saturation Analyzer Extension Guide
+              Saturation Detector Extension Guide
             
           </span>
         </div>
@@ -2628,10 +2628,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#current-implementation-backlogdriftanalyzer" class="md-nav__link">
+  <a href="#the-detector-interface" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Current Implementation: BacklogDriftAnalyzer
+        The Detector interface
       
     </span>
   </a>
@@ -2639,10 +2639,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#usage-examples" class="md-nav__link">
+  <a href="#built-in-detectors" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Usage Examples
+        Built-in detectors
       
     </span>
   </a>
@@ -2650,33 +2650,50 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#classification-progression" class="md-nav__link">
+  <a href="#running-detectors" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Classification Progression
+        Running detectors
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#adding-a-new-analyzer" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Adding a New Analyzer
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Adding a New Analyzer">
+    <nav class="md-nav" aria-label="Running detectors">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#1-create-your-analyzer" class="md-nav__link">
+  <a href="#tuning-via-saturation-config" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Create Your Analyzer
+        Tuning via --saturation-config
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-a-new-detector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a new detector
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Adding a new detector">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-implement-the-detector-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Implement the Detector interface
       
     </span>
   </a>
@@ -2684,10 +2701,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-register-in-factory" class="md-nav__link">
+  <a href="#2-register-in-the-builder-and-the-roster" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Register in Factory
+        2. Register in the builder and the roster
       
     </span>
   </a>
@@ -2695,21 +2712,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#3-add-cli-flags-optional" class="md-nav__link">
+  <a href="#3-write-tests" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. Add CLI Flags (Optional)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#4-write-tests" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        4. Write Tests
+        3. Write tests
       
     </span>
   </a>
@@ -2725,18 +2731,7 @@
   <a href="#output-format" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Output Format
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#when-to-use-which-analyzer" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        When to Use Which Analyzer
+        Output format
       
     </span>
   </a>
@@ -2747,7 +2742,7 @@
   <a href="#design-principles" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Design Principles
+        Design principles
       
     </span>
   </a>
@@ -2758,7 +2753,7 @@
   <a href="#need-help" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Need Help?
+        Need help?
       
     </span>
   </a>
@@ -2785,221 +2780,210 @@
   
 
 
-<h1 id="saturation-analyzer-extension-guide">Saturation Analyzer Extension Guide<a class="headerlink" href="#saturation-analyzer-extension-guide" title="Permanent link">&para;</a></h1>
+<h1 id="saturation-detector-extension-guide">Saturation Detector Extension Guide<a class="headerlink" href="#saturation-detector-extension-guide" title="Permanent link">&para;</a></h1>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>Saturation analyzers detect when your system is overloaded. They classify the system into three states:</p>
+<p>Post-hoc saturation <strong>detectors</strong> classify a completed run into one of three
+levels:</p>
 <ul>
-<li><strong>UNSATURATED</strong>: System handling load comfortably</li>
-<li><strong>TRANSIENT_BACKLOG</strong>: Temporary bursts or near capacity</li>
-<li><strong>PERSISTENTLY_SATURATED</strong>: System can't keep up, backlog growing</li>
+<li><strong>STABLE</strong>: system handling load comfortably.</li>
+<li><strong>BACKLOGGED</strong>: queue building but not runaway (temporary bursts or near
+  capacity).</li>
+<li><strong>OVERLOADED</strong>: system can't keep up; backlog growing.</li>
 </ul>
-<p>The <code>SaturationAnalyzer</code> interface lets you plug in different detection algorithms.</p>
-<h2 id="current-implementation-backlogdriftanalyzer">Current Implementation: BacklogDriftAnalyzer<a class="headerlink" href="#current-implementation-backlogdriftanalyzer" title="Permanent link">&para;</a></h2>
-<p>The default analyzer watches how the request backlog changes over time:</p>
-<ul>
-<li><strong>How it works</strong>: Splits observation into time windows, tracks active requests, fits a trend line</li>
-<li><strong>Classification</strong>:</li>
-<li>Growing backlog → PERSISTENTLY_SATURATED</li>
-<li>Spike but stable trend → TRANSIENT_BACKLOG</li>
-<li>Flat or declining → UNSATURATED</li>
-</ul>
-<p><strong>Configuration options</strong>:
-- <code>--saturation-window</code>: Time window size (default: 60s)
-- <code>--saturation-min-windows</code>: Minimum windows needed (default: 5)
-- <code>--saturation-peak-ratio</code>: Burst threshold (default: 2.0)
-- <code>--saturation-peak-band</code>: Confidence band (default: 0.2)
-- <code>--saturation-ci</code>: Statistical confidence (default: 0.95)</p>
-<h2 id="usage-examples">Usage Examples<a class="headerlink" href="#usage-examples" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Low load - should show UNSATURATED</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--rate<span class="w"> </span><span class="m">5</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--saturation-report<span class="w"> </span>sat.json
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># Medium load - should show TRANSIENT_BACKLOG</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="c1"># Note: Use --horizon to stop before requests drain</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">10000</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span>--horizon<span class="w"> </span><span class="m">60000000</span><span class="w"> </span>--saturation-report<span class="w"> </span>sat.json
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1"># High load - should show PERSISTENTLY_SATURATED</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">100000</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span>--horizon<span class="w"> </span><span class="m">120000000</span><span class="w"> </span>--saturation-report<span class="w"> </span>sat.json
+<blockquote>
+<p><strong>Not</strong> the real-time flow-control <code>sim.SaturationDetector</code> (a <code>float64</code>
+admission-control signal). These post-hoc detectors live in <code>sim/saturation/</code>
+and implement the <code>saturation.Detector</code> interface for trace analysis. See the
+naming note at the top of <code>sim/saturation/detector.go</code>.</p>
+</blockquote>
+<p>Every detector is <strong>streaming</strong> (#1515/#1516): it folds one reconstructed event
+at a time into internal state and returns an evolving per-event verdict. There
+is no batch <code>Analyze()</code>/<code>Classify()</code> path — the former post-hoc batch analysis
+library in <code>sim/workload</code> (<code>AnalyzeBacklogDrift*</code>, <code>BacklogDriftReport</code>, the
+<code>slope-based</code>/<code>drain-ratio</code> classifiers) was removed in #1547.</p>
+<h2 id="the-detector-interface">The <code>Detector</code> interface<a class="headerlink" href="#the-detector-interface" title="Permanent link">&para;</a></h2>
+<p><code>sim/saturation/detector.go</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kd">type</span><span class="w"> </span><span class="nx">Detector</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">    </span><span class="nx">Name</span><span class="p">()</span><span class="w"> </span><span class="kt">string</span><span class="w">       </span><span class="c1">// stable identifier, also the trace/report key</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nx">Observe</span><span class="p">(</span><span class="nx">event</span><span class="w"> </span><span class="nx">Event</span><span class="p">)</span><span class="w"> </span><span class="c1">// fold one event into internal state</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span><span class="nx">Detect</span><span class="p">()</span><span class="w"> </span><span class="nx">Result</span><span class="w">      </span><span class="c1">// current verdict from accumulated state</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">    </span><span class="nx">Reset</span><span class="p">()</span><span class="w">             </span><span class="c1">// return to initial state (reused across replay legs)</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">}</span>
 </code></pre></div>
-<p><strong>Important</strong>: For PERSISTENTLY_SATURATED detection, use <code>--horizon</code> to end observation while load is active. If you let all requests complete, the system drains and looks unsaturated at the end.</p>
-<h2 id="classification-progression">Classification Progression<a class="headerlink" href="#classification-progression" title="Permanent link">&para;</a></h2>
-<p>As you increase load, classifications progress:</p>
+<p>An <code>Event</code> is one of two types — an <code>Arrival</code> or a <code>Completion</code> — reconstructed
+from completed request metrics (each request contributes an arrival at its
+arrival time and a completion at <code>arrival + E2E</code>). A <code>Result</code> carries the
+<code>Level</code>, a <code>Score</code>, a <code>Confidence</code>, and a free-form <code>Signals</code> map for
+diagnostics.</p>
+<p>The drive loop (<code>ReplayOneDetector</code> in <code>replay.go</code>) calls <code>Reset()</code> once, then
+<code>Observe(e)</code> followed by <code>Detect()</code> for <strong>every</strong> event in the deterministic
+<code>(timestamp, event-type, request-id)</code>-sorted stream, recording each verdict to
+the sink. A detector may ignore an event type in <code>Observe</code> (the threshold
+detector, for example, only accumulates completions); its verdict then simply
+doesn't change on the events it ignores.</p>
+<h2 id="built-in-detectors">Built-in detectors<a class="headerlink" href="#built-in-detectors" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
-<th>System Load</th>
-<th>Classification</th>
-<th>What You'll See</th>
+<th>Name</th>
+<th>Levels emitted</th>
+<th>What it measures</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>&lt; 50% capacity</td>
-<td>UNSATURATED</td>
-<td>Small, stable backlog</td>
+<td><strong>composite</strong></td>
+<td>STABLE / BACKLOGGED / OVERLOADED</td>
+<td><code>max(rate_deficit, quartile-filtered latency_trend)</code> banded against a <code>1/√arrivals</code> noise floor. Zero tunable parameters.</td>
 </tr>
 <tr>
-<td>≈ 100% capacity</td>
-<td>TRANSIENT_BACKLOG</td>
-<td>Bursts but recovers</td>
+<td><strong>threshold</strong></td>
+<td>STABLE / OVERLOADED</td>
+<td>Mean E2E latency vs. a configurable threshold (default 5000ms). Binary — never emits BACKLOGGED.</td>
 </tr>
-<tr>
-<td>&gt;&gt; capacity</td>
-<td>PERSISTENTLY_SATURATED</td>
-<td>Backlog keeps growing</td>
-</tr>
-</tbody>
-</table>
-<h2 id="adding-a-new-analyzer">Adding a New Analyzer<a class="headerlink" href="#adding-a-new-analyzer" title="Permanent link">&para;</a></h2>
-<p>Want to detect saturation using different metrics (CPU, memory, latency)? Here's the process:</p>
-<h3 id="1-create-your-analyzer">1. Create Your Analyzer<a class="headerlink" href="#1-create-your-analyzer" title="Permanent link">&para;</a></h3>
-<p>Create a new file <code>sim/workload/saturation_&lt;name&gt;.go</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">package</span><span class="w"> </span><span class="nx">workload</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="kd">type</span><span class="w"> </span><span class="nx">YourAnalyzer</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="c1">// Your configuration</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="p">}</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="c1">// Implement the SaturationAnalyzer interface</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">a</span><span class="w"> </span><span class="o">*</span><span class="nx">YourAnalyzer</span><span class="p">)</span><span class="w"> </span><span class="nx">Analyze</span><span class="p">(</span><span class="nx">requests</span><span class="w"> </span><span class="p">[]</span><span class="o">*</span><span class="nx">sim</span><span class="p">.</span><span class="nx">Request</span><span class="p">,</span><span class="w"> </span><span class="nx">simEndUs</span><span class="w"> </span><span class="kt">int64</span><span class="p">)</span><span class="w"> </span><span class="nx">SaturationReport</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="c1">// 1. Compute your metrics from requests</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="c1">// 2. Classify as UNSATURATED, TRANSIENT_BACKLOG, or PERSISTENTLY_SATURATED</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="c1">// 3. Return SaturationReport</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">SaturationReport</span><span class="p">{</span>
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">        </span><span class="nx">Classification</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;...&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">        </span><span class="nx">Algorithm</span><span class="p">:</span><span class="w">      </span><span class="s">&quot;your-analyzer&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">        </span><span class="nx">Note</span><span class="p">:</span><span class="w">           </span><span class="s">&quot;Human-readable explanation&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">        </span><span class="nx">Recommendation</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Suggested action&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">        </span><span class="nx">AlgorithmData</span><span class="p">:</span><span class="w">  </span><span class="nx">yourMetrics</span><span class="p">,</span><span class="w"> </span><span class="c1">// Your custom data structure</span>
-<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="p">}</span>
-</code></pre></div>
-<h3 id="2-register-in-factory">2. Register in Factory<a class="headerlink" href="#2-register-in-factory" title="Permanent link">&para;</a></h3>
-<p>Add your analyzer to <code>sim/workload/saturation_analyzer.go</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kd">func</span><span class="w"> </span><span class="nx">NewSaturationAnalyzer</span><span class="p">(</span><span class="nx">algorithm</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">config</span><span class="w"> </span><span class="kd">interface</span><span class="p">{})</span><span class="w"> </span><span class="p">(</span><span class="nx">SaturationAnalyzer</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span><span class="k">switch</span><span class="w"> </span><span class="nx">algorithm</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="s">&quot;backlog-drift&quot;</span><span class="p">:</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">        </span><span class="c1">// ... existing code ...</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="s">&quot;your-analyzer&quot;</span><span class="p">:</span><span class="w">  </span><span class="c1">// Add this</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">        </span><span class="nx">cfg</span><span class="p">,</span><span class="w"> </span><span class="nx">ok</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">config</span><span class="p">.(</span><span class="nx">YourConfig</span><span class="p">)</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">!</span><span class="nx">ok</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span><span class="p">,</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;your-analyzer requires YourConfig, got %T&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">config</span><span class="p">)</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">        </span><span class="p">}</span>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">NewYourAnalyzer</span><span class="p">(</span><span class="nx">cfg</span><span class="p">),</span><span class="w"> </span><span class="kc">nil</span>
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">    </span><span class="k">default</span><span class="p">:</span>
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span><span class="p">,</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;unknown saturation algorithm: %s&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">algorithm</span><span class="p">)</span>
-<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="p">}</span>
-</code></pre></div>
-<h3 id="3-add-cli-flags-optional">3. Add CLI Flags (Optional)<a class="headerlink" href="#3-add-cli-flags-optional" title="Permanent link">&para;</a></h3>
-<p>If you need configuration flags, add them to <code>cmd/root.go</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1">// In variable declarations</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kd">var</span><span class="w"> </span><span class="p">(</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nx">saturationAlgorithm</span><span class="w"> </span><span class="kt">string</span><span class="w">  </span><span class="c1">// Algorithm selector</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="c1">// ... your analyzer&#39;s config flags ...</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="p">)</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1">// In flag registration</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="nx">runCmd</span><span class="p">.</span><span class="nx">Flags</span><span class="p">().</span><span class="nx">StringVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">saturationAlgorithm</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;saturation-algorithm&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;backlog-drift&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">    </span><span class="s">&quot;Saturation detection algorithm: backlog-drift, your-analyzer&quot;</span><span class="p">)</span>
-</code></pre></div>
-<h3 id="4-write-tests">4. Write Tests<a class="headerlink" href="#4-write-tests" title="Permanent link">&para;</a></h3>
-<p>Test your analyzer in <code>sim/workload/saturation_&lt;name&gt;_test.go</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kd">func</span><span class="w"> </span><span class="nx">TestYourAnalyzer_HighLoad</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">    </span><span class="nx">analyzer</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">NewYourAnalyzer</span><span class="p">(</span><span class="nx">config</span><span class="p">)</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="nx">requests</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="cm">/* create test requests */</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="nx">report</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">analyzer</span><span class="p">.</span><span class="nx">Analyze</span><span class="p">(</span><span class="nx">requests</span><span class="p">,</span><span class="w"> </span><span class="nx">simEndUs</span><span class="p">)</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">report</span><span class="p">.</span><span class="nx">Classification</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="s">&quot;PERSISTENTLY_SATURATED&quot;</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;Expected PERSISTENTLY_SATURATED, got %s&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">report</span><span class="p">.</span><span class="nx">Classification</span><span class="p">)</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="p">}</span>
-</code></pre></div>
-<h2 id="output-format">Output Format<a class="headerlink" href="#output-format" title="Permanent link">&para;</a></h2>
-<p>The <code>backlog-drift</code> analyzer (currently the only implemented analyzer) produces the following JSON report format:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">{</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">&quot;classification&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;TRANSIENT_BACKLOG&quot;</span><span class="p">,</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">&quot;slope&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">-0.0000186</span><span class="p">,</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">&quot;slope_lower&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">-0.0000235</span><span class="p">,</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="nt">&quot;slope_upper&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">-0.0000137</span><span class="p">,</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span><span class="nt">&quot;initial_backlog&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">&quot;final_backlog&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">  </span><span class="nt">&quot;peak_in_flight&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">468</span><span class="p">,</span>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">  </span><span class="nt">&quot;mean_in_flight&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">211.5</span><span class="p">,</span>
-<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">  </span><span class="nt">&quot;windows&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">      </span><span class="nt">&quot;start_us&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">      </span><span class="nt">&quot;end_us&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">60000000</span><span class="p">,</span>
-<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">      </span><span class="nt">&quot;num_entered&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">120</span><span class="p">,</span>
-<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">      </span><span class="nt">&quot;num_left&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="p">,</span>
-<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">      </span><span class="nt">&quot;active_start&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">      </span><span class="nt">&quot;active_end&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span>
-<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">      </span><span class="nt">&quot;delta_backlog&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span>
-<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">      </span><span class="nt">&quot;drain_ratio&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.833</span>
-<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="w">  </span><span class="p">],</span>
-<a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="w">  </span><span class="nt">&quot;note&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Peak/mean ratio (2.21) is borderline. Using positive slope as tiebreaker → TRANSIENT_BACKLOG.&quot;</span><span class="p">,</span>
-<a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a><span class="w">  </span><span class="nt">&quot;recommendation&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;System experienced transient congestion (bursts without persistent growth). Monitor for recurring patterns. Consider increasing capacity if bursts are frequent.&quot;</span>
-<a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="p">}</span>
-</code></pre></div>
-<p><strong>Key fields:</strong>
-- <code>classification</code>: One of <code>UNSATURATED</code>, <code>TRANSIENT_BACKLOG</code>, or <code>PERSISTENTLY_SATURATED</code>
-- <code>slope</code>, <code>slope_lower</code>, <code>slope_upper</code>: Linear regression slope with 95% confidence interval (req/µs)
-- <code>peak_in_flight</code>, <code>mean_in_flight</code>: Peak and mean active request counts across windows
-- <code>windows</code>: Per-window metrics (see <code>WindowMetrics</code> for field definitions)
-- <code>note</code>: Explanation of the classification decision
-- <code>recommendation</code>: User-facing guidance for capacity planning</p>
-<h2 id="when-to-use-which-analyzer">When to Use Which Analyzer<a class="headerlink" href="#when-to-use-which-analyzer" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Analyzer Type</th>
-<th>Best For</th>
-<th>Example Use Case</th>
-</tr>
-</thead>
-<tbody>
 <tr>
 <td><strong>backlog-drift</strong></td>
-<td>Time-series workloads with sustained load</td>
-<td>Production traffic monitoring</td>
-</tr>
-<tr>
-<td><strong>utilization-based</strong></td>
-<td>Short observations, resource limits</td>
-<td>Quick capacity checks</td>
-</tr>
-<tr>
-<td><strong>queue-depth</strong></td>
-<td>Request-rate-focused workloads</td>
-<td>API endpoint monitoring</td>
-</tr>
-<tr>
-<td><strong>latency-based</strong></td>
-<td>User-facing SLAs</td>
-<td>Customer experience tracking</td>
+<td>STABLE / BACKLOGGED / OVERLOADED</td>
+<td>Online OLS slope of in-flight (<code>arrivals − completions</code>) over a trailing window, banded against the noise floor.</td>
 </tr>
 </tbody>
 </table>
-<h2 id="design-principles">Design Principles<a class="headerlink" href="#design-principles" title="Permanent link">&para;</a></h2>
+<h2 id="running-detectors">Running detectors<a class="headerlink" href="#running-detectors" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Single detector (streaming path, #1516)</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--detectors<span class="w"> </span>composite<span class="w"> </span>--saturation-report<span class="w"> </span>sat.json
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># The whole roster, or a named subset, over ONE deterministic replay (bank, #1519)</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--detectors<span class="w"> </span>all<span class="w"> </span>--saturation-report<span class="w"> </span>sat.json
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--detectors<span class="w"> </span>composite,threshold<span class="w"> </span>--saturation-report<span class="w"> </span>sat.json
+</code></pre></div>
+<p><code>--detectors</code> also works on <code>blis replay</code> (byte-identical to <code>run</code> for the same
+trace, INV-13) and <code>blis observe</code> (same pipeline over real-server latencies).</p>
+<h3 id="tuning-via-saturation-config">Tuning via <code>--saturation-config</code><a class="headerlink" href="#tuning-via-saturation-config" title="Permanent link">&para;</a></h3>
+<p>A strict-YAML file carries one optional block per parameterized detector.
+<code>composite</code> has no block (a <code>composite:</code> key is a hard error via strict
+parsing). See <code>SaturationConfig</code> in <code>sim/saturation/config.go</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># threshold: the ThresholdDetector&#39;s single knob</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">threshold</span><span class="p">:</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">threshold_ms</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8000</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># backlog_drift: mirrors saturation.BacklogDriftConfig</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nt">backlog_drift</span><span class="p">:</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">window_size_sec</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30</span><span class="w">      </span><span class="c1"># whole seconds</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="nt">min_windows</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="nt">peak_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">  </span><span class="nt">peak_ratio_band</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.2</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">  </span><span class="nt">confidence_ci</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.95</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span><span class="nt">warmup_windows</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span><span class="nt">tail_windows</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">  </span><span class="nt">saturated_drain_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.95</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">  </span><span class="nt">transient_drain_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.98</span>
+</code></pre></div>
+<p>Absent block = defaults; a partial block overrides only the fields it names; an
+unknown key or out-of-range value errors naming the field. Block ownership is
+enforced: a block whose owning detector is not among the selected <code>--detectors</code>
+is a hard error (no silent drop), for both the single-detector and bank paths.</p>
+<h2 id="adding-a-new-detector">Adding a new detector<a class="headerlink" href="#adding-a-new-detector" title="Permanent link">&para;</a></h2>
+<h3 id="1-implement-the-detector-interface">1. Implement the <code>Detector</code> interface<a class="headerlink" href="#1-implement-the-detector-interface" title="Permanent link">&para;</a></h3>
+<p>Create <code>sim/saturation/&lt;name&gt;.go</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">package</span><span class="w"> </span><span class="nx">saturation</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="kd">type</span><span class="w"> </span><span class="nx">MyDetector</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="c1">// streaming state, populated by Observe, read by Detect, cleared by Reset</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="p">}</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="kd">func</span><span class="w"> </span><span class="nx">NewMyDetector</span><span class="p">(</span><span class="w"> </span><span class="cm">/* config */</span><span class="w"> </span><span class="p">)</span><span class="w"> </span><span class="nx">Detector</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">MyDetector</span><span class="p">{</span><span class="w"> </span><span class="cm">/* ... */</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="p">}</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">d</span><span class="w"> </span><span class="o">*</span><span class="nx">MyDetector</span><span class="p">)</span><span class="w"> </span><span class="nx">Name</span><span class="p">()</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;my-detector&quot;</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">d</span><span class="w"> </span><span class="o">*</span><span class="nx">MyDetector</span><span class="p">)</span><span class="w"> </span><span class="nx">Observe</span><span class="p">(</span><span class="nx">event</span><span class="w"> </span><span class="nx">Event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="w">    </span><span class="c1">// fold this event into internal state (you may ignore an event type)</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="p">}</span>
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">d</span><span class="w"> </span><span class="o">*</span><span class="nx">MyDetector</span><span class="p">)</span><span class="w"> </span><span class="nx">Detect</span><span class="p">()</span><span class="w"> </span><span class="nx">Result</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="w">    </span><span class="c1">// classify from accumulated state; return STABLE on empty input (R20 — no panic)</span>
+<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">Result</span><span class="p">{</span>
+<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a><span class="w">        </span><span class="nx">Level</span><span class="p">:</span><span class="w">      </span><span class="nx">Stable</span><span class="p">,</span>
+<a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a><span class="w">        </span><span class="nx">Score</span><span class="p">:</span><span class="w">      </span><span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a><span class="w">        </span><span class="nx">Confidence</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a><span class="w">        </span><span class="nx">Signals</span><span class="p">:</span><span class="w">    </span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">float64</span><span class="p">{</span><span class="w"> </span><span class="cm">/* diagnostics */</span><span class="w"> </span><span class="p">},</span>
+<a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-3-25" name="__codelineno-3-25" href="#__codelineno-3-25"></a><span class="p">}</span>
+<a id="__codelineno-3-26" name="__codelineno-3-26" href="#__codelineno-3-26"></a>
+<a id="__codelineno-3-27" name="__codelineno-3-27" href="#__codelineno-3-27"></a><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">d</span><span class="w"> </span><span class="o">*</span><span class="nx">MyDetector</span><span class="p">)</span><span class="w"> </span><span class="nx">Reset</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-28" name="__codelineno-3-28" href="#__codelineno-3-28"></a><span class="w">    </span><span class="c1">// return to initial state so the detector can be reused across replay legs</span>
+<a id="__codelineno-3-29" name="__codelineno-3-29" href="#__codelineno-3-29"></a><span class="p">}</span>
+</code></pre></div>
+<h3 id="2-register-in-the-builder-and-the-roster">2. Register in the builder and the roster<a class="headerlink" href="#2-register-in-the-builder-and-the-roster" title="Permanent link">&para;</a></h3>
+<p>Add a <code>case</code> to <code>buildDetector</code> in <code>sim/saturation/config.go</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">case</span><span class="w"> </span><span class="s">&quot;my-detector&quot;</span><span class="p">:</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">NewMyDetector</span><span class="p">(</span><span class="w"> </span><span class="cm">/* resolved from cfg */</span><span class="w"> </span><span class="p">),</span><span class="w"> </span><span class="kc">nil</span>
+</code></pre></div>
+<p>If your detector is tunable, add a block type to <code>SaturationConfig</code>, resolve it
+(mirror <code>resolveBacklogDriftConfig</code>: validate and return errors, never panic —
+R6), and extend <code>checkBlockOwnership</code> / <code>checkBlockOwnershipSet</code> so a foreign
+block is rejected.</p>
+<p>Add the name to <code>rosterOrder</code> in <code>sim/saturation/bank.go</code> so it is included in
+<code>--detectors all</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kd">var</span><span class="w"> </span><span class="nx">rosterOrder</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="p">[]</span><span class="kt">string</span><span class="p">{</span><span class="s">&quot;composite&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;threshold&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;backlog-drift&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;my-detector&quot;</span><span class="p">}</span>
+</code></pre></div>
+<p>The bank fans every event out to each selected detector in this fixed canonical
+order, so CLI argument order never changes output (INV-6). Wire the name into
+the CLI validation in <code>cmd</code> if a fresh single-name path is desired.</p>
+<h3 id="3-write-tests">3. Write tests<a class="headerlink" href="#3-write-tests" title="Permanent link">&para;</a></h3>
+<p>Test the streaming contract in <code>sim/saturation/&lt;name&gt;_test.go</code>. Prefer
+behavioral assertions over structural ones (BDD/TDD): assert that a growing
+backlog eventually drives the verdict to OVERLOADED, that a draining backlog
+returns to STABLE, and that zero events yields STABLE without panicking. Follow
+the table-driven style used in <code>composite_test.go</code> / <code>threshold_test.go</code>.</p>
+<h2 id="output-format">Output format<a class="headerlink" href="#output-format" title="Permanent link">&para;</a></h2>
+<p><code>--saturation-report</code> writes a single JSON object with a <code>final</code> detector→label
+map (the last-window plurality verdict per detector, #1517) and a <code>trace</code> array
+of per-event verdicts (one record per event, tagged by detector name). Map keys
+are sorted so repeated runs are byte-identical (INV-6).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="p">{</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">&quot;final&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;composite&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;STABLE&quot;</span><span class="w"> </span><span class="p">},</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nt">&quot;trace&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">      </span><span class="nt">&quot;timestamp&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">150000</span><span class="p">,</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">      </span><span class="nt">&quot;detector&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;composite&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">      </span><span class="nt">&quot;result&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">        </span><span class="nt">&quot;level&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;STABLE&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">        </span><span class="nt">&quot;score&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.35</span><span class="p">,</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">        </span><span class="nt">&quot;confidence&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.95</span><span class="p">,</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="w">        </span><span class="nt">&quot;signals&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;latency_trend&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.12</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;rate_deficit&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="w">      </span><span class="p">}</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="w">  </span><span class="p">]</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="p">}</span>
+</code></pre></div>
+<p>The same <code>final</code> map is also spliced onto the metrics JSON on stdout (a run
+<em>without</em> <code>--detectors</code> stays byte-identical to the historical no-feature
+output).</p>
+<h2 id="design-principles">Design principles<a class="headerlink" href="#design-principles" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>One method</strong>: Implement just <code>Analyze()</code></li>
-<li><strong>Config validated early</strong>: Check parameters at creation time, not analysis time</li>
-<li><strong>Unified output</strong>: Always return <code>SaturationReport</code></li>
-<li><strong>Algorithm-specific data</strong>: Put your custom metrics in <code>AlgorithmData</code> field</li>
-<li><strong>Forward compatible</strong>: The <code>algorithm</code> field lets tools know how to parse <code>algorithm_data</code></li>
+<li><strong>Four small methods</strong>: <code>Name</code>/<code>Observe</code>/<code>Detect</code>/<code>Reset</code>. No batch path.</li>
+<li><strong>Streaming and causal</strong>: consume events in order; never look ahead.</li>
+<li><strong>Empty input is STABLE, not a panic</strong> (R20).</li>
+<li><strong>Config validated at build time</strong>: <code>buildDetector</code> returns errors naming the
+  offending field; the library boundary never panics on user config (R6).</li>
+<li><strong>Diagnostics in <code>Signals</code></strong>: put intermediate quantities (slopes, ratios,
+  noise floors) there so the trace explains each verdict.</li>
 </ul>
-<h2 id="need-help">Need Help?<a class="headerlink" href="#need-help" title="Permanent link">&para;</a></h2>
-<p>Check existing implementations:
-- <code>sim/workload/saturation.go</code> - BacklogDriftAnalyzer
-- <code>sim/workload/saturation_analyzer.go</code> - Interface definition
-- <code>sim/workload/saturation_test.go</code> - Example tests</p>
+<h2 id="need-help">Need help?<a class="headerlink" href="#need-help" title="Permanent link">&para;</a></h2>
+<p>Reference implementations:</p>
+<ul>
+<li><code>sim/saturation/detector.go</code> — the <code>Detector</code> interface + <code>Event</code>/<code>Result</code>.</li>
+<li><code>sim/saturation/composite.go</code>, <code>threshold.go</code>, <code>backlog_drift.go</code> — the three
+  built-in detectors.</li>
+<li><code>sim/saturation/config.go</code> — <code>SaturationConfig</code>, <code>buildDetector</code>, block
+  ownership.</li>
+<li><code>sim/saturation/bank.go</code> — the multi-detector <code>Bank</code> + <code>rosterOrder</code>.</li>
+<li><code>sim/saturation/replay.go</code> — the single-detector drive loop and event
+  reconstruction.</li>
+<li><code>sim/saturation/reduce.go</code> — the final-label plurality reducer.</li>
+</ul>
 
 
 
