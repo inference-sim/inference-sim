@@ -16,11 +16,11 @@ import (
 // --saturation-config backlog_drift: YAML knobs (see the BacklogDriftBlock in
 // config.go), so they are validated but otherwise unused by the streaming path.
 type BacklogDriftConfig struct {
-	WindowSize      time.Duration // Window width for sampling and per-window metrics (BC-1)
-	MinWindows      int           // Minimum complete windows required for classification (BC-7)
-	PeakRatio       float64       // Peak-to-mean threshold for TRANSIENT_BACKLOG detection (BC-6)
+	WindowSize      time.Duration // Window width for sampling and per-window metrics
+	MinWindows      int           // Minimum complete windows required for classification
+	PeakRatio       float64       // Peak-to-mean threshold for TRANSIENT_BACKLOG detection
 	PeakRatioBand   float64       // Confidence band around PeakRatio (±band creates borderline zone)
-	ConfidenceCI    float64       // Confidence level for slope significance test (BC-3)
+	ConfidenceCI    float64       // Confidence level for slope significance test
 
 	// Drain-ratio knobs (#1392), retained as user-facing --saturation-config
 	// backlog_drift: YAML fields. Validation in NewBacklogDriftConfig enforces the
@@ -32,7 +32,7 @@ type BacklogDriftConfig struct {
 	TransientDrainRatio float64 // Mean DrainRatio < this → TRANSIENT_BACKLOG
 }
 
-// NewBacklogDriftConfig creates a BacklogDriftConfig with validation (BC-10, BC-14, R3).
+// NewBacklogDriftConfig creates a BacklogDriftConfig with validation (R3).
 // Panics if any parameter is invalid (NaN, Inf, out of range).
 //
 // warmupWindows must be >= 0. saturatedDrainRatio and transientDrainRatio must each be

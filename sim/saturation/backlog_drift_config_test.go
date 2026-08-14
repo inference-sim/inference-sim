@@ -59,6 +59,91 @@ func TestBacklogDriftConfig_Validation_CIOutOfRange(t *testing.T) {
 	_ = NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 1.5, 2, 1, 0.95, 0.98)
 }
 
+func TestBacklogDriftConfig_Validation_NegativePeakRatioBand(t *testing.T) {
+	// GIVEN PeakRatioBand < 0
+	// WHEN constructing config
+	// THEN panics identifying PeakRatioBand
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("Expected panic for negative PeakRatioBand")
+		} else if !strings.Contains(fmt.Sprint(r), "PeakRatioBand must be >= 0") {
+			t.Fatalf("Wrong panic message: %v", r)
+		}
+	}()
+	_ = NewBacklogDriftConfig(60*time.Second, 5, 2.0, -0.1, 0.95, 2, 1, 0.95, 0.98)
+}
+
+func TestBacklogDriftConfig_Validation_NegativeWarmupWindows(t *testing.T) {
+	// GIVEN WarmupWindows < 0
+	// WHEN constructing config
+	// THEN panics identifying WarmupWindows
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("Expected panic for negative WarmupWindows")
+		} else if !strings.Contains(fmt.Sprint(r), "WarmupWindows must be >= 0") {
+			t.Fatalf("Wrong panic message: %v", r)
+		}
+	}()
+	_ = NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95, -1, 1, 0.95, 0.98)
+}
+
+func TestBacklogDriftConfig_Validation_NegativeTailWindows(t *testing.T) {
+	// GIVEN TailWindows < 0
+	// WHEN constructing config
+	// THEN panics identifying TailWindows
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("Expected panic for negative TailWindows")
+		} else if !strings.Contains(fmt.Sprint(r), "TailWindows must be >= 0") {
+			t.Fatalf("Wrong panic message: %v", r)
+		}
+	}()
+	_ = NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95, 2, -1, 0.95, 0.98)
+}
+
+func TestBacklogDriftConfig_Validation_SaturatedDrainRatioOutOfRange(t *testing.T) {
+	// GIVEN SaturatedDrainRatio outside (0, 1]
+	// WHEN constructing config
+	// THEN panics identifying SaturatedDrainRatio
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("Expected panic for SaturatedDrainRatio=1.5")
+		} else if !strings.Contains(fmt.Sprint(r), "SaturatedDrainRatio must be in (0, 1]") {
+			t.Fatalf("Wrong panic message: %v", r)
+		}
+	}()
+	_ = NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95, 2, 1, 1.5, 0.98)
+}
+
+func TestBacklogDriftConfig_Validation_TransientDrainRatioOutOfRange(t *testing.T) {
+	// GIVEN TransientDrainRatio outside (0, 1]
+	// WHEN constructing config
+	// THEN panics identifying TransientDrainRatio
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("Expected panic for TransientDrainRatio=0")
+		} else if !strings.Contains(fmt.Sprint(r), "TransientDrainRatio must be in (0, 1]") {
+			t.Fatalf("Wrong panic message: %v", r)
+		}
+	}()
+	_ = NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95, 2, 1, 0.95, 0.0)
+}
+
+func TestBacklogDriftConfig_Validation_DrainRatioOverlap(t *testing.T) {
+	// GIVEN SaturatedDrainRatio > TransientDrainRatio (each individually in range)
+	// WHEN constructing config
+	// THEN panics because the PERSISTENTLY_SATURATED and TRANSIENT_BACKLOG regions
+	//      would overlap
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("Expected panic for overlapping drain-ratio regions")
+		} else if !strings.Contains(fmt.Sprint(r), "regions would overlap") {
+			t.Fatalf("Wrong panic message: %v", r)
+		}
+	}()
+	_ = NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95, 2, 1, 0.99, 0.95)
+}
+
 func TestBacklogDriftConfig_Validation_ValidConfig(t *testing.T) {
 	// GIVEN all parameters valid
 	// WHEN constructing config

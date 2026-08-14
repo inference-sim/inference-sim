@@ -134,8 +134,9 @@ func (b *BacklogDriftDetector) Observe(event Event) {
 
 // Detect computes an evolving per-event verdict from the streaming state (#1515):
 // an online OLS slope of in-flight over the trailing window, banded against a
-// noise floor. This is an online heuristic, explicitly NOT the batch drain-ratio/
-// slope-based analysis in sim/workload — the two may legitimately disagree.
+// noise floor. This is an online heuristic; the earlier batch drain-ratio/
+// slope-based analysis it superseded (formerly in sim/workload) was removed in
+// #1547 once the streaming detector had no live-path caller.
 func (b *BacklogDriftDetector) Detect() Result {
 	signals := make(map[string]float64)
 
