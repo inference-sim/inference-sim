@@ -16,21 +16,21 @@ import (
 // for final reporting. Useful for evaluating system performance
 // and debugging behavior over time.
 type Metrics struct {
-	CompletedRequests int     // Number of requests completed
-	TotalInputTokens  int     // Total number of input tokens
-	TotalOutputTokens int     // Total number of output tokens
-	SimEndedTime      int64   // Sim clock time in ticks when simulation ends
-	KVBlocksUsed      float64 // Integral of KVBlockUsage over time
-	PeakKVBlocksUsed  int64   // Max number of simultaneously used KV blocks
+	CompletedRequests    int     // Number of requests completed
+	TotalInputTokens     int     // Total number of input tokens
+	TotalOutputTokens    int     // Total number of output tokens
+	SimEndedTime         int64   // Sim clock time in ticks when simulation ends
+	KVBlocksUsed         float64 // Integral of KVBlockUsage over time
+	PeakKVBlocksUsed     int64   // Max number of simultaneously used KV blocks
 	PreemptionCount      int64   // Total preemption events (PR12)
 	KVAllocationFailures int64   // KV allocation failures for the final decode token at completion; non-zero indicates a cache accounting anomaly (#183)
 	CacheHitRate         float64 // Cumulative cache hit rate at finalization (PR12). Intentional observability signal: set by cluster/instance.go Finalize() from KVStore.CacheHitRate(). Read-only statistic — does not feed back into state evolution.
 	KVThrashingRate      float64 // KV thrashing rate at finalization (PR12)
 	StillQueued          int     // Requests still in wait queue at sim end
 	StillRunning         int     // Requests still in running batch at sim end
-	DroppedUnservable    int // Requests dropped at enqueue: negative MaxOutputLen (R3), MaxModelLen violation, or input exceeds KV capacity (R19)
-	LengthCappedRequests int // Requests force-completed at MaxModelLen-1 boundary (proactive cap)
-	TimedOutRequests     int // Requests cancelled by client timeout
+	DroppedUnservable    int     // Requests dropped at enqueue: negative MaxOutputLen (R3), MaxModelLen violation, or input exceeds KV capacity (R19)
+	LengthCappedRequests int     // Requests force-completed at MaxModelLen-1 boundary (proactive cap)
+	TimedOutRequests     int     // Requests cancelled by client timeout
 
 	TTFTSum int64 // Total time-to-first-token sum (in ticks)
 	ITLSum  int64 // Total ITL sum across requests (in ticks)
@@ -58,8 +58,17 @@ type Metrics struct {
 	// (cluster.aggregateMetrics). Both are always non-nil (allocated in NewMetrics) but
 	// empty (a missing key reads as 0) unless the LoRA subsystem is active, so an
 	// adapter-blind run produces no adapter output (INV-6). Surfaced via buildAdapterMetrics.
+	// AdapterPrefetchCounts[id] is a STRICT SUBSET of AdapterLoadCounts[id]: it counts
+	// only those cold loads a periodic creation tick initiated (Spec 3). Demand loads are
+	// therefore AdapterLoadCounts - AdapterPrefetchCounts. AdapterLoadCounts deliberately
+	// remains the TOTAL of all charged loads, because that is the physical quantity — a
+	// prefetch consumes the same channel and bandwidth as a demand load. Classification is
+	// by INITIATION, not consumption: a prefetch whose in-flight load is consumed by an
+	// arriving request stays counted here. Empty unless a tick policy ran, so every
+	// pre-Spec-3 run is unchanged (INV-PS3').
 	AdapterLoadCounts     map[string]int64
 	AdapterEvictionCounts map[string]int64
+	AdapterPrefetchCounts map[string]int64
 }
 
 func NewMetrics() *Metrics {
@@ -76,6 +85,7 @@ func NewMetrics() *Metrics {
 		Requests:                make(map[string]RequestMetrics),
 		AdapterLoadCounts:       make(map[string]int64),
 		AdapterEvictionCounts:   make(map[string]int64),
+		AdapterPrefetchCounts:   make(map[string]int64),
 	}
 }
 
@@ -209,7 +219,8 @@ func buildAdapterMetrics(m *Metrics, vllmRuntime float64) map[string]AdapterMetr
 	// event (load/eviction), so counts appear even for an adapter loaded then
 	// evicted before any of its requests completed in-window. All three empty =>
 	// adapter-blind run => nil (INV-6 no-op).
-	if len(ttftsByAdapter) == 0 && len(m.AdapterLoadCounts) == 0 && len(m.AdapterEvictionCounts) == 0 {
+	if len(ttftsByAdapter) == 0 && len(m.AdapterLoadCounts) == 0 &&
+		len(m.AdapterEvictionCounts) == 0 && len(m.AdapterPrefetchCounts) == 0 {
 		return nil
 	}
 	idSet := make(map[string]struct{}, len(ttftsByAdapter)+len(m.AdapterLoadCounts)+len(m.AdapterEvictionCounts))
@@ -220,6 +231,9 @@ func buildAdapterMetrics(m *Metrics, vllmRuntime float64) map[string]AdapterMetr
 		idSet[id] = struct{}{}
 	}
 	for id := range m.AdapterEvictionCounts {
+		idSet[id] = struct{}{}
+	}
+	for id := range m.AdapterPrefetchCounts {
 		idSet[id] = struct{}{}
 	}
 	// Build in sorted id order (R2). The output is a map (JSON marshals keys sorted),
@@ -235,6 +249,7 @@ func buildAdapterMetrics(m *Metrics, vllmRuntime float64) map[string]AdapterMetr
 		am := AdapterMetrics{
 			LoadCount:     m.AdapterLoadCounts[adapter],
 			EvictionCount: m.AdapterEvictionCounts[adapter],
+			PrefetchCount: m.AdapterPrefetchCounts[adapter],
 		}
 		if ttfts, ok := ttftsByAdapter[adapter]; ok {
 			sort.Float64s(ttfts)
@@ -316,9 +331,9 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts .
 		// so incomplete requests appear with zero-valued metrics.
 		for _, id := range sortedRequestIDs(m.Requests) {
 			detail := m.Requests[id]
-			detail.TTFT = m.RequestTTFTs[id] / 1e3                               // zero if not in map
-			detail.E2E = m.RequestE2Es[id] / 1e3                                 // zero if not in map
-			detail.ITL = m.RequestITLs[id] / 1e3                                 // ticks → ms (consistent with TTFT, E2E)
+			detail.TTFT = m.RequestTTFTs[id] / 1e3                                // zero if not in map
+			detail.E2E = m.RequestE2Es[id] / 1e3                                  // zero if not in map
+			detail.ITL = m.RequestITLs[id] / 1e3                                  // ticks → ms (consistent with TTFT, E2E)
 			detail.SchedulingDelay = float64(m.RequestSchedulingDelays[id]) / 1e3 // ticks → ms
 			output.Requests = append(output.Requests, detail)
 		}

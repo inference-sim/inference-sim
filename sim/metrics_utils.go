@@ -11,19 +11,19 @@ type IntOrFloat64 interface {
 
 // Individual request metrics for the JSON log
 type RequestMetrics struct {
-	ArrivedAt        float64 `json:"arrived_at"`
-	ID               string  `json:"requestID"`
-	NumPrefillTokens int     `json:"num_prefill_tokens"`
-	NumDecodeTokens  int     `json:"num_decode_tokens"`
-	TTFT             float64 `json:"ttft_ms"`
-	ITL              float64 `json:"itl_ms"`
-	E2E              float64 `json:"e2e_ms"`
-	SchedulingDelay  float64 `json:"scheduling_delay_ms"`
-	SLOClass         string  `json:"slo_class,omitempty"`   // PR10: for per-SLO-class metrics
-	TenantID         string  `json:"tenant_id,omitempty"`  // PR10: for per-tenant fairness
-	HandledBy        string  `json:"handled_by,omitempty"` // #181: instance that processed this request
-	Model            string  `json:"model,omitempty"`      // W0-1: model tag for per-model metrics
-	Adapter          string  `json:"adapter,omitempty"`    // #1464: LoRA adapter id serving this request ("" = base model)
+	ArrivedAt         float64 `json:"arrived_at"`
+	ID                string  `json:"requestID"`
+	NumPrefillTokens  int     `json:"num_prefill_tokens"`
+	NumDecodeTokens   int     `json:"num_decode_tokens"`
+	TTFT              float64 `json:"ttft_ms"`
+	ITL               float64 `json:"itl_ms"`
+	E2E               float64 `json:"e2e_ms"`
+	SchedulingDelay   float64 `json:"scheduling_delay_ms"`
+	SLOClass          string  `json:"slo_class,omitempty"`              // PR10: for per-SLO-class metrics
+	TenantID          string  `json:"tenant_id,omitempty"`              // PR10: for per-tenant fairness
+	HandledBy         string  `json:"handled_by,omitempty"`             // #181: instance that processed this request
+	Model             string  `json:"model,omitempty"`                  // W0-1: model tag for per-model metrics
+	Adapter           string  `json:"adapter,omitempty"`                // #1464: LoRA adapter id serving this request ("" = base model)
 	LengthCapped      bool    `json:"length_capped,omitempty"`          // #588: per-request indicator for BC-5 force-completion
 	GatewayQueueDelay float64 `json:"gateway_queue_delay_ms,omitempty"` // #882: time spent in gateway queue (ms)
 	SessionID         string  `json:"session_id,omitempty"`             // #1058: session context for multi-turn metrics
@@ -166,6 +166,7 @@ const UnknownCatalogRevision = "unknown"
 type AdapterMetrics struct {
 	LoadCount         int64   `json:"load_count"`
 	EvictionCount     int64   `json:"eviction_count"`
+	PrefetchCount     int64   `json:"prefetch_count,omitempty"` // subset of LoadCount; omitted when 0 so pre-Spec-3 output is byte-identical
 	TTFTP50Us         float64 `json:"ttft_p50_us"`
 	TTFTP99Us         float64 `json:"ttft_p99_us"`
 	ThroughputTokPerS float64 `json:"throughput_tok_per_s"`
@@ -209,4 +210,3 @@ func CalculateMean[T IntOrFloat64](numbers []T) float64 {
 
 	return (sum / float64(len(numbers))) / 1000
 }
-

@@ -1875,6 +1875,9 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		for k, v := range m.AdapterEvictionCounts {
 			merged.AdapterEvictionCounts[k] += v
 		}
+		for k, v := range m.AdapterPrefetchCounts {
+			merged.AdapterPrefetchCounts[k] += v
+		}
 		merged.PreemptionCount += m.PreemptionCount
 		merged.KVAllocationFailures += m.KVAllocationFailures
 		merged.DroppedUnservable += m.DroppedUnservable
