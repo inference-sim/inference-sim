@@ -113,6 +113,9 @@ var (
 	routingPolicy    string  // Routing policy name
 	routingScorers   string  // Comma-separated name:weight pairs for weighted routing
 	loraScorerWeight float64 // Weight of the lora-affinity scorer; 0 (default) ⇒ off (#1469)
+	// --routing-deterministic-tiebreak (Spec 3, backlog #3): default false ⇒ byte-identical
+	// to previous releases (INV-6). Not lora-prefixed on purpose — governs LeastLoaded too.
+	routingDeterministicTiebreak bool
 
 	// Scheduler and preemption config
 	scheduler        string // Scheduler name
@@ -1648,6 +1651,10 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, always-busiest, route-to-holder")
 	cmd.Flags().StringVar(&routingScorers, "routing-scorers", "", "Scorer weights for weighted routing (e.g., queue-depth:2,kv-utilization:2,load-balance:1). Default: precise-prefix-cache:2,queue-depth:1,kv-utilization:1")
 	cmd.Flags().Float64Var(&loraScorerWeight, "lora-scorer-weight", 0, "Weight of the lora-affinity routing scorer, composed into the weighted profile. Leave unset to keep routing unchanged; must be a finite positive number when set. Requires --routing-policy weighted (#1469)")
+	cmd.Flags().BoolVar(&routingDeterministicTiebreak, "routing-deterministic-tiebreak", false,
+		"Replace the router's RANDOM equal-score tie-break with the positional one, for paired comparisons. "+
+			"EXPERIMENT CONTROL, not fidelity: production llm-d randomises ties deliberately, so a run that "+
+			"sets this must say so when reporting. Default false: byte-identical to previous releases.")
 
 	// Scheduler and preemption config
 	cmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf, reverse-priority")
@@ -2956,6 +2963,7 @@ var runCmd = &cobra.Command{
 			TokenBucketRefillRate:           tokenBucketRefillRate,
 			RoutingPolicy:                   routingPolicy,
 			RoutingScorerConfigs:            parsedScorerConfigs,
+			RoutingDeterministicTiebreak:    routingDeterministicTiebreak,
 			TraceLevel:                      traceLevel,
 			CounterfactualK:                 counterfactualK,
 			SnapshotRefreshInterval:         snapshotRefreshInterval,

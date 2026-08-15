@@ -525,7 +525,18 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	cs.cacheQueryFn = cs.snapshotProvider.BuildCacheQueryFn()
 
 	// Create routing policies now that cacheQueryFn is available.
-	cs.routingPolicy = sim.NewRoutingPolicyWithCache(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem(sim.SubsystemRouter), cs.cacheQueryFn)
+	//
+	// Spec 3 / backlog #3: a nil RNG selects the routing policies' existing positional
+	// tie-break instead of the random one. Scoped to the routing partition only — the
+	// call to rng.ForSubsystem(SubsystemRouter) below still happens unconditionally (each
+	// subsystem's seed is independently derived from the master seed, so this touches
+	// nothing else); only the value passed to the routing policy is swapped for nil when
+	// the knob is on.
+	routerRNG := rng.ForSubsystem(sim.SubsystemRouter)
+	if config.RoutingDeterministicTiebreak {
+		routerRNG = nil
+	}
+	cs.routingPolicy = sim.NewRoutingPolicyWithCache(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens, routerRNG, cs.cacheQueryFn)
 	if len(config.PrefillScorerConfigs) > 0 {
 		cs.prefillRoutingPolicy = sim.NewRoutingPolicyWithCache("weighted", config.PrefillScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("prefill-router"), cs.cacheQueryFn)
 	}

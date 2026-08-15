@@ -753,6 +753,7 @@ Example:
 			TokenBucketRefillRate:           tokenBucketRefillRate,
 			RoutingPolicy:                   routingPolicy,
 			RoutingScorerConfigs:            parsedScorerConfigs,
+			RoutingDeterministicTiebreak:    routingDeterministicTiebreak,
 			TraceLevel:                      traceLevel,
 			CounterfactualK:                 counterfactualK,
 			SnapshotRefreshInterval:         snapshotRefreshInterval,

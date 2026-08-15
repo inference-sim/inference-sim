@@ -184,6 +184,28 @@ type DeploymentConfig struct {
 	// matching the ModelAutoscalerIntervalUs idiom (R9). omitempty ⇒ absent when unset
 	// (INV-6). CLI validates it is >= 0 (R3).
 	LoRAPeriodicIntervalUs int64 `yaml:"lora_periodic_interval_us,omitempty"`
+
+	// RoutingDeterministicTiebreak replaces the routing policy's RANDOM equal-score
+	// tie-break with the positional (first-in-snapshot-order) one already implemented at
+	// routing.go's "Random tie-breaking when rng is non-nil; positional (first) when nil."
+	// branches in LeastLoaded.Route and WeightedScoring.Route, by passing a nil RNG to the
+	// routing policy. That branch is unreachable from the cluster path today because
+	// NewClusterSimulator always passes rng.ForSubsystem(SubsystemRouter).
+	//
+	// EXPERIMENT CONTROL, not a fidelity fix (backlog entry #3). Production llm-d
+	// randomises equal-score ties deliberately — MaxScorePicker shuffles before selecting
+	// (lora-control docs/target-system.md §1.4) — so BLIS's default (knob off) is FAITHFUL
+	// to that behaviour, and turning this on is a deliberate departure adopted to isolate a
+	// treatment in a paired comparison. Any run that sets it must say so when reporting.
+	//
+	// Why it matters: the tie-break draw sequence depends on which instances hold which
+	// adapters, which is exactly what an eviction or creation policy changes, so two arms
+	// of a paired comparison consume the routing RNG differently and diverge in routing
+	// decisions that are not the treatment. Scoped to the routing partition only — no
+	// other subsystem's RNG changes when this is set.
+	//
+	// Default false; omitempty ⇒ an absent field is byte-identical to pre-Spec-3 (INV-6).
+	RoutingDeterministicTiebreak bool `yaml:"routing_deterministic_tiebreak,omitempty"`
 }
 
 // ToSimConfig returns the embedded SimConfig for per-instance construction.
