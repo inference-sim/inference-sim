@@ -159,6 +159,11 @@ type Simulator struct {
 	// this instance, or "" when none. Loads serialize per instance: the gate starts
 	// a new load only when this is "" (§7 serialization).
 	loadingAdapter string
+	// loadIsPrefetch classifies the in-flight load named by loadingAdapter: true when a
+	// periodic creation tick initiated it (Spec 3), false for a gate-driven demand load.
+	// Read once at completion to pick the counter. Classification is by INITIATION, so a
+	// prefetch consumed mid-flight by an arriving request stays a prefetch.
+	loadIsPrefetch bool
 	seqCounter     int64 // monotonic counter for event queue seqID (deterministic ordering)
 	// OnRequestDone is an optional callback invoked when a request reaches a terminal
 	// state (completed, length-capped, or timed out). Returns follow-up requests to inject.
@@ -1101,8 +1106,56 @@ func (sim *Simulator) maybeStartAdapterLoad(now int64) {
 		sim.Metrics.AdapterEvictionCounts[victim]++
 	}
 	sim.loadingAdapter = head.Adapter
+	sim.loadIsPrefetch = false
 	loadTicks := max(1, int64(math.Ceil(sim.adapterCost.LoadLatency(head.Adapter))))
 	sim.Schedule(&AdapterLoadCompletionEvent{time: now + loadTicks, Adapter: head.Adapter})
+}
+
+// StartPrefetch begins a charged, non-blocking cold load of adapter at the request of a
+// periodic creation tick (Spec 3). It is the t>0 sibling of maybeStartAdapterLoad: same
+// slot reservation, same eviction seam, same completion event and charging — the only
+// differences are that the trigger is a tick rather than the wait-queue head, and that
+// the load is classified as a prefetch.
+//
+// Non-blocking means the instance keeps forming steps and serving decode while the load
+// runs. It does NOT mean free: the load occupies this instance's single serialized load
+// channel for LoadLatency, so a demand miss arriving during it waits. The cluster
+// therefore refuses to ask for a prefetch on an instance with visible pending demand
+// (demand-priority deferral, design §5); this method enforces only the invariants it
+// owns.
+//
+// Returns false, having changed nothing, when: the subsystem is inert; the channel is
+// busy; the adapter is already resident; or no slot could be reserved because every
+// resident adapter is pinned.
+func (sim *Simulator) StartPrefetch(now int64, adapter string) bool {
+	if sim.residentAdapters == nil || sim.adapterCost == nil || sim.evictionPolicy == nil {
+		return false // inert subsystem (INV-6)
+	}
+	if sim.loadingAdapter != "" {
+		return false // loads serialize per instance
+	}
+	if adapter == "" || sim.residentAdapters.IsResident(adapter) {
+		return false // nothing to do; never charge a load for a resident adapter
+	}
+	if sim.residentAdapters.AtCapacity() {
+		victim, ok := sim.evictionPolicy.SelectVictim(sim.buildEvictionContext())
+		if !ok {
+			// Every resident adapter is pinned by an in-flight request. Start no prefetch;
+			// unlike the demand path there is no request waiting on this, so there is
+			// nothing to retry and no liveness obligation (INV-8 is unaffected).
+			return false
+		}
+		if !sim.residentAdapters.Evict(victim) {
+			logrus.Errorf("StartPrefetch: eviction policy selected non-removable victim %q (pinned or absent); starting no prefetch", victim)
+			return false
+		}
+		sim.Metrics.AdapterEvictionCounts[victim]++
+	}
+	sim.loadingAdapter = adapter
+	sim.loadIsPrefetch = true
+	loadTicks := max(1, int64(math.Ceil(sim.adapterCost.LoadLatency(adapter))))
+	sim.Schedule(&AdapterLoadCompletionEvent{time: now + loadTicks, Adapter: adapter})
+	return true
 }
 
 // completeAdapterLoad finishes a cold-adapter load: it makes the adapter resident
@@ -1125,6 +1178,10 @@ func (sim *Simulator) completeAdapterLoad(now int64, adapter string) {
 	// path that calls Store at capacity would need to account for that eviction.
 	if _, admitted := sim.residentAdapters.Store(adapter); admitted {
 		sim.Metrics.AdapterLoadCounts[adapter]++ // charged once per cold transition (INV-L3)
+		if sim.loadIsPrefetch {
+			// Strict subset of the line above: total load work stays in AdapterLoadCounts.
+			sim.Metrics.AdapterPrefetchCounts[adapter]++
+		}
 	} else {
 		logrus.Errorf("[tick %07d] adapter %q load completed but could not be made resident (set full and fully pinned) — resident-set accounting bug", now, adapter)
 	}
@@ -1132,6 +1189,7 @@ func (sim *Simulator) completeAdapterLoad(now int64, adapter string) {
 	// outcome, so the gated request is retried and the simulator never wedges with
 	// queued work and no pending step (INV-8) — even on the unreachable error path.
 	sim.loadingAdapter = ""
+	sim.loadIsPrefetch = false
 	sim.ScheduleStepIfIdle(now)
 }
 
