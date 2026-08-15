@@ -398,12 +398,13 @@ Example:
 		// INV-13 sync point (B-7, #1495): the LoRA-seam selections — routing
 		// (--routing-policy/--lora-bundle, via resolvePolicies), eviction/creation
 		// (--eviction-policy/--creation-policy/--lora-bundle, via resolveLoRAConfig),
-		// placement (--lora-adapter-placement), and the periodic-trigger scaffold
+		// placement (--lora-adapter-placement), and the periodic creation tick
 		// interval (--lora-periodic-interval-us) — all flow through this SAME shared
 		// resolution path and are set identically in the run and replay
 		// DeploymentConfig literals. All are replay-supported: the seams build
-		// identical clusters in both commands, and the periodic scaffold is inert (no
-		// event scheduled in either command, INV-PS3), so NO new fail-fast is
+		// identical clusters in both commands, so the periodic tick — live since
+		// Spec 3, and inert in BOTH commands alike for a gate-only creation policy
+		// (INV-PS3') — behaves identically here and under blis run. NO new fail-fast is
 		// warranted for them (DD-B7-7). The autoscaler/node-pool fatals below remain
 		// the fail-fast mechanism for the genuinely unsupported cases.
 		parsedScorerConfigs, bundle := resolvePolicies(cmd)

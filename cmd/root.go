@@ -131,7 +131,7 @@ var (
 	loraCreationPolicy        string  // --creation-policy (applied only when Changed; empty => on-demand default, B-6)
 	loraAdapterPlacement      string  // --lora-adapter-placement (idx=id[,id...];... construction-index→adapter ids, B-6)
 	loraBundle                string  // --lora-bundle (named strategy bundle => {routing,eviction,creation} triple; empty => none, B-7)
-	loraPeriodicInterval      int64   // --lora-periodic-interval-us (periodic-trigger scaffold interval, µs; 0 => off; inert this round, B-7)
+	loraPeriodicInterval      int64   // --lora-periodic-interval-us (periodic creation tick interval, µs; 0 => off; inert for a gate-only creation policy, INV-PS3')
 
 	// Speculative decoding / MTP (#1528). All default-off; num-speculative-tokens=0
 	// => feature inert, output byte-identical (INV-6). --speculative-acceptance-rate
@@ -1733,7 +1733,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&loraCreationPolicy, "creation-policy", "", fmt.Sprintf("Adapter-creation policy (t=0 seeding + cold-load-gate admit). Valid: %s. Applied only when set; empty/default => on-demand (byte-identical to no LoRA).", strings.Join(sim.ValidCreationPolicyNames(), ", ")))
 	cmd.Flags().StringVar(&loraAdapterPlacement, "lora-adapter-placement", "", "Static per-instance adapter placement for the pre-placement creation policy, as \"idx=id[,id...];idx=id...\" (construction-index => adapter ids), e.g. \"0=A,B;1=C\". Adapters are seeded resident at t=0. Empty => no placement.")
 	cmd.Flags().StringVar(&loraBundle, "lora-bundle", "", fmt.Sprintf("Named LoRA strategy bundle expanding to a {routing, eviction, creation} policy triple. Valid: %s. Per-knob flags (--routing-policy/--eviction-policy/--creation-policy) override their knob; empty => no bundle (byte-identical to no LoRA).", strings.Join(sim.ValidLoRABundleNames(), ", ")))
-	cmd.Flags().Int64Var(&loraPeriodicInterval, "lora-periodic-interval-us", 0, "Simulation-time interval (µs) for the periodic LoRA-seam re-resolution trigger. SCAFFOLD this round: any value is inert (no event scheduled, byte-identical to unset, INV-PS3); reserves future wiring. Must be >= 0.")
+	cmd.Flags().Int64Var(&loraPeriodicInterval, "lora-periodic-interval-us", 0, "Simulation-time interval (µs) between periodic LoRA creation ticks. 0 = off. Takes effect only when --creation-policy names a tick-capable policy (keep-warm); with a gate-only policy (on-demand, pre-placement) any value is inert and byte-identical to 0. Must be >= 0.")
 
 	// Speculative decoding / MTP (#1528). Model-level; shared by run and replay so a
 	// trace round-trips under identical flags (INV-13). Default off => byte-identical.
@@ -1968,12 +1968,14 @@ func resolveLoRAAdapterPlacement() map[int][]string {
 	return placement
 }
 
-// resolveLoRAPeriodicInterval validates and returns the periodic-trigger scaffold
-// interval (µs) for DeploymentConfig.LoRAPeriodicIntervalUs (B-7, D5/INV-PS3). It
-// fail-fasts at the CLI boundary (logrus.Fatalf, Principle V, R3) on a negative
-// value. Shared by runCmd and replayCmd so both set the same field (INV-13 parity).
-// The returned interval is inert this round — NewClusterSimulator never schedules a
-// LoRAPeriodicTriggerEvent — so any non-negative value is byte-identical to 0.
+// resolveLoRAPeriodicInterval validates and returns the periodic creation tick
+// interval (µs) for DeploymentConfig.LoRAPeriodicIntervalUs (B-7's D5 scaffold,
+// activated by Spec 3). It fail-fasts at the CLI boundary (logrus.Fatalf, Principle V,
+// R3) on a negative value. Shared by runCmd and replayCmd so both set the same field
+// (INV-13 parity). Whether the interval has any effect is decided downstream, by
+// NewClusterSimulator: it schedules a tick only for a creation policy implementing
+// sim.PeriodicCreationPolicy, so with a gate-only policy any value is byte-identical
+// to 0 (INV-PS3').
 func resolveLoRAPeriodicInterval() int64 {
 	if loraPeriodicInterval < 0 {
 		logrus.Fatalf("--lora-periodic-interval-us must be >= 0, got %d", loraPeriodicInterval)
