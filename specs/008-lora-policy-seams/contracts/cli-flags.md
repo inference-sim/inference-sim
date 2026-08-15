@@ -12,6 +12,12 @@ at micro-plan time. All default to baseline so the no-op golden is byte-identica
 | `--lora-bundle` | select a named strategy bundle (expands to a triple) | none | per-knob flags override (FR-015) |
 | `--lora-periodic-interval` | declare the (inert) periodic trigger interval | unset | scaffold only, no effect this round (INV-PS3) |
 
+**SUPERSEDED by Spec 3 (2026-08-15)** — the last row above. The flag shipped as
+`--lora-periodic-interval-us` (this table's spelling never existed), and it is no longer
+inert: it now sets the periodic LoRA creation tick interval, which fires whenever the
+effective `--creation-policy` implements `sim.PeriodicCreationPolicy` (INV-PS3′ replaces
+INV-PS3). The row is kept as a record of the B-7 round; `blis run --help` is authoritative.
+
 ## Rules
 - Unknown policy/bundle name ⇒ `logrus.Fatalf` listing valid names for that seam (FR-004, Principle V).
 - Every numeric flag validated for zero/negative/NaN/Inf at the CLI (R3).

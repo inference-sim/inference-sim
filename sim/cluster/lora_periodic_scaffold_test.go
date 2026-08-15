@@ -34,11 +34,21 @@ func TestPeriodicInterval_ByteIdenticalToUnset(t *testing.T) {
 		// build returns a config with the interval unset; the test sets it per run.
 		build func() DeploymentConfig
 		reqs  func() []*sim.Request
+		// premise asserts that this case reaches the branch of newLoRAPeriodicPipeline it
+		// is named for. Each case asserts the OTHER's negation, so the two can never
+		// silently converge on the same branch and quietly become duplicates.
+		premise func(*testing.T, DeploymentConfig)
 	}{
 		{
 			name:  "lora-inactive",
 			build: func() DeploymentConfig { return newTestDeploymentConfig(2) },
 			reqs:  func() []*sim.Request { return newTestRequests(50) },
+			premise: func(t *testing.T, cfg DeploymentConfig) {
+				t.Helper()
+				if cfg.HasAdapters() || cfg.AdapterCapacity != nil {
+					t.Fatalf("premise broken: the lora-inactive case must declare NO adapters and NO capacity so it exercises the subsystem-inactive branch, got HasAdapters=%v AdapterCapacity=%v", cfg.HasAdapters(), cfg.AdapterCapacity)
+				}
+			},
 		},
 		{
 			name: "gate-only-policy",
@@ -49,6 +59,22 @@ func TestPeriodicInterval_ByteIdenticalToUnset(t *testing.T) {
 				return loraAffinityTestConfig(2, 2, periodicTestAdapters)
 			},
 			reqs: func() []*sim.Request { return zipfianAdapterRequests(50, periodicTestAdapters) },
+			premise: func(t *testing.T, cfg DeploymentConfig) {
+				t.Helper()
+				// THIS is the property whose absence let an earlier version of this test
+				// pass while the gate-only check was broken: with LoRA inactive,
+				// newLoRAPeriodicPipeline returns nil at the subsystem branch and never
+				// reaches the sim.PeriodicCreationPolicy type assertion that this case
+				// exists to exercise, so the subtest silently degrades into a duplicate of
+				// lora-inactive while keeping its name and staying green.
+				//
+				// The risk is live, not hypothetical: loraAffinityTestConfig is a shared
+				// helper owned by lora_affinity_routing_e2e_test.go, so an edit there could
+				// drop Adapters or AdapterCapacity without anyone touching this file.
+				if !cfg.HasAdapters() || cfg.AdapterCapacity == nil {
+					t.Fatalf("premise broken: the gate-only-policy case must be LoRA-ACTIVE so newLoRAPeriodicPipeline reaches the PeriodicCreationPolicy type assertion, got HasAdapters=%v AdapterCapacity=%v", cfg.HasAdapters(), cfg.AdapterCapacity)
+				}
+			},
 		},
 	}
 
@@ -61,7 +87,10 @@ func TestPeriodicInterval_ByteIdenticalToUnset(t *testing.T) {
 
 			cfgSet := tc.build()
 			cfgSet.LoRAPeriodicIntervalUs = 1_000_000 // 1s — inert when no tick can fire
-			// Assert the premise explicitly, so this cannot pass for the wrong reason: an
+			// Assert this case reaches the branch it is named for, before relying on the
+			// outcome below.
+			tc.premise(t, cfgSet)
+			// Assert the creation-policy premise too, so this cannot pass for the wrong reason: an
 			// empty CreationPolicy is the gate-only on-demand default (both NewSimulator
 			// and newLoRAPeriodicPipeline resolve ""→on-demand). If a future default
 			// became a tick policy, byte-identity would be the WRONG expectation and this

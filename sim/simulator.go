@@ -1094,9 +1094,15 @@ func (sim *Simulator) waitQueueHeadIsColdMiss() bool {
 
 // HasGateBlockedRequest reports whether a cold-miss request is waiting at this
 // instance's cold-load gate. Read by the cluster's periodic creation tick (Spec 3),
-// which drops any prefetch decision naming such an instance: the demand miss owns the
-// single serialized load channel, and a prefetch must never step in front of work
-// already visible here (demand priority).
+// which drops any prefetch decision naming such an instance so a prefetch cannot take
+// the single serialized load channel away from that already-waiting demand miss.
+//
+// Mind the SCOPE, which is the wait-queue HEAD only (see waitQueueHeadIsColdMiss): this
+// is NOT "is there visible work on this instance". A request that is merely QUEUED and
+// whose adapter IS resident does not make this true, and is not protected by it — its
+// adapter stays unpinned until batch admission takes the pin (recordAdapterResidency),
+// so a prefetch's eviction seam may evict precisely that adapter and turn a warm hit
+// into a cold miss.
 func (sim *Simulator) HasGateBlockedRequest() bool {
 	return sim.waitQueueHeadIsColdMiss()
 }
@@ -1170,11 +1176,19 @@ func (sim *Simulator) maybeStartAdapterLoad(now int64) {
 // the load is classified as a prefetch.
 //
 // Non-blocking means the instance keeps forming steps and serving decode while the load
-// runs. It does NOT mean free: the load occupies this instance's single serialized load
-// channel for LoadLatency, so a demand miss arriving during it waits. The cluster
-// therefore refuses to ask for a prefetch on an instance with visible pending demand
-// (demand-priority deferral, design §5); this method enforces only the invariants it
-// owns.
+// runs. It does NOT mean free, in two ways. The load occupies this instance's single
+// serialized load channel for LoadLatency, so a demand miss arriving during it waits; and
+// when the resident set is at capacity this method calls the eviction seam, so a prefetch
+// can evict a warm adapter that no in-flight request has pinned — including the adapter of
+// a request sitting in the wait queue, whose pin is not taken until batch admission
+// (recordAdapterResidency). That request's warm hit becomes a cold miss.
+//
+// The cluster defers rather than asking, on an instance whose load channel is busy or
+// whose wait-queue HEAD is a cold miss (demand-priority deferral, design §5). That rule is
+// deliberately narrower than "any visible pending demand" — a merely-queued request is not
+// covered by it — so the case above is a known, accepted latency cost, not an oversight.
+// Liveness is unaffected either way (the gate re-runs and reloads, INV-8). This method
+// enforces only the invariants it owns.
 //
 // Returns false, having changed nothing, when: the subsystem is inert; the channel is
 // busy; the adapter is already resident; or no slot could be reserved because every

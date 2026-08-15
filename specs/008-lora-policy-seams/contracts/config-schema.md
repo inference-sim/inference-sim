@@ -17,3 +17,4 @@ pointer types where zero is meaningful (R9); no new `SimConfig` sub-config (Prin
 
 ## Periodic trigger config (scaffold only)
 - A declared, deterministic simulation-time interval field, parseable and selectable, but inert this round (no event scheduled, INV-PS3).
+- **SUPERSEDED by Spec 3 (2026-08-15):** the trigger is now live and INV-PS3 is replaced by INV-PS3′ — the interval is inert only when the effective creation policy does not implement `sim.PeriodicCreationPolicy`. The text above describes the B-7 round as shipped and is kept as a record of it; the current contract is `DeploymentConfig.LoRAPeriodicIntervalUs`'s doc comment.

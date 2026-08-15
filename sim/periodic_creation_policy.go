@@ -12,7 +12,15 @@ package sim
 // A returned decision is a REQUEST, not a command. The cluster drops any decision
 // naming an unknown or non-routable instance, an adapter the registry does not have,
 // an instance whose load channel is busy, or an instance with a gate-blocked request —
-// so a misbehaving policy cannot defeat demand-priority deferral.
+// so a misbehaving policy cannot defeat those deferral rules.
+//
+// Read "gate-blocked" exactly: the wait-queue HEAD is a cold miss. The rules above are
+// therefore narrower than a general "never disturb work in progress" guarantee, and no
+// such guarantee is offered. A prefetch may still evict the adapter of a request that is
+// merely QUEUED (pins are taken at batch admission, not at enqueue) and so delay it by up
+// to one LoadLatency. Widening the rule to skip any instance with a non-empty wait queue
+// would suppress prefetching precisely under load — a design decision, deliberately not
+// taken here.
 type PeriodicCreationPolicy interface {
 	OnTick(ctx PeriodicCreationContext) []PrefetchDecision
 }

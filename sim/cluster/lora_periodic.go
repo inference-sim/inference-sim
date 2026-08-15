@@ -153,8 +153,9 @@ func (p *loraPeriodicPipeline) buildContext(cs *ClusterSimulator, nowUs int64) s
 }
 
 // actuate applies the surviving decisions. A decision is a REQUEST, not a command: this
-// is the single place the demand-priority guarantee is enforced, so a buggy or
-// adversarial policy cannot defeat it.
+// is the single place the demand-priority rule is enforced, so a buggy or adversarial
+// policy cannot defeat it. That rule is narrow and is defined precisely at the check
+// below — read it there before relying on it.
 //
 // At most ONE prefetch per instance per tick starts, because loads serialize per
 // instance. The cap is per instance, not per tick: decisions are taken in returned
@@ -184,10 +185,28 @@ func (p *loraPeriodicPipeline) actuate(cs *ClusterSimulator, nowUs int64, decisi
 			logrus.Debugf("[lora-periodic] t=%d dropping decision for unregistered adapter %q", nowUs, d.Adapter)
 			continue
 		}
-		// Demand priority: never step in front of work already visible on this instance.
-		// The busy-channel half is also enforced inside StartPrefetch (defense in
-		// depth); the gate-blocked half is enforced ONLY here, because the instance's
-		// load gate has no way to know a prefetch is being considered.
+		// Demand priority, stated exactly: never take the load channel from a cold-miss
+		// request already at the gate, and never queue behind a load in flight.
+		//
+		// That is NARROWER than "never step in front of work visible on this instance",
+		// and the difference is real, not pedantic: HasGateBlockedRequest is only "the
+		// wait-queue HEAD is a cold miss", so a request whose adapter IS resident is
+		// unprotected even when it is the head. Its adapter stays unpinned until batch
+		// admission takes the pin (recordAdapterResidency), so StartPrefetch's eviction
+		// seam may evict exactly that adapter and then hold the channel — turning a warm
+		// hit into a cold miss and delaying it by up to one LoadLatency. Liveness is
+		// unaffected (the gate re-runs and reloads it, INV-8); the cost is latency.
+		//
+		// Widening this to "skip any instance with a non-empty wait queue" would suppress
+		// prefetching precisely under load. That is a design decision, not a defect fix,
+		// so the narrow rule stands — stated honestly here rather than advertised as
+		// something stronger than it is.
+		//
+		// Both halves are kept even though the busy-channel one is currently redundant
+		// with StartPrefetch's own refusal (defense in depth): the redundancy is
+		// contingent — if StartPrefetch ever queued instead of refusing, both halves would
+		// become load-bearing. The gate-blocked half is enforced ONLY here, because the
+		// instance's load gate cannot know a prefetch is being considered.
 		if inst.LoadingAdapter() != "" || inst.HasGateBlockedRequest() {
 			logrus.Debugf("[lora-periodic] t=%d deferring prefetch of %q on %q: load channel busy or a request is gate-blocked", nowUs, d.Adapter, d.Instance)
 			continue
