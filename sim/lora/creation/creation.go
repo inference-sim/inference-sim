@@ -11,6 +11,12 @@
 // every policy must uphold (seeding is uncharged INV-L3, no busy-loop INV-8,
 // purity/determinism INV-6, and the starvation-freedom obligation) — NOT
 // byte-identity with on-demand, which only the on-demand default guarantees.
+//
+// A policy may ALSO implement the optional sim.PeriodicCreationPolicy to act on a
+// periodic tick (Spec 3). That interface is reached by a type assertion, so a policy
+// that forgets the method silently never ticks — tick_contract_test.go therefore
+// requires every registered policy to either implement it or appear in
+// tickInertPolicies with a reason.
 package creation
 
 import (
@@ -74,4 +80,5 @@ func validNames() string {
 func init() {
 	register("on-demand", func() sim.CreationPolicy { return onDemand{} })
 	register("pre-placement", func() sim.CreationPolicy { return prePlacement{} })
+	register("keep-warm", func() sim.CreationPolicy { return keepWarm{} })
 }
