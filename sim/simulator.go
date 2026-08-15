@@ -1102,7 +1102,9 @@ func (sim *Simulator) waitQueueHeadIsColdMiss() bool {
 // whose adapter IS resident does not make this true, and is not protected by it — its
 // adapter stays unpinned until batch admission takes the pin (recordAdapterResidency),
 // so a prefetch's eviction seam may evict precisely that adapter and turn a warm hit
-// into a cold miss.
+// into a cold miss. Sharper still: the victim need not be queued behind the head at
+// all — if the head itself targets a resident adapter, this method is false, and the
+// head's own warm adapter can be evicted out from under it.
 func (sim *Simulator) HasGateBlockedRequest() bool {
 	return sim.waitQueueHeadIsColdMiss()
 }
@@ -1181,7 +1183,10 @@ func (sim *Simulator) maybeStartAdapterLoad(now int64) {
 // when the resident set is at capacity this method calls the eviction seam, so a prefetch
 // can evict a warm adapter that no in-flight request has pinned — including the adapter of
 // a request sitting in the wait queue, whose pin is not taken until batch admission
-// (recordAdapterResidency). That request's warm hit becomes a cold miss.
+// (recordAdapterResidency). That request's warm hit becomes a cold miss. Sharper still:
+// the victim need not be a separate queued request at all — if the wait-queue HEAD
+// itself targets a resident adapter, HasGateBlockedRequest is false, and the head's own
+// warm adapter can be evicted out from under it.
 //
 // The cluster defers rather than asking, on an instance whose load channel is busy or
 // whose wait-queue HEAD is a cold miss (demand-priority deferral, design §5). That rule is

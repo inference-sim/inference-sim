@@ -19,6 +19,13 @@ import "github.com/inference-sim/inference-sim/sim"
 // names an eviction victim (the eviction seam's concern — the cluster calls that seam
 // when the chosen target is full).
 //
+// A property of this implementation, not a refusal: pickTarget is a pure function of
+// the unmutated instance list, so every decision OnTick returns in a single call names
+// the SAME instance — deterministically, not incidentally. Combined with the cluster's
+// per-instance actuation cap (the first surviving decision per instance actuates; later
+// ones naming that instance are dropped), keep-warm's prefetch throughput is at most one
+// adapter per tick, regardless of cluster size.
+//
 // Expected to perform WORSE than on-demand in most regimes: a prefetch into a full
 // instance evicts a warm adapter at load START, before knowing the prefetched one will
 // be used again, at 7-10 ms per attempt under the Spec 2 constants. That is a correct

@@ -44,12 +44,18 @@ func TestPrefetchCount_PresentWhenNonZero(t *testing.T) {
 	}
 }
 
-// TestBuildAdapterMetrics_SurfacesPrefetchOnlyAdapter covers the case the idSet union
-// exists for: an adapter that was prefetched and evicted before any request completed
-// must still appear in the output.
+// TestBuildAdapterMetrics_SurfacesPrefetchOnlyAdapter exercises the idSet union loop and
+// the widened all-empty nil-guard on an adapter present ONLY in AdapterPrefetchCounts.
+// That state is not reachable through the simulator today — completeAdapterLoad
+// increments AdapterPrefetchCounts[a] only inside the branch that has just incremented
+// AdapterLoadCounts[a] (sim/simulator.go), and the cluster merge sums both, so the
+// prefetch key set is always a subset of the load key set (see AdapterPrefetchCounts's
+// doc comment in metrics.go). The union loop and nil-guard are defensive: they exist so
+// buildAdapterMetrics does not depend on that subset invariant to surface an adapter
+// correctly, and this test pins that defensive behavior directly rather than via a
+// load-count coincidence.
 func TestBuildAdapterMetrics_SurfacesPrefetchOnlyAdapter(t *testing.T) {
 	m := NewMetrics()
-	m.AdapterLoadCounts["a1"] = 1
 	m.AdapterPrefetchCounts["a1"] = 1
 
 	got := buildAdapterMetrics(m, 1.0)
@@ -57,7 +63,7 @@ func TestBuildAdapterMetrics_SurfacesPrefetchOnlyAdapter(t *testing.T) {
 	if !ok {
 		t.Fatalf("adapter a1 must surface from prefetch/load counts alone; got %v", got)
 	}
-	if am.PrefetchCount != 1 || am.LoadCount != 1 {
-		t.Errorf("LoadCount/PrefetchCount = %d/%d, want 1/1", am.LoadCount, am.PrefetchCount)
+	if am.PrefetchCount != 1 || am.LoadCount != 0 {
+		t.Errorf("LoadCount/PrefetchCount = %d/%d, want 0/1", am.LoadCount, am.PrefetchCount)
 	}
 }

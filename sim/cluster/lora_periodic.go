@@ -164,6 +164,11 @@ func (p *loraPeriodicPipeline) buildContext(cs *ClusterSimulator, nowUs int64) s
 // decision would act on stale state the next tick recomputes anyway. Decisions naming
 // distinct instances all actuate in the same tick.
 //
+// That last sentence documents the mechanism's contract, not something exercised today:
+// no SHIPPED policy currently emits decisions naming distinct instances in one tick —
+// keep-warm included, because its pickTarget names the same instance for every decision
+// in a call (see creation.keepWarm's doc comment). Only a test stub does.
+//
 // This is reachable, not hypothetical: keep-warm's pickTarget re-reads the unmutated
 // context on every iteration, so Resident never grows during a single OnTick and several
 // requested adapters can all name the same instance.
