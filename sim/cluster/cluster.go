@@ -116,6 +116,13 @@ type ClusterSimulator struct {
 	autoscaler      *autoscalerPipeline
 	pendingArrivals int // count of ClusterArrivalEvents not yet executed; used by scheduleNextTick to stop ticking when all work is done
 
+	// Spec 3: periodic LoRA creation pipeline. Nil unless the LoRA subsystem is active,
+	// LoRAPeriodicIntervalUs > 0, AND the effective creation policy implements
+	// sim.PeriodicCreationPolicy — which is what makes INV-PS3' structural (see
+	// newLoRAPeriodicPipeline). Nil is the pre-Spec-3 behaviour in full: no tick is
+	// scheduled and no demand is recorded.
+	loraPeriodic *loraPeriodicPipeline
+
 	// sessionCallback is the raw onRequestDone parameter for session follow-up
 	// generation in PD mode. Called from detectDecodeCompletions with the original
 	// request (which carries SessionID). Separate from the per-instance closure to
@@ -526,6 +533,12 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		cs.decodeRoutingPolicy = sim.NewRoutingPolicyWithCache("weighted", config.DecodeScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("decode-router"), cs.cacheQueryFn)
 	}
 
+	// Spec 3: resolve the cluster's own periodic creation pipeline, mirroring the
+	// routing-policy resolution above (resolve by config name at construction). Returns
+	// nil — the pre-Spec-3 behaviour in full — unless the LoRA subsystem is active, the
+	// interval is positive, and the creation policy can act on a tick (INV-PS3').
+	cs.loraPeriodic = newLoRAPeriodicPipeline(config)
+
 	// PD disaggregation: construct the decider now that cacheQueryFn is available.
 	// PrefixThresholdDecider consumes the per-pod cache-query map; other deciders
 	// ignore state but share the same construction point.
@@ -829,6 +842,18 @@ func (c *ClusterSimulator) Run() error {
 	if c.autoscaler != nil && c.config.ModelAutoscalerIntervalUs > 0 {
 		heap.Push(&c.clusterEvents, clusterEventEntry{
 			event: &ScalingTickEvent{At: c.clock},
+			seqID: c.nextSeqID(),
+		})
+	}
+
+	// Spec 3: first periodic creation tick at t = clock + Interval, NOT at t = clock.
+	// t=0 belongs to CreationPolicy.Initial, and the demand window is necessarily empty
+	// then (no arrival has executed), so a tick there could only ever return no
+	// decisions. The pipeline is nil unless a tick can fire at all, so this push is
+	// itself the enforcement point for INV-PS3'.
+	if c.loraPeriodic != nil {
+		heap.Push(&c.clusterEvents, clusterEventEntry{
+			event: &LoRAPeriodicTriggerEvent{At: c.clock + c.loraPeriodic.interval},
 			seqID: c.nextSeqID(),
 		})
 	}

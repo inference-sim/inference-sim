@@ -538,6 +538,27 @@ func (sim *Simulator) ResidentAdapterIDs() []string {
 	return sim.residentAdapters.ResidentIDs()
 }
 
+// UnpinnedAdapterIDs returns the resident, unpinned adapter ids — the eviction seam's
+// candidate set — in LRU→MRU (eviction-priority) order, or nil when none are evictable
+// or the LoRA subsystem is inert. Read by the cluster's periodic creation tick (Spec 3)
+// so a policy can tell a full-but-evictable instance from a full-and-fully-pinned one
+// without being handed the eviction decision itself. The returned slice is freshly
+// built, so the caller may sort it in place.
+func (sim *Simulator) UnpinnedAdapterIDs() []string {
+	if sim.residentAdapters == nil {
+		return nil
+	}
+	return sim.residentAdapters.UnpinnedCandidates()
+}
+
+// LoadingAdapter returns the adapter id occupying this instance's single serialized
+// load channel, or "" when the channel is free (which includes an inert subsystem).
+// Read by the cluster's periodic creation tick (Spec 3) both to inform the policy and
+// to drop a decision naming a busy instance at actuation.
+func (sim *Simulator) LoadingAdapter() string {
+	return sim.loadingAdapter
+}
+
 // DrainWaitQueue removes and returns all requests currently in the wait queue.
 // Used by DrainRedirect policy to re-inject queued requests into the cluster router.
 // After this call, WaitQ.Len() == 0.
@@ -1049,6 +1070,37 @@ func (sim *Simulator) buildEvictionContext() EvictionContext {
 	}
 }
 
+// waitQueueHeadIsColdMiss reports whether the wait-queue head is a new prefill
+// request whose adapter is not resident — the cold-miss condition the load gate acts
+// on (§7), and the "gate-blocked" state the cluster's periodic creation tick must
+// defer to (Spec 3).
+//
+// It exists as ONE definition with TWO callers on purpose: maybeStartAdapterLoad
+// below, and HasGateBlockedRequest, which the cluster reads to decide whether a
+// prefetch may take this instance's load channel. Inlining the condition in both
+// places would let the gate and the deferral rule drift apart silently — the
+// deferral would then protect a state the gate no longer recognises.
+//
+// False when the LoRA subsystem is inert (INV-6): with no resident set there is no
+// residency to miss.
+func (sim *Simulator) waitQueueHeadIsColdMiss() bool {
+	if sim.residentAdapters == nil {
+		return false
+	}
+	head := sim.WaitQ.Peek()
+	return head != nil && !head.IsDecodeSubRequest && head.Adapter != "" &&
+		!sim.residentAdapters.IsResident(head.Adapter)
+}
+
+// HasGateBlockedRequest reports whether a cold-miss request is waiting at this
+// instance's cold-load gate. Read by the cluster's periodic creation tick (Spec 3),
+// which drops any prefetch decision naming such an instance: the demand miss owns the
+// single serialized load channel, and a prefetch must never step in front of work
+// already visible here (demand priority).
+func (sim *Simulator) HasGateBlockedRequest() bool {
+	return sim.waitQueueHeadIsColdMiss()
+}
+
 // maybeStartAdapterLoad begins a serialized cold-adapter load when the wait-queue
 // head is a new prefill request whose adapter is not yet resident (§7). It runs
 // before batch formation each step. Loads serialize per instance: it starts at
@@ -1061,10 +1113,10 @@ func (sim *Simulator) maybeStartAdapterLoad(now int64) {
 	if sim.residentAdapters == nil || sim.adapterCost == nil || sim.evictionPolicy == nil || sim.loadingAdapter != "" {
 		return
 	}
-	head := sim.WaitQ.Peek()
-	if head == nil || head.IsDecodeSubRequest || head.Adapter == "" || sim.residentAdapters.IsResident(head.Adapter) {
+	if !sim.waitQueueHeadIsColdMiss() {
 		return
 	}
+	head := sim.WaitQ.Peek()
 	// Cold miss: route the admit decision through the creation seam (B-5, #1493).
 	// on-demand always admits (pre-B-5 behavior, no change). A policy returning
 	// false holds the request at the gate this step without starting a load — not a

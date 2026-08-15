@@ -45,6 +45,15 @@ type InstanceSimulator struct {
 	// maxNumSeqs stores cfg.BatchConfig.MaxNumSeqs at construction time.
 	// Exposed via MaxBatchSize() for the autoscaler pipeline.
 	maxNumSeqs int64
+
+	// adapterCapacity stores cfg.LoRAConfig.AdapterCapacity at construction time (0
+	// when unset, i.e. the LoRA subsystem is inert). Exposed via AdapterCapacity() for
+	// the periodic creation tick's context (Spec 3), following maxNumSeqs above
+	// exactly: capacity is a constructor argument to the resident adapter set and the
+	// ResidentAdapterSet interface deliberately exposes no capacity accessor (it is
+	// scoped to what the scheduling hook and the load gate consume), so the value is
+	// stored here rather than the interface widened for one read.
+	adapterCapacity int
 }
 
 // NewInstanceSimulator creates an InstanceSimulator from a SimConfig struct.
@@ -74,11 +83,16 @@ func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	if err != nil {
 		panic(fmt.Sprintf("NewInstanceSimulator(%s): %v", id, err))
 	}
+	adapterCapacity := 0
+	if cfg.AdapterCapacity != nil {
+		adapterCapacity = *cfg.AdapterCapacity
+	}
 	return &InstanceSimulator{
-		id:         id,
-		sim:        s,
-		gpu:        cfg.GPU,
-		maxNumSeqs: cfg.MaxNumSeqs,
+		id:              id,
+		sim:             s,
+		gpu:             cfg.GPU,
+		maxNumSeqs:      cfg.MaxNumSeqs,
+		adapterCapacity: adapterCapacity,
 	}
 }
 
@@ -184,6 +198,55 @@ func (i *InstanceSimulator) ResidentAdapterIDs() []string {
 		return nil
 	}
 	return i.sim.ResidentAdapterIDs()
+}
+
+// UnpinnedAdapterIDs returns this instance's resident, unpinned adapter ids — the
+// eviction seam's candidate set — in LRU→MRU order, or nil when none are evictable.
+// Read by the periodic creation tick's context builder (Spec 3), which sorts it.
+func (i *InstanceSimulator) UnpinnedAdapterIDs() []string {
+	if i.sim == nil {
+		return nil
+	}
+	return i.sim.UnpinnedAdapterIDs()
+}
+
+// AdapterCapacity returns the configured TOTAL number of resident adapter slots on
+// this instance (not the free ones), or 0 when the LoRA subsystem is inert.
+// Read by the periodic creation tick's context builder (Spec 3).
+func (i *InstanceSimulator) AdapterCapacity() int {
+	if i.sim == nil {
+		return 0
+	}
+	return i.adapterCapacity
+}
+
+// LoadingAdapter returns the adapter id occupying this instance's single serialized
+// adapter-load channel, or "" when the channel is free.
+func (i *InstanceSimulator) LoadingAdapter() string {
+	if i.sim == nil {
+		return ""
+	}
+	return i.sim.LoadingAdapter()
+}
+
+// HasGateBlockedRequest reports whether a cold-miss request is waiting at this
+// instance's cold-load gate — the state a prefetch must never step in front of.
+func (i *InstanceSimulator) HasGateBlockedRequest() bool {
+	if i.sim == nil {
+		return false
+	}
+	return i.sim.HasGateBlockedRequest()
+}
+
+// StartPrefetch begins a charged, non-blocking cold load of adapter on this instance at
+// the request of a periodic creation tick (Spec 3), returning whether a load started.
+// Delegates to the wrapped Simulator's seam, which owns slot reservation, the eviction
+// seam call, and the load-channel serialization — the cluster never names a victim.
+func (i *InstanceSimulator) StartPrefetch(nowUs int64, adapter string) bool {
+	if i.sim == nil {
+		return false
+	}
+	return i.sim.StartPrefetch(nowUs, adapter)
 }
 
 // KVUtilization returns the fraction of KV cache blocks in use.
