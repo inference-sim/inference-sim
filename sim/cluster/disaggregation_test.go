@@ -344,6 +344,65 @@ func TestDisaggregation_DroppedAtDecodeKV(t *testing.T) {
 	assertINV1Conservation(t, metrics, 4, "decode KV drops")
 }
 
+// TestDisaggregation_DroppedParent_NotInLatencyMaps verifies issue #1511 end to end:
+// a PD parent that reaches a terminal CompletionTime but emits NO token (decode-side
+// drop or decode-timeout-while-queued) must not appear in the reported latency
+// distributions (RequestTTFTs / RequestE2Es). It is represented only by the drop/
+// timeout counters. A served parent keeps its entries (BC-2). This is the integration
+// counterpart to TestPDParentMetrics_NoTokenExcludedFromLatency, driven through the
+// finalization path shared by blis run and blis replay (INV-13).
+func TestDisaggregation_DroppedParent_NotInLatencyMaps(t *testing.T) {
+	// Tight decode KV forces decode-side drops (same setup as
+	// TestDisaggregation_DroppedAtDecodeKV / the reservation-failure test).
+	config := newTestDisaggDeploymentConfig(3, 2, 1)
+	config.KVCacheConfig = sim.NewKVCacheConfig(3, 16, 0, 0, 0, 0)
+
+	requests := newShortRequests(4)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	if cs.droppedAtDecodeKV == 0 {
+		t.Fatal("droppedAtDecodeKV = 0, expected > 0 under tight decode KV")
+	}
+	m := cs.AggregatedMetrics()
+
+	var noTokenTerminal, servedTerminal int
+	for _, p := range cs.ParentRequests() {
+		if p.CompletionTime <= 0 || p.DecodeInstanceID == "" {
+			continue // not terminal (e.g. horizon-interrupted) — out of #1511 scope
+		}
+		servedFirstToken := p.DecodeSubReq != nil && len(p.DecodeSubReq.ITL) > 0
+		if servedFirstToken {
+			servedTerminal++
+			// BC-2: a served parent keeps its E2E entry (guards against over-exclusion).
+			if _, ok := m.RequestE2Es[p.ID]; !ok {
+				t.Errorf("served parent %s: missing E2E entry (fix over-excluded)", p.ID)
+			}
+			continue
+		}
+		// No-token terminal parent (#1511): absent from the latency distributions.
+		noTokenTerminal++
+		if _, ok := m.RequestTTFTs[p.ID]; ok {
+			t.Errorf("no-token parent %s present in RequestTTFTs (phantom TTFT, #1511)", p.ID)
+		}
+		if _, ok := m.RequestE2Es[p.ID]; ok {
+			t.Errorf("no-token parent %s present in RequestE2Es (phantom E2E, #1511)", p.ID)
+		}
+	}
+
+	// Guard against a vacuous pass: the tight-KV workload must actually produce a
+	// no-token terminal parent for the exclusion assertion to mean anything.
+	if noTokenTerminal == 0 {
+		t.Fatal("no no-token terminal parent found; drop scenario did not exercise the #1511 path")
+	}
+
+	// The dropped requests remain accounted for (not silently lost) and INV-1 holds.
+	if m.DroppedUnservable == 0 {
+		t.Error("DroppedUnservable = 0, expected the decode-side drops to be counted")
+	}
+	assertINV1Conservation(t, m, 4, "no-token drop exclusion (#1511)")
+}
+
 func TestDisaggregation_PhaseCausality(t *testing.T) {
 	// BC-PD-9 / INV-PD-4: Full causal chain for every disaggregated request
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
@@ -1194,10 +1253,10 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 		wantEntry      bool    // whether a parent-keyed TTFT entry is expected
 		wantTTFT       float64 // expected projected TTFT (when wantEntry)
 		// wantSum is the expected TTFTSum after projection (pre-projection baseline is 0
-		// in these stubs). It is stated explicitly per case rather than derived, so it
-		// models production exactly: the delta is applied ONLY when the primary branch
-		// takes the newTTFT path; every fallback (incl. the negative-TTFT guard) leaves
-		// TTFTSum at 0.
+		// in these stubs). It is stated explicitly per case rather than derived: the
+		// primary branch applies +（newTTFT − prefillTTFT); a served-token fallback (incl.
+		// the negative-TTFT guard) leaves TTFTSum untouched; and a no-token terminal parent
+		// rolls the deleted prefill TTFT out, applying −prefillTTFT (issue #1511).
 		wantSum int64
 	}{
 		{
@@ -1230,9 +1289,11 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 			wantEntry:      true, wantTTFT: prefillTTFT,
 		},
 		{
-			// FALLBACK: empty decode ITL ⇒ prefill-only (delay present, so this isolates
-			// the ITL guard).
-			name: "fallback: empty DecodeSubReq.ITL",
+			// NO-TOKEN: empty decode ITL (timeout-while-queued shape) ⇒ NO entry (#1511).
+			// The decode sub-request is non-nil but never ran a step, so it emitted no
+			// token. The deleted prefill TTFT is rolled out of TTFTSum (wantSum is the
+			// −prefillTTFT rollback delta off this stub's 0 baseline).
+			name: "no-token: empty DecodeSubReq.ITL ⇒ no entry",
 			parent: &ParentRequest{
 				ID: "p2", PrefillSubReqID: "p2_prefill", DecodeSubReqID: "p2_decode",
 				OriginalRequest: origReq,
@@ -1241,11 +1302,12 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 				DecodeSubReq: &sim.Request{ITL: nil},
 			},
 			setDecodeDelay: true, decodeDelay: 4000,
-			wantEntry: true, wantTTFT: prefillTTFT,
+			wantEntry: false, wantSum: -int64(prefillTTFT),
 		},
 		{
-			// FALLBACK: nil DecodeSubReq ⇒ prefill-only (delay present, isolates the nil guard).
-			name: "fallback: nil DecodeSubReq",
+			// NO-TOKEN: nil DecodeSubReq (decode-side drop) ⇒ NO entry (#1511). The deleted
+			// prefill TTFT is rolled out of TTFTSum (−prefillTTFT off this stub's 0 baseline).
+			name: "no-token: nil DecodeSubReq ⇒ no entry",
 			parent: &ParentRequest{
 				ID: "p3", PrefillSubReqID: "p3_prefill", DecodeSubReqID: "p3_decode",
 				OriginalRequest: origReq,
@@ -1254,7 +1316,7 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 				DecodeSubReq: nil,
 			},
 			setDecodeDelay: true, decodeDelay: 4000,
-			wantEntry: true, wantTTFT: prefillTTFT,
+			wantEntry: false, wantSum: -int64(prefillTTFT),
 		},
 		{
 			// BRANCH C: no prefill TTFT key ⇒ no entry (even with full decode data).
@@ -1345,11 +1407,10 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 				}
 			} else {
 				if ok {
-					t.Errorf("Branch C: unexpected TTFT entry for parent %s (no prefill key)", tc.parent.ID)
+					t.Errorf("parent %s: unexpected TTFT entry (no entry expected: no prefill key, or no-token terminal parent #1511)", tc.parent.ID)
 				}
-				// Branch C also makes no TTFTSum contribution.
 				if m.TTFTSum != tc.wantSum {
-					t.Errorf("Branch C: parent %s: TTFTSum = %d, want %d", tc.parent.ID, m.TTFTSum, tc.wantSum)
+					t.Errorf("parent %s: TTFTSum = %d, want %d", tc.parent.ID, m.TTFTSum, tc.wantSum)
 				}
 			}
 
