@@ -62,7 +62,7 @@ jobs:
             const body = context.payload.comment.body;
             const match = body.match(/--archon-ref\s+(\S+)/);
             const ref = match ? match[1] : 'v0.2.0';
-            if (!/^[a-zA-Z0-9._\/-]+$/.test(ref)) {
+            if (!/^[a-zA-Z0-9._/-]+$/.test(ref)) {
               core.setFailed(`Invalid archon ref: ${ref}`);
               return;
             }
@@ -70,8 +70,10 @@ jobs:
 
       - name: Build archon-go
         id: build
+        env:
+          ARCHON_REF: ${{ steps.parse.outputs.ref }}
         run: |
-          ARCHON_BIN=$(scripts/archon-build.sh "${{ steps.parse.outputs.ref }}")
+          ARCHON_BIN=$(scripts/archon-build.sh "$ARCHON_REF")
           [[ -n "$ARCHON_BIN" && -x "$ARCHON_BIN" ]] || { echo "::error::archon-build.sh produced no valid binary"; exit 1; }
           echo "archon_bin=$ARCHON_BIN" >> "$GITHUB_OUTPUT"
 
