@@ -37,7 +37,11 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 		return
 	}
 	if err := cs.placement.MarkNodeReady(e.nodeID); err != nil {
-		// Node may have been terminated before becoming ready — not a fatal error
+		// Two cases: (1) node terminated before becoming ready (a legitimate race), or
+		// (2) unknown node ID (a bookkeeping bug). Either way, pending instances awaiting
+		// this node are not retried here — log it rather than return silently (R1). Debug
+		// level: case (1) is expected and can be frequent under churn.
+		logrus.Debugf("[cluster] NodeReadyEvent: MarkNodeReady(%s): %v — pending retries skipped", e.nodeID, err)
 		return
 	}
 
@@ -71,7 +75,9 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 		// path too (mirrors the startup path). No-op when KVAutoCalc.Enabled is false.
 		applyPerInstanceKVCapacity(&p.simCfg, poolGPUMemoryGiB, cs.config.KVAutoCalc, p.gpuType)
 
-		if !cs.addLiveInstance(p.id, cs.config.Model, p.simCfg, p.nodeID, p.gpuIDs, p.tpDegree, poolCostPerHour) {
+		// #1529: cost = distinct-nodes-spanned × pool cost_per_hour (mirrors startup path).
+		instCost := cs.placement.InstanceCostPerHour(p.gpuIDs, poolCostPerHour)
+		if !cs.addLiveInstance(p.id, cs.config.Model, p.simCfg, p.nodeID, p.gpuIDs, p.tpDegree, instCost) {
 			continue // GPU release already handled by addLiveInstance
 		}
 	}

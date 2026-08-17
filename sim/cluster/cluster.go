@@ -308,6 +308,25 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	// Phase 1A: initialize PlacementManager when node pools are configured.
 	// Must happen BEFORE the unified construction loop so cs.placement is set.
 	if len(config.NodePools) > 0 {
+		// #1529: placement uses the GLOBAL config.TP to decide single-node vs
+		// whole-node spanning and to bill nodes-spanned × cost. A per-role TP
+		// override (--prefill-tp/--decode-tp) would make the simulated TP diverge
+		// from the placed/billed TP — wrong span decision, wrong cost, wrong KV
+		// capacity. Per-role placement does not exist yet, so reject the combination
+		// loudly rather than produce silently-wrong numbers (mirrors the INV-13
+		// Fatalf-on-unsupported-combination policy). Lifting this guard (a per-role
+		// placement path) is tracked by #1543.
+		for _, ov := range []struct {
+			name string
+			po   PoolOverrides
+		}{{"prefill", config.PrefillOverrides}, {"decode", config.DecodeOverrides}} {
+			if ov.po.TP != nil && *ov.po.TP != config.TP {
+				panic(fmt.Sprintf("ClusterSimulator: per-role tensor parallelism (%s pool TP=%d) is not supported with "+
+					"node_pools (global TP=%d): placement, node-span, and cost use the global TP, so a differing per-role "+
+					"TP would be simulated at one degree but placed/billed at another. Use a uniform --tp, or drop node_pools.",
+					ov.name, *ov.po.TP, config.TP))
+			}
+		}
 		provisionRng := rng.ForSubsystem(subsystemNodeProvisioning)
 		loadingRng := rng.ForSubsystem(subsystemInstanceLoading)
 		cs.placement = NewPlacementManager(config.NodePools, provisionRng, loadingRng, 0)
@@ -320,6 +339,12 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	if tpDegree < 1 {
 		tpDegree = 1 // default to TP=1 when not explicitly set (R3: defensive correction with comment)
 	}
+	// Deferral accounting (#1529): count instances that fail startup placement so we
+	// warn once after the loop instead of once per instance. NodeReadyEvent (the only
+	// path that retries pending instances) has no production caller in blis run, so a
+	// startup deferral means the instance is effectively dropped — surface it (R1).
+	var unplacedCount int
+	var unplacedFirstErr error
 	for idx := 0; idx < config.NumInstances; idx++ {
 		id := InstanceID(fmt.Sprintf("instance_%d", idx))
 		role := PoolRole(0)
@@ -336,6 +361,15 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			if err != nil {
 				// No capacity — defer construction until NodeReadyEvent.
 				// Pass "" as gpuType (any pool) to match AddPending's placement semantics.
+				// Collect deferrals here and warn ONCE after the loop (a cluster with
+				// InitialNodes=0 defers every instance — one summary, not N copies).
+				// Keep the FIRST error: instance_0's error is the most actionable (e.g.
+				// the structurally-unsatisfiable "regardless of capacity" message would
+				// otherwise be masked by a later instance's generic capacity error).
+				unplacedCount++
+				if unplacedFirstErr == nil {
+					unplacedFirstErr = err
+				}
 				cs.placement.AddPending(id, config.Model, "", tpDegree, simCfg)
 				continue
 			}
@@ -372,7 +406,9 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			inst.nodeID = nodeID
 			inst.allocatedGPUIDs = gpuIDs
 			inst.TPDegree = tpDegree
-			inst.CostPerHour = poolCostPerHour
+			// #1529: cost = distinct-nodes-spanned × pool cost_per_hour. Single-node
+			// instances are 1× (unchanged); a multi-node TP instance is billed per node.
+			inst.CostPerHour = cs.placement.InstanceCostPerHour(gpuIDs, poolCostPerHour)
 			inst.warmUpRemaining = config.InstanceLifecycle.WarmUpRequestCount
 			if config.InstanceLifecycle.WarmStartInitialInstances {
 				// Pre-deployed cluster: startup instances skip loading delay and start Active.
@@ -406,6 +442,17 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			instanceMap[id] = inst
 			cs.inFlightRequests[string(id)] = 0
 		}
+	}
+
+	// One summary warning for all startup placement deferrals (#1529). The first
+	// error text distinguishes a structurally-unsatisfiable request ("unsatisfiable
+	// regardless of capacity" — a config error worth fixing) from a transient
+	// shortfall; either way, NodeReady is not wired in blis run, so these instances
+	// will not be placed later.
+	if unplacedCount > 0 {
+		logrus.Warnf("[cluster] %d of %d instance(s) not placed at startup (first error: %v) — deferred to "+
+			"pending, but NodeReady is not wired in blis run, so they will not be placed later",
+			unplacedCount, config.NumInstances, unplacedFirstErr)
 	}
 
 	// Initialize snapshot provider with exactly the placed instances.

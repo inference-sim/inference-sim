@@ -438,9 +438,15 @@ preemption:
   policy: "priority"    # fcfs (default) or priority (least-urgent SLO tier evicted first)
 
 # Node pool infrastructure (Phase 1A — optional; omit for backward-compatible single-pool mode)
+# Two startup-guard constraints apply when node_pools are set (both panic at startup; #1537, tracked #1543):
+#   - gpu_type must be UNIQUE across pools (metadata is resolved by first-match on gpu_type).
+#   - a per-role TP override (--prefill-tp/--decode-tp) may not differ from the global --tp
+#     (placement, node-span, and cost all use the global TP).
+# An instance whose --tp exceeds a pool's gpus_per_node occupies whole nodes across the pool
+# (multi-node TP), when --tp is a whole multiple of gpus_per_node; see docs/guide/cluster.md.
 node_pools:
   - name: "gpu-pool-1"
-    gpu_type: "H100"      # pool-authoritative: overrides --gpu flag for GPU label (all backends) and hardware calibration (roofline/trained-physics backends); see issues #892/#893
+    gpu_type: "H100"      # pool-authoritative: overrides --gpu flag for GPU label (all backends) and hardware calibration (roofline/trained-physics backends); see issues #892/#893; must be unique across pools (#1537)
     gpus_per_node: 8
     gpu_memory_gib: 80.0
     initial_nodes: 2
@@ -576,7 +582,7 @@ Before any backend-specific logic runs, BLIS loads hardware/TP/vLLM-version defa
 !!! note "Per-instance capacity with mixed-GPU node pools (#1522)"
     When `node_pools` are configured (via `--policy-config`) and `--total-kv-blocks` is **not** explicitly set, each placed instance auto-calculates KV capacity from its **own** pool's `gpu_memory_gib` — not the single global `--hardware` GPU. So an H100 pool (80 GiB) and an L40S pool (48 GiB) serving the same role get different block counts. This applies to startup placement, deferred placement (nodes provisioned after start), and autoscaler-created instances. An explicit `--total-kv-blocks` disables this and forces a uniform global capacity across all instances (layer 1 above wins). A per-GPU capacity smaller than `--max-model-len` auto-caps that instance's `max-model-len` to the KV-feasible maximum. If a pool's memory is unavailable or the calc fails, that instance falls back to the global capacity with a warning. Node pools are `blis run` only.
 
-    **`gpu_type` is the hardware-identity key.** Per-GPU metadata (KV memory, cost, execution calibration) is resolved by matching `gpu_type` against the placed instance's GPU. If two pools share the same `gpu_type` but differ in `gpu_memory_gib`, the first-listed pool's memory is used for capacity — the same first-match behavior already used for `cost_per_hour` and `hw_config_by_gpu`. To model two hardware variants that differ in memory, give them distinct `gpu_type` strings (e.g., `A100-40` and `A100-80`) rather than the same type with different `gpu_memory_gib`.
+    **`gpu_type` is the hardware-identity key, and must be unique across pools.** Per-GPU metadata (KV memory, cost, execution calibration) is resolved by matching `gpu_type` against the placed instance's GPU. Because that lookup is first-match, two pools sharing a `gpu_type` would resolve ambiguously — so as of #1537 (multi-node TP, whose `nodes-spanned × cost_per_hour` multiplier makes a wrong cost lookup worse) **duplicate `gpu_type` across pools is rejected with a startup panic**. To model two hardware variants that differ in memory or cost, give them distinct `gpu_type` strings (e.g., `A100-40` and `A100-80`) rather than the same type with different `gpu_memory_gib`. (Making duplicate `gpu_type` legal via pool-identity lookup is tracked by #1543.)
 
 ## Coefficient Calibration
 
