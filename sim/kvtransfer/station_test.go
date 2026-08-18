@@ -160,6 +160,28 @@ func TestSubmitPoll_SingleJobCompletionTime(t *testing.T) {
 	}
 }
 
+// A Poll with a tick earlier than one already observed is a safe no-op: the
+// clock never moves backward (INV-3) and no completions are returned. The
+// documented precondition is a non-decreasing now; this verifies the station
+// degrades gracefully rather than misbehaving if a caller violates it.
+func TestPoll_BackwardIsSafeNoOp(t *testing.T) {
+	s := mustNew(t, oneTier(1, 0, 10, 10)) // serviceTicks = 10 + bytes
+	id, _ := s.Submit(TransferJob{Tier: 0, Direction: Read, Bytes: 0, SubmitTick: 100})
+	// Advance well past completion (job completes at tick 110).
+	if got := s.Poll(200); len(got) != 1 || got[0] != id {
+		t.Fatalf("expected job %d to complete by tick 200, got %v", id, got)
+	}
+	// A backward Poll returns nothing and does not disturb the clock.
+	if got := s.Poll(50); len(got) != 0 {
+		t.Fatalf("backward Poll returned %v, want none", got)
+	}
+	// A subsequent forward Poll still returns nothing (the job already drained),
+	// confirming the backward Poll left the clock intact.
+	if got := s.Poll(300); len(got) != 0 {
+		t.Fatalf("forward Poll after backward no-op returned %v, want none", got)
+	}
+}
+
 // BC-S1: in-service jobs per tier never exceed NRead+NWrite, under arrival storms.
 // Also checks conservation: every accepted job completes exactly once.
 func TestBCS1_NeverExceedServers(t *testing.T) {
