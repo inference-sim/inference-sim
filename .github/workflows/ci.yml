@@ -32,7 +32,7 @@ jobs:
             packages: "./sim/cluster"
             timeout: "15m"
           - name: "core packages"
-            packages: "./sim ./sim/kv ./sim/trace"
+            packages: "./sim ./sim/kv ./sim/kvtransfer ./sim/trace"
             timeout: "10m"
           - name: "latency models"
             packages: "./sim/latency"
