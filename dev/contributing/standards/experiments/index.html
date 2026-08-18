@@ -3805,13 +3805,13 @@
 </ul>
 <h3 id="how-to-choose-your-vvuq-category">How to choose your VV&amp;UQ category<a class="headerlink" href="#how-to-choose-your-vvuq-category" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Is your hypothesis about whether the CODE is correct?
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>  → Yes: Verification (e.g., &quot;conservation holds,&quot; &quot;deterministic output&quot;)
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>  → Yes: Verification (e.g., "conservation holds," "deterministic output")
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>  → No: ↓
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>Is your hypothesis comparing the MODEL&#39;s output to expected behavior?
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>  → Yes: Validation (e.g., &quot;policy A beats B,&quot; &quot;TTFT ∝ input tokens&quot;)
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>Is your hypothesis comparing the MODEL's output to expected behavior?
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>  → Yes: Validation (e.g., "policy A beats B," "TTFT ∝ input tokens")
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>  → No: ↓
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>Is your hypothesis about the BOUNDARIES or CONFIDENCE of a finding?
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>  → Yes: UQ (e.g., &quot;preemption cliff at 2100±100 blocks,&quot; &quot;P(stable) &gt; 0.95&quot;)
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>  → Yes: UQ (e.g., "preemption cliff at 2100±100 blocks," "P(stable) &gt; 0.95")
 </code></pre></div>
 <p>The VV&amp;UQ category determines what counts as evidence:
 - <strong>Verification:</strong> Exact invariant checks. One failure = bug. Single seed sufficient.
@@ -4174,14 +4174,14 @@
 <p>Evidence: H10 proposed <code>maybeOffload</code> as the mechanism. The control experiment (threshold=1.0) produced output byte-identical to single-tier, confirming <code>maybeOffload</code> as the sole cause. Without this control, the mechanism question ("does maybeOffload cause the TTFT improvement?") would have remained unverified.</p>
 <h3 id="rcv-5-confirmation-bias-guard-devils-advocate">RCV-5: Confirmation bias guard (Devil's Advocate)<a class="headerlink" href="#rcv-5-confirmation-bias-guard-devils-advocate" title="Permanent link">&para;</a></h3>
 <p>Before sending FINDINGS.md to external review, the experimenter must write a <strong>Devil's Advocate</strong> section: 2-3 sentences arguing the <strong>opposite</strong> of the conclusion. This is a pre-review self-check that forces consideration of alternative interpretations.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="gu">## Devil&#39;s Advocate</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="gu">## Devil's Advocate</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="gs">**If this is &quot;Confirmed,&quot; argue why it might be Refuted:**</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="gs">**If this is "Confirmed," argue why it might be Refuted:**</span>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>The 69x TTFT improvement could be entirely from load shedding (96% rejection)
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>rather than burst smoothing. A firewall that blocks all traffic also has great
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>latency for the requests that pass.
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="gs">**If this is &quot;Refuted,&quot; argue why it might be Confirmed:**</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="gs">**If this is "Refuted," argue why it might be Confirmed:**</span>
 <a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>The calibrated bucket (cap=100K) showed a 4% improvement — small but consistent
 <a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>across 2 of 3 seeds. This might be a real but tiny burst-smoothing effect masked
 <a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>by workload noise.

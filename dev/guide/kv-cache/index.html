@@ -1148,6 +1148,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Tiered Caching (GPU + CPU Offload)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#multi-tier-offload-config-surface-kv-offload-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Multi-Tier Offload Config Surface (--kv-offload-config)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2802,6 +2819,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Tiered Caching (GPU + CPU Offload)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#multi-tier-offload-config-surface-kv-offload-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Multi-Tier Offload Config Surface (--kv-offload-config)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2966,12 +3000,56 @@
 </tr>
 </tbody>
 </table>
+<h3 id="multi-tier-offload-config-surface-kv-offload-config">Multi-Tier Offload Config Surface (<code>--kv-offload-config</code>)<a class="headerlink" href="#multi-tier-offload-config-surface-kv-offload-config" title="Permanent link">&para;</a></h3>
+<p>The scalar flags above cover the single CPU tier. For vLLM's <strong>multi-tier</strong> offload
+(CPU → disk / object store), BLIS captures the full config surface through one strict-YAML
+file — <code>--kv-offload-config &lt;path&gt;</code> — with a single top-level <code>kv_offload:</code> block. This
+mirrors <code>--lora-config</code> / <code>--saturation-config</code>: absent ⇒ the offload subsystem is inert and
+output is byte-identical to a build without it.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--kv-offload-config<span class="w"> </span>offload.yaml
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">kv_offload</span><span class="p">:</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">cpu_bytes_to_use</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">17179869184</span><span class="w">     </span><span class="c1"># required when the block is present</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">block_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span><span class="w">                    </span><span class="c1"># optional; default = GPU block size (mutually</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">                                    </span><span class="c1">#   exclusive with blocks_per_chunk)</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="c1"># blocks_per_chunk: 1             # alternate encoding of block_size (default 1)</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span><span class="nt">eviction_policy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lru</span><span class="w">              </span><span class="c1"># lru | arc  (default lru)</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">offload_prompt_only</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">         </span><span class="c1"># vLLM DEFAULT — decode KV is NOT offloaded unless false</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">  </span><span class="c1"># self_describing_kv_events: false</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">  </span><span class="c1"># tokens_per_hash: 16             # default = GPU block size</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">  </span><span class="nt">secondary_tiers</span><span class="p">:</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fs</span><span class="w">                      </span><span class="c1"># only "fs" is representable today; obj/p2p error loudly</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">      </span><span class="nt">root_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/mnt/kv-cache</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">      </span><span class="nt">n_read_threads</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span><span class="w">            </span><span class="c1"># vLLM default 16</span>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">      </span><span class="nt">n_write_threads</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span><span class="w">           </span><span class="c1"># vLLM default 16</span>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">      </span><span class="nt">locality</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">LOCAL</span><span class="w">               </span><span class="c1"># LOCAL | REMOTE (optional)</span>
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">      </span><span class="nt">direct_io</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">               </span><span class="c1"># REQUIRED — BLIS makes vLLM's runtime O_DIRECT probe explicit</span>
+<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">      </span><span class="nt">device_class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nvme_gen4</span><span class="w">       </span><span class="c1"># resolves read/write bandwidth + latency from defaults.yaml</span>
+<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">      </span><span class="c1"># read_bandwidth: 7000.0      # bytes/µs — overrides device_class (per-direction, required as a pair)</span>
+<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">      </span><span class="c1"># write_bandwidth: 5000.0</span>
+<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">      </span><span class="c1"># base_latency: 80.0          # µs</span>
+</code></pre></div>
+<p>Defaults match vLLM knob-for-knob. Anything vLLM accepts either maps to a BLIS config or
+fails <strong>loudly</strong> at startup — never silently ignored: <code>store_threshold &gt;= 2</code> is rejected
+(vLLM's <code>TieringOffloadingSpec</code> rejects it), and <code>obj</code>/<code>p2p</code>/<code>example</code> tier types are rejected
+(no faithful BLIS mapping yet). <code>device_class</code> names resolve against the <code>kv_offload_devices:</code>
+block shipped in <code>defaults.yaml</code> (bandwidth in bytes/µs, latency in µs); an explicit
+<code>read_bandwidth</code>/<code>write_bandwidth</code>/<code>base_latency</code> triple overrides the class.</p>
+<p>The resolved config is recorded in the exported trace header, so a <code>blis run --trace-output</code>
+round-trips through <code>blis replay</code> (INV-13): on replay the header is authoritative and a config
+the binary cannot reproduce fails loudly rather than silently degrading to single-tier.</p>
+<div class="admonition note">
+<p class="admonition-title">Config surface only (today)</p>
+<p><code>--kv-offload-config</code> currently <strong>captures and validates</strong> the offload configuration; the
+multi-tier transfer/keying mechanisms that consume these knobs are landing separately.
+With no <code>--kv-offload-config</code>, behavior is unchanged.</p>
+</div>
 <h2 id="chunked-prefill">Chunked Prefill<a class="headerlink" href="#chunked-prefill" title="Permanent link">&para;</a></h2>
 <p>Long prefill sequences can cause <strong>head-of-line (HOL) blocking</strong> — a 2,048-token prefill takes ~97ms on Qwen3-14B / H100 / TP=1 (roofline mode), blocking shorter requests from starting.</p>
 <p>Chunked prefill splits long prefills into smaller chunks:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--long-prefill-token-threshold<span class="w"> </span><span class="m">256</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--long-prefill-token-threshold<span class="w"> </span><span class="m">256</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
 <div class="admonition info">
 <p class="admonition-title">Chunked prefill benefits TTFT, not ITL</p>
@@ -3003,13 +3081,13 @@
 <p>These are the primary capacity knobs — in vLLM terms, <code>max_num_seqs</code> and <code>max_num_batched_tokens</code>. Reducing them decreases KV cache pressure but also reduces throughput.</p>
 <h2 id="identifying-the-kv-pressure-cliff">Identifying the KV Pressure Cliff<a class="headerlink" href="#identifying-the-kv-pressure-cliff" title="Permanent link">&para;</a></h2>
 <p>Preemption rates spike non-linearly as KV blocks decrease past a threshold. The threshold depends on your workload's <strong>median</strong> token count (not mean or tail):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Sweep KV blocks to find the cliff</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="k">for</span><span class="w"> </span>blocks<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">100000</span><span class="w"> </span><span class="m">50000</span><span class="w"> </span><span class="m">20000</span><span class="w"> </span><span class="m">10000</span><span class="w"> </span><span class="m">5000</span><span class="w"> </span><span class="m">3000</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;=== blocks=</span><span class="nv">$blocks</span><span class="s2"> ===&quot;</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span>--total-kv-blocks<span class="w"> </span><span class="nv">$blocks</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">50</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">    </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s2">&quot;preemption_count|completed_requests&quot;</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="k">done</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Sweep KV blocks to find the cliff</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="k">for</span><span class="w"> </span>blocks<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">100000</span><span class="w"> </span><span class="m">50000</span><span class="w"> </span><span class="m">20000</span><span class="w"> </span><span class="m">10000</span><span class="w"> </span><span class="m">5000</span><span class="w"> </span><span class="m">3000</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"=== blocks=</span><span class="nv">$blocks</span><span class="s2"> ==="</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">    </span>--total-kv-blocks<span class="w"> </span><span class="nv">$blocks</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">50</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">    </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s2">"preemption_count|completed_requests"</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="k">done</span>
 </code></pre></div>
 <div class="admonition tip">
 <p class="admonition-title">Distribution median drives KV pressure</p>

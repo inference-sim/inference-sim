@@ -3997,7 +3997,7 @@
 <h4 id="filing-pre-existing-issues">Filing Pre-Existing Issues<a class="headerlink" href="#filing-pre-existing-issues" title="Permanent link">&para;</a></h4>
 <p>Review passes naturally surface pre-existing bugs in surrounding code. These are valuable discoveries but outside the current PR's scope.</p>
 <p><strong>Rule:</strong> File a GitHub issue immediately. Do not fix in the current PR.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>gh<span class="w"> </span>issue<span class="w"> </span>create<span class="w"> </span>--title<span class="w"> </span><span class="s2">&quot;Bug: &lt;concise description&gt;&quot;</span><span class="w"> </span>--body<span class="w"> </span><span class="s2">&quot;&lt;location, impact, discovery context&gt;&quot;</span><span class="w"> </span>--label<span class="w"> </span>bug
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>gh<span class="w"> </span>issue<span class="w"> </span>create<span class="w"> </span>--title<span class="w"> </span><span class="s2">"Bug: &lt;concise description&gt;"</span><span class="w"> </span>--body<span class="w"> </span><span class="s2">"&lt;location, impact, discovery context&gt;"</span><span class="w"> </span>--label<span class="w"> </span>bug
 </code></pre></div>
 <p><strong>Label guide:</strong> Use <code>bug</code> for code defects, <code>design</code> for design limitations, <code>enhancement</code> for feature gaps, <code>hardening</code> for correctness/invariant issues. Every issue must have at least one label — unlabeled issues are invisible in filtered views.</p>
 <p><strong>After filing:</strong> Reference the issue number in the PR description under a "Discovered Issues" section so reviewers know it was found and tracked.</p>
@@ -4044,14 +4044,14 @@
 <h3 id="step-5-commit-push-and-create-pr">Step 5: Commit, Push, and Create PR<a class="headerlink" href="#step-5-commit-push-and-create-pr" title="Permanent link">&para;</a></h3>
 <p>Stage your changes, commit, push, and create a PR:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>git<span class="w"> </span>add<span class="w"> </span>&lt;files&gt;
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(scope): &lt;description&gt;</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">"feat(scope): &lt;description&gt;</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="s2">- Implement BC-1: &lt;brief description&gt;</span>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="s2">- Implement BC-2: &lt;brief description&gt;</span>
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="s2">Co-Authored-By: Claude &lt;noreply@anthropic.com&gt;&quot;</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="s2">Co-Authored-By: Claude &lt;noreply@anthropic.com&gt;"</span>
 <a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>git<span class="w"> </span>push<span class="w"> </span>-u<span class="w"> </span>origin<span class="w"> </span>&lt;branch-name&gt;
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>gh<span class="w"> </span>pr<span class="w"> </span>create<span class="w"> </span>--title<span class="w"> </span><span class="s2">&quot;&lt;title&gt;&quot;</span><span class="w"> </span>--body<span class="w"> </span><span class="s2">&quot;&lt;description with behavioral contracts&gt;&quot;</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>gh<span class="w"> </span>pr<span class="w"> </span>create<span class="w"> </span>--title<span class="w"> </span><span class="s2">"&lt;title&gt;"</span><span class="w"> </span>--body<span class="w"> </span><span class="s2">"&lt;description with behavioral contracts&gt;"</span>
 </code></pre></div>
 <p>The PR description should include a summary, behavioral contracts (GIVEN/WHEN/THEN), testing verification, and GitHub closing keywords from the plan's <code>Closes:</code> field (e.g., <code>Fixes #183, fixes #189</code>).</p>
 <div class="admonition tip">
@@ -4161,17 +4161,17 @@
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>.review
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
 <a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="c1"># Run each pass in its own context (no overflow)</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>claude<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Pass 1: Code quality review of branch </span><span class="nv">$BRANCH</span><span class="s2">. Write findings to .review/01-code-quality.md&quot;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span>--allowedTools<span class="w"> </span><span class="s2">&quot;Read,Grep,Glob,Bash&quot;</span><span class="w"> </span><span class="p">&amp;</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>claude<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Pass 2: Test behavioral quality review. Write findings to .review/02-test-quality.md&quot;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">  </span>--allowedTools<span class="w"> </span><span class="s2">&quot;Read,Grep,Glob,Bash&quot;</span><span class="w"> </span><span class="p">&amp;</span>
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>claude<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Pass 3: Getting-started review. Write findings to .review/03-getting-started.md&quot;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">  </span>--allowedTools<span class="w"> </span><span class="s2">&quot;Read,Grep,Glob,Bash&quot;</span><span class="w"> </span><span class="p">&amp;</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>claude<span class="w"> </span>-p<span class="w"> </span><span class="s2">"Pass 1: Code quality review of branch </span><span class="nv">$BRANCH</span><span class="s2">. Write findings to .review/01-code-quality.md"</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span>--allowedTools<span class="w"> </span><span class="s2">"Read,Grep,Glob,Bash"</span><span class="w"> </span><span class="p">&amp;</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>claude<span class="w"> </span>-p<span class="w"> </span><span class="s2">"Pass 2: Test behavioral quality review. Write findings to .review/02-test-quality.md"</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">  </span>--allowedTools<span class="w"> </span><span class="s2">"Read,Grep,Glob,Bash"</span><span class="w"> </span><span class="p">&amp;</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>claude<span class="w"> </span>-p<span class="w"> </span><span class="s2">"Pass 3: Getting-started review. Write findings to .review/03-getting-started.md"</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">  </span>--allowedTools<span class="w"> </span><span class="s2">"Read,Grep,Glob,Bash"</span><span class="w"> </span><span class="p">&amp;</span>
 <a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="nb">wait</span>
 <a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>
 <a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="c1"># Lightweight consolidation</span>
-<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>claude<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Read .review/*.md files. Produce a consolidated summary sorted by severity.&quot;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="w">  </span>--allowedTools<span class="w"> </span><span class="s2">&quot;Read,Glob&quot;</span>
+<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>claude<span class="w"> </span>-p<span class="w"> </span><span class="s2">"Read .review/*.md files. Produce a consolidated summary sorted by severity."</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="w">  </span>--allowedTools<span class="w"> </span><span class="s2">"Read,Glob"</span>
 </code></pre></div>
 <p>When to use: When Step 2.5 or Step 4.5 hits context limits. Not needed for most PRs.</p>
 <hr />

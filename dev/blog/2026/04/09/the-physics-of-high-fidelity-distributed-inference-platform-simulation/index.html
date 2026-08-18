@@ -3078,12 +3078,12 @@
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="c1"># H100 with prefix-aware routing</span>
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--workload<span class="w"> </span>chatbot<span class="w"> </span>--rate<span class="w"> </span><span class="m">50</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span><span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span>--routing-scorers<span class="w"> </span><span class="s2">&quot;prefix-affinity:2,queue-depth:1&quot;</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span>--routing-scorers<span class="w"> </span><span class="s2">"prefix-affinity:2,queue-depth:1"</span>
 <a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
 <a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="c1"># A100-80 with prefix-aware routing</span>
 <a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--workload<span class="w"> </span>chatbot<span class="w"> </span>--rate<span class="w"> </span><span class="m">50</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span><span class="w"> </span>--hardware<span class="w"> </span>A100-80<span class="w"> </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">  </span>--routing-scorers<span class="w"> </span><span class="s2">&quot;prefix-affinity:2,queue-depth:1&quot;</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">  </span>--routing-scorers<span class="w"> </span><span class="s2">"prefix-affinity:2,queue-depth:1"</span>
 </code></pre></div>
 <p><strong>Simulated Results:</strong></p>
 <table>
