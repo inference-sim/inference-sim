@@ -107,7 +107,7 @@ func resolveKVOffload(block *kvOffloadBlock, devices map[string]KVOffloadDeviceD
 		return sim.KVOffloadConfig{}, fmt.Errorf("kv_offload: the --kv-offload-config file has no top-level kv_offload: block")
 	}
 	if gpuBlockSizeTokens <= 0 {
-		return sim.KVOffloadConfig{}, fmt.Errorf("kv_offload: internal error — GPU block size must be > 0, got %d", gpuBlockSizeTokens)
+		return sim.KVOffloadConfig{}, fmt.Errorf("kv_offload: GPU block size (--block-size-in-tokens) must be > 0, got %d", gpuBlockSizeTokens)
 	}
 	cfg := sim.KVOffloadConfig{Enabled: true}
 
@@ -117,9 +117,15 @@ func resolveKVOffload(block *kvOffloadBlock, devices map[string]KVOffloadDeviceD
 	}
 	cfg.CPUBytesToUse = *block.CPUBytesToUse
 
-	// store_threshold: reject >= 2 (vLLM TieringOffloadingSpec); nil/0/1 are a no-op.
-	if block.StoreThreshold != nil && *block.StoreThreshold >= 2 {
-		return cfg, fmt.Errorf("kv_offload: store_threshold=%d: store_threshold is not supported for TieringOffloadingSpec (values >= 2 are rejected; it is single-tier-only and fixed at 1 on the multi-tier offload path)", *block.StoreThreshold)
+	// store_threshold: reject < 0 (invalid) and >= 2 (vLLM TieringOffloadingSpec
+	// rejects it); 0/1 are accepted as a no-op on the multi-tier path (vLLM parity).
+	if block.StoreThreshold != nil {
+		if *block.StoreThreshold < 0 {
+			return cfg, fmt.Errorf("kv_offload: store_threshold must be >= 0, got %d", *block.StoreThreshold)
+		}
+		if *block.StoreThreshold >= 2 {
+			return cfg, fmt.Errorf("kv_offload: store_threshold=%d: store_threshold is not supported for TieringOffloadingSpec (values >= 2 are rejected; it is single-tier-only and fixed at 1 on the multi-tier offload path)", *block.StoreThreshold)
+		}
 	}
 
 	// block_size XOR blocks_per_chunk (mutually exclusive alternate encodings of the
@@ -142,9 +148,12 @@ func resolveKVOffload(block *kvOffloadBlock, devices map[string]KVOffloadDeviceD
 		}
 		cfg.BlocksPerChunk = bpc
 		cfg.BlockSize = bpc * gpuBlockSizeTokens
+		if cfg.BlockSize/gpuBlockSizeTokens != bpc { // int64 overflow guard
+			return cfg, fmt.Errorf("kv_offload: blocks_per_chunk (%d) is too large — block_size = blocks_per_chunk × gpu_block_size (%d) would overflow int64", bpc, gpuBlockSizeTokens)
+		}
 	default:
-		cfg.BlocksPerChunk = 1               // vLLM default
-		cfg.BlockSize = gpuBlockSizeTokens   // vLLM default = GPU block size
+		cfg.BlocksPerChunk = 1             // vLLM default
+		cfg.BlockSize = gpuBlockSizeTokens // vLLM default = GPU block size
 	}
 
 	// tokens_per_hash: vLLM has no default (required); BLIS defaults to the GPU block
@@ -343,6 +352,7 @@ func simToHeaderOffload(c sim.KVOffloadConfig) *workload.TraceKVOffloadConfig {
 //   - a --kv-offload-config flag is accepted only if it resolves identical to the
 //     header (INV-13 "identical flags"); a genuine mismatch ⇒ Fatalf;
 //   - a flag that would ADD offload to a trace captured without it ⇒ Fatalf.
+//
 // Returns the inert zero value when the trace carries no offload config.
 func reconcileReplayKVOffload(cmd *cobra.Command, headerBlock *workload.TraceKVOffloadConfig) sim.KVOffloadConfig {
 	flagChanged := cmd.Flags().Changed("kv-offload-config")

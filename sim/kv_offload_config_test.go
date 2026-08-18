@@ -197,9 +197,20 @@ func TestKVOffloadConfig_ReadOnly_BC_G4(t *testing.T) {
 				}
 			case *ast.AssignStmt:
 				for _, lhs := range node.Lhs {
-					if sel, ok := lhs.(*ast.SelectorExpr); ok && sel.Sel.Name == "Offload" {
+					sel, ok := lhs.(*ast.SelectorExpr)
+					if !ok {
+						continue
+					}
+					// Whole-field write: x.Offload = ...
+					if sel.Sel.Name == "Offload" {
 						pos := fset.Position(sel.Pos())
 						t.Errorf("%s:%d: assignment to .Offload outside the allow-list — the offload sub-config is read-only after construction (BC-G4)", name, pos.Line)
+					}
+					// Deep write into the sub-config: x.Offload.Field = ... (the LHS
+					// receiver is itself a selector whose leaf is "Offload").
+					if inner, ok := sel.X.(*ast.SelectorExpr); ok && inner.Sel.Name == "Offload" {
+						pos := fset.Position(sel.Pos())
+						t.Errorf("%s:%d: assignment into .Offload.%s outside the allow-list — the offload sub-config is read-only after construction (BC-G4)", name, pos.Line, sel.Sel.Name)
 					}
 				}
 			}

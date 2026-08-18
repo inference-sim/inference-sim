@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,6 +12,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 // testDevices is a fixed device map for resolver tests (independent of defaults.yaml).
@@ -185,9 +187,10 @@ func TestResolveKVOffload_Rejects(t *testing.T) {
 		mutate   func(*kvOffloadBlock)
 		wantFrag string
 	}{
-		{"nil block handled elsewhere: missing cpu_bytes", func(b *kvOffloadBlock) { b.CPUBytesToUse = nil }, "cpu_bytes_to_use"},
+		{"missing cpu_bytes", func(b *kvOffloadBlock) { b.CPUBytesToUse = nil }, "cpu_bytes_to_use"},
 		{"store_threshold 2", func(b *kvOffloadBlock) { b.StoreThreshold = intp(2) }, "TieringOffloadingSpec"},
 		{"store_threshold 5", func(b *kvOffloadBlock) { b.StoreThreshold = intp(5) }, "TieringOffloadingSpec"},
+		{"store_threshold negative", func(b *kvOffloadBlock) { b.StoreThreshold = intp(-1) }, "store_threshold must be >= 0"},
 		{"both block sizes", func(b *kvOffloadBlock) { b.BlockSize = i64p(16); b.BlocksPerChunk = i64p(1) }, "mutually exclusive"},
 		{"block_size not multiple", func(b *kvOffloadBlock) { b.BlockSize = i64p(20) }, "multiple of the GPU block size"},
 		{"tokens_per_hash zero", func(b *kvOffloadBlock) { b.TokensPerHash = i64p(0) }, "tokens_per_hash"},
@@ -254,14 +257,18 @@ func TestKVOffloadHeaderConversion_RoundTrip(t *testing.T) {
 	}
 }
 
-// T7/BC-G3: metamorphic round-trip fuzz. Any bytes that parse+resolve+validate must
-// survive sim→header→marshal→unmarshal→header→sim unchanged (INV-13 idempotence). Also
-// asserts the resolver/loader never panic.
+// T7/BC-G3 + INV-13: metamorphic round-trip fuzz. Any bytes that parse+resolve+validate
+// must survive the FULL trace-header serialization path unchanged —
+// sim→header→yaml.Marshal→strict-decode→header→sim (the exact primitives ExportTraceV2
+// and LoadTraceV2 use). This exercises the YAML tags and omitempty rules of
+// TraceKVOffloadConfig/TraceKVOffloadTier (not just in-memory converter idempotence),
+// and asserts the loader/resolver never panic on arbitrary parseable YAML.
 func FuzzKVOffloadRoundTrip(f *testing.F) {
 	f.Add("kv_offload:\n  cpu_bytes_to_use: 17179869184\n  secondary_tiers:\n    - {type: fs, root_dir: /mnt, direct_io: true, device_class: nvme_gen4}\n")
 	f.Add("kv_offload:\n  cpu_bytes_to_use: 1024\n  store_threshold: 3\n")
 	f.Add("kv_offload:\n  cpu_bytes_to_use: 1024\n  block_size: 16\n  blocks_per_chunk: 1\n")
 	f.Add("kv_offload:\n  cpu_bytes_to_use: 1024\n  secondary_tiers:\n    - {type: p2p, root_dir: /x, direct_io: true}\n")
+	f.Add("kv_offload:\n  cpu_bytes_to_use: 1024\n  secondary_tiers:\n    - {type: fs, root_dir: /m, direct_io: false, read_bandwidth: 100.0, write_bandwidth: 50.0, base_latency: 0.0, locality: REMOTE, enable_kv_events: true}\n")
 	f.Add("not yaml: [")
 	devices := testDevices()
 	f.Fuzz(func(t *testing.T, data string) {
@@ -273,9 +280,24 @@ func FuzzKVOffloadRoundTrip(f *testing.F) {
 		if err != nil {
 			return // invalid config — resolver correctly rejects
 		}
-		back := headerToSimOffload(simToHeaderOffload(cfg))
+		// Serialize through the real trace-header YAML path.
+		hdr := &workload.TraceHeader{
+			Version: 3, TimeUnit: "microseconds", Mode: "generated",
+			KVOffload: simToHeaderOffload(cfg),
+		}
+		out, err := yaml.Marshal(hdr)
+		if err != nil {
+			t.Fatalf("marshal header for %q: %v", data, err)
+		}
+		dec := yaml.NewDecoder(bytes.NewReader(out))
+		dec.KnownFields(true) // same strictness as LoadTraceV2
+		var got workload.TraceHeader
+		if err := dec.Decode(&got); err != nil {
+			t.Fatalf("strict-decode of self-marshaled header failed for %q: %v\n%s", data, err, out)
+		}
+		back := headerToSimOffload(got.KVOffload)
 		if !reflect.DeepEqual(cfg, back) {
-			t.Fatalf("round-trip not idempotent for input %q:\n got  %+v\n want %+v", data, back, cfg)
+			t.Fatalf("YAML round-trip not idempotent for input %q:\n got  %+v\n want %+v", data, back, cfg)
 		}
 	})
 }
