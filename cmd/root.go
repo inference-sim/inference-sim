@@ -1467,6 +1467,11 @@ var runCmd = &cobra.Command{
 		loraCfg := resolveLoRAConfig(cmd)
 		loraReservedBytesForKV = adapterReservedBytesFor(loraCfg)
 
+		// KV-cache offload config surface (#1587): resolve ONCE (R4), validated at the
+		// CLI boundary. Inert (zero value) when --kv-offload-config is absent (BC-G5).
+		// Recorded in the exported trace header below for run/replay parity (BC-G6).
+		kvOffloadCfg := resolveKVOffloadConfig(cmd)
+
 		// Resolve latency backend configuration (single code path shared with replayCmd).
 		lr := resolveLatencyConfig(cmd)
 
@@ -2053,7 +2058,8 @@ var runCmd = &cobra.Command{
 				Horizon: simulationHorizon,
 				Seed:    seed,
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
-					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
+					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency,
+					sim.WithKVOffload(kvOffloadCfg)),
 				BatchConfig:          sim.NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:        sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
 				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dataParallelism, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen),
@@ -2241,7 +2247,8 @@ var runCmd = &cobra.Command{
 				TimeUnit:          "microseconds",
 				Mode:              "generated",
 				WorkloadSeed:      &spec.Seed,
-				GoodputSLOTargets: goodputTargets, // #1413, BC-7: persist resolved targets for downstream replay/calibrate
+				GoodputSLOTargets: goodputTargets,               // #1413, BC-7: persist resolved targets for downstream replay/calibrate
+				KVOffload:         simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: nil when inert (omitted); round-trips resolved config
 			}
 			if err := workload.ExportTraceV2(header, records, traceOutput+".yaml", traceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)

@@ -74,6 +74,57 @@ BLIS models tiered KV cache with GPU→CPU offloading:
 | `--kv-transfer-bandwidth` | 100.0 | GPU→CPU transfer rate in blocks/tick |
 | `--kv-transfer-base-latency` | 0 | Fixed per-transfer latency in ticks |
 
+### Multi-Tier Offload Config Surface (`--kv-offload-config`)
+
+The scalar flags above cover the single CPU tier. For vLLM's **multi-tier** offload
+(CPU → disk / object store), BLIS captures the full config surface through one strict-YAML
+file — `--kv-offload-config <path>` — with a single top-level `kv_offload:` block. This
+mirrors `--lora-config` / `--saturation-config`: absent ⇒ the offload subsystem is inert and
+output is byte-identical to a build without it.
+
+```bash
+./blis run --model qwen/qwen3-14b --kv-offload-config offload.yaml
+```
+
+```yaml
+kv_offload:
+  cpu_bytes_to_use: 17179869184     # required when the block is present
+  block_size: 16                    # optional; default = GPU block size (mutually
+                                    #   exclusive with blocks_per_chunk)
+  # blocks_per_chunk: 1             # alternate encoding of block_size (default 1)
+  eviction_policy: lru              # lru | arc  (default lru)
+  offload_prompt_only: true         # vLLM DEFAULT — decode KV is NOT offloaded unless false
+  # self_describing_kv_events: false
+  # tokens_per_hash: 16             # default = GPU block size
+  secondary_tiers:
+    - type: fs                      # only "fs" is representable today; obj/p2p error loudly
+      root_dir: /mnt/kv-cache
+      n_read_threads: 16            # vLLM default 16
+      n_write_threads: 16           # vLLM default 16
+      locality: LOCAL               # LOCAL | REMOTE (optional)
+      direct_io: true               # REQUIRED — BLIS makes vLLM's runtime O_DIRECT probe explicit
+      device_class: nvme_gen4       # resolves read/write bandwidth + latency from defaults.yaml
+      # read_bandwidth: 7000.0      # bytes/µs — overrides device_class (per-direction, required as a pair)
+      # write_bandwidth: 5000.0
+      # base_latency: 80.0          # µs
+```
+
+Defaults match vLLM knob-for-knob. Anything vLLM accepts either maps to a BLIS config or
+fails **loudly** at startup — never silently ignored: `store_threshold >= 2` is rejected
+(vLLM's `TieringOffloadingSpec` rejects it), and `obj`/`p2p`/`example` tier types are rejected
+(no faithful BLIS mapping yet). `device_class` names resolve against the `kv_offload_devices:`
+block shipped in `defaults.yaml` (bandwidth in bytes/µs, latency in µs); an explicit
+`read_bandwidth`/`write_bandwidth`/`base_latency` triple overrides the class.
+
+The resolved config is recorded in the exported trace header, so a `blis run --trace-output`
+round-trips through `blis replay` (INV-13): on replay the header is authoritative and a config
+the binary cannot reproduce fails loudly rather than silently degrading to single-tier.
+
+!!! note "Config surface only (today)"
+    `--kv-offload-config` currently **captures and validates** the offload configuration; the
+    multi-tier transfer/keying mechanisms that consume these knobs are landing separately.
+    With no `--kv-offload-config`, behavior is unchanged.
+
 ## Chunked Prefill
 
 Long prefill sequences can cause **head-of-line (HOL) blocking** — a 2,048-token prefill takes ~97ms on Qwen3-14B / H100 / TP=1 (roofline mode), blocking shorter requests from starting.

@@ -1,7 +1,11 @@
 package sim
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"math"
+	"os"
 	"strings"
 	"testing"
 )
@@ -149,4 +153,57 @@ func TestNewKVCacheConfig_WithInvalidOffload_Panics(t *testing.T) {
 		}
 	}()
 	_ = NewKVCacheConfig(1000, 16, 0, 0, 0, 0, WithKVOffload(bad))
+}
+
+// TestKVOffloadConfig_ReadOnly_BC_G4 is the BC-G4 static-analysis guard: no code in
+// the sim package (outside the type definition in kv_offload_config.go and the
+// constructor in config.go) may WRITE KVOffloadConfig/KVOffloadTier fields — the
+// config is operator input, resolved and validated once in cmd/, never fitted at
+// runtime.
+//
+// SCOPE (honest): this scans the sim package only. The single legitimate write site
+// is cmd/kv_offload.go (resolution/construction); the sim-side write sites are the
+// KVCacheConfig.Offload assignment inside WithKVOffload (config.go) and the type
+// definitions (kv_offload_config.go), both allow-listed. Because the offload
+// subsystem is INERT in this PR (no sim/ consumer reads the field yet), a sim-only
+// scan is sufficient; when consumers land they will be added to this package and this
+// guard extends to them automatically.
+func TestKVOffloadConfig_ReadOnly_BC_G4(t *testing.T) {
+	allow := map[string]bool{
+		"kv_offload_config.go": true, // type definitions
+		"config.go":            true, // WithKVOffload option (the sole write of .Offload)
+	}
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || allow[name] {
+			continue
+		}
+		f, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch node := n.(type) {
+			case *ast.CompositeLit:
+				if id, ok := node.Type.(*ast.Ident); ok {
+					if id.Name == "KVOffloadConfig" || id.Name == "KVOffloadTier" {
+						t.Errorf("%s: %s{...} composite literal outside the allow-list — offload config must be constructed only in cmd/ (BC-G4)", name, id.Name)
+					}
+				}
+			case *ast.AssignStmt:
+				for _, lhs := range node.Lhs {
+					if sel, ok := lhs.(*ast.SelectorExpr); ok && sel.Sel.Name == "Offload" {
+						pos := fset.Position(sel.Pos())
+						t.Errorf("%s:%d: assignment to .Offload outside the allow-list — the offload sub-config is read-only after construction (BC-G4)", name, pos.Line)
+					}
+				}
+			}
+			return true
+		})
+	}
 }

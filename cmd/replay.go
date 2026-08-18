@@ -166,6 +166,12 @@ Example:
 		loraCfg := resolveLoRAConfig(cmd)
 		loraReservedBytesForKV = adapterReservedBytesFor(loraCfg)
 
+		// KV-cache offload config (#1587, BC-G6): the trace header is authoritative on
+		// replay (unlike --lora-config, which is flags-only). Reconstruct the recorded
+		// config, Fatalf if this binary cannot reproduce it, and Fatalf on a genuine
+		// flag/header conflict. Inert when the trace carries no offload config (BC-G5).
+		kvOffloadCfg := reconcileReplayKVOffload(cmd, traceData.Header.KVOffload)
+
 		// Resolve latency backend configuration (single code path shared with runCmd).
 		lr := resolveLatencyConfig(cmd)
 
@@ -471,7 +477,8 @@ Example:
 				Horizon: replayHorizon,
 				Seed:    seed,
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
-					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
+					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency,
+					sim.WithKVOffload(kvOffloadCfg)),
 				BatchConfig:          sim.NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:        sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
 				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dataParallelism, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen),
@@ -570,7 +577,8 @@ Example:
 				Version:           3,
 				TimeUnit:          "microseconds",
 				Mode:              "replayed",
-				GoodputSLOTargets: goodputTargets, // #1413, BC-7
+				GoodputSLOTargets: goodputTargets,                   // #1413, BC-7
+				KVOffload:         simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: carry the offload config forward
 			}
 			if err := workload.ExportTraceV2(header, records, replayTraceOutput+".yaml", replayTraceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)

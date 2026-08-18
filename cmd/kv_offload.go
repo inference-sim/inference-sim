@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -332,6 +333,49 @@ func simToHeaderOffload(c sim.KVOffloadConfig) *workload.TraceKVOffloadConfig {
 		})
 	}
 	return h
+}
+
+// reconcileReplayKVOffload resolves the KV-offload config for blis replay. Unlike
+// --lora-config (flags-only on replay), the offload config round-trips through the
+// trace header, so on replay the HEADER is authoritative (BC-G6):
+//   - a recorded config that this binary cannot reconstruct/validate ⇒ logrus.Fatalf
+//     (INV-13, never a silent degrade to single-tier);
+//   - a --kv-offload-config flag is accepted only if it resolves identical to the
+//     header (INV-13 "identical flags"); a genuine mismatch ⇒ Fatalf;
+//   - a flag that would ADD offload to a trace captured without it ⇒ Fatalf.
+// Returns the inert zero value when the trace carries no offload config.
+func reconcileReplayKVOffload(cmd *cobra.Command, headerBlock *workload.TraceKVOffloadConfig) sim.KVOffloadConfig {
+	flagChanged := cmd.Flags().Changed("kv-offload-config")
+	var flagCfg sim.KVOffloadConfig
+	if flagChanged {
+		// resolveKVOffloadConfig itself logrus.Fatalf's on a malformed flag file.
+		flagCfg = resolveKVOffloadConfig(cmd)
+	}
+	cfg, err := resolveReplayKVOffload(headerBlock, flagChanged, flagCfg)
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	return cfg
+}
+
+// resolveReplayKVOffload is the PURE, error-returning core of replay's
+// header-authoritative reconciliation (Deviation #9 — every reject branch is
+// unit-testable). See reconcileReplayKVOffload for the policy summary.
+func resolveReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, flagChanged bool, flagCfg sim.KVOffloadConfig) (sim.KVOffloadConfig, error) {
+	headerOffload := headerToSimOffload(headerBlock)
+	if headerOffload.IsEnabled() {
+		if err := headerOffload.Validate(); err != nil {
+			return sim.KVOffloadConfig{}, fmt.Errorf("blis replay cannot reproduce the trace's kv_offload config: %w (INV-13: never silent degradation)", err)
+		}
+		if flagChanged && !reflect.DeepEqual(flagCfg, headerOffload) {
+			return sim.KVOffloadConfig{}, fmt.Errorf("--kv-offload-config conflicts with the kv_offload config recorded in the trace header; on replay the header is authoritative — omit the flag or pass the identical config")
+		}
+		return headerOffload, nil
+	}
+	if flagChanged && flagCfg.IsEnabled() {
+		return sim.KVOffloadConfig{}, fmt.Errorf("the trace was captured without a kv_offload config; --kv-offload-config cannot add one on replay (INV-13)")
+	}
+	return sim.KVOffloadConfig{}, nil
 }
 
 // headerToSimOffload reconstructs a resolved sim.KVOffloadConfig from a trace header

@@ -28,6 +28,17 @@ go build -o blis main.go
 # Run and export workload as TraceV2 (prefix auto-appends .yaml/.csv)
 ./blis run --model qwen/qwen3-14b --trace-output traces/run1
 
+# Run with a multi-tier KV-offload config (#1587). One strict-YAML flag captures vLLM's
+# offload config surface (kv_offload: block — cpu_bytes_to_use, block_size/blocks_per_chunk,
+# eviction_policy, offload_prompt_only [vLLM default TRUE], secondary_tiers[] with per-tier
+# device_class/direct_io/bandwidth). Absent => offload subsystem inert, byte-identical output
+# (BC-G5). Defaults match vLLM knob-for-knob; store_threshold>=2 and non-fs tiers fail loudly.
+# device_class names resolve against defaults.yaml kv_offload_devices. The resolved config is
+# recorded in the trace header and round-trips through replay (INV-13); on replay the header is
+# authoritative (a config it cannot reproduce is a hard error). Config-capture only today — the
+# consuming multi-tier mechanisms land separately.
+./blis run --model qwen/qwen3-14b --kv-offload-config offload.yaml --trace-output traces/run1
+
 # Replay a captured TraceV2 file through the DES (fixed timing from trace)
 ./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b
 
