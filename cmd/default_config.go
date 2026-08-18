@@ -30,6 +30,21 @@ type Config struct {
 	Workloads              map[string]Workload      `yaml:"workloads"`
 	TrainedPhysicsDefaults *TrainedPhysicsDefaults  `yaml:"trained_physics_coefficients,omitempty"`
 	LoRADefaults           *LoRADefaults            `yaml:"lora,omitempty"`
+	// KVOffloadDevices maps a device_class name to its bandwidth/latency physics for
+	// the KV-offload config surface (H5, #1587). Shipped constants (operator input),
+	// never fitted (BC-G4). Inert: only consulted when --kv-offload-config names a
+	// device_class. A struct-field map (decode target, read-only after load) — not an
+	// exported package var (R8-compatible, like Defaults/Workloads above).
+	KVOffloadDevices map[string]KVOffloadDeviceDefaults `yaml:"kv_offload_devices,omitempty"`
+}
+
+// KVOffloadDeviceDefaults is one device_class's resolved physics for KV offload
+// (H5, #1587). Bandwidths are bytes per microsecond; base_latency is microseconds.
+// Fields are plain float64 (always present within a device block).
+type KVOffloadDeviceDefaults struct {
+	ReadBandwidth  float64 `yaml:"read_bandwidth"`
+	WriteBandwidth float64 `yaml:"write_bandwidth"`
+	BaseLatency    float64 `yaml:"base_latency"`
 }
 
 // LoRADefaults holds inert defaults for the LoRA control-plane subsystem's cost

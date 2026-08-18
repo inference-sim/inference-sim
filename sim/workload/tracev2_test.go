@@ -1935,3 +1935,103 @@ func TestExportTraceV2_XRequestID_CoexistsWithOtherOptionalColumns(t *testing.T)
 		t.Errorf("XRequestID: got %q, want %q", got.XRequestID, "uuid-zzz")
 	}
 }
+
+// TestTraceV2_RoundTrip_WithKVOffload verifies the resolved KV-offload config
+// (H5, #1587, BC-G6) survives export→load with all fields intact, and that a header
+// without offload omits the key (BC-G5).
+func TestTraceV2_RoundTrip_WithKVOffload(t *testing.T) {
+	header := &TraceHeader{
+		Version: 3, TimeUnit: "microseconds", Mode: "generated",
+		KVOffload: &TraceKVOffloadConfig{
+			CPUBytesToUse:          17179869184,
+			BlockSize:              16,
+			BlocksPerChunk:         1,
+			TokensPerHash:          16,
+			EvictionPolicy:         "lru",
+			OffloadPromptOnly:      true,
+			SelfDescribingKVEvents: false,
+			Tiers: []TraceKVOffloadTier{
+				{
+					Type: "fs", RootDir: "/mnt/kv-cache",
+					NReadThreads: 16, NWriteThreads: 16,
+					Locality: "LOCAL", EnableKVEvents: false, DirectIO: true,
+					DeviceClass: "nvme_gen4",
+					ReadBandwidth: 7000, WriteBandwidth: 5000, BaseLatency: 80,
+				},
+			},
+		},
+	}
+
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	dataPath := filepath.Join(dir, "data.csv")
+	if err := ExportTraceV2(header, nil, headerPath, dataPath); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := loaded.Header.KVOffload
+	if got == nil {
+		t.Fatal("kv_offload config should round-trip, got nil")
+	}
+	if got.CPUBytesToUse != 17179869184 || got.EvictionPolicy != "lru" || !got.OffloadPromptOnly {
+		t.Errorf("scalar mismatch after round-trip: %+v", got)
+	}
+	if len(got.Tiers) != 1 {
+		t.Fatalf("tiers: got %d, want 1", len(got.Tiers))
+	}
+	tr := got.Tiers[0]
+	if tr.Type != "fs" || tr.RootDir != "/mnt/kv-cache" || !tr.DirectIO ||
+		tr.ReadBandwidth != 7000 || tr.WriteBandwidth != 5000 || tr.BaseLatency != 80 ||
+		tr.NReadThreads != 16 || tr.Locality != "LOCAL" || tr.DeviceClass != "nvme_gen4" {
+		t.Errorf("tier mismatch after round-trip: %+v", tr)
+	}
+}
+
+// TestTraceV2_NoKVOffload_OmitsKey verifies a header without offload writes no
+// kv_offload key (BC-G5 byte-identity for the disabled case).
+func TestTraceV2_NoKVOffload_OmitsKey(t *testing.T) {
+	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	dataPath := filepath.Join(dir, "data.csv")
+	if err := ExportTraceV2(header, nil, headerPath, dataPath); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(headerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "kv_offload") {
+		t.Errorf("header without offload must not contain a kv_offload key:\n%s", data)
+	}
+	loaded, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Header.KVOffload != nil {
+		t.Error("KVOffload must be nil when absent")
+	}
+}
+
+// TestTraceV2_KVOffload_UnknownSubKey_Errors verifies strict parsing rejects an
+// unknown offload sub-key (BC-G6: replay must fail loudly on a config it cannot
+// reconstruct, e.g. one written by a future binary).
+func TestTraceV2_KVOffload_UnknownSubKey_Errors(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	dataPath := filepath.Join(dir, "data.csv")
+	yaml := "trace_version: 3\ntime_unit: microseconds\nmode: generated\n" +
+		"warm_up_requests: 0\nkv_offload:\n  cpu_bytes_to_use: 1\n  future_knob: 42\n"
+	if err := os.WriteFile(headerPath, []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dataPath, []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadTraceV2(headerPath, dataPath); err == nil {
+		t.Fatal("expected strict-parse error for unknown kv_offload sub-key, got nil")
+	}
+}

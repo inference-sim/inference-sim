@@ -197,4 +197,19 @@ lora:
     8: {k6: 0.02, k7: 1.0}
     16: {k6: 0.035, k7: 1.0}
     32: {k6: 0.06, k7: 1.0}
+# KV-cache offload device physics (H5, #1587). INERT: these seed the bandwidth/latency
+# classes for --kv-offload-config's per-tier `device_class` field. With no
+# --kv-offload-config the offload subsystem is a no-op and output is byte-identical to a
+# pre-feature build (INV-6/BC-G5). Shipped constants (operator input), never fitted
+# (BC-G4). read_bandwidth/write_bandwidth are bytes per microsecond; base_latency is
+# microseconds. A per-tier explicit read_bandwidth/write_bandwidth/base_latency triple
+# overrides the class (same override shape as --lora-load-base-latency-us over the lora
+# block). Numbers are representative device classes seeded for the multi-tier offload
+# holes (#1588/#1589); operators override per run for their hardware.
+kv_offload_devices:
+  nvme_gen4: {read_bandwidth: 7.0e3, write_bandwidth: 5.0e3, base_latency: 80.0}
+  nvme_gen3: {read_bandwidth: 3.5e3, write_bandwidth: 3.0e3, base_latency: 100.0}
+  sata_ssd:  {read_bandwidth: 5.5e2, write_bandwidth: 5.0e2, base_latency: 150.0}
+  cpu_dram:  {read_bandwidth: 2.0e4, write_bandwidth: 2.0e4, base_latency: 1.0}
+  s3:        {read_bandwidth: 1.0e3, write_bandwidth: 1.0e3, base_latency: 30000.0}
 version: 0.0.1

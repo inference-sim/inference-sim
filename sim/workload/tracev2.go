@@ -36,6 +36,49 @@ type TraceHeader struct {
 	// version 3; old binaries reading new traces will hard-fail under
 	// KnownFields(true) — intentional, signaled by Version (BC-N3).
 	GoodputSLOTargets map[string]SLODimTargets `yaml:"goodput_slo_targets,omitempty"`
+
+	// KVOffload records the RESOLVED KV-cache offload configuration (H5, #1587) so it
+	// round-trips run→replay (BC-G6, INV-13). Absent (nil, omitempty) when no
+	// --kv-offload-config was supplied — so a run without offload writes a
+	// byte-identical header to a pre-feature build (BC-G5). The resolved bandwidth /
+	// latency numbers are recorded (not device_class), so replay reproduces the exact
+	// physics regardless of the replay host's defaults.yaml; replay uses them
+	// authoritatively and logrus.Fatalf's on any config it cannot reconstruct.
+	KVOffload *TraceKVOffloadConfig `yaml:"kv_offload,omitempty"`
+}
+
+// TraceKVOffloadConfig is the trace-header serialization of a resolved
+// sim.KVOffloadConfig (H5, #1587). It is a workload-package struct — decoupled from
+// sim.KVOffloadConfig so the on-disk trace format is stable independent of the
+// internal config type — mirroring the TraceServerConfig / TraceNetworkConfig
+// precedent. cmd/ owns the sim↔header conversion. Read strictly (KnownFields) via
+// LoadTraceV2, so an unknown offload sub-key is a hard error (BC-N3 version guard).
+type TraceKVOffloadConfig struct {
+	CPUBytesToUse          int64                `yaml:"cpu_bytes_to_use"`
+	BlockSize              int64                `yaml:"block_size"`
+	BlocksPerChunk         int64                `yaml:"blocks_per_chunk"`
+	TokensPerHash          int64                `yaml:"tokens_per_hash"`
+	EvictionPolicy         string               `yaml:"eviction_policy"`
+	OffloadPromptOnly      bool                 `yaml:"offload_prompt_only"`
+	SelfDescribingKVEvents bool                 `yaml:"self_describing_kv_events"`
+	Tiers                  []TraceKVOffloadTier `yaml:"secondary_tiers,omitempty"`
+}
+
+// TraceKVOffloadTier is the trace-header serialization of one resolved
+// sim.KVOffloadTier. Bandwidths/latency are the RESOLVED numbers (bytes/µs, µs);
+// device_class is an informational echo only.
+type TraceKVOffloadTier struct {
+	Type           string  `yaml:"type"`
+	RootDir        string  `yaml:"root_dir"`
+	NReadThreads   int64   `yaml:"n_read_threads"`
+	NWriteThreads  int64   `yaml:"n_write_threads"`
+	Locality       string  `yaml:"locality,omitempty"`
+	EnableKVEvents bool    `yaml:"enable_kv_events"`
+	DirectIO       bool    `yaml:"direct_io"`
+	DeviceClass    string  `yaml:"device_class,omitempty"`
+	ReadBandwidth  float64 `yaml:"read_bandwidth"`
+	WriteBandwidth float64 `yaml:"write_bandwidth"`
+	BaseLatency    float64 `yaml:"base_latency"`
 }
 
 // TraceServerConfig captures server configuration in trace header.
