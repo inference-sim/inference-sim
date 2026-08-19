@@ -1471,6 +1471,11 @@ var runCmd = &cobra.Command{
 		// CLI boundary. Inert (zero value) when --kv-offload-config is absent (BC-G5).
 		// Recorded in the exported trace header below for run/replay parity (BC-G6).
 		kvOffloadCfg := resolveKVOffloadConfig(cmd)
+		// #1590 (H1): --kv-offload-config (multi-tier chain) and --kv-cpu-blocks (legacy
+		// single CPU tier) are distinct offload models; setting both is ambiguous.
+		if kvOffloadCfg.IsEnabled() && kvCPUBlocks > 0 {
+			logrus.Fatalf("--kv-offload-config and --kv-cpu-blocks are mutually exclusive (distinct KV-offload models); set only one")
+		}
 
 		// Resolve latency backend configuration (single code path shared with replayCmd).
 		lr := resolveLatencyConfig(cmd)
@@ -2049,6 +2054,22 @@ var runCmd = &cobra.Command{
 		}
 
 		startTime := time.Now() // Get current time (start)
+
+		// #1590 (H1): derive per_block_bytes for the offload tier chain. sim/kv cannot
+		// import sim/latency, so compute the per-rank KV byte size of one GPU block here
+		// (model + TP are resolved) and record it on the resolved offload config. It
+		// feeds the CPU-tier block capacity and transfer-job sizing, and round-trips
+		// through the trace header (INV-13). Only when offload is enabled.
+		if kvOffloadCfg.IsEnabled() {
+			perTokenKVBytes, err := latency.KVBytesPerToken(lr.ModelConfig, tensorParallelism)
+			if err != nil {
+				logrus.Fatalf("kv_offload: cannot derive per_block_bytes from the model: %v", err)
+			}
+			kvOffloadCfg.PerBlockBytes = int64(perTokenKVBytes * float64(blockSizeTokens))
+			if kvOffloadCfg.PerBlockBytes <= 0 {
+				logrus.Fatalf("kv_offload: derived per_block_bytes must be > 0 (KVBytesPerToken=%v × block_size=%d)", perTokenKVBytes, blockSizeTokens)
+			}
+		}
 
 		// Unified cluster path (used for all values of numInstances).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/replay.go (replayCmd

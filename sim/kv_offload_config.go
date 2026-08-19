@@ -25,8 +25,19 @@ type KVOffloadConfig struct {
 	Enabled bool
 
 	// CPUBytesToUse is vLLM's cpu_bytes_to_use: CPU-tier capacity in bytes. Required
-	// (>0) when Enabled — vLLM marks it required with no default.
+	// (>0) when Enabled — vLLM marks it required with no default. Interpreted as the
+	// per-GPU (per-TP-rank) host CPU budget: the CPU-tier block capacity is
+	// CPUBytesToUse / PerBlockBytes, both per-rank quantities.
 	CPUBytesToUse int64
+
+	// PerBlockBytes is the resolved KV-cache byte size of one GPU block on one TP
+	// rank: KVBytesPerToken(model, tp) × BlockSizeTokens (H1, #1590). It is DERIVED
+	// from the model + block size, not a user knob — sim/kv cannot import sim/latency
+	// to compute it, so cmd resolves it and records it here so the tier-chain
+	// mechanism can convert CPUBytesToUse into a block capacity and size transfer
+	// jobs. Required (>0) when Enabled. Being derived, it is authoritative from the
+	// trace header on replay and excluded from the flag-vs-header reconcile.
+	PerBlockBytes int64
 
 	// BlockSize is the offload block size in TOKENS. vLLM default = GPU block size.
 	// It is an alternate encoding of BlocksPerChunk (BlockSize = BlocksPerChunk ×
@@ -137,6 +148,10 @@ func (c KVOffloadConfig) Validate() error {
 	if c.CPUBytesToUse <= 0 {
 		return fmt.Errorf("kv_offload: cpu_bytes_to_use must be > 0 when offload is enabled, got %d", c.CPUBytesToUse)
 	}
+	// NOTE: PerBlockBytes is NOT checked here. It is a model-derived value resolved
+	// downstream (cmd, where the model + TP are known), so it is legitimately 0 at
+	// config-surface validation time. The tier-chain factory (NewOffloadCache)
+	// enforces PerBlockBytes > 0 at the point the mechanism consumes it (#1590).
 	if c.BlockSize <= 0 {
 		return fmt.Errorf("kv_offload: block_size must be > 0, got %d", c.BlockSize)
 	}
