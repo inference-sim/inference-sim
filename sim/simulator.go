@@ -442,8 +442,25 @@ func (sim *Simulator) ResidentAdapterIDs() []string {
 // After this call, WaitQ.Len() == 0.
 func (sim *Simulator) DrainWaitQueue() []*Request {
 	items := sim.WaitQ.Items()
+	// Forget any deferral state for drained requests (H3, #1591): they leave this
+	// instance's WaitQ for re-injection elsewhere, so their offload deferral must not
+	// leak here. No-op when the store does not support deferral.
+	for _, req := range items {
+		sim.ClearDeferredKV(req.ID)
+	}
 	sim.WaitQ = &WaitQueue{}
 	return items
+}
+
+// ClearDeferredKV forgets any step-boundary deferral state (H3, #1591) the KV store
+// holds for a request leaving the WaitQ by a non-admit path (timeout, gateway
+// eviction, drain-redirect), so the offload chain's deferred map does not leak. A
+// no-op unless the store supports deferral (the offload chain with secondary tiers)
+// and the request is tracked; idempotent.
+func (sim *Simulator) ClearDeferredKV(id string) {
+	if d, ok := sim.KVCache.(DeferrableKVStore); ok {
+		d.ClearDeferred(id)
+	}
 }
 
 // BatchSize returns the number of requests in the running batch, or 0 if nil.
