@@ -3,12 +3,31 @@ package kv
 import (
 	"fmt"
 	"math"
+	"math/rand"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/kvkey"
 	"github.com/inference-sim/inference-sim/sim/internal/util"
 	"github.com/inference-sim/inference-sim/sim/kvtransfer"
 )
+
+// jitterMinFactor is the floor for a sampled latency-jitter multiplier (#1581
+// BC-D5): a transfer can be at most this much FASTER than its mean device service
+// time, so a left-tail Gaussian draw can never drive service time to zero or
+// negative. It is a numerical guard, not a physical parameter.
+const jitterMinFactor = 0.05
+
+// OffloadOption configures an OffloadCache at construction.
+type OffloadOption func(*OffloadCache)
+
+// WithOffloadRNG supplies the seeded RNG partition used to draw the optional
+// per-transfer latency jitter (#1581 BC-D5). NewKVStore derives it from the run
+// seed; direct callers that do not exercise jitter may omit it (jitter then stays
+// disabled). It is a construction error for a tier to set latency_jitter_stddev>0
+// without an RNG (enforced in NewOffloadCache).
+func WithOffloadRNG(rng *rand.Rand) OffloadOption {
+	return func(o *OffloadCache) { o.rng = rng }
+}
 
 // jobRef records what an in-flight transfer-station job represents so SetClock can
 // apply its completion to the right tier action. A Read job (secondary→CPU)
@@ -56,6 +75,13 @@ type OffloadCache struct {
 	offloadPromptOnly bool
 	clock             int64
 
+	// Device-model latency jitter (#1581 BC-D5). jitterStddev[t] is tier t's relative
+	// stddev σ (0 == off). rng is the seeded kv-offload partition; nil disables jitter
+	// regardless of σ. The RNG lives here (not in the deterministic transfer station,
+	// which stays RNG-free — BC-S4): the station consumes a pre-drawn scalar factor.
+	jitterStddev []float64
+	rng          *rand.Rand
+
 	// Metrics / diagnostics (all load-independent where it matters, #1586).
 	offloadMissCount int64 // neither CPU nor secondary served AND GPU alloc failed
 	promotionsFired  int64 // secondary→CPU promotions initiated (Read jobs submitted)
@@ -71,7 +97,7 @@ type OffloadCache struct {
 // "lru"), and a CPU budget too small for one block. Panic (not logrus.Fatalf) is
 // the library convention here (R6); the CLI validates first so these are
 // defense-in-depth invariants.
-func NewOffloadCache(gpu *KVCacheState, cfg sim.KVOffloadConfig) *OffloadCache {
+func NewOffloadCache(gpu *KVCacheState, cfg sim.KVOffloadConfig, opts ...OffloadOption) *OffloadCache {
 	if gpu == nil {
 		panic("NewOffloadCache: gpu must not be nil")
 	}
@@ -101,19 +127,29 @@ func NewOffloadCache(gpu *KVCacheState, cfg sim.KVOffloadConfig) *OffloadCache {
 		perBlockBytes:     cfg.PerBlockBytes,
 		offloadPromptOnly: cfg.OffloadPromptOnly,
 	}
+	for _, opt := range opts {
+		opt(oc)
+	}
 
 	if len(cfg.Tiers) > 0 {
 		stationCfg := kvtransfer.Config{Tiers: make([]kvtransfer.TierConfig, len(cfg.Tiers))}
+		oc.jitterStddev = make([]float64, len(cfg.Tiers))
 		for i, t := range cfg.Tiers {
 			oc.secondary = append(oc.secondary, newSecondaryTier())
+			oc.jitterStddev[i] = t.LatencyJitterStddev
+			if t.LatencyJitterStddev > 0 && oc.rng == nil {
+				panic(fmt.Sprintf("NewOffloadCache: tier %d sets latency_jitter_stddev>0 but no RNG was supplied (WithOffloadRNG); jitter requires a seeded RNG for determinism (#1581 INV-6)", i))
+			}
 			stationCfg.Tiers[i] = kvtransfer.TierConfig{
-				NRead:             int(t.NReadThreads),
-				NWrite:            int(t.NWriteThreads),
-				ReadBaseTicks:     int64(math.Round(t.BaseLatency)),
-				WriteBaseTicks:    int64(math.Round(t.BaseLatency)),
-				ReadBytesPerTick:  t.ReadBandwidth,
-				WriteBytesPerTick: t.WriteBandwidth,
-				MaxQueueDepth:     0, // unbounded (vLLM deque default); keeps prepareStore→Submit leak-safe
+				NRead:                  int(t.NReadThreads),
+				NWrite:                 int(t.NWriteThreads),
+				ReadBaseTicks:          int64(math.Round(t.BaseLatency)),
+				WriteBaseTicks:         int64(math.Round(t.BaseLatency)),
+				ReadBytesPerTick:       t.ReadBandwidth,
+				WriteBytesPerTick:      t.WriteBandwidth,
+				SaturationQueueDepth:   int(t.SaturationQueueDepth),
+				SingleTransferFraction: t.SingleTransferFraction,
+				MaxQueueDepth:          0, // unbounded (vLLM deque default); keeps prepareStore→Submit leak-safe
 			}
 		}
 		station, err := kvtransfer.New(stationCfg)
@@ -123,6 +159,23 @@ func NewOffloadCache(gpu *KVCacheState, cfg sim.KVOffloadConfig) *OffloadCache {
 		oc.station = station
 	}
 	return oc
+}
+
+// drawJitterFactor returns the multiplicative service-time factor for a transfer
+// on the given tier (#1581 BC-D5). It returns 0 — the station's "no jitter"
+// sentinel, drawing NOTHING from the RNG — when the tier has no jitter configured,
+// so a σ=0 run is byte-identical and its RNG stream is untouched (INV-6). Otherwise
+// it draws 1+N(0,σ) from the seeded partition and clamps the lower tail to
+// jitterMinFactor so service time stays positive.
+func (o *OffloadCache) drawJitterFactor(tier int) float64 {
+	if tier < 0 || tier >= len(o.jitterStddev) || o.jitterStddev[tier] <= 0 || o.rng == nil {
+		return 0
+	}
+	factor := 1 + o.rng.NormFloat64()*o.jitterStddev[tier]
+	if factor < jitterMinFactor {
+		factor = jitterMinFactor
+	}
+	return factor
 }
 
 // --- Trivial sim.KVStore methods delegating to the GPU tier ---
@@ -460,10 +513,11 @@ func (o *OffloadCache) firePromotionRun(run []kvkey.BlockKey, tier int) (kvtrans
 		return 0, false
 	}
 	id, accepted := o.station.Submit(kvtransfer.TransferJob{
-		Tier:       tier,
-		Direction:  kvtransfer.Read,
-		Bytes:      int64(granted) * o.perBlockBytes,
-		SubmitTick: o.clock,
+		Tier:         tier,
+		Direction:    kvtransfer.Read,
+		Bytes:        int64(granted) * o.perBlockBytes,
+		SubmitTick:   o.clock,
+		JitterFactor: o.drawJitterFactor(tier),
 	})
 	if !accepted {
 		// MaxQueueDepth==0 makes rejection impossible; roll back defensively so a
@@ -533,10 +587,11 @@ func (o *OffloadCache) cascade(key kvkey.BlockKey) {
 	for tier := range o.secondary {
 		o.cpu.pin(key) // lock for the write duration (ref_cnt++)
 		id, accepted := o.station.Submit(kvtransfer.TransferJob{
-			Tier:       tier,
-			Direction:  kvtransfer.Write,
-			Bytes:      o.perBlockBytes,
-			SubmitTick: o.clock,
+			Tier:         tier,
+			Direction:    kvtransfer.Write,
+			Bytes:        o.perBlockBytes,
+			SubmitTick:   o.clock,
+			JitterFactor: o.drawJitterFactor(tier),
 		})
 		if !accepted {
 			o.cpu.unpin(key) // MaxQueueDepth==0 => unreachable; defensive
