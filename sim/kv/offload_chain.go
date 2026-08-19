@@ -551,9 +551,12 @@ func (o *OffloadCache) firePromotionRun(run []kvkey.BlockKey, tier int) (kvtrans
 // count is truncated to the prompt length (offloading/scheduler.py:588-597,
 // _calc_num_offloadable_tokens); then it is floor-divided into whole chunks
 // (storable_chunks, :401) — so a chunk holding any decode token is never formed. When
-// !OffloadPromptOnly, full decode blocks are first given a prefix-consistent hash
-// (assignDecodeHashes) so they are offloaded here and reusable by a later request.
-// Uses the stored clock (SetClock ran earlier this step).
+// !OffloadPromptOnly, full decode blocks fall inside the offloadable range and are
+// offloaded here too; they need no hashing step of their own — the GPU tier's partial-fill
+// path (cache.go) already hashes every completed block prefix-consistently (for
+// block_size > 1), so a later request whose input contains those tokens reloads them.
+// MirrorToCPU never writes gpu.HashToBlock (pure consumer), so switching the policy cannot
+// perturb GPU-tier behavior. Uses the stored clock (SetClock ran earlier this step).
 func (o *OffloadCache) MirrorToCPU(batch []*sim.Request) {
 	bs := o.gpu.BlockSize()
 	for _, req := range batch {

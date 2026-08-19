@@ -134,3 +134,30 @@ func TestOffload_MirrorToCPU_DoesNotMutateGPUHashes(t *testing.T) {
 		}
 	}
 }
+
+// Documented limitation (regression guard): at block_size == 1, decode blocks take the
+// GUARDED new-block path (cache.go:352, `req.ProgressIndex < req.InputLen()`) instead of the
+// partial-fill path, so they never receive a hash and decode-KV offload is inert even under
+// offload_prompt_only=false. This test pins that behavior — if a future change to cache.go's
+// decode-hash guard makes block_size==1 decode blocks hashable, BC-4 would silently change and
+// this test would flag it.
+func TestOffload_DecodeOffload_InertAtBlockSizeOne(t *testing.T) {
+	gpu := NewKVCacheState(64, 1) // bs = 1 -> decode blocks are full via the guarded new-block path
+	cfg := enabledOffloadCfg(1<<20, 4096, 0)
+	cfg.OffloadPromptOnly = false // decode-offload requested...
+	oc := NewOffloadCache(gpu, cfg)
+	req := buildDecodeReq(gpu, oc, "r", []sim.TokenID{1}, []sim.TokenID{9}) // 1 prompt block, 1 decode block
+
+	ids := gpu.RequestMap["r"]
+	if len(ids) != 2 {
+		t.Fatalf("expected 1 prompt + 1 decode block, got %d", len(ids))
+	}
+	if gpu.Blocks[ids[1]].Hash != "" {
+		t.Fatalf("at block_size==1 the decode block must be unhashed (guarded new-block path)")
+	}
+	oc.MirrorToCPU([]*sim.Request{req})
+	// ...but only the prompt block is offloaded; the unhashed decode block is inert.
+	if oc.cpu.usedCount() != 1 {
+		t.Fatalf("block_size==1 decode offload must be inert (only the prompt block offloads), got %d", oc.cpu.usedCount())
+	}
+}

@@ -80,7 +80,7 @@ func TestOffload_PromptOnlySkipsDecode(t *testing.T) {
 		// only thing gating its mirror is OffloadPromptOnly (not the Hash/full guard).
 		db := gpu.popFreeBlock()
 		db.Tokens = []sim.TokenID{5, 6}
-		db.Hash = "decodeblockhash000000000000000000000000000000000000000000000000"
+		db.Hash = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef" // 64-hex synthetic decode-block hash
 		db.RefCount = 1
 		db.InUse = true
 		gpu.HashToBlock[db.Hash] = db.ID
@@ -118,11 +118,16 @@ func TestOffload_OffloadableTokenClamp_SingleDecisionPoint(t *testing.T) {
 
 		// Append TWO full, hashed "decode" blocks (indices 2 and 3) so computed KV
 		// (4 blocks) strictly exceeds InputLen/bs (2). Their mirror is gated only by
-		// the offloadable-token clamp, not the Hash/full guard.
+		// the offloadable-token clamp, not the Hash/full guard. Hashes are 64-hex
+		// (SHA-256 shape) and distinct, so they never collide with real block hashes.
+		synthHash := []string{
+			"cafebabecafebabecafebabecafebabecafebabecafebabecafebabecafebabe",
+			"feedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedface",
+		}
 		for i, toks := range [][]sim.TokenID{{5, 6}, {7, 8}} {
 			db := gpu.popFreeBlock()
 			db.Tokens = toks
-			db.Hash = "decodeblockhash" + string(rune('A'+i)) + "0000000000000000000000000000000000000000000000000"
+			db.Hash = synthHash[i]
 			db.RefCount = 1
 			db.InUse = true
 			gpu.HashToBlock[db.Hash] = db.ID
