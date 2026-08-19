@@ -206,6 +206,18 @@ lora:
 # overrides the class (same override shape as --lora-load-base-latency-us over the lora
 # block). Numbers are representative device classes seeded for the multi-tier offload
 # holes (#1588/#1589); operators override per run for their hardware.
+#
+# #1581 adds an OPTIONAL non-linear device model per class (all fields absent below =>
+# behavior byte-identical to pre-#1581; tuned curves are calibration's job, #1583):
+#   saturation_queue_depth: <int>       # Qsat: in-service depth where bandwidth saturates
+#   single_transfer_fraction: <0..1]    # f1: fraction of peak bw at queue depth 1
+#                                        #     (ramp is active only when Qsat>=2 AND f1<1)
+#   latency_jitter_stddev: <float>=0     # sigma: relative stddev of seeded latency jitter
+#   buffered_read_bandwidth / buffered_write_bandwidth / buffered_base_latency /
+#   buffered_saturation_queue_depth / buffered_single_transfer_fraction /
+#   buffered_latency_jitter_stddev       # buffered-I/O regime, selected per tier by
+#                                        # direct_io: false; each absent field falls back
+#                                        # to the O_DIRECT value above.
 kv_offload_devices:
   nvme_gen4: {read_bandwidth: 7.0e3, write_bandwidth: 5.0e3, base_latency: 80.0}
   nvme_gen3: {read_bandwidth: 3.5e3, write_bandwidth: 3.0e3, base_latency: 100.0}
