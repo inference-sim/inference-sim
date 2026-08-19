@@ -24,6 +24,16 @@ func init() {
 // Returns *TieredKVCache for tiered mode (KVCPUBlocks > 0).
 func NewKVStore(cfg sim.KVCacheConfig) sim.KVStore {
 	gpu := NewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
+	// #1590 (H1): the multi-tier offload chain (--kv-offload-config) and the legacy
+	// single-CPU-tier path (--kv-cpu-blocks) are two distinct offload models; setting
+	// both is ambiguous. Refuse loudly rather than silently pick one (R1/R22). The CLI
+	// checks this first for a clean message; this is defense-in-depth.
+	if cfg.Offload.IsEnabled() {
+		if cfg.KVCPUBlocks > 0 {
+			panic("NewKVStore: --kv-offload-config and --kv-cpu-blocks are mutually exclusive (distinct offload models); set only one")
+		}
+		return NewOffloadCache(gpu, cfg.Offload)
+	}
 	if cfg.KVCPUBlocks <= 0 {
 		return gpu
 	}

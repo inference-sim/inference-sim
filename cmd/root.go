@@ -1471,6 +1471,11 @@ var runCmd = &cobra.Command{
 		// CLI boundary. Inert (zero value) when --kv-offload-config is absent (BC-G5).
 		// Recorded in the exported trace header below for run/replay parity (BC-G6).
 		kvOffloadCfg := resolveKVOffloadConfig(cmd)
+		// #1590 (H1): --kv-offload-config (multi-tier chain) and --kv-cpu-blocks (legacy
+		// single CPU tier) are distinct offload models; setting both is ambiguous.
+		if kvOffloadCfg.IsEnabled() && kvCPUBlocks > 0 {
+			logrus.Fatalf("--kv-offload-config and --kv-cpu-blocks are mutually exclusive (distinct KV-offload models); set only one")
+		}
 
 		// Resolve latency backend configuration (single code path shared with replayCmd).
 		lr := resolveLatencyConfig(cmd)
