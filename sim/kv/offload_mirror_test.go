@@ -13,7 +13,7 @@ import (
 func TestOffload_CascadePinsAllTiers(t *testing.T) {
 	gpu := NewKVCacheState(64, 2)
 	oc := NewOffloadCache(gpu, enabledOffloadCfg(1<<20, 4096, 2)) // 2 secondary tiers
-	tokens := []sim.TokenID{1, 2, 3, 4}                            // 2 prompt blocks
+	tokens := []sim.TokenID{1, 2, 3, 4}                           // 2 prompt blocks
 	keys := blockKeysFor(tokens, 2)
 
 	req := &sim.Request{ID: "r", InputTokens: tokens}

@@ -116,11 +116,13 @@ func NewOffloadCache(gpu *KVCacheState, cfg sim.KVOffloadConfig) *OffloadCache {
 
 // --- Trivial sim.KVStore methods delegating to the GPU tier ---
 
-func (o *OffloadCache) GetCachedBlocks(tokens []sim.TokenID) []int64 { return o.gpu.GetCachedBlocks(tokens) }
-func (o *OffloadCache) ReleaseKVBlocks(req *sim.Request)             { o.gpu.ReleaseKVBlocks(req) }
-func (o *OffloadCache) BlockSize() int64                            { return o.gpu.BlockSize() }
-func (o *OffloadCache) UsedBlocks() int64                           { return o.gpu.UsedBlocks() }
-func (o *OffloadCache) TotalCapacity() int64                        { return o.gpu.TotalCapacity() }
+func (o *OffloadCache) GetCachedBlocks(tokens []sim.TokenID) []int64 {
+	return o.gpu.GetCachedBlocks(tokens)
+}
+func (o *OffloadCache) ReleaseKVBlocks(req *sim.Request) { o.gpu.ReleaseKVBlocks(req) }
+func (o *OffloadCache) BlockSize() int64                 { return o.gpu.BlockSize() }
+func (o *OffloadCache) UsedBlocks() int64                { return o.gpu.UsedBlocks() }
+func (o *OffloadCache) TotalCapacity() int64             { return o.gpu.TotalCapacity() }
 
 // SnapshotCachedBlocksFn delegates to the GPU tier so cluster routing keeps its
 // frozen-snapshot semantics (INV-7). Offload tiers are intentionally invisible to

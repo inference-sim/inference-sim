@@ -13,9 +13,9 @@ import (
 type cpuLookupResult int
 
 const (
-	cpuMiss        cpuLookupResult = iota // absent
-	cpuHit                                // present, ref_cnt >= 0 (readable)
-	cpuHitPending                         // present, ref_cnt == -1 (promotion write in flight)
+	cpuMiss       cpuLookupResult = iota // absent
+	cpuHit                               // present, ref_cnt >= 0 (readable)
+	cpuHitPending                        // present, ref_cnt == -1 (promotion write in flight)
 )
 
 // offloadCPUBlock is one content-addressed block in the CPU staging tier. ref_cnt
@@ -240,8 +240,8 @@ func (t *offloadCPUTier) unlink(blk *offloadCPUBlock) {
 }
 
 func (t *offloadCPUTier) evictableCount() int64 { return t.evictable }
-func (t *offloadCPUTier) freeCount() int64       { return t.capacity - t.used }
-func (t *offloadCPUTier) usedCount() int64       { return t.used }
+func (t *offloadCPUTier) freeCount() int64      { return t.capacity - t.used }
+func (t *offloadCPUTier) usedCount() int64      { return t.used }
 
 // scanEvictable is an O(n) reference count of ready-idle blocks, used by tests to
 // validate the maintained O(1) evictable counter (BC-C8). Not used at runtime.
