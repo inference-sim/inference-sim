@@ -98,6 +98,14 @@ func TestCalibrateCmd_HitRate_Present(t *testing.T) {
 	if report.HitRate.Source != workload.ObservedKVSourceTiered {
 		t.Errorf("source = %q, want tiered", report.HitRate.Source)
 	}
+	// BC-7: the TTFT-MAPE tolerance verdict must also be recorded in the report JSON
+	// (not just logged) whenever a TTFT metric exists.
+	if report.TTFTTolerance == nil {
+		t.Fatal("report.ttft_tolerance should be populated when a TTFT metric exists")
+	}
+	if report.TTFTTolerance.Threshold != 0.15 {
+		t.Errorf("ttft_tolerance.threshold = %v, want 0.15", report.TTFTTolerance.Threshold)
+	}
 }
 
 // TestCalibrateCmd_HitRate_SkipWhenNoSimMetrics verifies BC-12: an observed hit-rate
