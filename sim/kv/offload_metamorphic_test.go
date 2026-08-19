@@ -43,7 +43,7 @@ func TestOffload_LockSaturationRecompute(t *testing.T) {
 		// Advance a fixed 100 ticks: a FAST write (service 80) has completed (pins
 		// released, evictable 2); a SLOW write is still in flight (evictable 0).
 		oc.SetClock(110)
-		oc.consultAndReload(xt, 0) // attempt to promote the 2-block prefix X
+		oc.consultAndReload(xt, 0, "") // attempt to promote the 2-block prefix X
 		return oc.promotionsFired, oc.promotionsFailed
 	}
 
@@ -69,7 +69,7 @@ func TestOffload_LockSaturationRecompute(t *testing.T) {
 // promotion outcome, independent of per-tier attribution.
 func promotedPending(oc *OffloadCache, xt []sim.TokenID) (pending int, fired int64) {
 	oc.SetClock(10)
-	oc.consultAndReload(xt, 0)
+	oc.consultAndReload(xt, 0, "")
 	xk := blockKeysFor(xt, 2)
 	for _, k := range xk {
 		if oc.cpu.lookup(k) == cpuHitPending {

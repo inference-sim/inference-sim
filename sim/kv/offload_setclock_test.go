@@ -19,7 +19,7 @@ func TestOffload_PromotionCompletesOnPoll(t *testing.T) {
 	oc.secondary[0].store(keys[1])
 
 	oc.SetClock(100)
-	oc.consultAndReload(tokens, 0) // initiate promotion at t=100 (service = base 80)
+	oc.consultAndReload(tokens, 0, "") // initiate promotion at t=100 (service = base 80)
 	if oc.cpu.lookup(keys[0]) != cpuHitPending {
 		t.Fatalf("promotion must be HIT_PENDING before completion")
 	}

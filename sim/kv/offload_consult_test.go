@@ -90,7 +90,7 @@ func TestOffload_PromotionRefusedWhenEvictableShort(t *testing.T) {
 	oc.secondary[0].store(keys[1])
 
 	oc.SetClock(10)
-	oc.consultAndReload(tokens, 0)
+	oc.consultAndReload(tokens, 0, "")
 
 	if oc.promotionsFailed != 1 {
 		t.Fatalf("promotion into a locked CPU tier must be refused (BC-C5), promotionsFailed=%d", oc.promotionsFailed)
@@ -115,8 +115,8 @@ func TestOffload_SameStepDedup(t *testing.T) {
 	oc.secondary[0].store(keys[1])
 
 	oc.SetClock(50)
-	oc.consultAndReload(tokens, 0) // request A: initiates promotion
-	oc.consultAndReload(tokens, 0) // request B (same step): must see HIT_PENDING, no new promotion
+	oc.consultAndReload(tokens, 0, "") // request A: initiates promotion
+	oc.consultAndReload(tokens, 0, "") // request B (same step): must see HIT_PENDING, no new promotion
 
 	if oc.promotionsFired != 1 {
 		t.Fatalf("two same-step consults of the same prefix must promote ONCE (C2 convoy), got %d", oc.promotionsFired)
