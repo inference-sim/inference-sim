@@ -208,13 +208,25 @@ func (o *OffloadCache) PollDeferred(now int64) []string {
 		}
 		switch st.phase {
 		case deferRetry:
-			// RETRY resolved: existence now known → promote (round 2 for cold).
+			// RETRY resolved: existence now known → promote (round 2 for cold). If a
+			// concurrent request already promoted the run since we registered (its
+			// blocks are now CPU-readable or a promotion is in flight), ride that
+			// promotion instead of firing a duplicate (convoy dedup, BC-C2) — firing
+			// would find no fresh CPU slots and wrongly recompute. Only fire when the
+			// run is still genuinely CPU-absent; a gate refusal there means recompute.
 			o.markKnown(st.keys)
-			if _, ok := o.firePromotionRun(st.keys, st.tier); ok {
-				st.phase = deferPromoting
-				st.hasJob = true
-			} else {
-				st.recompute = true
+			switch o.awaitedState(st.keys) {
+			case cpuHit:
+				st.resolved = true // already landed
+			case cpuHitPending:
+				st.phase = deferPromoting // wait for the in-flight promotion (no own job)
+			default: // cpuMiss: genuinely absent → fire this request's promotion
+				if _, ok := o.firePromotionRun(st.keys, st.tier); ok {
+					st.phase = deferPromoting
+					st.hasJob = true
+				} else {
+					st.recompute = true // evictable gate refused (locked tier) → recompute
+				}
 			}
 		case deferPromoting:
 			switch o.awaitedState(st.keys) {

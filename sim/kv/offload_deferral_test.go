@@ -312,6 +312,44 @@ func TestDeferral_DeterministicUnderConcurrentDeferrals(t *testing.T) {
 	}
 }
 
+// Two concurrent COLD requests for the SAME secondary prefix must share ONE
+// promotion (convoy dedup, BC-C2): the first to reach the promote round fires it;
+// the second rides the in-flight promotion instead of recomputing. Both are
+// admitted, exactly one promotion fires, and nothing is force-recomputed.
+func TestDeferral_ConcurrentColdSamePrefixShareOnePromotion(t *testing.T) {
+	const step = int64(1000)
+	tokens := []sim.TokenID{1, 2, 3, 4}
+	oc := deferOC(80, 7000)
+	seedSecondary(oc, tokens)
+	A := &sim.Request{ID: "A", InputTokens: tokens}
+	B := &sim.Request{ID: "B", InputTokens: tokens}
+
+	aAdm, bAdm := false, false
+	for r := 1; r <= 10 && (!aAdm || !bAdm); r++ {
+		clock := int64(r) * step
+		oc.SetClock(clock)
+		still := map[string]bool{}
+		for _, id := range oc.PollDeferred(clock) {
+			still[id] = true
+		}
+		if !aAdm && !still["A"] {
+			aAdm = oc.AllocateKVBlocks(A, 0, 4, nil)
+		}
+		if !bAdm && !still["B"] {
+			bAdm = oc.AllocateKVBlocks(B, 0, 4, nil)
+		}
+	}
+	if !aAdm || !bAdm {
+		t.Fatalf("both concurrent cold requests must be admitted, A=%v B=%v", aAdm, bAdm)
+	}
+	if oc.promotionsFired != 1 {
+		t.Fatalf("concurrent cold requests for one prefix must share ONE promotion (convoy), fired=%d", oc.promotionsFired)
+	}
+	if oc.promotionsFailed != 0 {
+		t.Fatalf("neither request should be force-recomputed (both ride the one promotion), failed=%d", oc.promotionsFailed)
+	}
+}
+
 // ClearDeferred forgets a request that leaves the WaitQ by a non-admit path, so the
 // deferred map does not leak (the P benchmark stays O(live deferrals)).
 func TestDeferral_ClearDeferredForgets(t *testing.T) {
