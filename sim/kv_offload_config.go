@@ -109,11 +109,29 @@ type KVOffloadTier struct {
 	DeviceClass string
 
 	// ReadBandwidth / WriteBandwidth are the resolved per-direction bandwidths in
-	// bytes per microsecond. BaseLatency is the fixed per-access latency in
-	// microseconds.
+	// bytes per microsecond. With a queue-depth ramp (below) they are the SATURATED
+	// (peak) bandwidths. BaseLatency is the fixed per-access latency in
+	// microseconds. These reflect the regime selected by DirectIO (#1581 BC-D3):
+	// the O_DIRECT triple when DirectIO, else the buffered triple (each falling back
+	// to the O_DIRECT value when unspecified).
 	ReadBandwidth  float64
 	WriteBandwidth float64
 	BaseLatency    float64
+
+	// SaturationQueueDepth (Qsat) and SingleTransferFraction (f₁) parameterize the
+	// device's queue-depth bandwidth curve (#1581 BC-D1). Effective per-transfer
+	// bandwidth ramps from f₁·bw at in-service depth q=1 up to bw (peak) at q=Qsat,
+	// flat beyond. Resolved from the selected regime's device-class fields; default
+	// Qsat=1 / f₁=1.0 disables the ramp (byte-identical to the linear model, BC-D2).
+	SaturationQueueDepth   int64
+	SingleTransferFraction float64
+
+	// LatencyJitterStddev (σ) is the relative standard deviation of an optional
+	// multiplicative latency distribution (#1581 BC-D5). σ=0 (default) disables
+	// jitter — no RNG draw, byte-identical (INV-6). When σ>0 the OffloadCache draws
+	// a per-transfer factor from the seeded kv-offload RNG partition; the station
+	// itself stays deterministic.
+	LatencyJitterStddev float64
 }
 
 // Valid enumerations for the offload config surface.
@@ -197,6 +215,21 @@ func (t KVOffloadTier) validate(index int) error {
 	}
 	if math.IsNaN(t.BaseLatency) || math.IsInf(t.BaseLatency, 0) || t.BaseLatency < 0 {
 		return fmt.Errorf("kv_offload: secondary_tiers[%d].base_latency must be a finite value >= 0, got %v", index, t.BaseLatency)
+	}
+	// Queue-depth ramp (#1581 BC-D7). Qsat >= 0 (0 or 1 disables the ramp). When
+	// the ramp is active (Qsat >= 2) the single-transfer fraction must be finite
+	// and in (0,1]; otherwise it is ignored but must still be finite.
+	if t.SaturationQueueDepth < 0 {
+		return fmt.Errorf("kv_offload: secondary_tiers[%d].saturation_queue_depth must be >= 0, got %d", index, t.SaturationQueueDepth)
+	}
+	if math.IsNaN(t.SingleTransferFraction) || math.IsInf(t.SingleTransferFraction, 0) {
+		return fmt.Errorf("kv_offload: secondary_tiers[%d].single_transfer_fraction must be a finite value, got %v", index, t.SingleTransferFraction)
+	}
+	if t.SaturationQueueDepth >= 2 && !(t.SingleTransferFraction > 0 && t.SingleTransferFraction <= 1) {
+		return fmt.Errorf("kv_offload: secondary_tiers[%d].single_transfer_fraction must be in (0,1] when saturation_queue_depth >= 2, got %v", index, t.SingleTransferFraction)
+	}
+	if math.IsNaN(t.LatencyJitterStddev) || math.IsInf(t.LatencyJitterStddev, 0) || t.LatencyJitterStddev < 0 {
+		return fmt.Errorf("kv_offload: secondary_tiers[%d].latency_jitter_stddev must be a finite value >= 0, got %v", index, t.LatencyJitterStddev)
 	}
 	return nil
 }
