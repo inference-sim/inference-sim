@@ -469,7 +469,14 @@ func (s *TransferStation) start(ts *tierState, nj *job, sc serverClass, startTic
 	}
 	svc := ts.cfg.serviceTicks(nj.direction, nj.bytes, q)
 	if nj.jitter > 0 {
-		svc = int64(math.Round(float64(svc) * nj.jitter))
+		jittered := math.Round(float64(svc) * nj.jitter)
+		// Clamp to the same overflow guard serviceTicks uses, so an adversarial
+		// (large bytes) × (right-tail factor) product cannot overflow completeAt.
+		if jittered >= float64(maxServiceTicks) {
+			svc = maxServiceTicks
+		} else {
+			svc = int64(jittered)
+		}
 	}
 	nj.completeAt = startTick + svc
 	if nj.direction == Read {

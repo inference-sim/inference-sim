@@ -26,7 +26,8 @@ type fuzzOp struct {
 	tier      int
 	dir       Direction
 	bytes     int64
-	tickDelta int64 // non-negative; ticks are cumulative and non-decreasing
+	tickDelta int64   // non-negative; ticks are cumulative and non-decreasing
+	jitter    float64 // per-job jitter factor (0 = none); exercises the #1581 factor path
 }
 
 // decodeScenario turns raw fuzz bytes into a validated station config and a
@@ -88,6 +89,13 @@ func decodeScenario(data []byte) (Config, []fuzzOp) {
 		default:
 			op.bytes = int64(r.u8()%64+1) << 24 // very large: up to ~1 GiB
 		}
+		// Per-job jitter factor: ~half the ops carry a bounded positive factor
+		// (0.1..3.5), the rest the no-jitter sentinel (0). Bounded so the drain
+		// horizon below stays finite; the factor path (round + overflow clamp) is
+		// deterministic, so BC-S4 determinism must still hold (#1581 BC-D5).
+		if jb := r.u8(); jb%2 == 0 {
+			op.jitter = 0.1 + float64(jb%35)/10.0 // 0.1 .. 3.5, always > 0
+		}
 		ops = append(ops, op)
 	}
 	return Config{Tiers: tiers}, ops
@@ -122,7 +130,7 @@ func runScenario(t *testing.T, cfg Config, ops []fuzzOp) (completed []JobID, acc
 	for _, op := range ops {
 		tick += op.tickDelta
 		if op.submit {
-			id, ok := s.Submit(TransferJob{Tier: op.tier, Direction: op.dir, Bytes: op.bytes, SubmitTick: tick})
+			id, ok := s.Submit(TransferJob{Tier: op.tier, Direction: op.dir, Bytes: op.bytes, SubmitTick: tick, JitterFactor: op.jitter})
 			if ok {
 				accepted[id] = true
 			}
