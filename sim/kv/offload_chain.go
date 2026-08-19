@@ -43,7 +43,6 @@ type OffloadCache struct {
 	inflight map[kvtransfer.JobID]jobRef // in-flight transfer jobs, applied on SetClock→Poll
 
 	perBlockBytes     int64 // resolved per-rank KV bytes of one GPU block (transfer-job sizing)
-	blockSizeTokens   int64
 	offloadPromptOnly bool
 	clock             int64
 
@@ -87,7 +86,6 @@ func NewOffloadCache(gpu *KVCacheState, cfg sim.KVOffloadConfig) *OffloadCache {
 		cpu:               newOffloadCPUTier(capacity),
 		inflight:          make(map[kvtransfer.JobID]jobRef),
 		perBlockBytes:     cfg.PerBlockBytes,
-		blockSizeTokens:   gpu.BlockSizeTokens,
 		offloadPromptOnly: cfg.OffloadPromptOnly,
 	}
 

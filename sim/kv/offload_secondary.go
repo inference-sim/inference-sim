@@ -8,10 +8,11 @@ import "github.com/inference-sim/inference-sim/sim/internal/kvkey"
 // own prefix tokens. Secondary tiers are unbounded in H1 (#1587 defines no
 // per-secondary capacity).
 //
-// Writes are eager parallel replicas across all tiers (BC-C7a): a block landing
-// in CPU is copied to every secondary tier via fanOutSecondary. Lookups are
-// ORDERED (tier 0 first) and stop at the first holding tier. A tier's own drop
-// never touches another tier — eviction is not a spill-chain.
+// Writes are eager parallel replicas across all tiers (BC-C7a): OffloadCache.cascade
+// submits a Write job to every secondary tier, and each tier records the block only
+// when its Write job completes (SetClock). Lookups are ORDERED (tier 0 first) and
+// stop at the first holding tier. A tier's own drop never touches another tier —
+// eviction is not a spill-chain.
 type secondaryTier struct {
 	holds map[kvkey.BlockKey]struct{}
 }
@@ -39,15 +40,4 @@ func lookupSecondary(tiers []*secondaryTier, key kvkey.BlockKey) (int, bool) {
 		}
 	}
 	return 0, false
-}
-
-// fanOutSecondary writes key into every secondary tier (the write-through cascade
-// target set, BC-C7a) and returns the tier indices written, in order.
-func fanOutSecondary(tiers []*secondaryTier, key kvkey.BlockKey) []int {
-	written := make([]int, 0, len(tiers))
-	for i, tier := range tiers {
-		tier.store(key)
-		written = append(written, i)
-	}
-	return written
 }

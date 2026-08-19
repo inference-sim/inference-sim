@@ -171,6 +171,13 @@ Example:
 		// config, Fatalf if this binary cannot reproduce it, and Fatalf on a genuine
 		// flag/header conflict. Inert when the trace carries no offload config (BC-G5).
 		kvOffloadCfg := reconcileReplayKVOffload(cmd, traceData.Header.KVOffload)
+		// #1590 (H1): parity with run — the multi-tier offload chain (from the trace
+		// header or --kv-offload-config) and the legacy --kv-cpu-blocks single CPU tier
+		// are distinct offload models; refuse both with a clean CLI error rather than
+		// the library-level panic in NewKVStore.
+		if kvOffloadCfg.IsEnabled() && kvCPUBlocks > 0 {
+			logrus.Fatalf("--kv-cpu-blocks conflicts with the trace's kv_offload config (distinct KV-offload models); set only one")
+		}
 
 		// Resolve latency backend configuration (single code path shared with runCmd).
 		lr := resolveLatencyConfig(cmd)
