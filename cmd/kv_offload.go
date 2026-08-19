@@ -319,6 +319,7 @@ func simToHeaderOffload(c sim.KVOffloadConfig) *workload.TraceKVOffloadConfig {
 	}
 	h := &workload.TraceKVOffloadConfig{
 		CPUBytesToUse:          c.CPUBytesToUse,
+		PerBlockBytes:          c.PerBlockBytes,
 		BlockSize:              c.BlockSize,
 		BlocksPerChunk:         c.BlocksPerChunk,
 		TokensPerHash:          c.TokensPerHash,
@@ -377,7 +378,15 @@ func resolveReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, flagChan
 		if err := headerOffload.Validate(); err != nil {
 			return sim.KVOffloadConfig{}, fmt.Errorf("blis replay cannot reproduce the trace's kv_offload config: %w (INV-13: never silent degradation)", err)
 		}
-		if flagChanged && !reflect.DeepEqual(flagCfg, headerOffload) {
+		// Compare user-facing fields only: PerBlockBytes is DERIVED from the model KV
+		// size (not a user knob) and the replay-path flagCfg cannot compute it (no
+		// sim/latency import, and reconcile runs before the latency config resolves),
+		// so it is zero on the flag side. The header value is authoritative by design
+		// (INV-13 cross-host, never re-resolved), so exclude it from the equality gate;
+		// otherwise identical flags would spuriously conflict.
+		flagCmp, headerCmp := flagCfg, headerOffload
+		flagCmp.PerBlockBytes, headerCmp.PerBlockBytes = 0, 0
+		if flagChanged && !reflect.DeepEqual(flagCmp, headerCmp) {
 			return sim.KVOffloadConfig{}, fmt.Errorf("--kv-offload-config conflicts with the kv_offload config recorded in the trace header; on replay the header is authoritative — omit the flag or pass the identical config")
 		}
 		return headerOffload, nil
@@ -399,6 +408,7 @@ func headerToSimOffload(h *workload.TraceKVOffloadConfig) sim.KVOffloadConfig {
 	c := sim.KVOffloadConfig{
 		Enabled:                true,
 		CPUBytesToUse:          h.CPUBytesToUse,
+		PerBlockBytes:          h.PerBlockBytes,
 		BlockSize:              h.BlockSize,
 		BlocksPerChunk:         h.BlocksPerChunk,
 		TokensPerHash:          h.TokensPerHash,

@@ -55,6 +55,7 @@ type TraceHeader struct {
 // LoadTraceV2, so an unknown offload sub-key is a hard error (BC-N3 version guard).
 type TraceKVOffloadConfig struct {
 	CPUBytesToUse          int64                `yaml:"cpu_bytes_to_use"`
+	PerBlockBytes          int64                `yaml:"per_block_bytes"`
 	BlockSize              int64                `yaml:"block_size"`
 	BlocksPerChunk         int64                `yaml:"blocks_per_chunk"`
 	TokensPerHash          int64                `yaml:"tokens_per_hash"`

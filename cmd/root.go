@@ -2050,6 +2050,22 @@ var runCmd = &cobra.Command{
 
 		startTime := time.Now() // Get current time (start)
 
+		// #1590 (H1): derive per_block_bytes for the offload tier chain. sim/kv cannot
+		// import sim/latency, so compute the per-rank KV byte size of one GPU block here
+		// (model + TP are resolved) and record it on the resolved offload config. It
+		// feeds the CPU-tier block capacity and transfer-job sizing, and round-trips
+		// through the trace header (INV-13). Only when offload is enabled.
+		if kvOffloadCfg.IsEnabled() {
+			perTokenKVBytes, err := latency.KVBytesPerToken(lr.ModelConfig, tensorParallelism)
+			if err != nil {
+				logrus.Fatalf("kv_offload: cannot derive per_block_bytes from the model: %v", err)
+			}
+			kvOffloadCfg.PerBlockBytes = int64(perTokenKVBytes * float64(blockSizeTokens))
+			if kvOffloadCfg.PerBlockBytes <= 0 {
+				logrus.Fatalf("kv_offload: derived per_block_bytes must be > 0 (KVBytesPerToken=%v × block_size=%d)", perTokenKVBytes, blockSizeTokens)
+			}
+		}
+
 		// Unified cluster path (used for all values of numInstances).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/replay.go (replayCmd
 		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
