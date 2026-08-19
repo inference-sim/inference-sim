@@ -59,17 +59,21 @@ is unambiguous.
 
 ```bash
 # 1. Observe the real server, scraping the per-tier counters into the trace header.
-#    --vllm-commit records the pinned (unreleased) vLLM the counters require.
+#    --vllm-commit records the pinned (unreleased) vLLM the counters require. observe
+#    dispatches to a real server and does not itself model the offload tiers, so no
+#    --kv-offload-config is passed here — the observed hit-rate is whatever the server
+#    reports.
 blis observe --server-url http://localhost:8000 --model <model> \
-  --kv-offload-config offload.yaml \
   --workload-spec sweep.yaml \
   --scrape-kv-metrics --vllm-commit <sha> \
   --trace-header t.yaml --trace-data t.csv
 
-# 2. Replay the captured trace through the DES; --metrics-path carries the sim's
-#    aggregate cache_hit_rate. The header's kv_offload config is reproduced
-#    authoritatively; a tiered observation with no reproducible config is a hard error.
+# 2. Replay the captured trace through the DES to produce the SIM-side hit-rate. Supply
+#    --kv-offload-config matching the observed deployment — replay models the tiers and
+#    derives the aggregate cache_hit_rate into --metrics-path. (A tiered observation
+#    replayed WITHOUT an offload config is a hard error, never a silent GPU-only value.)
 blis replay --trace-header t.yaml --trace-data t.csv --model <model> \
+  --kv-offload-config offload.yaml \
   --results-path sim.json --metrics-path simagg.json
 
 # 3. Compare. TTFT/E2E come from --sim-results; the hit-rate comes from --sim-metrics.
@@ -78,6 +82,13 @@ blis calibrate --trace-header t.yaml --trace-data t.csv \
   --hit-rate-tolerance-pp 5 --ttft-mape-threshold 0.15 \
   --report calibration.json
 ```
+
+> **Note.** `blis observe` records the observed hit-rate and its source, but not the
+> offload config — it is a black-box dispatcher against a real server. The operator
+> supplies the deployment's `--kv-offload-config` on the **replay** step so the
+> simulator reproduces the tiered behaviour. For a sim-generated trace
+> (`blis run --kv-offload-config … --trace-output`) the config is instead recorded in
+> the header and reproduced authoritatively on replay (INV-13).
 
 The report's `hit_rate` block reports `real_hit_rate`, `sim_hit_rate`, `abs_error_pp`,
 `tolerance_pp`, `within`, and `source`. Targets on the minimal set: **TTFT MAPE ≤ 15%**

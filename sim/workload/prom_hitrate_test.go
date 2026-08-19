@@ -125,6 +125,21 @@ func TestDeriveObservedHitRate_ZeroQueriesGuard(t *testing.T) {
 	}
 }
 
+func TestDeriveObservedHitRate_HitsExceedQueriesGuard(t *testing.T) {
+	// A window where hits delta > queries delta is physically impossible (hit-rate > 1).
+	start := map[string]float64{PromTieringBlockHits: 0, PromTieringBlockQueries: 0}
+	end := map[string]float64{PromTieringBlockHits: 600, PromTieringBlockQueries: 400}
+	if _, err := DeriveObservedHitRate(start, end, ""); err == nil {
+		t.Fatal("expected hits>queries guard to error (hit-rate > 1 is impossible)")
+	}
+	// Same guard on the GPU fallback family.
+	gStart := map[string]float64{PromGPUPrefixCacheHits: 0, PromGPUPrefixCacheQueries: 0}
+	gEnd := map[string]float64{PromGPUPrefixCacheHits: 60, PromGPUPrefixCacheQueries: 40}
+	if _, err := DeriveObservedHitRate(gStart, gEnd, ""); err == nil {
+		t.Fatal("expected GPU-fallback hits>queries guard to error")
+	}
+}
+
 func TestDeriveObservedHitRate_CounterResetGuard(t *testing.T) {
 	start := map[string]float64{PromTieringBlockHits: 500, PromTieringBlockQueries: 1000}
 	end := map[string]float64{PromTieringBlockHits: 10, PromTieringBlockQueries: 20} // restarted

@@ -74,6 +74,18 @@ type CalibrationReport struct {
 	// MetricsOutput with cache_hit_rate is supplied (--sim-metrics); omitted
 	// otherwise so the legacy report shape is unchanged.
 	HitRate *HitRateComparison `json:"hit_rate,omitempty"`
+	// TTFTTolerance records the TTFT-MAPE tolerance verdict (#1583, BC-7) in the
+	// report so automation consumers see it, not only the stderr log. Populated
+	// whenever a TTFT metric exists; omitted otherwise.
+	TTFTTolerance *ToleranceVerdict `json:"ttft_tolerance,omitempty"`
+}
+
+// ToleranceVerdict is a compact machine-readable pass/fail against a MAPE threshold
+// (#1583). MAPE and Threshold are fractions (not percentages).
+type ToleranceVerdict struct {
+	MAPE      float64 `json:"mape"`
+	Threshold float64 `json:"threshold"`
+	Within    bool    `json:"within"`
 }
 
 // HitRateComparison holds the real-vs-simulated KV cache hit-rate comparison (#1583).

@@ -117,9 +117,11 @@ go build -o blis main.go
 # the observed hit-rate (vllm:kv_offload_tiering_block_hits/_block_queries, or the GPU
 # prefix-cache fallback) in the trace header for downstream calibrate. --vllm-commit
 # records the pinned (unreleased, PR #48798) vLLM the tiering counters require. A scrape
-# miss warns and omits the block (never fatal). See docs/guide/kv-offload-calibration.md.
+# miss warns and omits the block (never fatal). observe is a black-box dispatcher — it
+# does NOT take --kv-offload-config; the offload config is supplied on the replay step
+# (below). See docs/guide/kv-offload-calibration.md.
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
-  --kv-offload-config offload.yaml --workload chatbot --rate 10 --num-requests 100 \
+  --workload chatbot --rate 10 --num-requests 100 \
   --scrape-kv-metrics --vllm-commit 63a9a5010a \
   --trace-header trace.yaml --trace-data trace.csv
 
@@ -131,8 +133,13 @@ go build -o blis main.go
 # MetricsOutput from `blis replay --metrics-path`, which carries cache_hit_rate). The
 # report gains a hit_rate block with abs_error_pp and a within-tolerance verdict
 # (default 5 pp); a TTFT-MAPE verdict uses --ttft-mape-threshold (default 0.15).
-# Skipped with a warning when --sim-metrics is absent or lacks cache_hit_rate.
+# Skipped with a warning when --sim-metrics is absent or lacks cache_hit_rate. For a
+# tiered observed hit-rate, supply --kv-offload-config on replay to model the observed
+# deployment (observe traces are exempt from the "cannot add offload on replay" rule;
+# sim-generated traces stay header-authoritative). Replaying a tiered observation with
+# no offload config is a hard error (never a silent GPU-only value).
 ./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
+  --kv-offload-config offload.yaml \
   --results-path results.json --metrics-path simagg.json
 ./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json \
   --sim-metrics simagg.json --hit-rate-tolerance-pp 5 --ttft-mape-threshold 0.15 \

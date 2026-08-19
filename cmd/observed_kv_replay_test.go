@@ -37,8 +37,8 @@ func TestValidateObservedKVReplayable(t *testing.T) {
 func TestValidateObservedKVReplayable_ErrorMentionsConfig(t *testing.T) {
 	tiered := &workload.TraceObservedKVMetrics{Source: workload.ObservedKVSourceTiered}
 	err := validateObservedKVReplayable(tiered, false)
-	if err == nil || !strings.Contains(err.Error(), "kv_offload") {
-		t.Errorf("BC-10 error must mention kv_offload config, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "--kv-offload-config") {
+		t.Errorf("BC-10 error must point at --kv-offload-config, got %v", err)
 	}
 }
 
@@ -74,6 +74,29 @@ func makeSharedPrefixGroupRequests() []*sim.Request {
 		}
 	}
 	return reqs
+}
+
+// TestResolveReplayKVOffload_ObserveTraceAllowsFlagAdd verifies the #1583 fix for the
+// tiered observe→replay workflow: an observe trace (allowFlagAdd=true) with no header
+// offload config accepts a --kv-offload-config-supplied config to model the observed
+// deployment; a sim-generated trace (allowFlagAdd=false) still rejects it (INV-13).
+func TestResolveReplayKVOffload_ObserveTraceAllowsFlagAdd(t *testing.T) {
+	flagCfg := sim.KVOffloadConfig{
+		Enabled: true, CPUBytesToUse: 1 << 30, BlockSize: 16, BlocksPerChunk: 1,
+		TokensPerHash: 16, EvictionPolicy: "lru", OffloadPromptOnly: true,
+	}
+	// Observe trace: no header offload, flag supplied, add ALLOWED.
+	got, err := resolveReplayKVOffload(nil, true, flagCfg, true)
+	if err != nil {
+		t.Fatalf("observe trace must accept --kv-offload-config, got %v", err)
+	}
+	if !got.IsEnabled() {
+		t.Fatal("returned config should be the flag-supplied offload config")
+	}
+	// Sim-generated trace: identical inputs, add NOT allowed → error (INV-13).
+	if _, err := resolveReplayKVOffload(nil, true, flagCfg, false); err == nil {
+		t.Fatal("sim-generated trace must still reject a flag-added offload config (INV-13)")
+	}
 }
 
 // TestINV13_RunReplayParity_CacheHitRate verifies BC-5: with the KV-offload chain

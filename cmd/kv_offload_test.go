@@ -318,13 +318,13 @@ func TestResolveReplayKVOffload(t *testing.T) {
 	validSim := headerToSimOffload(validHeader)
 
 	t.Run("header authoritative, no flag", func(t *testing.T) {
-		got, err := resolveReplayKVOffload(validHeader, false, sim.KVOffloadConfig{})
+		got, err := resolveReplayKVOffload(validHeader, false, sim.KVOffloadConfig{}, false)
 		if err != nil || !reflect.DeepEqual(got, validSim) {
 			t.Fatalf("header should be used verbatim: got %+v err %v", got, err)
 		}
 	})
 	t.Run("matching flag accepted", func(t *testing.T) {
-		got, err := resolveReplayKVOffload(validHeader, true, validSim)
+		got, err := resolveReplayKVOffload(validHeader, true, validSim, false)
 		if err != nil || !reflect.DeepEqual(got, validSim) {
 			t.Fatalf("identical flag must be accepted: got %+v err %v", got, err)
 		}
@@ -332,7 +332,7 @@ func TestResolveReplayKVOffload(t *testing.T) {
 	t.Run("conflicting flag rejected", func(t *testing.T) {
 		other := validSim
 		other.CPUBytesToUse = 2048
-		_, err := resolveReplayKVOffload(validHeader, true, other)
+		_, err := resolveReplayKVOffload(validHeader, true, other, false)
 		if err == nil || !strings.Contains(err.Error(), "conflicts") {
 			t.Fatalf("conflicting flag must error with 'conflicts', got %v", err)
 		}
@@ -344,19 +344,19 @@ func TestResolveReplayKVOffload(t *testing.T) {
 			EvictionPolicy: "lru",
 			Tiers:          []workload.TraceKVOffloadTier{{Type: "p2p", RootDir: "/x"}},
 		}
-		_, err := resolveReplayKVOffload(bad, false, sim.KVOffloadConfig{})
+		_, err := resolveReplayKVOffload(bad, false, sim.KVOffloadConfig{}, false)
 		if err == nil || !strings.Contains(err.Error(), "cannot reproduce") {
 			t.Fatalf("unreproducible header must fail loudly, got %v", err)
 		}
 	})
 	t.Run("no header, no flag -> inert", func(t *testing.T) {
-		got, err := resolveReplayKVOffload(nil, false, sim.KVOffloadConfig{})
+		got, err := resolveReplayKVOffload(nil, false, sim.KVOffloadConfig{}, false)
 		if err != nil || got.IsEnabled() {
 			t.Fatalf("nil header + no flag must be inert, got %+v err %v", got, err)
 		}
 	})
 	t.Run("flag adds to a no-offload trace -> rejected", func(t *testing.T) {
-		_, err := resolveReplayKVOffload(nil, true, validSim)
+		_, err := resolveReplayKVOffload(nil, true, validSim, false)
 		if err == nil || !strings.Contains(err.Error(), "cannot add one on replay") {
 			t.Fatalf("adding offload to a no-offload trace must error, got %v", err)
 		}

@@ -27,7 +27,7 @@ func TestResolveReplayKVOffload_PerBlockBytesExcluded(t *testing.T) {
 	// Identical flags EXCEPT the derived PerBlockBytes (0 on the flag side).
 	flag := headerToSimOffload(header)
 	flag.PerBlockBytes = 0
-	got, err := resolveReplayKVOffload(header, true, flag)
+	got, err := resolveReplayKVOffload(header, true, flag, false)
 	if err != nil {
 		t.Fatalf("identical flags with a differing DERIVED PerBlockBytes must NOT conflict (INV-13), got %v", err)
 	}
@@ -39,7 +39,7 @@ func TestResolveReplayKVOffload_PerBlockBytesExcluded(t *testing.T) {
 	bad := headerToSimOffload(header)
 	bad.PerBlockBytes = 0
 	bad.CPUBytesToUse = 2048
-	if _, err := resolveReplayKVOffload(header, true, bad); err == nil || !strings.Contains(err.Error(), "conflicts") {
+	if _, err := resolveReplayKVOffload(header, true, bad, false); err == nil || !strings.Contains(err.Error(), "conflicts") {
 		t.Fatalf("a real user-facing divergence must still conflict, got %v", err)
 	}
 }

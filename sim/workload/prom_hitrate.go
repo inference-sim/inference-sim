@@ -116,6 +116,9 @@ func DeriveObservedHitRate(start, end map[string]float64, vllmCommit string) (*T
 		if queries <= 0 {
 			return nil, fmt.Errorf("tiered KV counters show zero block_queries over the measured window (%.0f); cannot derive a hit-rate", queries)
 		}
+		if hits > queries {
+			return nil, fmt.Errorf("tiered KV counters report more block_hits (%.0f) than block_queries (%.0f) over the window (hit-rate > 1 is impossible; likely a scrape/counter anomaly); refusing to record a bogus value", hits, queries)
+		}
 		readDelta, _ := familyDelta(start, end, PromTieringReadTime)
 		writeDelta, _ := familyDelta(start, end, PromTieringWriteTime)
 		return &TraceObservedKVMetrics{
@@ -141,6 +144,9 @@ func DeriveObservedHitRate(start, end map[string]float64, vllmCommit string) (*T
 		}
 		if queries <= 0 {
 			return nil, fmt.Errorf("GPU prefix-cache counters show zero queries over the measured window (%.0f); cannot derive a hit-rate", queries)
+		}
+		if hits > queries {
+			return nil, fmt.Errorf("GPU prefix-cache counters report more hits (%.0f) than queries (%.0f) over the window (hit-rate > 1 is impossible); refusing to record a bogus value", hits, queries)
 		}
 		return &TraceObservedKVMetrics{
 			Source:       ObservedKVSourceGPUCache,

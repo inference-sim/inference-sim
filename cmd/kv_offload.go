@@ -355,14 +355,19 @@ func simToHeaderOffload(c sim.KVOffloadConfig) *workload.TraceKVOffloadConfig {
 //   - a flag that would ADD offload to a trace captured without it ⇒ Fatalf.
 //
 // Returns the inert zero value when the trace carries no offload config.
-func reconcileReplayKVOffload(cmd *cobra.Command, headerBlock *workload.TraceKVOffloadConfig) sim.KVOffloadConfig {
+// allowFlagAdd is true for OBSERVE traces (Mode "real"): they carry real-server
+// timing, not a sim-generated offload config, so supplying --kv-offload-config to
+// model the observed deployment for the sim side of calibration (#1583) is allowed.
+// It is false for sim-generated (run/replay) traces, where INV-13 run/replay parity
+// forbids a flag adding an offload config the source run did not have.
+func reconcileReplayKVOffload(cmd *cobra.Command, headerBlock *workload.TraceKVOffloadConfig, allowFlagAdd bool) sim.KVOffloadConfig {
 	flagChanged := cmd.Flags().Changed("kv-offload-config")
 	var flagCfg sim.KVOffloadConfig
 	if flagChanged {
 		// resolveKVOffloadConfig itself logrus.Fatalf's on a malformed flag file.
 		flagCfg = resolveKVOffloadConfig(cmd)
 	}
-	cfg, err := resolveReplayKVOffload(headerBlock, flagChanged, flagCfg)
+	cfg, err := resolveReplayKVOffload(headerBlock, flagChanged, flagCfg, allowFlagAdd)
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
@@ -372,7 +377,7 @@ func reconcileReplayKVOffload(cmd *cobra.Command, headerBlock *workload.TraceKVO
 // resolveReplayKVOffload is the PURE, error-returning core of replay's
 // header-authoritative reconciliation (Deviation #9 — every reject branch is
 // unit-testable). See reconcileReplayKVOffload for the policy summary.
-func resolveReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, flagChanged bool, flagCfg sim.KVOffloadConfig) (sim.KVOffloadConfig, error) {
+func resolveReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, flagChanged bool, flagCfg sim.KVOffloadConfig, allowFlagAdd bool) (sim.KVOffloadConfig, error) {
 	headerOffload := headerToSimOffload(headerBlock)
 	if headerOffload.IsEnabled() {
 		if err := headerOffload.Validate(); err != nil {
@@ -392,7 +397,14 @@ func resolveReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, flagChan
 		return headerOffload, nil
 	}
 	if flagChanged && flagCfg.IsEnabled() {
-		return sim.KVOffloadConfig{}, fmt.Errorf("the trace was captured without a kv_offload config; --kv-offload-config cannot add one on replay (INV-13)")
+		if allowFlagAdd {
+			// Observe trace (#1583): the operator supplies the offload config the
+			// server ran with, to model the observed deployment for the sim side of
+			// the hit-rate comparison. PerBlockBytes is 0 here (model not yet
+			// resolved); replay derives it after the latency config resolves.
+			return flagCfg, nil
+		}
+		return sim.KVOffloadConfig{}, fmt.Errorf("the trace was captured without a kv_offload config; --kv-offload-config cannot add one on replay of a sim-generated trace (INV-13). Only observe traces (mode \"real\") may have an offload config supplied on replay to model the observed deployment")
 	}
 	return sim.KVOffloadConfig{}, nil
 }
@@ -411,7 +423,7 @@ func validateObservedKVReplayable(obs *workload.TraceObservedKVMetrics, offloadE
 		return nil
 	}
 	if obs.Source == workload.ObservedKVSourceTiered && !offloadEnabled {
-		return fmt.Errorf("the trace's observed_kv_metrics were captured from the tiered KV-offload counters (source=%q) but this replay has no reproducible kv_offload config; replay would produce a GPU-only hit-rate that calibrate cannot compare against the tiered observation — supply the kv_offload config (via the trace header or --kv-offload-config) or re-observe without tiering (INV-13, never silent degradation)", obs.Source)
+		return fmt.Errorf("the trace's observed_kv_metrics were captured from the tiered KV-offload counters (source=%q) but this replay has no offload config; replay would produce a GPU-only hit-rate that calibrate cannot compare against the tiered observation — pass --kv-offload-config <file> matching the observed deployment (INV-13, never silent degradation)", obs.Source)
 	}
 	return nil
 }

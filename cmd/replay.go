@@ -171,7 +171,10 @@ Example:
 		// replay (unlike --lora-config, which is flags-only). Reconstruct the recorded
 		// config, Fatalf if this binary cannot reproduce it, and Fatalf on a genuine
 		// flag/header conflict. Inert when the trace carries no offload config (BC-G5).
-		kvOffloadCfg := reconcileReplayKVOffload(cmd, traceData.Header.KVOffload)
+		// Observe traces (mode "real") may model the observed deployment's offload via
+		// --kv-offload-config for the sim side of the #1583 hit-rate comparison; sim-
+		// generated traces remain header-authoritative (INV-13).
+		kvOffloadCfg := reconcileReplayKVOffload(cmd, traceData.Header.KVOffload, traceData.Header.Mode == "real")
 		// #1590 (H1): parity with run — the multi-tier offload chain (from the trace
 		// header or --kv-offload-config) and the legacy --kv-cpu-blocks single CPU tier
 		// are distinct offload models; refuse both with a clean CLI error rather than
@@ -188,6 +191,22 @@ Example:
 
 		// Resolve latency backend configuration (single code path shared with runCmd).
 		lr := resolveLatencyConfig(cmd)
+
+		// #1583: derive PerBlockBytes for an offload config supplied by --kv-offload-config
+		// (the observe-trace calibration path). A sim-generated trace header already
+		// carries the run-computed value (>0), so this is skipped for run/replay parity;
+		// a flag-supplied config has PerBlockBytes==0 until the model resolves. Mirrors
+		// the derivation in cmd/root.go (runCmd) so run and replay agree.
+		if kvOffloadCfg.IsEnabled() && kvOffloadCfg.PerBlockBytes == 0 {
+			perTokenKVBytes, pbErr := latency.KVBytesPerToken(lr.ModelConfig, tensorParallelism)
+			if pbErr != nil {
+				logrus.Fatalf("kv_offload: cannot derive per_block_bytes from the model: %v", pbErr)
+			}
+			kvOffloadCfg.PerBlockBytes = int64(perTokenKVBytes * float64(kvOffloadCfg.BlockSize))
+			if kvOffloadCfg.PerBlockBytes <= 0 {
+				logrus.Fatalf("kv_offload: derived per_block_bytes must be > 0 (KVBytesPerToken=%v × block_size=%d)", perTokenKVBytes, kvOffloadCfg.BlockSize)
+			}
+		}
 
 		// Numeric flag validation (same as runCmd)
 		if numInstances < 1 {

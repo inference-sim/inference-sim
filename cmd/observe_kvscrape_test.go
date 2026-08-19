@@ -42,18 +42,19 @@ func TestScrapeKVMetrics_ParsesServedMetrics(t *testing.T) {
 
 // TestResolveObservedKVMetrics_EndToEnd verifies the end-of-window scrape + derive
 // wiring: given a start snapshot and a server serving the end snapshot, the derived
-// header block reflects the windowed delta (BC-1).
+// header block reflects the windowed delta (BC-1). Values keep hits <= queries so the
+// derived hit-rate stays in [0,1].
 func TestResolveObservedKVMetrics_EndToEnd(t *testing.T) {
-	// End-of-window server state.
-	end := "vllm:kv_offload_tiering_block_hits 800\nvllm:kv_offload_tiering_block_queries 1000\n"
+	// End-of-window server state: 500 hits / 1200 queries.
+	end := "vllm:kv_offload_tiering_block_hits 500\nvllm:kv_offload_tiering_block_queries 1200\n"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(end))
 	}))
 	defer srv.Close()
 	client := NewRealClient(srv.URL, "", "m", "vllm")
 
-	// Start-of-window snapshot: 300 hits / 500 queries. Delta = 500 / 500 = 1.0? No:
-	// hits delta = 500, queries delta = 500 → 1.0. Use different numbers for clarity.
+	// Start-of-window snapshot: 200 hits / 600 queries. Window delta = (500-200)/(1200-600)
+	// = 300/600 = 0.5 (strictly interior, hits <= queries).
 	start := map[string]float64{
 		workload.PromTieringBlockHits:    200,
 		workload.PromTieringBlockQueries: 600,
@@ -62,15 +63,15 @@ func TestResolveObservedKVMetrics_EndToEnd(t *testing.T) {
 	if block == nil {
 		t.Fatal("expected a derived observed-KV-metrics block")
 	}
-	// hits delta 600 / queries delta 400 = 1.5 → but hit rate can't exceed 1; use the
-	// actual arithmetic: (800-200)/(1000-600) = 600/400 = 1.5. That is a degenerate
-	// (impossible) real scenario; adjust expectations to the arithmetic the function
-	// performs so the test asserts behavior, not physical plausibility.
+	// (500-200)/(1200-600) = 300/600 = 0.5.
 	if block.Source != workload.ObservedKVSourceTiered {
 		t.Errorf("source = %q, want tiered", block.Source)
 	}
-	if block.BlockHits != 600 || block.BlockQueries != 400 {
-		t.Errorf("deltas = %d/%d, want 600/400", block.BlockHits, block.BlockQueries)
+	if block.BlockHits != 300 || block.BlockQueries != 600 {
+		t.Errorf("deltas = %d/%d, want 300/600", block.BlockHits, block.BlockQueries)
+	}
+	if block.HitRate != 0.5 {
+		t.Errorf("hit_rate = %v, want 0.5", block.HitRate)
 	}
 	if block.VLLMCommit != "pinned-sha" {
 		t.Errorf("commit = %q, want pinned-sha", block.VLLMCommit)

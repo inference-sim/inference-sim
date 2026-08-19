@@ -253,6 +253,16 @@ Example:
 			}
 		}
 
+		// TTFT-MAPE tolerance verdict (#1583, BC-7): recorded in the report (not just
+		// logged) so automation consumers see it. Set before the write below.
+		if ttft, ok := report.Metrics["ttft"]; ok {
+			report.TTFTTolerance = &workload.ToleranceVerdict{
+				MAPE:      ttft.RequestLevel.MAPE,
+				Threshold: calibrateTTFTMapeThreshold,
+				Within:    ttft.RequestLevel.MAPE <= calibrateTTFTMapeThreshold,
+			}
+		}
+
 		// Step 7: Write report JSON
 		reportData, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
@@ -333,10 +343,10 @@ Example:
 			logFn("KV hit-rate (source=%s): Real=%.4f Sim=%.4f AbsErr=%.2fpp (tolerance %.2fpp) [%s]",
 				hr.Source, hr.RealHitRate, hr.SimHitRate, hr.AbsErrorPP, hr.TolerancePP, verdict)
 		}
-		if ttft, ok := report.Metrics["ttft"]; ok {
-			mapePct := ttft.RequestLevel.MAPE * 100
-			threshPct := calibrateTTFTMapeThreshold * 100
-			if ttft.RequestLevel.MAPE <= calibrateTTFTMapeThreshold {
+		if tv := report.TTFTTolerance; tv != nil {
+			mapePct := tv.MAPE * 100
+			threshPct := tv.Threshold * 100
+			if tv.Within {
 				logrus.Infof("TTFT MAPE=%.1f%% (threshold %.1f%%) [WITHIN]", mapePct, threshPct)
 			} else {
 				logrus.Warnf("TTFT MAPE=%.1f%% (threshold %.1f%%) [EXCEEDS]", mapePct, threshPct)
