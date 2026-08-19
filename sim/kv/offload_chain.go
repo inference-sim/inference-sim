@@ -52,6 +52,7 @@ type OffloadCache struct {
 	promotionsFired  int64 // secondary→CPU promotions initiated (Read jobs submitted)
 	promotionsFailed int64 // secondary hits refused by the BC-C5 evictable gate → recompute
 	reloadCount      int64 // CPU→GPU reloads performed (diagnostic)
+	mirrorSkipped    int64 // MirrorToCPU stores skipped because CPU was full and all-pinned
 }
 
 // NewOffloadCache builds the tier chain from a resolved, enabled KVOffloadConfig.
@@ -160,13 +161,38 @@ func (o *OffloadCache) KVThrashingRate() float64 {
 	return float64(o.promotionsFailed) / float64(attempts)
 }
 
-// SetClock advances the offload clock and applies transfer completions (Task 7
-// fleshes out the completion dispatch). It is the ONLY point completions are
-// applied, and it runs at the top of each step before batch formation.
+// SetClock advances the offload clock and applies transfer completions. It is the
+// ONLY point completions are applied (never reading the station's internal
+// pendingCompleted mid-step), and it runs at the top of each step before batch
+// formation — so a promotion that finished since the last step is a HIT this step,
+// not next (vLLM within-step ordering §3.4 rule 1). A backward clock is a safe
+// no-op (the station's Poll never moves the clock back, INV-3).
 func (o *OffloadCache) SetClock(clock int64) {
 	o.clock = clock
-	// Task 7: poll the station and apply completions (Read→completeStore,
-	// Write→secondary.store+unpin).
+	if o.station == nil {
+		return
+	}
+	for _, id := range o.station.Poll(clock) {
+		ref, ok := o.inflight[id]
+		if !ok {
+			continue // defensive: unknown/duplicate id
+		}
+		delete(o.inflight, id)
+		switch ref.dir {
+		case kvtransfer.Read:
+			// Promotion (secondary→CPU) landed: -1 → 0, block becomes readable.
+			for _, k := range ref.keys {
+				o.cpu.completeStore(k, true)
+			}
+		case kvtransfer.Write:
+			// Cascade replica (CPU→secondary) landed: record it in the tier and
+			// release the CPU write-lock (re-evictable once its last writer finishes).
+			for _, k := range ref.keys {
+				o.secondary[ref.tier].store(k)
+				o.cpu.unpin(k)
+			}
+		}
+	}
 }
 
 // AllocateKVBlocks consults the tier chain, then allocates on GPU. CPU-resident
@@ -337,8 +363,70 @@ func (o *OffloadCache) maybePromoteFromSecondary(keys []kvkey.BlockKey, i, n int
 	o.inflight[id] = jobRef{keys: run, tier: tier, dir: kvtransfer.Read}
 }
 
-// MirrorToCPU stores newly-completed full blocks into the CPU tier and cascades
-// them to the secondary tiers (Task 6 implements it). No-op for now.
+// MirrorToCPU stores each request's newly-completed full GPU blocks into the CPU
+// tier and, for a block that newly lands there, cascades it to every secondary
+// tier (write-through, BC-C7a). Each cascade Write pins the CPU block for the
+// write duration (ref_cnt++), which is what starves the evictable pool and forces
+// the BC-C5 recompute path under a burst of writes. When the CPU tier is full and
+// every block is pinned, the store finds no evictable victim and the block is
+// SKIPPED (counted) — never force-evicting a locked block (BC-C4) or dropping data
+// silently (R1). With OffloadPromptOnly (vLLM default TRUE) only prompt blocks are
+// offloaded; decode-generated blocks are not. Uses the stored clock (SetClock ran
+// earlier this step).
 func (o *OffloadCache) MirrorToCPU(batch []*sim.Request) {
-	// Task 6: store new full blocks (OffloadPromptOnly gate) + write-through cascade.
+	bs := o.gpu.BlockSize()
+	for _, req := range batch {
+		blockIDs, ok := o.gpu.RequestMap[req.ID]
+		if !ok {
+			continue
+		}
+		promptBlocks := int64(len(blockIDs))
+		if o.offloadPromptOnly {
+			promptBlocks = req.InputLen() / bs // full prompt blocks only
+		}
+		for i, blockID := range blockIDs {
+			if int64(i) >= promptBlocks {
+				break // OffloadPromptOnly: stop at the first decode block
+			}
+			blk := o.gpu.Blocks[blockID]
+			if blk.Hash == "" || util.Len64(blk.Tokens) < bs {
+				continue // only full, hashed blocks are offloadable
+			}
+			key := kvkey.BlockKey(blk.Hash)
+			if o.cpu.lookup(key) != cpuMiss {
+				o.cpu.touchKey(key) // already resident: refresh recency, no re-cascade
+				continue
+			}
+			if !o.cpu.store(key) {
+				o.mirrorSkipped++ // CPU full and all-pinned: skip (BC-C4, R1)
+				continue
+			}
+			o.cascade(key)
+		}
+	}
+}
+
+// cascade submits a write-through replica of a freshly-stored CPU block to every
+// secondary tier and pins the CPU block once per in-flight write, so it is
+// non-evictable until every replica completes (BC-C3 pin, BC-C7a fan-out). The
+// pins are released as the Write jobs complete (SetClock). No-op when there are no
+// secondary tiers (CPU-only offload).
+func (o *OffloadCache) cascade(key kvkey.BlockKey) {
+	if o.station == nil {
+		return
+	}
+	for tier := range o.secondary {
+		o.cpu.pin(key) // lock for the write duration (ref_cnt++)
+		id, accepted := o.station.Submit(kvtransfer.TransferJob{
+			Tier:       tier,
+			Direction:  kvtransfer.Write,
+			Bytes:      o.perBlockBytes,
+			SubmitTick: o.clock,
+		})
+		if !accepted {
+			o.cpu.unpin(key) // MaxQueueDepth==0 => unreachable; defensive
+			continue
+		}
+		o.inflight[id] = jobRef{keys: []kvkey.BlockKey{key}, tier: tier, dir: kvtransfer.Write}
+	}
 }
