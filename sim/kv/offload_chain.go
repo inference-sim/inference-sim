@@ -42,6 +42,13 @@ type OffloadCache struct {
 
 	inflight map[kvtransfer.JobID]jobRef // in-flight transfer jobs, applied on SetClock→Poll
 
+	// H3 (#1591) step-boundary re-poll state. deferred tracks new prefill admissions
+	// set aside waiting for a secondary→CPU fetch (keyed by Request.ID). existenceKnown
+	// models vLLM's async-lookup existence cache: a key present ⇒ its secondary
+	// existence is resolved (warm, skips the RETRY round); absent ⇒ cold (+1 round).
+	deferred       map[string]*deferralState
+	existenceKnown map[kvkey.BlockKey]struct{}
+
 	perBlockBytes     int64 // resolved per-rank KV bytes of one GPU block (transfer-job sizing)
 	offloadPromptOnly bool
 	clock             int64
@@ -85,6 +92,8 @@ func NewOffloadCache(gpu *KVCacheState, cfg sim.KVOffloadConfig) *OffloadCache {
 		gpu:               gpu,
 		cpu:               newOffloadCPUTier(capacity),
 		inflight:          make(map[kvtransfer.JobID]jobRef),
+		deferred:          make(map[string]*deferralState),
+		existenceKnown:    make(map[kvkey.BlockKey]struct{}),
 		perBlockBytes:     cfg.PerBlockBytes,
 		offloadPromptOnly: cfg.OffloadPromptOnly,
 	}
@@ -195,15 +204,66 @@ func (o *OffloadCache) SetClock(clock int64) {
 	}
 }
 
-// AllocateKVBlocks consults the tier chain, then allocates on GPU. CPU-resident
-// prefix blocks are reloaded to the GPU free list synchronously (so a subsequent
-// GetCachedBlocks hits them); a secondary-resident prefix run kicks off an async
-// promotion (a station Read job that populates CPU for a LATER lookup) but is
-// treated as a miss for THIS request (the triggering request never waits for its
-// own promotion — that request-level deferral is H3, #1591). The GPU commit/
-// allocate structure mirrors the legacy TieredKVCache path (INV-4 GPU
-// conservation, hash-chain correctness).
+// AllocateKVBlocks consults the tier chain and allocates on GPU. It adds the H3
+// (#1591) step-boundary deferral in front of the H1 allocate path
+// (allocateThroughChain), gated to NEW prefill admissions:
+//
+//   - A new request (not yet on the GPU) whose needed prefix requires a
+//     secondary→CPU fetch is DEFERRED — it is left in the WaitQ and re-polled each
+//     step (PollDeferred) until its promotion lands (then admitted) or the fetch is
+//     refused/lost (then recomputed). This realizes vLLM's step-boundary re-poll:
+//     the offload-attributable TTFT delay is a whole multiple of step time.
+//   - A running-request continuation (Phase-1 chunked prefill, decode sub-request,
+//     final-token alloc) never defers — it keeps the H1 background-promote path,
+//     where a false return means GPU pressure (preempt), not "skip".
+//
+// The deferral machinery is inert when there are no secondary tiers, so CPU-only
+// offload and all non-offload stores are byte-identical (INV-6).
 func (o *OffloadCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
+	if _, running := o.gpu.RequestMap[req.ID]; !running {
+		// Resume seed for the read-only fetch classification: past the caller's
+		// GPU-matched prefix (a fresh request owns nothing yet, so RequestMap does
+		// not extend it).
+		reloadStartBlock := int64(len(cachedBlocks))
+		reloadPrevHash := ""
+		if reloadStartBlock > 0 {
+			reloadPrevHash = o.gpu.Blocks[cachedBlocks[reloadStartBlock-1]].Hash
+		}
+
+		if st, tracked := o.deferred[req.ID]; tracked {
+			if !st.resolved && !st.recompute {
+				// Still pending. Batch formation skips these via PollDeferred, so this
+				// is defensive: never re-fire a promotion, never admit mid-fetch.
+				return false
+			}
+			// resolved (blocks landed) or recompute (fetch refused/lost): admit through
+			// the H1 path (reloads now-ready CPU blocks; a residual miss recomputes —
+			// it never re-enters defer). Clear the episode only once actually admitted;
+			// on GPU pressure the entry persists so the next step retries without
+			// resetting state (no re-defer, backstop preserved).
+			ok := o.allocateThroughChain(req, startIndex, endIndex, cachedBlocks)
+			if ok {
+				delete(o.deferred, req.ID)
+			}
+			return ok
+		}
+
+		if fc := o.classifyFetch(req.FullInputTokens(), reloadStartBlock, reloadPrevHash); fc.kind != fetchNone {
+			o.registerDeferral(req.ID, fc)
+			return false // defer: stays in WaitQ, re-polled next step
+		}
+	}
+	return o.allocateThroughChain(req, startIndex, endIndex, cachedBlocks)
+}
+
+// allocateThroughChain is the H1 (#1590) allocate path: reload CPU-resident prefix
+// blocks to the GPU free list synchronously (so a subsequent GetCachedBlocks hits
+// them); a secondary-resident prefix run kicks off an async background promotion (a
+// station Read job that populates CPU for a LATER lookup) but is treated as a miss
+// for THIS call. The GPU commit/allocate structure mirrors the legacy TieredKVCache
+// path (INV-4 GPU conservation, hash-chain correctness). H3 deferral wraps this in
+// AllocateKVBlocks; for a resolved deferral this reloads the now-CPU-resident run.
+func (o *OffloadCache) allocateThroughChain(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
 	// Resume the consult past the prefix the caller already matched on GPU, and
 	// past what a running request already owns (its partially-filled last block
 	// must not be reloaded — same running-request trap as TieredKVCache). The
@@ -331,13 +391,33 @@ func (o *OffloadCache) consultAndReload(tokens []sim.TokenID, startBlock int64, 
 // gate) and submits a single Read job for the run. If the gate refuses the run the
 // promotion is a miss (recompute); the request has already been served whatever
 // GPU/CPU prefix it had.
+//
+// This is the H1 background-promotion path, used for RUNNING-request continuations
+// that reach a secondary-resident block (the triggering request does NOT wait —
+// the promotion populates CPU for a later lookup). NEW prefill admissions instead
+// DEFER (H3, #1591): see classifyFetch/registerDeferral, which reuse the same
+// gatherSecondaryRun + firePromotionRun helpers.
 func (o *OffloadCache) maybePromoteFromSecondary(tailKeys []kvkey.BlockKey, localIdx int) {
+	run, tier, ok := o.gatherSecondaryRun(tailKeys, localIdx)
+	if !ok {
+		return // no station/tiers, or a genuine miss (absent from every secondary tier)
+	}
+	o.firePromotionRun(run, tier)
+}
+
+// gatherSecondaryRun returns the contiguous run of not-yet-CPU-resident blocks
+// starting at tailKeys[localIdx] that are all held by the SAME first-matching
+// secondary tier, plus that tier index. ok is false when there is no station/tier
+// or the starting block is absent from every secondary tier (a genuine miss). It is
+// read-only (no allocation, no submission) so both the H1 promote path and the H3
+// deferral classifier can use it.
+func (o *OffloadCache) gatherSecondaryRun(tailKeys []kvkey.BlockKey, localIdx int) ([]kvkey.BlockKey, int, bool) {
 	if o.station == nil || len(o.secondary) == 0 {
-		return
+		return nil, 0, false
 	}
 	tier, ok := lookupSecondary(o.secondary, tailKeys[localIdx])
 	if !ok {
-		return // genuine miss (absent from every secondary tier)
+		return nil, 0, false // genuine miss (absent from every secondary tier)
 	}
 	run := []kvkey.BlockKey{tailKeys[localIdx]}
 	for j := localIdx + 1; j < len(tailKeys); j++ {
@@ -352,10 +432,20 @@ func (o *OffloadCache) maybePromoteFromSecondary(tailKeys []kvkey.BlockKey, loca
 		}
 		run = append(run, tailKeys[j])
 	}
+	return run, tier, true
+}
+
+// firePromotionRun allocates NOT-READY CPU slots for the run (prepareStore,
+// all-or-nothing under the BC-C5 evictable gate) and submits a single Read job.
+// It returns the station JobID and true on success; (0, false) when the gate
+// refuses the run (promotionsFailed++, recompute) or the (unbounded) station
+// somehow rejects. Shared by the H1 background path and the H3 deferral path so
+// the ref_cnt/station bookkeeping lives in exactly one place.
+func (o *OffloadCache) firePromotionRun(run []kvkey.BlockKey, tier int) (kvtransfer.JobID, bool) {
 	granted := o.cpu.prepareStore(run) // all-or-nothing over the (all-fresh) run
 	if granted == 0 {
 		o.promotionsFailed++ // BC-C5: evictable gate refused the run -> recompute
-		return
+		return 0, false
 	}
 	id, accepted := o.station.Submit(kvtransfer.TransferJob{
 		Tier:       tier,
@@ -369,10 +459,11 @@ func (o *OffloadCache) maybePromoteFromSecondary(tailKeys []kvkey.BlockKey, loca
 		for _, k := range run {
 			o.cpu.completeStore(k, false)
 		}
-		return
+		return 0, false
 	}
 	o.promotionsFired++
 	o.inflight[id] = jobRef{keys: run, tier: tier, dir: kvtransfer.Read}
+	return id, true
 }
 
 // MirrorToCPU stores each request's newly-completed full GPU blocks into the CPU
