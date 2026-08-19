@@ -150,6 +150,7 @@ func (o *OffloadCache) markKnown(keys []kvkey.BlockKey) {
 // action. Returns nothing; the request is left in the WaitQ (the caller returns
 // "defer" to batch formation).
 func (o *OffloadCache) registerDeferral(reqID string, fc fetchClass) {
+	o.deferralsStarted++
 	st := &deferralState{keys: fc.run, tier: fc.tier, startTick: o.clock}
 	switch fc.kind {
 	case fetchPending:
@@ -272,3 +273,9 @@ func (o *OffloadCache) IsDeferred(id string) bool {
 func (o *OffloadCache) ClearDeferred(id string) {
 	delete(o.deferred, id)
 }
+
+// DeferralsStarted returns the cumulative count of new prefill admissions that were
+// set aside for a secondary-tier fetch (H3, #1591). A load-independent diagnostic
+// (like promotionsFired, #1586); 0 for a run where no request ever waited on a
+// secondary tier.
+func (o *OffloadCache) DeferralsStarted() int64 { return o.deferralsStarted }

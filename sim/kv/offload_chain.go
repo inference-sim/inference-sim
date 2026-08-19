@@ -28,12 +28,15 @@ type jobRef struct {
 // SnapshotCachedBlocksFn used by cluster routing.
 //
 // It is driven through the synchronous KVStore seam: SetClock advances the
-// station and applies completions; AllocateKVBlocks consults the chain and kicks
-// off async promotions; MirrorToCPU stores freshly-computed blocks and cascades
-// them. There are NO sim.Event objects — the station is the queueing model, and
-// timing flows through token counts (recompute under lock-saturation raises
-// prefill tokens via the existing StepTime model). Request-level deferral and
-// per-request transfer latency (the dominant TTFT effect) are H3 (#1591).
+// station and applies completions; AllocateKVBlocks consults the chain and either
+// defers a new admission or kicks off async promotions; MirrorToCPU stores
+// freshly-computed blocks and cascades them. There are NO sim.Event objects — the
+// station is the queueing model, and timing flows through token counts (recompute
+// under lock-saturation raises prefill tokens via the existing StepTime model).
+// Request-level step-boundary deferral (the dominant TTFT effect, H3 #1591) is
+// realized by leaving a new admission in the WaitQ and re-polling it each step
+// (PollDeferred / offload_deferral.go) — the delay is a whole multiple of step
+// time, not a per-request transfer latency (ConsumePendingTransferLatency stays 0).
 type OffloadCache struct {
 	gpu       *KVCacheState
 	cpu       *offloadCPUTier
@@ -59,6 +62,7 @@ type OffloadCache struct {
 	promotionsFailed int64 // secondary hits refused by the BC-C5 evictable gate → recompute
 	reloadCount      int64 // CPU→GPU reloads performed (diagnostic)
 	mirrorSkipped    int64 // MirrorToCPU stores skipped because CPU was full and all-pinned
+	deferralsStarted int64 // new admissions set aside for a secondary fetch (H3, #1591)
 }
 
 // NewOffloadCache builds the tier chain from a resolved, enabled KVOffloadConfig.
@@ -138,11 +142,12 @@ func (o *OffloadCache) SnapshotCachedBlocksFn() func([]sim.TokenID) int {
 	return o.gpu.SnapshotCachedBlocksFn()
 }
 
-// PendingTransferLatency / ConsumePendingTransferLatency return 0: H1 charges no
-// explicit per-request transfer latency for the offload path. Timing impact flows
-// through token counts (recompute under lock-saturation → more prefill tokens →
-// longer step via the existing StepTime model); the dominant step-boundary
-// deferral latency is H3 (#1591).
+// PendingTransferLatency / ConsumePendingTransferLatency return 0: the offload path
+// charges no explicit per-request transfer latency. Timing impact flows through
+// token counts (recompute under lock-saturation → more prefill tokens → longer step
+// via the existing StepTime model) and, for the dominant TTFT effect, through
+// step-boundary deferral (H3 #1591) — a deferred admission is delayed by whole
+// steps of WaitQ residency, not by a latency added to any single step (BC-T7).
 func (o *OffloadCache) PendingTransferLatency() int64        { return 0 }
 func (o *OffloadCache) ConsumePendingTransferLatency() int64 { return 0 }
 

@@ -9,7 +9,9 @@ import (
 // cpuLookupResult is the readability state of a key in the CPU offload tier. It
 // mirrors the readable subset of vLLM's LookupResult (base.py): a block is either
 // absent, present-and-readable, or present-but-write-in-flight. The RETRY state
-// (async secondary existence check) is H3 (#1591) and is not modeled here.
+// (the async secondary existence check) is not a CPU-tier state — it is modeled at
+// the request level by the H3 deferral machine (offload_deferral.go: a cold hit
+// spends one deferRetry round before the promotion is submitted).
 type cpuLookupResult int
 
 const (
