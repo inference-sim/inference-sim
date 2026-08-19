@@ -121,6 +121,11 @@ type TraceKVOffloadTier struct {
 	ReadBandwidth  float64 `yaml:"read_bandwidth"`
 	WriteBandwidth float64 `yaml:"write_bandwidth"`
 	BaseLatency    float64 `yaml:"base_latency"`
+	// #1581 device model (resolved for the selected regime). Always present so the
+	// round-trip is lossless (BC-G6); Qsat=1/f₁=1.0/σ=0 encode "ramp/jitter off".
+	SaturationQueueDepth   int64   `yaml:"saturation_queue_depth"`
+	SingleTransferFraction float64 `yaml:"single_transfer_fraction"`
+	LatencyJitterStddev    float64 `yaml:"latency_jitter_stddev"`
 }
 
 // TraceServerConfig captures server configuration in trace header.
