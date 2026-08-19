@@ -225,7 +225,14 @@ func (o *OffloadCache) SetClock(clock int64) {
 // The deferral machinery is inert when there are no secondary tiers, so CPU-only
 // offload and all non-offload stores are byte-identical (INV-6).
 func (o *OffloadCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
-	if _, running := o.gpu.RequestMap[req.ID]; !running {
+	// Defer only genuinely-new prefill admissions. A running-request continuation
+	// already owns GPU blocks (in RequestMap). A PD decode sub-request is also NOT a
+	// prefill admission: its KV is pre-reserved via ReserveTransferredKV
+	// (AllocateKVBlocks(req, 0, inputLen, nil) with req.IsDecodeSubRequest already
+	// set) and its prompt prefix may be secondary-resident on the decode instance —
+	// deferring it would make the reservation return false and the request be
+	// dropped (dropAtStart). Both keep the H1 allocate path (pre-#1591 behavior).
+	if _, running := o.gpu.RequestMap[req.ID]; !running && !req.IsDecodeSubRequest {
 		// Resume seed for the read-only fetch classification: past the caller's
 		// GPU-matched prefix (a fresh request owns nothing yet, so RequestMap does
 		// not extend it).

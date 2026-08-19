@@ -350,6 +350,30 @@ func TestDeferral_ConcurrentColdSamePrefixShareOnePromotion(t *testing.T) {
 	}
 }
 
+// A PD decode sub-request (KV pre-reservation via ReserveTransferredKV, which calls
+// AllocateKVBlocks(req, 0, inputLen, nil) with IsDecodeSubRequest set) must NEVER be
+// deferred even when its prompt prefix is secondary-resident — deferring would make
+// the reservation return false and the request be dropped. It keeps the H1 path
+// (pre-#1591 behavior): the reservation succeeds and a background promotion fires.
+func TestDeferral_DecodeSubRequestDoesNotDefer(t *testing.T) {
+	tokens := []sim.TokenID{1, 2, 3, 4}
+	oc := deferOC(80, 7000)
+	seedSecondary(oc, tokens) // prompt prefix resides only on the secondary tier
+	req := &sim.Request{ID: "d", InputTokens: tokens, IsDecodeSubRequest: true}
+
+	oc.SetClock(1000)
+	ok := oc.AllocateKVBlocks(req, 0, 4, nil) // the ReserveTransferredKV call shape
+	if oc.IsDeferred(req.ID) {
+		t.Fatalf("a PD decode sub-request must never be deferred (would be dropped)")
+	}
+	if !ok {
+		t.Fatalf("the KV reservation must succeed via the H1 path (GPU has capacity)")
+	}
+	if _, tracked := oc.deferred[req.ID]; tracked {
+		t.Fatalf("a decode sub-request must not register a deferral episode")
+	}
+}
+
 // ClearDeferred forgets a request that leaves the WaitQ by a non-admit path, so the
 // deferred map does not leak (the P benchmark stays O(live deferrals)).
 func TestDeferral_ClearDeferredForgets(t *testing.T) {
