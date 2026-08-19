@@ -3,6 +3,7 @@ package kvtransfer
 import (
 	"container/heap"
 	"fmt"
+	"math"
 )
 
 // Direction distinguishes the two transfer classes a tier serves.
@@ -45,6 +46,15 @@ type TransferJob struct {
 	Direction  Direction // Read or Write
 	Bytes      int64     // total payload bytes (≥ 0)
 	SubmitTick int64     // simulation tick at which the job is submitted (≥ 0, non-decreasing)
+
+	// JitterFactor optionally scales this job's (depth-adjusted) service time by a
+	// caller-supplied multiplicative factor (#1581, BC-D5): completeAt = start +
+	// round(serviceTicks · JitterFactor). It is drawn by the caller from a seeded
+	// RNG (the station itself draws no randomness — BC-S4), so the station stays a
+	// pure function of its inputs. A value ≤ 0 (the zero-value default) is the
+	// "no jitter" sentinel: the exact integer service time is used unchanged
+	// (byte-identical, BC-D2/INV-6).
+	JitterFactor float64
 }
 
 // TierConfig describes one tier's server pool and its per-direction service
@@ -63,9 +73,25 @@ type TierConfig struct {
 	WriteBaseTicks int64
 
 	// ReadBytesPerTick / WriteBytesPerTick are the per-direction bandwidths in
-	// bytes per tick (> 0). Read and write are independent (BC-S3).
+	// bytes per tick (> 0). Read and write are independent (BC-S3). With a
+	// queue-depth ramp enabled (see below) these are the SATURATED (peak, q≥Qsat)
+	// bandwidths; without a ramp they are the constant bandwidth used at all
+	// depths.
 	ReadBytesPerTick  float64
 	WriteBytesPerTick float64
+
+	// SaturationQueueDepth (Qsat) and SingleTransferFraction (f₁) describe the
+	// device's queue-depth bandwidth curve (#1581, BC-D1). Effective per-transfer
+	// bandwidth ramps linearly from f₁·bw at in-service depth q=1 up to bw (peak)
+	// at q=Qsat, and is flat (bw) for q>Qsat. The ramp is DISABLED — bandwidth is
+	// the constant bw at every depth, byte-identical to the pre-#1581 linear model
+	// (BC-D2, INV-6) — whenever Qsat≤1, f₁≥1, or f₁≤0 (the zero-value default). It
+	// applies equally to both directions, indexed by that direction's in-service
+	// count. q is fixed at service-start and never recomputed mid-flight (DL-4),
+	// which keeps completeAt stable for the completion heap (BC-S4). When Qsat≥2
+	// the ramp is active and f₁ must be in (0,1].
+	SaturationQueueDepth   int
+	SingleTransferFraction float64
 
 	// MaxQueueDepth bounds each of the tier's two queues. 0 means unbounded,
 	// matching vLLM's deque()-backed queues; a positive value enables the
@@ -104,6 +130,7 @@ type job struct {
 	submitTick int64
 	completeAt int64       // valid once the job is in service
 	server     serverClass // which server group is serving it (valid once in service)
+	jitter     float64     // caller-supplied service-time multiplier; ≤0 == none (BC-D5)
 }
 
 // tierState is the mutable per-tier state.
@@ -179,25 +206,52 @@ func validateTier(i int, tc TierConfig) error {
 	if tc.MaxQueueDepth < 0 {
 		return fmt.Errorf("kvtransfer: tier %d MaxQueueDepth must be ≥ 0, got %d", i, tc.MaxQueueDepth)
 	}
+	if tc.SaturationQueueDepth < 0 {
+		return fmt.Errorf("kvtransfer: tier %d SaturationQueueDepth must be ≥ 0, got %d", i, tc.SaturationQueueDepth)
+	}
+	// The single-transfer fraction only constrains behavior when the ramp is
+	// active (Qsat ≥ 2); a valid fraction is finite and in (0, 1] (1.0 is a
+	// no-op ramp). When Qsat ≤ 1 the fraction is ignored and unconstrained.
+	if tc.SaturationQueueDepth >= 2 {
+		f := tc.SingleTransferFraction
+		if math.IsNaN(f) || math.IsInf(f, 0) || !(f > 0) || f > 1 {
+			return fmt.Errorf("kvtransfer: tier %d SingleTransferFraction must be in (0,1] when SaturationQueueDepth ≥ 2, got %g", i, f)
+		}
+	}
 	return nil
 }
 
 // TierCount returns the number of configured secondary tiers.
 func (s *TransferStation) TierCount() int { return len(s.tiers) }
 
-// ServiceTicks returns the service time (in ticks) a job of the given size would
-// take on the given tier and direction: base + floor(bytes/bandwidth) (BC-S3).
-// It is a pure query — it does not mutate the station — and panics only on an
-// out-of-range tier or invalid direction (programmer error).
+// ServiceTicks returns the UNCONTENDED (in-service depth q=1) service time in
+// ticks a job of the given size would take on the given tier and direction:
+// base + floor(bytes/bandwidth) (BC-S3). With a queue-depth ramp configured this
+// is the single-transfer cost (f₁·bw); without one it is the constant-bandwidth
+// cost. It is a pure query — it does not mutate the station — and panics only on
+// an out-of-range tier or invalid direction (programmer error).
 func (s *TransferStation) ServiceTicks(tier int, dir Direction, bytes int64) int64 {
 	s.checkTier(tier)
-	return s.tiers[tier].cfg.serviceTicks(dir, bytes)
+	return s.tiers[tier].cfg.serviceTicks(dir, bytes, 1)
 }
 
-// serviceTicks implements BC-S3 for one tier: base + floor(bytes/bandwidth),
-// per direction. The variable part is clamped to maxServiceTicks to prevent
-// int64 overflow on adversarially large Bytes.
-func (c TierConfig) serviceTicks(dir Direction, bytes int64) int64 {
+// ServiceTicksAtDepth returns the service time in ticks for a job of the given
+// size at the given in-service concurrency q (same direction, self-included),
+// applying the queue-depth bandwidth ramp (#1581, BC-D1). q<1 is treated as 1.
+// Pure query; panics only on an out-of-range tier or invalid direction.
+func (s *TransferStation) ServiceTicksAtDepth(tier int, dir Direction, bytes int64, q int) int64 {
+	s.checkTier(tier)
+	return s.tiers[tier].cfg.serviceTicks(dir, bytes, q)
+}
+
+// serviceTicks implements BC-S3 + the #1581 queue-depth ramp (BC-D1) for one
+// tier: base + floor(bytes/effBW(q)), per direction. effBW(q) ramps linearly
+// from f₁·bw at q=1 to bw at q=Qsat and is flat (bw) beyond; when the ramp is
+// disabled (Qsat≤1, f₁≥1, or f₁≤0) effBW is the constant bw, making the result
+// byte-identical to the pre-#1581 linear formula (BC-D2). The variable part is
+// clamped to maxServiceTicks to prevent int64 overflow on adversarially large
+// Bytes.
+func (c TierConfig) serviceTicks(dir Direction, bytes int64, q int) int64 {
 	var base int64
 	var bw float64
 	switch dir {
@@ -212,7 +266,8 @@ func (c TierConfig) serviceTicks(dir Direction, bytes int64) int64 {
 		panic(fmt.Sprintf("kvtransfer: negative bytes %d", bytes))
 	}
 	// bw > 0 is guaranteed by New's validation.
-	variableF := float64(bytes) / bw
+	effBW := effectiveBandwidth(bw, q, c.SaturationQueueDepth, c.SingleTransferFraction)
+	variableF := float64(bytes) / effBW
 	var variable int64
 	if variableF >= float64(maxServiceTicks) {
 		variable = maxServiceTicks
@@ -220,6 +275,24 @@ func (c TierConfig) serviceTicks(dir Direction, bytes int64) int64 {
 		variable = int64(variableF) // truncation toward zero; deterministic
 	}
 	return base + variable
+}
+
+// effectiveBandwidth applies the queue-depth ramp (BC-D1). It returns the
+// constant peak bw when the ramp is disabled (qsat≤1, f1≥1, or f1≤0), the
+// single-transfer bandwidth f1·bw at q=1, a linear interpolation for
+// 1<q<qsat, and the peak bw for q≥qsat. q is clamped to ≥1.
+func effectiveBandwidth(bw float64, q, qsat int, f1 float64) float64 {
+	if qsat < 2 || f1 <= 0 || f1 >= 1 {
+		return bw // ramp disabled — constant bandwidth (BC-D2)
+	}
+	if q < 1 {
+		q = 1
+	}
+	if q >= qsat {
+		return bw // saturated / flat
+	}
+	ramp := f1 + (1-f1)*float64(q-1)/float64(qsat-1)
+	return bw * ramp
 }
 
 // Submit enqueues a transfer job. It returns the assigned JobID and true on
@@ -262,6 +335,7 @@ func (s *TransferStation) Submit(j TransferJob) (JobID, bool) {
 		direction:  j.Direction,
 		bytes:      j.Bytes,
 		submitTick: j.SubmitTick,
+		jitter:     j.JitterFactor,
 	}
 	if j.Direction == Read {
 		ts.readQ = append(ts.readQ, nj)
@@ -380,10 +454,24 @@ func (s *TransferStation) assign(tier int, startTick int64) {
 }
 
 // start puts a job into service on the given server group beginning at startTick,
-// computing its completion time and pushing it onto the completion heap.
+// computing its completion time and pushing it onto the completion heap. The
+// queue-depth ramp uses this job's direction's in-service count INCLUDING itself
+// (q = active+1, taken before the increment below), so a lone transfer sees q=1.
+// An optional caller-supplied jitter factor (BC-D5) scales the service time; the
+// ≤0 sentinel keeps the exact integer path (byte-identical, BC-D2).
 func (s *TransferStation) start(ts *tierState, nj *job, sc serverClass, startTick int64) {
 	nj.server = sc
-	nj.completeAt = startTick + ts.cfg.serviceTicks(nj.direction, nj.bytes)
+	var q int
+	if nj.direction == Read {
+		q = ts.activeRead + 1
+	} else {
+		q = ts.activeWrite + 1
+	}
+	svc := ts.cfg.serviceTicks(nj.direction, nj.bytes, q)
+	if nj.jitter > 0 {
+		svc = int64(math.Round(float64(svc) * nj.jitter))
+	}
+	nj.completeAt = startTick + svc
 	if nj.direction == Read {
 		ts.activeRead++
 	} else {

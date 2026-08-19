@@ -43,14 +43,24 @@ func decodeScenario(data []byte) (Config, []fuzzOp) {
 		if nRead+nWrite == 0 { // ensure ≥ 1 server
 			nWrite = 1
 		}
+		// Queue-depth ramp (#1581): Qsat in 0..5. When the ramp is active (Qsat≥2)
+		// f₁ must be in (0,1]; otherwise it is ignored. This exercises BC-S1 /
+		// conservation / BC-S4 under both the ramp-off and ramp-on regimes.
+		qsat := int(r.u8() % 6)
+		var f1 float64
+		if qsat >= 2 {
+			f1 = 0.1 + float64(r.u8()%10)/10.0 // 0.1 .. 1.0, all in (0,1]
+		}
 		tiers[i] = TierConfig{
-			NRead:             nRead,
-			NWrite:            nWrite,
-			ReadBaseTicks:     int64(r.u8() % 5),
-			WriteBaseTicks:    int64(r.u8() % 5),
-			ReadBytesPerTick:  1 + float64(r.u8()%8),
-			WriteBytesPerTick: 1 + float64(r.u8()%8),
-			MaxQueueDepth:     r.u8() % 6, // 0..5; 0 = unbounded, small values force rejections
+			NRead:                  nRead,
+			NWrite:                 nWrite,
+			ReadBaseTicks:          int64(r.u8() % 5),
+			WriteBaseTicks:         int64(r.u8() % 5),
+			ReadBytesPerTick:       1 + float64(r.u8()%8),
+			WriteBytesPerTick:      1 + float64(r.u8()%8),
+			SaturationQueueDepth:   qsat,
+			SingleTransferFraction: f1,
+			MaxQueueDepth:          r.u8() % 6, // 0..5; 0 = unbounded, small values force rejections
 		}
 	}
 
