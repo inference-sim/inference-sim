@@ -204,6 +204,15 @@ func (t *offloadCPUTier) touch(blk *offloadCPUBlock) {
 	t.appendToTail(blk)
 }
 
+// touchKey refreshes the LRU recency of a ready-idle block on reference (e.g. a
+// CPU->GPU reload). It is a no-op for a pinned or not-ready block (off the LRU)
+// or an absent key.
+func (t *offloadCPUTier) touchKey(key kvkey.BlockKey) {
+	if blk, ok := t.blocks[key]; ok && blk.refCnt == 0 {
+		t.touch(blk)
+	}
+}
+
 func (t *offloadCPUTier) appendToTail(blk *offloadCPUBlock) {
 	blk.next = nil
 	blk.prev = t.lruTail

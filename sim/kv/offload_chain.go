@@ -5,8 +5,21 @@ import (
 	"math"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/internal/kvkey"
+	"github.com/inference-sim/inference-sim/sim/internal/util"
 	"github.com/inference-sim/inference-sim/sim/kvtransfer"
 )
+
+// jobRef records what an in-flight transfer-station job represents so SetClock can
+// apply its completion to the right tier action. A Read job (secondary→CPU)
+// promotes its keys (completeStore); a Write job (CPU→secondary) lands its keys in
+// the tier and releases the CPU pins (secondary.store + unpin). A single Read job
+// may cover a run of keys; a cascade Write job covers one.
+type jobRef struct {
+	keys []kvkey.BlockKey
+	tier int
+	dir  kvtransfer.Direction
+}
 
 // OffloadCache is the N-tier KV-offload chain (H1, #1590): the GPU tier
 // (KVCacheState) plus a ref_cnt-managed CPU staging tier and ordered secondary
@@ -27,6 +40,8 @@ type OffloadCache struct {
 	secondary []*secondaryTier
 	station   *kvtransfer.TransferStation // nil when there are no secondary tiers (CPU-only offload)
 
+	inflight map[kvtransfer.JobID]jobRef // in-flight transfer jobs, applied on SetClock→Poll
+
 	perBlockBytes     int64 // resolved per-rank KV bytes of one GPU block (transfer-job sizing)
 	blockSizeTokens   int64
 	offloadPromptOnly bool
@@ -36,6 +51,7 @@ type OffloadCache struct {
 	offloadMissCount int64 // neither CPU nor secondary served AND GPU alloc failed
 	promotionsFired  int64 // secondary→CPU promotions initiated (Read jobs submitted)
 	promotionsFailed int64 // secondary hits refused by the BC-C5 evictable gate → recompute
+	reloadCount      int64 // CPU→GPU reloads performed (diagnostic)
 }
 
 // NewOffloadCache builds the tier chain from a resolved, enabled KVOffloadConfig.
@@ -68,6 +84,7 @@ func NewOffloadCache(gpu *KVCacheState, cfg sim.KVOffloadConfig) *OffloadCache {
 	oc := &OffloadCache{
 		gpu:               gpu,
 		cpu:               newOffloadCPUTier(capacity),
+		inflight:          make(map[kvtransfer.JobID]jobRef),
 		perBlockBytes:     cfg.PerBlockBytes,
 		blockSizeTokens:   gpu.BlockSizeTokens,
 		offloadPromptOnly: cfg.OffloadPromptOnly,
@@ -152,15 +169,172 @@ func (o *OffloadCache) SetClock(clock int64) {
 	// Write→secondary.store+unpin).
 }
 
-// AllocateKVBlocks consults the chain then allocates on GPU (Task 5 adds the CPU
-// reload + secondary promotion). For now it delegates to the GPU tier so the
-// skeleton is a working single-tier equivalent.
+// AllocateKVBlocks consults the tier chain, then allocates on GPU. CPU-resident
+// prefix blocks are reloaded to the GPU free list synchronously (so a subsequent
+// GetCachedBlocks hits them); a secondary-resident prefix run kicks off an async
+// promotion (a station Read job that populates CPU for a LATER lookup) but is
+// treated as a miss for THIS request (the triggering request never waits for its
+// own promotion — that request-level deferral is H3, #1591). The GPU commit/
+// allocate structure mirrors the legacy TieredKVCache path (INV-4 GPU
+// conservation, hash-chain correctness).
 func (o *OffloadCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
+	// Resume the consult past the prefix the caller already matched on GPU, and
+	// past what a running request already owns (its partially-filled last block
+	// must not be reloaded — same running-request trap as TieredKVCache).
+	reloadStartBlock := int64(len(cachedBlocks))
+	if owned, ok := o.gpu.RequestMap[req.ID]; ok && int64(len(owned)) > reloadStartBlock {
+		reloadStartBlock = int64(len(owned))
+	}
+
+	if o.consultAndReload(req.FullInputTokens(), reloadStartBlock) {
+		// A CPU->GPU reload happened: recompute the GPU-cached prefix (now longer).
+		newCached := o.gpu.GetCachedBlocks(req.FullInputTokens())
+		newStart := int64(len(newCached)) * o.gpu.BlockSize()
+		bs := o.gpu.BlockSize()
+		if newStart > startIndex {
+			_, running := o.gpu.RequestMap[req.ID]
+			if newStart >= endIndex {
+				// Entire requested range is cached after reload; commit it.
+				endBlock := min((endIndex+bs-1)/bs, int64(len(newCached)))
+				if running {
+					if startBlock := (startIndex + bs - 1) / bs; startBlock < endBlock {
+						o.gpu.commitCachedBlocks(req.ID, newCached[startBlock:endBlock])
+					}
+				} else {
+					o.gpu.commitCachedBlocks(req.ID, newCached[:endBlock])
+				}
+				return true
+			}
+			// Partial improvement: commit the reloaded prefix, then allocate the tail.
+			newStartBlock := newStart / bs
+			if running {
+				if startBlock := (startIndex + bs - 1) / bs; startBlock < newStartBlock {
+					o.gpu.commitCachedBlocks(req.ID, newCached[startBlock:newStartBlock])
+				}
+			} else {
+				o.gpu.commitCachedBlocks(req.ID, newCached[:newStartBlock])
+			}
+			return o.gpu.AllocateKVBlocks(req, newStart, endIndex, newCached)
+		}
+		// Reload produced no prefix hit beyond startIndex; allocate as given.
+		return o.gpu.AllocateKVBlocks(req, startIndex, endIndex, cachedBlocks)
+	}
+
+	// No CPU-resident continuation. Allocate on GPU exactly as the single-tier path.
 	ok := o.gpu.AllocateKVBlocks(req, startIndex, endIndex, cachedBlocks)
 	if !ok {
 		o.offloadMissCount++
 	}
 	return ok
+}
+
+// consultAndReload walks the prefix blocks from startBlock. It reloads every
+// CPU-resident (ready) block onto the GPU free list (returning true if any
+// reload happened), stops at a HIT_PENDING block (a promotion already in flight),
+// and — on the first CPU-miss whose block is secondary-resident — initiates one
+// async promotion of the contiguous same-tier run and stops (the run is not
+// available to this request). It is the offload analogue of TieredKVCache's
+// reloadPrefixFromCPU: block-granular (BlocksPerChunk==1), keyed through
+// sim/internal/kvkey so the CPU/secondary keyspace is byte-identical to the GPU
+// block hashes (BC-K1).
+func (o *OffloadCache) consultAndReload(tokens []sim.TokenID, startBlock int64) bool {
+	bs := o.gpu.BlockSize()
+	n := util.Len64(tokens) / bs
+	if startBlock >= n {
+		return false
+	}
+	keys := kvkey.DeriveChunkKeys("", tokens, int(bs)) // keys[i] == GPU block hash for block i (BC-K1)
+	maxReloads := o.gpu.countFreeBlocks()              // never re-pop the same free block
+	reloaded := false
+	var reloadCount int64
+	for i := startBlock; i < n; i++ {
+		h := string(keys[i])
+		if _, inGPU := o.gpu.HashToBlock[h]; inGPU {
+			continue // already on GPU
+		}
+		switch o.cpu.lookup(keys[i]) {
+		case cpuHit:
+			if reloadCount >= maxReloads {
+				return reloaded
+			}
+			gpuBlk := o.gpu.popFreeBlock()
+			if gpuBlk == nil {
+				return reloaded
+			}
+			// Lazy hash deletion (vLLM parity): clear a stale hash before refilling.
+			if gpuBlk.Hash != "" {
+				delete(o.gpu.HashToBlock, gpuBlk.Hash)
+				gpuBlk.Hash = ""
+			}
+			start := i * bs
+			gpuBlk.Tokens = append(gpuBlk.Tokens[:0], tokens[start:start+bs]...)
+			gpuBlk.Hash = h
+			gpuBlk.RefCount = 0
+			gpuBlk.InUse = false
+			o.gpu.HashToBlock[h] = gpuBlk.ID
+			o.gpu.appendToFreeList(gpuBlk)
+			o.cpu.touchKey(keys[i]) // block is hot: refresh LRU recency
+			o.reloadCount++
+			reloaded = true
+			reloadCount++
+		case cpuHitPending:
+			return reloaded // promotion in flight for this block; stop (hierarchical)
+		case cpuMiss:
+			o.maybePromoteFromSecondary(keys, i, n)
+			return reloaded // stop after initiating (or refusing) one promotion
+		}
+	}
+	return reloaded
+}
+
+// maybePromoteFromSecondary initiates one async promotion (secondary→CPU) for the
+// contiguous run of not-yet-CPU-resident blocks, starting at block i, that are all
+// held by the SAME first-matching secondary tier. It allocates NOT-READY CPU slots
+// (prepareStore, all-or-nothing under the BC-C5 evictable gate) and submits a
+// single Read job for the run. If the gate refuses the run the promotion is a miss
+// (recompute); the request has already been served whatever GPU/CPU prefix it had.
+func (o *OffloadCache) maybePromoteFromSecondary(keys []kvkey.BlockKey, i, n int64) {
+	if o.station == nil || len(o.secondary) == 0 {
+		return
+	}
+	tier, ok := lookupSecondary(o.secondary, keys[i])
+	if !ok {
+		return // genuine miss (absent from every secondary tier)
+	}
+	run := []kvkey.BlockKey{keys[i]}
+	for j := i + 1; j < n; j++ {
+		if _, inGPU := o.gpu.HashToBlock[string(keys[j])]; inGPU {
+			break
+		}
+		if o.cpu.lookup(keys[j]) != cpuMiss {
+			break // already CPU-resident or a promotion in flight
+		}
+		if tj, okj := lookupSecondary(o.secondary, keys[j]); !okj || tj != tier {
+			break
+		}
+		run = append(run, keys[j])
+	}
+	granted := o.cpu.prepareStore(run) // all-or-nothing over the (all-fresh) run
+	if granted == 0 {
+		o.promotionsFailed++ // BC-C5: evictable gate refused the run -> recompute
+		return
+	}
+	id, accepted := o.station.Submit(kvtransfer.TransferJob{
+		Tier:       tier,
+		Direction:  kvtransfer.Read,
+		Bytes:      int64(granted) * o.perBlockBytes,
+		SubmitTick: o.clock,
+	})
+	if !accepted {
+		// MaxQueueDepth==0 makes rejection impossible; roll back defensively so a
+		// future bounded queue can never strand -1 slots with no in-flight Read.
+		for _, k := range run {
+			o.cpu.completeStore(k, false)
+		}
+		return
+	}
+	o.promotionsFired++
+	o.inflight[id] = jobRef{keys: run, tier: tier, dir: kvtransfer.Read}
 }
 
 // MirrorToCPU stores newly-completed full blocks into the CPU tier and cascades
