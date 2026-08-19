@@ -25,6 +25,7 @@ var (
 	traceHeaderPath     string
 	traceDataPath       string
 	replayTraceOutput   string // File prefix for TraceV2 re-export (<prefix>.yaml + <prefix>.csv)
+	replayMetricsPath   string // File to write aggregate MetricsOutput JSON (incl. cache_hit_rate, #1583); symmetric with `blis run --metrics-path`
 	replaySessionMode   string
 	replayThinkTimeMs   int
 	replayThinkTimeDist string // distribution spec for think time (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s")
@@ -177,6 +178,12 @@ Example:
 		// the library-level panic in NewKVStore.
 		if kvOffloadCfg.IsEnabled() && kvCPUBlocks > 0 {
 			logrus.Fatalf("--kv-cpu-blocks conflicts with the trace's kv_offload config (distinct KV-offload models); set only one")
+		}
+		// #1583 (BC-10): a tiered observed hit-rate in the header is only replayable
+		// into a comparable sim number if this replay reproduces a tiered offload
+		// config. Fail loudly rather than silently produce a GPU-only hit-rate.
+		if err := validateObservedKVReplayable(traceData.Header.ObservedKVMetrics, kvOffloadCfg.IsEnabled()); err != nil {
+			logrus.Fatalf("%v", err)
 		}
 
 		// Resolve latency backend configuration (single code path shared with runCmd).
@@ -586,6 +593,11 @@ Example:
 				Mode:              "replayed",
 				GoodputSLOTargets: goodputTargets,                   // #1413, BC-7
 				KVOffload:         simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: carry the offload config forward
+				// #1583, BC-4: preserve the real-side observed KV hit-rate verbatim.
+				// It is a real-server observation replay cannot regenerate; carrying it
+				// forward keeps it available to a downstream calibrate and never
+				// silently drops it.
+				ObservedKVMetrics: traceData.Header.ObservedKVMetrics,
 			}
 			if err := workload.ExportTraceV2(header, records, replayTraceOutput+".yaml", replayTraceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)
@@ -626,7 +638,12 @@ Example:
 			}
 		}
 
-		if err := aggregated.EmitOutput(clusterOutput, ""); err != nil {
+		// --metrics-path (#1583): write the aggregate MetricsOutput JSON (which gains
+		// the file-only cache_hit_rate) so `blis calibrate --sim-metrics` can read the
+		// simulator's hit-rate. Empty path → stdout only, byte-identical to before
+		// (BC-8). run and replay --metrics-path of the same trace produce identical
+		// cache_hit_rate (INV-13).
+		if err := aggregated.EmitOutput(clusterOutput, replayMetricsPath); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
@@ -767,6 +784,7 @@ func init() {
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
 	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us) for blis calibrate consumption.")
 	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\"")
+	replayCmd.Flags().StringVar(&replayMetricsPath, "metrics-path", "", "File to write aggregate MetricsOutput JSON (incl. cache_hit_rate for `blis calibrate --sim-metrics`, #1583). Symmetric with `blis run --metrics-path`; stdout is unaffected.")
 
 	// Saturation trace flags (#1516): --detectors + --saturation-config + --saturation-report.
 	registerDetectorFlags(replayCmd)

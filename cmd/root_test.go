@@ -670,14 +670,17 @@ func TestRunCmd_HasMetricsPathFlag(t *testing.T) {
 	}
 }
 
-// TestReplayCmd_HasResultsPathFlag verifies BC-2: blis replay exposes --results-path,
-// not --metrics-path.
+// TestReplayCmd_HasResultsPathFlag verifies blis replay exposes --results-path (the
+// per-request SimResult path) AND, as of #1583, --metrics-path (the aggregate
+// MetricsOutput path, symmetric with `blis run`). The latter carries the simulator's
+// cache_hit_rate for `blis calibrate --sim-metrics`; it aligns replay with the
+// already-documented "run/replay --metrics-path" adapter-reference workflow.
 func TestReplayCmd_HasResultsPathFlag(t *testing.T) {
 	if replayCmd.Flags().Lookup("results-path") == nil {
-		t.Error("BC-2: replayCmd missing --results-path flag")
+		t.Error("replayCmd missing --results-path flag")
 	}
-	if replayCmd.Flags().Lookup("metrics-path") != nil {
-		t.Error("BC-2: replayCmd must NOT have --metrics-path flag")
+	if replayCmd.Flags().Lookup("metrics-path") == nil {
+		t.Error("#1583: replayCmd must expose --metrics-path (aggregate MetricsOutput incl. cache_hit_rate)")
 	}
 }
 

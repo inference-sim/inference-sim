@@ -397,6 +397,25 @@ func resolveReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, flagChan
 	return sim.KVOffloadConfig{}, nil
 }
 
+// validateObservedKVReplayable enforces BC-10 (#1583): a trace whose observed KV
+// hit-rate was captured from the multi-tier offload family (source "tiered") is only
+// comparable on replay if this replay reproduces a tiered offload config. If the
+// reconciled offload config is NOT enabled, the simulator would produce a GPU-only
+// hit-rate that `blis calibrate` would then compare against a tiered real number —
+// silent degradation. Fail loudly instead (INV-13). The GPU-prefix-cache fallback
+// source has no such requirement (it is a GPU-only observation to begin with).
+// Pure and error-returning (Deviation #9) so the guard is unit-testable; the CLI
+// caller turns the error into logrus.Fatalf.
+func validateObservedKVReplayable(obs *workload.TraceObservedKVMetrics, offloadEnabled bool) error {
+	if obs == nil {
+		return nil
+	}
+	if obs.Source == workload.ObservedKVSourceTiered && !offloadEnabled {
+		return fmt.Errorf("the trace's observed_kv_metrics were captured from the tiered KV-offload counters (source=%q) but this replay has no reproducible kv_offload config; replay would produce a GPU-only hit-rate that calibrate cannot compare against the tiered observation — supply the kv_offload config (via the trace header or --kv-offload-config) or re-observe without tiering (INV-13, never silent degradation)", obs.Source)
+	}
+	return nil
+}
+
 // headerToSimOffload reconstructs a resolved sim.KVOffloadConfig from a trace header
 // (BC-G6). Returns the inert zero value when the header carries no offload block.
 // Lossless inverse of simToHeaderOffload. The caller (replay) runs Validate() on the

@@ -440,6 +440,61 @@ func (c *RealClient) handleStreamingResponse(resp *http.Response, record *Reques
 	return record, nil
 }
 
+// ScrapeKVMetrics fetches the server's Prometheus /metrics endpoint and parses it
+// into a family→summed-value map (#1583). metricsURL overrides the default
+// baseURL+"/metrics" when non-empty (e.g. metrics served on a sidecar port). The
+// returned map feeds workload.DeriveObservedHitRate over the measured window.
+func (c *RealClient) ScrapeKVMetrics(ctx context.Context, metricsURL string) (map[string]float64, error) {
+	url := metricsURL
+	if url == "" {
+		url = c.baseURL + "/metrics"
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build /metrics request: %w", err)
+	}
+	if c.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("GET %s: %w", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET %s: HTTP %d", url, resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read %s body: %w", url, err)
+	}
+	return workload.ParsePromMetrics(string(body)), nil
+}
+
+// resolveObservedKVMetrics performs the end-of-window /metrics scrape and derives the
+// observed KV hit-rate block for the trace header (#1583). It returns nil (with a
+// warning) on any scrape/parse/derive failure — a metrics miss must never abort the
+// observe run or emit a bogus value (BC-11). A nil startSamples (scrape disabled, or
+// the start-of-window scrape failed) yields nil without a second scrape.
+func resolveObservedKVMetrics(ctx context.Context, client *RealClient, metricsURL string, startSamples map[string]float64, vllmCommit string) *workload.TraceObservedKVMetrics {
+	if startSamples == nil {
+		return nil
+	}
+	end, err := client.ScrapeKVMetrics(ctx, metricsURL)
+	if err != nil {
+		logrus.Warnf("observe: --scrape-kv-metrics: end-of-window /metrics scrape failed: %v; omitting observed KV hit-rate from the trace header", err)
+		return nil
+	}
+	block, err := workload.DeriveObservedHitRate(startSamples, end, vllmCommit)
+	if err != nil {
+		logrus.Warnf("observe: --scrape-kv-metrics: %v; omitting observed KV hit-rate from the trace header", err)
+		return nil
+	}
+	logrus.Infof("observe: observed KV hit-rate = %.4f (source=%s, block_hits=%d, block_queries=%d)",
+		block.HitRate, block.Source, block.BlockHits, block.BlockQueries)
+	return block
+}
+
 // Recorder captures per-request timing and metrics (goroutine-safe).
 type Recorder struct {
 	mu         sync.Mutex

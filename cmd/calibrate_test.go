@@ -24,6 +24,9 @@ func saveRestoreCalibrateFlags() func() {
 	origRTT := calibrateNetworkRTTUs
 	origBW := calibrateNetworkBandwidthMbps
 	origITL := calibrateITLDataPath
+	origSimMetrics := calibrateSimMetrics
+	origHRTol := calibrateHitRateTolerancePP
+	origTTFTThresh := calibrateTTFTMapeThreshold
 	return func() {
 		calibrateTraceHeaderPath = origHeader
 		calibrateTraceDataPath = origData
@@ -33,6 +36,9 @@ func saveRestoreCalibrateFlags() func() {
 		calibrateNetworkRTTUs = origRTT
 		calibrateNetworkBandwidthMbps = origBW
 		calibrateITLDataPath = origITL
+		calibrateSimMetrics = origSimMetrics
+		calibrateHitRateTolerancePP = origHRTol
+		calibrateTTFTMapeThreshold = origTTFTThresh
 	}
 }
 

@@ -69,6 +69,46 @@ type CalibrationReport struct {
 	// goodput targets were configured (issue #1413, BC-9). Omitted when targets
 	// are absent so old consumers see the legacy report shape unchanged.
 	Goodput *GoodputComparisonReport `json:"goodput,omitempty"`
+	// HitRate holds the real-vs-sim KV cache hit-rate comparison (#1583, BC-6).
+	// Populated when the trace header carries an observed hit-rate AND a sim
+	// MetricsOutput with cache_hit_rate is supplied (--sim-metrics); omitted
+	// otherwise so the legacy report shape is unchanged.
+	HitRate *HitRateComparison `json:"hit_rate,omitempty"`
+}
+
+// HitRateComparison holds the real-vs-simulated KV cache hit-rate comparison (#1583).
+// Real is the observed hit-rate scraped by `blis observe --scrape-kv-metrics` (trace
+// header); Sim is the simulator's aggregate cache_hit_rate (from `blis replay
+// --metrics-path`). The error is reported in percentage points, and Within tests it
+// against the configured tolerance (default 5 pp).
+type HitRateComparison struct {
+	RealHitRate float64 `json:"real_hit_rate"`
+	SimHitRate  float64 `json:"sim_hit_rate"`
+	AbsErrorPP  float64 `json:"abs_error_pp"` // |sim − real| × 100 (percentage points)
+	TolerancePP float64 `json:"tolerance_pp"`
+	Within      bool    `json:"within"`
+	// Source echoes the observation family ("tiered" or "gpu-prefix-cache-fallback")
+	// so a weaker GPU-only comparison is never mistaken for a tiered one.
+	Source string `json:"source"`
+}
+
+// ComputeHitRateComparison builds a HitRateComparison from a real (observed) and a
+// simulated hit-rate, both fractions in [0,1]. tolerancePP is the absolute-error band
+// in percentage points; Within is true when |sim − real| × 100 ≤ tolerancePP.
+func ComputeHitRateComparison(realHitRate, simHitRate, tolerancePP float64, source string) *HitRateComparison {
+	absErrPP := math.Abs(simHitRate-realHitRate) * 100
+	// A tiny epsilon keeps the band inclusive at its intended boundary despite
+	// float representation (e.g. |0.75−0.70|×100 = 5.000000000000004, which would
+	// otherwise fail a "≤ 5 pp" band spuriously).
+	const boundaryEps = 1e-9
+	return &HitRateComparison{
+		RealHitRate: realHitRate,
+		SimHitRate:  simHitRate,
+		AbsErrorPP:  absErrPP,
+		TolerancePP: tolerancePP,
+		Within:      absErrPP <= tolerancePP+boundaryEps,
+		Source:      source,
+	}
 }
 
 // GoodputComparisonReport summarizes observed-vs-simulated goodput per SLO class.

@@ -266,6 +266,14 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string) error 
 	fmt.Println(string(data))
 
 	if outputFilePath != "" {
+		// Aggregate KV-cache hit rate (#1583): file-only, alongside Requests[] below.
+		// Kept off stdout (the marshal above already ran) so stdout stays
+		// byte-identical to a pre-feature build (INV-6, BC-9). calibrate --sim-metrics
+		// reads this as the simulator's hit rate. run and replay of the same trace
+		// produce identical values (INV-13).
+		hitRate := m.CacheHitRate
+		output.CacheHitRate = &hitRate
+
 		// request-level metrics for detailed output in file
 		// Iterate over all registered requests (not just completed prefill)
 		// so incomplete requests appear with zero-valued metrics.

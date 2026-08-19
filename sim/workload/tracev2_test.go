@@ -1990,6 +1990,112 @@ func TestTraceV2_RoundTrip_WithKVOffload(t *testing.T) {
 	}
 }
 
+// TestTraceV2_RoundTrip_WithObservedKVMetrics verifies the observed KV hit-rate
+// block (#1583, BC-3) survives export→load with all fields intact.
+func TestTraceV2_RoundTrip_WithObservedKVMetrics(t *testing.T) {
+	header := &TraceHeader{
+		Version: 3, TimeUnit: "microseconds", Mode: "real",
+		ObservedKVMetrics: &TraceObservedKVMetrics{
+			Source:         "tiered",
+			HitRate:        0.734,
+			BlockHits:      7340,
+			BlockQueries:   10000,
+			ReadTimeTotal:  12.5,
+			WriteTimeTotal: 3.25,
+			VLLMCommit:     "63a9a5010a6d1539c52957646ef9d6bbcf7a4deb",
+		},
+	}
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	dataPath := filepath.Join(dir, "data.csv")
+	if err := ExportTraceV2(header, nil, headerPath, dataPath); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := loaded.Header.ObservedKVMetrics
+	if got == nil {
+		t.Fatal("observed_kv_metrics should round-trip, got nil")
+	}
+	if got.Source != "tiered" || got.HitRate != 0.734 || got.BlockHits != 7340 ||
+		got.BlockQueries != 10000 || got.ReadTimeTotal != 12.5 || got.WriteTimeTotal != 3.25 ||
+		got.VLLMCommit != "63a9a5010a6d1539c52957646ef9d6bbcf7a4deb" {
+		t.Errorf("observed_kv_metrics mismatch after round-trip: %+v", got)
+	}
+}
+
+// TestTraceV2_ObservedKVMetrics_ZeroHitRate verifies an observed hit-rate of exactly
+// 0 (a valid observation: zero cache hits) is preserved, not dropped by omitempty.
+func TestTraceV2_ObservedKVMetrics_ZeroHitRate(t *testing.T) {
+	header := &TraceHeader{
+		Version: 3, TimeUnit: "microseconds", Mode: "real",
+		ObservedKVMetrics: &TraceObservedKVMetrics{
+			Source: "gpu-prefix-cache-fallback", HitRate: 0, BlockHits: 0, BlockQueries: 500,
+		},
+	}
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	dataPath := filepath.Join(dir, "data.csv")
+	if err := ExportTraceV2(header, nil, headerPath, dataPath); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(headerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "hit_rate: 0") {
+		t.Errorf("zero hit_rate must serialize explicitly, header:\n%s", data)
+	}
+	loaded, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Header.ObservedKVMetrics == nil || loaded.Header.ObservedKVMetrics.BlockQueries != 500 {
+		t.Errorf("zero-hit observation should round-trip: %+v", loaded.Header.ObservedKVMetrics)
+	}
+}
+
+// TestTraceV2_ObservedKVMetrics_UnknownSubKey verifies strict parsing rejects an
+// unknown sub-key inside the observed_kv_metrics block (BC-3, R10).
+func TestTraceV2_ObservedKVMetrics_UnknownSubKey(t *testing.T) {
+	yamlText := []byte("trace_version: 3\ntime_unit: microseconds\nmode: real\nwarm_up_requests: 0\n" +
+		"observed_kv_metrics:\n  source: tiered\n  hit_rate: 0.5\n  block_hits: 5\n  block_queries: 10\n  bogus_key: 1\n")
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	if err := os.WriteFile(headerPath, yamlText, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dataPath := filepath.Join(dir, "data.csv")
+	if err := os.WriteFile(dataPath, []byte("request_id\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadTraceV2(headerPath, dataPath); err == nil ||
+		!strings.Contains(err.Error(), "field") {
+		t.Errorf("expected unknown-field error for observed_kv_metrics sub-key, got %v", err)
+	}
+}
+
+// TestTraceV2_NoObservedKVMetrics_OmitsKey verifies a header without a scraped
+// observation writes no observed_kv_metrics key (BC-8 byte-identity for default observe).
+func TestTraceV2_NoObservedKVMetrics_OmitsKey(t *testing.T) {
+	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "real"}
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	dataPath := filepath.Join(dir, "data.csv")
+	if err := ExportTraceV2(header, nil, headerPath, dataPath); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(headerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "observed_kv_metrics") {
+		t.Errorf("header without a scrape must not contain observed_kv_metrics:\n%s", data)
+	}
+}
+
 // TestTraceV2_NoKVOffload_OmitsKey verifies a header without offload writes no
 // kv_offload key (BC-G5 byte-identity for the disabled case).
 func TestTraceV2_NoKVOffload_OmitsKey(t *testing.T) {
