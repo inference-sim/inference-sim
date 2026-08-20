@@ -13,8 +13,10 @@ import (
 )
 
 // makeSharedPrefixRequests builds requests that share a long common prefix, so the
-// KV-offload chain actually exercises mirror + cascade + reload paths.
-func makeSharedPrefixRequests() []*sim.Request {
+// KV-offload chain actually exercises mirror + cascade + reload paths. outputLen sets
+// the number of decode tokens per request: a value >= blockSize (16) forms full decode
+// blocks, which the offload_prompt_only=false path mirrors (decode-KV offload).
+func makeSharedPrefixRequests(outputLen int) []*sim.Request {
 	shared := make([]sim.TokenID, 48) // 3 shared prompt blocks (blockSize 16)
 	for j := range shared {
 		shared[j] = sim.TokenID(1000 + j)
@@ -23,7 +25,7 @@ func makeSharedPrefixRequests() []*sim.Request {
 	for i := range reqs {
 		in := append([]sim.TokenID{}, shared...)
 		in = append(in, sim.TokenID(9000+i)) // per-request tail
-		out := make([]sim.TokenID, 4)
+		out := make([]sim.TokenID, outputLen)
 		for j := range out {
 			out[j] = sim.TokenID(200 + j)
 		}
@@ -44,8 +46,24 @@ func makeSharedPrefixRequests() []*sim.Request {
 // are slice/sorted-ordered), so parity holds; combined with the config round-trip
 // test (TestKVOffload_EndToEnd_RunReplayRoundTrip) this covers INV-13 for offload.
 func TestINV13_RunReplayParity_Offload(t *testing.T) {
+	// Default policy (prompt-only): short outputs, no full decode blocks.
+	assertOffloadRunReplayParity(t, true, 4)
+}
+
+// INV-13 for the decode-KV offload path (offload_prompt_only=false, BC-6): longer outputs
+// form full decode blocks that the false policy mirrors to the tiers. Run and replay are
+// driven by the same in-process resolved config through the sim/kv kernel, so the
+// decode-offload path is deterministic across run/replay exactly as prompt-only is. (The
+// kv_offload trace-header round-trip itself — including OffloadPromptOnly — is covered
+// separately by TestKVOffload_EndToEnd_RunReplayRoundTrip.)
+func TestINV13_RunReplayParity_Offload_DecodeOffload(t *testing.T) {
+	assertOffloadRunReplayParity(t, false, 32) // 32 decode tokens = 2 full decode blocks
+}
+
+func assertOffloadRunReplayParity(t *testing.T, offloadPromptOnly bool, outputLen int) {
+	t.Helper()
 	const fixedSeed int64 = 99
-	requests := makeSharedPrefixRequests()
+	requests := makeSharedPrefixRequests(outputLen)
 
 	mcFolder, hwPath := setupTrainedPhysicsTestFixtures(t)
 	dir := t.TempDir()
@@ -79,7 +97,7 @@ func TestINV13_RunReplayParity_Offload(t *testing.T) {
 	offload := sim.KVOffloadConfig{
 		Enabled: true, CPUBytesToUse: 1 << 30, PerBlockBytes: int64(perTok * 16),
 		BlockSize: 16, BlocksPerChunk: 1, TokensPerHash: 16,
-		EvictionPolicy: "lru", OffloadPromptOnly: true,
+		EvictionPolicy: "lru", OffloadPromptOnly: offloadPromptOnly,
 		Tiers: []sim.KVOffloadTier{{
 			Type: "fs", RootDir: "/mnt", NReadThreads: 16, NWriteThreads: 16,
 			DirectIO: true, ReadBandwidth: 7000, WriteBandwidth: 5000, BaseLatency: 80,

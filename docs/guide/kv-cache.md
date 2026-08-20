@@ -93,7 +93,8 @@ kv_offload:
                                     #   exclusive with blocks_per_chunk)
   # blocks_per_chunk: 1             # alternate encoding of block_size (default 1)
   eviction_policy: lru              # lru | arc  (default lru)
-  offload_prompt_only: true         # vLLM DEFAULT — decode KV is NOT offloaded unless false
+  offload_prompt_only: true         # vLLM DEFAULT (prompt-only). false => promptAndDecode:
+                                    #   full decode blocks are offloaded and reused too (see below)
   # self_describing_kv_events: false
   # tokens_per_hash: 16             # default = GPU block size
   secondary_tiers:
@@ -120,10 +121,19 @@ The resolved config is recorded in the exported trace header, so a `blis run --t
 round-trips through `blis replay` (INV-13): on replay the header is authoritative and a config
 the binary cannot reproduce fails loudly rather than silently degrading to single-tier.
 
-!!! note "Config surface only (today)"
-    `--kv-offload-config` currently **captures and validates** the offload configuration; the
-    multi-tier transfer/keying mechanisms that consume these knobs are landing separately.
-    With no `--kv-offload-config`, behavior is unchanged.
+The `offload_prompt_only` knob is an explicit policy over *what enters the tiers*. Modeling
+vLLM's mechanism (`_calc_num_offloadable_tokens` + `storable_chunks`), a request's computed KV is
+truncated to the prompt length when `true` (the default), then floor-divided into whole chunks — so
+a chunk containing any decode token is never offloaded (a prompt of `1.5 ×` the chunk size offloads
+exactly 1 chunk). With `offload_prompt_only: false` (vLLM's `promptAndDecode`), full decode blocks
+are offloaded too; because BLIS already hashes every completed block prefix-consistently (for
+`block_size > 1`), a later request on the same instance whose **input contains earlier output
+tokens** (multi-turn / agentic workloads) reloads that decode KV from the tiers instead of
+recomputing it — so the cache hit-rate reflects the policy. Reuse is single-instance (offload tiers
+are per-instance and invisible to the router). At `block_size == 1` decode blocks take a guarded
+allocation path that leaves them unhashed, so decode-offload is inert there — a degenerate offload
+block size (real offload block sizes track the GPU block size). With no `--kv-offload-config`,
+behavior is unchanged (INV-6).
 
 ## Chunked Prefill
 

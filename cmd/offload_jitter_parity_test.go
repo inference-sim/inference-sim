@@ -85,7 +85,7 @@ func jitterRampOffloadCfg(t *testing.T, seed int64) cluster.DeploymentConfig {
 // request-processing sequence — so the draws match exactly.
 func TestINV13_RunReplayParity_Offload_Jitter(t *testing.T) {
 	const fixedSeed int64 = 99
-	requests := makeSharedPrefixRequests()
+	requests := makeSharedPrefixRequests(4) // outputLen: 4 (short outputs, as before #1584)
 	cfg := jitterRampOffloadCfg(t, fixedSeed)
 	dir := t.TempDir()
 
@@ -147,7 +147,7 @@ func TestINV6_OffloadJitter_RunTwiceIdentical(t *testing.T) {
 	// Fresh requests per run: the simulator mutates Request objects, so reusing the
 	// same pointers would confound the determinism check.
 	runOnce := func() (map[string]float64, map[string]float64) {
-		cs := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(makeSharedPrefixRequests()), nil)
+		cs := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(makeSharedPrefixRequests(4)), nil)
 		if err := cs.Run(); err != nil {
 			t.Fatalf("run failed: %v", err)
 		}

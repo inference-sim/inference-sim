@@ -73,7 +73,14 @@ type OffloadCache struct {
 
 	perBlockBytes     int64 // resolved per-rank KV bytes of one GPU block (transfer-job sizing)
 	offloadPromptOnly bool
-	clock             int64
+	// blocksPerChunk is vLLM blocks_per_chunk (== 1 at H1; NewOffloadCache panics otherwise).
+	// It lets the offloadable-token floor-divide read as vLLM's tokens_per_chunk =
+	// bs*blocksPerChunk rather than hard-coding the block size (mechanism fidelity). It does
+	// NOT by itself make the chain correct at blocks_per_chunk > 1 — the read side
+	// (consultAndReload) is block-granular and chunk keys are a disjoint keyspace; enabling
+	// > 1 is a separate follow-up.
+	blocksPerChunk int64
+	clock          int64
 
 	// Device-model latency jitter (#1581 BC-D5). jitterStddev[t] is tier t's relative
 	// stddev σ (0 == off). rng is the seeded kv-offload partition; nil disables jitter
@@ -126,6 +133,7 @@ func NewOffloadCache(gpu *KVCacheState, cfg sim.KVOffloadConfig, opts ...Offload
 		existenceKnown:    make(map[kvkey.BlockKey]struct{}),
 		perBlockBytes:     cfg.PerBlockBytes,
 		offloadPromptOnly: cfg.OffloadPromptOnly,
+		blocksPerChunk:    cfg.BlocksPerChunk,
 	}
 	for _, opt := range opts {
 		opt(oc)
@@ -539,9 +547,20 @@ func (o *OffloadCache) firePromotionRun(run []kvkey.BlockKey, tier int) (kvtrans
 // the BC-C5 recompute path under a burst of writes. When the CPU tier is full and
 // every block is pinned, the store finds no evictable victim and the block is
 // SKIPPED (counted) — never force-evicting a locked block (BC-C4) or dropping data
-// silently (R1). With OffloadPromptOnly (vLLM default TRUE) only prompt blocks are
-// offloaded; decode-generated blocks are not. Uses the stored clock (SetClock ran
-// earlier this step).
+// silently (R1).
+//
+// What is offered for store is decided by a single offloadable-token clamp modeling
+// vLLM's mechanism (NOT a per-block prompt/decode classification): the request's
+// computed KV is its full owned blocks; when OffloadPromptOnly (vLLM default TRUE) that
+// count is truncated to the prompt length (offloading/scheduler.py:588-597,
+// _calc_num_offloadable_tokens); then it is floor-divided into whole chunks
+// (storable_chunks, :401) — so a chunk holding any decode token is never formed. When
+// !OffloadPromptOnly, full decode blocks fall inside the offloadable range and are
+// offloaded here too; they need no hashing step of their own — the GPU tier's partial-fill
+// path (cache.go) already hashes every completed block prefix-consistently (for
+// block_size > 1), so a later request whose input contains those tokens reloads them.
+// MirrorToCPU never writes gpu.HashToBlock (pure consumer), so switching the policy cannot
+// perturb GPU-tier behavior. Uses the stored clock (SetClock ran earlier this step).
 func (o *OffloadCache) MirrorToCPU(batch []*sim.Request) {
 	bs := o.gpu.BlockSize()
 	for _, req := range batch {
@@ -549,13 +568,17 @@ func (o *OffloadCache) MirrorToCPU(batch []*sim.Request) {
 		if !ok {
 			continue
 		}
-		promptBlocks := int64(len(blockIDs))
+		// Offloadable-token clamp (single decision point). The chunk stride derives from
+		// the actual gpu.BlockSize(), NOT cfg.BlockSize (they can differ in test fixtures).
+		tokensPerChunk := bs * o.blocksPerChunk
+		numOffloadableTokens := int64(len(blockIDs)) * bs
 		if o.offloadPromptOnly {
-			promptBlocks = req.InputLen() / bs // full prompt blocks only
+			numOffloadableTokens = min(numOffloadableTokens, req.InputLen()) // vLLM prompt-only clamp
 		}
+		maxOffloadBlocks := (numOffloadableTokens / tokensPerChunk) * o.blocksPerChunk
 		for i, blockID := range blockIDs {
-			if int64(i) >= promptBlocks {
-				break // OffloadPromptOnly: stop at the first decode block
+			if int64(i) >= maxOffloadBlocks {
+				break // outside the offloadable chunk range (prompt-only tail / decode)
 			}
 			blk := o.gpu.Blocks[blockID]
 			if blk.Hash == "" || util.Len64(blk.Tokens) < bs {
