@@ -26,7 +26,8 @@ type fuzzOp struct {
 	tier      int
 	dir       Direction
 	bytes     int64
-	tickDelta int64 // non-negative; ticks are cumulative and non-decreasing
+	tickDelta int64   // non-negative; ticks are cumulative and non-decreasing
+	jitter    float64 // per-job jitter factor (0 = none); exercises the #1581 factor path
 }
 
 // decodeScenario turns raw fuzz bytes into a validated station config and a
@@ -43,14 +44,24 @@ func decodeScenario(data []byte) (Config, []fuzzOp) {
 		if nRead+nWrite == 0 { // ensure ≥ 1 server
 			nWrite = 1
 		}
+		// Queue-depth ramp (#1581): Qsat in 0..5. When the ramp is active (Qsat≥2)
+		// f₁ must be in (0,1]; otherwise it is ignored. This exercises BC-S1 /
+		// conservation / BC-S4 under both the ramp-off and ramp-on regimes.
+		qsat := int(r.u8() % 6)
+		var f1 float64
+		if qsat >= 2 {
+			f1 = 0.1 + float64(r.u8()%10)/10.0 // 0.1 .. 1.0, all in (0,1]
+		}
 		tiers[i] = TierConfig{
-			NRead:             nRead,
-			NWrite:            nWrite,
-			ReadBaseTicks:     int64(r.u8() % 5),
-			WriteBaseTicks:    int64(r.u8() % 5),
-			ReadBytesPerTick:  1 + float64(r.u8()%8),
-			WriteBytesPerTick: 1 + float64(r.u8()%8),
-			MaxQueueDepth:     r.u8() % 6, // 0..5; 0 = unbounded, small values force rejections
+			NRead:                  nRead,
+			NWrite:                 nWrite,
+			ReadBaseTicks:          int64(r.u8() % 5),
+			WriteBaseTicks:         int64(r.u8() % 5),
+			ReadBytesPerTick:       1 + float64(r.u8()%8),
+			WriteBytesPerTick:      1 + float64(r.u8()%8),
+			SaturationQueueDepth:   qsat,
+			SingleTransferFraction: f1,
+			MaxQueueDepth:          r.u8() % 6, // 0..5; 0 = unbounded, small values force rejections
 		}
 	}
 
@@ -77,6 +88,13 @@ func decodeScenario(data []byte) (Config, []fuzzOp) {
 			op.bytes = int64(r.u8()) * 1024
 		default:
 			op.bytes = int64(r.u8()%64+1) << 24 // very large: up to ~1 GiB
+		}
+		// Per-job jitter factor: ~half the ops carry a bounded positive factor
+		// (0.1..3.5), the rest the no-jitter sentinel (0). Bounded so the drain
+		// horizon below stays finite; the factor path (round + overflow clamp) is
+		// deterministic, so BC-S4 determinism must still hold (#1581 BC-D5).
+		if jb := r.u8(); jb%2 == 0 {
+			op.jitter = 0.1 + float64(jb%35)/10.0 // 0.1 .. 3.5, always > 0
 		}
 		ops = append(ops, op)
 	}
@@ -112,7 +130,7 @@ func runScenario(t *testing.T, cfg Config, ops []fuzzOp) (completed []JobID, acc
 	for _, op := range ops {
 		tick += op.tickDelta
 		if op.submit {
-			id, ok := s.Submit(TransferJob{Tier: op.tier, Direction: op.dir, Bytes: op.bytes, SubmitTick: tick})
+			id, ok := s.Submit(TransferJob{Tier: op.tier, Direction: op.dir, Bytes: op.bytes, SubmitTick: tick, JitterFactor: op.jitter})
 			if ok {
 				accepted[id] = true
 			}

@@ -246,7 +246,14 @@ func resolveKVOffloadTier(index int, tb kvOffloadTierBlock, devices map[string]K
 	}
 	tier.DirectIO = *tb.DirectIO
 
-	// bandwidth/latency: a device_class resolves the triple; explicit fields override.
+	// bandwidth/latency + device model: a device_class resolves the numbers for the
+	// regime selected by direct_io (#1581 BC-D3); explicit per-tier bandwidth/latency
+	// fields override the resolved base triple (the ramp/jitter come only from the
+	// device class, DL-6). Defaults are the "ramp/jitter off" values so a device that
+	// declares none is byte-identical to pre-#1581 (BC-D2/INV-6).
+	tier.SaturationQueueDepth = 1
+	tier.SingleTransferFraction = 1.0
+	tier.LatencyJitterStddev = 0
 	hasClass := tb.DeviceClass != nil
 	if hasClass {
 		dev, ok := devices[*tb.DeviceClass]
@@ -254,9 +261,9 @@ func resolveKVOffloadTier(index int, tb kvOffloadTierBlock, devices map[string]K
 			return tier, fmt.Errorf("kv_offload: secondary_tiers[%d].device_class=%q is not defined in defaults.yaml kv_offload_devices (known: %s)", index, *tb.DeviceClass, knownDeviceClasses(devices))
 		}
 		tier.DeviceClass = *tb.DeviceClass
-		tier.ReadBandwidth = dev.ReadBandwidth
-		tier.WriteBandwidth = dev.WriteBandwidth
-		tier.BaseLatency = dev.BaseLatency
+		rb, wb, base, qsat, f1, sigma := resolveDeviceRegime(dev, tier.DirectIO)
+		tier.ReadBandwidth, tier.WriteBandwidth, tier.BaseLatency = rb, wb, base
+		tier.SaturationQueueDepth, tier.SingleTransferFraction, tier.LatencyJitterStddev = qsat, f1, sigma
 	}
 	if tb.ReadBandwidth != nil {
 		tier.ReadBandwidth = *tb.ReadBandwidth
@@ -274,6 +281,50 @@ func resolveKVOffloadTier(index int, tb kvOffloadTierBlock, devices map[string]K
 		return tier, fmt.Errorf("kv_offload: secondary_tiers[%d] needs a device_class OR an explicit read_bandwidth + write_bandwidth + base_latency triple", index)
 	}
 	return tier, nil
+}
+
+// resolveDeviceRegime picks the physics numbers for one device_class under the
+// selected I/O regime (#1581 BC-D3). It starts from the O_DIRECT set (with ramp/
+// jitter defaulting to off — Qsat=1, f₁=1.0, σ=0 — when the device omits them). For
+// the buffered regime (directIO=false) each buffered_* field overrides its O_DIRECT
+// counterpart when present, and otherwise falls back to the O_DIRECT value. To
+// activate a real ramp a device must set BOTH saturation_queue_depth ≥ 2 AND
+// single_transfer_fraction < 1 (Qsat alone with f₁=1.0 is a no-op).
+func resolveDeviceRegime(dev KVOffloadDeviceDefaults, directIO bool) (readBW, writeBW, base float64, qsat int64, f1, sigma float64) {
+	readBW, writeBW, base = dev.ReadBandwidth, dev.WriteBandwidth, dev.BaseLatency
+	qsat, f1, sigma = 1, 1.0, 0
+	if dev.SaturationQueueDepth != nil {
+		qsat = *dev.SaturationQueueDepth
+	}
+	if dev.SingleTransferFraction != nil {
+		f1 = *dev.SingleTransferFraction
+	}
+	if dev.LatencyJitterStddev != nil {
+		sigma = *dev.LatencyJitterStddev
+	}
+	if directIO {
+		return
+	}
+	// Buffered regime: override per field, else keep the O_DIRECT value.
+	if dev.BufferedReadBandwidth != nil {
+		readBW = *dev.BufferedReadBandwidth
+	}
+	if dev.BufferedWriteBandwidth != nil {
+		writeBW = *dev.BufferedWriteBandwidth
+	}
+	if dev.BufferedBaseLatency != nil {
+		base = *dev.BufferedBaseLatency
+	}
+	if dev.BufferedSaturationQueueDepth != nil {
+		qsat = *dev.BufferedSaturationQueueDepth
+	}
+	if dev.BufferedSingleTransferFraction != nil {
+		f1 = *dev.BufferedSingleTransferFraction
+	}
+	if dev.BufferedLatencyJitterStddev != nil {
+		sigma = *dev.BufferedLatencyJitterStddev
+	}
+	return
 }
 
 // knownDeviceClasses returns the sorted device_class names for a deterministic error
@@ -336,10 +387,13 @@ func simToHeaderOffload(c sim.KVOffloadConfig) *workload.TraceKVOffloadConfig {
 			Locality:       t.Locality,
 			EnableKVEvents: t.EnableKVEvents,
 			DirectIO:       t.DirectIO,
-			DeviceClass:    t.DeviceClass,
-			ReadBandwidth:  t.ReadBandwidth,
-			WriteBandwidth: t.WriteBandwidth,
-			BaseLatency:    t.BaseLatency,
+			DeviceClass:            t.DeviceClass,
+			ReadBandwidth:          t.ReadBandwidth,
+			WriteBandwidth:         t.WriteBandwidth,
+			BaseLatency:            t.BaseLatency,
+			SaturationQueueDepth:   t.SaturationQueueDepth,
+			SingleTransferFraction: t.SingleTransferFraction,
+			LatencyJitterStddev:    t.LatencyJitterStddev,
 		})
 	}
 	return h
@@ -456,10 +510,13 @@ func headerToSimOffload(h *workload.TraceKVOffloadConfig) sim.KVOffloadConfig {
 			Locality:       t.Locality,
 			EnableKVEvents: t.EnableKVEvents,
 			DirectIO:       t.DirectIO,
-			DeviceClass:    t.DeviceClass,
-			ReadBandwidth:  t.ReadBandwidth,
-			WriteBandwidth: t.WriteBandwidth,
-			BaseLatency:    t.BaseLatency,
+			DeviceClass:            t.DeviceClass,
+			ReadBandwidth:          t.ReadBandwidth,
+			WriteBandwidth:         t.WriteBandwidth,
+			BaseLatency:            t.BaseLatency,
+			SaturationQueueDepth:   t.SaturationQueueDepth,
+			SingleTransferFraction: t.SingleTransferFraction,
+			LatencyJitterStddev:    t.LatencyJitterStddev,
 		})
 	}
 	return c

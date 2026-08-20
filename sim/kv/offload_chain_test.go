@@ -37,17 +37,17 @@ func mustPanic(t *testing.T, name string, f func()) {
 // legacy paths are unchanged (BC-N1: disabled offload never becomes an OffloadCache).
 func TestNewKVStore_OffloadGating(t *testing.T) {
 	// Disabled + no CPU blocks -> single-tier.
-	single := NewKVStore(sim.KVCacheConfig{TotalKVBlocks: 64, BlockSizeTokens: 16})
+	single := NewKVStore(sim.KVCacheConfig{TotalKVBlocks: 64, BlockSizeTokens: 16}, 0)
 	if _, ok := single.(*KVCacheState); !ok {
 		t.Fatalf("disabled offload + no CPU blocks must be single-tier *KVCacheState, got %T", single)
 	}
 	// Disabled + legacy CPU blocks -> legacy TieredKVCache (unchanged).
-	legacy := NewKVStore(sim.KVCacheConfig{TotalKVBlocks: 64, BlockSizeTokens: 16, KVCPUBlocks: 8, KVTransferBandwidth: 100})
+	legacy := NewKVStore(sim.KVCacheConfig{TotalKVBlocks: 64, BlockSizeTokens: 16, KVCPUBlocks: 8, KVTransferBandwidth: 100}, 0)
 	if _, ok := legacy.(*TieredKVCache); !ok {
 		t.Fatalf("legacy KVCPUBlocks path must be *TieredKVCache, got %T", legacy)
 	}
 	// Enabled offload -> OffloadCache.
-	off := NewKVStore(sim.KVCacheConfig{TotalKVBlocks: 64, BlockSizeTokens: 16, Offload: enabledOffloadCfg(1<<20, 4096, 1)})
+	off := NewKVStore(sim.KVCacheConfig{TotalKVBlocks: 64, BlockSizeTokens: 16, Offload: enabledOffloadCfg(1<<20, 4096, 1)}, 0)
 	if _, ok := off.(*OffloadCache); !ok {
 		t.Fatalf("enabled offload must be *OffloadCache, got %T", off)
 	}
@@ -59,7 +59,7 @@ func TestNewKVStore_BothOffloadModelsPanics(t *testing.T) {
 		NewKVStore(sim.KVCacheConfig{
 			TotalKVBlocks: 64, BlockSizeTokens: 16, KVCPUBlocks: 8, KVTransferBandwidth: 100,
 			Offload: enabledOffloadCfg(1<<20, 4096, 1),
-		})
+		}, 0)
 	})
 }
 

@@ -53,7 +53,7 @@ type InstanceSimulator struct {
 // Failure modes: Panics if internal Simulator creation fails (matches existing behavior).
 func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	// Create KV store (single-tier or tiered based on config)
-	kvStore := kv.NewKVStore(cfg.KVCacheConfig)
+	kvStore := kv.NewKVStore(cfg.KVCacheConfig, cfg.Seed)
 	// Build the LoRA adapter-cost accessor (nil when the subsystem is inert) and
 	// supply it to the latency model at construction so the per-step compute
 	// overhead applies to both backends (#1467, R23). BuildAdapterCost is pure and

@@ -19,10 +19,12 @@ func init() {
 	sim.NewKVStoreFromConfig = NewKVStore
 }
 
-// NewKVStore creates a KVStore from KVCacheConfig.
+// NewKVStore creates a KVStore from KVCacheConfig. seed is the run seed; it is
+// used only to derive the offload device model's jitter RNG partition (#1581) and
+// is otherwise ignored (byte-identical behavior for every non-jitter run).
 // Returns *KVCacheState for single-tier (KVCPUBlocks <= 0, the default).
 // Returns *TieredKVCache for tiered mode (KVCPUBlocks > 0).
-func NewKVStore(cfg sim.KVCacheConfig) sim.KVStore {
+func NewKVStore(cfg sim.KVCacheConfig, seed int64) sim.KVStore {
 	gpu := NewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 	// #1590 (H1): the multi-tier offload chain (--kv-offload-config) and the legacy
 	// single-CPU-tier path (--kv-cpu-blocks) are two distinct offload models; setting
@@ -32,7 +34,11 @@ func NewKVStore(cfg sim.KVCacheConfig) sim.KVStore {
 		if cfg.KVCPUBlocks > 0 {
 			panic("NewKVStore: --kv-offload-config and --kv-cpu-blocks are mutually exclusive (distinct offload models); set only one")
 		}
-		return NewOffloadCache(gpu, cfg.Offload)
+		// Dedicated, seed-derived RNG partition for the storage device model's
+		// latency jitter (#1581 BC-D5/BC-D6). Built unconditionally when offload is
+		// enabled (cheap); consumed only when a tier sets latency_jitter_stddev > 0.
+		jitterRNG := sim.NewPartitionedRNG(sim.NewSimulationKey(seed)).ForSubsystem(sim.SubsystemKVOffload)
+		return NewOffloadCache(gpu, cfg.Offload, WithOffloadRNG(jitterRNG))
 	}
 	if cfg.KVCPUBlocks <= 0 {
 		return gpu

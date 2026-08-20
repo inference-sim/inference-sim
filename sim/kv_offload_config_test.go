@@ -85,6 +85,24 @@ func TestKVOffloadConfig_Validate(t *testing.T) {
 		{"base latency negative", func(c *KVOffloadConfig) { c.Tiers[0].BaseLatency = -1 }, "base_latency"},
 		{"base latency NaN", func(c *KVOffloadConfig) { c.Tiers[0].BaseLatency = math.NaN() }, "base_latency"},
 		{"base latency Inf", func(c *KVOffloadConfig) { c.Tiers[0].BaseLatency = math.Inf(1) }, "base_latency"},
+		// #1581 device-model fields (BC-D7).
+		{"negative qsat", func(c *KVOffloadConfig) { c.Tiers[0].SaturationQueueDepth = -1 }, "saturation_queue_depth"},
+		{"f1 zero with ramp", func(c *KVOffloadConfig) {
+			c.Tiers[0].SaturationQueueDepth = 4
+			c.Tiers[0].SingleTransferFraction = 0
+		}, "single_transfer_fraction"},
+		{"f1 above one with ramp", func(c *KVOffloadConfig) {
+			c.Tiers[0].SaturationQueueDepth = 4
+			c.Tiers[0].SingleTransferFraction = 1.5
+		}, "single_transfer_fraction"},
+		{"f1 negative with ramp", func(c *KVOffloadConfig) {
+			c.Tiers[0].SaturationQueueDepth = 4
+			c.Tiers[0].SingleTransferFraction = -0.1
+		}, "single_transfer_fraction"},
+		{"f1 NaN", func(c *KVOffloadConfig) { c.Tiers[0].SingleTransferFraction = math.NaN() }, "single_transfer_fraction"},
+		{"jitter negative", func(c *KVOffloadConfig) { c.Tiers[0].LatencyJitterStddev = -0.1 }, "latency_jitter_stddev"},
+		{"jitter NaN", func(c *KVOffloadConfig) { c.Tiers[0].LatencyJitterStddev = math.NaN() }, "latency_jitter_stddev"},
+		{"jitter Inf", func(c *KVOffloadConfig) { c.Tiers[0].LatencyJitterStddev = math.Inf(1) }, "latency_jitter_stddev"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -116,6 +134,38 @@ func TestKVOffloadConfig_Validate_ZeroBaseLatencyOK(t *testing.T) {
 	c.Tiers[0].BaseLatency = 0
 	if err := c.Validate(); err != nil {
 		t.Fatalf("zero base_latency must be allowed, got %v", err)
+	}
+}
+
+// #1581: valid device-model parameterizations pass Validate (BC-D7).
+func TestKVOffloadConfig_Validate_DeviceModelOK(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*KVOffloadConfig)
+	}{
+		{"active ramp", func(c *KVOffloadConfig) {
+			c.Tiers[0].SaturationQueueDepth = 8
+			c.Tiers[0].SingleTransferFraction = 0.4
+		}},
+		{"f1 exactly 1 (no-op ramp)", func(c *KVOffloadConfig) {
+			c.Tiers[0].SaturationQueueDepth = 8
+			c.Tiers[0].SingleTransferFraction = 1.0
+		}},
+		{"qsat 1 ignores f1", func(c *KVOffloadConfig) {
+			c.Tiers[0].SaturationQueueDepth = 1
+			c.Tiers[0].SingleTransferFraction = 0 // ignored when ramp off
+		}},
+		{"jitter enabled", func(c *KVOffloadConfig) { c.Tiers[0].LatencyJitterStddev = 0.15 }},
+		{"zero jitter", func(c *KVOffloadConfig) { c.Tiers[0].LatencyJitterStddev = 0 }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := validEnabledConfig()
+			tc.mutate(&c)
+			if err := c.Validate(); err != nil {
+				t.Fatalf("%s must validate, got %v", tc.name, err)
+			}
+		})
 	}
 }
 
