@@ -3044,20 +3044,21 @@ output is byte-identical to a build without it.</p>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">                                    </span><span class="c1">#   exclusive with blocks_per_chunk)</span>
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="c1"># blocks_per_chunk: 1             # alternate encoding of block_size (default 1)</span>
 <a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span><span class="nt">eviction_policy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lru</span><span class="w">              </span><span class="c1"># lru | arc  (default lru)</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">offload_prompt_only</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">         </span><span class="c1"># vLLM DEFAULT — decode KV is NOT offloaded unless false</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">  </span><span class="c1"># self_describing_kv_events: false</span>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">  </span><span class="c1"># tokens_per_hash: 16             # default = GPU block size</span>
-<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">  </span><span class="nt">secondary_tiers</span><span class="p">:</span>
-<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fs</span><span class="w">                      </span><span class="c1"># only "fs" is representable today; obj/p2p error loudly</span>
-<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">      </span><span class="nt">root_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/mnt/kv-cache</span>
-<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">      </span><span class="nt">n_read_threads</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span><span class="w">            </span><span class="c1"># vLLM default 16</span>
-<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">      </span><span class="nt">n_write_threads</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span><span class="w">           </span><span class="c1"># vLLM default 16</span>
-<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">      </span><span class="nt">locality</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">LOCAL</span><span class="w">               </span><span class="c1"># LOCAL | REMOTE (optional)</span>
-<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">      </span><span class="nt">direct_io</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">               </span><span class="c1"># REQUIRED — BLIS makes vLLM's runtime O_DIRECT probe explicit</span>
-<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">      </span><span class="nt">device_class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nvme_gen4</span><span class="w">       </span><span class="c1"># resolves read/write bandwidth + latency from defaults.yaml</span>
-<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">      </span><span class="c1"># read_bandwidth: 7000.0      # bytes/µs — overrides device_class (per-direction, required as a pair)</span>
-<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">      </span><span class="c1"># write_bandwidth: 5000.0</span>
-<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">      </span><span class="c1"># base_latency: 80.0          # µs</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">offload_prompt_only</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">         </span><span class="c1"># vLLM DEFAULT (prompt-only). false =&gt; promptAndDecode:</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">                                    </span><span class="c1">#   full decode blocks are offloaded and reused too (see below)</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">  </span><span class="c1"># self_describing_kv_events: false</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">  </span><span class="c1"># tokens_per_hash: 16             # default = GPU block size</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">  </span><span class="nt">secondary_tiers</span><span class="p">:</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fs</span><span class="w">                      </span><span class="c1"># only "fs" is representable today; obj/p2p error loudly</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">      </span><span class="nt">root_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/mnt/kv-cache</span>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">      </span><span class="nt">n_read_threads</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span><span class="w">            </span><span class="c1"># vLLM default 16</span>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">      </span><span class="nt">n_write_threads</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span><span class="w">           </span><span class="c1"># vLLM default 16</span>
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">      </span><span class="nt">locality</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">LOCAL</span><span class="w">               </span><span class="c1"># LOCAL | REMOTE (optional)</span>
+<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">      </span><span class="nt">direct_io</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">               </span><span class="c1"># REQUIRED — BLIS makes vLLM's runtime O_DIRECT probe explicit</span>
+<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">      </span><span class="nt">device_class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nvme_gen4</span><span class="w">       </span><span class="c1"># resolves read/write bandwidth + latency from defaults.yaml</span>
+<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">      </span><span class="c1"># read_bandwidth: 7000.0      # bytes/µs — overrides device_class (per-direction, required as a pair)</span>
+<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">      </span><span class="c1"># write_bandwidth: 5000.0</span>
+<a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="w">      </span><span class="c1"># base_latency: 80.0          # µs</span>
 </code></pre></div>
 <p>Defaults match vLLM knob-for-knob. Anything vLLM accepts either maps to a BLIS config or
 fails <strong>loudly</strong> at startup — never silently ignored: <code>store_threshold &gt;= 2</code> is rejected
@@ -3068,12 +3069,19 @@ block shipped in <code>defaults.yaml</code> (bandwidth in bytes/µs, latency in 
 <p>The resolved config is recorded in the exported trace header, so a <code>blis run --trace-output</code>
 round-trips through <code>blis replay</code> (INV-13): on replay the header is authoritative and a config
 the binary cannot reproduce fails loudly rather than silently degrading to single-tier.</p>
-<div class="admonition note">
-<p class="admonition-title">Config surface only (today)</p>
-<p><code>--kv-offload-config</code> currently <strong>captures and validates</strong> the offload configuration; the
-multi-tier transfer/keying mechanisms that consume these knobs are landing separately.
-With no <code>--kv-offload-config</code>, behavior is unchanged.</p>
-</div>
+<p>The <code>offload_prompt_only</code> knob is an explicit policy over <em>what enters the tiers</em>. Modeling
+vLLM's mechanism (<code>_calc_num_offloadable_tokens</code> + <code>storable_chunks</code>), a request's computed KV is
+truncated to the prompt length when <code>true</code> (the default), then floor-divided into whole chunks — so
+a chunk containing any decode token is never offloaded (a prompt of <code>1.5 ×</code> the chunk size offloads
+exactly 1 chunk). With <code>offload_prompt_only: false</code> (vLLM's <code>promptAndDecode</code>), full decode blocks
+are offloaded too; because BLIS already hashes every completed block prefix-consistently (for
+<code>block_size &gt; 1</code>), a later request on the same instance whose <strong>input contains earlier output
+tokens</strong> (multi-turn / agentic workloads) reloads that decode KV from the tiers instead of
+recomputing it — so the cache hit-rate reflects the policy. Reuse is single-instance (offload tiers
+are per-instance and invisible to the router). At <code>block_size == 1</code> decode blocks take a guarded
+allocation path that leaves them unhashed, so decode-offload is inert there — a degenerate offload
+block size (real offload block sizes track the GPU block size). With no <code>--kv-offload-config</code>,
+behavior is unchanged (INV-6).</p>
 <h2 id="chunked-prefill">Chunked Prefill<a class="headerlink" href="#chunked-prefill" title="Permanent link">&para;</a></h2>
 <p>Long prefill sequences can cause <strong>head-of-line (HOL) blocking</strong> — a 2,048-token prefill takes ~97ms on Qwen3-14B / H100 / TP=1 (roofline mode), blocking shorter requests from starting.</p>
 <p>Chunked prefill splits long prefills into smaller chunks:</p>
