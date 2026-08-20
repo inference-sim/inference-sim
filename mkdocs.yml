@@ -113,6 +113,7 @@ nav:
       - Cluster Simulation: guide/cluster.md
       - Metrics & Results: guide/results.md
       - Observe / Replay / Calibrate: guide/observe-replay-calibrate.md
+      - KV Hit-Rate Calibration: guide/kv-offload-calibration.md
       - Hypothesis Experimentation: guide/experimentation.md
       - Archon PR Review: guide/archon-pr-review.md
       - Skills & Plugins: guide/skills-and-plugins.md

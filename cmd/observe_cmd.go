@@ -65,6 +65,12 @@ var (
 	observeTimeout             int
 	observePrewarmDuration     time.Duration
 	observeLazyGeneration      bool // --lazy-generation: stream requests from generator (alpha, #1441/#1443)
+	// KV hit-rate scraping (#1583): scrape the server's Prometheus /metrics endpoint
+	// at the start and end of the measured window and record the observed hit-rate in
+	// the trace header for downstream `blis calibrate`. Off by default (BC-8).
+	observeScrapeKVMetrics bool
+	observeVLLMCommit      string
+	observeKVMetricsURL    string
 	// saturationReport is declared in root.go and shared across run, replay, observe
 )
 
@@ -137,6 +143,10 @@ func init() {
 	observeCmd.Flags().IntVar(&observeMaxConcur, "max-concurrency", 256, "Maximum simultaneous in-flight requests")
 	observeCmd.Flags().IntVar(&observeWarmup, "warmup-requests", 0, "Number of initial requests to exclude from trace")
 	observeCmd.Flags().DurationVar(&observePrewarmDuration, "prewarm-duration", 0, "Duration of system priming phase before real workload (e.g., 60s). Sends small fixed requests at low concurrency to warm CUDA/EPP/memory. 0 = disabled.")
+	// KV hit-rate scraping (#1583).
+	observeCmd.Flags().BoolVar(&observeScrapeKVMetrics, "scrape-kv-metrics", false, "Scrape the server's Prometheus /metrics endpoint at the start and end of the measured window and record the observed KV-cache hit-rate (vllm:kv_offload_tiering_* counters, or the GPU prefix-cache fallback) in the trace header for downstream `blis calibrate`. Off by default; a scrape miss warns and omits the block (never fatal).")
+	observeCmd.Flags().StringVar(&observeVLLMCommit, "vllm-commit", "", "Pinned vLLM commit the server is running; recorded verbatim in the observed KV-metrics header block (the tiering counters require an unreleased vLLM, PR #48798). Only meaningful with --scrape-kv-metrics.")
+	observeCmd.Flags().StringVar(&observeKVMetricsURL, "kv-metrics-url", "", "Override URL for the Prometheus /metrics endpoint (default: <server-url>/metrics). Use when metrics are served on a separate port/host. Only meaningful with --scrape-kv-metrics.")
 	observeCmd.Flags().BoolVar(&observeNoStreaming, "no-streaming", false, "Disable streaming (use non-streaming HTTP)")
 	observeCmd.Flags().Int64Var(&observeSeed, "seed", 42, "RNG seed for workload generation")
 	observeCmd.Flags().Int64Var(&observeHorizon, "horizon", 0, "Observation horizon in microseconds (0 = from spec or unlimited)")
@@ -549,6 +559,19 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Fatalf("%v", satErr)
 	}
 
+	// KV hit-rate scrape (#1583): capture the start-of-window Prometheus counters
+	// AFTER prewarm and BEFORE the measured workload, so the end-start delta reflects
+	// the measured window. A start-scrape failure warns and disables the derivation
+	// (kvScrapeStart stays nil) — never aborts the run (BC-11).
+	var kvScrapeStart map[string]float64
+	if observeScrapeKVMetrics {
+		if s, err := client.ScrapeKVMetrics(ctx, observeKVMetricsURL); err != nil {
+			logrus.Warnf("observe: --scrape-kv-metrics: start-of-window /metrics scrape failed: %v; the observed KV hit-rate will be omitted from the trace header", err)
+		} else {
+			kvScrapeStart = s
+		}
+	}
+
 	// Run orchestrator
 	startTime := time.Now()
 	runObserveOrchestrator(ctx, client, recorder, sessionMgr, observeSource, observeNoStreaming, observeMaxConcur, observeWarmup, prefixes, prefixLengths, observeUnconstrainedOutput, observeRecordITL, tokensPerWord)
@@ -602,6 +625,9 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	if spec != nil {
 		header.WorkloadSeed = &spec.Seed
 	}
+	// KV hit-rate (#1583): end-of-window scrape + derive, then record in the header.
+	// nil when scraping was off or any step failed (BC-8/BC-11).
+	header.ObservedKVMetrics = resolveObservedKVMetrics(ctx, client, observeKVMetricsURL, kvScrapeStart, observeVLLMCommit)
 
 	if err := recorder.Export(header, observeTraceHeader, observeTraceData); err != nil {
 		logrus.Fatalf("Failed to export trace: %v", err)

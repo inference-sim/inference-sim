@@ -45,6 +45,47 @@ type TraceHeader struct {
 	// physics regardless of the replay host's defaults.yaml; replay uses them
 	// authoritatively and logrus.Fatalf's on any config it cannot reconstruct.
 	KVOffload *TraceKVOffloadConfig `yaml:"kv_offload,omitempty"`
+
+	// ObservedKVMetrics records the REAL server's KV-cache hit-rate scraped from its
+	// Prometheus /metrics endpoint during `blis observe --scrape-kv-metrics` (#1583).
+	// It is a resolved-observation block (engine-level counters, not per-request), so
+	// it lives in the header rather than a per-record column. Absent (nil, omitempty)
+	// unless --scrape-kv-metrics was set and a recognized counter family was found —
+	// so a default observe writes a byte-identical header (BC-8). It is real-side
+	// ground truth: replay preserves it verbatim on re-export (BC-4) and never
+	// regenerates it. `blis calibrate` compares it against the simulator's own
+	// aggregate cache_hit_rate.
+	ObservedKVMetrics *TraceObservedKVMetrics `yaml:"observed_kv_metrics,omitempty"`
+}
+
+// TraceObservedKVMetrics is the real-side KV-cache hit-rate observed from a vLLM
+// server's Prometheus /metrics endpoint over the measured observation window (#1583).
+// It is a workload-package struct — decoupled from any sim type — so the on-disk trace
+// format is stable, mirroring the TraceKVOffloadConfig / TraceServerConfig precedent.
+// Read strictly (KnownFields) via LoadTraceV2, so an unknown sub-key is a hard error.
+type TraceObservedKVMetrics struct {
+	// Source names which counter family produced HitRate:
+	//   "tiered"                    — vllm:kv_offload_tiering_block_hits/_block_queries
+	//                                 (the multi-tier offload family; requires an
+	//                                 unreleased vLLM, PR #48798).
+	//   "gpu-prefix-cache-fallback" — vllm:gpu_prefix_cache_* (released vLLM, GPU-only).
+	//                                 A distinct, weaker signal — never conflated with a
+	//                                 tiered number.
+	Source string `yaml:"source"`
+	// HitRate is a fraction in [0,1]: BlockHits/BlockQueries over the measured window.
+	HitRate float64 `yaml:"hit_rate"`
+	// BlockHits and BlockQueries are the cumulative-counter DELTAS over the measured
+	// window (end − start), summed across all per-tier label series of the family.
+	BlockHits    int64 `yaml:"block_hits"`
+	BlockQueries int64 `yaml:"block_queries"`
+	// ReadTimeTotal and WriteTimeTotal are the per-tier read/write time deltas summed
+	// across the family (vLLM native seconds), recorded for the documented manual
+	// bandwidth cross-check. Informational — not part of the automated comparison.
+	ReadTimeTotal  float64 `yaml:"read_time_total,omitempty"`
+	WriteTimeTotal float64 `yaml:"write_time_total,omitempty"`
+	// VLLMCommit is the pinned vLLM commit the cluster ran (operator-supplied via
+	// --vllm-commit), recorded so the dependency on an unreleased vLLM is explicit.
+	VLLMCommit string `yaml:"vllm_commit,omitempty"`
 }
 
 // TraceKVOffloadConfig is the trace-header serialization of a resolved

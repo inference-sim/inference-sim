@@ -34,6 +34,11 @@ var (
 	calibrateSimMetrics        string
 	calibrateSimMetricsBlind   string
 	calibrateAdapterMAPEThresh float64
+	// KV hit-rate comparison (#1583). --sim-metrics (reused from adapter mode) supplies
+	// the simulator's aggregate cache_hit_rate; the tolerances gate the pass/fail
+	// verdicts (absolute pp for hit-rate, MAPE fraction for TTFT).
+	calibrateHitRateTolerancePP float64
+	calibrateTTFTMapeThreshold   float64
 )
 
 var calibrateCmd = &cobra.Command{
@@ -120,6 +125,14 @@ Example:
 		// Validate bandwidth (R3, R20): NaN/Inf bypass computeUploadDelay's ≤0 guard
 		if math.IsNaN(calibrateNetworkBandwidthMbps) || math.IsInf(calibrateNetworkBandwidthMbps, 0) {
 			logrus.Fatalf("--network-bandwidth-mbps must be a finite number, got %v", calibrateNetworkBandwidthMbps)
+		}
+
+		// Validate hit-rate comparison tolerances (R3): finite and non-negative.
+		if math.IsNaN(calibrateHitRateTolerancePP) || math.IsInf(calibrateHitRateTolerancePP, 0) || calibrateHitRateTolerancePP < 0 {
+			logrus.Fatalf("--hit-rate-tolerance-pp must be a finite number >= 0, got %v", calibrateHitRateTolerancePP)
+		}
+		if math.IsNaN(calibrateTTFTMapeThreshold) || math.IsInf(calibrateTTFTMapeThreshold, 0) || calibrateTTFTMapeThreshold < 0 {
+			logrus.Fatalf("--ttft-mape-threshold must be a finite number >= 0, got %v", calibrateTTFTMapeThreshold)
 		}
 
 		config := workload.CalibrationConfig{
@@ -219,6 +232,37 @@ Example:
 			}
 		}
 
+		// Step 6.7: KV cache hit-rate comparison (#1583, BC-6/BC-12). Compares the
+		// real observed hit-rate (trace header, from observe --scrape-kv-metrics)
+		// against the simulator's aggregate cache_hit_rate (--sim-metrics MetricsOutput
+		// from replay --metrics-path). Skipped with a warning when either side is
+		// missing — never a fabricated comparison (R1).
+		if obs := trace.Header.ObservedKVMetrics; obs != nil {
+			if calibrateSimMetrics == "" {
+				logrus.Warnf("calibrate: trace header carries an observed KV hit-rate (source=%s, %.4f) but --sim-metrics was not provided; skipping the hit-rate comparison. Produce it with `blis replay --metrics-path <file>` and pass --sim-metrics <file>.", obs.Source, obs.HitRate)
+			} else {
+				simHR, hrErr := loadSimCacheHitRate(calibrateSimMetrics)
+				if hrErr != nil {
+					logrus.Fatalf("%v", hrErr)
+				}
+				if simHR == nil {
+					logrus.Warnf("calibrate: --sim-metrics %s has no cache_hit_rate; skipping the hit-rate comparison. Regenerate it with `blis replay --metrics-path` (a bare stdout run does not carry cache_hit_rate).", calibrateSimMetrics)
+				} else {
+					report.HitRate = workload.ComputeHitRateComparison(obs.HitRate, *simHR, calibrateHitRateTolerancePP, obs.Source)
+				}
+			}
+		}
+
+		// TTFT-MAPE tolerance verdict (#1583, BC-7): recorded in the report (not just
+		// logged) so automation consumers see it. Set before the write below.
+		if ttft, ok := report.Metrics["ttft"]; ok {
+			report.TTFTTolerance = &workload.ToleranceVerdict{
+				MAPE:      ttft.RequestLevel.MAPE,
+				Threshold: calibrateTTFTMapeThreshold,
+				Within:    ttft.RequestLevel.MAPE <= calibrateTTFTMapeThreshold,
+			}
+		}
+
 		// Step 7: Write report JSON
 		reportData, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
@@ -285,6 +329,28 @@ Example:
 		if itl, ok := report.Metrics["itl"]; ok {
 			logrus.Infof("  ITL:  MAPE=%.1f%%, PearsonR=%.3f, Bias=%s, Quality=%s",
 				itl.RequestLevel.MAPE*100, itl.RequestLevel.PearsonR, itl.RequestLevel.BiasDirection, itl.RequestLevel.Quality)
+		}
+
+		// KV cache hit-rate verdict + TTFT tolerance verdict (#1583, BC-6/BC-7).
+		if report.HitRate != nil {
+			hr := report.HitRate
+			verdict := "WITHIN"
+			logFn := logrus.Infof
+			if !hr.Within {
+				verdict = "EXCEEDS"
+				logFn = logrus.Warnf
+			}
+			logFn("KV hit-rate (source=%s): Real=%.4f Sim=%.4f AbsErr=%.2fpp (tolerance %.2fpp) [%s]",
+				hr.Source, hr.RealHitRate, hr.SimHitRate, hr.AbsErrorPP, hr.TolerancePP, verdict)
+		}
+		if tv := report.TTFTTolerance; tv != nil {
+			mapePct := tv.MAPE * 100
+			threshPct := tv.Threshold * 100
+			if tv.Within {
+				logrus.Infof("TTFT MAPE=%.1f%% (threshold %.1f%%) [WITHIN]", mapePct, threshPct)
+			} else {
+				logrus.Warnf("TTFT MAPE=%.1f%% (threshold %.1f%%) [EXCEEDS]", mapePct, threshPct)
+			}
 		}
 
 		// Per-SLO class breakdown (when data present)
@@ -362,6 +428,23 @@ func loadBLISAggregate(path string) workload.BLISAggregate {
 		TTFTMs:           m.TTFTMeanMs,
 		OutputThroughput: float64(m.TotalOutputTokens) / m.VllmDurationSec,
 	}
+}
+
+// loadSimCacheHitRate reads a BLIS MetricsOutput JSON (from `blis run/replay
+// --metrics-path`) and returns its aggregate cache_hit_rate (#1583). A nil return
+// with nil error means the file parsed but carries no cache_hit_rate (e.g. produced
+// without --metrics-path, or by a pre-feature binary) — the caller warns and skips
+// the hit-rate comparison rather than fabricating a value.
+func loadSimCacheHitRate(path string) (*float64, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read --sim-metrics %s: %w", path, err)
+	}
+	var m sim.MetricsOutput
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, fmt.Errorf("parse --sim-metrics %s: %w", path, err)
+	}
+	return m.CacheHitRate, nil
 }
 
 // runAdapterReferenceComparison implements the US5 (#1470) DT fidelity comparison:
@@ -450,7 +533,9 @@ func init() {
 	calibrateCmd.Flags().StringVar(&calibrateGoodputSLOE2E, "slo-e2e", "", "Per-class E2E goodput thresholds (e.g. \"critical=5s,standard=30s\").")
 	// Adapter-cost fidelity comparison vs the Digital Twin (US5, #1470).
 	calibrateCmd.Flags().StringVar(&calibrateAdapterReference, "adapter-reference", "", "Path to a DT reference JSON (per-config adapter_aware/adapter_blind aggregates). Enables standalone BLIS-vs-DT fidelity comparison; --trace-header/--trace-data/--sim-results are not used in this mode.")
-	calibrateCmd.Flags().StringVar(&calibrateSimMetrics, "sim-metrics", "", "Path to a BLIS aggregate MetricsOutput JSON (from blis run/replay --metrics-path) for the adapter-aware run. Required with --adapter-reference.")
+	calibrateCmd.Flags().StringVar(&calibrateSimMetrics, "sim-metrics", "", "Path to a BLIS aggregate MetricsOutput JSON (from blis run/replay --metrics-path). Required with --adapter-reference (adapter-aware run). In the standard flow it supplies the simulator's cache_hit_rate for the KV hit-rate comparison (#1583).")
+	calibrateCmd.Flags().Float64Var(&calibrateHitRateTolerancePP, "hit-rate-tolerance-pp", 5.0, "Absolute-error band (percentage points) for the KV cache hit-rate comparison (#1583). Real (trace header observed) vs sim (--sim-metrics cache_hit_rate).")
+	calibrateCmd.Flags().Float64Var(&calibrateTTFTMapeThreshold, "ttft-mape-threshold", 0.15, "TTFT MAPE threshold (fraction) for the informational TTFT tolerance verdict (#1583; issue target 0.15).")
 	calibrateCmd.Flags().StringVar(&calibrateSimMetricsBlind, "sim-metrics-blind", "", "Optional BLIS MetricsOutput JSON for the adapter-blind baseline run; enables the delta-normalized (aware/blind) diagnostic that isolates the ported adapter physics.")
 	calibrateCmd.Flags().Float64Var(&calibrateAdapterMAPEThresh, "adapter-mape-threshold", 0.20, "MAPE bound (fraction) for the adapter-reference comparison (SC-007 target 0.20).")
 	rootCmd.AddCommand(calibrateCmd)

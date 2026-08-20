@@ -112,8 +112,38 @@ go build -o blis main.go
   --record-itl --itl-output trace.itl.csv \
   --trace-header trace.yaml --trace-data trace.csv
 
+# Observe with KV cache hit-rate scraping (#1583). --scrape-kv-metrics scrapes the
+# server's Prometheus /metrics at the start and end of the measured window and records
+# the observed hit-rate (vllm:kv_offload_tiering_block_hits/_block_queries, or the GPU
+# prefix-cache fallback) in the trace header for downstream calibrate. --vllm-commit
+# records the pinned (unreleased, PR #48798) vLLM the tiering counters require. A scrape
+# miss warns and omits the block (never fatal). observe is a black-box dispatcher — it
+# does NOT take --kv-offload-config; the offload config is supplied on the replay step
+# (below). See docs/guide/kv-offload-calibration.md.
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --workload chatbot --rate 10 --num-requests 100 \
+  --scrape-kv-metrics --vllm-commit 63a9a5010a \
+  --trace-header trace.yaml --trace-data trace.csv
+
 # Compare real observed latencies against simulator predictions
 ./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json --report calibration.json
+
+# Compare KV cache hit-rate too (#1583). The real hit-rate comes from the trace header
+# (observe --scrape-kv-metrics); the sim hit-rate comes from --sim-metrics (a
+# MetricsOutput from `blis replay --metrics-path`, which carries cache_hit_rate). The
+# report gains a hit_rate block with abs_error_pp and a within-tolerance verdict
+# (default 5 pp); a TTFT-MAPE verdict uses --ttft-mape-threshold (default 0.15).
+# Skipped with a warning when --sim-metrics is absent or lacks cache_hit_rate. For a
+# tiered observed hit-rate, supply --kv-offload-config on replay to model the observed
+# deployment (observe traces are exempt from the "cannot add offload on replay" rule;
+# sim-generated traces stay header-authoritative). Replaying a tiered observation with
+# no offload config is a hard error (never a silent GPU-only value).
+./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
+  --kv-offload-config offload.yaml \
+  --results-path results.json --metrics-path simagg.json
+./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json \
+  --sim-metrics simagg.json --hit-rate-tolerance-pp 5 --ttft-mape-threshold 0.15 \
+  --report calibration.json
 
 # Compare with ITL metric included (requires observe --record-itl)
 ./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json \
@@ -370,6 +400,8 @@ LoRA control-plane subsystem (#1464, epic PRs 1–7): adapter identity + pre-dec
 Phase 0 workload unification complete (see issue #420): W0-1 (spec v2 schema + SLO tiers), W0-2 (binary rename + converters), W0-3 (cohort population dynamics), W0-4 (legacy retirement). All workload generation now flows through `sim/workload/GenerateRequests()`. SLO tiers: critical, standard, sheddable, batch, background. Arrival processes: poisson, gamma, weibull, constant. CLI binary renamed from `simulation_worker` to `blis`.
 
 Observe/replay/calibrate pipeline complete: `blis observe` (#659) dispatches workload to real servers with closed-loop session support, `blis replay` (#689) replays through DES, `blis calibrate` (#701) compares real vs simulated latencies. Observe fidelity (#660): chat completions endpoint (`--api-format chat`), `stream_options` for streaming token counts, `finish_reason` extraction, configurable `max_tokens` (`--unconstrained-output`), deterministic prefix strings for KV cache activation, `--rtt-ms` for network RTT.
+
+KV cache hit-rate calibration (#1583, epic #1585 S6): `blis observe --scrape-kv-metrics` scrapes the server's Prometheus `/metrics` KV-offload tiering counters (`vllm:kv_offload_tiering_block_hits`/`_block_queries`; released fallback `vllm:gpu_prefix_cache_*`, tagged distinctly) over the measured window and records the observed hit-rate in a new trace-header block (`observed_kv_metrics`, with `--vllm-commit` pinning the unreleased vLLM PR #48798). `blis replay --metrics-path` writes the sim aggregate `cache_hit_rate` (a `*float64` on `MetricsOutput`, populated file-only in `EmitOutput` so stdout stays byte-identical — INV-6). `blis calibrate --sim-metrics` then compares TTFT, E2E, **and** KV hit-rate (`hit_rate` report block, default ≤5 pp band; TTFT MAPE ≤0.15 verdict). On replay a tiered observation with no reproducible `kv_offload` config is a hard error (BC-10, INV-13, never silent GPU-only degradation); the observed block round-trips verbatim on re-export. The sim exposes one aggregate hit-rate (no per-tier), so the automated comparison is overall-hit-rate; per-tier read/write time is recorded for a documented manual bandwidth cross-check. Pure Prometheus-text parser + hit-rate derivation in `sim/workload/prom_hitrate.go` (no new go.mod dep). Empirical cluster tolerance-pass is an operator step (needs an unreleased-vLLM GPU cluster); see `docs/guide/kv-offload-calibration.md`.
 
 Recent work: MkDocs documentation site (#450), roofline auto-fetch flag (#435), metrics substrate fixes (#458), cross-cutting documentation audit (#460).
 
