@@ -11,28 +11,28 @@
       
       
       
-        <link rel="prev" href="../getting-started/tutorial/">
+        <link rel="prev" href="../observe-replay-calibrate/">
       
       
-        <link rel="next" href="glossary/">
+        <link rel="next" href="../experimentation/">
       
       
         
       
       
-      <link rel="icon" href="../assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
     
     
       
-        <title>Concepts - BLIS — Blackbox Inference Simulator</title>
+        <title>KV Hit-Rate Calibration - BLIS — Blackbox Inference Simulator</title>
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -51,9 +51,9 @@
       
     
     
-      <link rel="stylesheet" href="../stylesheets/extra.css">
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
     
-    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#concepts" class="md-skip">
+        <a href="#kv-cache-hit-rate-calibration" class="md-skip">
           Skip to content
         </a>
       
@@ -96,7 +96,7 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href=".." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -116,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Concepts
+              KV Hit-Rate Calibration
             
           </span>
         </div>
@@ -229,7 +229,7 @@
   
   
     <li class="md-tabs__item">
-      <a href=".." class="md-tabs__link">
+      <a href="../.." class="md-tabs__link">
         
   
   
@@ -250,7 +250,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../getting-started/" class="md-tabs__link">
+        <a href="../../getting-started/" class="md-tabs__link">
           
   
   
@@ -268,13 +268,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="./" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../concepts/" class="md-tabs__link">
           
   
   
@@ -292,11 +290,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../guide/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
           
   
   
@@ -318,7 +318,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../reference/" class="md-tabs__link">
+        <a href="../../reference/" class="md-tabs__link">
           
   
   
@@ -340,7 +340,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../methodology/" class="md-tabs__link">
+        <a href="../../methodology/" class="md-tabs__link">
           
   
   
@@ -362,7 +362,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../contributing/" class="md-tabs__link">
+        <a href="../../contributing/" class="md-tabs__link">
           
   
   
@@ -384,7 +384,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../blog/" class="md-tabs__link">
+        <a href="../../blog/" class="md-tabs__link">
           
   
   
@@ -420,7 +420,7 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href=".." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -450,7 +450,7 @@
   
   
     <li class="md-nav__item">
-      <a href=".." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -508,7 +508,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../getting-started/" class="md-nav__link ">
+            <a href="../../getting-started/" class="md-nav__link ">
               
   
   
@@ -552,7 +552,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../getting-started/installation/" class="md-nav__link">
+      <a href="../../getting-started/installation/" class="md-nav__link">
         
   
   
@@ -580,7 +580,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../getting-started/quickstart/" class="md-nav__link">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
         
   
   
@@ -608,7 +608,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../getting-started/tutorial/" class="md-nav__link">
+      <a href="../../getting-started/tutorial/" class="md-nav__link">
         
   
   
@@ -640,8 +640,6 @@
       
   
   
-    
-  
   
   
     
@@ -663,23 +661,22 @@
     
     
       
-        
-        
-      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="./" class="md-nav__link md-nav__link--active">
+            <a href="../../concepts/" class="md-nav__link ">
               
   
   
@@ -697,13 +694,13 @@
             </a>
             
               
-              <label class="md-nav__link md-nav__link--active" for="__nav_3" id="__nav_3_label" tabindex="">
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -723,7 +720,7 @@
   
   
     <li class="md-nav__item">
-      <a href="glossary/" class="md-nav__link">
+      <a href="../../concepts/glossary/" class="md-nav__link">
         
   
   
@@ -751,7 +748,7 @@
   
   
     <li class="md-nav__item">
-      <a href="architecture/" class="md-nav__link">
+      <a href="../../concepts/architecture/" class="md-nav__link">
         
   
   
@@ -779,7 +776,7 @@
   
   
     <li class="md-nav__item">
-      <a href="core-engine/" class="md-nav__link">
+      <a href="../../concepts/core-engine/" class="md-nav__link">
         
   
   
@@ -807,7 +804,7 @@
   
   
     <li class="md-nav__item">
-      <a href="roofline/" class="md-nav__link">
+      <a href="../../concepts/roofline/" class="md-nav__link">
         
   
   
@@ -839,6 +836,8 @@
       
   
   
+    
+  
   
   
     
@@ -878,22 +877,23 @@
     
     
       
+        
+        
+      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../guide/" class="md-nav__link ">
+            <a href="../" class="md-nav__link ">
               
   
   
@@ -911,13 +911,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
@@ -937,7 +937,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guide/routing/" class="md-nav__link">
+      <a href="../routing/" class="md-nav__link">
         
   
   
@@ -965,7 +965,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guide/admission/" class="md-nav__link">
+      <a href="../admission/" class="md-nav__link">
         
   
   
@@ -993,7 +993,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guide/scheduling/" class="md-nav__link">
+      <a href="../scheduling/" class="md-nav__link">
         
   
   
@@ -1021,7 +1021,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guide/latency-models/" class="md-nav__link">
+      <a href="../latency-models/" class="md-nav__link">
         
   
   
@@ -1049,7 +1049,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guide/kv-cache/" class="md-nav__link">
+      <a href="../kv-cache/" class="md-nav__link">
         
   
   
@@ -1077,7 +1077,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guide/workloads/" class="md-nav__link">
+      <a href="../workloads/" class="md-nav__link">
         
   
   
@@ -1105,7 +1105,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guide/cluster/" class="md-nav__link">
+      <a href="../cluster/" class="md-nav__link">
         
   
   
@@ -1133,7 +1133,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guide/results/" class="md-nav__link">
+      <a href="../results/" class="md-nav__link">
         
   
   
@@ -1161,7 +1161,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guide/observe-replay-calibrate/" class="md-nav__link">
+      <a href="../observe-replay-calibrate/" class="md-nav__link">
         
   
   
@@ -1186,10 +1186,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../guide/kv-offload-calibration/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KV Hit-Rate Calibration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1205,6 +1232,81 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-gets-compared" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What gets compared
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dependency-on-an-unreleased-vllm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dependency on an unreleased vLLM
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#minimal-experiment-set" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Minimal experiment set
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#procedure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Procedure
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#notes-and-caveats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notes and caveats
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1217,7 +1319,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guide/experimentation/" class="md-nav__link">
+      <a href="../experimentation/" class="md-nav__link">
         
   
   
@@ -1245,7 +1347,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guide/archon-pr-review/" class="md-nav__link">
+      <a href="../archon-pr-review/" class="md-nav__link">
         
   
   
@@ -1273,7 +1375,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guide/skills-and-plugins/" class="md-nav__link">
+      <a href="../skills-and-plugins/" class="md-nav__link">
         
   
   
@@ -1341,7 +1443,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../reference/" class="md-nav__link ">
+            <a href="../../reference/" class="md-nav__link ">
               
   
   
@@ -1385,7 +1487,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/project-structure/" class="md-nav__link">
+      <a href="../../reference/project-structure/" class="md-nav__link">
         
   
   
@@ -1413,7 +1515,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/configuration/" class="md-nav__link">
+      <a href="../../reference/configuration/" class="md-nav__link">
         
   
   
@@ -1441,7 +1543,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/models/" class="md-nav__link">
+      <a href="../../reference/models/" class="md-nav__link">
         
   
   
@@ -1469,7 +1571,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/workload-spec/" class="md-nav__link">
+      <a href="../../reference/workload-spec/" class="md-nav__link">
         
   
   
@@ -1533,7 +1635,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../methodology/" class="md-nav__link ">
+            <a href="../../methodology/" class="md-nav__link ">
               
   
   
@@ -1577,7 +1679,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../methodology/strategy-evolution/" class="md-nav__link">
+      <a href="../../methodology/strategy-evolution/" class="md-nav__link">
         
   
   
@@ -1605,7 +1707,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../methodology/hypothesis-bundles/" class="md-nav__link">
+      <a href="../../methodology/hypothesis-bundles/" class="md-nav__link">
         
   
   
@@ -1681,7 +1783,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../contributing/" class="md-nav__link ">
+            <a href="../../contributing/" class="md-nav__link ">
               
   
   
@@ -1725,7 +1827,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../contributing/extension-recipes/" class="md-nav__link">
+      <a href="../../contributing/extension-recipes/" class="md-nav__link">
         
   
   
@@ -1753,7 +1855,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../contributing/pr-workflow/" class="md-nav__link">
+      <a href="../../contributing/pr-workflow/" class="md-nav__link">
         
   
   
@@ -1781,7 +1883,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../contributing/design-process/" class="md-nav__link">
+      <a href="../../contributing/design-process/" class="md-nav__link">
         
   
   
@@ -1809,7 +1911,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../contributing/macro-planning/" class="md-nav__link">
+      <a href="../../contributing/macro-planning/" class="md-nav__link">
         
   
   
@@ -1837,7 +1939,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../contributing/hypothesis/" class="md-nav__link">
+      <a href="../../contributing/hypothesis/" class="md-nav__link">
         
   
   
@@ -1865,7 +1967,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../contributing/convergence/" class="md-nav__link">
+      <a href="../../contributing/convergence/" class="md-nav__link">
         
   
   
@@ -1957,7 +2059,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../contributing/standards/rules/" class="md-nav__link">
+      <a href="../../contributing/standards/rules/" class="md-nav__link">
         
   
   
@@ -1985,7 +2087,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../contributing/standards/invariants/" class="md-nav__link">
+      <a href="../../contributing/standards/invariants/" class="md-nav__link">
         
   
   
@@ -2013,7 +2115,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../contributing/standards/principles/" class="md-nav__link">
+      <a href="../../contributing/standards/principles/" class="md-nav__link">
         
   
   
@@ -2041,7 +2143,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../contributing/standards/experiments/" class="md-nav__link">
+      <a href="../../contributing/standards/experiments/" class="md-nav__link">
         
   
   
@@ -2141,7 +2243,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../contributing/templates/design-guidelines/" class="md-nav__link">
+      <a href="../../contributing/templates/design-guidelines/" class="md-nav__link">
         
   
   
@@ -2169,7 +2271,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../contributing/templates/macro-plan/" class="md-nav__link">
+      <a href="../../contributing/templates/macro-plan/" class="md-nav__link">
         
   
   
@@ -2197,7 +2299,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../contributing/templates/micro-plan/" class="md-nav__link">
+      <a href="../../contributing/templates/micro-plan/" class="md-nav__link">
         
   
   
@@ -2225,7 +2327,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../contributing/templates/hypothesis/" class="md-nav__link">
+      <a href="../../contributing/templates/hypothesis/" class="md-nav__link">
         
   
   
@@ -2297,7 +2399,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../blog/" class="md-nav__link ">
+            <a href="../../blog/" class="md-nav__link ">
               
   
   
@@ -2401,7 +2503,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../blog/archive/2026/" class="md-nav__link">
+      <a href="../../blog/archive/2026/" class="md-nav__link">
         
   
   
@@ -2503,7 +2605,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../blog/category/architecture/" class="md-nav__link">
+      <a href="../../blog/category/architecture/" class="md-nav__link">
         
   
   
@@ -2533,7 +2635,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../blog/category/capacity-planning/" class="md-nav__link">
+      <a href="../../blog/category/capacity-planning/" class="md-nav__link">
         
   
   
@@ -2563,7 +2665,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../blog/category/deep-dives/" class="md-nav__link">
+      <a href="../../blog/category/deep-dives/" class="md-nav__link">
         
   
   
@@ -2593,7 +2695,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../blog/category/what-is-blis/" class="md-nav__link">
+      <a href="../../blog/category/what-is-blis/" class="md-nav__link">
         
   
   
@@ -2656,10 +2758,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#concept-pages" class="md-nav__link">
+  <a href="#what-gets-compared" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Concept Pages
+        What gets compared
       
     </span>
   </a>
@@ -2667,10 +2769,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#diagrams" class="md-nav__link">
+  <a href="#dependency-on-an-unreleased-vllm" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Diagrams
+        Dependency on an unreleased vLLM
       
     </span>
   </a>
@@ -2678,10 +2780,32 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#reading-order" class="md-nav__link">
+  <a href="#minimal-experiment-set" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Reading Order
+        Minimal experiment set
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#procedure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Procedure
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#notes-and-caveats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notes and caveats
       
     </span>
   </a>
@@ -2708,52 +2832,121 @@
   
 
 
-<h1 id="concepts">Concepts<a class="headerlink" href="#concepts" title="Permanent link">&para;</a></h1>
-<p>These pages explain BLIS's architecture and core mechanisms at the level needed to understand the system without reading source code. For task-oriented how-to guides, see the <a href="../guide/">User Guide</a>.</p>
-<h2 id="concept-pages">Concept Pages<a class="headerlink" href="#concept-pages" title="Permanent link">&para;</a></h2>
+<h1 id="kv-cache-hit-rate-calibration">KV Cache Hit-Rate Calibration<a class="headerlink" href="#kv-cache-hit-rate-calibration" title="Permanent link">&para;</a></h1>
+<p>This note documents how to validate BLIS's tiered KV-offload model against real vLLM
+runs using the <code>observe → replay → calibrate</code> pipeline (issue #1583, part of the
+multi-tier KV-offload epic #1585). It complements
+<a href="../observe-replay-calibrate/">Observe / Replay / Calibrate</a> and
+<a href="../kv-cache/">KV Cache &amp; Memory</a>.</p>
+<h2 id="what-gets-compared">What gets compared<a class="headerlink" href="#what-gets-compared" title="Permanent link">&para;</a></h2>
+<p><code>blis calibrate</code> compares <strong>TTFT</strong>, <strong>E2E</strong>, and — as of #1583 — the <strong>KV cache
+hit-rate</strong>:</p>
+<ul>
+<li><strong>Real hit-rate</strong> is scraped from the vLLM server's Prometheus <code>/metrics</code> endpoint
+  by <code>blis observe --scrape-kv-metrics</code> and recorded in the trace header
+  (<code>observed_kv_metrics</code>).</li>
+<li><strong>Simulated hit-rate</strong> is the DES aggregate <code>cache_hit_rate</code>, written to the
+  <code>blis replay --metrics-path</code> MetricsOutput file.</li>
+<li><code>blis calibrate --sim-metrics &lt;that file&gt;</code> reports the absolute error in percentage
+  points and a pass/fail verdict against <code>--hit-rate-tolerance-pp</code> (default <strong>5 pp</strong>),
+  plus a TTFT-MAPE verdict against <code>--ttft-mape-threshold</code> (default <strong>0.15</strong>).</li>
+</ul>
+<p>BLIS exposes a single aggregate hit-rate (GPU tier plus offload misses), so the
+comparison is on the <strong>overall</strong> hit-rate. Per-tier read/write time is recorded in the
+header (<code>read_time_total</code> / <code>write_time_total</code>) as informational data for a manual
+bandwidth cross-check — the simulator has no per-tier hit counters to compare against.</p>
+<h2 id="dependency-on-an-unreleased-vllm">Dependency on an unreleased vLLM<a class="headerlink" href="#dependency-on-an-unreleased-vllm" title="Permanent link">&para;</a></h2>
+<p>The tiered counters <code>vllm:kv_offload_tiering_block_hits</code> /
+<code>vllm:kv_offload_tiering_block_queries</code> (and <code>..._read_time</code> / <code>..._write_time</code>) come
+from vLLM PR #48798, which is <strong>in no release tag</strong>. Record the exact commit the
+cluster ran with <code>--vllm-commit &lt;sha&gt;</code> — it is stored verbatim in the header so the
+dependency is explicit and reproducible.</p>
+<p>If the server exposes only released metrics, <code>--scrape-kv-metrics</code> falls back to the
+GPU-only <code>vllm:gpu_prefix_cache_*</code> family and tags the observation
+<code>source: gpu-prefix-cache-fallback</code>. This is a <strong>weaker</strong> validation (GPU tier only,
+no offload tiers) and is never conflated with a tiered hit-rate — treat it as a
+separate, weaker check.</p>
+<h2 id="minimal-experiment-set">Minimal experiment set<a class="headerlink" href="#minimal-experiment-set" title="Permanent link">&para;</a></h2>
+<p>Validate against the four canonical cache paths, over a small prefix-length sweep,
+single replica, TP=1:</p>
 <table>
 <thead>
 <tr>
-<th>Page</th>
-<th>Description</th>
+<th>Path</th>
+<th>How to elicit it</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><a href="glossary/">Glossary</a></td>
-<td>Definitions of BLIS-specific terminology</td>
+<td><strong>GPU hit</strong></td>
+<td>Repeat a prompt whose prefix is still resident in the GPU KV cache.</td>
 </tr>
 <tr>
-<td><a href="architecture/">Cluster Architecture</a></td>
-<td>Multi-instance simulation: admission, routing, scorer composition, snapshot freshness, shared-clock event loop</td>
+<td><strong>CPU hit</strong></td>
+<td>Repeat a prefix that has been offloaded to the CPU staging tier but evicted from GPU.</td>
 </tr>
 <tr>
-<td><a href="core-engine/">Core Engine</a></td>
-<td>Single-instance DES engine: event queue, Step() phases, request lifecycle, batch formation, KV cache, latency models</td>
+<td><strong>Storage hit</strong></td>
+<td>Repeat a prefix that has cascaded to a secondary <code>fs</code> tier and been evicted from CPU.</td>
 </tr>
 <tr>
-<td><a href="roofline/">Roofline Estimation</a></td>
-<td>Analytical GPU step time estimation without training data</td>
+<td><strong>Full miss</strong></td>
+<td>A unique prefix with no cached blocks anywhere.</td>
 </tr>
 </tbody>
 </table>
-<h2 id="diagrams">Diagrams<a class="headerlink" href="#diagrams" title="Permanent link">&para;</a></h2>
-<p>Each concept page includes inline Mermaid diagrams:</p>
+<p>Sweep the shared prefix length (e.g. 256 / 1024 / 4096 tokens) so the hit-rate spans
+its range. Keep the deployment to a single replica at TP=1 so the aggregate hit-rate
+is unambiguous.</p>
+<h2 id="procedure">Procedure<a class="headerlink" href="#procedure" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># 1. Observe the real server, scraping the per-tier counters into the trace header.</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="c1">#    --vllm-commit records the pinned (unreleased) vLLM the counters require. observe</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="c1">#    dispatches to a real server and does not itself model the offload tiers, so no</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1">#    --kv-offload-config is passed here — the observed hit-rate is whatever the server</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1">#    reports.</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>blis<span class="w"> </span>observe<span class="w"> </span>--server-url<span class="w"> </span>http://localhost:8000<span class="w"> </span>--model<span class="w"> </span>&lt;model&gt;<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span>--workload-spec<span class="w"> </span>sweep.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span>--scrape-kv-metrics<span class="w"> </span>--vllm-commit<span class="w"> </span>&lt;sha&gt;<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span>--trace-header<span class="w"> </span>t.yaml<span class="w"> </span>--trace-data<span class="w"> </span>t.csv
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="c1"># 2. Replay the captured trace through the DES to produce the SIM-side hit-rate. Supply</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="c1">#    --kv-offload-config matching the observed deployment — replay models the tiers and</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="c1">#    derives the aggregate cache_hit_rate into --metrics-path. (A tiered observation</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="c1">#    replayed WITHOUT an offload config is a hard error, never a silent GPU-only value.)</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>blis<span class="w"> </span>replay<span class="w"> </span>--trace-header<span class="w"> </span>t.yaml<span class="w"> </span>--trace-data<span class="w"> </span>t.csv<span class="w"> </span>--model<span class="w"> </span>&lt;model&gt;<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">  </span>--kv-offload-config<span class="w"> </span>offload.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">  </span>--results-path<span class="w"> </span>sim.json<span class="w"> </span>--metrics-path<span class="w"> </span>simagg.json
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="c1"># 3. Compare. TTFT/E2E come from --sim-results; the hit-rate comes from --sim-metrics.</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>blis<span class="w"> </span>calibrate<span class="w"> </span>--trace-header<span class="w"> </span>t.yaml<span class="w"> </span>--trace-data<span class="w"> </span>t.csv<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">  </span>--sim-results<span class="w"> </span>sim.json<span class="w"> </span>--sim-metrics<span class="w"> </span>simagg.json<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">  </span>--hit-rate-tolerance-pp<span class="w"> </span><span class="m">5</span><span class="w"> </span>--ttft-mape-threshold<span class="w"> </span><span class="m">0</span>.15<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">  </span>--report<span class="w"> </span>calibration.json
+</code></pre></div>
+<blockquote>
+<p><strong>Note.</strong> <code>blis observe</code> records the observed hit-rate and its source, but not the
+offload config — it is a black-box dispatcher against a real server. The operator
+supplies the deployment's <code>--kv-offload-config</code> on the <strong>replay</strong> step so the
+simulator reproduces the tiered behaviour. For a sim-generated trace
+(<code>blis run --kv-offload-config … --trace-output</code>) the config is instead recorded in
+the header and reproduced authoritatively on replay (INV-13).</p>
+</blockquote>
+<p>The report's <code>hit_rate</code> block reports <code>real_hit_rate</code>, <code>sim_hit_rate</code>, <code>abs_error_pp</code>,
+<code>tolerance_pp</code>, <code>within</code>, and <code>source</code>. Targets on the minimal set: <strong>TTFT MAPE ≤ 15%</strong>
+and <strong>hit-rate absolute error ≤ 5 pp</strong>.</p>
+<h2 id="notes-and-caveats">Notes and caveats<a class="headerlink" href="#notes-and-caveats" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong><a href="architecture/#overview">Cluster Data Flow</a></strong> — End-to-end cluster pipeline: request arrival through metrics output</li>
-<li><strong><a href="core-engine/#request-lifecycle">Request Lifecycle</a></strong> — Request state machine: states, transitions, and metric recording points</li>
-<li><strong><a href="core-engine/#event-queue">Event Processing Loop</a></strong> — DES event loop: min-heap queue, clock advancement, Step() decomposition</li>
-<li><strong><a href="architecture/#weighted-scoring-policy">Scoring Pipeline</a></strong> — Weighted scorer composition: per-scorer normalization, weight multiplication, argmax selection</li>
+<li>The counter delta spans the whole measured window, which includes any warm-up
+  requests (they are excluded from TTFT/E2E calibration but not from the engine-level
+  counter delta). Keep warm-up small, or prefer <code>--prewarm-duration</code> (which runs before
+  the start scrape).</li>
+<li>A scrape miss (unreachable <code>/metrics</code>, no recognized counters, zero queries, or a
+  counter reset mid-window) is <strong>not fatal</strong>: <code>observe</code> warns and omits
+  <code>observed_kv_metrics</code>; the workload trace is still exported.</li>
+<li>The <code>read_time</code>/<code>write_time</code> counters are vLLM <strong>device service time excluding queue
+  wait</strong> — they calibrate the offload tiers' <em>service</em> term, not the queueing term. Do
+  not fit queue wait against them.</li>
 </ul>
-<h2 id="reading-order">Reading Order<a class="headerlink" href="#reading-order" title="Permanent link">&para;</a></h2>
-<p>For newcomers to BLIS:</p>
-<ol>
-<li>Start with <strong><a href="glossary/">Glossary</a></strong> to learn BLIS-specific terminology</li>
-<li>Read <strong><a href="core-engine/">Core Engine</a></strong> to understand the DES architecture and single-instance simulation</li>
-<li>Read <strong><a href="architecture/">Cluster Architecture</a></strong> to understand multi-instance orchestration</li>
-<li>Consult <strong><a href="../reference/configuration/">Configuration Reference</a></strong> when running experiments</li>
-<li>See <strong><a href="../contributing/extension-recipes/">Extension Recipes</a></strong> when adding new policies or features</li>
-</ol>
 
 
 
@@ -2789,7 +2982,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../getting-started/tutorial/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Tutorial: Capacity Planning">
+          <a href="../observe-replay-calibrate/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Observe / Replay / Calibrate">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -2799,20 +2992,20 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Tutorial: Capacity Planning
+                Observe / Replay / Calibrate
               </div>
             </div>
           </a>
         
         
           
-          <a href="glossary/" class="md-footer__link md-footer__link--next" aria-label="Next: Glossary">
+          <a href="../experimentation/" class="md-footer__link md-footer__link--next" aria-label="Next: Hypothesis Experimentation">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Glossary
+                Hypothesis Experimentation
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -2849,14 +3042,14 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.indexes", "navigation.sections", "navigation.expand", "navigation.footer", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.indexes", "navigation.sections", "navigation.expand", "navigation.footer", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
     
     
-      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
-        <script src="../javascripts/mermaid-text-fix.js"></script>
+        <script src="../../javascripts/mermaid-text-fix.js"></script>
       
-        <script src="../javascripts/mathjax.js"></script>
+        <script src="../../javascripts/mathjax.js"></script>
       
         <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
       
