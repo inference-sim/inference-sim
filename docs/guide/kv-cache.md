@@ -126,11 +126,14 @@ vLLM's mechanism (`_calc_num_offloadable_tokens` + `storable_chunks`), a request
 truncated to the prompt length when `true` (the default), then floor-divided into whole chunks — so
 a chunk containing any decode token is never offloaded (a prompt of `1.5 ×` the chunk size offloads
 exactly 1 chunk). With `offload_prompt_only: false` (vLLM's `promptAndDecode`), full decode blocks
-are offloaded too; because BLIS already hashes every completed block prefix-consistently, a later
-request on the same instance whose **input contains earlier output tokens** (multi-turn / agentic
-workloads) reloads that decode KV from the tiers instead of recomputing it — so the cache hit-rate
-reflects the policy. Reuse is single-instance (offload tiers are per-instance and invisible to the
-router). With no `--kv-offload-config`, behavior is unchanged (INV-6).
+are offloaded too; because BLIS already hashes every completed block prefix-consistently (for
+`block_size > 1`), a later request on the same instance whose **input contains earlier output
+tokens** (multi-turn / agentic workloads) reloads that decode KV from the tiers instead of
+recomputing it — so the cache hit-rate reflects the policy. Reuse is single-instance (offload tiers
+are per-instance and invisible to the router). At `block_size == 1` decode blocks take a guarded
+allocation path that leaves them unhashed, so decode-offload is inert there — a degenerate offload
+block size (real offload block sizes track the GPU block size). With no `--kv-offload-config`,
+behavior is unchanged (INV-6).
 
 ## Chunked Prefill
 

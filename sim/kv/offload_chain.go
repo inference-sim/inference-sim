@@ -73,10 +73,14 @@ type OffloadCache struct {
 
 	perBlockBytes     int64 // resolved per-rank KV bytes of one GPU block (transfer-job sizing)
 	offloadPromptOnly bool
-	blocksPerChunk    int64 // vLLM blocks_per_chunk (== 1 at H1; NewOffloadCache panics otherwise).
-	// Kept so the offloadable-token floor-divide reads as vLLM's tokens_per_chunk = bs*blocksPerChunk
-	// and stays correct when a future PR lands blocks_per_chunk > 1.
-	clock int64
+	// blocksPerChunk is vLLM blocks_per_chunk (== 1 at H1; NewOffloadCache panics otherwise).
+	// It lets the offloadable-token floor-divide read as vLLM's tokens_per_chunk =
+	// bs*blocksPerChunk rather than hard-coding the block size (mechanism fidelity). It does
+	// NOT by itself make the chain correct at blocks_per_chunk > 1 — the read side
+	// (consultAndReload) is block-granular and chunk keys are a disjoint keyspace; enabling
+	// > 1 is a separate follow-up.
+	blocksPerChunk int64
+	clock          int64
 
 	// Device-model latency jitter (#1581 BC-D5). jitterStddev[t] is tier t's relative
 	// stddev σ (0 == off). rng is the seeded kv-offload partition; nil disables jitter
