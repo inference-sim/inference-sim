@@ -496,6 +496,7 @@ func (i *InstanceSimulator) DrainWaitQueue() []*sim.Request {
 // Returns true if found and removed, false otherwise (idempotent for already-completed).
 func (i *InstanceSimulator) EvictRequest(req *sim.Request) bool {
 	if i.sim.WaitQ.Remove(req) {
+		i.sim.ClearDeferredKV(req.ID) // H3 (#1591): a gateway-evicted queued request may be mid-deferral
 		i.sim.KVCache.ReleaseKVBlocks(req)
 		// Release the LoRA adapter pin (#1466): a queued request is not pinned, so
 		// this is a no-op here, but calling it keeps eviction symmetric with the

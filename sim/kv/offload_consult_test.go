@@ -42,7 +42,10 @@ func TestOffload_ReloadsCPUResidentPrefix(t *testing.T) {
 // BC-C1 (no direct secondary->GPU): a secondary-resident-only prefix triggers an
 // async PROMOTION into CPU (a Read job + HIT_PENDING), NOT a secondary->GPU
 // transfer. The request itself does not get the promoted block (reloadCount==0);
-// the promotion benefits a later request.
+// the promotion benefits a later request. This is the H1 immediate-promotion path
+// (consultAndReload), which running-request continuations use; H3 (#1591) defers a
+// NEW prefill admission instead of promoting immediately — that behavior has its own
+// tests (offload_deferral_test.go).
 func TestOffload_SecondaryHitInitiatesPromotionNotDirectToGPU(t *testing.T) {
 	gpu := NewKVCacheState(64, 2)
 	oc := NewOffloadCache(gpu, enabledOffloadCfg(1<<20, 4096, 1))
@@ -54,8 +57,7 @@ func TestOffload_SecondaryHitInitiatesPromotionNotDirectToGPU(t *testing.T) {
 	oc.secondary[0].store(keys[1])
 
 	oc.SetClock(100)
-	req := &sim.Request{ID: "r", InputTokens: tokens}
-	oc.AllocateKVBlocks(req, 0, 4, nil)
+	oc.consultAndReload(tokens, 0, "")
 
 	if oc.promotionsFired != 1 {
 		t.Fatalf("a secondary hit must initiate exactly one promotion, got %d", oc.promotionsFired)

@@ -10,11 +10,42 @@ type KVStore interface {
 	UsedBlocks() int64
 	TotalCapacity() int64
 	CacheHitRate() float64
-	PendingTransferLatency() int64            // Pure query: returns accumulated transfer latency without clearing.
-	ConsumePendingTransferLatency() int64     // Read and clear: returns accumulated transfer latency and resets to zero.
+	PendingTransferLatency() int64        // Pure query: returns accumulated transfer latency without clearing.
+	ConsumePendingTransferLatency() int64 // Read and clear: returns accumulated transfer latency and resets to zero.
 	KVThrashingRate() float64
-	SetClock(clock int64)            // Synchronize clock for time-dependent operations. No-op for single-tier.
-	MirrorToCPU(batch []*Request)    // Copy newly-completed full blocks to CPU tier. No-op for single-tier.
+	SetClock(clock int64)         // Synchronize clock for time-dependent operations. No-op for single-tier.
+	MirrorToCPU(batch []*Request) // Copy newly-completed full blocks to CPU tier. No-op for single-tier.
+}
+
+// DeferrableKVStore is the optional capability a KVStore implements when it can
+// defer a new prefill admission that needs KV blocks resident only on a secondary
+// (disk/object-store) offload tier, and re-poll it at each scheduler step instead
+// of blocking on the disk or recomputing immediately (H3 kv_deferral, #1591). Only
+// kv.OffloadCache implements it; the single-tier and legacy-tiered stores do not,
+// so batch formation type-asserts and the whole mechanism is inert (byte-identical,
+// INV-6) when offload is off.
+//
+// The step-quantized re-poll is realized entirely through the existing step loop —
+// there is NO new sim.Event. A deferred request stays in the WaitQ (so INV-1
+// still_queued counts it and INV-8 keeps a StepEvent scheduled) and is re-examined
+// each step until its secondary→CPU promotion lands, then admitted; a bounded fetch
+// attempt guarantees it never defers forever (BC-T3).
+type DeferrableKVStore interface {
+	// PollDeferred advances every tracked deferred request's state machine by one
+	// scheduler round (using completions applied by the preceding SetClock) and
+	// returns the ids of requests that are STILL deferred this step. Called once per
+	// step at the top of batch formation. Cost is O(deferred), not O(waitq).
+	PollDeferred(now int64) []string
+	// IsDeferred reports whether the request is currently set aside for a
+	// secondary-tier fetch (map membership). Batch formation calls it after a failed
+	// admission to tell a fresh deferral (skip, keep in WaitQ) apart from GPU
+	// pressure (break).
+	IsDeferred(id string) bool
+	// ClearDeferred forgets a request that left the WaitQ by a non-admit path
+	// (timeout, gateway eviction, drain-redirect) so its deferral state and any
+	// in-flight promotion bookkeeping do not leak. Idempotent; a no-op for an
+	// untracked id.
+	ClearDeferred(id string)
 }
 
 // NewKVCacheStateFunc is a factory function for creating single-tier KVStore implementations.
