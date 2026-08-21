@@ -2653,6 +2653,7 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 	origThinkTimeDist := replayThinkTimeDist
 	origConcurrentSessions := replayConcurrentSessions
 	origTotalSessions := replayTotalSessions
+	origShuffleCorpus := replayShuffleCorpus
 	t.Cleanup(func() {
 		resultsPath = origResultsPath
 		replayTraceOutput = origTraceOutput
@@ -2673,6 +2674,7 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 		replayThinkTimeDist = origThinkTimeDist
 		replayConcurrentSessions = origConcurrentSessions
 		replayTotalSessions = origTotalSessions
+		replayShuffleCorpus = origShuffleCorpus
 	})
 
 	resultsPath = ""
@@ -2690,6 +2692,7 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 	replayThinkTimeMs = 0
 	replayThinkTimeDist = ""
 	replayConcurrentSessions, replayTotalSessions = 0, 0
+	replayShuffleCorpus = false
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
