@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -31,8 +32,9 @@ var (
 	replayThinkTimeDist string // distribution spec for think time (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s")
 	// saturationReport is declared in root.go and shared across run, replay, observe
 
-	replayConcurrentSessions int // >0 enables fixed-pool closed-loop replay (N concurrent sessions)
-	replayTotalSessions      int // total sessions to replay when pooling (0 = corpus size)
+	replayConcurrentSessions int  // >0 enables fixed-pool closed-loop replay (N concurrent sessions)
+	replayTotalSessions      int  // total sessions to replay when pooling (0 = corpus size)
+	replayShuffleCorpus      bool // randomize corpus step order (pool mode only; seeded from --seed) (#1480)
 )
 
 var replayCmd = &cobra.Command{
@@ -124,6 +126,13 @@ Example:
 		if replayTotalSessions > 0 && replayConcurrentSessions == 0 {
 			logrus.Fatalf("--total-sessions requires --concurrent-sessions > 0")
 		}
+		// --shuffle-corpus is a pool-mode concept (it randomizes the pool's step
+		// order). Plain closed-loop replay injects every session at its recorded
+		// arrival, so there is no step order to randomize — fail loudly (R1), never
+		// a silent no-op.
+		if replayShuffleCorpus && replayConcurrentSessions == 0 {
+			logrus.Fatalf("--shuffle-corpus requires --concurrent-sessions > 0")
+		}
 		if replayThinkTimeMs > 0 && replaySessionMode != "closed-loop" {
 			logrus.Fatalf("--think-time-ms requires --session-mode closed-loop")
 		}
@@ -178,6 +187,13 @@ Example:
 				logrus.Warnf("--session-mode closed-loop: no session records found in trace; all requests injected with fixed timing")
 				requests = r0Requests
 			} else if replayConcurrentSessions > 0 {
+				// Optional seeded shuffle of the corpus step order (#1480). Drawn from
+				// a distinct stream off the master seed (XOR salt) so it is reproducible
+				// from --seed yet does not perturb the per-session token / clone RNGs.
+				if replayShuffleCorpus {
+					const shuffleSeedSalt = 0x53485546 // "SHUF"
+					workload.ShuffleSessions(blueprints, r0Requests, rand.New(rand.NewSource(seed^shuffleSeedSalt)))
+				}
 				driver, initial, pErr := workload.BuildSessionPool(blueprints, r0Requests, replayConcurrentSessions, replayTotalSessions, seed)
 				if pErr != nil {
 					logrus.Fatalf("Failed to build session pool: %v", pErr)
@@ -884,6 +900,7 @@ func init() {
 	replayCmd.Flags().StringVar(&replayThinkTimeDist, "think-time-dist", "", `Think-time distribution spec for closed-loop replay (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s" or "constant:value=500ms"). Mutually exclusive with --think-time-ms. Requires --session-mode closed-loop.`)
 	replayCmd.Flags().IntVar(&replayConcurrentSessions, "concurrent-sessions", 0, "Replay a fixed pool of N concurrent closed-loop sessions drawn from the trace corpus (0 = disabled). Implies closed-loop session semantics.")
 	replayCmd.Flags().IntVar(&replayTotalSessions, "total-sessions", 0, "Total sessions to replay under --concurrent-sessions; duplicates the corpus (with cache-busting) to fill. 0 = replay each corpus session once.")
+	replayCmd.Flags().BoolVar(&replayShuffleCorpus, "shuffle-corpus", false, "Randomize the corpus step/admission order (seeded from --seed for reproducibility). Requires --concurrent-sessions > 0. With --total-sessions < corpus this yields a random subset; every session still runs otherwise.")
 	replayCmd.Flags().StringVar(&goodputSLOTTFT, "slo-ttft", "", "Per-class TTFT goodput thresholds (e.g. \"critical=100ms,standard=500ms\"). Precedence: CLI > trace header > workload spec.")
 	replayCmd.Flags().StringVar(&goodputSLOITL, "slo-itl", "", "Per-class mean ITL goodput thresholds (e.g. \"critical=50ms,standard=150ms\").")
 	replayCmd.Flags().StringVar(&goodputSLOE2E, "slo-e2e", "", "Per-class E2E goodput thresholds (e.g. \"critical=5s,standard=30s\").")
