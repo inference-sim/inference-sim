@@ -19,6 +19,9 @@ func validateObserveCorpusFlags(
 	workload, workloadSpec string,
 	rateChanged bool,
 	concurrency int,
+	thinkTimeMs int,
+	thinkTimeDist string,
+	lazyGeneration bool,
 ) string {
 	corpusFilesSet := corpusHeader != "" || corpusData != ""
 	corpusMode := concurrentSessions > 0
@@ -51,6 +54,20 @@ func validateObserveCorpusFlags(
 	}
 	if rateChanged {
 		return "--rate is invalid with --concurrent-sessions (spec-mode vs corpus-mode)"
+	}
+	// Corpus-mode drives per-round think time from the corpus itself (recorded
+	// think_time_us / arrival gaps via the session machinery), and loads the corpus
+	// directly rather than streaming from a spec generator. So the spec-mode think /
+	// generation knobs have no effect here — reject them loudly rather than silently
+	// ignore (R1, no silent no-op).
+	if thinkTimeMs > 0 {
+		return "--think-time-ms is invalid with --concurrent-sessions (corpus-mode): per-round think time comes from the corpus, not this flag"
+	}
+	if thinkTimeDist != "" {
+		return "--think-time-dist is invalid with --concurrent-sessions (corpus-mode): per-round think time comes from the corpus, not this flag"
+	}
+	if lazyGeneration {
+		return "--lazy-generation is invalid with --concurrent-sessions (corpus-mode): the corpus is loaded directly; there is no spec generator to stream"
 	}
 	return ""
 }
