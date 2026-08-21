@@ -1,6 +1,7 @@
 package workload
 
 import (
+	"math"
 	"math/rand"
 	"testing"
 
@@ -852,5 +853,86 @@ func TestGenerateRequestsForWindow_Determinism_AbsoluteRateMode(t *testing.T) {
 		assert.Equal(t, requests1[i].ArrivalTime, requests2[i].ArrivalTime, "arrival time mismatch at index %d", i)
 		assert.Equal(t, requests1[i].InputTokens, requests2[i].InputTokens, "input tokens mismatch at index %d", i)
 		assert.Equal(t, requests1[i].OutputTokens, requests2[i].OutputTokens, "output tokens mismatch at index %d", i)
+	}
+}
+
+// TestGenerateRequestsForWindow_ExactCountAndInteriorArrivals is the
+// regression test for the last-request-dropped defect in step 7's emission
+// loop (generator.go). Step 6 rescales IATs to sum EXACTLY to the window
+// duration, so with the old code (numRequests IATs sampled, all numRequests
+// summed), the cumulative time after the final IAT landed exactly on
+// window.EndUs -- the next window's start instant -- and the loop's
+// `currentTime >= window.EndUs` guard discarded that request every time,
+// unconditionally, for every window and every client. For a window where
+// ceil(rate*duration) == 1 this meant the window's only expected request was
+// always dropped, so short windows produced zero traffic.
+//
+// The fix samples numRequests+1 IATs and rescales across all of them,
+// emitting only the first numRequests. This asserts the property directly:
+// the number of generated requests equals ceil(rate*duration) exactly, and
+// every arrival lands strictly inside (window.StartUs, window.EndUs) --
+// never on either boundary instant.
+func TestGenerateRequestsForWindow_ExactCountAndInteriorArrivals(t *testing.T) {
+	const rate = 5.0 // req/s
+
+	cases := []struct {
+		name       string
+		durationUs int64
+	}{
+		// 5 req/s * 0.1s = 0.5 expected requests -> ceil = 1. This is
+		// exactly the case that previously produced ZERO requests.
+		{"short window, ceil gives 1", 100_000},
+		{"sub-second window, ceil gives 3", 500_000},
+		{"one-second window", 1_000_000},
+		{"multi-second window", 5_000_000},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			expected := int(math.Ceil(rate * float64(tc.durationUs) / 1e6))
+			require.Greater(t, expected, 0, "test case must expect at least one request")
+
+			// Several seeds: the COUNT is deterministic regardless of the
+			// sampled shape (rescaling forces the gap sum to match the
+			// window duration exactly), but the interior-arrival property
+			// must hold for any draw, so check it isn't seed-dependent.
+			for _, seed := range []int64{1, 2, 3, 17, 42, 99} {
+				traceRate := rate
+				clients := []ClientSpec{
+					{
+						ID:           "short-window-client",
+						RateFraction: 1.0,
+						Arrival:      ArrivalSpec{Process: "poisson"},
+						InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+						OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+						Lifecycle: &LifecycleSpec{
+							Windows: []ActiveWindow{
+								{StartUs: 1_000_000, EndUs: 1_000_000 + tc.durationUs, TraceRate: &traceRate},
+							},
+						},
+					},
+				}
+
+				rng := rand.New(rand.NewSource(seed))
+				window := clients[0].Lifecycle.Windows[0]
+				// aggregateRate=0 selects absolute rate mode (computeProportionalRate
+				// returns window.TraceRate directly), sidestepping proportional
+				// allocation across co-active clients -- orthogonal to what this
+				// test checks.
+				requests, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng, nil)
+				require.NoError(t, err)
+
+				assert.Equal(t, expected, len(requests),
+					"seed %d: window [%d,%d) at %.1f req/s must produce ceil(rate*duration)=%d requests, got %d",
+					seed, window.StartUs, window.EndUs, rate, expected, len(requests))
+
+				for i, req := range requests {
+					assert.Greater(t, req.ArrivalTime, window.StartUs,
+						"seed %d request %d: arrival must be strictly > window start", seed, i)
+					assert.Less(t, req.ArrivalTime, window.EndUs,
+						"seed %d request %d: arrival must be strictly < window end", seed, i)
+				}
+			}
+		})
 	}
 }
