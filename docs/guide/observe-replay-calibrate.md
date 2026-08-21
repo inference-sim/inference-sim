@@ -239,6 +239,119 @@ Replay also accepts all shared simulation config flags (`--latency-model`, `--to
 
 ---
 
+## Replaying OTel agentic traces
+
+BLIS can replay captured OpenTelemetry agent traces (e.g. the Exgentic
+`agent-llm-traces` dataset) as a fixed pool of N concurrent closed-loop sessions.
+Each session is a linear chain of LLM calls: BLIS waits for call N to complete,
+applies the recorded think/tool gap, then sends call N+1 — whose prompt reuses
+call N's entire prompt plus its output plus new tokens (a strictly-growing shared
+prefix for realistic KV-cache reuse).
+
+The dataset ships as Parquet, so first explode it to per-session OTel JSON:
+
+```python
+import pyarrow.parquet as pq, json, os
+os.makedirs("otel_json", exist_ok=True)
+t = pq.read_table("data/train-00001-of-00039.parquet").to_pylist()
+for i, row in enumerate(t):
+    json.dump({"spans": row["spans"]}, open(f"otel_json/trace_{i:04d}.json", "w"))
+```
+
+Then convert and replay:
+
+```bash
+# Convert the trace corpus to a TraceV2 pair (accumulate = growing shared prefix).
+blis convert otel --input otel_json --trace-output corpus \
+  --context-growth accumulate --max-think-time 15s
+
+# Replay a fixed pool of 8 concurrent sessions, 200 total (corpus duplicated to fill).
+blis replay --trace-header corpus.yaml --trace-data corpus.csv \
+  --model qwen/qwen3-14b --concurrent-sessions 8 --total-sessions 200
+```
+
+The recorded source model names are pure provenance and are dropped during
+conversion — all calls are simulated under `--model`. (They are deliberately not
+written into the trace: `TraceRecord.Model` is routing-significant, and a name
+that differs from `--model` would filter out every request at routing.)
+`--concurrent-sessions` implies closed-loop session semantics; without it,
+replay behaves as a standard fixed/closed-loop replay.
+
+### Driving the corpus against a real server (`blis observe`)
+
+The same corpus can be driven against a **live inference server** — the
+observe-side twin of `blis replay --concurrent-sessions`. This records real
+observed timing so `blis calibrate` can compare the real server against the
+simulator over the *identical* session set:
+
+```bash
+# Drive the corpus as a fixed pool of 8 concurrent sessions, 200 total, against
+# a live server, recording observed timing into observed.{yaml,csv}.
+blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --corpus-header corpus.yaml --corpus-data corpus.csv \
+  --concurrent-sessions 8 --total-sessions 200 \
+  --trace-header observed.yaml --trace-data observed.csv
+```
+
+`--corpus-header` / `--corpus-data` name the **input** corpus (the pair produced
+by `convert otel`); `--trace-header` / `--trace-data` remain the **output**
+observed trace. Corpus-mode (`--concurrent-sessions > 0`) is mutually exclusive
+with the spec-mode inputs (`--workload`, `--workload-spec`, `--rate`,
+`--concurrency`) — a corpus *is* the workload. `--max-concurrency` is
+auto-raised to the pool size if set lower, so the pool is never throttled. The
+pool self-drains all `--total-sessions` sessions (observe bounds the run by the
+session count, not a clock).
+
+#### Session-id header for session-aware routing
+
+Each round is an independent HTTP request, so a session-aware gateway/EPP
+(session-affinity or predictive-least-loaded pinning) needs the session id on
+the wire to keep a session's rounds on one instance (issue #1505). `blis observe`
+emits it on the `--session-id-header` header — default `x-session-id`, matching
+the current custom scorers — for every request carrying a session id:
+
+```bash
+blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --corpus-header corpus.yaml --corpus-data corpus.csv \
+  --concurrent-sessions 8 --total-sessions 200 \
+  --session-id-header x-session-id \
+  --trace-header observed.yaml --trace-data observed.csv
+```
+
+Set `--session-id-header` to match your deployment's session-id-producer, or to
+the empty string to disable emission. It applies to any session-bearing request
+— corpus-mode (`--concurrent-sessions`) and spec-mode closed-loop
+(`--concurrency`) alike. Closed-loop replay is the wire producer of this header:
+real captured clients carry the session in telemetry, not on the request.
+
+To calibrate real vs simulated over the same corpus:
+
+```bash
+blis replay --trace-header corpus.yaml --trace-data corpus.csv \
+  --model qwen/qwen3-14b --concurrent-sessions 8 --total-sessions 200 \
+  --trace-output sim
+blis calibrate --trace-header observed.yaml --trace-data observed.csv \
+  --sim-results sim.results.json --report calibration.json
+```
+
+By default the pool is **self-draining**: it runs until all `--total-sessions`
+sessions complete, regardless of how many waves that takes. Pass `--horizon` only
+if you want a hard wall-clock cap on the simulated run — sessions still queued when
+the cap is reached are reported as un-admitted (a warning is logged) rather than
+silently dropped.
+
+!!! warning "Size the context window to the trace"
+    Real agentic traces (e.g. Exgentic `agent-llm-traces`) often carry very large
+    prompts — tens of thousands to well over 100K input tokens per call, growing
+    further each round as the shared prefix accumulates — which can exceed a
+    model's default `--max-model-len` (e.g. qwen3-14b defaults to ~41K). If the
+    run completes cleanly but reports `completed_requests: 0` with a matching
+    `dropped_unservable` count, the prompts didn't fit: raise `--max-model-len` to
+    cover the largest round, and scale `--total-kv-blocks` up proportionally so
+    the KV cache can hold the growing sessions.
+
+---
+
 ## `blis calibrate`
 
 Compares real observed latencies (from `blis observe`) against simulator predictions (from `blis replay`) and produces a calibration report.
