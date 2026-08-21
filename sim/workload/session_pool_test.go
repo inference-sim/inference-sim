@@ -93,6 +93,39 @@ func TestBuildSessionPool_DuplicatesToTarget(t *testing.T) {
 	}
 }
 
+func TestSessionPool_RefillRebasesDeadline(t *testing.T) {
+	// Two single-round sessions, pool of 1, each with an ABSOLUTE deadline 5000µs
+	// after its original arrival (t=0). Terminating session 0 far in the future must
+	// refill session 1 with its deadline REBASED ahead of the admission tick —
+	// otherwise the stale past deadline drops it instantly on enqueue, mass-cancelling
+	// every wave-2+ session for any deadline-bearing (run/observe) corpus.
+	bp0, r0 := makeBP("s0", 1)
+	bp1, r1 := makeBP("s1", 2)
+	r0.Deadline = 5000
+	r1.Deadline = 5000
+	d, initial, err := BuildSessionPool([]SessionBlueprint{bp0, bp1}, []*sim.Request{r0, r1}, 1, 2, 7)
+	if err != nil {
+		t.Fatalf("BuildSessionPool: %v", err)
+	}
+	if len(initial) != 1 || initial[0].SessionID != "s0" {
+		t.Fatalf("initial = %v, want [s0]", initial)
+	}
+	const tick = 100000
+	initial[0].State = sim.StateCompleted
+	initial[0].ProgressIndex = int64(initial[0].InputLen())
+	next := d.OnComplete(initial[0], tick)
+	if len(next) != 1 || next[0].SessionID != "s1" {
+		t.Fatalf("expected refill of s1, got %v", next)
+	}
+	refill := next[0]
+	if refill.ArrivalTime != tick {
+		t.Errorf("refill arrival = %d, want %d", refill.ArrivalTime, tick)
+	}
+	if refill.Deadline != tick+5000 {
+		t.Errorf("refill deadline = %d, want %d (rebased by the arrival offset); a stale past deadline would mass-cancel wave 2+", refill.Deadline, tick+5000)
+	}
+}
+
 func TestSessionPool_RefillAndConservation(t *testing.T) {
 	// 4 single-round sessions, pool of 2. Each completion should admit the next
 	// until the corpus is exhausted; active count never exceeds 2; exactly 4 start.

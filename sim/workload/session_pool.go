@@ -177,6 +177,15 @@ func (d *SessionPoolDriver) OnComplete(req *sim.Request, tick int64) []*sim.Requ
 	if d.nextQueued < len(d.queued) {
 		next := d.queued[d.nextQueued]
 		// Admit at the completion tick (a fresh user starts as this one ends).
+		// Deadline is an ABSOLUTE timestamp on the same clock origin as ArrivalTime,
+		// so rebasing arrival to `tick` without shifting the deadline would leave a
+		// stale past deadline on every wave-2+ session — instantly dropped on enqueue
+		// (simulator.go deadline guard), mass-cancelling the pool. Preserve the
+		// recorded deadline-relative-to-arrival gap by shifting the deadline by the
+		// same offset. (OTel corpora set no deadline; run/observe corpora do.)
+		if next.Deadline > 0 {
+			next.Deadline += tick - next.ArrivalTime
+		}
 		next.ArrivalTime = tick
 		d.nextQueued++
 		d.activeCount++
@@ -189,11 +198,15 @@ func (d *SessionPoolDriver) OnComplete(req *sim.Request, tick int64) []*sim.Requ
 // TotalSessions returns the total number of sessions in the pool (after duplication).
 func (d *SessionPoolDriver) TotalSessions() int { return d.totalCount }
 
-// Unstarted returns the number of sessions never admitted — nonzero only when a
-// hard --horizon cap ends the run with sessions still queued. In self-draining
-// mode (no --horizon) this is always 0. The caller logs a warning and reports
-// this alongside totalStarted so accounting is closed: totalStarted + Unstarted()
-// == TotalSessions() (INV-11 / INV-1). See Task 4 Step 5.
+// Unstarted returns the number of sessions never admitted. It is nonzero when
+// either (a) a hard --horizon cap ends the run with sessions still queued, or
+// (b) an admitted session's request left the pipeline before reaching an instance
+// (routing rejection, gateway shed/evict/expire) — OnRequestDone is wired
+// per-instance, so those pre-instance drops never terminate the session and its
+// pool slot is not refilled. Case (b) can make Unstarted() > 0 even with no
+// --horizon set. The caller logs a warning and reports this alongside totalStarted
+// so accounting stays closed: totalStarted + Unstarted() == TotalSessions()
+// (INV-11 / INV-1).
 func (d *SessionPoolDriver) Unstarted() int { return d.totalCount - d.totalStarted }
 
 // hasUniqueSessionIDs is a test helper: true iff all pooled round-0 requests
