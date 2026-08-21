@@ -22,6 +22,9 @@ func TestValidateObserveCorpusFlags(t *testing.T) {
 		workload, workloadSpec        string
 		rateChanged                   bool
 		concurrency                   int
+		thinkTimeMs                   int
+		thinkTimeDist                 string
+		lazyGeneration                bool
 		wantErrSubstr                 string // "" = expect valid
 	}{
 		{name: "spec-mode untouched", workload: "chatbot", rateChanged: true, wantErrSubstr: ""},
@@ -33,10 +36,13 @@ func TestValidateObserveCorpusFlags(t *testing.T) {
 		{name: "corpus + rate conflict", concurrentSessions: 4, corpusHeader: "h.yaml", corpusData: "d.csv", rateChanged: true, wantErrSubstr: "--rate"},
 		{name: "corpus files without concurrent-sessions", corpusHeader: "h.yaml", corpusData: "d.csv", wantErrSubstr: "--concurrent-sessions"},
 		{name: "total-sessions without concurrent-sessions", totalSess: 10, wantErrSubstr: "--concurrent-sessions"},
+		{name: "corpus + think-time-ms conflict", concurrentSessions: 4, corpusHeader: "h.yaml", corpusData: "d.csv", thinkTimeMs: 200, wantErrSubstr: "--think-time-ms"},
+		{name: "corpus + think-time-dist conflict", concurrentSessions: 4, corpusHeader: "h.yaml", corpusData: "d.csv", thinkTimeDist: "constant:value=500ms", wantErrSubstr: "--think-time-dist"},
+		{name: "corpus + lazy-generation conflict", concurrentSessions: 4, corpusHeader: "h.yaml", corpusData: "d.csv", lazyGeneration: true, wantErrSubstr: "--lazy-generation"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := validateObserveCorpusFlags(tc.concurrentSessions, tc.totalSess, tc.corpusHeader, tc.corpusData, tc.workload, tc.workloadSpec, tc.rateChanged, tc.concurrency)
+			got := validateObserveCorpusFlags(tc.concurrentSessions, tc.totalSess, tc.corpusHeader, tc.corpusData, tc.workload, tc.workloadSpec, tc.rateChanged, tc.concurrency, tc.thinkTimeMs, tc.thinkTimeDist, tc.lazyGeneration)
 			if tc.wantErrSubstr == "" && got != "" {
 				t.Errorf("expected valid, got error %q", got)
 			}
@@ -150,5 +156,65 @@ func TestObserveCorpusMode_DrainsAllSessions(t *testing.T) {
 	}
 	if len(sessions) != 6 {
 		t.Errorf("distinct completed sessions = %d, want 6 (duplicate-to-fill + refill drain)", len(sessions))
+	}
+}
+
+// TestObserveCorpusMode_MultiRoundAccumulate drives a multi-round accumulate-mode
+// corpus end-to-end through the observe orchestrator (#1487 review, recommended):
+// a single 3-round session must dispatch round 0 plus both follow-ups, confirming
+// the SessionManager follow-up path works over the real-server dispatch loop.
+func TestObserveCorpusMode_MultiRoundAccumulate(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{"text": "hello"}},
+			"usage":   map[string]interface{}{"prompt_tokens": 100, "completion_tokens": 10},
+		})
+	}))
+	defer server.Close()
+
+	// One 3-round accumulate session (per-round input deltas). Small recorded think
+	// times keep the closed-loop wall-clock pacing fast.
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "corpus.yaml")
+	dataPath := filepath.Join(dir, "corpus.csv")
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s0", RoundIndex: 1, InputTokens: 40, OutputTokens: 10, ArrivalTimeUs: 1000, ThinkTimeUs: 1000, Status: "ok"},
+		{RequestID: 2, SessionID: "s0", RoundIndex: 2, InputTokens: 25, OutputTokens: 10, ArrivalTimeUs: 2000, ThinkTimeUs: 1000, Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export corpus: %v", err)
+	}
+
+	driver, initial, err := buildObserveCorpusPool(headerPath, dataPath, 1, 1, 42)
+	if err != nil {
+		t.Fatalf("buildObserveCorpusPool: %v", err)
+	}
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	recorder := &Recorder{}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runObserveOrchestrator(context.Background(), client, recorder, driver,
+			cluster.NewSliceRequestSource(initial), true, 1, 0, nil, nil, false, false, 1.0)
+	}()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("orchestrator did not drain within 30s — multi-round follow-up dispatch likely stalled")
+	}
+
+	// All three rounds (round 0 + two accumulate follow-ups) must have dispatched.
+	rounds := map[int]bool{}
+	for _, rec := range recorder.Records() {
+		if rec.SessionID == "s0" {
+			rounds[rec.RoundIndex] = true
+		}
+	}
+	if !rounds[0] || !rounds[1] || !rounds[2] {
+		t.Errorf("session s0 dispatched rounds %v, want {0,1,2} (multi-round accumulate follow-ups)", rounds)
 	}
 }

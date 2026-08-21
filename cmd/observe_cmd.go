@@ -300,6 +300,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		observeCorpusHeader, observeCorpusData,
 		observeWorkload, observeWorkloadSpec,
 		cmd.Flags().Changed("rate"), observeConcurrency,
+		observeThinkTimeMs, observeThinkTimeDist, observeLazyGeneration,
 	); msg != "" {
 		logrus.Fatalf("%s", msg)
 	}
@@ -648,6 +649,18 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	startTime := time.Now()
 	runObserveOrchestrator(ctx, client, recorder, completionHandler, observeSource, observeNoStreaming, observeMaxConcur, observeWarmup, prefixes, prefixLengths, observeUnconstrainedOutput, observeRecordITL, tokensPerWord)
 	logrus.Infof("Observation wall-clock time: %.3fs", time.Since(startTime).Seconds())
+
+	// Corpus-mode pool accounting parity with `blis replay` (#1487): warn if any
+	// pooled session was never admitted. In observe there is no wall-clock horizon
+	// (the loop drains on the active-session count), so a nonzero count here means a
+	// dispatched session's request left the pipeline before completing (e.g. a
+	// transport error), never a horizon cut.
+	if poolDriver != nil {
+		if un := poolDriver.Unstarted(); un > 0 {
+			logrus.Warnf("%d of %d pooled sessions never completed (a dispatched request errored out before terminating its session, so the pool slot was not refilled)",
+				un, poolDriver.TotalSessions())
+		}
+	}
 
 	// Surface any terminal sampler/generator error the lazy source recorded on a
 	// per-client state during dispatch. Eager mode would have hit Fatalf at
