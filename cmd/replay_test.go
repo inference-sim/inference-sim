@@ -2637,8 +2637,9 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 	origResultsPath := resultsPath
 	origTraceOutput := replayTraceOutput
 	origSaturationReport := saturationReport
-	origPostHocDetector := postHocDetector
-	origSaturationThreshold := saturationThreshold
+	origDetectorName := detectorName
+	origSaturationConfig := saturationConfigPath
+	origSaturationFinalWindow := saturationFinalWindow
 	origGoodputTTFT := goodputSLOTTFT
 	origGoodputITL := goodputSLOITL
 	origGoodputE2E := goodputSLOE2E
@@ -2656,8 +2657,9 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 		resultsPath = origResultsPath
 		replayTraceOutput = origTraceOutput
 		saturationReport = origSaturationReport
-		postHocDetector = origPostHocDetector
-		saturationThreshold = origSaturationThreshold
+		detectorName = origDetectorName
+		saturationConfigPath = origSaturationConfig
+		saturationFinalWindow = origSaturationFinalWindow
 		goodputSLOTTFT = origGoodputTTFT
 		goodputSLOITL = origGoodputITL
 		goodputSLOE2E = origGoodputE2E
@@ -2676,8 +2678,9 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 	resultsPath = ""
 	replayTraceOutput = ""
 	saturationReport = ""
-	postHocDetector = "none"
-	saturationThreshold = 5000.0
+	detectorName = ""
+	saturationConfigPath = ""
+	saturationFinalWindow = ""
 	goodputSLOTTFT, goodputSLOITL, goodputSLOE2E = "", "", ""
 	tenantBudgets = nil
 	sloPriorityOverrides = nil
@@ -2976,8 +2979,8 @@ func TestReplayCmd_AccumulateHeaderRequiresClosedLoop(t *testing.T) {
 		latencyModelBackend = "trained-physics"
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
-		maxRunningReqs = 64
-		maxScheduledTokens = 2048
+		maxNumSeqs = 64
+		maxNumBatchedTokens = 2048
 		numInstances = 1
 		seed = 42
 		longPrefillTokenThreshold = 0
