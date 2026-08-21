@@ -161,54 +161,34 @@ func ConvertOTelTrace(raw []byte, opts OTelConvertOptions) ([]TraceRecord, error
 	// Order by start time (stable): overlapping/parallel spans serialize by start.
 	sort.SliceStable(spans, func(i, j int) bool { return spans[i].startUs < spans[j].startUs })
 
+	// Build the source-agnostic normalized session; the shared encoder
+	// (EncodeSessionToTraceRecords) computes per-round input deltas and leaves
+	// TraceRecord.Model empty (routing safety — a recorded cross-model name would
+	// drop every request at routing under a differing --model; see the encoder's
+	// doc comment and #1477). ThinkUs is left 0: OTel has no reliable
+	// response-complete time (end_time is often a placeholder), so per-round think
+	// is derived from arrival gaps at replay rather than recorded here.
 	t0 := spans[0].startUs
-	recs := make([]TraceRecord, 0, len(spans))
-	prevIn, prevOut := 0, 0
-	for round, sp := range spans {
+	rounds := make([]NormalizedRound, 0, len(spans))
+	for i, sp := range spans {
 		// Relative arrival time; cap the inter-round gap when requested.
 		arrival := sp.startUs - t0
-		if round > 0 && opts.MaxThinkTimeUs > 0 {
-			prevArrival := recs[round-1].ArrivalTimeUs
+		if i > 0 && opts.MaxThinkTimeUs > 0 {
+			prevArrival := rounds[i-1].ArrivalUs
 			if arrival-prevArrival > opts.MaxThinkTimeUs {
 				arrival = prevArrival + opts.MaxThinkTimeUs
 			}
 		}
-
-		// Per-round input delta. Round 0 = full first prompt.
-		inputDelta := sp.in
-		if round > 0 {
-			inputDelta = sp.in - prevIn - prevOut
-			if inputDelta < 0 {
-				inputDelta = 0 // clamp: non-monotone context (rare; e.g. context trimming)
-			}
-		}
-
-		// Model is deliberately left empty. TraceRecord.Model is NOT passive
-		// metadata: at replay it flows to req.Model, which buildRouterState
-		// (sim/cluster/cluster_event.go:76-78) uses to FILTER routable instances
-		// — `if req.Model != "" && inst.Model != req.Model { continue }`. Every
-		// replay instance is configured with the --model flag (e.g. qwen/…),
-		// while OTel traces record a different model (gpt-4o, claude-*). Writing
-		// the recorded name here would leave zero routable instances → every
-		// request silently dropped at routing (routingRejections++), zero
-		// completions, no error. Leaving it empty makes requests inherit --model,
-		// which is the intended behavior (all calls simulate under one model per
-		// #1477). The recorded source model name is pure provenance metadata and
-		// is dropped during conversion.
 		status := "ok"
 		if sp.isError {
 			status = "error"
 		}
-		recs = append(recs, TraceRecord{
-			SessionID:     sessionID,
-			RoundIndex:    round,
-			InputTokens:   inputDelta,
-			OutputTokens:  sp.out,
-			ArrivalTimeUs: arrival,
-			// Model: intentionally empty — see comment above.
-			Status: status,
+		rounds = append(rounds, NormalizedRound{
+			InputTokensAbs: sp.in,
+			OutputTokens:   sp.out,
+			ArrivalUs:      arrival,
+			Status:         status,
 		})
-		prevIn, prevOut = sp.in, sp.out
 	}
-	return recs, nil
+	return EncodeSessionToTraceRecords(sessionID, rounds), nil
 }
