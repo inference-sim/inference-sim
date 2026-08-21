@@ -200,7 +200,13 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 	var blueprints []SessionBlueprint
 
 	// Growth mode from header (design §5): "accumulate" → strict growing prefix.
+	// Validate up front: an unrecognized value (e.g. a typo like "Accumulate") would
+	// otherwise fall through to the non-accumulate branch silently, disabling the
+	// feature with no feedback — an operator footgun. Fail loudly instead (R1).
 	contextGrowth := trace.Header.SessionContextGrowth
+	if contextGrowth != "" && contextGrowth != "accumulate" {
+		return nil, nil, fmt.Errorf("session_context_growth: unknown value %q (valid: \"accumulate\" or empty)", contextGrowth)
+	}
 
 	for _, sessionID := range sessionOrder {
 		sr := sessionMap[sessionID]

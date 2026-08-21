@@ -2,6 +2,7 @@ package workload
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -913,6 +914,22 @@ func TestLoadTraceV2SessionBlueprints_NegativeSendTime(t *testing.T) {
 	// Non-session: must use ArrivalTimeUs (20000), not SendTimeUs (-100).
 	if nonSessionArrival != 20000 {
 		t.Errorf("non-session: ArrivalTime = %d, want 20000 (negative send_time must fall back)", nonSessionArrival)
+	}
+}
+
+func TestLoadTraceV2SessionBlueprints_UnknownContextGrowth_Errors(t *testing.T) {
+	// A typo'd session_context_growth (e.g. wrong case) must fail loudly rather than
+	// silently falling through to the non-accumulate branch and disabling the feature.
+	trace := &TraceV2{
+		Header: TraceHeader{SessionContextGrowth: "Accumulate"}, // wrong case
+		Records: []TraceRecord{
+			{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50},
+			{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40},
+		},
+	}
+	_, _, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err == nil || !strings.Contains(err.Error(), "session_context_growth") {
+		t.Errorf("expected error for unknown session_context_growth, got %v", err)
 	}
 }
 

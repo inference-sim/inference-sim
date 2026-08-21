@@ -1204,6 +1204,69 @@ func TestParseTraceRecord_NegativeThinkTime_Errors(t *testing.T) {
 	}
 }
 
+func TestTraceV2_SessionContextGrowth_HeaderRoundTrip(t *testing.T) {
+	t.Run("accumulate survives export→load", func(t *testing.T) {
+		dir := t.TempDir()
+		hp := filepath.Join(dir, "h.yaml")
+		dp := filepath.Join(dir, "d.csv")
+		h := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+		if err := ExportTraceV2(h, nil, hp, dp); err != nil {
+			t.Fatalf("ExportTraceV2: %v", err)
+		}
+		loaded, err := LoadTraceV2(hp, dp)
+		if err != nil {
+			t.Fatalf("LoadTraceV2: %v", err)
+		}
+		if loaded.Header.SessionContextGrowth != "accumulate" {
+			t.Errorf("SessionContextGrowth = %q, want %q", loaded.Header.SessionContextGrowth, "accumulate")
+		}
+	})
+	t.Run("absent → empty (omitempty)", func(t *testing.T) {
+		dir := t.TempDir()
+		hp := filepath.Join(dir, "h.yaml")
+		dp := filepath.Join(dir, "d.csv")
+		h := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+		if err := ExportTraceV2(h, nil, hp, dp); err != nil {
+			t.Fatalf("ExportTraceV2: %v", err)
+		}
+		loaded, err := LoadTraceV2(hp, dp)
+		if err != nil {
+			t.Fatalf("LoadTraceV2: %v", err)
+		}
+		if loaded.Header.SessionContextGrowth != "" {
+			t.Errorf("SessionContextGrowth = %q, want empty", loaded.Header.SessionContextGrowth)
+		}
+	})
+}
+
+func TestExportTraceV2_ThinkTimeUs_CoexistsWithAdapterAndXRequestID(t *testing.T) {
+	// think_time_us is appended after the adapter and x_request_id trailing columns;
+	// verify all three optional trailing columns round-trip together with correct
+	// values (guards the column-ordering / index math when they coexist).
+	dir := t.TempDir()
+	hp := filepath.Join(dir, "h.yaml")
+	dp := filepath.Join(dir, "d.csv")
+	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "real"} // real → x_request_id emitted
+	records := []TraceRecord{
+		{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, Adapter: "sql-lora", XRequestID: "uuid-0", ThinkTimeUs: 0},
+		{RequestID: 1, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, Adapter: "sql-lora", XRequestID: "uuid-1", ThinkTimeUs: 7000},
+	}
+	if err := ExportTraceV2(header, records, hp, dp); err != nil {
+		t.Fatalf("ExportTraceV2: %v", err)
+	}
+	loaded, err := LoadTraceV2(hp, dp)
+	if err != nil {
+		t.Fatalf("LoadTraceV2: %v", err)
+	}
+	r := loaded.Records[1]
+	if r.Adapter != "sql-lora" || r.XRequestID != "uuid-1" || r.ThinkTimeUs != 7000 {
+		t.Errorf("coexistence round-trip: adapter=%q xreq=%q think=%d; want sql-lora/uuid-1/7000", r.Adapter, r.XRequestID, r.ThinkTimeUs)
+	}
+	if loaded.Records[0].ThinkTimeUs != 0 {
+		t.Errorf("record 0 think_time_us = %d, want 0", loaded.Records[0].ThinkTimeUs)
+	}
+}
+
 func TestExportTraceV2_VLLMPriority_ConditionalColumn(t *testing.T) {
 	// BC-3: vllm_priority column included only when priority was actually computed.
 	// Distinguishes between:
