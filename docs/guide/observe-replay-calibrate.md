@@ -302,6 +302,28 @@ auto-raised to the pool size if set lower, so the pool is never throttled. The
 pool self-drains all `--total-sessions` sessions (observe bounds the run by the
 session count, not a clock).
 
+#### Session-id header for session-aware routing
+
+Each round is an independent HTTP request, so a session-aware gateway/EPP
+(session-affinity or predictive-least-loaded pinning) needs the session id on
+the wire to keep a session's rounds on one instance (issue #1505). `blis observe`
+emits it on the `--session-id-header` header — default `x-session-id`, matching
+the current custom scorers — for every request carrying a session id:
+
+```bash
+blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --corpus-header corpus.yaml --corpus-data corpus.csv \
+  --concurrent-sessions 8 --total-sessions 200 \
+  --session-id-header x-session-id \
+  --trace-header observed.yaml --trace-data observed.csv
+```
+
+Set `--session-id-header` to match your deployment's session-id-producer, or to
+the empty string to disable emission. It applies to any session-bearing request
+— corpus-mode (`--concurrent-sessions`) and spec-mode closed-loop
+(`--concurrency`) alike. Closed-loop replay is the wire producer of this header:
+real captured clients carry the session in telemetry, not on the request.
+
 To calibrate real vs simulated over the same corpus:
 
 ```bash
