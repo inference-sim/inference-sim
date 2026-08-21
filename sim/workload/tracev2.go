@@ -185,7 +185,7 @@ type TraceRecord struct {
 	FinishReason      string // server-reported finish_reason ("stop", "length", "abort", etc.); empty = not recorded
 	XRequestID        string // client-generated UUID sent as x-request-id header (real-mode only); empty = not recorded
 	Adapter           string // LoRA adapter id serving this request (registry key; #1464); empty = base-model-only
-	ThinkTimeUs       int64  // recorded per-round client think time in µs (gap from previous request's end); 0 = not recorded. Set by agentic-trace converters (#1478); preferred over arrival-gap derivation in closed-loop replay.
+	ThinkTimeUs       int64  // recorded per-round client think time in µs (gap from previous request's end). Set by agentic-trace converters (#1478); preferred over arrival-gap derivation in closed-loop replay. NOTE: 0 is a LOSSY SENTINEL for "not recorded" — a genuinely-zero recorded think time (e.g. Weka's overlap-clamped rounds) is indistinguishable from an absent column, so an all-zero session falls back to arrival-gap derivation. A non-lossy encoding (distinguishing recorded-0 from absent) is deferred to the Weka converter work (#1604).
 }
 
 // TraceV2 combines header and records for a complete trace.
@@ -473,8 +473,9 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 
 // parseTraceRecord parses a CSV row. Handles optional columns vllm_priority
 // (after slo_class), slo_target_us (after deadline_us), and the trailing
-// columns x_request_id and adapter. xRequestIDIdx and adapterIdx are absolute
-// column indices in the row, or -1 if the respective column is absent.
+// columns x_request_id, adapter, and think_time_us. xRequestIDIdx, adapterIdx,
+// and thinkTimeUsIdx are absolute column indices in the row, or -1 if the
+// respective column is absent.
 func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequestIDIdx, adapterIdx, thinkTimeUsIdx int) (*TraceRecord, error) {
 	// Column offset: optional columns shift subsequent indices.
 	// vllm_priority appears after slo_class (index 3) → shifts everything after by +1.

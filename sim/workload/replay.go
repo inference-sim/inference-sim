@@ -118,6 +118,14 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 // carries a recorded think_time_us (#1478). Round 0 has no predecessor, so its think
 // time is meaningless and ignored. When true, closed-loop replay prefers the recorded
 // per-round think time over arrival-gap derivation.
+//
+// LOSSY SENTINEL (F1, #1484 review): a value of 0 means "not recorded", so a session
+// whose every round has a genuinely-zero recorded think time (real for Weka's
+// overlap-clamped rounds) reads as false here and falls back to the arrival-gap path
+// — which bundles service time into the gap (see the gap-derivation note below), the
+// very effect think_time_us exists to avoid. The impact is bounded (a ~0 recorded
+// think replaced by the recorded arrival gap); a non-lossy encoding is deferred to the
+// Weka converter (#1604). Pinned by TestLoadTraceV2SessionBlueprints_AllZeroRecordedThink_FallsBackToGap.
 func sessionHasRecordedThinkTime(rounds []TraceRecord) bool {
 	for i := 1; i < len(rounds); i++ {
 		if rounds[i].ThinkTimeUs != 0 {

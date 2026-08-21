@@ -1014,3 +1014,120 @@ func TestAccumulateReplay_StrictPrefixIdentity(t *testing.T) {
 		}
 	}
 }
+
+// TestLoadTraceV2SessionBlueprints_AllZeroRecordedThink_FallsBackToGap pins the
+// F1 lossy-sentinel behavior (#1484 review): a session whose every round records
+// think_time_us == 0 (real for Weka's overlap-clamped rounds) is indistinguishable
+// from an absent column, so it falls back to arrival-gap derivation.
+func TestLoadTraceV2SessionBlueprints_AllZeroRecordedThink_FallsBackToGap(t *testing.T) {
+	trace := &TraceV2{Records: []TraceRecord{
+		{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, ThinkTimeUs: 0},
+		{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, ArrivalTimeUs: 5000, ThinkTimeUs: 0},
+		{RequestID: 3, SessionID: "A", RoundIndex: 2, InputTokens: 70, OutputTokens: 30, ArrivalTimeUs: 12000, ThinkTimeUs: 0},
+	}}
+	_, bps, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	s := bps[0].ThinkTimeSampler
+	if s == nil {
+		t.Fatal("expected a think sampler for a multi-round session")
+	}
+	// Falls back to arrival gaps [5000, 7000], NOT the recorded zeros.
+	if g1, g2 := s.Sample(nil), s.Sample(nil); g1 != 5000 || g2 != 7000 {
+		t.Errorf("all-zero recorded think: sampler = [%d, %d], want arrival gaps [5000, 7000] (documented lossy-sentinel fallback)", g1, g2)
+	}
+}
+
+// TestLoadTraceV2SessionBlueprints_MixedThinkSessions covers F4 (#1484 review): the
+// export gate (includeThinkTime) is global, but think-time selection is per-session,
+// so a trace mixing a recorded-think session with an all-zero one must select each
+// independently — A uses its recorded think, B falls back to arrival gaps.
+func TestLoadTraceV2SessionBlueprints_MixedThinkSessions(t *testing.T) {
+	trace := &TraceV2{Records: []TraceRecord{
+		// A: recorded think 300; arrival gap (9999) deliberately differs so the two are distinguishable.
+		{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, ThinkTimeUs: 0},
+		{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, ArrivalTimeUs: 9999, ThinkTimeUs: 300},
+		// B: all-zero recorded think; arrival gap 5000.
+		{RequestID: 4, SessionID: "B", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, ThinkTimeUs: 0},
+		{RequestID: 5, SessionID: "B", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, ArrivalTimeUs: 5000, ThinkTimeUs: 0},
+	}}
+	_, bps, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	byID := map[string]*SessionBlueprint{}
+	for i := range bps {
+		byID[bps[i].SessionID] = &bps[i]
+	}
+	if got := byID["A"].ThinkTimeSampler.Sample(nil); got != 300 {
+		t.Errorf("session A think = %d, want recorded 300", got)
+	}
+	if got := byID["B"].ThinkTimeSampler.Sample(nil); got != 5000 {
+		t.Errorf("session B think = %d, want arrival gap 5000 (all-zero fallback)", got)
+	}
+}
+
+// TestAccumulateReplay_TransitivityAndLengthCap covers F3 (#1484 review): 3+ round
+// transitivity — round 2's prefix is byte-identical to round 1's FULL input as the
+// accumulate buffer keeps growing (which also verifies round 1's interior segment
+// flows forward unchanged) — plus the length-capped path (actual output < recorded
+// output shrinks the appended segment).
+func TestAccumulateReplay_TransitivityAndLengthCap(t *testing.T) {
+	mk := func() (*sim.Request, *SessionManager) {
+		trace := &TraceV2{
+			Header: TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
+			Records: []TraceRecord{
+				{RequestID: 0, SessionID: "s", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0},
+				{RequestID: 1, SessionID: "s", RoundIndex: 1, InputTokens: 40, OutputTokens: 20, ArrivalTimeUs: 1_000_000},
+				{RequestID: 2, SessionID: "s", RoundIndex: 2, InputTokens: 25, OutputTokens: 5, ArrivalTimeUs: 2_000_000},
+			},
+		}
+		r0, bps, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+		if err != nil {
+			t.Fatalf("err: %v", err)
+		}
+		return r0[0], NewSessionManager(bps)
+	}
+	next := func(sm *SessionManager, req *sim.Request, tick int64) *sim.Request {
+		fu := sm.OnComplete(req, tick)
+		if len(fu) != 1 {
+			t.Fatalf("expected 1 follow-up, got %d", len(fu))
+		}
+		return fu[0]
+	}
+
+	t.Run("full-output transitivity", func(t *testing.T) {
+		round0, sm := mk()
+		round0.State = sim.StateCompleted
+		round0.ProgressIndex = int64(round0.InputLen()) + 10 // full 10 output tokens
+		round1 := next(sm, round0, 1_000_000)
+		if round1.InputLen() != 150 { // 100 + 10 output + 40 delta
+			t.Fatalf("round1 len = %d, want 150", round1.InputLen())
+		}
+		round1In := append([]sim.TokenID{}, round1.FullInputTokens()...)
+		round1.State = sim.StateCompleted
+		round1.ProgressIndex = int64(round1.InputLen()) + 20
+		round2 := next(sm, round1, 2_000_000)
+		if round2.InputLen() != 195 { // 150 + 20 output + 25 delta
+			t.Fatalf("round2 len = %d, want 195", round2.InputLen())
+		}
+		r2 := round2.FullInputTokens()
+		for i := 0; i < 150; i++ {
+			if r2[i] != round1In[i] {
+				t.Fatalf("round2 token[%d] diverged from round1 full input — transitivity/interior broken", i)
+			}
+		}
+	})
+
+	t.Run("length-capped output", func(t *testing.T) {
+		round0, sm := mk()
+		round0.State = sim.StateCompleted
+		round0.ProgressIndex = int64(round0.InputLen()) + 5 // only 5 of the 10 output tokens generated
+		round1 := next(sm, round0, 1_000_000)
+		// Appended segment tracks ACTUAL output, not the recorded count: 100 + 5 + 40 = 145.
+		if round1.InputLen() != 145 {
+			t.Errorf("length-capped round1 len = %d, want 145 (100 + actual-output 5 + delta 40)", round1.InputLen())
+		}
+	})
+}
