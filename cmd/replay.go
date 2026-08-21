@@ -133,6 +133,18 @@ Example:
 		if replayShuffleCorpus && replayConcurrentSessions == 0 {
 			logrus.Fatalf("--shuffle-corpus requires --concurrent-sessions > 0")
 		}
+		// Pool mode + output artifacts: guard against silent truncation (R1).
+		// Trace re-export in pool mode would contain only the initial wave of
+		// round-0 requests (follow-ups/clones are never collected for export), so
+		// reject it outright — mirroring how replay fails fast on unsupported
+		// features (INV-13). Per-request results similarly exclude clone sessions
+		// (non-numeric ids), so warn loudly rather than silently subsetting.
+		if replayConcurrentSessions > 0 && replayTraceOutput != "" {
+			logrus.Fatalf("--trace-output is not supported with --concurrent-sessions (pool mode): a re-export would capture only the initial %d-session wave, not all pooled sessions. Re-run without --trace-output.", replayConcurrentSessions)
+		}
+		if replayConcurrentSessions > 0 && resultsPath != "" {
+			logrus.Warnf("--results-path with --concurrent-sessions (pool mode): per-request results cover only the original corpus sessions' round-0; duplicated (clone) sessions and follow-up rounds are excluded (non-numeric request ids).")
+		}
 		if replayThinkTimeMs > 0 && replaySessionMode != "closed-loop" {
 			logrus.Fatalf("--think-time-ms requires --session-mode closed-loop")
 		}
@@ -675,7 +687,7 @@ Example:
 			// undercount dropped sessions and this warning may not fire. The
 			// self-draining path (no --horizon) is exact. Tracked in #1483.
 			if un := poolDriver.Unstarted(); un > 0 {
-				logrus.Warnf("--horizon cap reached before pool drained: %d of %d sessions never admitted (increase --horizon or omit it to self-drain)",
+				logrus.Warnf("%d of %d pooled sessions never admitted — a --horizon cap truncated the drain, and/or admitted sessions were dropped before reaching an instance (routing/gateway rejection, which does not fire the per-instance completion hook). Omit --horizon to self-drain; check routing-rejection metrics for the second cause.",
 					un, poolDriver.TotalSessions())
 			}
 		}
