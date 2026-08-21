@@ -39,13 +39,11 @@ type otelStatus struct {
 }
 
 type otelAttributes struct {
-	// Model is parsed for completeness but intentionally NOT propagated to
-	// TraceRecord.Model (that field is routing-significant — see the
-	// TraceRecord construction in ConvertOTelTrace). Kept here only to document
-	// the schema; drop it entirely if a linter flags it as unused.
-	Model        string `json:"gen_ai.request.model"`
-	InputTokens  *int   `json:"gen_ai.usage.input_tokens"`
-	OutputTokens *int   `json:"gen_ai.usage.output_tokens"`
+	// The recorded model name (gen_ai.request.model) is intentionally NOT parsed:
+	// it must not reach TraceRecord.Model (routing-significant — see
+	// EncodeSessionToTraceRecords), and encoding/json simply ignores the key.
+	InputTokens  *int `json:"gen_ai.usage.input_tokens"`
+	OutputTokens *int `json:"gen_ai.usage.output_tokens"`
 	// Presence of this key (even empty) marks an LLM chat span when name doesn't.
 	InputMessages *string `json:"gen_ai.input.messages"`
 }

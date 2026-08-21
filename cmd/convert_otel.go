@@ -119,11 +119,15 @@ func collectTraceInputs(path string) ([]traceInput, error) {
 // records, assigns global request IDs, and writes a TraceV2 pair to
 // <outPrefix>.yaml / <outPrefix>.csv.
 func runConvertOtel(inputPath, outPrefix string, opts workload.OTelConvertOptions) error {
+	// Return errors (do not Fatalf): the cobra Run wrapper owns the CLI exit
+	// boundary and Fatalf's on a returned error (R6 — library-style helpers
+	// surface errors, the CLI layer terminates). --input/--trace-output are also
+	// MarkFlagRequired'd, so these guards are defense-in-depth.
 	if inputPath == "" {
-		logrus.Fatalf("--input is required")
+		return fmt.Errorf("--input is required")
 	}
 	if outPrefix == "" {
-		logrus.Fatalf("--trace-output is required")
+		return fmt.Errorf("--trace-output is required")
 	}
 	inputs, err := collectTraceInputs(inputPath)
 	if err != nil {
@@ -153,7 +157,7 @@ func runConvertOtel(inputPath, outPrefix string, opts workload.OTelConvertOption
 	}
 
 	if len(allRecords) == 0 {
-		logrus.Fatalf("no usable sessions found in %q (skipped %d)", inputPath, skipped)
+		return fmt.Errorf("no usable sessions found in %q (skipped %d)", inputPath, skipped)
 	}
 
 	growth := opts.ContextGrowth

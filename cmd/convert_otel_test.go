@@ -45,6 +45,35 @@ func TestConvertOtel_SingleFileEndToEnd(t *testing.T) {
 	}
 }
 
+func TestConvertOtel_JSONLInput(t *testing.T) {
+	// .jsonl input: one trace per line. Also exercises the gen_ai.input.messages
+	// isLLMSpan disjunct end-to-end (span "y" has no "chat " name; it is kept only
+	// because gen_ai.input.messages is present).
+	dir := t.TempDir()
+	inPath := filepath.Join(dir, "traces.jsonl")
+	line1 := `{"spans":[{"span_id":"a","name":"chat gpt","start_time":"2026-01-01T00:00:00.000000+00:00","status":{"code":1},"attributes":{"gen_ai.usage.input_tokens":100,"gen_ai.usage.output_tokens":10},"trace_id":"sess-1"}]}`
+	line2 := `{"spans":[{"span_id":"y","name":"llm.call","start_time":"2026-01-01T00:00:00.000000+00:00","status":{"code":1},"attributes":{"gen_ai.usage.input_tokens":80,"gen_ai.usage.output_tokens":8,"gen_ai.input.messages":"[]"},"trace_id":"sess-2"}]}`
+	if err := os.WriteFile(inPath, []byte(line1+"\n"+line2+"\n"), 0o644); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+	outPrefix := filepath.Join(dir, "out")
+	if err := runConvertOtel(inPath, outPrefix, workload.OTelConvertOptions{ContextGrowth: "accumulate", MaxThinkTimeUs: 15_000_000, MinRounds: 1}); err != nil {
+		t.Fatalf("runConvertOtel: %v", err)
+	}
+	trace, err := workload.LoadTraceV2(outPrefix+".yaml", outPrefix+".csv")
+	if err != nil {
+		t.Fatalf("load exported trace: %v", err)
+	}
+	// Two .jsonl lines → two sessions → two round-0 records.
+	if len(trace.Records) != 2 {
+		t.Fatalf("records = %d, want 2 (one per .jsonl line)", len(trace.Records))
+	}
+	sessions := map[string]bool{trace.Records[0].SessionID: true, trace.Records[1].SessionID: true}
+	if !sessions["sess-1"] || !sessions["sess-2"] {
+		t.Errorf("sessions = %v, want sess-1 + sess-2 (input.messages-only span kept)", sessions)
+	}
+}
+
 func TestConvertOtel_DirectoryDeterministicIDs(t *testing.T) {
 	dir := t.TempDir()
 	inDir := filepath.Join(dir, "traces")
