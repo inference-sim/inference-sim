@@ -936,3 +936,103 @@ func TestGenerateRequestsForWindow_ExactCountAndInteriorArrivals(t *testing.T) {
 		})
 	}
 }
+
+// TestGenerateRequestsForWindow_MultiSessionReasoning_ExactCountAndInteriorArrivals
+// is the multi-session-reasoning counterpart to
+// TestGenerateRequestsForWindow_ExactCountAndInteriorArrivals above.
+//
+// The multi-session branch (client.Reasoning.MultiTurn set, SingleSession
+// false) had the IDENTICAL last-request-dropped defect as the single-shot
+// path, for the same reason: before the fix, it looped
+// `for i := 0; i < len(iats); i++`, and len(iats) was numRequests -- the
+// exact-sum property of rescaleIATsToMatchDuration meant the cumulative time
+// after the LAST iat landed exactly on window.EndUs, so its own
+// `currentTime >= window.EndUs` guard dropped the final session every time.
+//
+// The existing reasoning tests in generator_test.go
+// (TestGenerateRequestsForWindow_ReasoningClient and its three siblings) do
+// NOT pin this: they only assert `len(sessionsFound) < 2` (i.e. "more than
+// one session") or "zero vs. nonzero", both of which pass identically
+// whether the loop emits N sessions or N-1. They could not have caught the
+// original defect and cannot catch a regression in it.
+//
+// This test pins the property the loop bound actually governs: the number
+// of sessions started (here, MaxRounds=1 makes each session exactly one
+// request, so len(requests) == session count == the value numRequests
+// controls directly) must equal ceil(rate*duration) exactly, including a
+// case where that ceil is 1 -- small enough that an off-by-one is a 100%
+// miss, not a rounding blur. It also pins the strict interior bound
+// (StartUs < arrival < EndUs) for this branch, matching the single-shot test.
+func TestGenerateRequestsForWindow_MultiSessionReasoning_ExactCountAndInteriorArrivals(t *testing.T) {
+	const rate = 5.0 // req/s
+
+	cases := []struct {
+		name       string
+		durationUs int64
+	}{
+		// 5 req/s * 0.1s = 0.5 expected sessions -> ceil = 1. Exactly the
+		// case that previously produced ZERO sessions.
+		{"short window, ceil gives 1", 100_000},
+		// 5 req/s * 0.3s = 1.5 expected sessions -> ceil = 2.
+		{"short window, ceil gives 2", 300_000},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			expected := int(math.Ceil(rate * float64(tc.durationUs) / 1e6))
+			require.Greater(t, expected, 0, "test case must expect at least one session")
+
+			for _, seed := range []int64{1, 2, 3, 17, 42, 99} {
+				traceRate := rate
+				clients := []ClientSpec{
+					{
+						ID:       "multisession-reasoning-client",
+						TenantID: "tenant-a",
+						SLOClass: "standard",
+						Model:    "qwen/qwen3-14b",
+						Reasoning: &ReasoningSpec{
+							MultiTurn: &MultiTurnSpec{
+								// MaxRounds=1: every session is exactly one
+								// round/request, so len(requests) == session
+								// count == the value the loop bound
+								// (numRequests) governs directly. This keeps
+								// the assertion below unambiguous -- no need
+								// to also account for multi-round sessions.
+								MaxRounds:     1,
+								ThinkTimeUs:   1_000_000,
+								ContextGrowth: "accumulate",
+							},
+						},
+						InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+						OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+						Lifecycle: &LifecycleSpec{
+							Windows: []ActiveWindow{
+								{StartUs: 1_000_000, EndUs: 1_000_000 + tc.durationUs, TraceRate: &traceRate},
+							},
+						},
+					},
+				}
+
+				rng := rand.New(rand.NewSource(seed))
+				window := clients[0].Lifecycle.Windows[0]
+				requests, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng, nil)
+				require.NoError(t, err)
+
+				assert.Equal(t, expected, len(requests),
+					"seed %d: window [%d,%d) at %.1f req/s must start ceil(rate*duration)=%d sessions (MaxRounds=1 => 1 request each), got %d requests",
+					seed, window.StartUs, window.EndUs, rate, expected, len(requests))
+
+				sessionIDs := make(map[string]bool)
+				for i, req := range requests {
+					sessionIDs[req.SessionID] = true
+					assert.Greater(t, req.ArrivalTime, window.StartUs,
+						"seed %d request %d: session start must be strictly > window start", seed, i)
+					assert.Less(t, req.ArrivalTime, window.EndUs,
+						"seed %d request %d: session start must be strictly < window end", seed, i)
+				}
+				assert.Equal(t, expected, len(sessionIDs),
+					"seed %d: expected %d distinct sessions, got %d", seed, expected, len(sessionIDs))
+			}
+		})
+	}
+}
