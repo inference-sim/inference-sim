@@ -312,6 +312,56 @@ func TestLoadTraceV2SessionBlueprints_OverrideThinkTime(t *testing.T) {
 	}
 }
 
+func TestLoadTraceV2SessionBlueprints_PrefersRecordedThinkTime(t *testing.T) {
+	// GIVEN a 3-round session whose recorded think_time_us (300, 400) DIFFERS from
+	// its inter-round arrival gaps (5000, 7000)
+	// WHEN blueprints are built with no caller sampler
+	// THEN the think sampler yields the RECORDED think times, not the arrival gaps
+	// (#1478: recorded per-round think time is pure client think, preferred over the
+	// gap derivation which bundles service time).
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, ThinkTimeUs: 0},
+			{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 200, OutputTokens: 80, ArrivalTimeUs: 5000, ThinkTimeUs: 300},
+			{RequestID: 3, SessionID: "A", RoundIndex: 2, InputTokens: 300, OutputTokens: 90, ArrivalTimeUs: 12000, ThinkTimeUs: 400},
+		},
+	}
+
+	_, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	bp := blueprints[0]
+	if bp.ThinkTimeSampler == nil {
+		t.Fatal("expected ThinkTimeSampler to be set")
+	}
+	got1 := bp.ThinkTimeSampler.Sample(nil)
+	got2 := bp.ThinkTimeSampler.Sample(nil)
+	if got1 != 300 || got2 != 400 {
+		t.Errorf("think times = [%d, %d], want recorded [300, 400] (not arrival gaps [5000, 7000])", got1, got2)
+	}
+}
+
+func TestLoadTraceV2SessionBlueprints_RecordedThinkTime_CLIOverrides(t *testing.T) {
+	// GIVEN a session with recorded think_time_us AND a caller-provided sampler
+	// WHEN blueprints are built
+	// THEN the caller sampler wins (#1478 precedence: CLI > recorded > gap).
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, ThinkTimeUs: 0},
+			{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 200, OutputTokens: 80, ArrivalTimeUs: 5000, ThinkTimeUs: 300},
+		},
+	}
+	sampler := &ConstantSampler{value: 500_000}
+	_, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, sampler, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := blueprints[0].ThinkTimeSampler.Sample(nil); got != 500_000 {
+		t.Errorf("ThinkTimeSampler.Sample() = %d, want 500000 (CLI sampler overrides recorded think_time_us)", got)
+	}
+}
+
 func TestLoadTraceV2SessionBlueprints_NonMonotoneGapClamped(t *testing.T) {
 	// GIVEN a 2-round session where round-1 has an earlier arrival than round-0
 	// (clock skew in observed trace), THEN ThinkTimeSampler returns 0 (not negative),
@@ -358,11 +408,11 @@ func TestLoadTraceV2SessionBlueprints_NonConsecutiveRoundIndex_Error(t *testing.
 
 func TestEffectiveInputTokenCount(t *testing.T) {
 	cases := []struct {
-		name             string
-		inputTokens      int
-		serverTokens     int
-		prefixGroup      string
-		want             int
+		name         string
+		inputTokens  int
+		serverTokens int
+		prefixGroup  string
+		want         int
 	}{
 		// Server > client, no prefix: use server (chat-template overhead case)
 		{"server_overrides_client", 512, 530, "", 530},
@@ -436,7 +486,7 @@ func TestLoadTraceV2Requests_ServerInputTokens_PrefixGroup_FallsBackToInputToken
 		Records: []TraceRecord{
 			{RequestID: 0, InputTokens: 100, PrefixGroup: "shared", PrefixLength: 128,
 				ServerInputTokens: 246, // = PrefixLength(128) + InputTokens(100) + overhead(18)
-				OutputTokens: 32, ArrivalTimeUs: 0, Status: "ok"},
+				OutputTokens:      32, ArrivalTimeUs: 0, Status: "ok"},
 		},
 	}
 	requests, err := LoadTraceV2Requests(trace, 42)
@@ -569,7 +619,7 @@ func TestLoadTraceV2SessionBlueprints_ServerInputTokens_Sampler_PrefixGroup_Fall
 			{RequestID: 2, SessionID: "A", RoundIndex: 1,
 				InputTokens: 50, PrefixGroup: "shared", PrefixLength: 64,
 				ServerInputTokens: 132, // = PrefixLength(64) + InputTokens(50) + overhead(18)
-				OutputTokens: 16, ArrivalTimeUs: 5000},
+				OutputTokens:      16, ArrivalTimeUs: 5000},
 		},
 	}
 	_, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
@@ -626,8 +676,8 @@ func TestLoadTraceV2Requests_ModelAndDeadline(t *testing.T) {
 		},
 		{
 			RequestID:         1,
-			Model:             "",  // BC-6: empty = default model
-			DeadlineUs:        0,   // BC-5: no timeout
+			Model:             "", // BC-6: empty = default model
+			DeadlineUs:        0,  // BC-5: no timeout
 			ServerInputTokens: 0,
 			InputTokens:       50,
 			OutputTokens:      25,
