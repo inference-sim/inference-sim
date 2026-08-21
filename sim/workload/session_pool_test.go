@@ -8,6 +8,58 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
+// TestShuffleSessions_ReproducibleAndLockstep verifies #1480's shuffle contract:
+// the permutation is reproducible from a fixed seed, keeps (blueprint, round-0)
+// pairs aligned, drops no session, and generally differs across seeds.
+func TestShuffleSessions_ReproducibleAndLockstep(t *testing.T) {
+	build := func(n int) ([]SessionBlueprint, []*sim.Request) {
+		bps := make([]SessionBlueprint, n)
+		r0 := make([]*sim.Request, n)
+		for i := 0; i < n; i++ {
+			bp, req := makeBP(fmt.Sprintf("s%02d", i), int64(i))
+			bps[i], r0[i] = bp, req
+		}
+		return bps, r0
+	}
+	order := func(bps []SessionBlueprint) string {
+		s := ""
+		for _, b := range bps {
+			s += b.SessionID + ","
+		}
+		return s
+	}
+
+	// Reproducible: the same seed yields the same permutation.
+	bpsA, r0A := build(20)
+	ShuffleSessions(bpsA, r0A, rand.New(rand.NewSource(7)))
+	bpsA2, r0A2 := build(20)
+	ShuffleSessions(bpsA2, r0A2, rand.New(rand.NewSource(7)))
+	_ = r0A2
+	if order(bpsA) != order(bpsA2) {
+		t.Errorf("same seed → different order:\n %q\n %q", order(bpsA), order(bpsA2))
+	}
+	// Lockstep: after the shuffle, blueprint[i] and r0[i] still name the same session.
+	for i := range bpsA {
+		if bpsA[i].SessionID != r0A[i].SessionID {
+			t.Errorf("lockstep broken at %d: bp=%s r0=%s", i, bpsA[i].SessionID, r0A[i].SessionID)
+		}
+	}
+	// Set preserved: every session still present (nothing dropped).
+	seen := map[string]bool{}
+	for _, b := range bpsA {
+		seen[b.SessionID] = true
+	}
+	if len(seen) != 20 {
+		t.Errorf("shuffle changed the session set: %d unique, want 20", len(seen))
+	}
+	// A different seed generally yields a different order (collision negligible at n=20).
+	bpsB, r0B := build(20)
+	ShuffleSessions(bpsB, r0B, rand.New(rand.NewSource(999)))
+	if order(bpsA) == order(bpsB) {
+		t.Errorf("different seeds → identical order (astronomically unlikely; likely a bug)")
+	}
+}
+
 // makeBP builds a minimal 1-round blueprint + its round-0 request for tests.
 func makeBP(id string, seed int64) (SessionBlueprint, *sim.Request) {
 	bp := SessionBlueprint{

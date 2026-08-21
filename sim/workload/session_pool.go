@@ -72,6 +72,26 @@ func cloneBlueprintForDup(src SessionBlueprint, srcR0 *sim.Request, dupIdx int, 
 	return bp, &r0
 }
 
+// ShuffleSessions permutes the corpus's session order in place with rng, keeping
+// the (blueprints, r0Requests) pair in lockstep (index i of each still names the
+// same session). `blis replay --shuffle-corpus` (#1480) uses it to randomize the
+// pool's step/admission order reproducibly from the master seed — every session
+// still runs, only the order changes. The two slices are expected 1:1 (as
+// BuildSessionPool asserts); the shuffle spans the matched prefix, so any trailing
+// non-session requests would be left untouched.
+func ShuffleSessions(blueprints []SessionBlueprint, r0Requests []*sim.Request, rng *rand.Rand) {
+	n := len(blueprints)
+	if len(r0Requests) < n {
+		n = len(r0Requests)
+	}
+	// Fisher-Yates, applied identically to both slices so pairs stay aligned.
+	for i := n - 1; i > 0; i-- {
+		j := rng.Intn(i + 1)
+		blueprints[i], blueprints[j] = blueprints[j], blueprints[i]
+		r0Requests[i], r0Requests[j] = r0Requests[j], r0Requests[i]
+	}
+}
+
 // BuildSessionPool expands the corpus (blueprints + their round-0 requests) to
 // total via round-robin duplication, registers all sessions with a
 // SessionManager, and returns the driver plus the first concurrent round-0
