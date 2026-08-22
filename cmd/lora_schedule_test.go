@@ -52,12 +52,15 @@ func TestParseLoRAPlacementScheduleRejects(t *testing.T) {
 		{"equal timestamps", "0 0=a\n0 1=b\n", "does not increase"},
 		{"decreasing timestamps", "10 0=a\n5 1=b\n", "does not increase"},
 		{"unparseable placement", "0 not-a-placement\n", "placement schedule"},
-		{"empty placement", "0 \n", "want \"<t_us> <placement>\""},
+		// The trailing space is stripped by the outer TrimSpace before Cut ever
+		// runs, so this collapses to the same !found path as "no space separator"
+		// above — a timestamp with no placement text at all, not an empty spec.
+		{"timestamp followed by only whitespace", "0 \n", "want \"<t_us> <placement>\""},
 		// parseLoRAAdapterPlacement returns an empty, non-nil map with no error for a
 		// spec that is non-empty but parses to no chunks (all ';'-separated pieces are
 		// blank) — e.g. ";". That reaches the len(placement) == 0 guard below the
-		// delegated parse, distinct from the "empty placement" case above which is
-		// caught earlier by the "<t_us> <placement>" format check.
+		// delegated parse, distinct from the case above which is caught earlier by
+		// the "<t_us> <placement>" format check.
 		{"placement parses to nothing", "0 ;\n", "empty placement"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

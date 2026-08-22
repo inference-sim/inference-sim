@@ -34,15 +34,16 @@ func parseLoRAPlacementSchedule(path string) ([]sim.PlacementScheduleEntry, erro
 	defer func() { _ = f.Close() }()
 
 	var out []sim.PlacementScheduleEntry
+	line := 1
 	scanner := bufio.NewScanner(f)
-	for line := 1; scanner.Scan(); line++ {
+	for ; scanner.Scan(); line++ {
 		text := strings.TrimSpace(scanner.Text())
 		if text == "" || strings.HasPrefix(text, "#") {
 			continue
 		}
 		stamp, spec, found := strings.Cut(text, " ")
 		spec = strings.TrimSpace(spec)
-		if !found || spec == "" {
+		if !found {
 			return nil, fmt.Errorf("placement schedule %s line %d: want \"<t_us> <placement>\", got %q",
 				path, line, text)
 		}
@@ -66,20 +67,20 @@ func parseLoRAPlacementSchedule(path string) ([]sim.PlacementScheduleEntry, erro
 			return nil, fmt.Errorf("placement schedule %s line %d: %w", path, line, err)
 		}
 		if len(placement) == 0 {
-			// Normally unreachable: the "<t_us> <placement>" check above already
-			// rejects spec == "", which is the only empty input
-			// parseLoRAAdapterPlacement documents as returning a nil map. It IS
-			// reachable, though — a spec that is non-empty but parses to no chunks
-			// (e.g. ";", where every ';'-separated piece is blank) yields an empty,
-			// non-nil map with no error. Kept as defence in depth so that case is
-			// still an error rather than a silent no-op entry.
+			// parseLoRAAdapterPlacement returns a nil map only for spec == "", which
+			// can't happen here: found == true guarantees a nonempty remainder after
+			// Cut, because text was already fully trimmed and so never ends in
+			// whitespace. This branch IS reachable, though — a spec that is non-empty
+			// but parses to no chunks (e.g. ";", where every ';'-separated piece is
+			// blank) yields an empty, non-nil map with no error. Kept as defence in
+			// depth so that case is still an error rather than a silent no-op entry.
 			return nil, fmt.Errorf("placement schedule %s line %d: empty placement; an entry "+
 				"naming no adapter is a no-op that reads as a policy decision", path, line)
 		}
 		out = append(out, sim.PlacementScheduleEntry{AtUs: atUs, Placement: placement})
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("placement schedule %s: %w", path, err)
+		return nil, fmt.Errorf("placement schedule %s line %d: %w", path, line, err)
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("placement schedule %s has no entries; an empty schedule makes "+
