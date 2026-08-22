@@ -11,7 +11,7 @@ import (
 // TestOnDemand_InitialReturnsEmpty pins C-4/INV-L1: on-demand seeds nothing at t=0,
 // regardless of the assigned subset it is handed.
 func TestOnDemand_InitialReturnsEmpty(t *testing.T) {
-	p, err := New("on-demand")
+	p, err := New("on-demand", sim.CreationPolicyConfig{})
 	if err != nil {
 		t.Fatalf("New(on-demand): %v", err)
 	}
@@ -25,7 +25,7 @@ func TestOnDemand_InitialReturnsEmpty(t *testing.T) {
 // TestOnDemand_OnResidentMissAlwaysAdmits pins C-4: on-demand always admits, so the
 // cold-load gate behaves exactly as pre-B-5 (INV-L1).
 func TestOnDemand_OnResidentMissAlwaysAdmits(t *testing.T) {
-	p, err := New("on-demand")
+	p, err := New("on-demand", sim.CreationPolicyConfig{})
 	if err != nil {
 		t.Fatalf("New(on-demand): %v", err)
 	}
@@ -39,11 +39,11 @@ func TestOnDemand_OnResidentMissAlwaysAdmits(t *testing.T) {
 // TestNew_EmptyDefaultsToOnDemand pins C-2/R20: the empty name resolves to on-demand,
 // so LoRAConfig's zero value never surfaces an "unknown policy" error.
 func TestNew_EmptyDefaultsToOnDemand(t *testing.T) {
-	pEmpty, err := New("")
+	pEmpty, err := New("", sim.CreationPolicyConfig{})
 	if err != nil {
 		t.Fatalf(`New(""): %v`, err)
 	}
-	pNamed, err := New("on-demand")
+	pNamed, err := New("on-demand", sim.CreationPolicyConfig{})
 	if err != nil {
 		t.Fatalf("New(on-demand): %v", err)
 	}
@@ -55,7 +55,7 @@ func TestNew_EmptyDefaultsToOnDemand(t *testing.T) {
 // TestNew_UnknownErrorsWithValidNames pins C-2: an unknown name errors and the message
 // lists the valid options (deterministic, sorted).
 func TestNew_UnknownErrorsWithValidNames(t *testing.T) {
-	_, err := New("bogus")
+	_, err := New("bogus", sim.CreationPolicyConfig{})
 	if err == nil {
 		t.Fatal("New(bogus) = nil error, want error")
 	}
@@ -84,5 +84,31 @@ func TestValidNames_SortedContainsOnDemand(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("ValidNames() = %v, missing on-demand", names)
+	}
+}
+
+// TestNewAcceptsConfigAndExistingPoliciesIgnoreIt pins the widened factory signature.
+//
+// The three pre-Spec-4 policies are stateless empty structs, so a non-empty config must
+// change nothing about what New returns. Task 3's scheduled_test.go proves the other half:
+// that a policy which DOES want the config actually receives it.
+func TestNewAcceptsConfigAndExistingPoliciesIgnoreIt(t *testing.T) {
+	loaded := sim.CreationPolicyConfig{PlacementSchedule: []sim.PlacementScheduleEntry{
+		{AtUs: 0, Placement: map[int][]string{0: {"a1"}}},
+		{AtUs: 10_000_000, Placement: map[int][]string{1: {"a2"}}},
+	}}
+	for _, name := range []string{"on-demand", "pre-placement", "keep-warm"} {
+		bare, err := New(name, sim.CreationPolicyConfig{})
+		if err != nil {
+			t.Fatalf("New(%q, zero): %v", name, err)
+		}
+		withCfg, err := New(name, loaded)
+		if err != nil {
+			t.Fatalf("New(%q, loaded): %v", name, err)
+		}
+		if bare != withCfg {
+			t.Errorf("New(%q): config changed the policy value (%#v vs %#v); these policies "+
+				"are stateless empty structs and must be config-blind", name, bare, withCfg)
+		}
 	}
 }

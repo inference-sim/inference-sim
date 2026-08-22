@@ -18,7 +18,7 @@ func (f fakeDemand) RequestedSince(s int64) []string      { return f.since[s] }
 // two instance-scoped methods must stay on-demand's, so a cold miss is still admitted
 // and t=0 seeds nothing — the tick is additive, not a replacement gate policy.
 func TestKeepWarm_GateBehaviourIsOnDemand(t *testing.T) {
-	p, err := New("keep-warm")
+	p, err := New("keep-warm", sim.CreationPolicyConfig{})
 	if err != nil {
 		t.Fatalf("New(keep-warm): %v", err)
 	}
@@ -159,7 +159,7 @@ func TestKeepWarm_Deterministic(t *testing.T) {
 
 func mustPeriodic(t *testing.T, name string) sim.PeriodicCreationPolicy {
 	t.Helper()
-	p, err := New(name)
+	p, err := New(name, sim.CreationPolicyConfig{})
 	if err != nil {
 		t.Fatalf("New(%q): %v", name, err)
 	}

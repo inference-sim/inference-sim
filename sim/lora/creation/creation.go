@@ -6,8 +6,9 @@
 //
 // To add a policy: implement sim.CreationPolicy (Initial + OnResidentMiss), then
 // register it under a name in this file's init() via
-// register("my-policy", func() sim.CreationPolicy { ... }). New(name) then resolves
-// it. Add contract tests mirroring sim/creation_seam_test.go for the invariants
+// register("my-policy", func(cfg sim.CreationPolicyConfig) sim.CreationPolicy { ... }).
+// New(name, cfg) then resolves it. A policy needing no configuration ignores cfg.
+// Add contract tests mirroring sim/creation_seam_test.go for the invariants
 // every policy must uphold (seeding is uncharged INV-L3, no busy-loop INV-8,
 // purity/determinism INV-6, and the starvation-freedom obligation) — NOT
 // byte-identity with on-demand, which only the on-demand default guarantees.
@@ -27,7 +28,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-type constructor func() sim.CreationPolicy
+type constructor func(sim.CreationPolicyConfig) sim.CreationPolicy
 
 // registry maps policy name → constructor. Unexported (R8); all access is via New.
 var registry = map[string]constructor{}
@@ -49,7 +50,10 @@ func register(name string, c constructor) {
 // empty name resolves to on-demand — the single canonical empty→on-demand
 // fallback site, so LoRAConfig's zero value never surfaces an "unknown policy"
 // error (R20).
-func New(name string) (sim.CreationPolicy, error) {
+//
+// cfg is construction-time configuration. Policies that need none ignore it; the zero
+// value is always valid.
+func New(name string, cfg sim.CreationPolicyConfig) (sim.CreationPolicy, error) {
 	if name == "" {
 		name = "on-demand"
 	}
@@ -57,7 +61,7 @@ func New(name string) (sim.CreationPolicy, error) {
 	if !ok {
 		return nil, fmt.Errorf("unknown creation policy %q; valid options: %s", name, validNames())
 	}
-	return c(), nil
+	return c(cfg), nil
 }
 
 // ValidNames returns the registered policy names, sorted. Reached from package sim
@@ -78,7 +82,7 @@ func validNames() string {
 }
 
 func init() {
-	register("on-demand", func() sim.CreationPolicy { return onDemand{} })
-	register("pre-placement", func() sim.CreationPolicy { return prePlacement{} })
-	register("keep-warm", func() sim.CreationPolicy { return keepWarm{} })
+	register("on-demand", func(sim.CreationPolicyConfig) sim.CreationPolicy { return onDemand{} })
+	register("pre-placement", func(sim.CreationPolicyConfig) sim.CreationPolicy { return prePlacement{} })
+	register("keep-warm", func(sim.CreationPolicyConfig) sim.CreationPolicy { return keepWarm{} })
 }

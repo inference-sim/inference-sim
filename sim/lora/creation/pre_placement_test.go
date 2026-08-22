@@ -15,7 +15,7 @@ import (
 // TestPrePlacement_InitialReturnsAssigned pins C-B6-1: Initial returns exactly the
 // assigned subset, order-preserving, for nil / empty / singleton / multi inputs.
 func TestPrePlacement_InitialReturnsAssigned(t *testing.T) {
-	p, err := New("pre-placement")
+	p, err := New("pre-placement", sim.CreationPolicyConfig{})
 	if err != nil {
 		t.Fatalf("New(pre-placement): %v", err)
 	}
@@ -51,7 +51,7 @@ func TestPrePlacement_InitialReturnsAssigned(t *testing.T) {
 // returned slice must not corrupt the caller's assigned slice. A policy that
 // returned the caller's slice by reference would fail this.
 func TestPrePlacement_InitialCopySafe(t *testing.T) {
-	p, err := New("pre-placement")
+	p, err := New("pre-placement", sim.CreationPolicyConfig{})
 	if err != nil {
 		t.Fatalf("New(pre-placement): %v", err)
 	}
@@ -69,7 +69,7 @@ func TestPrePlacement_InitialCopySafe(t *testing.T) {
 // TestPrePlacement_OnResidentMissAdmits pins C-B6-2/INV-8: OnResidentMiss returns
 // true for any missed adapter (seeded or not), so no enqueued request is starved.
 func TestPrePlacement_OnResidentMissAdmits(t *testing.T) {
-	p, err := New("pre-placement")
+	p, err := New("pre-placement", sim.CreationPolicyConfig{})
 	if err != nil {
 		t.Fatalf("New(pre-placement): %v", err)
 	}

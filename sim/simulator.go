@@ -313,7 +313,9 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		if creationName == "" {
 			creationName = "on-demand"
 		}
-		cp, err := NewCreationPolicyFunc(creationName)
+		cp, err := NewCreationPolicyFunc(creationName, CreationPolicyConfig{
+			PlacementSchedule: cfg.PlacementSchedule,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("NewSimulator: creation policy: %w", err)
 		}

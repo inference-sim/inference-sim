@@ -622,6 +622,13 @@ type LoRAConfig struct {
 	// NOT check the name here — that keeps sim free of the creation import, and the
 	// CLI fails fast against sim.ValidCreationPolicyNames.
 	CreationPolicy string `yaml:"creation_policy,omitempty"`
+
+	// PlacementSchedule is the timed placement sequence for creation_policy="scheduled"
+	// (Spec 4 Slice B). Set programmatically by the CLI from --lora-placement-schedule and
+	// deliberately NOT a YAML field: it is a run-scoped experiment input of up to a few
+	// hundred entries, published as its own artifact rather than inlined into a config.
+	// Empty => `scheduled` never proposes anything, which cmd rejects before it can happen.
+	PlacementSchedule []PlacementScheduleEntry `yaml:"-"`
 }
 
 // HasAdapters reports whether any adapter is declared. When false the subsystem is

@@ -21,11 +21,13 @@ import (
 // a second delay would add a config knob plus a staleness window in which a decision can
 // name an instance the autoscaler just scaled away.
 type loraPeriodicPipeline struct {
-	// policy is the cluster's OWN tick-policy instance, resolved by name from the same
-	// config field each instance's Simulator resolves from. All shipped creation
-	// policies are stateless empty structs, so a separate instance is behaviourally
-	// identical to the instances' own; a cluster-scope decision could not be owned by
-	// any one instance's policy object in any case.
+	// policy is the cluster's OWN tick-policy instance, resolved by name AND by config from
+	// the same fields each instance's Simulator resolves from. Through Spec 3 every shipped
+	// policy was a stateless empty struct, so a separate instance was trivially identical to
+	// the instances' own; Spec 4's `scheduled` carries a placement schedule, so the two are
+	// identical because they are built from the SAME CreationPolicyConfig, not because the
+	// policy is empty. A cluster-scope decision could not be owned by any one instance's
+	// policy object in any case.
 	policy sim.PeriodicCreationPolicy
 	// interval is the tick period in microseconds (always > 0 when the pipeline exists).
 	interval int64
@@ -75,7 +77,9 @@ func newLoRAPeriodicPipeline(config DeploymentConfig) *loraPeriodicPipeline {
 	if name == "" {
 		name = "on-demand"
 	}
-	policy, err := sim.NewCreationPolicyFunc(name)
+	policy, err := sim.NewCreationPolicyFunc(name, sim.CreationPolicyConfig{
+		PlacementSchedule: config.PlacementSchedule,
+	})
 	if err != nil {
 		// Unreachable in practice — instance construction above resolves the same name
 		// and panics first — but the library layer fails fast rather than ticking with

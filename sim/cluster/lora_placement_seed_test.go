@@ -37,7 +37,7 @@ func (seedAllStub) OnResidentMiss(sim.CreationContext) bool  { return true }
 func withSeedingCreationPolicy(t *testing.T) {
 	t.Helper()
 	orig := sim.NewCreationPolicyFunc
-	sim.NewCreationPolicyFunc = func(string) (sim.CreationPolicy, error) { return seedAllStub{}, nil }
+	sim.NewCreationPolicyFunc = func(string, sim.CreationPolicyConfig) (sim.CreationPolicy, error) { return seedAllStub{}, nil }
 	t.Cleanup(func() { sim.NewCreationPolicyFunc = orig })
 }
 

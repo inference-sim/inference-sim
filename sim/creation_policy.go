@@ -51,11 +51,40 @@ type CreationContext struct {
 	Registry AdapterRegistry
 }
 
+// PlacementScheduleEntry is one timed cross-instance placement. From AtUs until the next
+// entry's AtUs, Placement names each instance's TARGET resident set, keyed by construction
+// index — the same key space as DeploymentConfig.LoRAAdapterPlacement.
+//
+// Built by the CLI from --lora-placement-schedule and reached by a policy through
+// CreationPolicyConfig. Consumers may assume entries are ordered by strictly increasing
+// AtUs and that Placement is non-empty; cmd.parseLoRAPlacementSchedule enforces both, and
+// cluster.ValidateLoRAPlacementSchedule enforces index range, id registration, intra-entry
+// uniqueness and per-instance capacity.
+type PlacementScheduleEntry struct {
+	// AtUs is the simulation timestamp in microseconds from which this placement applies.
+	AtUs int64
+	// Placement maps instance construction index -> target adapter ids.
+	Placement map[int][]string
+}
+
+// CreationPolicyConfig carries the construction-time configuration a creation policy may
+// need. Every policy through Spec 3 was a stateless empty struct, so the factory took only
+// a name; Spec 4's `scheduled` owns a placement schedule. Policies that need nothing ignore
+// it, and the zero value is always valid and inert (R20).
+type CreationPolicyConfig struct {
+	// PlacementSchedule is the timed placement sequence `scheduled` drives residency
+	// toward. Nil for every other policy.
+	PlacementSchedule []PlacementScheduleEntry
+}
+
 // NewCreationPolicyFunc builds a creation policy by name. Registered by
 // sim/lora/creation (via sim/lora's init()), breaking the sim ↔ sim/lora import
 // cycle — package sim never imports the implementation. Returns an error for an
 // unknown name.
-var NewCreationPolicyFunc func(name string) (CreationPolicy, error)
+//
+// cfg carries construction-time configuration; the zero value is valid, and every policy
+// through Spec 3 ignores it entirely.
+var NewCreationPolicyFunc func(name string, cfg CreationPolicyConfig) (CreationPolicy, error)
 
 // ValidCreationPolicyNamesFunc returns the registered creation-policy names,
 // sorted. Registered by sim/lora/creation via the same init()-time inversion as

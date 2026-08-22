@@ -28,7 +28,7 @@ func TestEveryCreationPolicyDeclaresTickBehaviour(t *testing.T) {
 		t.Fatal("no creation policies registered — registry init() did not run")
 	}
 	for _, name := range names {
-		p, err := New(name)
+		p, err := New(name, sim.CreationPolicyConfig{})
 		if err != nil {
 			t.Fatalf("New(%q): %v", name, err)
 		}
