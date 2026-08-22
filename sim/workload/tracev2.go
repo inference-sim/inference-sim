@@ -26,7 +26,15 @@ type TraceHeader struct {
 	//   - a file path when --workload-spec is used (e.g. "workload.yaml")
 	//   - "preset:<name>" when --workload is used (e.g. "preset:chatbot")
 	//   - empty (omitted) when distribution synthesis or concurrency mode is used
-	WorkloadSpec   string `yaml:"workload_spec,omitempty"`
+	WorkloadSpec string `yaml:"workload_spec,omitempty"`
+
+	// SessionContextGrowth controls per-round input assembly in closed-loop
+	// replay. "accumulate" makes each session reuse a single growing token
+	// buffer so round N+1's input is byte-identical to round N's plus new
+	// tokens (strict prefix reuse for KV-cache modeling; see design §5).
+	// Empty (default) = each round's input is generated independently
+	// (pre-existing behavior). Set by `blis convert otel`.
+	SessionContextGrowth string `yaml:"session_context_growth,omitempty"`
 
 	Server  *TraceServerConfig  `yaml:"server,omitempty"`
 	Network *TraceNetworkConfig `yaml:"network,omitempty"`
@@ -130,13 +138,13 @@ type TraceKVOffloadTier struct {
 
 // TraceServerConfig captures server configuration in trace header.
 type TraceServerConfig struct {
-	Type                  string  `yaml:"type,omitempty"`
-	Model                 string  `yaml:"model,omitempty"`
-	TensorParallel        int     `yaml:"tensor_parallel,omitempty"`
-	MaxNumSeqs            int     `yaml:"max_num_seqs,omitempty"`
-	BlockSize             int     `yaml:"block_size,omitempty"`
-	GPUMemoryUtilization  float64 `yaml:"gpu_memory_utilization,omitempty"`
-	MaxModelLen           int64   `yaml:"max_model_len,omitempty"`
+	Type                 string  `yaml:"type,omitempty"`
+	Model                string  `yaml:"model,omitempty"`
+	TensorParallel       int     `yaml:"tensor_parallel,omitempty"`
+	MaxNumSeqs           int     `yaml:"max_num_seqs,omitempty"`
+	BlockSize            int     `yaml:"block_size,omitempty"`
+	GPUMemoryUtilization float64 `yaml:"gpu_memory_utilization,omitempty"`
+	MaxModelLen          int64   `yaml:"max_model_len,omitempty"`
 }
 
 // TraceNetworkConfig captures network configuration in trace header.
@@ -150,7 +158,7 @@ type TraceRecord struct {
 	ClientID          string
 	TenantID          string
 	SLOClass          string
-	VLLMPriority      int    // vLLM priority value (0=highest urgency, higher=lower urgency); 0 when not set
+	VLLMPriority      int // vLLM priority value (0=highest urgency, higher=lower urgency); 0 when not set
 	SessionID         string
 	RoundIndex        int
 	PrefixGroup       string
@@ -177,6 +185,7 @@ type TraceRecord struct {
 	FinishReason      string // server-reported finish_reason ("stop", "length", "abort", etc.); empty = not recorded
 	XRequestID        string // client-generated UUID sent as x-request-id header (real-mode only); empty = not recorded
 	Adapter           string // LoRA adapter id serving this request (registry key; #1464); empty = base-model-only
+	ThinkTimeUs       int64  // recorded per-round client think time in µs (gap from previous request's end). Set by agentic-trace converters (#1478); preferred over arrival-gap derivation in closed-loop replay. NOTE: 0 is a LOSSY SENTINEL for "not recorded" — a genuinely-zero recorded think time (e.g. Weka's overlap-clamped rounds) is indistinguishable from an absent column, so an all-zero session falls back to arrival-gap derivation. A non-lossy encoding (distinguishing recorded-0 from absent) is deferred to the Weka converter work (#1604).
 }
 
 // TraceV2 combines header and records for a complete trace.
@@ -252,6 +261,18 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 		}
 	}
 
+	// Conditionally include think_time_us column (#1478): present iff any record carries
+	// a non-zero recorded think time. Trailing position (like x_request_id / adapter) keeps
+	// the positional parser's index math untouched. Omitted when no record has it, so
+	// existing traces (e.g. observe, generated) add no column (INV-6 byte-identity).
+	includeThinkTime := false
+	for _, r := range records {
+		if r.ThinkTimeUs != 0 {
+			includeThinkTime = true
+			break
+		}
+	}
+
 	// Conditionally include vllm_priority column: present iff priority was actually computed.
 	// Include when either:
 	// 1. Any record has non-zero priority (batch, standard, sheddable, background from observe)
@@ -287,6 +308,10 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 	// Append adapter at end (#1464): also trailing; parsed by header-position lookup.
 	if includeAdapter {
 		columns = append(columns, "adapter")
+	}
+	// Append think_time_us at end (#1478): also trailing; parsed by header-position lookup.
+	if includeThinkTime {
+		columns = append(columns, "think_time_us")
 	}
 
 	// Write header row
@@ -328,7 +353,7 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 		}
 		row = append(row,
 			strconv.Itoa(r.ServerInputTokens),
-			strconv.FormatInt(r.ArrivalTimeUs, 10),   // integer format
+			strconv.FormatInt(r.ArrivalTimeUs, 10),    // integer format
 			strconv.FormatInt(r.SendTimeUs, 10),       // integer format
 			strconv.FormatInt(r.FirstChunkTimeUs, 10), // integer format
 			strconv.FormatInt(r.LastChunkTimeUs, 10),  // integer format
@@ -344,6 +369,10 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 		// Append adapter at end (#1464).
 		if includeAdapter {
 			row = append(row, r.Adapter)
+		}
+		// Append think_time_us at end (#1478).
+		if includeThinkTime {
+			row = append(row, strconv.FormatInt(r.ThinkTimeUs, 10))
 		}
 		if err := writer.Write(row); err != nil {
 			return fmt.Errorf("writing CSV row %d: %w", r.RequestID, err)
@@ -385,8 +414,9 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	// Detect optional columns from header
 	hasVLLMPriority := false
 	hasSLOTarget := false
-	xRequestIDIdx := -1 // header-position lookup; -1 = absent (issue #1428)
-	adapterIdx := -1    // header-position lookup; -1 = absent (#1464)
+	xRequestIDIdx := -1  // header-position lookup; -1 = absent (issue #1428)
+	adapterIdx := -1     // header-position lookup; -1 = absent (#1464)
+	thinkTimeUsIdx := -1 // header-position lookup; -1 = absent (#1478)
 	for i, col := range headerRow {
 		switch col {
 		case "vllm_priority":
@@ -397,6 +427,8 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 			xRequestIDIdx = i
 		case "adapter":
 			adapterIdx = i
+		case "think_time_us":
+			thinkTimeUsIdx = i
 		}
 	}
 
@@ -422,11 +454,14 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 		if adapterIdx >= 0 {
 			minCols++
 		}
+		if thinkTimeUsIdx >= 0 {
+			minCols++
+		}
 		if len(row) < minCols {
 			return nil, fmt.Errorf("CSV row has %d columns, expected at least %d", len(row), minCols)
 		}
 
-		r, err := parseTraceRecord(row, hasVLLMPriority, hasSLOTarget, xRequestIDIdx, adapterIdx)
+		r, err := parseTraceRecord(row, hasVLLMPriority, hasSLOTarget, xRequestIDIdx, adapterIdx, thinkTimeUsIdx)
 		if err != nil {
 			return nil, err
 		}
@@ -438,9 +473,10 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 
 // parseTraceRecord parses a CSV row. Handles optional columns vllm_priority
 // (after slo_class), slo_target_us (after deadline_us), and the trailing
-// columns x_request_id and adapter. xRequestIDIdx and adapterIdx are absolute
-// column indices in the row, or -1 if the respective column is absent.
-func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequestIDIdx, adapterIdx int) (*TraceRecord, error) {
+// columns x_request_id, adapter, and think_time_us. xRequestIDIdx, adapterIdx,
+// and thinkTimeUsIdx are absolute column indices in the row, or -1 if the
+// respective column is absent.
+func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequestIDIdx, adapterIdx, thinkTimeUsIdx int) (*TraceRecord, error) {
 	// Column offset: optional columns shift subsequent indices.
 	// vllm_priority appears after slo_class (index 3) → shifts everything after by +1.
 	// slo_target_us appears after deadline_us → shifts everything after by +1.
@@ -605,6 +641,22 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 		adapter = strings.TrimSpace(row[adapterIdx])
 	}
 
+	// Optional think_time_us at trailing column (#1478): looked up by absolute header
+	// position so the positional index math above is unaffected. Negative values are
+	// rejected — recorded think time cannot be negative (INV-3).
+	var thinkTimeUs int64
+	if thinkTimeUsIdx >= 0 && thinkTimeUsIdx < len(row) {
+		if v := strings.TrimSpace(row[thinkTimeUsIdx]); v != "" {
+			thinkTimeUs, err = strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("parsing think_time_us %q: %w", v, err)
+			}
+			if thinkTimeUs < 0 {
+				return nil, fmt.Errorf("parsing think_time_us: negative value %d not allowed", thinkTimeUs)
+			}
+		}
+	}
+
 	return &TraceRecord{
 		RequestID:         requestID,
 		ClientID:          row[1],
@@ -637,6 +689,7 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 		FinishReason:      finishReason,
 		XRequestID:        xRequestID,
 		Adapter:           adapter,
+		ThinkTimeUs:       thinkTimeUs,
 	}, nil
 }
 
@@ -698,7 +751,7 @@ func RequestsToTraceRecords(requests []*sim.Request) []TraceRecord {
 			PrefixGroup:      req.PrefixGroup,
 			PrefixLength:     prefixLen,
 			Streaming:        req.Streaming,
-			InputTokens:      inputTokens,      // suffix-only: total - PrefixLength
+			InputTokens:      inputTokens,           // suffix-only: total - PrefixLength
 			OutputTokens:     len(req.OutputTokens), // pre-determined count for replay fidelity
 			TextTokens:       req.TextTokenCount,
 			ImageTokens:      req.ImageTokenCount,

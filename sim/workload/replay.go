@@ -114,6 +114,27 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 	return requests, nil
 }
 
+// sessionHasRecordedThinkTime reports whether any non-round-0 record in a session
+// carries a recorded think_time_us (#1478). Round 0 has no predecessor, so its think
+// time is meaningless and ignored. When true, closed-loop replay prefers the recorded
+// per-round think time over arrival-gap derivation.
+//
+// LOSSY SENTINEL (F1, #1484 review): a value of 0 means "not recorded", so a session
+// whose every round has a genuinely-zero recorded think time (real for Weka's
+// overlap-clamped rounds) reads as false here and falls back to the arrival-gap path
+// — which bundles service time into the gap (see the gap-derivation note below), the
+// very effect think_time_us exists to avoid. The impact is bounded (a ~0 recorded
+// think replaced by the recorded arrival gap); a non-lossy encoding is deferred to the
+// Weka converter (#1604). Pinned by TestLoadTraceV2SessionBlueprints_AllZeroRecordedThink_FallsBackToGap.
+func sessionHasRecordedThinkTime(rounds []TraceRecord) bool {
+	for i := 1; i < len(rounds); i++ {
+		if rounds[i].ThinkTimeUs != 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // LoadTraceV2SessionBlueprints groups trace records by session and builds
 // SessionBlueprints with SequenceSamplers for deterministic token replay.
 // Returns round-0 requests (plus all non-session requests) for initial injection,
@@ -186,6 +207,15 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 	var requests []*sim.Request
 	var blueprints []SessionBlueprint
 
+	// Growth mode from header (design §5): "accumulate" → strict growing prefix.
+	// Validate up front: an unrecognized value (e.g. a typo like "Accumulate") would
+	// otherwise fall through to the non-accumulate branch silently, disabling the
+	// feature with no feedback — an operator footgun. Fail loudly instead (R1).
+	contextGrowth := trace.Header.SessionContextGrowth
+	if contextGrowth != "" && contextGrowth != "accumulate" {
+		return nil, nil, fmt.Errorf("session_context_growth: unknown value %q (valid: \"accumulate\" or empty)", contextGrowth)
+	}
+
 	for _, sessionID := range sessionOrder {
 		sr := sessionMap[sessionID]
 		rounds := sr.records
@@ -201,11 +231,29 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			outputSeq[i] = rec.OutputTokens
 		}
 
-		// Build think time: use provided sampler or derive from inter-round arrival gaps.
+		// Build think time. Precedence (#1478):
+		//   1. caller-provided sampler (CLI --think-time-dist / --think-time-ms)
+		//   2. recorded per-round think_time_us column (set by agentic-trace converters):
+		//      pure client think time, decoupled from inference — preferred over the
+		//      arrival-gap derivation, which bundles service time into the gap
+		//   3. inter-round arrival gaps (existing default; NOT pure client think time)
 		var sessionThinkTimeSampler LengthSampler
-		if thinkTimeSampler != nil {
+		switch {
+		case thinkTimeSampler != nil:
 			sessionThinkTimeSampler = thinkTimeSampler // stateless: safe to share across sessions
-		} else if len(rounds) > 1 {
+		case sessionHasRecordedThinkTime(rounds):
+			// think_time_us on round i is the recorded gap BEFORE round i (from round
+			// i-1's end). Round 0 carries no think; rounds 1..N supply the sequence.
+			thinkTimes := make([]int, len(rounds)-1)
+			for i := 1; i < len(rounds); i++ {
+				t := rounds[i].ThinkTimeUs
+				if t < 0 {
+					t = 0 // defensive; LoadTraceV2 already rejects negatives (INV-3)
+				}
+				thinkTimes[i-1] = int(t)
+			}
+			sessionThinkTimeSampler = &SequenceSampler{values: thinkTimes}
+		case len(rounds) > 1:
 			thinkTimes := make([]int, len(rounds)-1)
 			for i := 1; i < len(rounds); i++ {
 				gap := rounds[i].ArrivalTimeUs - rounds[i-1].ArrivalTimeUs
@@ -270,6 +318,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			SessionID:        sessionID,
 			ClientID:         r0.ClientID,
 			MaxRounds:        len(rounds),
+			ContextGrowth:    contextGrowth,
 			ThinkTimeSampler: sessionThinkTimeSampler,
 			Horizon:          horizon,
 			InputSampler:     &SequenceSampler{values: inputSeq[1:]},  // rounds 1..N
