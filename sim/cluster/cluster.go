@@ -251,6 +251,8 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		panic(fmt.Sprintf("ClusterSimulator: %v", err))
 	} else if err := ValidateLoRAPlacement(config, placementRegistry); err != nil {
 		panic(fmt.Sprintf("ClusterSimulator: %v", err))
+	} else if err := ValidateLoRAPlacementSchedule(config, placementRegistry); err != nil {
+		panic(fmt.Sprintf("ClusterSimulator: %v", err))
 	}
 
 	// Build pre-construction pool membership so instance construction can resolve per-pool config.

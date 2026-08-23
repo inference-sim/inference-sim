@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 func writeSchedule(t *testing.T, body string) string {
@@ -79,5 +81,61 @@ func TestParseLoRAPlacementScheduleRejectsAMissingFile(t *testing.T) {
 	_, err := parseLoRAPlacementSchedule(filepath.Join(t.TempDir(), "absent.txt"))
 	if err == nil {
 		t.Fatal("a missing schedule must be an error, not an empty schedule")
+	}
+}
+
+func TestValidateLoRAScheduleFlags(t *testing.T) {
+	entry := func(at int64, p map[int][]string) sim.PlacementScheduleEntry {
+		return sim.PlacementScheduleEntry{AtUs: at, Placement: p}
+	}
+	seeded := map[int][]string{0: {"a0"}, 1: {"a1"}}
+	matching := []sim.PlacementScheduleEntry{
+		entry(0, map[int][]string{0: {"a0"}, 1: {"a1"}}),
+		entry(10_000_000, map[int][]string{0: {"a2"}}),
+	}
+
+	for _, tc := range []struct {
+		name        string
+		policy      string
+		path        string
+		schedule    []sim.PlacementScheduleEntry
+		placement   map[int][]string
+		wantErrPart string
+	}{
+		{name: "scheduled with a matching t=0 entry", policy: "scheduled", path: "s.txt",
+			schedule: matching, placement: seeded},
+		{name: "scheduled with a schedule starting after t=0", policy: "scheduled", path: "s.txt",
+			schedule:  []sim.PlacementScheduleEntry{entry(10_000_000, map[int][]string{0: {"a2"}})},
+			placement: seeded},
+		{name: "gate-only policy with no schedule", policy: "pre-placement", placement: seeded},
+		{name: "on-demand with nothing", policy: ""},
+
+		{name: "scheduled without a schedule", policy: "scheduled",
+			placement: seeded, wantErrPart: "requires --lora-placement-schedule"},
+		{name: "schedule without scheduled", policy: "pre-placement", path: "s.txt",
+			schedule: matching, placement: seeded,
+			wantErrPart: "only the \"scheduled\" creation policy reads it"},
+		{name: "t=0 entry disagrees on ids", policy: "scheduled", path: "s.txt",
+			schedule:  []sim.PlacementScheduleEntry{entry(0, map[int][]string{0: {"a9"}, 1: {"a1"}})},
+			placement: seeded, wantErrPart: "disagrees with --lora-adapter-placement"},
+		{name: "t=0 entry disagrees on instances", policy: "scheduled", path: "s.txt",
+			schedule:  []sim.PlacementScheduleEntry{entry(0, map[int][]string{0: {"a0"}})},
+			placement: seeded, wantErrPart: "disagrees with --lora-adapter-placement"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateLoRAScheduleFlags(tc.policy, tc.path, tc.schedule, tc.placement)
+			if tc.wantErrPart == "" {
+				if err != nil {
+					t.Fatalf("want no error, got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("want an error mentioning %q, got nil", tc.wantErrPart)
+			}
+			if !strings.Contains(err.Error(), tc.wantErrPart) {
+				t.Errorf("error %q does not mention %q", err.Error(), tc.wantErrPart)
+			}
+		})
 	}
 }

@@ -133,6 +133,7 @@ var (
 	loraEvictionPolicy        string  // --eviction-policy (applied only when Changed; empty => lru default, B-4)
 	loraCreationPolicy        string  // --creation-policy (applied only when Changed; empty => on-demand default, B-6)
 	loraAdapterPlacement      string  // --lora-adapter-placement (idx=id[,id...];... construction-index→adapter ids, B-6)
+	loraPlacementSchedule     string  // --lora-placement-schedule (timed placement file for the scheduled creation policy, Spec 4 Slice B)
 	loraBundle                string  // --lora-bundle (named strategy bundle => {routing,eviction,creation} triple; empty => none, B-7)
 	loraPeriodicInterval      int64   // --lora-periodic-interval-us (periodic creation tick interval, µs; 0 => off; inert for a gate-only creation policy, INV-PS3')
 
@@ -1739,6 +1740,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&loraEvictionPolicy, "eviction-policy", "", fmt.Sprintf("Resident-adapter eviction policy at the cold-load gate. Valid: %s. Applied only when set; empty/default => lru (byte-identical to no LoRA).", strings.Join(sim.ValidEvictionPolicyNames(), ", ")))
 	cmd.Flags().StringVar(&loraCreationPolicy, "creation-policy", "", fmt.Sprintf("Adapter-creation policy (t=0 seeding + cold-load-gate admit). Valid: %s. Applied only when set; empty/default => on-demand (byte-identical to no LoRA).", strings.Join(sim.ValidCreationPolicyNames(), ", ")))
 	cmd.Flags().StringVar(&loraAdapterPlacement, "lora-adapter-placement", "", "Static per-instance adapter placement for the pre-placement creation policy, as \"idx=id[,id...];idx=id...\" (construction-index => adapter ids), e.g. \"0=A,B;1=C\". Adapters are seeded resident at t=0. Empty => no placement.")
+	cmd.Flags().StringVar(&loraPlacementSchedule, "lora-placement-schedule", "", "Path to a timed placement schedule for the scheduled creation policy, one entry per line as \"<t_us> <idx=id[,id...];idx=id...>\" (blank lines and #-comments ignored). Timestamps must strictly increase. Required by --creation-policy=scheduled and rejected under any other policy. Empty => none.")
 	cmd.Flags().StringVar(&loraBundle, "lora-bundle", "", fmt.Sprintf("Named LoRA strategy bundle expanding to a {routing, eviction, creation} policy triple. Valid: %s. Per-knob flags (--routing-policy/--eviction-policy/--creation-policy) override their knob; empty => no bundle (byte-identical to no LoRA).", strings.Join(sim.ValidLoRABundleNames(), ", ")))
 	cmd.Flags().Int64Var(&loraPeriodicInterval, "lora-periodic-interval-us", 0, "Simulation-time interval (µs) between periodic LoRA creation ticks. 0 = off. Takes effect only when --creation-policy names a tick-capable policy (keep-warm); with a gate-only policy (on-demand, pre-placement) any value is inert and byte-identical to 0. Must be >= 0.")
 
@@ -1918,6 +1920,10 @@ func resolveLoRAConfig(cmd *cobra.Command) sim.LoRAConfig {
 			logrus.Fatalf("Invalid --creation-policy %q; valid options: %s", cfg.CreationPolicy, strings.Join(valid, ", "))
 		}
 	}
+	// --lora-placement-schedule (Spec 4 Slice B): resolved here, the single site LoRAConfig
+	// is assembled, so DeploymentConfig.LoRAConfig carries it via embedding with no further
+	// change at the call site.
+	cfg.PlacementSchedule = resolveLoRAPlacementSchedule()
 	return cfg
 }
 
@@ -2254,6 +2260,10 @@ var runCmd = &cobra.Command{
 		// literal further down share one resolution. The reservation is 0 (KV
 		// unaffected) when the subsystem is inert (INV-6). Set before resolveLatencyConfig.
 		loraCfg := resolveLoRAConfig(cmd)
+		if err := validateLoRAScheduleFlags(loraCreationPolicy, loraPlacementSchedule,
+			loraCfg.PlacementSchedule, resolveLoRAAdapterPlacement()); err != nil {
+			logrus.Fatalf("%v", err)
+		}
 		loraReservedBytesForKV = adapterReservedBytesFor(loraCfg)
 
 		// KV-cache offload config surface (#1587): resolve ONCE (R4), validated at the

@@ -4,8 +4,11 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
@@ -87,4 +90,103 @@ func parseLoRAPlacementSchedule(path string) ([]sim.PlacementScheduleEntry, erro
 			"`scheduled` a silent no-op indistinguishable from pre-placement", path)
 	}
 	return out, nil
+}
+
+// resolveLoRAPlacementSchedule parses --lora-placement-schedule, or returns nil when the flag
+// is unset. Fatal on a bad file: an unreadable or malformed schedule cannot be degraded into
+// "no schedule" without silently converting the scheduled arm into pre-placement.
+func resolveLoRAPlacementSchedule() []sim.PlacementScheduleEntry {
+	if loraPlacementSchedule == "" {
+		return nil
+	}
+	schedule, err := parseLoRAPlacementSchedule(loraPlacementSchedule)
+	if err != nil {
+		logrus.Fatalf("Invalid --lora-placement-schedule: %v", err)
+	}
+	return schedule
+}
+
+// validateLoRAScheduleFlags enforces the three cross-flag rules the schedule introduces. Pure
+// so it is unit-testable; the caller fatals (library returns an error, cmd decides fatality).
+//
+//  1. creation_policy="scheduled" requires a schedule. Without one the policy proposes nothing
+//     and is indistinguishable from pre-placement -- the gate-only-policy failure mode of
+//     issues #46 and #48, applied to a new knob.
+//  2. A schedule requires creation_policy="scheduled". Under any other policy it reaches no
+//     code path, so accepting it would let a run claim an arm it never exercised.
+//  3. A t=0 entry must agree with --lora-adapter-placement. The two flags jointly define t=0
+//     residency -- the flag seeds it uncharged, the entry is what the tick drives toward -- so
+//     disagreement is a mis-specified arm, not a preference.
+//
+// A schedule whose first entry is after t=0 is legal and is exactly how a lookahead offset is
+// expressed: nothing is in force until that entry, and t=0 residency comes from the flag alone.
+func validateLoRAScheduleFlags(creationPolicy, schedulePath string,
+	schedule []sim.PlacementScheduleEntry, placement map[int][]string) error {
+	scheduled := creationPolicy == "scheduled"
+	if scheduled && len(schedule) == 0 {
+		return fmt.Errorf("--creation-policy=scheduled requires --lora-placement-schedule: with no "+
+			"schedule the policy proposes nothing and is indistinguishable from pre-placement "+
+			"(got --lora-placement-schedule=%q)", schedulePath)
+	}
+	if !scheduled && len(schedule) > 0 {
+		return fmt.Errorf("--lora-placement-schedule is set (%q, %d entries) but "+
+			"--creation-policy=%q; only the \"scheduled\" creation policy reads it, so this run "+
+			"would silently not be the arm it claims", schedulePath, len(schedule), creationPolicy)
+	}
+	if len(schedule) == 0 || schedule[0].AtUs != 0 {
+		return nil
+	}
+	if !samePlacement(schedule[0].Placement, placement) {
+		return fmt.Errorf("the schedule's t=0 entry disagrees with --lora-adapter-placement: "+
+			"schedule has %s, flag has %s. Both define t=0 residency -- the flag seeds it "+
+			"uncharged and the entry is what the first tick drives toward -- so a disagreement "+
+			"is a mis-specified arm", formatPlacementMap(schedule[0].Placement),
+			formatPlacementMap(placement))
+	}
+	return nil
+}
+
+// samePlacement compares two placements for equality, order-insensitively within an instance.
+// Order does not matter: the policy sorts each entry's ids before emitting decisions, and
+// ValidateLoRAPlacement forbids duplicates within an instance.
+func samePlacement(a, b map[int][]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for idx, want := range a {
+		got, ok := b[idx]
+		if !ok || len(got) != len(want) {
+			return false
+		}
+		x := append([]string(nil), want...)
+		y := append([]string(nil), got...)
+		sort.Strings(x)
+		sort.Strings(y)
+		for i := range x {
+			if x[i] != y[i] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// formatPlacementMap renders a placement deterministically for error text (INV-6): a ranged map
+// would make the message depend on Go's map order.
+func formatPlacementMap(p map[int][]string) string {
+	if len(p) == 0 {
+		return "(empty)"
+	}
+	indices := make([]int, 0, len(p))
+	for idx := range p {
+		indices = append(indices, idx)
+	}
+	sort.Ints(indices)
+	parts := make([]string, 0, len(indices))
+	for _, idx := range indices {
+		ids := append([]string(nil), p[idx]...)
+		sort.Strings(ids)
+		parts = append(parts, fmt.Sprintf("%d=%s", idx, strings.Join(ids, ",")))
+	}
+	return strings.Join(parts, ";")
 }
