@@ -2260,7 +2260,12 @@ var runCmd = &cobra.Command{
 		// literal further down share one resolution. The reservation is 0 (KV
 		// unaffected) when the subsystem is inert (INV-6). Set before resolveLatencyConfig.
 		loraCfg := resolveLoRAConfig(cmd)
-		if err := validateLoRAScheduleFlags(loraCreationPolicy, loraPlacementSchedule,
+		// Pass the EFFECTIVE creation policy (loraCfg.CreationPolicy), not the raw
+		// --creation-policy flag var: resolveLoRAConfig also resolves creation_policy
+		// from --lora-config YAML and --lora-bundle (R18 precedence), so a run whose
+		// "scheduled" comes from the config file, not the flag, must still be checked
+		// against its true effective policy (Fix round 1, Important 1).
+		if err := validateLoRAScheduleFlags(loraCfg.CreationPolicy, loraPlacementSchedule,
 			loraCfg.PlacementSchedule, resolveLoRAAdapterPlacement()); err != nil {
 			logrus.Fatalf("%v", err)
 		}

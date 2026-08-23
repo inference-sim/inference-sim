@@ -121,6 +121,24 @@ func TestValidateLoRAScheduleFlags(t *testing.T) {
 		{name: "t=0 entry disagrees on instances", policy: "scheduled", path: "s.txt",
 			schedule:  []sim.PlacementScheduleEntry{entry(0, map[int][]string{0: {"a0"}})},
 			placement: seeded, wantErrPart: "disagrees with --lora-adapter-placement"},
+		// Fix round 1, Important 3: samePlacement's order-insensitivity was unguarded --
+		// deleting both sort.Strings calls in samePlacement made no existing test fail.
+		// This row pins the property the function exists to have: reordering ids WITHIN
+		// one instance's list must still compare equal.
+		{name: "t=0 entry agrees when ids are reordered within an instance", policy: "scheduled",
+			path: "s.txt",
+			schedule: []sim.PlacementScheduleEntry{
+				entry(0, map[int][]string{0: {"a1", "a0"}, 1: {"a2"}})},
+			placement: map[int][]string{0: {"a0", "a1"}, 1: {"a2"}}},
+		// The pre-existing "disagrees on instances" row above exits through the
+		// len(a) != len(b) shortcut (1 vs 2 keys) and never reaches the !ok branch (an
+		// instance present in one map, absent from the other, at EQUAL key counts). This
+		// row forces that branch: both maps have 2 keys, but index 2 replaces index 1.
+		{name: "t=0 entry disagrees on instance keys at equal counts", policy: "scheduled",
+			path: "s.txt",
+			schedule: []sim.PlacementScheduleEntry{
+				entry(0, map[int][]string{0: {"a0"}, 2: {"a1"}})},
+			placement: seeded, wantErrPart: "disagrees with --lora-adapter-placement"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := validateLoRAScheduleFlags(tc.policy, tc.path, tc.schedule, tc.placement)

@@ -2442,6 +2442,92 @@ func TestReplayCmd_AutoscalerFlagFatal(t *testing.T) {
 	}
 }
 
+// TestReplayCmd_ScheduledCreationPolicyRequiresScheduleFatal is the replay-path regression
+// test for Fix round 1, Important 2: --lora-placement-schedule is registered on replayCmd
+// (registerSimConfigFlags) and reaches NewClusterSimulator through the same LoRAConfig
+// DeploymentConfig literal runCmd uses, so `blis replay --creation-policy scheduled` with no
+// schedule must fatal exactly as `blis run` does -- before this fix it silently ran
+// pre-placement instead (INV-13 parity broken). Mirrors TestReplayCmd_AutoscalerFlagFatal's
+// subprocess-reexec pattern since logrus.Fatalf calls os.Exit.
+func TestReplayCmd_ScheduledCreationPolicyRequiresScheduleFatal(t *testing.T) {
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		dir := t.TempDir()
+		headerPath := filepath.Join(dir, "trace.yaml")
+		dataPath := filepath.Join(dir, "trace.csv")
+		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
+		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
+
+		catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+		model = "test-model"
+		latencyModelBackend = "trained-physics"
+		totalKVBlocks = 1000
+		blockSizeTokens = 16
+		maxNumSeqs = 64
+		maxNumBatchedTokens = 2048
+		numInstances = 1
+		seed = 42
+		longPrefillTokenThreshold = 0
+		kvCPUBlocks = 0
+		kvOffloadThreshold = 0.9
+		kvTransferBandwidth = 100.0
+		kvTransferBaseLatency = 0
+		snapshotRefreshInterval = 0
+		admissionPolicy = "always-admit"
+		routingPolicy = "round-robin"
+		scheduler = "fcfs"
+		policyConfigPath = ""
+		maxModelLen = 0
+		traceLevel = "none"
+		counterfactualK = 0
+		traceHeaderPath = headerPath
+		traceDataPath = dataPath
+		catalogPath = catalogDir
+		hwConfigPath = hwPath
+		gpu = "H100"
+		tensorParallelism = 1
+		defaultsFilePath = "../defaults.yaml"
+		replaySessionMode = "fixed"
+		resultsPath = ""
+		replayTraceOutput = ""
+
+		testCmd := &cobra.Command{}
+		registerSimConfigFlags(testCmd)
+		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+		if err := testCmd.ParseFlags([]string{
+			"--model", "test-model", "--latency-model", "trained-physics",
+			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+			"--catalog", catalogDir, "--hardware-config", hwPath,
+			"--trace-header", headerPath, "--trace-data", dataPath,
+			"--creation-policy", "scheduled", // no --lora-placement-schedule: must fatal
+			"--defaults-filepath", "../defaults.yaml",
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)
+			os.Exit(2)
+		}
+		replayCmd.Run(testCmd, nil) // must Fatalf before here
+		os.Exit(0)
+	}
+
+	// Parent: expect exit code 1 from the cross-flag guard, mirroring blis run.
+	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_ScheduledCreationPolicyRequiresScheduleFatal", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("expected non-zero exit for replay --creation-policy scheduled with no schedule, got exit 0")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("unexpected error type: %v", err)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("expected exit code 1 (logrus.Fatalf), got %d; output:\n%s", exitErr.ExitCode(), out)
+	}
+	if !strings.Contains(string(out), "requires --lora-placement-schedule") {
+		t.Errorf("fatal message should mention 'requires --lora-placement-schedule', got:\n%s", out)
+	}
+}
+
 // TestReplayCmd_PDTopologyFatal verifies BC-5:
 // an invalid PD pool topology causes a fatal exit in replay.
 func TestReplayCmd_PDTopologyFatal(t *testing.T) {

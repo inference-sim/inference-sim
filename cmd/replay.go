@@ -311,6 +311,16 @@ Example:
 		// it. Reservation is 0 when the subsystem is inert (INV-6). Set before
 		// resolveLatencyConfig.
 		loraCfg := resolveLoRAConfig(cmd)
+		// INV-13 parity (Fix round 1, Important 2): --lora-placement-schedule is registered
+		// on replayCmd via registerSimConfigFlags and reaches NewClusterSimulator through
+		// the same LoRAConfig/DeploymentConfig literal runCmd uses, so the cross-flag guard
+		// runCmd applies must run here too — otherwise `blis replay --creation-policy
+		// scheduled` with no schedule silently runs pre-placement, and the structural
+		// validator alone can't catch that (it has nothing to check against).
+		if err := validateLoRAScheduleFlags(loraCfg.CreationPolicy, loraPlacementSchedule,
+			loraCfg.PlacementSchedule, resolveLoRAAdapterPlacement()); err != nil {
+			logrus.Fatalf("%v", err)
+		}
 		loraReservedBytesForKV = adapterReservedBytesFor(loraCfg)
 
 		// KV-cache offload config (#1587, BC-G6): the trace header is authoritative on

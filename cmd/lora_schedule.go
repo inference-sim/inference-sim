@@ -109,6 +109,14 @@ func resolveLoRAPlacementSchedule() []sim.PlacementScheduleEntry {
 // validateLoRAScheduleFlags enforces the three cross-flag rules the schedule introduces. Pure
 // so it is unit-testable; the caller fatals (library returns an error, cmd decides fatality).
 //
+// effectiveCreationPolicy MUST be the resolved policy (LoRAConfig.CreationPolicy, as returned
+// by resolveLoRAConfig), never the raw --creation-policy flag variable: resolveLoRAConfig also
+// resolves creation_policy from --lora-config YAML and --lora-bundle (R18 precedence: flag >
+// file > bundle), so a run whose "scheduled" comes from the config file or a bundle, not the
+// flag, must still be checked against what the run actually does (Fix round 1, Important 1 —
+// passing the raw flag let a config-file-driven "scheduled" run with no schedule through
+// silently, and falsely rejected a config-file-driven "scheduled" run that DID carry one).
+//
 //  1. creation_policy="scheduled" requires a schedule. Without one the policy proposes nothing
 //     and is indistinguishable from pre-placement -- the gate-only-policy failure mode of
 //     issues #46 and #48, applied to a new knob.
@@ -120,18 +128,19 @@ func resolveLoRAPlacementSchedule() []sim.PlacementScheduleEntry {
 //
 // A schedule whose first entry is after t=0 is legal and is exactly how a lookahead offset is
 // expressed: nothing is in force until that entry, and t=0 residency comes from the flag alone.
-func validateLoRAScheduleFlags(creationPolicy, schedulePath string,
+func validateLoRAScheduleFlags(effectiveCreationPolicy, schedulePath string,
 	schedule []sim.PlacementScheduleEntry, placement map[int][]string) error {
-	scheduled := creationPolicy == "scheduled"
+	scheduled := effectiveCreationPolicy == "scheduled"
 	if scheduled && len(schedule) == 0 {
 		return fmt.Errorf("--creation-policy=scheduled requires --lora-placement-schedule: with no "+
 			"schedule the policy proposes nothing and is indistinguishable from pre-placement "+
 			"(got --lora-placement-schedule=%q)", schedulePath)
 	}
 	if !scheduled && len(schedule) > 0 {
-		return fmt.Errorf("--lora-placement-schedule is set (%q, %d entries) but "+
-			"--creation-policy=%q; only the \"scheduled\" creation policy reads it, so this run "+
-			"would silently not be the arm it claims", schedulePath, len(schedule), creationPolicy)
+		return fmt.Errorf("--lora-placement-schedule is set (%q, %d entries) but the effective "+
+			"creation policy is %q (resolved from --creation-policy, --lora-config, or "+
+			"--lora-bundle); only the \"scheduled\" creation policy reads it, so this run "+
+			"would silently not be the arm it claims", schedulePath, len(schedule), effectiveCreationPolicy)
 	}
 	if len(schedule) == 0 || schedule[0].AtUs != 0 {
 		return nil
