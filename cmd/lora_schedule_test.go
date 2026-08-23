@@ -42,6 +42,45 @@ func TestParseLoRAPlacementScheduleReadsEntriesAndSkipsComments(t *testing.T) {
 	}
 }
 
+// TestParseLoRAPlacementScheduleParsesAHarnessRenderedFixture pins the cross-language
+// contract: this fixture body is the literal stdout of
+//
+//	python3 -c "
+//	from harness.schedule import write_schedule
+//	write_schedule('/tmp/sched.txt', [(0, {0: ['adapter_0','adapter_1'], 1: ['adapter_2']}),
+//	                                  (10_000_000, {0: ['adapter_3']})], header='round-trip probe')
+//	print(open('/tmp/sched.txt').read())"
+//
+// run against harness/schedule.py (lora-control, Spec 4 Slice B, Task 7). A Python renderer
+// and a Go parser can drift on a shared grammar with every test on both sides still green;
+// this is the only check that catches it.
+func TestParseLoRAPlacementScheduleParsesAHarnessRenderedFixture(t *testing.T) {
+	path := writeSchedule(t, `# round-trip probe
+# <t_us> <idx=id[,id...];idx=id...>   -- BLIS --lora-placement-schedule
+0 0=adapter_0,adapter_1;1=adapter_2
+10000000 0=adapter_3
+`)
+	got, err := parseLoRAPlacementSchedule(path)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 entries, got %d: %#v", len(got), got)
+	}
+	if got[0].AtUs != 0 || got[1].AtUs != 10_000_000 {
+		t.Errorf("timestamps: got %d and %d", got[0].AtUs, got[1].AtUs)
+	}
+	if ids := got[0].Placement[0]; len(ids) != 2 || ids[0] != "adapter_0" || ids[1] != "adapter_1" {
+		t.Errorf("entry 0 instance 0: got %#v", ids)
+	}
+	if ids := got[0].Placement[1]; len(ids) != 1 || ids[0] != "adapter_2" {
+		t.Errorf("entry 0 instance 1: got %#v", ids)
+	}
+	if ids := got[1].Placement[0]; len(ids) != 1 || ids[0] != "adapter_3" {
+		t.Errorf("entry 1 instance 0: got %#v", ids)
+	}
+}
+
 // Each rejected form gets its own case: the point of this parser is that NONE of them
 // degrade into a silently different experiment.
 func TestParseLoRAPlacementScheduleRejects(t *testing.T) {
