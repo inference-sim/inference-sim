@@ -28,13 +28,16 @@ func scheduledPolicy(t *testing.T, entries []sim.PlacementScheduleEntry) sim.Per
 }
 
 // ctxAt builds a two-instance context. Both instances start empty with capacity 2.
+// ConstructionIndex matches slice position here (no instance is ever skipped in these
+// tests), mirroring the common case; TestScheduledUsesConstructionIndexNotSlicePosition
+// below is the one that exercises the case where they diverge.
 func ctxAt(now int64, resident0, resident1 []string) sim.PeriodicCreationContext {
 	return sim.PeriodicCreationContext{
 		Now:      now,
 		Interval: 50_000,
 		Instances: []sim.InstanceResidency{
-			{ID: "i0", Resident: resident0, Capacity: 2},
-			{ID: "i1", Resident: resident1, Capacity: 2},
+			{ID: "i0", ConstructionIndex: 0, Resident: resident0, Capacity: 2},
+			{ID: "i1", ConstructionIndex: 1, Resident: resident1, Capacity: 2},
 		},
 	}
 }
@@ -141,17 +144,71 @@ func TestScheduledIsDeterministicAndSorted(t *testing.T) {
 	}
 }
 
-// OnTick is a pure query: it must not mutate the context it is handed (Principle I).
+// OnTick is a pure query: it must not mutate the context it is handed (Principle I),
+// AND it must not mutate the schedule the policy was constructed from. The latter is
+// the sharper risk: those Placement slices are the policy's own state, shared with
+// every instance's policy copy through the same CreationPolicyConfig value, so an
+// in-place sort here would corrupt state well outside this one call.
 func TestScheduledOnTickDoesNotMutateItsContext(t *testing.T) {
-	p := scheduledPolicy(t, twoEntrySchedule())
-	ctx := ctxAt(0, []string{"a0"}, []string{"a2"})
+	// The target lists are deliberately NOT pre-sorted (m5 before a1, z9 before b2): a
+	// schedule fed in already-sorted order (as twoEntrySchedule's is) would let an
+	// in-place sort pass unnoticed, since sorting a sorted slice changes nothing
+	// observable. Unsorted input is what makes the copy-vs-sort-in-place distinction
+	// detectable at all.
+	entries := []sim.PlacementScheduleEntry{
+		{AtUs: 0, Placement: map[int][]string{0: {"m5", "a1"}, 1: {"z9", "b2"}}},
+	}
+	p := scheduledPolicy(t, entries)
+	ctx := ctxAt(0, []string{"a9"}, []string{"b9"}) // resident adapters distinct from targets, so nothing is skipped
 	before := [][]string{append([]string(nil), ctx.Instances[0].Resident...),
 		append([]string(nil), ctx.Instances[1].Resident...)}
+	scheduleBefore := cloneSchedule(entries)
 	p.OnTick(ctx)
 	for i, was := range before {
 		if !reflect.DeepEqual(ctx.Instances[i].Resident, was) {
 			t.Errorf("instance %d Resident mutated: %#v -> %#v", i, was, ctx.Instances[i].Resident)
 		}
+	}
+	if got := cloneSchedule(entries); !reflect.DeepEqual(got, scheduleBefore) {
+		t.Errorf("OnTick mutated the policy's own schedule:\n before %#v\n after  %#v", scheduleBefore, got)
+	}
+}
+
+// cloneSchedule deep-copies a schedule's Placement slices so a before/after comparison
+// can detect an in-place sort on the policy's OWN state, not just on a caller's copy.
+func cloneSchedule(entries []sim.PlacementScheduleEntry) []sim.PlacementScheduleEntry {
+	out := make([]sim.PlacementScheduleEntry, len(entries))
+	for i, e := range entries {
+		p := make(map[int][]string, len(e.Placement))
+		for k, v := range e.Placement {
+			p[k] = append([]string(nil), v...)
+		}
+		out[i] = sim.PlacementScheduleEntry{AtUs: e.AtUs, Placement: p}
+	}
+	return out
+}
+
+// The bug this guards against: buildContext's routable filter means SLICE POSITION and
+// CONSTRUCTION INDEX diverge whenever an earlier instance is skipped as non-routable.
+// Construct that divergence directly (construction indices 0 and 2 occupy slice
+// positions 0 and 1, as if construction index 1 were skipped) and confirm OnTick keys
+// off ConstructionIndex. Keying by slice position instead would look up Placement[1]
+// for the second instance -- which is empty here -- and silently drop its decision.
+func TestScheduledKeysByConstructionIndexNotSlicePosition(t *testing.T) {
+	p := scheduledPolicy(t, []sim.PlacementScheduleEntry{
+		{AtUs: 0, Placement: map[int][]string{0: {"a0"}, 2: {"a2"}}},
+	})
+	ctx := sim.PeriodicCreationContext{
+		Now: 0,
+		Instances: []sim.InstanceResidency{
+			{ID: "i0", ConstructionIndex: 0, Capacity: 2},
+			{ID: "i2", ConstructionIndex: 2, Capacity: 2},
+		},
+	}
+	got := p.OnTick(ctx)
+	want := []sim.PrefetchDecision{{Instance: "i0", Adapter: "a0"}, {Instance: "i2", Adapter: "a2"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %#v\nwant %#v\n(position-based keying would silently drop i2's decision)", got, want)
 	}
 }
 

@@ -57,6 +57,17 @@ type PeriodicCreationContext struct {
 type InstanceResidency struct {
 	// ID is the instance id a PrefetchDecision must name.
 	ID string
+	// ConstructionIndex is this instance's position in the CLUSTER'S construction
+	// order — the same key space PlacementScheduleEntry.Placement and
+	// --lora-adapter-placement's DeploymentConfig.LoRAAdapterPlacement use (D9).
+	//
+	// It is NOT the index of this entry within the Instances slice: a non-routable
+	// instance is omitted from Instances (buildContext), so slice position and
+	// construction index diverge exactly when an instance is skipped. A policy that
+	// keys off PlacementScheduleEntry.Placement MUST index by this field, never by a
+	// range index over Instances — ranging positionally silently hands one instance
+	// another instance's target set the moment any earlier instance is non-routable.
+	ConstructionIndex int
 	// Resident is the currently-resident adapter ids, sorted (INV-6).
 	Resident []string
 	// Unpinned is the eviction seam's candidate set, sorted (INV-6). A prefetch into a

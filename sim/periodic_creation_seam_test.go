@@ -78,12 +78,13 @@ func TestInstanceResidency_FieldAudit(t *testing.T) {
 	}
 
 	want := map[string]string{
-		"ID":          "string",
-		"Resident":    "[]string",
-		"Unpinned":    "[]string",
-		"Capacity":    "int",
-		"Loading":     "string",
-		"GateBlocked": "bool",
+		"ID":                "string",
+		"ConstructionIndex": "int",
+		"Resident":          "[]string",
+		"Unpinned":          "[]string",
+		"Capacity":          "int",
+		"Loading":           "string",
+		"GateBlocked":       "bool",
 	}
 	got := map[string]string{}
 	for i := 0; i < rt.NumField(); i++ {

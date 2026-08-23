@@ -71,17 +71,23 @@ func (s scheduled) entryAt(now int64) (sim.PlacementScheduleEntry, bool) {
 // relocation can oscillate — and it is measured by the leaf's churn pair rather than avoided
 // here. Changing this to a cluster-wide check would discard the objective under test.
 //
-// Determinism (INV-6): instances are visited in construction order and each entry's adapter
-// list is sorted into a copy, so no map is ranged and the returned slice is ordered by
-// (construction index, adapter id).
+// Determinism (INV-6): instances are visited in ctx.Instances order — a subsequence of
+// construction order, since buildContext only omits non-routable instances — and each
+// entry's adapter list is sorted into a copy, so no map is ranged and the returned slice
+// is ordered by (construction index, adapter id).
+//
+// Placement is keyed by CONSTRUCTION index (InstanceResidency.ConstructionIndex), never
+// by a range index over ctx.Instances: a non-routable instance is omitted from
+// ctx.Instances, so the two indices diverge exactly when that happens, and keying by
+// position would silently hand one instance another instance's target set.
 func (s scheduled) OnTick(ctx sim.PeriodicCreationContext) []sim.PrefetchDecision {
 	entry, ok := s.entryAt(ctx.Now)
 	if !ok {
 		return nil
 	}
 	var out []sim.PrefetchDecision
-	for idx, inst := range ctx.Instances {
-		targets := entry.Placement[idx]
+	for _, inst := range ctx.Instances {
+		targets := entry.Placement[inst.ConstructionIndex]
 		if len(targets) == 0 {
 			continue
 		}

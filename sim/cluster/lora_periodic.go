@@ -124,7 +124,7 @@ func (p *loraPeriodicPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 // what the context's fields promise. No map is ranged here.
 func (p *loraPeriodicPipeline) buildContext(cs *ClusterSimulator, nowUs int64) sim.PeriodicCreationContext {
 	insts := make([]sim.InstanceResidency, 0, len(cs.instances))
-	for _, inst := range cs.instances {
+	for i, inst := range cs.instances {
 		if !inst.IsRoutable() {
 			continue // a decision naming it would be dropped at actuation anyway
 		}
@@ -133,12 +133,17 @@ func (p *loraPeriodicPipeline) buildContext(cs *ClusterSimulator, nowUs int64) s
 		sort.Strings(resident)
 		sort.Strings(unpinned)
 		insts = append(insts, sim.InstanceResidency{
-			ID:          string(inst.ID()),
-			Resident:    resident,
-			Unpinned:    unpinned,
-			Capacity:    inst.AdapterCapacity(),
-			Loading:     inst.LoadingAdapter(),
-			GateBlocked: inst.HasGateBlockedRequest(),
+			ID: string(inst.ID()),
+			// i is the index into cs.instances itself — the construction-order
+			// position — NOT len(insts)/the append counter of this filtered slice.
+			// Those differ precisely when an earlier instance was skipped above,
+			// which is exactly the case ConstructionIndex exists to keep correct.
+			ConstructionIndex: i,
+			Resident:          resident,
+			Unpinned:          unpinned,
+			Capacity:          inst.AdapterCapacity(),
+			Loading:           inst.LoadingAdapter(),
+			GateBlocked:       inst.HasGateBlockedRequest(),
 		})
 	}
 	// Demand is documented as nil-able, so pass a genuine nil interface rather than a
@@ -168,14 +173,13 @@ func (p *loraPeriodicPipeline) buildContext(cs *ClusterSimulator, nowUs int64) s
 // decision would act on stale state the next tick recomputes anyway. Decisions naming
 // distinct instances all actuate in the same tick.
 //
-// That last sentence documents the mechanism's contract, not something exercised today:
-// no SHIPPED policy currently emits decisions naming distinct instances in one tick —
-// keep-warm included, because its pickTarget names the same instance for every decision
-// in a call (see creation.keepWarm's doc comment). Only a test stub does.
-//
-// This is reachable, not hypothetical: keep-warm's pickTarget re-reads the unmutated
-// context on every iteration, so Resident never grows during a single OnTick and several
-// requested adapters can all name the same instance.
+// That last sentence documents the mechanism's contract, and it is exercised, not
+// hypothetical: keep-warm's pickTarget re-reads the unmutated context on every
+// iteration and names the SAME instance for every decision in a call (see
+// creation.keepWarm's doc comment), so keep-warm alone never drives the multi-instance
+// path — but creation.scheduled's decisions are built one per (instance, target
+// adapter) pair, so a single tick routinely names several distinct instances, and the
+// per-instance actuation cap above is what makes all of them actuate in that tick.
 func (p *loraPeriodicPipeline) actuate(cs *ClusterSimulator, nowUs int64, decisions []sim.PrefetchDecision) {
 	if len(decisions) == 0 {
 		return
