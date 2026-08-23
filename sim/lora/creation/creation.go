@@ -85,4 +85,7 @@ func init() {
 	register("on-demand", func(sim.CreationPolicyConfig) sim.CreationPolicy { return onDemand{} })
 	register("pre-placement", func(sim.CreationPolicyConfig) sim.CreationPolicy { return prePlacement{} })
 	register("keep-warm", func(sim.CreationPolicyConfig) sim.CreationPolicy { return keepWarm{} })
+	register("scheduled", func(cfg sim.CreationPolicyConfig) sim.CreationPolicy {
+		return scheduled{schedule: cfg.PlacementSchedule}
+	})
 }
