@@ -29,7 +29,7 @@ func scheduledPolicy(t *testing.T, entries []sim.PlacementScheduleEntry) sim.Per
 
 // ctxAt builds a two-instance context. Both instances start empty with capacity 2.
 // ConstructionIndex matches slice position here (no instance is ever skipped in these
-// tests), mirroring the common case; TestScheduledUsesConstructionIndexNotSlicePosition
+// tests), mirroring the common case; TestScheduledKeysByConstructionIndexNotSlicePosition
 // below is the one that exercises the case where they diverge.
 func ctxAt(now int64, resident0, resident1 []string) sim.PeriodicCreationContext {
 	return sim.PeriodicCreationContext{

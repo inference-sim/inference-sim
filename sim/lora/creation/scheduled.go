@@ -72,14 +72,22 @@ func (s scheduled) entryAt(now int64) (sim.PlacementScheduleEntry, bool) {
 // here. Changing this to a cluster-wide check would discard the objective under test.
 //
 // Determinism (INV-6): instances are visited in ctx.Instances order — a subsequence of
-// construction order, since buildContext only omits non-routable instances — and each
-// entry's adapter list is sorted into a copy, so no map is ranged and the returned slice
-// is ordered by (construction index, adapter id).
+// cs.instances order, since buildContext appends in that order and only omits non-routable
+// instances — and each entry's adapter list is sorted into a copy, so no map is ranged and
+// the returned slice is ordered by (ConstructionIndex, adapter id).
 //
 // Placement is keyed by CONSTRUCTION index (InstanceResidency.ConstructionIndex), never
 // by a range index over ctx.Instances: a non-routable instance is omitted from
 // ctx.Instances, so the two indices diverge exactly when that happens, and keying by
 // position would silently hand one instance another instance's target set.
+//
+// That ConstructionIndex is also the key space the schedule file itself was written in
+// holds WHILE every instance comes from NewClusterSimulator's construction loop — every run
+// without NodePools, and every NodePools run with no deferred instance. See
+// sim.InstanceResidency.ConstructionIndex for the exception: a NodePools deferral appends
+// the instance at the end of cs.instances instead of at its construction-loop index, which
+// REORDERS rather than subsets, and no check here would notice. This experiment's
+// configuration does not reach it.
 func (s scheduled) OnTick(ctx sim.PeriodicCreationContext) []sim.PrefetchDecision {
 	entry, ok := s.entryAt(ctx.Now)
 	if !ok {

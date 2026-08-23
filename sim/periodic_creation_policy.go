@@ -57,9 +57,8 @@ type PeriodicCreationContext struct {
 type InstanceResidency struct {
 	// ID is the instance id a PrefetchDecision must name.
 	ID string
-	// ConstructionIndex is this instance's position in the CLUSTER'S construction
-	// order — the same key space PlacementScheduleEntry.Placement and
-	// --lora-adapter-placement's DeploymentConfig.LoRAAdapterPlacement use (D9).
+	// ConstructionIndex is this instance's position in cs.instances, the cluster's
+	// construction order.
 	//
 	// It is NOT the index of this entry within the Instances slice: a non-routable
 	// instance is omitted from Instances (buildContext), so slice position and
@@ -67,6 +66,19 @@ type InstanceResidency struct {
 	// keys off PlacementScheduleEntry.Placement MUST index by this field, never by a
 	// range index over Instances — ranging positionally silently hands one instance
 	// another instance's target set the moment any earlier instance is non-routable.
+	//
+	// SCOPE OF THE KEY-SPACE IDENTITY. This index is the same key space
+	// PlacementScheduleEntry.Placement and --lora-adapter-placement's
+	// DeploymentConfig.LoRAAdapterPlacement use (D9) WHEN EVERY INSTANCE IS BUILT BY
+	// NewClusterSimulator'S OWN CONSTRUCTION LOOP — which is the case for every run
+	// without NodePools, and for every NodePools run in which no instance is deferred.
+	// Those placement maps are keyed by that loop's counter `idx`. Under the NodePools
+	// path an instance PlaceInstance cannot place is NOT appended at its idx: it is
+	// `continue`d into AddPending and later appended at the END of cs.instances by
+	// addLiveInstance (NodeReadyEvent). Deferral therefore REORDERS cs.instances rather
+	// than subsetting it, and this field stops agreeing with the `idx` that keyed the
+	// placement maps. Nothing in the LoRA subsystem detects that today; it is an open
+	// gap, not a property to rely on.
 	ConstructionIndex int
 	// Resident is the currently-resident adapter ids, sorted (INV-6).
 	Resident []string
