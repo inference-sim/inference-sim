@@ -219,6 +219,34 @@ func TestConvertWekaSession_MinRoundsAndAllSubagentSkip(t *testing.T) {
 	}
 }
 
+// T7b — a main turn missing `in` (or `out`) is dropped (defense-in-depth; real
+// data always carries them). Surviving main turns renumber contiguously and the
+// delta spans the survivors — the dropped turn's wall-clock is absorbed into the
+// following kept turn's think gap. Mirrors OTel's DropsSpanMissingTokenCount.
+func TestConvertWekaSession_DropsMainTurnMissingTokens(t *testing.T) {
+	// Middle main turn omits `in` → dropped; survivors are the 0s and 8s turns.
+	j := `{"id":"s","requests":[
+	  {"type":"n","t":0.0,"in":100,"out":10,"api_time":1.0},
+	  {"type":"n","t":4.0,"out":9,"api_time":1.0},
+	  {"type":"n","t":8.0,"in":150,"out":20,"api_time":1.0}
+	]}`
+	recs, err := ConvertWekaSession([]byte(j), WekaConvertOptions{MinRounds: 1})
+	if err != nil {
+		t.Fatalf("ConvertWekaSession: %v", err)
+	}
+	if len(recs) != 2 {
+		t.Fatalf("got %d records, want 2 (main turn with missing `in` dropped)", len(recs))
+	}
+	// RoundIndex renumbers 0,1 with no gap; delta spans survivors: 150-100-10 = 40.
+	if recs[1].RoundIndex != 1 || recs[1].InputTokens != 40 {
+		t.Errorf("survivor round1 = ri %d in %d, want 1/40", recs[1].RoundIndex, recs[1].InputTokens)
+	}
+	// Think for the kept round spans the dropped turn: t2-t0-api0 = 8-0-1 = 7s.
+	if recs[1].ThinkTimeUs != 7_000_000 {
+		t.Errorf("round1 think = %d, want 7e6 (dropped turn's wall-clock absorbed into the gap)", recs[1].ThinkTimeUs)
+	}
+}
+
 // T8 — a session with no `id` cannot be identified: ConvertWekaSession errors
 // rather than emitting records under an empty session id. The corpus-level
 // warn+skip of this error is covered in cmd/convert_weka_test.go.

@@ -25,10 +25,9 @@ var convertWekaCmd = &cobra.Command{
 TraceV2 pair (<prefix>.yaml + <prefix>.csv) suitable for 'blis replay --session-mode closed-loop'
 (or 'blis replay --concurrent-sessions', which auto-promotes to closed-loop).
 
-Input is a .jsonl file (one session per line; a directory of *.json or a single JSON
-session file also work). Each session's requests[] is filtered to the linear main-agent
-stream — type:"subagent" groups are skipped (deferred to PR-E) — and each main turn
-becomes one round. Per-round input token counts are stored as deltas so accumulate replay
+Input is a .jsonl file (one session per line) — the native Weka shape. Each session's
+requests[] is filtered to the linear main-agent stream — type:"subagent" groups are
+skipped (deferred to PR-E) — and each main turn becomes one round. Per-round input token counts are stored as deltas so accumulate replay
 reconstructs the exact growing prompt with a strictly-identical shared prefix. Per-round
 pure client think time is recomputed as max(0, t_i − t_{i-1} − api_time_{i-1}) between
 consecutive main turns and carried in the think_time_us column.

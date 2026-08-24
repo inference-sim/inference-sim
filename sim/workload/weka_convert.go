@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+
+	"github.com/sirupsen/logrus"
 )
 
 // WekaConvertOptions configures Weka-session → TraceRecord conversion.
@@ -96,7 +98,12 @@ func ConvertWekaSession(raw []byte, opts WekaConvertOptions) ([]TraceRecord, err
 			continue // sub-agent fan-out deferred to PR-E (#1477)
 		}
 		if r.In == nil || r.Out == nil {
-			continue // no ground-truth token counts → unusable
+			// No ground-truth token counts → unusable. Real Weka main turns always
+			// carry in/out (0 drops observed across the 051926 dataset), so this is
+			// defense-in-depth; log it (not a silent continue, R1) so a future
+			// data-shape change that starts dropping turns is debuggable.
+			logrus.Debugf("convert weka: session %q request %d dropped — main turn missing in/out", s.ID, i)
+			continue
 		}
 		turns = append(turns, mainTurn{t: r.T, api: r.API, in: *r.In, out: *r.Out})
 	}

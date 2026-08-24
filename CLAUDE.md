@@ -227,6 +227,10 @@ go build -o blis main.go
 # = uncapped, since Weka gaps are genuine away-from-keyboard times). Reads `in` directly
 # (never len(hash_ids)×64). Weka ISL is huge (p50 ≈ 110K, p90 ≈ 395K), so replay MUST raise
 # --max-model-len (the ~41K default drops every request unservable) and scale --total-kv-blocks.
+# Fidelity note: real agentic traces compact/trim context often (~28% of rounds on the
+# 051926 dataset have in_N < in_{N-1}+out_{N-1}); such non-monotone rounds clamp their input
+# delta to 0, so the accumulate buffer OVER-counts the true per-round ISL (it cannot shrink).
+# Replayed KV pressure / hit-rate is therefore an UPPER BOUND, not an exact reproduction.
 ./blis convert weka --input traces.jsonl --trace-output corpus \
   --context-growth accumulate --max-think-time 0
 #
