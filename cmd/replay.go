@@ -37,6 +37,12 @@ var (
 	replayShuffleCorpus      bool // randomize corpus step order (pool mode only; seeded from --seed) (#1480)
 )
 
+// corpusShuffleSeedSalt is XORed with the master --seed to derive the corpus-shuffle
+// RNG stream, keeping it independent of the per-session token and clone RNGs (#1480).
+// Shared by `blis replay --shuffle-corpus` and `blis observe --shuffle-corpus` so the
+// SAME --seed selects the SAME subset/order on both — required for calibration parity.
+const corpusShuffleSeedSalt = 0x53485546 // "SHUF"
+
 var replayCmd = &cobra.Command{
 	Use:   "replay",
 	Short: "Replay a TraceV2 file through the discrete-event simulator",
@@ -213,8 +219,7 @@ Example:
 				// a distinct stream off the master seed (XOR salt) so it is reproducible
 				// from --seed yet does not perturb the per-session token / clone RNGs.
 				if replayShuffleCorpus {
-					const shuffleSeedSalt = 0x53485546 // "SHUF"
-					workload.ShuffleSessions(blueprints, r0Requests, rand.New(rand.NewSource(seed^shuffleSeedSalt)))
+					workload.ShuffleSessions(blueprints, r0Requests, rand.New(rand.NewSource(seed^corpusShuffleSeedSalt)))
 				}
 				driver, initial, pErr := workload.BuildSessionPool(blueprints, r0Requests, replayConcurrentSessions, replayTotalSessions, seed)
 				if pErr != nil {
