@@ -338,7 +338,8 @@ names are dropped during conversion (same routing-safety reason as OTel).
     total by ≈3–4×** (+312% on that dataset). Treat replayed input length, KV pressure,
     and hit-rate as a substantial **upper bound**, not a faithful reproduction of the
     recorded workload. (This is a property of the accumulate delta law, not the
-    converter; the think-time lossy-sentinel corner is tracked in #1608.)
+    converter; faithful compaction support is tracked in #1609, and the separate
+    think-time lossy-0 sentinel corner in #1608.)
 
 ---
 
