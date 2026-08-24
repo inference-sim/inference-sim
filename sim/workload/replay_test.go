@@ -1065,6 +1065,35 @@ func TestLoadTraceV2SessionBlueprints_AbsentThink_FallsBackToGap(t *testing.T) {
 	}
 }
 
+// TestLoadTraceV2SessionBlueprints_MixedInteriorThink_DerefDefensive exercises the
+// defensive nil-interior path (#1608, blis-pr-review + qa-review G1 optional note): a
+// single session with a nil interior round (round 1) among recorded rounds (round 2
+// non-nil). sessionHasRecordedThinkTime is true (round 2 recorded), so the whole
+// session uses the recorded path — and the nil interior round derefs to 0 think, NOT
+// to its arrival gap. No shipped converter emits such a session; this pins the deref
+// behavior for a hypothetical future sparse-think converter.
+func TestLoadTraceV2SessionBlueprints_MixedInteriorThink_DerefDefensive(t *testing.T) {
+	trace := &TraceV2{Records: []TraceRecord{
+		// Arrival gaps would be [3000, 7000] if this fell back — it must NOT.
+		{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, ThinkTimeUs: nil},
+		{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, ArrivalTimeUs: 3000, ThinkTimeUs: nil},      // interior nil
+		{RequestID: 3, SessionID: "A", RoundIndex: 2, InputTokens: 70, OutputTokens: 30, ArrivalTimeUs: 10000, ThinkTimeUs: i64p(5000)}, // recorded
+	}}
+	_, bps, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	s := bps[0].ThinkTimeSampler
+	if s == nil {
+		t.Fatal("expected a think sampler for a multi-round session")
+	}
+	// Recorded path (round 2 non-nil) with nil interior derefing to 0: [0, 5000],
+	// NOT the arrival gaps [3000, 7000].
+	if g1, g2 := s.Sample(nil), s.Sample(nil); g1 != 0 || g2 != 5000 {
+		t.Errorf("mixed-interior think: sampler = [%d, %d], want [0, 5000] (nil interior → 0 deref, round 2 recorded), not arrival gaps [3000, 7000]", g1, g2)
+	}
+}
+
 // TestLoadTraceV2SessionBlueprints_MixedThinkSessions covers F4 (#1484 review),
 // updated for #1608: think-time selection is per-session, so a trace mixing a
 // recorded-think session with a not-recorded one selects each independently — A uses

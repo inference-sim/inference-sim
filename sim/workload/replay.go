@@ -249,8 +249,10 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			for i := 1; i < len(rounds); i++ {
 				// derefInt64(nil) == 0: a recorded &0 and (defensively) a nil interior
 				// round both yield 0 think. sessionHasRecordedThinkTime guarantees at
-				// least one round here is non-nil; in practice a recorded session's
-				// rounds 1..N are all non-nil.
+				// least one round here is non-nil. No shipped converter produces a mixed
+				// interior (OTel leaves every round nil; Weka sets every round 1..N), so
+				// the nil-interior branch is unreachable today — the deref pins a defined
+				// behavior (0 think) if a future converter ever recorded think sparsely.
 				t := derefInt64(rounds[i].ThinkTimeUs)
 				if t < 0 {
 					t = 0 // defensive; LoadTraceV2 already rejects negatives (INV-3)
