@@ -283,6 +283,17 @@ if you want a hard wall-clock cap on the simulated run — sessions still queued
 the cap is reached are reported as un-admitted (a warning is logged) rather than
 silently dropped.
 
+!!! tip "Subsetting a large corpus: add `--shuffle-corpus`"
+    `--total-sessions N` on its own is **deterministic, ordered selection**, not a
+    random sample: with `N` below the corpus size it replays the **first `N`
+    sessions in file order** and never touches the tail — a biased sample for a
+    time-sorted or harness-grouped corpus. To draw a *representative* subset, add
+    `--shuffle-corpus`, which applies a seeded Fisher-Yates permutation (reproducible
+    from `--seed`, on a stream independent of token generation) before selection:
+    `--total-sessions N --shuffle-corpus` yields a seeded-random `N`-of-corpus
+    subset, while `--total-sessions ≥ corpus` simply randomizes the admission order
+    with every session still running.
+
 !!! warning "Size the context window to the trace"
     Real agentic traces (e.g. Exgentic `agent-llm-traces`) often carry very large
     prompts — tens of thousands to well over 100K input tokens per call, growing
