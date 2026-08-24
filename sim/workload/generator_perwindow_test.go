@@ -1036,3 +1036,88 @@ func TestGenerateRequestsForWindow_MultiSessionReasoning_ExactCountAndInteriorAr
 		})
 	}
 }
+
+// TestGenerateRequestsForWindow_SingleSessionReasoning_SessionSurvivesAtCeilOne
+// pins the third branch touched by the last-request-dropped fix.
+//
+// The single-session reasoning branch has no emission loop -- it derives its one
+// session start from iats[0] alone -- so it was never edited by the fix. It was
+// still defective for the same root cause: with exactly numRequests gaps
+// rescaled to sum to the window duration, numRequests == 1 makes iats[0] equal
+// the whole duration, so startTime lands exactly on window.EndUs, the
+// `startTime >= window.EndUs` guard fires, and the branch returns (nil, nil) --
+// the window's ONLY session, silently dropped. Sampling numRequests+1 gaps
+// makes iats[0] strictly smaller than the duration, which repairs this branch
+// as a side effect of the shared rescale.
+//
+// Confirmed RED against pre-fix generator.go: 0 requests at every seed for the
+// ceil==1 case (the ceil==2 case passed before and after, since iats[0] was
+// already only ~half the duration there).
+func TestGenerateRequestsForWindow_SingleSessionReasoning_SessionSurvivesAtCeilOne(t *testing.T) {
+	const rate = 5.0 // req/s
+
+	cases := []struct {
+		name       string
+		durationUs int64
+	}{
+		// 5 req/s * 0.1s -> ceil = 1: iats[0] was the entire window duration.
+		// This is the case that previously produced ZERO requests.
+		{"short window, ceil gives 1", 100_000},
+		// 5 req/s * 0.3s -> ceil = 2: already worked, kept as a control.
+		{"short window, ceil gives 2", 300_000},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, seed := range []int64{1, 2, 3, 17, 42, 99} {
+				traceRate := rate
+				clients := []ClientSpec{
+					{
+						ID:       "singlesession-reasoning-client",
+						TenantID: "tenant-a",
+						SLOClass: "standard",
+						Model:    "qwen/qwen3-14b",
+						Reasoning: &ReasoningSpec{
+							MultiTurn: &MultiTurnSpec{
+								// MaxRounds=1 so the session is exactly one
+								// request: len(requests) then distinguishes
+								// "session dropped" (0) from "session kept" (1)
+								// with no round-filtering to reason about.
+								MaxRounds:     1,
+								ThinkTimeUs:   1_000_000,
+								ContextGrowth: "accumulate",
+								SingleSession: true,
+							},
+						},
+						InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+						OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+						Lifecycle: &LifecycleSpec{
+							Windows: []ActiveWindow{
+								{StartUs: 1_000_000, EndUs: 1_000_000 + tc.durationUs, TraceRate: &traceRate},
+							},
+						},
+					},
+				}
+
+				rng := rand.New(rand.NewSource(seed))
+				window := clients[0].Lifecycle.Windows[0]
+				requests, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng, nil)
+				require.NoError(t, err)
+
+				// Exactly one session, exactly one round: the branch generates a
+				// single session regardless of rate, so the count is 1 and not
+				// ceil(rate*duration) -- what matters is that it is not 0.
+				assert.Equal(t, 1, len(requests),
+					"seed %d: window [%d,%d) at %.1f req/s must keep its single session (1 request at MaxRounds=1), got %d",
+					seed, window.StartUs, window.EndUs, rate, len(requests))
+
+				for i, req := range requests {
+					assert.Greater(t, req.ArrivalTime, window.StartUs,
+						"seed %d request %d: session start must be strictly > window start", seed, i)
+					assert.Less(t, req.ArrivalTime, window.EndUs,
+						"seed %d request %d: session start must be strictly < window end", seed, i)
+				}
+			}
+		})
+	}
+}
