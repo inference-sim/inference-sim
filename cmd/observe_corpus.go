@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"math"
+	"math/rand"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/workload"
@@ -22,6 +23,9 @@ func validateObserveCorpusFlags(
 	thinkTimeMs int,
 	thinkTimeDist string,
 	lazyGeneration bool,
+	horizonChanged bool,
+	numRequestsChanged bool,
+	shuffleCorpus bool,
 ) string {
 	corpusFilesSet := corpusHeader != "" || corpusData != ""
 	corpusMode := concurrentSessions > 0
@@ -33,6 +37,11 @@ func validateObserveCorpusFlags(
 	// Corpus files supplied but pool not enabled.
 	if corpusFilesSet && !corpusMode {
 		return "--corpus-header/--corpus-data require --concurrent-sessions > 0"
+	}
+	// --shuffle-corpus only reorders a corpus pool; it is meaningless without one
+	// (mirrors `blis replay --shuffle-corpus`). Never a silent no-op (R1).
+	if shuffleCorpus && !corpusMode {
+		return "--shuffle-corpus requires --concurrent-sessions > 0"
 	}
 	if !corpusMode {
 		return "" // spec-mode: no corpus constraints apply
@@ -69,6 +78,15 @@ func validateObserveCorpusFlags(
 	if lazyGeneration {
 		return "--lazy-generation is invalid with --concurrent-sessions (corpus-mode): the corpus is loaded directly; there is no spec generator to stream"
 	}
+	// --horizon / --num-requests bound spec-mode generation. Corpus-mode self-drains
+	// on session count (sized by --total-sessions), so neither has any effect here —
+	// reject them loudly rather than silently ignore (R1, no silent no-op).
+	if horizonChanged {
+		return "--horizon is invalid with --concurrent-sessions (corpus-mode): the pool self-drains on session count; size the run with --total-sessions"
+	}
+	if numRequestsChanged {
+		return "--num-requests is invalid with --concurrent-sessions (corpus-mode): the corpus and --total-sessions determine the request count"
+	}
 	return ""
 }
 
@@ -81,6 +99,7 @@ func validateObserveCorpusFlags(
 func buildObserveCorpusPool(
 	corpusHeader, corpusData string,
 	concurrentSessions, totalSessions int,
+	shuffleCorpus bool,
 	seed int64,
 ) (*workload.SessionPoolDriver, []*sim.Request, error) {
 	trace, err := workload.LoadTraceV2(corpusHeader, corpusData)
@@ -105,6 +124,13 @@ func buildObserveCorpusPool(
 	// than letting BuildSessionPool fail with its internal "count mismatch" wording.
 	if nonSession := len(r0Requests) - len(blueprints); nonSession > 0 {
 		return nil, nil, fmt.Errorf("corpus-mode requires every record to belong to a session, but %d of %d records have no session_id; pooled observe cannot mix session and non-session (single-shot) records — re-export the corpus so every row carries a session_id (e.g. via `blis convert otel`)", nonSession, len(r0Requests))
+	}
+	// Optional seeded shuffle of the corpus step/admission order (#1480). Drawn from
+	// the SAME salted stream (seed ^ corpusShuffleSeedSalt) as `blis replay
+	// --shuffle-corpus`, so observe and replay of one corpus under the same --seed
+	// select the identical subset/order — required for calibration parity.
+	if shuffleCorpus {
+		workload.ShuffleSessions(blueprints, r0Requests, rand.New(rand.NewSource(seed^corpusShuffleSeedSalt)))
 	}
 	driver, initial, err := workload.BuildSessionPool(blueprints, r0Requests, concurrentSessions, totalSessions, seed)
 	if err != nil {

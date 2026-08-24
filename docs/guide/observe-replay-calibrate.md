@@ -300,7 +300,17 @@ with the spec-mode inputs (`--workload`, `--workload-spec`, `--rate`,
 `--concurrency`) — a corpus *is* the workload. `--max-concurrency` is
 auto-raised to the pool size if set lower, so the pool is never throttled. The
 pool self-drains all `--total-sessions` sessions (observe bounds the run by the
-session count, not a clock).
+session count, not a clock). Because of that self-draining, the spec-mode
+bounding flags `--horizon` and `--num-requests` have no meaning in corpus-mode
+and are rejected rather than silently ignored — size the run with
+`--total-sessions`.
+
+`--shuffle-corpus` works in corpus-mode here too, and draws the **same** seeded
+permutation as `blis replay --shuffle-corpus` (both salt the master `--seed`
+identically). So observe and replay of one corpus under the same `--seed` select
+the identical subset and admission order — exactly what you want when calibrating
+the simulator against the real server over a matched session set. See the
+subsetting tip below for the selection semantics.
 
 #### Session-id header for session-aware routing
 

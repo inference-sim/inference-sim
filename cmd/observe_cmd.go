@@ -79,6 +79,7 @@ var (
 	observeSessionIDHeader    string
 	observeConcurrentSessions int
 	observeTotalSessions      int
+	observeShuffleCorpus      bool
 	// saturationReport is declared in root.go and shared across run, replay, observe
 )
 
@@ -167,6 +168,7 @@ func init() {
 	observeCmd.Flags().StringVar(&observeCorpusData, "corpus-data", "", "Input TraceV2 corpus data CSV (corpus-mode). Distinct from the --trace-data OUTPUT.")
 	observeCmd.Flags().IntVar(&observeConcurrentSessions, "concurrent-sessions", 0, "Replay a fixed pool of N concurrent closed-loop sessions from --corpus-* against the server (0 = disabled). Mutually exclusive with spec-mode inputs (--workload/--workload-spec/--rate/--concurrency).")
 	observeCmd.Flags().IntVar(&observeTotalSessions, "total-sessions", 0, "Total sessions to replay under --concurrent-sessions; duplicates the corpus (with cache-busting) to fill. 0 = replay each corpus session once.")
+	observeCmd.Flags().BoolVar(&observeShuffleCorpus, "shuffle-corpus", false, "Randomize the corpus step/admission order (seeded from --seed; uses the SAME permutation as `blis replay --shuffle-corpus`, so observe and replay of one corpus+seed select the same subset — for calibration parity). Requires --concurrent-sessions > 0. With --total-sessions < corpus this yields a seeded-random subset; every session still runs otherwise.")
 	observeCmd.Flags().StringVar(&observeSessionIDHeader, "session-id-header", defaultSessionIDHeader, "Request header carrying the closed-loop session id for session-aware EPP routing (session-affinity / predictive pinning). Must match the deployment's session-id-producer. Empty disables emission (issue #1505).")
 
 	// Distribution synthesis flags — same names AND defaults as blis run.
@@ -301,6 +303,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		observeWorkload, observeWorkloadSpec,
 		cmd.Flags().Changed("rate"), observeConcurrency,
 		observeThinkTimeMs, observeThinkTimeDist, observeLazyGeneration,
+		cmd.Flags().Changed("horizon"), cmd.Flags().Changed("num-requests"), observeShuffleCorpus,
 	); msg != "" {
 		logrus.Fatalf("%s", msg)
 	}
@@ -386,7 +389,8 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		var perr error
 		poolDriver, corpusInitial, perr = buildObserveCorpusPool(
 			observeCorpusHeader, observeCorpusData,
-			observeConcurrentSessions, observeTotalSessions, observeSeed,
+			observeConcurrentSessions, observeTotalSessions,
+			observeShuffleCorpus, observeSeed,
 		)
 		if perr != nil {
 			logrus.Fatalf("Failed to build corpus pool: %v", perr)

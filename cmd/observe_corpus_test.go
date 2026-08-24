@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -25,10 +27,14 @@ func TestValidateObserveCorpusFlags(t *testing.T) {
 		thinkTimeMs                   int
 		thinkTimeDist                 string
 		lazyGeneration                bool
+		horizonChanged                bool
+		numRequestsChanged            bool
+		shuffleCorpus                 bool
 		wantErrSubstr                 string // "" = expect valid
 	}{
 		{name: "spec-mode untouched", workload: "chatbot", rateChanged: true, wantErrSubstr: ""},
 		{name: "valid corpus", concurrentSessions: 4, totalSess: 20, corpusHeader: "h.yaml", corpusData: "d.csv", wantErrSubstr: ""},
+		{name: "valid corpus with shuffle", concurrentSessions: 4, totalSess: 20, corpusHeader: "h.yaml", corpusData: "d.csv", shuffleCorpus: true, wantErrSubstr: ""},
 		{name: "corpus needs both files", concurrentSessions: 4, corpusHeader: "h.yaml", wantErrSubstr: "--corpus-data"},
 		{name: "corpus + concurrency conflict", concurrentSessions: 4, corpusHeader: "h.yaml", corpusData: "d.csv", concurrency: 8, wantErrSubstr: "--concurrency"},
 		{name: "corpus + workload conflict", concurrentSessions: 4, corpusHeader: "h.yaml", corpusData: "d.csv", workload: "chatbot", wantErrSubstr: "--workload"},
@@ -39,10 +45,13 @@ func TestValidateObserveCorpusFlags(t *testing.T) {
 		{name: "corpus + think-time-ms conflict", concurrentSessions: 4, corpusHeader: "h.yaml", corpusData: "d.csv", thinkTimeMs: 200, wantErrSubstr: "--think-time-ms"},
 		{name: "corpus + think-time-dist conflict", concurrentSessions: 4, corpusHeader: "h.yaml", corpusData: "d.csv", thinkTimeDist: "constant:value=500ms", wantErrSubstr: "--think-time-dist"},
 		{name: "corpus + lazy-generation conflict", concurrentSessions: 4, corpusHeader: "h.yaml", corpusData: "d.csv", lazyGeneration: true, wantErrSubstr: "--lazy-generation"},
+		{name: "corpus + horizon conflict", concurrentSessions: 4, corpusHeader: "h.yaml", corpusData: "d.csv", horizonChanged: true, wantErrSubstr: "--horizon"},
+		{name: "corpus + num-requests conflict", concurrentSessions: 4, corpusHeader: "h.yaml", corpusData: "d.csv", numRequestsChanged: true, wantErrSubstr: "--num-requests"},
+		{name: "shuffle-corpus without concurrent-sessions", shuffleCorpus: true, wantErrSubstr: "--shuffle-corpus"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := validateObserveCorpusFlags(tc.concurrentSessions, tc.totalSess, tc.corpusHeader, tc.corpusData, tc.workload, tc.workloadSpec, tc.rateChanged, tc.concurrency, tc.thinkTimeMs, tc.thinkTimeDist, tc.lazyGeneration)
+			got := validateObserveCorpusFlags(tc.concurrentSessions, tc.totalSess, tc.corpusHeader, tc.corpusData, tc.workload, tc.workloadSpec, tc.rateChanged, tc.concurrency, tc.thinkTimeMs, tc.thinkTimeDist, tc.lazyGeneration, tc.horizonChanged, tc.numRequestsChanged, tc.shuffleCorpus)
 			if tc.wantErrSubstr == "" && got != "" {
 				t.Errorf("expected valid, got error %q", got)
 			}
@@ -67,7 +76,7 @@ func TestBuildObserveCorpusPool_DuplicatesToTarget(t *testing.T) {
 		t.Fatalf("export corpus: %v", err)
 	}
 
-	driver, initial, err := buildObserveCorpusPool(headerPath, dataPath, 2, 5, 42)
+	driver, initial, err := buildObserveCorpusPool(headerPath, dataPath, 2, 5, false, 42)
 	if err != nil {
 		t.Fatalf("buildObserveCorpusPool: %v", err)
 	}
@@ -87,7 +96,7 @@ func TestBuildObserveCorpusPool_EmptyCorpusErrors(t *testing.T) {
 	if err := workload.ExportTraceV2(header, []workload.TraceRecord{}, headerPath, dataPath); err != nil {
 		t.Fatalf("export: %v", err)
 	}
-	_, _, err := buildObserveCorpusPool(headerPath, dataPath, 2, 4, 42)
+	_, _, err := buildObserveCorpusPool(headerPath, dataPath, 2, 4, false, 42)
 	if err == nil {
 		t.Fatal("expected error for empty corpus, got nil")
 	}
@@ -112,7 +121,7 @@ func TestBuildObserveCorpusPool_MixedNonSessionErrors(t *testing.T) {
 	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
 		t.Fatalf("export: %v", err)
 	}
-	_, _, err := buildObserveCorpusPool(headerPath, dataPath, 1, 0, 42)
+	_, _, err := buildObserveCorpusPool(headerPath, dataPath, 1, 0, false, 42)
 	if err == nil {
 		t.Fatal("expected error for a corpus mixing session and non-session records, got nil")
 	}
@@ -121,6 +130,73 @@ func TestBuildObserveCorpusPool_MixedNonSessionErrors(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "count mismatch") {
 		t.Errorf("guard should pre-empt BuildSessionPool's internal 'count mismatch', but it surfaced: %v", err)
+	}
+}
+
+// TestBuildObserveCorpusPool_ShuffleReproducibleAndReorders verifies observe's
+// --shuffle-corpus (PR-C parity, #1480): the seeded permutation is reproducible
+// from the same --seed, actually reorders the corpus, and preserves the set;
+// shuffle=false keeps file order. observe draws from the SAME salted stream as
+// `blis replay --shuffle-corpus`, so one --seed selects the same subset on both.
+func TestBuildObserveCorpusPool_ShuffleReproducibleAndReorders(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "corpus.yaml")
+	dataPath := filepath.Join(dir, "corpus.csv")
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	var records []workload.TraceRecord
+	for i := 0; i < 6; i++ {
+		records = append(records, workload.TraceRecord{
+			RequestID: i, SessionID: fmt.Sprintf("s%d", i), RoundIndex: 0,
+			InputTokens: 100 + i, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok",
+		})
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export corpus: %v", err)
+	}
+	// joinIDs returns the comma-joined SessionID sequence of the initial injection
+	// (concurrent == total == 6 ⇒ all injected, in queued/admission order).
+	joinIDs := func(reqs []*sim.Request) string {
+		s := ""
+		for _, r := range reqs {
+			s += r.SessionID + ","
+		}
+		return s
+	}
+	const fileOrder = "s0,s1,s2,s3,s4,s5,"
+
+	// shuffle=false → file order.
+	_, initNoShuf, err := buildObserveCorpusPool(headerPath, dataPath, 6, 6, false, 42)
+	if err != nil {
+		t.Fatalf("no-shuffle: %v", err)
+	}
+	if got := joinIDs(initNoShuf); got != fileOrder {
+		t.Errorf("shuffle=false order = %q, want file order %q", got, fileOrder)
+	}
+
+	// shuffle=true, same seed twice → identical (reproducible).
+	_, initA, err := buildObserveCorpusPool(headerPath, dataPath, 6, 6, true, 7)
+	if err != nil {
+		t.Fatalf("shuffle A: %v", err)
+	}
+	_, initB, err := buildObserveCorpusPool(headerPath, dataPath, 6, 6, true, 7)
+	if err != nil {
+		t.Fatalf("shuffle B: %v", err)
+	}
+	ordA, ordB := joinIDs(initA), joinIDs(initB)
+	if ordA != ordB {
+		t.Errorf("same seed → different order:\n %q\n %q", ordA, ordB)
+	}
+	// Actually reorders (seed 7 permutes 6 elements away from identity).
+	if ordA == fileOrder {
+		t.Errorf("shuffle=true seed=7 did not reorder; got file order %q", ordA)
+	}
+	// Set preserved: the same 6 sessions, none dropped or duplicated.
+	seen := map[string]bool{}
+	for _, r := range initA {
+		seen[r.SessionID] = true
+	}
+	if len(seen) != 6 {
+		t.Errorf("shuffle changed the session set: %d unique, want 6", len(seen))
 	}
 }
 
@@ -156,7 +232,7 @@ func TestObserveCorpusMode_DrainsAllSessions(t *testing.T) {
 		t.Fatalf("export corpus: %v", err)
 	}
 
-	driver, initial, err := buildObserveCorpusPool(headerPath, dataPath, 2, 6, 42)
+	driver, initial, err := buildObserveCorpusPool(headerPath, dataPath, 2, 6, false, 42)
 	if err != nil {
 		t.Fatalf("buildObserveCorpusPool: %v", err)
 	}
@@ -220,7 +296,7 @@ func TestObserveCorpusMode_MultiRoundAccumulate(t *testing.T) {
 		t.Fatalf("export corpus: %v", err)
 	}
 
-	driver, initial, err := buildObserveCorpusPool(headerPath, dataPath, 1, 1, 42)
+	driver, initial, err := buildObserveCorpusPool(headerPath, dataPath, 1, 1, false, 42)
 	if err != nil {
 		t.Fatalf("buildObserveCorpusPool: %v", err)
 	}
