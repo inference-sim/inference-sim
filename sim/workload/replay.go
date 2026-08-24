@@ -124,8 +124,9 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 // overlap-clamped rounds) reads as false here and falls back to the arrival-gap path
 // — which bundles service time into the gap (see the gap-derivation note below), the
 // very effect think_time_us exists to avoid. The impact is bounded (a ~0 recorded
-// think replaced by the recorded arrival gap); a non-lossy encoding is deferred to the
-// Weka converter (#1604). Pinned by TestLoadTraceV2SessionBlueprints_AllZeroRecordedThink_FallsBackToGap.
+// think replaced by the recorded arrival gap); a non-lossy encoding is deferred to
+// #1608 (the Weka converter #1604 intentionally kept this lossy 0-sentinel). Pinned by
+// TestLoadTraceV2SessionBlueprints_AllZeroRecordedThink_FallsBackToGap.
 func sessionHasRecordedThinkTime(rounds []TraceRecord) bool {
 	for i := 1; i < len(rounds); i++ {
 		if rounds[i].ThinkTimeUs != 0 {

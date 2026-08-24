@@ -304,6 +304,42 @@ silently dropped.
     cover the largest round, and scale `--total-kv-blocks` up proportionally so
     the KV cache can hold the growing sessions.
 
+### Weka CC traces (`blis convert weka`)
+
+The [SemiAnalysis WekaTrace](https://huggingface.co/datasets/semianalysisai/cc-traces-weka-with-subagents-051926)
+datasets are a second agentic-trace family. Unlike the OTel/Exgentic corpus they ship
+as **JSONL** — one proxy session per line — so no Parquet explosion step is needed:
+
+```bash
+# Convert (one session per JSONL line) to the same TraceV2 corpus format.
+blis convert weka --input traces.jsonl --trace-output corpus \
+  --context-growth accumulate --max-think-time 0
+
+# Replay closed-loop (or as a concurrent pool, exactly as for OTel above).
+blis replay --trace-header corpus.yaml --trace-data corpus.csv \
+  --model qwen/qwen3-14b --session-mode closed-loop --max-model-len 1000000
+```
+
+The reader filters each session's `requests[]` to the **linear main-agent stream** —
+`type:"subagent"` groups are skipped (deferred to a later PR); their wall-clock is
+absorbed into the following main turn's think gap. Per-round **pure client think** is
+recomputed as `max(0, t_i − t_{i-1} − api_time_{i-1})` between consecutive main turns
+(carried in the `think_time_us` column, `--max-think-time` default `0` = uncapped,
+since Weka gaps are genuine away-from-keyboard times). The recorded `claude-*` model
+names are dropped during conversion (same routing-safety reason as OTel).
+
+!!! warning "Weka replay ISL is an upper bound (context compaction)"
+    Weka input token counts are very large (p50 ≈ 110K, p90 ≈ 395K), so the
+    `--max-model-len` / `--total-kv-blocks` sizing warning above applies with extra
+    force. More subtly: real Claude Code traffic **compacts/trims context constantly**
+    — ~30% of rounds on the full `051926` dataset have `in_N < in_{N-1}+out_{N-1}`.
+    The accumulate buffer can only grow, never shrink, so each such round clamps its
+    input delta to 0 and the reconstructed cumulative input **over-counts the recorded
+    total by ≈3–4×** (+312% on that dataset). Treat replayed input length, KV pressure,
+    and hit-rate as a substantial **upper bound**, not a faithful reproduction of the
+    recorded workload. (This is a property of the accumulate delta law, not the
+    converter; the think-time lossy-sentinel corner is tracked in #1608.)
+
 ---
 
 ## `blis calibrate`

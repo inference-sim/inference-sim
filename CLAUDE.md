@@ -227,10 +227,14 @@ go build -o blis main.go
 # = uncapped, since Weka gaps are genuine away-from-keyboard times). Reads `in` directly
 # (never len(hash_ids)×64). Weka ISL is huge (p50 ≈ 110K, p90 ≈ 395K), so replay MUST raise
 # --max-model-len (the ~41K default drops every request unservable) and scale --total-kv-blocks.
-# Fidelity note: real agentic traces compact/trim context often (~28% of rounds on the
-# 051926 dataset have in_N < in_{N-1}+out_{N-1}); such non-monotone rounds clamp their input
-# delta to 0, so the accumulate buffer OVER-counts the true per-round ISL (it cannot shrink).
-# Replayed KV pressure / hit-rate is therefore an UPPER BOUND, not an exact reproduction.
+# Fidelity note (important): real agentic traces compact/trim context heavily — ~30% of
+# rounds on the full 051926 dataset (219 sessions, 37.7K rounds) have in_N < in_{N-1}+out_{N-1}.
+# Such non-monotone rounds clamp their input delta to 0 (the accumulate buffer can only grow,
+# never shrink), so it OVER-counts the true cumulative input by ≈3–4× on real Claude Code
+# traffic (+312% on this dataset). Replayed input length / KV pressure / hit-rate is therefore
+# a substantial UPPER BOUND — do NOT read it as a faithful reproduction of the recorded ISL.
+# (Property of the PR-A/PR-B accumulate delta law, not this converter; the conversion is exact
+# per that law. A non-lossy think encoding is tracked in #1608.)
 ./blis convert weka --input traces.jsonl --trace-output corpus \
   --context-growth accumulate --max-think-time 0
 #
