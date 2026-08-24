@@ -185,7 +185,7 @@ type TraceRecord struct {
 	FinishReason      string // server-reported finish_reason ("stop", "length", "abort", etc.); empty = not recorded
 	XRequestID        string // client-generated UUID sent as x-request-id header (real-mode only); empty = not recorded
 	Adapter           string // LoRA adapter id serving this request (registry key; #1464); empty = base-model-only
-	ThinkTimeUs       int64  // recorded per-round client think time in µs (gap from previous request's end). Set by agentic-trace converters (#1478); preferred over arrival-gap derivation in closed-loop replay. NOTE: 0 is a LOSSY SENTINEL for "not recorded" — a genuinely-zero recorded think time (e.g. Weka's overlap-clamped rounds) is indistinguishable from an absent column, so an all-zero session falls back to arrival-gap derivation. A non-lossy encoding (distinguishing recorded-0 from absent) is deferred to the Weka converter work (#1604).
+	ThinkTimeUs       int64  // recorded per-round client think time in µs (gap from previous request's end). Set by agentic-trace converters (#1478); preferred over arrival-gap derivation in closed-loop replay. NOTE: 0 is a LOSSY SENTINEL for "not recorded" — a genuinely-zero recorded think time (e.g. Weka's overlap-clamped rounds) is indistinguishable from an absent column, so an all-zero session falls back to arrival-gap derivation. A non-lossy encoding (distinguishing recorded-0 from absent) is deferred to #1608 (the Weka converter #1604 intentionally kept this lossy 0-sentinel).
 }
 
 // TraceV2 combines header and records for a complete trace.

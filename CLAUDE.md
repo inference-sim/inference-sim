@@ -207,17 +207,46 @@ go build -o blis main.go
 ./blis convert inference-perf --spec spec.yaml
 ./blis compose --from spec1.yaml --from spec2.yaml
 
-# Convert OTel agentic trace JSON to a TraceV2 corpus (accumulate = strict growing prefix)
-./blis convert otel --input otel_json/ --trace-output corpus \
-  --context-growth accumulate --max-think-time 15s
-
-# Replay a fixed pool of N concurrent closed-loop sessions from the corpus
-# (--total-sessions duplicates the corpus with cache-busting to fill the target)
-# Real agentic prompts can be huge (tens of thousands to >100K tokens) and grow
-# each round — raise --max-model-len (default ~41K) and scale --total-kv-blocks
-# accordingly, or every request drops as unservable (completed_requests: 0).
+# Convert captured agentic traces to a TraceV2 corpus for closed-loop replay (#1477).
+# Both readers feed the shared session→TraceV2 encoder (#1479): each session becomes
+# rounds 0..N with per-round input DELTAS, TraceRecord.Model left empty (routing safety —
+# the recorded cross-model name would drop every request under --model), and closed-loop
+# replay's accumulate buffer reconstructs the growing prompt. Output is delta-encoded, so
+# it MUST be replayed with --session-mode closed-loop (or --concurrent-sessions, which
+# auto-promotes); the default --session-mode fixed would misread the deltas as absolutes.
+#
+# convert otel — OpenTelemetry agentic trace JSON (file / dir of *.json / *.jsonl); one
+# LLM chat span per round; think derived from arrival gaps (--max-think-time default 15s).
+./blis convert otel --input traces.jsonl --trace-output corpus \
+  --context-growth accumulate
+#
+# convert weka — SemiAnalysis WekaTrace JSONL (#1604, PR-F; one proxy session per line).
+# Filters requests[] to the linear main-agent stream (type:"subagent" groups skipped,
+# deferred to PR-E); recomputes pure client think as max(0, t_i − t_{i-1} − api_time_{i-1})
+# between consecutive main turns into the think_time_us column (--max-think-time default 0
+# = uncapped, since Weka gaps are genuine away-from-keyboard times). Reads `in` directly
+# (never len(hash_ids)×64). Weka ISL is huge (p50 ≈ 110K, p90 ≈ 395K), so replay MUST raise
+# --max-model-len (the ~41K default drops every request unservable) and scale --total-kv-blocks.
+# Fidelity note (important): real agentic traces compact/trim context heavily — ~30% of
+# rounds on the full 051926 dataset (219 sessions, 37.7K rounds) have in_N < in_{N-1}+out_{N-1}.
+# Such non-monotone rounds clamp their input delta to 0 (the accumulate buffer can only grow,
+# never shrink), so it OVER-counts the true cumulative input by ≈3–4× on real Claude Code
+# traffic (+312% on this dataset). Replayed input length / KV pressure / hit-rate is therefore
+# a substantial UPPER BOUND — do NOT read it as a faithful reproduction of the recorded ISL.
+# (Property of the PR-A/PR-B accumulate delta law, not this converter; the conversion is exact
+# per that law. Faithful compaction support is tracked in #1609; the separate think-time
+# lossy-0 sentinel is #1608.)
+./blis convert weka --input traces.jsonl --trace-output corpus \
+  --context-growth accumulate --max-think-time 0
+#
+# Replay a corpus (from either converter) closed-loop — reconstructs each session's growing prompt.
 ./blis replay --trace-header corpus.yaml --trace-data corpus.csv \
-  --model qwen/qwen3-14b --concurrent-sessions 8 --total-sessions 200
+  --model qwen/qwen3-14b --session-mode closed-loop --max-model-len 1000000
+# Or replay a fixed pool of N concurrent closed-loop sessions (#1486, PR-C); --total-sessions
+# duplicates the corpus with cache-busting to fill the target (--concurrent-sessions auto-promotes
+# to closed-loop). Same huge-ISL caveat — raise --max-model-len and scale --total-kv-blocks.
+./blis replay --trace-header corpus.yaml --trace-data corpus.csv \
+  --model qwen/qwen3-14b --concurrent-sessions 8 --total-sessions 200 --max-model-len 1000000
 
 # Observe corpus-mode: drive the SAME corpus as a fixed session pool against a
 # LIVE server (observe-side twin of `blis replay --concurrent-sessions`), so
