@@ -847,6 +847,62 @@ func TestLoadTraceV2Requests_GeneratedTraceInjectionUnchanged(t *testing.T) {
 	}
 }
 
+// TestLoadTraceV2Requests_MixedSendSign_RelativeClock_ShiftZero pins the ONLY
+// "mixed send sign" case a real producer emits: a generated blis run trace whose
+// first request arrives at t=0 has send_time_us == 0 for that record (so
+// injectionTime falls back to arrival) while later records have send_time_us > 0.
+// All are on ONE relative clock (send == arrival), so injectionTime == arrival for
+// every record ⇒ shift == 0 ⇒ injection == arrival (byte-identical, INV-13). A
+// mix of send>0 and send<=0 must NOT be misread as a cross-clock trace.
+func TestLoadTraceV2Requests_MixedSendSign_RelativeClock_ShiftZero(t *testing.T) {
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 0, ArrivalTimeUs: 0, SendTimeUs: 0, InputTokens: 40, OutputTokens: 8, Status: "ok"},
+			{RequestID: 1, ArrivalTimeUs: 100_000, SendTimeUs: 100_000, InputTokens: 40, OutputTokens: 8, Status: "ok"},
+		},
+	}
+	if got := injectionOriginShift(trace.Records); got != 0 {
+		t.Fatalf("injectionOriginShift = %d, want 0 (uniform relative clock)", got)
+	}
+	reqs, err := LoadTraceV2Requests(trace, 42)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reqs[0].ArrivalTime != 0 || reqs[1].ArrivalTime != 100_000 {
+		t.Errorf("injection = [%d, %d], want [0, 100000] (== arrival; shift must be 0)", reqs[0].ArrivalTime, reqs[1].ArrivalTime)
+	}
+}
+
+// TestLoadTraceV2Requests_MixedEpochAndFallback_StaysNonNegative documents the
+// uniform-clock PRECONDITION via the INV-3 law. A trace that mixes an epoch-clock
+// record (send_time_us > 0) with a fallback record (send_time_us <= 0, using its
+// relative arrival) is UNREACHABLE from blis observe/run/converters — every real
+// producer writes a single uniform clock (all epoch, or all relative/send==arrival,
+// or all-fallback). Re-basing to one origin is exact only for a uniform-clock trace,
+// so the epoch record is not re-based correctly here — but INV-3 still holds for
+// EVERY input: injection = injectionTime - minInjection + minArrival >= minArrival
+// >= 0. Pinning this proves the fix never emits a negative DES tick, even in the
+// pathological corner (rather than a heuristic "uniform-clock" guard, which would
+// false-positive on the legitimate t=0-first-arrival case above).
+func TestLoadTraceV2Requests_MixedEpochAndFallback_StaysNonNegative(t *testing.T) {
+	const epoch = int64(1_787_274_995_712_218)
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 0, ArrivalTimeUs: 0, SendTimeUs: epoch, InputTokens: 40, OutputTokens: 8, Status: "ok"},
+			{RequestID: 1, ArrivalTimeUs: 50_000, SendTimeUs: -1, InputTokens: 40, OutputTokens: 8, Status: "ok"},
+		},
+	}
+	reqs, err := LoadTraceV2Requests(trace, 42)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, r := range reqs {
+		if r.ArrivalTime < 0 {
+			t.Errorf("INV-3: %s injected at negative tick %d", r.ID, r.ArrivalTime)
+		}
+	}
+}
+
 // TestInjectionOriginShift_AllFallback_IsZero verifies BC-5: a trace whose every
 // record falls back to arrival_time_us (send_time_us <= 0) has a zero origin
 // shift, so injection == arrival and no negative DES tick is produced (INV-3).

@@ -79,6 +79,9 @@ func injectionTime(rec TraceRecord) int64 {
 // constant leaves the spacing intact. The result is >= 0 for every injected
 // request whenever arrival_time_us >= 0 (validated by LoadTraceV2), because
 // injectionTime(rec) >= min(injectionTime) and we add back min(arrival) >= 0.
+// That same arrival_time_us >= 0 validation also bounds this subtraction: both
+// mins lie in [0, max epoch µs ~1.79e15], far below int64 max, so minInjection -
+// minArrival cannot overflow for any trace that came through LoadTraceV2.
 // Returns 0 for an empty record set.
 func injectionOriginShift(records []TraceRecord) int64 {
 	if len(records) == 0 {
