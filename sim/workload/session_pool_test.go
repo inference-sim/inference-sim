@@ -127,8 +127,13 @@ func TestSessionPool_RefillRebasesDeadline(t *testing.T) {
 }
 
 func TestSessionPool_RefillAndConservation(t *testing.T) {
-	// 4 single-round sessions, pool of 2. Each completion should admit the next
-	// until the corpus is exhausted; active count never exceeds 2; exactly 4 start.
+	// 4 single-round sessions, pool of 2. Each completion admits the next until the
+	// corpus is exhausted; the pool never admits more than one replacement per
+	// termination (so the concurrently-active count never exceeds the pool size);
+	// exactly 4 sessions start and terminate. Asserted purely through observable
+	// outputs — the injected slice, the per-completion follow-ups admitted, and
+	// Unstarted()/TotalSessions() — so the test survives a rewrite of the driver's
+	// internal counters (refactor-survival; principles.md BDD/TDD item 5).
 	var bps []SessionBlueprint
 	var r0s []*sim.Request
 	for i := 0; i < 4; i++ {
@@ -140,44 +145,55 @@ func TestSessionPool_RefillAndConservation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildSessionPool: %v", err)
 	}
-	if len(initial) != 2 || d.activeCount != 2 {
-		t.Fatalf("initial=%d active=%d, want 2/2", len(initial), d.activeCount)
+	if len(initial) != 2 {
+		t.Fatalf("initial injected = %d, want 2 (pool size)", len(initial))
+	}
+	if d.TotalSessions() != 4 {
+		t.Fatalf("total sessions = %d, want 4", d.TotalSessions())
 	}
 
-	admitted := 0
-	// Complete the 2 initial sessions; each single-round session terminates on
-	// its round-0 completion, so each should admit one queued session.
+	// started/terminated are counted only through observable outputs (returned
+	// requests and OnComplete calls), never by reading a driver field.
+	started := len(initial)
+	terminated := 0
+
+	// Complete the 2 initial sessions; each single-round session terminates on its
+	// round-0 completion. Each termination must admit AT MOST ONE replacement —
+	// len(next) <= 1 is the observable form of "active never exceeds the pool".
+	var refills []*sim.Request
 	for _, r := range initial {
 		r.State = sim.StateCompleted
 		r.ProgressIndex = int64(r.InputLen())
 		next := d.OnComplete(r, 1000)
-		admitted += len(next)
-		if d.activeCount > 2 {
-			t.Fatalf("active count %d exceeded pool size 2", d.activeCount)
+		terminated++
+		if len(next) > 1 {
+			t.Fatalf("a single termination admitted %d sessions; the pool bound requires <= 1", len(next))
 		}
-		for _, n := range next {
-			n.State = sim.StateCompleted
-			n.ProgressIndex = int64(n.InputLen())
-		}
+		started += len(next)
+		refills = append(refills, next...)
 	}
-	if admitted != 2 {
-		t.Fatalf("admitted %d sessions on first wave, want 2", admitted)
+	if len(refills) != 2 {
+		t.Fatalf("first wave admitted %d refills, want 2 (corpus not yet exhausted)", len(refills))
 	}
-	// Complete the 2 admitted sessions; corpus now exhausted → no more admissions.
-	// (We re-drive by completing whatever was admitted.)
-	// Fetch them from the queue tail we just admitted:
-	for i := 2; i < 4; i++ {
-		r := d.queued[i]
+
+	// Complete the 2 refills; the corpus is now exhausted → no further admissions.
+	for _, r := range refills {
 		r.State = sim.StateCompleted
 		r.ProgressIndex = int64(r.InputLen())
 		next := d.OnComplete(r, 2000)
+		terminated++
 		if len(next) != 0 {
-			t.Fatalf("corpus exhausted but admitted %d more", len(next))
+			t.Fatalf("corpus exhausted but a termination admitted %d more", len(next))
 		}
 	}
-	// Conservation: every session started and terminated exactly once.
-	if d.totalStarted != 4 || d.totalTerm != 4 {
-		t.Errorf("started=%d terminated=%d, want 4/4", d.totalStarted, d.totalTerm)
+
+	// Conservation, all via the public surface: every session started and
+	// terminated exactly once, and none was left unstarted.
+	if started != 4 || terminated != 4 {
+		t.Errorf("started=%d terminated=%d, want 4/4", started, terminated)
+	}
+	if d.Unstarted() != 0 {
+		t.Errorf("Unstarted() = %d, want 0 (every pooled session was admitted)", d.Unstarted())
 	}
 }
 

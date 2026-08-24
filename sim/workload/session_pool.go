@@ -19,10 +19,8 @@ type SessionPoolDriver struct {
 	mgr          *SessionManager
 	queued       []*sim.Request // all total round-0 requests (originals + clones), in admission order
 	nextQueued   int            // index into queued of the next session to admit
-	activeCount  int
-	totalStarted int // sessions injected so far (initial pool + admitted)
-	totalTerm    int // sessions that have reached a terminal state
-	totalCount   int // total sessions in the pool (== len of all round-0 requests)
+	totalStarted int            // sessions injected so far (initial pool + admitted); read by Unstarted()
+	totalCount   int            // total sessions in the pool (== len of all round-0 requests)
 }
 
 // cloneSampler returns a sampler independent of s for stateful sampler types.
@@ -146,7 +144,6 @@ func BuildSessionPool(blueprints []SessionBlueprint, r0Requests []*sim.Request, 
 	for i := 0; i < concurrent; i++ {
 		initial = append(initial, d.queued[d.nextQueued])
 		d.nextQueued++
-		d.activeCount++
 		d.totalStarted++
 	}
 	return d, initial, nil
@@ -171,9 +168,9 @@ func (d *SessionPoolDriver) OnComplete(req *sim.Request, tick int64) []*sim.Requ
 		// Session continues (intra-session follow-up). Pool membership unchanged.
 		return followUps
 	}
-	// Session terminated. Free its slot and admit the next queued session, if any.
-	d.activeCount--
-	d.totalTerm++
+	// Session terminated. Admit the next queued session, if any, to refill the pool.
+	// The pool bound is maintained structurally: each termination admits at most one
+	// replacement, so the concurrently-active count never exceeds the initial pool.
 	if d.nextQueued < len(d.queued) {
 		next := d.queued[d.nextQueued]
 		// Admit at the completion tick (a fresh user starts as this one ends).
@@ -188,7 +185,6 @@ func (d *SessionPoolDriver) OnComplete(req *sim.Request, tick int64) []*sim.Requ
 		}
 		next.ArrivalTime = tick
 		d.nextQueued++
-		d.activeCount++
 		d.totalStarted++
 		return []*sim.Request{next}
 	}

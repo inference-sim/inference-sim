@@ -3088,3 +3088,114 @@ func TestReplayCmd_AccumulateHeaderRequiresClosedLoop(t *testing.T) {
 		t.Errorf("positive control: completed_requests = %d, want 1 (guard must not fire once auto-promoted to closed-loop)", int(got2))
 	}
 }
+
+// TestReplayCmd_PoolRejectsNonSessionRecords is a regression test for the
+// pool-mode non-session guard (F5): pooled replay (--concurrent-sessions) builds
+// the pool from a 1:1 (session blueprint ↔ round-0 request) corpus, so a trace
+// that MIXES session records with non-session (single-shot, empty session_id)
+// records cannot be pooled. LoadTraceV2SessionBlueprints returns one round-0
+// request per session PLUS one per non-session record, so the counts diverge.
+// The guard in cmd/replay.go must Fatalf with an actionable operator message
+// (naming the non-session count) rather than deferring to BuildSessionPool's
+// internal "count mismatch" wording.
+//
+// The Fatalf os.Exit's, so — like TestReplayCmd_AccumulateHeaderRequiresClosedLoop
+// — the negative case runs in a subprocess re-run (BLIS_TEST_SUBPROCESS=1) and is
+// asserted via exit code + stderr content.
+func TestReplayCmd_PoolRejectsNonSessionRecords(t *testing.T) {
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		// Subprocess: a corpus with one session record AND one non-session record,
+		// replayed with --concurrent-sessions. Must Fatalf before completing.
+		dir := t.TempDir()
+		headerPath := filepath.Join(dir, "trace.yaml")
+		dataPath := filepath.Join(dir, "trace.csv")
+		header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+		records := []workload.TraceRecord{
+			{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 10, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
+			{RequestID: 1, SessionID: "", RoundIndex: 0, InputTokens: 8, OutputTokens: 4, ArrivalTimeUs: 0, Status: "ok"},
+		}
+		if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			os.Exit(2)
+		}
+
+		mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+		model = "test-model"
+		latencyModelBackend = "trained-physics"
+		totalKVBlocks = 1000
+		blockSizeTokens = 16
+		maxNumSeqs = 64
+		maxNumBatchedTokens = 2048
+		numInstances = 1
+		seed = 42
+		longPrefillTokenThreshold = 0
+		kvCPUBlocks = 0
+		kvOffloadThreshold = 0.9
+		kvTransferBandwidth = 100.0
+		kvTransferBaseLatency = 0
+		snapshotRefreshInterval = 0
+		admissionPolicy = "always-admit"
+		routingPolicy = "round-robin"
+		scheduler = "fcfs"
+		policyConfigPath = ""
+		maxModelLen = 0
+		traceLevel = "none"
+		counterfactualK = 0
+		traceHeaderPath = headerPath
+		traceDataPath = dataPath
+		modelConfigFolder = mcFolder
+		hwConfigPath = hwPath
+		gpu = "H100"
+		tensorParallelism = 1
+		defaultsFilePath = defaultsPath
+		replaySessionMode = "closed-loop"
+		replayConcurrentSessions = 1
+		replayTotalSessions = 0
+		replayThinkTimeMs = 0
+		replayThinkTimeDist = ""
+		resultsPath = ""
+		replayTraceOutput = ""
+
+		testCmd := &cobra.Command{}
+		registerSimConfigFlags(testCmd)
+		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+		// --concurrent-sessions is read via the replayConcurrentSessions package var
+		// (set above), not a registerSimConfigFlags flag, so it is NOT in the parsed
+		// args — mirroring TestReplayCmd_AccumulateHeaderRequiresClosedLoop's setup.
+		if err := testCmd.ParseFlags([]string{
+			"--model", "test-model", "--latency-model", "trained-physics",
+			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+			"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+			"--trace-header", headerPath, "--trace-data", dataPath,
+			"--defaults-filepath", defaultsPath,
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)
+			os.Exit(2) // distinct from logrus.Fatalf exit code (1)
+		}
+		replayCmd.Run(testCmd, nil) // must Fatalf before here
+		os.Exit(0)                  // reached only if no fatal = parent test failure
+	}
+
+	// Parent: re-run this test as subprocess and expect exit code 1 (logrus.Fatalf).
+	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_PoolRejectsNonSessionRecords", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("expected non-zero exit when pooling a corpus with non-session records, got exit 0")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("unexpected error type: %v", err)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("expected exit code 1 (logrus.Fatalf), got %d; output:\n%s", exitErr.ExitCode(), out)
+	}
+	// The message must be the actionable operator guard, not BuildSessionPool's
+	// internal "count mismatch" wording.
+	if !strings.Contains(string(out), "no session_id") {
+		t.Errorf("fatal message should name the non-session records ('no session_id'), got:\n%s", out)
+	}
+	if strings.Contains(string(out), "count mismatch") {
+		t.Errorf("guard should pre-empt BuildSessionPool's internal 'count mismatch' error, but it surfaced:\n%s", out)
+	}
+}

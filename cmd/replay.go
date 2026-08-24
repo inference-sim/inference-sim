@@ -199,6 +199,16 @@ Example:
 				logrus.Warnf("--session-mode closed-loop: no session records found in trace; all requests injected with fixed timing")
 				requests = r0Requests
 			} else if replayConcurrentSessions > 0 {
+				// Pool mode requires a pure-session corpus: every record must belong to
+				// a session (carry a session_id). LoadTraceV2SessionBlueprints returns one
+				// round-0 request per session PLUS one per non-session (single-shot)
+				// record, so a mixed trace yields more round-0 requests than blueprints.
+				// Surface that here with an actionable message naming the offending count,
+				// rather than letting BuildSessionPool fail with its internal
+				// "count mismatch" wording (R1 — no opaque internal-invariant error).
+				if nonSession := len(r0Requests) - len(blueprints); nonSession > 0 {
+					logrus.Fatalf("--concurrent-sessions requires every trace record to belong to a session, but %d of %d records have no session_id. Pooled replay cannot mix session and non-session (single-shot) records; re-export the corpus so every row carries a session_id (e.g. via `blis convert otel`), or drop --concurrent-sessions to replay it in plain closed-loop mode.", nonSession, len(r0Requests))
+				}
 				// Optional seeded shuffle of the corpus step order (#1480). Drawn from
 				// a distinct stream off the master seed (XOR salt) so it is reproducible
 				// from --seed yet does not perturb the per-session token / clone RNGs.
