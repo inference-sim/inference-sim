@@ -732,76 +732,171 @@ func TestLoadTraceV2Requests_ModelAndDeadline(t *testing.T) {
 	}
 }
 
-// TestLoadTraceV2Requests_ConcurrencyModeUseSendTime verifies BC-1 and BC-2.
-func TestLoadTraceV2Requests_ConcurrencyModeUseSendTime(t *testing.T) {
+// TestInjectionTime_ChoiceLogic verifies the raw send-vs-arrival CHOICE in
+// injectionTime (unchanged by #1606). The chosen basis is later re-based onto the
+// arrival origin by injectionOriginShift; this test isolates the choice so a
+// regression there is caught independently of the normalization.
+func TestInjectionTime_ChoiceLogic(t *testing.T) {
 	tests := []struct {
 		name          string
 		sendTimeUs    int64
 		arrivalTimeUs int64
-		wantArrival   int64
+		wantBasis     int64
 	}{
 		{
-			name:          "non-zero send_time overrides arrival_time",
-			sendTimeUs:    50000, // observed trace: slot wait caused send_time > arrival_time
+			name:          "non-zero send_time is the injection basis (slot wait)",
+			sendTimeUs:    50000,
 			arrivalTimeUs: 0,
-			wantArrival:   50000,
+			wantBasis:     50000,
 		},
 		{
-			name:          "send_time equals arrival_time: returns send_time unchanged",
+			name:          "send_time == arrival_time: basis unchanged",
 			sendTimeUs:    100000,
 			arrivalTimeUs: 100000,
-			wantArrival:   100000,
+			wantBasis:     100000,
 		},
 		{
 			name:          "zero send_time falls back to arrival_time",
 			sendTimeUs:    0,
 			arrivalTimeUs: 200000,
-			wantArrival:   200000,
+			wantBasis:     200000,
 		},
 		{
-			// Negative send_time (clock corruption) must NOT be used as injection
-			// time — the > 0 guard ensures we fall back to arrival_time rather
-			// than injecting a negative DES timestamp (which would violate INV-3).
+			// Negative send_time (clock corruption) must NOT be used as the
+			// basis — the > 0 guard falls back to arrival_time so no negative
+			// DES timestamp reaches the sim (INV-3).
 			name:          "negative send_time falls back to arrival_time",
 			sendTimeUs:    -100,
 			arrivalTimeUs: 300000,
-			wantArrival:   300000,
+			wantBasis:     300000,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			trace := &TraceV2{
-				Records: []TraceRecord{
-					{
-						RequestID:     0,
-						ArrivalTimeUs: tc.arrivalTimeUs,
-						SendTimeUs:    tc.sendTimeUs,
-						InputTokens:   50,
-						OutputTokens:  25,
-						Status:        "ok",
-					},
-				},
-			}
-			reqs, err := LoadTraceV2Requests(trace, 42)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if len(reqs) != 1 {
-				t.Fatalf("got %d requests, want 1", len(reqs))
-			}
-			if reqs[0].ArrivalTime != tc.wantArrival {
-				t.Errorf("ArrivalTime = %d, want %d", reqs[0].ArrivalTime, tc.wantArrival)
+			got := injectionTime(TraceRecord{ArrivalTimeUs: tc.arrivalTimeUs, SendTimeUs: tc.sendTimeUs})
+			if got != tc.wantBasis {
+				t.Errorf("injectionTime = %d, want %d", got, tc.wantBasis)
 			}
 		})
 	}
 }
 
-// TestLoadTraceV2SessionBlueprints_ConcurrencyModeInjection verifies BC-3, BC-4, BC-5.
+// TestLoadTraceV2Requests_NormalizesEpochSendOrigin verifies BC-1 and BC-4: an
+// epoch-scale send_time_us trace (a real blis observe trace) is injected on the
+// arrival origin with send-delta spacing preserved. This is the #1606 fix.
+func TestLoadTraceV2Requests_NormalizesEpochSendOrigin(t *testing.T) {
+	// Two records. arrival_time_us is run-relative (starts ~0); send_time_us is
+	// Unix-epoch µs. rec0 waited 100ms for a concurrency slot, rec1 waited 250ms,
+	// so the SEND delta (200000) differs from the ARRIVAL delta (50000).
+	const epoch = int64(1_787_274_995_712_218)
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 0, ArrivalTimeUs: 0, SendTimeUs: epoch + 100_000,
+				DeadlineUs: 300_000_000, InputTokens: 50, OutputTokens: 25, Status: "ok"},
+			{RequestID: 1, ArrivalTimeUs: 50_000, SendTimeUs: epoch + 300_000,
+				DeadlineUs: 350_000_000, InputTokens: 50, OutputTokens: 25, Status: "ok"},
+		},
+	}
+	reqs, err := LoadTraceV2Requests(trace, 42)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(reqs) != 2 {
+		t.Fatalf("got %d requests, want 2", len(reqs))
+	}
+	// BC-1: injection is re-based onto the arrival origin. The earliest injected
+	// request lands at min(arrival) == 0, NOT at an epoch-scale tick.
+	if reqs[0].ArrivalTime != 0 {
+		t.Errorf("BC-1: request 0 ArrivalTime = %d, want 0 (arrival origin, not epoch)", reqs[0].ArrivalTime)
+	}
+	// BC-1: injection must be far below the deadline (no instant timeout).
+	if reqs[0].ArrivalTime >= reqs[0].Deadline {
+		t.Errorf("BC-1: request 0 injected at %d >= deadline %d — would instant-timeout (#1606)", reqs[0].ArrivalTime, reqs[0].Deadline)
+	}
+	// BC-4: spacing follows the SEND delta (200000), not the arrival delta (50000).
+	gotDelta := reqs[1].ArrivalTime - reqs[0].ArrivalTime
+	if gotDelta != 200_000 {
+		t.Errorf("BC-4: injection delta = %d, want 200000 (send delta); arrival delta 50000 would be wrong", gotDelta)
+	}
+}
+
+// TestLoadTraceV2Requests_GeneratedTraceInjectionUnchanged verifies BC-3
+// (INV-13/INV-6): a generated blis run trace (send_time_us == arrival_time_us,
+// arrival origin > 0 for a positive rate) injects EXACTLY at arrival_time_us —
+// the origin shift is 0, so replay is byte-identical to pre-#1606.
+func TestLoadTraceV2Requests_GeneratedTraceInjectionUnchanged(t *testing.T) {
+	// blis run --rate 10 produces the first arrival at 99999 (not 0), with
+	// send_time_us == arrival_time_us (tracev2.go). See #1606 deviation D1.
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 0, ArrivalTimeUs: 99_999, SendTimeUs: 99_999, InputTokens: 50, OutputTokens: 25, Status: "ok"},
+			{RequestID: 1, ArrivalTimeUs: 199_998, SendTimeUs: 199_998, InputTokens: 50, OutputTokens: 25, Status: "ok"},
+			{RequestID: 2, ArrivalTimeUs: 299_997, SendTimeUs: 299_997, InputTokens: 50, OutputTokens: 25, Status: "ok"},
+		},
+	}
+	reqs, err := LoadTraceV2Requests(trace, 42)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []int64{99_999, 199_998, 299_997}
+	for i, req := range reqs {
+		if req.ArrivalTime != want[i] {
+			t.Errorf("BC-3 (INV-13): request %d ArrivalTime = %d, want %d (shift must be 0 for generated traces)", i, req.ArrivalTime, want[i])
+		}
+	}
+}
+
+// TestInjectionOriginShift_AllFallback_IsZero verifies BC-5: a trace whose every
+// record falls back to arrival_time_us (send_time_us <= 0) has a zero origin
+// shift, so injection == arrival and no negative DES tick is produced (INV-3).
+func TestInjectionOriginShift_AllFallback_IsZero(t *testing.T) {
+	records := []TraceRecord{
+		{RequestID: 0, ArrivalTimeUs: 10_000, SendTimeUs: 0},
+		{RequestID: 1, ArrivalTimeUs: 20_000, SendTimeUs: -100},
+	}
+	if got := injectionOriginShift(records); got != 0 {
+		t.Errorf("injectionOriginShift = %d, want 0 (all records fall back to arrival)", got)
+	}
+	// Empty record set → 0 (defensive).
+	if got := injectionOriginShift(nil); got != 0 {
+		t.Errorf("injectionOriginShift(nil) = %d, want 0", got)
+	}
+}
+
+// TestMaxNormalizedInjectionTimeUs verifies BC-6: the preliminary closed-loop
+// horizon basis is the max NORMALIZED injection over injected records (round-0 +
+// non-session), on the arrival origin — not the raw arrival_time_us column.
+func TestMaxNormalizedInjectionTimeUs(t *testing.T) {
+	const epoch = int64(1_787_274_995_712_218)
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			// Session round-0 (injected initially).
+			{RequestID: 0, SessionID: "A", RoundIndex: 0, ArrivalTimeUs: 0, SendTimeUs: epoch},
+			// Session follow-up (NOT injected initially — must be skipped).
+			{RequestID: 1, SessionID: "A", RoundIndex: 1, ArrivalTimeUs: 500_000, SendTimeUs: epoch + 9_000_000},
+			// Non-session (injected initially); latest send → sets the max.
+			{RequestID: 2, ArrivalTimeUs: 300_000, SendTimeUs: epoch + 700_000},
+		},
+	}
+	// shift = min(injectionTime) - min(arrival) = epoch - 0 = epoch.
+	// Normalized injected: r0 → 0, r2 → 700000. Follow-up r1 skipped.
+	if got := MaxNormalizedInjectionTimeUs(trace); got != 700_000 {
+		t.Errorf("MaxNormalizedInjectionTimeUs = %d, want 700000 (normalized max over injected records)", got)
+	}
+	if got := MaxNormalizedInjectionTimeUs(nil); got != 0 {
+		t.Errorf("MaxNormalizedInjectionTimeUs(nil) = %d, want 0", got)
+	}
+}
+
+// TestLoadTraceV2SessionBlueprints_ConcurrencyModeInjection verifies that the
+// round-0 and non-session injection sites use the send-based basis re-based onto
+// the arrival origin (#1606, BC-1/BC-4), and that think-time still comes from
+// arrival deltas.
 func TestLoadTraceV2SessionBlueprints_ConcurrencyModeInjection(t *testing.T) {
-	// Session round-0 with send_time > arrival_time (BC-3)
-	// Non-session record with send_time > arrival_time (BC-4)
-	// Think-time gap still uses arrival_time_us deltas (BC-5)
+	// injectionTimes: A/r0 → 50000, A/r1 → 230000, non-session → 40000.
+	// min(injectionTime) = 40000, min(arrival) = 0 → origin shift = 40000.
+	// Normalized injection: A/r0 → 10000, non-session → 0.
 	trace := &TraceV2{
 		Records: []TraceRecord{
 			// Session A: round-0 delayed by concurrency slot wait (50ms)
@@ -812,7 +907,7 @@ func TestLoadTraceV2SessionBlueprints_ConcurrencyModeInjection(t *testing.T) {
 			{RequestID: 2, SessionID: "A", RoundIndex: 1,
 				ArrivalTimeUs: 200000, SendTimeUs: 230000,
 				InputTokens: 150, OutputTokens: 60},
-			// Non-session record with send_time > arrival_time (BC-4)
+			// Non-session record with send_time > arrival_time (earliest send → origin)
 			{RequestID: 3, SessionID: "",
 				ArrivalTimeUs: 10000, SendTimeUs: 40000,
 				InputTokens: 80, OutputTokens: 30},
@@ -842,17 +937,20 @@ func TestLoadTraceV2SessionBlueprints_ConcurrencyModeInjection(t *testing.T) {
 		t.Fatal("non-session request not found")
 	}
 
-	// BC-3: session round-0 uses send_time
-	if sessionArrival != 50000 {
-		t.Errorf("BC-3: session round-0 ArrivalTime = %d, want 50000 (send_time_us)", sessionArrival)
+	// BC-1/BC-4: session round-0 injected at send basis re-based to arrival origin
+	// (send 50000 - shift 40000 = 10000). The send-delta between the two injected
+	// records (50000 - 40000 = 10000) is preserved, not the arrival delta.
+	if sessionArrival != 10000 {
+		t.Errorf("session round-0 ArrivalTime = %d, want 10000 (send 50000 - origin shift 40000)", sessionArrival)
 	}
 
-	// BC-4: non-session request uses send_time
-	if nonSessionArrival != 40000 {
-		t.Errorf("BC-4: non-session ArrivalTime = %d, want 40000 (send_time_us)", nonSessionArrival)
+	// BC-4: earliest-sent (non-session) request lands at the arrival origin (0).
+	if nonSessionArrival != 0 {
+		t.Errorf("non-session ArrivalTime = %d, want 0 (earliest send at arrival origin)", nonSessionArrival)
 	}
 
-	// BC-5: think-time gap derived from ArrivalTimeUs differences (200000 - 0 = 200000)
+	// Think-time gap derived from ArrivalTimeUs differences (200000 - 0 = 200000),
+	// origin-invariant and unaffected by the injection normalization.
 	if len(blueprints) != 1 {
 		t.Fatalf("expected 1 blueprint, got %d", len(blueprints))
 	}
@@ -866,10 +964,10 @@ func TestLoadTraceV2SessionBlueprints_ConcurrencyModeInjection(t *testing.T) {
 	// Asserting == 200000 AND != 180000 makes the law explicit: think-time MUST
 	// come from ArrivalTimeUs deltas, not SendTimeUs deltas.
 	if gotThinkTime != 200000 {
-		t.Errorf("BC-5: think time = %d, want 200000 (ArrivalTimeUs gap); if 180000, SendTimeUs gap was used instead", gotThinkTime)
+		t.Errorf("think time = %d, want 200000 (ArrivalTimeUs gap); if 180000, SendTimeUs gap was used instead", gotThinkTime)
 	}
 	if gotThinkTime == 180000 {
-		t.Error("BC-5: think time == 180000 (SendTimeUs gap) — must use ArrivalTimeUs gap instead")
+		t.Error("think time == 180000 (SendTimeUs gap) — must use ArrivalTimeUs gap instead")
 	}
 }
 
