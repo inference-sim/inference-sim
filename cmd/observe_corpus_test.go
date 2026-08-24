@@ -93,6 +93,37 @@ func TestBuildObserveCorpusPool_EmptyCorpusErrors(t *testing.T) {
 	}
 }
 
+// TestBuildObserveCorpusPool_MixedNonSessionErrors is the observe-side parity of
+// the replay non-session guard (PR-C review follow-up: "same behavior in observe
+// needs to be addressed"). A corpus that mixes session records with non-session
+// (empty session_id) records cannot be pooled 1:1; buildObserveCorpusPool must
+// return an actionable "no session_id" error, pre-empting BuildSessionPool's
+// internal "count mismatch" wording (R1).
+func TestBuildObserveCorpusPool_MixedNonSessionErrors(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "mixed.yaml")
+	dataPath := filepath.Join(dir, "mixed.csv")
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	// One session record + one non-session (empty SessionID) record.
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 10, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "", RoundIndex: 0, InputTokens: 8, OutputTokens: 4, ArrivalTimeUs: 0, Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	_, _, err := buildObserveCorpusPool(headerPath, dataPath, 1, 0, 42)
+	if err == nil {
+		t.Fatal("expected error for a corpus mixing session and non-session records, got nil")
+	}
+	if !strings.Contains(err.Error(), "no session_id") {
+		t.Errorf("error should name the non-session records ('no session_id'), got: %v", err)
+	}
+	if strings.Contains(err.Error(), "count mismatch") {
+		t.Errorf("guard should pre-empt BuildSessionPool's internal 'count mismatch', but it surfaced: %v", err)
+	}
+}
+
 // TestObserveCorpusMode_DrainsAllSessions is the load-bearing corpus-mode test:
 // a 2-session corpus scaled to --total-sessions 6 at --concurrent-sessions 2
 // must dispatch and complete exactly 6 sessions against the (mock) server, with

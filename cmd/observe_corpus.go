@@ -96,6 +96,16 @@ func buildObserveCorpusPool(
 	if len(blueprints) == 0 {
 		return nil, nil, fmt.Errorf("corpus has no session records (need SessionID + RoundIndex rows)")
 	}
+	// Corpus-mode builds the pool from a 1:1 (session blueprint ↔ round-0 request)
+	// corpus, so a trace that MIXES session records with non-session (single-shot,
+	// empty session_id) records cannot be pooled. LoadTraceV2SessionBlueprints
+	// returns one round-0 request per session PLUS one per non-session record, so a
+	// mix diverges from the blueprint count. Surface that with an actionable message
+	// — mirroring the same guard on `blis replay --concurrent-sessions` (R1) — rather
+	// than letting BuildSessionPool fail with its internal "count mismatch" wording.
+	if nonSession := len(r0Requests) - len(blueprints); nonSession > 0 {
+		return nil, nil, fmt.Errorf("corpus-mode requires every record to belong to a session, but %d of %d records have no session_id; pooled observe cannot mix session and non-session (single-shot) records — re-export the corpus so every row carries a session_id (e.g. via `blis convert otel`)", nonSession, len(r0Requests))
+	}
 	driver, initial, err := workload.BuildSessionPool(blueprints, r0Requests, concurrentSessions, totalSessions, seed)
 	if err != nil {
 		return nil, nil, fmt.Errorf("building session pool: %w", err)
