@@ -319,6 +319,30 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			outputSeq[i] = rec.OutputTokens
 		}
 
+		// Context-compaction reset targets (#1609), aligned with inputSeq. A round's
+		// input_tokens_reset marker (non-nil) becomes its absolute re-seed length; a
+		// round without one gets the -1 "no reset" sentinel. Only meaningful in
+		// accumulate mode, and only built when at least one round 1..N actually carries
+		// a marker — so a trace with no compaction column (or a monotone session within
+		// a compaction-bearing corpus) leaves InputResetSampler nil and replays
+		// byte-identically to pre-#1609 (INV-6).
+		var inputResetSampler LengthSampler
+		if contextGrowth == "accumulate" {
+			resetSeq := make([]int, len(rounds))
+			anyReset := false
+			for i, rec := range rounds {
+				if i > 0 && rec.InputTokensReset != nil {
+					resetSeq[i] = int(*rec.InputTokensReset)
+					anyReset = true
+				} else {
+					resetSeq[i] = -1 // no reset this round
+				}
+			}
+			if anyReset {
+				inputResetSampler = &SequenceSampler{values: resetSeq[1:]} // rounds 1..N, lockstep with InputSampler
+			}
+		}
+
 		// Build think time. Precedence (#1478):
 		//   1. caller-provided sampler (CLI --think-time-dist / --think-time-ms)
 		//   2. recorded per-round think_time_us column (set by agentic-trace converters):
@@ -409,21 +433,22 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 		requests = append(requests, req)
 
 		bp := SessionBlueprint{
-			SessionID:        sessionID,
-			ClientID:         r0.ClientID,
-			MaxRounds:        len(rounds),
-			ContextGrowth:    contextGrowth,
-			ThinkTimeSampler: sessionThinkTimeSampler,
-			Horizon:          horizon,
-			InputSampler:     &SequenceSampler{values: inputSeq[1:]},  // rounds 1..N
-			OutputSampler:    &SequenceSampler{values: outputSeq[1:]}, // rounds 1..N
-			RNG:              sessionRNG,
-			Prefix:           prefix,
-			TenantID:         r0.TenantID,
-			SLOClass:         r0.SLOClass,
-			Model:            r0.Model,
-			SLOTargetUs:      r0.SLOTargetUs,
-			Adapter:          r0.Adapter, // #1464: adapter threads through session follow-up rounds
+			SessionID:         sessionID,
+			ClientID:          r0.ClientID,
+			MaxRounds:         len(rounds),
+			ContextGrowth:     contextGrowth,
+			ThinkTimeSampler:  sessionThinkTimeSampler,
+			Horizon:           horizon,
+			InputSampler:      &SequenceSampler{values: inputSeq[1:]},  // rounds 1..N
+			OutputSampler:     &SequenceSampler{values: outputSeq[1:]}, // rounds 1..N
+			InputResetSampler: inputResetSampler,                       // #1609; nil unless a round compacts
+			RNG:               sessionRNG,
+			Prefix:            prefix,
+			TenantID:          r0.TenantID,
+			SLOClass:          r0.SLOClass,
+			Model:             r0.Model,
+			SLOTargetUs:       r0.SLOTargetUs,
+			Adapter:           r0.Adapter, // #1464: adapter threads through session follow-up rounds
 		}
 		blueprints = append(blueprints, bp)
 	}

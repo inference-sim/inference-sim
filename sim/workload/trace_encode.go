@@ -21,9 +21,18 @@ type NormalizedRound struct {
 //
 // The delta law: round 0 carries the full first prompt; round N+1 carries
 // max(0, in_{N+1} − in_N − out_N). In accumulate replay the buffer appends
-// out_N then this delta, reconstructing the recorded absolute input (exactly for
-// monotonically-growing, non-length-capped sessions; non-monotone rounds clamp
-// to 0 and over-count by the clamped deficit — an accepted, documented deviation).
+// out_N then this delta, reconstructing the recorded absolute input exactly for
+// monotonically-growing, non-length-capped sessions.
+//
+// Context compaction (#1609): when in_{N+1} < in_N + out_N (the model summarized
+// or trimmed context, so the delta would go negative) the delta still clamps to
+// 0, but the record ALSO carries the recorded absolute input in InputTokensReset
+// (a *int64 presence marker; nil otherwise). Accumulate replay re-seeds its
+// growing buffer to that absolute at the boundary — restoring exact reconstruction
+// on non-monotone rounds and intentionally breaking strict prefix identity across
+// the compaction boundary (the summary is not a literal prefix of the pre-compaction
+// buffer). The marker is absent for monotone sessions and for spec-built `blis run`
+// blueprints, so a trace without it replays byte-identically to before (INV-6).
 //
 // TraceRecord.Model is left empty deliberately: it is routing-significant at
 // replay (buildRouterState filters instances by it), so writing a recorded
@@ -38,20 +47,28 @@ func EncodeSessionToTraceRecords(sessionID string, rounds []NormalizedRound) []T
 	prevIn, prevOut := 0, 0
 	for round, r := range rounds {
 		inputDelta := r.InputTokensAbs
+		var resetAbs *int64 // #1609: recorded absolute on a compaction round; nil otherwise
 		if round > 0 {
 			inputDelta = r.InputTokensAbs - prevIn - prevOut
 			if inputDelta < 0 {
-				inputDelta = 0 // clamp: non-monotone context (e.g. compaction/trimming)
+				// Non-monotone context (compaction/trimming): the delta would go
+				// negative. Clamp it to 0 as before (so an old reader still replays,
+				// over-counting) AND emit the recorded absolute so a compaction-aware
+				// accumulate replay re-seeds the buffer to it (#1609).
+				inputDelta = 0
+				abs := int64(r.InputTokensAbs)
+				resetAbs = &abs
 			}
 		}
 		recs = append(recs, TraceRecord{
-			SessionID:     sessionID,
-			RoundIndex:    round,
-			InputTokens:   inputDelta,
-			OutputTokens:  r.OutputTokens,
-			ArrivalTimeUs: r.ArrivalUs,
-			ThinkTimeUs:   r.ThinkUs,
-			Status:        r.Status,
+			SessionID:        sessionID,
+			RoundIndex:       round,
+			InputTokens:      inputDelta,
+			InputTokensReset: resetAbs,
+			OutputTokens:     r.OutputTokens,
+			ArrivalTimeUs:    r.ArrivalUs,
+			ThinkTimeUs:      r.ThinkUs,
+			Status:           r.Status,
 			// Model: intentionally empty — see doc comment.
 		})
 		prevIn, prevOut = r.InputTokensAbs, r.OutputTokens

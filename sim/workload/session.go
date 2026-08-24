@@ -27,24 +27,32 @@ const (
 // SessionBlueprint describes a session's full shape. Created during workload generation,
 // immutable after creation. Each session has its own deterministic RNG (INV-6).
 type SessionBlueprint struct {
-	SessionID        string
-	ClientID         string
-	MaxRounds        int
-	UnlimitedRounds  bool   // when true, session continues past MaxRounds until budget/horizon/timeout/drop
-	ContextGrowth    string // "accumulate" or ""
-	ThinkTimeUs      int64
-	Timeout          *int64 // per-request timeout from ClientSpec (nil = default 300s)
-	Horizon          int64  // simulation horizon for BC-19 guard
-	InputSampler     LengthSampler
-	OutputSampler    LengthSampler
-	RNG              *rand.Rand    // per-session, seeded deterministically from client RNG
-	ThinkTimeSampler LengthSampler // optional: per-round think time in µs; nil = use constant ThinkTimeUs
-	Prefix           []sim.TokenID // shared system prompt tokens
-	TenantID         string
-	SLOClass         string
-	Model            string
-	Adapter          string // LoRA adapter id (registry key; #1464). "" = base-model-only.
-	SLOTargetUs      int64  // per-request SLO TTFT target in µs; 0 = no target
+	SessionID       string
+	ClientID        string
+	MaxRounds       int
+	UnlimitedRounds bool   // when true, session continues past MaxRounds until budget/horizon/timeout/drop
+	ContextGrowth   string // "accumulate" or ""
+	ThinkTimeUs     int64
+	Timeout         *int64 // per-request timeout from ClientSpec (nil = default 300s)
+	Horizon         int64  // simulation horizon for BC-19 guard
+	InputSampler    LengthSampler
+	OutputSampler   LengthSampler
+	// InputResetSampler yields a per-follow-up-round context-compaction reset target
+	// (#1609), in lockstep with InputSampler: a value >= 0 means "re-seed the accumulate
+	// buffer to this absolute input length at this round" (a compaction boundary from the
+	// trace's input_tokens_reset column); a value < 0 (the -1 sentinel) means "no reset,
+	// use the delta". nil (the common case: monotone sessions, spec-built `blis run`
+	// blueprints) means no round resets, so the accumulate path is byte-identical to
+	// pre-#1609 (INV-6). Only consulted in ContextGrowth == "accumulate" mode.
+	InputResetSampler LengthSampler
+	RNG               *rand.Rand    // per-session, seeded deterministically from client RNG
+	ThinkTimeSampler  LengthSampler // optional: per-round think time in µs; nil = use constant ThinkTimeUs
+	Prefix            []sim.TokenID // shared system prompt tokens
+	TenantID          string
+	SLOClass          string
+	Model             string
+	Adapter           string // LoRA adapter id (registry key; #1464). "" = base-model-only.
+	SLOTargetUs       int64  // per-request SLO TTFT target in µs; 0 = no target
 }
 
 // activeSession tracks mutable per-session lifecycle state.
@@ -180,6 +188,13 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 	// Generate round N+1
 	inputLen := bp.InputSampler.Sample(bp.RNG)
 	outputLen := bp.OutputSampler.Sample(bp.RNG)
+	// Context-compaction reset target for this round (#1609): accumulate mode only,
+	// -1 = no reset. SequenceSampler.Sample ignores the RNG, so sampling it consumes
+	// no randomness and cannot perturb byte-identity of the non-compaction path (INV-6).
+	resetTarget := -1
+	if bp.ContextGrowth == "accumulate" && bp.InputResetSampler != nil {
+		resetTarget = bp.InputResetSampler.Sample(bp.RNG)
+	}
 	newInputTokens := sim.GenerateRandomTokenIDs(bp.RNG, inputLen)
 	outputTokens := sim.GenerateRandomTokenIDs(bp.RNG, outputLen)
 
@@ -238,30 +253,46 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 			panic(fmt.Sprintf("SessionManager.OnComplete: session %s req.InputLen=%d != buf.Len=%d — buffer continuity broken; expected req.InputTokens to alias buf[0:buf.Len()]",
 				req.SessionID, req.InputLen(), sess.buf.Len()))
 		}
-		// Append the round's actual output and the new round's input.
-		if actualOutputLen > 0 && len(req.OutputTokens) > 0 {
-			outTokens := req.OutputTokens
-			switch {
-			case actualOutputLen > len(outTokens):
-				// Over-cap defense: ProgressIndex accounting should never produce
-				// an actualOutputLen exceeding the oracle output length. If it
-				// does, cancel the session — the upstream computation has
-				// drifted and continuing would propagate the corruption to every
-				// subsequent round. Better to terminate one session loudly than
-				// silently corrupt many.
-				logrus.Errorf("SessionManager.OnComplete: session %s round %d actualOutputLen=%d > len(OutputTokens)=%d — cancelling session to contain corruption (ProgressIndex accounting drift)",
-					req.SessionID, req.RoundIndex, actualOutputLen, len(outTokens))
-				sess.state = sessionCancelled
-				return nil
-			case actualOutputLen < len(outTokens):
-				outTokens = outTokens[:actualOutputLen]
-				logrus.Debugf("SessionManager.OnComplete: session %s round %d length-capped — accumulating %d/%d output tokens",
-					req.SessionID, req.RoundIndex, actualOutputLen, len(req.OutputTokens))
+		if resetTarget >= 0 {
+			// Context compaction (#1609): the recorded absolute input for this round
+			// dropped below the accumulated length (the model summarized/trimmed), so
+			// the trace carries an input_tokens_reset marker. Re-seed the buffer to a
+			// fresh segment of exactly resetTarget tokens: this restores exact
+			// reconstruction (buf.Len() == recorded in_N, no over-count) and
+			// intentionally breaks strict prefix identity across the boundary — real
+			// compaction replaces the history with a summary, which is not a literal
+			// prefix of the pre-compaction buffer. The just-completed round's output is
+			// deliberately NOT carried forward: it was folded into the compaction the
+			// trace already recorded as in_N.
+			resetToks := sim.GenerateRandomTokenIDs(bp.RNG, resetTarget)
+			_, inputEnd := sess.buf.Reset(resetToks)
+			inputTokens = sess.buf.Slice(0, inputEnd)
+		} else {
+			// Append the round's actual output and the new round's input.
+			if actualOutputLen > 0 && len(req.OutputTokens) > 0 {
+				outTokens := req.OutputTokens
+				switch {
+				case actualOutputLen > len(outTokens):
+					// Over-cap defense: ProgressIndex accounting should never produce
+					// an actualOutputLen exceeding the oracle output length. If it
+					// does, cancel the session — the upstream computation has
+					// drifted and continuing would propagate the corruption to every
+					// subsequent round. Better to terminate one session loudly than
+					// silently corrupt many.
+					logrus.Errorf("SessionManager.OnComplete: session %s round %d actualOutputLen=%d > len(OutputTokens)=%d — cancelling session to contain corruption (ProgressIndex accounting drift)",
+						req.SessionID, req.RoundIndex, actualOutputLen, len(outTokens))
+					sess.state = sessionCancelled
+					return nil
+				case actualOutputLen < len(outTokens):
+					outTokens = outTokens[:actualOutputLen]
+					logrus.Debugf("SessionManager.OnComplete: session %s round %d length-capped — accumulating %d/%d output tokens",
+						req.SessionID, req.RoundIndex, actualOutputLen, len(req.OutputTokens))
+				}
+				sess.buf.Append(outTokens)
 			}
-			sess.buf.Append(outTokens)
+			_, inputEnd := sess.buf.Append(newInputTokens)
+			inputTokens = sess.buf.Slice(0, inputEnd)
 		}
-		_, inputEnd := sess.buf.Append(newInputTokens)
-		inputTokens = sess.buf.Slice(0, inputEnd)
 	} else {
 		inputTokens = newInputTokens
 		// Non-accumulate: prepend prefix freshly (no shared buffer in this mode).

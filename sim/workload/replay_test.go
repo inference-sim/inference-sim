@@ -1342,3 +1342,101 @@ func TestAccumulateReplay_TransitivityAndLengthCap(t *testing.T) {
 		}
 	})
 }
+
+// TestAccumulateReplay_CompactionResetsBuffer covers #1609: a round whose trace
+// carries an input_tokens_reset marker (context compaction) re-seeds the accumulate
+// buffer to the recorded absolute — shrinking the reconstructed input to in_N exactly
+// and intentionally breaking strict prefix identity across the boundary — while
+// monotone rounds (before AND after the compaction) keep the growing-prefix behavior.
+func TestAccumulateReplay_CompactionResetsBuffer(t *testing.T) {
+	// Recorded absolutes: 100 → 150(mono) → 50(COMPACTION, 50 < 150+20) → 80(mono).
+	// As delta-encoded records: round2 carries delta 0 + InputTokensReset=&50.
+	trace := &TraceV2{
+		Header: TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
+		Records: []TraceRecord{
+			{RequestID: 0, SessionID: "s", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0},
+			{RequestID: 1, SessionID: "s", RoundIndex: 1, InputTokens: 40, OutputTokens: 20, ArrivalTimeUs: 1_000_000},
+			{RequestID: 2, SessionID: "s", RoundIndex: 2, InputTokens: 0, OutputTokens: 5, ArrivalTimeUs: 2_000_000, InputTokensReset: i64p(50)},
+			{RequestID: 3, SessionID: "s", RoundIndex: 3, InputTokens: 25, OutputTokens: 5, ArrivalTimeUs: 3_000_000},
+		},
+	}
+	r0, bps, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	// The loader must build a reset sampler for a compaction-bearing session.
+	if bps[0].InputResetSampler == nil {
+		t.Fatal("InputResetSampler = nil, want a sampler (session carries a compaction marker)")
+	}
+	sm := NewSessionManager(bps)
+
+	next := func(req *sim.Request, tick int64) *sim.Request {
+		req.State = sim.StateCompleted
+		req.ProgressIndex = int64(req.InputLen()) + int64(len(req.OutputTokens)) // full output generated
+		fu := sm.OnComplete(req, tick)
+		if len(fu) != 1 {
+			t.Fatalf("expected 1 follow-up, got %d", len(fu))
+		}
+		return fu[0]
+	}
+
+	round1 := next(r0[0], 1_000_000)
+	if round1.InputLen() != 150 { // 100 + 10 output + 40 delta — normal accumulate
+		t.Fatalf("round1 len = %d, want 150 (monotone accumulate)", round1.InputLen())
+	}
+	round1In := append([]sim.TokenID{}, round1.FullInputTokens()...)
+
+	round2 := next(round1, 2_000_000)
+	// BC-2: buffer shrinks to the recorded absolute (50), NOT the over-counted
+	// 150+20+0 = 170 the append-only buffer would have produced.
+	if round2.InputLen() != 50 {
+		t.Fatalf("compaction round2 len = %d, want 50 (re-seeded to recorded absolute, not 170)", round2.InputLen())
+	}
+	// BC-3: strict prefix identity is broken across the compaction boundary —
+	// round2 is a fresh segment, not a token-prefix of round1.
+	round2In := round2.FullInputTokens()
+	prefixIdentical := true
+	for i := 0; i < 50; i++ {
+		if round2In[i] != round1In[i] {
+			prefixIdentical = false
+			break
+		}
+	}
+	if prefixIdentical {
+		t.Error("round2 is a strict prefix of round1 — compaction must break prefix identity (#1609)")
+	}
+
+	// BC-3 (other direction): a monotone round AFTER the compaction resumes the
+	// growing-prefix behavior from the re-seeded segment. round3 = 50 + 5 out + 25 delta.
+	round2FullIn := append([]sim.TokenID{}, round2In...)
+	round3 := next(round2, 3_000_000)
+	if round3.InputLen() != 80 {
+		t.Fatalf("post-compaction round3 len = %d, want 80 (50 + 5 output + 25 delta)", round3.InputLen())
+	}
+	got := round3.FullInputTokens()
+	for i := 0; i < 50; i++ {
+		if got[i] != round2FullIn[i] {
+			t.Fatalf("round3 token[%d] diverged from round2 — post-compaction prefix must be preserved", i)
+		}
+	}
+}
+
+// TestAccumulateReplay_NoResetSampler_WhenMonotone pins BC-5: an accumulate trace
+// with no compaction marker builds NO reset sampler, so replay stays on the
+// pre-#1609 append-only path (byte-identical, INV-6).
+func TestAccumulateReplay_NoResetSampler_WhenMonotone(t *testing.T) {
+	trace := &TraceV2{
+		Header: TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
+		Records: []TraceRecord{
+			{RequestID: 0, SessionID: "s", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0},
+			{RequestID: 1, SessionID: "s", RoundIndex: 1, InputTokens: 40, OutputTokens: 20, ArrivalTimeUs: 1_000_000},
+		},
+	}
+	_, bps, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if bps[0].InputResetSampler != nil {
+		t.Error("InputResetSampler != nil for a monotone accumulate session — must be nil (INV-6)")
+	}
+}

@@ -401,18 +401,24 @@ distinct from a not-recorded (empty) cell, so an all-overlap session replays wit
 recorded zeros rather than degrading to arrival-gap think. The recorded `claude-*`
 model names are dropped during conversion (same routing-safety reason as OTel).
 
-!!! warning "Weka replay ISL is an upper bound (context compaction)"
+!!! note "Context compaction is represented (#1609)"
     Weka input token counts are very large (p50 ≈ 110K, p90 ≈ 395K), so the
     `--max-model-len` / `--total-kv-blocks` sizing warning above applies with extra
-    force. More subtly: real Claude Code traffic **compacts/trims context constantly**
-    — ~30% of rounds on the full `051926` dataset have `in_N < in_{N-1}+out_{N-1}`.
-    The accumulate buffer can only grow, never shrink, so each such round clamps its
-    input delta to 0 and the reconstructed cumulative input **over-counts the recorded
-    total by ≈3–4×** (+312% on that dataset). Treat replayed input length, KV pressure,
-    and hit-rate as a substantial **upper bound**, not a faithful reproduction of the
-    recorded workload. (This is a property of the accumulate delta law, not the
-    converter; faithful compaction support is tracked in #1609. The separate
-    think-time lossy-0 sentinel was resolved in #1608 — see the non-lossy note above.)
+    force. Real Claude Code traffic **compacts/trims context constantly** — ~30% of
+    rounds on the full `051926` dataset have `in_N < in_{N-1}+out_{N-1}` (the model
+    summarized or trimmed). The shared agentic-trace encoder emits a per-round
+    `input_tokens_reset` marker (the recorded absolute) on exactly those non-monotone
+    rounds, and accumulate closed-loop replay **re-seeds its growing buffer to that
+    absolute at the compaction boundary**. The reconstructed cumulative input therefore
+    tracks the recorded total — previously the buffer could only grow, clamped the delta
+    to 0, and **over-counted by ≈3–4×** (+312% on that dataset). The re-seed intentionally
+    breaks strict prefix identity across the boundary (a summary is not a literal prefix of
+    the pre-compaction context), which also corrects the prefix-cache hit-rate over-estimate.
+    The marker is a trailing conditional CSV column: absent for monotone sessions and for
+    `blis run`, so a trace with no compaction round replays byte-identically to before
+    (INV-6). Traces converted by an **older build** (no marker column) still over-count —
+    re-run `convert` to get compaction-aware output. (The separate think-time lossy-0
+    sentinel was resolved in #1608 — see the non-lossy note above.)
 
 ---
 

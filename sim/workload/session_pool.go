@@ -55,6 +55,10 @@ func cloneBlueprintForDup(src SessionBlueprint, srcR0 *sim.Request, dupIdx int, 
 	bp.InputSampler = cloneSampler(src.InputSampler)
 	bp.OutputSampler = cloneSampler(src.OutputSampler)
 	bp.ThinkTimeSampler = cloneSampler(src.ThinkTimeSampler)
+	// #1609: the context-compaction reset sampler is a stateful *SequenceSampler in
+	// lockstep with InputSampler, so each clone needs its own cursor (cloneSampler
+	// passes nil through unchanged for monotone sessions).
+	bp.InputResetSampler = cloneSampler(src.InputResetSampler)
 
 	// Cache-busting token prepended to the clone's round-0 input so the block
 	// hash chain diverges immediately from the source session (design §6).
