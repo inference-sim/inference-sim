@@ -345,10 +345,13 @@ blis calibrate --trace-header observed.yaml --trace-data observed.csv \
 ```
 
 By default the pool is **self-draining**: it runs until all `--total-sessions`
-sessions complete, regardless of how many waves that takes. Pass `--horizon` only
-if you want a hard wall-clock cap on the simulated run — sessions still queued when
-the cap is reached are reported as un-admitted (a warning is logged) rather than
-silently dropped.
+sessions complete, regardless of how many waves that takes. For **`blis replay`**
+corpus-mode you may pass `--horizon` to impose a hard wall-clock cap on the
+simulated run — sessions still queued when the cap is reached are reported as
+un-admitted (a warning is logged) rather than silently dropped. **`blis observe`**
+corpus-mode has no such cap: it always self-drains on session count and rejects
+`--horizon` / `--num-requests` (see above), since a live run is bounded by the
+corpus, not a clock.
 
 !!! tip "Subsetting a large corpus: add `--shuffle-corpus`"
     `--total-sessions N` on its own is **deterministic, ordered selection**, not a
