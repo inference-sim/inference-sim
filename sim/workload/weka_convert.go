@@ -118,7 +118,11 @@ func ConvertWekaSession(raw []byte, opts WekaConvertOptions) ([]TraceRecord, err
 	// pure client think (#1478), preferred over arrival-gap think at replay.
 	rounds := make([]NormalizedRound, 0, len(turns))
 	for i, tn := range turns {
-		var thinkUs int64
+		// Round 0 has no predecessor → think is not recorded (nil, #1608). Rounds
+		// 1..N carry the recomputed pure client think — including a recorded &0 when
+		// the turn overlapped the previous response, which is now distinguishable
+		// from "not recorded" (no longer degrades an all-overlap session to gaps).
+		var thinkUs *int64
 		if i > 0 {
 			prev := turns[i-1]
 			// Pure client think: wall-clock from the previous turn's RESPONSE
@@ -130,7 +134,7 @@ func ConvertWekaSession(raw []byte, opts WekaConvertOptions) ([]TraceRecord, err
 			if opts.MaxThinkTimeUs > 0 && gapUs > opts.MaxThinkTimeUs {
 				gapUs = opts.MaxThinkTimeUs
 			}
-			thinkUs = gapUs
+			thinkUs = &gapUs
 		}
 		rounds = append(rounds, NormalizedRound{
 			InputTokensAbs: tn.in,

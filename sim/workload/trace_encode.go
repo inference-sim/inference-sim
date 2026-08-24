@@ -10,7 +10,7 @@ type NormalizedRound struct {
 	InputTokensAbs int    // absolute recorded prompt tokens for this round
 	OutputTokens   int    // recorded output tokens
 	ArrivalUs      int64  // arrival time (µs), relative to session start
-	ThinkUs        int64  // recorded pure client think time (µs); 0 = not recorded
+	ThinkUs        *int64 // recorded pure client think time (µs); nil = not recorded, &0 = recorded zero (#1608)
 	Status         string // "ok" or "error"
 }
 
@@ -28,9 +28,11 @@ type NormalizedRound struct {
 // TraceRecord.Model is left empty deliberately: it is routing-significant at
 // replay (buildRouterState filters instances by it), so writing a recorded
 // cross-model name would drop every request at routing. Empty makes requests
-// inherit --model (#1477). ThinkUs, when a reader sets it, is written to the
-// think_time_us column (#1478) and preferred over arrival-gap think at replay;
-// the OTel reader leaves it 0 (no reliable response-complete time), Weka sets it.
+// inherit --model (#1477). ThinkUs, when a reader sets it (non-nil), is written to
+// the think_time_us column (#1478) and preferred over arrival-gap think at replay;
+// the OTel reader leaves it nil (no reliable response-complete time → arrival-gap
+// fallback), Weka sets it — including a recorded &0 for an overlapping turn, which
+// (#1608) is no longer conflated with "not recorded".
 func EncodeSessionToTraceRecords(sessionID string, rounds []NormalizedRound) []TraceRecord {
 	recs := make([]TraceRecord, 0, len(rounds))
 	prevIn, prevOut := 0, 0

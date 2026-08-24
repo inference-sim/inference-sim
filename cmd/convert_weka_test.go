@@ -51,9 +51,10 @@ func TestConvertWeka_EndToEndAndAccumulateReconstruction(t *testing.T) {
 			t.Errorf("record %d Model = %q, want empty (routing safety)", i, r.Model)
 		}
 	}
-	// think_time_us column round-trips: recorded 7s / 10s on rounds 1, 2.
-	if trace.Records[1].ThinkTimeUs != 7_000_000 || trace.Records[2].ThinkTimeUs != 10_000_000 {
-		t.Errorf("think_time_us = [_,%d,%d], want [_,7e6,10e6]", trace.Records[1].ThinkTimeUs, trace.Records[2].ThinkTimeUs)
+	// think_time_us column round-trips: recorded 7s / 10s on rounds 1, 2 (non-nil, #1608).
+	if trace.Records[1].ThinkTimeUs == nil || *trace.Records[1].ThinkTimeUs != 7_000_000 ||
+		trace.Records[2].ThinkTimeUs == nil || *trace.Records[2].ThinkTimeUs != 10_000_000 {
+		t.Errorf("think_time_us = [_,%v,%v], want [_,&7e6,&10e6]", trace.Records[1].ThinkTimeUs, trace.Records[2].ThinkTimeUs)
 	}
 
 	// Closed-loop reconstruction through the SessionManager (accumulate buffer).

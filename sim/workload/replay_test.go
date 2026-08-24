@@ -322,9 +322,9 @@ func TestLoadTraceV2SessionBlueprints_PrefersRecordedThinkTime(t *testing.T) {
 	// gap derivation which bundles service time).
 	trace := &TraceV2{
 		Records: []TraceRecord{
-			{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, ThinkTimeUs: 0},
-			{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 200, OutputTokens: 80, ArrivalTimeUs: 5000, ThinkTimeUs: 300},
-			{RequestID: 3, SessionID: "A", RoundIndex: 2, InputTokens: 300, OutputTokens: 90, ArrivalTimeUs: 12000, ThinkTimeUs: 400},
+			{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, ThinkTimeUs: nil},
+			{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 200, OutputTokens: 80, ArrivalTimeUs: 5000, ThinkTimeUs: i64p(300)},
+			{RequestID: 3, SessionID: "A", RoundIndex: 2, InputTokens: 300, OutputTokens: 90, ArrivalTimeUs: 12000, ThinkTimeUs: i64p(400)},
 		},
 	}
 
@@ -349,8 +349,8 @@ func TestLoadTraceV2SessionBlueprints_RecordedThinkTime_CLIOverrides(t *testing.
 	// THEN the caller sampler wins (#1478 precedence: CLI > recorded > gap).
 	trace := &TraceV2{
 		Records: []TraceRecord{
-			{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, ThinkTimeUs: 0},
-			{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 200, OutputTokens: 80, ArrivalTimeUs: 5000, ThinkTimeUs: 300},
+			{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, ThinkTimeUs: nil},
+			{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 200, OutputTokens: 80, ArrivalTimeUs: 5000, ThinkTimeUs: i64p(300)},
 		},
 	}
 	sampler := &ConstantSampler{value: 500_000}
@@ -1015,15 +1015,18 @@ func TestAccumulateReplay_StrictPrefixIdentity(t *testing.T) {
 	}
 }
 
-// TestLoadTraceV2SessionBlueprints_AllZeroRecordedThink_FallsBackToGap pins the
-// F1 lossy-sentinel behavior (#1484 review): a session whose every round records
-// think_time_us == 0 (real for Weka's overlap-clamped rounds) is indistinguishable
-// from an absent column, so it falls back to arrival-gap derivation.
-func TestLoadTraceV2SessionBlueprints_AllZeroRecordedThink_FallsBackToGap(t *testing.T) {
+// TestLoadTraceV2SessionBlueprints_AllRecordedZeroThink_UsesRecordedZeros pins the
+// non-lossy fix (#1608, was the F1 lossy-sentinel behavior of #1484): a session whose
+// every non-round-0 round RECORDS think == 0 (non-nil &0, real for Weka's
+// overlap-clamped rounds) now USES those recorded zeros (back-to-back rounds) —
+// it no longer degrades to arrival-gap derivation, which bundled service time into
+// the gap.
+func TestLoadTraceV2SessionBlueprints_AllRecordedZeroThink_UsesRecordedZeros(t *testing.T) {
 	trace := &TraceV2{Records: []TraceRecord{
-		{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, ThinkTimeUs: 0},
-		{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, ArrivalTimeUs: 5000, ThinkTimeUs: 0},
-		{RequestID: 3, SessionID: "A", RoundIndex: 2, InputTokens: 70, OutputTokens: 30, ArrivalTimeUs: 12000, ThinkTimeUs: 0},
+		// Round 0 not recorded (nil); rounds 1..2 recorded &0 (overlapping turns).
+		{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, ThinkTimeUs: nil},
+		{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, ArrivalTimeUs: 5000, ThinkTimeUs: i64p(0)},
+		{RequestID: 3, SessionID: "A", RoundIndex: 2, InputTokens: 70, OutputTokens: 30, ArrivalTimeUs: 12000, ThinkTimeUs: i64p(0)},
 	}}
 	_, bps, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
 	if err != nil {
@@ -1033,24 +1036,49 @@ func TestLoadTraceV2SessionBlueprints_AllZeroRecordedThink_FallsBackToGap(t *tes
 	if s == nil {
 		t.Fatal("expected a think sampler for a multi-round session")
 	}
-	// Falls back to arrival gaps [5000, 7000], NOT the recorded zeros.
-	if g1, g2 := s.Sample(nil), s.Sample(nil); g1 != 5000 || g2 != 7000 {
-		t.Errorf("all-zero recorded think: sampler = [%d, %d], want arrival gaps [5000, 7000] (documented lossy-sentinel fallback)", g1, g2)
+	// Uses the RECORDED zeros [0, 0], NOT the arrival gaps [5000, 7000].
+	if g1, g2 := s.Sample(nil), s.Sample(nil); g1 != 0 || g2 != 0 {
+		t.Errorf("all-recorded-zero think: sampler = [%d, %d], want recorded zeros [0, 0] (#1608 non-lossy), not arrival gaps [5000, 7000]", g1, g2)
 	}
 }
 
-// TestLoadTraceV2SessionBlueprints_MixedThinkSessions covers F4 (#1484 review): the
-// export gate (includeThinkTime) is global, but think-time selection is per-session,
-// so a trace mixing a recorded-think session with an all-zero one must select each
-// independently — A uses its recorded think, B falls back to arrival gaps.
+// TestLoadTraceV2SessionBlueprints_AbsentThink_FallsBackToGap pins the surviving
+// fallback path (#1608): a session whose non-round-0 rounds are all NOT recorded
+// (nil, real for OTel / generated traces) still derives think from arrival gaps.
+func TestLoadTraceV2SessionBlueprints_AbsentThink_FallsBackToGap(t *testing.T) {
+	trace := &TraceV2{Records: []TraceRecord{
+		{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, ThinkTimeUs: nil},
+		{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, ArrivalTimeUs: 5000, ThinkTimeUs: nil},
+		{RequestID: 3, SessionID: "A", RoundIndex: 2, InputTokens: 70, OutputTokens: 30, ArrivalTimeUs: 12000, ThinkTimeUs: nil},
+	}}
+	_, bps, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	s := bps[0].ThinkTimeSampler
+	if s == nil {
+		t.Fatal("expected a think sampler for a multi-round session")
+	}
+	// No recorded think → arrival gaps [5000, 7000].
+	if g1, g2 := s.Sample(nil), s.Sample(nil); g1 != 5000 || g2 != 7000 {
+		t.Errorf("absent think: sampler = [%d, %d], want arrival gaps [5000, 7000]", g1, g2)
+	}
+}
+
+// TestLoadTraceV2SessionBlueprints_MixedThinkSessions covers F4 (#1484 review),
+// updated for #1608: think-time selection is per-session, so a trace mixing a
+// recorded-think session with a not-recorded one selects each independently — A uses
+// its recorded think, B (nil) falls back to arrival gaps. (Under the non-lossy
+// encoding, a recorded &0 would NOT fall back — see AllRecordedZeroThink — so B must
+// be genuinely absent (nil) to exercise the fallback.)
 func TestLoadTraceV2SessionBlueprints_MixedThinkSessions(t *testing.T) {
 	trace := &TraceV2{Records: []TraceRecord{
 		// A: recorded think 300; arrival gap (9999) deliberately differs so the two are distinguishable.
-		{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, ThinkTimeUs: 0},
-		{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, ArrivalTimeUs: 9999, ThinkTimeUs: 300},
-		// B: all-zero recorded think; arrival gap 5000.
-		{RequestID: 4, SessionID: "B", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, ThinkTimeUs: 0},
-		{RequestID: 5, SessionID: "B", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, ArrivalTimeUs: 5000, ThinkTimeUs: 0},
+		{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, ThinkTimeUs: nil},
+		{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, ArrivalTimeUs: 9999, ThinkTimeUs: i64p(300)},
+		// B: NOT recorded (nil); arrival gap 5000.
+		{RequestID: 4, SessionID: "B", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, ThinkTimeUs: nil},
+		{RequestID: 5, SessionID: "B", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, ArrivalTimeUs: 5000, ThinkTimeUs: nil},
 	}}
 	_, bps, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
 	if err != nil {
@@ -1064,7 +1092,7 @@ func TestLoadTraceV2SessionBlueprints_MixedThinkSessions(t *testing.T) {
 		t.Errorf("session A think = %d, want recorded 300", got)
 	}
 	if got := byID["B"].ThinkTimeSampler.Sample(nil); got != 5000 {
-		t.Errorf("session B think = %d, want arrival gap 5000 (all-zero fallback)", got)
+		t.Errorf("session B think = %d, want arrival gap 5000 (not-recorded fallback)", got)
 	}
 }
 

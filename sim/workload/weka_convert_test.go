@@ -91,22 +91,23 @@ func TestConvertWekaSession_ThinkTimeRecompute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConvertWekaSession: %v", err)
 	}
-	if recs[0].ThinkTimeUs != 0 {
-		t.Errorf("round0 think = %d, want 0 (round 0 has no predecessor)", recs[0].ThinkTimeUs)
+	if recs[0].ThinkTimeUs != nil {
+		t.Errorf("round0 think = %v, want nil (round 0 has no predecessor → not recorded, #1608)", recs[0].ThinkTimeUs)
 	}
 	// Round 1 think absorbs the skipped sub-agent group's wall-clock: 5.0s.
-	if recs[1].ThinkTimeUs != 5_000_000 {
-		t.Errorf("round1 think = %d, want 5e6 (t1−t0−api0 = 6−0−1, absorbs sub-agent wall-clock; == recorded think_time 5.0)", recs[1].ThinkTimeUs)
+	if recs[1].ThinkTimeUs == nil || *recs[1].ThinkTimeUs != 5_000_000 {
+		t.Errorf("round1 think = %v, want &5e6 (t1−t0−api0 = 6−0−1, absorbs sub-agent wall-clock; == recorded think_time 5.0)", recs[1].ThinkTimeUs)
 	}
 	// Round 2 think: consecutive main turns, no sub-agent between: 2.0s.
-	if recs[2].ThinkTimeUs != 2_000_000 {
-		t.Errorf("round2 think = %d, want 2e6 (t2−t1−api1 = 10−6−2; == recorded think_time 2.0)", recs[2].ThinkTimeUs)
+	if recs[2].ThinkTimeUs == nil || *recs[2].ThinkTimeUs != 2_000_000 {
+		t.Errorf("round2 think = %v, want &2e6 (t2−t1−api1 = 10−6−2; == recorded think_time 2.0)", recs[2].ThinkTimeUs)
 	}
 }
 
 // T3 — overlapping main turns (round i arrives before round i-1's response
-// elapsed → negative raw gap, real in these traces) yield ThinkTimeUs == 0,
-// never negative (INV-3, BC-4). Mirrors the input-delta clamp.
+// elapsed → negative raw gap, real in these traces) yield a RECORDED &0
+// (non-nil), never negative and never conflated with "not recorded" (INV-3, BC-4,
+// BC-6 #1608). Mirrors the input-delta clamp.
 func TestConvertWekaSession_NegativeGapThinkClampsToZero(t *testing.T) {
 	// Round 1 arrives at t=1.0 but round 0's response ends at 0.0+2.0=2.0 →
 	// raw gap 1.0−0.0−2.0 = −1.0s → clamp to 0.
@@ -118,8 +119,13 @@ func TestConvertWekaSession_NegativeGapThinkClampsToZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConvertWekaSession: %v", err)
 	}
-	if recs[1].ThinkTimeUs != 0 {
-		t.Errorf("round1 think = %d, want 0 (negative raw gap clamped; never negative)", recs[1].ThinkTimeUs)
+	// The overlap is a RECORDED zero, not an absent think: non-nil &0 (#1608), so an
+	// all-overlap session no longer degrades to arrival-gap think at replay.
+	if recs[1].ThinkTimeUs == nil {
+		t.Fatal("round1 think = nil, want recorded &0 (overlap clamps to a RECORDED zero, #1608)")
+	}
+	if *recs[1].ThinkTimeUs != 0 {
+		t.Errorf("round1 think = %d, want 0 (negative raw gap clamped; never negative)", *recs[1].ThinkTimeUs)
 	}
 }
 
@@ -134,15 +140,15 @@ func TestConvertWekaSession_MaxThinkTimeCapAndUncapped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("capped: %v", err)
 	}
-	if capped[1].ThinkTimeUs != 15_000_000 {
-		t.Errorf("capped think = %d, want 15e6", capped[1].ThinkTimeUs)
+	if capped[1].ThinkTimeUs == nil || *capped[1].ThinkTimeUs != 15_000_000 {
+		t.Errorf("capped think = %v, want &15e6", capped[1].ThinkTimeUs)
 	}
 	uncapped, err := ConvertWekaSession([]byte(j), WekaConvertOptions{MinRounds: 1, MaxThinkTimeUs: 0})
 	if err != nil {
 		t.Fatalf("uncapped: %v", err)
 	}
-	if uncapped[1].ThinkTimeUs != 100_000_000 {
-		t.Errorf("uncapped think = %d, want 100e6 (no cap when MaxThinkTimeUs == 0)", uncapped[1].ThinkTimeUs)
+	if uncapped[1].ThinkTimeUs == nil || *uncapped[1].ThinkTimeUs != 100_000_000 {
+		t.Errorf("uncapped think = %v, want &100e6 (no cap when MaxThinkTimeUs == 0)", uncapped[1].ThinkTimeUs)
 	}
 }
 
@@ -242,8 +248,8 @@ func TestConvertWekaSession_DropsMainTurnMissingTokens(t *testing.T) {
 		t.Errorf("survivor round1 = ri %d in %d, want 1/40", recs[1].RoundIndex, recs[1].InputTokens)
 	}
 	// Think for the kept round spans the dropped turn: t2-t0-api0 = 8-0-1 = 7s.
-	if recs[1].ThinkTimeUs != 7_000_000 {
-		t.Errorf("round1 think = %d, want 7e6 (dropped turn's wall-clock absorbed into the gap)", recs[1].ThinkTimeUs)
+	if recs[1].ThinkTimeUs == nil || *recs[1].ThinkTimeUs != 7_000_000 {
+		t.Errorf("round1 think = %v, want &7e6 (dropped turn's wall-clock absorbed into the gap)", recs[1].ThinkTimeUs)
 	}
 }
 
