@@ -1121,3 +1121,197 @@ func TestGenerateRequestsForWindow_SingleSessionReasoning_SessionSurvivesAtCeilO
 		})
 	}
 }
+
+// windowClientSpec builds a single-window, single-client spec for the
+// interior-gap tests below. aggregateRate=0 at the call site selects absolute
+// rate mode, so the window's TraceRate is used directly and proportional
+// allocation across co-active clients (orthogonal to gap semantics) is
+// sidestepped.
+func windowClientSpec(process string, rate float64, startUs, durationUs int64) []ClientSpec {
+	traceRate := rate
+	return []ClientSpec{
+		{
+			ID:           "gap-semantics-client",
+			RateFraction: 1.0,
+			Arrival:      ArrivalSpec{Process: process},
+			InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+			OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+			Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{
+					{StartUs: startUs, EndUs: startUs + durationUs, TraceRate: &traceRate},
+				},
+			},
+		},
+	}
+}
+
+// TestGenerateRequestsForWindow_InteriorGapSemantics pins the mean-gap
+// semantics that the last-request-dropped fix deliberately changed, as a law
+// rather than a code comment.
+//
+// numRequests arrivals placed strictly INSIDE a window of length D have
+// numRequests+1 surrounding gaps, so the effective mean gap is
+// D/(numRequests+1) -- not D/numRequests. Before the fix, numRequests gaps
+// were rescaled to sum to exactly D, which put the final arrival exactly on
+// window.EndUs where the boundary guard discarded it; the surviving arrivals
+// were spaced D/numRequests apart with ZERO trailing slack.
+//
+// The `constant` arrival process makes this deterministic and
+// seed-independent instead of statistical: every sampled IAT is identical, so
+// rescaleIATsToMatchDuration divides D evenly and every emitted gap is the
+// same width, D/(numRequests+1). That pins the semantics on two independent
+// axes, both of which fail against the pre-fix generator:
+//
+//   - count is numRequests (pre-fix: numRequests-1)
+//   - spacing is D/(numRequests+1) (pre-fix: D/numRequests)
+//
+// Uniformity is asserted exactly; the gap's absolute width is asserted within
+// a couple of microseconds, because ConstantArrivalSampler derives its IAT as
+// int64(1.0/(rate/1e6)) and that float division truncates -- at 5 req/s it
+// yields 199999us rather than 200000us, shifting the rescaled gap by 1us.
+// That artifact belongs to the sampler, not to the gap semantics under test,
+// and the tolerance is orders of magnitude tighter than the D/numRequests vs
+// D/(numRequests+1) difference this test exists to distinguish (2x at
+// numRequests == 1).
+//
+// It also pins the trailing slack as strictly positive and at least one mean
+// gap wide -- the property that makes the interior bound hold unconditionally
+// rather than probabilistically. Pre-fix that slack was identically zero,
+// which is precisely why the final arrival collided with window.EndUs.
+func TestGenerateRequestsForWindow_InteriorGapSemantics(t *testing.T) {
+	const startUs = int64(1_000_000)
+
+	cases := []struct {
+		name       string
+		rate       float64
+		durationUs int64
+	}{
+		// ceil(rate*duration) == 1: the case that previously produced no
+		// traffic at all. One arrival, so the single gap is D/2 and the
+		// arrival sits at the window midpoint.
+		{"ceil gives 1, arrival at midpoint", 5.0, 100_000},
+		{"ceil gives 5", 5.0, 1_000_000},
+		{"ceil gives 40", 40.0, 1_000_000},
+		{"sub-second window, ceil gives 4", 20.0, 200_000},
+		{"multi-second window", 3.0, 5_000_000},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			numRequests := int(math.Ceil(tc.rate * float64(tc.durationUs) / 1e6))
+			require.Greater(t, numRequests, 0, "test case must expect at least one request")
+
+			// The law under test.
+			wantGap := tc.durationUs / int64(numRequests+1)
+			require.Greater(t, wantGap, int64(0),
+				"test case must have a mean gap of at least 1us for spacing to be meaningful")
+			// Absorbs ConstantArrivalSampler's int64(1.0/(rate/1e6))
+			// truncation only; see the doc comment.
+			const gapToleranceUs = 2.0
+
+			clients := windowClientSpec("constant", tc.rate, startUs, tc.durationUs)
+			window := clients[0].Lifecycle.Windows[0]
+
+			// Seed is irrelevant for `constant`; fixed for reproducibility.
+			rng := rand.New(rand.NewSource(42))
+			requests, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng, nil)
+			require.NoError(t, err)
+
+			require.Equal(t, numRequests, len(requests),
+				"window [%d,%d) at %.1f req/s must produce ceil(rate*duration)=%d requests",
+				window.StartUs, window.EndUs, tc.rate, numRequests)
+
+			// Every emitted gap has the SAME width -- including the leading
+			// gap from window.StartUs to the first arrival -- and that width
+			// is D/(numRequests+1).
+			firstGap := requests[0].ArrivalTime - window.StartUs
+			assert.InDelta(t, float64(wantGap), float64(firstGap), gapToleranceUs,
+				"leading gap must be D/(numRequests+1)=%d, got %d", wantGap, firstGap)
+
+			prev := window.StartUs
+			for i, req := range requests {
+				assert.Equal(t, firstGap, req.ArrivalTime-prev,
+					"request %d: every emitted gap must be identical (%d), got %d (arrival %d)",
+					i, firstGap, req.ArrivalTime-prev, req.ArrivalTime)
+				prev = req.ArrivalTime
+			}
+
+			// Trailing slack: strictly positive (so the final arrival cannot
+			// collide with window.EndUs) and at least one gap wide (so the
+			// window is evenly divided rather than merely nudged inward).
+			// rescaleIATsToMatchDuration adds its non-negative rounding
+			// residual to the unused trailing gap, so slack >= firstGap.
+			// Pre-fix this slack was identically ZERO.
+			trailingSlack := window.EndUs - requests[len(requests)-1].ArrivalTime
+			assert.Greater(t, trailingSlack, int64(0),
+				"final arrival must leave strictly positive slack before window end")
+			assert.GreaterOrEqual(t, trailingSlack, firstGap,
+				"trailing slack must be at least one gap wide (%d), got %d", firstGap, trailingSlack)
+		})
+	}
+}
+
+// TestGenerateRequestsForWindow_ArrivalsOrderedAndInterior pins arrival
+// ordering across the stochastic arrival processes and several seeds,
+// complementing the exact-spacing test above (which uses `constant`).
+//
+// The law is that arrivals are NON-DECREASING -- deliberately not "strictly
+// increasing". Every sampler reachable through NewArrivalSampler floors its
+// raw IAT to >= 1us, but rescaleIATsToMatchDuration then multiplies by a
+// scale factor that can be < 1 and truncates toward zero, so a rescaled gap
+// of 0 is representable: rescaleIATsToMatchDuration([1,1,1,1000], 1000)
+// returns [0,0,0,1000]. Two arrivals sharing one microsecond is legal and
+// harmless (the downstream merge sorts by ArrivalTime); asserting strict
+// monotonicity would encode a property the rescale does not guarantee.
+//
+// Strict interiority IS unconditional whenever the mean gap is at least 1us,
+// which every realistic per-window config satisfies, so the cases below hold
+// it alongside the exact count.
+func TestGenerateRequestsForWindow_ArrivalsOrderedAndInterior(t *testing.T) {
+	const startUs = int64(1_000_000)
+
+	processes := []string{"poisson", "gamma", "weibull"}
+	cases := []struct {
+		name       string
+		rate       float64
+		durationUs int64
+	}{
+		{"ceil gives 1", 5.0, 100_000},
+		{"ceil gives 10", 10.0, 1_000_000},
+		{"bursty many-request window", 100.0, 1_000_000},
+	}
+
+	for _, process := range processes {
+		for _, tc := range cases {
+			t.Run(process+"/"+tc.name, func(t *testing.T) {
+				numRequests := int(math.Ceil(tc.rate * float64(tc.durationUs) / 1e6))
+				require.Greater(t, numRequests, 0)
+
+				for _, seed := range []int64{1, 2, 3, 17, 42, 99} {
+					clients := windowClientSpec(process, tc.rate, startUs, tc.durationUs)
+					window := clients[0].Lifecycle.Windows[0]
+
+					rng := rand.New(rand.NewSource(seed))
+					requests, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng, nil)
+					require.NoError(t, err)
+
+					require.Equal(t, numRequests, len(requests),
+						"seed %d: count must be ceil(rate*duration)=%d regardless of arrival process",
+						seed, numRequests)
+
+					prev := window.StartUs
+					for i, req := range requests {
+						assert.GreaterOrEqual(t, req.ArrivalTime, prev,
+							"seed %d request %d: arrivals must be non-decreasing (prev=%d, got %d)",
+							seed, i, prev, req.ArrivalTime)
+						assert.Greater(t, req.ArrivalTime, window.StartUs,
+							"seed %d request %d: arrival must be strictly after window start", seed, i)
+						assert.Less(t, req.ArrivalTime, window.EndUs,
+							"seed %d request %d: arrival must be strictly before window end", seed, i)
+						prev = req.ArrivalTime
+					}
+				}
+			})
+		}
+	}
+}
