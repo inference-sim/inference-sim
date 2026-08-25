@@ -284,11 +284,7 @@ function read_perspective_prompts(gate):
     source_map = {
         "pr-plan": ("pr-prompts.md", "Section A"),
         "pr-code": ("pr-prompts.md", "Section B"),
-        "design": ("design-prompts.md", "Section A"),
-        "macro-plan": ("design-prompts.md", "Section B"),
-        "h-design": ("../hypothesis-experiment/review-prompts.md", "Section A"),
-        "h-code": ("../hypothesis-experiment/review-prompts.md", "Section B"),
-        "h-findings": ("../hypothesis-experiment/review-prompts.md", "Section C")
+        "design": ("design-prompts.md", "Section A")
     }
     
     file, section = source_map[gate]
