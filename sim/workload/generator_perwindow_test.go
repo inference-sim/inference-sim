@@ -896,7 +896,13 @@ func TestGenerateRequestsForWindow_ExactCountAndInteriorArrivals(t *testing.T) {
 			// sampled shape (rescaling forces the gap sum to match the
 			// window duration exactly), but the interior-arrival property
 			// must hold for any draw, so check it isn't seed-dependent.
-			for _, seed := range []int64{1, 2, 3, 17, 42, 99} {
+			// Seed 276753 is pinned deliberately: it draws a raw first IAT of
+			// 1us (the sampler floor), which rescaleIATsToMatchDuration truncates
+			// to a ZERO leading gap, putting the first arrival exactly on
+			// window.StartUs. That is legal -- the window is half-open -- so the
+			// lower bound below is asserted inclusively. Before this seed was
+			// added the strict form passed on the other six by luck alone.
+			for _, seed := range []int64{1, 2, 3, 17, 42, 99, 276753} {
 				traceRate := rate
 				clients := []ClientSpec{
 					{
@@ -927,8 +933,8 @@ func TestGenerateRequestsForWindow_ExactCountAndInteriorArrivals(t *testing.T) {
 					seed, window.StartUs, window.EndUs, rate, expected, len(requests))
 
 				for i, req := range requests {
-					assert.Greater(t, req.ArrivalTime, window.StartUs,
-						"seed %d request %d: arrival must be strictly > window start", seed, i)
+					assert.GreaterOrEqual(t, req.ArrivalTime, window.StartUs,
+						"seed %d request %d: arrival must be at or after window start", seed, i)
 					assert.Less(t, req.ArrivalTime, window.EndUs,
 						"seed %d request %d: arrival must be strictly < window end", seed, i)
 				}
@@ -982,7 +988,13 @@ func TestGenerateRequestsForWindow_MultiSessionReasoning_ExactCountAndInteriorAr
 			expected := int(math.Ceil(rate * float64(tc.durationUs) / 1e6))
 			require.Greater(t, expected, 0, "test case must expect at least one session")
 
-			for _, seed := range []int64{1, 2, 3, 17, 42, 99} {
+			// Seed 276753 is pinned deliberately: it draws a raw first IAT of
+			// 1us (the sampler floor), which rescaleIATsToMatchDuration truncates
+			// to a ZERO leading gap, putting the first arrival exactly on
+			// window.StartUs. That is legal -- the window is half-open -- so the
+			// lower bound below is asserted inclusively. Before this seed was
+			// added the strict form passed on the other six by luck alone.
+			for _, seed := range []int64{1, 2, 3, 17, 42, 99, 276753} {
 				traceRate := rate
 				clients := []ClientSpec{
 					{
@@ -1025,8 +1037,8 @@ func TestGenerateRequestsForWindow_MultiSessionReasoning_ExactCountAndInteriorAr
 				sessionIDs := make(map[string]bool)
 				for i, req := range requests {
 					sessionIDs[req.SessionID] = true
-					assert.Greater(t, req.ArrivalTime, window.StartUs,
-						"seed %d request %d: session start must be strictly > window start", seed, i)
+					assert.GreaterOrEqual(t, req.ArrivalTime, window.StartUs,
+						"seed %d request %d: session start must be at or after window start", seed, i)
 					assert.Less(t, req.ArrivalTime, window.EndUs,
 						"seed %d request %d: session start must be strictly < window end", seed, i)
 				}
@@ -1069,7 +1081,13 @@ func TestGenerateRequestsForWindow_SingleSessionReasoning_SessionSurvivesAtCeilO
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			for _, seed := range []int64{1, 2, 3, 17, 42, 99} {
+			// Seed 276753 is pinned deliberately: it draws a raw first IAT of
+			// 1us (the sampler floor), which rescaleIATsToMatchDuration truncates
+			// to a ZERO leading gap, putting the first arrival exactly on
+			// window.StartUs. That is legal -- the window is half-open -- so the
+			// lower bound below is asserted inclusively. Before this seed was
+			// added the strict form passed on the other six by luck alone.
+			for _, seed := range []int64{1, 2, 3, 17, 42, 99, 276753} {
 				traceRate := rate
 				clients := []ClientSpec{
 					{
@@ -1112,8 +1130,8 @@ func TestGenerateRequestsForWindow_SingleSessionReasoning_SessionSurvivesAtCeilO
 					seed, window.StartUs, window.EndUs, rate, len(requests))
 
 				for i, req := range requests {
-					assert.Greater(t, req.ArrivalTime, window.StartUs,
-						"seed %d request %d: session start must be strictly > window start", seed, i)
+					assert.GreaterOrEqual(t, req.ArrivalTime, window.StartUs,
+						"seed %d request %d: session start must be at or after window start", seed, i)
 					assert.Less(t, req.ArrivalTime, window.EndUs,
 						"seed %d request %d: session start must be strictly < window end", seed, i)
 				}
