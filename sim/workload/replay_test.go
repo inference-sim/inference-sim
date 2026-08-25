@@ -1466,6 +1466,62 @@ func TestAccumulateReplay_ZeroReset_EmptyBuffer(t *testing.T) {
 	}
 }
 
+// TestAccumulateReplay_ConsecutiveCompactions covers back-to-back compaction rounds
+// (qa-review G9): a session that compacts on two consecutive turns (abs 200 → 150 → 100)
+// must re-seed the buffer to the recorded absolute EACH round, with the continuity
+// invariant holding across successive resets (each reset installs a fresh buffer; the
+// next completion validates its length before resetting again) and strict prefix identity
+// broken at every compaction boundary.
+func TestAccumulateReplay_ConsecutiveCompactions(t *testing.T) {
+	// abs: 200, then 150 (150 < 200+10), then 100 (100 < 150+5) — two compactions in a row.
+	trace := &TraceV2{
+		Header: TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
+		Records: []TraceRecord{
+			{RequestID: 0, SessionID: "s", RoundIndex: 0, InputTokens: 200, OutputTokens: 10, ArrivalTimeUs: 0},
+			{RequestID: 1, SessionID: "s", RoundIndex: 1, InputTokens: 0, OutputTokens: 5, ArrivalTimeUs: 1_000_000, InputTokensReset: i64p(150)},
+			{RequestID: 2, SessionID: "s", RoundIndex: 2, InputTokens: 0, OutputTokens: 5, ArrivalTimeUs: 2_000_000, InputTokensReset: i64p(100)},
+		},
+	}
+	r0, bps, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	sm := NewSessionManager(bps)
+	next := func(req *sim.Request, tick int64) *sim.Request {
+		req.State = sim.StateCompleted
+		req.ProgressIndex = int64(req.InputLen()) + int64(len(req.OutputTokens))
+		fu := sm.OnComplete(req, tick)
+		if len(fu) != 1 {
+			t.Fatalf("expected 1 follow-up, got %d", len(fu))
+		}
+		return fu[0]
+	}
+
+	round1 := next(r0[0], 1_000_000)
+	round1In := append([]sim.TokenID{}, round1.FullInputTokens()...)
+	if round1.InputLen() != 150 {
+		t.Fatalf("compaction round1 len = %d, want 150 (re-seed to recorded absolute)", round1.InputLen())
+	}
+	// Second consecutive compaction: buffer must reset AGAIN to the new absolute (100),
+	// not accumulate on top of the first reset (which would give 150+5+0 = 155).
+	round2 := next(round1, 2_000_000)
+	if round2.InputLen() != 100 {
+		t.Fatalf("consecutive compaction round2 len = %d, want 100 (second re-seed, not 155)", round2.InputLen())
+	}
+	// Strict prefix identity broken at the second boundary too (fresh segment).
+	round2In := round2.FullInputTokens()
+	prefixIdentical := true
+	for i := 0; i < 100; i++ {
+		if round2In[i] != round1In[i] {
+			prefixIdentical = false
+			break
+		}
+	}
+	if prefixIdentical {
+		t.Error("round2 is a strict prefix of round1 — each consecutive compaction must break prefix identity")
+	}
+}
+
 // TestAccumulateReplay_NoResetSampler_WhenMonotone pins BC-5: an accumulate trace
 // with no compaction marker builds NO reset sampler, so replay stays on the
 // pre-#1609 append-only path (byte-identical, INV-6).

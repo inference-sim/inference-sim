@@ -295,7 +295,9 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 	var requests []*sim.Request
 	var blueprints []SessionBlueprint
 
-	// Growth mode from header (design §5): "accumulate" → strict growing prefix.
+	// Growth mode from header (design §5): "accumulate" → growing shared prefix,
+	// shrunk back to the recorded absolute at a context-compaction boundary when the
+	// trace carries input_tokens_reset markers (#1609).
 	// Validate up front: an unrecognized value (e.g. a typo like "Accumulate") would
 	// otherwise fall through to the non-accumulate branch silently, disabling the
 	// feature with no feedback — an operator footgun. Fail loudly instead (R1).
