@@ -216,3 +216,81 @@ func TestBuildDetector_AcceptsValidKnobs(t *testing.T) {
 		}
 	}
 }
+
+// INV-6 for the bank with a TUNED knob: selection filters WHICH detectors run,
+// never HOW they see traffic. A tuned detector's records under --detectors all
+// must be byte-identical to its records under a single selection, and the other
+// detectors must be unperturbed by the tuning of a peer.
+func TestBank_TunedDetectorRecordsMatchUnderAll(t *testing.T) {
+	events := makeCompositeStream(60)
+	sens := 4.0
+	cfg := SaturationConfig{Composite: &CompositeBlock{Sensitivity: &sens}}
+
+	collect := func(names []string) map[string][]Result {
+		sink := NewInMemoryCollector()
+		bank, err := NewBank(names, cfg, sink)
+		if err != nil {
+			t.Fatalf("NewBank(%v): %v", names, err)
+		}
+		out := map[string][]Result{}
+		for _, e := range events {
+			bank.fanout(e)
+		}
+		for _, rec := range sink.Records() {
+			out[rec.Detector] = append(out[rec.Detector], rec.Result)
+		}
+		return out
+	}
+
+	alone := collect([]string{"composite"})
+	all := collect(AllDetectorNames())
+
+	if len(alone["composite"]) == 0 {
+		t.Fatal("no composite records collected; the comparison would be vacuous")
+	}
+	if len(alone["composite"]) != len(all["composite"]) {
+		t.Fatalf("composite record count differs: %d alone vs %d under all",
+			len(alone["composite"]), len(all["composite"]))
+	}
+	for i := range alone["composite"] {
+		a, b := alone["composite"][i], all["composite"][i]
+		if a.Level != b.Level || a.Score != b.Score || a.Confidence != b.Confidence {
+			t.Errorf("record %d differs between a single selection and --detectors all: %+v vs %+v", i, a, b)
+		}
+		for k, av := range a.Signals {
+			if bv := b.Signals[k]; bv != av {
+				t.Errorf("record %d signal %q differs: %v vs %v", i, k, av, bv)
+			}
+		}
+	}
+
+	// The peer detectors must be untouched by composite's tuning: compare against
+	// a bank where composite carries no override.
+	untuned := func() map[string][]Result {
+		sink := NewInMemoryCollector()
+		bank, err := NewBank(AllDetectorNames(), SaturationConfig{}, sink)
+		if err != nil {
+			t.Fatalf("NewBank untuned: %v", err)
+		}
+		for _, e := range events {
+			bank.fanout(e)
+		}
+		out := map[string][]Result{}
+		for _, rec := range sink.Records() {
+			out[rec.Detector] = append(out[rec.Detector], rec.Result)
+		}
+		return out
+	}()
+
+	for _, peer := range []string{"threshold", "backlog-drift"} {
+		if len(all[peer]) != len(untuned[peer]) {
+			t.Fatalf("%s record count changed when composite was tuned", peer)
+		}
+		for i := range all[peer] {
+			if all[peer][i].Level != untuned[peer][i].Level {
+				t.Errorf("%s record %d level changed when a PEER detector was tuned: %v vs %v",
+					peer, i, all[peer][i].Level, untuned[peer][i].Level)
+			}
+		}
+	}
+}
