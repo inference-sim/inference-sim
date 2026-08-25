@@ -22,6 +22,7 @@ func allBlockSetters() []blockSetter {
 		{"composite", "composite", func(c *SaturationConfig) { c.Composite = &CompositeBlock{Sensitivity: &one} }},
 		{"threshold", "threshold", func(c *SaturationConfig) { c.Threshold = &ThresholdBlock{ThresholdMs: &ms} }},
 		{"backlog_drift", "backlog-drift", func(c *SaturationConfig) { c.BacklogDrift = &BacklogDriftBlock{SlopeK: &k} }},
+		{"peak_rate", "peak-rate", func(c *SaturationConfig) { c.PeakRate = &PeakRateBlock{Threshold: &one} }},
 	}
 }
 
@@ -144,6 +145,8 @@ func TestBuildDetector_RejectsInvalidKnobs(t *testing.T) {
 	negInf := math.Inf(-1)
 	zero := 0.0
 	neg := -1.0
+	half := 0.5
+	zeroInt := 0
 
 	tests := []struct {
 		name      string
@@ -171,6 +174,24 @@ func TestBuildDetector_RejectsInvalidKnobs(t *testing.T) {
 			SaturationConfig{BacklogDrift: &BacklogDriftBlock{SlopeK: &posInf}}, "backlog_drift.slope_k"},
 		{"backlog_drift slope_k -Inf", "backlog-drift",
 			SaturationConfig{BacklogDrift: &BacklogDriftBlock{SlopeK: &negInf}}, "backlog_drift.slope_k"},
+		{"peak_rate threshold zero", "peak-rate",
+			SaturationConfig{PeakRate: &PeakRateBlock{Threshold: &zero}}, "peak_rate.threshold"},
+		{"peak_rate threshold negative", "peak-rate",
+			SaturationConfig{PeakRate: &PeakRateBlock{Threshold: &neg}}, "peak_rate.threshold"},
+		{"peak_rate threshold NaN", "peak-rate",
+			SaturationConfig{PeakRate: &PeakRateBlock{Threshold: &nan}}, "peak_rate.threshold"},
+		{"peak_rate threshold +Inf", "peak-rate",
+			SaturationConfig{PeakRate: &PeakRateBlock{Threshold: &posInf}}, "peak_rate.threshold"},
+		{"peak_rate min_observations zero", "peak-rate",
+			SaturationConfig{PeakRate: &PeakRateBlock{MinObservations: &zeroInt}}, "peak_rate.min_observations"},
+		{"peak_rate consecutive_k zero", "peak-rate",
+			SaturationConfig{PeakRate: &PeakRateBlock{ConsecutiveK: &zeroInt}}, "peak_rate.consecutive_k"},
+		// Below 1 the OVERLOADED boundary sits under the firing threshold, so
+		// BACKLOGGED becomes unreachable and the detector silently loses a level.
+		{"peak_rate overload_multiple below one", "peak-rate",
+			SaturationConfig{PeakRate: &PeakRateBlock{OverloadMultiple: &half}}, "peak_rate.overload_multiple"},
+		{"peak_rate overload_multiple zero", "peak-rate",
+			SaturationConfig{PeakRate: &PeakRateBlock{OverloadMultiple: &zero}}, "peak_rate.overload_multiple"},
 	}
 
 	for _, tc := range tests {
@@ -207,6 +228,7 @@ func TestBuildDetector_AcceptsValidKnobs(t *testing.T) {
 	}{
 		{"composite", SaturationConfig{Composite: &CompositeBlock{Sensitivity: &two}}},
 		{"backlog-drift", SaturationConfig{BacklogDrift: &BacklogDriftBlock{SlopeK: &two}}},
+		{"peak-rate", SaturationConfig{PeakRate: &PeakRateBlock{Threshold: &two}}},
 	} {
 		if _, err := BuildDetector(tc.detector, tc.cfg); err != nil {
 			t.Errorf("%s: valid knob rejected on the single path: %v", tc.detector, err)

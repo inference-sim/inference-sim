@@ -213,7 +213,7 @@ func (b *BacklogDriftDetector) Detect() Result {
 		score = 1.0
 	}
 
-	// Confidence reuses composite's ramp so the three streaming detectors agree.
+	// Confidence reuses composite's ramp so the streaming detectors agree.
 	confidence := math.Min(1.0, float64(b.arrivals)/20.0)
 
 	return Result{

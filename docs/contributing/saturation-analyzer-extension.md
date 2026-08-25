@@ -281,8 +281,8 @@ output).
 Reference implementations:
 
 - `sim/saturation/detector.go` — the `Detector` interface + `Event`/`Result`.
-- `sim/saturation/composite.go`, `threshold.go`, `backlog_drift.go` — the three
-  built-in detectors.
+- `sim/saturation/composite.go`, `threshold.go`, `backlog_drift.go`,
+  `peak_rate.go` — the built-in detectors.
 - `sim/saturation/config.go` — `SaturationConfig`, `buildDetector`, the
   `blockOwners()` ownership table.
 - `sim/saturation/bank.go` — the multi-detector `Bank` + `rosterOrder`.

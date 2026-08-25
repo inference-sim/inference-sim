@@ -104,7 +104,7 @@ intended_rate  goodput_rps  ratio  composite     threshold   backlog-drift  peak
 ```
 
 The saturation knee is the first rate where `ratio` falls below ~100% OR a
-detector's final verdict flips to `OVERLOADED`. The three detectors measure
+detector's final verdict flips to `OVERLOADED`. The detectors measure
 different things — composite blends rate deficit with a latency trend,
 threshold is a pure mean-E2E cutoff, and backlog-drift tracks the slope of
 in-flight — so a rate where they disagree (e.g. backlog-drift flags

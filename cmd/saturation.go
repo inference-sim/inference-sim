@@ -35,7 +35,7 @@ func registerDetectorFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&detectorName, "detectors", "",
 		"Post-hoc saturation detector(s) to trace: one of "+validNames+"; a comma-list of those; or \"all\". Empty = off.")
 	cmd.Flags().StringVar(&saturationConfigPath, "saturation-config", "",
-		"Path to a strict-YAML saturation tuning file. Every detector has one calibration knob: composite: {sensitivity}, threshold: {threshold_ms}, backlog_drift: {slope_k, ...}.")
+		"Path to a strict-YAML saturation tuning file. Every detector has a calibration knob: composite: {sensitivity}, threshold: {threshold_ms}, backlog_drift: {slope_k, ...}, peak_rate: {threshold, min_observations, consecutive_k, overload_multiple}.")
 	cmd.Flags().StringVar(&saturationReport, "saturation-report", "",
 		"File to write the selected detector(s)' per-event verdict trace as {\"final\":{...},\"trace\":[...]} JSON. Requires --detectors.")
 	cmd.Flags().StringVar(&saturationFinalWindow, "saturation-final-window", "",

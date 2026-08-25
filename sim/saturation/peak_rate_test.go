@@ -4,6 +4,8 @@ import (
 	"math"
 	"strconv"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 // --- Fixtures -------------------------------------------------------------
@@ -39,6 +41,39 @@ func healthyStream(rounds int) []Event {
 		events = append(events,
 			Event{Timestamp: ts, Type: Arrival, RequestID: "a"},
 			Event{Timestamp: ts + 50_000, Type: Completion, RequestID: "a", LatencyMs: 50})
+	}
+	return events
+}
+
+// spikeThenDrainStream is the fixture that distinguishes a HIGH-WATER MARK from the
+// instantaneous backlog: a large burst drives the backlog up, it then drains
+// completely, and a long healthy tail follows.
+//
+// The two implementations diverge sharply here. Tracking the running maximum keeps
+// R_t elevated for the whole tail (the peak is remembered), while tracking the
+// current backlog would let it collapse the moment the queue drains. Without a
+// fixture where the peak LAGS the current backlog, no assertion can tell the two
+// apart -- and the running max is the detector's defining feature.
+func spikeThenDrainStream(spike, tail int) []Event {
+	events := make([]Event, 0, 2*(spike+tail))
+	var ts int64
+
+	// Burst: `spike` arrivals in quick succession, so the backlog climbs to `spike`.
+	for i := 0; i < spike; i++ {
+		ts += 1_000
+		events = append(events, Event{Timestamp: ts, Type: Arrival, RequestID: "s"})
+	}
+	// Drain: every one of them completes, so the backlog returns to zero.
+	for i := 0; i < spike; i++ {
+		ts += 1_000
+		events = append(events, Event{Timestamp: ts, Type: Completion, RequestID: "s", LatencyMs: 10})
+	}
+	// Healthy tail: one request at a time, arriving and completing, for a long while.
+	for i := 0; i < tail; i++ {
+		ts += 100_000
+		events = append(events, Event{Timestamp: ts, Type: Arrival, RequestID: "h"})
+		ts += 50_000
+		events = append(events, Event{Timestamp: ts, Type: Completion, RequestID: "h", LatencyMs: 50})
 	}
 	return events
 }
@@ -452,6 +487,14 @@ func TestPeakRate_ResultStaysCoherentForAnyParameters(t *testing.T) {
 				if r.Level == Overloaded && r.Score != 1.0 {
 					t.Fatalf("threshold=%v overload_multiple=%v: OVERLOADED with Score %v, want the 1.0 cap", thr, om, r.Score)
 				}
+				// The converse: a capped Score means the magnitude cleared the
+				// OVERLOADED boundary, so the level must be OVERLOADED unless the
+				// debounce streak is simply not satisfied yet. Level and Score must
+				// never disagree about the MAGNITUDE.
+				if r.Score == 1.0 && r.Level == Backlogged {
+					t.Fatalf("threshold=%v overload_multiple=%v: Score reached the 1.0 cap but Level is BACKLOGGED; the band and the score denominator disagree",
+						thr, om)
+				}
 			}
 		}
 	}
@@ -504,4 +547,459 @@ func firedFraction(levels []Level) float64 {
 		}
 	}
 	return float64(n) / float64(len(levels))
+}
+
+// saturatedRequests builds RequestMetrics whose reconstructed event stream is a
+// growing backlog: requests arrive faster than they complete, and each takes longer
+// than the last. Used for the Bank.Run path, which consumes RequestMetrics.
+func saturatedRequests(n int) []sim.RequestMetrics {
+	out := make([]sim.RequestMetrics, 0, n)
+	for i := 0; i < n; i++ {
+		out = append(out, sim.RequestMetrics{
+			ID:        "request_" + strconv.Itoa(i),
+			ArrivedAt: float64(i) * 0.01,   // 100/s arrivals
+			E2E:       float64(500 + i*30), // ms, growing: completions fall behind
+		})
+	}
+	return out
+}
+
+// Under the bank, tuning peak-rate must not perturb any peer detector: selection
+// and configuration filter WHICH detectors run and how they band, never HOW any of
+// them sees traffic (INV-6).
+//
+// The vacuity guard at the end is essential -- without it a threshold that happened
+// to change nothing would let this pass while proving nothing.
+func TestPeakRate_TuningDoesNotPerturbPeerDetectors(t *testing.T) {
+	reqs := saturatedRequests(300)
+	huge := 1e6
+
+	collect := func(cfg SaturationConfig) map[string][]Level {
+		sink := NewInMemoryCollector()
+		bank, err := NewBank(AllDetectorNames(), cfg, sink)
+		if err != nil {
+			t.Fatalf("NewBank: %v", err)
+		}
+		if err := bank.Run(reqs); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		out := map[string][]Level{}
+		for _, r := range sink.Records() {
+			out[r.Detector] = append(out[r.Detector], r.Result.Level)
+		}
+		return out
+	}
+
+	untuned := collect(SaturationConfig{})
+	tuned := collect(SaturationConfig{PeakRate: &PeakRateBlock{Threshold: &huge}})
+
+	for _, peer := range []string{"composite", "threshold", "backlog-drift"} {
+		a, b := untuned[peer], tuned[peer]
+		if len(a) == 0 {
+			t.Fatalf("%s produced no records; the isolation assertion would be vacuous", peer)
+		}
+		if len(a) != len(b) {
+			t.Fatalf("%s: record count changed when peak-rate was tuned (%d vs %d)", peer, len(a), len(b))
+		}
+		for i := range a {
+			if a[i] != b[i] {
+				t.Errorf("%s: event %d changed %v -> %v when a PEER detector was tuned", peer, i, a[i], b[i])
+			}
+		}
+	}
+
+	changed := false
+	for i := range untuned["peak-rate"] {
+		if untuned["peak-rate"][i] != tuned["peak-rate"][i] {
+			changed = true
+			break
+		}
+	}
+	if !changed {
+		t.Fatal("tuning peak-rate changed none of its own verdicts; the isolation assertion is vacuous")
+	}
+}
+
+// The documented recovery property: because the numerator is an ALL-TIME high-water
+// mark, a detector that fired during a transient keeps firing until enough further
+// work completes to pull R_t back under the threshold. That is a real limitation, so
+// it is pinned as a contract rather than left implicit -- and it must be BOUNDED: a
+// healthy tail must eventually clear the verdict.
+//
+// Stated behaviorally: after a burst, feeding healthy traffic must return the verdict
+// to STABLE, and raising the threshold must clear it SOONER (the knob controls
+// recovery time as well as sensitivity).
+func TestPeakRate_RecoversAfterATransientAndTheThresholdControlsHowFast(t *testing.T) {
+	// A burst that drives the peak up, then a long healthy tail.
+	burst := saturatedStream(60)
+	lastTs := burst[len(burst)-1].Timestamp
+	tail := healthyStream(1200)
+	for i := range tail {
+		tail[i].Timestamp += lastTs
+	}
+	stream := append(append([]Event{}, burst...), tail...)
+
+	clearedAt := func(threshold float64) int {
+		levels := streamLevels(peakRateWith(threshold, 20, 3), stream)
+		// The last index at which the verdict was still saturated; everything after
+		// it is STABLE.
+		last := -1
+		for i, l := range levels {
+			if l != Stable {
+				last = i
+			}
+		}
+		if last == len(levels)-1 {
+			return -1 // never recovered
+		}
+		return last + 1
+	}
+
+	low := clearedAt(0.5)
+	high := clearedAt(4.0)
+
+	if low < 0 {
+		t.Fatal("the verdict never returned to STABLE after the burst; recovery is unbounded")
+	}
+	if high < 0 {
+		t.Fatal("the verdict never returned to STABLE even at a high threshold")
+	}
+	if high >= low {
+		t.Errorf("raising the threshold did not shorten recovery: cleared at event %d (threshold 4.0) vs %d (threshold 0.5)", high, low)
+	}
+}
+
+// The detector must track the backlog's HIGH-WATER MARK, not its instantaneous
+// value. After a large burst has fully drained, the statistic must still reflect the
+// peak that was reached -- that is what makes R_t a saturation detector rather than
+// a backlog gauge, and it is the property the whole asymptotic argument rests on.
+//
+// Stated behaviorally: on a stream whose backlog spikes and then drains to zero, the
+// verdict must remain saturated well past the point where the queue is empty, and
+// the reported statistic must stay far above what the (zero) current backlog implies.
+func TestPeakRate_TracksTheHighWaterMarkNotTheCurrentBacklog(t *testing.T) {
+	events := spikeThenDrainStream(200, 100)
+
+	d := peakRateWith(defaultPeakRateThreshold, 20, 3)
+	d.Reset()
+
+	type sample struct {
+		level    Level
+		stat     float64
+		inFlight float64
+		peak     float64
+	}
+	var samples []sample
+	for _, e := range events {
+		d.Observe(e)
+		r := d.Detect()
+		samples = append(samples, sample{r.Level, r.Signals["peak_rate"], r.Signals["in_flight"], r.Signals["peak_backlog"]})
+	}
+
+	// Look at the healthy tail, well after the burst has drained.
+	tail := samples[len(samples)*3/4:]
+
+	drained := 0
+	for _, s := range tail {
+		if s.inFlight <= 1 {
+			drained++
+		}
+	}
+	if drained == 0 {
+		t.Fatal("the backlog never drained in the tail; this fixture cannot distinguish a high-water mark from the current backlog")
+	}
+
+	// The remembered peak must exceed the drained backlog by a wide margin --
+	// otherwise the detector is tracking the instantaneous value.
+	for i, s := range tail {
+		if s.peak <= s.inFlight+1 {
+			t.Fatalf("tail sample %d: reported peak %v is not above the current backlog %v; the high-water mark is not being tracked",
+				i, s.peak, s.inFlight)
+		}
+	}
+
+	// And the verdict must still be saturated: the run DID saturate, even though the
+	// queue is now empty.
+	tailLevels := make([]Level, len(tail))
+	for i, s := range tail {
+		tailLevels[i] = s.level
+	}
+	if !firedAnywhere(tailLevels) {
+		t.Error("after a large burst drained, the verdict returned to STABLE immediately; the peak was forgotten")
+	}
+}
+
+// An out-of-order timestamp must not silence the detector. Observe is a public
+// interface method, so a caller need not deliver events in time order; tracking
+// "the first timestamp" rather than the minimum would pin the elapsed span at zero
+// and report STABLE on an unboundedly growing backlog forever -- a silent failure,
+// which is strictly worse than a wrong answer because it looks like a healthy run.
+func TestPeakRate_OutOfOrderTimestampsDoNotSilenceIt(t *testing.T) {
+	d := NewPeakRateDetector()
+	d.Reset()
+
+	// The largest timestamp arrives FIRST, then 200 arrivals at earlier times.
+	d.Observe(Event{Timestamp: 10_000_000, Type: Arrival, RequestID: "late"})
+	for i := 0; i < 200; i++ {
+		d.Observe(Event{Timestamp: int64(i) * 1_000, Type: Arrival, RequestID: "early"})
+	}
+
+	r := d.Detect()
+	if r.Signals["elapsed_sec"] <= 0 {
+		t.Fatalf("elapsed span is %v after events spanning 10s; the detector cannot form a verdict", r.Signals["elapsed_sec"])
+	}
+	if r.Level == Stable {
+		t.Errorf("201 arrivals with no completions was reported STABLE (statistic %v); an unbounded backlog must not read as healthy",
+			r.Signals["peak_rate"])
+	}
+}
+
+// An unrecognized event type must not change the verdict at all. Advancing the
+// elapsed span for an event that does not move the backlog would shrink the
+// statistic while leaving the breach streak frozen, so the reported level would
+// contradict the reported statistic.
+func TestPeakRate_UnknownEventTypeIsFullyIgnored(t *testing.T) {
+	d := peakRateWith(defaultPeakRateThreshold, 20, 3)
+	d.Reset()
+	for _, e := range saturatedStream(100) {
+		d.Observe(e)
+	}
+	before := d.Detect()
+
+	ts := int64(100_000_000)
+	for i := 0; i < 1000; i++ {
+		ts += 1_000_000
+		d.Observe(Event{Timestamp: ts, Type: EventType(99), RequestID: "junk"})
+	}
+	after := d.Detect()
+
+	if after.Level != before.Level {
+		t.Errorf("1000 unknown-type events changed the level %v -> %v", before.Level, after.Level)
+	}
+	if after.Signals["peak_rate"] != before.Signals["peak_rate"] {
+		t.Errorf("1000 unknown-type events changed the statistic %v -> %v", before.Signals["peak_rate"], after.Signals["peak_rate"])
+	}
+	if after.Signals["elapsed_sec"] != before.Signals["elapsed_sec"] {
+		t.Errorf("1000 unknown-type events advanced the elapsed span %v -> %v", before.Signals["elapsed_sec"], after.Signals["elapsed_sec"])
+	}
+}
+
+// Whenever the detector reports a saturated level, its reported statistic must be
+// above the reported threshold -- the verdict and the evidence for it must agree.
+// This is the property that a stale streak (a verdict outliving the statistic that
+// justified it) violates.
+func TestPeakRate_SaturatedVerdictsAlwaysExceedTheReportedThreshold(t *testing.T) {
+	for _, events := range [][]Event{
+		saturatedStream(200),
+		healthyStream(400),
+		spikeThenDrainStream(200, 100),
+	} {
+		d := peakRateWith(defaultPeakRateThreshold, 20, 3)
+		d.Reset()
+		checked := 0
+		for _, e := range events {
+			d.Observe(e)
+			r := d.Detect()
+			if r.Level == Stable {
+				continue
+			}
+			checked++
+			if r.Signals["peak_rate"] <= r.Signals["threshold"] {
+				t.Fatalf("reported %v while the statistic %v is not above the threshold %v; the verdict outlived its evidence",
+					r.Level, r.Signals["peak_rate"], r.Signals["threshold"])
+			}
+		}
+		if checked == 0 {
+			t.Error("no saturated verdict was examined; the assertion was vacuous for this stream")
+		}
+	}
+}
+
+// The separation between healthy and overloaded traffic must WIDEN with the
+// observation horizon. This is the asymptotic property the whole design rests on
+// (the statistic is defined by a limit), and it is why min_observations is part of
+// the algorithm rather than input validation: at a short horizon the two regimes are
+// genuinely hard to tell apart, because the healthy server's peak has not levelled
+// off yet.
+//
+// Asserted as a trend rather than against the measured figures in the doc comment,
+// so the test states the law instead of pinning one apparatus's numbers.
+func TestPeakRate_SeparationWidensWithTheHorizon(t *testing.T) {
+	statAtEnd := func(events []Event) float64 {
+		d := peakRateWith(defaultPeakRateThreshold, 20, 3)
+		d.Reset()
+		var last float64
+		for _, e := range events {
+			d.Observe(e)
+			last = d.Detect().Signals["peak_rate"]
+		}
+		return last
+	}
+
+	var prev float64
+	for _, rounds := range []int{50, 100, 200, 400, 800} {
+		sat := statAtEnd(saturatedStream(rounds))
+		healthy := statAtEnd(healthyStream(rounds))
+		if healthy <= 0 {
+			t.Fatalf("rounds=%d: healthy statistic is %v; cannot form a ratio", rounds, healthy)
+		}
+		sep := sat / healthy
+		if sep <= 1 {
+			t.Fatalf("rounds=%d: separation %v does not favour the saturated stream at all", rounds, sep)
+		}
+		if prev > 0 && sep < prev {
+			t.Errorf("rounds=%d: separation NARROWED to %.2fx from %.2fx at the shorter horizon; the statistic should discriminate better with more observation, not worse",
+				rounds, sep, prev)
+		}
+		prev = sep
+	}
+}
+
+// The knobs' exact semantics, pinned at their boundaries. Ordering tests (a bigger
+// knob fires no more) cannot see an off-by-one, because both sides shift together --
+// so the absolute meaning of each knob needs its own assertion.
+//
+// Constructed so the statistic lands EXACTLY on the threshold: a single arrival
+// gives peak=1, and choosing the elapsed span makes peak/elapsed exactly 1.0.
+func TestPeakRate_KnobBoundarySemantics(t *testing.T) {
+	// A stream whose statistic is exactly 1.0 backlog/second and stays there:
+	// one arrival at t=0, then arrivals and completions that hold peak at 2 while
+	// elapsed grows to 2s -> R_t = 1.0.
+	exactly := func(n int) []Event {
+		out := []Event{{Timestamp: 0, Type: Arrival, RequestID: "a"}}
+		var ts int64
+		for i := 0; i < n; i++ {
+			ts += 1_000_000 // 1s steps
+			out = append(out,
+				Event{Timestamp: ts, Type: Arrival, RequestID: "b"},
+				Event{Timestamp: ts, Type: Completion, RequestID: "b", LatencyMs: 1})
+		}
+		return out
+	}
+
+	t.Run("threshold is strict: a statistic EQUAL to the threshold does not fire", func(t *testing.T) {
+		events := exactly(4)
+		// Find the exact statistic at the end, then use it AS the threshold.
+		probe := peakRateWith(1e-6, 1, 1)
+		probe.Reset()
+		var stat float64
+		for _, e := range events {
+			probe.Observe(e)
+			stat = probe.Detect().Signals["peak_rate"]
+		}
+		if stat <= 0 {
+			t.Fatalf("probe statistic is %v; cannot set an exact-boundary threshold", stat)
+		}
+
+		atBoundary := streamLevels(peakRateWith(stat, 1, 1), events)
+		if atBoundary[len(atBoundary)-1] != Stable {
+			t.Errorf("a statistic exactly equal to the threshold fired (%v); the comparison must be strict so `threshold` means 'fire ABOVE this'",
+				atBoundary[len(atBoundary)-1])
+		}
+
+		// And a hair below the boundary must fire, proving the test is not passing
+		// because nothing ever fires.
+		justUnder := streamLevels(peakRateWith(stat*0.99, 1, 1), events)
+		if justUnder[len(justUnder)-1] == Stable {
+			t.Fatalf("a threshold 1%% below the statistic did not fire; the boundary assertion above is vacuous")
+		}
+	})
+
+	t.Run("min_observations is inclusive: exactly that many events is enough", func(t *testing.T) {
+		events := exactly(20)
+		// With min_observations == the event count, the final event must be eligible
+		// to produce a verdict (an exclusive gate would need one more).
+		levels := streamLevels(peakRateWith(1e-6, len(events), 1), events)
+		if levels[len(levels)-1] == Stable {
+			t.Errorf("with min_observations equal to the event count the detector never became eligible; the gate must be inclusive (>=)")
+		}
+		// One more than the count must NOT be eligible.
+		levels = streamLevels(peakRateWith(1e-6, len(events)+1, 1), events)
+		if levels[len(levels)-1] != Stable {
+			t.Errorf("with min_observations ABOVE the event count the detector formed a verdict; the gate is not being applied")
+		}
+	})
+
+	t.Run("consecutive_k is inclusive: exactly k breaches fires", func(t *testing.T) {
+		events := exactly(40)
+		// A tiny threshold makes every eligible event a breach, so the first fire
+		// index tells us how many breaches k actually requires.
+		firstFire := func(k int) int {
+			for i, l := range streamLevels(peakRateWith(1e-6, 1, k), events) {
+				if l != Stable {
+					return i
+				}
+			}
+			return -1
+		}
+		f1, f2 := firstFire(1), firstFire(2)
+		if f1 < 0 || f2 < 0 {
+			t.Fatalf("did not fire at k=1 (%d) or k=2 (%d); the assertion would be vacuous", f1, f2)
+		}
+		// Requiring one more breach must delay firing by exactly one eligible event.
+		if f2 != f1+1 {
+			t.Errorf("k=2 first fired at event %d and k=1 at %d; requiring one more breach should delay by exactly one event, so consecutive_k counts breaches inclusively", f2, f1)
+		}
+	})
+}
+
+// The OVERLOADED boundary is strict too, and the elapsed-span guard is load-bearing.
+// Both are boundary conditions that ordering tests cannot see.
+func TestPeakRate_OverloadBoundaryAndElapsedGuard(t *testing.T) {
+	t.Run("OVERLOADED is strict: a statistic exactly at the boundary stays BACKLOGGED", func(t *testing.T) {
+		// Hold peak at 1 with elapsed growing, so the statistic is a clean value.
+		events := []Event{{Timestamp: 0, Type: Arrival, RequestID: "a"}}
+		var ts int64
+		for i := 0; i < 8; i++ {
+			ts += 1_000_000
+			events = append(events,
+				Event{Timestamp: ts, Type: Arrival, RequestID: "b"},
+				Event{Timestamp: ts, Type: Completion, RequestID: "b", LatencyMs: 1})
+		}
+
+		probe := peakRateWith(1e-6, 1, 1)
+		probe.Reset()
+		var stat float64
+		for _, e := range events {
+			probe.Observe(e)
+			stat = probe.Detect().Signals["peak_rate"]
+		}
+
+		// overload_multiple x threshold == stat exactly.
+		const om = 4.0
+		d := newPeakRateDetector(peakRateConfig{
+			Threshold: stat / om, MinObservations: 1, ConsecutiveK: 1, OverloadMultiple: om,
+		})
+		levels := streamLevels(d, events)
+		last := levels[len(levels)-1]
+		if last == Stable {
+			t.Fatalf("the detector did not fire at all; the boundary assertion would be vacuous")
+		}
+		if last == Overloaded {
+			t.Errorf("a statistic exactly AT overload_multiple x threshold reported OVERLOADED; the comparison must be strict so the knob means 'OVERLOADED above this'")
+		}
+	})
+
+	t.Run("a zero elapsed span cannot produce a verdict", func(t *testing.T) {
+		// Every event at the same instant: the backlog is huge but no time has
+		// passed, so peak/elapsed is undefined. The detector must decline to judge
+		// rather than treat the undefined ratio as evidence.
+		var events []Event
+		for i := 0; i < 500; i++ {
+			events = append(events, Event{Timestamp: 42, Type: Arrival, RequestID: "a"})
+		}
+		d := peakRateWith(1e-9, 1, 1) // maximally sensitive
+		levels := streamLevels(d, events)
+		for i, l := range levels {
+			if l != Stable {
+				t.Fatalf("event %d reported %v with a zero elapsed span; the statistic is undefined there and must not drive a verdict", i, l)
+			}
+		}
+		// Once time advances, the same detector must be willing to fire -- proving
+		// the assertion above is about the zero span, not about a dead detector.
+		d.Observe(Event{Timestamp: 43, Type: Arrival, RequestID: "a"})
+		if d.Detect().Level == Stable {
+			t.Error("after time advanced the detector still would not fire on a 501-deep backlog; the guard is suppressing more than the zero-span case")
+		}
+	})
 }

@@ -127,7 +127,10 @@ func NewPeakRateDetector() Detector {
 // here; the clamps below are the in-process safety net for direct callers, so the
 // banding can never be driven by a nonsense parameter.
 func newPeakRateDetector(cfg peakRateConfig) Detector {
-	if cfg.Threshold <= 0 || math.IsNaN(cfg.Threshold) || math.IsInf(cfg.Threshold, 0) {
+	// The floor matches the YAML resolver's (minCalibrationKnob), so the two layers
+	// agree: a subnormal threshold underflows the score denominator and would
+	// decouple Level from Score.
+	if math.IsNaN(cfg.Threshold) || math.IsInf(cfg.Threshold, 0) || cfg.Threshold < minCalibrationKnob {
 		cfg.Threshold = defaultPeakRateThreshold
 	}
 	if cfg.MinObservations <= 0 {
@@ -149,9 +152,26 @@ func (p *PeakRateDetector) Name() string { return "peak-rate" }
 // Both event types matter: arrivals raise the backlog (and so possibly the peak),
 // completions lower it. An unknown event type is ignored rather than mis-counted.
 func (p *PeakRateDetector) Observe(event Event) {
+	// Ignore an unrecognized event type BEFORE touching any state. Advancing the
+	// elapsed span for an event that does not change the backlog would shrink the
+	// statistic while leaving the breach streak frozen, so the verdict would
+	// contradict its own reported statistic (R1: no silent inconsistency).
+	if event.Type != Arrival && event.Type != Completion {
+		return
+	}
+
+	// Track the observed span SYMMETRICALLY: the minimum and maximum timestamp
+	// seen, not "the first one" and the maximum. buildSortedEvents delivers events
+	// in nondecreasing time, but Observe is a public interface method, and an
+	// out-of-order first event would otherwise pin elapsed at zero forever --
+	// making ready() permanently false and reporting STABLE on an unboundedly
+	// growing backlog. That is a silent failure, not a degradation.
 	if !p.haveFirst {
 		p.firstTsUs, p.lastTsUs = event.Timestamp, event.Timestamp
 		p.haveFirst = true
+	}
+	if event.Timestamp < p.firstTsUs {
+		p.firstTsUs = event.Timestamp
 	}
 	if event.Timestamp > p.lastTsUs {
 		p.lastTsUs = event.Timestamp
@@ -167,8 +187,6 @@ func (p *PeakRateDetector) Observe(event Event) {
 		if p.inFlight > 0 {
 			p.inFlight--
 		}
-	default:
-		return
 	}
 	p.observations++
 
@@ -207,21 +225,30 @@ func (p *PeakRateDetector) Detect() Result {
 		return Result{Level: Stable, Score: 0, Confidence: 0, Signals: signals}
 	}
 
+	// The OVERLOADED boundary, hoisted once so the band switch below and the score
+	// denominator provably use the SAME value: if they diverged, Score reaching its
+	// 1.0 cap would stop coinciding with the OVERLOADED band.
+	overloadAt := p.cfg.OverloadMultiple * p.cfg.Threshold
+
+	// Score is the normalized magnitude, capped at 1.0. The cap is reached exactly
+	// when the statistic clears overloadAt -- the same `>` comparison the band uses,
+	// so Score == 1.0 and Level == OVERLOADED cannot disagree at the boundary point
+	// itself (Level additionally requires the breach streak, so a capped Score with
+	// a STABLE level means "magnitude reached, debounce not yet satisfied").
+	score := 0.0
+	switch {
+	case stat > overloadAt:
+		score = 1.0
+	case overloadAt > 0:
+		score = math.Max(0.0, stat) / overloadAt
+	}
+
 	level := Stable
 	if p.consecutive >= p.cfg.ConsecutiveK {
 		level = Backlogged
-		if stat > p.cfg.OverloadMultiple*p.cfg.Threshold {
+		if stat > overloadAt {
 			level = Overloaded
 		}
-	}
-
-	// Score is the normalized magnitude, capped at 1.0, reaching the cap exactly at
-	// the OVERLOADED boundary -- the same convention backlog-drift follows.
-	score := 0.0
-	if denom := p.cfg.OverloadMultiple * p.cfg.Threshold; denom > 0 {
-		score = math.Min(1.0, math.Max(0.0, stat)/denom)
-	} else if stat > 0 {
-		score = 1.0
 	}
 
 	// Confidence reuses composite's ramp so the streaming detectors agree.
@@ -248,9 +275,16 @@ func (p *PeakRateDetector) Reset() {
 }
 
 // ready reports whether enough of the run has been observed for R_t to carry
-// information. Both conditions are necessary: the observation count keeps the
-// detector quiet through the opening transient, and a positive elapsed span keeps
-// the division defined (R11).
+// information.
+//
+// The observation count is the load-bearing condition: it keeps the detector quiet
+// through the opening transient. The elapsed-span condition is defence in depth --
+// statistic() independently returns 0 for a non-positive span, and a zero statistic
+// cannot exceed a threshold (validation floors it at minCalibrationKnob > 0), so
+// removing it here changes no verdict. It is kept so that "is a verdict meaningful
+// yet?" is answered in one place rather than depending on statistic()'s guard, and
+// so a future threshold of exactly 0 could not turn an undefined ratio into a
+// breach (R11).
 func (p *PeakRateDetector) ready() bool {
 	return p.observations >= int64(p.cfg.MinObservations) && p.elapsedSec() > 0
 }
