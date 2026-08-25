@@ -411,9 +411,7 @@ The PR description should include:
 
 ## Universal Convergence Protocol
 
-> **Canonical source:** [`docs/contributing/convergence.md`](convergence.md). If this section diverges, convergence.md is authoritative.
-
-All three review gates (Design Review, Code Review, FINDINGS Review) use the same convergence protocol: run all N perspectives in parallel, fix any CRITICAL/IMPORTANT findings, re-run until zero CRITICAL and zero IMPORTANT in a round. Max 10 rounds per gate. See [`docs/contributing/convergence.md`](convergence.md) for the full protocol, severity definitions, agent failure handling, and expected convergence rates.
+All three review gates (Design Review, Code Review, FINDINGS Review) use the same convergence protocol: run all N perspectives in parallel, fix any CRITICAL/IMPORTANT findings, re-run until zero CRITICAL and zero IMPORTANT in a round. Max 10 rounds per gate.
 
 !!! tip "Automation"
     The `convergence-review` skill automates this protocol: `/convergence-review <gate-type> [artifact-path]`. See [Skills & Plugins](../guide/skills-and-plugins.md).

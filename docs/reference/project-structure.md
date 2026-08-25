@@ -140,18 +140,14 @@ inference-sim/
 │   │   ├── index.md           # Contributing landing page
 │   │   ├── extension-recipes.md # Step-by-step extension guides
 │   │   ├── pr-workflow.md     # PR development workflow
-│   │   ├── design-process.md  # Design document process
-│   │   ├── macro-planning.md  # Macro-level planning process
+│   │   ├── rfc.md             # RFC template for large features
 │   │   ├── hypothesis.md      # Hypothesis experiment process
-│   │   ├── convergence.md     # Universal Convergence Protocol
 │   │   ├── standards/         # Canonical rules, invariants, principles, experiment standards
-│   │   └── templates/         # Artifact templates + agent prompts
+│   │   └── templates/         # Artifact templates
 │   │       ├── design-guidelines.md  # DES foundations, module architecture
-│   │       ├── macro-plan.md         # Multi-PR template (human-readable)
-│   │       ├── macro-plan-prompt.md  # Agent preamble for macro planning
-│   │       ├── micro-plan.md         # Single-PR template (human-readable)
-│   │       ├── micro-plan-prompt.md  # Agent preamble for writing-plans skill
 │   │       └── hypothesis.md         # Experiment FINDINGS.md template
+│   ├── templates/             # Claude prompt templates
+│   │   └── rfc-to-plan.md    # Prompt: encode .archon + create sub-issues
 │   └── plans/                 # Active implementation plans (excluded from MkDocs)
 │       └── archive/           # Completed design docs (architectural reference)
 ├── CONTRIBUTING.md            # Contributor guide (references docs/contributing/standards/)

@@ -526,6 +526,5 @@ To add a new gate type:
 ## Related Documentation
 
 - [PR Workflow](../contributing/pr-workflow.md) - Full PR development process
-- [Convergence Protocol](../contributing/convergence.md) - Convergence rules and invariants
 - Convergence Review Skill - Original source of perspective prompts (now self-contained in `.bob/prompts/review-perspectives.md`)
 - [Bob Command Documentation](https://internal.bob.ibm.com/docs/ide/basic-usage/slash-commands) - Bob's command system

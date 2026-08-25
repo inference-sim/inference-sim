@@ -100,5 +100,5 @@ The distinction matters for onboarding: project skills work immediately after `g
 
 - [PR Workflow](../contributing/pr-workflow.md) -- skill usage in PR development
 - [Hypothesis Experiments](../contributing/hypothesis.md) -- skill usage in experimentation
-- [Convergence Protocol](../contributing/convergence.md) -- the review protocol that `convergence-review` implements
+
 - [Extension Recipes](../contributing/extension-recipes.md) -- step-by-step guides that skills help execute

@@ -121,7 +121,7 @@ For a complete worked example of a hypothesis bundle, see **[Hypothesis Bundles 
 
 ### Step 2c: Design Review
 
-Run the **5-perspective Design Review** on the hypothesis bundle using the [universal convergence protocol](../contributing/convergence.md).
+Run the **5-perspective Design Review** on the hypothesis bundle using the universal convergence protocol.
 
 ```
 /convergence-review h-design
@@ -179,7 +179,7 @@ flowchart TD
 
 **3f — Document FINDINGS.** Write `FINDINGS.md` using the [hypothesis template](../contributing/templates/hypothesis.md). The prediction-vs-outcome comparison is a required section.
 
-**3g — FINDINGS Review.** 10-perspective review using the [convergence protocol](../contributing/convergence.md) (`/convergence-review h-findings`).
+**3g — FINDINGS Review.** 10-perspective review using the convergence protocol (`/convergence-review h-findings`).
 
 **3h — Self-audit.** Six dimensions of critical self-review.
 

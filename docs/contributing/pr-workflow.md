@@ -95,7 +95,7 @@ Save the plan to `docs/plans/<feature-name>-plan.md`.
 The source of work can be a macro plan section, a design document, one or more GitHub issues, or a feature request.
 
 !!! tip "Automation"
-    `/superpowers:writing-plans for <work-item> in @docs/plans/<name>-plan.md using @docs/contributing/templates/micro-plan-prompt.md and @<source-document>` generates the plan automatically. The skill reads the source document and the template, inspects the codebase, and produces behavioral contracts with executable tasks.
+    `/superpowers:writing-plans for <work-item> in @docs/plans/<name>-plan.md and @<source-document>` generates the plan automatically. The skill reads the source document and the template, inspects the codebase, and produces behavioral contracts with executable tasks.
 
 ---
 
@@ -147,7 +147,7 @@ Perform these 4 checks directly (no agent needed):
 
 **Check 1: Task Dependencies** — For each task, verify it can actually start given what comes before it. Trace the dependency chain: what files does each task create/modify? Does any task require a file or type that hasn't been created yet? Flag tasks that modify the same file and could conflict.
 
-**Check 2: Template Completeness** — Verify all sections from the [micro-plan template](templates/micro-plan.md) are present and non-empty: Header, Part 1 (A–E), Part 2 (F–I), Part 3 (J), Appendix. For compact-format plans (Small tier), verify the compact sections are present: Header (Goal/Source/Closes), Behavioral Contracts, Tasks, Sanity Checklist.
+**Check 2: Template Completeness** — Verify the plan includes: Header (Goal/Source/Closes), Behavioral Contracts, TDD Tasks, and Sanity Checklist.
 
 **Check 3: Executive Summary Clarity** — Read the executive summary as if you're a new team member with no context. Is it clear what the PR does and why? Can you understand the scope without reading the rest of the plan?
 
@@ -435,7 +435,7 @@ Not all PRs need the same level of review. Use these objective criteria:
 - **Human reviewer can override** — if the human reviewer at Step 3 believes the tier is wrong, they can request a different tier.
 
 !!! note "Compact Plan Format"
-    Small tier PRs may use the [compact plan format](templates/micro-plan.md#compact-format-small-tier-prs) instead of the full micro-plan template. The compact format retains behavioral contracts and TDD tasks but drops ceremony sections. See the template for criteria and structure.
+    Small tier PRs may use a compact plan format — behavioral contracts and TDD tasks only, no ceremony sections.
 
 ---
 
@@ -445,7 +445,7 @@ A typical PR from a macro plan section:
 
 1. **Create worktree:** `git worktree add .worktrees/pr8-routing -b pr8-routing && cd .worktrees/pr8-routing`
 2. **Audit source:** Scan source document for ambiguities, contradictions, missing info. Record clarifications.
-3. **Write plan:** Follow [micro-plan template](templates/micro-plan.md), save to `docs/plans/pr8-routing-plan.md`
+3. **Write plan:** Write plan, save to `docs/plans/pr8-routing-plan.md`
 4. **Review plan:** For Medium/Large PRs, run holistic pre-pass first. Then run all 10 perspectives in convergence rounds. Fix issues, re-run until converged. (Small PRs skip the pre-pass.)
 5. **Human review:** Read plan — contracts, tasks, appendix. Approve to proceed.
 6. **Implement:** Execute TDD tasks: test → fail → implement → pass → lint → commit.
