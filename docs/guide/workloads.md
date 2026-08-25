@@ -481,6 +481,8 @@ Rate fractions are normalized **per-phase**: during 0–50s the co-active fracti
 
 See [Lifecycle Normalization](../reference/workload-spec.md#lifecycle-normalization) for details.
 
+**Arrival spacing inside a window.** Each window generates exactly N = `ceil(rate x window_duration_seconds)` arrivals, and they are placed **strictly inside** the window — never on either boundary instant. Because N arrivals inside a window of length D have N+1 surrounding gaps, the effective mean gap is `D/(N+1)`, not `D/N`; the window opens and closes with a gap rather than with an arrival. This keeps a window's arrivals from colliding with the next window's start instant (where they would be attributed to the wrong window's parameters) and avoids every co-active client firing simultaneously at each boundary. Note that a window whose expected count is fractional still rounds **up**, so any window with a non-zero rate produces at least one arrival.
+
 ## Advanced Features
 
 ### Multimodal Requests
