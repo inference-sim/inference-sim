@@ -2702,6 +2702,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#calibrating-peak-rate-specifically" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Calibrating peak-rate specifically
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2864,7 +2875,7 @@ doesn't change on the events it ignores.</p>
 <tr>
 <td><strong>composite</strong></td>
 <td>STABLE / BACKLOGGED / OVERLOADED</td>
-<td><code>max(rate_deficit, quartile-filtered latency_trend)</code> banded against a <code>1/√arrivals</code> noise floor. Zero tunable parameters.</td>
+<td><code>max(rate_deficit, quartile-filtered latency_trend)</code> banded against a <code>1/√arrivals</code> noise floor, scaled by <code>sensitivity</code> (default 1.0).</td>
 </tr>
 <tr>
 <td><strong>threshold</strong></td>
@@ -2874,7 +2885,12 @@ doesn't change on the events it ignores.</p>
 <tr>
 <td><strong>backlog-drift</strong></td>
 <td>STABLE / BACKLOGGED / OVERLOADED</td>
-<td>Online OLS slope of in-flight (<code>arrivals − completions</code>) over a trailing window, banded against the noise floor.</td>
+<td>Online OLS slope of in-flight (<code>arrivals − completions</code>) over a trailing window, banded against <code>slope_k × noiseFloor</code> (default <code>slope_k</code> = 3.0).</td>
+</tr>
+<tr>
+<td><strong>peak-rate</strong></td>
+<td>STABLE / BACKLOGGED / OVERLOADED</td>
+<td><code>R_t = Peak_t / t</code> — the backlog high-water mark over elapsed time. Needs no latency target and no capacity estimate. Fires when <code>R_t</code> holds above <code>threshold</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -2889,25 +2905,94 @@ doesn't change on the events it ignores.</p>
 <p><code>--detectors</code> also works on <code>blis replay</code> (byte-identical to <code>run</code> for the same
 trace, INV-13) and <code>blis observe</code> (same pipeline over real-server latencies).</p>
 <h3 id="tuning-via-saturation-config">Tuning via <code>--saturation-config</code><a class="headerlink" href="#tuning-via-saturation-config" title="Permanent link">&para;</a></h3>
-<p>A strict-YAML file carries one optional block per parameterized detector.
-<code>composite</code> has no block (a <code>composite:</code> key is a hard error via strict
-parsing). See <code>SaturationConfig</code> in <code>sim/saturation/config.go</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># threshold: the ThresholdDetector's single knob</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">threshold</span><span class="p">:</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">threshold_ms</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8000</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># backlog_drift: mirrors saturation.BacklogDriftConfig</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nt">backlog_drift</span><span class="p">:</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">window_size_sec</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30</span><span class="w">      </span><span class="c1"># whole seconds</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="nt">min_windows</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="nt">peak_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">  </span><span class="nt">peak_ratio_band</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.2</span>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">  </span><span class="nt">confidence_ci</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.95</span>
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span><span class="nt">warmup_windows</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span><span class="nt">tail_windows</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">  </span><span class="nt">saturated_drain_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.95</span>
-<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">  </span><span class="nt">transient_drain_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.98</span>
+<p>A strict-YAML file carries one optional block per detector. <strong>Every detector has
+at least one calibration knob</strong>, and that is a correctness property rather than a
+convenience: detector scores are comparable only when each detector has first been
+calibrated to the same false-alarm rate, and a detector with no knob cannot be
+moved onto that rate — it can only be disqualified. See <code>SaturationConfig</code> in
+<code>sim/saturation/config.go</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># composite: the noise-floor multiplier. Larger =&gt; higher bar =&gt; fires less.</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># 1.0 is the default and reproduces the historical unscaled floor exactly.</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">composite</span><span class="p">:</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">sensitivity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="c1"># threshold: the ThresholdDetector's single knob</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="nt">threshold</span><span class="p">:</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="nt">threshold_ms</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8000</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="c1"># backlog_drift: mirrors saturation.BacklogDriftConfig</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="nt">backlog_drift</span><span class="p">:</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span><span class="nt">window_size_sec</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30</span><span class="w">      </span><span class="c1"># whole seconds</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span><span class="nt">min_windows</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">  </span><span class="nt">peak_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">  </span><span class="nt">peak_ratio_band</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.2</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">  </span><span class="nt">confidence_ci</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.95</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">  </span><span class="nt">warmup_windows</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">  </span><span class="nt">tail_windows</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">  </span><span class="nt">saturated_drain_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.95</span>
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="w">  </span><span class="nt">transient_drain_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.98</span>
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="w">  </span><span class="nt">slope_k</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3.0</span><span class="w">             </span><span class="c1"># BACKLOGGED/OVERLOADED boundary multiplier</span>
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>
+<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a><span class="c1"># peak_rate: the reflected-random-walk detector</span>
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a><span class="nt">peak_rate</span><span class="p">:</span>
+<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a><span class="w">  </span><span class="nt">threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span><span class="w">           </span><span class="c1"># fire when peak/elapsed exceeds this (backlog per second)</span>
+<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a><span class="w">  </span><span class="nt">min_observations</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span><span class="w">     </span><span class="c1"># hold the verdict until enough EVENTS have been seen</span>
+<a id="__codelineno-2-27" name="__codelineno-2-27" href="#__codelineno-2-27"></a><span class="w">  </span><span class="nt">warmup_us</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span><span class="w">             </span><span class="c1"># hold the verdict until this much TIME has elapsed</span>
+<a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a><span class="w">  </span><span class="nt">consecutive_k</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span><span class="w">         </span><span class="c1"># successive breaches before firing (anti-flapping)</span>
+<a id="__codelineno-2-29" name="__codelineno-2-29" href="#__codelineno-2-29"></a><span class="w">  </span><span class="nt">overload_multiple</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3.0</span><span class="w">   </span><span class="c1"># OVERLOADED above this multiple of threshold (&gt;= 1)</span>
 </code></pre></div>
+<p><strong>Calibrating a knob.</strong> Every knob above trades sensitivity against false alarms,
+and larger always means "fires less". To calibrate: run a workload you believe is
+healthy, sweep the knob upward, and take the smallest value that produces no
+alarm. Comparing two detectors is only meaningful once both have been calibrated
+that way — otherwise you are comparing a strict detector against a lenient one.</p>
+<p>Two bounds worth knowing:</p>
+<ul>
+<li>All calibration knobs are rejected below <code>1e-6</code>, for two different reasons. For a
+  knob that multiplies a noise floor and then divides (<code>composite.sensitivity</code>,
+  <code>backlog_drift.slope_k</code>) a subnormal value drives the product to exactly zero,
+  which decouples a detector's level from its score. For <code>peak_rate</code>'s knobs there is
+  no such hazard — the score compares before it divides — so the bound is a usability
+  floor: a false-alarm dial below <code>1e-6</code> is indistinguishable from "fire on
+  everything", and rejecting it names the mistake.</li>
+<li>A band multiplier <code>&lt;= 1</code> makes the BACKLOGGED band unsatisfiable, so the detector
+  reports only STABLE and OVERLOADED. This holds for <code>backlog_drift.slope_k</code> (the band
+  is <code>noiseFloor &lt; slope &lt;= slope_k×noiseFloor</code>) and identically for
+  <code>peak_rate.overload_multiple</code>. <strong>Both accept it</strong> as a legitimate "maximally severe"
+  setting: rejecting it for one detector while allowing it for the other would mean
+  the two could not be swept over a common knob range, which is exactly the
+  comparability this configuration surface exists to provide. Do note that a sweep
+  crossing 1 compares a two-level detector against a three-level one.</li>
+</ul>
+<h3 id="calibrating-peak-rate-specifically">Calibrating peak-rate specifically<a class="headerlink" href="#calibrating-peak-rate-specifically" title="Permanent link">&para;</a></h3>
+<p><code>peak_rate.threshold</code> is in <strong>backlog per second</strong>, so its calibrated value depends
+on the deployment's capacity — it is not portable between a 15 rps and a 150 rps
+service. Calibrate it the same way as any other knob: run a workload you believe is
+healthy and raise <code>threshold</code> until it stops firing.</p>
+<p>Two properties worth knowing before you sweep it:</p>
+<ul>
+<li><strong><code>min_observations</code> and <code>warmup_us</code> guard different transients, so both exist.</strong>
+  <code>R_t</code>'s numerator is counted in events while its denominator is measured in seconds.
+  A dense burst satisfies an event count while elapsed time is still negligible — 300
+  arrivals inside 3 ms gives <code>R_t &gt; 100000</code> — and no observation gate can suppress
+  that, because the events really are there. Only a time gate can. Conversely a time
+  gate does not help a slow trickle that has run long enough to matter but produced
+  too few samples. Default <code>warmup_us: 0</code> leaves the gate off.</li>
+<li><strong><code>min_observations</code> usually does not move the stdout headline.</strong> It suppresses
+  per-event verdicts before the gate (visible in <code>--saturation-report</code>); the headline
+  is a trailing-window plurality vote, so on any run long enough that the window lies
+  past the gate the headline is unchanged. It <em>can</em> move the headline when the gate
+  falls inside that window — a short run, a very large gate, or a long
+  <code>--saturation-final-window</code>. Calibrate the headline false-alarm rate with
+  <code>threshold</code>; use <code>min_observations</code> to keep the trace quiet through a known ramp-up.</li>
+<li><strong>Recovery after a transient takes about <code>peak / threshold</code> seconds.</strong> Because the
+  numerator is an all-time high-water mark, a burst that drives the peak to <code>P</code> keeps
+  the detector firing until elapsed time reaches roughly <code>P / threshold</code> from the
+  observation origin (<code>threshold</code> has units of backlog per second). For a post-hoc
+  verdict on a finished run that is usually what you want — the run <em>did</em> saturate —
+  but it means the detector answers "did this run saturate?" rather than "is it
+  saturated right now?"</li>
+</ul>
 <p>Absent block = defaults; a partial block overrides only the fields it names; an
 unknown key or out-of-range value errors naming the field. Block ownership is
 enforced: a block whose owning detector is not among the selected <code>--detectors</code>
@@ -2952,11 +3037,34 @@ is a hard error (no silent drop), for both the single-detector and bank paths.</
 </code></pre></div>
 <p>If your detector is tunable, add a block type to <code>SaturationConfig</code>, resolve it
 (mirror <code>resolveBacklogDriftConfig</code>: validate and return errors, never panic —
-R6), and extend <code>checkBlockOwnership</code> / <code>checkBlockOwnershipSet</code> so a foreign
-block is rejected.</p>
+R6), and add <strong>one row</strong> to the <code>blockOwners()</code> table in
+<code>sim/saturation/config.go</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">{</span><span class="s">"my_detector"</span><span class="p">,</span><span class="w"> </span><span class="s">"my-detector"</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="nx">SaturationConfig</span><span class="p">)</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">MyDetector</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">}},</span>
+</code></pre></div>
+<p>Both <code>checkBlockOwnership</code> (single-detector) and <code>checkBlockOwnershipSet</code> (bank)
+derive from that one table, so a foreign block is rejected identically on both
+paths and the two cannot drift apart. Do <strong>not</strong> hand-edit either function.</p>
+<p>Validate the knob's value in the resolver, not only in the detector's
+constructor: a constructor-side fallback would silently coerce a bad value
+instead of reporting it (R1).</p>
+<p><strong><code>Signals</code> is a public output surface, not scratch space.</strong> The map is serialized
+into <code>--saturation-report</code>, so an <em>unconditional</em> new key is a report-format change:
+a default-configured run stops producing the bytes it produced before, and any golden
+fixture or downstream tool diffing that file sees a regression. Emit a knob's value
+only when the operator actually set it:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">if</span><span class="w"> </span><span class="nx">d</span><span class="p">.</span><span class="nx">config</span><span class="p">.</span><span class="nx">MyKnob</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">{</span><span class="w">          </span><span class="c1">// set, not merely defaulted</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">    </span><span class="nx">signals</span><span class="p">[</span><span class="s">"my_knob"</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">d</span><span class="p">.</span><span class="nx">config</span><span class="p">.</span><span class="nx">MyKnob</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="p">}</span>
+</code></pre></div>
+<p>The rule is not "never add signals" — a <em>configured</em> detector should explain which
+parameter produced each verdict. It is "add them only when they carry information the
+default does not". For this to work, the resolver must keep "unset" distinguishable
+from "set to the default value": seed the field's zero value and let an accessor
+supply the default at read time, rather than seeding the default into the resolved
+config.</p>
 <p>Add the name to <code>rosterOrder</code> in <code>sim/saturation/bank.go</code> so it is included in
 <code>--detectors all</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kd">var</span><span class="w"> </span><span class="nx">rosterOrder</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[]</span><span class="kt">string</span><span class="p">{</span><span class="s">"composite"</span><span class="p">,</span><span class="w"> </span><span class="s">"threshold"</span><span class="p">,</span><span class="w"> </span><span class="s">"backlog-drift"</span><span class="p">,</span><span class="w"> </span><span class="s">"my-detector"</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kd">var</span><span class="w"> </span><span class="nx">rosterOrder</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[]</span><span class="kt">string</span><span class="p">{</span><span class="s">"composite"</span><span class="p">,</span><span class="w"> </span><span class="s">"threshold"</span><span class="p">,</span><span class="w"> </span><span class="s">"backlog-drift"</span><span class="p">,</span><span class="w"> </span><span class="s">"my-detector"</span><span class="p">}</span>
 </code></pre></div>
 <p>The bank fans every event out to each selected detector in this fixed canonical
 order, so CLI argument order never changes output (INV-6). Wire the name into
@@ -2972,21 +3080,21 @@ the table-driven style used in <code>composite_test.go</code> / <code>threshold_
 map (the last-window plurality verdict per detector, #1517) and a <code>trace</code> array
 of per-event verdicts (one record per event, tagged by detector name). Map keys
 are sorted so repeated runs are byte-identical (INV-6).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="p">{</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">"final"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">"composite"</span><span class="p">:</span><span class="w"> </span><span class="s2">"STABLE"</span><span class="w"> </span><span class="p">},</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nt">"trace"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">      </span><span class="nt">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">150000</span><span class="p">,</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">      </span><span class="nt">"detector"</span><span class="p">:</span><span class="w"> </span><span class="s2">"composite"</span><span class="p">,</span>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">      </span><span class="nt">"result"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">        </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"STABLE"</span><span class="p">,</span>
-<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">        </span><span class="nt">"score"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.35</span><span class="p">,</span>
-<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">        </span><span class="nt">"confidence"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.95</span><span class="p">,</span>
-<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="w">        </span><span class="nt">"signals"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">"latency_trend"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.12</span><span class="p">,</span><span class="w"> </span><span class="nt">"rate_deficit"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="w"> </span><span class="p">}</span>
-<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="w">      </span><span class="p">}</span>
-<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="w">  </span><span class="p">]</span>
-<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="p">{</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">"final"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">"composite"</span><span class="p">:</span><span class="w"> </span><span class="s2">"STABLE"</span><span class="w"> </span><span class="p">},</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span><span class="nt">"trace"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">      </span><span class="nt">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">150000</span><span class="p">,</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">      </span><span class="nt">"detector"</span><span class="p">:</span><span class="w"> </span><span class="s2">"composite"</span><span class="p">,</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">      </span><span class="nt">"result"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">        </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"STABLE"</span><span class="p">,</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">        </span><span class="nt">"score"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.35</span><span class="p">,</span>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="w">        </span><span class="nt">"confidence"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.95</span><span class="p">,</span>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="w">        </span><span class="nt">"signals"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">"latency_trend"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.12</span><span class="p">,</span><span class="w"> </span><span class="nt">"rate_deficit"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="w">      </span><span class="p">}</span>
+<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="w">  </span><span class="p">]</span>
+<a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="p">}</span>
 </code></pre></div>
 <p>The same <code>final</code> map is also spliced onto the metrics JSON on stdout (a run
 <em>without</em> <code>--detectors</code> stays byte-identical to the historical no-feature
@@ -3005,10 +3113,10 @@ output).</p>
 <p>Reference implementations:</p>
 <ul>
 <li><code>sim/saturation/detector.go</code> — the <code>Detector</code> interface + <code>Event</code>/<code>Result</code>.</li>
-<li><code>sim/saturation/composite.go</code>, <code>threshold.go</code>, <code>backlog_drift.go</code> — the three
-  built-in detectors.</li>
-<li><code>sim/saturation/config.go</code> — <code>SaturationConfig</code>, <code>buildDetector</code>, block
-  ownership.</li>
+<li><code>sim/saturation/composite.go</code>, <code>threshold.go</code>, <code>backlog_drift.go</code>,
+  <code>peak_rate.go</code> — the built-in detectors.</li>
+<li><code>sim/saturation/config.go</code> — <code>SaturationConfig</code>, <code>buildDetector</code>, the
+  <code>blockOwners()</code> ownership table.</li>
 <li><code>sim/saturation/bank.go</code> — the multi-detector <code>Bank</code> + <code>rosterOrder</code>.</li>
 <li><code>sim/saturation/replay.go</code> — the single-detector drive loop and event
   reconstruction.</li>
