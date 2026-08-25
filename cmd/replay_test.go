@@ -3199,3 +3199,210 @@ func TestReplayCmd_PoolRejectsNonSessionRecords(t *testing.T) {
 		t.Errorf("guard should pre-empt BuildSessionPool's internal 'count mismatch' error, but it surfaced:\n%s", out)
 	}
 }
+
+// TestReplayCmd_ClosedLoopAccumulateTraceOutputFatal is a regression test for the
+// plain closed-loop accumulate re-export guard (issue #1621). Re-exporting a
+// closed-loop replay via --trace-output sources only the round-0 `requests` slice
+// (the export block never sees the generated follow-up rounds), and
+// RequestsToTraceRecords re-emits per-round input_tokens as absolute suffix
+// lengths (not the deltas an accumulate loader expects) and does not carry
+// session_context_growth onto the re-export header. The exported trace therefore
+// could not be re-replayed to reproduce the original per-round input, so — rather
+// than write a silently-unfaithful trace (INV-13, R1) — cmd/replay.go Fatalfs.
+//
+// This mirrors the sibling pool-mode guard (--concurrent-sessions + --trace-output,
+// TestReplayCmd_PoolTraceOutputFatal); the guard fires up front, before session
+// blueprints are built, so a minimal accumulate corpus reaches it. Fatalf os.Exit's,
+// so — following TestReplayCmd_AccumulateHeaderRequiresClosedLoop — the case runs in
+// a subprocess re-run (BLIS_TEST_SUBPROCESS=1) and is asserted via exit code + stderr.
+func TestReplayCmd_ClosedLoopAccumulateTraceOutputFatal(t *testing.T) {
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		// Subprocess: an accumulate-header, multi-round session corpus replayed in
+		// plain closed-loop mode (--concurrent-sessions 0) WITH --trace-output set.
+		// Must Fatalf before completing.
+		dir := t.TempDir()
+		headerPath := filepath.Join(dir, "trace.yaml")
+		dataPath := filepath.Join(dir, "trace.csv")
+		header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+		records := []workload.TraceRecord{
+			{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 10, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
+			{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 4, OutputTokens: 5, ArrivalTimeUs: 100_000, Status: "ok"},
+		}
+		if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			os.Exit(2)
+		}
+
+		mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+		model = "test-model"
+		latencyModelBackend = "trained-physics"
+		totalKVBlocks = 1000
+		blockSizeTokens = 16
+		maxNumSeqs = 64
+		maxNumBatchedTokens = 2048
+		numInstances = 1
+		seed = 42
+		longPrefillTokenThreshold = 0
+		kvCPUBlocks = 0
+		kvOffloadThreshold = 0.9
+		kvTransferBandwidth = 100.0
+		kvTransferBaseLatency = 0
+		snapshotRefreshInterval = 0
+		admissionPolicy = "always-admit"
+		routingPolicy = "round-robin"
+		scheduler = "fcfs"
+		policyConfigPath = ""
+		maxModelLen = 0
+		traceLevel = "none"
+		counterfactualK = 0
+		traceHeaderPath = headerPath
+		traceDataPath = dataPath
+		modelConfigFolder = mcFolder
+		hwConfigPath = hwPath
+		gpu = "H100"
+		tensorParallelism = 1
+		defaultsFilePath = defaultsPath
+		replaySessionMode = "closed-loop"
+		replayConcurrentSessions = 0
+		replayTotalSessions = 0
+		replayThinkTimeMs = 0
+		replayThinkTimeDist = ""
+		resultsPath = ""
+		replayTraceOutput = filepath.Join(dir, "reexport")
+
+		testCmd := &cobra.Command{}
+		registerSimConfigFlags(testCmd)
+		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+		if err := testCmd.ParseFlags([]string{
+			"--model", "test-model", "--latency-model", "trained-physics",
+			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+			"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+			"--trace-header", headerPath, "--trace-data", dataPath,
+			"--defaults-filepath", defaultsPath,
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)
+			os.Exit(2) // distinct from logrus.Fatalf exit code (1)
+		}
+		replayCmd.Run(testCmd, nil) // must Fatalf before here
+		os.Exit(0)                  // reached only if no fatal = parent test failure
+	}
+
+	// Parent: re-run this test as subprocess and expect exit code 1 (logrus.Fatalf).
+	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_ClosedLoopAccumulateTraceOutputFatal", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("expected non-zero exit when re-exporting a closed-loop accumulate replay (--trace-output), got exit 0")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("unexpected error type: %v", err)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("expected exit code 1 (logrus.Fatalf), got %d; output:\n%s", exitErr.ExitCode(), out)
+	}
+	// Message must name the flag, the mode, and the header field so the operator
+	// knows exactly which combination is rejected and why.
+	for _, want := range []string{"--trace-output", "closed-loop", "accumulate"} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("fatal message should mention %q, got:\n%s", want, out)
+		}
+	}
+}
+
+// TestReplayCmd_PoolTraceOutputFatal is the companion regression test the sibling
+// pool-mode guard (--concurrent-sessions > 0 + --trace-output) never had (issue
+// #1621 notes it was untested). Pool-mode re-export would capture only the initial
+// wave of round-0 requests — follow-ups/clones are never collected — so the guard
+// in cmd/replay.go rejects it outright (INV-13, R1). Fatalf os.Exit's, so the case
+// runs in a subprocess re-run and is asserted via exit code + stderr content.
+func TestReplayCmd_PoolTraceOutputFatal(t *testing.T) {
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		// Subprocess: a pure-session corpus replayed with --concurrent-sessions 1
+		// (pool mode) AND --trace-output set. Must Fatalf before completing.
+		dir := t.TempDir()
+		headerPath := filepath.Join(dir, "trace.yaml")
+		dataPath := filepath.Join(dir, "trace.csv")
+		header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+		records := []workload.TraceRecord{
+			{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 10, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
+		}
+		if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			os.Exit(2)
+		}
+
+		mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+		model = "test-model"
+		latencyModelBackend = "trained-physics"
+		totalKVBlocks = 1000
+		blockSizeTokens = 16
+		maxNumSeqs = 64
+		maxNumBatchedTokens = 2048
+		numInstances = 1
+		seed = 42
+		longPrefillTokenThreshold = 0
+		kvCPUBlocks = 0
+		kvOffloadThreshold = 0.9
+		kvTransferBandwidth = 100.0
+		kvTransferBaseLatency = 0
+		snapshotRefreshInterval = 0
+		admissionPolicy = "always-admit"
+		routingPolicy = "round-robin"
+		scheduler = "fcfs"
+		policyConfigPath = ""
+		maxModelLen = 0
+		traceLevel = "none"
+		counterfactualK = 0
+		traceHeaderPath = headerPath
+		traceDataPath = dataPath
+		modelConfigFolder = mcFolder
+		hwConfigPath = hwPath
+		gpu = "H100"
+		tensorParallelism = 1
+		defaultsFilePath = defaultsPath
+		replaySessionMode = "closed-loop"
+		replayConcurrentSessions = 1
+		replayTotalSessions = 0
+		replayThinkTimeMs = 0
+		replayThinkTimeDist = ""
+		resultsPath = ""
+		replayTraceOutput = filepath.Join(dir, "reexport")
+
+		testCmd := &cobra.Command{}
+		registerSimConfigFlags(testCmd)
+		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+		if err := testCmd.ParseFlags([]string{
+			"--model", "test-model", "--latency-model", "trained-physics",
+			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+			"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+			"--trace-header", headerPath, "--trace-data", dataPath,
+			"--defaults-filepath", defaultsPath,
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)
+			os.Exit(2) // distinct from logrus.Fatalf exit code (1)
+		}
+		replayCmd.Run(testCmd, nil) // must Fatalf before here
+		os.Exit(0)                  // reached only if no fatal = parent test failure
+	}
+
+	// Parent: re-run this test as subprocess and expect exit code 1 (logrus.Fatalf).
+	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_PoolTraceOutputFatal", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("expected non-zero exit when re-exporting a pool-mode replay (--trace-output), got exit 0")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("unexpected error type: %v", err)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("expected exit code 1 (logrus.Fatalf), got %d; output:\n%s", exitErr.ExitCode(), out)
+	}
+	for _, want := range []string{"--trace-output", "--concurrent-sessions", "pool mode"} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("fatal message should mention %q, got:\n%s", want, out)
+		}
+	}
+}
