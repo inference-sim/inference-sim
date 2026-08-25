@@ -29,10 +29,13 @@ const defaultFinalWindowUs int64 = 30_000_000
 // registerDetectorFlags registers the saturation flags on cmd. Called by run,
 // replay, and observe so all three share one flag surface (#1516, #1519, #1517).
 func registerDetectorFlags(cmd *cobra.Command) {
+	// The valid-name list is derived from the roster so it cannot desync as
+	// detectors are added (#1614).
+	validNames := strings.Join(saturation.AllDetectorNames(), ", ")
 	cmd.Flags().StringVar(&detectorName, "detectors", "",
-		"Post-hoc saturation detector(s) to trace: one of composite, threshold, backlog-drift; a comma-list of those; or \"all\". Empty = off.")
+		"Post-hoc saturation detector(s) to trace: one of "+validNames+"; a comma-list of those; or \"all\". Empty = off.")
 	cmd.Flags().StringVar(&saturationConfigPath, "saturation-config", "",
-		"Path to a strict-YAML saturation tuning file (optional threshold: and backlog_drift: blocks). composite has no tunable params.")
+		"Path to a strict-YAML saturation tuning file. Every detector has a calibration knob: composite: {sensitivity}, threshold: {threshold_ms}, backlog_drift: {slope_k, ...}, peak_rate: {threshold, min_observations, warmup_us, consecutive_k, overload_multiple}.")
 	cmd.Flags().StringVar(&saturationReport, "saturation-report", "",
 		"File to write the selected detector(s)' per-event verdict trace as {\"final\":{...},\"trace\":[...]} JSON. Requires --detectors.")
 	cmd.Flags().StringVar(&saturationFinalWindow, "saturation-final-window", "",

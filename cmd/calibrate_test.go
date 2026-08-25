@@ -474,7 +474,7 @@ func TestCalibrateCmd_LogsIncludeMeanError(t *testing.T) {
 	dir := t.TempDir()
 	// 3 requests: real TTFT=4000, sim TTFT=4200 → mean error = +200µs
 	rows := [][4]int64{
-		{0, 1000, 5000, 10000},   // realTTFT = 5000-1000 = 4000
+		{0, 1000, 5000, 10000},      // realTTFT = 5000-1000 = 4000
 		{1, 101000, 105000, 110000}, // realTTFT = 105000-101000 = 4000
 		{2, 201000, 205000, 210000}, // realTTFT = 205000-201000 = 4000
 	}

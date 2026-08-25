@@ -160,7 +160,7 @@ func TestResolveSaturation_UnknownName(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unknown detector name")
 	}
-	for _, name := range []string{"composite", "threshold", "backlog-drift"} {
+	for _, name := range saturation.AllDetectorNames() {
 		if !strings.Contains(err.Error(), name) {
 			t.Errorf("error should list %q, got: %v", name, err)
 		}
@@ -469,15 +469,18 @@ func TestSaturationTracer_BankWritesAllDetectors(t *testing.T) {
 		t.Fatalf("trace: %v", err)
 	}
 	report := readReport(t, saturationReport)
-	// 2 requests × 2 events × 3 detectors = 12 records.
-	if len(report.Trace) != 12 {
-		t.Errorf("expected 12 trace records (2 req × 2 ev × 3 det), got %d", len(report.Trace))
+	// 2 requests x 2 events x one record per selected detector. Derived from the
+	// roster so adding a detector does not silently weaken this to a subset check.
+	wantRecords := 2 * 2 * len(saturation.AllDetectorNames())
+	if len(report.Trace) != wantRecords {
+		t.Errorf("expected %d trace records (2 req x 2 ev x %d det), got %d",
+			wantRecords, len(saturation.AllDetectorNames()), len(report.Trace))
 	}
 	seen := map[string]bool{}
 	for _, r := range report.Trace {
 		seen[r.Detector] = true
 	}
-	for _, name := range []string{"composite", "threshold", "backlog-drift"} {
+	for _, name := range saturation.AllDetectorNames() {
 		if !seen[name] {
 			t.Errorf("bank trace missing records for %q", name)
 		}
@@ -506,7 +509,14 @@ func TestSaturationTracer_AllEqualsExplicitList(t *testing.T) {
 		return data
 	}
 	all := write("all")
-	explicit := write("threshold,backlog-drift,composite") // scrambled order
+
+	// The explicit selection is the full roster REVERSED, so this stays exhaustive
+	// as detectors are added while still exercising order-independence.
+	names := saturation.AllDetectorNames()
+	for i, j := 0, len(names)-1; i < j; i, j = i+1, j-1 {
+		names[i], names[j] = names[j], names[i]
+	}
+	explicit := write(strings.Join(names, ","))
 	if string(all) != string(explicit) {
 		t.Errorf("--detectors all and the explicit full list produced different trace bytes")
 	}

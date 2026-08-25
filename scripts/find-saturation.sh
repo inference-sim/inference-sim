@@ -28,7 +28,7 @@ NUM_REQUESTS="${NUM_REQUESTS:-6000}"
 HORIZON_US="${HORIZON_US:-600000000}"   # 600s
 # Trailing window for the stdout/report final-label plurality vote (#1517).
 FINAL_WINDOW="${FINAL_WINDOW:-10s}"
-# Which detectors to run. "all" ⇒ composite,threshold,backlog-drift.
+# Which detectors to run. "all" ⇒ every detector in the roster.
 DETECTORS="${DETECTORS:-all}"
 RATES="${RATES:-0.5 1 2 4 6 8 10 12 14 16 20 30 40 50 60 80 100}"
 SEED="${SEED:-42}"
@@ -48,7 +48,7 @@ if [[ ! -x ./blis ]]; then
   go build -o blis main.go
 fi
 
-echo "intended_rate,sustained_throughput,goodput_rps,goodput_vs_intended,timeout_frac,e2e_p99_ms,ttft_p99_ms,still_queued,still_running,composite_verdict,threshold_verdict,backlog_drift_verdict" > "$SUMMARY"
+echo "intended_rate,sustained_throughput,goodput_rps,goodput_vs_intended,timeout_frac,e2e_p99_ms,ttft_p99_ms,still_queued,still_running,composite_verdict,threshold_verdict,backlog_drift_verdict,peak_rate_verdict" > "$SUMMARY"
 printf "Model:     %s (TP=%d, %s)\n" "$MODEL" "$TP" "$HARDWARE"
 printf "Workload:  %s\n" "$WORKLOAD"
 printf "Detectors: %s (final window %s)\n" "$DETECTORS" "$FINAL_WINDOW"
@@ -105,12 +105,13 @@ for R in $RATES; do
   COMPOSITE_VERDICT=$(final_label "$SAT_REPORT" composite)
   THRESHOLD_VERDICT=$(final_label "$SAT_REPORT" threshold)
   BACKLOG_DRIFT_VERDICT=$(final_label "$SAT_REPORT" backlog-drift)
+  PEAK_RATE_VERDICT=$(final_label "$SAT_REPORT" peak-rate)
 
   RATIO=$(echo "scale=4; $GOOD / $R" | bc -l)
-  printf "goodput=%6.2f  ratio=%5.1f%%  composite: %-11s  threshold: %-11s  backlog-drift: %s\n" \
-    "$GOOD" "$(echo "$RATIO * 100" | bc -l)" "$COMPOSITE_VERDICT" "$THRESHOLD_VERDICT" "$BACKLOG_DRIFT_VERDICT"
+  printf "goodput=%6.2f  ratio=%5.1f%%  composite: %-11s  threshold: %-11s  backlog-drift: %-11s  peak-rate: %s\n" \
+    "$GOOD" "$(echo "$RATIO * 100" | bc -l)" "$COMPOSITE_VERDICT" "$THRESHOLD_VERDICT" "$BACKLOG_DRIFT_VERDICT" "$PEAK_RATE_VERDICT"
 
-  echo "$R,$OFF,$GOOD,$RATIO,$TIMEOUT_FRAC,$E2E_P99,$TTFT_P99,$SQ,$SR,$COMPOSITE_VERDICT,$THRESHOLD_VERDICT,$BACKLOG_DRIFT_VERDICT" >> "$SUMMARY"
+  echo "$R,$OFF,$GOOD,$RATIO,$TIMEOUT_FRAC,$E2E_P99,$TTFT_P99,$SQ,$SR,$COMPOSITE_VERDICT,$THRESHOLD_VERDICT,$BACKLOG_DRIFT_VERDICT,$PEAK_RATE_VERDICT" >> "$SUMMARY"
 done
 
 printf "\nDone. Summary CSV: %s\n" "$SUMMARY"

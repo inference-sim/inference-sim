@@ -292,7 +292,7 @@ go build -o blis main.go
   --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 --in-flight-eviction
 
 # Run with a single saturation detector (#1516). --detectors takes one of
-# composite, threshold, backlog-drift (empty = off). --saturation-report writes a
+# composite, threshold, backlog-drift, peak-rate (empty = off). --saturation-report writes a
 # {"final":{...},"trace":[...]} JSON file (per-detector final label + one record
 # per event). stdout regains a per-detector "saturation" final-label map (#1517),
 # derived uniformly from the trace by the last-window plurality reducer.
@@ -314,9 +314,11 @@ go build -o blis main.go
 ./blis run --model qwen/qwen3-14b --detectors all --saturation-report sat.json
 ./blis run --model qwen/qwen3-14b --detectors composite,threshold --saturation-report sat.json
 
-# Tune a detector via a strict-YAML config file (#1516). composite has no params
-# (a composite: block errors). threshold has one knob; backlog-drift mirrors
-# saturation.BacklogDriftConfig (#1547). The config must carry ONLY the selected detector's
+# Tune a detector via a strict-YAML config file (#1516, #1614). EVERY detector now
+# has a false-alarm calibration knob: composite: {sensitivity},
+# threshold: {threshold_ms}, backlog_drift: {slope_k, ...} (backlog-drift mirrors
+# saturation.BacklogDriftConfig, #1547), peak_rate: {threshold, min_observations,
+# warmup_us, consecutive_k, overload_multiple}. The config must carry ONLY the selected detector's
 # block — a block for another detector errors (no silent drop). Absent block =
 # defaults; partial block overrides only named fields; unknown key / bad value
 # errors naming the field.
@@ -324,9 +326,26 @@ cat > sat-config.yaml <<'YAML'
 backlog_drift:
   window_size_sec: 30
   min_windows: 5
+  slope_k: 3.0          # BACKLOGGED/OVERLOADED boundary multiplier (#1614)
 YAML
 ./blis run --model qwen/qwen3-14b --detectors backlog-drift \
   --saturation-config sat-config.yaml --saturation-report sat.json
+
+# Run the peak-rate detector (#1614): R_t = Peak_t/t, the backlog high-water mark
+# over elapsed time. Needs NO latency target and NO capacity estimate, unlike
+# --detectors threshold whose millisecond target must be re-tuned per model/GPU.
+# threshold is in backlog per second, so calibrate it per deployment: run a healthy
+# workload and raise it until it stops firing.
+cat > pk.yaml <<'YAML'
+peak_rate:
+  threshold: 0.5           # primary false-alarm dial; larger fires less
+  min_observations: 20     # hold the verdict until enough EVENTS have been seen
+  warmup_us: 0             # hold the verdict until this much TIME has elapsed
+  consecutive_k: 3         # successive breaches before firing
+  overload_multiple: 3.0   # OVERLOADED above this multiple of threshold (>= 1)
+YAML
+./blis run --model qwen/qwen3-14b --detectors peak-rate \
+  --saturation-config pk.yaml --saturation-report sat.json
 
 # Replay writes the same {"final":{...},"trace":[...]} format and emits the same
 # stdout saturation map (run→replay byte-identical, INV-13)
@@ -532,20 +551,21 @@ BLIS includes post-hoc saturation detection for analyzing completed runs. This i
 
 **Package**: `sim/saturation/`
 
-**Streaming detectors** (all stream via `Observe`/`Detect`; the batch `Classify` path was removed in #1516):
-- **composite**: Combines rate deficit (1 - completions/arrivals) and a quartile-filtered latency trend. Zero parameters (a `composite:` config block errors). STABLE / BACKLOGGED / OVERLOADED by score vs a 1/√arrivals noise floor.
+**Streaming detectors** (all stream via `Observe`/`Detect`; the batch `Classify` path was removed in #1516). Every detector has at least one false-alarm calibration knob — a precondition for comparing them, since scores are only comparable at a matched false-alarm rate:
+- **composite**: Combines rate deficit (1 - completions/arrivals) and a quartile-filtered latency trend. STABLE / BACKLOGGED / OVERLOADED by score vs a 1/√arrivals noise floor, scaled by `composite.sensitivity` (#1614; default 1.0 = the historical unscaled floor, so absent config is byte-identical). A larger sensitivity raises the floor and fires less.
 - **threshold**: Mean E2E latency vs a configurable threshold (default 5000ms). STABLE when mean < threshold, OVERLOADED when mean > threshold.
-- **backlog-drift**: Online OLS slope of in-flight over a trailing window (became streaming in #1515), banded against the noise floor.
+- **backlog-drift**: Online OLS slope of in-flight over a trailing window (became streaming in #1515), banded against the noise floor. The BACKLOGGED/OVERLOADED boundary sits at `backlog_drift.slope_k × noiseFloor` (#1614; default 3.0). `slope_k` is read through `BacklogDriftConfig.effectiveSlopeK()`, which falls back to 3.0 for the struct-literal construction paths — a literal zero would otherwise band every rising trace OVERLOADED. Both the band switch and the score denominator read the same hoisted value, so `Score == 1.0` coincides with the OVERLOADED edge at every `slope_k`. All calibration knobs are rejected below `1e-6`, though for two different reasons: for knobs that multiply a noise floor and then divide (`slope_k`, `composite.sensitivity`) a subnormal value underflows the product to zero and decouples Level from Score, whereas `peak_rate`'s knobs compare before dividing and so take the bound purely as a usability floor. `slope_k <= 1` makes the BACKLOGGED band unsatisfiable — accepted as a legitimate "maximally severe" setting, yielding a two-level detector; `peak_rate.overload_multiple` accepts sub-1 identically, so the two detectors can be swept over a common range.
+- **peak-rate**: `R_t = Peak_t / t` — the backlog high-water mark over elapsed time. Backlog is a random walk reflected at zero, and the reflection makes the regimes separable *without any capacity estimate*: under positive drift `R_t` converges to a positive constant, under zero drift it decays as `1/√t`, under negative drift as `1/t`. So an overloaded server HOLDS `R_t` while a healthy one lets it decay, and the detector fires when it holds above `peak_rate.threshold`. This is also why it is the natural foil to `backlog-drift`: a straight-line fit to backlog is degenerate at exactly ρ≈1 (backlog grows like √t, so the slope tends to ZERO and the detector reports STABLE at criticality — the worst failure direction), while `R_t` has no such degeneracy. **Horizon-dependent by construction** (the result is asymptotic): measured separation between sub- and super-capacity traffic is 2.3× at n=500, 4.7× at n=2000, 14.6× at n=8000, so `min_observations` is part of the algorithm rather than input validation. O(1) state — four scalars, no per-event retention. Validated by an optimization campaign (5 seeds × 11 load rungs, false-alarm-calibrated first) and reproduced on `blis run`: a clean step at the true capacity cliff, seed-stable across 5 seeds, with BACKLOGGED one rung *before* the cliff (early warning). `peak_rate.overload_multiple` accepts values below 1, which collapse it to two levels exactly as `slope_k <= 1` does for backlog-drift — the band split is the one parameter the selection campaign never varied (its scorer counted BACKLOGGED and OVERLOADED alike), so rejecting a value there would be severity without evidence. **peak-rate's knobs:** `threshold` (the primary FPR dial, in backlog per second, so its calibrated value is deployment-specific), `warmup_us` (a TIME gate, not redundant with the event gate: `R_t`'s numerator counts events while its denominator measures seconds, so a dense burst — 300 arrivals in 3 ms — makes `R_t` enormous on negligible evidence and no observation count can suppress it; default 0 = off), `min_observations` (holds the verdict through the opening transient — it moves the per-event trace and usually not the stdout headline, since the reducer's trailing window normally lies past the gate; it *can* move the headline on a short run, a very large gate, or a long `--saturation-final-window`), `consecutive_k` (anti-flapping), `overload_multiple` (the BACKLOGGED/OVERLOADED split). Recovery after a transient takes about `peak / threshold` **seconds** of elapsed time (`threshold` is backlog per second), since the numerator is an all-time high-water mark — so the detector answers "did this run saturate?", not "is it saturated right now?"
 
 **CLI flags** (`run`, `observe`, `replay`; #1516, #1519, #1517):
-- `--detectors <selection>`: empty = off. A single name (`composite`, `threshold`, `backlog-drift`) runs #1516's single-detector streaming path. `all` runs the full roster; a comma-list (e.g. `composite,threshold`) runs exactly the named subset. `all` and comma-lists route through the **detector bank** (#1519). Unknown name — single or inside a list — is a hard error listing valid names (R1).
-- `--saturation-config <path>`: strict-YAML tuning file with optional `threshold:` and `backlog_drift:` blocks. composite has no block. For a **single** detector the config must carry only that detector's block — a foreign block errors (no silent drop, R1). For the **bank**, ownership is enforced over the selected SET (`checkBlockOwnershipSet`): a block whose owning detector is not among the selected names is a hard error (R1), same as the single-detector path — `--detectors all` selects every owner so a full shared config is fine, but a subset that omits a detector whose block was supplied errors. A value error inside a *selected* detector's own block also errors. Absent block = defaults; a partial block overrides only named fields; an unknown key or out-of-range value errors naming the field; an empty file = all defaults.
+- `--detectors <selection>`: empty = off. A single name (`composite`, `threshold`, `backlog-drift`, `peak-rate`) runs #1516's single-detector streaming path. `all` runs the full roster; a comma-list (e.g. `composite,threshold`) runs exactly the named subset. `all` and comma-lists route through the **detector bank** (#1519). Unknown name — single or inside a list — is a hard error listing valid names (R1).
+- `--saturation-config <path>`: strict-YAML tuning file with optional `composite:`, `threshold:`, `backlog_drift:`, and `peak_rate:` blocks — one calibration knob per detector (#1614), since a detector with no knob cannot be moved onto a matched false-alarm rate and so cannot be fairly compared. For a **single** detector the config must carry only that detector's block — a foreign block errors (no silent drop, R1). For the **bank**, ownership is enforced over the selected SET (`checkBlockOwnershipSet`): a block whose owning detector is not among the selected names is a hard error (R1), same as the single-detector path — `--detectors all` selects every owner so a full shared config is fine, but a subset that omits a detector whose block was supplied errors. A value error inside a *selected* detector's own block also errors. Absent block = defaults; a partial block overrides only named fields; an unknown key or out-of-range value errors naming the field; an empty file = all defaults.
 - `--saturation-report <path>`: writes the selected detector(s)' **final label + per-event verdict trace** as one `{"final":{...},"trace":[...]}` JSON object (one trace record per event, tagged by detector name; map keys sorted so repeated runs are byte-identical). Requires `--detectors`. Optional — the stdout final label (#1517) is emitted regardless. `--saturation-config`, `--saturation-report`, and `--saturation-final-window` without `--detectors` are hard errors, as is an unwritable report path (checked up front).
 - `--saturation-final-window <duration>` (#1517): Go duration for the trailing window of the stdout final-label plurality vote. Resolution: this flag if set → else `backlog_drift.window_size_sec` from `--saturation-config` → else 30s. Same value for every detector; a non-positive or unparseable value is a hard error. Requires `--detectors`.
 
 **Final label reducer** (`sim/saturation/reduce.go`, #1517): `ReduceOne(records, windowUs) Level` collapses ONE detector's per-event trace into a headline label by a **last-window plurality** rule — keep records within `windowUs` of the max timestamp, take the most-frequent `Level`, break count-ties toward the more severe level (`OVERLOADED > BACKLOGGED > STABLE`), empty group → `STABLE` (R20). `ReduceAll(records, windowUs) map[string]Level` groups by detector name and reduces each group. It is a **pure function, not a `Detector` method** — so every detector is collapsed identically (fair cross-detector comparison) and new detectors get final labeling for free. The rule is order-independent (INV-6) and identical traces yield identical maps (INV-13). `cmd` calls `ReduceAll` for every selection: a single detector yields a one-key map, `all` the full map. There is exactly one stdout shape — a `map[string]Level` (`--detectors composite` → `{"composite":"STABLE"}`, never a bare label).
 
-**Detector bank** (`sim/saturation/bank.go`, #1519): `Bank` holds and drives a roster of streaming detectors over ONE deterministic replay, fanning each event out to every selected detector (`fanout`) so all are scored on a byte-identical event sequence in a single pass. It reimplements no `Detector` method — it only multiplexes the shared `buildSortedEvents` (a #1519 extraction) + #1516's `TraceSink` + `WriteCombinedReport`. Its sole public driver is `Run(requests) error` (the multi-detector analogue of `ReplayOneDetector`); the collected records are reduced to the stdout label by `saturation.ReduceAll` in `cmd` (#1517). `NewBank(names, cfg, sink)` validates/de-dups names and orders the roster canonically (`composite`, `threshold`, `backlog-drift`), so selection order and spelling never change output: `all` ≡ the full comma-list byte-identically, and a subset detector's records are byte-identical to its records under `all` (selection filters WHICH detectors run, never HOW they see traffic — INV-6/INV-13).
+**Detector bank** (`sim/saturation/bank.go`, #1519): `Bank` holds and drives a roster of streaming detectors over ONE deterministic replay, fanning each event out to every selected detector (`fanout`) so all are scored on a byte-identical event sequence in a single pass. It reimplements no `Detector` method — it only multiplexes the shared `buildSortedEvents` (a #1519 extraction) + #1516's `TraceSink` + `WriteCombinedReport`. Its sole public driver is `Run(requests) error` (the multi-detector analogue of `ReplayOneDetector`); the collected records are reduced to the stdout label by `saturation.ReduceAll` in `cmd` (#1517). `NewBank(names, cfg, sink)` validates/de-dups names and orders the roster canonically (`composite`, `threshold`, `backlog-drift`, `peak-rate`), so selection order and spelling never change output: `all` ≡ the full comma-list byte-identically, and a subset detector's records are byte-identical to its records under `all` (selection filters WHICH detectors run, never HOW they see traffic — INV-6/INV-13).
 
 **One pipeline, three input adapters**: run/replay/observe all produce the trace through the same shared `resolveSaturation → saturationTracer.run` path (single detector via `ReplayOneDetector`, bank via `Bank.Run`), reducing to the final label via `ReduceAll` and writing the report via `TraceSink → WriteCombinedReport` (R23). The only difference is the `[]RequestMetrics` input — run/replay from the sim (`Metrics.CompletedRequestMetrics()`), observe from the real server (`workload.TraceRecordsToRequestMetrics`). run→replay of the same trace is byte-identical (INV-13); observe's trace reflects real-server latencies by design.
 

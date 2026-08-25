@@ -55,10 +55,10 @@ func TestE2E_ExtractorParity_ByteIdenticalTrace(t *testing.T) {
 		})
 	}
 
-	writeTrace := func(reqs []sim.RequestMetrics) []byte {
-		det, err := saturation.BuildDetector("composite", saturation.SaturationConfig{})
+	writeTrace := func(detector string, reqs []sim.RequestMetrics) []byte {
+		det, err := saturation.BuildDetector(detector, saturation.SaturationConfig{})
 		if err != nil {
-			t.Fatalf("BuildDetector: %v", err)
+			t.Fatalf("BuildDetector(%q): %v", detector, err)
 		}
 		c := saturation.NewInMemoryCollector()
 		saturation.ReplayOneDetector(det, reqs, c)
@@ -73,11 +73,18 @@ func TestE2E_ExtractorParity_ByteIdenticalTrace(t *testing.T) {
 		return data
 	}
 
-	runBytes := writeTrace(m.CompletedRequestMetrics())
-	observeBytes := writeTrace(workload.TraceRecordsToRequestMetrics(workload.RequestsToTraceRecords(simReqs)))
+	simSide := m.CompletedRequestMetrics()
+	observeSide := workload.TraceRecordsToRequestMetrics(workload.RequestsToTraceRecords(simReqs))
 
-	if string(runBytes) != string(observeBytes) {
-		t.Errorf("run-side and observe-side traces differ:\n--- run ---\n%s\n--- observe ---\n%s", runBytes, observeBytes)
+	// Every detector in the roster, so parity is proven for the whole surface and a
+	// newly added detector cannot quietly escape this guarantee.
+	for _, detector := range saturation.AllDetectorNames() {
+		runBytes := writeTrace(detector, simSide)
+		observeBytes := writeTrace(detector, observeSide)
+		if string(runBytes) != string(observeBytes) {
+			t.Errorf("%s: run-side and observe-side traces differ:\n--- run ---\n%s\n--- observe ---\n%s",
+				detector, runBytes, observeBytes)
+		}
 	}
 }
 

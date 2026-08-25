@@ -12,15 +12,16 @@ import (
 // Relocated from sim/workload into sim/saturation in #1547 (verbatim — same
 // fields, validation, panic messages, and defaults) so the saturation package no
 // longer imports sim/workload for this type. The streaming BacklogDriftDetector
-// reads only WindowSize; the remaining fields are retained as user-facing
-// --saturation-config backlog_drift: YAML knobs (see the BacklogDriftBlock in
-// config.go), so they are validated but otherwise unused by the streaming path.
+// reads WindowSize and SlopeK (#1614); the remaining fields are retained as
+// user-facing --saturation-config backlog_drift: YAML knobs (see the
+// BacklogDriftBlock in config.go), so they are validated but otherwise unused by
+// the streaming path.
 type BacklogDriftConfig struct {
-	WindowSize      time.Duration // Window width for sampling and per-window metrics
-	MinWindows      int           // Minimum complete windows required for classification
-	PeakRatio       float64       // Peak-to-mean threshold for TRANSIENT_BACKLOG detection
-	PeakRatioBand   float64       // Confidence band around PeakRatio (±band creates borderline zone)
-	ConfidenceCI    float64       // Confidence level for slope significance test
+	WindowSize    time.Duration // Window width for sampling and per-window metrics
+	MinWindows    int           // Minimum complete windows required for classification
+	PeakRatio     float64       // Peak-to-mean threshold for TRANSIENT_BACKLOG detection
+	PeakRatioBand float64       // Confidence band around PeakRatio (±band creates borderline zone)
+	ConfidenceCI  float64       // Confidence level for slope significance test
 
 	// Drain-ratio knobs (#1392), retained as user-facing --saturation-config
 	// backlog_drift: YAML fields. Validation in NewBacklogDriftConfig enforces the
@@ -30,6 +31,42 @@ type BacklogDriftConfig struct {
 	TailWindows         int     // Inject windows skipped at the end (rate ramp-down boundary)
 	SaturatedDrainRatio float64 // Mean DrainRatio < this → PERSISTENTLY_SATURATED
 	TransientDrainRatio float64 // Mean DrainRatio < this → TRANSIENT_BACKLOG
+
+	// SlopeK is the "clearly rising" band multiplier — backlog-drift's
+	// false-alarm calibration knob (#1614), replacing what used to be the
+	// hardcoded backlogDriftSlopeK constant.
+	//
+	// ZERO MEANS "UNSET", and that distinction is load-bearing:
+	// NewBacklogDriftConfig returns a fresh struct literal, so every config built
+	// through it — and every bare BacklogDriftConfig{...} literal — leaves this
+	// field at zero. A literal zero used as the multiplier would make
+	// `slope <= 0*noiseFloor` false for every positive slope, banding EVERY
+	// rising trace OVERLOADED. Always read this through effectiveSlopeK(), never
+	// directly.
+	//
+	// A user-supplied slope_k never relies on that fallback:
+	// resolveBacklogDriftConfig rejects a non-positive, non-finite, or
+	// degenerately-small value with an error naming the YAML field (R1/R6).
+	//
+	// VALUES <= 1 COLLAPSE THE DETECTOR TO TWO LEVELS. The BACKLOGGED band is
+	// `noiseFloor < slope <= slope_k*noiseFloor`, which is unsatisfiable when
+	// slope_k <= 1, so every rising trace reports OVERLOADED directly. Such values
+	// are accepted (they are a legitimate way to make the detector maximally
+	// severe) but an operator sweeping slope_k downward to calibrate should know
+	// that below 1 they are comparing a two-level detector against a three-level
+	// one.
+	SlopeK float64
+}
+
+// effectiveSlopeK returns the configured "clearly rising" band multiplier,
+// falling back to the package default when the field is unset (zero) or
+// non-finite. This is the in-process safety net for the struct-literal
+// construction paths described on SlopeK; it is not the validation layer.
+func (c BacklogDriftConfig) effectiveSlopeK() float64 {
+	if math.IsNaN(c.SlopeK) || math.IsInf(c.SlopeK, 0) || c.SlopeK < minCalibrationKnob {
+		return backlogDriftSlopeK
+	}
+	return c.SlopeK
 }
 
 // NewBacklogDriftConfig creates a BacklogDriftConfig with validation (R3).

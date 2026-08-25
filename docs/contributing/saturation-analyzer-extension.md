@@ -51,9 +51,10 @@ doesn't change on the events it ignores.
 
 | Name | Levels emitted | What it measures |
 |---|---|---|
-| **composite** | STABLE / BACKLOGGED / OVERLOADED | `max(rate_deficit, quartile-filtered latency_trend)` banded against a `1/√arrivals` noise floor. Zero tunable parameters. |
+| **composite** | STABLE / BACKLOGGED / OVERLOADED | `max(rate_deficit, quartile-filtered latency_trend)` banded against a `1/√arrivals` noise floor, scaled by `sensitivity` (default 1.0). |
 | **threshold** | STABLE / OVERLOADED | Mean E2E latency vs. a configurable threshold (default 5000ms). Binary — never emits BACKLOGGED. |
-| **backlog-drift** | STABLE / BACKLOGGED / OVERLOADED | Online OLS slope of in-flight (`arrivals − completions`) over a trailing window, banded against the noise floor. |
+| **backlog-drift** | STABLE / BACKLOGGED / OVERLOADED | Online OLS slope of in-flight (`arrivals − completions`) over a trailing window, banded against `slope_k × noiseFloor` (default `slope_k` = 3.0). |
+| **peak-rate** | STABLE / BACKLOGGED / OVERLOADED | `R_t = Peak_t / t` — the backlog high-water mark over elapsed time. Needs no latency target and no capacity estimate. Fires when `R_t` holds above `threshold`. |
 
 ## Running detectors
 
@@ -71,11 +72,19 @@ trace, INV-13) and `blis observe` (same pipeline over real-server latencies).
 
 ### Tuning via `--saturation-config`
 
-A strict-YAML file carries one optional block per parameterized detector.
-`composite` has no block (a `composite:` key is a hard error via strict
-parsing). See `SaturationConfig` in `sim/saturation/config.go`.
+A strict-YAML file carries one optional block per detector. **Every detector has
+at least one calibration knob**, and that is a correctness property rather than a
+convenience: detector scores are comparable only when each detector has first been
+calibrated to the same false-alarm rate, and a detector with no knob cannot be
+moved onto that rate — it can only be disqualified. See `SaturationConfig` in
+`sim/saturation/config.go`.
 
 ```yaml
+# composite: the noise-floor multiplier. Larger => higher bar => fires less.
+# 1.0 is the default and reproduces the historical unscaled floor exactly.
+composite:
+  sensitivity: 2.0
+
 # threshold: the ThresholdDetector's single knob
 threshold:
   threshold_ms: 8000
@@ -91,7 +100,71 @@ backlog_drift:
   tail_windows: 1
   saturated_drain_ratio: 0.95
   transient_drain_ratio: 0.98
+  slope_k: 3.0             # BACKLOGGED/OVERLOADED boundary multiplier
+
+# peak_rate: the reflected-random-walk detector
+peak_rate:
+  threshold: 0.5           # fire when peak/elapsed exceeds this (backlog per second)
+  min_observations: 20     # hold the verdict until enough EVENTS have been seen
+  warmup_us: 0             # hold the verdict until this much TIME has elapsed
+  consecutive_k: 3         # successive breaches before firing (anti-flapping)
+  overload_multiple: 3.0   # OVERLOADED above this multiple of threshold (>= 1)
 ```
+
+**Calibrating a knob.** Every knob above trades sensitivity against false alarms,
+and larger always means "fires less". To calibrate: run a workload you believe is
+healthy, sweep the knob upward, and take the smallest value that produces no
+alarm. Comparing two detectors is only meaningful once both have been calibrated
+that way — otherwise you are comparing a strict detector against a lenient one.
+
+Two bounds worth knowing:
+
+- All calibration knobs are rejected below `1e-6`, for two different reasons. For a
+  knob that multiplies a noise floor and then divides (`composite.sensitivity`,
+  `backlog_drift.slope_k`) a subnormal value drives the product to exactly zero,
+  which decouples a detector's level from its score. For `peak_rate`'s knobs there is
+  no such hazard — the score compares before it divides — so the bound is a usability
+  floor: a false-alarm dial below `1e-6` is indistinguishable from "fire on
+  everything", and rejecting it names the mistake.
+- A band multiplier `<= 1` makes the BACKLOGGED band unsatisfiable, so the detector
+  reports only STABLE and OVERLOADED. This holds for `backlog_drift.slope_k` (the band
+  is `noiseFloor < slope <= slope_k×noiseFloor`) and identically for
+  `peak_rate.overload_multiple`. **Both accept it** as a legitimate "maximally severe"
+  setting: rejecting it for one detector while allowing it for the other would mean
+  the two could not be swept over a common knob range, which is exactly the
+  comparability this configuration surface exists to provide. Do note that a sweep
+  crossing 1 compares a two-level detector against a three-level one.
+
+### Calibrating peak-rate specifically
+
+`peak_rate.threshold` is in **backlog per second**, so its calibrated value depends
+on the deployment's capacity — it is not portable between a 15 rps and a 150 rps
+service. Calibrate it the same way as any other knob: run a workload you believe is
+healthy and raise `threshold` until it stops firing.
+
+Two properties worth knowing before you sweep it:
+
+- **`min_observations` and `warmup_us` guard different transients, so both exist.**
+  `R_t`'s numerator is counted in events while its denominator is measured in seconds.
+  A dense burst satisfies an event count while elapsed time is still negligible — 300
+  arrivals inside 3 ms gives `R_t > 100000` — and no observation gate can suppress
+  that, because the events really are there. Only a time gate can. Conversely a time
+  gate does not help a slow trickle that has run long enough to matter but produced
+  too few samples. Default `warmup_us: 0` leaves the gate off.
+- **`min_observations` usually does not move the stdout headline.** It suppresses
+  per-event verdicts before the gate (visible in `--saturation-report`); the headline
+  is a trailing-window plurality vote, so on any run long enough that the window lies
+  past the gate the headline is unchanged. It *can* move the headline when the gate
+  falls inside that window — a short run, a very large gate, or a long
+  `--saturation-final-window`. Calibrate the headline false-alarm rate with
+  `threshold`; use `min_observations` to keep the trace quiet through a known ramp-up.
+- **Recovery after a transient takes about `peak / threshold` seconds.** Because the
+  numerator is an all-time high-water mark, a burst that drives the peak to `P` keeps
+  the detector firing until elapsed time reaches roughly `P / threshold` from the
+  observation origin (`threshold` has units of backlog per second). For a post-hoc
+  verdict on a finished run that is usually what you want — the run *did* saturate —
+  but it means the detector answers "did this run saturate?" rather than "is it
+  saturated right now?"
 
 Absent block = defaults; a partial block overrides only the fields it names; an
 unknown key or out-of-range value errors naming the field. Block ownership is
@@ -147,8 +220,39 @@ case "my-detector":
 
 If your detector is tunable, add a block type to `SaturationConfig`, resolve it
 (mirror `resolveBacklogDriftConfig`: validate and return errors, never panic —
-R6), and extend `checkBlockOwnership` / `checkBlockOwnershipSet` so a foreign
-block is rejected.
+R6), and add **one row** to the `blockOwners()` table in
+`sim/saturation/config.go`:
+
+```go
+{"my_detector", "my-detector", func(c SaturationConfig) bool { return c.MyDetector != nil }},
+```
+
+Both `checkBlockOwnership` (single-detector) and `checkBlockOwnershipSet` (bank)
+derive from that one table, so a foreign block is rejected identically on both
+paths and the two cannot drift apart. Do **not** hand-edit either function.
+
+Validate the knob's value in the resolver, not only in the detector's
+constructor: a constructor-side fallback would silently coerce a bad value
+instead of reporting it (R1).
+
+**`Signals` is a public output surface, not scratch space.** The map is serialized
+into `--saturation-report`, so an *unconditional* new key is a report-format change:
+a default-configured run stops producing the bytes it produced before, and any golden
+fixture or downstream tool diffing that file sees a regression. Emit a knob's value
+only when the operator actually set it:
+
+```go
+if d.config.MyKnob > 0 {          // set, not merely defaulted
+    signals["my_knob"] = d.config.MyKnob
+}
+```
+
+The rule is not "never add signals" — a *configured* detector should explain which
+parameter produced each verdict. It is "add them only when they carry information the
+default does not". For this to work, the resolver must keep "unset" distinguishable
+from "set to the default value": seed the field's zero value and let an accessor
+supply the default at read time, rather than seeding the default into the resolved
+config.
 
 Add the name to `rosterOrder` in `sim/saturation/bank.go` so it is included in
 `--detectors all`:
@@ -213,10 +317,10 @@ output).
 Reference implementations:
 
 - `sim/saturation/detector.go` — the `Detector` interface + `Event`/`Result`.
-- `sim/saturation/composite.go`, `threshold.go`, `backlog_drift.go` — the three
-  built-in detectors.
-- `sim/saturation/config.go` — `SaturationConfig`, `buildDetector`, block
-  ownership.
+- `sim/saturation/composite.go`, `threshold.go`, `backlog_drift.go`,
+  `peak_rate.go` — the built-in detectors.
+- `sim/saturation/config.go` — `SaturationConfig`, `buildDetector`, the
+  `blockOwners()` ownership table.
 - `sim/saturation/bank.go` — the multi-detector `Bank` + `rosterOrder`.
 - `sim/saturation/replay.go` — the single-detector drive loop and event
   reconstruction.

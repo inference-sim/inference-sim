@@ -11,7 +11,7 @@ Drives `blis run` across a configurable rate sweep against a chosen
 
 1. Runs `blis run` once with the **detector bank** (`--detectors all`), which
    fans one deterministic replay out to every post-hoc detector (composite,
-   threshold, backlog-drift) in a single pass (#1519).
+   threshold, backlog-drift, peak-rate) in a single pass (#1519, #1614).
 2. Reads each detector's final verdict from the run's `--saturation-report`
    (the `"final"` detector→label map, #1517).
 3. Extracts throughput, latency, and all detector verdicts into a single CSV row.
@@ -86,6 +86,7 @@ $OUT_DIR/
 | `composite_verdict` | report `.final.composite` | STABLE / BACKLOGGED / OVERLOADED |
 | `threshold_verdict` | report `.final.threshold` | STABLE / OVERLOADED (binary) |
 | `backlog_drift_verdict` | report `.final["backlog-drift"]` | STABLE / BACKLOGGED / OVERLOADED |
+| `peak_rate_verdict` | report `.final["peak-rate"]` | STABLE / BACKLOGGED / OVERLOADED |
 
 A detector that is not in `DETECTORS` shows `n/a` in its column.
 
@@ -94,7 +95,7 @@ A detector that is not in `DETECTORS` shows `n/a` in its column.
 A clean read of "where does this configuration saturate?" looks like:
 
 ```
-intended_rate  goodput_rps  ratio  composite     threshold   backlog-drift
+intended_rate  goodput_rps  ratio  composite     threshold   backlog-drift  peak-rate
 0.5            0.50         100%   STABLE        STABLE      STABLE
 …
 60             56.29        94%    BACKLOGGED    STABLE      BACKLOGGED
@@ -103,7 +104,7 @@ intended_rate  goodput_rps  ratio  composite     threshold   backlog-drift
 ```
 
 The saturation knee is the first rate where `ratio` falls below ~100% OR a
-detector's final verdict flips to `OVERLOADED`. The three detectors measure
+detector's final verdict flips to `OVERLOADED`. The detectors measure
 different things — composite blends rate deficit with a latency trend,
 threshold is a pure mean-E2E cutoff, and backlog-drift tracks the slope of
 in-flight — so a rate where they disagree (e.g. backlog-drift flags

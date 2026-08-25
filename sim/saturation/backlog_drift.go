@@ -6,13 +6,15 @@ import (
 	"time"
 )
 
-// backlogDriftSlopeK is the "clearly rising" multiplier for the streaming band
-// classifier (#1515): running_slope in (noiseFloor, K*noiseFloor] → BACKLOGGED,
-// running_slope > K*noiseFloor → OVERLOADED. It is a tunable heuristic constant,
-// NOT an empirically calibrated value. The streaming bands are an online
-// heuristic; the former drain-ratio/slope-based post-hoc batch classifiers (once
-// in sim/workload) were removed in #1547, so this detector is now the only
-// backlog-drift saturation computation.
+// backlogDriftSlopeK is the DEFAULT "clearly rising" multiplier for the streaming
+// band classifier (#1515): running_slope in (noiseFloor, K*noiseFloor] →
+// BACKLOGGED, running_slope > K*noiseFloor → OVERLOADED.
+//
+// It remains a heuristic rather than an empirically calibrated value, which is
+// exactly why it is now only a default: as of #1614 it is overridable via
+// `backlog_drift.slope_k`, so an operator can calibrate the detector to a target
+// false-alarm rate instead of inheriting this number. Read the effective value
+// through BacklogDriftConfig.effectiveSlopeK(), never this constant directly.
 const backlogDriftSlopeK = 3.0
 
 // BacklogDriftDetector is a streaming saturation detector (#1515): Observe folds
@@ -162,6 +164,20 @@ func (b *BacklogDriftDetector) Detect() Result {
 	signals["running_slope"] = runningSlope
 	signals["noise_floor"] = noiseFloor
 
+	// The effective band multiplier, hoisted once so the band switch below and the
+	// score denominator further down provably use the SAME value (#1614): if they
+	// diverged, Score==1.0 would stop coinciding with the OVERLOADED boundary.
+	slopeK := b.config.effectiveSlopeK()
+	// Reported ONLY when the knob was explicitly configured. The Signals map is
+	// serialized into --saturation-report, so emitting it unconditionally would make
+	// a default-configured report differ from a pre-#1614 one -- breaking the
+	// absent-config byte-identity this PR promises (INV-6) for the sake of a
+	// diagnostic that just restates the documented default. When the operator HAS
+	// tuned it, the trace must explain which multiplier produced the band.
+	if b.config.SlopeK > 0 {
+		signals["slope_k"] = slopeK
+	}
+
 	// Level bands mirror composite's two-threshold structure:
 	//   slope <= noiseFloor            → STABLE
 	//   noiseFloor < slope <= K·noise  → BACKLOGGED
@@ -170,7 +186,7 @@ func (b *BacklogDriftDetector) Detect() Result {
 	switch {
 	case runningSlope <= noiseFloor:
 		level = Stable
-	case runningSlope <= backlogDriftSlopeK*noiseFloor:
+	case runningSlope <= slopeK*noiseFloor:
 		level = Backlogged
 	default:
 		level = Overloaded
@@ -188,13 +204,24 @@ func (b *BacklogDriftDetector) Detect() Result {
 	// #1515 — kept as-is so callers get the contracted values rather than a
 	// locally-nudged epsilon; Score is a magnitude, Level is the authoritative
 	// band.
+	// The denominator is the OVERLOADED boundary, so Score reaching its 1.0 cap
+	// must coincide with Level crossing that boundary. A subnormal slope_k can
+	// drive the product to exactly zero even though slope_k itself is positive and
+	// finite, which would leave Score at 0 while Level is OVERLOADED -- Level and
+	// Score decoupled. When the product underflows, the boundary is effectively
+	// zero, so any positive slope is past it: report the cap.
 	score := 0.0
-	denom := backlogDriftSlopeK * noiseFloor
-	if denom > 0 {
+	denom := slopeK * noiseFloor
+	switch {
+	case denom > 0:
 		score = math.Min(1.0, math.Max(0.0, runningSlope)/denom)
+	case runningSlope > 0:
+		// Boundary underflowed to zero and the slope is rising: the OVERLOADED
+		// band starts at zero, so the magnitude is saturated by construction.
+		score = 1.0
 	}
 
-	// Confidence reuses composite's ramp so the three streaming detectors agree.
+	// Confidence reuses composite's ramp so the streaming detectors agree.
 	confidence := math.Min(1.0, float64(b.arrivals)/20.0)
 
 	return Result{

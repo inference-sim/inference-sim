@@ -380,13 +380,13 @@ func simToHeaderOffload(c sim.KVOffloadConfig) *workload.TraceKVOffloadConfig {
 	}
 	for _, t := range c.Tiers {
 		h.Tiers = append(h.Tiers, workload.TraceKVOffloadTier{
-			Type:           t.Type,
-			RootDir:        t.RootDir,
-			NReadThreads:   t.NReadThreads,
-			NWriteThreads:  t.NWriteThreads,
-			Locality:       t.Locality,
-			EnableKVEvents: t.EnableKVEvents,
-			DirectIO:       t.DirectIO,
+			Type:                   t.Type,
+			RootDir:                t.RootDir,
+			NReadThreads:           t.NReadThreads,
+			NWriteThreads:          t.NWriteThreads,
+			Locality:               t.Locality,
+			EnableKVEvents:         t.EnableKVEvents,
+			DirectIO:               t.DirectIO,
 			DeviceClass:            t.DeviceClass,
 			ReadBandwidth:          t.ReadBandwidth,
 			WriteBandwidth:         t.WriteBandwidth,
@@ -503,13 +503,13 @@ func headerToSimOffload(h *workload.TraceKVOffloadConfig) sim.KVOffloadConfig {
 	}
 	for _, t := range h.Tiers {
 		c.Tiers = append(c.Tiers, sim.KVOffloadTier{
-			Type:           t.Type,
-			RootDir:        t.RootDir,
-			NReadThreads:   t.NReadThreads,
-			NWriteThreads:  t.NWriteThreads,
-			Locality:       t.Locality,
-			EnableKVEvents: t.EnableKVEvents,
-			DirectIO:       t.DirectIO,
+			Type:                   t.Type,
+			RootDir:                t.RootDir,
+			NReadThreads:           t.NReadThreads,
+			NWriteThreads:          t.NWriteThreads,
+			Locality:               t.Locality,
+			EnableKVEvents:         t.EnableKVEvents,
+			DirectIO:               t.DirectIO,
 			DeviceClass:            t.DeviceClass,
 			ReadBandwidth:          t.ReadBandwidth,
 			WriteBandwidth:         t.WriteBandwidth,
