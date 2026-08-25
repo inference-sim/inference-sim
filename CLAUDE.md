@@ -292,7 +292,7 @@ go build -o blis main.go
   --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 --in-flight-eviction
 
 # Run with a single saturation detector (#1516). --detectors takes one of
-# composite, threshold, backlog-drift (empty = off). --saturation-report writes a
+# composite, threshold, backlog-drift, peak-rate (empty = off). --saturation-report writes a
 # {"final":{...},"trace":[...]} JSON file (per-detector final label + one record
 # per event). stdout regains a per-detector "saturation" final-label map (#1517),
 # derived uniformly from the trace by the last-window plurality reducer.
