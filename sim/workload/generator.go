@@ -1043,6 +1043,15 @@ func generateRequestsForWindow(
 				startTime += iats[0]
 			}
 			if startTime >= window.EndUs {
+				// Unreachable in normal operation: step 5 samples
+				// numRequests+1 gaps and step 6 rescales ALL of them to sum
+				// to windowDurationUs, so iats[0] alone is strictly less
+				// than the window duration. Reaching this means that
+				// invariant has been broken by a later change, which would
+				// silently drop this window's only session -- warn rather
+				// than truncate quietly (R1).
+				logrus.Warnf("generateRequestsForWindow: client %q window [%d-%d]: single session start %d is at/beyond window end (numRequests+1 gap invariant violated); dropping the window's only session",
+					client.ID, window.StartUs, window.EndUs, startTime)
 				return nil, nil // Session starts beyond window boundary
 			}
 
@@ -1091,6 +1100,14 @@ func generateRequestsForWindow(
 		for i := 0; i < numRequests; i++ {
 			currentTime += iats[i]
 			if currentTime >= window.EndUs {
+				// Unreachable in normal operation (see the loop-bound
+				// comment above): the numRequests emitted gaps sum to
+				// strictly less than windowDurationUs. Reaching this means a
+				// later change broke that invariant, which would silently
+				// truncate the window's sessions -- warn rather than
+				// truncate quietly (R1).
+				logrus.Warnf("generateRequestsForWindow: client %q window [%d-%d]: session %d of %d starts at %d, at/beyond window end (numRequests+1 gap invariant violated); truncating window",
+					client.ID, window.StartUs, window.EndUs, i+1, numRequests, currentTime)
 				break // Session start is beyond window boundary
 			}
 
@@ -1140,6 +1157,13 @@ func generateRequestsForWindow(
 
 		// Stop if we exceed window boundary.
 		if currentTime >= window.EndUs {
+			// Unreachable in normal operation (see the loop-bound comment
+			// above): the numRequests emitted gaps sum to strictly less than
+			// windowDurationUs. Reaching this means a later change broke
+			// that invariant, which would silently shorten the window --
+			// warn rather than truncate quietly (R1).
+			logrus.Warnf("generateRequestsForWindow: client %q window [%d-%d]: request %d of %d arrives at %d, at/beyond window end (numRequests+1 gap invariant violated); truncating window",
+				client.ID, window.StartUs, window.EndUs, i+1, numRequests, currentTime)
 			break
 		}
 
