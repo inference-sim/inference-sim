@@ -25,11 +25,10 @@ See [CONTRIBUTING.md](https://github.com/inference-sim/inference-sim/blob/main/C
 
 | Workflow | When to Use |
 |----------|-------------|
-| [PR Workflow](pr-workflow.md) | Every PR: worktree → plan → review → implement → audit → commit |
-| [Design Process](design-process.md) | New features that introduce module boundaries |
-| [Macro Planning](macro-planning.md) | Multi-PR features requiring decomposition |
+| [RFC Template](rfc.md) | Large features: writing the tracking issue with holes/surfaces/contracts |
+| [RFC to Plan](../templates/rfc-to-plan.md) | After RFC agreement: encode .archon, create sub-issues |
+| [PR Workflow](pr-workflow.md) | Every PR: worktree → plan → implement → review → commit |
 | [Hypothesis Experiments](hypothesis.md) | Rigorous experiments to validate simulator behavior |
-| [Convergence Protocol](convergence.md) | Review gate used by all workflows above |
 
 ## Extension Recipes
 
@@ -47,11 +46,8 @@ See [CONTRIBUTING.md](https://github.com/inference-sim/inference-sim/blob/main/C
 
 ## Templates
 
-| Template | Purpose | Agent Prompt |
-|----------|---------|--------------|
-| [Design Guidelines](templates/design-guidelines.md) | DES foundations, module architecture, extension framework | N/A (reference material) |
-| [Macro Plan](templates/macro-plan.md) | Multi-PR feature decomposition | [`macro-plan-prompt.md`](templates/macro-plan-prompt.md) |
-| [Micro Plan](templates/micro-plan.md) | Single-PR implementation with TDD tasks | [`micro-plan-prompt.md`](templates/micro-plan-prompt.md) |
-| [Hypothesis](templates/hypothesis.md) | Experiment FINDINGS.md structure | N/A (template is audience-neutral) |
-
-Templates describe the output format (what sections to include and why). Agent prompts contain LLM-specific instructions for generating those artifacts. Claude Code skills reference the prompt files automatically.
+| Template | Purpose |
+|----------|---------|
+| [Design Guidelines](templates/design-guidelines.md) | DES foundations, module architecture, extension framework |
+| [RFC to Plan](../templates/rfc-to-plan.md) | Claude prompt: encode .archon from agreed RFC + create sub-issues |
+| [Hypothesis](templates/hypothesis.md) | Experiment FINDINGS.md structure |

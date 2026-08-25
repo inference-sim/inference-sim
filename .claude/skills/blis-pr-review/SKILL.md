@@ -72,6 +72,35 @@ Is the 300s default consistent across both mechanisms (DefaultTimeoutUs in gener
 
 Also identify any risks, edge cases, or missing considerations.
 
+--- Q/A PHASE (probing questions) ---
+
+After completing the checklist above, perform a Q/A review:
+
+1. Spawn a haiku subagent to generate 10-15 probing questions about this PR. Questions should cover:
+   - Does this PR fully implement the issue it closes, without unnecessary additions?
+   - Is all documentation updated (CLAUDE.md, README, guides)?
+   - Are there stale comments left by this change?
+   - Are there edge cases the tests don't cover?
+   - Additional questions generated from the diff + standards docs
+
+2. Spawn an opus subagent to investigate the code and answer each question with file:line evidence. Tag each answer:
+   - CONFIDENT — verified correct with evidence
+   - FLAW_FOUND — concrete issue with file:line reference
+   - CANNOT_ANSWER — insufficient evidence to determine
+
+Only FLAW_FOUND with concrete evidence (file:line or reproducible scenario) blocks the PR.
+
+--- CONTRACT VERIFICATION (if .archon plan exists) ---
+
+If a `.archon` plan exists in `specs/*/` for the feature this PR belongs to:
+
+1. Read the plan's contract clauses (lines with `[evidenced: ...]`)
+2. For each contract, verify a corresponding test exists
+3. Check that the test actually tests what the contract claims (not just structural)
+4. Report any contracts without matching evidence
+
+---
+
 Finally, provide a clear verdict: Is this PR ready to merge? If not, what specific changes are required?
 ```
 
@@ -84,4 +113,4 @@ Post the review verdict as a PR comment. This skill is READ-ONLY:
 - Do NOT use the Edit or Write tools
 - Do NOT fix findings — only report them
 
-The caller (e.g., `/implement-issue`) is responsible for acting on findings.
+The caller is responsible for acting on findings.

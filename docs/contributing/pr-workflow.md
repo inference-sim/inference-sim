@@ -82,7 +82,9 @@ If the source document is unambiguous and complete, skip this step — but note 
 
 ### Step 2: Write an Implementation Plan
 
-Write an implementation plan following the [micro-plan template](templates/micro-plan.md). The plan must include:
+> **Large features (new package boundaries)?** Before micro-planning, write an RFC using the [RFC template](rfc.md) and follow [RFC to Plan](../templates/rfc-to-plan.md) to create the .archon plan and sub-issues. Each sub-issue then gets its own micro plan below.
+
+Write an implementation plan. The plan must include:
 
 - **Behavioral contracts** (GIVEN/WHEN/THEN) defining what this PR guarantees
 - **TDD task breakdown** (6–12 tasks, each: test → fail → implement → pass → lint → commit)
@@ -99,7 +101,7 @@ The source of work can be a macro plan section, a design document, one or more G
 
 ### Step 2.5: Review the Plan
 
-Review the plan from 10 targeted perspectives, applying the [convergence protocol](convergence.md): run all perspectives in parallel as one round; if zero CRITICAL and zero IMPORTANT across all reviewers, the round converged; otherwise fix and re-run the entire round. Max 10 rounds per gate. Hard gate — no exceptions. See [convergence.md](convergence.md) for full rules.
+Review the plan from 10 targeted perspectives: run all perspectives in parallel as one round; if zero CRITICAL and zero IMPORTANT across all reviewers, the round converged; otherwise fix and re-run the entire round. Max 10 rounds per gate. Hard gate — no exceptions.
 
 **Two-stage review (Medium/Large PRs; Small PRs skip the pre-pass — see [PR Size Tiers](#pr-size-tiers)):**
 
@@ -107,7 +109,7 @@ Review the plan from 10 targeted perspectives, applying the [convergence protoco
 2. **Formal convergence:** Run all 10 perspectives below in parallel.
 
 !!! tip "Automation"
-    Stage 1: `/pr-review-toolkit:review-pr`. Stage 2: `/convergence-review pr-plan docs/plans/<name>-plan.md`. See [Skills & Plugins](../guide/skills-and-plugins.md).
+    Use `/pr-review-toolkit:review-pr` for a holistic review pass.
 
 **Why two stages?** The holistic sweep catches emergent cross-cutting issues (the kind a human reviewer would spot). Fixing those first means the convergence review starts from a cleaner baseline — fewer rounds needed because obvious issues are already addressed. Small PRs skip the pre-pass because cross-cutting issues are unlikely with ≤3 files; perspectives 1 (Substance) and 2 (Cross-doc) cover the same ground.
 
@@ -230,7 +232,7 @@ Execute all tasks sequentially. Stop only on test failure, lint failure, or buil
 
 ### Step 4.5: Review the Code
 
-Review the implementation from 10 targeted perspectives, applying the [convergence protocol](convergence.md): zero CRITICAL + zero IMPORTANT = converged; fix and re-run entire round otherwise. Max 10 rounds. Same structure as Step 2.5 (two-stage for Medium/Large, convergence-only for Small), but the 10 perspectives differ: plan review checks design soundness; code review checks implementation quality.
+Review the implementation from 10 targeted perspectives: zero CRITICAL + zero IMPORTANT = converged; fix and re-run entire round otherwise. Max 10 rounds. Same structure as Step 2.5 (two-stage for Medium/Large, convergence-only for Small), but the 10 perspectives differ: plan review checks design soundness; code review checks implementation quality.
 
 **Two-stage review (Medium/Large PRs; Small PRs skip the pre-pass — see [PR Size Tiers](#pr-size-tiers)):**
 
@@ -238,7 +240,7 @@ Review the implementation from 10 targeted perspectives, applying the [convergen
 2. **Formal convergence:** Run all 10 perspectives below in parallel.
 
 !!! tip "Automation"
-    Stage 1: `/pr-review-toolkit:review-pr`. Stage 2: `/convergence-review pr-code`. See [Skills & Plugins](../guide/skills-and-plugins.md).
+    Use `/pr-review-toolkit:review-pr` for a holistic review pass.
 
 **Why two stages?** The holistic sweep catches emergent cross-cutting issues. In past PRs, this pre-pass found issues (runtime-breaking regressions, stale panic message prefixes) that individual targeted perspectives missed because they were each focused on their narrow lens. Fixing those first reduces convergence rounds. Small PRs skip the pre-pass for the same reason as Step 2.5.
 

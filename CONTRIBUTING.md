@@ -140,7 +140,7 @@ gh pr create --title "feat: add counting-admit admission policy" --body "My firs
 
 BLIS development workflows are orchestrated through [Claude Code](https://claude.ai/code) skills — structured sequences that handle worktree creation, plan generation, multi-perspective review with convergence enforcement, and PR creation. Contributors with Claude Code get the full automated pipeline. Contributors without it follow the manual path below and still go through the same quality gates (maintainers run the automated reviews on submitted PRs).
 
-**Prerequisites:** Claude Code installed with project skills available (`convergence-review`, `hypothesis-experiment`) and general Claude Code skills (`writing-plans`, `executing-plans`, `commit-push-pr`). See [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md) for the full skill table. Before your first contribution, read [`docs/contributing/templates/design-guidelines.md`](docs/contributing/templates/design-guidelines.md) — it covers module architecture, extension types, and DES foundations.
+**Prerequisites:** Claude Code installed with project skills available (`blis-pr-review`, `issue-review`) and general Claude Code skills (`writing-plans`, `executing-plans`, `commit-push-pr`). See [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md) for the full workflow. Before your first contribution, read [`docs/contributing/templates/design-guidelines.md`](docs/contributing/templates/design-guidelines.md) — it covers module architecture, extension types, and DES foundations.
 
 ### Choosing Your Journey
 
@@ -158,14 +158,12 @@ For hypothesis experiments, see [Running or Contributing Hypothesis Experiments]
 The lightest path. For bug fixes, docs updates, and single-PR changes that don't introduce new module boundaries.
 
 1. **Create worktree** — `git worktree add .worktrees/fix-<name> -b fix-<name>`
-2. **Write micro plan** — follow [`docs/contributing/templates/micro-plan.md`](docs/contributing/templates/micro-plan.md) with behavioral contracts and TDD tasks
-3. **Review plan** — review from 10 perspectives using the [convergence protocol](docs/contributing/convergence.md)
+2. **Write plan** — behavioral contracts (GIVEN/WHEN/THEN) and TDD task breakdown
+3. **Review plan** — review for correctness before proceeding
 4. **Human approval** — review contracts and tasks, approve to proceed
 5. **Implement** — execute TDD tasks from the plan
-6. **Review code** — review from 10 perspectives using the convergence protocol
+6. **Review code** — review implementation for correctness
 7. **Self-audit + commit** — deliberate critical thinking, then commit and push
-
-> **Automation:** With Claude Code, use `/superpowers:using-git-worktrees`, `/superpowers:writing-plans` (with `@docs/contributing/templates/micro-plan-prompt.md`), `/convergence-review pr-plan`, `/superpowers:executing-plans`, `/convergence-review pr-code`, and `/commit-commands:commit-push-pr`. See [Skills & Plugins](docs/guide/skills-and-plugins.md).
 
 Full process: [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md)
 
@@ -175,36 +173,26 @@ For adding a routing policy, admission policy, scorer, scheduler, priority polic
 
 1. **Identify extension type** — see [Adding New Components](#adding-new-components) below
 2. **Create worktree** — `git worktree add .worktrees/<extension-name> -b <extension-name>`
-3. **Write micro plan** — follow [`docs/contributing/templates/micro-plan.md`](docs/contributing/templates/micro-plan.md) and [`docs/contributing/extension-recipes.md`](docs/contributing/extension-recipes.md)
+3. **Write plan** — follow [`docs/contributing/extension-recipes.md`](docs/contributing/extension-recipes.md) for the recipe
 4. **Follow steps 3–7 from Bug Fix** (review → approve → implement → review → commit)
 
-> **Automation:** With Claude Code, use `/superpowers:writing-plans` (with `@docs/contributing/templates/micro-plan-prompt.md` and `@docs/contributing/extension-recipes.md`).
-
-No design doc needed for policy templates. For tier compositions, a design doc is recommended — see the extension type table in [Adding New Components](#adding-new-components). Full process: [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md)
+No design doc needed for policy templates. Full process: [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md)
 
 ### New Feature (Idea to PR)
 
 The full pipeline for features that introduce new module boundaries, new interfaces, or span multiple PRs.
 
-**Phase 1 — Idea to Design:**
-1. **Explore approaches** — discuss design options, settle on an approach
-2. **Write design doc** — following [`docs/contributing/templates/design-guidelines.md`](docs/contributing/templates/design-guidelines.md)
-3. **Review design** — review from 8 perspectives using the [convergence protocol](docs/contributing/convergence.md)
-4. **Human approval** — review design doc before planning begins
+**Phase 1 — RFC:**
+1. **Write tracking issue** — following [`docs/contributing/rfc.md`](docs/contributing/rfc.md) (plain-English description + holes/surfaces/contracts)
+2. **Team discusses** — agree on holes, surfaces, contracts in the issue thread
+3. **Human approval** — agreement to proceed
 
-Full process: [`docs/contributing/design-process.md`](docs/contributing/design-process.md)
+**Phase 2 — Plan** (after agreement):
+4. **Encode .archon plan** — following [`docs/templates/rfc-to-plan.md`](docs/templates/rfc-to-plan.md) (Claude encodes, creates sub-issues)
+5. **PR0** — persist plan to `specs/NNN-feature/` on feature branch
 
-**Phase 2 — Design to Macro Plan** (skip if single-PR):
-
-5. **Write macro plan** — decompose into PRs following [`docs/contributing/templates/macro-plan.md`](docs/contributing/templates/macro-plan.md)
-6. **Review macro plan** — review from 8 perspectives using the convergence protocol
-7. **Human approval** — review PR decomposition and module contracts
-
-Full process: [`docs/contributing/macro-planning.md`](docs/contributing/macro-planning.md)
-
-**Phase 3 — Plan to PR** (repeat for each PR):
-
-8. **Follow the Bug Fix journey** (steps 1–7) using the macro plan section or design doc as the source document
+**Phase 3 — Deliver** (repeat for each sub-issue):
+6. **Follow the Bug Fix journey** (steps 1–7) for each hole
 
 Each phase produces an artifact that feeds the next. Human approval gates between phases prevent wasted work.
 
@@ -213,14 +201,12 @@ Each phase produces an artifact that feeds the next. Human approval gates betwee
 If you are not using Claude Code, here is the simplified workflow:
 
 1. **Branch** — `git checkout -b feature/my-change`
-2. **Plan** — write an implementation plan following `docs/contributing/templates/micro-plan.md`. Include behavioral contracts (GIVEN/WHEN/THEN) and a task breakdown. Post the plan as a PR draft or issue comment for review.
+2. **Plan** — write behavioral contracts (GIVEN/WHEN/THEN) and a task breakdown. Post as a PR draft or issue comment for review.
 3. **Implement** — follow TDD: write a failing test, implement the minimal code to pass it, run `go test ./...`, run `golangci-lint run ./...`, commit. Repeat for each contract.
 4. **Self-review** — check the [Antipattern Checklist](#antipattern-checklist) below. Run `go build ./... && go test ./... && golangci-lint run ./...` one final time.
-5. **PR** — push your branch and open a PR. Maintainers will run the automated review protocols (convergence-review with 10 perspectives).
+5. **PR** — push your branch and open a PR. Maintainers will run `@claude /blis-pr-review` and `/archon-pr-review`.
 
-The automated review tools (convergence-review, pr-review-toolkit) are run by maintainers — you do not need Claude Code installed. Your PR will go through the same quality gates regardless of tooling.
-
-For design docs and macro plans: follow the same templates ([`docs/contributing/templates/design-guidelines.md`](docs/contributing/templates/design-guidelines.md), [`docs/contributing/templates/macro-plan.md`](docs/contributing/templates/macro-plan.md)) and submit for review. Maintainers will run convergence review.
+For large features: write the RFC following [`docs/contributing/rfc.md`](docs/contributing/rfc.md) and submit for team discussion. The `.archon` encoding can be done with Claude Code after agreement.
 
 Full process: [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md) (the same workflow applies regardless of tooling)
 
@@ -354,7 +340,7 @@ Follow `docs/contributing/hypothesis.md` for the full process (Steps 0-10). Key 
 |---|---|
 | [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) | Completed experiments, FINDINGS.md catalog, coverage gaps |
 | `docs/contributing/hypothesis.md` | Full process (Steps 0-10, three review gates) |
-| `docs/contributing/convergence.md` | Universal Convergence Protocol (used by all review gates) |
+| `docs/contributing/rfc.md` | RFC template for large features (tracking issue structure) |
 | `docs/contributing/standards/experiments.md` | Rigor requirements (families, types, VV&UQ, RCV rules) |
 | `docs/contributing/templates/hypothesis.md` | FINDINGS.md template |
 
@@ -377,5 +363,5 @@ Follow `docs/contributing/hypothesis.md` for the full process (Steps 0-10). Key 
 | `docs/contributing/pr-workflow.md` | End-to-end PR lifecycle (worktree → plan → review → implement → audit → PR) | Before starting any PR |
 | `docs/concepts/` | System architecture, core engine, concepts glossary, roofline estimation | When learning how BLIS works before contributing |
 | `docs/contributing/templates/design-guidelines.md` | DES foundations, module architecture, extension framework | Before designing a new feature or extending BLIS |
-| `docs/contributing/templates/micro-plan.md` | Template for single-PR implementation plans | When creating any PR implementation plan |
-| `docs/contributing/templates/macro-plan.md` | Template for multi-PR feature expansions | When planning a large feature with multiple PRs |
+| `docs/contributing/rfc.md` | RFC template for large features (holes/surfaces/contracts) | When planning a multi-PR feature |
+| `docs/templates/rfc-to-plan.md` | Claude prompt for encoding RFC into .archon plan | After RFC agreement, before implementation |
