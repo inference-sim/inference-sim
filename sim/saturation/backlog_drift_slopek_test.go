@@ -134,3 +134,39 @@ func TestBacklogDrift_ScoreAndLevelAgreeAtCustomSlopeK(t *testing.T) {
 		}
 	}
 }
+
+// The trace must explain each verdict, so the ACTIVE band multiplier is reported
+// in Signals -- matching the convention threshold already follows (it reports
+// "threshold") and what the extension guide asks for. This pins the key as an
+// intentional part of the report rather than an incidental addition.
+//
+// Verdicts are unaffected: the report gains a diagnostic, and stdout (the INV-6
+// surface) is unchanged.
+func TestBacklogDrift_ReportsActiveSlopeKInSignals(t *testing.T) {
+	events := risingBacklogStream(20)
+	for _, k := range []float64{1.0, 3.0, 7.5} {
+		d := NewBacklogDriftDetectorWithConfig(slopeKConfig(k))
+		d.Reset()
+		for _, e := range events {
+			d.Observe(e)
+		}
+		got, ok := d.Detect().Signals["slope_k"]
+		if !ok {
+			t.Fatalf("slope_k=%v: Signals is missing the slope_k key; the trace cannot explain the band boundary", k)
+		}
+		if got != k {
+			t.Errorf("Signals[\"slope_k\"] = %v, want the active multiplier %v", got, k)
+		}
+	}
+
+	// A default-configured detector must report the documented default rather
+	// than a zero, so the diagnostic never misdescribes the banding.
+	d := NewBacklogDriftDetector()
+	d.Reset()
+	for _, e := range events {
+		d.Observe(e)
+	}
+	if got := d.Detect().Signals["slope_k"]; got != backlogDriftSlopeK {
+		t.Errorf("default detector reported slope_k=%v, want %v", got, backlogDriftSlopeK)
+	}
+}
