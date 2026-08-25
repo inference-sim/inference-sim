@@ -119,14 +119,21 @@ that way — otherwise you are comparing a strict detector against a lenient one
 
 Two bounds worth knowing:
 
-- All multiplicative knobs are rejected below `1e-6`. A subnormal multiplier passes
-  a naive "is it positive?" check but drives its product with the noise floor to
-  zero, which decouples a detector's level from its score.
-- `backlog_drift.slope_k <= 1` makes the BACKLOGGED band unsatisfiable (that band is
-  `noiseFloor < slope <= slope_k×noiseFloor`), so the detector reports only STABLE
-  and OVERLOADED. That is a legitimate "maximally severe" setting, but a sweep that
-  crosses 1 is comparing a two-level detector against a three-level one.
-  `peak_rate.overload_multiple` is rejected below 1 for the same reason.
+- All calibration knobs are rejected below `1e-6`, for two different reasons. For a
+  knob that multiplies a noise floor and then divides (`composite.sensitivity`,
+  `backlog_drift.slope_k`) a subnormal value drives the product to exactly zero,
+  which decouples a detector's level from its score. For `peak_rate`'s knobs there is
+  no such hazard — the score compares before it divides — so the bound is a usability
+  floor: a false-alarm dial below `1e-6` is indistinguishable from "fire on
+  everything", and rejecting it names the mistake.
+- A band multiplier `<= 1` makes the BACKLOGGED band unsatisfiable, so the detector
+  reports only STABLE and OVERLOADED. This holds for `backlog_drift.slope_k` (the band
+  is `noiseFloor < slope <= slope_k×noiseFloor`) and identically for
+  `peak_rate.overload_multiple`. **Both accept it** as a legitimate "maximally severe"
+  setting: rejecting it for one detector while allowing it for the other would mean
+  the two could not be swept over a common knob range, which is exactly the
+  comparability this configuration surface exists to provide. Do note that a sweep
+  crossing 1 compares a two-level detector against a three-level one.
 
 ### Calibrating peak-rate specifically
 

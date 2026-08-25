@@ -218,10 +218,8 @@ func TestSaturationKnobs_PeakRateInvalidValuesFailNamingTheField(t *testing.T) {
 		{"peak_rate:\n  min_observations: -5\n", "peak_rate.min_observations"},
 		{"peak_rate:\n  consecutive_k: 0\n", "peak_rate.consecutive_k"},
 		{"peak_rate:\n  warmup_us: -1\n", "peak_rate.warmup_us"},
-		// Below 1 the OVERLOADED boundary would sit under the firing threshold, so
-		// BACKLOGGED would be unreachable and the detector would silently lose a level.
-		{"peak_rate:\n  overload_multiple: 0.5\n", "peak_rate.overload_multiple"},
 		{"peak_rate:\n  overload_multiple: 0\n", "peak_rate.overload_multiple"},
+		{"peak_rate:\n  overload_multiple: -1\n", "peak_rate.overload_multiple"},
 	} {
 		resetSaturationGlobals()
 		detectorName = "peak-rate"

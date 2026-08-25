@@ -115,7 +115,10 @@ type peakRateConfig struct {
 
 	// OverloadMultiple separates the two saturated levels: R_t above
 	// OverloadMultiple*Threshold is OVERLOADED, between the two is BACKLOGGED.
-	// Must be >= 1, or the BACKLOGGED band would be unsatisfiable.
+	//
+	// Values <= 1 make the BACKLOGGED band unsatisfiable, so every fired event is
+	// OVERLOADED. That is a legitimate "maximally severe" setting -- the same one
+	// backlog_drift.slope_k allows -- and is accepted rather than rejected.
 	OverloadMultiple float64
 }
 
@@ -162,7 +165,7 @@ func newPeakRateDetector(cfg peakRateConfig) Detector {
 	if cfg.ConsecutiveK <= 0 {
 		cfg.ConsecutiveK = defaultPeakRateConsecutiveK
 	}
-	if cfg.OverloadMultiple < 1 || math.IsNaN(cfg.OverloadMultiple) || math.IsInf(cfg.OverloadMultiple, 0) {
+	if math.IsNaN(cfg.OverloadMultiple) || math.IsInf(cfg.OverloadMultiple, 0) || cfg.OverloadMultiple < minCalibrationKnob {
 		cfg.OverloadMultiple = defaultPeakRateOverloadMultiple
 	}
 	if cfg.WarmupUs < 0 {
@@ -262,17 +265,23 @@ func (p *PeakRateDetector) Detect() Result {
 	// 1.0 cap would stop coinciding with the OVERLOADED band.
 	overloadAt := p.cfg.OverloadMultiple * p.cfg.Threshold
 
-	// Score is the normalized magnitude, capped at 1.0. The cap is reached exactly
-	// when the statistic clears overloadAt -- the same `>` comparison the band uses,
-	// so Score == 1.0 and Level == OVERLOADED cannot disagree at the boundary point
-	// itself (Level additionally requires the breach streak, so a capped Score with
-	// a STABLE level means "magnitude reached, debounce not yet satisfied").
+	// Score is the normalized magnitude. The cap is reached exactly when the
+	// statistic CLEARS overloadAt -- the same strict `>` the band uses -- so a capped
+	// Score and an OVERLOADED Level cannot disagree about the magnitude. (Level
+	// additionally requires the breach streak, so a capped Score with a STABLE level
+	// means "magnitude reached, debounce not yet satisfied".)
+	//
+	// The ratio is held strictly BELOW the cap for that reason: at stat == overloadAt
+	// the band reports BACKLOGGED, but stat/overloadAt is exactly 1.0 in float64, so
+	// dividing alone would report a capped Score beside a BACKLOGGED Level. Nexttoward
+	// steps the ratio down by one representable value, which preserves the ordering
+	// without inventing an epsilon.
 	score := 0.0
 	switch {
 	case stat > overloadAt:
 		score = 1.0
 	case overloadAt > 0:
-		score = math.Max(0.0, stat) / overloadAt
+		score = math.Min(math.Nextafter(1.0, 0.0), math.Max(0.0, stat)/overloadAt)
 	}
 
 	level := Stable
@@ -298,11 +307,16 @@ func (p *PeakRateDetector) Reset() {
 	p.firstTsUs = 0
 	p.lastTsUs = 0
 	p.haveFirst = false
-	// Belt-and-braces: Observe already zeroes the streak on its first call after a
-	// reset (the peak is 0, so ready() is false and the else-branch fires), which
-	// makes this line unobservable from outside and therefore untestable
-	// behaviorally. It is kept so "Reset clears all accumulated state" holds as a
-	// property of Reset itself rather than depending on Observe's internals.
+	// Clearing the streak is what makes "Reset returns the detector to its initial
+	// state" true of Reset itself, rather than a property inherited from Observe.
+	//
+	// Observe does happen to zero it on the first call after a reset, but NOT for the
+	// reason one might assume: ready() never reads peak. The actual mechanism is that
+	// a single event sets firstTsUs == lastTsUs, so elapsedSec() is 0 and ready() is
+	// false regardless of MinObservations -- even at MinObservations == 1. So a stale
+	// streak cannot survive into a verdict today. That is a fact about the timestamp
+	// bookkeeping, though, not about Reset; if elapsed time ever became seedable from
+	// a prior leg, the streak would leak. Clearing it here removes the dependency.
 	p.consecutive = 0
 }
 

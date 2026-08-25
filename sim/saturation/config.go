@@ -65,8 +65,15 @@ type PeakRateBlock struct {
 	WarmupUs *int64 `yaml:"warmup_us"`
 	// ConsecutiveK is the successive breaches required before firing.
 	ConsecutiveK *int `yaml:"consecutive_k"`
-	// OverloadMultiple separates BACKLOGGED from OVERLOADED. Must be >= 1: below 1
-	// the BACKLOGGED band would be unsatisfiable.
+	// OverloadMultiple separates BACKLOGGED from OVERLOADED: the band is
+	// threshold < R_t <= OverloadMultiple*threshold.
+	//
+	// Values <= 1 collapse the detector to two levels, since the band is then
+	// unsatisfiable and every fired event is OVERLOADED. That is accepted, not
+	// rejected -- it is the same "maximally severe" setting backlog_drift.slope_k
+	// allows, and rejecting it here while allowing it there would mean the two
+	// detectors could not be swept over a common knob range, which is precisely the
+	// comparability this configuration surface exists to provide.
 	OverloadMultiple *float64 `yaml:"overload_multiple"`
 }
 
@@ -132,15 +139,27 @@ func LoadSaturationConfig(path string) (SaturationConfig, error) {
 // --saturation-threshold-ms default and NewThresholdDetector's own fallback).
 const defaultThresholdMs = 5000.0
 
-// minCalibrationKnob is the smallest accepted value for a multiplicative
-// calibration knob (composite.sensitivity, backlog_drift.slope_k).
+// minCalibrationKnob is the smallest accepted value for a calibration knob.
 //
-// A positive-but-subnormal multiplier passes an "is it > 0 and finite?" check yet
-// drives its PRODUCT with the noise floor to exactly zero, which decouples the
-// detector's Level from its Score and makes every event non-STABLE. No real
-// calibration needs a multiplier below 1e-6 -- the useful range is within a couple
-// of orders of magnitude of 1 -- so this bound rejects the degenerate regime
-// instead of silently producing nonsense verdicts (R1).
+// The bound serves two distinct purposes, and only the first is a mathematical
+// hazard:
+//
+//   - For a knob that MULTIPLIES a noise floor and then DIVIDES
+//     (composite.sensitivity, backlog_drift.slope_k), a positive-but-subnormal value
+//     passes an "is it > 0 and finite?" check yet drives the product to exactly zero.
+//     backlog-drift then skips its guarded score computation, leaving Score at 0
+//     while Level is OVERLOADED -- Level and Score decoupled. composite's floor
+//     underflows to 0, making every event non-STABLE.
+//
+//   - For peak_rate.threshold and peak_rate.overload_multiple there is no such
+//     hazard: the score switch tests `stat > overloadAt` FIRST, so a zero boundary
+//     yields Score 1.0 rather than a division. The bound is applied there purely as
+//     a usability floor -- a false-alarm dial below 1e-6 is indistinguishable from
+//     "fire on everything", and rejecting it names the mistake instead of accepting
+//     a value that silently means something else (R1).
+//
+// No real calibration needs a value below 1e-6; the useful range is within a couple
+// of orders of magnitude of 1.
 const minCalibrationKnob = 1e-6
 
 // BuildDetector constructs the named detector, applying any relevant overrides
@@ -453,8 +472,8 @@ func resolvePeakRateConfig(block *PeakRateBlock) (peakRateConfig, error) {
 	}
 	if block.OverloadMultiple != nil {
 		v := *block.OverloadMultiple
-		if math.IsNaN(v) || math.IsInf(v, 0) || v < 1 {
-			return peakRateConfig{}, fmt.Errorf("saturation config: peak_rate.overload_multiple must be a finite value >= 1 (below 1 the BACKLOGGED band is unsatisfiable), got %v", v)
+		if math.IsNaN(v) || math.IsInf(v, 0) || v < minCalibrationKnob {
+			return peakRateConfig{}, fmt.Errorf("saturation config: peak_rate.overload_multiple must be a finite value >= %v, got %v", minCalibrationKnob, v)
 		}
 		out.OverloadMultiple = v
 	}

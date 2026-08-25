@@ -145,7 +145,6 @@ func TestBuildDetector_RejectsInvalidKnobs(t *testing.T) {
 	negInf := math.Inf(-1)
 	zero := 0.0
 	neg := -1.0
-	half := 0.5
 	zeroInt := 0
 
 	tests := []struct {
@@ -186,12 +185,12 @@ func TestBuildDetector_RejectsInvalidKnobs(t *testing.T) {
 			SaturationConfig{PeakRate: &PeakRateBlock{MinObservations: &zeroInt}}, "peak_rate.min_observations"},
 		{"peak_rate consecutive_k zero", "peak-rate",
 			SaturationConfig{PeakRate: &PeakRateBlock{ConsecutiveK: &zeroInt}}, "peak_rate.consecutive_k"},
-		// Below 1 the OVERLOADED boundary sits under the firing threshold, so
-		// BACKLOGGED becomes unreachable and the detector silently loses a level.
-		{"peak_rate overload_multiple below one", "peak-rate",
-			SaturationConfig{PeakRate: &PeakRateBlock{OverloadMultiple: &half}}, "peak_rate.overload_multiple"},
 		{"peak_rate overload_multiple zero", "peak-rate",
 			SaturationConfig{PeakRate: &PeakRateBlock{OverloadMultiple: &zero}}, "peak_rate.overload_multiple"},
+		{"peak_rate overload_multiple negative", "peak-rate",
+			SaturationConfig{PeakRate: &PeakRateBlock{OverloadMultiple: &neg}}, "peak_rate.overload_multiple"},
+		{"peak_rate overload_multiple NaN", "peak-rate",
+			SaturationConfig{PeakRate: &PeakRateBlock{OverloadMultiple: &nan}}, "peak_rate.overload_multiple"},
 	}
 
 	for _, tc := range tests {
@@ -222,6 +221,7 @@ func TestBuildDetector_RejectsInvalidKnobs(t *testing.T) {
 // rejection table above from passing vacuously.
 func TestBuildDetector_AcceptsValidKnobs(t *testing.T) {
 	two := 2.0
+	half := 0.5
 	for _, tc := range []struct {
 		detector string
 		cfg      SaturationConfig
@@ -229,6 +229,9 @@ func TestBuildDetector_AcceptsValidKnobs(t *testing.T) {
 		{"composite", SaturationConfig{Composite: &CompositeBlock{Sensitivity: &two}}},
 		{"backlog-drift", SaturationConfig{BacklogDrift: &BacklogDriftBlock{SlopeK: &two}}},
 		{"peak-rate", SaturationConfig{PeakRate: &PeakRateBlock{Threshold: &two}}},
+		// A sub-1 overload_multiple is a legitimate "maximally severe" setting (every
+		// fired event is OVERLOADED), matching what backlog_drift.slope_k allows.
+		{"peak-rate", SaturationConfig{PeakRate: &PeakRateBlock{OverloadMultiple: &half}}},
 	} {
 		if _, err := BuildDetector(tc.detector, tc.cfg); err != nil {
 			t.Errorf("%s: valid knob rejected on the single path: %v", tc.detector, err)

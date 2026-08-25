@@ -1079,3 +1079,97 @@ func TestPeakRate_WarmupOnlyDelaysAndNeverSuppressesRealSaturation(t *testing.T)
 		t.Error("a warm-up covering only the run's opening suppressed the verdict entirely; the gate must delay, not blind")
 	}
 }
+
+// A sub-1 overload_multiple makes the BACKLOGGED band unsatisfiable, so every fired
+// event is OVERLOADED. That is accepted as a "maximally severe" setting rather than
+// rejected, because backlog_drift.slope_k allows exactly the same collapse -- and if
+// one detector rejected it while the other allowed it, the two could not be swept over
+// a common knob range, which is the comparability this config surface exists for.
+//
+// Asserted over observable levels: the band must genuinely empty out, and the verdict
+// must stay coherent while it does.
+func TestPeakRate_SubOneOverloadMultipleCollapsesToTwoLevels(t *testing.T) {
+	events := saturatedStream(200)
+
+	// A threshold the statistic clears, so firing happens and the band is exercised.
+	probe := peakRateWith(1e-9, 20, 3)
+	probe.Reset()
+	var stat float64
+	for _, e := range events {
+		probe.Observe(e)
+		stat = probe.Detect().Signals["peak_rate"]
+	}
+	thr := stat / 2
+
+	count := func(om float64) map[Level]int {
+		d := newPeakRateDetector(peakRateConfig{
+			Threshold: thr, MinObservations: 20, ConsecutiveK: 1, OverloadMultiple: om,
+		})
+		d.Reset()
+		c := map[Level]int{}
+		for _, e := range events {
+			d.Observe(e)
+			c[d.Detect().Level]++
+		}
+		return c
+	}
+
+	// At a multiple above the statistic's ratio, BACKLOGGED is reachable.
+	three := count(3.0)
+	if three[Backlogged] == 0 {
+		t.Fatalf("BACKLOGGED unreachable even at overload_multiple=3.0 (%v); the collapse assertion would be vacuous", three)
+	}
+
+	// Below 1 it must be empty, and everything that fires must be OVERLOADED.
+	for _, om := range []float64{0.01, 0.5, 1.0} {
+		c := count(om)
+		if c[Backlogged] != 0 {
+			t.Errorf("overload_multiple=%v: BACKLOGGED should be unsatisfiable, got %d events", om, c[Backlogged])
+		}
+		if c[Overloaded] == 0 {
+			t.Errorf("overload_multiple=%v: nothing reached OVERLOADED; the setting silenced the detector instead of making it severe", om)
+		}
+	}
+}
+
+// Score and Level must never disagree about the MAGNITUDE, including at the exact
+// boundary where the statistic equals overload_multiple x threshold. There, the band
+// reports BACKLOGGED (the comparison is strict), so a capped Score would contradict it
+// -- and stat/overloadAt is exactly 1.0 in float64 at that point, so dividing alone
+// produces precisely that contradiction.
+func TestPeakRate_ScoreAndLevelAgreeAtTheExactOverloadBoundary(t *testing.T) {
+	events := saturatedStream(200)
+
+	probe := peakRateWith(1e-9, 20, 3)
+	probe.Reset()
+	var stat float64
+	for _, e := range events {
+		probe.Observe(e)
+		stat = probe.Detect().Signals["peak_rate"]
+	}
+
+	// Choose (threshold, multiple) so that multiple*threshold == stat EXACTLY.
+	const om = 2.0
+	d := newPeakRateDetector(peakRateConfig{
+		Threshold: stat / om, MinObservations: 20, ConsecutiveK: 1, OverloadMultiple: om,
+	})
+	d.Reset()
+	sawBoundary := false
+	for _, e := range events {
+		d.Observe(e)
+		r := d.Detect()
+		if r.Signals["peak_rate"] == om*(stat/om) {
+			sawBoundary = true
+		}
+		if r.Score == 1.0 && r.Level == Backlogged {
+			t.Fatalf("Score reached its cap while Level is BACKLOGGED (statistic %v, boundary %v); the two disagree about the magnitude",
+				r.Signals["peak_rate"], om*(stat/om))
+		}
+		if r.Level == Overloaded && r.Score != 1.0 {
+			t.Fatalf("OVERLOADED with Score %v; the cap must coincide with the band", r.Score)
+		}
+	}
+	if !sawBoundary {
+		t.Fatal("the statistic never landed exactly on the boundary; this test's premise did not hold")
+	}
+}

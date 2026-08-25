@@ -146,8 +146,8 @@ func TestEmitGoodput_OneClassE2EOnly(t *testing.T) {
 	// Two requests under "default": one meets E2E=5s threshold, one does not.
 	m.Requests["r1"] = sim.RequestMetrics{ID: "r1", SLOClass: "default"}
 	m.Requests["r2"] = sim.RequestMetrics{ID: "r2", SLOClass: "default"}
-	m.RequestE2Es["r1"] = 1_000_000   // 1s in µs (passes 5s threshold)
-	m.RequestE2Es["r2"] = 10_000_000  // 10s in µs (fails)
+	m.RequestE2Es["r1"] = 1_000_000  // 1s in µs (passes 5s threshold)
+	m.RequestE2Es["r2"] = 10_000_000 // 10s in µs (fails)
 
 	targets := map[string]workload.SLODimTargets{
 		"default": {E2EMs: 5000},
