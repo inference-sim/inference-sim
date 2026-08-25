@@ -228,6 +228,25 @@ Validate the knob's value in the resolver, not only in the detector's
 constructor: a constructor-side fallback would silently coerce a bad value
 instead of reporting it (R1).
 
+**`Signals` is a public output surface, not scratch space.** The map is serialized
+into `--saturation-report`, so an *unconditional* new key is a report-format change:
+a default-configured run stops producing the bytes it produced before, and any golden
+fixture or downstream tool diffing that file sees a regression. Emit a knob's value
+only when the operator actually set it:
+
+```go
+if d.config.MyKnob > 0 {          // set, not merely defaulted
+    signals["my_knob"] = d.config.MyKnob
+}
+```
+
+The rule is not "never add signals" — a *configured* detector should explain which
+parameter produced each verdict. It is "add them only when they carry information the
+default does not". For this to work, the resolver must keep "unset" distinguishable
+from "set to the default value": seed the field's zero value and let an accessor
+supply the default at read time, rather than seeding the default into the resolved
+config.
+
 Add the name to `rosterOrder` in `sim/saturation/bank.go` so it is included in
 `--detectors all`:
 
