@@ -264,6 +264,10 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 			// prefix of the pre-compaction buffer. The just-completed round's output is
 			// deliberately NOT carried forward: it was folded into the compaction the
 			// trace already recorded as in_N.
+			//
+			// newInputTokens (generated above) is intentionally unused here: a compaction
+			// round's encoded delta is 0, so it is an empty slice — the reset segment below
+			// replaces the whole buffer instead of appending it.
 			resetToks := sim.GenerateRandomTokenIDs(bp.RNG, resetTarget)
 			_, inputEnd := sess.buf.Reset(resetToks)
 			inputTokens = sess.buf.Slice(0, inputEnd)

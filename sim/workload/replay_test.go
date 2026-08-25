@@ -1421,6 +1421,51 @@ func TestAccumulateReplay_CompactionResetsBuffer(t *testing.T) {
 	}
 }
 
+// TestAccumulateReplay_ZeroReset_EmptyBuffer exercises the degenerate `&0` reset
+// end-to-end through OnComplete (blis-pr-review coverage note): a compaction to an
+// absolute of 0 (full context discarded) makes the buffer empty. The follow-up round
+// then carries a 0-length input, and the buffer-continuity invariant still holds on the
+// NEXT round (req.InputLen()==buf.Len()==0). No shipped converter emits a 0-token round
+// (nil/0 in/out rounds are dropped at conversion), but the loader accepts &0, so this
+// pins that the reset path handles it without panicking rather than assuming InputLen()>0.
+func TestAccumulateReplay_ZeroReset_EmptyBuffer(t *testing.T) {
+	trace := &TraceV2{
+		Header: TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
+		Records: []TraceRecord{
+			{RequestID: 0, SessionID: "s", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0},
+			// round 1 compacts to an absolute of 0 (full context discarded).
+			{RequestID: 1, SessionID: "s", RoundIndex: 1, InputTokens: 0, OutputTokens: 5, ArrivalTimeUs: 1_000_000, InputTokensReset: i64p(0)},
+			// round 2 grows again from the empty buffer.
+			{RequestID: 2, SessionID: "s", RoundIndex: 2, InputTokens: 30, OutputTokens: 5, ArrivalTimeUs: 2_000_000},
+		},
+	}
+	r0, bps, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	sm := NewSessionManager(bps)
+	next := func(req *sim.Request, tick int64) *sim.Request {
+		req.State = sim.StateCompleted
+		req.ProgressIndex = int64(req.InputLen()) + int64(len(req.OutputTokens))
+		fu := sm.OnComplete(req, tick)
+		if len(fu) != 1 {
+			t.Fatalf("expected 1 follow-up, got %d", len(fu))
+		}
+		return fu[0]
+	}
+
+	round1 := next(r0[0], 1_000_000)
+	if round1.InputLen() != 0 {
+		t.Fatalf("zero-reset round1 InputLen = %d, want 0 (buffer fully reset)", round1.InputLen())
+	}
+	// Continuity must still hold on the next round: growing from an empty buffer.
+	// round2 = 0 (buffer) + 5 (round1 actual output) + 30 (delta) = 35.
+	round2 := next(round1, 2_000_000)
+	if round2.InputLen() != 35 {
+		t.Fatalf("post-zero-reset round2 InputLen = %d, want 35 (0 + 5 output + 30 delta)", round2.InputLen())
+	}
+}
+
 // TestAccumulateReplay_NoResetSampler_WhenMonotone pins BC-5: an accumulate trace
 // with no compaction marker builds NO reset sampler, so replay stays on the
 // pre-#1609 append-only path (byte-identical, INV-6).
