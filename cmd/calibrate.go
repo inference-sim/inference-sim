@@ -38,7 +38,7 @@ var (
 	// the simulator's aggregate cache_hit_rate; the tolerances gate the pass/fail
 	// verdicts (absolute pp for hit-rate, MAPE fraction for TTFT).
 	calibrateHitRateTolerancePP float64
-	calibrateTTFTMapeThreshold  float64
+	calibrateTTFTMapeThreshold   float64
 )
 
 var calibrateCmd = &cobra.Command{

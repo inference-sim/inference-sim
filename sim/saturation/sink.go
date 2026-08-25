@@ -28,7 +28,7 @@ type NoOpSink struct{}
 func NewNoOpSink() *NoOpSink { return &NoOpSink{} }
 
 func (n *NoOpSink) Record(int64, string, Result) {}
-func (n *NoOpSink) Close()                       {}
+func (n *NoOpSink) Close()                        {}
 
 // InMemoryCollector keeps verdict records in the order they were recorded, for
 // later serialization by WriteCombinedReport.
