@@ -187,7 +187,7 @@ Example:
 			// Closed-loop: inject only round-0 requests; SessionManager drives follow-ups.
 			// Compute the preliminary horizon from trace records directly (O(n)) so we can
 			// call LoadTraceV2SessionBlueprints exactly once with correct parameters.
-			replayHorizonPrelim := computeHorizonFromMaxArrival(maxInjectedArrivalTimeUs(traceData))
+			replayHorizonPrelim := computeHorizonFromMaxArrival(workload.MaxNormalizedInjectionTimeUs(traceData))
 			if cmd.Flags().Changed("horizon") {
 				replayHorizonPrelim = simulationHorizon
 			}
@@ -940,24 +940,12 @@ func init() {
 	rootCmd.AddCommand(replayCmd)
 }
 
-// maxInjectedArrivalTimeUs returns the maximum ArrivalTimeUs among records that
-// will be injected as initial requests in closed-loop mode: session round-0 records
-// and all non-session records. Used to compute the preliminary horizon in O(n)
-// without a full LoadTraceV2SessionBlueprints call.
-func maxInjectedArrivalTimeUs(trace *workload.TraceV2) int64 {
-	var max int64
-	for _, rec := range trace.Records {
-		if rec.SessionID != "" && rec.RoundIndex != 0 {
-			continue // skip follow-up session rounds
-		}
-		if rec.ArrivalTimeUs > max {
-			max = rec.ArrivalTimeUs
-		}
-	}
-	return max
-}
-
-// computeHorizonFromMaxArrival maps a maximum arrival time to a simulation horizon.
+// computeHorizonFromMaxArrival maps a maximum injection time to a simulation
+// horizon. The argument is the largest injected-request tick on the sim clock:
+// the max ArrivalTime for fixed mode (computeReplayHorizon) or the normalized
+// injection for closed-loop mode (workload.MaxNormalizedInjectionTimeUs) — both
+// already re-based onto the arrival origin (#1606). (The parameter is named
+// maxArrival for historical reasons; it is generic over any int64 tick.)
 // - maxArrival > MaxInt64/2 → math.MaxInt64 (overflow guard for 2×)
 // - maxArrival <= 0 (all at t=0) → 600,000,000 µs (10 min buffer; MaxInt64 would hang)
 // - Otherwise → maxArrival * 2 (generous buffer for last request to complete)

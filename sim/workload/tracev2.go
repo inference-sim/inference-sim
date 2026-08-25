@@ -613,6 +613,15 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 	if err != nil {
 		return nil, fmt.Errorf("parsing arrival_time_us %q: %w", row[19+offset], err)
 	}
+	// arrival_time_us is the injection-origin anchor (#1606): replay re-bases
+	// injection so the earliest injected request lands at min(arrival_time_us).
+	// A negative value would yield a negative DES injection tick (INV-3 clock
+	// monotonicity). Reject loudly, matching the other time/count fields (R1).
+	// (send_time_us is intentionally NOT checked: injectionTime falls back to
+	// arrival_time_us when send_time_us <= 0, so a negative send is tolerated.)
+	if arrivalTimeUs < 0 {
+		return nil, fmt.Errorf("parsing arrival_time_us: negative value %d not allowed", arrivalTimeUs)
+	}
 	sendTimeUs, err := strconv.ParseInt(row[20+offset], 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("parsing send_time_us %q: %w", row[20+offset], err)

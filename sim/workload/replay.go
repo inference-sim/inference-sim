@@ -25,8 +25,8 @@ func effectiveInputTokenCount(inputTokens, serverInputTokens int, prefixGroup st
 	return inputTokens
 }
 
-// injectionTime returns the DES injection time for a trace record.
-// For traces where SendTimeUs > 0, uses SendTimeUs as the DES injection time.
+// injectionTime returns the raw DES injection basis for a trace record.
+// For traces where SendTimeUs > 0, uses SendTimeUs as the injection basis.
 // For blis observe traces with --concurrency, SendTimeUs is when the HTTP
 // request was actually dispatched (after any concurrency-slot wait), which
 // matches calibrate's TTFT baseline of first_chunk_time_us - send_time_us.
@@ -38,14 +38,92 @@ func effectiveInputTokenCount(inputTokens, serverInputTokens int, prefixGroup st
 //   - SendTimeUs < 0: defensive guard against corrupted trace timestamps;
 //     a negative DES injection time would violate INV-3 (clock monotonicity).
 //
+// IMPORTANT (#1606): the value returned here is the RAW basis and may be on a
+// different clock than the trace's arrival_time_us / deadline_us columns. In a
+// real blis observe trace SendTimeUs is Unix-epoch µs (time.Now().UnixMicro())
+// while arrival_time_us / deadline_us are run-relative (t≈0 at observe start).
+// Callers building sim.Request.ArrivalTime MUST subtract injectionOriginShift so
+// injection lands on the same (arrival) origin as the deadline; using this raw
+// value as an absolute DES tick injects at epoch scale and instantly trips the
+// past-due deadline guard (issue #1606).
+//
 // Note: in closed-loop session replay, think-time gaps between rounds are
 // derived from ArrivalTimeUs deltas (not SendTimeUs) to preserve client-side
-// pacing semantics; only the initial injection point uses SendTimeUs.
+// pacing semantics; only the initial injection point uses the injection basis.
 func injectionTime(rec TraceRecord) int64 {
 	if rec.SendTimeUs > 0 {
 		return rec.SendTimeUs
 	}
 	return rec.ArrivalTimeUs
+}
+
+// injectionOriginShift returns the constant to subtract from each record's
+// injectionTime so injection lands on the SAME origin as arrival_time_us — the
+// origin the deadline_us column is written on (#1606). It is
+// min(injectionTime(rec)) - min(arrival_time_us(rec)) over all records:
+//
+//   - blis observe traces: send_time_us is Unix-epoch µs while arrival_time_us
+//     is run-relative, so the shift ≈ the epoch offset and re-bases injection
+//     onto the relative clock. Without it, requests inject at ~1.79e15 ticks and
+//     the relative deadline (~3.4e8) is already past → instant timeout, 0
+//     completions (issue #1606).
+//   - blis run traces: send_time_us == arrival_time_us for every record
+//     (tracev2.go), so min(injectionTime) == min(arrival) and the shift is
+//     exactly 0 ⇒ injection == arrival, byte-identical to pre-#1606 replay
+//     (INV-13 run/replay parity, INV-6 determinism).
+//   - all-fallback traces (every send_time_us <= 0): injectionTime == arrival
+//     for every record, so the shift is 0 (INV-3: no negative injection tick).
+//
+// Preserves #1304's send-based intra-trace spacing: the concurrency-slot wait is
+// carried in send deltas, which are origin-invariant, so subtracting a single
+// constant leaves the spacing intact. The result is >= 0 for every injected
+// request whenever arrival_time_us >= 0 (validated by LoadTraceV2), because
+// injectionTime(rec) >= min(injectionTime) and we add back min(arrival) >= 0.
+// That same arrival_time_us >= 0 validation also bounds this subtraction: both
+// mins lie in [0, max epoch µs ~1.79e15], far below int64 max, so minInjection -
+// minArrival cannot overflow for any trace that came through LoadTraceV2.
+// Returns 0 for an empty record set.
+func injectionOriginShift(records []TraceRecord) int64 {
+	if len(records) == 0 {
+		return 0
+	}
+	minInjection := injectionTime(records[0])
+	minArrival := records[0].ArrivalTimeUs
+	for _, rec := range records[1:] {
+		if inj := injectionTime(rec); inj < minInjection {
+			minInjection = inj
+		}
+		if rec.ArrivalTimeUs < minArrival {
+			minArrival = rec.ArrivalTimeUs
+		}
+	}
+	return minInjection - minArrival
+}
+
+// MaxNormalizedInjectionTimeUs returns the largest normalized injection time
+// among the records closed-loop replay injects initially — session round-0
+// records and all non-session records. "Normalized" == injectionTime(rec) minus
+// injectionOriginShift, so the value is on the same relative clock as the
+// requests LoadTraceV2SessionBlueprints builds (and as computeReplayHorizon
+// reads). cmd uses it to size the preliminary blueprint horizon in O(n) without
+// building requests first; deriving it from the normalized injection (not the
+// raw arrival_time_us column) keeps the horizon and the injection on one clock
+// (#1606). Returns 0 for a nil/empty trace.
+func MaxNormalizedInjectionTimeUs(trace *TraceV2) int64 {
+	if trace == nil || len(trace.Records) == 0 {
+		return 0
+	}
+	shift := injectionOriginShift(trace.Records)
+	var max int64
+	for _, rec := range trace.Records {
+		if rec.SessionID != "" && rec.RoundIndex != 0 {
+			continue // skip follow-up session rounds (not injected initially)
+		}
+		if inj := injectionTime(rec) - shift; inj > max {
+			max = inj
+		}
+	}
+	return max
 }
 
 // LoadTraceV2Requests converts trace v2 records into sim.Request objects
@@ -57,6 +135,10 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 	}
 
 	rng := rand.New(rand.NewSource(seed))
+
+	// Injection-origin shift (#1606): re-base injection onto the arrival/deadline
+	// origin. 0 for generated traces (send == arrival) ⇒ byte-identical.
+	originShift := injectionOriginShift(trace.Records)
 
 	// Generate shared prefix tokens per prefix group using trace-specified length
 	prefixTokens := make(map[string][]sim.TokenID)
@@ -84,7 +166,7 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 
 		req := &sim.Request{
 			ID:               fmt.Sprintf("request_%d", rec.RequestID),
-			ArrivalTime:      injectionTime(rec),
+			ArrivalTime:      injectionTime(rec) - originShift, // #1606: on the arrival/deadline origin
 			InputTokens:      inputTokens,
 			OutputTokens:     outputTokens,
 			MaxOutputLen:     len(outputTokens),
@@ -160,6 +242,11 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 	}
 
 	rng := rand.New(rand.NewSource(seed))
+
+	// Injection-origin shift (#1606): a single constant over ALL records so the
+	// round-0 and non-session injection sites below share one origin. 0 for
+	// generated traces (send == arrival) ⇒ byte-identical to pre-#1606 replay.
+	originShift := injectionOriginShift(trace.Records)
 
 	// Generate shared prefix tokens per prefix group (same as LoadTraceV2Requests)
 	prefixTokens := make(map[string][]sim.TokenID)
@@ -295,7 +382,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 
 		req := &sim.Request{
 			ID:           fmt.Sprintf("request_%d", r0.RequestID),
-			ArrivalTime:  injectionTime(r0),
+			ArrivalTime:  injectionTime(r0) - originShift, // #1606: on the arrival/deadline origin
 			InputTokens:  inputTokens,
 			OutputTokens: outputTokens,
 			MaxOutputLen: len(outputTokens),
@@ -352,7 +439,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 		outputTokens := sim.GenerateRandomTokenIDs(rng, rec.OutputTokens)
 		req := &sim.Request{
 			ID:              fmt.Sprintf("request_%d", rec.RequestID),
-			ArrivalTime:     injectionTime(rec),
+			ArrivalTime:     injectionTime(rec) - originShift, // #1606: on the arrival/deadline origin
 			InputTokens:     inputTokens,
 			OutputTokens:    outputTokens,
 			MaxOutputLen:    len(outputTokens),

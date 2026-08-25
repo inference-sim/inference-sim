@@ -423,6 +423,51 @@ func TestParseTraceRecord_NegativeDeadlineUs_ReturnsError(t *testing.T) {
 	}
 }
 
+// TestParseTraceRecord_NegativeArrivalTimeUs_ReturnsError verifies the #1606
+// hardening: arrival_time_us is the injection-origin anchor, so a negative value
+// (which would yield a negative DES injection tick, violating INV-3) is rejected
+// loudly, matching the other time/count fields (R1). send_time_us stays exempt
+// (injectionTime falls back to arrival when send <= 0).
+func TestParseTraceRecord_NegativeArrivalTimeUs_ReturnsError(t *testing.T) {
+	row := make([]string, 27)
+	for i := range row {
+		row[i] = "0"
+	}
+	row[19] = "-1" // arrival_time_us column (offset 0 when vllm_priority absent)
+
+	_, err := parseTraceRecord(row, false, false, -1, -1, -1)
+
+	if err == nil {
+		t.Fatal("expected error for negative arrival_time_us, got nil")
+	}
+	if !strings.Contains(err.Error(), "arrival_time_us") {
+		t.Errorf("error should mention 'arrival_time_us', got: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "negative") {
+		t.Errorf("error should mention 'negative', got: %s", err.Error())
+	}
+}
+
+// TestParseTraceRecord_NegativeSendTimeUs_Tolerated verifies the deliberate
+// asymmetry (#1606): a negative send_time_us is NOT rejected — injectionTime
+// falls back to arrival_time_us for send <= 0, so a corrupt/absent send column
+// must not fail trace loading.
+func TestParseTraceRecord_NegativeSendTimeUs_Tolerated(t *testing.T) {
+	row := make([]string, 27)
+	for i := range row {
+		row[i] = "0"
+	}
+	row[20] = "-100" // send_time_us column; must be tolerated
+
+	rec, err := parseTraceRecord(row, false, false, -1, -1, -1)
+	if err != nil {
+		t.Fatalf("negative send_time_us must be tolerated (falls back to arrival), got error: %v", err)
+	}
+	if rec.SendTimeUs != -100 {
+		t.Errorf("send_time_us = %d, want -100 (preserved verbatim; fallback happens at injection)", rec.SendTimeUs)
+	}
+}
+
 // TestParseTraceRecord_NegativeInputTokens_ReturnsError verifies R3 for
 // input_tokens (prevents make([]sim.TokenID, negative) panic in replay).
 func TestParseTraceRecord_NegativeInputTokens_ReturnsError(t *testing.T) {
