@@ -2,7 +2,7 @@
 
 **Status:** Active (v1.0)
 
-Use this template when filing a tracking issue for a feature that introduces new package boundaries or modifies the architecture. Bug fixes and small features (new policy behind existing interface) do not need an RFC — go directly to `pr-workflow.md`.
+Use this template when filing a tracking issue for a feature that introduces new package boundaries or modifies the architecture. Bug fixes and small features (new policy behind existing interface) do not need an RFC.
 
 ---
 
@@ -54,4 +54,4 @@ See [inference-sim#1585](https://github.com/inference-sim/inference-sim/issues/1
 
 ## After Agreement
 
-Once the team approves the RFC, follow `docs/templates/rfc-to-plan.md` to encode the design into a machine-checkable `.archon` plan and create sub-issues.
+The next step (encoding into `.archon` plan + creating sub-issues) is driven by the user — see `docs/templates/rfc-to-plan.md` when ready.

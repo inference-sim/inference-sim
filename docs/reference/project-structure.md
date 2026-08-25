@@ -113,7 +113,6 @@ inference-sim/
 │   │   ├── workloads.md       # Workload specifications
 │   │   ├── cluster.md         # Cluster simulation
 │   │   ├── results.md         # Metrics & results
-│   │   ├── experimentation.md # Hypothesis-driven experimentation
 │   │   └── skills-and-plugins.md # Claude Code skills & plugins
 │   ├── concepts/              # Architecture and design documentation
 │   │   ├── index.md           # Concepts overview
@@ -127,10 +126,7 @@ inference-sim/
 │   │   ├── configuration.md   # Configuration reference
 │   │   ├── models.md          # Model compatibility and validation
 │   │   └── workload-spec.md   # Workload spec YAML schema
-│   ├── methodology/           # Research methodology documentation
 │   │   ├── index.md           # Methodology overview
-│   │   ├── strategy-evolution.md # Strategy Evolution methodology guide
-│   │   ├── hypothesis-bundles.md # Hypothesis bundle examples and writing guide
 │   │   └── principles.md     # Discovered principles catalog (30 principles)
 │   ├── contributing/          # Contributor documentation
 │   │   ├── index.md           # Contributing landing page
