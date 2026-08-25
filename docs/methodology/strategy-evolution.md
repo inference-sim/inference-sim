@@ -112,7 +112,7 @@ flowchart LR
 | **H-control-negative** | Where the effect should vanish | Confirms mechanism specificity |
 | **H-robustness** | Generalization across workloads, resources, scale | Where does the strategy break? |
 
-Each arm follows the [hypothesis experiment workflow](../contributing/hypothesis.md): experiment design standards (ED-1 through ED-6), convergence-gated review, formal controls, FINDINGS documentation. Every arm includes a **diagnostic clause** ("if this fails, it indicates...") that directs investigation when predictions don't match outcomes.
+Each arm follows the hypothesis experiment workflow: experiment design standards (ED-1 through ED-6), convergence-gated review, formal controls, FINDINGS documentation. Every arm includes a **diagnostic clause** ("if this fails, it indicates...") that directs investigation when predictions don't match outcomes.
 
 !!! warning "Pre-commit ablation, don't bolt it on"
     Ablation hypotheses are designed HERE, before any code is written. This prevents confirmation bias — you predict each component's contribution before seeing whether the compound strategy works. If you can't articulate what removing a component should do, you don't understand the mechanism well enough to implement it.
@@ -177,7 +177,7 @@ flowchart TD
 - Whether the prediction was **confirmed** (direction correct AND exceeds threshold), **partially confirmed** (direction correct, magnitude falls short), or **refuted** (direction wrong or magnitude negligible <5%)
 - If refuted: what the **discrepancy reveals** about the causal model
 
-**3f — Document FINDINGS.** Write `FINDINGS.md` using the [hypothesis template](../contributing/templates/hypothesis.md). The prediction-vs-outcome comparison is a required section.
+**3f — Document FINDINGS.** Write `FINDINGS.md` using the hypothesis template. The prediction-vs-outcome comparison is a required section.
 
 **3g — FINDINGS Review.** 10-perspective review using the convergence protocol (`/convergence-review h-findings`).
 
@@ -314,7 +314,7 @@ The number of hypothesis arms scales with strategy complexity (see the [Bundle S
 
 1. **Tiered review depth.** H-main gets the full 10-perspective FINDINGS review. Ablation arms get a 5-perspective review. Byte-identical controls get a spot-check that the treatment was active, then automatic validation.
 
-2. **Parallel execution.** Hypothesis arms are independent. Use [parallel execution mode](../contributing/hypothesis.md#parallel-execution-mode). All arms must use the same seed set for valid comparison.
+2. **Parallel execution.** Hypothesis arms are independent. Use parallel execution mode. All arms must use the same seed set for valid comparison.
 
 3. **Fast-fail.** If H-main is refuted (after FINDINGS review confirms the refutation), skip remaining arms.
 
@@ -337,7 +337,7 @@ The number of hypothesis arms scales with strategy complexity (see the [Bundle S
 | `/hypothesis-test` | Experiment scaffolding: run.sh, analyze.py templates (sdlc-plugins) |
 | `/convergence-review` | Gates Design Review, Code Review, FINDINGS Review |
 | `/brainstorming` | Explores solution space before committing to candidates |
-| [Hypothesis experiment process](../contributing/hypothesis.md) | Defines the detailed per-arm workflow |
+| Hypothesis experiment process (archived) | Defines the detailed per-arm workflow |
 
 ---
 

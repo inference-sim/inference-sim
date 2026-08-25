@@ -223,7 +223,7 @@ The number of hypothesis arms scales with strategy complexity. Use this table as
     | H-control-negative (byte-identical) | Spot-check that treatment was active, then automatic validation | Verify the treatment was correctly applied; byte-identical output confirms specificity |
     | H-robustness | 5-perspective | Standard experimental rigor |
 
-2. **Parallel execution.** All arms are independent. Use the [parallel execution mode](../contributing/hypothesis.md#parallel-execution-mode) from the hypothesis process. All arms in a bundle must use the same seed set for valid comparison.
+2. **Parallel execution.** All arms are independent. Use the parallel execution mode from the hypothesis process. All arms in a bundle must use the same seed set for valid comparison.
 
 3. **Fast-fail.** If H-main is refuted (after FINDINGS review confirms the refutation is genuine, not an analyzer bug), skip remaining arms. If H-control-negative fails, stop and redesign. See [fast-fail rules](strategy-evolution.md#fast-fail-rules).
 

@@ -98,6 +98,4 @@ Every piece of documentation lives in exactly one canonical location. Other file
 | RFC-to-plan prompt | `docs/templates/rfc-to-plan.md` | CONTRIBUTING.md (summary) |
 | File organization and architecture | `docs/reference/project-structure.md` | CLAUDE.md (pointer), README.md (Project Structure tree) |
 | Completed experiments and coverage catalog | [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) | — (not on `main`) |
-| Experiment standards | `docs/contributing/standards/experiments.md` | — |
-| Hypothesis experiment workflow | `docs/contributing/hypothesis.md` | CONTRIBUTING.md (summary) |
 | PR workflow | `docs/contributing/pr-workflow.md` | CONTRIBUTING.md (summary) |

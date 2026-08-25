@@ -149,9 +149,6 @@ BLIS development workflows are orchestrated through [Claude Code](https://claude
 | Fix a bug or make a small change | [Bug Fix / Small Change](#bug-fix--small-change) | A GitHub issue or observed bug |
 | Add a new policy, scorer, or extension | [New Policy or Extension](#new-policy-or-extension) | An existing interface to implement |
 | Build a new feature or subsystem | [New Feature (Idea to PR)](#new-feature-idea-to-pr) | An idea or requirement |
-| Validate simulator behavior | [Hypothesis Experiment](#running-or-contributing-hypothesis-experiments) | A behavioral prediction |
-
-For hypothesis experiments, see [Running or Contributing Hypothesis Experiments](#running-or-contributing-hypothesis-experiments) below. With Claude Code, the `hypothesis-experiment` skill orchestrates the full Steps 0–10 workflow.
 
 ### Bug Fix / Small Change
 
@@ -313,36 +310,6 @@ See design guidelines Section 5.4 for the full two-phase recipe.
 5. Update `Summarize()` aggregation
 6. Add behavioral tests
 
-## Running or Contributing Hypothesis Experiments
-
-> **Canonical source:** [`docs/contributing/hypothesis.md`](docs/contributing/hypothesis.md). If this section diverges, hypothesis.md is authoritative.
-
-BLIS uses hypothesis-driven experimentation to validate system behavior, surface bugs, and document design tradeoffs. Experiments are organized into 6 families (workload/arrival, scheduler invariants, performance-regime, structural model, robustness, cross-policy comparative).
-
-**To run existing experiments:** Experiment scripts (`run.sh`, `analyze.py`) are not on `main` — they live in experiment feature branches and are archived in the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) at commit `cad4191`. Check out the relevant branch and run `./run.sh` from the experiment directory.
-
-**To propose a new hypothesis:**
-File a GitHub issue using the "Hypothesis Proposal" template. Include: the hypothesis sentence, family, diagnostic value, and rough experiment design.
-
-**To implement and run a new experiment:**
-Follow `docs/contributing/hypothesis.md` for the full process (Steps 0-10). Key phases:
-1. Create worktree from `main`, classify hypothesis, design experiment
-2. **Design Review** (5 perspectives) → convergence → **human approval**
-3. Implement `run.sh` and `analyze.py` using shared harness (copy from `hypothesis-archive` branch)
-4. **Code Review** (5 perspectives) → convergence
-5. Run experiments, document FINDINGS.md
-6. **FINDINGS Review** (10 perspectives) → convergence
-7. Self-audit (6 dimensions), verification gate, create PR (branch not merged to `main`)
-
-**Review protocol:** Three review gates at different lifecycle stages, each using the universal convergence protocol (zero CRITICAL + zero IMPORTANT from all reviewers). External contributors without AI review infrastructure should submit their artifacts via PR — maintainers will run the review protocols. Only standard-library Python packages are needed (json, math, re, sys, pathlib).
-
-| Document | Purpose |
-|---|---|
-| [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) | Completed experiments, FINDINGS.md catalog, coverage gaps |
-| `docs/contributing/hypothesis.md` | Full process (Steps 0-10, three review gates) |
-| `docs/contributing/rfc.md` | RFC template for large features (tracking issue structure) |
-| `docs/contributing/standards/experiments.md` | Rigor requirements (families, types, VV&UQ, RCV rules) |
-| `docs/contributing/templates/hypothesis.md` | FINDINGS.md template |
 
 ## Code Style
 
@@ -359,7 +326,6 @@ Follow `docs/contributing/hypothesis.md` for the full process (Steps 0-10). Key 
 | `CLAUDE.md` | Code architecture, file organization, CLI flags, compact rule/invariant tables | Always — authoritative for current codebase state |
 | `docs/contributing/standards/rules.md` | 23 antipattern rules with evidence, checks, enforcement | When reviewing or writing code |
 | `docs/contributing/standards/invariants.md` | 13 system invariants (INV-1 through INV-13), plus PD disaggregation (INV-PD-*) and pool/transfer (INV-P2-*) invariants, with verification strategies | When touching request lifecycle, KV cache, or metrics |
-| `docs/contributing/standards/experiments.md` | Experiment taxonomy, rigor requirements, findings classification | When running hypothesis experiments |
 | `docs/contributing/pr-workflow.md` | End-to-end PR lifecycle (worktree → plan → review → implement → audit → PR) | Before starting any PR |
 | `docs/concepts/` | System architecture, core engine, concepts glossary, roofline estimation | When learning how BLIS works before contributing |
 | `docs/contributing/templates/design-guidelines.md` | DES foundations, module architecture, extension framework | Before designing a new feature or extending BLIS |

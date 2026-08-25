@@ -4,11 +4,7 @@ The simulator uses a discrete-event architecture with a min-heap event queue.
 
 ```
 inference-sim/
-├── .claude/commands/          # Claude Code slash commands (speckit.specify, speckit.plan, speckit.tasks, speckit.implement, speckit.clarify, speckit.checklist, speckit.analyze, speckit.constitution, speckit.taskstoissues)
-├── .specify/                  # Speckit feature-development toolkit
-│   ├── memory/constitution.md # BLIS project constitution (principles, invariants, rules)
-│   ├── templates/             # Spec, plan, tasks, checklist, agent-file templates
-│   └── scripts/bash/          # Bash scripts: create-new-feature.sh, setup-plan.sh, update-agent-context.sh, check-prerequisites.sh, common.sh
+├── .claude/skills/            # Claude Code skills (blis-pr-review, issue-review)
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
@@ -141,11 +137,9 @@ inference-sim/
 │   │   ├── extension-recipes.md # Step-by-step extension guides
 │   │   ├── pr-workflow.md     # PR development workflow
 │   │   ├── rfc.md             # RFC template for large features
-│   │   ├── hypothesis.md      # Hypothesis experiment process
 │   │   ├── standards/         # Canonical rules, invariants, principles, experiment standards
 │   │   └── templates/         # Artifact templates
 │   │       ├── design-guidelines.md  # DES foundations, module architecture
-│   │       └── hypothesis.md         # Experiment FINDINGS.md template
 │   ├── templates/             # Claude prompt templates
 │   │   └── rfc-to-plan.md    # Prompt: encode .archon + create sub-issues
 │   └── plans/                 # Active implementation plans (excluded from MkDocs)

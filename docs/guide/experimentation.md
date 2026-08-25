@@ -78,7 +78,7 @@ The harness provides:
 - `preflight_kv_check()` — verify KV configuration
 - `hypotheses/lib/analyze_helpers.py` — common analysis functions (`parse_blis_output()`, etc.)
 
-> **Note:** The archive is pinned at commit `cad4191`. Verify harness output format matches the current CLI before use — see Step 4 in [Hypothesis Process](../contributing/hypothesis.md).
+> **Note:** The archive is pinned at commit `cad4191`. Verify harness output format matches the current CLI before use — see Step 4 in Hypothesis Process (archived).
 
 ## Case Studies
 
@@ -105,6 +105,6 @@ The `/convergence-review` skill automates this process. Zero CRITICAL + zero IMP
 
 ## Further Reading
 
-- [Hypothesis Process](../contributing/hypothesis.md) — full 10-step process for contributors
-- [Experiment Standards](../contributing/standards/experiments.md) — rigor requirements (ED-1 through ED-6, RCV-1 through RCV-6)
+- Hypothesis Process (archived) — full 10-step process for contributors
+
 - [Metrics & Results](results.md) — understanding the metrics your experiments produce

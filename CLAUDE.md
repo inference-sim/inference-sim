@@ -605,7 +605,6 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 - `docs/contributing/standards/rules.md`: **23 antipattern rules** (R1-R23) — each with evidence, checks, enforcement locations
 - `docs/contributing/standards/invariants.md`: **13 system invariants** (INV-1 through INV-13) — with verification strategies
 - `docs/contributing/standards/principles.md`: **Engineering principles** — separation of concerns, interface design, BDD/TDD
-- `docs/contributing/standards/experiments.md`: **Experiment standards** — hypothesis families (6 families × type classification), rigor requirements, root cause verification (RCV-1 through RCV-6), findings classification
 - `docs/contributing/standards/agent-trust.md`: **Agent trust boundaries** — three trust tiers (Trusted, Verify-after, Never-trust) for agent operations, with known failure modes
 
 ### Process (how to do each activity)
@@ -613,13 +612,11 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 - `docs/contributing/pr-workflow.md`: End-to-end PR workflow (worktree → plan → review → implement → audit → commit)
 - `docs/contributing/rfc.md`: RFC template for large features (tracking issue with holes/surfaces/contracts)
 - `docs/templates/rfc-to-plan.md`: Claude prompt for encoding RFC into .archon plan + creating sub-issues
-- `docs/contributing/hypothesis.md`: End-to-end hypothesis experiment process (Steps 0-10, three review gates)
 
 ### Templates (what to produce)
 
 - `docs/contributing/templates/design-guidelines.md`: **BLIS Design Guidelines** — DES foundations, module architecture, extension framework. **Start here when designing anything new.**
 - `docs/templates/rfc-to-plan.md`: Claude prompt for .archon encoding + sub-issue creation
-- `docs/contributing/templates/hypothesis.md`: Template for hypothesis experiment artifacts
 
 ### Per-Feature Plans
 

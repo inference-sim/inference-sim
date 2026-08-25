@@ -82,17 +82,15 @@ If the source document is unambiguous and complete, skip this step — but note 
 
 ### Step 2: Write an Implementation Plan
 
-> **Large features (new package boundaries)?** Before micro-planning, write an RFC using the [RFC template](rfc.md) and follow [RFC to Plan](../templates/rfc-to-plan.md) to create the .archon plan and sub-issues. Each sub-issue then gets its own micro plan below.
+> **Prerequisite for large features:** Design and planning (RFC, .archon encoding, sub-issue creation) must be done BEFORE reaching this step. See [RFC template](rfc.md) and [RFC to Plan](../templates/rfc-to-plan.md). This workflow starts AFTER you have a sub-issue or issue to implement.
 
-Write an implementation plan. The plan must include:
+Write an implementation plan for THIS PR (one sub-issue or issue). The plan must include:
 
 - **Behavioral contracts** (GIVEN/WHEN/THEN) defining what this PR guarantees
 - **TDD task breakdown** (6–12 tasks, each: test → fail → implement → pass → lint → commit)
 - **Test strategy** mapping contracts to specific tests
 
-Save the plan to `docs/plans/<feature-name>-plan.md`.
-
-The source of work can be a macro plan section, a design document, one or more GitHub issues, or a feature request.
+The source of work is the sub-issue (which already contains: surface, contracts, allowed imports) or a GitHub issue.
 
 !!! tip "Automation"
     `/superpowers:writing-plans for <work-item> in @docs/plans/<name>-plan.md and @<source-document>` generates the plan automatically. The skill reads the source document and the template, inspects the codebase, and produces behavioral contracts with executable tasks.
