@@ -61,6 +61,10 @@ type BacklogDriftBlock struct {
 	TailWindows         *int     `yaml:"tail_windows"`
 	SaturatedDrainRatio *float64 `yaml:"saturated_drain_ratio"`
 	TransientDrainRatio *float64 `yaml:"transient_drain_ratio"`
+	// SlopeK is backlog-drift's false-alarm calibration knob (#1614): the
+	// multiplier separating BACKLOGGED from OVERLOADED. Absent keeps the
+	// documented default (3.0).
+	SlopeK *float64 `yaml:"slope_k"`
 }
 
 // LoadSaturationConfig reads and strictly parses a saturation config file. An
@@ -223,6 +227,7 @@ func resolveBacklogDriftConfig(block *BacklogDriftBlock) (BacklogDriftConfig, er
 	tailWindows := def.TailWindows
 	saturatedDrainRatio := def.SaturatedDrainRatio
 	transientDrainRatio := def.TransientDrainRatio
+	slopeK := def.effectiveSlopeK()
 
 	if block != nil {
 		if block.WindowSizeSec != nil {
@@ -279,6 +284,16 @@ func resolveBacklogDriftConfig(block *BacklogDriftBlock) (BacklogDriftConfig, er
 			}
 			transientDrainRatio = *block.TransientDrainRatio
 		}
+		// Validated HERE rather than relying on effectiveSlopeK's fallback: the
+		// fallback exists for in-process struct literals, so letting a user's
+		// slope_k: 0 reach it would silently coerce the value to 3.0 instead of
+		// reporting the mistake (R1).
+		if block.SlopeK != nil {
+			if *block.SlopeK <= 0 || math.IsNaN(*block.SlopeK) || math.IsInf(*block.SlopeK, 0) {
+				return BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.slope_k must be a finite value > 0, got %v", *block.SlopeK)
+			}
+			slopeK = *block.SlopeK
+		}
 	}
 
 	// Cross-field invariant (mirrors NewBacklogDriftConfig): the two drain-ratio
@@ -290,8 +305,13 @@ func resolveBacklogDriftConfig(block *BacklogDriftBlock) (BacklogDriftConfig, er
 			saturatedDrainRatio, transientDrainRatio)
 	}
 
-	return NewBacklogDriftConfig(
+	// NewBacklogDriftConfig validates and returns a fresh struct literal, so
+	// SlopeK is zero-filled there and must be set afterwards. Its value was
+	// already validated above; effectiveSlopeK() would otherwise mask it.
+	resolved := NewBacklogDriftConfig(
 		windowSize, minWindows, peakRatio, peakRatioBand, confidenceCI,
 		warmupWindows, tailWindows, saturatedDrainRatio, transientDrainRatio,
-	), nil
+	)
+	resolved.SlopeK = slopeK
+	return resolved, nil
 }

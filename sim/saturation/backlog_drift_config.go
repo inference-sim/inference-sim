@@ -30,6 +30,34 @@ type BacklogDriftConfig struct {
 	TailWindows         int     // Inject windows skipped at the end (rate ramp-down boundary)
 	SaturatedDrainRatio float64 // Mean DrainRatio < this → PERSISTENTLY_SATURATED
 	TransientDrainRatio float64 // Mean DrainRatio < this → TRANSIENT_BACKLOG
+
+	// SlopeK is the "clearly rising" band multiplier — backlog-drift's
+	// false-alarm calibration knob (#1614), replacing what used to be the
+	// hardcoded backlogDriftSlopeK constant.
+	//
+	// ZERO MEANS "UNSET", and that distinction is load-bearing:
+	// NewBacklogDriftConfig returns a fresh struct literal, so every config built
+	// through it — and every bare BacklogDriftConfig{...} literal — leaves this
+	// field at zero. A literal zero used as the multiplier would make
+	// `slope <= 0*noiseFloor` false for every positive slope, banding EVERY
+	// rising trace OVERLOADED. Always read this through effectiveSlopeK(), never
+	// directly.
+	//
+	// A user-supplied slope_k never relies on that fallback:
+	// resolveBacklogDriftConfig rejects a non-positive or non-finite value with
+	// an error naming the YAML field (R1/R6).
+	SlopeK float64
+}
+
+// effectiveSlopeK returns the configured "clearly rising" band multiplier,
+// falling back to the package default when the field is unset (zero) or
+// non-finite. This is the in-process safety net for the struct-literal
+// construction paths described on SlopeK; it is not the validation layer.
+func (c BacklogDriftConfig) effectiveSlopeK() float64 {
+	if c.SlopeK <= 0 || math.IsNaN(c.SlopeK) || math.IsInf(c.SlopeK, 0) {
+		return backlogDriftSlopeK
+	}
+	return c.SlopeK
 }
 
 // NewBacklogDriftConfig creates a BacklogDriftConfig with validation (R3).
