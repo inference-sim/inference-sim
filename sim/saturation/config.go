@@ -157,56 +157,67 @@ func buildDetector(name string, cfg SaturationConfig) (Detector, error) {
 		}
 		return NewBacklogDriftDetectorWithConfig(bdc), nil
 	default:
-		return nil, fmt.Errorf("unknown saturation detector %q; valid: composite, threshold, backlog-drift", name)
+		// Derived from the roster so a future detector cannot desync this list.
+		return nil, fmt.Errorf("unknown saturation detector %q; valid: %s", name, strings.Join(AllDetectorNames(), ", "))
+	}
+}
+
+// blockOwner pairs one tuning block with the detector that owns it.
+type blockOwner struct {
+	block   string                      // YAML key, as it appears in error messages
+	owner   string                      // the only detector that may carry it
+	present func(SaturationConfig) bool // whether the block is set
+}
+
+// blockOwners returns the block↔detector ownership table.
+//
+// This is the SINGLE source of truth both ownership checks derive from
+// (#1614). They were previously two hand-written functions enumerating blocks in
+// separate if-statements, which could — and did — disagree: before #1614
+// checkBlockOwnershipSet had no composite case at all, so once composite gained a
+// block, a composite: block supplied to a bank selection that omitted composite
+// would have been silently dropped (R1). Adding a tunable detector now means
+// adding one row here.
+//
+// The slice is constructed per call so no mutable package-level slice escapes
+// (R8). The predicates are pure readers of the config they are handed.
+func blockOwners() []blockOwner {
+	return []blockOwner{
+		{"composite", "composite", func(c SaturationConfig) bool { return c.Composite != nil }},
+		{"threshold", "threshold", func(c SaturationConfig) bool { return c.Threshold != nil }},
+		{"backlog_drift", "backlog-drift", func(c SaturationConfig) bool { return c.BacklogDrift != nil }},
 	}
 }
 
 // checkBlockOwnership rejects a config that carries a tuning block for a detector
-// other than the selected one. composite has no tunable params, so ANY block is
-// a mistake when composite is selected; threshold accepts only threshold:;
-// backlog-drift accepts only backlog_drift:.
+// other than the selected one (single-detector path). Exactly one detector runs,
+// so any foreign block is a user mistake and is reported rather than dropped (R1).
 func checkBlockOwnership(name string, cfg SaturationConfig) error {
-	switch name {
-	case "composite":
-		if cfg.Threshold != nil {
-			return fmt.Errorf("saturation config: threshold block is not valid for --detectors composite (composite has no tunable parameters)")
-		}
-		if cfg.BacklogDrift != nil {
-			return fmt.Errorf("saturation config: backlog_drift block is not valid for --detectors composite (composite has no tunable parameters)")
-		}
-	case "threshold":
-		if cfg.BacklogDrift != nil {
-			return fmt.Errorf("saturation config: backlog_drift block is not valid for --detectors threshold")
-		}
-	case "backlog-drift":
-		if cfg.Threshold != nil {
-			return fmt.Errorf("saturation config: threshold block is not valid for --detectors backlog-drift")
+	for _, bo := range blockOwners() {
+		if bo.present(cfg) && bo.owner != name {
+			return fmt.Errorf("saturation config: %s block is not valid for --detectors %s (it belongs to %s)",
+				bo.block, name, bo.owner)
 		}
 	}
 	return nil
 }
 
-// checkBlockOwnershipSet is the multi-detector generalization of
-// checkBlockOwnership for the bank (#1519). A tuning block is valid only if the
-// detector that owns it is among the selected names; a block whose owner is NOT
-// selected is a hard error rather than a silent drop (R1), matching the
-// single-detector path's contract. `--detectors all` selects every owner, so it
-// trivially passes; the check bites only on subset selections that omit a
-// detector whose block the user nonetheless supplied.
-//
-// composite owns no block, so it never appears here as an owner — a threshold:
-// or backlog_drift: block is justified purely by threshold / backlog-drift being
-// in the selection.
+// checkBlockOwnershipSet is the multi-detector generalization for the bank
+// (#1519). A tuning block is valid only if its owning detector is among the
+// selected names; a block whose owner is NOT selected is a hard error rather than
+// a silent drop (R1), matching the single-detector contract. `--detectors all`
+// selects every owner, so a full shared config trivially passes; the check bites
+// on subset selections that omit a detector whose block was nonetheless supplied.
 func checkBlockOwnershipSet(names []string, cfg SaturationConfig) error {
 	selected := make(map[string]bool, len(names))
 	for _, n := range names {
 		selected[n] = true
 	}
-	if cfg.Threshold != nil && !selected["threshold"] {
-		return fmt.Errorf("saturation config: threshold block is not valid for --detectors %q (threshold is not among the selected detectors)", strings.Join(names, ","))
-	}
-	if cfg.BacklogDrift != nil && !selected["backlog-drift"] {
-		return fmt.Errorf("saturation config: backlog_drift block is not valid for --detectors %q (backlog-drift is not among the selected detectors)", strings.Join(names, ","))
+	for _, bo := range blockOwners() {
+		if bo.present(cfg) && !selected[bo.owner] {
+			return fmt.Errorf("saturation config: %s block is not valid for --detectors %q (%s is not among the selected detectors)",
+				bo.block, strings.Join(names, ","), bo.owner)
+		}
 	}
 	return nil
 }
