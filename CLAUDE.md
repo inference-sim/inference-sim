@@ -318,7 +318,7 @@ go build -o blis main.go
 # has a false-alarm calibration knob: composite: {sensitivity},
 # threshold: {threshold_ms}, backlog_drift: {slope_k, ...} (backlog-drift mirrors
 # saturation.BacklogDriftConfig, #1547), peak_rate: {threshold, min_observations,
-# consecutive_k, overload_multiple}. The config must carry ONLY the selected detector's
+# warmup_us, consecutive_k, overload_multiple}. The config must carry ONLY the selected detector's
 # block — a block for another detector errors (no silent drop). Absent block =
 # defaults; partial block overrides only named fields; unknown key / bad value
 # errors naming the field.

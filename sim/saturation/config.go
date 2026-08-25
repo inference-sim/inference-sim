@@ -20,7 +20,7 @@ import (
 //   - backlog_drift:  the BacklogDriftDetector's tuning knobs (mirrors
 //     BacklogDriftConfig)
 //   - peak_rate:      the PeakRateDetector's knobs (threshold, min_observations,
-//     consecutive_k, overload_multiple)
+//     warmup_us, consecutive_k, overload_multiple)
 //
 // Every detector is now tunable. That is a correctness property, not a
 // convenience: detector scores are comparable only when each detector has first
