@@ -59,9 +59,9 @@ func deviceModelDevices() map[string]KVOffloadDeviceDefaults {
 	return map[string]KVOffloadDeviceDefaults{
 		"nvme_ramp": {
 			ReadBandwidth: 7000, WriteBandwidth: 5000, BaseLatency: 80,
-			SaturationQueueDepth:   i64p(8),
-			SingleTransferFraction: f64p(0.4),
-			LatencyJitterStddev:    f64p(0.10),
+			SaturationQueueDepth:           i64p(8),
+			SingleTransferFraction:         f64p(0.4),
+			LatencyJitterStddev:            f64p(0.10),
 			BufferedReadBandwidth:          f64p(4000),
 			BufferedWriteBandwidth:         f64p(3000),
 			BufferedBaseLatency:            f64p(120),

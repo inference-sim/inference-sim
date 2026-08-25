@@ -8,6 +8,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/saturation"
+	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
 // writeSatConfig writes a saturation config file and returns its path.
@@ -216,6 +217,7 @@ func TestSaturationKnobs_PeakRateInvalidValuesFailNamingTheField(t *testing.T) {
 		{"peak_rate:\n  min_observations: 0\n", "peak_rate.min_observations"},
 		{"peak_rate:\n  min_observations: -5\n", "peak_rate.min_observations"},
 		{"peak_rate:\n  consecutive_k: 0\n", "peak_rate.consecutive_k"},
+		{"peak_rate:\n  warmup_us: -1\n", "peak_rate.warmup_us"},
 		// Below 1 the OVERLOADED boundary would sit under the firing threshold, so
 		// BACKLOGGED would be unreachable and the detector would silently lose a level.
 		{"peak_rate:\n  overload_multiple: 0.5\n", "peak_rate.overload_multiple"},
@@ -243,12 +245,97 @@ func TestSaturationKnobs_PeakRateMisspelledKnobIsRejected(t *testing.T) {
 		"peak_rate:\n  threshhold: 1.0\n",
 		"peak_rate:\n  min_observation: 100\n",
 		"peak_rate:\n  overload_multipler: 3.0\n",
+		"peak_rate:\n  warmup_u: 1000\n",
 	} {
 		resetSaturationGlobals()
 		detectorName = "peak-rate"
 		saturationConfigPath = writeSatConfig(t, cfg)
 		if _, err := resolveSaturation(); err == nil {
 			t.Errorf("misspelled knob %q was accepted; a typo would silently read as the default", cfg)
+		}
+	}
+}
+
+// INV-13 at the CLI boundary: `blis run` and `blis replay` must write byte-identical
+// saturation reports for the same workload, with the knob configured. The acceptance
+// criterion in #1614 asks for this per detector, so it is asserted over the whole
+// roster -- a newly added detector cannot quietly escape the guarantee.
+//
+// The two legs differ exactly as the real commands differ: run resolves its requests
+// from the simulator's own metrics, while replay resolves them from an exported
+// TraceV2 round trip. Everything downstream -- the resolver, the tracer, the event
+// sorter, the reducer and the JSON writer -- is shared, so this pins the property the
+// sharing is supposed to give.
+func TestSaturationKnobs_RunReplayReportsAreByteIdentical(t *testing.T) {
+	defer resetSaturationGlobals()
+
+	// A workload with a growing backlog, so every detector has a non-trivial verdict
+	// sequence rather than a uniform STABLE one.
+	reqs := risingRequests(120)
+
+	// The replay leg's requests, reconstructed the way `blis replay` reconstructs
+	// them: through the TraceV2 record round trip.
+	simReqs := make([]*sim.Request, 0, len(reqs))
+	for _, r := range reqs {
+		simReqs = append(simReqs, &sim.Request{
+			ID:             r.ID,
+			ArrivalTime:    int64(r.ArrivedAt * 1e6),
+			TTFTSet:        true,
+			FirstTokenTime: int64(r.E2E * 1e3),
+			ITL:            []int64{},
+			State:          sim.StateCompleted,
+		})
+	}
+	replayReqs := workload.TraceRecordsToRequestMetrics(workload.RequestsToTraceRecords(simReqs))
+
+	// Each detector's own knob block. Ownership is enforced over the SELECTED set, so
+	// a single-detector selection may carry only its own block; `all` carries them
+	// all. Parity is therefore asserted for the CONFIGURED path, not just the default.
+	blocks := map[string]string{
+		"composite":     "composite:\n  sensitivity: 2.0\n",
+		"threshold":     "threshold:\n  threshold_ms: 250\n",
+		"backlog-drift": "backlog_drift:\n  slope_k: 4.0\n",
+		"peak-rate":     "peak_rate:\n  threshold: 0.25\n  min_observations: 10\n  warmup_us: 1000\n",
+	}
+	var everyBlock string
+	for _, name := range saturation.AllDetectorNames() {
+		everyBlock += blocks[name]
+	}
+
+	reportFor := func(selection string, requests []sim.RequestMetrics) []byte {
+		body := blocks[selection]
+		if selection == "all" {
+			body = everyBlock
+		}
+		resetSaturationGlobals()
+		detectorName = selection
+		saturationConfigPath = writeSatConfig(t, body)
+		saturationReport = filepath.Join(t.TempDir(), "sat.json")
+
+		tracer, err := resolveSaturation()
+		if err != nil {
+			t.Fatalf("resolveSaturation(%q): %v", selection, err)
+		}
+		if _, err := tracer.run(requests); err != nil {
+			t.Fatalf("tracer.run(%q): %v", selection, err)
+		}
+		data, err := os.ReadFile(saturationReport)
+		if err != nil {
+			t.Fatalf("read report: %v", err)
+		}
+		return data
+	}
+
+	for _, selection := range append(saturation.AllDetectorNames(), "all") {
+		runLeg := reportFor(selection, reqs)
+		replayLeg := reportFor(selection, replayReqs)
+
+		if len(runLeg) == 0 {
+			t.Fatalf("--detectors %s: run leg wrote an empty report; the comparison would be vacuous", selection)
+		}
+		if string(runLeg) != string(replayLeg) {
+			t.Errorf("--detectors %s: run and replay reports differ (INV-13)\n--- run ---\n%s\n--- replay ---\n%s",
+				selection, runLeg, replayLeg)
 		}
 	}
 }

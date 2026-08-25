@@ -168,7 +168,15 @@ func (b *BacklogDriftDetector) Detect() Result {
 	// score denominator further down provably use the SAME value (#1614): if they
 	// diverged, Score==1.0 would stop coinciding with the OVERLOADED boundary.
 	slopeK := b.config.effectiveSlopeK()
-	signals["slope_k"] = slopeK
+	// Reported ONLY when the knob was explicitly configured. The Signals map is
+	// serialized into --saturation-report, so emitting it unconditionally would make
+	// a default-configured report differ from a pre-#1614 one -- breaking the
+	// absent-config byte-identity this PR promises (INV-6) for the sake of a
+	// diagnostic that just restates the documented default. When the operator HAS
+	// tuned it, the trace must explain which multiplier produced the band.
+	if b.config.SlopeK > 0 {
+		signals["slope_k"] = slopeK
+	}
 
 	// Level bands mirror composite's two-threshold structure:
 	//   slope <= noiseFloor            → STABLE

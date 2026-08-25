@@ -34,6 +34,15 @@ import "math"
 // linear fit tends toward ZERO slope and reports STABLE at criticality -- the worst
 // possible failure direction. R_t has no such degeneracy at the boundary.
 //
+// # Recovery after a transient
+//
+// The numerator is an ALL-TIME high-water mark, so a burst that drives the peak to P
+// keeps the detector firing until elapsed time reaches roughly P/threshold SECONDS
+// from the observation origin (threshold has units of backlog per second). The
+// detector therefore answers "did this run saturate?", not "is it saturated right
+// now?" -- which is the right question for a post-hoc verdict on a finished run, but
+// it must be stated rather than discovered.
+//
 // # Horizon dependence (load-bearing, not hygiene)
 //
 // The result above is asymptotic while every run is finite, so how well R_t
@@ -55,10 +64,10 @@ import "math"
 //
 // # State
 //
-// Four scalars: the running peak, in-flight count, first/last timestamps, and the
-// consecutive-breach counter. No per-event or per-request retention, so memory is
-// O(1) in the trace length -- unlike composite and threshold, which retain every
-// event.
+// A fixed set of scalars: the running peak, in-flight count, observation count,
+// first/last timestamps, a first-event flag, and the consecutive-breach counter.
+// Nothing is retained per event or per request, so memory is O(1) in the trace
+// length -- unlike composite and threshold, which retain every event.
 type PeakRateDetector struct {
 	cfg peakRateConfig
 
@@ -89,6 +98,16 @@ type peakRateConfig struct {
 	// R_t to be meaningful (see the horizon discussion on PeakRateDetector).
 	MinObservations int
 
+	// WarmupUs gates the verdict until this much TIME has elapsed. It is not
+	// redundant with MinObservations: the two guard different transients, because
+	// R_t = Peak_t/t has a numerator counted in events and a denominator measured in
+	// seconds. A dense burst satisfies an event count almost immediately while
+	// elapsed time is still tiny, which makes R_t enormous on evidence spanning a
+	// fraction of a second -- 300 arrivals inside 3ms yields R_t > 100000 and an
+	// OVERLOADED verdict that an observation gate cannot suppress. Zero (the default)
+	// disables the gate, so absent config behaves exactly as before.
+	WarmupUs int64
+
 	// ConsecutiveK is the number of successive breaches required before firing --
 	// the anti-flapping lever that keeps a momentary excursion from flipping the
 	// verdict.
@@ -109,6 +128,9 @@ const (
 	defaultPeakRateMinObservations  = 20
 	defaultPeakRateConsecutiveK     = 3
 	defaultPeakRateOverloadMultiple = 3.0
+	// Zero disables the time gate, which is the campaign-validated level (WARM=0)
+	// and keeps an absent peak_rate: block byte-identical to no detector at all.
+	defaultPeakRateWarmupUs int64 = 0
 )
 
 // NewPeakRateDetector creates a peak-rate detector with the campaign-validated
@@ -119,6 +141,7 @@ func NewPeakRateDetector() Detector {
 		MinObservations:  defaultPeakRateMinObservations,
 		ConsecutiveK:     defaultPeakRateConsecutiveK,
 		OverloadMultiple: defaultPeakRateOverloadMultiple,
+		WarmupUs:         defaultPeakRateWarmupUs,
 	})
 }
 
@@ -141,6 +164,9 @@ func newPeakRateDetector(cfg peakRateConfig) Detector {
 	}
 	if cfg.OverloadMultiple < 1 || math.IsNaN(cfg.OverloadMultiple) || math.IsInf(cfg.OverloadMultiple, 0) {
 		cfg.OverloadMultiple = defaultPeakRateOverloadMultiple
+	}
+	if cfg.WarmupUs < 0 {
+		cfg.WarmupUs = defaultPeakRateWarmupUs
 	}
 	return &PeakRateDetector{cfg: cfg}
 }
@@ -218,6 +244,12 @@ func (p *PeakRateDetector) Detect() Result {
 		"overload_multiple": p.cfg.OverloadMultiple,
 	}
 
+	// Reported only when the time gate is actually in use: a constant zero would be
+	// noise in every trace rather than an explanation of any verdict.
+	if p.cfg.WarmupUs > 0 {
+		signals["warmup_us"] = float64(p.cfg.WarmupUs)
+	}
+
 	// Not enough of the run seen yet: report STABLE rather than guessing from the
 	// opening transient, where R_t is large by construction (R20 -- degenerate
 	// input is STABLE, never a panic).
@@ -277,8 +309,10 @@ func (p *PeakRateDetector) Reset() {
 // ready reports whether enough of the run has been observed for R_t to carry
 // information.
 //
-// The observation count is the load-bearing condition: it keeps the detector quiet
-// through the opening transient. The elapsed-span condition is defence in depth --
+// The observation count and the warm-up span guard DIFFERENT transients, because
+// R_t's numerator is counted in events while its denominator is measured in seconds:
+// a dense burst satisfies an event count while elapsed time is still negligible. The
+// elapsed-span condition is defence in depth --
 // statistic() independently returns 0 for a non-positive span, and a zero statistic
 // cannot exceed a threshold (validation floors it at minCalibrationKnob > 0), so
 // removing it here changes no verdict. It is kept so that "is a verdict meaningful
@@ -286,7 +320,17 @@ func (p *PeakRateDetector) Reset() {
 // so a future threshold of exactly 0 could not turn an undefined ratio into a
 // breach (R11).
 func (p *PeakRateDetector) ready() bool {
-	return p.observations >= int64(p.cfg.MinObservations) && p.elapsedSec() > 0
+	return p.observations >= int64(p.cfg.MinObservations) &&
+		p.elapsedUs() >= p.cfg.WarmupUs &&
+		p.elapsedSec() > 0
+}
+
+// elapsedUs is the observed span in microseconds, the unit warm_up is configured in.
+func (p *PeakRateDetector) elapsedUs() int64 {
+	if !p.haveFirst || p.lastTsUs <= p.firstTsUs {
+		return 0
+	}
+	return p.lastTsUs - p.firstTsUs
 }
 
 // statistic is R_t = Peak_t / t, in units of backlog per second. Returns 0 when

@@ -49,11 +49,20 @@ type PeakRateBlock struct {
 	// separate healthy from overloaded (see PeakRateDetector's horizon note).
 	//
 	// It suppresses PER-EVENT verdicts before the gate, which is what the
-	// --saturation-report trace shows. It does NOT move the stdout headline label:
-	// that is a trailing-window plurality vote, and the trailing window is always
-	// past the gate. Use `threshold` to calibrate the headline false-alarm rate;
-	// use this to keep the trace quiet through a known ramp-up.
+	// --saturation-report trace shows. On a run long enough that the reducer's
+	// trailing window lies entirely past the gate -- the common case -- it therefore
+	// does not move the stdout headline label, so `threshold` is the knob to
+	// calibrate the headline false-alarm rate with. It CAN move the headline when the
+	// gate falls inside that window: a short run, a very large gate, or a long
+	// --saturation-final-window. Use this to keep the trace quiet through a known
+	// ramp-up.
 	MinObservations *int `yaml:"min_observations"`
+	// WarmupUs holds the verdict until this many MICROSECONDS have elapsed. Not
+	// redundant with min_observations: R_t's numerator counts events while its
+	// denominator measures seconds, so a dense burst satisfies an event count while
+	// elapsed time is still negligible, making R_t enormous on a fraction of a
+	// second's evidence. Zero (the default) disables the gate.
+	WarmupUs *int64 `yaml:"warmup_us"`
 	// ConsecutiveK is the successive breaches required before firing.
 	ConsecutiveK *int `yaml:"consecutive_k"`
 	// OverloadMultiple separates BACKLOGGED from OVERLOADED. Must be >= 1: below 1
@@ -300,7 +309,12 @@ func resolveBacklogDriftConfig(block *BacklogDriftBlock) (BacklogDriftConfig, er
 	tailWindows := def.TailWindows
 	saturatedDrainRatio := def.SaturatedDrainRatio
 	transientDrainRatio := def.TransientDrainRatio
-	slopeK := def.effectiveSlopeK()
+	// Seeded at zero -- meaning "unset" -- rather than at the effective default, so
+	// the resolved config still distinguishes "the operator chose 3.0" from "nobody
+	// chose anything". effectiveSlopeK() supplies the default at read time, and the
+	// detector reports the slope_k diagnostic only for an explicit choice (keeping a
+	// default-configured report byte-identical to a pre-#1614 one).
+	slopeK := 0.0
 
 	if block != nil {
 		if block.WindowSizeSec != nil {
@@ -407,6 +421,7 @@ func resolvePeakRateConfig(block *PeakRateBlock) (peakRateConfig, error) {
 		MinObservations:  defaultPeakRateMinObservations,
 		ConsecutiveK:     defaultPeakRateConsecutiveK,
 		OverloadMultiple: defaultPeakRateOverloadMultiple,
+		WarmupUs:         defaultPeakRateWarmupUs,
 	}
 	if block == nil {
 		return out, nil
@@ -423,6 +438,12 @@ func resolvePeakRateConfig(block *PeakRateBlock) (peakRateConfig, error) {
 			return peakRateConfig{}, fmt.Errorf("saturation config: peak_rate.min_observations must be > 0, got %d", *block.MinObservations)
 		}
 		out.MinObservations = *block.MinObservations
+	}
+	if block.WarmupUs != nil {
+		if *block.WarmupUs < 0 {
+			return peakRateConfig{}, fmt.Errorf("saturation config: peak_rate.warmup_us must be >= 0, got %d", *block.WarmupUs)
+		}
+		out.WarmupUs = *block.WarmupUs
 	}
 	if block.ConsecutiveK != nil {
 		if *block.ConsecutiveK <= 0 {

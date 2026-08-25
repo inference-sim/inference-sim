@@ -34,8 +34,13 @@ func TestBacklogDrift_ScoreLevelCouplingSurvivesAnySlopeK(t *testing.T) {
 			if r.Level == Overloaded && r.Score != 1.0 {
 				t.Errorf("SlopeK=%v: OVERLOADED with Score %v, want the 1.0 cap; Level and Score are decoupled", in, r.Score)
 			}
-			if sk := r.Signals["slope_k"]; sk <= 0 || math.IsNaN(sk) || math.IsInf(sk, 0) {
-				t.Errorf("SlopeK=%v: reported slope_k %v is not finite and positive", in, sk)
+			// The key is present only when the knob was explicitly configured
+			// (an unset SlopeK keeps a default report byte-identical). When it IS
+			// present it must describe a usable multiplier.
+			if sk, present := r.Signals["slope_k"]; present {
+				if sk <= 0 || math.IsNaN(sk) || math.IsInf(sk, 0) {
+					t.Errorf("SlopeK=%v: reported slope_k %v is not finite and positive", in, sk)
+				}
 			}
 		}
 	}

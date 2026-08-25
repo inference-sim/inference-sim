@@ -105,7 +105,8 @@ backlog_drift:
 # peak_rate: the reflected-random-walk detector
 peak_rate:
   threshold: 0.5           # fire when peak/elapsed exceeds this (backlog per second)
-  min_observations: 20     # hold the verdict until the run is long enough
+  min_observations: 20     # hold the verdict until enough EVENTS have been seen
+  warmup_us: 0             # hold the verdict until this much TIME has elapsed
   consecutive_k: 3         # successive breaches before firing (anti-flapping)
   overload_multiple: 3.0   # OVERLOADED above this multiple of threshold (>= 1)
 ```
@@ -136,18 +137,27 @@ healthy and raise `threshold` until it stops firing.
 
 Two properties worth knowing before you sweep it:
 
-- **`min_observations` does not move the stdout headline.** It suppresses per-event
-  verdicts before the gate (visible in `--saturation-report`), but the headline is a
-  trailing-window plurality vote and that window is always past the gate. Use
-  `threshold` for the headline false-alarm rate; use `min_observations` to keep the
-  trace quiet through a known ramp-up.
-- **Recovery after a transient takes `peak / threshold` completions.** Because the
+- **`min_observations` and `warmup_us` guard different transients, so both exist.**
+  `R_t`'s numerator is counted in events while its denominator is measured in seconds.
+  A dense burst satisfies an event count while elapsed time is still negligible — 300
+  arrivals inside 3 ms gives `R_t > 100000` — and no observation gate can suppress
+  that, because the events really are there. Only a time gate can. Conversely a time
+  gate does not help a slow trickle that has run long enough to matter but produced
+  too few samples. Default `warmup_us: 0` leaves the gate off.
+- **`min_observations` usually does not move the stdout headline.** It suppresses
+  per-event verdicts before the gate (visible in `--saturation-report`); the headline
+  is a trailing-window plurality vote, so on any run long enough that the window lies
+  past the gate the headline is unchanged. It *can* move the headline when the gate
+  falls inside that window — a short run, a very large gate, or a long
+  `--saturation-final-window`. Calibrate the headline false-alarm rate with
+  `threshold`; use `min_observations` to keep the trace quiet through a known ramp-up.
+- **Recovery after a transient takes about `peak / threshold` seconds.** Because the
   numerator is an all-time high-water mark, a burst that drives the peak to `P` keeps
-  the detector firing until roughly `P / threshold` further requests have completed
-  (verified: predicted 3483 vs observed 3484 completions). For a post-hoc verdict on a
-  finished run that is usually what you want — the run *did* saturate — but it means
-  the detector answers "did this run saturate?" rather than "is it saturated right
-  now?"
+  the detector firing until elapsed time reaches roughly `P / threshold` from the
+  observation origin (`threshold` has units of backlog per second). For a post-hoc
+  verdict on a finished run that is usually what you want — the run *did* saturate —
+  but it means the detector answers "did this run saturate?" rather than "is it
+  saturated right now?"
 
 Absent block = defaults; a partial block overrides only the fields it names; an
 unknown key or out-of-range value errors naming the field. Block ownership is

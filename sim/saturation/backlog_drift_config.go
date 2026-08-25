@@ -12,9 +12,10 @@ import (
 // Relocated from sim/workload into sim/saturation in #1547 (verbatim — same
 // fields, validation, panic messages, and defaults) so the saturation package no
 // longer imports sim/workload for this type. The streaming BacklogDriftDetector
-// reads only WindowSize; the remaining fields are retained as user-facing
-// --saturation-config backlog_drift: YAML knobs (see the BacklogDriftBlock in
-// config.go), so they are validated but otherwise unused by the streaming path.
+// reads WindowSize and SlopeK (#1614); the remaining fields are retained as
+// user-facing --saturation-config backlog_drift: YAML knobs (see the
+// BacklogDriftBlock in config.go), so they are validated but otherwise unused by
+// the streaming path.
 type BacklogDriftConfig struct {
 	WindowSize    time.Duration // Window width for sampling and per-window metrics
 	MinWindows    int           // Minimum complete windows required for classification

@@ -1003,3 +1003,79 @@ func TestPeakRate_OverloadBoundaryAndElapsedGuard(t *testing.T) {
 		}
 	})
 }
+
+// warmup_us and min_observations guard DIFFERENT transients, and this is why both
+// exist. R_t's numerator is counted in events while its denominator is measured in
+// seconds, so a dense burst satisfies an event count while elapsed time is still
+// negligible -- making R_t enormous on a fraction of a second's evidence.
+//
+// An observation gate cannot suppress that (the events are there); only a time gate
+// can. The test asserts exactly that asymmetry, so it fails if warmup_us is removed
+// as "redundant".
+func TestPeakRate_WarmupGuardsATransientTheObservationGateCannot(t *testing.T) {
+	// 300 arrivals inside 3 milliseconds: a dense burst.
+	var burst []Event
+	for i := 0; i < 300; i++ {
+		burst = append(burst, Event{Timestamp: int64(i) * 10, Type: Arrival, RequestID: "a"})
+	}
+
+	// A generous OBSERVATION gate does not help: the events exist, so the gate opens
+	// while elapsed time is still a fraction of a second.
+	byObservations := streamLevels(peakRateWith(defaultPeakRateThreshold, 100, 3), burst)
+	if !firedAnywhere(byObservations) {
+		t.Fatal("the dense burst did not fire even with only an observation gate; this fixture cannot show the asymmetry")
+	}
+
+	// A TIME gate longer than the burst suppresses it.
+	withWarmup := newPeakRateDetector(peakRateConfig{
+		Threshold:        defaultPeakRateThreshold,
+		MinObservations:  20,
+		ConsecutiveK:     3,
+		OverloadMultiple: defaultPeakRateOverloadMultiple,
+		WarmupUs:         10_000, // 10ms > the burst's 3ms span
+	})
+	if levels := streamLevels(withWarmup, burst); firedAnywhere(levels) {
+		t.Errorf("a warm-up longer than the burst did not suppress it: %v", firstNonStable(levels))
+	}
+}
+
+// warmup_us must only DELAY a verdict, never prevent a genuinely saturated run from
+// being reported once the gate has passed -- otherwise it would trade false alarms
+// for missed detections rather than for patience.
+func TestPeakRate_WarmupOnlyDelaysAndNeverSuppressesRealSaturation(t *testing.T) {
+	events := saturatedStream(300)
+	severity := map[Level]int{Stable: 0, Backlogged: 1, Overloaded: 2}
+
+	withWarmup := func(us int64) []Level {
+		return streamLevels(newPeakRateDetector(peakRateConfig{
+			Threshold:        defaultPeakRateThreshold,
+			MinObservations:  20,
+			ConsecutiveK:     3,
+			OverloadMultiple: defaultPeakRateOverloadMultiple,
+			WarmupUs:         us,
+		}), events)
+	}
+
+	base := withWarmup(0)
+	if !firedAnywhere(base) {
+		t.Fatal("fixture never fires with no warm-up; the assertions would be vacuous")
+	}
+
+	// Monotone: a longer warm-up never escalates any event's severity.
+	prev := base
+	for _, us := range []int64{1_000_000, 5_000_000, 10_000_000} {
+		cur := withWarmup(us)
+		for i := range cur {
+			if severity[cur[i]] > severity[prev[i]] {
+				t.Errorf("warmup_us=%d: event %d escalated %v -> %v as the gate GREW", us, i, prev[i], cur[i])
+			}
+		}
+		prev = cur
+	}
+
+	// And a warm-up well inside the run must still let the saturation be reported:
+	// the stream spans 300 rounds of 100ms, so a 2s gate leaves most of it eligible.
+	if !firedAnywhere(withWarmup(2_000_000)) {
+		t.Error("a warm-up covering only the run's opening suppressed the verdict entirely; the gate must delay, not blind")
+	}
+}

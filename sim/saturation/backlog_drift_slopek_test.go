@@ -161,10 +161,11 @@ func TestBacklogDrift_ReportsActiveSlopeKInSignals(t *testing.T) {
 		}
 	}
 
-	// An UNCONFIGURED detector must report a POSITIVE multiplier, never a zero: a
-	// zero would misdescribe the banding, and would mean the detector bands every
-	// rising trace OVERLOADED. Asserted as the property that matters rather than
-	// against the constant, so the test survives a change of default.
+	// An UNCONFIGURED detector must NOT report the key at all. The Signals map is
+	// serialized into --saturation-report, so emitting it by default would make a
+	// default-configured report differ from a pre-#1614 one -- breaking the
+	// absent-config byte-identity this change promises, for a diagnostic that would
+	// only restate the documented default.
 	//
 	// The config below leaves slope_k unset but keeps the small window, so the
 	// comparison isolates the multiplier (the 60s production window of
@@ -175,15 +176,15 @@ func TestBacklogDrift_ReportsActiveSlopeKInSignals(t *testing.T) {
 	for _, e := range events {
 		d.Observe(e)
 	}
-	reported := d.Detect().Signals["slope_k"]
-	if reported <= 0 {
-		t.Fatalf("an unset slope_k was reported as %v; must be > 0 or the banding is inverted", reported)
+	if _, present := d.Detect().Signals["slope_k"]; present {
+		t.Error("an unconfigured detector reported slope_k; the key must appear only when the knob was set, or a default report is no longer byte-identical")
 	}
-	// And the reported value must be the one actually in force: configuring it
-	// explicitly must reproduce the same verdicts.
-	explicit := countLevels(NewBacklogDriftDetectorWithConfig(slopeKConfig(reported)), events)
+
+	// And the default banding must equal an explicitly-configured default, so the
+	// absent key means "the documented default" rather than "no multiplier".
+	explicit := countLevels(NewBacklogDriftDetectorWithConfig(slopeKConfig(backlogDriftSlopeK)), events)
 	implied := countLevels(NewBacklogDriftDetectorWithConfig(unset), events)
 	if explicit[Overloaded] != implied[Overloaded] || explicit[Backlogged] != implied[Backlogged] {
-		t.Errorf("the reported slope_k %v does not reproduce the unconfigured detector's verdicts: %v vs %v", reported, explicit, implied)
+		t.Errorf("an unset slope_k did not band like an explicit default: %v vs %v", implied, explicit)
 	}
 }
