@@ -4165,8 +4165,11 @@ as <strong>JSONL</strong> — one proxy session per line — so no Parquet explo
 absorbed into the following main turn's think gap. Per-round <strong>pure client think</strong> is
 recomputed as <code>max(0, t_i − t_{i-1} − api_time_{i-1})</code> between consecutive main turns
 (carried in the <code>think_time_us</code> column, <code>--max-think-time</code> default <code>0</code> = uncapped,
-since Weka gaps are genuine away-from-keyboard times). The recorded <code>claude-*</code> model
-names are dropped during conversion (same routing-safety reason as OTel).</p>
+since Weka gaps are genuine away-from-keyboard times). The column is <strong>non-lossy</strong>
+(#1608): a genuinely-zero recomputed think (an overlapping turn) is recorded as <code>&amp;0</code>,
+distinct from a not-recorded (empty) cell, so an all-overlap session replays with the
+recorded zeros rather than degrading to arrival-gap think. The recorded <code>claude-*</code>
+model names are dropped during conversion (same routing-safety reason as OTel).</p>
 <div class="admonition warning">
 <p class="admonition-title">Weka replay ISL is an upper bound (context compaction)</p>
 <p>Weka input token counts are very large (p50 ≈ 110K, p90 ≈ 395K), so the
@@ -4178,8 +4181,8 @@ input delta to 0 and the reconstructed cumulative input <strong>over-counts the 
 total by ≈3–4×</strong> (+312% on that dataset). Treat replayed input length, KV pressure,
 and hit-rate as a substantial <strong>upper bound</strong>, not a faithful reproduction of the
 recorded workload. (This is a property of the accumulate delta law, not the
-converter; faithful compaction support is tracked in #1609, and the separate
-think-time lossy-0 sentinel corner in #1608.)</p>
+converter; faithful compaction support is tracked in #1609. The separate
+think-time lossy-0 sentinel was resolved in #1608 — see the non-lossy note above.)</p>
 </div>
 <hr />
 <h2 id="blis-calibrate"><code>blis calibrate</code><a class="headerlink" href="#blis-calibrate" title="Permanent link">&para;</a></h2>
