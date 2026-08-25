@@ -102,6 +102,22 @@ backlog_drift:
   slope_k: 3.0             # BACKLOGGED/OVERLOADED boundary multiplier
 ```
 
+**Calibrating a knob.** Every knob above trades sensitivity against false alarms,
+and larger always means "fires less". To calibrate: run a workload you believe is
+healthy, sweep the knob upward, and take the smallest value that produces no
+alarm. Comparing two detectors is only meaningful once both have been calibrated
+that way — otherwise you are comparing a strict detector against a lenient one.
+
+Two bounds worth knowing:
+
+- All multiplicative knobs are rejected below `1e-6`. A subnormal multiplier passes
+  a naive "is it positive?" check but drives its product with the noise floor to
+  zero, which decouples a detector's level from its score.
+- `backlog_drift.slope_k <= 1` makes the BACKLOGGED band unsatisfiable (that band is
+  `noiseFloor < slope <= slope_k×noiseFloor`), so the detector reports only STABLE
+  and OVERLOADED. That is a legitimate "maximally severe" setting, but a sweep that
+  crosses 1 is comparing a two-level detector against a three-level one.
+
 Absent block = defaults; a partial block overrides only the fields it names; an
 unknown key or out-of-range value errors naming the field. Block ownership is
 enforced: a block whose owning detector is not among the selected `--detectors`

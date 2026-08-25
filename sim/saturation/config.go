@@ -108,11 +108,6 @@ const defaultThresholdMs = 5000.0
 // instead of silently producing nonsense verdicts (R1).
 const minCalibrationKnob = 1e-6
 
-// defaultCompositeSensitivityYAML is the sensitivity used when no
-// composite.sensitivity override is supplied. It mirrors
-// defaultCompositeSensitivity so the resolved value is explicit at this layer.
-const defaultCompositeSensitivityYAML = defaultCompositeSensitivity
-
 // BuildDetector constructs the named detector, applying any relevant overrides
 // from cfg. Returns an error (never panics — R6) when a name is unknown, a
 // supplied parameter is out of range, or a config block is present that does not
@@ -125,14 +120,38 @@ const defaultCompositeSensitivityYAML = defaultCompositeSensitivity
 // NewBank), then calls buildDetector per detector — so a block whose owner is not
 // in the bank's selection is likewise a hard error, not a silent drop (R1).
 func BuildDetector(name string, cfg SaturationConfig) (Detector, error) {
+	// Validate the NAME before ownership. Ownership is meaningless for a name that
+	// is not a detector, and reporting "your threshold: block is invalid" for a
+	// typo'd name would hide the actual mistake and omit the valid names. (The
+	// bank path gets this ordering for free -- NewBank validates names before
+	// calling checkBlockOwnershipSet.)
+	if !isKnownDetector(name) {
+		return nil, unknownDetectorError(name)
+	}
 	// Reject config blocks that do not belong to the selected detector rather
 	// than silently dropping the user's tuning (R1). SaturationConfig always
-	// knows both keys (strict parsing can't tell which detector is active), so
+	// knows every key (strict parsing can't tell which detector is active), so
 	// the block↔detector match is enforced here.
 	if err := checkBlockOwnership(name, cfg); err != nil {
 		return nil, err
 	}
 	return buildDetector(name, cfg)
+}
+
+// isKnownDetector reports whether name is in the canonical roster.
+func isKnownDetector(name string) bool {
+	for _, n := range rosterOrder {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
+// unknownDetectorError is the single phrasing for an unrecognized detector name,
+// with the valid list derived from the roster so it cannot desync.
+func unknownDetectorError(name string) error {
+	return fmt.Errorf("unknown saturation detector %q; valid: %s", name, strings.Join(AllDetectorNames(), ", "))
 }
 
 // buildDetector constructs the named detector, applying only the block that
@@ -144,7 +163,7 @@ func BuildDetector(name string, cfg SaturationConfig) (Detector, error) {
 func buildDetector(name string, cfg SaturationConfig) (Detector, error) {
 	switch name {
 	case "composite":
-		sensitivity := defaultCompositeSensitivityYAML
+		sensitivity := defaultCompositeSensitivity
 		if cfg.Composite != nil && cfg.Composite.Sensitivity != nil {
 			sensitivity = *cfg.Composite.Sensitivity
 			if math.IsNaN(sensitivity) || math.IsInf(sensitivity, 0) || sensitivity < minCalibrationKnob {
@@ -168,8 +187,7 @@ func buildDetector(name string, cfg SaturationConfig) (Detector, error) {
 		}
 		return NewBacklogDriftDetectorWithConfig(bdc), nil
 	default:
-		// Derived from the roster so a future detector cannot desync this list.
-		return nil, fmt.Errorf("unknown saturation detector %q; valid: %s", name, strings.Join(AllDetectorNames(), ", "))
+		return nil, unknownDetectorError(name)
 	}
 }
 
