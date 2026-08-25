@@ -1,7 +1,6 @@
 package saturation
 
 import (
-	"math"
 	"testing"
 )
 
@@ -152,20 +151,123 @@ func TestComposite_DefaultSensitivityIsByteIdentical(t *testing.T) {
 	})
 }
 
-// The reported noise_floor signal must describe the floor actually used for the
-// comparison, otherwise the trace explains a verdict the detector did not reach.
-func TestComposite_ReportedNoiseFloorIsTheAppliedFloor(t *testing.T) {
+// The reported noise_floor must describe the floor the banding ACTUALLY used,
+// otherwise the trace explains a verdict the detector did not reach.
+//
+// Stated as an observable property rather than by recomputing the implementation's
+// formula: the reported floor must be a threshold CONSISTENT with the verdict.
+// Whenever the detector says STABLE its score sits below the reported floor, and
+// whenever it says OVERLOADED its latency trend sits above it. A detector that
+// reported an unscaled floor while banding on a scaled one violates this on the
+// events between the two floors -- and it holds for ANY implementation that reports
+// the floor it used, including one that scales the boundary differently.
+func TestComposite_ReportedFloorIsConsistentWithTheVerdict(t *testing.T) {
 	events := makeCompositeStream(60)
-	const s = 4.0
 
-	one := resultSequence(NewCompositeDetectorWithSensitivity(1.0), events)
-	scaled := resultSequence(NewCompositeDetectorWithSensitivity(s), events)
+	for _, s := range []float64{0.25, 1.0, 4.0, 16.0} {
+		d := NewCompositeDetectorWithSensitivity(s)
+		d.Reset()
+		checked := 0
+		for _, e := range events {
+			d.Observe(e)
+			r := d.Detect()
+			floor := r.Signals["noise_floor"]
+			score := r.Score
+			lt := r.Signals["latency_trend"]
 
-	for i := range one {
-		want := one[i].Signals["noise_floor"] * s
-		got := scaled[i].Signals["noise_floor"]
-		if math.Abs(got-want) > 1e-12 {
-			t.Fatalf("event %d: reported noise_floor %v, want %v (= %v x %v)", i, got, want, one[i].Signals["noise_floor"], s)
+			switch r.Level {
+			case Stable:
+				if score >= floor {
+					t.Errorf("sensitivity=%v: STABLE but score %v >= reported floor %v; the reported floor is not the one used", s, score, floor)
+				}
+				checked++
+			case Overloaded:
+				if lt <= floor {
+					t.Errorf("sensitivity=%v: OVERLOADED but latency_trend %v <= reported floor %v", s, lt, floor)
+				}
+				checked++
+			case Backlogged:
+				if score < floor {
+					t.Errorf("sensitivity=%v: BACKLOGGED but score %v < reported floor %v (should have been STABLE)", s, score, floor)
+				}
+				checked++
+			}
 		}
+		if checked == 0 {
+			t.Fatalf("sensitivity=%v: no verdicts examined; the consistency assertion was vacuous", s)
+		}
+	}
+}
+
+// Raising sensitivity must raise the reported floor. This is the observable
+// direction of the knob -- it says nothing about HOW the floor is computed, only
+// that the dial moves the bar the way its documentation promises.
+func TestComposite_HigherSensitivityRaisesTheReportedFloor(t *testing.T) {
+	events := makeCompositeStream(60)
+	ladder := []float64{0.5, 1.0, 2.0, 8.0}
+
+	var prev []float64
+	for _, s := range ladder {
+		d := NewCompositeDetectorWithSensitivity(s)
+		d.Reset()
+		var floors []float64
+		for _, e := range events {
+			d.Observe(e)
+			floors = append(floors, d.Detect().Signals["noise_floor"])
+		}
+		if prev != nil {
+			rose := 0
+			for i := range floors {
+				if floors[i] < prev[i] {
+					t.Errorf("sensitivity=%v: event %d floor %v is BELOW the lower sensitivity's %v", s, i, floors[i], prev[i])
+				}
+				if floors[i] > prev[i] {
+					rose++
+				}
+			}
+			if rose == 0 {
+				t.Errorf("sensitivity=%v: raising sensitivity moved no floor; the knob is inert", s)
+			}
+		}
+		prev = floors
+	}
+}
+
+// Severity must never INCREASE as sensitivity increases. This is the strong form
+// of the calibration contract: an operator raising sensitivity to suppress false
+// alarms must never be handed a MORE severe verdict on any event.
+//
+// (The weaker "never becomes non-STABLE" form is blind to a BACKLOGGED -> OVERLOADED
+// escalation, which would be just as wrong for a knob sold as a suppressor.)
+func TestComposite_SeverityNeverEscalatesWithSensitivity(t *testing.T) {
+	events := makeCompositeStream(60)
+	severity := map[Level]int{Stable: 0, Backlogged: 1, Overloaded: 2}
+
+	var prev []Level
+	for _, s := range []float64{0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0} {
+		cur := levelSequence(NewCompositeDetectorWithSensitivity(s), events)
+		if prev != nil {
+			for i := range cur {
+				if severity[cur[i]] > severity[prev[i]] {
+					t.Errorf("sensitivity=%v: event %d escalated %v -> %v as sensitivity ROSE", s, i, prev[i], cur[i])
+				}
+			}
+		}
+		prev = cur
+	}
+
+	// Positive control: the ladder must actually span a change in verdicts, or the
+	// no-escalation assertion above proves nothing.
+	lo := levelSequence(NewCompositeDetectorWithSensitivity(0.25), events)
+	hi := levelSequence(NewCompositeDetectorWithSensitivity(16.0), events)
+	differs := false
+	for i := range lo {
+		if lo[i] != hi[i] {
+			differs = true
+			break
+		}
+	}
+	if !differs {
+		t.Fatal("the sensitivity ladder changed no verdict; the monotonicity assertions were vacuous")
 	}
 }

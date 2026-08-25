@@ -97,6 +97,17 @@ func LoadSaturationConfig(path string) (SaturationConfig, error) {
 // --saturation-threshold-ms default and NewThresholdDetector's own fallback).
 const defaultThresholdMs = 5000.0
 
+// minCalibrationKnob is the smallest accepted value for a multiplicative
+// calibration knob (composite.sensitivity, backlog_drift.slope_k).
+//
+// A positive-but-subnormal multiplier passes an "is it > 0 and finite?" check yet
+// drives its PRODUCT with the noise floor to exactly zero, which decouples the
+// detector's Level from its Score and makes every event non-STABLE. No real
+// calibration needs a multiplier below 1e-6 -- the useful range is within a couple
+// of orders of magnitude of 1 -- so this bound rejects the degenerate regime
+// instead of silently producing nonsense verdicts (R1).
+const minCalibrationKnob = 1e-6
+
 // defaultCompositeSensitivityYAML is the sensitivity used when no
 // composite.sensitivity override is supplied. It mirrors
 // defaultCompositeSensitivity so the resolved value is explicit at this layer.
@@ -136,8 +147,8 @@ func buildDetector(name string, cfg SaturationConfig) (Detector, error) {
 		sensitivity := defaultCompositeSensitivityYAML
 		if cfg.Composite != nil && cfg.Composite.Sensitivity != nil {
 			sensitivity = *cfg.Composite.Sensitivity
-			if sensitivity <= 0 || math.IsNaN(sensitivity) || math.IsInf(sensitivity, 0) {
-				return nil, fmt.Errorf("saturation config: composite.sensitivity must be a finite value > 0, got %v", sensitivity)
+			if math.IsNaN(sensitivity) || math.IsInf(sensitivity, 0) || sensitivity < minCalibrationKnob {
+				return nil, fmt.Errorf("saturation config: composite.sensitivity must be a finite value >= %v, got %v", minCalibrationKnob, sensitivity)
 			}
 		}
 		return NewCompositeDetectorWithSensitivity(sensitivity), nil
@@ -300,8 +311,8 @@ func resolveBacklogDriftConfig(block *BacklogDriftBlock) (BacklogDriftConfig, er
 		// slope_k: 0 reach it would silently coerce the value to 3.0 instead of
 		// reporting the mistake (R1).
 		if block.SlopeK != nil {
-			if *block.SlopeK <= 0 || math.IsNaN(*block.SlopeK) || math.IsInf(*block.SlopeK, 0) {
-				return BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.slope_k must be a finite value > 0, got %v", *block.SlopeK)
+			if math.IsNaN(*block.SlopeK) || math.IsInf(*block.SlopeK, 0) || *block.SlopeK < minCalibrationKnob {
+				return BacklogDriftConfig{}, fmt.Errorf("saturation config: backlog_drift.slope_k must be a finite value >= %v, got %v", minCalibrationKnob, *block.SlopeK)
 			}
 			slopeK = *block.SlopeK
 		}

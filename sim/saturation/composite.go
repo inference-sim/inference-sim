@@ -44,7 +44,7 @@ func NewCompositeDetector() Detector {
 // construction. The clamp here is the in-process safety net for direct callers,
 // so the detector can never divide its banding by a nonsense floor.
 func NewCompositeDetectorWithSensitivity(sensitivity float64) Detector {
-	if sensitivity <= 0 || math.IsNaN(sensitivity) || math.IsInf(sensitivity, 0) {
+	if math.IsNaN(sensitivity) || math.IsInf(sensitivity, 0) || sensitivity < minCalibrationKnob {
 		sensitivity = defaultCompositeSensitivity
 	}
 	return &CompositeDetector{
