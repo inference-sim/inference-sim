@@ -119,17 +119,17 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 // time is meaningless and ignored. When true, closed-loop replay prefers the recorded
 // per-round think time over arrival-gap derivation.
 //
-// LOSSY SENTINEL (F1, #1484 review): a value of 0 means "not recorded", so a session
-// whose every round has a genuinely-zero recorded think time (real for Weka's
-// overlap-clamped rounds) reads as false here and falls back to the arrival-gap path
-// — which bundles service time into the gap (see the gap-derivation note below), the
-// very effect think_time_us exists to avoid. The impact is bounded (a ~0 recorded
-// think replaced by the recorded arrival gap); a non-lossy encoding is deferred to
-// #1608 (the Weka converter #1604 intentionally kept this lossy 0-sentinel). Pinned by
-// TestLoadTraceV2SessionBlueprints_AllZeroRecordedThink_FallsBackToGap.
+// PRESENCE, not non-zero (#1608): ThinkTimeUs is now a *int64, so a recorded &0 is
+// distinguishable from an absent (nil) value. A session whose every round genuinely
+// recorded think == 0 (real for Weka's overlap-clamped rounds) now reads as recorded
+// here and uses those zeros (back-to-back rounds) — it no longer falls back to the
+// arrival-gap path, which bundles service time into the gap (see the gap-derivation
+// note below), the very effect think_time_us exists to avoid. Only a truly absent
+// (nil) value falls back. Pinned by
+// TestLoadTraceV2SessionBlueprints_AllRecordedZeroThink_UsesRecordedZeros.
 func sessionHasRecordedThinkTime(rounds []TraceRecord) bool {
 	for i := 1; i < len(rounds); i++ {
-		if rounds[i].ThinkTimeUs != 0 {
+		if rounds[i].ThinkTimeUs != nil {
 			return true
 		}
 	}
@@ -247,7 +247,13 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			// i-1's end). Round 0 carries no think; rounds 1..N supply the sequence.
 			thinkTimes := make([]int, len(rounds)-1)
 			for i := 1; i < len(rounds); i++ {
-				t := rounds[i].ThinkTimeUs
+				// derefInt64(nil) == 0: a recorded &0 and (defensively) a nil interior
+				// round both yield 0 think. sessionHasRecordedThinkTime guarantees at
+				// least one round here is non-nil. No shipped converter produces a mixed
+				// interior (OTel leaves every round nil; Weka sets every round 1..N), so
+				// the nil-interior branch is unreachable today — the deref pins a defined
+				// behavior (0 think) if a future converter ever recorded think sparsely.
+				t := derefInt64(rounds[i].ThinkTimeUs)
 				if t < 0 {
 					t = 0 // defensive; LoadTraceV2 already rejects negatives (INV-3)
 				}

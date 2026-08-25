@@ -1137,8 +1137,8 @@ func TestTraceV2_ThinkTimeUs_RoundTrip(t *testing.T) {
 		headerPath := filepath.Join(dir, "h.yaml")
 		dataPath := filepath.Join(dir, "d.csv")
 		records := []TraceRecord{
-			{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ThinkTimeUs: 0},
-			{RequestID: 1, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, ThinkTimeUs: 5000},
+			{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ThinkTimeUs: i64p(0)},
+			{RequestID: 1, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, ThinkTimeUs: i64p(5000)},
 		}
 		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
 			t.Fatalf("ExportTraceV2: %v", err)
@@ -1151,8 +1151,41 @@ func TestTraceV2_ThinkTimeUs_RoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("LoadTraceV2: %v", err)
 		}
-		if loaded.Records[0].ThinkTimeUs != 0 || loaded.Records[1].ThinkTimeUs != 5000 {
-			t.Errorf("ThinkTimeUs round-trip = [%d, %d], want [0, 5000]", loaded.Records[0].ThinkTimeUs, loaded.Records[1].ThinkTimeUs)
+		// A recorded &0 round-trips as non-nil &0 (NOT nil) — the core #1608 distinction.
+		if loaded.Records[0].ThinkTimeUs == nil || *loaded.Records[0].ThinkTimeUs != 0 {
+			t.Errorf("recorded &0 round-trip = %v, want &0 (non-nil)", loaded.Records[0].ThinkTimeUs)
+		}
+		if loaded.Records[1].ThinkTimeUs == nil || *loaded.Records[1].ThinkTimeUs != 5000 {
+			t.Errorf("recorded &5000 round-trip = %v, want &5000", loaded.Records[1].ThinkTimeUs)
+		}
+	})
+
+	t.Run("mixed presence: nil / &0 / &N round-trip distinctly (#1608)", func(t *testing.T) {
+		dir := t.TempDir()
+		headerPath := filepath.Join(dir, "h.yaml")
+		dataPath := filepath.Join(dir, "d.csv")
+		// nil = not recorded (empty cell); &0 = recorded zero ("0"); &N = recorded N.
+		// think_time_us is the last trailing column, so a nil is an empty trailing field.
+		records := []TraceRecord{
+			{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ThinkTimeUs: nil},
+			{RequestID: 1, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, ThinkTimeUs: i64p(0)},
+			{RequestID: 2, SessionID: "A", RoundIndex: 2, InputTokens: 70, OutputTokens: 30, ThinkTimeUs: i64p(9000)},
+		}
+		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			t.Fatalf("ExportTraceV2: %v", err)
+		}
+		loaded, err := LoadTraceV2(headerPath, dataPath)
+		if err != nil {
+			t.Fatalf("LoadTraceV2: %v", err)
+		}
+		if loaded.Records[0].ThinkTimeUs != nil {
+			t.Errorf("record 0 (nil) round-trip = %v, want nil (empty cell)", loaded.Records[0].ThinkTimeUs)
+		}
+		if loaded.Records[1].ThinkTimeUs == nil || *loaded.Records[1].ThinkTimeUs != 0 {
+			t.Errorf("record 1 (&0) round-trip = %v, want &0 (distinct from nil)", loaded.Records[1].ThinkTimeUs)
+		}
+		if loaded.Records[2].ThinkTimeUs == nil || *loaded.Records[2].ThinkTimeUs != 9000 {
+			t.Errorf("record 2 (&9000) round-trip = %v, want &9000", loaded.Records[2].ThinkTimeUs)
 		}
 	})
 
@@ -1175,8 +1208,34 @@ func TestTraceV2_ThinkTimeUs_RoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("LoadTraceV2: %v", err)
 		}
-		if loaded.Records[1].ThinkTimeUs != 0 {
-			t.Errorf("absent column: ThinkTimeUs = %d, want 0", loaded.Records[1].ThinkTimeUs)
+		if loaded.Records[1].ThinkTimeUs != nil {
+			t.Errorf("absent column: ThinkTimeUs = %v, want nil", loaded.Records[1].ThinkTimeUs)
+		}
+	})
+
+	t.Run("lone recorded &0 emits column (BC-5, was omitted pre-#1608)", func(t *testing.T) {
+		dir := t.TempDir()
+		headerPath := filepath.Join(dir, "h.yaml")
+		dataPath := filepath.Join(dir, "d.csv")
+		// A single recorded &0 (with all other records nil) now emits the column —
+		// pre-#1608 the != 0 gate would have omitted it, losing the recorded zero.
+		records := []TraceRecord{
+			{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ThinkTimeUs: nil},
+			{RequestID: 1, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, ThinkTimeUs: i64p(0)},
+		}
+		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			t.Fatalf("ExportTraceV2: %v", err)
+		}
+		data, _ := os.ReadFile(dataPath)
+		if !strings.Contains(string(data), "think_time_us") {
+			t.Error("think_time_us column omitted when a record recorded &0 (must be present, BC-5)")
+		}
+		loaded, err := LoadTraceV2(headerPath, dataPath)
+		if err != nil {
+			t.Fatalf("LoadTraceV2: %v", err)
+		}
+		if loaded.Records[1].ThinkTimeUs == nil || *loaded.Records[1].ThinkTimeUs != 0 {
+			t.Errorf("lone &0 round-trip = %v, want &0", loaded.Records[1].ThinkTimeUs)
 		}
 	})
 }
@@ -1189,7 +1248,7 @@ func TestParseTraceRecord_NegativeThinkTime_Errors(t *testing.T) {
 	dataPath := filepath.Join(dir, "d.csv")
 	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
 	records := []TraceRecord{
-		{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ThinkTimeUs: 5000},
+		{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ThinkTimeUs: i64p(5000)},
 	}
 	if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
 		t.Fatalf("ExportTraceV2: %v", err)
@@ -1248,8 +1307,8 @@ func TestExportTraceV2_ThinkTimeUs_CoexistsWithAdapterAndXRequestID(t *testing.T
 	dp := filepath.Join(dir, "d.csv")
 	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "real"} // real → x_request_id emitted
 	records := []TraceRecord{
-		{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, Adapter: "sql-lora", XRequestID: "uuid-0", ThinkTimeUs: 0},
-		{RequestID: 1, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, Adapter: "sql-lora", XRequestID: "uuid-1", ThinkTimeUs: 7000},
+		{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, Adapter: "sql-lora", XRequestID: "uuid-0", ThinkTimeUs: i64p(0)},
+		{RequestID: 1, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, Adapter: "sql-lora", XRequestID: "uuid-1", ThinkTimeUs: i64p(7000)},
 	}
 	if err := ExportTraceV2(header, records, hp, dp); err != nil {
 		t.Fatalf("ExportTraceV2: %v", err)
@@ -1259,11 +1318,11 @@ func TestExportTraceV2_ThinkTimeUs_CoexistsWithAdapterAndXRequestID(t *testing.T
 		t.Fatalf("LoadTraceV2: %v", err)
 	}
 	r := loaded.Records[1]
-	if r.Adapter != "sql-lora" || r.XRequestID != "uuid-1" || r.ThinkTimeUs != 7000 {
-		t.Errorf("coexistence round-trip: adapter=%q xreq=%q think=%d; want sql-lora/uuid-1/7000", r.Adapter, r.XRequestID, r.ThinkTimeUs)
+	if r.Adapter != "sql-lora" || r.XRequestID != "uuid-1" || r.ThinkTimeUs == nil || *r.ThinkTimeUs != 7000 {
+		t.Errorf("coexistence round-trip: adapter=%q xreq=%q think=%v; want sql-lora/uuid-1/&7000", r.Adapter, r.XRequestID, r.ThinkTimeUs)
 	}
-	if loaded.Records[0].ThinkTimeUs != 0 {
-		t.Errorf("record 0 think_time_us = %d, want 0", loaded.Records[0].ThinkTimeUs)
+	if loaded.Records[0].ThinkTimeUs == nil || *loaded.Records[0].ThinkTimeUs != 0 {
+		t.Errorf("record 0 think_time_us = %v, want &0 (recorded zero, non-nil)", loaded.Records[0].ThinkTimeUs)
 	}
 }
 

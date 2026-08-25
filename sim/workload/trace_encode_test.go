@@ -2,15 +2,20 @@ package workload
 
 import "testing"
 
+// i64p returns a pointer to v, for constructing a RECORDED (non-nil) think time in
+// tests (#1608). A recorded &0 (i64p(0)) is distinct from a nil (not-recorded) think:
+// TraceRecord.ThinkTimeUs and NormalizedRound.ThinkUs are *int64 presence signals.
+func i64p(v int64) *int64 { return &v }
+
 // TestEncodeSessionToTraceRecords_DeltaLaw verifies the shared encoder's core
 // contract (#1479): absolute per-round inputs → per-round deltas, round-0 full,
 // non-monotone clamp to 0, Model left empty (routing safety), RequestID left 0,
 // and ThinkUs surfaced onto the think_time_us column (#1478).
 func TestEncodeSessionToTraceRecords_DeltaLaw(t *testing.T) {
 	rounds := []NormalizedRound{
-		{InputTokensAbs: 100, OutputTokens: 50, ArrivalUs: 0, Status: "ok"},
-		{InputTokensAbs: 200, OutputTokens: 80, ArrivalUs: 5000, ThinkUs: 300, Status: "ok"},
-		{InputTokensAbs: 120, OutputTokens: 10, ArrivalUs: 9000, Status: "error"}, // non-monotone → clamp
+		{InputTokensAbs: 100, OutputTokens: 50, ArrivalUs: 0, Status: "ok"}, // round 0: ThinkUs nil (not recorded)
+		{InputTokensAbs: 200, OutputTokens: 80, ArrivalUs: 5000, ThinkUs: i64p(300), Status: "ok"},
+		{InputTokensAbs: 120, OutputTokens: 10, ArrivalUs: 9000, Status: "error"}, // non-monotone → clamp; ThinkUs nil
 	}
 	recs := EncodeSessionToTraceRecords("sess", rounds)
 	if len(recs) != 3 {
@@ -44,9 +49,13 @@ func TestEncodeSessionToTraceRecords_DeltaLaw(t *testing.T) {
 		}
 	}
 
-	// ThinkUs → think_time_us column; arrival, output, status propagate.
-	if recs[0].ThinkTimeUs != 0 || recs[1].ThinkTimeUs != 300 {
-		t.Errorf("ThinkTimeUs = [%d, %d], want [0, 300]", recs[0].ThinkTimeUs, recs[1].ThinkTimeUs)
+	// ThinkUs → think_time_us column: nil propagates as nil (not recorded), a set
+	// value propagates through (#1608). Round 0 nil; round 1 recorded &300.
+	if recs[0].ThinkTimeUs != nil {
+		t.Errorf("round0 ThinkTimeUs = %v, want nil (not recorded)", recs[0].ThinkTimeUs)
+	}
+	if recs[1].ThinkTimeUs == nil || *recs[1].ThinkTimeUs != 300 {
+		t.Errorf("round1 ThinkTimeUs = %v, want &300", recs[1].ThinkTimeUs)
 	}
 	if recs[1].ArrivalTimeUs != 5000 {
 		t.Errorf("round1 ArrivalTimeUs = %d, want 5000", recs[1].ArrivalTimeUs)

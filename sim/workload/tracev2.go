@@ -185,7 +185,14 @@ type TraceRecord struct {
 	FinishReason      string // server-reported finish_reason ("stop", "length", "abort", etc.); empty = not recorded
 	XRequestID        string // client-generated UUID sent as x-request-id header (real-mode only); empty = not recorded
 	Adapter           string // LoRA adapter id serving this request (registry key; #1464); empty = base-model-only
-	ThinkTimeUs       int64  // recorded per-round client think time in µs (gap from previous request's end). Set by agentic-trace converters (#1478); preferred over arrival-gap derivation in closed-loop replay. NOTE: 0 is a LOSSY SENTINEL for "not recorded" — a genuinely-zero recorded think time (e.g. Weka's overlap-clamped rounds) is indistinguishable from an absent column, so an all-zero session falls back to arrival-gap derivation. A non-lossy encoding (distinguishing recorded-0 from absent) is deferred to #1608 (the Weka converter #1604 intentionally kept this lossy 0-sentinel).
+	// ThinkTimeUs is the recorded per-round client think time in µs (gap from the
+	// previous request's end), set by agentic-trace converters (#1478) and preferred
+	// over arrival-gap derivation in closed-loop replay. It is a PRESENCE signal
+	// (#1608): nil = not recorded (CSV cell empty; replay falls back to arrival gaps),
+	// non-nil = recorded — INCLUDING a recorded &0 (CSV cell "0"), which a genuinely-
+	// zero recorded think (e.g. Weka's overlap-clamped rounds) uses so it is no longer
+	// conflated with "absent". A negative recorded value is a load error (INV-3).
+	ThinkTimeUs *int64
 }
 
 // TraceV2 combines header and records for a complete trace.
@@ -262,12 +269,13 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 	}
 
 	// Conditionally include think_time_us column (#1478): present iff any record carries
-	// a non-zero recorded think time. Trailing position (like x_request_id / adapter) keeps
-	// the positional parser's index math untouched. Omitted when no record has it, so
-	// existing traces (e.g. observe, generated) add no column (INV-6 byte-identity).
+	// a RECORDED (non-nil) think time — including a recorded &0 (#1608). Trailing position
+	// (like x_request_id / adapter) keeps the positional parser's index math untouched.
+	// Omitted when no record recorded think, so traces that never set it (e.g. observe,
+	// generated, convert otel) add no column (INV-6 byte-identity).
 	includeThinkTime := false
 	for _, r := range records {
-		if r.ThinkTimeUs != 0 {
+		if r.ThinkTimeUs != nil {
 			includeThinkTime = true
 			break
 		}
@@ -370,9 +378,14 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 		if includeAdapter {
 			row = append(row, r.Adapter)
 		}
-		// Append think_time_us at end (#1478).
+		// Append think_time_us at end (#1478). A nil (not-recorded) think writes an
+		// empty cell so it is distinguishable from a recorded &0 on reload (#1608).
 		if includeThinkTime {
-			row = append(row, strconv.FormatInt(r.ThinkTimeUs, 10))
+			if r.ThinkTimeUs != nil {
+				row = append(row, strconv.FormatInt(*r.ThinkTimeUs, 10))
+			} else {
+				row = append(row, "")
+			}
 		}
 		if err := writer.Write(row); err != nil {
 			return fmt.Errorf("writing CSV row %d: %w", r.RequestID, err)
@@ -642,18 +655,20 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 	}
 
 	// Optional think_time_us at trailing column (#1478): looked up by absolute header
-	// position so the positional index math above is unaffected. Negative values are
-	// rejected — recorded think time cannot be negative (INV-3).
-	var thinkTimeUs int64
+	// position so the positional index math above is unaffected. An EMPTY cell means
+	// "not recorded" and yields a nil pointer (#1608), distinct from a recorded "0";
+	// negative values are rejected — recorded think time cannot be negative (INV-3).
+	var thinkTimeUs *int64
 	if thinkTimeUsIdx >= 0 && thinkTimeUsIdx < len(row) {
 		if v := strings.TrimSpace(row[thinkTimeUsIdx]); v != "" {
-			thinkTimeUs, err = strconv.ParseInt(v, 10, 64)
-			if err != nil {
-				return nil, fmt.Errorf("parsing think_time_us %q: %w", v, err)
+			parsed, perr := strconv.ParseInt(v, 10, 64)
+			if perr != nil {
+				return nil, fmt.Errorf("parsing think_time_us %q: %w", v, perr)
 			}
-			if thinkTimeUs < 0 {
-				return nil, fmt.Errorf("parsing think_time_us: negative value %d not allowed", thinkTimeUs)
+			if parsed < 0 {
+				return nil, fmt.Errorf("parsing think_time_us: negative value %d not allowed", parsed)
 			}
+			thinkTimeUs = &parsed
 		}
 	}
 

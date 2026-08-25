@@ -289,8 +289,8 @@ func TestObserveCorpusMode_MultiRoundAccumulate(t *testing.T) {
 	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
-		{RequestID: 1, SessionID: "s0", RoundIndex: 1, InputTokens: 40, OutputTokens: 10, ArrivalTimeUs: 1000, ThinkTimeUs: 1000, Status: "ok"},
-		{RequestID: 2, SessionID: "s0", RoundIndex: 2, InputTokens: 25, OutputTokens: 10, ArrivalTimeUs: 2000, ThinkTimeUs: 1000, Status: "ok"},
+		{RequestID: 1, SessionID: "s0", RoundIndex: 1, InputTokens: 40, OutputTokens: 10, ArrivalTimeUs: 1000, ThinkTimeUs: i64p(1000), Status: "ok"},
+		{RequestID: 2, SessionID: "s0", RoundIndex: 2, InputTokens: 25, OutputTokens: 10, ArrivalTimeUs: 2000, ThinkTimeUs: i64p(1000), Status: "ok"},
 	}
 	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
 		t.Fatalf("export corpus: %v", err)

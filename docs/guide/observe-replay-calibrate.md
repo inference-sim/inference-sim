@@ -395,8 +395,11 @@ The reader filters each session's `requests[]` to the **linear main-agent stream
 absorbed into the following main turn's think gap. Per-round **pure client think** is
 recomputed as `max(0, t_i − t_{i-1} − api_time_{i-1})` between consecutive main turns
 (carried in the `think_time_us` column, `--max-think-time` default `0` = uncapped,
-since Weka gaps are genuine away-from-keyboard times). The recorded `claude-*` model
-names are dropped during conversion (same routing-safety reason as OTel).
+since Weka gaps are genuine away-from-keyboard times). The column is **non-lossy**
+(#1608): a genuinely-zero recomputed think (an overlapping turn) is recorded as `&0`,
+distinct from a not-recorded (empty) cell, so an all-overlap session replays with the
+recorded zeros rather than degrading to arrival-gap think. The recorded `claude-*`
+model names are dropped during conversion (same routing-safety reason as OTel).
 
 !!! warning "Weka replay ISL is an upper bound (context compaction)"
     Weka input token counts are very large (p50 ≈ 110K, p90 ≈ 395K), so the
@@ -408,8 +411,8 @@ names are dropped during conversion (same routing-safety reason as OTel).
     total by ≈3–4×** (+312% on that dataset). Treat replayed input length, KV pressure,
     and hit-rate as a substantial **upper bound**, not a faithful reproduction of the
     recorded workload. (This is a property of the accumulate delta law, not the
-    converter; faithful compaction support is tracked in #1609, and the separate
-    think-time lossy-0 sentinel corner in #1608.)
+    converter; faithful compaction support is tracked in #1609. The separate
+    think-time lossy-0 sentinel was resolved in #1608 — see the non-lossy note above.)
 
 ---
 

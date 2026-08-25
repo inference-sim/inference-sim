@@ -234,8 +234,10 @@ go build -o blis main.go
 # traffic (+312% on this dataset). Replayed input length / KV pressure / hit-rate is therefore
 # a substantial UPPER BOUND — do NOT read it as a faithful reproduction of the recorded ISL.
 # (Property of the PR-A/PR-B accumulate delta law, not this converter; the conversion is exact
-# per that law. Faithful compaction support is tracked in #1609; the separate think-time
-# lossy-0 sentinel is #1608.)
+# per that law. Faithful compaction support is tracked in #1609.) The recorded think time is
+# non-lossy (#1608): a genuinely-zero recorded think (an overlapping turn) is a &0 in the
+# think_time_us column, distinct from a not-recorded (empty) cell, so an all-overlap session
+# uses the recorded zeros rather than degrading to arrival-gap think at replay.
 ./blis convert weka --input traces.jsonl --trace-output corpus \
   --context-growth accumulate --max-think-time 0
 #
