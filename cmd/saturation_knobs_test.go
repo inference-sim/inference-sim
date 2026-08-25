@@ -184,3 +184,71 @@ func TestSaturationKnobs_MisspelledKnobIsRejected(t *testing.T) {
 		}
 	}
 }
+
+// peak-rate must be selectable and tunable through the real flag path, and its
+// threshold must move the headline label a user reads on stdout. This is the
+// end-to-end face of the detector's calibration contract.
+func TestSaturationKnobs_PeakRateThresholdChangesTheReportedLabel(t *testing.T) {
+	defer resetSaturationGlobals()
+	reqs := risingRequests(120)
+
+	loose := labelsFor(t, "peak-rate", writeSatConfig(t, "peak_rate:\n  threshold: 0.001\n"), reqs)
+	if loose["peak-rate"] == saturation.Stable {
+		t.Fatalf("a tiny threshold did not fire on a rising-backlog fixture (%v); the suppression assertion would be vacuous", loose)
+	}
+
+	tight := labelsFor(t, "peak-rate", writeSatConfig(t, "peak_rate:\n  threshold: 1e9\n"), reqs)
+	if tight["peak-rate"] != saturation.Stable {
+		t.Errorf("a huge threshold did not suppress the label: loose=%v tight=%v", loose, tight)
+	}
+}
+
+// Every peak_rate knob must be rejected out of range, with the error naming the
+// field so an operator can find it.
+func TestSaturationKnobs_PeakRateInvalidValuesFailNamingTheField(t *testing.T) {
+	defer resetSaturationGlobals()
+
+	for _, tc := range []struct{ config, wantField string }{
+		{"peak_rate:\n  threshold: 0\n", "peak_rate.threshold"},
+		{"peak_rate:\n  threshold: -1\n", "peak_rate.threshold"},
+		{"peak_rate:\n  threshold: 5e-324\n", "peak_rate.threshold"},
+		{"peak_rate:\n  threshold: .nan\n", "peak_rate.threshold"},
+		{"peak_rate:\n  min_observations: 0\n", "peak_rate.min_observations"},
+		{"peak_rate:\n  min_observations: -5\n", "peak_rate.min_observations"},
+		{"peak_rate:\n  consecutive_k: 0\n", "peak_rate.consecutive_k"},
+		// Below 1 the OVERLOADED boundary would sit under the firing threshold, so
+		// BACKLOGGED would be unreachable and the detector would silently lose a level.
+		{"peak_rate:\n  overload_multiple: 0.5\n", "peak_rate.overload_multiple"},
+		{"peak_rate:\n  overload_multiple: 0\n", "peak_rate.overload_multiple"},
+	} {
+		resetSaturationGlobals()
+		detectorName = "peak-rate"
+		saturationConfigPath = writeSatConfig(t, tc.config)
+		_, err := resolveSaturation()
+		if err == nil {
+			t.Errorf("%q: expected an error, got none", tc.config)
+			continue
+		}
+		if !strings.Contains(err.Error(), tc.wantField) {
+			t.Errorf("error should name %q, got: %v", tc.wantField, err)
+		}
+	}
+}
+
+// A misspelled peak_rate knob must be rejected rather than silently read as the
+// default (R10).
+func TestSaturationKnobs_PeakRateMisspelledKnobIsRejected(t *testing.T) {
+	defer resetSaturationGlobals()
+	for _, cfg := range []string{
+		"peak_rate:\n  threshhold: 1.0\n",
+		"peak_rate:\n  min_observation: 100\n",
+		"peak_rate:\n  overload_multipler: 3.0\n",
+	} {
+		resetSaturationGlobals()
+		detectorName = "peak-rate"
+		saturationConfigPath = writeSatConfig(t, cfg)
+		if _, err := resolveSaturation(); err == nil {
+			t.Errorf("misspelled knob %q was accepted; a typo would silently read as the default", cfg)
+		}
+	}
+}

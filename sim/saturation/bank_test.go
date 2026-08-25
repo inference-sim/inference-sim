@@ -179,7 +179,15 @@ func TestBank_AllEqualsExplicitList(t *testing.T) {
 	}
 
 	all := run(AllDetectorNames())
-	explicit := run([]string{"threshold", "backlog-drift", "composite"}) // scrambled order
+
+	// The explicit list is the full roster in REVERSE, so it exercises the
+	// order-independence guarantee while staying exhaustive as detectors are added
+	// (a hardcoded list would silently become a subset and stop testing `all`).
+	scrambled := AllDetectorNames()
+	for i, j := 0, len(scrambled)-1; i < j; i, j = i+1, j-1 {
+		scrambled[i], scrambled[j] = scrambled[j], scrambled[i]
+	}
+	explicit := run(scrambled)
 
 	assertRecordsEqual(t, all, explicit)
 }

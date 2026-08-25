@@ -19,6 +19,8 @@ import (
 //   - threshold:      the ThresholdDetector's single knob (threshold_ms)
 //   - backlog_drift:  the BacklogDriftDetector's tuning knobs (mirrors
 //     BacklogDriftConfig)
+//   - peak_rate:      the PeakRateDetector's knobs (threshold, min_observations,
+//     consecutive_k, overload_multiple)
 //
 // Every detector is now tunable. That is a correctness property, not a
 // convenience: detector scores are comparable only when each detector has first
@@ -33,6 +35,30 @@ type SaturationConfig struct {
 	Composite    *CompositeBlock    `yaml:"composite,omitempty"`
 	Threshold    *ThresholdBlock    `yaml:"threshold,omitempty"`
 	BacklogDrift *BacklogDriftBlock `yaml:"backlog_drift,omitempty"`
+	PeakRate     *PeakRateBlock     `yaml:"peak_rate,omitempty"`
+}
+
+// PeakRateBlock overrides the PeakRateDetector's parameters. Every field is
+// optional; absent fields keep the campaign-validated default.
+type PeakRateBlock struct {
+	// Threshold is the false-alarm calibration knob: fire when R_t = peak/elapsed
+	// exceeds it. Larger fires less. Units are backlog per second, so it is
+	// calibrated per deployment.
+	Threshold *float64 `yaml:"threshold"`
+	// MinObservations gates the verdict until the run is long enough for R_t to
+	// separate healthy from overloaded (see PeakRateDetector's horizon note).
+	//
+	// It suppresses PER-EVENT verdicts before the gate, which is what the
+	// --saturation-report trace shows. It does NOT move the stdout headline label:
+	// that is a trailing-window plurality vote, and the trailing window is always
+	// past the gate. Use `threshold` to calibrate the headline false-alarm rate;
+	// use this to keep the trace quiet through a known ramp-up.
+	MinObservations *int `yaml:"min_observations"`
+	// ConsecutiveK is the successive breaches required before firing.
+	ConsecutiveK *int `yaml:"consecutive_k"`
+	// OverloadMultiple separates BACKLOGGED from OVERLOADED. Must be >= 1: below 1
+	// the BACKLOGGED band would be unsatisfiable.
+	OverloadMultiple *float64 `yaml:"overload_multiple"`
 }
 
 // CompositeBlock overrides the CompositeDetector's noise-floor multiplier.
@@ -186,6 +212,12 @@ func buildDetector(name string, cfg SaturationConfig) (Detector, error) {
 			return nil, err
 		}
 		return NewBacklogDriftDetectorWithConfig(bdc), nil
+	case "peak-rate":
+		prc, err := resolvePeakRateConfig(cfg.PeakRate)
+		if err != nil {
+			return nil, err
+		}
+		return newPeakRateDetector(prc), nil
 	default:
 		return nil, unknownDetectorError(name)
 	}
@@ -215,6 +247,7 @@ func blockOwners() []blockOwner {
 		{"composite", "composite", func(c SaturationConfig) bool { return c.Composite != nil }},
 		{"threshold", "threshold", func(c SaturationConfig) bool { return c.Threshold != nil }},
 		{"backlog_drift", "backlog-drift", func(c SaturationConfig) bool { return c.BacklogDrift != nil }},
+		{"peak_rate", "peak-rate", func(c SaturationConfig) bool { return c.PeakRate != nil }},
 	}
 }
 
@@ -354,4 +387,55 @@ func resolveBacklogDriftConfig(block *BacklogDriftBlock) (BacklogDriftConfig, er
 	)
 	resolved.SlopeK = slopeK
 	return resolved, nil
+}
+
+// resolvePeakRateConfig merges a PeakRateBlock over the campaign-validated
+// defaults and validates the result, returning errors that name the YAML field
+// rather than panicking (R6).
+//
+// Bounds worth noting:
+//   - threshold shares the minCalibrationKnob floor: a subnormal multiplier passes
+//     a naive positivity check but underflows the score denominator to zero,
+//     decoupling Level from Score.
+//   - overload_multiple must be >= 1. Below 1 the OVERLOADED boundary would sit
+//     BELOW the firing threshold, so BACKLOGGED would be unreachable and the
+//     detector would silently lose a level (mirrors the cross-field ordering check
+//     backlog_drift's drain ratios get).
+func resolvePeakRateConfig(block *PeakRateBlock) (peakRateConfig, error) {
+	out := peakRateConfig{
+		Threshold:        defaultPeakRateThreshold,
+		MinObservations:  defaultPeakRateMinObservations,
+		ConsecutiveK:     defaultPeakRateConsecutiveK,
+		OverloadMultiple: defaultPeakRateOverloadMultiple,
+	}
+	if block == nil {
+		return out, nil
+	}
+	if block.Threshold != nil {
+		v := *block.Threshold
+		if math.IsNaN(v) || math.IsInf(v, 0) || v < minCalibrationKnob {
+			return peakRateConfig{}, fmt.Errorf("saturation config: peak_rate.threshold must be a finite value >= %v, got %v", minCalibrationKnob, v)
+		}
+		out.Threshold = v
+	}
+	if block.MinObservations != nil {
+		if *block.MinObservations <= 0 {
+			return peakRateConfig{}, fmt.Errorf("saturation config: peak_rate.min_observations must be > 0, got %d", *block.MinObservations)
+		}
+		out.MinObservations = *block.MinObservations
+	}
+	if block.ConsecutiveK != nil {
+		if *block.ConsecutiveK <= 0 {
+			return peakRateConfig{}, fmt.Errorf("saturation config: peak_rate.consecutive_k must be > 0, got %d", *block.ConsecutiveK)
+		}
+		out.ConsecutiveK = *block.ConsecutiveK
+	}
+	if block.OverloadMultiple != nil {
+		v := *block.OverloadMultiple
+		if math.IsNaN(v) || math.IsInf(v, 0) || v < 1 {
+			return peakRateConfig{}, fmt.Errorf("saturation config: peak_rate.overload_multiple must be a finite value >= 1 (below 1 the BACKLOGGED band is unsatisfiable), got %v", v)
+		}
+		out.OverloadMultiple = v
+	}
+	return out, nil
 }

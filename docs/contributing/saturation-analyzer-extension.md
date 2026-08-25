@@ -54,6 +54,7 @@ doesn't change on the events it ignores.
 | **composite** | STABLE / BACKLOGGED / OVERLOADED | `max(rate_deficit, quartile-filtered latency_trend)` banded against a `1/√arrivals` noise floor, scaled by `sensitivity` (default 1.0). |
 | **threshold** | STABLE / OVERLOADED | Mean E2E latency vs. a configurable threshold (default 5000ms). Binary — never emits BACKLOGGED. |
 | **backlog-drift** | STABLE / BACKLOGGED / OVERLOADED | Online OLS slope of in-flight (`arrivals − completions`) over a trailing window, banded against `slope_k × noiseFloor` (default `slope_k` = 3.0). |
+| **peak-rate** | STABLE / BACKLOGGED / OVERLOADED | `R_t = Peak_t / t` — the backlog high-water mark over elapsed time. Needs no latency target and no capacity estimate. Fires when `R_t` holds above `threshold`. |
 
 ## Running detectors
 
@@ -100,6 +101,13 @@ backlog_drift:
   saturated_drain_ratio: 0.95
   transient_drain_ratio: 0.98
   slope_k: 3.0             # BACKLOGGED/OVERLOADED boundary multiplier
+
+# peak_rate: the reflected-random-walk detector
+peak_rate:
+  threshold: 0.5           # fire when peak/elapsed exceeds this (backlog per second)
+  min_observations: 20     # hold the verdict until the run is long enough
+  consecutive_k: 3         # successive breaches before firing (anti-flapping)
+  overload_multiple: 3.0   # OVERLOADED above this multiple of threshold (>= 1)
 ```
 
 **Calibrating a knob.** Every knob above trades sensitivity against false alarms,
@@ -117,6 +125,29 @@ Two bounds worth knowing:
   `noiseFloor < slope <= slope_k×noiseFloor`), so the detector reports only STABLE
   and OVERLOADED. That is a legitimate "maximally severe" setting, but a sweep that
   crosses 1 is comparing a two-level detector against a three-level one.
+  `peak_rate.overload_multiple` is rejected below 1 for the same reason.
+
+### Calibrating peak-rate specifically
+
+`peak_rate.threshold` is in **backlog per second**, so its calibrated value depends
+on the deployment's capacity — it is not portable between a 15 rps and a 150 rps
+service. Calibrate it the same way as any other knob: run a workload you believe is
+healthy and raise `threshold` until it stops firing.
+
+Two properties worth knowing before you sweep it:
+
+- **`min_observations` does not move the stdout headline.** It suppresses per-event
+  verdicts before the gate (visible in `--saturation-report`), but the headline is a
+  trailing-window plurality vote and that window is always past the gate. Use
+  `threshold` for the headline false-alarm rate; use `min_observations` to keep the
+  trace quiet through a known ramp-up.
+- **Recovery after a transient takes `peak / threshold` completions.** Because the
+  numerator is an all-time high-water mark, a burst that drives the peak to `P` keeps
+  the detector firing until roughly `P / threshold` further requests have completed
+  (verified: predicted 3483 vs observed 3484 completions). For a post-hoc verdict on a
+  finished run that is usually what you want — the run *did* saturate — but it means
+  the detector answers "did this run saturate?" rather than "is it saturated right
+  now?"
 
 Absent block = defaults; a partial block overrides only the fields it names; an
 unknown key or out-of-range value errors naming the field. Block ownership is

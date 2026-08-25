@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim/saturation"
 )
 
 // TestSaturationStdout_FinalLabelShape is the #1517 stdout contract, replacing the
@@ -125,8 +127,10 @@ func TestSaturationStdout_FinalLabelShape(t *testing.T) {
 			t.Errorf("--detectors all: detector %q has invalid label %q", name, label)
 		}
 	}
-	if len(bankSat) != 3 {
-		t.Errorf("--detectors all saturation should have exactly 3 keys, got %d (%v)", len(bankSat), bankSat)
+	// Derived from the roster so a new detector cannot silently make this assertion
+	// a subset check.
+	if want := len(saturation.AllDetectorNames()); len(bankSat) != want {
+		t.Errorf("--detectors all saturation should have exactly %d keys (one per roster entry), got %d (%v)", want, len(bankSat), bankSat)
 	}
 
 	// INV-6: two identical --detectors all runs produce byte-identical stdout.
