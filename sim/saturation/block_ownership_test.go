@@ -294,3 +294,33 @@ func TestBank_TunedDetectorRecordsMatchUnderAll(t *testing.T) {
 		}
 	}
 }
+
+// An unknown detector name must be reported as such, even when a VALID config
+// block is also present. Ownership is meaningless for a name that is not a
+// detector, so complaining about the block hides the actual mistake (the typo) and
+// omits the valid names the user needs.
+//
+// This is a behavioral contract about which error a user receives, and it is the
+// error that tells them what to fix.
+func TestBuildDetector_UnknownNameIsReportedBeforeOwnership(t *testing.T) {
+	ms := 5000.0
+	one := 1.0
+	for _, cfg := range []SaturationConfig{
+		{},
+		{Threshold: &ThresholdBlock{ThresholdMs: &ms}},
+		{Composite: &CompositeBlock{Sensitivity: &one}},
+	} {
+		_, err := BuildDetector("bogus-detector", cfg)
+		if err == nil {
+			t.Fatal("expected an error for an unknown detector name")
+		}
+		if !strings.Contains(err.Error(), "bogus-detector") {
+			t.Errorf("error should name the unknown detector, got: %v", err)
+		}
+		for _, valid := range AllDetectorNames() {
+			if !strings.Contains(err.Error(), valid) {
+				t.Errorf("error should list the valid name %q so the user can correct the typo, got: %v", valid, err)
+			}
+		}
+	}
+}

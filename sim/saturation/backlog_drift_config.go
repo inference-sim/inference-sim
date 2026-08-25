@@ -44,8 +44,16 @@ type BacklogDriftConfig struct {
 	// directly.
 	//
 	// A user-supplied slope_k never relies on that fallback:
-	// resolveBacklogDriftConfig rejects a non-positive or non-finite value with
-	// an error naming the YAML field (R1/R6).
+	// resolveBacklogDriftConfig rejects a non-positive, non-finite, or
+	// degenerately-small value with an error naming the YAML field (R1/R6).
+	//
+	// VALUES <= 1 COLLAPSE THE DETECTOR TO TWO LEVELS. The BACKLOGGED band is
+	// `noiseFloor < slope <= slope_k*noiseFloor`, which is unsatisfiable when
+	// slope_k <= 1, so every rising trace reports OVERLOADED directly. Such values
+	// are accepted (they are a legitimate way to make the detector maximally
+	// severe) but an operator sweeping slope_k downward to calibrate should know
+	// that below 1 they are comparing a two-level detector against a three-level
+	// one.
 	SlopeK float64
 }
 
