@@ -15,20 +15,31 @@ import (
 // SaturationConfig is the strict-YAML replacement for the 11 saturation tuning
 // flags (#1516). It carries one optional block per parameterized detector:
 //
+//   - composite:      the CompositeDetector's noise-floor knob (sensitivity, #1614)
 //   - threshold:      the ThresholdDetector's single knob (threshold_ms)
 //   - backlog_drift:  the BacklogDriftDetector's tuning knobs (mirrors
 //     BacklogDriftConfig)
 //
-// composite has no tunable parameters, so it has no block — a "composite:" key
-// therefore fails strict parsing (KnownFields), which is the intended contract.
+// Every detector is now tunable. That is a correctness property, not a
+// convenience: detector scores are comparable only when each detector has first
+// been calibrated to the same false-alarm rate, and a detector with no knob
+// cannot be moved onto that rate — it can only be disqualified (#1614).
 //
 // Fields are pointers so an absent key keeps the detector's default while a
 // present key overrides only the field it names (R9: distinguish "unset" from
 // "zero"). An empty file parses to a SaturationConfig with all-nil blocks, which
 // means "all defaults" — not an error.
 type SaturationConfig struct {
+	Composite    *CompositeBlock    `yaml:"composite,omitempty"`
 	Threshold    *ThresholdBlock    `yaml:"threshold,omitempty"`
 	BacklogDrift *BacklogDriftBlock `yaml:"backlog_drift,omitempty"`
+}
+
+// CompositeBlock overrides the CompositeDetector's noise-floor multiplier.
+// A larger sensitivity raises the floor, so the detector fires less; 1.0 is the
+// historical behaviour.
+type CompositeBlock struct {
+	Sensitivity *float64 `yaml:"sensitivity"`
 }
 
 // ThresholdBlock overrides the ThresholdDetector's mean-E2E threshold.
@@ -54,7 +65,8 @@ type BacklogDriftBlock struct {
 
 // LoadSaturationConfig reads and strictly parses a saturation config file. An
 // empty path returns the zero config (all defaults) without touching disk.
-// Unknown keys (including a "composite:" block) error via KnownFields(true).
+// Unknown keys error via KnownFields(true) — including a misspelled field inside
+// an otherwise valid block.
 func LoadSaturationConfig(path string) (SaturationConfig, error) {
 	var cfg SaturationConfig
 	if path == "" {
@@ -80,6 +92,11 @@ func LoadSaturationConfig(path string) (SaturationConfig, error) {
 // no threshold.threshold_ms override is supplied (matches the retired
 // --saturation-threshold-ms default and NewThresholdDetector's own fallback).
 const defaultThresholdMs = 5000.0
+
+// defaultCompositeSensitivityYAML is the sensitivity used when no
+// composite.sensitivity override is supplied. It mirrors
+// defaultCompositeSensitivity so the resolved value is explicit at this layer.
+const defaultCompositeSensitivityYAML = defaultCompositeSensitivity
 
 // BuildDetector constructs the named detector, applying any relevant overrides
 // from cfg. Returns an error (never panics — R6) when a name is unknown, a
@@ -112,7 +129,14 @@ func BuildDetector(name string, cfg SaturationConfig) (Detector, error) {
 func buildDetector(name string, cfg SaturationConfig) (Detector, error) {
 	switch name {
 	case "composite":
-		return NewCompositeDetector(), nil
+		sensitivity := defaultCompositeSensitivityYAML
+		if cfg.Composite != nil && cfg.Composite.Sensitivity != nil {
+			sensitivity = *cfg.Composite.Sensitivity
+			if sensitivity <= 0 || math.IsNaN(sensitivity) || math.IsInf(sensitivity, 0) {
+				return nil, fmt.Errorf("saturation config: composite.sensitivity must be a finite value > 0, got %v", sensitivity)
+			}
+		}
+		return NewCompositeDetectorWithSensitivity(sensitivity), nil
 	case "threshold":
 		thresholdMs := defaultThresholdMs
 		if cfg.Threshold != nil && cfg.Threshold.ThresholdMs != nil {
