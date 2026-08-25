@@ -95,9 +95,11 @@ func TestBacklogDrift_ZeroSlopeKBehavesAsDefault(t *testing.T) {
 		}
 	})
 
-	t.Run("DefaultBacklogDriftConfig", func(t *testing.T) {
-		if got := DefaultBacklogDriftConfig().effectiveSlopeK(); got != backlogDriftSlopeK {
-			t.Errorf("effectiveSlopeK() = %v, want the package default %v", got, backlogDriftSlopeK)
+	t.Run("DefaultBacklogDriftConfig matches an explicit default", func(t *testing.T) {
+		got := countLevels(NewBacklogDriftDetectorWithConfig(DefaultBacklogDriftConfig()), events)
+		want := countLevels(NewBacklogDriftDetector(), events)
+		if got[Overloaded] != want[Overloaded] || got[Backlogged] != want[Backlogged] {
+			t.Errorf("DefaultBacklogDriftConfig diverged from the default constructor: got %v, want %v", got, want)
 		}
 	})
 }
@@ -159,14 +161,29 @@ func TestBacklogDrift_ReportsActiveSlopeKInSignals(t *testing.T) {
 		}
 	}
 
-	// A default-configured detector must report the documented default rather
-	// than a zero, so the diagnostic never misdescribes the banding.
-	d := NewBacklogDriftDetector()
+	// An UNCONFIGURED detector must report a POSITIVE multiplier, never a zero: a
+	// zero would misdescribe the banding, and would mean the detector bands every
+	// rising trace OVERLOADED. Asserted as the property that matters rather than
+	// against the constant, so the test survives a change of default.
+	//
+	// The config below leaves slope_k unset but keeps the small window, so the
+	// comparison isolates the multiplier (the 60s production window of
+	// NewBacklogDriftDetector would complete no bucket on this fixture).
+	unset := NewBacklogDriftConfig(1*time.Second, 5, 2.0, 0.2, 0.95, 2, 1, 0.95, 0.98)
+	d := NewBacklogDriftDetectorWithConfig(unset)
 	d.Reset()
 	for _, e := range events {
 		d.Observe(e)
 	}
-	if got := d.Detect().Signals["slope_k"]; got != backlogDriftSlopeK {
-		t.Errorf("default detector reported slope_k=%v, want %v", got, backlogDriftSlopeK)
+	reported := d.Detect().Signals["slope_k"]
+	if reported <= 0 {
+		t.Fatalf("an unset slope_k was reported as %v; must be > 0 or the banding is inverted", reported)
+	}
+	// And the reported value must be the one actually in force: configuring it
+	// explicitly must reproduce the same verdicts.
+	explicit := countLevels(NewBacklogDriftDetectorWithConfig(slopeKConfig(reported)), events)
+	implied := countLevels(NewBacklogDriftDetectorWithConfig(unset), events)
+	if explicit[Overloaded] != implied[Overloaded] || explicit[Backlogged] != implied[Backlogged] {
+		t.Errorf("the reported slope_k %v does not reproduce the unconfigured detector's verdicts: %v vs %v", reported, explicit, implied)
 	}
 }

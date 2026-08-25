@@ -54,7 +54,7 @@ type BacklogDriftConfig struct {
 // non-finite. This is the in-process safety net for the struct-literal
 // construction paths described on SlopeK; it is not the validation layer.
 func (c BacklogDriftConfig) effectiveSlopeK() float64 {
-	if c.SlopeK <= 0 || math.IsNaN(c.SlopeK) || math.IsInf(c.SlopeK, 0) {
+	if math.IsNaN(c.SlopeK) || math.IsInf(c.SlopeK, 0) || c.SlopeK < minCalibrationKnob {
 		return backlogDriftSlopeK
 	}
 	return c.SlopeK

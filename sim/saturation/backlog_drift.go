@@ -196,10 +196,21 @@ func (b *BacklogDriftDetector) Detect() Result {
 	// #1515 — kept as-is so callers get the contracted values rather than a
 	// locally-nudged epsilon; Score is a magnitude, Level is the authoritative
 	// band.
+	// The denominator is the OVERLOADED boundary, so Score reaching its 1.0 cap
+	// must coincide with Level crossing that boundary. A subnormal slope_k can
+	// drive the product to exactly zero even though slope_k itself is positive and
+	// finite, which would leave Score at 0 while Level is OVERLOADED -- Level and
+	// Score decoupled. When the product underflows, the boundary is effectively
+	// zero, so any positive slope is past it: report the cap.
 	score := 0.0
 	denom := slopeK * noiseFloor
-	if denom > 0 {
+	switch {
+	case denom > 0:
 		score = math.Min(1.0, math.Max(0.0, runningSlope)/denom)
+	case runningSlope > 0:
+		// Boundary underflowed to zero and the slope is rising: the OVERLOADED
+		// band starts at zero, so the magnitude is saturated by construction.
+		score = 1.0
 	}
 
 	// Confidence reuses composite's ramp so the three streaming detectors agree.
