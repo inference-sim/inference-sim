@@ -314,9 +314,10 @@ go build -o blis main.go
 ./blis run --model qwen/qwen3-14b --detectors all --saturation-report sat.json
 ./blis run --model qwen/qwen3-14b --detectors composite,threshold --saturation-report sat.json
 
-# Tune a detector via a strict-YAML config file (#1516). composite has no params
-# (a composite: block errors). threshold has one knob; backlog-drift mirrors
-# saturation.BacklogDriftConfig (#1547). The config must carry ONLY the selected detector's
+# Tune a detector via a strict-YAML config file (#1516, #1614). EVERY detector now
+# has exactly one false-alarm calibration knob: composite: {sensitivity},
+# threshold: {threshold_ms}, backlog_drift: {slope_k, ...} (backlog-drift mirrors
+# saturation.BacklogDriftConfig, #1547). The config must carry ONLY the selected detector's
 # block — a block for another detector errors (no silent drop). Absent block =
 # defaults; partial block overrides only named fields; unknown key / bad value
 # errors naming the field.
@@ -324,6 +325,7 @@ cat > sat-config.yaml <<'YAML'
 backlog_drift:
   window_size_sec: 30
   min_windows: 5
+  slope_k: 3.0          # BACKLOGGED/OVERLOADED boundary multiplier (#1614)
 YAML
 ./blis run --model qwen/qwen3-14b --detectors backlog-drift \
   --saturation-config sat-config.yaml --saturation-report sat.json
@@ -533,13 +535,13 @@ BLIS includes post-hoc saturation detection for analyzing completed runs. This i
 **Package**: `sim/saturation/`
 
 **Streaming detectors** (all stream via `Observe`/`Detect`; the batch `Classify` path was removed in #1516):
-- **composite**: Combines rate deficit (1 - completions/arrivals) and a quartile-filtered latency trend. Zero parameters (a `composite:` config block errors). STABLE / BACKLOGGED / OVERLOADED by score vs a 1/√arrivals noise floor.
+- **composite**: Combines rate deficit (1 - completions/arrivals) and a quartile-filtered latency trend. STABLE / BACKLOGGED / OVERLOADED by score vs a 1/√arrivals noise floor, scaled by `composite.sensitivity` (#1614; default 1.0 = the historical unscaled floor, so absent config is byte-identical). A larger sensitivity raises the floor and fires less.
 - **threshold**: Mean E2E latency vs a configurable threshold (default 5000ms). STABLE when mean < threshold, OVERLOADED when mean > threshold.
-- **backlog-drift**: Online OLS slope of in-flight over a trailing window (became streaming in #1515), banded against the noise floor.
+- **backlog-drift**: Online OLS slope of in-flight over a trailing window (became streaming in #1515), banded against the noise floor. The BACKLOGGED/OVERLOADED boundary sits at `backlog_drift.slope_k × noiseFloor` (#1614; default 3.0). `slope_k` is read through `BacklogDriftConfig.effectiveSlopeK()`, which falls back to 3.0 for the struct-literal construction paths — a literal zero would otherwise band every rising trace OVERLOADED. Both the band switch and the score denominator read the same hoisted value, so `Score == 1.0` coincides with the OVERLOADED edge at every `slope_k`.
 
 **CLI flags** (`run`, `observe`, `replay`; #1516, #1519, #1517):
 - `--detectors <selection>`: empty = off. A single name (`composite`, `threshold`, `backlog-drift`) runs #1516's single-detector streaming path. `all` runs the full roster; a comma-list (e.g. `composite,threshold`) runs exactly the named subset. `all` and comma-lists route through the **detector bank** (#1519). Unknown name — single or inside a list — is a hard error listing valid names (R1).
-- `--saturation-config <path>`: strict-YAML tuning file with optional `threshold:` and `backlog_drift:` blocks. composite has no block. For a **single** detector the config must carry only that detector's block — a foreign block errors (no silent drop, R1). For the **bank**, ownership is enforced over the selected SET (`checkBlockOwnershipSet`): a block whose owning detector is not among the selected names is a hard error (R1), same as the single-detector path — `--detectors all` selects every owner so a full shared config is fine, but a subset that omits a detector whose block was supplied errors. A value error inside a *selected* detector's own block also errors. Absent block = defaults; a partial block overrides only named fields; an unknown key or out-of-range value errors naming the field; an empty file = all defaults.
+- `--saturation-config <path>`: strict-YAML tuning file with optional `composite:`, `threshold:`, and `backlog_drift:` blocks — one calibration knob per detector (#1614), since a detector with no knob cannot be moved onto a matched false-alarm rate and so cannot be fairly compared. For a **single** detector the config must carry only that detector's block — a foreign block errors (no silent drop, R1). For the **bank**, ownership is enforced over the selected SET (`checkBlockOwnershipSet`): a block whose owning detector is not among the selected names is a hard error (R1), same as the single-detector path — `--detectors all` selects every owner so a full shared config is fine, but a subset that omits a detector whose block was supplied errors. A value error inside a *selected* detector's own block also errors. Absent block = defaults; a partial block overrides only named fields; an unknown key or out-of-range value errors naming the field; an empty file = all defaults.
 - `--saturation-report <path>`: writes the selected detector(s)' **final label + per-event verdict trace** as one `{"final":{...},"trace":[...]}` JSON object (one trace record per event, tagged by detector name; map keys sorted so repeated runs are byte-identical). Requires `--detectors`. Optional — the stdout final label (#1517) is emitted regardless. `--saturation-config`, `--saturation-report`, and `--saturation-final-window` without `--detectors` are hard errors, as is an unwritable report path (checked up front).
 - `--saturation-final-window <duration>` (#1517): Go duration for the trailing window of the stdout final-label plurality vote. Resolution: this flag if set → else `backlog_drift.window_size_sec` from `--saturation-config` → else 30s. Same value for every detector; a non-positive or unparseable value is a hard error. Requires `--detectors`.
 

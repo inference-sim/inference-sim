@@ -51,9 +51,9 @@ doesn't change on the events it ignores.
 
 | Name | Levels emitted | What it measures |
 |---|---|---|
-| **composite** | STABLE / BACKLOGGED / OVERLOADED | `max(rate_deficit, quartile-filtered latency_trend)` banded against a `1/√arrivals` noise floor. Zero tunable parameters. |
+| **composite** | STABLE / BACKLOGGED / OVERLOADED | `max(rate_deficit, quartile-filtered latency_trend)` banded against a `1/√arrivals` noise floor, scaled by `sensitivity` (default 1.0). |
 | **threshold** | STABLE / OVERLOADED | Mean E2E latency vs. a configurable threshold (default 5000ms). Binary — never emits BACKLOGGED. |
-| **backlog-drift** | STABLE / BACKLOGGED / OVERLOADED | Online OLS slope of in-flight (`arrivals − completions`) over a trailing window, banded against the noise floor. |
+| **backlog-drift** | STABLE / BACKLOGGED / OVERLOADED | Online OLS slope of in-flight (`arrivals − completions`) over a trailing window, banded against `slope_k × noiseFloor` (default `slope_k` = 3.0). |
 
 ## Running detectors
 
@@ -71,11 +71,19 @@ trace, INV-13) and `blis observe` (same pipeline over real-server latencies).
 
 ### Tuning via `--saturation-config`
 
-A strict-YAML file carries one optional block per parameterized detector.
-`composite` has no block (a `composite:` key is a hard error via strict
-parsing). See `SaturationConfig` in `sim/saturation/config.go`.
+A strict-YAML file carries one optional block per detector. **Every detector has
+at least one calibration knob**, and that is a correctness property rather than a
+convenience: detector scores are comparable only when each detector has first been
+calibrated to the same false-alarm rate, and a detector with no knob cannot be
+moved onto that rate — it can only be disqualified. See `SaturationConfig` in
+`sim/saturation/config.go`.
 
 ```yaml
+# composite: the noise-floor multiplier. Larger => higher bar => fires less.
+# 1.0 is the default and reproduces the historical unscaled floor exactly.
+composite:
+  sensitivity: 2.0
+
 # threshold: the ThresholdDetector's single knob
 threshold:
   threshold_ms: 8000
@@ -91,6 +99,7 @@ backlog_drift:
   tail_windows: 1
   saturated_drain_ratio: 0.95
   transient_drain_ratio: 0.98
+  slope_k: 3.0             # BACKLOGGED/OVERLOADED boundary multiplier
 ```
 
 Absent block = defaults; a partial block overrides only the fields it names; an
@@ -147,8 +156,20 @@ case "my-detector":
 
 If your detector is tunable, add a block type to `SaturationConfig`, resolve it
 (mirror `resolveBacklogDriftConfig`: validate and return errors, never panic —
-R6), and extend `checkBlockOwnership` / `checkBlockOwnershipSet` so a foreign
-block is rejected.
+R6), and add **one row** to the `blockOwners()` table in
+`sim/saturation/config.go`:
+
+```go
+{"my_detector", "my-detector", func(c SaturationConfig) bool { return c.MyDetector != nil }},
+```
+
+Both `checkBlockOwnership` (single-detector) and `checkBlockOwnershipSet` (bank)
+derive from that one table, so a foreign block is rejected identically on both
+paths and the two cannot drift apart. Do **not** hand-edit either function.
+
+Validate the knob's value in the resolver, not only in the detector's
+constructor: a constructor-side fallback would silently coerce a bad value
+instead of reporting it (R1).
 
 Add the name to `rosterOrder` in `sim/saturation/bank.go` so it is included in
 `--detectors all`:
@@ -215,8 +236,8 @@ Reference implementations:
 - `sim/saturation/detector.go` — the `Detector` interface + `Event`/`Result`.
 - `sim/saturation/composite.go`, `threshold.go`, `backlog_drift.go` — the three
   built-in detectors.
-- `sim/saturation/config.go` — `SaturationConfig`, `buildDetector`, block
-  ownership.
+- `sim/saturation/config.go` — `SaturationConfig`, `buildDetector`, the
+  `blockOwners()` ownership table.
 - `sim/saturation/bank.go` — the multi-detector `Bank` + `rosterOrder`.
 - `sim/saturation/replay.go` — the single-detector drive loop and event
   reconstruction.
