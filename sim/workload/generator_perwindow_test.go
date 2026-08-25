@@ -1264,9 +1264,20 @@ func TestGenerateRequestsForWindow_InteriorGapSemantics(t *testing.T) {
 // harmless (the downstream merge sorts by ArrivalTime); asserting strict
 // monotonicity would encode a property the rescale does not guarantee.
 //
-// Strict interiority IS unconditional whenever the mean gap is at least 1us,
-// which every realistic per-window config satisfies, so the cases below hold
-// it alongside the exact count.
+// Interiority is deliberately ASYMMETRIC, for the same truncation reason.
+// rescaleIATsToMatchDuration adds its rounding residual only to the LAST
+// element, so the trailing gap is always floored up to >= 1us. No arrival can
+// reach window.EndUs, which makes the upper bound below a genuine law -- and
+// it is the regression #1607 guards against, so it is asserted strictly.
+//
+// Nothing floors the LEADING gap. When the scale factor is < 1, rescaled[0]
+// can truncate to 0 and the first arrival lands exactly on window.StartUs:
+// measured at ~7.5e-5 of draws for the 100 req/s cases below (15 of 200000
+// seeds), with ~1e-2 of those runs containing a zero interior gap for the same
+// reason. An arrival at window.StartUs is legal -- the window is half-open and
+// no guard drops it -- so the lower bound is pinned as >= StartUs. Asserting
+// strict interiority there would encode a property the rescale does not
+// guarantee, exactly as asserting strict monotonicity would.
 func TestGenerateRequestsForWindow_ArrivalsOrderedAndInterior(t *testing.T) {
 	const startUs = int64(1_000_000)
 
@@ -1304,8 +1315,8 @@ func TestGenerateRequestsForWindow_ArrivalsOrderedAndInterior(t *testing.T) {
 						assert.GreaterOrEqual(t, req.ArrivalTime, prev,
 							"seed %d request %d: arrivals must be non-decreasing (prev=%d, got %d)",
 							seed, i, prev, req.ArrivalTime)
-						assert.Greater(t, req.ArrivalTime, window.StartUs,
-							"seed %d request %d: arrival must be strictly after window start", seed, i)
+						assert.GreaterOrEqual(t, req.ArrivalTime, window.StartUs,
+							"seed %d request %d: arrival must be at or after window start", seed, i)
 						assert.Less(t, req.ArrivalTime, window.EndUs,
 							"seed %d request %d: arrival must be strictly before window end", seed, i)
 						prev = req.ArrivalTime
