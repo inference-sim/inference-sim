@@ -2,36 +2,29 @@
 
 How to incorporate archon's PR review output during code review.
 
-## When archon-pr-review runs
+**Requires:** archon v0.2.0+. See [archon README](https://github.com/AI-native-Systems-Research/archon#quick-start).
 
-`/archon-pr-review` runs automatically in CI on every PR. It may also be triggered manually (`/archon-pr-review` comment on the PR). It produces a structural architecture review — what boundaries moved, what edges changed.
+## When it runs
+
+`/archon-pr-review` runs automatically in CI on every PR. It may also be triggered manually. It produces a structural architecture review — what boundaries moved, what edges changed.
 
 ## Verdicts
 
 | Verdict | Meaning | Reviewer action |
 |---------|---------|-----------------|
-| **FAST-TRACK** | No boundary moved. Internal-only change. | Skip architecture concerns — focus on correctness and behavior. |
-| **REALIZES** | Hole filled, dist decreased. Progress toward the plan. | Confirm the filled hole matches the sub-issue's expected outcome. |
-| **EXCEEDS** | Adds structure the plan didn't mention. | Ask: is this intentional? Should the plan be updated? |
-| **CONFLICTS** | Dist went up or a disallowed dependency was introduced. | Block. Either the code is wrong or the plan needs a plan-update PR. |
+| **FAST-TRACK** | No boundary moved | Skip architecture concerns — focus on correctness |
+| **REALIZES** | Hole filled, dist decreased | Confirm it matches the sub-issue's expected outcome |
+| **EXCEEDS** | Adds structure the plan didn't mention | Ask: intentional? Plan update needed? |
+| **CONFLICTS** | Dist went up or disallowed dependency | Block. Code is wrong or plan needs update. |
 
 ## How to incorporate during review
 
-1. **Check if archon output exists** — look for a previous comment from the archon CI action or a manual `/archon-pr-review` invocation.
-2. **If FAST-TRACK** — no architectural concern. Proceed with normal code review.
-3. **If REALIZES** — verify the sub-issue expected this hole to be filled. Check dist reduction matches expectation.
-4. **If EXCEEDS** — flag to maintainer. May need a plan-update PR.
-5. **If CONFLICTS** — block the PR. The implementation introduced a dependency the plan forbids.
+1. Check if archon output exists in a previous PR comment (CI or manual)
+2. **FAST-TRACK** → no architectural concern, proceed with normal review
+3. **REALIZES** → verify dist reduction matches sub-issue expectation
+4. **EXCEEDS/CONFLICTS** → flag to maintainer, may need plan-update PR
 
-## With --plan flag
+## Full reference
 
-When a `.plan.json` exists in `specs/*/`, archon runs with `--plan` and reports:
-- `dist(P,G): before → after` (should decrease or stay)
-- Plan verdict: REALIZES / EXCEEDS / CONFLICTS / UNRELATED
-- Which specific holes were filled, which arrows appeared
-
-Without a plan, archon just reports boundary moves (FAST-TRACK vs ARCHITECTURAL_CHANGE).
-
-## Reference
-
-For full archon pr-review documentation: see the [archon repository](https://github.com/AI-native-Systems-Research/archon).
+- Verdict definitions and examples: [archon README — Plan verdicts](https://github.com/AI-native-Systems-Research/archon#plan-verdicts)
+- Real PR tracking with dist: [demo/flow3-blis-design](https://github.com/AI-native-Systems-Research/archon/blob/main/demo/flow3-blis-design/README.md)
