@@ -2,7 +2,7 @@
 
 Run before designing a large feature to understand the current architecture, blast radius, and health of the area you'll change.
 
-**Requires:** archon v0.2.0+. See [archon README](https://github.com/AI-native-Systems-Research/archon) for build instructions, full command reference, and examples.
+**Requires:** latest stable archon release — check [releases](https://github.com/AI-native-Systems-Research/archon/releases). See [archon README](https://github.com/AI-native-Systems-Research/archon) for build instructions, full command reference, and examples.
 
 ## What to run
 

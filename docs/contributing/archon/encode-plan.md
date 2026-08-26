@@ -2,7 +2,7 @@
 
 After the team agrees on an RFC, encode the design into a machine-checkable `.archon` plan.
 
-**Requires:** archon v0.2.0+. See [archon README](https://github.com/AI-native-Systems-Research/archon) for plan syntax, compile/dist/slice commands, and full examples.
+**Requires:** latest stable archon release — check [releases](https://github.com/AI-native-Systems-Research/archon/releases). See [archon README](https://github.com/AI-native-Systems-Research/archon) for plan syntax, compile/dist/slice commands, and full examples.
 
 ## What to run
 

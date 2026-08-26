@@ -2,7 +2,7 @@
 
 How to incorporate archon's PR review output during code review.
 
-**Requires:** archon v0.2.0+. See [archon README](https://github.com/AI-native-Systems-Research/archon) for verdict definitions, dist tracking, and full examples.
+**Requires:** latest stable archon release — check [releases](https://github.com/AI-native-Systems-Research/archon/releases). See [archon README](https://github.com/AI-native-Systems-Research/archon) for verdict definitions, dist tracking, and full examples.
 
 ## When it runs
 
