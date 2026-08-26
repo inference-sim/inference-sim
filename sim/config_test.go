@@ -25,8 +25,8 @@ func TestNewKVCacheConfig_FieldEquivalence(t *testing.T) {
 func TestNewBatchConfig_FieldEquivalence(t *testing.T) {
 	got := NewBatchConfig(10, 1000, 200)
 	want := BatchConfig{
-		MaxRunningReqs:            10,
-		MaxScheduledTokens:        1000,
+		MaxNumSeqs:                10,
+		MaxNumBatchedTokens:       1000,
 		LongPrefillTokenThreshold: 200,
 	}
 	assert.Equal(t, want, got)
@@ -367,10 +367,10 @@ func TestNewBatchConfig_PanicsOnInvalid(t *testing.T) {
 		prefillThresh int64
 		wantContains  string
 	}{
-		{"zero_max_running", 0, 2048, 0, "MaxRunningReqs"},
-		{"negative_max_running", -1, 2048, 0, "MaxRunningReqs"},
-		{"zero_max_tokens", 256, 0, 0, "MaxScheduledTokens"},
-		{"negative_max_tokens", 256, -1, 0, "MaxScheduledTokens"},
+		{"zero_max_running", 0, 2048, 0, "MaxNumSeqs"},
+		{"negative_max_running", -1, 2048, 0, "MaxNumSeqs"},
+		{"zero_max_tokens", 256, 0, 0, "MaxNumBatchedTokens"},
+		{"negative_max_tokens", 256, -1, 0, "MaxNumBatchedTokens"},
 		{"negative_prefill", 256, 2048, -1, "LongPrefillTokenThreshold"},
 	}
 	for _, tc := range tests {

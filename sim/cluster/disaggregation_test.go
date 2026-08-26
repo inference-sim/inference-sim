@@ -920,10 +920,11 @@ func TestDisaggregation_MetricProjection_E2ECorrectness(t *testing.T) {
 //
 // Test independence: the assertions never recompute the production formula (the pre-#1510
 // test did, making it a tautology). Instead they use two orthogonal guards —
-//  (1) a residual reconstructed from ParentRequest phase timestamps
-//      (DecodeEnqueueTime − ArrivalTime), recorded by a different mechanism than the
-//      RequestSchedulingDelays map the fix reads; and
-//  (2) a differential comparison against the old buggy formula.
+//
+//	(1) a residual reconstructed from ParentRequest phase timestamps
+//	    (DecodeEnqueueTime − ArrivalTime), recorded by a different mechanism than the
+//	    RequestSchedulingDelays map the fix reads; and
+//	(2) a differential comparison against the old buggy formula.
 func TestDisaggregation_TTFT_IncludesTransferAndDecode(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	// OTPT (α₂) is the per-output-token processing overhead; the old formula carried a
@@ -1061,11 +1062,11 @@ func TestDisaggregation_TTFT_IncludesTransferAndDecode(t *testing.T) {
 // TTFT was smaller than reality exactly under load.
 //
 // The scenario is pinned to deterministically produce a positive decode-queue wait:
-// a single decode instance with maxRunningReqs=1 (serialized decode) fed by several
+// a single decode instance with maxNumSeqs=1 (serialized decode) fed by several
 // short requests whose decodes overlap. It never relies on t.Skip.
 func TestDisaggregation_TTFT_IncludesDecodeQueueWait(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(3, 2, 1) // 2 prefill, 1 decode
-	// maxRunningReqs=1: the single decode instance runs one sub-request at a time, so
+	// maxNumSeqs=1: the single decode instance runs one sub-request at a time, so
 	// sub-requests transferred while an earlier decode is still running must queue.
 	config.BatchConfig = sim.NewBatchConfig(1, 2048, 0)
 	otpt := float64(config.AlphaCoeffs[2]) // OTPT (α₂); the differential threshold below
@@ -1142,7 +1143,7 @@ func TestDisaggregation_TTFT_IncludesDecodeQueueWait(t *testing.T) {
 
 	if withQueueWait == 0 {
 		t.Fatal("BC-2: no parent exhibited a decode-queue wait exceeding one OTPT; the loaded " +
-			"scenario (1 decode instance, maxRunningReqs=1, 6 short overlapping requests) is " +
+			"scenario (1 decode instance, maxNumSeqs=1, 6 short overlapping requests) is " +
 			"engineered to force queueing ≫ OTPT — its absence is a test-premise failure, not a pass")
 	}
 }
@@ -1211,7 +1212,7 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 			},
 			setDecodeDelay: true, decodeDelay: 4000,
 			wantEntry: true, wantTTFT: 4000 + 300, // = 4300
-			wantSum: 4300 - 2500,                  // primary branch: newTTFT − prefillTTFT = 1800
+			wantSum: 4300 - 2500, // primary branch: newTTFT − prefillTTFT = 1800
 		},
 		{
 			// FALLBACK: decode scheduling delay never recorded ⇒ prefill-only.
@@ -1305,7 +1306,7 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 			},
 			setDecodeDelay: true, decodeDelay: 4000,
 			wantEntry: true, wantTTFT: 4000 + 300, // = 4300, same as a normal primary parent
-			wantSum: 4300 - 2500,                  // primary branch delta = 1800
+			wantSum: 4300 - 2500, // primary branch delta = 1800
 		},
 	}
 

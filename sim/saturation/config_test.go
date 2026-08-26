@@ -37,22 +37,57 @@ func TestLoadSaturationConfig_EmptyFile_Defaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("empty file should be valid, got: %v", err)
 	}
-	if cfg.Threshold != nil || cfg.BacklogDrift != nil {
+	if cfg.Composite != nil || cfg.Threshold != nil || cfg.BacklogDrift != nil {
 		t.Errorf("expected all-nil config for empty file, got %+v", cfg)
 	}
 }
 
-// TestLoadSaturationConfig_UnknownKey_Errors verifies strict parsing: a
-// composite: block (or any unknown key) fails, naming the offending field.
+// TestLoadSaturationConfig_UnknownKey_Errors verifies strict parsing: an unknown
+// top-level key, or an unknown field inside a known block, fails.
+//
+// Note (#1614): "composite:" is now a KNOWN top-level key, since composite gained
+// a sensitivity knob. The composite case below therefore exercises an unknown
+// field *inside* that block, and the positive counterpart -- that a well-formed
+// composite: block parses -- lives in
+// TestLoadSaturationConfig_NewBlocksParse. Before #1614 this test asserted that
+// any composite: key errored; that contract is retired, and leaving the old case
+// in place would have kept passing for the wrong reason.
 func TestLoadSaturationConfig_UnknownKey_Errors(t *testing.T) {
 	for _, contents := range []string{
-		"composite:\n  anything: 1\n",
+		"composite:\n  anything: 1\n",     // unknown field in a known block
+		"composite:\n  sensitivty: 2.0\n", // a plausible typo must not be accepted
 		"threshold:\n  bogus_field: 1\n",
+		"backlog_drift:\n  slope_kk: 3.0\n",
 		"unknown_top: 5\n",
 	} {
 		if _, err := LoadSaturationConfig(writeTempConfig(t, contents)); err == nil {
 			t.Errorf("expected error for unknown key in %q, got nil", contents)
 		}
+	}
+}
+
+// TestLoadSaturationConfig_NewBlocksParse is the positive counterpart: the knobs
+// added in #1614 parse, and a partial block leaves the other blocks nil.
+func TestLoadSaturationConfig_NewBlocksParse(t *testing.T) {
+	cfg, err := LoadSaturationConfig(writeTempConfig(t,
+		"composite:\n  sensitivity: 2.5\nbacklog_drift:\n  slope_k: 1.5\n"))
+	if err != nil {
+		t.Fatalf("well-formed config should parse, got: %v", err)
+	}
+	if cfg.Composite == nil || cfg.Composite.Sensitivity == nil {
+		t.Fatalf("composite.sensitivity did not parse: %+v", cfg.Composite)
+	}
+	if *cfg.Composite.Sensitivity != 2.5 {
+		t.Errorf("composite.sensitivity = %v, want 2.5", *cfg.Composite.Sensitivity)
+	}
+	if cfg.BacklogDrift == nil || cfg.BacklogDrift.SlopeK == nil {
+		t.Fatalf("backlog_drift.slope_k did not parse: %+v", cfg.BacklogDrift)
+	}
+	if *cfg.BacklogDrift.SlopeK != 1.5 {
+		t.Errorf("backlog_drift.slope_k = %v, want 1.5", *cfg.BacklogDrift.SlopeK)
+	}
+	if cfg.Threshold != nil {
+		t.Errorf("threshold block should stay nil when unnamed, got %+v", cfg.Threshold)
 	}
 }
 
@@ -81,7 +116,8 @@ func TestBuildDetector_UnknownName_Errors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unknown detector name")
 	}
-	for _, name := range []string{"composite", "threshold", "backlog-drift"} {
+	// Derived from the roster so this stays exhaustive as detectors are added.
+	for _, name := range AllDetectorNames() {
 		if !strings.Contains(err.Error(), name) {
 			t.Errorf("error should list valid name %q, got: %v", name, err)
 		}

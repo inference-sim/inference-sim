@@ -20,6 +20,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
+	"github.com/inference-sim/inference-sim/sim/saturation"
 	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -64,6 +65,21 @@ var (
 	observeTimeout             int
 	observePrewarmDuration     time.Duration
 	observeLazyGeneration      bool // --lazy-generation: stream requests from generator (alpha, #1441/#1443)
+	// KV hit-rate scraping (#1583): scrape the server's Prometheus /metrics endpoint
+	// at the start and end of the measured window and record the observed hit-rate in
+	// the trace header for downstream `blis calibrate`. Off by default (BC-8).
+	observeScrapeKVMetrics bool
+	observeVLLMCommit      string
+	observeKVMetricsURL    string
+	// Corpus-mode (OTel session-pool replay against a real server, PR-D #1487). These
+	// select a second input mode mutually exclusive with the spec-mode flags above;
+	// a corpus IS the workload. --corpus-* are INPUT, distinct from --trace-* OUTPUT.
+	observeCorpusHeader       string
+	observeCorpusData         string
+	observeSessionIDHeader    string
+	observeConcurrentSessions int
+	observeTotalSessions      int
+	observeShuffleCorpus      bool
 	// saturationReport is declared in root.go and shared across run, replay, observe
 )
 
@@ -136,6 +152,10 @@ func init() {
 	observeCmd.Flags().IntVar(&observeMaxConcur, "max-concurrency", 256, "Maximum simultaneous in-flight requests")
 	observeCmd.Flags().IntVar(&observeWarmup, "warmup-requests", 0, "Number of initial requests to exclude from trace")
 	observeCmd.Flags().DurationVar(&observePrewarmDuration, "prewarm-duration", 0, "Duration of system priming phase before real workload (e.g., 60s). Sends small fixed requests at low concurrency to warm CUDA/EPP/memory. 0 = disabled.")
+	// KV hit-rate scraping (#1583).
+	observeCmd.Flags().BoolVar(&observeScrapeKVMetrics, "scrape-kv-metrics", false, "Scrape the server's Prometheus /metrics endpoint at the start and end of the measured window and record the observed KV-cache hit-rate (vllm:kv_offload_tiering_* counters, or the GPU prefix-cache fallback) in the trace header for downstream `blis calibrate`. Off by default; a scrape miss warns and omits the block (never fatal).")
+	observeCmd.Flags().StringVar(&observeVLLMCommit, "vllm-commit", "", "Pinned vLLM commit the server is running; recorded verbatim in the observed KV-metrics header block (the tiering counters require an unreleased vLLM, PR #48798). Only meaningful with --scrape-kv-metrics.")
+	observeCmd.Flags().StringVar(&observeKVMetricsURL, "kv-metrics-url", "", "Override URL for the Prometheus /metrics endpoint (default: <server-url>/metrics). Use when metrics are served on a separate port/host. Only meaningful with --scrape-kv-metrics.")
 	observeCmd.Flags().BoolVar(&observeNoStreaming, "no-streaming", false, "Disable streaming (use non-streaming HTTP)")
 	observeCmd.Flags().Int64Var(&observeSeed, "seed", 42, "RNG seed for workload generation")
 	observeCmd.Flags().Int64Var(&observeHorizon, "horizon", 0, "Observation horizon in microseconds (0 = from spec or unlimited)")
@@ -143,6 +163,13 @@ func init() {
 	observeCmd.Flags().IntVar(&observeConcurrency, "concurrency", 0, "Number of concurrent virtual users (closed-loop, mutually exclusive with --rate)")
 	observeCmd.Flags().IntVar(&observeThinkTimeMs, "think-time-ms", 0, "Think time in ms between response and next request (concurrency mode; mutually exclusive with --think-time-dist)")
 	observeCmd.Flags().StringVar(&observeThinkTimeDist, "think-time-dist", "", `Think-time distribution spec for closed-loop observe (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s" or "constant:value=500ms"). Mutually exclusive with --think-time-ms. Requires --concurrency.`)
+	// Corpus-mode (PR-D): replay an OTel corpus as a fixed session pool against the server.
+	observeCmd.Flags().StringVar(&observeCorpusHeader, "corpus-header", "", "Input TraceV2 corpus header YAML (corpus-mode; typically from `blis convert otel`). Distinct from the --trace-header OUTPUT.")
+	observeCmd.Flags().StringVar(&observeCorpusData, "corpus-data", "", "Input TraceV2 corpus data CSV (corpus-mode). Distinct from the --trace-data OUTPUT.")
+	observeCmd.Flags().IntVar(&observeConcurrentSessions, "concurrent-sessions", 0, "Replay a fixed pool of N concurrent closed-loop sessions from --corpus-* against the server (0 = disabled). Mutually exclusive with spec-mode inputs (--workload/--workload-spec/--rate/--concurrency).")
+	observeCmd.Flags().IntVar(&observeTotalSessions, "total-sessions", 0, "Total sessions to replay under --concurrent-sessions; duplicates the corpus (with cache-busting) to fill. 0 = replay each corpus session once.")
+	observeCmd.Flags().BoolVar(&observeShuffleCorpus, "shuffle-corpus", false, "Randomize the corpus step/admission order (seeded from --seed; uses the SAME permutation as `blis replay --shuffle-corpus`, so observe and replay of one corpus+seed select the same subset — for calibration parity). Requires --concurrent-sessions > 0. With --total-sessions < corpus this yields a seeded-random subset; every session still runs otherwise.")
+	observeCmd.Flags().StringVar(&observeSessionIDHeader, "session-id-header", defaultSessionIDHeader, "Request header carrying the closed-loop session id for session-aware EPP routing (session-affinity / predictive pinning). Must match the deployment's session-id-producer. Empty disables emission (issue #1505).")
 
 	// Distribution synthesis flags — same names AND defaults as blis run.
 	// Default values are defined in root.go (distDefaults const block).
@@ -268,9 +295,21 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	if msg := validateITLStreamingFlags(observeRecordITL, observeNoStreaming); msg != "" {
 		logrus.Fatalf("%s", msg)
 	}
-	// BC-7: at least one workload input mode must be provided
-	if observeWorkload == "" && observeWorkloadSpec == "" && !cmd.Flags().Changed("rate") && observeConcurrency <= 0 {
-		logrus.Fatalf("Either --workload, --workload-spec, --rate, or --concurrency is required")
+	// Corpus-mode (OTel session-pool replay, PR-D) vs spec-mode split. Runs
+	// before BC-7 so a corpus-mode/spec-mode collision is reported specifically.
+	if msg := validateObserveCorpusFlags(
+		observeConcurrentSessions, observeTotalSessions,
+		observeCorpusHeader, observeCorpusData,
+		observeWorkload, observeWorkloadSpec,
+		cmd.Flags().Changed("rate"), observeConcurrency,
+		observeThinkTimeMs, observeThinkTimeDist, observeLazyGeneration,
+		cmd.Flags().Changed("horizon"), cmd.Flags().Changed("num-requests"), observeShuffleCorpus,
+	); msg != "" {
+		logrus.Fatalf("%s", msg)
+	}
+	// BC-7: at least one workload input mode must be provided (corpus-mode counts).
+	if observeConcurrentSessions == 0 && observeWorkload == "" && observeWorkloadSpec == "" && !cmd.Flags().Changed("rate") && observeConcurrency <= 0 {
+		logrus.Fatalf("Either --workload, --workload-spec, --rate, --concurrency, or --concurrent-sessions is required")
 	}
 	// BC-2/3/4: preset-mode constraint check (extracted for testability, R14).
 	// Runs before the existing concurrency/rate exclusion so preset errors are shown first.
@@ -328,99 +367,12 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Fatalf("--timeout must be between 1 and 86400 seconds (1 day), got %d", observeTimeout)
 	}
 
-	// Generate workload
+	// Workload source: corpus-mode (OTel session pool, PR-D) or spec-mode
+	// (generated). spec/wl/lazySource are hoisted so the shared setup below
+	// (client, prefixes, session manager, orchestrator) works for both. In
+	// corpus-mode spec stays nil and wl is an empty GeneratedWorkload so the
+	// spec-guarded blocks below are no-ops.
 	var spec *workload.WorkloadSpec
-	if observeWorkloadSpec != "" {
-		if observeConcurrency > 0 {
-			logrus.Fatalf("--concurrency cannot be used with --workload-spec; " +
-				"define concurrency in the spec file using clients[].concurrency instead")
-		}
-		var err error
-		spec, err = workload.LoadWorkloadSpec(observeWorkloadSpec)
-		if err != nil {
-			logrus.Fatalf("Failed to load workload spec: %v", err)
-		}
-		if cmd.Flags().Changed("seed") {
-			spec.Seed = observeSeed
-		}
-	} else if observeWorkload != "" {
-		// Preset synthesis — BC-1: same token distribution as blis run --workload <preset>
-		// Rate was validated finite+positive by the earlier rate validation above (defense-in-depth:
-		// also guarded by validateObserveWorkloadFlags above, which requires rateChanged to be true).
-		// Use separate errMsg var + = (not :=) to avoid shadowing the outer spec variable.
-		var errMsg string
-		spec, errMsg = buildPresetSpec(observeWorkload, observeDefaultsFilePath, observeRate, observeNumRequests)
-		if errMsg != "" {
-			logrus.Fatalf("%s", errMsg)
-		}
-		spec.Seed = observeSeed
-	} else {
-		// Distribution or concurrency synthesis
-		// R3: Validate distribution token bounds before synthesis.
-		if msg := validateDistributionParams(observePromptMin, observePromptMax, observeOutputMin, observeOutputMax,
-			observePromptStdDev, observeOutputStdDev, observePromptTokens, observeOutputTokens); msg != "" {
-			logrus.Fatalf("%s", msg)
-		}
-		spec = workload.SynthesizeFromDistribution(workload.DistributionParams{
-			Rate:               observeRate,
-			Concurrency:        observeConcurrency,
-			ThinkTimeMs:        observeThinkTimeMs,
-			NumRequests:        observeNumRequests,
-			PrefixTokens:       observePrefixTokens,
-			PromptTokensMean:   observePromptTokens,
-			PromptTokensStdDev: observePromptStdDev,
-			PromptTokensMin:    observePromptMin,
-			PromptTokensMax:    observePromptMax,
-			OutputTokensMean:   observeOutputTokens,
-			OutputTokensStdDev: observeOutputStdDev,
-			OutputTokensMin:    observeOutputMin,
-			OutputTokensMax:    observeOutputMax,
-		})
-		spec.Seed = observeSeed
-	}
-
-	// LoRA adapter fields are not supported by `blis observe`: it dispatches to a
-	// real server that manages its own adapter loading, so there is no registry to
-	// validate against and no in-simulator adapter state (#1464). Warn loudly rather
-	// than silently thread dangling adapter ids onto every dispatched request.
-	if workload.SpecHasAdapterFields(spec) {
-		logrus.Warnf("workload spec declares LoRA adapter fields, but `blis observe` does not " +
-			"model the LoRA control plane (the target server manages adapter loading); adapter " +
-			"ids are ignored here. Use `blis run`/`blis replay` with --lora-config for adapter-aware simulation.")
-	}
-
-	// Resolve horizon
-	horizon := int64(math.MaxInt64)
-	if cmd.Flags().Changed("horizon") && observeHorizon > 0 {
-		horizon = observeHorizon
-	} else if spec.Horizon > 0 {
-		horizon = spec.Horizon
-	}
-
-	// Resolve max requests
-	maxRequests := spec.NumRequests
-	if cmd.Flags().Changed("num-requests") && observeNumRequests > 0 {
-		maxRequests = int64(observeNumRequests)
-	}
-
-	// Guard unbounded generation
-	if maxRequests <= 0 && horizon == math.MaxInt64 {
-		logrus.Fatalf("Workload requires either num_requests, --num-requests, or --horizon to bound generation")
-	}
-
-	// Generate requests and session blueprints (BC-1, BC-2, D1).
-	//
-	// Lazy generation path (#1441/#1443, alpha, default off). When set, build a
-	// streaming request source instead of materializing the full slice, mirroring
-	// blis run (cmd/root.go). As of #1460 there is NO eager-fallback class — every
-	// spec the eager generator accepts is streamed: multi-session reasoning (#1458),
-	// concurrency clients (#1459), and time-varying / per-window workloads (#1460).
-	// Any error is a real spec/validation failure → abort.
-	//
-	// No spec pre-expand is needed here (unlike run): observe has no
-	// pre-generation applyTimeoutToSpec step, and both generators expand
-	// spec.Clients in place before the (post-generation) prefix-string loop
-	// reads it.
 	var wl *workload.GeneratedWorkload
 	// lazySource is typed as the interface satisfied by *workload.lazyRequestSource:
 	// Next() feeds the orchestrator, Err() surfaces a terminal per-client sampler
@@ -429,19 +381,136 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		Next() (*sim.Request, bool)
 		Err() error
 	}
-	if observeLazyGeneration {
-		src, sessions, followUpBudget, lazyErr := workload.GenerateWorkloadLazy(spec, horizon, maxRequests)
-		if lazyErr != nil {
-			logrus.Fatalf("Failed to build lazy workload: %v", lazyErr)
+	var poolDriver *workload.SessionPoolDriver
+	var corpusInitial []*sim.Request
+
+	if observeConcurrentSessions > 0 {
+		// Corpus-mode: load the TraceV2 corpus into a fixed session pool.
+		var perr error
+		poolDriver, corpusInitial, perr = buildObserveCorpusPool(
+			observeCorpusHeader, observeCorpusData,
+			observeConcurrentSessions, observeTotalSessions,
+			observeShuffleCorpus, observeSeed,
+		)
+		if perr != nil {
+			logrus.Fatalf("Failed to build corpus pool: %v", perr)
 		}
-		lazySource = src
-		wl = &workload.GeneratedWorkload{Sessions: sessions, FollowUpBudget: followUpBudget}
-	}
-	if wl == nil {
-		var err error
-		wl, err = workload.GenerateWorkload(spec, horizon, maxRequests)
-		if err != nil {
-			logrus.Fatalf("Failed to generate workload: %v", err)
+		wl = &workload.GeneratedWorkload{} // empty; corpus drives dispatch via corpusInitial + poolDriver
+		logrus.Infof("Corpus-mode: pool=%d total=%d, %d initial sessions",
+			observeConcurrentSessions, poolDriver.TotalSessions(), len(corpusInitial))
+		// Auto-raise the HTTP socket cap so the pool is never throttled below N.
+		if observeMaxConcur < observeConcurrentSessions {
+			logrus.Infof("Auto-raising --max-concurrency %d → %d to match --concurrent-sessions",
+				observeMaxConcur, observeConcurrentSessions)
+			observeMaxConcur = observeConcurrentSessions
+		}
+	} else {
+		// Spec-mode: generate the workload from a WorkloadSpec.
+		if observeWorkloadSpec != "" {
+			if observeConcurrency > 0 {
+				logrus.Fatalf("--concurrency cannot be used with --workload-spec; " +
+					"define concurrency in the spec file using clients[].concurrency instead")
+			}
+			var err error
+			spec, err = workload.LoadWorkloadSpec(observeWorkloadSpec)
+			if err != nil {
+				logrus.Fatalf("Failed to load workload spec: %v", err)
+			}
+			if cmd.Flags().Changed("seed") {
+				spec.Seed = observeSeed
+			}
+		} else if observeWorkload != "" {
+			// Preset synthesis — BC-1: same token distribution as blis run --workload <preset>
+			// Rate was validated finite+positive by the earlier rate validation above (defense-in-depth:
+			// also guarded by validateObserveWorkloadFlags above, which requires rateChanged to be true).
+			// Use separate errMsg var + = (not :=) to avoid shadowing the outer spec variable.
+			var errMsg string
+			spec, errMsg = buildPresetSpec(observeWorkload, observeDefaultsFilePath, observeRate, observeNumRequests)
+			if errMsg != "" {
+				logrus.Fatalf("%s", errMsg)
+			}
+			spec.Seed = observeSeed
+		} else {
+			// Distribution or concurrency synthesis
+			// R3: Validate distribution token bounds before synthesis.
+			if msg := validateDistributionParams(observePromptMin, observePromptMax, observeOutputMin, observeOutputMax,
+				observePromptStdDev, observeOutputStdDev, observePromptTokens, observeOutputTokens); msg != "" {
+				logrus.Fatalf("%s", msg)
+			}
+			spec = workload.SynthesizeFromDistribution(workload.DistributionParams{
+				Rate:               observeRate,
+				Concurrency:        observeConcurrency,
+				ThinkTimeMs:        observeThinkTimeMs,
+				NumRequests:        observeNumRequests,
+				PrefixTokens:       observePrefixTokens,
+				PromptTokensMean:   observePromptTokens,
+				PromptTokensStdDev: observePromptStdDev,
+				PromptTokensMin:    observePromptMin,
+				PromptTokensMax:    observePromptMax,
+				OutputTokensMean:   observeOutputTokens,
+				OutputTokensStdDev: observeOutputStdDev,
+				OutputTokensMin:    observeOutputMin,
+				OutputTokensMax:    observeOutputMax,
+			})
+			spec.Seed = observeSeed
+		}
+
+		// LoRA adapter fields are not supported by `blis observe`: it dispatches to a
+		// real server that manages its own adapter loading, so there is no registry to
+		// validate against and no in-simulator adapter state (#1464). Warn loudly rather
+		// than silently thread dangling adapter ids onto every dispatched request.
+		if workload.SpecHasAdapterFields(spec) {
+			logrus.Warnf("workload spec declares LoRA adapter fields, but `blis observe` does not " +
+				"model the LoRA control plane (the target server manages adapter loading); adapter " +
+				"ids are ignored here. Use `blis run`/`blis replay` with --lora-config for adapter-aware simulation.")
+		}
+
+		// Resolve horizon
+		horizon := int64(math.MaxInt64)
+		if cmd.Flags().Changed("horizon") && observeHorizon > 0 {
+			horizon = observeHorizon
+		} else if spec.Horizon > 0 {
+			horizon = spec.Horizon
+		}
+
+		// Resolve max requests
+		maxRequests := spec.NumRequests
+		if cmd.Flags().Changed("num-requests") && observeNumRequests > 0 {
+			maxRequests = int64(observeNumRequests)
+		}
+
+		// Guard unbounded generation
+		if maxRequests <= 0 && horizon == math.MaxInt64 {
+			logrus.Fatalf("Workload requires either num_requests, --num-requests, or --horizon to bound generation")
+		}
+
+		// Generate requests and session blueprints (BC-1, BC-2, D1).
+		//
+		// Lazy generation path (#1441/#1443, alpha, default off). When set, build a
+		// streaming request source instead of materializing the full slice, mirroring
+		// blis run (cmd/root.go). As of #1460 there is NO eager-fallback class — every
+		// spec the eager generator accepts is streamed: multi-session reasoning (#1458),
+		// concurrency clients (#1459), and time-varying / per-window workloads (#1460).
+		// Any error is a real spec/validation failure → abort.
+		//
+		// No spec pre-expand is needed here (unlike run): observe has no
+		// pre-generation applyTimeoutToSpec step, and both generators expand
+		// spec.Clients in place before the (post-generation) prefix-string loop
+		// reads it.
+		if observeLazyGeneration {
+			src, sessions, followUpBudget, lazyErr := workload.GenerateWorkloadLazy(spec, horizon, maxRequests)
+			if lazyErr != nil {
+				logrus.Fatalf("Failed to build lazy workload: %v", lazyErr)
+			}
+			lazySource = src
+			wl = &workload.GeneratedWorkload{Sessions: sessions, FollowUpBudget: followUpBudget}
+		}
+		if wl == nil {
+			var err error
+			wl, err = workload.GenerateWorkload(spec, horizon, maxRequests)
+			if err != nil {
+				logrus.Fatalf("Failed to generate workload: %v", err)
+			}
 		}
 	}
 
@@ -470,7 +539,8 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	// Setup
 	client := NewRealClient(observeServerURL, observeAPIKey, observeModel, observeServerType,
 		WithAPIFormat(observeAPIFormat),
-		WithHTTPTimeout(time.Duration(observeTimeout)*time.Second))
+		WithHTTPTimeout(time.Duration(observeTimeout)*time.Second),
+		WithSessionIDHeader(observeSessionIDHeader))
 	recorder := &Recorder{}
 
 	// Calibrate tokens-per-word ratio for the server's tokenizer (BC-6).
@@ -530,16 +600,12 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		runPrewarm(ctx, client, observePrewarmDuration)
 	}
 
-	// RequestSource: streaming in lazy mode, eager-slice adapter otherwise.
+	// RequestSource + completion handler selection:
+	//   - corpus-mode: the pool's initial round-0 requests seed dispatch; the
+	//     SessionPoolDriver admits refills on termination (self-draining).
+	//   - spec-mode: streaming in lazy mode, eager-slice adapter otherwise.
 	// The workload package's lazy source satisfies cluster.RequestSource via
 	// structural typing (same Next() method), mirroring blis run.
-	var observeSource cluster.RequestSource
-	if lazySource != nil {
-		observeSource = lazySource
-	} else {
-		observeSource = cluster.NewSliceRequestSource(wl.Requests)
-	}
-
 	// Resolve the saturation tracer BEFORE dispatch so a bad flag / config /
 	// report path fails fast rather than after the run (#1516 single detector,
 	// #1519 bank).
@@ -548,10 +614,57 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Fatalf("%v", satErr)
 	}
 
+	// KV hit-rate scrape (#1583): capture the start-of-window Prometheus counters
+	// AFTER prewarm and BEFORE the measured workload, so the end-start delta reflects
+	// the measured window. A start-scrape failure warns and disables the derivation
+	// (kvScrapeStart stays nil) — never aborts the run (BC-11).
+	var kvScrapeStart map[string]float64
+	if observeScrapeKVMetrics {
+		if s, err := client.ScrapeKVMetrics(ctx, observeKVMetricsURL); err != nil {
+			logrus.Warnf("observe: --scrape-kv-metrics: start-of-window /metrics scrape failed: %v; the observed KV hit-rate will be omitted from the trace header", err)
+		} else {
+			kvScrapeStart = s
+		}
+	}
+
+	// Request source + completion handler are selected by mode below (corpus vs
+	// spec). Box the handler into the interface only when non-nil, so the
+	// orchestrator's `handler != nil` guard is correct (a typed-nil concrete pointer
+	// boxed into an interface would be non-nil and wrongly enable the serializer).
+	var observeSource cluster.RequestSource
+	var completionHandler workload.CompletionHandler
+	switch {
+	case poolDriver != nil:
+		observeSource = cluster.NewSliceRequestSource(corpusInitial)
+		completionHandler = poolDriver
+	case lazySource != nil:
+		observeSource = lazySource
+		if sessionMgr != nil {
+			completionHandler = sessionMgr
+		}
+	default:
+		observeSource = cluster.NewSliceRequestSource(wl.Requests)
+		if sessionMgr != nil {
+			completionHandler = sessionMgr
+		}
+	}
+
 	// Run orchestrator
 	startTime := time.Now()
-	runObserveOrchestrator(ctx, client, recorder, sessionMgr, observeSource, observeNoStreaming, observeMaxConcur, observeWarmup, prefixes, prefixLengths, observeUnconstrainedOutput, observeRecordITL, tokensPerWord)
+	runObserveOrchestrator(ctx, client, recorder, completionHandler, observeSource, observeNoStreaming, observeMaxConcur, observeWarmup, prefixes, prefixLengths, observeUnconstrainedOutput, observeRecordITL, tokensPerWord)
 	logrus.Infof("Observation wall-clock time: %.3fs", time.Since(startTime).Seconds())
+
+	// Corpus-mode pool accounting parity with `blis replay` (#1487): warn if any
+	// pooled session was never admitted. In observe there is no wall-clock horizon
+	// (the loop drains on the active-session count), so a nonzero count here means a
+	// dispatched session's request left the pipeline before completing (e.g. a
+	// transport error), never a horizon cut.
+	if poolDriver != nil {
+		if un := poolDriver.Unstarted(); un > 0 {
+			logrus.Warnf("%d of %d pooled sessions never completed (a dispatched request errored out before terminating its session, so the pool slot was not refilled)",
+				un, poolDriver.TotalSessions())
+		}
+	}
 
 	// Surface any terminal sampler/generator error the lazy source recorded on a
 	// per-client state during dispatch. Eager mode would have hit Fatalf at
@@ -601,6 +714,9 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	if spec != nil {
 		header.WorkloadSeed = &spec.Seed
 	}
+	// KV hit-rate (#1583): end-of-window scrape + derive, then record in the header.
+	// nil when scraping was off or any step failed (BC-8/BC-11).
+	header.ObservedKVMetrics = resolveObservedKVMetrics(ctx, client, observeKVMetricsURL, kvScrapeStart, observeVLLMCommit)
 
 	if err := recorder.Export(header, observeTraceHeader, observeTraceData); err != nil {
 		logrus.Fatalf("Failed to export trace: %v", err)
@@ -615,20 +731,25 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		itlRecords = recorder.ITLRecords()
 	}
 
-	// Saturation trace (#1516 single detector / #1519 bank): stream the selected
-	// detector(s) over the real-server request metrics and write the per-event
-	// verdict trace to --saturation-report. Same pipeline as run/replay; the only
+	// Saturation (#1516 single detector / #1519 bank / #1517 final label): stream
+	// the selected detector(s) over the real-server request metrics, write the
+	// per-event verdict trace to --saturation-report (if given), and surface the
+	// per-detector final label on stdout. Same pipeline as run/replay; the only
 	// difference is the input source (TraceRecordsToRequestMetrics, real-server
-	// latencies). No stdout saturation field (passed nil to printObserveMetrics
-	// below) — the final label returns in #1517. No-op when no detector was
-	// selected or no report path was given.
+	// latencies) — observe's trace reflects real-server latencies by design. No-op
+	// when no detector was selected.
+	var saturationFinal map[string]saturation.Level
 	if satTracer != nil {
-		// trace emits the shared "0 completed requests" warning (consistent across
+		// run emits the shared "0 completed requests" warning (consistent across
 		// run/replay/observe). TraceRecordsToRequestMetrics drops non-"ok" records,
 		// so all-failed dispatch yields 0 metrics here.
 		requestMetrics := workload.TraceRecordsToRequestMetrics(records)
-		if err := satTracer.trace(requestMetrics); err != nil {
-			logrus.Fatalf("Saturation trace: %v", err)
+		final, err := satTracer.run(requestMetrics)
+		if err != nil {
+			logrus.Fatalf("Saturation: %v", err)
+		}
+		if len(final) > 0 {
+			saturationFinal = final
 		}
 	}
 
@@ -640,10 +761,14 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Warnf("--slo-itl set without --record-itl: ITL goodput attainment cannot be computed; using TTFT/E2E only for in-process goodput. Trace header still carries the original ITL thresholds for downstream replay/calibrate.")
 	}
 
-	// nil saturation arg (#1516): observe's stdout carries no saturation field;
-	// the per-event trace is written to --saturation-report above. #1517 restores
-	// the stdout final label.
-	printObserveMetrics(os.Stdout, records, wallClockDurationSec, itlRecords, nil, inProcGoodputTargets)
+	// #1517: observe's stdout regains the per-detector saturation final label
+	// (nil when no detector was selected ⇒ omitempty drops the field). The
+	// per-event trace is written to --saturation-report above.
+	var saturationResult interface{}
+	if saturationFinal != nil {
+		saturationResult = saturationFinal
+	}
+	printObserveMetrics(os.Stdout, records, wallClockDurationSec, itlRecords, saturationResult, inProcGoodputTargets)
 
 	// Print session metrics if any record carries a session label (#1058)
 	sessionMetrics := computeSessionMetricsFromTrace(records)
@@ -778,7 +903,7 @@ func printObserveMetrics(w io.Writer, records []workload.TraceRecord, wallClockD
 		ITLMeanMs:         itlMeanMs,
 		ResponsesPerSec:   responsesPerSec,
 		TokensPerSec:      tokensPerSec,
-		Saturation:        saturationResult, // always nil as of #1516 (observe writes the per-event trace to --saturation-report, not stdout); #1517 repopulates this for the stdout final label
+		Saturation:        saturationResult, // #1517: per-detector final-label map when --detectors is set; nil otherwise (omitempty drops the field)
 	}
 
 	// Compute percentiles if data available
@@ -904,7 +1029,7 @@ func runObserveOrchestrator(
 	ctx context.Context,
 	client *RealClient,
 	recorder *Recorder,
-	sessionMgr *workload.SessionManager,
+	handler workload.CompletionHandler,
 	source cluster.RequestSource,
 	noStreaming bool,
 	maxConcurrency int,
@@ -935,19 +1060,19 @@ func runObserveOrchestrator(
 	// they cannot double-count.
 	activeSessionCount := int64(0)
 	var seenSessions map[string]bool
-	if sessionMgr != nil {
+	if handler != nil {
 		seenSessions = make(map[string]bool)
 	}
 
 	// Session serializer goroutine (BC-8: single-threaded OnComplete)
 	var serializerDone chan struct{}
-	if sessionMgr != nil {
+	if handler != nil {
 		serializerDone = make(chan struct{})
 		go func() {
 			defer close(serializerDone)
 			for ce := range completionCh {
 				adapted := adaptForSessionManager(ce.req, ce.record)
-				followUps := sessionMgr.OnComplete(adapted, ce.wallClock)
+				followUps := handler.OnComplete(adapted, ce.wallClock)
 				for _, fu := range followUps {
 					followUpCh <- fu
 				}
@@ -987,7 +1112,7 @@ func runObserveOrchestrator(
 		}
 
 		// Session completion (BC-3)
-		if sessionMgr != nil && req.SessionID != "" {
+		if handler != nil && req.SessionID != "" {
 			completionCh <- completionEvent{
 				req:       req,
 				record:    record,
@@ -1020,7 +1145,7 @@ func runObserveOrchestrator(
 	// deref of req.SessionID below assumes a buffered request is present.
 	takePreGen := func() *sim.Request {
 		req := nextPreGen
-		if sessionMgr != nil && req.SessionID != "" && !seenSessions[req.SessionID] {
+		if handler != nil && req.SessionID != "" && !seenSessions[req.SessionID] {
 			seenSessions[req.SessionID] = true
 			atomic.AddInt64(&activeSessionCount, 1)
 		}
@@ -1070,7 +1195,7 @@ func runObserveOrchestrator(
 			nextReq = pendingFollowUps[0]
 			pendingFollowUps = pendingFollowUps[1:]
 
-		} else if sessionMgr != nil && atomic.LoadInt64(&activeSessionCount) > 0 {
+		} else if handler != nil && atomic.LoadInt64(&activeSessionCount) > 0 {
 			// No pre-generated or buffered follow-ups — wait for new follow-up or drain
 			select {
 			case fu, ok := <-followUpCh:
@@ -1128,7 +1253,7 @@ drain:
 	wg.Wait()
 
 	// Close session channels
-	if sessionMgr != nil {
+	if handler != nil {
 		close(completionCh)
 		<-serializerDone
 	}
@@ -1251,6 +1376,7 @@ func requestToPending(req *sim.Request, reqIndex int, noStreaming, unconstrained
 		MinTokens:       minTokens,
 		DeadlineUs:      req.Deadline,
 		SLOTargetUs:     req.SLOTargetUs,
+		SessionID:       req.SessionID,
 	}
 }
 

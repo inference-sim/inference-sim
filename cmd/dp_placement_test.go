@@ -248,8 +248,8 @@ func replayDPSubprocess() {
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
 	maxModelLen = 0
-	maxRunningReqs = 256
-	maxScheduledTokens = 2048
+	maxNumSeqs = 256
+	maxNumBatchedTokens = 2048
 	longPrefillTokenThreshold = 0
 	gpuMemoryUtilization = 0.9
 	numInstances = 1

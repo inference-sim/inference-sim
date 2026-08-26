@@ -34,17 +34,19 @@ func threeRequests() []sim.RequestMetrics {
 	}
 }
 
-// TestBank_ClassifyActuallyReplaysEvents is the vacuous-pass guard the issue
+// TestBank_RunActuallyReplaysEvents is the vacuous-pass guard the issue
 // mandates: a streaming detector in the bank must observe exactly 2*N events
-// (one arrival + one completion per request) — proving Classify really replays
+// (one arrival + one completion per request) — proving Run really replays
 // rather than silently no-op'ing. It also checks Reset ran (fresh state) and one
 // Detect per Observe (one verdict per event).
-func TestBank_ClassifyActuallyReplaysEvents(t *testing.T) {
+func TestBank_RunActuallyReplaysEvents(t *testing.T) {
 	spy := &countingDetector{name: "composite"}
 	bank := &Bank{detectors: []Detector{spy}, sink: NewNoOpSink()}
 
 	reqs := threeRequests()
-	bank.Classify(reqs, len(reqs))
+	if err := bank.Run(reqs); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
 
 	wantEvents := 2 * len(reqs)
 	if spy.observed != wantEvents {
@@ -58,28 +60,24 @@ func TestBank_ClassifyActuallyReplaysEvents(t *testing.T) {
 	}
 }
 
-// TestBank_SatisfiesBatchClassifierContract binds *Bank to sim.BatchClassifier
-// inside a test (the production assertion in bank.go is not attributed to the
-// contract by coverage tooling) AND drives Classify through the interface-typed
-// variable — proving the polymorphic contract, not just the concrete method.
-// Independent of the #1517 SaveResults wiring: it exercises the seam directly.
-func TestBank_SatisfiesBatchClassifierContract(t *testing.T) {
+// TestBank_RunProducesNonEmptyTrace verifies Run populates the collector with a
+// non-empty trace (a nil/no-op driver would leave zero records). This replaces
+// the retired sim.BatchClassifier interface-conformance test (#1517).
+func TestBank_RunProducesNonEmptyTrace(t *testing.T) {
 	c := NewInMemoryCollector()
 	bank, err := NewBank(AllDetectorNames(), SaturationConfig{}, c)
 	if err != nil {
 		t.Fatalf("NewBank: %v", err)
 	}
 
-	// Drive Classify strictly through the interface, never the concrete type.
-	var classifier sim.BatchClassifier = bank
 	reqs := threeRequests()
-	classifier.Classify(reqs, len(reqs))
+	if err := bank.Run(reqs); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
 	bank.Close()
 
-	// The interface call must produce the same non-empty trace the concrete
-	// path does — a nil/no-op interface impl would leave zero records.
 	if len(c.Records()) == 0 {
-		t.Fatal("Classify via sim.BatchClassifier produced no records; the interface seam is a no-op")
+		t.Fatal("Run produced no records; the driver is a no-op")
 	}
 }
 
@@ -92,14 +90,16 @@ func TestBank_ZeroRequestsEmptyTrace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBank: %v", err)
 	}
-	bank.Classify(nil, 0) // zero requests
+	if err := bank.Run(nil); err != nil { // zero requests
+		t.Fatalf("Run(nil): %v", err)
+	}
 	bank.Close()
 	if got := len(c.Records()); got != 0 {
 		t.Errorf("expected 0 records for zero requests, got %d", got)
 	}
 	// WriteCombinedReport must still emit a valid {"trace":[]} (not {"trace":null}).
 	path := filepath.Join(t.TempDir(), "empty.json")
-	if err := WriteCombinedReport(path, c); err != nil {
+	if err := WriteCombinedReport(path, c, nil); err != nil {
 		t.Fatalf("WriteCombinedReport: %v", err)
 	}
 	data, err := os.ReadFile(path)
@@ -171,13 +171,23 @@ func TestBank_AllEqualsExplicitList(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewBank(%v): %v", names, err)
 		}
-		bank.Classify(reqs, len(reqs))
+		if err := bank.Run(reqs); err != nil {
+			t.Fatalf("Run(%v): %v", names, err)
+		}
 		bank.Close()
 		return c.Records()
 	}
 
 	all := run(AllDetectorNames())
-	explicit := run([]string{"threshold", "backlog-drift", "composite"}) // scrambled order
+
+	// The explicit list is the full roster in REVERSE, so it exercises the
+	// order-independence guarantee while staying exhaustive as detectors are added
+	// (a hardcoded list would silently become a subset and stop testing `all`).
+	scrambled := AllDetectorNames()
+	for i, j := 0, len(scrambled)-1; i < j; i, j = i+1, j-1 {
+		scrambled[i], scrambled[j] = scrambled[j], scrambled[i]
+	}
+	explicit := run(scrambled)
 
 	assertRecordsEqual(t, all, explicit)
 }
@@ -193,7 +203,9 @@ func TestBank_SubsetMatchesRecordsUnderAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBank(all): %v", err)
 	}
-	bankAll.Classify(reqs, len(reqs))
+	if err := bankAll.Run(reqs); err != nil {
+		t.Fatalf("Run(all): %v", err)
+	}
 	bankAll.Close()
 
 	collectSubset := NewInMemoryCollector()
@@ -201,7 +213,9 @@ func TestBank_SubsetMatchesRecordsUnderAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBank(composite): %v", err)
 	}
-	bankSubset.Classify(reqs, len(reqs))
+	if err := bankSubset.Run(reqs); err != nil {
+		t.Fatalf("Run(composite): %v", err)
+	}
 	bankSubset.Close()
 
 	// Filter the `all` trace down to composite records and compare.
@@ -224,7 +238,9 @@ func TestBank_Deterministic(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewBank: %v", err)
 		}
-		bank.Classify(reqs, len(reqs))
+		if err := bank.Run(reqs); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
 		bank.Close()
 		return c.Records()
 	}

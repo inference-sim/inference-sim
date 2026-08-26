@@ -56,8 +56,8 @@ var (
 	simulationHorizon         int64     // Total simulation time (in ticks)
 	logLevel                  string    // Log verbosity level
 	totalKVBlocks             int64     // Total number of KV blocks available on GPU
-	maxRunningReqs            int64     // Maximum number of requests in the Running batch
-	maxScheduledTokens        int64     // Maximum total number of tokens across requests in the Running batch
+	maxNumSeqs                int64     // Maximum number of requests in the Running batch (vLLM: --max-num-seqs)
+	maxNumBatchedTokens       int64     // Maximum total number of tokens across requests in the Running batch (vLLM: --max-num-batched-tokens)
 	blockSizeTokens           int64     // Number of tokens per KV block
 	betaCoeffs                []float64 // List of beta coeffs corresponding to step features
 	alphaCoeffs               []float64 // List of alpha coeffs corresponding to pre, postprocessing delays
@@ -1198,8 +1198,18 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 
 	// vLLM server configs
 	cmd.Flags().Int64Var(&totalKVBlocks, "total-kv-blocks", 1000000, "Total number of KV cache blocks")
-	cmd.Flags().Int64Var(&maxRunningReqs, "max-num-running-reqs", 256, "Maximum number of requests running together")
-	cmd.Flags().Int64Var(&maxScheduledTokens, "max-num-scheduled-tokens", 2048, "Maximum total number of new tokens across running requests")
+	cmd.Flags().Int64Var(&maxNumSeqs, "max-num-seqs", 256, "Maximum number of requests running together (vLLM parity)")
+	cmd.Flags().Int64Var(&maxNumBatchedTokens, "max-num-batched-tokens", 2048, "Maximum total number of new tokens across running requests (vLLM parity)")
+	// Deprecated aliases bound to the same vars for backward compatibility (issue #1570).
+	// pflag emits the deprecation warning to stderr, so stdout stays byte-identical (INV-6).
+	cmd.Flags().Int64Var(&maxNumSeqs, "max-num-running-reqs", 256, "Deprecated: use --max-num-seqs")
+	cmd.Flags().Int64Var(&maxNumBatchedTokens, "max-num-scheduled-tokens", 2048, "Deprecated: use --max-num-batched-tokens")
+	if err := cmd.Flags().MarkDeprecated("max-num-running-reqs", "use --max-num-seqs"); err != nil {
+		logrus.Fatalf("failed to mark --max-num-running-reqs deprecated: %v", err)
+	}
+	if err := cmd.Flags().MarkDeprecated("max-num-scheduled-tokens", "use --max-num-batched-tokens"); err != nil {
+		logrus.Fatalf("failed to mark --max-num-scheduled-tokens deprecated: %v", err)
+	}
 	cmd.Flags().Float64SliceVar(&betaCoeffs, "beta-coeffs", []float64{0.0, 0.0, 0.0}, "Comma-separated list of beta coefficients")
 	cmd.Flags().Float64SliceVar(&alphaCoeffs, "alpha-coeffs", []float64{0.0, 0.0, 0.0}, "Comma-separated alpha coefficients (alpha0,alpha1) for processing delays")
 	cmd.Flags().Int64Var(&blockSizeTokens, "block-size-in-tokens", 16, "Number of tokens contained in a KV cache block")
@@ -1308,6 +1318,15 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&loraLoadBaseLatencyUs, "lora-load-base-latency-us", 0, "Cold adapter-load fixed latency in µs. Applied only when set; else --lora-config / defaults.yaml.")
 	cmd.Flags().Float64Var(&loraLoadBandwidthBytesUs, "lora-load-bandwidth-bytes-us", 0, "Cold adapter-load bandwidth in bytes/µs (>0). Applied only when set; else --lora-config / defaults.yaml.")
 	cmd.Flags().Float64Var(&loraFootprintBytesPerRank, "lora-footprint-bytes-per-rank", 0, "Adapter HBM footprint per rank unit in bytes (>0). Applied only when set; else --lora-config / defaults.yaml.")
+
+	// KV-cache offload config surface (H5, #1587). One flag: a strict-YAML file with a
+	// single top-level kv_offload: block (CPU tier + ordered secondary tiers, per-tier
+	// device physics). Registered on run and replay (INV-13). Absent => the offload
+	// subsystem is inert and output is byte-identical to a build without the feature
+	// (BC-G5). On replay the trace header is authoritative; a passed flag must match the
+	// header (see resolveKVOffloadConfig / the replay wiring). device_class names resolve
+	// against defaults.yaml kv_offload_devices.
+	cmd.Flags().StringVar(&kvOffloadConfigPath, "kv-offload-config", "", "Path to a YAML file with a top-level kv_offload: block (multi-tier KV-cache offload config: cpu_bytes_to_use, block_size/blocks_per_chunk, eviction_policy, offload_prompt_only, secondary_tiers[] with per-tier device_class/direct_io/bandwidth). Absent => offload subsystem inert. On replay the trace header is authoritative.")
 }
 
 // loraConfigFile is the on-disk shape of a --lora-config YAML file: a single
@@ -1538,6 +1557,16 @@ var runCmd = &cobra.Command{
 		// unaffected) when the subsystem is inert (INV-6). Set before resolveLatencyConfig.
 		loraCfg := resolveLoRAConfig(cmd)
 		loraReservedBytesForKV = adapterReservedBytesFor(loraCfg)
+
+		// KV-cache offload config surface (#1587): resolve ONCE (R4), validated at the
+		// CLI boundary. Inert (zero value) when --kv-offload-config is absent (BC-G5).
+		// Recorded in the exported trace header below for run/replay parity (BC-G6).
+		kvOffloadCfg := resolveKVOffloadConfig(cmd)
+		// #1590 (H1): --kv-offload-config (multi-tier chain) and --kv-cpu-blocks (legacy
+		// single CPU tier) are distinct offload models; setting both is ambiguous.
+		if kvOffloadCfg.IsEnabled() && kvCPUBlocks > 0 {
+			logrus.Fatalf("--kv-offload-config and --kv-cpu-blocks are mutually exclusive (distinct KV-offload models); set only one")
+		}
 
 		// Resolve latency backend configuration (single code path shared with replayCmd).
 		lr := resolveLatencyConfig(cmd)
@@ -1893,11 +1922,11 @@ var runCmd = &cobra.Command{
 		if totalKVBlocks <= 0 {
 			logrus.Fatalf("--total-kv-blocks must be > 0, got %d", totalKVBlocks)
 		}
-		if maxRunningReqs <= 0 {
-			logrus.Fatalf("--max-num-running-reqs must be > 0, got %d", maxRunningReqs)
+		if maxNumSeqs <= 0 {
+			logrus.Fatalf("--max-num-seqs must be > 0, got %d", maxNumSeqs)
 		}
-		if maxScheduledTokens <= 0 {
-			logrus.Fatalf("--max-num-scheduled-tokens must be > 0, got %d", maxScheduledTokens)
+		if maxNumBatchedTokens <= 0 {
+			logrus.Fatalf("--max-num-batched-tokens must be > 0, got %d", maxNumBatchedTokens)
 		}
 		if longPrefillTokenThreshold < 0 {
 			logrus.Fatalf("--long-prefill-token-threshold must be >= 0, got %d", longPrefillTokenThreshold)
@@ -2172,6 +2201,22 @@ var runCmd = &cobra.Command{
 			}
 		}
 
+		// #1590 (H1): derive per_block_bytes for the offload tier chain. sim/kv cannot
+		// import sim/latency, so compute the per-rank KV byte size of one GPU block here
+		// (model + TP are resolved) and record it on the resolved offload config. It
+		// feeds the CPU-tier block capacity and transfer-job sizing, and round-trips
+		// through the trace header (INV-13). Only when offload is enabled.
+		if kvOffloadCfg.IsEnabled() {
+			perTokenKVBytes, err := latency.KVBytesPerToken(lr.ModelConfig, tensorParallelism)
+			if err != nil {
+				logrus.Fatalf("kv_offload: cannot derive per_block_bytes from the model: %v", err)
+			}
+			kvOffloadCfg.PerBlockBytes = int64(perTokenKVBytes * float64(blockSizeTokens))
+			if kvOffloadCfg.PerBlockBytes <= 0 {
+				logrus.Fatalf("kv_offload: derived per_block_bytes must be > 0 (KVBytesPerToken=%v × block_size=%d)", perTokenKVBytes, blockSizeTokens)
+			}
+		}
+
 		// Unified cluster path (used for all values of numInstances).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/replay.go (replayCmd
 		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
@@ -2180,8 +2225,9 @@ var runCmd = &cobra.Command{
 				Horizon: simulationHorizon,
 				Seed:    seed,
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
-					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
-				BatchConfig:   sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
+					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency,
+					sim.WithKVOffload(kvOffloadCfg)),
+				BatchConfig:   sim.NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold),
 				LatencyCoeffs: sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
 				// DP-as-placement (#1531): dpPlan.PerRankDP is the per-replica DP — 1 when
 				// the plan is active (each replica is one rank), else the CLI dataParallelism
@@ -2374,7 +2420,8 @@ var runCmd = &cobra.Command{
 				TimeUnit:          "microseconds",
 				Mode:              "generated",
 				WorkloadSeed:      &spec.Seed,
-				GoodputSLOTargets: goodputTargets, // #1413, BC-7: persist resolved targets for downstream replay/calibrate
+				GoodputSLOTargets: goodputTargets,                   // #1413, BC-7: persist resolved targets for downstream replay/calibrate
+				KVOffload:         simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: nil when inert (omitted); round-trips resolved config
 			}
 			if err := workload.ExportTraceV2(header, records, traceOutput+".yaml", traceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)
@@ -2383,38 +2430,44 @@ var runCmd = &cobra.Command{
 		}
 
 		if numInstances > 1 {
-			// Print per-instance metrics to stdout (multi-instance only).
-			// nil saturation arg (#1516): stdout carries no saturation field.
+			// Print per-instance metrics to stdout (multi-instance only). Per-instance
+			// output carries no saturation field — the final label is a cluster-level
+			// verdict, emitted on the aggregate below (#1517).
 			for _, inst := range cs.Instances() {
-				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, "", nil); err != nil {
+				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, ""); err != nil {
 					logrus.Fatalf("SaveResults for instance %s: %v", inst.ID(), err)
 				}
 			}
 		}
-		// Build aggregate output, inject goodput, then emit (#1413).
-		// nil saturation arg (#1516): the per-event trace is produced by the
-		// streaming replay below, not through BuildOutput's stdout field.
+		// Build aggregate output, inject goodput, run the saturation reducer, then
+		// emit (#1413 goodput / #1517 saturation share the build-then-mutate-then-emit
+		// pattern). The saturation label must reach stdout, so the tracer runs BEFORE
+		// EmitOutput and mutates clusterOutput.Saturation — sim/ builds the struct and
+		// knows nothing about saturation; cmd/ sets the field.
 		aggregated := cs.AggregatedMetrics()
-		clusterOutput := aggregated.BuildOutput("cluster", nil)
+		clusterOutput := aggregated.BuildOutput("cluster")
 		emitGoodput(&clusterOutput, aggregated, cs.InjectedByClass(),
 			float64(aggregated.SimEndedTime)/1e6, goodputTargets)
-		if err := aggregated.EmitOutput(clusterOutput, metricsPath); err != nil {
-			logrus.Fatalf("SaveResults: %v", err)
+
+		// Saturation (#1516 single detector / #1519 bank / #1517 final label): stream
+		// the selected detector(s) over the aggregate's completed-request metrics,
+		// write the per-event verdict trace to --saturation-report (if given), and
+		// splice the per-detector final label onto stdout. Same pipeline as
+		// replay/observe; only the input slice differs (here it is sim-derived,
+		// INV-13). Guard on the tracer so the common no-detector path skips the
+		// O(n log n) sort + O(n) copy in CompletedRequestMetrics().
+		if satTracer != nil {
+			final, err := satTracer.run(aggregated.CompletedRequestMetrics())
+			if err != nil {
+				logrus.Fatalf("Saturation: %v", err)
+			}
+			if len(final) > 0 {
+				clusterOutput.Saturation = final
+			}
 		}
 
-		// Saturation trace (#1516 single detector / #1519 bank): stream the selected
-		// detector(s) over the aggregate's completed-request metrics and write the
-		// per-event verdict trace to --saturation-report. Same pipeline as
-		// replay/observe; only the input slice differs (here it is sim-derived,
-		// INV-13).
-		//
-		// Guard on the tracer so the common no-detector path skips the
-		// O(n log n) sort + O(n) copy in CompletedRequestMetrics() — the argument
-		// would otherwise be evaluated before trace could no-op.
-		if satTracer != nil {
-			if err := satTracer.trace(aggregated.CompletedRequestMetrics()); err != nil {
-				logrus.Fatalf("Saturation trace: %v", err)
-			}
+		if err := aggregated.EmitOutput(clusterOutput, metricsPath); err != nil {
+			logrus.Fatalf("SaveResults: %v", err)
 		}
 
 		// Collect RawMetrics and compute fitness (PR9)

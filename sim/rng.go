@@ -35,6 +35,13 @@ const (
 	// XOR-derived stream. Existing code in sim/cluster/workload.go continues
 	// using SubsystemWorkload unchanged.
 	SubsystemWorkloadGen = "workload-gen"
+
+	// SubsystemKVOffload is the RNG subsystem for the KV-offload storage device
+	// model's optional latency jitter (#1581). Its XOR-derived stream is consumed
+	// only when a tier configures latency_jitter_stddev > 0, so runs without jitter
+	// draw nothing and stay byte-identical (INV-6). The KV store builds one from the
+	// run seed; run and replay share the seed, so jitter draws match (INV-13).
+	SubsystemKVOffload = "kv-offload"
 )
 
 // SubsystemInstance returns the subsystem name for instance N.

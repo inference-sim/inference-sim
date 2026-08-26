@@ -51,7 +51,7 @@ func TestInstanceSimulator_GoldenDataset_Equivalence(t *testing.T) {
 					Horizon:             math.MaxInt64,
 					Seed:                tc.Seed,
 					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
-					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
+					BatchConfig:         sim.NewBatchConfig(tc.MaxNumSeqs, tc.MaxNumBatchedTokens, tc.LongPrefillTokenThreshold),
 					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
 					ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, 1, false, "", "roofline", tc.MaxModelLen),
 				},
@@ -105,7 +105,7 @@ func TestInstanceSimulator_GoldenDataset_Invariants(t *testing.T) {
 					Horizon:             math.MaxInt64,
 					Seed:                tc.Seed,
 					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
-					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
+					BatchConfig:         sim.NewBatchConfig(tc.MaxNumSeqs, tc.MaxNumBatchedTokens, tc.LongPrefillTokenThreshold),
 					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
 					ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, 1, false, "", "roofline", tc.MaxModelLen),
 				},
@@ -686,7 +686,7 @@ func TestInstanceSimulator_EvictRequest_ReleasesAdapterPin(t *testing.T) {
 		inst.ProcessNextEvent()
 	}
 
-	out := inst.Metrics().BuildOutput("evict-pin", nil)
+	out := inst.Metrics().BuildOutput("evict-pin")
 	if lc := out.Adapters["a2"].LoadCount; lc != 1 {
 		t.Errorf("adapter a2 LoadCount = %d, want 1 — cold a2 could not load after a1 was evicted; "+
 			"the eviction leaked a1's adapter pin (EvictLRU stuck)", lc)

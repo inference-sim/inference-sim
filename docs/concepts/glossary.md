@@ -30,7 +30,7 @@ The JSON output of `blis calibrate` comparing real observed latencies against si
 
 ### Chunked Prefill
 
-A vLLM optimization where long prefill sequences are split into chunks that fit within the per-step token budget (`max-num-scheduled-tokens`). Controlled by `--long-prefill-token-threshold`. See [Core Engine: Batch Formation](core-engine.md#batch-formation).
+A vLLM optimization where long prefill sequences are split into chunks that fit within the per-step token budget (`max-num-batched-tokens`). Controlled by `--long-prefill-token-threshold`. See [Core Engine: Batch Formation](core-engine.md#batch-formation).
 
 ### Cohort
 

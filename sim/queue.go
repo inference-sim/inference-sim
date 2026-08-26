@@ -47,6 +47,18 @@ func (wq *WaitQueue) Peek() *Request {
 	return wq.queue[0]
 }
 
+// PeekAt returns the request at index i (0-based, front == 0) without removing it,
+// or nil if i is out of range. PeekAt(0) is equivalent to Peek(). It is used by
+// batch formation to scan past requests that are set aside this step (e.g. an
+// offload-deferred request waiting for a secondary-tier fetch, #1591) without
+// mutating the queue.
+func (wq *WaitQueue) PeekAt(i int) *Request {
+	if i < 0 || i >= len(wq.queue) {
+		return nil
+	}
+	return wq.queue[i]
+}
+
 // PrependFront inserts a request at the front of the queue.
 // Used for preemption: a request evicted from the running batch
 // is placed back at the head of the wait queue for immediate rescheduling.

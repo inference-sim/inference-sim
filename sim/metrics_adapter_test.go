@@ -30,7 +30,7 @@ func newAdapterTestMetrics() *Metrics {
 // requests attributed to no adapter (specs/007-lora-control-plane/contracts/metrics.md).
 func TestBuildOutput_PerAdapterMetrics(t *testing.T) {
 	m := newAdapterTestMetrics()
-	out := m.BuildOutput("cluster", nil)
+	out := m.BuildOutput("cluster")
 
 	if out.Adapters == nil {
 		t.Fatal("expected non-nil Adapters block when adapters are attributed")
@@ -71,7 +71,7 @@ func TestBuildOutput_AdapterEventCountsSurface(t *testing.T) {
 	m.AdapterLoadCounts["adapter_2"] = 2
 	m.AdapterEvictionCounts["adapter_2"] = 2
 
-	out := m.BuildOutput("cluster", nil)
+	out := m.BuildOutput("cluster")
 
 	a0 := out.Adapters["adapter_0"]
 	if a0.LoadCount != 3 || a0.EvictionCount != 1 {
@@ -102,7 +102,7 @@ func TestBuildOutput_NoAdapters_OmitsBlock(t *testing.T) {
 	m.RequestE2Es["rb"] = 50000.0
 	m.CompletedRequests = 1
 
-	out := m.BuildOutput("cluster", nil)
+	out := m.BuildOutput("cluster")
 	if out.Adapters != nil {
 		t.Errorf("expected nil Adapters when none attributed, got %v", out.Adapters)
 	}
@@ -128,7 +128,7 @@ func TestBuildOutput_AdapterKeysSorted(t *testing.T) {
 	}
 	m.CompletedRequests = 3
 
-	out := m.BuildOutput("cluster", nil)
+	out := m.BuildOutput("cluster")
 	data, _ := json.Marshal(out)
 	s := string(data)
 	ia := strings.Index(s, "\"alpha\"")

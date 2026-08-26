@@ -33,7 +33,7 @@ func newTenantConfig(numInstances int, tenantBudgets map[string]float64) Deploym
 }
 
 // T_TenantInteg_001 — Over-budget tenant's Sheddable shed; on-budget tenant's Sheddable admitted.
-// Use MaxRunningReqs=5 so totalCapacity = 2×5 = 10; alice budget=0.1 → limit=1 slot.
+// Use MaxNumSeqs=5 so totalCapacity = 2×5 = 10; alice budget=0.1 → limit=1 slot.
 // Dense arrivals ensure alice quickly exceeds her 1-slot budget.
 //
 // Differential verification: budgets are swapped in the second run to prove enforcement
@@ -248,7 +248,7 @@ func TestTenantAdmission_INV9_DoesNotReadOutputTokens(t *testing.T) {
 		return reqs
 	}
 
-	// Use MaxRunningReqs=5 so totalCapacity=10; alice budget=0.1 → limit=1 slot.
+	// Use MaxNumSeqs=5 so totalCapacity=10; alice budget=0.1 → limit=1 slot.
 	// Dense arrivals ensure the budget enforcement code path actually executes.
 	cfg1 := newTenantConfig(2, map[string]float64{"alice": 0.1})
 	cfg1.BatchConfig = sim.NewBatchConfig(5, 2048, 0)
@@ -289,7 +289,7 @@ func TestTenantAdmission_PDMode_BudgetEnforced(t *testing.T) {
 		))
 	}
 
-	// 4 instances: 2 prefill + 2 decode; MaxRunningReqs=10 → totalCapacity=40; alice limit=4 slots.
+	// 4 instances: 2 prefill + 2 decode; MaxNumSeqs=10 → totalCapacity=40; alice limit=4 slots.
 	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
 	cfg.AdmissionPolicy = "tier-shed"
 	cfg.TierShedThreshold = 0

@@ -54,10 +54,26 @@ jobs:
         with:
           go-version: '1.26'
 
+      - name: Parse archon ref
+        id: parse
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const body = context.payload.comment.body;
+            const match = body.match(/--archon-ref\s+(\S+)/);
+            const ref = match ? match[1] : 'v0.2.0';
+            if (!/^[a-zA-Z0-9._/-]+$/.test(ref)) {
+              core.setFailed(`Invalid archon ref: ${ref}`);
+              return;
+            }
+            core.setOutput('ref', ref);
+
       - name: Build archon-go
         id: build
+        env:
+          ARCHON_REF: ${{ steps.parse.outputs.ref }}
         run: |
-          ARCHON_BIN=$(scripts/archon-build.sh v0.1.0)
+          ARCHON_BIN=$(scripts/archon-build.sh "$ARCHON_REF")
           [[ -n "$ARCHON_BIN" && -x "$ARCHON_BIN" ]] || { echo "::error::archon-build.sh produced no valid binary"; exit 1; }
           echo "archon_bin=$ARCHON_BIN" >> "$GITHUB_OUTPUT"
 
@@ -75,12 +91,9 @@ jobs:
             core.setOutput('head_sha', pr.head.sha);
 
       - name: Fetch PR head ref
-        env:
-          PR_NUMBER: ${{ github.event.issue.number }}
-        run: |
-          git fetch origin "pull/$PR_NUMBER/head"
+        run: git fetch origin "pull/${{ github.event.issue.number }}/head"
 
-      - name: Run Archon analysis
+      - name: Run archon pr-review
         id: archon
         env:
           ARCHON_BIN: ${{ steps.build.outputs.archon_bin }}
@@ -96,14 +109,28 @@ jobs:
             echo "$OUTPUT" > /tmp/archon-output.md
             exit 0
           }
-          EXIT_CODE=0
-          OUTPUT=$(scripts/archon-ci.sh . "$MERGE_BASE" "$HEAD_SHA") || EXIT_CODE=$?
-          if [[ $EXIT_CODE -gt 1 ]]; then
+
+          "$ARCHON_BIN" pr-review . "$MERGE_BASE" "$HEAD_SHA" --out .archon || {
             OUTPUT="## Archon Error
 
-          Script exited with unexpected code $EXIT_CODE. Check the workflow logs."
+          archon-go pr-review failed. Check the workflow logs."
+            echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+            echo "$OUTPUT" > /tmp/archon-output.md
+            exit 0
+          }
+
+          if [[ ! -f .archon/review.md ]]; then
+            OUTPUT="## Archon Error
+
+          archon-go exited 0 but did not produce .archon/review.md."
+            echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+            echo "$OUTPUT" > /tmp/archon-output.md
+            exit 0
           fi
+
+          OUTPUT=$(cat .archon/review.md)
           echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+
           # GitHub PR comments have a 65536 char limit. Truncate if needed.
           if [[ ${#OUTPUT} -gt 60000 ]]; then
             FULL_LEN=${#OUTPUT}

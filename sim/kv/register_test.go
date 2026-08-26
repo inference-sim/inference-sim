@@ -33,7 +33,7 @@ func TestNewKVStore_TieredMode_ThresholdOutOfRange_Panics(t *testing.T) {
 				}
 			}()
 			cfg := sim.NewKVCacheConfig(10, 2, 5, tc.threshold, 100.0, 0)
-			NewKVStore(cfg)
+			NewKVStore(cfg, 0)
 		})
 	}
 }
@@ -61,7 +61,7 @@ func TestNewKVStore_TieredMode_InvalidBandwidth_Panics(t *testing.T) {
 				}
 			}()
 			cfg := sim.NewKVCacheConfig(10, 2, 5, 0.5, tc.bandwidth, 0)
-			NewKVStore(cfg)
+			NewKVStore(cfg, 0)
 		})
 	}
 }
@@ -78,7 +78,7 @@ func TestNewKVStore_TieredMode_ValidEdgeCases(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := sim.NewKVCacheConfig(10, 2, 5, tc.threshold, 100.0, 0)
-			store := NewKVStore(cfg)
+			store := NewKVStore(cfg, 0)
 			if store == nil {
 				t.Fatal("NewKVStore should return non-nil for valid config")
 			}
@@ -89,7 +89,7 @@ func TestNewKVStore_TieredMode_ValidEdgeCases(t *testing.T) {
 func TestNewKVStore_SingleTier_SkipsValidation(t *testing.T) {
 	// When KVCPUBlocks <= 0, tiered-mode validation does not apply
 	cfg := sim.NewKVCacheConfig(10, 2, 0, -999.0, -999.0, 0)
-	store := NewKVStore(cfg)
+	store := NewKVStore(cfg, 0)
 	if store == nil {
 		t.Fatal("NewKVStore should return non-nil for single-tier mode")
 	}

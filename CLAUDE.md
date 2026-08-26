@@ -28,6 +28,17 @@ go build -o blis main.go
 # Run and export workload as TraceV2 (prefix auto-appends .yaml/.csv)
 ./blis run --model qwen/qwen3-14b --trace-output traces/run1
 
+# Run with a multi-tier KV-offload config (#1587). One strict-YAML flag captures vLLM's
+# offload config surface (kv_offload: block — cpu_bytes_to_use, block_size/blocks_per_chunk,
+# eviction_policy, offload_prompt_only [vLLM default TRUE], secondary_tiers[] with per-tier
+# device_class/direct_io/bandwidth). Absent => offload subsystem inert, byte-identical output
+# (BC-G5). Defaults match vLLM knob-for-knob; store_threshold>=2 and non-fs tiers fail loudly.
+# device_class names resolve against defaults.yaml kv_offload_devices. The resolved config is
+# recorded in the trace header and round-trips through replay (INV-13); on replay the header is
+# authoritative (a config it cannot reproduce is a hard error). As of #1590 the config DRIVES the
+# N-tier chain mechanism (below) — mutually exclusive with the legacy --kv-cpu-blocks.
+./blis run --model qwen/qwen3-14b --kv-offload-config offload.yaml --trace-output traces/run1
+
 # Replay a captured TraceV2 file through the DES (fixed timing from trace)
 ./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b
 
@@ -101,8 +112,38 @@ go build -o blis main.go
   --record-itl --itl-output trace.itl.csv \
   --trace-header trace.yaml --trace-data trace.csv
 
+# Observe with KV cache hit-rate scraping (#1583). --scrape-kv-metrics scrapes the
+# server's Prometheus /metrics at the start and end of the measured window and records
+# the observed hit-rate (vllm:kv_offload_tiering_block_hits/_block_queries, or the GPU
+# prefix-cache fallback) in the trace header for downstream calibrate. --vllm-commit
+# records the pinned (unreleased, PR #48798) vLLM the tiering counters require. A scrape
+# miss warns and omits the block (never fatal). observe is a black-box dispatcher — it
+# does NOT take --kv-offload-config; the offload config is supplied on the replay step
+# (below). See docs/guide/kv-offload-calibration.md.
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --workload chatbot --rate 10 --num-requests 100 \
+  --scrape-kv-metrics --vllm-commit 63a9a5010a \
+  --trace-header trace.yaml --trace-data trace.csv
+
 # Compare real observed latencies against simulator predictions
 ./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json --report calibration.json
+
+# Compare KV cache hit-rate too (#1583). The real hit-rate comes from the trace header
+# (observe --scrape-kv-metrics); the sim hit-rate comes from --sim-metrics (a
+# MetricsOutput from `blis replay --metrics-path`, which carries cache_hit_rate). The
+# report gains a hit_rate block with abs_error_pp and a within-tolerance verdict
+# (default 5 pp); a TTFT-MAPE verdict uses --ttft-mape-threshold (default 0.15).
+# Skipped with a warning when --sim-metrics is absent or lacks cache_hit_rate. For a
+# tiered observed hit-rate, supply --kv-offload-config on replay to model the observed
+# deployment (observe traces are exempt from the "cannot add offload on replay" rule;
+# sim-generated traces stay header-authoritative). Replaying a tiered observation with
+# no offload config is a hard error (never a silent GPU-only value).
+./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
+  --kv-offload-config offload.yaml \
+  --results-path results.json --metrics-path simagg.json
+./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json \
+  --sim-metrics simagg.json --hit-rate-tolerance-pp 5 --ttft-mape-threshold 0.15 \
+  --report calibration.json
 
 # Compare with ITL metric included (requires observe --record-itl)
 ./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json \
@@ -166,6 +207,59 @@ go build -o blis main.go
 ./blis convert inference-perf --spec spec.yaml
 ./blis compose --from spec1.yaml --from spec2.yaml
 
+# Convert captured agentic traces to a TraceV2 corpus for closed-loop replay (#1477).
+# Both readers feed the shared session→TraceV2 encoder (#1479): each session becomes
+# rounds 0..N with per-round input DELTAS, TraceRecord.Model left empty (routing safety —
+# the recorded cross-model name would drop every request under --model), and closed-loop
+# replay's accumulate buffer reconstructs the growing prompt. Output is delta-encoded, so
+# it MUST be replayed with --session-mode closed-loop (or --concurrent-sessions, which
+# auto-promotes); the default --session-mode fixed would misread the deltas as absolutes.
+#
+# convert otel — OpenTelemetry agentic trace JSON (file / dir of *.json / *.jsonl); one
+# LLM chat span per round; think derived from arrival gaps (--max-think-time default 15s).
+./blis convert otel --input traces.jsonl --trace-output corpus \
+  --context-growth accumulate
+#
+# convert weka — SemiAnalysis WekaTrace JSONL (#1604, PR-F; one proxy session per line).
+# Filters requests[] to the linear main-agent stream (type:"subagent" groups skipped,
+# deferred to PR-E); recomputes pure client think as max(0, t_i − t_{i-1} − api_time_{i-1})
+# between consecutive main turns into the think_time_us column (--max-think-time default 0
+# = uncapped, since Weka gaps are genuine away-from-keyboard times). Reads `in` directly
+# (never len(hash_ids)×64). Weka ISL is huge (p50 ≈ 110K, p90 ≈ 395K), so replay MUST raise
+# --max-model-len (the ~41K default drops every request unservable) and scale --total-kv-blocks.
+# Fidelity note (important): real agentic traces compact/trim context heavily — ~30% of
+# rounds on the full 051926 dataset (219 sessions, 37.7K rounds) have in_N < in_{N-1}+out_{N-1}.
+# Such non-monotone rounds clamp their input delta to 0 (the accumulate buffer can only grow,
+# never shrink), so it OVER-counts the true cumulative input by ≈3–4× on real Claude Code
+# traffic (+312% on this dataset). Replayed input length / KV pressure / hit-rate is therefore
+# a substantial UPPER BOUND — do NOT read it as a faithful reproduction of the recorded ISL.
+# (Property of the PR-A/PR-B accumulate delta law, not this converter; the conversion is exact
+# per that law. Faithful compaction support is tracked in #1609.) The recorded think time is
+# non-lossy (#1608): a genuinely-zero recorded think (an overlapping turn) is a &0 in the
+# think_time_us column, distinct from a not-recorded (empty) cell, so an all-overlap session
+# uses the recorded zeros rather than degrading to arrival-gap think at replay.
+./blis convert weka --input traces.jsonl --trace-output corpus \
+  --context-growth accumulate --max-think-time 0
+#
+# Replay a corpus (from either converter) closed-loop — reconstructs each session's growing prompt.
+./blis replay --trace-header corpus.yaml --trace-data corpus.csv \
+  --model qwen/qwen3-14b --session-mode closed-loop --max-model-len 1000000
+# Or replay a fixed pool of N concurrent closed-loop sessions (#1486, PR-C); --total-sessions
+# duplicates the corpus with cache-busting to fill the target (--concurrent-sessions auto-promotes
+# to closed-loop). Same huge-ISL caveat — raise --max-model-len and scale --total-kv-blocks.
+./blis replay --trace-header corpus.yaml --trace-data corpus.csv \
+  --model qwen/qwen3-14b --concurrent-sessions 8 --total-sessions 200 --max-model-len 1000000
+
+# Observe corpus-mode: drive the SAME corpus as a fixed session pool against a
+# LIVE server (observe-side twin of `blis replay --concurrent-sessions`), so
+# `blis calibrate` can compare real vs simulated over the same session set.
+# --corpus-* are the INPUT corpus; --trace-* remain the OUTPUT observed trace.
+# Corpus-mode is mutually exclusive with --workload/--workload-spec/--rate/--concurrency.
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --corpus-header corpus.yaml --corpus-data corpus.csv \
+  --concurrent-sessions 8 --total-sessions 200 \
+  --trace-header observed.yaml --trace-data observed.csv
+
 # Run with gateway queue flow control (utilization-based saturation gating)
 ./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
   --queue-depth-threshold 5 --kv-cache-util-threshold 0.8
@@ -197,11 +291,17 @@ go build -o blis main.go
 ./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
   --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 --in-flight-eviction
 
-# Run with a single saturation detector, writing its per-event verdict trace (#1516).
-# --detectors takes one of composite, threshold, backlog-drift (empty = off).
-# --saturation-report writes a {"trace":[...]} JSON file (one record per event).
-# Nothing saturation-related goes to stdout (the final label returns in #1517).
+# Run with a single saturation detector (#1516). --detectors takes one of
+# composite, threshold, backlog-drift, peak-rate (empty = off). --saturation-report writes a
+# {"final":{...},"trace":[...]} JSON file (per-detector final label + one record
+# per event). stdout regains a per-detector "saturation" final-label map (#1517),
+# derived uniformly from the trace by the last-window plurality reducer.
 ./blis run --model qwen/qwen3-14b --detectors composite --saturation-report sat.json
+
+# Tune the final-label trailing window (#1517). --saturation-final-window takes a
+# Go duration for the last-window plurality vote (default: backlog_drift.window_size_sec
+# if configured, else 30s). Same value for every detector; requires --detectors.
+./blis run --model qwen/qwen3-14b --detectors all --saturation-final-window 10s
 
 # Run the detector BANK over ONE deterministic replay (#1519). --detectors "all"
 # runs the full roster; a comma-list runs exactly the named subset. The bank fans
@@ -214,9 +314,11 @@ go build -o blis main.go
 ./blis run --model qwen/qwen3-14b --detectors all --saturation-report sat.json
 ./blis run --model qwen/qwen3-14b --detectors composite,threshold --saturation-report sat.json
 
-# Tune a detector via a strict-YAML config file (#1516). composite has no params
-# (a composite: block errors). threshold has one knob; backlog-drift mirrors
-# workload.BacklogDriftConfig. The config must carry ONLY the selected detector's
+# Tune a detector via a strict-YAML config file (#1516, #1614). EVERY detector now
+# has a false-alarm calibration knob: composite: {sensitivity},
+# threshold: {threshold_ms}, backlog_drift: {slope_k, ...} (backlog-drift mirrors
+# saturation.BacklogDriftConfig, #1547), peak_rate: {threshold, min_observations,
+# warmup_us, consecutive_k, overload_multiple}. The config must carry ONLY the selected detector's
 # block — a block for another detector errors (no silent drop). Absent block =
 # defaults; partial block overrides only named fields; unknown key / bad value
 # errors naming the field.
@@ -224,11 +326,29 @@ cat > sat-config.yaml <<'YAML'
 backlog_drift:
   window_size_sec: 30
   min_windows: 5
+  slope_k: 3.0          # BACKLOGGED/OVERLOADED boundary multiplier (#1614)
 YAML
 ./blis run --model qwen/qwen3-14b --detectors backlog-drift \
   --saturation-config sat-config.yaml --saturation-report sat.json
 
-# Replay writes the same {"trace":[...]} format (run→replay byte-identical, INV-13)
+# Run the peak-rate detector (#1614): R_t = Peak_t/t, the backlog high-water mark
+# over elapsed time. Needs NO latency target and NO capacity estimate, unlike
+# --detectors threshold whose millisecond target must be re-tuned per model/GPU.
+# threshold is in backlog per second, so calibrate it per deployment: run a healthy
+# workload and raise it until it stops firing.
+cat > pk.yaml <<'YAML'
+peak_rate:
+  threshold: 0.5           # primary false-alarm dial; larger fires less
+  min_observations: 20     # hold the verdict until enough EVENTS have been seen
+  warmup_us: 0             # hold the verdict until this much TIME has elapsed
+  consecutive_k: 3         # successive breaches before firing
+  overload_multiple: 3.0   # OVERLOADED above this multiple of threshold (>= 1)
+YAML
+./blis run --model qwen/qwen3-14b --detectors peak-rate \
+  --saturation-config pk.yaml --saturation-report sat.json
+
+# Replay writes the same {"final":{...},"trace":[...]} format and emits the same
+# stdout saturation map (run→replay byte-identical, INV-13)
 ./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
   --detectors composite --saturation-report sat.json
 
@@ -355,6 +475,10 @@ Phase 0 workload unification complete (see issue #420): W0-1 (spec v2 schema + S
 
 Observe/replay/calibrate pipeline complete: `blis observe` (#659) dispatches workload to real servers with closed-loop session support, `blis replay` (#689) replays through DES, `blis calibrate` (#701) compares real vs simulated latencies. Observe fidelity (#660): chat completions endpoint (`--api-format chat`), `stream_options` for streaming token counts, `finish_reason` extraction, configurable `max_tokens` (`--unconstrained-output`), deterministic prefix strings for KV cache activation, `--rtt-ms` for network RTT.
 
+Replay injection-origin normalization (#1606): `blis replay` re-bases each request's DES injection time onto the trace's `arrival_time_us`/`deadline_us` origin. A real `blis observe` trace writes `send_time_us` in Unix-epoch µs but `arrival_time_us`/`deadline_us` on a run-relative clock; using the raw epoch `send_time_us` as an absolute injection tick made every request instantly past-due (0 completions, empty `sim_result.json`). `LoadTraceV2Requests`/`LoadTraceV2SessionBlueprints` subtract a single per-trace `injectionOriginShift = min(injectionTime) − min(arrival_time_us)`, preserving #1304's send-delta (concurrency-slot-wait) spacing. Generated `blis run` traces write `send_time_us == arrival_time_us`, so the shift is exactly 0 and replay stays byte-identical (INV-13/INV-6); the closed-loop preliminary horizon uses `workload.MaxNormalizedInjectionTimeUs` (the normalized injection, not raw `arrival_time_us`).
+
+KV cache hit-rate calibration (#1583, epic #1585 S6): `blis observe --scrape-kv-metrics` scrapes the server's Prometheus `/metrics` KV-offload tiering counters (`vllm:kv_offload_tiering_block_hits`/`_block_queries`; released fallback `vllm:gpu_prefix_cache_*`, tagged distinctly) over the measured window and records the observed hit-rate in a new trace-header block (`observed_kv_metrics`, with `--vllm-commit` pinning the unreleased vLLM PR #48798). `blis replay --metrics-path` writes the sim aggregate `cache_hit_rate` (a `*float64` on `MetricsOutput`, populated file-only in `EmitOutput` so stdout stays byte-identical — INV-6). `blis calibrate --sim-metrics` then compares TTFT, E2E, **and** KV hit-rate (`hit_rate` report block, default ≤5 pp band; TTFT MAPE ≤0.15 verdict). On replay a tiered observation with no reproducible `kv_offload` config is a hard error (BC-10, INV-13, never silent GPU-only degradation); the observed block round-trips verbatim on re-export. The sim exposes one aggregate hit-rate (no per-tier), so the automated comparison is overall-hit-rate; per-tier read/write time is recorded for a documented manual bandwidth cross-check. Pure Prometheus-text parser + hit-rate derivation in `sim/workload/prom_hitrate.go` (no new go.mod dep). Empirical cluster tolerance-pass is an operator step (needs an unreleased-vLLM GPU cluster); see `docs/guide/kv-offload-calibration.md`.
+
 Recent work: MkDocs documentation site (#450), roofline auto-fetch flag (#435), metrics substrate fixes (#458), cross-cutting documentation audit (#460).
 
 ### Extension Recipes
@@ -429,25 +553,30 @@ BLIS includes post-hoc saturation detection for analyzing completed runs. This i
 
 **Package**: `sim/saturation/`
 
-**Streaming detectors** (all stream via `Observe`/`Detect`; the batch `Classify` path was removed in #1516):
-- **composite**: Combines rate deficit (1 - completions/arrivals) and a quartile-filtered latency trend. Zero parameters (a `composite:` config block errors). STABLE / BACKLOGGED / OVERLOADED by score vs a 1/√arrivals noise floor.
+**Streaming detectors** (all stream via `Observe`/`Detect`; the batch `Classify` path was removed in #1516). Every detector has at least one false-alarm calibration knob — a precondition for comparing them, since scores are only comparable at a matched false-alarm rate:
+- **composite**: Combines rate deficit (1 - completions/arrivals) and a quartile-filtered latency trend. STABLE / BACKLOGGED / OVERLOADED by score vs a 1/√arrivals noise floor, scaled by `composite.sensitivity` (#1614; default 1.0 = the historical unscaled floor, so absent config is byte-identical). A larger sensitivity raises the floor and fires less.
 - **threshold**: Mean E2E latency vs a configurable threshold (default 5000ms). STABLE when mean < threshold, OVERLOADED when mean > threshold.
-- **backlog-drift**: Online OLS slope of in-flight over a trailing window (became streaming in #1515), banded against the noise floor.
+- **backlog-drift**: Online OLS slope of in-flight over a trailing window (became streaming in #1515), banded against the noise floor. The BACKLOGGED/OVERLOADED boundary sits at `backlog_drift.slope_k × noiseFloor` (#1614; default 3.0). `slope_k` is read through `BacklogDriftConfig.effectiveSlopeK()`, which falls back to 3.0 for the struct-literal construction paths — a literal zero would otherwise band every rising trace OVERLOADED. Both the band switch and the score denominator read the same hoisted value, so `Score == 1.0` coincides with the OVERLOADED edge at every `slope_k`. All calibration knobs are rejected below `1e-6`, though for two different reasons: for knobs that multiply a noise floor and then divide (`slope_k`, `composite.sensitivity`) a subnormal value underflows the product to zero and decouples Level from Score, whereas `peak_rate`'s knobs compare before dividing and so take the bound purely as a usability floor. `slope_k <= 1` makes the BACKLOGGED band unsatisfiable — accepted as a legitimate "maximally severe" setting, yielding a two-level detector; `peak_rate.overload_multiple` accepts sub-1 identically, so the two detectors can be swept over a common range.
+- **peak-rate**: `R_t = Peak_t / t` — the backlog high-water mark over elapsed time. Backlog is a random walk reflected at zero, and the reflection makes the regimes separable *without any capacity estimate*: under positive drift `R_t` converges to a positive constant, under zero drift it decays as `1/√t`, under negative drift as `1/t`. So an overloaded server HOLDS `R_t` while a healthy one lets it decay, and the detector fires when it holds above `peak_rate.threshold`. This is also why it is the natural foil to `backlog-drift`: a straight-line fit to backlog is degenerate at exactly ρ≈1 (backlog grows like √t, so the slope tends to ZERO and the detector reports STABLE at criticality — the worst failure direction), while `R_t` has no such degeneracy. **Horizon-dependent by construction** (the result is asymptotic): measured separation between sub- and super-capacity traffic is 2.3× at n=500, 4.7× at n=2000, 14.6× at n=8000, so `min_observations` is part of the algorithm rather than input validation. O(1) state — four scalars, no per-event retention. Validated by an optimization campaign (5 seeds × 11 load rungs, false-alarm-calibrated first) and reproduced on `blis run`: a clean step at the true capacity cliff, seed-stable across 5 seeds, with BACKLOGGED one rung *before* the cliff (early warning). `peak_rate.overload_multiple` accepts values below 1, which collapse it to two levels exactly as `slope_k <= 1` does for backlog-drift — the band split is the one parameter the selection campaign never varied (its scorer counted BACKLOGGED and OVERLOADED alike), so rejecting a value there would be severity without evidence. **peak-rate's knobs:** `threshold` (the primary FPR dial, in backlog per second, so its calibrated value is deployment-specific), `warmup_us` (a TIME gate, not redundant with the event gate: `R_t`'s numerator counts events while its denominator measures seconds, so a dense burst — 300 arrivals in 3 ms — makes `R_t` enormous on negligible evidence and no observation count can suppress it; default 0 = off), `min_observations` (holds the verdict through the opening transient — it moves the per-event trace and usually not the stdout headline, since the reducer's trailing window normally lies past the gate; it *can* move the headline on a short run, a very large gate, or a long `--saturation-final-window`), `consecutive_k` (anti-flapping), `overload_multiple` (the BACKLOGGED/OVERLOADED split). Recovery after a transient takes about `peak / threshold` **seconds** of elapsed time (`threshold` is backlog per second), since the numerator is an all-time high-water mark — so the detector answers "did this run saturate?", not "is it saturated right now?"
 
-**CLI flags** (`run`, `observe`, `replay`; #1516, #1519):
-- `--detectors <selection>`: empty = off. A single name (`composite`, `threshold`, `backlog-drift`) runs #1516's single-detector streaming path. `all` runs the full roster; a comma-list (e.g. `composite,threshold`) runs exactly the named subset. `all` and comma-lists route through the **detector bank** (#1519). Unknown name — single or inside a list — is a hard error listing valid names (R1).
-- `--saturation-config <path>`: strict-YAML tuning file with optional `threshold:` and `backlog_drift:` blocks. composite has no block. For a **single** detector the config must carry only that detector's block — a foreign block errors (no silent drop, R1). For the **bank**, ownership is enforced over the selected SET (`checkBlockOwnershipSet`): a block whose owning detector is not among the selected names is a hard error (R1), same as the single-detector path — `--detectors all` selects every owner so a full shared config is fine, but a subset that omits a detector whose block was supplied errors. A value error inside a *selected* detector's own block also errors. Absent block = defaults; a partial block overrides only named fields; an unknown key or out-of-range value errors naming the field; an empty file = all defaults.
-- `--saturation-report <path>`: writes the selected detector(s)' **per-event verdict trace** as one `{"trace":[...]}` JSON object (one record per event, tagged by detector name; map keys sorted so repeated runs are byte-identical). Requires `--detectors`. Both `--saturation-config` and `--saturation-report` without `--detectors` are hard errors, as is an unwritable report path (checked up front).
+**CLI flags** (`run`, `observe`, `replay`; #1516, #1519, #1517):
+- `--detectors <selection>`: empty = off. A single name (`composite`, `threshold`, `backlog-drift`, `peak-rate`) runs #1516's single-detector streaming path. `all` runs the full roster; a comma-list (e.g. `composite,threshold`) runs exactly the named subset. `all` and comma-lists route through the **detector bank** (#1519). Unknown name — single or inside a list — is a hard error listing valid names (R1).
+- `--saturation-config <path>`: strict-YAML tuning file with optional `composite:`, `threshold:`, `backlog_drift:`, and `peak_rate:` blocks — one calibration knob per detector (#1614), since a detector with no knob cannot be moved onto a matched false-alarm rate and so cannot be fairly compared. For a **single** detector the config must carry only that detector's block — a foreign block errors (no silent drop, R1). For the **bank**, ownership is enforced over the selected SET (`checkBlockOwnershipSet`): a block whose owning detector is not among the selected names is a hard error (R1), same as the single-detector path — `--detectors all` selects every owner so a full shared config is fine, but a subset that omits a detector whose block was supplied errors. A value error inside a *selected* detector's own block also errors. Absent block = defaults; a partial block overrides only named fields; an unknown key or out-of-range value errors naming the field; an empty file = all defaults.
+- `--saturation-report <path>`: writes the selected detector(s)' **final label + per-event verdict trace** as one `{"final":{...},"trace":[...]}` JSON object (one trace record per event, tagged by detector name; map keys sorted so repeated runs are byte-identical). Requires `--detectors`. Optional — the stdout final label (#1517) is emitted regardless. `--saturation-config`, `--saturation-report`, and `--saturation-final-window` without `--detectors` are hard errors, as is an unwritable report path (checked up front).
+- `--saturation-final-window <duration>` (#1517): Go duration for the trailing window of the stdout final-label plurality vote. Resolution: this flag if set → else `backlog_drift.window_size_sec` from `--saturation-config` → else 30s. Same value for every detector; a non-positive or unparseable value is a hard error. Requires `--detectors`.
 
-**Detector bank** (`sim/saturation/bank.go`, #1519): `Bank` holds and drives a roster of streaming detectors over ONE deterministic replay, fanning each event out to every selected detector (`fanout`) so all are scored on a byte-identical event sequence in a single pass. It reimplements no `Detector` method — it only multiplexes the shared `buildSortedEvents` (a #1519 extraction) + #1516's `TraceSink` + `WriteCombinedReport` — and satisfies `sim.BatchClassifier` (`Classify(requests, totalArrivals) interface{}`, returns `nil` in this PR; #1517 uses the seam for the stdout label). `NewBank(names, cfg, sink)` validates/de-dups names and orders the roster canonically (`composite`, `threshold`, `backlog-drift`), so selection order and spelling never change output: `all` ≡ the full comma-list byte-identically, and a subset detector's records are byte-identical to its records under `all` (selection filters WHICH detectors run, never HOW they see traffic — INV-6/INV-13).
+**Final label reducer** (`sim/saturation/reduce.go`, #1517): `ReduceOne(records, windowUs) Level` collapses ONE detector's per-event trace into a headline label by a **last-window plurality** rule — keep records within `windowUs` of the max timestamp, take the most-frequent `Level`, break count-ties toward the more severe level (`OVERLOADED > BACKLOGGED > STABLE`), empty group → `STABLE` (R20). `ReduceAll(records, windowUs) map[string]Level` groups by detector name and reduces each group. It is a **pure function, not a `Detector` method** — so every detector is collapsed identically (fair cross-detector comparison) and new detectors get final labeling for free. The rule is order-independent (INV-6) and identical traces yield identical maps (INV-13). `cmd` calls `ReduceAll` for every selection: a single detector yields a one-key map, `all` the full map. There is exactly one stdout shape — a `map[string]Level` (`--detectors composite` → `{"composite":"STABLE"}`, never a bare label).
 
-**One pipeline, three input adapters**: run/replay/observe all produce the trace through the same shared `resolveSaturation → saturationTracer.trace` path (single detector via `ReplayOneDetector`, bank via `Bank.Classify`), both writing through `TraceSink → WriteCombinedReport` (R23). The only difference is the `[]RequestMetrics` input — run/replay from the sim (`Metrics.CompletedRequestMetrics()`), observe from the real server (`workload.TraceRecordsToRequestMetrics`). run→replay of the same trace is byte-identical (INV-13); observe's trace reflects real-server latencies by design.
+**Detector bank** (`sim/saturation/bank.go`, #1519): `Bank` holds and drives a roster of streaming detectors over ONE deterministic replay, fanning each event out to every selected detector (`fanout`) so all are scored on a byte-identical event sequence in a single pass. It reimplements no `Detector` method — it only multiplexes the shared `buildSortedEvents` (a #1519 extraction) + #1516's `TraceSink` + `WriteCombinedReport`. Its sole public driver is `Run(requests) error` (the multi-detector analogue of `ReplayOneDetector`); the collected records are reduced to the stdout label by `saturation.ReduceAll` in `cmd` (#1517). `NewBank(names, cfg, sink)` validates/de-dups names and orders the roster canonically (`composite`, `threshold`, `backlog-drift`, `peak-rate`), so selection order and spelling never change output: `all` ≡ the full comma-list byte-identically, and a subset detector's records are byte-identical to its records under `all` (selection filters WHICH detectors run, never HOW they see traffic — INV-6/INV-13).
 
-**stdout**: nothing saturation-related — a run with `--detectors` (single or `all`) is byte-identical on stdout to one without (the `saturation` field stays dropped by `omitempty`). The `sim.BatchClassifier` seam and `BuildOutput`'s signature are retained (param passed `nil`); the stdout final label returns in #1517.
+**One pipeline, three input adapters**: run/replay/observe all produce the trace through the same shared `resolveSaturation → saturationTracer.run` path (single detector via `ReplayOneDetector`, bank via `Bank.Run`), reducing to the final label via `ReduceAll` and writing the report via `TraceSink → WriteCombinedReport` (R23). The only difference is the `[]RequestMetrics` input — run/replay from the sim (`Metrics.CompletedRequestMetrics()`), observe from the real server (`workload.TraceRecordsToRequestMetrics`). run→replay of the same trace is byte-identical (INV-13); observe's trace reflects real-server latencies by design.
+
+**stdout** (#1517): a run WITH `--detectors` regains a `"saturation"` field — a per-detector `map[string]Level` final label spliced onto the metrics JSON via the goodput build-then-mutate-then-emit pattern (`cmd` sets `MetricsOutput.Saturation`; `sim` stays saturation-agnostic). A run WITHOUT `--detectors` is byte-identical to the historical no-feature output (the field stays dropped by `omitempty`, BC-8). The former `sim.BatchClassifier` seam was retired (`sim/classifier.go` deleted; `BuildOutput`/`SaveResults` lost their detector param) since `cmd` imports both `sim` and `sim/saturation` and wires the reducer directly.
 
 **Trace file example**:
 ```json
 {
+  "final": { "composite": "STABLE" },
   "trace": [
     {
       "timestamp": 150000,
@@ -467,10 +596,10 @@ BLIS includes post-hoc saturation detection for analyzing completed runs. This i
 - `--post-hoc-detector X` → `--detectors X`
 - `--saturation-threshold-ms N` → `--saturation-config` `threshold: {threshold_ms: N}`
 - the 10 backlog-drift tuning flags (`--saturation-window`, `--saturation-min-windows`, `--saturation-classifier`, …) → `--saturation-config` `backlog_drift:` block
-- the standalone `--saturation-report` (per-window `BacklogDriftReport`) is removed; `--saturation-report` now writes the per-event trace
-- detector `Classify` is removed from the `Detector` interface (streaming-only: `Name`/`Observe`/`Detect`/`Reset`); `workload.AnalyzeBacklogDrift*` stays in the library (used by the backlog-drift detector)
+- the standalone `--saturation-report` (per-window `BacklogDriftReport`) is removed; `--saturation-report` now writes the `{"final":{...},"trace":[...]}` object (final label + per-event trace)
+- detector `Classify` is removed from the `Detector` interface (streaming-only: `Name`/`Observe`/`Detect`/`Reset`); the post-hoc batch analysis library (`workload.AnalyzeBacklogDrift*`, the `slope-based`/`drain-ratio` classifiers, `BacklogDriftReport`) was fully removed in #1547 — it had no live-path caller once the streaming detectors (#1515/#1516) and the reducer (#1517) landed. `BacklogDriftConfig` was relocated verbatim into `sim/saturation` in the same PR, fully decoupling `sim/saturation` from `sim/workload` (the config type was the last import edge)
 
-**Use cases**: per-event saturation trajectories for completed runs — detecting queue buildup or throughput saturation in capacity-planning experiments. The bank (`--detectors all`) additionally lets you compare detectors head-to-head on byte-identical traffic in a single run, instead of separate runs where each detector sees different traffic.
+**Use cases**: a one-line end-of-run saturation verdict per detector on stdout (#1517) for quick capacity-planning answers, plus per-event saturation trajectories (the trace file) for detecting queue buildup or throughput saturation over time. The bank (`--detectors all`) additionally lets you compare detectors head-to-head on byte-identical traffic in a single run — both the final labels and the trajectories — instead of separate runs where each detector sees different traffic.
 
 ## File Organization
 
@@ -493,6 +622,14 @@ See [`docs/guide/latency-models.md`](docs/guide/latency-models.md) for details.
 **MLA / model-shape KV & weight fidelity (#1527, F1–F3)**: The KV-capacity model (`sim/latency/kv_capacity.go`, `config.go`) represents the modern MLA MoE family (DeepSeek-V2/V3, Kimi-K3, GLM-5.2 `glm_moe_dsa`). **F1 — explicit `head_dim`**: `ModelConfig.HeadDim` (`json:"head_dim"`) + `EffectiveHeadDim()` accessor (returns `HeadDim` when >0, else `HiddenDim/NumHeads`) feed `KVBytesPerToken` and `computeModelWeightBytes`; the step-time models (trained-physics/roofline) intentionally still use `hidden/heads`, so step-time goldens + INV-BC-DP1 are byte-identical. **F2 — MLA compressed-KV**: when `ModelConfig.KVLoraRank > 0`, `KVBytesPerToken` returns `(kv_lora_rank + qk_rope_head_dim) × num_layers × BytesPerParam` — a single latent per token per layer, independent of `num_kv_heads`/`head_dim` and **NOT divided by TP** (the latent is replicated across TP ranks, matching vLLM's MLA cache); both auto KV-block sizing and PD KV-transfer sizing inherit it. **F3 — dense-prefix MoE**: `ModelConfig.FirstKDenseReplace` splits `computeModelWeightBytes` into K dense-MLP layers + (L−K) MoE-MLP layers (K clamped to [0,L]), distinct from the every-Nth `InterleaveMoELayerStep`. All three are **no-ops when the config keys are absent** (INV-6 byte-identity); INV-4/INV-13 preserved (`run`/`replay` share the path; `observe` doesn't derive capacity from shape). Committed fixture: `model_configs/glm-5.2-fp8/config.json`. **Documented known approximations (F4/F5a)**: block-wise FP8 (`weight_block_size`, `modules_to_not_convert`) treated as flat 1.0 byte/param (optimistic); DSA indexer and MLA attention weight projections unmodeled. MTP/spec-decode throughput is out of scope (#1528).
 
 **Per-instance KV capacity for mixed-GPU node pools (#1522)**: When node pools are configured (`--policy-config` with `node_pools`) and `--total-kv-blocks` is NOT explicitly set, each placed instance auto-calculates its KV-block capacity from its ACTUAL placed GPU's `gpu_memory_gib` (plus TP, DP, block size, `--gpu-memory-utilization`, and weight precision) — so an H100 pool and an L40S pool no longer share one global capacity (restores INV-P2-1: an instance's GPU calibration and KV capacity describe the same device). Applied at all three placement sites (startup, deferred `NodeReadyEvent`, autoscaler scale-up) via `cluster.applyPerInstanceKVCapacity`, immediately after the `HWConfigByGPU` execution-calibration override (issue #893) so the placed GPU is authoritative for capacity as well. **Precedence**: an explicit `--total-kv-blocks` disables per-instance recalc (every instance keeps that uniform global capacity); when both node pools and PD per-pool KV overrides are present, the placement-derived per-GPU capacity wins (mirrors how `HWConfigByGPU` overrides the resolved `HWConfig`). A per-GPU capacity smaller than the configured `--max-model-len` auto-caps that instance's `MaxModelLen` to the KV-feasible maximum. Missing pool memory or a capacity-calc error falls back to the inherited global capacity with a warning (never a panic). `blis replay`/`observe` reject node pools, so this is `blis run` only (INV-13 parity N/A). Distinct from #1315 (role-specific capacity correct, latency coefficients wrong) and #633 (per-role overrides that can't express mixed hardware within one role).
+
+**KV block keying (`sim/internal/kvkey`, #1589, hole H4 of epic #1585)**: the single gated home for KV block-key derivation and interning. `DeriveChunkKeys(prevKey, tokens, tokensPerChunk)` produces hierarchical content keys at an arbitrary stride — a strict generalization of `hash.ComputeBlockHashes` (at `tokensPerChunk == blockSize`, `prevKey == ""` it is byte-identical, BC-K1). With `tokensPerChunk = tokensPerBlock × blocks_per_chunk` it yields one key per **chunk** (a group of `blocks_per_chunk` blocks), matching vLLM's per-chunk offload keys — NOT one key per block (BC-K4). `Interner` maps each distinct 64-hex `BlockKey` to a dense integer `KeyID` — injective, idempotent, deterministic given call order (BC-K3) — with a reverse `Key(KeyID)` accessor for boundaries where content identity must stay a string (KV events, traces, the router index). All hashing routes through `sim/internal/hash` (the sole hash source, BC-K1), enforced by a static-analysis test (`static_test.go`) over `sim/kv` + the box: production code must not import `crypto/*`, stdlib `hash`/`hash/*`, or `fnv`. **Chunk keys are a disjoint keyspace** — `DeriveChunkKeys` chain-hashes each whole chunk (BLIS's own SHA256), so a chunk key matches no block hash by value (vLLM instead anchors each chunk key to the chunk's trailing block-hash; the frozen surface here provides only the chunk stride). A consumer with the request tokens derives both keyspaces from this one hash source, so no cross-referencing capability is lost. **Wired into the offload hot path as of #1590**: `sim/kv.OffloadCache.consultAndReload` calls `DeriveChunkKeys` (seeded by the resumed prefix's last hash, so only the uncached tail is keyed) — so the INV-6 byte-identity guarantee is now conditional on offload being **disabled** (`cfg.Offload` absent ⇒ the offload path, and this call, never run ⇒ byte-identical stdout and zero benchmark regression). The `Interner` is not yet on the hot path; when a future hole adopts it, a `KeyID`-keyed probe beats a 64-byte-string probe for the disk-tier / ref-count / in-flight-job probes.
+
+**N-tier KV-offload chain (`sim/kv.OffloadCache`, #1590, hole H1 of epic #1585)**: the multi-tier offload mechanism the #1587 config surface drives. `OffloadCache` implements `sim.KVStore` (still **12 entities**) and composes the GPU tier (`KVCacheState`) with a `ref_cnt`-managed **CPU staging tier** and ordered secondary **`fs` tiers**, plus the #1588 bounded transfer station (`sim/kvtransfer`) for per-job service. Activated **only** when `cfg.Offload.IsEnabled()` (`--kv-offload-config`); the legacy `--kv-cpu-blocks` `TieredKVCache` is untouched and the two are mutually exclusive (loud error if both set). Absent ⇒ byte-identical output (INV-6). **Mechanism (models vLLM `tiering/manager.py` + `cpu/manager.py`, not just its outputs):** the CPU tier is a `ref_cnt` state machine — `-1` allocated-not-ready (HIT_PENDING, unreadable AND unevictable), `0` ready-evictable (HIT), `n>0` pinned (HIT, non-evictable) — with an **O(1) evictable counter** maintained only on zero-crossing transitions (BC-C8). `AllocateKVBlocks` reloads CPU-resident prefix blocks to GPU synchronously and kicks off an **async promotion** (a station Read job) for a secondary-resident run under the **evictable gate** (BC-C5: a promotion of `k` blocks succeeds iff `k ≤ free + evictable`, gating on the *evictable* count, NOT the free count — so a full-but-locked CPU tier degrades promotions to recompute, the non-linear mode a capacity gate misses). `MirrorToCPU` stores each request's newly-completed blocks and **cascades** each to *every* secondary tier (BC-C7a write-through fan-out), pinning the CPU block for each write's duration — the lock that starves the evictable pool. **Which blocks are offered for store is a single offloadable-token clamp (`offload_prompt_only`, S8/#1584), modeling vLLM's `_calc_num_offloadable_tokens` + `storable_chunks`** — NOT a per-block prompt/decode classification: the request's computed KV (its full owned blocks) is truncated to the prompt length when `offload_prompt_only` (vLLM default TRUE), then floor-divided by the chunk stride into whole chunks, so a chunk holding any decode token is never formed (a `1.5×`-chunk prompt offers exactly 1 chunk). With `offload_prompt_only: false` (`promptAndDecode`) full decode blocks are offered too, and — because BLIS already hashes every completed block prefix-consistently (the partial-fill path, `cache.go`), *including* decode-generated ones for `block_size > 1` — they become CPU-resident and are reloaded by a later same-instance request whose input contains those tokens, so hit-rate reflects the policy. Decode offload needs **no** new hashing: `MirrorToCPU` is a pure *consumer* of GPU block hashes (it never writes `HashToBlock`), so switching the policy cannot perturb GPU-tier behavior and default/prompt-only runs stay byte-identical (INV-6). Completions apply only via `SetClock`→`station.Poll` (before same-step lookups). A secondary block reaches GPU strictly via **two hops** (secondary→CPU→GPU, BC-C1), never directly. Timing flows through **token counts** (recompute raises prefill tokens via the existing `StepTime` model) — H1 charges no explicit per-request transfer latency and adds no `sim.Event` types; the dominant step-boundary deferral is H3 (#1591, blocked by H1). The resolved `per_block_bytes` (derived `KVBytesPerToken × block_size`, since `sim/kv` cannot import `sim/latency`) round-trips through the trace header for run/replay parity (INV-13). **H1 scope trims (rejected loudly, follow-ups):** `blocks_per_chunk == 1` only (block-granular; `>1` chunk coalescing deferred); `eviction_policy: lru` only (`arc` deferred). Offload tiers are invisible to the `precise-prefix-cache` router scorer (`GetCachedBlocks`/`SnapshotCachedBlocksFn` stay GPU-only) — a routing-fidelity boundary. Files: `sim/kv/offload_chain.go`, `offload_cputier.go`, `offload_secondary.go` (+ `offload_*_test.go`).
+
+**Step-boundary KV-deferral (`sim/kv.OffloadCache` + `sim.DeferrableKVStore`, #1591, hole H3 of epic #1585 — the dominant TTFT effect)**: the piece H1 deferred. A new prefill admission whose prefix needs KV blocks resident only on a secondary tier is **not** promoted-and-recomputed immediately (the H1 behavior) — it is **set aside and re-examined at each scheduler step** (vLLM `scheduler.py:835-841` `continue`), so the offload-attributable TTFT delay is a **whole multiple of step time, not disk latency** (BC-T2, BC-T7). Because step time grows with batch size while disk latency does not, a bandwidth model drifts in the wrong direction; the discriminating metamorphic test proves ~3× longer steps ⇒ ~3× delay while halving disk bandwidth barely moves it. **Round count (verified vs vLLM):** a COLD secondary hit costs `k ≥ 3` rounds — `RETRY` (the tier's existence check is itself async/step-batched) → promote (secondary→CPU Read submitted, CPU slot `ref_cnt=-1`) → in-flight → `HIT`; a WARM hit (existence resolved, tracked in a persistent per-key `existenceKnown` cache) costs `k ≥ 2`. Both are modeled and distinguished (`cold − warm == 1`, BC-T4). **Realization:** no new `sim.Event` — the delay is the request sitting in the WaitQ, admitted `k` steps later (its `FirstTokenTime` shifts by `(k-1)×step`); `ConsumePendingTransferLatency` stays 0. Deferred requests **stay in the WaitQ**, so INV-1 (`still_queued`) and INV-8 (`scheduleNextStep` schedules a StepEvent while `WaitQ.Len() > 0`, or an `AdapterLoadCompletionEvent` is pending under a co-active LoRA load) hold for free. `DeferrableKVStore` (`PollDeferred`/`IsDeferred`/`ClearDeferred`, implemented only by `OffloadCache`) is type-asserted by `FormBatch`: Phase 2 becomes a **non-blocking skip-scan** — a still-deferred request is skipped and requests behind it are admitted (vLLM `step_skipped_waiting`), while GPU pressure still breaks head-of-line. `PollDeferred` (once per step, top of `FormBatch`, after `SetClock` applies completions — completions-before-lookups, BC-T6) advances the state machines in **sorted `Request.ID` order for its side effects** (station `Submit` assigns JobIDs by call order; `prepareStore` evicts CPU-LRU by call order) so runs are byte-identical (INV-6); cost is **O(deferred), not O(waitq)** (property P). **Gating (correctness):** deferral fires only for NEW admissions (`!running`) — running-request continuations keep the H1 background-promote path (where a `false` return is GPU pressure, not "skip"); the resolved/recompute admit paths never re-enter defer; and a bounded single fetch attempt (plus the station's completion guarantee) means no request defers forever (BC-T3). `ClearDeferred` is wired into the non-admit WaitQ removals (timeout, gateway eviction, drain-redirect) so the deferred map never leaks. The whole mechanism is inert (byte-identical, INV-6) when offload is off or has no secondary tiers, and adds no new package arrow (`DeferrableKVStore` lives in `sim`, implemented in `sim/kv`). Files: `sim/kv/offload_deferral.go` (+ `offload_deferral_test.go`, `offload_deferral_bench_test.go`), `sim/batch_formation.go`, `sim/kv_store.go`; e2e `sim/cluster/offload_deferral_e2e_test.go`.
+
+**Non-linear FS device model (`sim/kvtransfer` + `sim/kv.OffloadCache`, #1581, S7 of epic #1585)**: refines the transfer station's linear `base + bytes/bandwidth` service cost (#1588 BC-S3) into a device curve, all **opt-in** (a device class that declares none of the fields resolves byte-identically to pre-#1581, INV-6). Three additive layers: **(1) queue-depth bandwidth ramp (deterministic, in the station)** — `TierConfig.{SaturationQueueDepth Qsat, SingleTransferFraction f₁}` make effective per-transfer bandwidth ramp linearly from `f₁·bw` at the tier-direction's in-service depth `q=1` up to the peak `bw` at `q=Qsat`, flat beyond; `q` is fixed at service-start (never recomputed mid-flight, so `completeAt`/BC-S4 stay stable); the ramp is disabled (constant `bw`) when `Qsat≤1`, `f₁≥1`, or `f₁≤0`. **(2) O_DIRECT vs buffered regime** — each `kv_offload_devices` device class may declare a buffered `(bandwidth, base_latency[, Qsat, f₁, σ])` set alongside its O_DIRECT set; the per-tier `direct_io` bool (captured by #1587) now **selects** the regime (`resolveDeviceRegime`), buffered falling back per-field to the O_DIRECT value. **(3) optional seeded latency jitter** — a per-device relative stddev `σ` (`latency_jitter_stddev`) makes `OffloadCache` draw a multiplicative factor `max(0.05, 1+N(0,σ))` from a dedicated seeded RNG partition (`SubsystemKVOffload`, derived from the run seed via `NewKVStore(cfg, seed)`) and pass it on the `TransferJob`; the station applies it but **draws no randomness itself** (its no-RNG determinism guarantee, BC-S4, is preserved — it consumes a caller-supplied scalar). `σ=0` (default) draws nothing ⇒ byte-identical. The three resolved fields round-trip through the trace header (`TraceKVOffloadTier`) so run→replay under the same seed is byte-identical (INV-13). Delivered under the single `--kv-offload-config` flag (no new flag); the committed device classes are unchanged (ramp/jitter/buffered all absent). Observability is via completion-timing → hit/miss/recompute → token counts (the service curve moves *when* promotions/cascades complete, hence hit/miss/recompute and step counts; the per-request TTFT deferral itself is H3's mechanism, #1591). Files: `sim/kvtransfer/station.go`, `sim/kv/offload_chain.go`, `sim/kv_offload_config.go`, `cmd/kv_offload.go`, `cmd/default_config.go`, `sim/workload/tracev2.go`, `sim/rng.go`.
 
 ### Key Data Flow
 

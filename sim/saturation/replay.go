@@ -11,11 +11,18 @@ import (
 )
 
 // CombinedReport is the on-disk shape of a saturation trace: one JSON object
-// with a "trace" array of per-event verdicts. It is deliberately a single-key
-// object (not a bare array) so #1519's bank can add sibling keys without a
-// format break.
+// with a "final" detector→label map (#1517) followed by a "trace" array of
+// per-event verdicts (#1516/#1519). It is deliberately a keyed object (not a bare
+// array) so sibling keys can be added without a format break.
+//
+// Final is emitted before Trace and dropped by omitempty when no detector ran, so
+// a report with no final labels stays {"trace":[...]} byte-identical to the
+// pre-#1517 shape. Level's MarshalJSON emits the bare string ("STABLE"), so
+// map[string]Level serializes as {"composite":"STABLE",...} with keys sorted by
+// encoding/json — byte-identical across identical runs (INV-6).
 type CombinedReport struct {
-	Trace []TraceRecord `json:"trace"`
+	Final map[string]Level `json:"final,omitempty"`
+	Trace []TraceRecord    `json:"trace"`
 }
 
 // ReplayOneDetector streams one detector over completed request metrics and
@@ -94,16 +101,18 @@ func buildSortedEvents(requests []sim.RequestMetrics) []Event {
 	return events
 }
 
-// WriteCombinedReport serializes the collected verdicts as a {"trace":[...]}
-// JSON object to path. Map keys inside each Result's Signals are sorted by
-// encoding/json, so two identical runs produce byte-identical files (INV-6).
-// A collector with no records writes {"trace":[]} — valid JSON, not an error.
-func WriteCombinedReport(path string, collector *InMemoryCollector) error {
+// WriteCombinedReport serializes the collected verdicts as a
+// {"final":{...},"trace":[...]} JSON object to path. Map keys (the final map and
+// each Result's Signals) are sorted by encoding/json, so two identical runs
+// produce byte-identical files (INV-6). A nil/empty final map is dropped by
+// omitempty, so a report with no final labels stays {"trace":[...]}. A collector
+// with no records writes an empty trace — valid JSON, not an error.
+func WriteCombinedReport(path string, collector *InMemoryCollector, final map[string]Level) error {
 	records := collector.Records()
 	if records == nil {
 		records = []TraceRecord{}
 	}
-	report := CombinedReport{Trace: records}
+	report := CombinedReport{Final: final, Trace: records}
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal saturation trace: %w", err)
