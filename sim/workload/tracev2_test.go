@@ -313,7 +313,7 @@ func TestParseTraceRecord_InvalidInteger_ReturnsError(t *testing.T) {
 	}
 
 	// WHEN parsing
-	_, err := parseTraceRecord(row, false, false, -1, -1)
+	_, err := parseTraceRecord(row, false, false, -1, -1, -1)
 
 	// THEN error about invalid value
 	if err == nil {
@@ -332,7 +332,7 @@ func TestParseTraceRecord_InvalidDeadlineUs_ReturnsError(t *testing.T) {
 	}
 	row[17] = "not_a_number" // deadline_us column (shifted +1 by prefix_length)
 
-	_, err := parseTraceRecord(row, false, false, -1, -1)
+	_, err := parseTraceRecord(row, false, false, -1, -1, -1)
 
 	if err == nil {
 		t.Fatal("expected error for non-numeric deadline_us, got nil")
@@ -350,7 +350,7 @@ func TestParseTraceRecord_InvalidServerInputTokens_ReturnsError(t *testing.T) {
 	}
 	row[18] = "not_a_number" // server_input_tokens column (shifted +1)
 
-	_, err := parseTraceRecord(row, false, false, -1, -1)
+	_, err := parseTraceRecord(row, false, false, -1, -1, -1)
 
 	if err == nil {
 		t.Fatal("expected error for non-numeric server_input_tokens, got nil")
@@ -370,7 +370,7 @@ func TestParseTraceRecord_InvalidVLLMPriority_ReturnsError(t *testing.T) {
 	row[4] = "not_a_number" // vllm_priority column (index 4)
 
 	// WHEN parsing with hasVLLMPriority=true
-	_, err := parseTraceRecord(row, true, false, -1, -1)
+	_, err := parseTraceRecord(row, true, false, -1, -1, -1)
 
 	// THEN error about invalid value
 	if err == nil {
@@ -391,7 +391,7 @@ func TestParseTraceRecord_NegativeVLLMPriority_ReturnsError(t *testing.T) {
 	row[4] = "-1" // negative vllm_priority
 
 	// WHEN parsing with hasVLLMPriority=true
-	_, err := parseTraceRecord(row, true, false, -1, -1)
+	_, err := parseTraceRecord(row, true, false, -1, -1, -1)
 
 	// THEN error about negative value
 	if err == nil {
@@ -413,13 +413,58 @@ func TestParseTraceRecord_NegativeDeadlineUs_ReturnsError(t *testing.T) {
 	}
 	row[17] = "-1" // negative deadline_us (shifted +1)
 
-	_, err := parseTraceRecord(row, false, false, -1, -1)
+	_, err := parseTraceRecord(row, false, false, -1, -1, -1)
 
 	if err == nil {
 		t.Fatal("expected error for negative deadline_us, got nil")
 	}
 	if !strings.Contains(err.Error(), "deadline_us") {
 		t.Errorf("error should mention 'deadline_us', got: %s", err.Error())
+	}
+}
+
+// TestParseTraceRecord_NegativeArrivalTimeUs_ReturnsError verifies the #1606
+// hardening: arrival_time_us is the injection-origin anchor, so a negative value
+// (which would yield a negative DES injection tick, violating INV-3) is rejected
+// loudly, matching the other time/count fields (R1). send_time_us stays exempt
+// (injectionTime falls back to arrival when send <= 0).
+func TestParseTraceRecord_NegativeArrivalTimeUs_ReturnsError(t *testing.T) {
+	row := make([]string, 27)
+	for i := range row {
+		row[i] = "0"
+	}
+	row[19] = "-1" // arrival_time_us column (offset 0 when vllm_priority absent)
+
+	_, err := parseTraceRecord(row, false, false, -1, -1, -1)
+
+	if err == nil {
+		t.Fatal("expected error for negative arrival_time_us, got nil")
+	}
+	if !strings.Contains(err.Error(), "arrival_time_us") {
+		t.Errorf("error should mention 'arrival_time_us', got: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "negative") {
+		t.Errorf("error should mention 'negative', got: %s", err.Error())
+	}
+}
+
+// TestParseTraceRecord_NegativeSendTimeUs_Tolerated verifies the deliberate
+// asymmetry (#1606): a negative send_time_us is NOT rejected — injectionTime
+// falls back to arrival_time_us for send <= 0, so a corrupt/absent send column
+// must not fail trace loading.
+func TestParseTraceRecord_NegativeSendTimeUs_Tolerated(t *testing.T) {
+	row := make([]string, 27)
+	for i := range row {
+		row[i] = "0"
+	}
+	row[20] = "-100" // send_time_us column; must be tolerated
+
+	rec, err := parseTraceRecord(row, false, false, -1, -1, -1)
+	if err != nil {
+		t.Fatalf("negative send_time_us must be tolerated (falls back to arrival), got error: %v", err)
+	}
+	if rec.SendTimeUs != -100 {
+		t.Errorf("send_time_us = %d, want -100 (preserved verbatim; fallback happens at injection)", rec.SendTimeUs)
 	}
 }
 
@@ -432,7 +477,7 @@ func TestParseTraceRecord_NegativeInputTokens_ReturnsError(t *testing.T) {
 	}
 	row[9] = "-1" // input_tokens column (shifted +1)
 
-	_, err := parseTraceRecord(row, false, false, -1, -1)
+	_, err := parseTraceRecord(row, false, false, -1, -1, -1)
 
 	if err == nil {
 		t.Fatal("expected error for negative input_tokens, got nil")
@@ -451,7 +496,7 @@ func TestParseTraceRecord_NegativeOutputTokens_ReturnsError(t *testing.T) {
 	}
 	row[10] = "-1" // output_tokens column (shifted +1)
 
-	_, err := parseTraceRecord(row, false, false, -1, -1)
+	_, err := parseTraceRecord(row, false, false, -1, -1, -1)
 
 	if err == nil {
 		t.Fatal("expected error for negative output_tokens, got nil")
@@ -470,7 +515,7 @@ func TestParseTraceRecord_NegativeServerInputTokens_ReturnsError(t *testing.T) {
 	}
 	row[18] = "-1" // server_input_tokens column (shifted +1)
 
-	_, err := parseTraceRecord(row, false, false, -1, -1)
+	_, err := parseTraceRecord(row, false, false, -1, -1, -1)
 
 	if err == nil {
 		t.Fatal("expected error for negative server_input_tokens, got nil")
@@ -490,7 +535,7 @@ func TestParseTraceRecord_DeadlineBeforeArrival_ReturnsError(t *testing.T) {
 	row[17] = "1000" // deadline_us = 1000 (shifted +1)
 	row[19] = "5000" // arrival_time_us = 5000 (shifted +1)
 
-	_, err := parseTraceRecord(row, false, false, -1, -1)
+	_, err := parseTraceRecord(row, false, false, -1, -1, -1)
 
 	if err == nil {
 		t.Fatal("expected error for deadline before arrival, got nil")
@@ -519,7 +564,7 @@ func TestParseTraceRecord_InvalidReasonRatio_ReturnsError(t *testing.T) {
 		}
 		row[15] = tc.value // reason_ratio column (shifted +1)
 
-		_, err := parseTraceRecord(row, false, false, -1, -1)
+		_, err := parseTraceRecord(row, false, false, -1, -1, -1)
 
 		if err == nil {
 			t.Errorf("reason_ratio=%q: expected error, got nil", tc.value)
@@ -619,8 +664,8 @@ func TestRequestMetadataFields(t *testing.T) {
 	req := &sim.Request{
 		ID:             "request_0",
 		State:          sim.StateCompleted,
-		InputTokens:  []sim.TokenID{1, 2, 3},
-		OutputTokens: []sim.TokenID{4, 5},
+		InputTokens:    []sim.TokenID{1, 2, 3},
+		OutputTokens:   []sim.TokenID{4, 5},
 		ArrivalTime:    1000,
 		TTFTSet:        true,
 		FirstTokenTime: 500,
@@ -1129,6 +1174,203 @@ func TestTraceRecord_VLLMPriority_FieldExists(t *testing.T) {
 	}
 }
 
+func TestTraceV2_ThinkTimeUs_RoundTrip(t *testing.T) {
+	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+
+	t.Run("present: value round-trips and column is emitted", func(t *testing.T) {
+		dir := t.TempDir()
+		headerPath := filepath.Join(dir, "h.yaml")
+		dataPath := filepath.Join(dir, "d.csv")
+		records := []TraceRecord{
+			{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ThinkTimeUs: i64p(0)},
+			{RequestID: 1, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, ThinkTimeUs: i64p(5000)},
+		}
+		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			t.Fatalf("ExportTraceV2: %v", err)
+		}
+		data, _ := os.ReadFile(dataPath)
+		if !strings.Contains(string(data), "think_time_us") {
+			t.Error("think_time_us column missing from CSV when a record carries it")
+		}
+		loaded, err := LoadTraceV2(headerPath, dataPath)
+		if err != nil {
+			t.Fatalf("LoadTraceV2: %v", err)
+		}
+		// A recorded &0 round-trips as non-nil &0 (NOT nil) — the core #1608 distinction.
+		if loaded.Records[0].ThinkTimeUs == nil || *loaded.Records[0].ThinkTimeUs != 0 {
+			t.Errorf("recorded &0 round-trip = %v, want &0 (non-nil)", loaded.Records[0].ThinkTimeUs)
+		}
+		if loaded.Records[1].ThinkTimeUs == nil || *loaded.Records[1].ThinkTimeUs != 5000 {
+			t.Errorf("recorded &5000 round-trip = %v, want &5000", loaded.Records[1].ThinkTimeUs)
+		}
+	})
+
+	t.Run("mixed presence: nil / &0 / &N round-trip distinctly (#1608)", func(t *testing.T) {
+		dir := t.TempDir()
+		headerPath := filepath.Join(dir, "h.yaml")
+		dataPath := filepath.Join(dir, "d.csv")
+		// nil = not recorded (empty cell); &0 = recorded zero ("0"); &N = recorded N.
+		// think_time_us is the last trailing column, so a nil is an empty trailing field.
+		records := []TraceRecord{
+			{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ThinkTimeUs: nil},
+			{RequestID: 1, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, ThinkTimeUs: i64p(0)},
+			{RequestID: 2, SessionID: "A", RoundIndex: 2, InputTokens: 70, OutputTokens: 30, ThinkTimeUs: i64p(9000)},
+		}
+		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			t.Fatalf("ExportTraceV2: %v", err)
+		}
+		loaded, err := LoadTraceV2(headerPath, dataPath)
+		if err != nil {
+			t.Fatalf("LoadTraceV2: %v", err)
+		}
+		if loaded.Records[0].ThinkTimeUs != nil {
+			t.Errorf("record 0 (nil) round-trip = %v, want nil (empty cell)", loaded.Records[0].ThinkTimeUs)
+		}
+		if loaded.Records[1].ThinkTimeUs == nil || *loaded.Records[1].ThinkTimeUs != 0 {
+			t.Errorf("record 1 (&0) round-trip = %v, want &0 (distinct from nil)", loaded.Records[1].ThinkTimeUs)
+		}
+		if loaded.Records[2].ThinkTimeUs == nil || *loaded.Records[2].ThinkTimeUs != 9000 {
+			t.Errorf("record 2 (&9000) round-trip = %v, want &9000", loaded.Records[2].ThinkTimeUs)
+		}
+	})
+
+	t.Run("absent: no column when no record carries it (INV-6 byte-identity)", func(t *testing.T) {
+		dir := t.TempDir()
+		headerPath := filepath.Join(dir, "h.yaml")
+		dataPath := filepath.Join(dir, "d.csv")
+		records := []TraceRecord{
+			{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50},
+			{RequestID: 1, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40},
+		}
+		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			t.Fatalf("ExportTraceV2: %v", err)
+		}
+		data, _ := os.ReadFile(dataPath)
+		if strings.Contains(string(data), "think_time_us") {
+			t.Error("think_time_us column emitted when no record carries it (must be omitted, INV-6)")
+		}
+		loaded, err := LoadTraceV2(headerPath, dataPath)
+		if err != nil {
+			t.Fatalf("LoadTraceV2: %v", err)
+		}
+		if loaded.Records[1].ThinkTimeUs != nil {
+			t.Errorf("absent column: ThinkTimeUs = %v, want nil", loaded.Records[1].ThinkTimeUs)
+		}
+	})
+
+	t.Run("lone recorded &0 emits column (BC-5, was omitted pre-#1608)", func(t *testing.T) {
+		dir := t.TempDir()
+		headerPath := filepath.Join(dir, "h.yaml")
+		dataPath := filepath.Join(dir, "d.csv")
+		// A single recorded &0 (with all other records nil) now emits the column —
+		// pre-#1608 the != 0 gate would have omitted it, losing the recorded zero.
+		records := []TraceRecord{
+			{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ThinkTimeUs: nil},
+			{RequestID: 1, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, ThinkTimeUs: i64p(0)},
+		}
+		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			t.Fatalf("ExportTraceV2: %v", err)
+		}
+		data, _ := os.ReadFile(dataPath)
+		if !strings.Contains(string(data), "think_time_us") {
+			t.Error("think_time_us column omitted when a record recorded &0 (must be present, BC-5)")
+		}
+		loaded, err := LoadTraceV2(headerPath, dataPath)
+		if err != nil {
+			t.Fatalf("LoadTraceV2: %v", err)
+		}
+		if loaded.Records[1].ThinkTimeUs == nil || *loaded.Records[1].ThinkTimeUs != 0 {
+			t.Errorf("lone &0 round-trip = %v, want &0", loaded.Records[1].ThinkTimeUs)
+		}
+	})
+}
+
+func TestParseTraceRecord_NegativeThinkTime_Errors(t *testing.T) {
+	// A think_time_us column carrying a negative value must be rejected (INV-3:
+	// recorded client think time cannot be negative).
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "h.yaml")
+	dataPath := filepath.Join(dir, "d.csv")
+	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	records := []TraceRecord{
+		{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ThinkTimeUs: i64p(5000)},
+	}
+	if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("ExportTraceV2: %v", err)
+	}
+	data, _ := os.ReadFile(dataPath)
+	corrupt := strings.Replace(string(data), "5000", "-5000", 1)
+	if err := os.WriteFile(dataPath, []byte(corrupt), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := LoadTraceV2(headerPath, dataPath); err == nil || !strings.Contains(err.Error(), "think_time_us") {
+		t.Errorf("expected negative think_time_us to error, got %v", err)
+	}
+}
+
+func TestTraceV2_SessionContextGrowth_HeaderRoundTrip(t *testing.T) {
+	t.Run("accumulate survives export→load", func(t *testing.T) {
+		dir := t.TempDir()
+		hp := filepath.Join(dir, "h.yaml")
+		dp := filepath.Join(dir, "d.csv")
+		h := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+		if err := ExportTraceV2(h, nil, hp, dp); err != nil {
+			t.Fatalf("ExportTraceV2: %v", err)
+		}
+		loaded, err := LoadTraceV2(hp, dp)
+		if err != nil {
+			t.Fatalf("LoadTraceV2: %v", err)
+		}
+		if loaded.Header.SessionContextGrowth != "accumulate" {
+			t.Errorf("SessionContextGrowth = %q, want %q", loaded.Header.SessionContextGrowth, "accumulate")
+		}
+	})
+	t.Run("absent → empty (omitempty)", func(t *testing.T) {
+		dir := t.TempDir()
+		hp := filepath.Join(dir, "h.yaml")
+		dp := filepath.Join(dir, "d.csv")
+		h := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+		if err := ExportTraceV2(h, nil, hp, dp); err != nil {
+			t.Fatalf("ExportTraceV2: %v", err)
+		}
+		loaded, err := LoadTraceV2(hp, dp)
+		if err != nil {
+			t.Fatalf("LoadTraceV2: %v", err)
+		}
+		if loaded.Header.SessionContextGrowth != "" {
+			t.Errorf("SessionContextGrowth = %q, want empty", loaded.Header.SessionContextGrowth)
+		}
+	})
+}
+
+func TestExportTraceV2_ThinkTimeUs_CoexistsWithAdapterAndXRequestID(t *testing.T) {
+	// think_time_us is appended after the adapter and x_request_id trailing columns;
+	// verify all three optional trailing columns round-trip together with correct
+	// values (guards the column-ordering / index math when they coexist).
+	dir := t.TempDir()
+	hp := filepath.Join(dir, "h.yaml")
+	dp := filepath.Join(dir, "d.csv")
+	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "real"} // real → x_request_id emitted
+	records := []TraceRecord{
+		{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, Adapter: "sql-lora", XRequestID: "uuid-0", ThinkTimeUs: i64p(0)},
+		{RequestID: 1, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, Adapter: "sql-lora", XRequestID: "uuid-1", ThinkTimeUs: i64p(7000)},
+	}
+	if err := ExportTraceV2(header, records, hp, dp); err != nil {
+		t.Fatalf("ExportTraceV2: %v", err)
+	}
+	loaded, err := LoadTraceV2(hp, dp)
+	if err != nil {
+		t.Fatalf("LoadTraceV2: %v", err)
+	}
+	r := loaded.Records[1]
+	if r.Adapter != "sql-lora" || r.XRequestID != "uuid-1" || r.ThinkTimeUs == nil || *r.ThinkTimeUs != 7000 {
+		t.Errorf("coexistence round-trip: adapter=%q xreq=%q think=%v; want sql-lora/uuid-1/&7000", r.Adapter, r.XRequestID, r.ThinkTimeUs)
+	}
+	if loaded.Records[0].ThinkTimeUs == nil || *loaded.Records[0].ThinkTimeUs != 0 {
+		t.Errorf("record 0 think_time_us = %v, want &0 (recorded zero, non-nil)", loaded.Records[0].ThinkTimeUs)
+	}
+}
+
 func TestExportTraceV2_VLLMPriority_ConditionalColumn(t *testing.T) {
 	// BC-3: vllm_priority column included only when priority was actually computed.
 	// Distinguishes between:
@@ -1544,46 +1786,46 @@ func TestTraceV2_SLOTargetUs_WithVLLMPriority_DoubleOffset(t *testing.T) {
 func TestTraceRecordsToRequestMetrics_UnitsAndFiltering(t *testing.T) {
 	records := []TraceRecord{
 		{
-			RequestID:        1,
-			Status:           "ok",
-			ArrivalTimeUs:    1000000, // 1 second in microseconds
-			SendTimeUs:       1000000,
-			LastChunkTimeUs:  1150000, // E2E = 150ms
+			RequestID:       1,
+			Status:          "ok",
+			ArrivalTimeUs:   1000000, // 1 second in microseconds
+			SendTimeUs:      1000000,
+			LastChunkTimeUs: 1150000, // E2E = 150ms
 		},
 		{
-			RequestID:        2,
-			Status:           "timeout",
-			ArrivalTimeUs:    2000000,
-			SendTimeUs:       2000000,
-			LastChunkTimeUs:  2100000,
+			RequestID:       2,
+			Status:          "timeout",
+			ArrivalTimeUs:   2000000,
+			SendTimeUs:      2000000,
+			LastChunkTimeUs: 2100000,
 		},
 		{
-			RequestID:        3,
-			Status:           "ok",
-			ArrivalTimeUs:    3000000, // 3 seconds in microseconds
-			SendTimeUs:       3000000,
-			LastChunkTimeUs:  3200000, // E2E = 200ms
+			RequestID:       3,
+			Status:          "ok",
+			ArrivalTimeUs:   3000000, // 3 seconds in microseconds
+			SendTimeUs:      3000000,
+			LastChunkTimeUs: 3200000, // E2E = 200ms
 		},
 		{
-			RequestID:        4,
-			Status:           "error",
-			ArrivalTimeUs:    4000000,
-			SendTimeUs:       4000000,
-			LastChunkTimeUs:  4050000,
+			RequestID:       4,
+			Status:          "error",
+			ArrivalTimeUs:   4000000,
+			SendTimeUs:      4000000,
+			LastChunkTimeUs: 4050000,
 		},
 		{
-			RequestID:        5,
-			Status:           "ok",
-			ArrivalTimeUs:    5000000,
-			SendTimeUs:       5000000,
-			LastChunkTimeUs:  5000000, // E2E = 0 (clock skew or malformed)
+			RequestID:       5,
+			Status:          "ok",
+			ArrivalTimeUs:   5000000,
+			SendTimeUs:      5000000,
+			LastChunkTimeUs: 5000000, // E2E = 0 (clock skew or malformed)
 		},
 		{
-			RequestID:        6,
-			Status:           "ok",
-			ArrivalTimeUs:    6000000,
-			SendTimeUs:       6100000,
-			LastChunkTimeUs:  6050000, // E2E < 0 (clock skew)
+			RequestID:       6,
+			Status:          "ok",
+			ArrivalTimeUs:   6000000,
+			SendTimeUs:      6100000,
+			LastChunkTimeUs: 6050000, // E2E < 0 (clock skew)
 		},
 	}
 
@@ -1658,12 +1900,12 @@ func TestTraceRecordsToRequestMetrics_RateDeficitSemantics(t *testing.T) {
 	// The rate_deficit formula depends on this distinction:
 	// rate_deficit = 1 - (completions / totalArrivals)
 	// If caller passes len(metrics) instead of len(records), the deficit is understated.
-	completions := len(metrics)             // 2
-	totalArrivalsCorrect := len(records)    // 4
-	totalArrivalsWrong := len(metrics)      // 2
+	completions := len(metrics)          // 2
+	totalArrivalsCorrect := len(records) // 4
+	totalArrivalsWrong := len(metrics)   // 2
 
-	rateDeficitCorrect := 1.0 - float64(completions)/float64(totalArrivalsCorrect)   // 1 - 2/4 = 0.5
-	rateDeficitWrong := 1.0 - float64(completions)/float64(totalArrivalsWrong)       // 1 - 2/2 = 0.0
+	rateDeficitCorrect := 1.0 - float64(completions)/float64(totalArrivalsCorrect) // 1 - 2/4 = 0.5
+	rateDeficitWrong := 1.0 - float64(completions)/float64(totalArrivalsWrong)     // 1 - 2/2 = 0.0
 
 	if rateDeficitCorrect != 0.5 {
 		t.Errorf("With totalArrivals=4: rate_deficit = %f, want 0.5", rateDeficitCorrect)
@@ -1933,5 +2175,211 @@ func TestExportTraceV2_XRequestID_CoexistsWithOtherOptionalColumns(t *testing.T)
 	}
 	if got.XRequestID != "uuid-zzz" {
 		t.Errorf("XRequestID: got %q, want %q", got.XRequestID, "uuid-zzz")
+	}
+}
+
+// TestTraceV2_RoundTrip_WithKVOffload verifies the resolved KV-offload config
+// (H5, #1587, BC-G6) survives export→load with all fields intact, and that a header
+// without offload omits the key (BC-G5).
+func TestTraceV2_RoundTrip_WithKVOffload(t *testing.T) {
+	header := &TraceHeader{
+		Version: 3, TimeUnit: "microseconds", Mode: "generated",
+		KVOffload: &TraceKVOffloadConfig{
+			CPUBytesToUse:          17179869184,
+			BlockSize:              16,
+			BlocksPerChunk:         1,
+			TokensPerHash:          16,
+			EvictionPolicy:         "lru",
+			OffloadPromptOnly:      true,
+			SelfDescribingKVEvents: false,
+			Tiers: []TraceKVOffloadTier{
+				{
+					Type: "fs", RootDir: "/mnt/kv-cache",
+					NReadThreads: 16, NWriteThreads: 16,
+					Locality: "LOCAL", EnableKVEvents: false, DirectIO: true,
+					DeviceClass:   "nvme_gen4",
+					ReadBandwidth: 7000, WriteBandwidth: 5000, BaseLatency: 80,
+				},
+			},
+		},
+	}
+
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	dataPath := filepath.Join(dir, "data.csv")
+	if err := ExportTraceV2(header, nil, headerPath, dataPath); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := loaded.Header.KVOffload
+	if got == nil {
+		t.Fatal("kv_offload config should round-trip, got nil")
+	}
+	if got.CPUBytesToUse != 17179869184 || got.EvictionPolicy != "lru" || !got.OffloadPromptOnly {
+		t.Errorf("scalar mismatch after round-trip: %+v", got)
+	}
+	if len(got.Tiers) != 1 {
+		t.Fatalf("tiers: got %d, want 1", len(got.Tiers))
+	}
+	tr := got.Tiers[0]
+	if tr.Type != "fs" || tr.RootDir != "/mnt/kv-cache" || !tr.DirectIO ||
+		tr.ReadBandwidth != 7000 || tr.WriteBandwidth != 5000 || tr.BaseLatency != 80 ||
+		tr.NReadThreads != 16 || tr.Locality != "LOCAL" || tr.DeviceClass != "nvme_gen4" {
+		t.Errorf("tier mismatch after round-trip: %+v", tr)
+	}
+}
+
+// TestTraceV2_RoundTrip_WithObservedKVMetrics verifies the observed KV hit-rate
+// block (#1583, BC-3) survives export→load with all fields intact.
+func TestTraceV2_RoundTrip_WithObservedKVMetrics(t *testing.T) {
+	header := &TraceHeader{
+		Version: 3, TimeUnit: "microseconds", Mode: "real",
+		ObservedKVMetrics: &TraceObservedKVMetrics{
+			Source:         "tiered",
+			HitRate:        0.734,
+			BlockHits:      7340,
+			BlockQueries:   10000,
+			ReadTimeTotal:  12.5,
+			WriteTimeTotal: 3.25,
+			VLLMCommit:     "63a9a5010a6d1539c52957646ef9d6bbcf7a4deb",
+		},
+	}
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	dataPath := filepath.Join(dir, "data.csv")
+	if err := ExportTraceV2(header, nil, headerPath, dataPath); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := loaded.Header.ObservedKVMetrics
+	if got == nil {
+		t.Fatal("observed_kv_metrics should round-trip, got nil")
+	}
+	if got.Source != "tiered" || got.HitRate != 0.734 || got.BlockHits != 7340 ||
+		got.BlockQueries != 10000 || got.ReadTimeTotal != 12.5 || got.WriteTimeTotal != 3.25 ||
+		got.VLLMCommit != "63a9a5010a6d1539c52957646ef9d6bbcf7a4deb" {
+		t.Errorf("observed_kv_metrics mismatch after round-trip: %+v", got)
+	}
+}
+
+// TestTraceV2_ObservedKVMetrics_ZeroHitRate verifies an observed hit-rate of exactly
+// 0 (a valid observation: zero cache hits) is preserved, not dropped by omitempty.
+func TestTraceV2_ObservedKVMetrics_ZeroHitRate(t *testing.T) {
+	header := &TraceHeader{
+		Version: 3, TimeUnit: "microseconds", Mode: "real",
+		ObservedKVMetrics: &TraceObservedKVMetrics{
+			Source: "gpu-prefix-cache-fallback", HitRate: 0, BlockHits: 0, BlockQueries: 500,
+		},
+	}
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	dataPath := filepath.Join(dir, "data.csv")
+	if err := ExportTraceV2(header, nil, headerPath, dataPath); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(headerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "hit_rate: 0") {
+		t.Errorf("zero hit_rate must serialize explicitly, header:\n%s", data)
+	}
+	loaded, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Header.ObservedKVMetrics == nil || loaded.Header.ObservedKVMetrics.BlockQueries != 500 {
+		t.Errorf("zero-hit observation should round-trip: %+v", loaded.Header.ObservedKVMetrics)
+	}
+}
+
+// TestTraceV2_ObservedKVMetrics_UnknownSubKey verifies strict parsing rejects an
+// unknown sub-key inside the observed_kv_metrics block (BC-3, R10).
+func TestTraceV2_ObservedKVMetrics_UnknownSubKey(t *testing.T) {
+	yamlText := []byte("trace_version: 3\ntime_unit: microseconds\nmode: real\nwarm_up_requests: 0\n" +
+		"observed_kv_metrics:\n  source: tiered\n  hit_rate: 0.5\n  block_hits: 5\n  block_queries: 10\n  bogus_key: 1\n")
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	if err := os.WriteFile(headerPath, yamlText, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dataPath := filepath.Join(dir, "data.csv")
+	if err := os.WriteFile(dataPath, []byte("request_id\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadTraceV2(headerPath, dataPath); err == nil ||
+		!strings.Contains(err.Error(), "field") {
+		t.Errorf("expected unknown-field error for observed_kv_metrics sub-key, got %v", err)
+	}
+}
+
+// TestTraceV2_NoObservedKVMetrics_OmitsKey verifies a header without a scraped
+// observation writes no observed_kv_metrics key (BC-8 byte-identity for default observe).
+func TestTraceV2_NoObservedKVMetrics_OmitsKey(t *testing.T) {
+	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "real"}
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	dataPath := filepath.Join(dir, "data.csv")
+	if err := ExportTraceV2(header, nil, headerPath, dataPath); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(headerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "observed_kv_metrics") {
+		t.Errorf("header without a scrape must not contain observed_kv_metrics:\n%s", data)
+	}
+}
+
+// TestTraceV2_NoKVOffload_OmitsKey verifies a header without offload writes no
+// kv_offload key (BC-G5 byte-identity for the disabled case).
+func TestTraceV2_NoKVOffload_OmitsKey(t *testing.T) {
+	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	dataPath := filepath.Join(dir, "data.csv")
+	if err := ExportTraceV2(header, nil, headerPath, dataPath); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(headerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "kv_offload") {
+		t.Errorf("header without offload must not contain a kv_offload key:\n%s", data)
+	}
+	loaded, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Header.KVOffload != nil {
+		t.Error("KVOffload must be nil when absent")
+	}
+}
+
+// TestTraceV2_KVOffload_UnknownSubKey_Errors verifies strict parsing rejects an
+// unknown offload sub-key (BC-G6: replay must fail loudly on a config it cannot
+// reconstruct, e.g. one written by a future binary).
+func TestTraceV2_KVOffload_UnknownSubKey_Errors(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	dataPath := filepath.Join(dir, "data.csv")
+	yaml := "trace_version: 3\ntime_unit: microseconds\nmode: generated\n" +
+		"warm_up_requests: 0\nkv_offload:\n  cpu_bytes_to_use: 1\n  future_knob: 42\n"
+	if err := os.WriteFile(headerPath, []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dataPath, []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadTraceV2(headerPath, dataPath); err == nil {
+		t.Fatal("expected strict-parse error for unknown kv_offload sub-key, got nil")
 	}
 }

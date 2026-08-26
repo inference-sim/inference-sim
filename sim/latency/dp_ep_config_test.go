@@ -17,12 +17,12 @@ import (
 // model_configs/. Expected values were verified against upstream config.json on
 // 2026-06-10 (design §2.2).
 //
-// numMoELayersGap records, but does NOT assert as parity, the known dense-layer
-// placement gap: BLIS does not yet parse first_k_dense_replace /
-// decoder_sparse_step / mlp_only_layers, so for those models BLIS treats every
-// layer as MoE and over-counts MoE layers. This is documented (design §2.2) and
-// resolved by the future distill-model-config effort, not this PR. The field
-// keeps the fixture honest — it does not claim layer-count parity.
+// numMoELayersGap records, but does NOT assert as parity, dense-layer placement
+// notes per fixture. As of #1527 (F3) BLIS DOES parse first_k_dense_replace and
+// the weight estimate honors the dense/MoE split; the remaining unparsed signals
+// (decoder_sparse_step / mlp_only_layers) are still noted here. This test asserts
+// only expert-count and DP/EP group fields — never layer counts — so it is
+// unaffected by the F3 weight-accounting change; the notes keep the fixture honest.
 func TestDPEPConfig_RealFixtures(t *testing.T) {
 	type fixture struct {
 		name    string
@@ -47,7 +47,7 @@ func TestDPEPConfig_RealFixtures(t *testing.T) {
 		{
 			name: "deepseek-v2-lite", dir: "deepseek-v2-lite",
 			experts: 64, perTok: 6, moeFFN: 1408, sharedF: 2816, // 2 × 1408
-			numMoELayersGapNote: "first_k_dense_replace=1 → 1 of 27 layers is dense; BLIS over-counts MoE layers by 1",
+			numMoELayersGapNote: "first_k_dense_replace=1 → 1 of 27 layers is dense; the weight estimate now honors this split (#1527 F3). This test still asserts only expert-count/DP-EP fields, not layer counts.",
 		},
 		{
 			name: "qwen3-30b-a3b", dir: "qwen3-30b-a3b",

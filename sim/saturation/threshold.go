@@ -94,4 +94,3 @@ func meanLatency(events []Event) float64 {
 	}
 	return sum / float64(len(events))
 }
-

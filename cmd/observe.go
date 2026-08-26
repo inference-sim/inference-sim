@@ -24,15 +24,23 @@ import (
 const defaultMaxOutputTokens = 2048
 const defaultHTTPTimeoutSeconds = 300
 
+// defaultSessionIDHeader is the request header carrying the closed-loop session
+// id, so a session-aware EPP (session-affinity / predictive-least-loaded) can
+// pin a session's rounds to one instance. Overridable via --session-id-header
+// to match whatever the deployment's session-id-producer is configured to read
+// (issue #1505).
+const defaultSessionIDHeader = "x-session-id"
+
 // RealClient sends requests to an OpenAI-compatible inference server.
 type RealClient struct {
-	baseURL    string
-	apiKey     string
-	modelName  string
-	serverType string
-	apiFormat  string // "completions" or "chat" (default: "completions")
-	httpClient *http.Client
-	sloMap     *sim.SLOPriorityMap
+	baseURL         string
+	apiKey          string
+	modelName       string
+	serverType      string
+	apiFormat       string // "completions" or "chat" (default: "completions")
+	httpClient      *http.Client
+	sloMap          *sim.SLOPriorityMap
+	sessionIDHeader string // request header carrying the session id (issue #1505); "" disables emission
 }
 
 // RealClientOption configures optional RealClient behavior.
@@ -46,6 +54,12 @@ func WithAPIFormat(format string) RealClientOption {
 // WithHTTPTimeout sets the HTTP client timeout for requests.
 func WithHTTPTimeout(d time.Duration) RealClientOption {
 	return func(c *RealClient) { c.httpClient.Timeout = d }
+}
+
+// WithSessionIDHeader sets the request header used to carry the session id
+// (issue #1505). An empty name disables session-id emission.
+func WithSessionIDHeader(name string) RealClientOption {
+	return func(c *RealClient) { c.sessionIDHeader = name }
 }
 
 // WithSLOPriorityMap sets a custom SLO priority map for vLLM priority translation.
@@ -71,13 +85,14 @@ func isTimeoutError(err error) bool {
 // NewRealClient creates a new real mode HTTP client.
 func NewRealClient(baseURL, apiKey, modelName, serverType string, opts ...RealClientOption) *RealClient {
 	c := &RealClient{
-		baseURL:    strings.TrimRight(baseURL, "/"),
-		apiKey:     apiKey,
-		modelName:  modelName,
-		serverType: serverType,
-		apiFormat:  "completions",
-		httpClient: &http.Client{Timeout: defaultHTTPTimeoutSeconds * time.Second},
-		sloMap:     sim.DefaultSLOPriorityMap(),
+		baseURL:         strings.TrimRight(baseURL, "/"),
+		apiKey:          apiKey,
+		modelName:       modelName,
+		serverType:      serverType,
+		apiFormat:       "completions",
+		httpClient:      &http.Client{Timeout: defaultHTTPTimeoutSeconds * time.Second},
+		sloMap:          sim.DefaultSLOPriorityMap(),
+		sessionIDHeader: defaultSessionIDHeader,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -102,6 +117,7 @@ type PendingRequest struct {
 	MinTokens       int
 	DeadlineUs      int64
 	SLOTargetUs     int64
+	SessionID       string // closed-loop session id, emitted as the session-id header (issue #1505)
 }
 
 // RequestRecord captures one request-response cycle.
@@ -222,6 +238,12 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 	if req.SLOTargetUs > 0 {
 		ms := (req.SLOTargetUs + 999) / 1000 // ceiling division: µs→ms
 		httpReq.Header.Set("x-slo-ttft-ms", strconv.FormatInt(ms, 10))
+	}
+	// Session id for session-aware EPP routing (session-affinity / predictive
+	// pinning). Closed-loop replay is the only producer of the wire header —
+	// real clients carry the session in telemetry, not on the request (#1505).
+	if req.SessionID != "" && c.sessionIDHeader != "" {
+		httpReq.Header.Set(c.sessionIDHeader, req.SessionID)
 	}
 
 	// Record send time
@@ -438,6 +460,61 @@ func (c *RealClient) handleStreamingResponse(resp *http.Response, record *Reques
 
 	warnOnFinishReason(record.RequestID, record.FinishReason, minTokens, effectiveMax, record.OutputTokens)
 	return record, nil
+}
+
+// ScrapeKVMetrics fetches the server's Prometheus /metrics endpoint and parses it
+// into a family→summed-value map (#1583). metricsURL overrides the default
+// baseURL+"/metrics" when non-empty (e.g. metrics served on a sidecar port). The
+// returned map feeds workload.DeriveObservedHitRate over the measured window.
+func (c *RealClient) ScrapeKVMetrics(ctx context.Context, metricsURL string) (map[string]float64, error) {
+	url := metricsURL
+	if url == "" {
+		url = c.baseURL + "/metrics"
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build /metrics request: %w", err)
+	}
+	if c.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("GET %s: %w", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET %s: HTTP %d", url, resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read %s body: %w", url, err)
+	}
+	return workload.ParsePromMetrics(string(body)), nil
+}
+
+// resolveObservedKVMetrics performs the end-of-window /metrics scrape and derives the
+// observed KV hit-rate block for the trace header (#1583). It returns nil (with a
+// warning) on any scrape/parse/derive failure — a metrics miss must never abort the
+// observe run or emit a bogus value (BC-11). A nil startSamples (scrape disabled, or
+// the start-of-window scrape failed) yields nil without a second scrape.
+func resolveObservedKVMetrics(ctx context.Context, client *RealClient, metricsURL string, startSamples map[string]float64, vllmCommit string) *workload.TraceObservedKVMetrics {
+	if startSamples == nil {
+		return nil
+	}
+	end, err := client.ScrapeKVMetrics(ctx, metricsURL)
+	if err != nil {
+		logrus.Warnf("observe: --scrape-kv-metrics: end-of-window /metrics scrape failed: %v; omitting observed KV hit-rate from the trace header", err)
+		return nil
+	}
+	block, err := workload.DeriveObservedHitRate(startSamples, end, vllmCommit)
+	if err != nil {
+		logrus.Warnf("observe: --scrape-kv-metrics: %v; omitting observed KV hit-rate from the trace header", err)
+		return nil
+	}
+	logrus.Infof("observe: observed KV hit-rate = %.4f (source=%s, block_hits=%d, block_queries=%d)",
+		block.HitRate, block.Source, block.BlockHits, block.BlockQueries)
+	return block
 }
 
 // Recorder captures per-request timing and metrics (goroutine-safe).

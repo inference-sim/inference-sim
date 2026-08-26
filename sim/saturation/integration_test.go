@@ -9,26 +9,27 @@ import (
 	"github.com/inference-sim/inference-sim/sim/saturation"
 )
 
-// TestMetricsOutput_SaturationField verifies BC-8: MetricsOutput.Saturation field exists and serializes
+// TestMetricsOutput_SaturationField verifies the #1517 stdout shape: the
+// Saturation field carries a per-detector final-label map (map[string]Level),
+// serializes each Level as its bare string via Level.MarshalJSON, and appears
+// under the "saturation" key. This is the shape the production pipeline actually
+// emits (ReduceAll's output spliced onto MetricsOutput by cmd) — NOT the retired
+// single-detector *Result batch shape.
 func TestMetricsOutput_SaturationField(t *testing.T) {
-	// Create a MetricsOutput with saturation result
+	// Create a MetricsOutput with the per-detector final-label map (#1517).
 	output := sim.MetricsOutput{
 		InstanceID:        "test",
 		CompletedRequests: 100,
-		Saturation: &saturation.Result{
-			Level:      saturation.Stable,
-			Score:      0.3,
-			Confidence: 0.9,
-			Signals: map[string]float64{
-				"rate_deficit":  0.1,
-				"latency_trend": 0.05,
-			},
+		Saturation: map[string]saturation.Level{
+			"composite":     saturation.Stable,
+			"threshold":     saturation.Overloaded,
+			"backlog-drift": saturation.Backlogged,
 		},
 	}
 
 	// Serialize to JSON
 	data, err := json.Marshal(output)
-	if err != nil{
+	if err != nil {
 		t.Fatalf("Failed to marshal MetricsOutput: %v", err)
 	}
 
@@ -44,28 +45,26 @@ func TestMetricsOutput_SaturationField(t *testing.T) {
 		t.Fatal("Saturation field is nil after round-trip")
 	}
 
-	// Type assert from interface{} to map[string]interface{} (JSON unmarshaling default)
+	// Type assert from interface{} to map[string]interface{} (JSON unmarshaling default).
 	satMap, ok := decoded.Saturation.(map[string]interface{})
 	if !ok {
 		t.Fatalf("Saturation field is not a map: %T", decoded.Saturation)
 	}
 
-	// Verify level (as string)
-	level, ok := satMap["level"].(string)
-	if !ok || level != "STABLE" {
-		t.Errorf("Expected level=STABLE, got %v", satMap["level"])
+	// Each detector maps to its bare label string (Level.MarshalJSON).
+	want := map[string]string{
+		"composite":     "STABLE",
+		"threshold":     "OVERLOADED",
+		"backlog-drift": "BACKLOGGED",
 	}
-
-	// Verify score
-	score, ok := satMap["score"].(float64)
-	if !ok || score != 0.3 {
-		t.Errorf("Expected score=0.3, got %v", satMap["score"])
+	if len(satMap) != len(want) {
+		t.Errorf("Expected %d detector keys, got %d (%v)", len(want), len(satMap), satMap)
 	}
-
-	// Verify confidence
-	confidence, ok := satMap["confidence"].(float64)
-	if !ok || confidence != 0.9 {
-		t.Errorf("Expected confidence=0.9, got %v", satMap["confidence"])
+	for det, wantLabel := range want {
+		gotLabel, ok := satMap[det].(string)
+		if !ok || gotLabel != wantLabel {
+			t.Errorf("detector %q: expected %q, got %v", det, wantLabel, satMap[det])
+		}
 	}
 
 	// Verify JSON contains "saturation" key

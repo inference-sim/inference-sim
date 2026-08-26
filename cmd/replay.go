@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,11 +26,22 @@ var (
 	traceHeaderPath     string
 	traceDataPath       string
 	replayTraceOutput   string // File prefix for TraceV2 re-export (<prefix>.yaml + <prefix>.csv)
+	replayMetricsPath   string // File to write aggregate MetricsOutput JSON (incl. cache_hit_rate, #1583); symmetric with `blis run --metrics-path`
 	replaySessionMode   string
 	replayThinkTimeMs   int
 	replayThinkTimeDist string // distribution spec for think time (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s")
 	// saturationReport is declared in root.go and shared across run, replay, observe
+
+	replayConcurrentSessions int  // >0 enables fixed-pool closed-loop replay (N concurrent sessions)
+	replayTotalSessions      int  // total sessions to replay when pooling (0 = corpus size)
+	replayShuffleCorpus      bool // randomize corpus step order (pool mode only; seeded from --seed) (#1480)
 )
+
+// corpusShuffleSeedSalt is XORed with the master --seed to derive the corpus-shuffle
+// RNG stream, keeping it independent of the per-session token and clone RNGs (#1480).
+// Shared by `blis replay --shuffle-corpus` and `blis observe --shuffle-corpus` so the
+// SAME --seed selects the SAME subset/order on both — required for calibration parity.
+const corpusShuffleSeedSalt = 0x53485546 // "SHUF"
 
 var replayCmd = &cobra.Command{
 	Use:   "replay",
@@ -90,6 +102,55 @@ Example:
 		if replayThinkTimeMs < 0 {
 			logrus.Fatalf("--think-time-ms must be non-negative, got %d", replayThinkTimeMs)
 		}
+		if replayConcurrentSessions < 0 {
+			logrus.Fatalf("--concurrent-sessions must be >= 0, got %d", replayConcurrentSessions)
+		}
+		if replayTotalSessions < 0 {
+			logrus.Fatalf("--total-sessions must be >= 0, got %d", replayTotalSessions)
+		}
+		// Auto-promote BEFORE the think-time-requires-closed-loop checks below:
+		// --concurrent-sessions' help text promises it "implies closed-loop session
+		// semantics", so a caller pairing it with --think-time-ms/--think-time-dist
+		// but omitting --session-mode must not be fatal'd for missing a mode that
+		// this very flag is about to supply.
+		if replayConcurrentSessions > 0 && replaySessionMode != "closed-loop" {
+			// Pool mode requires closed-loop; promote automatically with a notice.
+			logrus.Infof("--concurrent-sessions set; forcing --session-mode closed-loop")
+			replaySessionMode = "closed-loop"
+		}
+		// blis convert otel writes session_context_growth=accumulate and encodes
+		// per-round input_tokens as DELTAS, which only reconstruct correctly via
+		// the closed-loop accumulate-buffer path. Fixed-mode replay reads
+		// input_tokens as absolute per-round counts and never consults
+		// SessionContextGrowth, so it would silently misinterpret the deltas and
+		// produce wrong-but-plausible-looking metrics. Fail fast instead. This
+		// check runs after the auto-promote block above, so a pool run
+		// (--concurrent-sessions > 0, already promoted to closed-loop) passes.
+		if traceData.Header.SessionContextGrowth == "accumulate" && replaySessionMode != "closed-loop" {
+			logrus.Fatalf("trace header has session_context_growth=accumulate (per-round input_tokens are deltas that only reconstruct correctly in closed-loop replay), but --session-mode is %q. Re-run with --session-mode closed-loop, or use --concurrent-sessions N for pooled replay.", replaySessionMode)
+		}
+		if replayTotalSessions > 0 && replayConcurrentSessions == 0 {
+			logrus.Fatalf("--total-sessions requires --concurrent-sessions > 0")
+		}
+		// --shuffle-corpus is a pool-mode concept (it randomizes the pool's step
+		// order). Plain closed-loop replay injects every session at its recorded
+		// arrival, so there is no step order to randomize — fail loudly (R1), never
+		// a silent no-op.
+		if replayShuffleCorpus && replayConcurrentSessions == 0 {
+			logrus.Fatalf("--shuffle-corpus requires --concurrent-sessions > 0")
+		}
+		// Pool mode + output artifacts: guard against silent truncation (R1).
+		// Trace re-export in pool mode would contain only the initial wave of
+		// round-0 requests (follow-ups/clones are never collected for export), so
+		// reject it outright — mirroring how replay fails fast on unsupported
+		// features (INV-13). Per-request results similarly exclude clone sessions
+		// (non-numeric ids), so warn loudly rather than silently subsetting.
+		if replayConcurrentSessions > 0 && replayTraceOutput != "" {
+			logrus.Fatalf("--trace-output is not supported with --concurrent-sessions (pool mode): a re-export would capture only the initial %d-session wave, not all pooled sessions. Re-run without --trace-output.", replayConcurrentSessions)
+		}
+		if replayConcurrentSessions > 0 && resultsPath != "" {
+			logrus.Warnf("--results-path with --concurrent-sessions (pool mode): per-request results cover only the original corpus sessions' round-0; duplicated (clone) sessions and follow-up rounds are excluded (non-numeric request ids).")
+		}
 		if replayThinkTimeMs > 0 && replaySessionMode != "closed-loop" {
 			logrus.Fatalf("--think-time-ms requires --session-mode closed-loop")
 		}
@@ -121,23 +182,55 @@ Example:
 		// Build requests from trace — mode selects pre-baked vs closed-loop (BC-8, BC-9)
 		var requests []*sim.Request
 		var sessionMgr *workload.SessionManager
+		var poolDriver *workload.SessionPoolDriver
 		if replaySessionMode == "closed-loop" {
 			// Closed-loop: inject only round-0 requests; SessionManager drives follow-ups.
 			// Compute the preliminary horizon from trace records directly (O(n)) so we can
 			// call LoadTraceV2SessionBlueprints exactly once with correct parameters.
-			replayHorizonPrelim := computeHorizonFromMaxArrival(maxInjectedArrivalTimeUs(traceData))
+			replayHorizonPrelim := computeHorizonFromMaxArrival(workload.MaxNormalizedInjectionTimeUs(traceData))
 			if cmd.Flags().Changed("horizon") {
 				replayHorizonPrelim = simulationHorizon
+			}
+			// Pool mode drains on session count, not wall-clock. Unless the user set an
+			// explicit --horizon cap, run the blueprints with an unbounded horizon so no
+			// session is horizon-interrupted mid-drain (INV-11 / conservation).
+			if replayConcurrentSessions > 0 && !cmd.Flags().Changed("horizon") {
+				replayHorizonPrelim = math.MaxInt64
 			}
 			r0Requests, blueprints, bErr := workload.LoadTraceV2SessionBlueprints(traceData, seed, thinkTimeSampler, replayHorizonPrelim)
 			if bErr != nil {
 				logrus.Fatalf("Failed to build session blueprints from trace: %v", bErr)
 			}
-			requests = r0Requests
 			if len(blueprints) == 0 {
-				// BC-12: warning path — no automated unit test (integration-level only)
 				logrus.Warnf("--session-mode closed-loop: no session records found in trace; all requests injected with fixed timing")
+				requests = r0Requests
+			} else if replayConcurrentSessions > 0 {
+				// Pool mode requires a pure-session corpus: every record must belong to
+				// a session (carry a session_id). LoadTraceV2SessionBlueprints returns one
+				// round-0 request per session PLUS one per non-session (single-shot)
+				// record, so a mixed trace yields more round-0 requests than blueprints.
+				// Surface that here with an actionable message naming the offending count,
+				// rather than letting BuildSessionPool fail with its internal
+				// "count mismatch" wording (R1 — no opaque internal-invariant error).
+				if nonSession := len(r0Requests) - len(blueprints); nonSession > 0 {
+					logrus.Fatalf("--concurrent-sessions requires every trace record to belong to a session, but %d of %d records have no session_id. Pooled replay cannot mix session and non-session (single-shot) records; re-export the corpus so every row carries a session_id (e.g. via `blis convert otel`), or drop --concurrent-sessions to replay it in plain closed-loop mode.", nonSession, len(r0Requests))
+				}
+				// Optional seeded shuffle of the corpus step order (#1480). Drawn from
+				// a distinct stream off the master seed (XOR salt) so it is reproducible
+				// from --seed yet does not perturb the per-session token / clone RNGs.
+				if replayShuffleCorpus {
+					workload.ShuffleSessions(blueprints, r0Requests, rand.New(rand.NewSource(seed^corpusShuffleSeedSalt)))
+				}
+				driver, initial, pErr := workload.BuildSessionPool(blueprints, r0Requests, replayConcurrentSessions, replayTotalSessions, seed)
+				if pErr != nil {
+					logrus.Fatalf("Failed to build session pool: %v", pErr)
+				}
+				poolDriver = driver
+				requests = initial
+				logrus.Infof("Session-pool mode: pool=%d total=%d, %d round-0 requests injected initially",
+					replayConcurrentSessions, driver.TotalSessions(), len(initial))
 			} else {
+				requests = r0Requests
 				sessionMgr = workload.NewSessionManager(blueprints)
 				logrus.Infof("Closed-loop mode: %d session blueprints, %d round-0 requests", len(blueprints), len(requests))
 			}
@@ -156,6 +249,9 @@ Example:
 		if cmd.Flags().Changed("horizon") {
 			replayHorizon = simulationHorizon
 		}
+		if replayConcurrentSessions > 0 && !cmd.Flags().Changed("horizon") {
+			replayHorizon = math.MaxInt64 // self-draining pool; cluster horizon unbounded
+		}
 		logrus.Infof("Simulation horizon: %d ticks", replayHorizon)
 
 		// LoRA control-plane (#1464): resolve ONCE (R4) so the KV auto-capacity path
@@ -166,8 +262,46 @@ Example:
 		loraCfg := resolveLoRAConfig(cmd)
 		loraReservedBytesForKV = adapterReservedBytesFor(loraCfg)
 
+		// KV-cache offload config (#1587, BC-G6): the trace header is authoritative on
+		// replay (unlike --lora-config, which is flags-only). Reconstruct the recorded
+		// config, Fatalf if this binary cannot reproduce it, and Fatalf on a genuine
+		// flag/header conflict. Inert when the trace carries no offload config (BC-G5).
+		// Observe traces (mode "real") may model the observed deployment's offload via
+		// --kv-offload-config for the sim side of the #1583 hit-rate comparison; sim-
+		// generated traces remain header-authoritative (INV-13).
+		kvOffloadCfg := reconcileReplayKVOffload(cmd, traceData.Header.KVOffload, traceData.Header.Mode == "real")
+		// #1590 (H1): parity with run — the multi-tier offload chain (from the trace
+		// header or --kv-offload-config) and the legacy --kv-cpu-blocks single CPU tier
+		// are distinct offload models; refuse both with a clean CLI error rather than
+		// the library-level panic in NewKVStore.
+		if kvOffloadCfg.IsEnabled() && kvCPUBlocks > 0 {
+			logrus.Fatalf("--kv-cpu-blocks conflicts with the trace's kv_offload config (distinct KV-offload models); set only one")
+		}
+		// #1583 (BC-10): a tiered observed hit-rate in the header is only replayable
+		// into a comparable sim number if this replay reproduces a tiered offload
+		// config. Fail loudly rather than silently produce a GPU-only hit-rate.
+		if err := validateObservedKVReplayable(traceData.Header.ObservedKVMetrics, kvOffloadCfg.IsEnabled()); err != nil {
+			logrus.Fatalf("%v", err)
+		}
+
 		// Resolve latency backend configuration (single code path shared with runCmd).
 		lr := resolveLatencyConfig(cmd)
+
+		// #1583: derive PerBlockBytes for an offload config supplied by --kv-offload-config
+		// (the observe-trace calibration path). A sim-generated trace header already
+		// carries the run-computed value (>0), so this is skipped for run/replay parity;
+		// a flag-supplied config has PerBlockBytes==0 until the model resolves. Mirrors
+		// the derivation in cmd/root.go (runCmd) so run and replay agree.
+		if kvOffloadCfg.IsEnabled() && kvOffloadCfg.PerBlockBytes == 0 {
+			perTokenKVBytes, pbErr := latency.KVBytesPerToken(lr.ModelConfig, tensorParallelism)
+			if pbErr != nil {
+				logrus.Fatalf("kv_offload: cannot derive per_block_bytes from the model: %v", pbErr)
+			}
+			kvOffloadCfg.PerBlockBytes = int64(perTokenKVBytes * float64(kvOffloadCfg.BlockSize))
+			if kvOffloadCfg.PerBlockBytes <= 0 {
+				logrus.Fatalf("kv_offload: derived per_block_bytes must be > 0 (KVBytesPerToken=%v × block_size=%d)", perTokenKVBytes, kvOffloadCfg.BlockSize)
+			}
+		}
 
 		// Numeric flag validation (same as runCmd)
 		if numInstances < 1 {
@@ -176,11 +310,11 @@ Example:
 		if totalKVBlocks <= 0 {
 			logrus.Fatalf("--total-kv-blocks must be > 0, got %d", totalKVBlocks)
 		}
-		if maxRunningReqs <= 0 {
-			logrus.Fatalf("--max-num-running-reqs must be > 0, got %d", maxRunningReqs)
+		if maxNumSeqs <= 0 {
+			logrus.Fatalf("--max-num-seqs must be > 0, got %d", maxNumSeqs)
 		}
-		if maxScheduledTokens <= 0 {
-			logrus.Fatalf("--max-num-scheduled-tokens must be > 0, got %d", maxScheduledTokens)
+		if maxNumBatchedTokens <= 0 {
+			logrus.Fatalf("--max-num-batched-tokens must be > 0, got %d", maxNumBatchedTokens)
 		}
 		if longPrefillTokenThreshold < 0 {
 			logrus.Fatalf("--long-prefill-token-threshold must be >= 0, got %d", longPrefillTokenThreshold)
@@ -471,8 +605,9 @@ Example:
 				Horizon: replayHorizon,
 				Seed:    seed,
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
-					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
-				BatchConfig:          sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
+					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency,
+					sim.WithKVOffload(kvOffloadCfg)),
+				BatchConfig:          sim.NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:        sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
 				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dataParallelism, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
@@ -533,7 +668,15 @@ Example:
 		// Collect follow-ups for saturation analysis in closed-loop mode (BC-12, issue #1298)
 		var followUpRequests []*sim.Request
 		var onRequestDone func(*sim.Request, int64) []*sim.Request
-		if sessionMgr != nil {
+		switch {
+		case poolDriver != nil:
+			baseCb := poolDriver.OnComplete
+			onRequestDone = func(req *sim.Request, clock int64) []*sim.Request {
+				followUps := baseCb(req, clock)
+				followUpRequests = append(followUpRequests, followUps...)
+				return followUps
+			}
+		case sessionMgr != nil:
 			baseCb := sessionMgr.OnComplete
 			onRequestDone = func(req *sim.Request, clock int64) []*sim.Request {
 				followUps := baseCb(req, clock)
@@ -543,15 +686,26 @@ Example:
 		}
 		cs := cluster.NewClusterSimulator(config, cluster.NewSliceRequestSource(requests), onRequestDone)
 
-		// Resolve the saturation detector + trace collector BEFORE the run so a
-		// bad flag / config / report path fails fast (#1516).
-		saturationDet, saturationCollector, satErr := resolveSaturation()
+		// Resolve the saturation tracer BEFORE the run so a bad flag / config /
+		// report path fails fast (#1516 single detector, #1519 bank).
+		satTracer, satErr := resolveSaturation()
 		if satErr != nil {
 			logrus.Fatalf("%v", satErr)
 		}
 
 		if err := cs.Run(); err != nil {
 			logrus.Fatalf("Replay simulation failed: %v", err)
+		}
+		if poolDriver != nil {
+			// KNOWN LIMITATION (follow-up): under an explicit --horizon hard cap that
+			// truncates mid-drain, a refill pushed by OnComplete but discarded by the
+			// cluster's horizon guard is still counted as started, so Unstarted() may
+			// undercount dropped sessions and this warning may not fire. The
+			// self-draining path (no --horizon) is exact. Tracked in #1483.
+			if un := poolDriver.Unstarted(); un > 0 {
+				logrus.Warnf("%d of %d pooled sessions never admitted — a --horizon cap truncated the drain, and/or admitted sessions were dropped before reaching an instance (routing/gateway rejection, which does not fire the per-instance completion hook). Omit --horizon to self-drain; check routing-rejection metrics for the second cause.",
+					un, poolDriver.TotalSessions())
+			}
 		}
 
 		logrus.Infof("Replay wall-clock time: %.3fs", time.Since(startTime).Seconds())
@@ -571,7 +725,13 @@ Example:
 				Version:           3,
 				TimeUnit:          "microseconds",
 				Mode:              "replayed",
-				GoodputSLOTargets: goodputTargets, // #1413, BC-7
+				GoodputSLOTargets: goodputTargets,                   // #1413, BC-7
+				KVOffload:         simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: carry the offload config forward
+				// #1583, BC-4: preserve the real-side observed KV hit-rate verbatim.
+				// It is a real-server observation replay cannot regenerate; carrying it
+				// forward keeps it available to a downstream calibrate and never
+				// silently drops it.
+				ObservedKVMetrics: traceData.Header.ObservedKVMetrics,
 			}
 			if err := workload.ExportTraceV2(header, records, replayTraceOutput+".yaml", replayTraceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)
@@ -579,34 +739,46 @@ Example:
 			logrus.Infof("Trace exported: %s.yaml, %s.csv (%d records)", replayTraceOutput, replayTraceOutput, len(records))
 		}
 
-		// Save aggregate metrics to stdout (same as runCmd).
-		// nil saturation arg (#1516): stdout carries no saturation field.
+		// Save aggregate metrics to stdout (same as runCmd). Per-instance output
+		// carries no saturation field — the final label is a cluster-level verdict
+		// emitted on the aggregate below (#1517).
 		if numInstances > 1 {
 			for _, inst := range cs.Instances() {
-				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, "", nil); err != nil {
+				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, ""); err != nil {
 					logrus.Fatalf("SaveResults for instance %s: %v", inst.ID(), err)
 				}
 			}
 		}
 		// Save aggregate (always print to stdout; SimResult output uses separate file)
 		// goodputTargets resolved above for trace re-export; reused here (#1413, BC-1, BC-4).
-		// nil saturation arg (#1516): the per-event trace is streamed below.
+		// The saturation reducer runs BEFORE EmitOutput and mutates clusterOutput.Saturation
+		// (#1517), mirroring goodput's build-then-mutate-then-emit pattern.
 		aggregated := cs.AggregatedMetrics()
-		clusterOutput := aggregated.BuildOutput("cluster", nil)
+		clusterOutput := aggregated.BuildOutput("cluster")
 		emitGoodput(&clusterOutput, aggregated, cs.InjectedByClass(),
 			float64(aggregated.SimEndedTime)/1e6, goodputTargets)
-		if err := aggregated.EmitOutput(clusterOutput, ""); err != nil {
-			logrus.Fatalf("SaveResults: %v", err)
+
+		// Saturation (#1516 single detector / #1519 bank / #1517 final label): same
+		// pipeline as run/observe, sim-derived input. run → replay of the same trace
+		// is byte-identical (INV-13). Guard on the tracer so the common no-detector
+		// path skips the O(n log n) sort + O(n) copy in CompletedRequestMetrics().
+		if satTracer != nil {
+			final, err := satTracer.run(aggregated.CompletedRequestMetrics())
+			if err != nil {
+				logrus.Fatalf("Saturation: %v", err)
+			}
+			if len(final) > 0 {
+				clusterOutput.Saturation = final
+			}
 		}
 
-		// Saturation trace (#1516): same pipeline as run/observe, sim-derived
-		// input. run → replay of the same trace is byte-identical (INV-13).
-		// Guard on saturationDet so the common no-detector path skips the
-		// O(n log n) sort + O(n) copy in CompletedRequestMetrics().
-		if saturationDet != nil {
-			if err := runSaturationTrace(saturationDet, saturationCollector, aggregated.CompletedRequestMetrics()); err != nil {
-				logrus.Fatalf("Saturation trace: %v", err)
-			}
+		// --metrics-path (#1583): write the aggregate MetricsOutput JSON (which gains
+		// the file-only cache_hit_rate) so `blis calibrate --sim-metrics` can read the
+		// simulator's hit-rate. Empty path → stdout only, byte-identical to before
+		// (BC-8). run and replay --metrics-path of the same trace produce identical
+		// cache_hit_rate (INV-13).
+		if err := aggregated.EmitOutput(clusterOutput, replayMetricsPath); err != nil {
+			logrus.Fatalf("SaveResults: %v", err)
 		}
 
 		rawMetrics := cluster.CollectRawMetrics(
@@ -746,6 +918,7 @@ func init() {
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
 	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us) for blis calibrate consumption.")
 	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\"")
+	replayCmd.Flags().StringVar(&replayMetricsPath, "metrics-path", "", "File to write aggregate MetricsOutput JSON (incl. cache_hit_rate for `blis calibrate --sim-metrics`, #1583). Symmetric with `blis run --metrics-path`; stdout is unaffected.")
 
 	// Saturation trace flags (#1516): --detectors + --saturation-config + --saturation-report.
 	registerDetectorFlags(replayCmd)
@@ -753,6 +926,9 @@ func init() {
 	replayCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", `Session replay mode: "fixed" (pre-baked arrivals from trace) or "closed-loop" (load-adaptive follow-ups via SessionManager)`)
 	replayCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "Override think time between session rounds in milliseconds (0 = derive from trace inter-round arrival gaps; mutually exclusive with --think-time-dist; requires --session-mode closed-loop)")
 	replayCmd.Flags().StringVar(&replayThinkTimeDist, "think-time-dist", "", `Think-time distribution spec for closed-loop replay (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s" or "constant:value=500ms"). Mutually exclusive with --think-time-ms. Requires --session-mode closed-loop.`)
+	replayCmd.Flags().IntVar(&replayConcurrentSessions, "concurrent-sessions", 0, "Replay a fixed pool of N concurrent closed-loop sessions drawn from the trace corpus (0 = disabled). Implies closed-loop session semantics.")
+	replayCmd.Flags().IntVar(&replayTotalSessions, "total-sessions", 0, "Total sessions to replay under --concurrent-sessions; duplicates the corpus (with cache-busting) to fill. 0 = replay each corpus session once.")
+	replayCmd.Flags().BoolVar(&replayShuffleCorpus, "shuffle-corpus", false, "Randomize the corpus step/admission order (seeded from --seed for reproducibility). Requires --concurrent-sessions > 0. With --total-sessions < corpus this yields a random subset; every session still runs otherwise.")
 	replayCmd.Flags().StringVar(&goodputSLOTTFT, "slo-ttft", "", "Per-class TTFT goodput thresholds (e.g. \"critical=100ms,standard=500ms\"). Precedence: CLI > trace header > workload spec.")
 	replayCmd.Flags().StringVar(&goodputSLOITL, "slo-itl", "", "Per-class mean ITL goodput thresholds (e.g. \"critical=50ms,standard=150ms\").")
 	replayCmd.Flags().StringVar(&goodputSLOE2E, "slo-e2e", "", "Per-class E2E goodput thresholds (e.g. \"critical=5s,standard=30s\").")
@@ -765,24 +941,12 @@ func init() {
 	rootCmd.AddCommand(replayCmd)
 }
 
-// maxInjectedArrivalTimeUs returns the maximum ArrivalTimeUs among records that
-// will be injected as initial requests in closed-loop mode: session round-0 records
-// and all non-session records. Used to compute the preliminary horizon in O(n)
-// without a full LoadTraceV2SessionBlueprints call.
-func maxInjectedArrivalTimeUs(trace *workload.TraceV2) int64 {
-	var max int64
-	for _, rec := range trace.Records {
-		if rec.SessionID != "" && rec.RoundIndex != 0 {
-			continue // skip follow-up session rounds
-		}
-		if rec.ArrivalTimeUs > max {
-			max = rec.ArrivalTimeUs
-		}
-	}
-	return max
-}
-
-// computeHorizonFromMaxArrival maps a maximum arrival time to a simulation horizon.
+// computeHorizonFromMaxArrival maps a maximum injection time to a simulation
+// horizon. The argument is the largest injected-request tick on the sim clock:
+// the max ArrivalTime for fixed mode (computeReplayHorizon) or the normalized
+// injection for closed-loop mode (workload.MaxNormalizedInjectionTimeUs) — both
+// already re-based onto the arrival origin (#1606). (The parameter is named
+// maxArrival for historical reasons; it is generic over any int64 tick.)
 // - maxArrival > MaxInt64/2 → math.MaxInt64 (overflow guard for 2×)
 // - maxArrival <= 0 (all at t=0) → 600,000,000 µs (10 min buffer; MaxInt64 would hang)
 // - Otherwise → maxArrival * 2 (generous buffer for last request to complete)

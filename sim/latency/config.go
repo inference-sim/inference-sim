@@ -325,6 +325,44 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	// 0 = use IntermediateDim for both MoE and dense layers
 	denseIntermediateDim := getInt("intermediate_size_mlp")
 
+	// Explicit attention head dimension (F1, #1527). Modern MLA/GQA models declare
+	// a head_dim that differs from hidden/heads (e.g. GLM-5.2: 192 vs 6144/64=96).
+	// 0 = absent → EffectiveHeadDim falls back to HiddenDim/NumHeads (INV-6).
+	headDim := getInt("head_dim")
+
+	// MLA compressed-KV latent shape (F2, #1527). kv_lora_rank > 0 marks a
+	// Multi-head Latent Attention model (DeepSeek-V2/V3, Kimi-K3, GLM-5.2); the KV
+	// cache then stores a compressed latent of kv_lora_rank + qk_rope_head_dim
+	// scalars per token per layer. Both 0 for standard MHA/GQA (INV-6).
+	kvLoraRank := getInt("kv_lora_rank")
+	qkRopeHeadDim := getInt("qk_rope_head_dim")
+
+	// Dense-layer prefix count for MoE models (F3, #1527). first_k_dense_replace = K
+	// means the first K layers are dense and the remainder are MoE (a prefix split,
+	// distinct from InterleaveMoELayerStep's every-Nth interleave). 0 = no dense
+	// prefix (INV-6: all-MoE weight accounting unchanged when absent).
+	firstKDenseReplace := getInt("first_k_dense_replace")
+
+	// Reject negative values for the shape fields parsed above (#1527). getInt
+	// returns the raw JSON number, so a negative would otherwise pass silently: a
+	// negative kv_lora_rank would fall through to the standard MHA path (wrong KV
+	// capacity, no error), and a negative first_k_dense_replace would clamp to 0. A
+	// negative head_dim / qk_rope_head_dim is equally nonsensical. Fail fast at
+	// parse time (R1: no silent acceptance of bad input) rather than at use time.
+	for _, f := range []struct {
+		name string
+		val  int
+	}{
+		{"head_dim", headDim},
+		{"kv_lora_rank", kvLoraRank},
+		{"qk_rope_head_dim", qkRopeHeadDim},
+		{"first_k_dense_replace", firstKDenseReplace},
+	} {
+		if f.val < 0 {
+			return nil, fmt.Errorf("GetModelConfigFromHF: %s must be >= 0, got %d", f.name, f.val)
+		}
+	}
+
 	modelConfig := &sim.ModelConfig{
 		NumLayers:              getInt("num_hidden_layers"),
 		HiddenDim:              getInt("hidden_size"),
@@ -341,6 +379,10 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 		DenseIntermediateDim:   denseIntermediateDim,
 		HiddenAct:              hiddenAct,
 		WeightBytesPerParam:    weightBytesPerParam,
+		HeadDim:                headDim,
+		KVLoraRank:             kvLoraRank,
+		QKRopeHeadDim:          qkRopeHeadDim,
+		FirstKDenseReplace:     firstKDenseReplace,
 	}
 	return modelConfig, nil
 }

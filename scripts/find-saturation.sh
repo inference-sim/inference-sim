@@ -3,17 +3,17 @@
 # find-saturation.sh — Rate-sweep saturation finder.
 #
 # Drives `blis run` across a configurable rate sweep, records throughput and
-# both classifier verdicts (drain-ratio + slope-based) per rate, and prints a
-# single table summarizing the saturation envelope. Reproduces the Llama-3.1-70B
-# / TP=8 / H100 / chatbot reference validation from PR #1395.
+# every post-hoc detector's final verdict per rate (via the detector bank,
+# #1519), and prints a single table summarizing the saturation envelope.
+# Reproduces the Llama-3.1-70B / TP=8 / H100 / chatbot reference validation.
 #
-# All inputs are environment variables; defaults match the PR's reference run.
+# All inputs are environment variables; defaults match the reference run.
 # See scripts/README.md for the full input table and worked examples.
 #
 # Output:
 #   - $OUT_DIR/summary.csv — one row per rate
 #   - $OUT_DIR/rate-{R}.{json,stderr} — raw blis run output
-#   - $OUT_DIR/rate-{R}.{drain-ratio,slope-based}.json — classifier reports
+#   - $OUT_DIR/rate-{R}.saturation.json — {"final":{...},"trace":[...]} report
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -26,7 +26,10 @@ WORKLOAD="${WORKLOAD:-chatbot}"
 LATENCY_MODEL="${LATENCY_MODEL:-trained-physics}"
 NUM_REQUESTS="${NUM_REQUESTS:-6000}"
 HORIZON_US="${HORIZON_US:-600000000}"   # 600s
-SATURATION_WINDOW_S="${SATURATION_WINDOW_S:-10}"
+# Trailing window for the stdout/report final-label plurality vote (#1517).
+FINAL_WINDOW="${FINAL_WINDOW:-10s}"
+# Which detectors to run. "all" ⇒ every detector in the roster.
+DETECTORS="${DETECTORS:-all}"
 RATES="${RATES:-0.5 1 2 4 6 8 10 12 14 16 20 30 40 50 60 80 100}"
 SEED="${SEED:-42}"
 
@@ -45,14 +48,29 @@ if [[ ! -x ./blis ]]; then
   go build -o blis main.go
 fi
 
-echo "intended_rate,sustained_throughput,goodput_rps,goodput_vs_intended,timeout_frac,e2e_p99_ms,ttft_p99_ms,still_queued,still_running,drain_ratio_verdict,drain_ratio_rho,slope_based_verdict" > "$SUMMARY"
-printf "Model:    %s (TP=%d, %s)\n" "$MODEL" "$TP" "$HARDWARE"
-printf "Workload: %s\n" "$WORKLOAD"
-printf "Sweeping: %s req/s\n" "$RATES"
-printf "Output:   %s\n\n" "$OUT_DIR"
+echo "intended_rate,sustained_throughput,goodput_rps,goodput_vs_intended,timeout_frac,e2e_p99_ms,ttft_p99_ms,still_queued,still_running,composite_verdict,threshold_verdict,backlog_drift_verdict,peak_rate_verdict" > "$SUMMARY"
+printf "Model:     %s (TP=%d, %s)\n" "$MODEL" "$TP" "$HARDWARE"
+printf "Workload:  %s\n" "$WORKLOAD"
+printf "Detectors: %s (final window %s)\n" "$DETECTORS" "$FINAL_WINDOW"
+printf "Sweeping:  %s req/s\n" "$RATES"
+printf "Output:    %s\n\n" "$OUT_DIR"
 
-run_blis() {
-  local rate="$1" classifier="$2" report_path="$3" raw_path="$4" log_path="$5"
+# jq helper: read one detector's final label from the report, or "n/a" if the
+# detector wasn't selected.
+final_label() {
+  local report="$1" detector="$2"
+  jq -r --arg d "$detector" '.final[$d] // "n/a"' "$report"
+}
+
+for R in $RATES; do
+  RAW="$OUT_DIR/rate-${R}.json"
+  LOG="$OUT_DIR/rate-${R}.stderr"
+  SAT_REPORT="$OUT_DIR/rate-${R}.saturation.json"
+
+  printf "rate=%-5s ... " "$R"
+
+  # One deterministic run per rate: the detector bank fans the same replay out
+  # to every selected detector, so all verdicts come from a single pass.
   ./blis run \
     --model "$MODEL" \
     "${CFG_ARGS[@]}" \
@@ -60,32 +78,16 @@ run_blis() {
     --tp "$TP" \
     --latency-model "$LATENCY_MODEL" \
     --workload "$WORKLOAD" \
-    --rate "$rate" \
+    --rate "$R" \
     --num-requests "$NUM_REQUESTS" \
     --horizon "$HORIZON_US" \
     --seed "$SEED" \
-    --saturation-window "$SATURATION_WINDOW_S" \
-    --saturation-classifier "$classifier" \
-    --saturation-report "$report_path" \
-    > "$raw_path" 2> "$log_path"
-}
+    --detectors "$DETECTORS" \
+    --saturation-final-window "$FINAL_WINDOW" \
+    --saturation-report "$SAT_REPORT" \
+    > "$RAW" 2> "$LOG"
 
-for R in $RATES; do
-  RAW="$OUT_DIR/rate-${R}.json"
-  LOG="$OUT_DIR/rate-${R}.stderr"
-  DR_REPORT="$OUT_DIR/rate-${R}.drain-ratio.json"
-  SB_REPORT="$OUT_DIR/rate-${R}.slope-based.json"
-
-  printf "rate=%-5s ... " "$R"
-
-  # Run with drain-ratio (default classifier; throughput numbers come from this run)
-  run_blis "$R" "drain-ratio" "$DR_REPORT" "$RAW" "$LOG"
-
-  # Run again with slope-based classifier — same workload + seed, only verdict differs
-  run_blis "$R" "slope-based" "$SB_REPORT" "$OUT_DIR/.tmp.raw" "$OUT_DIR/.tmp.log"
-  rm -f "$OUT_DIR/.tmp.raw" "$OUT_DIR/.tmp.log"
-
-  # Extract throughput stats from the drain-ratio run's stdout JSON
+  # Extract throughput stats from the run's stdout JSON
   METRICS=$(awk '/^=== Simulation Metrics ===/{flag=1; next} flag' "$RAW")
   read -r OFF GOOD TIMEOUT_FRAC E2E_P99 TTFT_P99 SQ SR <<<"$(jq -r '
     def n: . // 0;
@@ -99,22 +101,22 @@ for R in $RATES; do
       (.still_running | n)
     ] | @tsv' <<<"$METRICS")"
 
-  # Extract verdicts from the saturation reports
-  DR_VERDICT=$(jq -r .classification "$DR_REPORT")
-  DR_RHO=$(jq -r '.note | capture("ρ ≈ (?<r>[0-9.]+)").r // "n/a"' "$DR_REPORT")
-  SB_VERDICT=$(jq -r .classification "$SB_REPORT")
+  # Extract each detector's final verdict from the saturation report's "final" map.
+  COMPOSITE_VERDICT=$(final_label "$SAT_REPORT" composite)
+  THRESHOLD_VERDICT=$(final_label "$SAT_REPORT" threshold)
+  BACKLOG_DRIFT_VERDICT=$(final_label "$SAT_REPORT" backlog-drift)
+  PEAK_RATE_VERDICT=$(final_label "$SAT_REPORT" peak-rate)
 
   RATIO=$(echo "scale=4; $GOOD / $R" | bc -l)
-  printf "goodput=%6.2f  ratio=%5.1f%%  ρ=%-5s  drain-ratio: %-23s  slope-based: %s\n" \
-    "$GOOD" "$(echo "$RATIO * 100" | bc -l)" "$DR_RHO" "$DR_VERDICT" "$SB_VERDICT"
+  printf "goodput=%6.2f  ratio=%5.1f%%  composite: %-11s  threshold: %-11s  backlog-drift: %-11s  peak-rate: %s\n" \
+    "$GOOD" "$(echo "$RATIO * 100" | bc -l)" "$COMPOSITE_VERDICT" "$THRESHOLD_VERDICT" "$BACKLOG_DRIFT_VERDICT" "$PEAK_RATE_VERDICT"
 
-  echo "$R,$OFF,$GOOD,$RATIO,$TIMEOUT_FRAC,$E2E_P99,$TTFT_P99,$SQ,$SR,$DR_VERDICT,$DR_RHO,$SB_VERDICT" >> "$SUMMARY"
+  echo "$R,$OFF,$GOOD,$RATIO,$TIMEOUT_FRAC,$E2E_P99,$TTFT_P99,$SQ,$SR,$COMPOSITE_VERDICT,$THRESHOLD_VERDICT,$BACKLOG_DRIFT_VERDICT,$PEAK_RATE_VERDICT" >> "$SUMMARY"
 done
 
 printf "\nDone. Summary CSV: %s\n" "$SUMMARY"
-printf "Per-rate raw + classifier reports in: %s/\n\n" "$OUT_DIR"
+printf "Per-rate raw + saturation reports in: %s/\n\n" "$OUT_DIR"
 printf "Saturation knee = first rate where:\n"
 printf "  - goodput_rps stops tracking intended_rate (ratio drops below 100%%), OR\n"
-printf "  - drain_ratio_verdict flips to PERSISTENTLY_SATURATED, OR\n"
-printf "  - slope_based_verdict flips to PERSISTENTLY_SATURATED.\n\n"
+printf "  - a detector's final verdict flips to OVERLOADED.\n\n"
 column -t -s, "$SUMMARY"

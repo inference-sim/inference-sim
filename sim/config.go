@@ -13,14 +13,34 @@ type KVCacheConfig struct {
 	KVOffloadThreshold    float64 // DEPRECATED: Ignored in vLLM v1 mirror model. Was: GPU utilization threshold for offload. (CLI default: 0.9, zero-value: 0)
 	KVTransferBandwidth   float64 // blocks/tick transfer rate (CLI default: 100.0, zero-value: 0)
 	KVTransferBaseLatency int64   // fixed cost per transfer (ticks, default 0)
+	// Offload captures vLLM's multi-tier KV-offload config surface (H5, #1587). Its
+	// zero value is inert (Enabled=false) and unread by sim/kv in this PR (INV-6);
+	// it is set only via the WithKVOffload option. Kept as a nested sub-config value
+	// rather than more positional constructor args (R16, R4).
+	Offload KVOffloadConfig
+}
+
+// KVCacheOption is a functional option applied inside NewKVCacheConfig. It lets the
+// constructor accept the nested KVOffloadConfig value without a 7th positional
+// parameter (which would break every existing call site) while keeping the single
+// struct-literal construction site intact (R4).
+type KVCacheOption func(*KVCacheConfig)
+
+// WithKVOffload sets the KVOffloadConfig sub-config. Absent (no option passed) ⇒ the
+// offload subsystem is inert and output is byte-identical to a build without the
+// feature (BC-G5).
+func WithKVOffload(o KVOffloadConfig) KVCacheOption {
+	return func(c *KVCacheConfig) { c.Offload = o }
 }
 
 // NewKVCacheConfig creates a KVCacheConfig with all fields explicitly set.
 // This is the canonical constructor — all construction sites must use it (R4).
-// Parameter order matches struct field order.
+// Parameter order matches struct field order. Optional KVCacheOptions (e.g.
+// WithKVOffload) set nested sub-configs; existing call sites pass none and get the
+// inert zero-value Offload.
 func NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks int64,
 	kvOffloadThreshold, kvTransferBandwidth float64,
-	kvTransferBaseLatency int64) KVCacheConfig {
+	kvTransferBaseLatency int64, opts ...KVCacheOption) KVCacheConfig {
 	if totalKVBlocks <= 0 {
 		panic(fmt.Sprintf("NewKVCacheConfig: TotalKVBlocks must be > 0, got %d", totalKVBlocks))
 	}
@@ -41,7 +61,7 @@ func NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks int64,
 			panic(fmt.Sprintf("NewKVCacheConfig: KVTransferBaseLatency must be >= 0 when KVCPUBlocks > 0, got %d", kvTransferBaseLatency))
 		}
 	}
-	return KVCacheConfig{
+	cfg := KVCacheConfig{
 		TotalKVBlocks:         totalKVBlocks,
 		BlockSizeTokens:       blockSizeTokens,
 		KVCPUBlocks:           kvCPUBlocks,
@@ -49,32 +69,43 @@ func NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks int64,
 		KVTransferBandwidth:   kvTransferBandwidth,
 		KVTransferBaseLatency: kvTransferBaseLatency,
 	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	// Factory validation (R3): an enabled offload sub-config must be self-consistent.
+	// The CLI resolver validates and logrus.Fatalf's before reaching here, so this is
+	// defense-in-depth for other callers (tests, future code). Panic matches this
+	// constructor's existing panic-on-invalid contract.
+	if err := cfg.Offload.Validate(); err != nil {
+		panic(fmt.Sprintf("NewKVCacheConfig: invalid offload config: %v", err))
+	}
+	return cfg
 }
 
 // BatchConfig groups batch formation parameters.
 type BatchConfig struct {
-	MaxRunningReqs            int64 // max requests in RunningBatch
-	MaxScheduledTokens        int64 // max total new tokens across all requests in RunningBatch
+	MaxNumSeqs                int64 // max requests in RunningBatch (vLLM: --max-num-seqs)
+	MaxNumBatchedTokens       int64 // max total new tokens across all requests in RunningBatch (vLLM: --max-num-batched-tokens)
 	LongPrefillTokenThreshold int64 // threshold for long prefill chunking
 }
 
 // NewBatchConfig creates a BatchConfig with all fields explicitly set.
 // This is the canonical constructor — all construction sites must use it (R4).
-// Panics on invalid values: MaxRunningReqs and MaxScheduledTokens must be > 0,
+// Panics on invalid values: MaxNumSeqs and MaxNumBatchedTokens must be > 0,
 // LongPrefillTokenThreshold must be >= 0 (0 means disabled).
-func NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold int64) BatchConfig {
-	if maxRunningReqs <= 0 {
-		panic(fmt.Sprintf("NewBatchConfig: MaxRunningReqs must be > 0, got %d", maxRunningReqs))
+func NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold int64) BatchConfig {
+	if maxNumSeqs <= 0 {
+		panic(fmt.Sprintf("NewBatchConfig: MaxNumSeqs must be > 0, got %d", maxNumSeqs))
 	}
-	if maxScheduledTokens <= 0 {
-		panic(fmt.Sprintf("NewBatchConfig: MaxScheduledTokens must be > 0, got %d", maxScheduledTokens))
+	if maxNumBatchedTokens <= 0 {
+		panic(fmt.Sprintf("NewBatchConfig: MaxNumBatchedTokens must be > 0, got %d", maxNumBatchedTokens))
 	}
 	if longPrefillTokenThreshold < 0 {
 		panic(fmt.Sprintf("NewBatchConfig: LongPrefillTokenThreshold must be >= 0, got %d", longPrefillTokenThreshold))
 	}
 	return BatchConfig{
-		MaxRunningReqs:            maxRunningReqs,
-		MaxScheduledTokens:        maxScheduledTokens,
+		MaxNumSeqs:                maxNumSeqs,
+		MaxNumBatchedTokens:       maxNumBatchedTokens,
 		LongPrefillTokenThreshold: longPrefillTokenThreshold,
 	}
 }

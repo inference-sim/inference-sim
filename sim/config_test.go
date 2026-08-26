@@ -25,8 +25,8 @@ func TestNewKVCacheConfig_FieldEquivalence(t *testing.T) {
 func TestNewBatchConfig_FieldEquivalence(t *testing.T) {
 	got := NewBatchConfig(10, 1000, 200)
 	want := BatchConfig{
-		MaxRunningReqs:            10,
-		MaxScheduledTokens:        1000,
+		MaxNumSeqs:                10,
+		MaxNumBatchedTokens:       1000,
 		LongPrefillTokenThreshold: 200,
 	}
 	assert.Equal(t, want, got)
@@ -323,6 +323,42 @@ func TestEffectiveWeightBytesPerParam_BothZero_ReturnsZero(t *testing.T) {
 	}
 }
 
+func TestEffectiveHeadDim_WhenSet_ReturnsHeadDim(t *testing.T) {
+	// F1 (BC-2): GIVEN explicit HeadDim > 0 (e.g. GLM-5.2: head_dim=192 while
+	// hidden/heads=6144/64=96), THEN EffectiveHeadDim returns the explicit value.
+	mc := ModelConfig{HiddenDim: 6144, NumHeads: 64, HeadDim: 192}
+	if got := mc.EffectiveHeadDim(); got != 192 {
+		t.Errorf("EffectiveHeadDim() = %d, want 192 (explicit head_dim)", got)
+	}
+}
+
+func TestEffectiveHeadDim_WhenZero_ReturnsHiddenOverHeads(t *testing.T) {
+	// F1 (BC-2, INV-6): GIVEN HeadDim == 0 (sentinel / key absent), THEN
+	// EffectiveHeadDim falls back to hidden/heads — byte-identical to pre-change.
+	mc := ModelConfig{HiddenDim: 4096, NumHeads: 32, HeadDim: 0}
+	if got := mc.EffectiveHeadDim(); got != 128 {
+		t.Errorf("EffectiveHeadDim() = %d, want 128 (hidden/heads fallback)", got)
+	}
+}
+
+func TestEffectiveHeadDim_ZeroHeads_NoPanic(t *testing.T) {
+	// Defensive: NumHeads == 0 on the implicit path must not divide by zero.
+	mc := ModelConfig{HiddenDim: 4096, NumHeads: 0, HeadDim: 0}
+	if got := mc.EffectiveHeadDim(); got != 0 {
+		t.Errorf("EffectiveHeadDim() = %d, want 0 when NumHeads==0 and HeadDim==0", got)
+	}
+}
+
+func TestIsMLA(t *testing.T) {
+	// F2: IsMLA is true iff a positive compressed-KV latent rank is present.
+	if (ModelConfig{KVLoraRank: 512}).IsMLA() != true {
+		t.Error("expected IsMLA()=true when KVLoraRank>0")
+	}
+	if (ModelConfig{KVLoraRank: 0}).IsMLA() != false {
+		t.Error("expected IsMLA()=false when KVLoraRank==0 (standard MHA/GQA)")
+	}
+}
+
 func TestNewBatchConfig_PanicsOnInvalid(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -331,10 +367,10 @@ func TestNewBatchConfig_PanicsOnInvalid(t *testing.T) {
 		prefillThresh int64
 		wantContains  string
 	}{
-		{"zero_max_running", 0, 2048, 0, "MaxRunningReqs"},
-		{"negative_max_running", -1, 2048, 0, "MaxRunningReqs"},
-		{"zero_max_tokens", 256, 0, 0, "MaxScheduledTokens"},
-		{"negative_max_tokens", 256, -1, 0, "MaxScheduledTokens"},
+		{"zero_max_running", 0, 2048, 0, "MaxNumSeqs"},
+		{"negative_max_running", -1, 2048, 0, "MaxNumSeqs"},
+		{"zero_max_tokens", 256, 0, 0, "MaxNumBatchedTokens"},
+		{"negative_max_tokens", 256, -1, 0, "MaxNumBatchedTokens"},
 		{"negative_prefill", 256, 2048, -1, "LongPrefillTokenThreshold"},
 	}
 	for _, tc := range tests {

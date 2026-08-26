@@ -4,33 +4,31 @@ package saturation
 import (
 	"math"
 	"time"
-
-	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
-// backlogDriftSlopeK is the "clearly rising" multiplier for the streaming band
-// classifier (#1515): running_slope in (noiseFloor, K*noiseFloor] → BACKLOGGED,
-// running_slope > K*noiseFloor → OVERLOADED. It is a tunable heuristic constant,
-// NOT an empirically calibrated value. The streaming bands are an online
-// heuristic and are explicitly NOT the drain-ratio classifier used by Classify;
-// the two computations may legitimately disagree.
+// backlogDriftSlopeK is the DEFAULT "clearly rising" multiplier for the streaming
+// band classifier (#1515): running_slope in (noiseFloor, K*noiseFloor] →
+// BACKLOGGED, running_slope > K*noiseFloor → OVERLOADED.
+//
+// It remains a heuristic rather than an empirically calibrated value, which is
+// exactly why it is now only a default: as of #1614 it is overridable via
+// `backlog_drift.slope_k`, so an operator can calibrate the detector to a target
+// false-alarm rate instead of inheriting this number. Read the effective value
+// through BacklogDriftConfig.effectiveSlopeK(), never this constant directly.
 const backlogDriftSlopeK = 3.0
 
 // BacklogDriftDetector is a streaming saturation detector (#1515): Observe folds
 // each event into an incremental in-flight estimate and Detect bands the online
 // OLS slope of in-flight against a noise floor. The batch Classify path was
-// removed in #1516; the detector now streams exclusively.
-//
-// The classifier field is retained for the online band computation's config
-// (#1392); it defaults to drain-ratio. Pass an explicit classifier via
-// NewBacklogDriftDetectorWithClassifier when slope-based behavior is preferred.
+// removed in #1516 and the post-hoc batch classifier library in #1547; the
+// detector now streams exclusively (the online band is self-contained; #1517).
 type BacklogDriftDetector struct {
-	config     workload.BacklogDriftConfig
-	classifier workload.BacklogClassifier
+	config BacklogDriftConfig
 
 	// Streaming state (#1515). Populated by Observe, read by Detect, cleared by
-	// Reset. This is a separate, causal computation from the non-causal batch
-	// Classify path (which needs the whole trace including the tail).
+	// Reset. This is a causal computation: it consumes events in order and never
+	// looks ahead, distinct from the removed non-causal batch analysis (#1547)
+	// which needed the whole trace including the tail.
 	arrivals    int64 // running count of Arrival events
 	completions int64 // running count of Completion events
 
@@ -51,40 +49,28 @@ type BacklogDriftDetector struct {
 	windowSizeUs  int64 // WindowSize in microseconds, cached from config
 }
 
-// NewBacklogDriftDetector creates a BacklogDriftDetector with default configuration
-// and the default classifier (drain-ratio, matching --saturation-classifier default).
+// NewBacklogDriftDetector creates a BacklogDriftDetector with default configuration.
 func NewBacklogDriftDetector() Detector {
-	return newBacklogDriftDetector(workload.DefaultBacklogDriftConfig(), nil)
-}
-
-// NewBacklogDriftDetectorWithClassifier creates a BacklogDriftDetector with an
-// explicit classifier. Use this for callers that want to opt into slope-based
-// or any future BacklogClassifier implementation.
-func NewBacklogDriftDetectorWithClassifier(classifier workload.BacklogClassifier) Detector {
-	return newBacklogDriftDetector(workload.DefaultBacklogDriftConfig(), classifier)
+	return newBacklogDriftDetector(DefaultBacklogDriftConfig())
 }
 
 // NewBacklogDriftDetectorWithConfig creates a BacklogDriftDetector with an
-// explicit config and the default classifier (#1515). The config's WindowSize
-// governs the streaming bucket width; the two default-config constructors
-// hardwire the 60s production window, which is impractical for driving the
-// streaming slope in a unit test. Callers (and #1516) pass a small WindowSize
-// via workload.NewBacklogDriftConfig so a handful of directly-fed events span
-// enough buckets to exercise the online slope deterministically.
-func NewBacklogDriftDetectorWithConfig(config workload.BacklogDriftConfig) Detector {
-	return newBacklogDriftDetector(config, nil)
+// explicit config (#1515). The config's WindowSize governs the streaming bucket
+// width; the default-config constructor hardwires the 60s production window, which
+// is impractical for driving the streaming slope in a unit test. Callers (and
+// #1516) pass a small WindowSize via NewBacklogDriftConfig so a handful of
+// directly-fed events span enough buckets to exercise the online slope
+// deterministically.
+func NewBacklogDriftDetectorWithConfig(config BacklogDriftConfig) Detector {
+	return newBacklogDriftDetector(config)
 }
 
 // newBacklogDriftDetector is the canonical constructor (R4): all exported
 // constructors route through it so streaming state (windowSizeUs) is initialized
-// in exactly one place. A nil classifier defaults to drain-ratio.
-func newBacklogDriftDetector(config workload.BacklogDriftConfig, classifier workload.BacklogClassifier) Detector {
-	if classifier == nil {
-		classifier = workload.NewBacklogClassifier("") // empty string → drain-ratio default
-	}
+// in exactly one place.
+func newBacklogDriftDetector(config BacklogDriftConfig) Detector {
 	return &BacklogDriftDetector{
 		config:       config,
-		classifier:   classifier,
 		windowSizeUs: int64(config.WindowSize / time.Microsecond),
 	}
 }
@@ -150,8 +136,9 @@ func (b *BacklogDriftDetector) Observe(event Event) {
 
 // Detect computes an evolving per-event verdict from the streaming state (#1515):
 // an online OLS slope of in-flight over the trailing window, banded against a
-// noise floor. This is an online heuristic, explicitly NOT the drain-ratio
-// classifier that Classify runs — the two may legitimately disagree.
+// noise floor. This is an online heuristic; the earlier batch drain-ratio/
+// slope-based analysis it superseded (formerly in sim/workload) was removed in
+// #1547 once the streaming detector had no live-path caller.
 func (b *BacklogDriftDetector) Detect() Result {
 	signals := make(map[string]float64)
 
@@ -177,6 +164,20 @@ func (b *BacklogDriftDetector) Detect() Result {
 	signals["running_slope"] = runningSlope
 	signals["noise_floor"] = noiseFloor
 
+	// The effective band multiplier, hoisted once so the band switch below and the
+	// score denominator further down provably use the SAME value (#1614): if they
+	// diverged, Score==1.0 would stop coinciding with the OVERLOADED boundary.
+	slopeK := b.config.effectiveSlopeK()
+	// Reported ONLY when the knob was explicitly configured. The Signals map is
+	// serialized into --saturation-report, so emitting it unconditionally would make
+	// a default-configured report differ from a pre-#1614 one -- breaking the
+	// absent-config byte-identity this PR promises (INV-6) for the sake of a
+	// diagnostic that just restates the documented default. When the operator HAS
+	// tuned it, the trace must explain which multiplier produced the band.
+	if b.config.SlopeK > 0 {
+		signals["slope_k"] = slopeK
+	}
+
 	// Level bands mirror composite's two-threshold structure:
 	//   slope <= noiseFloor            → STABLE
 	//   noiseFloor < slope <= K·noise  → BACKLOGGED
@@ -185,7 +186,7 @@ func (b *BacklogDriftDetector) Detect() Result {
 	switch {
 	case runningSlope <= noiseFloor:
 		level = Stable
-	case runningSlope <= backlogDriftSlopeK*noiseFloor:
+	case runningSlope <= slopeK*noiseFloor:
 		level = Backlogged
 	default:
 		level = Overloaded
@@ -203,13 +204,24 @@ func (b *BacklogDriftDetector) Detect() Result {
 	// #1515 — kept as-is so callers get the contracted values rather than a
 	// locally-nudged epsilon; Score is a magnitude, Level is the authoritative
 	// band.
+	// The denominator is the OVERLOADED boundary, so Score reaching its 1.0 cap
+	// must coincide with Level crossing that boundary. A subnormal slope_k can
+	// drive the product to exactly zero even though slope_k itself is positive and
+	// finite, which would leave Score at 0 while Level is OVERLOADED -- Level and
+	// Score decoupled. When the product underflows, the boundary is effectively
+	// zero, so any positive slope is past it: report the cap.
 	score := 0.0
-	denom := backlogDriftSlopeK * noiseFloor
-	if denom > 0 {
+	denom := slopeK * noiseFloor
+	switch {
+	case denom > 0:
 		score = math.Min(1.0, math.Max(0.0, runningSlope)/denom)
+	case runningSlope > 0:
+		// Boundary underflowed to zero and the slope is rising: the OVERLOADED
+		// band starts at zero, so the magnitude is saturated by construction.
+		score = 1.0
 	}
 
-	// Confidence reuses composite's ramp so the three streaming detectors agree.
+	// Confidence reuses composite's ramp so the streaming detectors agree.
 	confidence := math.Min(1.0, float64(b.arrivals)/20.0)
 
 	return Result{

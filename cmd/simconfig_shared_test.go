@@ -162,7 +162,9 @@ func TestBothCommands_SimConfigFlagsHaveIdenticalDefaults(t *testing.T) {
 		"kv-transfer-base-latency", "snapshot-refresh-interval",
 		"admission-latency", "routing-latency", "trace-level",
 		"counterfactual-k", "summarize-trace", "policy-config",
-		"num-instances", "max-num-running-reqs", "max-num-scheduled-tokens",
+		"num-instances", "max-num-seqs", "max-num-batched-tokens",
+		// Deprecated aliases (issue #1570) — registered on both commands.
+		"max-num-running-reqs", "max-num-scheduled-tokens",
 		"long-prefill-token-threshold", "cache-signal-delay",
 		"flow-control", "saturation-detector", "dispatch-order",
 		"max-gateway-queue-depth", "queue-depth-threshold",

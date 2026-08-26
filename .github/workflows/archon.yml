@@ -1,0 +1,152 @@
+name: Archon PR Review
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  check-permissions:
+    if: |
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/archon-pr-review') &&
+      !contains(github.event.comment.body, '/archon-pr-review-claude')
+    runs-on: ubuntu-latest
+    outputs:
+      allowed: ${{ steps.check.outputs.allowed }}
+    steps:
+      - name: Check invoker permissions
+        id: check
+        uses: actions/github-script@v8
+        with:
+          script: |
+            try {
+              const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                username: context.actor
+              });
+              const allowed = ['admin', 'write', 'maintain'].includes(data.permission);
+              core.setOutput('allowed', allowed ? 'true' : 'false');
+              if (!allowed) {
+                core.info(`User ${context.actor} has '${data.permission}' permission — skipping.`);
+              }
+            } catch (e) {
+              core.setOutput('allowed', 'false');
+              core.info(`User ${context.actor} is not a collaborator — skipping.`);
+            }
+
+  archon-review:
+    needs: check-permissions
+    if: needs.check-permissions.outputs.allowed == 'true'
+    runs-on: [self-hosted]
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Parse archon ref
+        id: parse
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const body = context.payload.comment.body;
+            const match = body.match(/--archon-ref\s+(\S+)/);
+            const ref = match ? match[1] : 'v0.2.0';
+            if (!/^[a-zA-Z0-9._/-]+$/.test(ref)) {
+              core.setFailed(`Invalid archon ref: ${ref}`);
+              return;
+            }
+            core.setOutput('ref', ref);
+
+      - name: Build archon-go
+        id: build
+        env:
+          ARCHON_REF: ${{ steps.parse.outputs.ref }}
+        run: |
+          ARCHON_BIN=$(scripts/archon-build.sh "$ARCHON_REF")
+          [[ -n "$ARCHON_BIN" && -x "$ARCHON_BIN" ]] || { echo "::error::archon-build.sh produced no valid binary"; exit 1; }
+          echo "archon_bin=$ARCHON_BIN" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve PR refs
+        id: refs
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            core.setOutput('base_sha', pr.base.sha);
+            core.setOutput('head_sha', pr.head.sha);
+
+      - name: Fetch PR head ref
+        run: git fetch origin "pull/${{ github.event.issue.number }}/head"
+
+      - name: Run archon pr-review
+        id: archon
+        env:
+          ARCHON_BIN: ${{ steps.build.outputs.archon_bin }}
+          BASE_SHA: ${{ steps.refs.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.refs.outputs.head_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          MERGE_BASE=$(git merge-base "$BASE_SHA" "$HEAD_SHA" 2>/dev/null) || {
+            OUTPUT="## Archon Error
+
+          Could not compute merge-base between base ($BASE_SHA) and head ($HEAD_SHA). The PR head may not be reachable — check that the fetch step succeeded."
+            echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+            echo "$OUTPUT" > /tmp/archon-output.md
+            exit 0
+          }
+
+          "$ARCHON_BIN" pr-review . "$MERGE_BASE" "$HEAD_SHA" --out .archon || {
+            OUTPUT="## Archon Error
+
+          archon-go pr-review failed. Check the workflow logs."
+            echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+            echo "$OUTPUT" > /tmp/archon-output.md
+            exit 0
+          }
+
+          if [[ ! -f .archon/review.md ]]; then
+            OUTPUT="## Archon Error
+
+          archon-go exited 0 but did not produce .archon/review.md."
+            echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+            echo "$OUTPUT" > /tmp/archon-output.md
+            exit 0
+          fi
+
+          OUTPUT=$(cat .archon/review.md)
+          echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+
+          # GitHub PR comments have a 65536 char limit. Truncate if needed.
+          if [[ ${#OUTPUT} -gt 60000 ]]; then
+            FULL_LEN=${#OUTPUT}
+            OUTPUT="${OUTPUT:0:60000}
+
+          _Output truncated (${FULL_LEN} chars). See the [workflow run](${RUN_URL}) for the full report._"
+          fi
+          echo "$OUTPUT" > /tmp/archon-output.md
+
+      - name: Post PR comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          if [[ ! -s /tmp/archon-output.md ]]; then
+            echo "::warning::Archon produced no output. Skipping PR comment."
+            exit 0
+          fi
+          gh pr comment "$PR_NUMBER" --body-file /tmp/archon-output.md

@@ -11,7 +11,7 @@ package saturation
 type EventType int
 
 const (
-	Arrival    EventType = iota
+	Arrival EventType = iota
 	Completion
 )
 
@@ -27,7 +27,7 @@ type Event struct {
 type Level int
 
 const (
-	Stable     Level = iota
+	Stable Level = iota
 	Backlogged
 	Overloaded
 )

@@ -538,8 +538,8 @@ func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []work
 	latencyModelBackend = "trained-physics"
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
-	maxRunningReqs = 64
-	maxScheduledTokens = 2048
+	maxNumSeqs = 64
+	maxNumBatchedTokens = 2048
 	numInstances = 1
 	resultsPath = resultsFile
 	longPrefillTokenThreshold = 0

@@ -30,6 +30,45 @@ type Config struct {
 	Workloads              map[string]Workload      `yaml:"workloads"`
 	TrainedPhysicsDefaults *TrainedPhysicsDefaults  `yaml:"trained_physics_coefficients,omitempty"`
 	LoRADefaults           *LoRADefaults            `yaml:"lora,omitempty"`
+	// KVOffloadDevices maps a device_class name to its bandwidth/latency physics for
+	// the KV-offload config surface (H5, #1587). Shipped constants (operator input),
+	// never fitted (BC-G4). Inert: only consulted when --kv-offload-config names a
+	// device_class. A struct-field map (decode target, read-only after load) — not an
+	// exported package var (R8-compatible, like Defaults/Workloads above).
+	KVOffloadDevices map[string]KVOffloadDeviceDefaults `yaml:"kv_offload_devices,omitempty"`
+}
+
+// KVOffloadDeviceDefaults is one device_class's resolved physics for KV offload
+// (H5, #1587). Bandwidths are bytes per microsecond; base_latency is microseconds.
+// The three required fields describe the O_DIRECT regime (the historical default).
+//
+// #1581 adds an optional non-linear device model, all opt-in (a device that omits
+// these fields resolves byte-identically to pre-#1581, INV-6):
+//   - a queue-depth bandwidth ramp (saturation_queue_depth Qsat + single_transfer_
+//     fraction f₁): effective bandwidth ramps from f₁·peak at in-service depth q=1
+//     up to the peak (read/write_bandwidth) at q=Qsat, flat beyond;
+//   - a relative latency jitter stddev (latency_jitter_stddev σ);
+//   - a buffered-I/O regime (buffered_*), selected per tier by direct_io=false; any
+//     absent buffered field falls back to the O_DIRECT value.
+//
+// Optional fields are pointers so "absent" is distinct from an explicit zero (R9).
+type KVOffloadDeviceDefaults struct {
+	ReadBandwidth  float64 `yaml:"read_bandwidth"`
+	WriteBandwidth float64 `yaml:"write_bandwidth"`
+	BaseLatency    float64 `yaml:"base_latency"`
+
+	// O_DIRECT regime device model (optional; absent => no ramp / no jitter).
+	SaturationQueueDepth   *int64   `yaml:"saturation_queue_depth,omitempty"`
+	SingleTransferFraction *float64 `yaml:"single_transfer_fraction,omitempty"`
+	LatencyJitterStddev    *float64 `yaml:"latency_jitter_stddev,omitempty"`
+
+	// Buffered-I/O regime (optional; each absent field falls back to O_DIRECT).
+	BufferedReadBandwidth          *float64 `yaml:"buffered_read_bandwidth,omitempty"`
+	BufferedWriteBandwidth         *float64 `yaml:"buffered_write_bandwidth,omitempty"`
+	BufferedBaseLatency            *float64 `yaml:"buffered_base_latency,omitempty"`
+	BufferedSaturationQueueDepth   *int64   `yaml:"buffered_saturation_queue_depth,omitempty"`
+	BufferedSingleTransferFraction *float64 `yaml:"buffered_single_transfer_fraction,omitempty"`
+	BufferedLatencyJitterStddev    *float64 `yaml:"buffered_latency_jitter_stddev,omitempty"`
 }
 
 // LoRADefaults holds inert defaults for the LoRA control-plane subsystem's cost
@@ -122,4 +161,3 @@ func GetHFRepo(modelName string, defaultsFile string) (string, error) {
 	}
 	return "", nil
 }
-

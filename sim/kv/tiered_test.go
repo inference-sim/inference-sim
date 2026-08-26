@@ -1039,3 +1039,233 @@ func TestTieredLazyHashDeletion_CPUReload(t *testing.T) {
 	// (lazy hash deletion in CPU reload path clears old hash before filling with CPU content)
 	// This verifies the lazy deletion in tiered.go reloadFromCPU path
 }
+
+// --- BC-D3 (#1586): consult offload tiers on EVERY request, not only on GPU alloc failure ---
+
+// runSharedPrefixReuseWorkload drives a FIXED shared-prefix workload through the
+// TieredKVCache exactly as batch_formation does (GetCachedBlocks -> AllocateKVBlocks ->
+// MirrorToCPU -> ReleaseKVBlocks per request), round-robin across K distinct system
+// prefixes so each prefix's reuse is interleaved with churn from the others. Returns the
+// final CacheHitRate(). The workload is identical across GPU capacities; only gpuBlocks
+// varies — this is the metamorphic knob for BC-D3.3.
+func runSharedPrefixReuseWorkload(gpuBlocks int64) float64 {
+	const (
+		blockSize = int64(2)
+		numPrefix = 6 // K distinct system prompts
+		prefixBlk = int64(4)
+		rounds    = 8 // reuses per prefix
+		suffixBlk = int64(1)
+	)
+	gpu := NewKVCacheState(gpuBlocks, blockSize)
+	tiered := NewTieredKVCache(gpu, 100000, 0.0, 1.0, 0) // CPU tier large: never evicts
+
+	prefixes := make([][]sim.TokenID, numPrefix)
+	for k := 0; k < numPrefix; k++ {
+		p := make([]sim.TokenID, prefixBlk*blockSize)
+		for i := range p {
+			p[i] = sim.TokenID(1000*(k+1) + i) // disjoint token range per prefix
+		}
+		prefixes[k] = p
+	}
+
+	reqSeq := 0
+	for r := 0; r < rounds; r++ {
+		for k := 0; k < numPrefix; k++ {
+			reqSeq++
+			toks := make([]sim.TokenID, 0, (prefixBlk+suffixBlk)*blockSize)
+			toks = append(toks, prefixes[k]...)
+			for j := int64(0); j < suffixBlk*blockSize; j++ {
+				toks = append(toks, sim.TokenID(9000000+reqSeq*10+int(j))) // unique suffix
+			}
+			req := &sim.Request{ID: fmt.Sprintf("r%d", reqSeq), InputTokens: toks}
+			cached := tiered.GetCachedBlocks(req.FullInputTokens())
+			startIndex := int64(len(cached)) * blockSize
+			endIndex := int64(len(toks))
+			if !tiered.AllocateKVBlocks(req, startIndex, endIndex, cached) {
+				continue
+			}
+			tiered.MirrorToCPU([]*sim.Request{req})
+			tiered.ReleaseKVBlocks(req)
+		}
+	}
+	return tiered.CacheHitRate()
+}
+
+// TestTieredKVCache_HitRate_FlatAcrossGPUCapacity is the discriminating BC-D3.3 test.
+// With the CPU tier and workload fixed, the cache hit rate must be FLAT as GPU capacity
+// is swept upward. Under the pre-fix code (CPU consulted only on GPU alloc failure) the
+// hit rate RISES with capacity, because larger GPUs retain more prefixes on-GPU while
+// smaller GPUs evict them to CPU-only where the old code ignored them.
+func TestTieredKVCache_HitRate_FlatAcrossGPUCapacity(t *testing.T) {
+	capacities := []int64{14, 22, 40, 80}
+	rates := make([]float64, len(capacities))
+	minR, maxR := 1.0, 0.0
+	for i, c := range capacities {
+		rates[i] = runSharedPrefixReuseWorkload(c)
+		if rates[i] < minR {
+			minR = rates[i]
+		}
+		if rates[i] > maxR {
+			maxR = rates[i]
+		}
+	}
+	// Flatness: the spread across capacities must be within noise.
+	assert.Less(t, maxR-minR, 0.02,
+		"BC-D3.3: hit rate must be flat across GPU capacity, got rates=%v (spread=%.4f)", rates, maxR-minR)
+	// Sanity: reloads actually happen (not trivially flat because everything misses).
+	assert.Greater(t, minR, 0.5,
+		"BC-D3.3: CPU reloads should keep hit rate high at every capacity, got rates=%v", rates)
+}
+
+// TestTieredKVCache_GetCachedBlocks_ReflectsCPUTierAfterAllocate is the BC-D3.1 test.
+// A prefix resident only on CPU (evicted from GPU) must be consulted and materialized on
+// GPU during AllocateKVBlocks EVEN WHEN the GPU has free space (the light-load case the
+// pre-fix code skipped). Discriminator: cpuHitCount increases despite free GPU blocks.
+func TestTieredKVCache_GetCachedBlocks_ReflectsCPUTierAfterAllocate(t *testing.T) {
+	gpu := NewKVCacheState(10, 2) // blockSize=2
+	tiered := NewTieredKVCache(gpu, 100, 0.0, 1.0, 0)
+
+	prefix := []sim.TokenID{1, 2, 3, 4, 5, 6} // 3 blocks
+
+	// Seed: allocate prefix, mirror to CPU, release.
+	seed := &sim.Request{ID: "seed", InputTokens: prefix}
+	require.True(t, tiered.AllocateKVBlocks(seed, 0, 6, []int64{}))
+	tiered.MirrorToCPU([]*sim.Request{seed})
+	tiered.ReleaseKVBlocks(seed)
+
+	// Evict the prefix from GPU by fully churning ALL 10 blocks with unique content
+	// (popFreeBlock overwrites the seed's hashes), then release the churn so the GPU
+	// is empty (LIGHT LOAD: 10 free blocks). Fill entirely before releasing so every
+	// block — including the seed's — is popped and its hash cleared.
+	for i := 0; i < 10; i++ {
+		f := &sim.Request{ID: fmt.Sprintf("churn%d", i), InputTokens: []sim.TokenID{sim.TokenID(500 + i*2), sim.TokenID(501 + i*2)}}
+		require.True(t, tiered.AllocateKVBlocks(f, 0, 2, []int64{}))
+	}
+	for i := 0; i < 10; i++ {
+		tiered.ReleaseKVBlocks(&sim.Request{ID: fmt.Sprintf("churn%d", i)})
+	}
+	require.Equal(t, int64(10), gpu.countFreeBlocks(), "GPU must have free space (light load)")
+	require.Equal(t, 0, len(tiered.GetCachedBlocks(prefix)), "prefix must be evicted from GPU")
+
+	// WHEN a new request with the same prefix is allocated (free GPU space available).
+	hitsBefore := tiered.cpuHitCount
+	newReq := &sim.Request{ID: "new", InputTokens: prefix}
+	cached := tiered.GetCachedBlocks(newReq.FullInputTokens()) // empty (GPU-only, pure)
+	require.True(t, tiered.AllocateKVBlocks(newReq, int64(len(cached))*2, 6, cached))
+
+	// THEN the CPU tier was consulted despite free GPU space (BC-D3.3 light-load) ...
+	assert.Greater(t, tiered.cpuHitCount, hitsBefore,
+		"BC-D3.1/3.3: CPU tier must be consulted with GPU space available")
+	// ... and GetCachedBlocks now reflects the materialized prefix (BC-D3.1).
+	assert.Equal(t, 3, len(tiered.GetCachedBlocks(prefix)),
+		"BC-D3.1: GetCachedBlocks must reflect the prefix after tier consultation materializes it on GPU")
+}
+
+// TestTieredKVCache_HitRate_MonotoneInCPUResidency is the BC-D3.2 test: adding a matching
+// block to the (lower) CPU tier must not decrease the observed cache hit rate.
+func TestTieredKVCache_HitRate_MonotoneInCPUResidency(t *testing.T) {
+	// Two identical runs; one seeds the shared prefix into CPU, the other does not.
+	run := func(seedCPU bool) float64 {
+		gpu := NewKVCacheState(12, 2)
+		tiered := NewTieredKVCache(gpu, 100, 0.0, 1.0, 0)
+		prefix := []sim.TokenID{7, 8, 9, 10, 11, 12} // 3 blocks
+
+		if seedCPU {
+			// Materialize the prefix into CPU (and evict from GPU) before the measured run.
+			s := &sim.Request{ID: "s", InputTokens: prefix}
+			require.True(t, tiered.AllocateKVBlocks(s, 0, 6, []int64{}))
+			tiered.MirrorToCPU([]*sim.Request{s})
+			tiered.ReleaseKVBlocks(s)
+			for i := 0; i < 6; i++ { // churn all 12 blocks to evict prefix from GPU
+				f := &sim.Request{ID: fmt.Sprintf("c%d", i), InputTokens: []sim.TokenID{sim.TokenID(400 + i*2), sim.TokenID(401 + i*2)}}
+				require.True(t, tiered.AllocateKVBlocks(f, 0, 2, []int64{}))
+				tiered.ReleaseKVBlocks(f)
+			}
+			// Reset counters so both runs measure only the workload below.
+			gpu.CacheHits, gpu.CacheMisses, tiered.cpuMissCount = 0, 0, 0
+		}
+
+		for r := 0; r < 4; r++ {
+			toks := append(append([]sim.TokenID{}, prefix...), sim.TokenID(8000+r*2), sim.TokenID(8001+r*2))
+			req := &sim.Request{ID: fmt.Sprintf("w%d", r), InputTokens: toks}
+			cached := tiered.GetCachedBlocks(req.FullInputTokens())
+			if !tiered.AllocateKVBlocks(req, int64(len(cached))*2, int64(len(toks)), cached) {
+				continue
+			}
+			tiered.MirrorToCPU([]*sim.Request{req})
+			tiered.ReleaseKVBlocks(req)
+		}
+		return tiered.CacheHitRate()
+	}
+	withCPU := run(true)
+	withoutCPU := run(false)
+	assert.GreaterOrEqual(t, withCPU, withoutCPU,
+		"BC-D3.2: hit rate must not decrease when a matching block is resident in the CPU tier (withCPU=%.4f, withoutCPU=%.4f)", withCPU, withoutCPU)
+}
+
+// BenchmarkTieredAllocate_GPUCachedPrefix measures the per-request AllocateKVBlocks cost
+// on the hot path introduced by #1586 (the CPU tier is now consulted on EVERY request).
+// The request has a long, fully-GPU-resident shared prefix plus a fresh suffix block —
+// the common shared-prefix serving case. The startBlock mitigation resumes the reload
+// scan just past the GPU-cached prefix, so per request it costs ~one hash + one CPU
+// lookup rather than re-hashing the whole prefix. Reported to demonstrate no material
+// regression (evidence P); compare against the single-tier baseline below.
+func BenchmarkTieredAllocate_GPUCachedPrefix(b *testing.B) {
+	const blockSize = int64(16)
+	const prefixBlocks = int64(32) // 512-token shared prefix
+	gpu := NewKVCacheState(1<<20, blockSize)
+	tiered := NewTieredKVCache(gpu, 1<<20, 0.0, 100.0, 0)
+
+	toks := make([]sim.TokenID, (prefixBlocks+1)*blockSize) // prefix + 1 suffix block
+	for i := range toks {
+		toks[i] = sim.TokenID(i + 1)
+	}
+	// Prime the prefix onto GPU (hashes survive release) and CPU (mirror).
+	seed := &sim.Request{ID: "seed", InputTokens: toks}
+	tiered.AllocateKVBlocks(seed, 0, int64(len(toks)), nil)
+	tiered.MirrorToCPU([]*sim.Request{seed})
+	tiered.ReleaseKVBlocks(seed)
+
+	req := &sim.Request{ID: "r", InputTokens: toks}
+	suffixPos := int(prefixBlocks * blockSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		toks[suffixPos] = sim.TokenID(1000000 + i) // fresh suffix block each iteration
+		cached := tiered.GetCachedBlocks(req.FullInputTokens())
+		startIndex := int64(len(cached)) * blockSize
+		tiered.AllocateKVBlocks(req, startIndex, int64(len(toks)), cached)
+		b.StopTimer()
+		tiered.ReleaseKVBlocks(req)
+		b.StartTimer()
+	}
+}
+
+// BenchmarkSingleTierAllocate_GPUCachedPrefix is the single-tier baseline for the above:
+// identical workload with no CPU tier, so no reload scan runs at all. The delta between
+// the two is the per-request cost the #1586 tier consultation adds.
+func BenchmarkSingleTierAllocate_GPUCachedPrefix(b *testing.B) {
+	const blockSize = int64(16)
+	const prefixBlocks = int64(32)
+	gpu := NewKVCacheState(1<<20, blockSize)
+
+	toks := make([]sim.TokenID, (prefixBlocks+1)*blockSize)
+	for i := range toks {
+		toks[i] = sim.TokenID(i + 1)
+	}
+	seed := &sim.Request{ID: "seed", InputTokens: toks}
+	gpu.AllocateKVBlocks(seed, 0, int64(len(toks)), nil)
+	gpu.ReleaseKVBlocks(seed)
+
+	req := &sim.Request{ID: "r", InputTokens: toks}
+	suffixPos := int(prefixBlocks * blockSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		toks[suffixPos] = sim.TokenID(1000000 + i)
+		cached := gpu.GetCachedBlocks(req.FullInputTokens())
+		startIndex := int64(len(cached)) * blockSize
+		gpu.AllocateKVBlocks(req, startIndex, int64(len(toks)), cached)
+		b.StopTimer()
+		gpu.ReleaseKVBlocks(req)
+		b.StartTimer()
+	}
+}

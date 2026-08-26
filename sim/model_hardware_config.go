@@ -4,21 +4,46 @@ package sim
 // Used by the roofline and cross-model latency models for step time estimation.
 // Parsing functions are in sim/latency/config.go.
 type ModelConfig struct {
-	NumLayers           int     `json:"num_hidden_layers"`
-	HiddenDim           int     `json:"hidden_size"`
-	NumHeads            int     `json:"num_attention_heads"`
-	NumKVHeads          int     `json:"num_key_value_heads"`
-	VocabSize           int     `json:"vocab_size"`
-	BytesPerParam       float64 `json:"bytes_per_param"`
-	IntermediateDim     int     `json:"intermediate_size"`
-	NumLocalExperts     int     `json:"num_local_experts"`                // 0 = dense model (MoE: number of experts)
-	NumExpertsPerTok    int     `json:"num_experts_per_tok"`              // 0 = dense model (MoE: active experts per token)
-	MoEExpertFFNDim     int     `json:"moe_intermediate_size"`            // Per-routed-expert FFN dim; 0 = use IntermediateDim (Mixtral convention)
-	SharedExpertFFNDim  int     `json:"shared_expert_intermediate_size"`  // Total shared-expert FFN dim; 0 = no shared experts
-	InterleaveMoELayerStep int  `json:"interleave_moe_layer_step"`        // Layer interleave pattern: 0 = uniform (all same type), 1 = alternate MoE/dense, 2 = every 3rd layer is MoE, etc. Used for Scout-style hybrid architectures.
-	DenseIntermediateDim int    `json:"intermediate_size_mlp"`            // Dense layer FFN dimension; 0 = use IntermediateDim. For models like Scout where dense layers have different FFN size than MoE expert FFN.
-	HiddenAct           string  `json:"hidden_act"`                       // Activation function (e.g. "silu", "gelu", "relu"); used by KV capacity (3-matrix SwiGLU detection), reserved for future roofline per-activation tuning
-	WeightBytesPerParam float64 `json:"weight_bytes_per_param,omitempty"` // Quantized weight precision (bytes/param); 0 = not set, use BytesPerParam. Auto-detected from quantization_config or model name conventions.
+	NumLayers              int     `json:"num_hidden_layers"`
+	HiddenDim              int     `json:"hidden_size"`
+	NumHeads               int     `json:"num_attention_heads"`
+	NumKVHeads             int     `json:"num_key_value_heads"`
+	VocabSize              int     `json:"vocab_size"`
+	BytesPerParam          float64 `json:"bytes_per_param"`
+	IntermediateDim        int     `json:"intermediate_size"`
+	NumLocalExperts        int     `json:"num_local_experts"`                // 0 = dense model (MoE: number of experts)
+	NumExpertsPerTok       int     `json:"num_experts_per_tok"`              // 0 = dense model (MoE: active experts per token)
+	MoEExpertFFNDim        int     `json:"moe_intermediate_size"`            // Per-routed-expert FFN dim; 0 = use IntermediateDim (Mixtral convention)
+	SharedExpertFFNDim     int     `json:"shared_expert_intermediate_size"`  // Total shared-expert FFN dim; 0 = no shared experts
+	InterleaveMoELayerStep int     `json:"interleave_moe_layer_step"`        // Layer interleave pattern: 0 = uniform (all same type), 1 = alternate MoE/dense, 2 = every 3rd layer is MoE, etc. Used for Scout-style hybrid architectures.
+	DenseIntermediateDim   int     `json:"intermediate_size_mlp"`            // Dense layer FFN dimension; 0 = use IntermediateDim. For models like Scout where dense layers have different FFN size than MoE expert FFN.
+	HiddenAct              string  `json:"hidden_act"`                       // Activation function (e.g. "silu", "gelu", "relu"); used by KV capacity (3-matrix SwiGLU detection), reserved for future roofline per-activation tuning
+	WeightBytesPerParam    float64 `json:"weight_bytes_per_param,omitempty"` // Quantized weight precision (bytes/param); 0 = not set, use BytesPerParam. Auto-detected from quantization_config or model name conventions.
+	HeadDim                int     `json:"head_dim,omitempty"`               // Explicit attention head dimension; 0 = not set, fall back to HiddenDim/NumHeads. Modern MLA/GQA models (GLM-5.2, Qwen3) declare a head_dim that differs from hidden/heads. Used by KV/weight capacity only (NOT step time). See EffectiveHeadDim.
+	KVLoraRank             int     `json:"kv_lora_rank,omitempty"`           // MLA compressed-KV latent rank; 0 = not MLA (standard MHA/GQA KV). When > 0 the KV cache stores a compressed latent of KVLoraRank+QKRopeHeadDim scalars per token per layer (DeepSeek-V2/V3, Kimi-K3, GLM-5.2). See KVBytesPerToken.
+	QKRopeHeadDim          int     `json:"qk_rope_head_dim,omitempty"`       // MLA decoupled-RoPE key dimension; the second summand of the MLA latent width. Meaningful only when KVLoraRank > 0.
+	FirstKDenseReplace     int     `json:"first_k_dense_replace,omitempty"`  // Number of leading layers that are dense (non-MoE) in a MoE model; remaining layers are MoE. 0 = no dense prefix (all layers MoE when IsMoE). Distinct from InterleaveMoELayerStep (every-Nth interleave). Used by weight estimation.
+}
+
+// EffectiveHeadDim returns the attention head dimension to use for KV-cache and
+// weight-memory calculations. Returns HeadDim when explicitly set (> 0),
+// otherwise falls back to HiddenDim/NumHeads (the implicit convention). Modern
+// MLA/GQA models declare an explicit head_dim that differs from hidden/heads
+// (e.g. GLM-5.2: head_dim=192 while 6144/64=96); using it corrects the KV and
+// weight estimates. Returns 0 when the implicit fallback would divide by zero
+// (NumHeads == 0), leaving the caller's own validation to reject it.
+//
+// This is deliberately NOT used by the step-time (trained-physics/roofline)
+// latency models, which retain HiddenDim/NumHeads — scoping the change to the
+// capacity path keeps step-time golden datasets and INV-BC-DP1 byte-identical.
+func (mc ModelConfig) EffectiveHeadDim() int {
+	if mc.HeadDim > 0 {
+		return mc.HeadDim
+	}
+	if mc.NumHeads == 0 {
+		return 0
+	}
+	return mc.HiddenDim / mc.NumHeads
 }
 
 // EffectiveWeightBytesPerParam returns the bytes-per-parameter to use for
@@ -61,6 +86,16 @@ const MoEMinExperts = 2
 // legitimately reads the raw field instead.
 func (mc ModelConfig) IsMoE() bool {
 	return mc.NumLocalExperts >= MoEMinExperts
+}
+
+// IsMLA reports whether the model uses Multi-head Latent Attention (a positive
+// compressed-KV latent rank), e.g. DeepSeek-V2/V3, Kimi-K3, GLM-5.2 glm_moe_dsa.
+// This is the canonical MLA-detection predicate — prefer it over inline
+// KVLoraRank comparisons so future MLA-aware paths share one definition (mirrors
+// IsMoE). When true, the KV cache stores a compressed latent of
+// KVLoraRank+QKRopeHeadDim scalars per token per layer (see KVBytesPerToken).
+func (mc ModelConfig) IsMLA() bool {
+	return mc.KVLoraRank > 0
 }
 
 // HardwareCalib holds GPU hardware calibration parameters.

@@ -26,8 +26,8 @@ func TestVLLMBatchFormation_ImplementsInterface(t *testing.T) {
 		RunningBatch:          &Batch{},
 		WaitQ:                 &WaitQueue{},
 		KVCache:               MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens),
-		MaxScheduledTokens:    10000,
-		MaxRunningReqs:        10,
+		MaxNumBatchedTokens:   10000,
+		MaxNumSeqs:            10,
 		PrefillTokenThreshold: 0,
 		MaxModelLen:           0,
 		Now:                   0,
@@ -44,7 +44,7 @@ func TestVLLMBatchFormation_ImplementsInterface(t *testing.T) {
 }
 
 // TestVLLMBatchFormation_TokenBudgetEnforced verifies BC-2:
-// total new tokens in result batch must not exceed MaxScheduledTokens.
+// total new tokens in result batch must not exceed MaxNumBatchedTokens.
 func TestVLLMBatchFormation_TokenBudgetEnforced(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
@@ -70,8 +70,8 @@ func TestVLLMBatchFormation_TokenBudgetEnforced(t *testing.T) {
 		RunningBatch:          &Batch{},
 		WaitQ:                 wq,
 		KVCache:               kvCache,
-		MaxScheduledTokens:    50,
-		MaxRunningReqs:        10,
+		MaxNumBatchedTokens:   50,
+		MaxNumSeqs:            10,
 		PrefillTokenThreshold: 0,
 		MaxModelLen:           0,
 		Now:                   1000,
@@ -98,7 +98,7 @@ func TestVLLMBatchFormation_TokenBudgetEnforced(t *testing.T) {
 }
 
 // TestVLLMBatchFormation_BatchSizeEnforced verifies BC-3:
-// batch size must not exceed MaxRunningReqs.
+// batch size must not exceed MaxNumSeqs.
 func TestVLLMBatchFormation_BatchSizeEnforced(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(200, 16, 0, 0, 0, 0),
@@ -124,8 +124,8 @@ func TestVLLMBatchFormation_BatchSizeEnforced(t *testing.T) {
 		RunningBatch:          &Batch{},
 		WaitQ:                 wq,
 		KVCache:               kvCache,
-		MaxScheduledTokens:    10000,
-		MaxRunningReqs:        2,
+		MaxNumBatchedTokens:   10000,
+		MaxNumSeqs:            2,
 		PrefillTokenThreshold: 0,
 		MaxModelLen:           0,
 		Now:                   1000,
@@ -191,8 +191,8 @@ func TestVLLMBatchFormation_PreemptionReleasesKV(t *testing.T) {
 		RunningBatch:          &Batch{Requests: []*Request{needy, victim}},
 		WaitQ:                 &WaitQueue{},
 		KVCache:               kvCache,
-		MaxScheduledTokens:    10000,
-		MaxRunningReqs:        10,
+		MaxNumBatchedTokens:   10000,
+		MaxNumSeqs:            10,
 		PrefillTokenThreshold: 0,
 		MaxModelLen:           0,
 		Now:                   5000,
@@ -254,8 +254,8 @@ func TestVLLMBatchFormation_PreemptionStopsDequeue(t *testing.T) {
 		RunningBatch:          &Batch{Requests: []*Request{req1, req2}},
 		WaitQ:                 wq,
 		KVCache:               kvCache,
-		MaxScheduledTokens:    10000,
-		MaxRunningReqs:        10,
+		MaxNumBatchedTokens:   10000,
+		MaxNumSeqs:            10,
 		PrefillTokenThreshold: 0,
 		MaxModelLen:           0,
 		Now:                   5000,
@@ -297,8 +297,8 @@ func TestVLLMBatchFormation_CircuitBreaker(t *testing.T) {
 		RunningBatch:          &Batch{},
 		WaitQ:                 wq,
 		KVCache:               kvCache,
-		MaxScheduledTokens:    10000,
-		MaxRunningReqs:        10,
+		MaxNumBatchedTokens:   10000,
+		MaxNumSeqs:            10,
 		PrefillTokenThreshold: 0,
 		MaxModelLen:           0,
 		Now:                   0,
@@ -348,8 +348,8 @@ func TestVLLMBatchFormation_KVAllocationFailure_StopsDequeue(t *testing.T) {
 		RunningBatch:          &Batch{},
 		WaitQ:                 wq,
 		KVCache:               kvCache,
-		MaxScheduledTokens:    10000,
-		MaxRunningReqs:        10,
+		MaxNumBatchedTokens:   10000,
+		MaxNumSeqs:            10,
 		PrefillTokenThreshold: 0,
 		MaxModelLen:           0,
 		Now:                   1000,
@@ -480,8 +480,8 @@ func TestVLLMBatchFormation_Phase1_EvictedNotRevisited(t *testing.T) {
 		RunningBatch:          &Batch{Requests: []*Request{r1, r2, r3}},
 		WaitQ:                 &WaitQueue{},
 		KVCache:               kvCache,
-		MaxScheduledTokens:    10000,
-		MaxRunningReqs:        10,
+		MaxNumBatchedTokens:   10000,
+		MaxNumSeqs:            10,
 		PrefillTokenThreshold: 0,
 		MaxModelLen:           0,
 		Now:                   5000,
@@ -629,8 +629,8 @@ func TestVLLMBatchFormation_MaxModelLen_ProactiveCap_Decode(t *testing.T) {
 		RunningBatch:          &Batch{Requests: []*Request{req}},
 		WaitQ:                 &WaitQueue{},
 		KVCache:               kvStore,
-		MaxScheduledTokens:    2048,
-		MaxRunningReqs:        256,
+		MaxNumBatchedTokens:   2048,
+		MaxNumSeqs:            256,
 		PrefillTokenThreshold: 0,
 		MaxModelLen:           100,
 		Now:                   0,
@@ -665,8 +665,8 @@ func TestVLLMBatchFormation_MaxModelLen_ProactiveCap_Phase2(t *testing.T) {
 		RunningBatch:          &Batch{},
 		WaitQ:                 wq,
 		KVCache:               kvStore,
-		MaxScheduledTokens:    2048,
-		MaxRunningReqs:        256,
+		MaxNumBatchedTokens:   2048,
+		MaxNumSeqs:            256,
 		PrefillTokenThreshold: 0,
 		MaxModelLen:           50,
 		Now:                   0,
@@ -699,8 +699,8 @@ func TestVLLMBatchFormation_MaxModelLen_Zero_NoClamp(t *testing.T) {
 		RunningBatch:          &Batch{},
 		WaitQ:                 wq,
 		KVCache:               kvStore,
-		MaxScheduledTokens:    10000,
-		MaxRunningReqs:        256,
+		MaxNumBatchedTokens:   10000,
+		MaxNumSeqs:            256,
 		PrefillTokenThreshold: 0,
 		MaxModelLen:           0, // unlimited
 		Now:                   0,
@@ -742,8 +742,8 @@ func TestVLLMBatchFormation_ZeroInputRequest_SkipsDecodeOnlyPath(t *testing.T) {
 		RunningBatch:          &Batch{},
 		WaitQ:                 wq,
 		KVCache:               kvStore,
-		MaxScheduledTokens:    10000,
-		MaxRunningReqs:        10,
+		MaxNumBatchedTokens:   10000,
+		MaxNumSeqs:            10,
 		PrefillTokenThreshold: 0,
 		MaxModelLen:           0,
 		Now:                   0,
@@ -795,13 +795,13 @@ func TestPreemption_FCFS_EvictsTail(t *testing.T) {
 
 	bf := NewBatchFormation("fcfs")
 	ctx := BatchContext{
-		RunningBatch:       &Batch{Requests: running},
-		WaitQ:              wq,
-		KVCache:            kvCache,
-		MaxScheduledTokens: 10000,
-		MaxRunningReqs:     10,
-		Now:                1000,
-		ComputedTokens:     make(map[string]int64),
+		RunningBatch:        &Batch{Requests: running},
+		WaitQ:               wq,
+		KVCache:             kvCache,
+		MaxNumBatchedTokens: 10000,
+		MaxNumSeqs:          10,
+		Now:                 1000,
+		ComputedTokens:      make(map[string]int64),
 	}
 
 	result := bf.FormBatch(ctx)
@@ -875,13 +875,13 @@ func TestPreemption_Priority_EvictsLeastUrgent(t *testing.T) {
 
 			bf := NewBatchFormation("priority")
 			ctx := BatchContext{
-				RunningBatch:       &Batch{Requests: running},
-				WaitQ:              wq,
-				KVCache:            kvCache,
-				MaxScheduledTokens: 10000,
-				MaxRunningReqs:     10,
-				Now:                1000,
-				ComputedTokens:     make(map[string]int64),
+				RunningBatch:        &Batch{Requests: running},
+				WaitQ:               wq,
+				KVCache:             kvCache,
+				MaxNumBatchedTokens: 10000,
+				MaxNumSeqs:          10,
+				Now:                 1000,
+				ComputedTokens:      make(map[string]int64),
 			}
 
 			result := bf.FormBatch(ctx)
@@ -916,13 +916,13 @@ func TestPreemption_Priority_SelfPreemption(t *testing.T) {
 
 	bf := NewBatchFormation("priority")
 	ctx := BatchContext{
-		RunningBatch:       &Batch{Requests: []*Request{bg, crit, dummy}},
-		WaitQ:              wq,
-		KVCache:            kvCache,
-		MaxScheduledTokens: 10000,
-		MaxRunningReqs:     10,
-		Now:                1000,
-		ComputedTokens:     make(map[string]int64),
+		RunningBatch:        &Batch{Requests: []*Request{bg, crit, dummy}},
+		WaitQ:               wq,
+		KVCache:             kvCache,
+		MaxNumBatchedTokens: 10000,
+		MaxNumSeqs:          10,
+		Now:                 1000,
+		ComputedTokens:      make(map[string]int64),
 	}
 
 	result := bf.FormBatch(ctx)
@@ -964,13 +964,13 @@ func TestPreemption_Priority_TiebreakByLatestArrival(t *testing.T) {
 
 	bf := NewBatchFormation("priority")
 	ctx := BatchContext{
-		RunningBatch:       &Batch{Requests: []*Request{old, mid, new_}},
-		WaitQ:              wq,
-		KVCache:            kvCache,
-		MaxScheduledTokens: 10000,
-		MaxRunningReqs:     10,
-		Now:                1000,
-		ComputedTokens:     make(map[string]int64),
+		RunningBatch:        &Batch{Requests: []*Request{old, mid, new_}},
+		WaitQ:               wq,
+		KVCache:             kvCache,
+		MaxNumBatchedTokens: 10000,
+		MaxNumSeqs:          10,
+		Now:                 1000,
+		ComputedTokens:      make(map[string]int64),
 	}
 
 	result := bf.FormBatch(ctx)
@@ -1002,13 +1002,13 @@ func TestPreemption_Priority_KVConservation(t *testing.T) {
 
 	bf := NewBatchFormation("priority")
 	ctx := BatchContext{
-		RunningBatch:       &Batch{Requests: []*Request{bg, crit}},
-		WaitQ:              wq,
-		KVCache:            kvCache,
-		MaxScheduledTokens: 10000,
-		MaxRunningReqs:     10,
-		Now:                1000,
-		ComputedTokens:     make(map[string]int64),
+		RunningBatch:        &Batch{Requests: []*Request{bg, crit}},
+		WaitQ:               wq,
+		KVCache:             kvCache,
+		MaxNumBatchedTokens: 10000,
+		MaxNumSeqs:          10,
+		Now:                 1000,
+		ComputedTokens:      make(map[string]int64),
 	}
 
 	bf.FormBatch(ctx)
@@ -1035,13 +1035,13 @@ func TestPreemption_Priority_EmptyBatch_NoPanic(t *testing.T) {
 
 	bf := NewBatchFormation("priority")
 	ctx := BatchContext{
-		RunningBatch:       &Batch{Requests: []*Request{}},
-		WaitQ:              wq,
-		KVCache:            kvCache,
-		MaxScheduledTokens: 10000,
-		MaxRunningReqs:     10,
-		Now:                0,
-		ComputedTokens:     make(map[string]int64),
+		RunningBatch:        &Batch{Requests: []*Request{}},
+		WaitQ:               wq,
+		KVCache:             kvCache,
+		MaxNumBatchedTokens: 10000,
+		MaxNumSeqs:          10,
+		Now:                 0,
+		ComputedTokens:      make(map[string]int64),
 	}
 
 	result := bf.FormBatch(ctx) // must not panic
@@ -1084,13 +1084,13 @@ func TestPreemption_Priority_Phase1Completeness(t *testing.T) {
 
 	bf := NewBatchFormation("priority")
 	ctx := BatchContext{
-		RunningBatch:       &Batch{Requests: []*Request{bg, crit, std}},
-		WaitQ:              wq,
-		KVCache:            kvCache,
-		MaxScheduledTokens: 10000,
-		MaxRunningReqs:     10,
-		Now:                1000,
-		ComputedTokens:     make(map[string]int64),
+		RunningBatch:        &Batch{Requests: []*Request{bg, crit, std}},
+		WaitQ:               wq,
+		KVCache:             kvCache,
+		MaxNumBatchedTokens: 10000,
+		MaxNumSeqs:          10,
+		Now:                 1000,
+		ComputedTokens:      make(map[string]int64),
 	}
 
 	result := bf.FormBatch(ctx)
@@ -1152,13 +1152,13 @@ func TestPreemption_Priority_MultiEvictionOrdering(t *testing.T) {
 
 	bf := NewBatchFormation("priority")
 	ctx := BatchContext{
-		RunningBatch:       &Batch{Requests: []*Request{crit, bg, shed}},
-		WaitQ:              wq,
-		KVCache:            kvCache,
-		MaxScheduledTokens: 10000,
-		MaxRunningReqs:     10,
-		Now:                1000,
-		ComputedTokens:     make(map[string]int64),
+		RunningBatch:        &Batch{Requests: []*Request{crit, bg, shed}},
+		WaitQ:               wq,
+		KVCache:             kvCache,
+		MaxNumBatchedTokens: 10000,
+		MaxNumSeqs:          10,
+		Now:                 1000,
+		ComputedTokens:      make(map[string]int64),
 	}
 
 	result := bf.FormBatch(ctx)

@@ -42,9 +42,9 @@ type InstanceSimulator struct {
 	TPDegree    int     // tensor-parallel degree; 0 = unplaced/unknown
 	CostPerHour float64 // $/hr from NodePool.CostPerHour; 0 = unplaced/free tier
 
-	// maxRunningReqs stores cfg.BatchConfig.MaxRunningReqs at construction time.
+	// maxNumSeqs stores cfg.BatchConfig.MaxNumSeqs at construction time.
 	// Exposed via MaxBatchSize() for the autoscaler pipeline.
-	maxRunningReqs int64
+	maxNumSeqs int64
 }
 
 // NewInstanceSimulator creates an InstanceSimulator from a SimConfig struct.
@@ -53,7 +53,7 @@ type InstanceSimulator struct {
 // Failure modes: Panics if internal Simulator creation fails (matches existing behavior).
 func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	// Create KV store (single-tier or tiered based on config)
-	kvStore := kv.NewKVStore(cfg.KVCacheConfig)
+	kvStore := kv.NewKVStore(cfg.KVCacheConfig, cfg.Seed)
 	// Build the LoRA adapter-cost accessor (nil when the subsystem is inert) and
 	// supply it to the latency model at construction so the per-step compute
 	// overhead applies to both backends (#1467, R23). BuildAdapterCost is pure and
@@ -75,10 +75,10 @@ func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 		panic(fmt.Sprintf("NewInstanceSimulator(%s): %v", id, err))
 	}
 	return &InstanceSimulator{
-		id:             id,
-		sim:            s,
-		gpu:            cfg.GPU,
-		maxRunningReqs: cfg.MaxRunningReqs,
+		id:         id,
+		sim:        s,
+		gpu:        cfg.GPU,
+		maxNumSeqs: cfg.MaxNumSeqs,
 	}
 }
 
@@ -307,12 +307,12 @@ func (i *InstanceSimulator) LatencyStats() InstanceLatencyStats {
 }
 
 // MaxBatchSize returns the simulator's configured maximum number of concurrent requests
-// (BatchConfig.MaxRunningReqs). Returns 0 when the instance has no underlying simulator.
+// (BatchConfig.MaxNumSeqs). Returns 0 when the instance has no underlying simulator.
 func (i *InstanceSimulator) MaxBatchSize() int {
 	if i.sim == nil {
 		return 0
 	}
-	return int(i.maxRunningReqs)
+	return int(i.maxNumSeqs)
 }
 
 // GetCachedBlockCount returns the number of consecutive cached prefix blocks
@@ -498,6 +498,7 @@ func (i *InstanceSimulator) DrainWaitQueue() []*sim.Request {
 // Returns true if found and removed, false otherwise (idempotent for already-completed).
 func (i *InstanceSimulator) EvictRequest(req *sim.Request) bool {
 	if i.sim.WaitQ.Remove(req) {
+		i.sim.ClearDeferredKV(req.ID) // H3 (#1591): a gateway-evicted queued request may be mid-deferral
 		i.sim.KVCache.ReleaseKVBlocks(req)
 		// Release the LoRA adapter pin (#1466): a queued request is not pinned, so
 		// this is a no-op here, but calling it keeps eviction symmetric with the

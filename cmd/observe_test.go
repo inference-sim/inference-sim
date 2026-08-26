@@ -445,6 +445,58 @@ func TestRealClient_ChatFormat_UsesMessagesEndpoint(t *testing.T) {
 	}
 }
 
+// TestRealClient_EmitsSessionIDHeader covers issue #1505: closed-loop requests
+// must carry the session id on a configurable header so a session-aware EPP can
+// pin a session's rounds to one instance.
+func TestRealClient_EmitsSessionIDHeader(t *testing.T) {
+	var gotHeader http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeader = r.Header.Clone()
+		resp := map[string]interface{}{
+			"choices": []interface{}{map[string]interface{}{"text": "hi", "finish_reason": "stop"}},
+			"usage":   map[string]interface{}{"prompt_tokens": 1.0, "completion_tokens": 1.0},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	t.Run("default header when SessionID set", func(t *testing.T) {
+		client := NewRealClient(server.URL, "", "m", "vllm")
+		_, _ = client.Send(context.Background(), &PendingRequest{RequestID: 1, Prompt: "x", SessionID: "sess-42"})
+		if got := gotHeader.Get("x-session-id"); got != "sess-42" {
+			t.Errorf("x-session-id = %q, want sess-42", got)
+		}
+	})
+
+	t.Run("custom header name via option", func(t *testing.T) {
+		client := NewRealClient(server.URL, "", "m", "vllm", WithSessionIDHeader("x-my-session"))
+		_, _ = client.Send(context.Background(), &PendingRequest{RequestID: 2, Prompt: "x", SessionID: "sess-9"})
+		if got := gotHeader.Get("x-my-session"); got != "sess-9" {
+			t.Errorf("x-my-session = %q, want sess-9", got)
+		}
+		if got := gotHeader.Get("x-session-id"); got != "" {
+			t.Errorf("default x-session-id should be empty when overridden, got %q", got)
+		}
+	})
+
+	t.Run("omitted when SessionID empty", func(t *testing.T) {
+		client := NewRealClient(server.URL, "", "m", "vllm")
+		_, _ = client.Send(context.Background(), &PendingRequest{RequestID: 3, Prompt: "x"})
+		if got := gotHeader.Get("x-session-id"); got != "" {
+			t.Errorf("x-session-id = %q, want empty (no session)", got)
+		}
+	})
+
+	t.Run("empty header name disables emission", func(t *testing.T) {
+		client := NewRealClient(server.URL, "", "m", "vllm", WithSessionIDHeader(""))
+		_, _ = client.Send(context.Background(), &PendingRequest{RequestID: 4, Prompt: "x", SessionID: "sess-1"})
+		if got := gotHeader.Get("x-session-id"); got != "" {
+			t.Errorf("x-session-id = %q, want empty (emission disabled)", got)
+		}
+	})
+}
+
 func TestRealClient_StreamingChat_ExtractsFinishReason(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		flusher, ok := w.(http.Flusher)

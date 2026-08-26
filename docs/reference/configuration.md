@@ -49,7 +49,7 @@ The general precedence (CLI → YAML → hardcoded) applies everywhere, but each
 2. `--policy-config` YAML bundle — loads all policy settings from one file
 3. Hardcoded defaults — `round-robin`, `always-admit`, `fcfs`
 
-**Batch formation** (`--max-num-running-reqs`, `--max-num-scheduled-tokens`, etc.):
+**Batch formation** (`--max-num-seqs`, `--max-num-batched-tokens`, etc.):
 
 1. Explicit CLI flags
 2. Hardcoded defaults — 256 running reqs, 2048 scheduled tokens
@@ -118,8 +118,8 @@ Controls how requests are selected for the running batch. Maps to `BatchConfig`.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--max-num-running-reqs` | int64 | 256 | Maximum requests in the running batch simultaneously. |
-| `--max-num-scheduled-tokens` | int64 | 2048 | Maximum total new tokens across all running requests per step (token budget). |
+| `--max-num-seqs` | int64 | 256 | Maximum requests in the running batch simultaneously (vLLM parity). Deprecated alias: `--max-num-running-reqs`. |
+| `--max-num-batched-tokens` | int64 | 2048 | Maximum total new tokens across all running requests per step (token budget; vLLM parity). Deprecated alias: `--max-num-scheduled-tokens`. |
 | `--long-prefill-token-threshold` | int64 | 0 | Prefill length threshold for chunked prefill. 0 = disabled (all prefill in one step). |
 | `--preemption-policy` | string | "fcfs" | Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode uses `slo_priorities` from the policy bundle when set (shared with admission). |
 
@@ -242,7 +242,7 @@ admission:
 
 | YAML field | Type | Default | Description |
 |------------|------|---------|-------------|
-| `tenant_budgets` | map[string]float64 | nil | Per-tenant fraction of total cluster capacity (NumInstances × MaxRunningReqs). Absent key = unlimited. 0.0 = effectively zero concurrent slots (one request may slip through per admission tick due to DES admission-before-routing event ordering; see IsOverBudget docstring). Values must be in [0, 1]. |
+| `tenant_budgets` | map[string]float64 | nil | Per-tenant fraction of total cluster capacity (NumInstances × MaxNumSeqs). Absent key = unlimited. 0.0 = effectively zero concurrent slots (one request may slip through per admission tick due to DES admission-before-routing event ordering; see IsOverBudget docstring). Values must be in [0, 1]. |
 
 Example:
 
@@ -487,7 +487,7 @@ instance_lifecycle:
 #     batch: 0    # make batch non-sheddable
 
 # Per-tenant fair-share budgets (Phase 1B — optional; omit for no tenant enforcement)
-# Each value is a fraction of total cluster capacity (NumInstances × MaxRunningReqs).
+# Each value is a fraction of total cluster capacity (NumInstances × MaxNumSeqs).
 # Absent key = unlimited. 0.0 = effectively zero concurrent slots (DES ordering caveat: see IsOverBudget docstring). Values must be in [0, 1].
 # Non-sheddable traffic (priority >= 0: critical, standard) is always protected from budget shedding.
 tenant_budgets:
@@ -597,7 +597,7 @@ For environments where live profiling is not feasible, the [Roofline model](../c
 | Sub-Config | Flags |
 |------------|-------|
 | **KVCacheConfig** | `--total-kv-blocks`, `--block-size-in-tokens`, `--kv-cpu-blocks`, `--kv-offload-threshold`, `--kv-transfer-bandwidth`, `--kv-transfer-base-latency` |
-| **BatchConfig** | `--max-num-running-reqs`, `--max-num-scheduled-tokens`, `--long-prefill-token-threshold` |
+| **BatchConfig** | `--max-num-seqs`, `--max-num-batched-tokens`, `--long-prefill-token-threshold` |
 | **LatencyCoeffs** | `--alpha-coeffs`, `--beta-coeffs` |
 | **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--latency-model`, `--model-config-folder`, `--hardware-config`, `--max-model-len` |
 | **PolicyConfig** | `--scheduler`, `--preemption-policy` |

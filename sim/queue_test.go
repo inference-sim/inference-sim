@@ -41,6 +41,44 @@ func TestWaitQueue_Peek_Empty_ReturnsNil(t *testing.T) {
 	}
 }
 
+func TestWaitQueue_PeekAt(t *testing.T) {
+	// GIVEN a queue [A, B, C]
+	wq := &WaitQueue{}
+	reqA := &Request{ID: "A"}
+	reqB := &Request{ID: "B"}
+	reqC := &Request{ID: "C"}
+	wq.Enqueue(reqA)
+	wq.Enqueue(reqB)
+	wq.Enqueue(reqC)
+
+	// PeekAt(0) equals Peek(); indexed access returns the right element without mutating.
+	if wq.PeekAt(0) != reqA || wq.PeekAt(0) != wq.Peek() {
+		t.Errorf("PeekAt(0) must equal Peek() == A")
+	}
+	if wq.PeekAt(1) != reqB {
+		t.Errorf("PeekAt(1): got %v, want B", wq.PeekAt(1))
+	}
+	if wq.PeekAt(2) != reqC {
+		t.Errorf("PeekAt(2): got %v, want C", wq.PeekAt(2))
+	}
+	// Out-of-range (>= len and negative) returns nil, like Peek() on empty.
+	if wq.PeekAt(3) != nil {
+		t.Errorf("PeekAt past end must be nil, got %v", wq.PeekAt(3))
+	}
+	if wq.PeekAt(-1) != nil {
+		t.Errorf("PeekAt(-1) must be nil, got %v", wq.PeekAt(-1))
+	}
+	if wq.Len() != 3 {
+		t.Errorf("PeekAt must not modify the queue, len=%d want 3", wq.Len())
+	}
+
+	// Empty queue: PeekAt(0) is nil, matching Peek().
+	empty := &WaitQueue{}
+	if empty.PeekAt(0) != nil || empty.PeekAt(0) != empty.Peek() {
+		t.Errorf("PeekAt(0) on empty queue must be nil like Peek()")
+	}
+}
+
 func TestWaitQueue_PrependFront_InsertsAtFront(t *testing.T) {
 	// GIVEN a queue with requests [A, B, C]
 	wq := &WaitQueue{}
