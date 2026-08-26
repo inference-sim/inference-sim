@@ -97,6 +97,8 @@ The team reviews the RFC from the [8 design review perspectives](perspectives.md
 
 See [inference-sim#1585](https://github.com/inference-sim/inference-sim/issues/1585) for a real example of this pattern applied to the multi-tier KV-offload feature (5 holes, 8 arrows, delivered across 6 PRs).
 
+For the exact issue format Claude should produce, see [archon issue examples](templates/archon-issue-examples.md).
+
 ---
 
 ## After Agreement

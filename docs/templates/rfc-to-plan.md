@@ -38,6 +38,11 @@ Read the tracking issue discussions and final decisions. Then:
    both the standard delta review AND the plan-based dist tracking.
 
 4. Report: summary of baseline dist, number of holes, delivery order.
+
+Use the sub-issue format from docs/contributing/templates/archon-issue-examples.md.
+Each sub-issue must include the full hole content (surface, contracts,
+evidence types, invariants, no-op default) so blis-pr-review can verify
+delivery without reading .archon files.
 ```
 
 ---
