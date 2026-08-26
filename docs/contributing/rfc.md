@@ -69,16 +69,7 @@ H5 (config) — no dependencies, but should land early
 
 ## Design Review (before agreement)
 
-The team reviews the RFC from these 8 perspectives before approving:
-
-1. **Motivation & Scoping** — Are goals clear? Is the modeling decisions table complete? Does every simplification state what real-system behavior is lost?
-2. **Module Contract Completeness** — Does every hole have all contract fields? Are invariants named and cross-referenced?
-3. **Extension Framework Fit** — Is the extension type correct? Is the no-op default specified? Is parallel development possible?
-4. **Trade-off Quality** — Does every non-obvious decision have alternatives with rationale? What breaks if it's wrong?
-5. **Validation Strategy** — How will correctness be verified (which invariants)? How will fidelity be validated (against what)?
-6. **Staleness Resistance** — Is content described behaviorally (what crosses a boundary and why) not structurally (how)?
-7. **Domain Expertise** — DES: are new events classified (exogenous/endogenous)? vLLM: does this match real serving behavior? Platform: scaling assumptions valid?
-8. **Prohibited Content** — No Go struct definitions, no method implementations, no file:line references. Describe behavior, not implementation.
+The team reviews the RFC from the [8 design review perspectives](perspectives.md#design-review-perspectives-8) before approving. Zero CRITICAL + zero IMPORTANT = ready for agreement.
 
 ---
 

@@ -82,15 +82,13 @@ If the source document is unambiguous and complete, skip this step — but note 
 
 ### Step 2: Write an Implementation Plan
 
-> **Prerequisite for large features:** Design and planning (RFC, .archon encoding, sub-issue creation) must be done BEFORE reaching this step. See [RFC template](rfc.md) and [RFC to Plan](../templates/rfc-to-plan.md). This workflow starts AFTER you have a sub-issue or issue to implement.
-
-Write an implementation plan for THIS PR (one sub-issue or issue). The plan must include:
+Read the issue (or sub-issue) you are closing. Write an implementation plan following the [micro-plan template](templates/micro-plan.md). The plan must include:
 
 - **Behavioral contracts** (GIVEN/WHEN/THEN) defining what this PR guarantees
 - **TDD task breakdown** (6–12 tasks, each: test → fail → implement → pass → lint → commit)
-- **Test strategy** mapping contracts to specific tests
+- **Sanity checklist** (R1-R23, relevant invariants)
 
-The source of work is the sub-issue (which already contains: surface, contracts, allowed imports) or a GitHub issue.
+Save the plan to `docs/plans/<feature-name>-plan.md`.
 
 !!! tip "Automation"
     `/superpowers:writing-plans for <work-item> in @docs/plans/<name>-plan.md and @<source-document>` generates the plan automatically. The skill reads the source document and the template, inspects the codebase, and produces behavioral contracts with executable tasks.
@@ -99,7 +97,7 @@ The source of work is the sub-issue (which already contains: surface, contracts,
 
 ### Step 2.5: Review the Plan
 
-Review the plan from 10 targeted perspectives: run all perspectives in parallel as one round; if zero CRITICAL and zero IMPORTANT across all reviewers, the round converged; otherwise fix and re-run the entire round. Max 10 rounds per gate. Hard gate — no exceptions.
+Review the plan from the [10 plan review perspectives](perspectives.md#plan-review-perspectives-10): run all perspectives in parallel as one round; if zero CRITICAL and zero IMPORTANT across all reviewers, the round converged; otherwise fix and re-run the entire round. Max 10 rounds per gate. Hard gate — no exceptions.
 
 **Two-stage review (Medium/Large PRs; Small PRs skip the pre-pass — see [PR Size Tiers](#pr-size-tiers)):**
 
@@ -230,7 +228,7 @@ Execute all tasks sequentially. Stop only on test failure, lint failure, or buil
 
 ### Step 4.5: Review the Code
 
-Review the implementation from 10 targeted perspectives: zero CRITICAL + zero IMPORTANT = converged; fix and re-run entire round otherwise. Max 10 rounds. Same structure as Step 2.5 (two-stage for Medium/Large, convergence-only for Small), but the 10 perspectives differ: plan review checks design soundness; code review checks implementation quality.
+Review the implementation from the [10 code review perspectives](perspectives.md#code-review-perspectives-10): zero CRITICAL + zero IMPORTANT = converged; fix and re-run entire round otherwise. Max 10 rounds. Same structure as Step 2.5 (two-stage for Medium/Large, convergence-only for Small), but the perspectives differ: plan review checks design soundness; code review checks implementation quality.
 
 **Two-stage review (Medium/Large PRs; Small PRs skip the pre-pass — see [PR Size Tiers](#pr-size-tiers)):**
 
