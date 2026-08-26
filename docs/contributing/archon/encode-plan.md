@@ -17,6 +17,11 @@ archon-go plan slice feature.plan.json <hole-path>                  # work order
 - **Sub-issue 0:** Persist `.archon` + `.plan.json` to `specs/NNN-feature/` on feature branch. Expected dist: baseline (no reduction — just commits the plan).
 - **Sub-issues 1–N:** One per hole, ordered by dependency arrows. Each states: which hole, expected dist reduction, surface, contracts, allowed imports, dependencies.
 
+Every sub-issue body must include this line so CI can auto-detect the plan:
+```
+archon-plan: specs/NNN-feature/feature.plan.json
+```
+
 ## Where to persist
 
 ```

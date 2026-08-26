@@ -30,6 +30,12 @@ Read the tracking issue discussions and final decisions. Then:
      - Allowed imports (whitelist)
      - Expected dist reduction (e.g., "dist 13 → 10, fills H2 + 3 arrows")
      - Which sub-issues must land first (dependencies)
+     - The line: `archon-plan: specs/NNN-feature/feature.plan.json`
+       (CI uses this to auto-detect the plan for dist tracking)
+
+   IMPORTANT: Every sub-issue (including sub-issue 0) must contain the
+   `archon-plan:` line with the same path. This is how CI knows to run
+   both the standard delta review AND the plan-based dist tracking.
 
 4. Report: summary of baseline dist, number of holes, delivery order.
 ```

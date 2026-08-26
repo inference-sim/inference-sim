@@ -6,7 +6,24 @@ How to incorporate archon's PR review output during code review.
 
 ## When it runs
 
-`/archon-pr-review` runs automatically in CI on every PR. It may also be triggered manually. It produces a structural architecture review — what boundaries moved, what edges changed.
+`/archon-pr-review` runs automatically in CI on every PR. It always runs the standard delta review (boundary moves, surface changes, edge deltas). Additionally, if the PR body (or its closing issue body) contains an `archon-plan:` line with a path to a `.plan.json`, CI also runs `--plan` for dist tracking.
+
+```
+# CI logic (pseudocode):
+archon-go pr-review . $BASE $HEAD --out .archon           # always: delta view
+if archon-plan path found AND file exists on base branch:
+  archon-go pr-review . $BASE $HEAD --plan <path> --out .archon  # additionally: dist tracking
+```
+
+Both outputs are posted. No failure if the plan path is missing or wrong — falls back to delta-only.
+
+## Convention: `archon-plan:` in sub-issues
+
+When sub-issues are created via `rfc-to-plan.md`, each includes a standard line:
+```
+archon-plan: specs/NNN-feature/feature.plan.json
+```
+CI greps for this. If absent, dist tracking is skipped (safe default).
 
 ## Verdicts
 
