@@ -10,9 +10,9 @@ Invoke the `/pr-review-toolkit:review-pr` skill with the following BLIS-specific
 ```
 /pr-review-toolkit:review-pr Please perform a thorough review of this PR with respect to both the original issue and its tracking parent issue (if any). Read both to understand the full plan and where this PR fits.
 
---- ARCHON CONTEXT ---
+--- ARCHON CONTEXT (read-only — never run archon yourself) ---
 
-Check if `/archon-pr-review` output exists in a previous PR comment (from CI or manual invocation). If it does, incorporate its verdict and findings into your review per @docs/contributing/archon/pr-review-context.md. If it doesn't exist yet, note this but proceed with the review.
+Check if `/archon-pr-review` output exists in a previous PR comment (from CI or manual invocation). Do NOT run archon yourself — just read the CI output. If it exists, incorporate its verdict (FAST-TRACK / REALIZES / EXCEEDS / CONFLICTS) and findings per @docs/contributing/archon/pr-review-context.md. If it doesn't exist yet, note this but proceed.
 
 Evaluate whether the PR fully and correctly addresses all requirements and reviewer concerns. In particular, assess:
 
@@ -98,14 +98,17 @@ After completing the checklist above, perform a Q/A review:
 
 Only FLAW_FOUND with concrete evidence (file:line or reproducible scenario) blocks the PR.
 
---- CONTRACT VERIFICATION (if .archon plan exists) ---
+--- CONTRACT VERIFICATION (from sub-issue body) ---
 
-If a `.archon` plan exists in `specs/*/` for the feature this PR belongs to:
+If this PR closes a sub-issue from a large feature (tracking issue with holes), the sub-issue body contains the promised contracts for this hole. Read the sub-issue body and check:
 
-1. Read the plan's contract clauses (lines with `[evidenced: ...]`)
-2. For each contract, verify a corresponding test exists
-3. Check that the test actually tests what the contract claims (not just structural)
-4. Report any contracts without matching evidence
+1. What contracts were promised (e.g., "BC-C1: only tier 0 exchanges blocks with GPU [evidenced: differential_test]")
+2. For each promised contract, does a corresponding test exist in this PR?
+3. Does the test match the evidence type (property_test, differential_test, metamorphic_test)?
+4. Does the test actually verify the contract's claim (not just structural)?
+5. Report any promised contracts without matching evidence.
+
+Do NOT read .archon files or run archon commands. The sub-issue body is your source of truth for what was promised.
 
 ---
 
