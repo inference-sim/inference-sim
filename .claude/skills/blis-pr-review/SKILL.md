@@ -10,17 +10,20 @@ Invoke the `/pr-review-toolkit:review-pr` skill with the following BLIS-specific
 ```
 /pr-review-toolkit:review-pr Please perform a thorough review of this PR with respect to both the original issue and its tracking parent issue.
 
-Evaluate whether the PR fully and correctly addresses all requirements and reviewer concerns. In particular, assess:
+Evaluate whether the PR fully and correctly addresses all requirements and reviewer concerns.
 
-Correctness and preservation of invariants
-Separation of concerns and overall design discipline
-Modularity and clarity of API boundaries/contracts
-Behavioral integrity, including both behavioral and non-structural tests
-Test coverage and quality (not just structure, but meaningful validation of behavior)
-Performance implications and potential regressions
-Adherence to our @docs/contributing/standards,
-Documentation quality, completeness, and accuracy (both user-facing and developer-facing)
-All reviews and comments in this PR are addressed
+Review from these 10 perspectives (each catches issues the others miss):
+
+1. **Substance & Design** — logic bugs, design mismatches between contracts and implementation, mathematical errors, silent regressions. Does the implementation actually achieve what the behavioral contracts promise?
+2. **Code Quality + Error Handling** — error path cleanup, map iteration sorted (R2/INV-6), construction site drift (R4), library code calling logrus.Fatalf (R6), exported mutable maps (R8), YAML pointer types (R9), division zero guards (R19), CLAUDE.md/docs drift.
+3. **Test Behavioral Quality** — are tests behavioral (test WHAT not HOW)? Would they survive a refactor? Golden tests without companion invariant tests? Tests that pass even if the feature is broken?
+4. **Getting-Started Experience** — would a new user or contributor get stuck? Missing examples, undocumented output, incomplete guides, unclear extension points?
+5. **Automated Reviewer Simulation** — what Copilot/Claude/Codex would flag: exported mutable globals, user-controlled panic paths, YAML typo acceptance, NaN/Inf gaps, redundant code.
+6. **DES Expert** — event ordering bugs, clock monotonicity (INV-3), stale signal propagation, heap priority errors, work-conserving violations (INV-8).
+7. **vLLM/SGLang Expert** — batching semantics mismatch, KV cache eviction differences, chunked prefill errors, preemption policy differences, scheduling assumption violations.
+8. **Distributed Inference Platform Expert** — multi-instance coordination bugs, routing load imbalance, stale snapshot propagation, admission control edge cases, horizontal scaling assumptions.
+9. **Performance & Scalability** — O(n²) where O(n) suffices, hot-path allocations, map iteration in loops, memory growth, degradation at 1000+ requests or 10+ instances.
+10. **Security & Robustness** — input validation completeness, panic paths from user input, resource exhaustion vectors, degenerate input handling (empty, zero, NaN, Inf).
 
 --- CROSS-PATH PARITY (run / replay / observe) ---
 
