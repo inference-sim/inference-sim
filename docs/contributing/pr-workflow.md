@@ -2,7 +2,7 @@
 
 **Status:** Active (v4.2 — updated 2026-03-17)
 
-This document describes the complete workflow for implementing a PR from any source: a macro plan section, GitHub issues, a design document, or a feature request. The same steps apply whether you use Claude Code or standard git tools.
+This document describes the complete workflow for implementing a PR from any source: an RFC sub-issue, GitHub issues, a design document, or a feature request. The same steps apply whether you use Claude Code or standard git tools.
 
 ---
 
@@ -66,7 +66,7 @@ All remaining steps happen in the worktree.
 
 ### Step 1.5: Audit the Source Document
 
-Before writing the plan, scan the source document (design doc, macro plan section, GitHub issue, or feature request) for:
+Before writing the plan, scan the source document (RFC sub-issue, GitHub issue, design doc, or feature request) for:
 
 1. **Ambiguous requirements** — flag and resolve with the document author before planning
 2. **Contradictions with existing invariants or standards** — check against `standards/invariants.md` and `standards/rules.md`
@@ -437,7 +437,7 @@ Not all PRs need the same level of review. Use these objective criteria:
 
 ## Example Walkthrough
 
-A typical PR from a macro plan section:
+A typical PR from an RFC sub-issue:
 
 1. **Create worktree:** `git worktree add .worktrees/pr8-routing -b pr8-routing && cd .worktrees/pr8-routing`
 2. **Audit source:** Scan source document for ambiguities, contradictions, missing info. Record clarifications.
@@ -449,7 +449,7 @@ A typical PR from a macro plan section:
 8. **Self-audit:** Think through all 10 dimensions. Fix issues.
 9. **Commit + PR:** Push branch, create PR with closing keywords.
 
-The workflow is the same regardless of source (macro plan, design doc, GitHub issues). Only the source document passed to the planning step differs.
+The workflow is the same regardless of source (RFC sub-issue, design doc, GitHub issues). Only the source document passed to the planning step differs.
 
 ---
 
@@ -462,7 +462,7 @@ The workflow is the same regardless of source (macro plan, design doc, GitHub is
 5. **Review after execution** — use automated code review (Step 4.5) after all tasks complete
 6. **Reference contracts in commits** — makes review easier and more traceable
 7. **Update CLAUDE.md immediately** — don't defer documentation
-8. **Keep source documents updated** — mark PRs as completed in macro plan; close resolved issues
+8. **Keep source documents updated** — close resolved issues; update tracking issue if needed
 9. **Don't trust automated passes alone** — the self-audit (Step 4.75) catches substance bugs that pattern-matching agents miss. In PR9, 3 real bugs were found by critical thinking after 4 automated passes found 0 issues.
 10. **Checkpoint long sessions** — for PRs with 8+ tasks or multi-round reviews, write a checkpoint summary to `.claude/checkpoint.md` after each major phase. If you hit context limits, read the checkpoint first.
 
