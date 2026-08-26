@@ -1802,22 +1802,29 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		pid := parent.ID              // "req_N"
 		completed := parent.CompletionTime > 0 && parent.DecodeInstanceID != ""
 
-		// servedFirstToken: the decode sub-request actually emitted ≥1 token. It is
-		// false for all three no-token TERMINAL outcomes (issue #1511):
+		// servedFirstToken: the decode sub-request has ≥1 un-discarded ITL entry at
+		// finalization — i.e. a client-visible first-token measurement survived to the end.
+		// It is false for the no-token TERMINAL outcomes (issue #1511):
 		//   - decode-side drop at transfer start / transfer complete — DecodeSubReq is
 		//     nil (nilled by dropAtStart / the late-drop path before the decode sub-request
-		//     runs); and
-		//   - decode-timeout-while-queued — DecodeSubReq != nil but its ITL is empty
-		//     (it never ran a decode step).
-		// Each of these reaches a terminal CompletionTime with a DecodeInstanceID assigned
-		// (so `completed` is true) yet produced no output. Such a parent belongs to the
-		// drop/timeout counters (DroppedUnservable via droppedAtDecodeKV; TimedOutRequests
-		// via pdDecodeTimedOutCount) ONLY and must contribute NO per-request metric entry —
+		//     runs);
+		//   - decode-timeout-while-queued — DecodeSubReq != nil but ITL is empty because it
+		//     never ran a decode step; and
+		//   - preempted-then-timed-out — a decode sub-request that emitted a token, was then
+		//     preempted (batch_formation.go resets ProgressIndex/TTFTSet and clears ITL on
+		//     preempt), and timed out while re-queued before re-emitting. Its ITL is empty at
+		//     finalization, so no first-token measurement survives — correctly excluded, same
+		//     as the others.
+		// Each reaches a terminal CompletionTime with a DecodeInstanceID assigned (so
+		// `completed` is true) yet has no surviving first token. Such a parent belongs to the
+		// drop/timeout counters (DroppedUnservable via droppedAtDecodeKV; TimedOutRequests via
+		// pdDecodeTimedOutCount) ONLY and must contribute NO per-request metric entry —
 		// otherwise it is double-represented as both a drop and a latency sample, polluting
 		// the TTFT/E2E/scheduling-delay distributions (INV-PD-6). `served` folds that
 		// requirement into the projection gate below. A decode sub-request that emitted a
-		// first token and THEN timed out mid-generation has a non-empty ITL, so it is still
-		// served and keeps its entries (the user did receive that token).
+		// first token and THEN timed out mid-generation WITHOUT an intervening preemption
+		// keeps a non-empty ITL, so it is still served and keeps its entries (the user did
+		// receive that token).
 		servedFirstToken := parent.DecodeSubReq != nil && len(parent.DecodeSubReq.ITL) > 0
 		served := completed && servedFirstToken
 
@@ -1951,9 +1958,13 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// structurally identical to the non-PD TTFT (scheduling_delay + first-token step).
 		//
 		// Read prefill TTFT before deleting sub-request keys (R1: no silent data loss).
-		// prefillTTFT is retained as the TTFTSum baseline: pre-projection TTFTSum holds
-		// exactly prefillTTFT for this parent (the decode sub-request never sets
-		// FirstTokenTime, so it contributes 0). decodeDelay/hasDecodeDelay were read
+		// prefillTTFT is retained as the TTFTSum baseline: on the normal path pre-projection
+		// TTFTSum holds exactly prefillTTFT for this parent (a normal decode sub-request never
+		// sets FirstTokenTime, so it contributes 0). A preempted-and-re-prefilled decode
+		// sub-request is the exception — it re-stamps FirstTokenTime and adds a decode term to
+		// TTFTSum that this projection does not roll back; that pre-existing PD TTFTSum residual
+		// is tracked in #1628 and is out of scope for the #1511 no-token fix here.
+		// decodeDelay/hasDecodeDelay were read
 		// above (shared with the E2E block); RequestSchedulingDelays[dec] is not
 		// deleted until the scheduling-delay block below.
 		//
@@ -2001,12 +2012,21 @@ func (c *ClusterSimulator) projectPDMetrics() {
 				logrus.Warnf("[cluster] projectPDMetrics: served parent %s has no prefill TTFT (key %s)", pid, pfx)
 			}
 		} else if completed && hasPrefillTTFT {
-			// Terminal-but-no-token parent (decode-side drop / timeout-while-queued, #1511):
-			// it emitted no token, so it contributes NO parent TTFT. The prefill
-			// sub-request's TTFT key was deleted above, but its value is still summed into
-			// the aggregate TTFTSum; roll it back so TTFTSum stays consistent with the
-			// (now parent-less) RequestTTFTs map — the reported mean TTFT (TTFTSum / n)
-			// must not count a request that produced no token (BC-3).
+			// Terminal-but-no-token parent (decode-side drop / timeout-while-queued /
+			// preempted-then-timed-out, #1511): it has no surviving first token, so it
+			// contributes NO parent TTFT. The prefill sub-request's TTFT key was deleted
+			// above, but its value is still summed into the aggregate TTFTSum; roll the
+			// PREFILL term back so the reported mean TTFT (TTFTSum / n) does not count a
+			// request that produced no token.
+			//
+			// Scope: this rolls back the prefill term only, which is exactly what the three
+			// no-token outcomes this fix restores require. A decode sub-request that emitted a
+			// token, was preempted (re-stamping FirstTokenTime and adding a decode term to
+			// TTFTSum, simulator.go), then timed out while re-queued also leaves that decode
+			// term in TTFTSum, which neither this rollback nor the unconditional
+			// delete(RequestTTFTs, dec) removes — a pre-existing PD TTFTSum residual tracked in
+			// #1628, not introduced here. So TTFTSum == Σ RequestTTFTs holds for the no-token
+			// terminal outcomes but is NOT a general PD law (see #1628).
 			m.TTFTSum -= int64(prefillTTFT)
 		}
 

@@ -395,6 +395,11 @@ func TestDisaggregation_DroppedParent_NotInLatencyMaps(t *testing.T) {
 	if noTokenTerminal == 0 {
 		t.Fatal("no no-token terminal parent found; drop scenario did not exercise the #1511 path")
 	}
+	// Symmetric guard: at least one served terminal parent must exist, else the BC-2
+	// over-exclusion check above (served parents keep their E2E) silently tests nothing.
+	if servedTerminal == 0 {
+		t.Fatal("no served terminal parent found; BC-2 over-exclusion check was untested")
+	}
 
 	// The dropped requests remain accounted for (not silently lost) and INV-1 holds.
 	if m.DroppedUnservable == 0 {
