@@ -946,9 +946,12 @@ func generateTimeVaryingRequests(
 // Steps:
 //  1. Resolve parameters with fallback to client-level defaults.
 //  2. Compute allocated rate via proportional allocation across co-active windows.
-//  3. Sample IATs from the resolved arrival process.
-//  4. Rescale IATs to match the target window duration (exact rate matching).
-//  5. Generate requests with window-specific token distributions.
+//  3. Sample one MORE IAT than requests wanted, from the resolved arrival process.
+//  4. Rescale all of them to the target window duration (exact rate matching).
+//  5. Generate requests with window-specific token distributions, from the
+//     first N of the N+1 rescaled gaps; the extra gap is trailing slack that
+//     keeps every arrival strictly inside the window (see step 5's comment
+//     in the implementation for why this is needed).
 //
 // Requests are returned in arrival-time order. IDs are left empty (assigned by caller
 // after merging requests from all windows).
@@ -994,13 +997,40 @@ func generateRequestsForWindow(
 	}
 
 	// Step 5: Sample IATs using the resolved arrival process (shape/scale for CV).
-	iats := make([]int64, numRequests)
-	for i := 0; i < numRequests; i++ {
+	//
+	// We sample numRequests+1 gaps, not numRequests. Step 7 below only emits
+	// numRequests arrivals (the cumulative sums of the FIRST numRequests gaps),
+	// leaving the (numRequests+1)-th gap unused as trailing slack. This is the
+	// fix for a defect where the window's last request was unconditionally
+	// dropped: with exactly numRequests gaps rescaled (step 6) to sum to
+	// windowDurationUs, the cumulative time after the final gap lands exactly
+	// on window.EndUs, which is the next window's start instant, so the
+	// boundary guard in step 7 discarded it every time. Sampling one extra gap
+	// and rescaling across all numRequests+1 of them means the numRequests
+	// emitted arrivals fall inside [window.StartUs, window.EndUs) — with
+	// jitter at both ends from the extra gap's share of the rescaling — while
+	// the count stays exactly numRequests. The bound is asymmetric: no arrival
+	// can reach window.EndUs (the residual lands on the trailing gap, so it is
+	// floored up), but the LEADING gap has no such floor and can truncate to
+	// zero, putting the first arrival exactly on window.StartUs — legal, since
+	// a window is half-open. See rescaleIATsToMatchDuration and the interiority
+	// tests in generator_perwindow_test.go. The cost is that the
+	// effective mean gap inside the window becomes windowDurationUs/(numRequests+1)
+	// rather than windowDurationUs/numRequests; that is the correct reading of
+	// "numRequests arrivals inside a window of length windowDurationUs" (there
+	// are numRequests+1 gaps around numRequests interior points), and it is
+	// what removes the boundary bias.
+	iats := make([]int64, numRequests+1)
+	for i := 0; i < numRequests+1; i++ {
 		iats[i] = arrivalSampler.SampleIAT(rng)
 	}
 
 	// Step 6: Rescale IATs to match target window duration.
 	// This preserves relative ratios (CV) while ensuring total span equals windowDurationUs.
+	// Note len(iats) == numRequests+1 here (see step 5); rescaling still sums
+	// ALL of them to windowDurationUs, so the trailing (numRequests+1)-th gap
+	// absorbs the residual arithmetic exactly, not one of the numRequests gaps
+	// that get emitted.
 	iats = rescaleIATsToMatchDuration(iats, windowDurationUs)
 
 	// Step 7: Generate requests with window-specific distributions.
@@ -1018,6 +1048,20 @@ func generateRequestsForWindow(
 				startTime += iats[0]
 			}
 			if startTime >= window.EndUs {
+				// Unreachable in normal operation: step 5 samples
+				// numRequests+1 gaps and step 6 rescales ALL of them to sum
+				// to windowDurationUs, so iats[0] alone is strictly less
+				// than the window duration. That relies on the TRAILING gap
+				// being strictly positive, which needs two facts, not one:
+				// rescaleIATsToMatchDuration puts its residual on the last
+				// element, AND every sampler reachable via NewArrivalSampler
+				// floors its raw IAT to >= 1us. The exact-sum property alone
+				// is not enough -- a zero raw IAT would rescale to a zero
+				// gap. Reaching this means one of those two was broken by a
+				// later change, which would silently drop this window's only
+				// session -- warn rather than truncate quietly (R1).
+				logrus.Warnf("generateRequestsForWindow: client %q window [%d-%d]: single session start %d is at/beyond window end (numRequests+1 gap invariant violated); dropping the window's only session",
+					client.ID, window.StartUs, window.EndUs, startTime)
 				return nil, nil // Session starts beyond window boundary
 			}
 
@@ -1054,10 +1098,29 @@ func generateRequestsForWindow(
 
 		// Multi-session: loop over IAT samples to generate multiple sessions.
 		// Matches non-time-varying path (generator.go:212-272).
+		//
+		// Bounded by numRequests, not len(iats): iats now holds numRequests+1
+		// gaps (step 5), and only the first numRequests are meant to produce a
+		// session start; the trailing gap is unused slack that keeps every
+		// emitted start strictly inside the window. The boundary guard below
+		// is defense in depth only — with numRequests gaps rescaled (step 6)
+		// to sum to strictly less than windowDurationUs, it should be
+		// unreachable in normal operation.
 		currentTime := window.StartUs
-		for i := 0; i < len(iats); i++ {
+		for i := 0; i < numRequests; i++ {
 			currentTime += iats[i]
 			if currentTime >= window.EndUs {
+				// Unreachable in normal operation (see the loop-bound
+				// comment above): the numRequests emitted gaps sum to
+				// strictly less than windowDurationUs, because the trailing
+				// gap is strictly positive -- which needs both the residual
+				// placement in rescaleIATsToMatchDuration and the >= 1us raw
+				// IAT floor every NewArrivalSampler sampler applies. Reaching
+				// this means a later change broke one of those, which would
+				// silently truncate the window's sessions -- warn rather than
+				// truncate quietly (R1).
+				logrus.Warnf("generateRequestsForWindow: client %q window [%d-%d]: session %d of %d starts at %d, at/beyond window end (numRequests+1 gap invariant violated); truncating window",
+					client.ID, window.StartUs, window.EndUs, i+1, numRequests, currentTime)
 				break // Session start is beyond window boundary
 			}
 
@@ -1093,15 +1156,30 @@ func generateRequestsForWindow(
 		return allRequests, nil
 	}
 
-	// BC-6: Single-shot path (unchanged from original implementation)
+	// BC-6: Single-shot path.
 	requests := make([]*sim.Request, 0, numRequests)
 	currentTime := window.StartUs
 
+	// Bounded by numRequests, leaving iats[numRequests] (the extra gap from
+	// step 5) unused: see step 5's comment for why. The boundary guard below
+	// is defense in depth only — with numRequests gaps rescaled (step 6) to
+	// sum to strictly less than windowDurationUs, it should be unreachable in
+	// normal operation.
 	for i := 0; i < numRequests; i++ {
 		currentTime += iats[i]
 
 		// Stop if we exceed window boundary.
 		if currentTime >= window.EndUs {
+			// Unreachable in normal operation (see the loop-bound comment
+			// above): the numRequests emitted gaps sum to strictly less than
+			// windowDurationUs, because the trailing gap is strictly positive
+			// -- which needs both the residual placement in
+			// rescaleIATsToMatchDuration and the >= 1us raw IAT floor every
+			// NewArrivalSampler sampler applies. Reaching this means a later
+			// change broke one of those, which would silently shorten the
+			// window -- warn rather than truncate quietly (R1).
+			logrus.Warnf("generateRequestsForWindow: client %q window [%d-%d]: request %d of %d arrives at %d, at/beyond window end (numRequests+1 gap invariant violated); truncating window",
+				client.ID, window.StartUs, window.EndUs, i+1, numRequests, currentTime)
 			break
 		}
 

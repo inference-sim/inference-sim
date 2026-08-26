@@ -1,6 +1,7 @@
 package workload
 
 import (
+	"math"
 	"math/rand"
 	"testing"
 
@@ -852,5 +853,494 @@ func TestGenerateRequestsForWindow_Determinism_AbsoluteRateMode(t *testing.T) {
 		assert.Equal(t, requests1[i].ArrivalTime, requests2[i].ArrivalTime, "arrival time mismatch at index %d", i)
 		assert.Equal(t, requests1[i].InputTokens, requests2[i].InputTokens, "input tokens mismatch at index %d", i)
 		assert.Equal(t, requests1[i].OutputTokens, requests2[i].OutputTokens, "output tokens mismatch at index %d", i)
+	}
+}
+
+// TestGenerateRequestsForWindow_ExactCountAndInteriorArrivals is the
+// regression test for the last-request-dropped defect in step 7's emission
+// loop (generator.go). Step 6 rescales IATs to sum EXACTLY to the window
+// duration, so with the old code (numRequests IATs sampled, all numRequests
+// summed), the cumulative time after the final IAT landed exactly on
+// window.EndUs -- the next window's start instant -- and the loop's
+// `currentTime >= window.EndUs` guard discarded that request every time,
+// unconditionally, for every window and every client. For a window where
+// ceil(rate*duration) == 1 this meant the window's only expected request was
+// always dropped, so short windows produced zero traffic.
+//
+// The fix samples numRequests+1 IATs and rescales across all of them,
+// emitting only the first numRequests. This asserts the property directly:
+// the number of generated requests equals ceil(rate*duration) exactly, and
+// every arrival lands strictly inside (window.StartUs, window.EndUs) --
+// never on either boundary instant.
+func TestGenerateRequestsForWindow_ExactCountAndInteriorArrivals(t *testing.T) {
+	const rate = 5.0 // req/s
+
+	cases := []struct {
+		name       string
+		durationUs int64
+	}{
+		// 5 req/s * 0.1s = 0.5 expected requests -> ceil = 1. This is
+		// exactly the case that previously produced ZERO requests.
+		{"short window, ceil gives 1", 100_000},
+		{"sub-second window, ceil gives 3", 500_000},
+		{"one-second window", 1_000_000},
+		{"multi-second window", 5_000_000},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			expected := int(math.Ceil(rate * float64(tc.durationUs) / 1e6))
+			require.Greater(t, expected, 0, "test case must expect at least one request")
+
+			// Several seeds: the COUNT is deterministic regardless of the
+			// sampled shape (rescaling forces the gap sum to match the
+			// window duration exactly), but the interior-arrival property
+			// must hold for any draw, so check it isn't seed-dependent.
+			// Seed 276753 is pinned deliberately: it draws a raw first IAT of
+			// 1us (the sampler floor), which rescaleIATsToMatchDuration truncates
+			// to a ZERO leading gap, putting the first arrival exactly on
+			// window.StartUs. That is legal -- the window is half-open -- so the
+			// lower bound below is asserted inclusively. Before this seed was
+			// added the strict form passed on the other six by luck alone.
+			for _, seed := range []int64{1, 2, 3, 17, 42, 99, 276753} {
+				traceRate := rate
+				clients := []ClientSpec{
+					{
+						ID:           "short-window-client",
+						RateFraction: 1.0,
+						Arrival:      ArrivalSpec{Process: "poisson"},
+						InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+						OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+						Lifecycle: &LifecycleSpec{
+							Windows: []ActiveWindow{
+								{StartUs: 1_000_000, EndUs: 1_000_000 + tc.durationUs, TraceRate: &traceRate},
+							},
+						},
+					},
+				}
+
+				rng := rand.New(rand.NewSource(seed))
+				window := clients[0].Lifecycle.Windows[0]
+				// aggregateRate=0 selects absolute rate mode (computeProportionalRate
+				// returns window.TraceRate directly), sidestepping proportional
+				// allocation across co-active clients -- orthogonal to what this
+				// test checks.
+				requests, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng, nil)
+				require.NoError(t, err)
+
+				assert.Equal(t, expected, len(requests),
+					"seed %d: window [%d,%d) at %.1f req/s must produce ceil(rate*duration)=%d requests, got %d",
+					seed, window.StartUs, window.EndUs, rate, expected, len(requests))
+
+				for i, req := range requests {
+					assert.GreaterOrEqual(t, req.ArrivalTime, window.StartUs,
+						"seed %d request %d: arrival must be at or after window start", seed, i)
+					assert.Less(t, req.ArrivalTime, window.EndUs,
+						"seed %d request %d: arrival must be strictly < window end", seed, i)
+				}
+			}
+		})
+	}
+}
+
+// TestGenerateRequestsForWindow_MultiSessionReasoning_ExactCountAndInteriorArrivals
+// is the multi-session-reasoning counterpart to
+// TestGenerateRequestsForWindow_ExactCountAndInteriorArrivals above.
+//
+// The multi-session branch (client.Reasoning.MultiTurn set, SingleSession
+// false) had the IDENTICAL last-request-dropped defect as the single-shot
+// path, for the same reason: before the fix, it looped
+// `for i := 0; i < len(iats); i++`, and len(iats) was numRequests -- the
+// exact-sum property of rescaleIATsToMatchDuration meant the cumulative time
+// after the LAST iat landed exactly on window.EndUs, so its own
+// `currentTime >= window.EndUs` guard dropped the final session every time.
+//
+// The existing reasoning tests in generator_test.go
+// (TestGenerateRequestsForWindow_ReasoningClient and its three siblings) do
+// NOT pin this: they only assert `len(sessionsFound) < 2` (i.e. "more than
+// one session") or "zero vs. nonzero", both of which pass identically
+// whether the loop emits N sessions or N-1. They could not have caught the
+// original defect and cannot catch a regression in it.
+//
+// This test pins the property the loop bound actually governs: the number
+// of sessions started (here, MaxRounds=1 makes each session exactly one
+// request, so len(requests) == session count == the value numRequests
+// controls directly) must equal ceil(rate*duration) exactly, including a
+// case where that ceil is 1 -- small enough that an off-by-one is a 100%
+// miss, not a rounding blur. It also pins the strict interior bound
+// (StartUs < arrival < EndUs) for this branch, matching the single-shot test.
+func TestGenerateRequestsForWindow_MultiSessionReasoning_ExactCountAndInteriorArrivals(t *testing.T) {
+	const rate = 5.0 // req/s
+
+	cases := []struct {
+		name       string
+		durationUs int64
+	}{
+		// 5 req/s * 0.1s = 0.5 expected sessions -> ceil = 1. Exactly the
+		// case that previously produced ZERO sessions.
+		{"short window, ceil gives 1", 100_000},
+		// 5 req/s * 0.3s = 1.5 expected sessions -> ceil = 2.
+		{"short window, ceil gives 2", 300_000},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			expected := int(math.Ceil(rate * float64(tc.durationUs) / 1e6))
+			require.Greater(t, expected, 0, "test case must expect at least one session")
+
+			// Seed 276753 is pinned deliberately: it draws a raw first IAT of
+			// 1us (the sampler floor), which rescaleIATsToMatchDuration truncates
+			// to a ZERO leading gap, putting the first arrival exactly on
+			// window.StartUs. That is legal -- the window is half-open -- so the
+			// lower bound below is asserted inclusively. Before this seed was
+			// added the strict form passed on the other six by luck alone.
+			for _, seed := range []int64{1, 2, 3, 17, 42, 99, 276753} {
+				traceRate := rate
+				clients := []ClientSpec{
+					{
+						ID:       "multisession-reasoning-client",
+						TenantID: "tenant-a",
+						SLOClass: "standard",
+						Model:    "qwen/qwen3-14b",
+						Reasoning: &ReasoningSpec{
+							MultiTurn: &MultiTurnSpec{
+								// MaxRounds=1: every session is exactly one
+								// round/request, so len(requests) == session
+								// count == the value the loop bound
+								// (numRequests) governs directly. This keeps
+								// the assertion below unambiguous -- no need
+								// to also account for multi-round sessions.
+								MaxRounds:     1,
+								ThinkTimeUs:   1_000_000,
+								ContextGrowth: "accumulate",
+							},
+						},
+						InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+						OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+						Lifecycle: &LifecycleSpec{
+							Windows: []ActiveWindow{
+								{StartUs: 1_000_000, EndUs: 1_000_000 + tc.durationUs, TraceRate: &traceRate},
+							},
+						},
+					},
+				}
+
+				rng := rand.New(rand.NewSource(seed))
+				window := clients[0].Lifecycle.Windows[0]
+				requests, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng, nil)
+				require.NoError(t, err)
+
+				assert.Equal(t, expected, len(requests),
+					"seed %d: window [%d,%d) at %.1f req/s must start ceil(rate*duration)=%d sessions (MaxRounds=1 => 1 request each), got %d requests",
+					seed, window.StartUs, window.EndUs, rate, expected, len(requests))
+
+				sessionIDs := make(map[string]bool)
+				for i, req := range requests {
+					sessionIDs[req.SessionID] = true
+					assert.GreaterOrEqual(t, req.ArrivalTime, window.StartUs,
+						"seed %d request %d: session start must be at or after window start", seed, i)
+					assert.Less(t, req.ArrivalTime, window.EndUs,
+						"seed %d request %d: session start must be strictly < window end", seed, i)
+				}
+				assert.Equal(t, expected, len(sessionIDs),
+					"seed %d: expected %d distinct sessions, got %d", seed, expected, len(sessionIDs))
+			}
+		})
+	}
+}
+
+// TestGenerateRequestsForWindow_SingleSessionReasoning_SessionSurvivesAtCeilOne
+// pins the third branch touched by the last-request-dropped fix.
+//
+// The single-session reasoning branch has no emission loop -- it derives its one
+// session start from iats[0] alone -- so it was never edited by the fix. It was
+// still defective for the same root cause: with exactly numRequests gaps
+// rescaled to sum to the window duration, numRequests == 1 makes iats[0] equal
+// the whole duration, so startTime lands exactly on window.EndUs, the
+// `startTime >= window.EndUs` guard fires, and the branch returns (nil, nil) --
+// the window's ONLY session, silently dropped. Sampling numRequests+1 gaps
+// makes iats[0] strictly smaller than the duration, which repairs this branch
+// as a side effect of the shared rescale.
+//
+// Confirmed RED against pre-fix generator.go: 0 requests at every seed for the
+// ceil==1 case (the ceil==2 case passed before and after, since iats[0] was
+// already only ~half the duration there).
+func TestGenerateRequestsForWindow_SingleSessionReasoning_SessionSurvivesAtCeilOne(t *testing.T) {
+	const rate = 5.0 // req/s
+
+	cases := []struct {
+		name       string
+		durationUs int64
+	}{
+		// 5 req/s * 0.1s -> ceil = 1: iats[0] was the entire window duration.
+		// This is the case that previously produced ZERO requests.
+		{"short window, ceil gives 1", 100_000},
+		// 5 req/s * 0.3s -> ceil = 2: already worked, kept as a control.
+		{"short window, ceil gives 2", 300_000},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Seed 276753 is pinned deliberately: it draws a raw first IAT of
+			// 1us (the sampler floor), which rescaleIATsToMatchDuration truncates
+			// to a ZERO leading gap, putting the first arrival exactly on
+			// window.StartUs. That is legal -- the window is half-open -- so the
+			// lower bound below is asserted inclusively. Before this seed was
+			// added the strict form passed on the other six by luck alone.
+			for _, seed := range []int64{1, 2, 3, 17, 42, 99, 276753} {
+				traceRate := rate
+				clients := []ClientSpec{
+					{
+						ID:       "singlesession-reasoning-client",
+						TenantID: "tenant-a",
+						SLOClass: "standard",
+						Model:    "qwen/qwen3-14b",
+						Reasoning: &ReasoningSpec{
+							MultiTurn: &MultiTurnSpec{
+								// MaxRounds=1 so the session is exactly one
+								// request: len(requests) then distinguishes
+								// "session dropped" (0) from "session kept" (1)
+								// with no round-filtering to reason about.
+								MaxRounds:     1,
+								ThinkTimeUs:   1_000_000,
+								ContextGrowth: "accumulate",
+								SingleSession: true,
+							},
+						},
+						InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+						OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+						Lifecycle: &LifecycleSpec{
+							Windows: []ActiveWindow{
+								{StartUs: 1_000_000, EndUs: 1_000_000 + tc.durationUs, TraceRate: &traceRate},
+							},
+						},
+					},
+				}
+
+				rng := rand.New(rand.NewSource(seed))
+				window := clients[0].Lifecycle.Windows[0]
+				requests, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng, nil)
+				require.NoError(t, err)
+
+				// Exactly one session, exactly one round: the branch generates a
+				// single session regardless of rate, so the count is 1 and not
+				// ceil(rate*duration) -- what matters is that it is not 0.
+				assert.Equal(t, 1, len(requests),
+					"seed %d: window [%d,%d) at %.1f req/s must keep its single session (1 request at MaxRounds=1), got %d",
+					seed, window.StartUs, window.EndUs, rate, len(requests))
+
+				for i, req := range requests {
+					assert.GreaterOrEqual(t, req.ArrivalTime, window.StartUs,
+						"seed %d request %d: session start must be at or after window start", seed, i)
+					assert.Less(t, req.ArrivalTime, window.EndUs,
+						"seed %d request %d: session start must be strictly < window end", seed, i)
+				}
+			}
+		})
+	}
+}
+
+// windowClientSpec builds a single-window, single-client spec for the
+// interior-gap tests below. aggregateRate=0 at the call site selects absolute
+// rate mode, so the window's TraceRate is used directly and proportional
+// allocation across co-active clients (orthogonal to gap semantics) is
+// sidestepped.
+func windowClientSpec(process string, rate float64, startUs, durationUs int64) []ClientSpec {
+	traceRate := rate
+	return []ClientSpec{
+		{
+			ID:           "gap-semantics-client",
+			RateFraction: 1.0,
+			Arrival:      ArrivalSpec{Process: process},
+			InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+			OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+			Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{
+					{StartUs: startUs, EndUs: startUs + durationUs, TraceRate: &traceRate},
+				},
+			},
+		},
+	}
+}
+
+// TestGenerateRequestsForWindow_InteriorGapSemantics pins the mean-gap
+// semantics that the last-request-dropped fix deliberately changed, as a law
+// rather than a code comment.
+//
+// numRequests arrivals placed strictly INSIDE a window of length D have
+// numRequests+1 surrounding gaps, so the effective mean gap is
+// D/(numRequests+1) -- not D/numRequests. Before the fix, numRequests gaps
+// were rescaled to sum to exactly D, which put the final arrival exactly on
+// window.EndUs where the boundary guard discarded it; the surviving arrivals
+// were spaced D/numRequests apart with ZERO trailing slack.
+//
+// The `constant` arrival process makes this deterministic and
+// seed-independent instead of statistical: every sampled IAT is identical, so
+// rescaleIATsToMatchDuration divides D evenly and every emitted gap is the
+// same width, D/(numRequests+1). That pins the semantics on two independent
+// axes, both of which fail against the pre-fix generator:
+//
+//   - count is numRequests (pre-fix: numRequests-1)
+//   - spacing is D/(numRequests+1) (pre-fix: D/numRequests)
+//
+// Uniformity is asserted exactly; the gap's absolute width is asserted within
+// a couple of microseconds, because ConstantArrivalSampler derives its IAT as
+// int64(1.0/(rate/1e6)) and that float division truncates -- at 5 req/s it
+// yields 199999us rather than 200000us, shifting the rescaled gap by 1us.
+// That artifact belongs to the sampler, not to the gap semantics under test,
+// and the tolerance is orders of magnitude tighter than the D/numRequests vs
+// D/(numRequests+1) difference this test exists to distinguish (2x at
+// numRequests == 1).
+//
+// It also pins the trailing slack as strictly positive and at least one mean
+// gap wide -- the property that makes the interior bound hold unconditionally
+// rather than probabilistically. Pre-fix that slack was identically zero,
+// which is precisely why the final arrival collided with window.EndUs.
+func TestGenerateRequestsForWindow_InteriorGapSemantics(t *testing.T) {
+	const startUs = int64(1_000_000)
+
+	cases := []struct {
+		name       string
+		rate       float64
+		durationUs int64
+	}{
+		// ceil(rate*duration) == 1: the case that previously produced no
+		// traffic at all. One arrival, so the single gap is D/2 and the
+		// arrival sits at the window midpoint.
+		{"ceil gives 1, arrival at midpoint", 5.0, 100_000},
+		{"ceil gives 5", 5.0, 1_000_000},
+		{"ceil gives 40", 40.0, 1_000_000},
+		{"sub-second window, ceil gives 4", 20.0, 200_000},
+		{"multi-second window", 3.0, 5_000_000},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			numRequests := int(math.Ceil(tc.rate * float64(tc.durationUs) / 1e6))
+			require.Greater(t, numRequests, 0, "test case must expect at least one request")
+
+			// The law under test.
+			wantGap := tc.durationUs / int64(numRequests+1)
+			require.Greater(t, wantGap, int64(0),
+				"test case must have a mean gap of at least 1us for spacing to be meaningful")
+			// Absorbs ConstantArrivalSampler's int64(1.0/(rate/1e6))
+			// truncation only; see the doc comment.
+			const gapToleranceUs = 2.0
+
+			clients := windowClientSpec("constant", tc.rate, startUs, tc.durationUs)
+			window := clients[0].Lifecycle.Windows[0]
+
+			// Seed is irrelevant for `constant`; fixed for reproducibility.
+			rng := rand.New(rand.NewSource(42))
+			requests, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng, nil)
+			require.NoError(t, err)
+
+			require.Equal(t, numRequests, len(requests),
+				"window [%d,%d) at %.1f req/s must produce ceil(rate*duration)=%d requests",
+				window.StartUs, window.EndUs, tc.rate, numRequests)
+
+			// Every emitted gap has the SAME width -- including the leading
+			// gap from window.StartUs to the first arrival -- and that width
+			// is D/(numRequests+1).
+			firstGap := requests[0].ArrivalTime - window.StartUs
+			assert.InDelta(t, float64(wantGap), float64(firstGap), gapToleranceUs,
+				"leading gap must be D/(numRequests+1)=%d, got %d", wantGap, firstGap)
+
+			prev := window.StartUs
+			for i, req := range requests {
+				assert.Equal(t, firstGap, req.ArrivalTime-prev,
+					"request %d: every emitted gap must be identical (%d), got %d (arrival %d)",
+					i, firstGap, req.ArrivalTime-prev, req.ArrivalTime)
+				prev = req.ArrivalTime
+			}
+
+			// Trailing slack: strictly positive (so the final arrival cannot
+			// collide with window.EndUs) and at least one gap wide (so the
+			// window is evenly divided rather than merely nudged inward).
+			// rescaleIATsToMatchDuration adds its non-negative rounding
+			// residual to the unused trailing gap, so slack >= firstGap.
+			// Pre-fix this slack was identically ZERO.
+			trailingSlack := window.EndUs - requests[len(requests)-1].ArrivalTime
+			assert.Greater(t, trailingSlack, int64(0),
+				"final arrival must leave strictly positive slack before window end")
+			assert.GreaterOrEqual(t, trailingSlack, firstGap,
+				"trailing slack must be at least one gap wide (%d), got %d", firstGap, trailingSlack)
+		})
+	}
+}
+
+// TestGenerateRequestsForWindow_ArrivalsOrderedAndInterior pins arrival
+// ordering across the stochastic arrival processes and several seeds,
+// complementing the exact-spacing test above (which uses `constant`).
+//
+// The law is that arrivals are NON-DECREASING -- deliberately not "strictly
+// increasing". Every sampler reachable through NewArrivalSampler floors its
+// raw IAT to >= 1us, but rescaleIATsToMatchDuration then multiplies by a
+// scale factor that can be < 1 and truncates toward zero, so a rescaled gap
+// of 0 is representable: rescaleIATsToMatchDuration([1,1,1,1000], 1000)
+// returns [0,0,0,1000]. Two arrivals sharing one microsecond is legal and
+// harmless (the downstream merge sorts by ArrivalTime); asserting strict
+// monotonicity would encode a property the rescale does not guarantee.
+//
+// Interiority is deliberately ASYMMETRIC, for the same truncation reason.
+// rescaleIATsToMatchDuration adds its rounding residual only to the LAST
+// element, so the trailing gap is always floored up to >= 1us. No arrival can
+// reach window.EndUs, which makes the upper bound below a genuine law -- and
+// it is the regression #1607 guards against, so it is asserted strictly.
+//
+// Nothing floors the LEADING gap. When the scale factor is < 1, rescaled[0]
+// can truncate to 0 and the first arrival lands exactly on window.StartUs:
+// measured at ~7.5e-5 of draws for the 100 req/s cases below (15 of 200000
+// seeds), with ~1e-2 of those runs containing a zero interior gap for the same
+// reason. An arrival at window.StartUs is legal -- the window is half-open and
+// no guard drops it -- so the lower bound is pinned as >= StartUs. Asserting
+// strict interiority there would encode a property the rescale does not
+// guarantee, exactly as asserting strict monotonicity would.
+func TestGenerateRequestsForWindow_ArrivalsOrderedAndInterior(t *testing.T) {
+	const startUs = int64(1_000_000)
+
+	processes := []string{"poisson", "gamma", "weibull"}
+	cases := []struct {
+		name       string
+		rate       float64
+		durationUs int64
+	}{
+		{"ceil gives 1", 5.0, 100_000},
+		{"ceil gives 10", 10.0, 1_000_000},
+		{"bursty many-request window", 100.0, 1_000_000},
+	}
+
+	for _, process := range processes {
+		for _, tc := range cases {
+			t.Run(process+"/"+tc.name, func(t *testing.T) {
+				numRequests := int(math.Ceil(tc.rate * float64(tc.durationUs) / 1e6))
+				require.Greater(t, numRequests, 0)
+
+				for _, seed := range []int64{1, 2, 3, 17, 42, 99} {
+					clients := windowClientSpec(process, tc.rate, startUs, tc.durationUs)
+					window := clients[0].Lifecycle.Windows[0]
+
+					rng := rand.New(rand.NewSource(seed))
+					requests, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng, nil)
+					require.NoError(t, err)
+
+					require.Equal(t, numRequests, len(requests),
+						"seed %d: count must be ceil(rate*duration)=%d regardless of arrival process",
+						seed, numRequests)
+
+					prev := window.StartUs
+					for i, req := range requests {
+						assert.GreaterOrEqual(t, req.ArrivalTime, prev,
+							"seed %d request %d: arrivals must be non-decreasing (prev=%d, got %d)",
+							seed, i, prev, req.ArrivalTime)
+						assert.GreaterOrEqual(t, req.ArrivalTime, window.StartUs,
+							"seed %d request %d: arrival must be at or after window start", seed, i)
+						assert.Less(t, req.ArrivalTime, window.EndUs,
+							"seed %d request %d: arrival must be strictly before window end", seed, i)
+						prev = req.ArrivalTime
+					}
+				}
+			})
+		}
 	}
 }
