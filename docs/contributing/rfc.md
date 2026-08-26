@@ -6,6 +6,14 @@ Use this template when filing a tracking issue for a feature that introduces new
 
 ---
 
+## Step 0: Baseline Analysis
+
+Before designing, understand the current architecture. Run the [archon baseline analysis](archon/baseline-analysis.md) on the area you'll change. This informs where it's safe to add code, what's risky, and what dependencies exist.
+
+Feed the output into your RFC — it informs modeling decisions and trade-offs.
+
+---
+
 ## When an RFC is Needed
 
 - New subsystem modules (new interface + integration)

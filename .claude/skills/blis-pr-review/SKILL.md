@@ -8,7 +8,11 @@ description: Project-specific PR self-review for BLIS. Evaluates correctness, in
 Invoke the `/pr-review-toolkit:review-pr` skill with the following BLIS-specific review prompt:
 
 ```
-/pr-review-toolkit:review-pr Please perform a thorough review of this PR with respect to both the original issue and its tracking parent issue.
+/pr-review-toolkit:review-pr Please perform a thorough review of this PR with respect to both the original issue and its tracking parent issue (if any). Read both to understand the full plan and where this PR fits.
+
+--- ARCHON CONTEXT ---
+
+Check if `/archon-pr-review` output exists in a previous PR comment (from CI or manual invocation). If it does, incorporate its verdict and findings into your review per @docs/contributing/archon/pr-review-context.md. If it doesn't exist yet, note this but proceed with the review.
 
 Evaluate whether the PR fully and correctly addresses all requirements and reviewer concerns. In particular, assess:
 

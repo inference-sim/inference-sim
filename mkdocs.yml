@@ -132,6 +132,10 @@ nav:
       - RFC Template: contributing/rfc.md
       - Hypothesis Experiments: contributing/hypothesis.md
       - Review Perspectives: contributing/perspectives.md
+      - Archon:
+          - Baseline Analysis: contributing/archon/baseline-analysis.md
+          - Encode Plan: contributing/archon/encode-plan.md
+          - PR Review Context: contributing/archon/pr-review-context.md
       - Standards:
           - Experiment Standards: contributing/standards/experiments.md
           - "Antipattern Rules (R1-R23)": contributing/standards/rules.md
