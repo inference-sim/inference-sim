@@ -10,7 +10,19 @@ Invoke the `/pr-review-toolkit:review-pr` skill with the following BLIS-specific
 ```
 /pr-review-toolkit:review-pr Please perform a thorough review of this PR with respect to both the original issue and its tracking parent issue.
 
-Evaluate whether the PR fully and correctly addresses all requirements and reviewer concerns.
+Evaluate whether the PR fully and correctly addresses all requirements and reviewer concerns. In particular, assess:
+
+Correctness and preservation of invariants
+Separation of concerns and overall design discipline
+Modularity and clarity of API boundaries/contracts
+Behavioral integrity, including both behavioral and non-structural tests
+Test coverage and quality (not just structure, but meaningful validation of behavior)
+Performance implications and potential regressions
+Adherence to our @docs/contributing/standards
+Documentation quality, completeness, and accuracy (both user-facing and developer-facing)
+All reviews and comments in this PR are addressed
+
+--- 10 REVIEW PERSPECTIVES ---
 
 Review from these 10 perspectives (each catches issues the others miss):
 
