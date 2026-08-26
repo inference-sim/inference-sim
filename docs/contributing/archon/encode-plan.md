@@ -2,7 +2,7 @@
 
 After the team agrees on an RFC, encode the design into a machine-checkable `.archon` plan.
 
-**Requires:** archon v0.2.0+. Build and usage: see [archon README](https://github.com/AI-native-Systems-Research/archon#quick-start).
+**Requires:** archon v0.2.0+. See [archon README](https://github.com/AI-native-Systems-Research/archon) for plan syntax, compile/dist/slice commands, and full examples.
 
 ## What to run
 
@@ -25,9 +25,3 @@ specs/NNN-feature-name/
   feature.archon       ← machine-checkable plan
   feature.plan.json    ← compiled graph
 ```
-
-## Full reference
-
-- Plan syntax (holes, boxes, arrows, invariants): [archon README — Flow 2](https://github.com/AI-native-Systems-Research/archon#flow-2-design-phase--pr-review-declare-intent-before-coding)
-- Plan syntax detailed reference: [docs/plan-syntax.md](https://github.com/AI-native-Systems-Research/archon/blob/main/docs/plan-syntax.md)
-- Real end-to-end tracking across PRs: [demo/flow3-blis-design](https://github.com/AI-native-Systems-Research/archon/blob/main/demo/flow3-blis-design/README.md)

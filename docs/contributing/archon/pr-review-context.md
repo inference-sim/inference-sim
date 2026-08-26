@@ -2,7 +2,7 @@
 
 How to incorporate archon's PR review output during code review.
 
-**Requires:** archon v0.2.0+. See [archon README](https://github.com/AI-native-Systems-Research/archon#quick-start).
+**Requires:** archon v0.2.0+. See [archon README](https://github.com/AI-native-Systems-Research/archon) for verdict definitions, dist tracking, and full examples.
 
 ## When it runs
 
@@ -23,8 +23,3 @@ How to incorporate archon's PR review output during code review.
 2. **FAST-TRACK** → no architectural concern, proceed with normal review
 3. **REALIZES** → verify dist reduction matches sub-issue expectation
 4. **EXCEEDS/CONFLICTS** → flag to maintainer, may need plan-update PR
-
-## Full reference
-
-- Verdict definitions and examples: [archon README — Plan verdicts](https://github.com/AI-native-Systems-Research/archon#plan-verdicts)
-- Real PR tracking with dist: [demo/flow3-blis-design](https://github.com/AI-native-Systems-Research/archon/blob/main/demo/flow3-blis-design/README.md)

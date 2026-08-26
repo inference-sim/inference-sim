@@ -2,7 +2,7 @@
 
 Run before designing a large feature to understand the current architecture, blast radius, and health of the area you'll change.
 
-**Requires:** archon v0.2.0+. Build and usage: see [archon README](https://github.com/AI-native-Systems-Research/archon#quick-start).
+**Requires:** archon v0.2.0+. See [archon README](https://github.com/AI-native-Systems-Research/archon) for build instructions, full command reference, and examples.
 
 ## What to run
 
@@ -19,8 +19,3 @@ archon-go evidence $REPO                        # are contracts test-covered?
 - **Evidence** → tells you if existing behavior is well-tested before you change it
 
 Feed these findings into your RFC (modeling decisions, trade-offs).
-
-## Full reference
-
-- Command details + example output: [archon README — Flow 1](https://github.com/AI-native-Systems-Research/archon#flow-1-pr-review-existing-code-no-setup)
-- Real end-to-end walkthrough: [demo/flow3-blis-design](https://github.com/AI-native-Systems-Research/archon/blob/main/demo/flow3-blis-design/README.md)
