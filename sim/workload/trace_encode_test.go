@@ -34,6 +34,22 @@ func TestEncodeSessionToTraceRecords_DeltaLaw(t *testing.T) {
 		t.Errorf("round2 delta = %d, want 0 (non-monotone clamp)", recs[2].InputTokens)
 	}
 
+	// Compaction marker (#1609): the non-monotone round (delta would clamp to a
+	// negative) carries the recorded absolute input as a reset target; every
+	// other round leaves it nil. Round 0 never carries a reset.
+	if recs[0].InputTokensReset != nil {
+		t.Errorf("round0 InputTokensReset = %v, want nil", *recs[0].InputTokensReset)
+	}
+	if recs[1].InputTokensReset != nil {
+		t.Errorf("round1 (monotone) InputTokensReset = %v, want nil", *recs[1].InputTokensReset)
+	}
+	if recs[2].InputTokensReset == nil {
+		t.Fatalf("round2 (compaction) InputTokensReset = nil, want &120")
+	}
+	if *recs[2].InputTokensReset != 120 {
+		t.Errorf("round2 InputTokensReset = %d, want 120 (recorded absolute)", *recs[2].InputTokensReset)
+	}
+
 	for i, r := range recs {
 		if r.RoundIndex != i {
 			t.Errorf("record %d RoundIndex = %d, want %d", i, r.RoundIndex, i)
@@ -62,5 +78,26 @@ func TestEncodeSessionToTraceRecords_DeltaLaw(t *testing.T) {
 	}
 	if recs[2].OutputTokens != 10 || recs[2].Status != "error" {
 		t.Errorf("round2 out/status = %d/%q, want 10/error", recs[2].OutputTokens, recs[2].Status)
+	}
+}
+
+// TestEncodeSessionToTraceRecords_MonotoneNoReset verifies a strictly-growing
+// session emits NO reset markers (#1609): every reconstruction is exact via the
+// delta law alone, so the compaction column stays absent (INV-6 byte-identity).
+func TestEncodeSessionToTraceRecords_MonotoneNoReset(t *testing.T) {
+	rounds := []NormalizedRound{
+		{InputTokensAbs: 100, OutputTokens: 50, Status: "ok"},
+		{InputTokensAbs: 200, OutputTokens: 80, Status: "ok"}, // 200 >= 100+50
+		{InputTokensAbs: 300, OutputTokens: 10, Status: "ok"}, // 300 >= 200+80
+	}
+	recs := EncodeSessionToTraceRecords("sess", rounds)
+	for i, r := range recs {
+		if r.InputTokensReset != nil {
+			t.Errorf("round%d InputTokensReset = %d, want nil (monotone)", i, *r.InputTokensReset)
+		}
+	}
+	// Deltas: 100, 50 (200-100-50), 20 (300-200-80).
+	if recs[1].InputTokens != 50 || recs[2].InputTokens != 20 {
+		t.Errorf("deltas = [%d, %d], want [50, 20]", recs[1].InputTokens, recs[2].InputTokens)
 	}
 }

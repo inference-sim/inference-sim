@@ -214,11 +214,13 @@ func TestSessionPool_RefillAndConservation(t *testing.T) {
 // what a shared cursor would produce.
 func TestBuildSessionPool_ClonesHaveIndependentSamplers(t *testing.T) {
 	src := SessionBlueprint{
-		SessionID:     "s0",
-		MaxRounds:     3,
-		Horizon:       1 << 62,
-		InputSampler:  &SequenceSampler{values: []int{10, 20, 30}},
-		OutputSampler: &SequenceSampler{values: []int{1, 2, 3}},
+		SessionID:         "s0",
+		MaxRounds:         3,
+		Horizon:           1 << 62,
+		ContextGrowth:     "accumulate",
+		InputSampler:      &SequenceSampler{values: []int{10, 20, 30}},
+		OutputSampler:     &SequenceSampler{values: []int{1, 2, 3}},
+		InputResetSampler: &SequenceSampler{values: []int{-1, 50, -1}}, // #1609: round-1 compaction reset
 	}
 	srcR0 := &sim.Request{ID: "r_s0", SessionID: "s0", RoundIndex: 0, State: sim.StateQueued}
 
@@ -228,6 +230,18 @@ func TestBuildSessionPool_ClonesHaveIndependentSamplers(t *testing.T) {
 	// Pointer identity must differ: the clone must not alias the source's sampler.
 	if clone.InputSampler == src.InputSampler {
 		t.Fatalf("clone.InputSampler shares the same object as src.InputSampler")
+	}
+	// The #1609 reset sampler must likewise be cloned to an independent cursor —
+	// otherwise a source session and its duplicate corrupt each other's per-round
+	// compaction sequence.
+	if clone.InputResetSampler == src.InputResetSampler {
+		t.Fatalf("clone.InputResetSampler shares the same object as src.InputResetSampler")
+	}
+	// Advance the source's reset cursor one step (-1), then the clone must still
+	// yield the FIRST value (-1), not the source's advanced position.
+	_ = src.InputResetSampler.Sample(nil) // -1
+	if got := clone.InputResetSampler.Sample(nil); got != -1 {
+		t.Fatalf("clone InputResetSampler sample #1 = %d, want -1 (independent cursor)", got)
 	}
 
 	// Advance the source's cursor two steps: 10, then 20.

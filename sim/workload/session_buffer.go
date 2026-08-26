@@ -88,6 +88,25 @@ func (s *sessionTokenBuffer) Slice(start, end int64) []sim.TokenID {
 	return s.b[start:end]
 }
 
+// Reset discards the buffer's accumulated context and re-seeds it with a copy of
+// toks, returning the new absolute [start, end) = [0, len(toks)). It is the shrink
+// operation the append-only buffer previously lacked (#1609): at a context-compaction
+// boundary the growing prefix is replaced by a fresh, shorter segment.
+//
+// A brand-new backing array is allocated (never an in-place s.b[:0] reuse) so slices
+// previously returned by Slice() — e.g. the just-completed round's Request.InputTokens —
+// keep pointing at the old array and remain content-correct, matching the reallocation-
+// hazard safety model documented on sessionTokenBuffer (a Slice result is read-only for
+// the simulator, and the old array's data is never mutated). The caller passes a
+// freshly-generated slice; copying keeps Reset's contract independent of caller aliasing,
+// mirroring Append.
+func (s *sessionTokenBuffer) Reset(toks []sim.TokenID) (start, end int64) {
+	nb := make([]sim.TokenID, len(toks))
+	copy(nb, toks)
+	s.b = nb
+	return 0, int64(len(nb))
+}
+
 // Len returns the number of tokens currently in the buffer.
 func (s *sessionTokenBuffer) Len() int64 {
 	return int64(len(s.b))

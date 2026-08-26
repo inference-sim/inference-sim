@@ -1342,3 +1342,202 @@ func TestAccumulateReplay_TransitivityAndLengthCap(t *testing.T) {
 		}
 	})
 }
+
+// TestAccumulateReplay_CompactionResetsBuffer covers #1609: a round whose trace
+// carries an input_tokens_reset marker (context compaction) re-seeds the accumulate
+// buffer to the recorded absolute — shrinking the reconstructed input to in_N exactly
+// and intentionally breaking strict prefix identity across the boundary — while
+// monotone rounds (before AND after the compaction) keep the growing-prefix behavior.
+func TestAccumulateReplay_CompactionResetsBuffer(t *testing.T) {
+	// Recorded absolutes: 100 → 150(mono) → 50(COMPACTION, 50 < 150+20) → 80(mono).
+	// As delta-encoded records: round2 carries delta 0 + InputTokensReset=&50.
+	trace := &TraceV2{
+		Header: TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
+		Records: []TraceRecord{
+			{RequestID: 0, SessionID: "s", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0},
+			{RequestID: 1, SessionID: "s", RoundIndex: 1, InputTokens: 40, OutputTokens: 20, ArrivalTimeUs: 1_000_000},
+			{RequestID: 2, SessionID: "s", RoundIndex: 2, InputTokens: 0, OutputTokens: 5, ArrivalTimeUs: 2_000_000, InputTokensReset: i64p(50)},
+			{RequestID: 3, SessionID: "s", RoundIndex: 3, InputTokens: 25, OutputTokens: 5, ArrivalTimeUs: 3_000_000},
+		},
+	}
+	r0, bps, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	// The loader must build a reset sampler for a compaction-bearing session.
+	if bps[0].InputResetSampler == nil {
+		t.Fatal("InputResetSampler = nil, want a sampler (session carries a compaction marker)")
+	}
+	sm := NewSessionManager(bps)
+
+	next := func(req *sim.Request, tick int64) *sim.Request {
+		req.State = sim.StateCompleted
+		req.ProgressIndex = int64(req.InputLen()) + int64(len(req.OutputTokens)) // full output generated
+		fu := sm.OnComplete(req, tick)
+		if len(fu) != 1 {
+			t.Fatalf("expected 1 follow-up, got %d", len(fu))
+		}
+		return fu[0]
+	}
+
+	round1 := next(r0[0], 1_000_000)
+	if round1.InputLen() != 150 { // 100 + 10 output + 40 delta — normal accumulate
+		t.Fatalf("round1 len = %d, want 150 (monotone accumulate)", round1.InputLen())
+	}
+	round1In := append([]sim.TokenID{}, round1.FullInputTokens()...)
+
+	round2 := next(round1, 2_000_000)
+	// BC-2: buffer shrinks to the recorded absolute (50), NOT the over-counted
+	// 150+20+0 = 170 the append-only buffer would have produced.
+	if round2.InputLen() != 50 {
+		t.Fatalf("compaction round2 len = %d, want 50 (re-seeded to recorded absolute, not 170)", round2.InputLen())
+	}
+	// BC-3: strict prefix identity is broken across the compaction boundary —
+	// round2 is a fresh segment, not a token-prefix of round1.
+	round2In := round2.FullInputTokens()
+	prefixIdentical := true
+	for i := 0; i < 50; i++ {
+		if round2In[i] != round1In[i] {
+			prefixIdentical = false
+			break
+		}
+	}
+	if prefixIdentical {
+		t.Error("round2 is a strict prefix of round1 — compaction must break prefix identity (#1609)")
+	}
+
+	// BC-3 (other direction): a monotone round AFTER the compaction resumes the
+	// growing-prefix behavior from the re-seeded segment. round3 = 50 + 5 out + 25 delta.
+	round2FullIn := append([]sim.TokenID{}, round2In...)
+	round3 := next(round2, 3_000_000)
+	if round3.InputLen() != 80 {
+		t.Fatalf("post-compaction round3 len = %d, want 80 (50 + 5 output + 25 delta)", round3.InputLen())
+	}
+	got := round3.FullInputTokens()
+	for i := 0; i < 50; i++ {
+		if got[i] != round2FullIn[i] {
+			t.Fatalf("round3 token[%d] diverged from round2 — post-compaction prefix must be preserved", i)
+		}
+	}
+}
+
+// TestAccumulateReplay_ZeroReset_EmptyBuffer exercises the degenerate `&0` reset
+// end-to-end through OnComplete (blis-pr-review coverage note): a compaction to an
+// absolute of 0 (full context discarded) makes the buffer empty. The follow-up round
+// then carries a 0-length input, and the buffer-continuity invariant still holds on the
+// NEXT round (req.InputLen()==buf.Len()==0). No shipped converter emits a 0-token round
+// (nil/0 in/out rounds are dropped at conversion), but the loader accepts &0, so this
+// pins that the reset path handles it without panicking rather than assuming InputLen()>0.
+func TestAccumulateReplay_ZeroReset_EmptyBuffer(t *testing.T) {
+	trace := &TraceV2{
+		Header: TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
+		Records: []TraceRecord{
+			{RequestID: 0, SessionID: "s", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0},
+			// round 1 compacts to an absolute of 0 (full context discarded).
+			{RequestID: 1, SessionID: "s", RoundIndex: 1, InputTokens: 0, OutputTokens: 5, ArrivalTimeUs: 1_000_000, InputTokensReset: i64p(0)},
+			// round 2 grows again from the empty buffer.
+			{RequestID: 2, SessionID: "s", RoundIndex: 2, InputTokens: 30, OutputTokens: 5, ArrivalTimeUs: 2_000_000},
+		},
+	}
+	r0, bps, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	sm := NewSessionManager(bps)
+	next := func(req *sim.Request, tick int64) *sim.Request {
+		req.State = sim.StateCompleted
+		req.ProgressIndex = int64(req.InputLen()) + int64(len(req.OutputTokens))
+		fu := sm.OnComplete(req, tick)
+		if len(fu) != 1 {
+			t.Fatalf("expected 1 follow-up, got %d", len(fu))
+		}
+		return fu[0]
+	}
+
+	round1 := next(r0[0], 1_000_000)
+	if round1.InputLen() != 0 {
+		t.Fatalf("zero-reset round1 InputLen = %d, want 0 (buffer fully reset)", round1.InputLen())
+	}
+	// Continuity must still hold on the next round: growing from an empty buffer.
+	// round2 = 0 (buffer) + 5 (round1 actual output) + 30 (delta) = 35.
+	round2 := next(round1, 2_000_000)
+	if round2.InputLen() != 35 {
+		t.Fatalf("post-zero-reset round2 InputLen = %d, want 35 (0 + 5 output + 30 delta)", round2.InputLen())
+	}
+}
+
+// TestAccumulateReplay_ConsecutiveCompactions covers back-to-back compaction rounds
+// (qa-review G9): a session that compacts on two consecutive turns (abs 200 → 150 → 100)
+// must re-seed the buffer to the recorded absolute EACH round, with the continuity
+// invariant holding across successive resets (each reset installs a fresh buffer; the
+// next completion validates its length before resetting again) and strict prefix identity
+// broken at every compaction boundary.
+func TestAccumulateReplay_ConsecutiveCompactions(t *testing.T) {
+	// abs: 200, then 150 (150 < 200+10), then 100 (100 < 150+5) — two compactions in a row.
+	trace := &TraceV2{
+		Header: TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
+		Records: []TraceRecord{
+			{RequestID: 0, SessionID: "s", RoundIndex: 0, InputTokens: 200, OutputTokens: 10, ArrivalTimeUs: 0},
+			{RequestID: 1, SessionID: "s", RoundIndex: 1, InputTokens: 0, OutputTokens: 5, ArrivalTimeUs: 1_000_000, InputTokensReset: i64p(150)},
+			{RequestID: 2, SessionID: "s", RoundIndex: 2, InputTokens: 0, OutputTokens: 5, ArrivalTimeUs: 2_000_000, InputTokensReset: i64p(100)},
+		},
+	}
+	r0, bps, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	sm := NewSessionManager(bps)
+	next := func(req *sim.Request, tick int64) *sim.Request {
+		req.State = sim.StateCompleted
+		req.ProgressIndex = int64(req.InputLen()) + int64(len(req.OutputTokens))
+		fu := sm.OnComplete(req, tick)
+		if len(fu) != 1 {
+			t.Fatalf("expected 1 follow-up, got %d", len(fu))
+		}
+		return fu[0]
+	}
+
+	round1 := next(r0[0], 1_000_000)
+	round1In := append([]sim.TokenID{}, round1.FullInputTokens()...)
+	if round1.InputLen() != 150 {
+		t.Fatalf("compaction round1 len = %d, want 150 (re-seed to recorded absolute)", round1.InputLen())
+	}
+	// Second consecutive compaction: buffer must reset AGAIN to the new absolute (100),
+	// not accumulate on top of the first reset (which would give 150+5+0 = 155).
+	round2 := next(round1, 2_000_000)
+	if round2.InputLen() != 100 {
+		t.Fatalf("consecutive compaction round2 len = %d, want 100 (second re-seed, not 155)", round2.InputLen())
+	}
+	// Strict prefix identity broken at the second boundary too (fresh segment).
+	round2In := round2.FullInputTokens()
+	prefixIdentical := true
+	for i := 0; i < 100; i++ {
+		if round2In[i] != round1In[i] {
+			prefixIdentical = false
+			break
+		}
+	}
+	if prefixIdentical {
+		t.Error("round2 is a strict prefix of round1 — each consecutive compaction must break prefix identity")
+	}
+}
+
+// TestAccumulateReplay_NoResetSampler_WhenMonotone pins BC-5: an accumulate trace
+// with no compaction marker builds NO reset sampler, so replay stays on the
+// pre-#1609 append-only path (byte-identical, INV-6).
+func TestAccumulateReplay_NoResetSampler_WhenMonotone(t *testing.T) {
+	trace := &TraceV2{
+		Header: TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
+		Records: []TraceRecord{
+			{RequestID: 0, SessionID: "s", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0},
+			{RequestID: 1, SessionID: "s", RoundIndex: 1, InputTokens: 40, OutputTokens: 20, ArrivalTimeUs: 1_000_000},
+		},
+	}
+	_, bps, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if bps[0].InputResetSampler != nil {
+		t.Error("InputResetSampler != nil for a monotone accumulate session — must be nil (INV-6)")
+	}
+}

@@ -227,17 +227,22 @@ go build -o blis main.go
 # = uncapped, since Weka gaps are genuine away-from-keyboard times). Reads `in` directly
 # (never len(hash_ids)×64). Weka ISL is huge (p50 ≈ 110K, p90 ≈ 395K), so replay MUST raise
 # --max-model-len (the ~41K default drops every request unservable) and scale --total-kv-blocks.
-# Fidelity note (important): real agentic traces compact/trim context heavily — ~30% of
+# Context compaction (#1609): real agentic traces compact/trim context heavily — ~30% of
 # rounds on the full 051926 dataset (219 sessions, 37.7K rounds) have in_N < in_{N-1}+out_{N-1}.
-# Such non-monotone rounds clamp their input delta to 0 (the accumulate buffer can only grow,
-# never shrink), so it OVER-counts the true cumulative input by ≈3–4× on real Claude Code
-# traffic (+312% on this dataset). Replayed input length / KV pressure / hit-rate is therefore
-# a substantial UPPER BOUND — do NOT read it as a faithful reproduction of the recorded ISL.
-# (Property of the PR-A/PR-B accumulate delta law, not this converter; the conversion is exact
-# per that law. Faithful compaction support is tracked in #1609.) The recorded think time is
-# non-lossy (#1608): a genuinely-zero recorded think (an overlapping turn) is a &0 in the
-# think_time_us column, distinct from a not-recorded (empty) cell, so an all-overlap session
-# uses the recorded zeros rather than degrading to arrival-gap think at replay.
+# The shared encoder now emits a per-round input_tokens_reset marker (the recorded absolute)
+# on exactly those non-monotone rounds, and accumulate closed-loop replay RE-SEEDS its growing
+# buffer to that absolute at the boundary — so the reconstructed input tracks the recorded
+# cumulative input (previously it clamped the delta to 0 and over-counted by ≈3–4× / +312% on
+# this dataset). Re-seeding intentionally breaks strict prefix identity across the compaction
+# boundary (the summary is not a literal prefix of the pre-compaction buffer), which also
+# corrects the prefix-cache hit-rate over-estimate. The marker is a trailing conditional CSV
+# column, absent for monotone sessions and for `blis run`, so a trace without any compaction
+# round replays byte-identically to before (INV-6). Traces converted by an OLDER build (no
+# marker column) still over-count — re-run convert to get compaction-aware output.
+# The recorded think time is likewise non-lossy (#1608): a genuinely-zero recorded think (an
+# overlapping turn) is a &0 in the think_time_us column, distinct from a not-recorded (empty)
+# cell, so an all-overlap session uses the recorded zeros rather than degrading to arrival-gap
+# think at replay.
 ./blis convert weka --input traces.jsonl --trace-output corpus \
   --context-growth accumulate --max-think-time 0
 #
