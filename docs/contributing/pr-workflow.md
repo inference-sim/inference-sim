@@ -72,7 +72,7 @@ Before writing the plan, scan the source document (design doc, macro plan sectio
 2. **Contradictions with existing invariants or standards** — check against `standards/invariants.md` and `standards/rules.md`
 3. **Missing information needed for planning** — which extension type? which invariants affected? which construction sites?
 
-**Output:** A list of resolved clarifications, appended to the micro plan's Deviation Log with reason `CLARIFICATION`.
+**Output:** A list of resolved clarifications, noted in the implementation plan.
 
 > **CLARIFICATION vs CORRECTION:** Use `CLARIFICATION` when the source was ambiguous or incomplete and you chose an interpretation. Use `CORRECTION` when the source was factually wrong about existing code or behavior.
 
@@ -121,7 +121,7 @@ Check for: design bugs, mathematical errors, logical inconsistencies, scale mism
 
 #### Perspective 2: Cross-Document Consistency
 
-Check for: scope mismatch between micro plan and source document, stale file paths, deviation log completeness. Does the deviation log account for all differences between what the source says and what the micro plan does? Check for stale references.
+Check for: scope mismatch between plan and source issue, stale file paths. Does the plan account for all differences between what the issue says and what the plan does? Check for stale references.
 
 **Catches:** Stale references, scope mismatch, missing deviations, wrong file paths.
 
@@ -191,7 +191,7 @@ Final human review of the plan (after automated review).
 
 1. **Part 1 (Design Validation)** — Review behavioral contracts, component interaction, risks
 2. **Part 2 (Executable Tasks)** — Verify task breakdown makes sense, no dead code
-3. **Deviation Log** — Check if deviations from source document are justified
+3. **Deviations** — Check if differences from source issue are justified
 4. **Appendix** — Spot-check file-level details for accuracy
 
 For compact-format plans (Small tier): review only behavioral contracts (from item 1) and task completeness (from item 2). Skip component interaction, deviation log (item 3), and appendix (item 4). Also review the sanity checklist, which compact plans include directly.

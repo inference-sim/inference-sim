@@ -124,7 +124,7 @@ For a complete worked example of a hypothesis bundle, see **[Hypothesis Bundles 
 Run the **5-perspective Design Review** on the hypothesis bundle using the universal convergence protocol.
 
 ```
-/convergence-review h-design
+run 5 design perspectives in parallel (see perspectives.md)
 ```
 
 The review covers the full bundle — not just H-main, but all ablation, control, and robustness arms.
@@ -166,7 +166,7 @@ flowchart TD
 
 **3b — Implement experiments.** For each hypothesis arm, create `run.sh` (sources shared harness) and `analyze.py`. All arms share one `run.sh` — they are independent and can execute in parallel.
 
-**3c — Code Review.** 5-perspective review on all experiment code BEFORE running experiments (`/convergence-review h-code`).
+**3c — Code Review.** 5-perspective review on all experiment code BEFORE running experiments (run 5 code perspectives in parallel, see perspectives.md).
 
 **3d — Execute.** Run all hypothesis arms across 3+ seeds.
 
@@ -333,9 +333,9 @@ The number of hypothesis arms scales with strategy complexity (see the [Bundle S
 | Skill / Process | Role in Strategy Evolution |
 |---|---|
 | `/research-ideas` | Generates candidate strategies (Step 2a) |
-| `/hypothesis-experiment` | Guided Steps 0-10 experiment workflow (project skill) |
+| `docs/contributing/hypothesis.md` | Steps 0-10 experiment workflow |
 | `/hypothesis-test` | Experiment scaffolding: run.sh, analyze.py templates (sdlc-plugins) |
-| `/convergence-review` | Gates Design Review, Code Review, FINDINGS Review |
+| `docs/contributing/perspectives.md` | Review perspectives for Design, Code, FINDINGS gates |
 | `/brainstorming` | Explores solution space before committing to candidates |
 | [Hypothesis experiment process](../contributing/hypothesis.md) | Defines the detailed per-arm workflow |
 
@@ -348,12 +348,12 @@ The number of hypothesis arms scales with strategy complexity (see the [Bundle S
 | `/research-ideas` | 2a | Structured idea generation with iterative external LLM review |
 | `/brainstorming` | 2a | Explore solution space before committing to an approach |
 | `/review-plan` | 2a | Send candidate designs to external LLMs for technical review |
-| `/convergence-review` (h-design) | 2c | 5-perspective design review on hypothesis bundle |
-| `/hypothesis-experiment` | 3b | Guided Steps 0-10 experiment workflow (project skill) |
+| Review perspectives (design) | 2c | 5-perspective design review (see `perspectives.md`) |
+| `hypothesis.md` Steps 0-10 | 3b | Full experiment workflow |
 | `/hypothesis-test` | 3b | Experiment scaffolding: run.sh, analyze.py templates (sdlc-plugins) |
 | `/test-driven-development` | 3a | TDD for new policy implementations |
-| `/convergence-review` (h-code) | 3c | 5-perspective code review on experiment code |
-| `/convergence-review` (h-findings) | 3g | 10-perspective findings review |
+| Review perspectives (code) | 3c | 5-perspective code review (see `perspectives.md`) |
+| Review perspectives (findings) | 3g | 10-perspective findings review (see `perspectives.md`) |
 | `/verification-before-completion` | 3h | Confirm results before claiming success |
 | `/dispatching-parallel-agents` | 3d | Parallel hypothesis arm execution |
 | `/commit-push-pr` | 5 | Clean git integration after validation |
@@ -362,7 +362,7 @@ The number of hypothesis arms scales with strategy complexity (see the [Bundle S
     These skills are [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugins. To install them:
 
     - **`/brainstorming`, `/test-driven-development`, `/verification-before-completion`, `/dispatching-parallel-agents`, `/commit-push-pr`**: Install the [superpowers](https://github.com/anthropics/claude-code-plugins) plugin — `claude plugins add superpowers`
-    - **`/convergence-review`, `/hypothesis-experiment`**: Project-local skills defined in this repository's `.claude/skills/` directory. Available automatically when Claude Code is run from the repo root.
+    - **Review perspectives**: See `docs/contributing/perspectives.md` for the perspective checklists. Run manually or use `/blis-pr-review` for automated review.
     - **`/hypothesis-test`**: Install the [sdlc-plugins](https://github.com/inference-sim/sdlc-plugins) plugin — `claude plugins add sdlc-plugins`
     - **`/research-ideas`, `/review-plan`**: Install the [research-ideas](https://github.com/anthropics/claude-code-plugins) plugin — `claude plugins add research-ideas`
 

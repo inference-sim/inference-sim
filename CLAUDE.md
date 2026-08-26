@@ -393,7 +393,7 @@ This project follows BDD/TDD practices. When implementing features:
 
 Diligently follow the workflow in docs/contributing/pr-workflow.md. Before I approve any plan, validate it: 1) Check every task's dependencies — can each task actually start given what comes before it? 2) Verify all sections from the template are present and non-empty. 3) Read the executive summary as if you're a new team member — is it clear and human-readable? 4) Flag any tasks that seem under-specified for implementation. List all issues found.
 
-For new features that introduce module boundaries or modify the architecture, a design doc (per the design guidelines) should exist before micro-planning begins. For smaller changes (bug fixes, new policy templates behind existing interfaces), a design doc is optional — proceed directly to micro-planning.
+For new features that introduce module boundaries or modify the architecture, an RFC (per `docs/contributing/rfc.md`) should exist before implementation planning begins. For smaller changes (bug fixes, new policy templates behind existing interfaces), an RFC is optional — proceed directly to `docs/contributing/pr-workflow.md`.
 
 ### Code Review Standards
 
