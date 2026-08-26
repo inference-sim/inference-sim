@@ -268,6 +268,11 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 			// newInputTokens (generated above) is intentionally unused here: a compaction
 			// round's encoded delta is 0, so it is an empty slice — the reset segment below
 			// replaces the whole buffer instead of appending it.
+			//
+			// The append branch's over-cap corruption defense (actualOutputLen >
+			// len(OutputTokens) => cancel session) is deliberately bypassed here: the reset
+			// discards the completed round's output entirely (it was folded into the recorded
+			// in_N), so ProgressIndex/actualOutputLen drift cannot propagate into the buffer.
 			resetToks := sim.GenerateRandomTokenIDs(bp.RNG, resetTarget)
 			_, inputEnd := sess.buf.Reset(resetToks)
 			inputTokens = sess.buf.Slice(0, inputEnd)
