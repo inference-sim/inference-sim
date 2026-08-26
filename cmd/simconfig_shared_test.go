@@ -77,6 +77,7 @@ func TestRunCmd_SimConfigFlagsParity(t *testing.T) {
 		"alpha-coeffs", "beta-coeffs",
 		"total-kv-blocks", "block-size-in-tokens", "max-model-len",
 		"gpu-memory-utilization", "model-config-folder", "hardware-config",
+		"gpus-per-node", "inter-node-bandwidth", "inter-node-latency",
 	}
 	for _, name := range latencyFlags {
 		runFlag := runCmd.Flags().Lookup(name)
@@ -172,6 +173,7 @@ func TestBothCommands_SimConfigFlagsHaveIdenticalDefaults(t *testing.T) {
 		"per-band-capacity", "usage-limit-threshold",
 		"queue-shedding", "dispatch-tick-interval",
 		"in-flight-eviction",
+		"gpus-per-node", "inter-node-bandwidth", "inter-node-latency",
 	}
 	for _, name := range sharedFlags {
 		runFlag := runCmd.Flags().Lookup(name)

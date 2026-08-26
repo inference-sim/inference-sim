@@ -78,6 +78,13 @@ type SimConfig struct {
 	// zero value is inert: unset => the subsystem is a no-op and output is
 	// byte-identical to a pre-feature build (INV-6). See sim/lora.
 	LoRAConfig
+	// NetworkConfig is the 8th module sub-config (inter-node interconnect cost,
+	// #1530). Its zero value is inert: unset => the trained-physics latency model
+	// charges no cross-node cost and StepTime is byte-identical to a pre-feature
+	// build (INV-6, INV-BC-DP1). Consumed by the latency model via
+	// latency.WithNetworkConfig. Always accessed qualified (cfg.NetworkConfig) —
+	// its Validate() intentionally does not promote onto SimConfig.
+	NetworkConfig
 
 	// SLO priority overrides for preemption victim selection (--preemption-policy priority).
 	// nil = use GAIE defaults (critical=4, standard=3, batch=-1, sheddable=-2, background=-3).

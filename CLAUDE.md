@@ -17,6 +17,18 @@ go build -o blis main.go
 # Run with default model
 ./blis run --model qwen/qwen3-14b
 
+# Run with inter-node network cost (#1530, trained-physics only). --gpus-per-node sets the
+# node size; a TP collective (group=tp) or DEP expert all-to-all (group=TP·DP) larger than it
+# is charged for its cross-node hops at --inter-node-bandwidth (GB/s) + --inter-node-latency
+# (ms), instead of on-package NVLink. Omitting --gpus-per-node (default 0) is inert and
+# byte-identical to a pre-feature build. Same flags on `blis replay` reproduce the StepTime
+# (INV-13). Multi-node TP all-reduce example (tp=8 spanning 2 nodes of 4 over ~50 GB/s IB):
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 8 \
+  --gpus-per-node 4 --inter-node-bandwidth 50 --inter-node-latency 0.005
+# Wide-EP (multi_node_dep) example: TP within node, DP across nodes (moeGroup=TP·DP spans):
+./blis run --model deepseek-ai/deepseek-v2-lite --hardware H100 --tp 4 --dp 2 \
+  --enable-expert-parallel --gpus-per-node 4 --inter-node-bandwidth 50
+
 # Run with goodput SLO targets (#1413). --slo-ttft / --slo-itl / --slo-e2e accept
 # class=duration[,class=duration...] using Go duration syntax. Precedence:
 # CLI > trace header > workload spec. Distinct from --slo-targets (dispatch ordering).
@@ -614,6 +626,8 @@ Two latency model modes (trained-physics, roofline), selected via `--latency-mod
 **Roofline model**: Pure analytical model available via explicit `--latency-model roofline` flag. Useful when you want FLOPs/bandwidth-based estimation without learned corrections.
 
 See [`docs/guide/latency-models.md`](docs/guide/latency-models.md) for details.
+
+**Inter-node network cost (#1530, trained-physics only)**: By default the trained-physics comm terms (`tpAllReduceBasis` TP all-reduce, `moeDispatchBasis` DEP expert all-to-all) divide byte volume by `bwHbmUs` (on-package HBM/NVLink), so cross-node collective traffic is free. `sim.NetworkConfig` (`--gpus-per-node`, `--inter-node-bandwidth` GB/s, `--inter-node-latency` ms) charges it: a collective whose participant group exceeds `--gpus-per-node` (TP group = `tp`; MoE all-to-all group = `moeGroup` = `TP·DP`) is scored as spanning `ceil(group/gpus_per_node)` nodes, and its cross-node fraction `(n-1)/n` of the ring/all-to-all volume is charged at the inter-node bandwidth (an effective rate, like `--pd-transfer-bandwidth`; **no learned β** — β₄ absorbs the NVLink/HBM ratio, which must not re-apply to the fabric) plus a fixed per-collective latency. Injected via the `latency.WithNetworkConfig` option (no `NewModelHardwareConfig` churn). **Inert by default** (`--gpus-per-node 0`): the term is exactly `0.0`, so every config expressible today is byte-identical to a pre-feature build (INV-6/INV-BC-DP1) — the guarantee is conditional on the network model being off or the group fitting in one node. Topology is a **config input, not a placement-derived signal** (mirroring `--tp`/`--dp`): both `blis run` and `blis replay` build it from the same flags, so run/replay parity (INV-13) holds by construction with no TraceV2 round-trip. `--gpus-per-node` requires `--latency-model trained-physics`, and an active config without a positive `--inter-node-bandwidth` (or fabric knobs set without `--gpus-per-node`) is a hard CLI error (R1). This is the foundation the multi-node placement work (#1529) will drive from real GPU spans; until then the node span is declared. `blis observe` takes timing from the real server, so it is unaffected.
 
 **Quantized model support**: Three-tier auto-detection of weight precision: (1) `quantization_config` in HF `config.json` — GPTQ/AWQ (`bits`), FP8 (implicit), compressed-tensors (`config_groups.*.weights.num_bits`); (2) model name conventions (`w4a16` → 0.5, `FP8` → 1.0 via `InferWeightBytesFromModelName`); (3) fallback to `BytesPerParam` from `torch_dtype`. Uses quantized weight precision for weight bandwidth and KV capacity calculations while keeping compute dtype for KV cache and activations. `ModelConfig.WeightBytesPerParam` (0=fallback to `BytesPerParam`) with `EffectiveWeightBytesPerParam()` accessor decouples weight storage precision from compute/KV dtype.
 

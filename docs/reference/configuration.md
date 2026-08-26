@@ -146,6 +146,9 @@ Maps to `ModelHardwareConfig`.
 | `--hardware` | string | "" | GPU type. Bundled options: `H100`, `A100-SXM`, `A100-80`. If empty, loaded from `defaults.yaml`. Add new GPUs to `hardware_config.json`. |
 | `--tp` | int | 0 | Tensor parallelism degree. If 0, loaded from `defaults.yaml`. |
 | `--max-model-len` | int64 | 0 | Max total sequence length (input + output) in tokens. 0 = unlimited. Mirrors vLLM's `--max-model-len`. Auto-derived from `max_position_embeddings` in HuggingFace `config.json` for roofline/trained-physics backends. Applies `rope_scaling` factor for types `linear`, `dynamic`, `yarn`, `default`, `mrope`; excludes `su`, `longrope`, `llama3`; skips entirely for `gemma3` models. Capped at KV-feasible maximum. |
+| `--gpus-per-node` | int | 0 | Inter-node network cost (#1530; `--latency-model trained-physics` only). GPUs sharing the fast intra-node fabric. A TP collective (group = `tp`) or DEP expert all-to-all (group = `TP·DP`) larger than this is charged for its cross-node hops at `--inter-node-bandwidth`/`--inter-node-latency`. `0` = single-node/off (inert, byte-identical to a pre-feature build). Requires `--latency-model trained-physics`. Same flags on `blis run` and `blis replay` reproduce `StepTime` (INV-13). |
+| `--inter-node-bandwidth` | float64 | 0 | Effective inter-node link bandwidth in GB/s (InfiniBand/RoCE) for cross-node collective traffic. Required (must be > 0) when `--gpus-per-node > 0`. |
+| `--inter-node-latency` | float64 | 0 | Inter-node per-collective base latency in ms for cross-node collective traffic. `0` = no fixed latency. |
 
 ### Roofline Mode
 

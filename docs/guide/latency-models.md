@@ -203,6 +203,28 @@ The β₄ default assumes the dispatch/combine collective runs at the same per-b
 
 Because the dispatch term is the *only* term gated on `DP > 1`, the residual isolates it cleanly. Fit per comm-backend *family* (all-gather vs all-to-all), not per backend name; see the PR #1433 discussion for why per-backend scalars are the wrong granularity (the within-family differences are prefill/decode shape effects a single scalar cannot represent).
 
+### Inter-node network cost (multi-node TP / DEP) — trained-physics only
+
+By default every collective — the TP all-reduce and the DEP expert all-to-all — is charged against `bwHbmUs` (on-package HBM/NVLink), i.e. as if all its GPUs share one fast intra-node fabric. For a deployment that spans a node boundary (multi-node TP, or Wide-EP with DP replicas on separate nodes) that is optimistic: the cross-node hops actually traverse a much slower InfiniBand/RoCE fabric. #1530 adds a minimal inter-node cost so those hops are charged.
+
+| Flag | Meaning | Default |
+|------|---------|---------|
+| `--gpus-per-node` | GPUs sharing the fast intra-node fabric. A collective whose group exceeds this spans nodes. | `0` (off — single node) |
+| `--inter-node-bandwidth` | Effective cross-node link bandwidth, GB/s (an achievable rate, like `--pd-transfer-bandwidth`). Required when `--gpus-per-node > 0`. | `0` |
+| `--inter-node-latency` | Fixed per-collective cross-node base latency, ms. | `0` |
+
+**How it's charged.** For a collective over a group of `G` GPUs (TP all-reduce: `G = tp`; DEP all-to-all: `G = moeGroup = TP·DP`), if `G > gpus_per_node` the group spans `n = ceil(G / gpus_per_node)` nodes. The cross-node fraction `(n−1)/n` of the ring/all-to-all byte volume is charged at the inter-node bandwidth (instead of NVLink), plus `inter-node-latency` per collective launch. **No learned β multiplies this term** — β₄ absorbs the NVLink/HBM ratio, which must not be re-applied to a different fabric; the inter-node bandwidth you supply is authoritative. The term is a first-cut serial-additive MVP (a hierarchical-overlap refinement is future work).
+
+**When it fires (recipe mapping).**
+
+- `single_node_tp` / `single_node_tep`: `tp ≤ gpus_per_node`, `moeGroup ≤ gpus_per_node` → no cross-node cost.
+- `multi_node_tp`: `tp > gpus_per_node` → TP all-reduce charged.
+- `multi_node_dep` (Wide-EP): TP within node (`tp ≤ gpus_per_node`) but `moeGroup = TP·DP > gpus_per_node` → DEP all-to-all charged, TP all-reduce not.
+
+**Guarantees.** Inert by default (`--gpus-per-node 0`): the term is exactly zero, so output is byte-identical to a pre-feature build (INV-6), and dense `DP=1` still satisfies INV-BC-DP1. Because the topology is a **config input** (not derived from `node_pools` placement), the same flags on `blis run` and `blis replay` reproduce identical `StepTime` (INV-13) with no trace round-trip. `--gpus-per-node` requires `--latency-model trained-physics`; an active config without a positive `--inter-node-bandwidth`, or fabric knobs set without `--gpus-per-node`, is a hard error. `blis observe` takes timing from the real server and is unaffected.
+
+**Relation to #1529.** This is the cost mechanism; the multi-node *placement* work (#1529) will later derive the node span from real GPU assignments and feed the same seam. Until then the node topology is declared via `--gpus-per-node` — a legitimate capacity-planning input (compare IB vs RoCE, or TP-vs-EP-vs-PP tradeoffs, without a real cluster).
+
 ## When to Use Which
 
 | Aspect | Roofline | Trained-Physics (default) |

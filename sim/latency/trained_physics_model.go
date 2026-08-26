@@ -173,6 +173,14 @@ type TrainedPhysicsModel struct {
 	// when the LoRA subsystem is inert, in which case StepTime is byte-identical to
 	// a pre-feature build (INV-6/INV-BC-DP1). Set via WithAdapterCost at construction.
 	adapterCost sim.AdapterCost
+
+	// network is the inter-node interconnect model (#1530). Its zero value is inert
+	// (GPUsPerNode == 0): the cross-node term contributes exactly zero and StepTime
+	// is byte-identical to a pre-feature build (INV-6/INV-BC-DP1). When active, a
+	// comm collective whose participant group exceeds network.GPUsPerNode is charged
+	// for its cross-node hops at the inter-node bandwidth/latency. Set via
+	// WithNetworkConfig at construction.
+	network sim.NetworkConfig
 }
 
 // bytesPerKVElement is 2 bytes (FP16) for KV cache, matching vLLM's default.
@@ -431,6 +439,11 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 		m.Beta[6] +
 		m.Beta[7]*moeScaling*float64(m.numMoELayers) // β₈: per-MoE-layer overhead (interleaved archs only)
 
+	// Inter-node network cost (#1530): additional µs for cross-node collective
+	// traffic. Exactly 0 when the network model is inert or no collective crosses a
+	// node boundary, so intra-node configs stay byte-identical (INV-6/INV-BC-DP1).
+	stepTime += m.interNodeCost(totalTokens)
+
 	return applyAdapterOverhead(max(1, clampToInt64(stepTime)), batch, m.adapterCost)
 }
 
@@ -469,27 +482,108 @@ func (m *TrainedPhysicsModel) sharedExpertCompute(tokens, d, tpdp float64) float
 // efficiency (ring all-reduce, which β_EP defaults to β₄ from, IS reduce-scatter+
 // all-gather), so only the volume basis differs between families.
 func (m *TrainedPhysicsModel) moeDispatchBasis(globalTokens, kEff float64) float64 {
+	return m.moeDispatchBytes(globalTokens, kEff) / m.bwHbmUs
+}
+
+// moeDispatchBytes is the raw per-MoE-layer dispatch/combine byte volume for
+// moeDispatchBasis, before dividing by a link bandwidth. Factored out (#1530) so
+// the same volume feeds both the intra-node basis (÷ bwHbmUs) and the inter-node
+// cross-node term (÷ inter-node bandwidth). The operation order is preserved
+// exactly, so moeDispatchBasis is byte-identical to its pre-#1530 form.
+//
+// Dispatch/combine moves hidden-state ACTIVATIONS, so size them with the
+// compute/activation dtype (BytesPerParam), NOT the quantized weight dtype —
+// matching tpAllReduceBytes and the KV terms (vLLM dispatches the BF16 hidden
+// states: NaiveAll2AllManager.naive_multicast allocates dtype=x.dtype; the
+// quantized post_quant_allgather path is an explicit opt-in, not the default).
+func (m *TrainedPhysicsModel) moeDispatchBytes(globalTokens, kEff float64) float64 {
 	hidden := float64(m.hiddenDim)
 	group := float64(m.moeGroup)
 	dpf := float64(m.dp)
-	// Dispatch/combine moves hidden-state ACTIVATIONS, so size them with the
-	// compute/activation dtype (BytesPerParam), NOT the quantized weight dtype —
-	// matching tpAllReduceBasis and the KV terms (vLLM dispatches the BF16 hidden
-	// states: NaiveAll2AllManager.naive_multicast allocates dtype=x.dtype; the
-	// quantized post_quant_allgather path is an explicit opt-in, not the default).
 	switch m.commFamily {
 	case commFamilyAllGather: // dense hidden-state volume, no top_k
-		return (globalTokens / dpf) * (group - 1) / group * 2 * hidden * m.activationBPP / m.bwHbmUs
+		return (globalTokens / dpf) * (group - 1) / group * 2 * hidden * m.activationBPP
 	case commFamilyAll2All:
 		load := m.placement.Resolve(globalTokens, kEff, m.numExperts, m.moeGroup, m.dp)
-		return load.PerGPUCommTokens * hidden * m.activationBPP / m.bwHbmUs
+		return load.PerGPUCommTokens * hidden * m.activationBPP
 	default:
 		// Unreachable: commFamily is set once at construction from moeCommFamilyFor,
 		// which only yields the two families above. Panic on a future 3rd family so a
 		// new volume model is added here deliberately, rather than silently inheriting
 		// the all-gather (no-kEff) cost — a quiet factor-of-kEff error.
-		panic(fmt.Sprintf("moeDispatchBasis: unhandled commFamily %d", m.commFamily))
+		panic(fmt.Sprintf("moeDispatchBytes: unhandled commFamily %d", m.commFamily))
 	}
+}
+
+// nodesSpanned returns how many physical nodes a collective over groupSize GPUs
+// spans, given the intra-node GPU count (network.GPUsPerNode). Returns 1 (single
+// node ⇒ no cross-node cost) when the network model is inert (GPUsPerNode == 0) or
+// the group fits within one node.
+func (m *TrainedPhysicsModel) nodesSpanned(groupSize int) int {
+	g := m.network.GPUsPerNode
+	if g <= 0 || groupSize <= g {
+		return 1
+	}
+	return (groupSize + g - 1) / g // ceil(groupSize / gpusPerNode)
+}
+
+// interNodeCost returns the additional step-time (µs) charged for cross-node
+// collective traffic (#1530). It is exactly 0 when the network model is inert
+// (GPUsPerNode == 0) or no collective crosses a node boundary, so an intra-node
+// config is byte-identical to a pre-feature build (INV-6/INV-BC-DP1).
+//
+// Mechanism (the issue's "swap bwHbmUs for an effective link bandwidth when the
+// collective crosses a node boundary"): for each comm collective whose participant
+// group spans n > 1 nodes, the cross-node fraction (n-1)/n of its ring/all-to-all
+// byte volume is charged at the inter-node bandwidth (an effective achievable rate,
+// like --pd-transfer-bandwidth) instead of the on-package bwHbmUs, plus a fixed
+// per-collective inter-node base latency. No learned β is applied: β₄ absorbs the
+// NVLink/HBM ratio, which must NOT be re-applied to the inter-node fabric.
+//
+// Two legs, mirroring the intra-node comm terms they shadow:
+//   - TP all-reduce (group = tp): attention (all layers) + dense-FFN (dense layers)
+//     + MoE-FFN reduce (MoE layers, only at dp==1, mirroring tMoEReduce). Charged
+//     /dp because DP groups run in parallel, exactly like tTpAttention/tTpDenseFFN.
+//   - MoE dispatch/combine (group = moeGroup = TP·DP): MoE layers, only at dp>1
+//     (mirroring tMoEDispatch). Its byte volume is already per-rank.
+//
+// This is a first-cut MVP: the cross-node cost is charged additively on top of the
+// intra-node comm term (a conservative serial model), and the per-collective latency
+// is charged per layer. A hierarchical-overlap refinement is future work.
+func (m *TrainedPhysicsModel) interNodeCost(totalTokens float64) float64 {
+	if !m.network.IsActive() || totalTokens <= 0 {
+		// No cross-node modeling requested, or no tokens to communicate this step —
+		// no collective runs, so neither the bandwidth nor the fixed-latency term applies.
+		return 0
+	}
+	bwUs := m.network.InterNodeBandwidthGBps * 1000.0 // GB/s → bytes/µs (matches PD-transfer)
+	latUs := m.network.InterNodeLatencyMs * 1000.0    // ms → µs
+	cost := 0.0
+
+	// TP all-reduce leg (group = tp).
+	if m.tp > 1 {
+		if n := m.nodesSpanned(m.tp); n > 1 {
+			crossFrac := float64(n-1) / float64(n)
+			units := float64(m.numLayers + m.numDenseLayers)
+			if m.isMoE && m.dp == 1 {
+				units += float64(m.numMoELayers) // MoE-FFN reduce, mirroring the tMoEReduce (dp==1) gate
+			}
+			dpf := float64(m.dp)
+			cost += crossFrac * m.tpAllReduceBytes(units, totalTokens) / bwUs / dpf
+			cost += latUs * units // per-collective launch latency (wall-clock; DP ranks run in parallel, so not /dp)
+		}
+	}
+
+	// MoE dispatch/combine leg (group = moeGroup = TP·DP), only at dp>1.
+	if m.isMoE && m.dp > 1 {
+		if n := m.nodesSpanned(m.moeGroup); n > 1 {
+			crossFrac := float64(n-1) / float64(n)
+			bytes := m.moeDispatchBytes(totalTokens, float64(m.kEff)) * float64(m.numMoELayers)
+			cost += crossFrac * bytes / bwUs
+			cost += latUs * float64(m.numMoELayers)
+		}
+	}
+	return cost
 }
 
 // tpAllReduceBasis is the ring-all-reduce communication basis V(units, tokens):
@@ -501,6 +595,19 @@ func (m *TrainedPhysicsModel) moeDispatchBasis(globalTokens, kEff float64) float
 // MoE-FFN reduction). Returns 0 at tp == 1 (no communication). β₄ absorbs the
 // NVLink/HBM bandwidth ratio (~0.27 on H100) and ring-collective efficiency.
 func (m *TrainedPhysicsModel) tpAllReduceBasis(units, tokens float64) float64 {
+	return m.tpAllReduceBytes(units, tokens) / m.bwHbmUs
+}
+
+// tpAllReduceBytes is the raw ring-all-reduce byte volume for tpAllReduceBasis,
+// before dividing by a link bandwidth:
+//
+//	units · tokens · hidden · activationBPP · 2 (ring phases) · (tp-1)/tp
+//
+// Returns 0 at tp == 1 (no communication). Factored out (#1530) so the same volume
+// feeds both the intra-node basis (÷ bwHbmUs) and the inter-node cross-node term
+// (÷ inter-node bandwidth). The operation order is preserved exactly, so
+// tpAllReduceBasis is byte-identical to its pre-#1530 form (INV-BC-DP1).
+func (m *TrainedPhysicsModel) tpAllReduceBytes(units, tokens float64) float64 {
 	if m.tp <= 1 {
 		return 0
 	}
@@ -508,7 +615,7 @@ func (m *TrainedPhysicsModel) tpAllReduceBasis(units, tokens float64) float64 {
 	// activationBPP (compute dtype) sizes the moved hidden states, not the weight dtype
 	// — same convention as moeDispatchBasis and the KV terms. The trailing 2.0 is the
 	// ring all-reduce phase count (reduce-scatter + all-gather), not a byte width.
-	return units * tokens * float64(m.hiddenDim) * m.activationBPP * 2.0 * tpFactor / m.bwHbmUs
+	return units * tokens * float64(m.hiddenDim) * m.activationBPP * 2.0 * tpFactor
 }
 
 // QueueingTime computes request-level overhead (ARRIVED → QUEUED).

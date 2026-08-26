@@ -64,7 +64,13 @@ func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	if err != nil {
 		panic(fmt.Sprintf("NewInstanceSimulator(%s): adapter cost model: %v", id, err))
 	}
-	latencyModel, err := latency.NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig, latency.WithAdapterCost(adapterCost))
+	// WithNetworkConfig supplies the inter-node interconnect model (#1530). Inert by
+	// default (cfg.NetworkConfig zero value ⇒ GPUsPerNode==0), so StepTime is
+	// byte-identical to a pre-feature build (INV-6). When active it charges cross-node
+	// collective traffic; the factory validates the fabric config and rejects an
+	// active config on a non-trained-physics backend.
+	latencyModel, err := latency.NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig,
+		latency.WithAdapterCost(adapterCost), latency.WithNetworkConfig(cfg.NetworkConfig))
 	if err != nil {
 		panic(fmt.Sprintf("NewInstanceSimulator(%s): NewLatencyModel: %v", id, err))
 	}

@@ -32,9 +32,11 @@ func clampToInt64(v float64) int64 {
 // the same options, so an adapter effect applies identically (R23).
 type Option func(*latencyOptions)
 
-// latencyOptions accumulates the applied Options. Zero value ⇒ no adapter effect.
+// latencyOptions accumulates the applied Options. Zero value ⇒ no adapter effect
+// and an inert (single-node) network model.
 type latencyOptions struct {
 	adapterCost sim.AdapterCost
+	network     sim.NetworkConfig
 }
 
 // WithAdapterCost supplies the LoRA per-step compute-overhead accessor. A nil
@@ -43,6 +45,17 @@ type latencyOptions struct {
 // sim.AdapterCost interface — sim/latency never imports sim/lora.
 func WithAdapterCost(ac sim.AdapterCost) Option {
 	return func(o *latencyOptions) { o.adapterCost = ac }
+}
+
+// WithNetworkConfig supplies the inter-node interconnect model (#1530). An inert
+// config (the zero value / GPUsPerNode == 0, or no option) leaves StepTime
+// byte-identical to a pre-feature build (INV-6, INV-BC-DP1). The network term is
+// modeled only by the trained-physics backend; NewLatencyModel rejects an active
+// config on any other backend (R1 — never silently ignore a cross-node cost the
+// user asked for). The concrete topology/fabric values are validated at
+// construction.
+func WithNetworkConfig(nc sim.NetworkConfig) Option {
+	return func(o *latencyOptions) { o.network = nc }
 }
 
 // applyAdapterOverhead multiplies a base step time by the batch's LoRA
@@ -152,6 +165,16 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig, opts 
 	if err := validateCoeffs("AlphaCoeffs", coeffs.AlphaCoeffs); err != nil {
 		return nil, err
 	}
+	// Inter-node network model (#1530): validate the fabric config, and reject an
+	// active config on any backend that does not model it (R1 — a cross-node cost
+	// the user configured must never be silently dropped). Only trained-physics
+	// consumes it; an inert config (the common case) is a no-op everywhere.
+	if err := o.network.Validate(); err != nil {
+		return nil, fmt.Errorf("latency model: %w", err)
+	}
+	if o.network.IsActive() && hw.Backend != "trained-physics" {
+		return nil, fmt.Errorf("latency model: inter-node network cost (--gpus-per-node) requires --latency-model trained-physics, got backend %q", hw.Backend)
+	}
 	switch hw.Backend {
 	case "", "roofline":
 		if hw.TP <= 0 {
@@ -176,6 +199,7 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig, opts 
 			return nil, err
 		}
 		model.adapterCost = o.adapterCost
+		model.network = o.network
 		return model, nil
 	default:
 		return nil, fmt.Errorf("latency model: unknown backend %q; valid options: %s",

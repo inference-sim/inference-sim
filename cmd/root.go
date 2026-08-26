@@ -89,6 +89,13 @@ var (
 	enableExpertParallel bool   // EP mode (MoE only; trained-physics backend only)
 	moeCommBackend       string // MoE all-to-all comm backend (MoE only; trained-physics backend only)
 
+	// Inter-node network cost (#1530; trained-physics backend only). Inert by default
+	// (gpusPerNode == 0): a collective whose group exceeds gpusPerNode is charged for
+	// its cross-node hops at interNodeBandwidth/interNodeLatency instead of NVLink.
+	gpusPerNode        int     // GPUs per physical node (0 = single-node/off)
+	interNodeBandwidth float64 // Effective inter-node link bandwidth in GB/s (IB/RoCE)
+	interNodeLatency   float64 // Inter-node per-collective base latency in ms
+
 	// cluster config
 	numInstances int // Number of instances in the cluster
 
@@ -817,6 +824,25 @@ func composeLoRAScorer(base []sim.ScorerConfig, weight float64) ([]sim.ScorerCon
 // DeploymentConfig.RoutingScorerConfigs) and the loaded policy bundle (nil if none).
 // Per-pool scorer configs (PD disaggregation) are NOT handled here — they remain inline
 // in runCmd.
+// resolveNetworkConfig builds and validates the inter-node network config from the
+// shared --gpus-per-node / --inter-node-bandwidth / --inter-node-latency flags (#1530).
+// Both `blis run` and `blis replay` call it at SimConfig assembly, so the two paths
+// reject the same misconfigurations identically and — since the config is a plain
+// CLI input, not a placement-derived signal — run/replay parity (INV-13) holds by
+// construction. It fails fast (CLI boundary → logrus.Fatalf) on an invalid fabric
+// config or an active config on a non-trained-physics backend (R1: never a silent
+// no-op). Inert by default (--gpus-per-node 0).
+func resolveNetworkConfig(backend string) sim.NetworkConfig {
+	nc := sim.NewNetworkConfig(gpusPerNode, interNodeBandwidth, interNodeLatency)
+	if err := nc.Validate(); err != nil {
+		logrus.Fatalf("Invalid inter-node network configuration: %v", err)
+	}
+	if nc.IsActive() && backend != "trained-physics" {
+		logrus.Fatalf("--gpus-per-node (inter-node network cost) requires --latency-model trained-physics, got %q", backend)
+	}
+	return nc
+}
+
 func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle) {
 	var bundleScorerConfigs []sim.ScorerConfig
 	var loadedBundle *sim.PolicyBundle
@@ -1131,6 +1157,11 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&dataParallelism, "dp", 1, "Data parallelism degree (MoE models only; --latency-model trained-physics only)")
 	cmd.Flags().BoolVar(&enableExpertParallel, "enable-expert-parallel", false, "Enable expert parallelism for MoE models (mirrors vLLM --enable-expert-parallel; --latency-model trained-physics only)")
 	cmd.Flags().StringVar(&moeCommBackend, "moe-comm-backend", "", "MoE all-to-all comm backend for dispatch/combine cost (mirrors vLLM VLLM_ALL2ALL_BACKEND: naive, allgather_reducescatter [default], pplx, deepep_high_throughput, deepep_low_latency, mori, flashinfer_all2allv; MoE + --latency-model trained-physics + --dp > 1)")
+	// Inter-node network cost (#1530; trained-physics backend only). Default 0 ⇒ inert
+	// (single-node) ⇒ StepTime byte-identical to a pre-feature build.
+	cmd.Flags().IntVar(&gpusPerNode, "gpus-per-node", 0, "GPUs per physical node for inter-node network cost (0 = single-node/off). A TP or MoE (TP·DP) collective larger than this crosses node boundaries and is charged at --inter-node-bandwidth/--inter-node-latency. Requires --latency-model trained-physics.")
+	cmd.Flags().Float64Var(&interNodeBandwidth, "inter-node-bandwidth", 0, "Effective inter-node link bandwidth in GB/s (InfiniBand/RoCE) for cross-node collective traffic (#1530). Required when --gpus-per-node > 0.")
+	cmd.Flags().Float64Var(&interNodeLatency, "inter-node-latency", 0, "Inter-node per-collective base latency in ms for cross-node collective traffic (#1530). 0 = no fixed latency.")
 	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "trained-physics", "Latency model backend: trained-physics (default), roofline")
 	cmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for analytical backends when not set.")
 
@@ -2086,6 +2117,7 @@ var runCmd = &cobra.Command{
 				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dataParallelism, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				LoRAConfig:           loraCfg,
+				NetworkConfig:        resolveNetworkConfig(lr.Backend),
 				SLOPriorityOverrides: sloPriorityOverrides,
 			},
 			NumInstances:                    numInstances,
