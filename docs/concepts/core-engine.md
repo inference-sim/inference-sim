@@ -192,14 +192,14 @@ Process requests already in the running batch:
 Dequeue requests from the wait queue:
 - Compute cached prefix blocks (prefix caching reduces allocation needs)
 - Allocate KV blocks for uncached prefix tokens being processed this step (bounded by chunked prefill threshold and remaining token budget)
-- Stop dequeuing when: max batch size reached (`--max-num-running-reqs`), allocation fails (cache full), token budget exhausted, or a preemption occurred during Phase 1
+- Stop dequeuing when: max batch size reached (`--max-num-seqs`), allocation fails (cache full), token budget exhausted, or a preemption occurred during Phase 1
 
 ### Constraints
 
 | Constraint | Flag | Effect |
 |------------|------|--------|
-| Max batch size | `--max-num-running-reqs` | Limits number of concurrent requests in the running batch |
-| Token budget | `--max-num-scheduled-tokens` | Limits total new tokens across all running requests per step |
+| Max batch size | `--max-num-seqs` | Limits number of concurrent requests in the running batch (deprecated alias: `--max-num-running-reqs`) |
+| Token budget | `--max-num-batched-tokens` | Limits total new tokens across all running requests per step (deprecated alias: `--max-num-scheduled-tokens`) |
 | Chunked prefill | `--long-prefill-token-threshold` | Splits long prefills across multiple steps |
 
 ### Preemption Strategy

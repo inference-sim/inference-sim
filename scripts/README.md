@@ -9,12 +9,14 @@ re-validate a published claim without manually reconstructing the command set.
 Drives `blis run` across a configurable rate sweep against a chosen
 `(model, hardware, TP, workload)` configuration. For each rate it:
 
-1. Runs `blis run` with the **drain-ratio** classifier (the default since #1392).
-2. Runs the same workload/seed again with the **slope-based** classifier so both
-   verdicts are recorded side-by-side.
-3. Extracts throughput, latency, and classifier verdicts into a single CSV row.
+1. Runs `blis run` once with the **detector bank** (`--detectors all`), which
+   fans one deterministic replay out to every post-hoc detector (composite,
+   threshold, backlog-drift, peak-rate) in a single pass (#1519, #1614).
+2. Reads each detector's final verdict from the run's `--saturation-report`
+   (the `"final"` detector→label map, #1517).
+3. Extracts throughput, latency, and all detector verdicts into a single CSV row.
 
-The output reproduces the validation table from PR #1395 against the bundled
+The output reproduces the validation table against the bundled
 `model_configs/llama-3.1-70b-instruct/`. Pointing it at any other configuration
 should produce a comparable table with the same column shape.
 
@@ -34,6 +36,9 @@ MODEL=meta-llama/Llama-2-7b-hf \
 WORKLOAD=summarization NUM_REQUESTS=2000 RATES="4 6 8 10 12" \
   ./scripts/find-saturation.sh
 
+# Only one detector (skip the bank)
+DETECTORS=composite ./scripts/find-saturation.sh
+
 # No bundled config — let blis fetch from HuggingFace
 MODEL=qwen/qwen3-14b MODEL_CONFIG_FOLDER="" TP=1 \
   ./scripts/find-saturation.sh
@@ -51,9 +56,10 @@ MODEL=qwen/qwen3-14b MODEL_CONFIG_FOLDER="" TP=1 \
 | `LATENCY_MODEL` | `trained-physics` | `--latency-model` backend |
 | `NUM_REQUESTS` | `6000` | `--num-requests` per rate |
 | `HORIZON_US` | `600000000` (600s) | `--horizon` per rate |
-| `SATURATION_WINDOW_S` | `10` | `--saturation-window` (seconds) |
+| `DETECTORS` | `all` | `--detectors` selection (`all`, or a comma-list like `composite,threshold`) |
+| `FINAL_WINDOW` | `10s` | `--saturation-final-window` (trailing window for the plurality vote) |
 | `RATES` | `0.5 1 2 4 6 8 10 12 14 16 20 30 40 50 60 80 100` | Space-separated rate sweep |
-| `SEED` | `42` | RNG seed (held constant across both classifier runs) |
+| `SEED` | `42` | RNG seed |
 | `OUT_DIR` | `results/saturation-<ts>-<pid>` | Output directory |
 
 ### Outputs
@@ -63,8 +69,7 @@ $OUT_DIR/
 ├── summary.csv                          # one row per rate (12 columns)
 ├── rate-{R}.json                        # blis run stdout (metrics)
 ├── rate-{R}.stderr                      # blis run stderr (progress logs)
-├── rate-{R}.drain-ratio.json            # BacklogDriftReport (drain-ratio classifier)
-└── rate-{R}.slope-based.json            # BacklogDriftReport (slope-based classifier)
+└── rate-{R}.saturation.json             # {"final":{...},"trace":[...]} report
 ```
 
 `summary.csv` columns:
@@ -78,28 +83,33 @@ $OUT_DIR/
 | `timeout_frac` | `timed_out_requests / injected_requests` | Fraction culled by client timeout |
 | `e2e_p99_ms` / `ttft_p99_ms` | metrics | Tail latencies |
 | `still_queued` / `still_running` | metrics | End-state residue |
-| `drain_ratio_verdict` | `--saturation-classifier drain-ratio` report | UNSATURATED / TRANSIENT_BACKLOG / PERSISTENTLY_SATURATED |
-| `drain_ratio_rho` | drain-ratio note (parsed) | Quantified `ρ ≈ 1/DrainRatio` from steady-state windows |
-| `slope_based_verdict` | `--saturation-classifier slope-based` report | Same three verdicts via OLS regression |
+| `composite_verdict` | report `.final.composite` | STABLE / BACKLOGGED / OVERLOADED |
+| `threshold_verdict` | report `.final.threshold` | STABLE / OVERLOADED (binary) |
+| `backlog_drift_verdict` | report `.final["backlog-drift"]` | STABLE / BACKLOGGED / OVERLOADED |
+| `peak_rate_verdict` | report `.final["peak-rate"]` | STABLE / BACKLOGGED / OVERLOADED |
+
+A detector that is not in `DETECTORS` shows `n/a` in its column.
 
 ### Reading the output
 
 A clean read of "where does this configuration saturate?" looks like:
 
 ```
-intended_rate  goodput_rps  ratio  ρ      drain-ratio              slope-based
-0.5            0.50         100%   1.00   UNSATURATED              UNSATURATED
+intended_rate  goodput_rps  ratio  composite     threshold   backlog-drift  peak-rate
+0.5            0.50         100%   STABLE        STABLE      STABLE
 …
-60             56.29        94%    1.00   UNSATURATED              PERSISTENTLY_SATURATED
-80             64.49        81%    1.16   PERSISTENTLY_SATURATED   PERSISTENTLY_SATURATED   ← knee
-100            64.76        65%    1.45   PERSISTENTLY_SATURATED   PERSISTENTLY_SATURATED
+60             56.29        94%    BACKLOGGED    STABLE      BACKLOGGED
+80             64.49        81%    OVERLOADED    OVERLOADED  OVERLOADED   ← knee
+100            64.76        65%    OVERLOADED    OVERLOADED  OVERLOADED
 ```
 
-The saturation knee is the first rate where `ratio` falls below ~100%, `ρ`
-crosses 1.05, OR a classifier flips to PERSISTENTLY_SATURATED. Drain-ratio is
-the cleanest signal — it gives a quantified ρ. Slope-based is more sensitive
-and may surface TRANSIENT_BACKLOG at moderate load (peak/mean burstiness even
-when average ρ < 1) — that's a feature when planning for tail latency.
+The saturation knee is the first rate where `ratio` falls below ~100% OR a
+detector's final verdict flips to `OVERLOADED`. The detectors measure
+different things — composite blends rate deficit with a latency trend,
+threshold is a pure mean-E2E cutoff, and backlog-drift tracks the slope of
+in-flight — so a rate where they disagree (e.g. backlog-drift flags
+`BACKLOGGED` while threshold is still `STABLE`) is itself informative: the queue
+is growing before mean latency crosses the cutoff.
 
 ### Tips
 
@@ -114,10 +124,13 @@ when average ρ < 1) — that's a feature when planning for tail latency.
 - **Fine sweep after coarse.** First pass with the default 17 rates spanning
   200×; identify the knee zone (e.g., between 60 and 80); then re-run with
   `RATES="62 64 66 68 70 72 74 76 78"` to pin the exact transition.
+- **Tune the final window.** `FINAL_WINDOW` controls how much of the run's tail
+  the plurality vote considers. Use `--horizon` to end observation while load is
+  still active — if you let all requests drain, the tail looks STABLE.
 
 ### Running on a custom configuration
 
-The script's defaults match the PR validation experiment so anyone can
+The script's defaults match the reference validation experiment so anyone can
 reproduce that exact table. To validate any other configuration, override the
 relevant variables:
 

@@ -176,6 +176,159 @@ func TestKVBytesPerToken_NonDivisibleKVHeadsLessThanTP_Accepted(t *testing.T) {
 	}
 }
 
+func TestKVBytesPerToken_ExplicitHeadDim_Used(t *testing.T) {
+	// F1 (BC-2): GIVEN an explicit HeadDim that differs from hidden/heads, THEN
+	// KVBytesPerToken uses HeadDim, not the quotient.
+	mc := validDenseModelConfig() // hidden/heads = 4096/32 = 128
+	mc.HeadDim = 256              // explicit, double the implicit value
+	got, err := latency.KVBytesPerToken(mc, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 32 layers × 2 × 256 headDim × 8 KVHeads × 2 = 262144 (double the implicit-128 value)
+	want := float64(32 * 2 * 256 * 8 * 2)
+	if got != want {
+		t.Errorf("KVBytesPerToken(HeadDim=256) = %v, want %v", got, want)
+	}
+}
+
+func TestKVBytesPerToken_HeadDimZero_ByteIdenticalToImplicit(t *testing.T) {
+	// F1 (BC-2, INV-6): GIVEN HeadDim == 0, THEN the value is byte-identical to the
+	// pre-change hidden/heads formula.
+	mc := validDenseModelConfig()
+	mc.HeadDim = 0
+	got, err := latency.KVBytesPerToken(mc, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := float64(32 * 2 * 128 * 8 * 2) // implicit headDim = 4096/32 = 128
+	if got != want {
+		t.Errorf("KVBytesPerToken(HeadDim=0) = %v, want %v (implicit path unchanged)", got, want)
+	}
+}
+
+func TestKVBytesPerToken_MLA_CompressedLatent(t *testing.T) {
+	// F2 (BC-3): GIVEN an MLA config (kv_lora_rank > 0), THEN KV bytes/token =
+	// (kv_lora_rank + qk_rope_head_dim) × num_layers × BytesPerParam, and is NOT
+	// divided by TP (the latent is replicated across TP ranks, design D2).
+	mc := sim.ModelConfig{
+		NumLayers:       27,
+		HiddenDim:       2048,
+		NumHeads:        16,
+		NumKVHeads:      16,
+		IntermediateDim: 10944,
+		BytesPerParam:   2.0,
+		KVLoraRank:      512,
+		QKRopeHeadDim:   64,
+	}
+	// (512 + 64) × 27 × 2.0 = 31104
+	want := float64((512 + 64) * 27 * 2)
+	for _, tp := range []int{1, 2, 4, 8} {
+		got, err := latency.KVBytesPerToken(mc, tp)
+		if err != nil {
+			t.Fatalf("unexpected error at TP=%d: %v", tp, err)
+		}
+		if got != want {
+			t.Errorf("MLA KVBytesPerToken(TP=%d) = %v, want %v (TP-invariant)", tp, got, want)
+		}
+	}
+}
+
+func TestKVBytesPerToken_MLA_LawInvariances(t *testing.T) {
+	// F2 (BC-4): MLA KV bytes/token scale linearly with num_layers and with the
+	// latent width, and are independent of num_kv_heads and head_dim.
+	base := sim.ModelConfig{
+		NumLayers: 27, HiddenDim: 2048, NumHeads: 16, NumKVHeads: 16,
+		IntermediateDim: 10944, BytesPerParam: 2.0, KVLoraRank: 512, QKRopeHeadDim: 64,
+	}
+	b, err := latency.KVBytesPerToken(base, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Doubling num_layers doubles the value.
+	dl := base
+	dl.NumLayers *= 2
+	if got, _ := latency.KVBytesPerToken(dl, 1); got != 2*b {
+		t.Errorf("MLA should scale linearly in NumLayers: got %v, want %v", got, 2*b)
+	}
+
+	// Changing num_kv_heads and head_dim does NOT change the MLA value.
+	inv := base
+	inv.NumKVHeads = 8
+	inv.HeadDim = 999
+	if got, _ := latency.KVBytesPerToken(inv, 1); got != b {
+		t.Errorf("MLA should be independent of NumKVHeads/HeadDim: got %v, want %v", got, b)
+	}
+
+	// Doubling BytesPerParam doubles the value.
+	db := base
+	db.BytesPerParam *= 2
+	if got, _ := latency.KVBytesPerToken(db, 1); got != 2*b {
+		t.Errorf("MLA should scale linearly in BytesPerParam: got %v, want %v", got, 2*b)
+	}
+}
+
+func TestKVBytesPerToken_MLA_RejectsDegenerateHeadsAndHidden(t *testing.T) {
+	// IMPORTANT-2 (blis-pr-review): the NumHeads>0 and HiddenDim>0 guards must gate
+	// the MLA path too — CalculateKVBlocks calls computeModelWeightBytes for MLA
+	// configs, and that weight estimate reads NumHeads/HiddenDim. An MLA config with
+	// NumHeads==0 or HiddenDim==0 must ERROR here rather than silently succeed and
+	// let the weight estimate run on garbage (kvDim=0 → under-count; hidden=0 →
+	// ~0 weight → inflated block count).
+	cases := []struct {
+		name string
+		mc   sim.ModelConfig
+	}{
+		{"MLA zero NumHeads", sim.ModelConfig{NumLayers: 27, HiddenDim: 2048, NumHeads: 0, BytesPerParam: 2.0, KVLoraRank: 512, QKRopeHeadDim: 64}},
+		{"MLA zero HiddenDim", sim.ModelConfig{NumLayers: 27, HiddenDim: 0, NumHeads: 16, BytesPerParam: 2.0, KVLoraRank: 512, QKRopeHeadDim: 64}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := latency.KVBytesPerToken(tc.mc, 1); err == nil {
+				t.Errorf("expected error for %s, got nil", tc.name)
+			}
+		})
+	}
+}
+
+func TestKVBytesPerToken_MLA_ZeroRopeHeadDim(t *testing.T) {
+	// F2 edge case: an MLA config where qk_rope_head_dim is absent/0. The latent
+	// width is then kv_lora_rank alone (still > 0 because the MLA branch requires
+	// KVLoraRank > 0), so the computation is well-defined and TP-invariant.
+	mc := sim.ModelConfig{
+		NumLayers: 27, HiddenDim: 2048, NumHeads: 16, NumKVHeads: 16,
+		IntermediateDim: 10944, BytesPerParam: 2.0, KVLoraRank: 512, QKRopeHeadDim: 0,
+	}
+	want := float64(512 * 27 * 2) // latentWidth == kv_lora_rank == 512
+	for _, tp := range []int{1, 2, 4} {
+		got, err := latency.KVBytesPerToken(mc, tp)
+		if err != nil {
+			t.Fatalf("unexpected error at TP=%d: %v", tp, err)
+		}
+		if got != want {
+			t.Errorf("MLA KVBytesPerToken(QKRopeHeadDim=0, TP=%d) = %v, want %v", tp, got, want)
+		}
+	}
+}
+
+func TestKVBytesPerToken_MLA_IgnoresIndivisibleHiddenHeads(t *testing.T) {
+	// F2 (R2): the MLA branch must be reached BEFORE the hidden%heads divisibility
+	// guard — the latent path never uses that quotient. A config where hidden is
+	// NOT divisible by heads must still succeed when MLA is set.
+	mc := sim.ModelConfig{
+		NumLayers: 4, HiddenDim: 100, NumHeads: 7, NumKVHeads: 7,
+		IntermediateDim: 256, BytesPerParam: 2.0, KVLoraRank: 512, QKRopeHeadDim: 64,
+	}
+	got, err := latency.KVBytesPerToken(mc, 1)
+	if err != nil {
+		t.Fatalf("MLA path should not hit the hidden%%heads guard, got error: %v", err)
+	}
+	if want := float64((512 + 64) * 4 * 2); got != want {
+		t.Errorf("MLA KVBytesPerToken = %v, want %v", got, want)
+	}
+}
+
 // --- Input validation tests ---
 
 func TestCalculateKVBlocks_ZeroDenominators_ReturnError(t *testing.T) {
@@ -1133,6 +1286,107 @@ func TestCalculateKVBlocks_DeepSeekV3_PerExpertDimFix(t *testing.T) {
 		t.Logf("BC-7 confirmed: buggy path (general dim as per-expert) returns error: %v", errBuggy)
 	} else {
 		t.Logf("BC-7 confirmed: buggy path gives fewer blocks: buggy=%d < fixed=%d", blocksBuggy, blocks)
+	}
+}
+
+// --- F3: first_k_dense_replace dense/MoE weight split ---
+
+func TestCalculateKVBlocks_FirstKDenseReplace_ReducesWeightVsAllMoE(t *testing.T) {
+	// F3 (BC-5): GIVEN a MoE model, WHEN first_k_dense_replace = K > 0, THEN the
+	// weight estimate is smaller than the all-MoE estimate (K dense layers replace
+	// K expensive MoE layers), so MORE KV blocks fit. This is observable end-to-end.
+	base := sim.ModelConfig{
+		NumLayers:        32,
+		HiddenDim:        4096,
+		NumHeads:         32,
+		NumKVHeads:       8,
+		VocabSize:        32000,
+		BytesPerParam:    2,
+		IntermediateDim:  14336,
+		NumLocalExperts:  8,
+		NumExpertsPerTok: 2,
+		MoEExpertFFNDim:  14336,
+	}
+	hc := validHWConfig()
+	params := latency.NewKVCapacityParams(true, 8, false, "silu", 14336, 0)
+
+	allMoE := base // FirstKDenseReplace == 0
+	withDense := base
+	withDense.FirstKDenseReplace = 8 // first 8 of 32 layers dense
+
+	blocksAllMoE, err := latency.CalculateKVBlocks(allMoE, hc, 2, 1, 16, 0.9, params)
+	if err != nil {
+		t.Fatalf("all-MoE: unexpected error: %v", err)
+	}
+	blocksWithDense, err := latency.CalculateKVBlocks(withDense, hc, 2, 1, 16, 0.9, params)
+	if err != nil {
+		t.Fatalf("with-dense-prefix: unexpected error: %v", err)
+	}
+	if blocksWithDense <= blocksAllMoE {
+		t.Errorf("first_k_dense_replace=8 should reduce weight → more KV blocks; got with-dense=%d <= all-MoE=%d",
+			blocksWithDense, blocksAllMoE)
+	}
+}
+
+func TestCalculateKVBlocks_FirstKDenseReplace_MonotonicInK(t *testing.T) {
+	// F3 (BC-5 law): for a MoE model whose MoE per-layer weight exceeds the dense
+	// per-layer weight, converting more leading layers to dense (larger K) never
+	// increases total weight, so the KV block count is non-decreasing in K, and
+	// strictly larger at K=L (all dense) than at K=0 (all MoE). This is a law the
+	// split must satisfy for any implementation, not a golden value. K=0 is the
+	// pre-F3 all-MoE anchor (also exercised by the published-param cross-validation
+	// tests, which continue to pass unchanged — the real INV-6 regression guard).
+	mkParams := func() latency.KVCapacityParams {
+		return latency.NewKVCapacityParams(true, 8, false, "silu", 14336, 0)
+	}
+	base := sim.ModelConfig{
+		NumLayers: 32, HiddenDim: 4096, NumHeads: 32, NumKVHeads: 8, VocabSize: 32000,
+		BytesPerParam: 2, IntermediateDim: 14336, NumLocalExperts: 8, NumExpertsPerTok: 2,
+		MoEExpertFFNDim: 14336,
+	}
+	hc := validHWConfig()
+
+	prev := int64(-1)
+	var atZero, atFull int64
+	for _, k := range []int{0, 4, 8, 16, 32} {
+		mc := base
+		mc.FirstKDenseReplace = k
+		blocks, err := latency.CalculateKVBlocks(mc, hc, 2, 1, 16, 0.9, mkParams())
+		if err != nil {
+			t.Fatalf("K=%d: unexpected error: %v", k, err)
+		}
+		if prev >= 0 && blocks < prev {
+			t.Errorf("blocks must be non-decreasing in K: K=%d gave %d < previous %d", k, blocks, prev)
+		}
+		prev = blocks
+		if k == 0 {
+			atZero = blocks
+		}
+		if k == 32 {
+			atFull = blocks
+		}
+	}
+	if atFull <= atZero {
+		t.Errorf("all-dense (K=L) should fit strictly more KV blocks than all-MoE (K=0); got K=L:%d <= K=0:%d", atFull, atZero)
+	}
+}
+
+func TestCalculateKVBlocks_FirstKDenseReplace_ClampsWhenExceedsLayers(t *testing.T) {
+	// F3 degenerate case: first_k_dense_replace >= num_layers must clamp to all-dense
+	// (every layer dense) with no negative count and no error.
+	mc := sim.ModelConfig{
+		NumLayers: 4, HiddenDim: 4096, NumHeads: 32, NumKVHeads: 8, VocabSize: 32000,
+		BytesPerParam: 2, IntermediateDim: 14336, NumLocalExperts: 8, NumExpertsPerTok: 2,
+		MoEExpertFFNDim: 14336, FirstKDenseReplace: 999, // absurdly large
+	}
+	hc := validHWConfig()
+	params := latency.NewKVCapacityParams(true, 8, false, "silu", 14336, 0)
+	blocks, err := latency.CalculateKVBlocks(mc, hc, 2, 1, 16, 0.9, params)
+	if err != nil {
+		t.Fatalf("degenerate first_k_dense_replace should not error, got: %v", err)
+	}
+	if blocks <= 0 {
+		t.Errorf("expected positive blocks with clamped all-dense split, got %d", blocks)
 	}
 }
 

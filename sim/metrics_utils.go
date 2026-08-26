@@ -82,6 +82,14 @@ type MetricsOutput struct {
 	SchedulingDelayP99Ms     float64          `json:"scheduling_delay_p99_ms"`
 	KVAllocationFailures    int64            `json:"kv_allocation_failures,omitempty"`
 	PreemptionCount         int64            `json:"preemption_count"`
+	// CacheHitRate is the aggregate KV-cache hit rate (a fraction in [0,1]) at
+	// finalization (#1583). It is populated ONLY into the --metrics-path file (the
+	// file branch of EmitOutput), alongside the file-only Requests[] — never onto
+	// stdout, so a run's stdout stays byte-identical to a pre-feature build (INV-6,
+	// BC-9). A nil pointer (default) is dropped by omitempty; the human-readable rate
+	// is still printed to stdout via printKVCacheMetrics. `blis calibrate --sim-metrics`
+	// reads it as the simulator's hit-rate for the real-vs-sim comparison.
+	CacheHitRate            *float64         `json:"cache_hit_rate,omitempty"`
 	DroppedUnservable       int              `json:"dropped_unservable"`
 	LengthCappedRequests    int              `json:"length_capped_requests"`
 	TimedOutRequests        int              `json:"timed_out_requests"`

@@ -193,14 +193,34 @@ func NewTieredKVCache(gpu *KVCacheState, cpuBlocks int64, threshold, bandwidth f
 }
 
 func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
-	ok := t.gpu.AllocateKVBlocks(req, startIndex, endIndex, cachedBlocks)
-	if ok {
-		return true
+	// BC-D3.3 (#1586): consult the CPU offload tier on EVERY request, before GPU
+	// allocation — mirroring vLLM's offload connector (get_num_new_matched_tokens on
+	// the normal waiting-queue path, with no reference to GPU pressure). Previously the
+	// reload ran only after GPU allocation failed, so under light GPU load a prefix
+	// resident on CPU-but-evicted-from-GPU was silently recomputed and counted as a
+	// miss — making cache-hit accounting load-shaped rather than load-independent.
+	//
+	// Resume the prefix hash chain just past the GPU-resident prefix the caller already
+	// matched (cachedBlocks), using its last block's hash as the chain seed. This keeps
+	// the common fully-GPU-cached case at one hash + one CPU lookup instead of
+	// re-hashing the whole prefix from block 0 (hot-path mitigation, evidence P).
+	reloadStartBlock := int64(len(cachedBlocks))
+	reloadPrevHash := ""
+	if reloadStartBlock > 0 {
+		reloadPrevHash = t.gpu.Blocks[cachedBlocks[reloadStartBlock-1]].Hash
 	}
-	// GPU allocation failed — try targeted CPU reload for this request's prefix.
-	reloaded := t.reloadPrefixFromCPU(req.FullInputTokens())
-	if reloaded {
-		// Re-compute cached blocks now that CPU content is back on GPU
+	// A continuing (running) request already owns its prefix blocks (cachedBlocks is empty
+	// on that path); resume past what it owns so we never reload a block position it
+	// already holds — in particular its partially-filled last block, whose empty hash
+	// would also break the chain seed. Reloading such a position would place a duplicate,
+	// full copy on the free list that the running-request path never claims but the GPU
+	// pre-check still budgets for, spuriously failing the allocation.
+	if owned, ok := t.gpu.RequestMap[req.ID]; ok && int64(len(owned)) > reloadStartBlock {
+		reloadStartBlock = int64(len(owned))
+		reloadPrevHash = t.gpu.Blocks[owned[len(owned)-1]].Hash
+	}
+	if t.reloadPrefixFromCPU(req.FullInputTokens(), reloadStartBlock, reloadPrevHash) {
+		// Re-compute cached blocks now that CPU content is back on the GPU free list.
 		newCached := t.gpu.GetCachedBlocks(req.FullInputTokens())
 		newStart := int64(len(newCached)) * t.gpu.BlockSize()
 		if newStart > startIndex {
@@ -250,11 +270,18 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 			}
 			return t.gpu.AllocateKVBlocks(req, newStart, endIndex, newCached)
 		}
-		// No new cache hits — retry with original params (reload freed up space)
+		// Reload produced no prefix hit beyond startIndex — allocate with the
+		// caller's original params (any space freed by the reload still helps).
 		return t.gpu.AllocateKVBlocks(req, startIndex, endIndex, cachedBlocks)
 	}
-	t.cpuMissCount++
-	return false
+	// No CPU-resident continuation: allocate on GPU exactly as the single-tier path.
+	// cpuMissCount++ preserves the pre-#1586 semantic — incremented only when the CPU
+	// tier could not help AND the GPU allocation fails.
+	ok := t.gpu.AllocateKVBlocks(req, startIndex, endIndex, cachedBlocks)
+	if !ok {
+		t.cpuMissCount++
+	}
+	return ok
 }
 
 // reloadPrefixFromCPU attempts to reload prefix-matching blocks from CPU to GPU.
@@ -262,16 +289,22 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 // Reloaded blocks are placed back on the GPU free list with valid hashes (not allocated).
 // Returns true if any blocks were reloaded.
 //
+// The scan begins at startBlock, whose predecessor's block hash is prevHash (the empty
+// string when startBlock == 0). Callers pass the length of the already-GPU-resident
+// prefix and that prefix's last block hash so the scan resumes at the first uncached
+// block instead of re-hashing blocks already on GPU (#1586 hot-path mitigation). The
+// hierarchical hash chain is identical to a scan from block 0, since GPU-resident blocks
+// would only be skipped anyway.
+//
 // The maxReloads guard ensures we never pop the same GPU free block twice —
 // each reload uses a distinct free block. Without this, pop+append creates
 // a cycle where block A's hash is destroyed on the second pop.
-func (t *TieredKVCache) reloadPrefixFromCPU(tokens []sim.TokenID) bool {
+func (t *TieredKVCache) reloadPrefixFromCPU(tokens []sim.TokenID, startBlock int64, prevHash string) bool {
 	n := util.Len64(tokens) / t.gpu.BlockSize()
 	maxReloads := t.gpu.countFreeBlocks() // limit to distinct free blocks
-	prevHash := ""
 	reloaded := false
 	reloadCount := int64(0)
-	for i := int64(0); i < n; i++ {
+	for i := startBlock; i < n; i++ {
 		start := i * t.gpu.BlockSize()
 		end := start + t.gpu.BlockSize()
 		h := hash.HashBlock(prevHash, tokens[start:end])

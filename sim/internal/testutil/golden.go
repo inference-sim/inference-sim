@@ -45,8 +45,8 @@ type GoldenTestCase struct {
 	Hardware                  string        `json:"hardware"`
 	TP                        int           `json:"tp"`
 	Seed                      int64         `json:"seed"`
-	MaxNumRunningReqs         int64         `json:"max-num-running-reqs"`
-	MaxNumScheduledTokens     int64         `json:"max-num-scheduled-tokens"`
+	MaxNumSeqs                int64         `json:"max-num-seqs"`
+	MaxNumBatchedTokens       int64         `json:"max-num-batched-tokens"`
 	MaxModelLen               int64         `json:"max-model-len"`
 	TotalKVBlocks             int64         `json:"total-kv-blocks"`
 	BlockSizeInTokens         int64         `json:"block-size-in-tokens"`
@@ -68,8 +68,8 @@ type GoldenMetrics struct {
 	VllmEstimatedDurationS float64 `json:"vllm_estimated_duration_s"`
 	// SimulationDurationS is wall-clock time (non-deterministic); preserved but never asserted.
 	SimulationDurationS float64 `json:"simulation_duration_s,omitempty"`
-	ResponsesPerSec        float64 `json:"responses_per_sec"`
-	TokensPerSec           float64 `json:"tokens_per_sec"`
+	ResponsesPerSec     float64 `json:"responses_per_sec"`
+	TokensPerSec        float64 `json:"tokens_per_sec"`
 
 	// E2E latency metrics
 	E2EMeanMs float64 `json:"e2e_mean_ms"`

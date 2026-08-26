@@ -47,7 +47,8 @@ inference-sim/
 │   ├── model_hardware_config.go # ModelConfig, HardwareCalib structs (config types stay in sim/); HardwareCalib includes MemoryGiB (used by KV capacity auto-calculation in roofline and trained-physics modes). ModelConfig.WeightBytesPerParam (0=fallback to BytesPerParam) with EffectiveWeightBytesPerParam() accessor decouples weight storage precision from compute/KV dtype. Note: MaxModelLen is int64 (aligned with ProgressIndex, TotalKVBlocks, BlockSizeTokens).
 │   ├── expert_placement.go    # ExpertPlacement interface (single-method pure query) + BalancedPlacement default: maps a step's routed-token population onto busiest-GPU MoE cost (ExpertLoad: per-GPU compute tokens, expert count, dispatch/combine comm). Lives in sim core so future consumers reach it without importing latency/; consumed by trained-physics StepTime (#1419).
 │   └── internal/              # Shared internal packages
-│       ├── hash/              # Block-level hashing for prefix cache
+│       ├── hash/              # Block-level hashing for prefix cache (the sole hash source)
+│       ├── kvkey/             # KV block keying (#1589): DeriveChunkKeys (chunk-stride keys, BC-K4) + Interner (BlockKey→KeyID, BC-K3); delegates all hashing to internal/hash (BC-K1)
 │       ├── testutil/          # Shared test infrastructure (golden dataset loading)
 │       ├── tokenid/           # TokenID (int32) type — defined-type compact token ID shared with sim/internal/hash
 │       └── util/              # General utility functions

@@ -24,8 +24,8 @@ type BatchContext struct {
 	RunningBatch          *Batch
 	WaitQ                 *WaitQueue
 	KVCache               KVStore
-	MaxScheduledTokens    int64
-	MaxRunningReqs        int64
+	MaxNumBatchedTokens   int64
+	MaxNumSeqs            int64
 	PrefillTokenThreshold int64
 	MaxModelLen           int64 // 0 = unlimited (proactive cap disabled)
 	Now                   int64
@@ -87,7 +87,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		RunningBatch: ctx.RunningBatch,
 	}
 
-	tokenBudget := ctx.MaxScheduledTokens
+	tokenBudget := ctx.MaxNumBatchedTokens
 
 	// Zero NumNewTokens for all running requests at the start of each scheduling pass.
 	// This prevents stale values from the prior step from causing phantom budget
@@ -162,17 +162,47 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		reqIndex++
 	}
 
-	// Phase 2: Dequeue new requests from wait queue
-	for len(result.RunningBatch.Requests) < int(ctx.MaxRunningReqs) && ctx.WaitQ.Len() > 0 && tokenBudget > 0 && !result.PreemptionHappened {
-		next := ctx.WaitQ.Peek()
+	// H3 kv_deferral (#1591): when the KV store supports step-boundary deferral (the
+	// offload chain with secondary tiers), advance its deferred requests once per
+	// step and collect the set still waiting for a secondary→CPU fetch. Batch
+	// formation SKIPS those (they are re-polled next step) and admits others behind
+	// them — mirroring vLLM's step_skipped_waiting + continue. The type-assert fails
+	// for the single-tier and legacy-tiered stores, so deferrable/deferredSet stay
+	// nil and Phase 2 below is byte-identical to the pre-#1591 loop (INV-6).
+	var deferrable DeferrableKVStore
+	var deferredSet map[string]bool
+	if d, ok := ctx.KVCache.(DeferrableKVStore); ok {
+		deferrable = d
+		if ids := d.PollDeferred(ctx.Now); len(ids) > 0 {
+			deferredSet = make(map[string]bool, len(ids))
+			for _, id := range ids {
+				deferredSet[id] = true
+			}
+		}
+	}
+
+	// Phase 2: Dequeue new requests from wait queue.
+	// skipped counts requests set aside this step (offload-deferred). It is the scan
+	// cursor: with no deferrals it stays 0, so PeekAt(0)==Peek() and admissions use
+	// DequeueBatch — identical to the pre-#1591 head-only loop.
+	skipped := 0
+	for len(result.RunningBatch.Requests) < int(ctx.MaxNumSeqs) && ctx.WaitQ.Len() > skipped && tokenBudget > 0 && !result.PreemptionHappened {
+		next := ctx.WaitQ.PeekAt(skipped)
+
+		// A request whose secondary-tier fetch is still in flight is not admittable
+		// this step — set it aside and try the next (offload only; inert otherwise).
+		if deferredSet != nil && deferredSet[next.ID] {
+			skipped++
+			continue
+		}
 
 		// Cold-load pre-admission gate (LoRA, #1466): a new prefill request whose
 		// adapter is not yet resident on this instance is held out of the batch
-		// until its adapter load completes (FR-007, §7). Because Phase 2 inspects
-		// only the queue head and breaks on the first non-admittable request, this
-		// realizes the DT-faithful blocking model — a gated head stalls the warm
-		// requests behind it for the load duration. Decode sub-requests (PD) are
-		// already past the gate (their prefill ran with the adapter resident).
+		// until its adapter load completes (FR-007, §7). This gate is head-of-line
+		// (break, not skip) by design — the DT-faithful blocking model — a gated
+		// request stalls the warm requests behind it for the load duration. Decode
+		// sub-requests (PD) are already past the gate (their prefill ran with the
+		// adapter resident).
 		if ctx.AdapterResident != nil && !next.IsDecodeSubRequest && next.Adapter != "" && !ctx.AdapterResident(next.Adapter) {
 			break
 		}
@@ -187,7 +217,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			if ok := ctx.KVCache.AllocateKVBlocks(next, next.ProgressIndex, next.ProgressIndex+decodeTokens, nil); !ok {
 				break
 			}
-			ctx.WaitQ.DequeueBatch()
+			dequeueAdmitted(ctx.WaitQ, next, skipped)
 			result.RunningBatch.Requests = append(result.RunningBatch.Requests, next)
 			next.ScheduledStepIdx = ctx.StepCount
 			result.NewlyScheduled = append(result.NewlyScheduled, ScheduledRequest{Request: next})
@@ -215,10 +245,17 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		endIndex := startIndex + numNewTokens
 
 		if ok := ctx.KVCache.AllocateKVBlocks(next, startIndex, endIndex, cachedBlocks); !ok {
+			// H3: distinguish a fresh deferral (the offload chain set this request
+			// aside for a secondary fetch — skip and keep it in the WaitQ) from
+			// genuine GPU pressure (break, head-of-line as before).
+			if deferrable != nil && deferrable.IsDeferred(next.ID) {
+				skipped++
+				continue
+			}
 			break
 		}
 
-		ctx.WaitQ.DequeueBatch()
+		dequeueAdmitted(ctx.WaitQ, next, skipped)
 		result.RunningBatch.Requests = append(result.RunningBatch.Requests, next)
 		next.ScheduledStepIdx = ctx.StepCount
 
@@ -233,6 +270,19 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 	}
 
 	return result
+}
+
+// dequeueAdmitted removes the just-admitted request from the wait queue. When no
+// requests were skipped this step it is the head, removed via the O(1) DequeueBatch
+// (the pre-#1591 fast path, preserving byte-identity when offload is off); when
+// requests were skipped ahead of it (offload deferral) it is at index `skipped` and
+// removed by pointer identity via the O(n) Remove.
+func dequeueAdmitted(wq *WaitQueue, req *Request, skipped int) {
+	if skipped == 0 {
+		wq.DequeueBatch()
+		return
+	}
+	wq.Remove(req)
 }
 
 // preemptForTokens tries to allocate numNewTokens of KV blocks for req,

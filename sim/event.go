@@ -209,6 +209,7 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 		}
 	} else {
 		sim.WaitQ.Remove(e.Request)
+		sim.ClearDeferredKV(e.Request.ID) // H3 (#1591): a timed-out queued request may be mid-deferral
 	}
 
 	// INV-8 work-conserving: if running batch is now empty but WaitQ has work,

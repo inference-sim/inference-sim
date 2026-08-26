@@ -11,17 +11,26 @@ import (
 )
 
 // CombinedReport is the on-disk shape of a saturation trace: one JSON object
-// with a "trace" array of per-event verdicts. It is deliberately a single-key
-// object (not a bare array) so #1519's bank can add sibling keys without a
-// format break.
+// with a "final" detector→label map (#1517) followed by a "trace" array of
+// per-event verdicts (#1516/#1519). It is deliberately a keyed object (not a bare
+// array) so sibling keys can be added without a format break.
+//
+// Final is emitted before Trace and dropped by omitempty when no detector ran, so
+// a report with no final labels stays {"trace":[...]} byte-identical to the
+// pre-#1517 shape. Level's MarshalJSON emits the bare string ("STABLE"), so
+// map[string]Level serializes as {"composite":"STABLE",...} with keys sorted by
+// encoding/json — byte-identical across identical runs (INV-6).
 type CombinedReport struct {
-	Trace []TraceRecord `json:"trace"`
+	Final map[string]Level `json:"final,omitempty"`
+	Trace []TraceRecord    `json:"trace"`
 }
 
 // ReplayOneDetector streams one detector over completed request metrics and
-// records its verdict after every event to the sink. It is the single uniform
-// loop the whole feature relies on: every detector is a streaming detector
-// (#1515), so there is no per-detector special case.
+// records its verdict after every event to the sink. It is the SINGLE-detector
+// drive loop (#1516); the multi-detector Bank (#1519) has its own fanout loop but
+// shares buildSortedEvents, so both consume a byte-identical event sequence.
+// Every detector is a streaming detector (#1515), so there is no per-detector
+// special case in either loop.
 //
 // Each request contributes two events — an Arrival at its arrival time and a
 // Completion at arrival+E2E — ordered deterministically by
@@ -34,9 +43,36 @@ type CombinedReport struct {
 func ReplayOneDetector(detector Detector, requests []sim.RequestMetrics, sink TraceSink) {
 	detector.Reset()
 
+	events := buildSortedEvents(requests)
+
+	name := detector.Name()
+	for _, e := range events {
+		detector.Observe(e)
+		sink.Record(e.Timestamp, name, detector.Detect())
+	}
+	sink.Close()
+}
+
+// buildSortedEvents turns completed request metrics into the deterministic event
+// stream every replay path consumes: each request contributes an Arrival at its
+// arrival time and a Completion at arrival+E2E, sorted by
+// (timestamp, event-type, request-id).
+//
+// It is shared by ReplayOneDetector (single-detector, #1516) and the Bank
+// (multi-detector, #1519) so both fan out over a byte-identical event sequence —
+// the guarantee that a subset detector's records match its records under `all`
+// (INV-6) and that run/replay parity holds (INV-13). Zero requests yield zero
+// events.
+//
+// Arrival (0) sorts before Completion (1) at an equal timestamp; request-id
+// breaks any remaining tie. sort.Slice is not stable, but the three-key
+// comparator is a total order (request-ids are unique per request, and a
+// request's own arrival precedes its completion by construction), so the result
+// is fully determined.
+func buildSortedEvents(requests []sim.RequestMetrics) []Event {
 	events := make([]Event, 0, 2*len(requests))
 	for _, r := range requests {
-		arrivalUs := int64(r.ArrivedAt * 1e6)   // seconds → µs
+		arrivalUs := int64(r.ArrivedAt * 1e6)        // seconds → µs
 		completionUs := arrivalUs + int64(r.E2E*1e3) // + E2E (ms → µs)
 		events = append(events,
 			Event{
@@ -53,11 +89,6 @@ func ReplayOneDetector(detector Detector, requests []sim.RequestMetrics, sink Tr
 		)
 	}
 
-	// Deterministic order: (timestamp, event-type, request-id). Arrival (0) sorts
-	// before Completion (1) at an equal timestamp; request-id breaks any remaining
-	// tie. sort.Slice is not stable, but the three-key comparator is a total order
-	// (request-ids are unique per request, and a request's own arrival precedes its
-	// completion by construction), so the result is fully determined.
 	sort.Slice(events, func(i, j int) bool {
 		if events[i].Timestamp != events[j].Timestamp {
 			return events[i].Timestamp < events[j].Timestamp
@@ -67,25 +98,21 @@ func ReplayOneDetector(detector Detector, requests []sim.RequestMetrics, sink Tr
 		}
 		return events[i].RequestID < events[j].RequestID
 	})
-
-	name := detector.Name()
-	for _, e := range events {
-		detector.Observe(e)
-		sink.Record(e.Timestamp, name, detector.Detect())
-	}
-	sink.Close()
+	return events
 }
 
-// WriteCombinedReport serializes the collected verdicts as a {"trace":[...]}
-// JSON object to path. Map keys inside each Result's Signals are sorted by
-// encoding/json, so two identical runs produce byte-identical files (INV-6).
-// A collector with no records writes {"trace":[]} — valid JSON, not an error.
-func WriteCombinedReport(path string, collector *InMemoryCollector) error {
+// WriteCombinedReport serializes the collected verdicts as a
+// {"final":{...},"trace":[...]} JSON object to path. Map keys (the final map and
+// each Result's Signals) are sorted by encoding/json, so two identical runs
+// produce byte-identical files (INV-6). A nil/empty final map is dropped by
+// omitempty, so a report with no final labels stays {"trace":[...]}. A collector
+// with no records writes an empty trace — valid JSON, not an error.
+func WriteCombinedReport(path string, collector *InMemoryCollector, final map[string]Level) error {
 	records := collector.Records()
 	if records == nil {
 		records = []TraceRecord{}
 	}
-	report := CombinedReport{Trace: records}
+	report := CombinedReport{Final: final, Trace: records}
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal saturation trace: %w", err)

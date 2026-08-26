@@ -83,14 +83,19 @@ var swiGLUActivations = map[string]bool{
 // per-GPU bytes (optimistic approximation). When numKVHeads >= tp, numKVHeads
 // must be evenly divisible by tp or an error is returned.
 func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
+	// Validations common to both the MLA and standard paths. NumHeads and HiddenDim
+	// are validated here (not only on the standard path) because CalculateKVBlocks
+	// also calls computeModelWeightBytes for MLA configs, and that weight estimate
+	// reads NumHeads/HiddenDim — a degenerate MLA config must error here, not run on
+	// garbage. Only the HiddenDim%NumHeads divisibility check is MLA-exempt (below).
 	if tp <= 0 {
 		return 0, fmt.Errorf("KVBytesPerToken: TP must be > 0, got %d", tp)
 	}
-	if mc.NumHeads <= 0 {
-		return 0, fmt.Errorf("KVBytesPerToken: num_attention_heads must be > 0, got %d", mc.NumHeads)
-	}
 	if mc.NumLayers <= 0 {
 		return 0, fmt.Errorf("KVBytesPerToken: num_layers must be > 0, got %d", mc.NumLayers)
+	}
+	if mc.NumHeads <= 0 {
+		return 0, fmt.Errorf("KVBytesPerToken: num_attention_heads must be > 0, got %d", mc.NumHeads)
 	}
 	if mc.HiddenDim <= 0 {
 		return 0, fmt.Errorf("KVBytesPerToken: hidden_dim must be > 0, got %d", mc.HiddenDim)
@@ -98,7 +103,30 @@ func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
 	if mc.BytesPerParam <= 0 || math.IsNaN(mc.BytesPerParam) || math.IsInf(mc.BytesPerParam, 0) {
 		return 0, fmt.Errorf("KVBytesPerToken: precision (BytesPerParam) must be a valid positive number, got %v", mc.BytesPerParam)
 	}
-	if mc.HiddenDim%mc.NumHeads != 0 {
+
+	// --- MLA (Multi-head Latent Attention) path (F2, #1527) ---
+	// See ModelConfig.IsMLA / the field comments: KV is a single compressed latent
+	// of (kv_lora_rank + qk_rope_head_dim) per token per layer, replicated across TP
+	// ranks (NOT divided by TP), and independent of numKVHeads/headDim. The
+	// hidden%heads guard is skipped (the latent path never uses that quotient).
+	if mc.IsMLA() {
+		latentWidth := mc.KVLoraRank + mc.QKRopeHeadDim
+		perTokenKVBytesF := float64(mc.NumLayers) * float64(latentWidth) * mc.BytesPerParam
+		// Public-API boundary guard: normal configs are validated at parse time
+		// (config.go rejects negative shape fields), but a hand-built ModelConfig
+		// with a negative QKRopeHeadDim could make latentWidth <= 0.
+		if perTokenKVBytesF <= 0 {
+			return 0, fmt.Errorf("KVBytesPerToken: MLA latent width must be > 0, got kv_lora_rank=%d + qk_rope_head_dim=%d",
+				mc.KVLoraRank, mc.QKRopeHeadDim)
+		}
+		return perTokenKVBytesF, nil
+	}
+
+	// --- Standard MHA/GQA path ---
+	// (NumHeads>0 and HiddenDim>0 are already validated above, common to both paths.)
+	// The hidden%heads guard applies only to the implicit head-dim path; an explicit
+	// head_dim (F1) is used directly and does not require divisibility.
+	if mc.HeadDim <= 0 && mc.HiddenDim%mc.NumHeads != 0 {
 		return 0, fmt.Errorf("KVBytesPerToken: hidden_dim (%d) must be evenly divisible by num_attention_heads (%d)", mc.HiddenDim, mc.NumHeads)
 	}
 
@@ -114,7 +142,8 @@ func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
 		return 0, fmt.Errorf("KVBytesPerToken: num_kv_heads (%d) must be evenly divisible by TP (%d)", numKVHeads, tp)
 	}
 
-	headDim := mc.HiddenDim / mc.NumHeads
+	// Effective head dim: explicit head_dim (F1) when set, else hidden/heads.
+	headDim := mc.EffectiveHeadDim()
 	perTokenKVBytesF := float64(mc.NumLayers) * 2.0 * float64(headDim) * float64(numKVHeads) * mc.BytesPerParam
 	perTokenKVBytesPerGPUF := perTokenKVBytesF / float64(tp)
 
@@ -348,7 +377,8 @@ func computeModelWeightBytes(mc sim.ModelConfig, params KVCapacityParams) int64 
 	if numKVHeads == 0 {
 		numKVHeads = mc.NumHeads
 	}
-	headDim := int64(mc.HiddenDim / mc.NumHeads)
+	// Effective head dim: explicit head_dim (F1, #1527) when set, else hidden/heads.
+	headDim := int64(mc.EffectiveHeadDim())
 	kvDim := int64(numKVHeads) * headDim
 
 	// Embeddings: vocab_size * hidden_dim
@@ -364,36 +394,70 @@ func computeModelWeightBytes(mc sim.ModelConfig, params KVCapacityParams) int64 
 	// MLP per layer: SwiGLU uses 3 matrices (gate, up, down) to match capacity_planner.py.
 	// NOTE: roofline step time (mlpMatrixCount in roofline.go) uses 2-matrix convention for
 	// FLOPs/bandwidth — see that function's comment for the calibration rationale.
-	var mlpPerLayer int64
+	//
+	// Dense MLP term for a pure dense model: gate + up + down at intermediate_size.
+	// (Unchanged from the pre-F3 behavior — INV-6.)
+	denseMLPPerLayer := 3 * hiddenDim * intermediateDim
+
+	// Total MLP params across all layers. For a MoE model with a dense prefix
+	// (first_k_dense_replace = K, #1527 F3), the first K layers use the dense MLP
+	// term and the remaining (numLayers - K) use the MoE term — a prefix split,
+	// distinct from the every-Nth InterleaveMoELayerStep. K == 0 (or absent) ⇒ all
+	// layers MoE ⇒ byte-identical to the pre-F3 all-MoE accounting (INV-6).
+	var totalMLPParams int64
 	// The NumLocalExperts >= MoEMinExperts clause is a defensive guard, not a
 	// duplicate of IsMoE: NewKVCapacityParams is a public positional constructor, so
 	// a caller could pass an inconsistent (IsMoE=true, NumLocalExperts<2) pair. The
 	// MoE arithmetic below multiplies by NumLocalExperts, so a degenerate count would
 	// silently produce zero/under-weighted MLP bytes — this keeps it on the dense path.
 	if params.IsMoE && params.NumLocalExperts >= sim.MoEMinExperts {
-		// MoE: use per-expert FFN dim for routed experts, add shared and gate
+		// MoE per-layer term: use per-expert FFN dim for routed experts, add shared and gate.
 		expertFFNDim := intermediateDim // Mixtral convention: IntermediateDim IS per-expert
 		if params.MoEExpertFFNDim > 0 {
 			expertFFNDim = int64(params.MoEExpertFFNDim)
 		}
 		// All routed experts (total model weight, not active)
-		mlpPerLayer = 3 * hiddenDim * expertFFNDim * int64(params.NumLocalExperts)
+		moeMLPPerLayer := 3 * hiddenDim * expertFFNDim * int64(params.NumLocalExperts)
 		// Shared experts
 		if params.SharedExpertFFNDim > 0 {
-			mlpPerLayer += 3 * hiddenDim * int64(params.SharedExpertFFNDim)
+			moeMLPPerLayer += 3 * hiddenDim * int64(params.SharedExpertFFNDim)
 		}
 		// Router weights: num_local_experts * hidden_dim per layer
-		mlpPerLayer += int64(params.NumLocalExperts) * hiddenDim
+		moeMLPPerLayer += int64(params.NumLocalExperts) * hiddenDim
+
+		// Dense-prefix MLP term. Within a hybrid MoE model the dense-prefix layers
+		// use DenseIntermediateDim (intermediate_size_mlp) when set, else
+		// intermediate_size — mirroring the step-time dense-layer sizing
+		// (roofline.go / trained_physics_model.go) so capacity and step-time agree
+		// on the dense FFN dim for Scout-style hybrids. Scoped to the MoE branch so a
+		// pure dense model's estimate is unchanged (INV-6).
+		densePrefixMLPPerLayer := denseMLPPerLayer
+		if mc.DenseIntermediateDim > 0 {
+			densePrefixMLPPerLayer = 3 * hiddenDim * int64(mc.DenseIntermediateDim)
+		}
+
+		// Dense-prefix split (F3). Clamp K to [0, numLayers] so a degenerate
+		// first_k_dense_replace >= numLayers yields all-dense with no negative count.
+		numDenseLayers := int64(mc.FirstKDenseReplace)
+		if numDenseLayers < 0 {
+			numDenseLayers = 0
+		}
+		if numDenseLayers > numLayers {
+			numDenseLayers = numLayers
+		}
+		numMoELayers := numLayers - numDenseLayers
+		totalMLPParams = numDenseLayers*densePrefixMLPPerLayer + numMoELayers*moeMLPPerLayer
 	} else {
-		// Dense: gate + up + down
-		mlpPerLayer = 3 * hiddenDim * intermediateDim
+		// Dense model: every layer uses the dense MLP term.
+		totalMLPParams = numLayers * denseMLPPerLayer
 	}
 
 	// Layer norms: 2 per layer (pre-attention + pre-MLP), each = hidden_dim params
 	layerNormsPerLayer := 2 * hiddenDim
 
-	// Per-layer total
-	perLayerParams := attentionPerLayer + mlpPerLayer + layerNormsPerLayer
+	// Attention + layer norms are per-layer for ALL layers (dense and MoE alike);
+	// only the MLP term differs by layer type (handled in totalMLPParams above).
+	attentionAndNormsAllLayers := numLayers * (attentionPerLayer + layerNormsPerLayer)
 
 	// lm_head: vocab_size * hidden_dim (omitted if tie_word_embeddings)
 	var lmHead int64
@@ -404,7 +468,7 @@ func computeModelWeightBytes(mc sim.ModelConfig, params KVCapacityParams) int64 
 	// Final layer norm: hidden_dim
 	finalNorm := hiddenDim
 
-	totalParams := embeddings + numLayers*perLayerParams + lmHead + finalNorm
+	totalParams := embeddings + attentionAndNormsAllLayers + totalMLPParams + lmHead + finalNorm
 	return int64(float64(totalParams) * mc.EffectiveWeightBytesPerParam())
 }
 

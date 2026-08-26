@@ -400,6 +400,35 @@ func makeDecodeBatch(count, seqLen int) []*sim.Request {
 	return batch
 }
 
+// TestTrainedPhysicsModel_HeadDimDoesNotAffectStepTime is the BC-2 / design-D4
+// guard (blis-pr-review MINOR-5): the explicit head_dim (#1527, F1) must flow into
+// KV/weight CAPACITY only, NOT into step time. Two configs differing solely in
+// HeadDim must produce byte-identical StepTime — otherwise a future refactor that
+// wires EffectiveHeadDim() into the step-time dKV term would silently break
+// INV-BC-DP1 with a green suite. The companion assertion (HeadDim DOES change
+// KVBytesPerToken) lives in TestKVBytesPerToken_ExplicitHeadDim_Used.
+func TestTrainedPhysicsModel_HeadDimDoesNotAffectStepTime(t *testing.T) {
+	hw := testHardwareConfig()
+	coeffs := testCoeffs()
+
+	base := trainedPhysicsTestModelConfig() // HeadDim == 0 (implicit 4096/32 = 128)
+	withHeadDim := trainedPhysicsTestModelConfig()
+	withHeadDim.HeadDim = 256 // explicit, differs from implicit 128
+
+	mBase := newTestTrainedPhysicsModel(t, base, hw, coeffs)
+	mHead := newTestTrainedPhysicsModel(t, withHeadDim, hw, coeffs)
+
+	batches := [][]*sim.Request{
+		makePrefillBatch(4, 512),
+		makeDecodeBatch(8, 2048),
+	}
+	for _, batch := range batches {
+		if got, want := mHead.StepTime(batch), mBase.StepTime(batch); got != want {
+			t.Errorf("StepTime must be independent of HeadDim (capacity-only, design D4): got %d with HeadDim=256, want %d with HeadDim=0", got, want)
+		}
+	}
+}
+
 // BC-1: TP=2 reduces step time vs TP=1 for trained-physics model.
 // Every compute and bandwidth term is divided by tp, so TP=2 must be strictly faster
 // than TP=1 for any non-trivial batch (All-Reduce overhead β₄ is small relative to savings).

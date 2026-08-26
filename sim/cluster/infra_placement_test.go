@@ -210,7 +210,7 @@ func TestAddPending_StoresSimCfg(t *testing.T) {
 	})
 
 	sentinel := sim.SimConfig{}
-	sentinel.MaxRunningReqs = 7 // recognizable sentinel value
+	sentinel.MaxNumSeqs = 7 // recognizable sentinel value
 
 	pm.AddPending("inst-0", "model-a", "H100", 4, sentinel)
 
@@ -230,8 +230,8 @@ func TestAddPending_StoresSimCfg(t *testing.T) {
 	}
 
 	// Verify the sentinel simCfg value survives propagation through RetryPendingInstances.
-	if placed[0].simCfg.MaxRunningReqs != 7 {
-		t.Errorf("placed[0].simCfg.MaxRunningReqs = %d, want 7", placed[0].simCfg.MaxRunningReqs)
+	if placed[0].simCfg.MaxNumSeqs != 7 {
+		t.Errorf("placed[0].simCfg.MaxNumSeqs = %d, want 7", placed[0].simCfg.MaxNumSeqs)
 	}
 }
 
@@ -271,13 +271,13 @@ func TestRetryPendingInstances_PlacedInstanceHasGPUType(t *testing.T) {
 // and returns "" on error (no capacity).
 func TestPlaceInstance_ReturnsMatchedPoolGPUType(t *testing.T) {
 	tests := []struct {
-		name             string
-		poolGPUType      string
-		requestGPUType   string
-		tpDegree         int
-		initialNodes     int
-		wantMatchedGPU   string
-		wantErr          bool
+		name           string
+		poolGPUType    string
+		requestGPUType string
+		tpDegree       int
+		initialNodes   int
+		wantMatchedGPU string
+		wantErr        bool
 	}{
 		{
 			name:           "success path returns pool gpu type",

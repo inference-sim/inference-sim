@@ -140,7 +140,7 @@ func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
 					Horizon:             math.MaxInt64,
 					Seed:                tc.Seed,
 					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
-					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
+					BatchConfig:         sim.NewBatchConfig(tc.MaxNumSeqs, tc.MaxNumBatchedTokens, tc.LongPrefillTokenThreshold),
 					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
 					ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, 1, false, "", "roofline", 0),
 				},
@@ -190,7 +190,7 @@ func TestClusterSimulator_SingleInstance_GoldenInvariants(t *testing.T) {
 					Horizon:             math.MaxInt64,
 					Seed:                tc.Seed,
 					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
-					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
+					BatchConfig:         sim.NewBatchConfig(tc.MaxNumSeqs, tc.MaxNumBatchedTokens, tc.LongPrefillTokenThreshold),
 					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
 					ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, 1, false, "", "roofline", 0),
 				},
@@ -1223,7 +1223,7 @@ func TestClusterSimulator_OverloadConservation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			config := newTestDeploymentConfig(numInstances)
 			config.Horizon = horizon
-			config.MaxRunningReqs = maxRunning
+			config.MaxNumSeqs = maxRunning
 			config.AdmissionPolicy = tc.admissionPolicy
 			config.RoutingPolicy = "least-loaded"
 			config.Scheduler = "fcfs"
@@ -1307,7 +1307,7 @@ func TestClusterSimulator_SchedulerLiveness(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			config := newTestDeploymentConfig(numInstances)
 			config.Horizon = math.MaxInt64 // Infinite horizon — all requests must complete
-			config.MaxRunningReqs = maxRunning
+			config.MaxNumSeqs = maxRunning
 			config.RoutingPolicy = "least-loaded"
 			config.AdmissionPolicy = "always-admit"
 			config.Scheduler = tc.scheduler
@@ -1490,7 +1490,7 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 		// Uses high rate (2000/s) with finite horizon to keep many requests in-flight.
 		// TotalKVBlocks=50 per instance with 10 blocks/request means only ~5 concurrent
 		// requests can hold KV. With high arrival rate, batch formation tries to schedule
-		// more, triggering preemptions. MaxRunningReqs=256 (default) allows large batches.
+		// more, triggering preemptions. MaxNumSeqs=256 (default) allows large batches.
 		// 50 >= 10 (max single request input blocks: ceil((32+128)/16)) so no DroppedUnservable.
 		config := mkFullStackConfig()
 		config.TotalKVBlocks = 50
