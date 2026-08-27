@@ -2,7 +2,7 @@
 
 After the team agrees on an RFC, encode the design into a machine-checkable `.archon` plan.
 
-**Requires:** latest stable archon release — check [releases](https://github.com/AI-native-Systems-Research/archon/releases). See [archon README](https://github.com/AI-native-Systems-Research/archon) for plan syntax, compile/dist/slice commands, and full examples.
+**Getting archon:** Run `scripts/archon-build.sh` from the repo root. It builds the version pinned in `.archon-version` and prints the binary path. Use that binary for the commands below. See [archon README](https://github.com/AI-native-Systems-Research/archon) for plan syntax and full examples.
 
 ## What to run
 

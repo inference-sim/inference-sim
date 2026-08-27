@@ -2,9 +2,9 @@
 
 How to incorporate archon's PR review output during code review.
 
-**Important:** `blis-pr-review` does NOT run archon. CI runs archon separately and posts the output as a PR comment. `blis-pr-review` just reads that comment and incorporates the verdict.
+**Important:** `blis-pr-review` does NOT run archon. It just reads archon output from a previous PR comment and incorporates the verdict.
 
-For archon CLI details: see [archon README](https://github.com/AI-native-Systems-Research/archon). Use latest stable release — check [releases](https://github.com/AI-native-Systems-Research/archon/releases).
+**Getting archon (for manual runs):** Run `scripts/archon-build.sh` from the repo root. It builds the version pinned in `.archon-version` and prints the binary path. See [archon README](https://github.com/AI-native-Systems-Research/archon) for verdict definitions and full examples.
 
 ## When it runs
 
