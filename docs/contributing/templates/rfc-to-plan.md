@@ -2,7 +2,7 @@
 
 Use this prompt after the team agrees on an RFC (tracking issue with holes/surfaces/contracts). Give it to Claude to encode the design into a machine-checkable plan and create sub-issues.
 
-For archon-specific encoding steps: see [archon/encode-plan.md](../contributing/archon/encode-plan.md).
+For archon-specific encoding steps: see [archon/encode-plan.md](../archon/encode-plan.md).
 
 ---
 
