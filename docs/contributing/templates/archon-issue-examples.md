@@ -138,6 +138,8 @@ archon-plan: specs/[NNN-feature]/[feature].plan.json
 
 ## Final PR (feature branch → main)
 
+This PR body must be **self-contained** — a reviewer can validate every contract without opening another issue. To produce it, Claude reads the tracking issue, all sub-issues, and the PRs that closed them.
+
 ```markdown
 # [Feature name]: merge to main
 
@@ -145,19 +147,34 @@ Closes: #[tracking issue number]
 
 ## Summary
 
-[Plain-English: what this feature adds, why, how it behaves — for maintainers who haven't followed the sub-issues]
+[Plain-English: what this feature adds, why, how it behaves — for a maintainer who followed nothing. No jargon, no hole IDs without explanation.]
 
-## What was delivered
+## Holes delivered
 
-- H1: [hole name] — [one sentence]
-- H2: [hole name] — [one sentence]
-- ...
+### H1: [package path] — [one sentence responsibility]
+- **Surface:** [what it exports]
+- **Allowed imports:** [whitelist]
+- **Contracts:**
+  - BC-H1-1: [statement] [evidenced: property_test]
+  - BC-H1-2: [statement] [evidenced: differential_test]
+- **Delivered in:** sub-issue #[N], PR #[N]
+
+### H2: [package path] — [one sentence responsibility]
+- **Surface:** [what it exports]
+- **Allowed imports:** [whitelist]
+- **Contracts:**
+  - BC-H2-1: [statement] [evidenced: property_test]
+- **Delivered in:** sub-issue #[N], PR #[N]
 
 ## Archon verification
 
-- dist: 0 (all holes filled, all arrows established)
-- All contracts evidenced (tests pass)
+- Baseline dist: [N] → Final dist: 0
+- All holes filled, all arrows established
 - No-op default confirmed (byte-identical when feature absent)
+
+## Deviations from RFC
+
+[Any changes from the original tracking issue design. If none: "None — implemented as designed."]
 
 ## Target branch
 

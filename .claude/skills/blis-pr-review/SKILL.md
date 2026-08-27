@@ -98,17 +98,24 @@ After completing the checklist above, perform a Q/A review:
 
 Only FLAW_FOUND with concrete evidence (file:line or reproducible scenario) blocks the PR.
 
---- CONTRACT VERIFICATION (from sub-issue body) ---
+--- CONTRACT VERIFICATION ---
 
-If this PR closes a sub-issue from a large feature (tracking issue with holes), the sub-issue body contains the promised contracts for this hole. Read the sub-issue body and check:
-
-1. What contracts were promised (e.g., "BC-C1: only tier 0 exchanges blocks with GPU [evidenced: differential_test]")
+**For hole PRs (PR1–N closing a sub-issue):**
+The sub-issue body contains the promised contracts for this hole. Read it and check:
+1. What contracts were promised (e.g., "BC-H1-1: only tier 0 exchanges blocks with GPU [evidenced: differential_test]")
 2. For each promised contract, does a corresponding test exist in this PR?
 3. Does the test match the evidence type (property_test, differential_test, metamorphic_test)?
 4. Does the test actually verify the contract's claim (not just structural)?
 5. Report any promised contracts without matching evidence.
 
-Do NOT read .archon files or run archon commands. The sub-issue body is your source of truth for what was promised.
+**For the final PR (feature branch → main):**
+The PR body itself is self-contained — it lists every hole with surface, contracts, evidence types, and which sub-issue/PR delivered it. Read the PR body and check:
+1. Every contract from every hole is listed with its evidence type
+2. For each contract, the delivering PR's tests exist in the branch
+3. Any deviations from the original RFC are acknowledged
+4. Archon dist = 0 confirmed
+
+Do NOT read .archon files or run archon commands. The PR body (or sub-issue body) is your source of truth.
 
 ---
 
