@@ -99,9 +99,11 @@ Parent: #[tracking issue number]
 
 ## Contracts
 
-- BC-X1: [statement] [evidenced: property_test]
-- BC-X2: [statement] [evidenced: differential_test]
-- BC-X3: [statement] [evidenced: metamorphic_test]
+Naming convention: `BC-<hole-id>-<N>` (e.g., hole H1's contracts are BC-H1-1, BC-H1-2; hole H2's are BC-H2-1, BC-H2-2).
+
+- BC-H1-1: [statement] [evidenced: property_test]
+- BC-H1-2: [statement] [evidenced: differential_test]
+- BC-H1-3: [statement] [evidenced: metamorphic_test]
 
 ## Invariants
 
