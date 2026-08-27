@@ -45,6 +45,11 @@ Use the sub-issue format from docs/contributing/templates/archon-issue-examples.
 Each sub-issue must include the full hole content (surface, contracts,
 evidence types, invariants, no-op default) so blis-pr-review can verify
 delivery without reading .archon files.
+
+CROSS-CHECK before filing: For each hole, verify its surface actually
+requires every arrow the plan declares from it. If a declared import
+isn't reachable from the surface as written, fix the surface or the
+arrow before filing. The sub-issue body and the .archon file must agree.
 ```
 
 ---
