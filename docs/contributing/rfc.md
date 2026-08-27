@@ -92,6 +92,7 @@ The team will then review the same RFC during discussion — but the author must
 - [ ] No implementation details for THIS repo (no Go code, struct definitions, or file paths for unwritten BLIS code). External references are fine (e.g., vLLM `scheduler.py:835` to explain what behavior you're modeling).
 - [ ] Invariants cross-referenced (INV-N)
 - [ ] Extension type identified per hole
+- [ ] Every declared dependency (allowed imports) is actually required by the surface. If a hole's surface doesn't need an import, fix the surface or remove the dependency.
 
 ---
 
