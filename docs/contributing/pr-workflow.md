@@ -427,6 +427,7 @@ Not all PRs need the same level of review. Use these objective criteria:
 
 **Rules:**
 - **Express Lane process:** Implement → self-audit (3 dimensions: correctness, determinism, consistency) → commit. No worktree, plan, convergence review, or human gate required. If the change grows beyond 3 lines, touches a source-of-truth file, or introduces any behavioral change, stop and switch to Small tier.
+- **Hole PRs from an approved archon plan:** Use Medium tier for code review, but **Small tier behavior for plan review** (single round, no pre-pass). The design was already reviewed during RFC (8 perspectives + team agreement + archon plan). The plan review still catches task ordering and under-specified steps, but skips the holistic sweep.
 - **All other tiers require Steps 1–5** — worktree, source audit, plan, human review, execution, and commit apply to Small, Medium, and Large.
 - **Self-audit is always full for Small and above** — the 10-dimension critical thinking check catches substance bugs that no automated review can. It costs 5 minutes and has caught 3+ real bugs in every PR where it was applied.
 - **When in doubt, tier up** — if you're unsure whether a change is Express Lane or Small, use Small. If unsure between Small and Medium, use Medium.

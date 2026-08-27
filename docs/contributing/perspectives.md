@@ -42,7 +42,7 @@ Used when reviewing implementation before commit. See [pr-workflow.md](pr-workfl
 
 1. **Substance & Design** — logic bugs, design mismatches between contracts and implementation, mathematical errors, silent regressions. Does the implementation actually achieve what the behavioral contracts promise?
 2. **Code Quality + Error Handling** — error path cleanup, map iteration sorted (R2/INV-6), construction site drift (R4), library code calling logrus.Fatalf (R6), exported mutable maps (R8), YAML pointer types (R9), division zero guards (R19), CLAUDE.md/docs drift.
-3. **Test Behavioral Quality** — are tests behavioral (test WHAT not HOW)? Would they survive a refactor? Golden tests without companion invariant tests? Tests that pass even if the feature is broken?
+3. **Test Behavioral Quality** — are tests behavioral (test WHAT not HOW)? Would they survive a refactor? Golden tests without companion invariant tests? Tests that pass even if the feature is broken? Contracts claiming "for any input" / "never" / "always" need fuzz targets or property-based tests — a table of N cases proves N cases, not universality.
 4. **Getting-Started Experience** — would a new user or contributor get stuck? Missing examples, undocumented output, incomplete guides, unclear extension points?
 5. **Automated Reviewer Simulation** — what Copilot/Claude/Codex would flag: exported mutable globals, user-controlled panic paths, YAML typo acceptance, NaN/Inf gaps, redundant code.
 6. **DES Expert** — event ordering bugs, clock monotonicity (INV-3), stale signal propagation, heap priority errors, work-conserving violations (INV-8).
