@@ -61,7 +61,7 @@ jobs:
           script: |
             const body = context.payload.comment.body;
             const match = body.match(/--archon-ref\s+(\S+)/);
-            const ref = match ? match[1] : 'v0.2.0';
+            const ref = match ? match[1] : 'v0.3.0';
             if (!/^[a-zA-Z0-9._/-]+$/.test(ref)) {
               core.setFailed(`Invalid archon ref: ${ref}`);
               return;
