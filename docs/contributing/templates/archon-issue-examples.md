@@ -51,9 +51,32 @@ H3 — depends on H1
 
 ---
 
-## Sub-issue (per hole)
+## Sub-issue 0 (create feature branch + persist plan)
 
-Each sub-issue is a self-contained work order. `blis-pr-review` reads this body to verify contracts are delivered.
+```markdown
+# Encode .archon plan + persist
+
+Parent: #[tracking issue number]
+
+## What to do
+
+1. Create feature branch: `feature/<name>` off main
+2. Commit plan files to `specs/NNN-feature/`:
+   - design.md (RFC prose from tracking issue)
+   - feature.archon (machine-checkable plan)
+   - feature.plan.json (compiled graph)
+3. Push the feature branch. No PR to main.
+
+All subsequent PRs (sub-issues 1–N) target this feature branch.
+
+archon-plan: specs/NNN-feature/feature.plan.json
+```
+
+---
+
+## Sub-issue 1–N (per hole)
+
+Each sub-issue is a self-contained work order. PRs target the feature branch. `blis-pr-review` reads this body to verify contracts are delivered.
 
 ```markdown
 # [Hole name]: [short description]

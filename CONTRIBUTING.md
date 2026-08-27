@@ -186,10 +186,11 @@ The full pipeline for features that introduce new module boundaries, new interfa
 
 **Phase 2 — Plan** (after agreement):
 4. **Encode .archon plan** — following [`docs/contributing/templates/rfc-to-plan.md`](docs/contributing/templates/rfc-to-plan.md) (Claude encodes, creates sub-issues)
-5. **PR0** — persist plan to `specs/NNN-feature/` on feature branch
+5. **PR0** — create `feature/<name>` branch, persist plan to `specs/NNN-feature/`, push
 
-**Phase 3 — Deliver** (repeat for each sub-issue):
+**Phase 3 — Deliver** (repeat for each sub-issue, PRs target the feature branch):
 6. **Follow the Bug Fix journey** (steps 1–7) for each hole
+7. **Final PR** — merge feature branch → main when dist=0 + tests pass
 
 Each phase produces an artifact that feeds the next. Human approval gates between phases prevent wasted work.
 

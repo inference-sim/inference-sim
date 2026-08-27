@@ -19,10 +19,12 @@ Read the tracking issue discussions and final decisions. Then:
 2. COMPILE + DISTANCE: Compile the plan and measure baseline distance.
 
 3. SUB-ISSUES: Create sub-issues under the tracking issue:
-   - Sub-issue 0: "Encode .archon plan + persist to specs/NNN-feature/"
-     This is always the first PR — commits the plan files to the feature branch.
+   - Sub-issue 0: "Create feature branch + encode .archon plan + persist to specs/NNN-feature/"
+     This is always the first PR. It creates the feature branch (feature/<name>),
+     commits the plan files, and pushes. No implementation code.
      Expected dist: baseline (no reduction — just persists the plan).
    - Sub-issues 1–N: one per hole, ordered by dependency arrows.
+     PRs for these target the feature branch (not main).
      Each sub-issue body contains:
      - Which hole it fills
      - Surface to implement (plain English)
@@ -47,12 +49,18 @@ delivery without reading .archon files.
 
 ---
 
+## Branch Strategy
+
+- **PR0** creates `feature/<name>` branch off main. Commits plan files. No PR to main — just the branch.
+- **PR1+** are worktrees off the feature branch, with PRs targeting the feature branch.
+- **Final PR** merges the feature branch → main (includes plan files + all implementation).
+
 ## Output
 
 After running this prompt, you will have:
 - Sub-issues created under the tracking issue with delivery order
 - Each sub-issue is a self-contained, plain-English work order
 - Baseline distance reported
-- Sub-issue 0 ready for PR0 (persists plan files to `specs/NNN-feature/`)
+- Sub-issue 0 ready for PR0 (creates feature branch + persists plan files)
 
-From PR1 onward, CI tracks dist against the plan via `/archon-pr-review --plan`.
+From PR1 onward, `/archon-pr-review --plan` tracks dist against the plan on the feature branch.
