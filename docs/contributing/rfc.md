@@ -89,7 +89,7 @@ The team will then review the same RFC during discussion — but the author must
 - [ ] Every non-obvious decision has alternatives + rationale
 - [ ] No-op default specified (existing behavior unchanged when feature absent)
 - [ ] Validation strategy specified (which invariants? what evidence?)
-- [ ] No implementation details (Go code, struct definitions, file paths)
+- [ ] No implementation details for THIS repo (no Go code, struct definitions, or file paths for unwritten BLIS code). External references are fine (e.g., vLLM `scheduler.py:835` to explain what behavior you're modeling).
 - [ ] Invariants cross-referenced (INV-N)
 - [ ] Extension type identified per hole
 
