@@ -77,7 +77,7 @@ H5 (config) — no dependencies, but should land early
 
 ## Self-Review (before opening the issue)
 
-BEFORE creating the tracking issue, self-review the RFC from the [8 design review perspectives](perspectives.md#design-review-perspectives-8). Fix any CRITICAL or IMPORTANT findings. Only open the issue once zero CRITICAL + zero IMPORTANT remain.
+BEFORE creating the tracking issue, self-review the RFC from the [8 design review perspectives](perspectives.md#design-review-perspectives-8). Reason about findings and fix any CRITICAL or IMPORTANT findings. Only open the issue once zero CRITICAL + zero IMPORTANT remain.
 
 The team will then review the same RFC during discussion — but the author must do the first pass.
 
