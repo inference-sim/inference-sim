@@ -75,13 +75,15 @@ H5 (config) — no dependencies, but should land early
 
 ---
 
-## Design Review (before agreement)
+## Self-Review (before opening the issue)
 
-The team reviews the RFC from the [8 design review perspectives](perspectives.md#design-review-perspectives-8) before approving. Zero CRITICAL + zero IMPORTANT = ready for agreement.
+BEFORE creating the tracking issue, self-review the RFC from the [8 design review perspectives](perspectives.md#design-review-perspectives-8). Fix any CRITICAL or IMPORTANT findings. Only open the issue once zero CRITICAL + zero IMPORTANT remain.
+
+The team will then review the same RFC during discussion — but the author must do the first pass.
 
 ---
 
-## Quality Gates (before agreement)
+## Quality Gates (check before opening the issue)
 
 - [ ] Every hole has a complete module contract (all fields filled)
 - [ ] Every non-obvious decision has alternatives + rationale
