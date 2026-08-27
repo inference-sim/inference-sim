@@ -8,10 +8,10 @@ For archon CLI details: see [archon README](https://github.com/AI-native-Systems
 
 ## When it runs
 
-`/archon-pr-review` runs automatically in CI on every PR. It always runs the standard delta review (boundary moves, surface changes, edge deltas). Additionally, if the PR body (or its closing issue body) contains an `archon-plan:` line with a path to a `.plan.json`, CI also runs `--plan` for dist tracking.
+`/archon-pr-review` runs when triggered via a comment on the PR (manually by a contributor or maintainer). It is NOT automatic — someone must type `/archon-pr-review` on the PR. It runs the standard delta review (boundary moves, surface changes, edge deltas). Additionally, if the PR body (or its closing issue body) contains an `archon-plan:` line with a path to a `.plan.json`, it also runs `--plan` for dist tracking.
 
 ```
-# CI logic (pseudocode):
+# When triggered (pseudocode):
 archon-go pr-review . $BASE $HEAD --out .archon           # always: delta view
 if archon-plan path found AND file exists on base branch:
   archon-go pr-review . $BASE $HEAD --plan <path> --out .archon  # additionally: dist tracking

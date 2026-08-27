@@ -82,18 +82,12 @@ Follow ED-1 through ED-6 (see `docs/contributing/standards/experiments.md`):
 
 ### 2b: Design Review (5 perspectives)
 
-Dispatch 5 parallel review agents using the convergence-review skill:
-
-```
-/convergence-review h-design
-```
-
-Alternatively, dispatch manually. See [review-prompts.md](review-prompts.md) Section A for exact prompts.
+Dispatch 5 parallel review agents. See [review-prompts.md](review-prompts.md) Section A for exact prompts.
 
 **Perspectives**: (1) Hypothesis Quality, (2) ED Rigor, (3) Parameter Calibration, (4) Control Completeness, (5) DES/Domain Fit
 
-The convergence-review skill enforces the protocol automatically. If dispatching manually, apply the **convergence protocol**:
-1. Launch all 5 in parallel as background Task agents (subagent_type="general-purpose", model=REVIEW_MODEL from `--model` flag, default "haiku")
+Apply the **convergence protocol**:
+1. Launch all 5 in parallel as background Task agents (subagent_type="general-purpose", model default "haiku")
 2. Collect all findings classified as CRITICAL / IMPORTANT / SUGGESTION
 3. **Zero CRITICAL + zero IMPORTANT = converged** -> proceed to Step 3
 4. **Any CRITICAL or IMPORTANT** -> fix all, re-run ENTIRE round (not just failed perspectives)
@@ -166,13 +160,7 @@ from analyze_helpers import parse_blis_output, check_for_timeout
 
 **Every run.sh and analyze.py must be code-reviewed BEFORE running.**
 
-Dispatch 5 parallel review agents using the convergence-review skill:
-
-```
-/convergence-review h-code hypotheses/h-$ARGUMENTS/
-```
-
-Alternatively, dispatch manually. See [review-prompts.md](review-prompts.md) Section B for exact prompts.
+Dispatch 5 parallel review agents. See [review-prompts.md](review-prompts.md) Section B for exact prompts.
 
 **Perspectives**: (1) Parser-Output Agreement, (2) CLI Flag Correctness, (3) YAML Field Validation, (4) Config Diff (ED-6), (5) Seed and Determinism
 
@@ -204,13 +192,7 @@ After Code Review converges:
 
 ## Step 8: FINDINGS Review (10 perspectives)
 
-Dispatch 10 parallel review agents using the convergence-review skill:
-
-```
-/convergence-review h-findings hypotheses/h-$ARGUMENTS/FINDINGS.md
-```
-
-Alternatively, dispatch manually. See [review-prompts.md](review-prompts.md) Section C for exact prompts.
+Dispatch 10 parallel review agents. See [review-prompts.md](review-prompts.md) Section C for exact prompts.
 
 **Perspectives**: (1) Code Verifier, (2) Experiment Designer, (3) Statistical Rigor, (4) Control Auditor, (5) Standards Compliance, (6) Substance/Logic, (7) DES Mechanism, (8) Reproducibility, (9) Cross-Experiment, (10) User Guidance
 
@@ -279,4 +261,4 @@ PR description must include:
 | **Agent timeout** | 5 min per reviewer; if exceeded, check output and restart |
 | **Agent failure** | Fall back to performing that review directly |
 | **Severity doubtful?** | If fixing it would change a conclusion → IMPORTANT. If only readability → SUGGESTION |
-| **Model for reviewers** | Default: haiku (~2-3 min, thorough reviews). Override via `/convergence-review <gate> --model sonnet\|opus` |
+| **Model for reviewers** | Default: haiku (~2-3 min, thorough reviews). Override via model parameter in subagent dispatch |

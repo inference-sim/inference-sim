@@ -103,4 +103,4 @@ For the exact issue format Claude should produce, see [archon issue examples](te
 
 ## After Agreement
 
-The next step (encoding into `.archon` plan + creating sub-issues) is driven by the user — see `docs/templates/rfc-to-plan.md` when ready.
+The next step (encoding into `.archon` plan + creating sub-issues) is driven by the user — see `docs/contributing/templates/rfc-to-plan.md` when ready.

@@ -95,7 +95,7 @@ Every piece of documentation lives in exactly one canonical location. Other file
 | Agent trust boundaries | `docs/contributing/standards/agent-trust.md` | CLAUDE.md (pointer), `docs/contributing/index.md` (landing page table) |
 | Extension recipes (policies, scorers, KV tiers) | `docs/contributing/extension-recipes.md` | — |
 | RFC template | `docs/contributing/rfc.md` | CONTRIBUTING.md (summary) |
-| RFC-to-plan prompt | `docs/templates/rfc-to-plan.md` | CONTRIBUTING.md (summary) |
+| RFC-to-plan prompt | `docs/contributing/templates/rfc-to-plan.md` | CONTRIBUTING.md (summary) |
 | File organization and architecture | `docs/reference/project-structure.md` | CLAUDE.md (pointer), README.md (Project Structure tree) |
 | Completed experiments and coverage catalog | [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) | — (not on `main`) |
 | PR workflow | `docs/contributing/pr-workflow.md` | CONTRIBUTING.md (summary) |

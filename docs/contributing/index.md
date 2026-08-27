@@ -26,7 +26,7 @@ See [CONTRIBUTING.md](https://github.com/inference-sim/inference-sim/blob/main/C
 | Workflow | When to Use |
 |----------|-------------|
 | [RFC Template](rfc.md) | Large features: writing the tracking issue with holes/surfaces/contracts |
-| [RFC to Plan](../templates/rfc-to-plan.md) | After RFC agreement: encode .archon, create sub-issues |
+| [RFC to Plan](templates/rfc-to-plan.md) | After RFC agreement: encode .archon, create sub-issues |
 | [PR Workflow](pr-workflow.md) | Every PR: worktree → plan → implement → review → commit |
 | [Hypothesis Experiments](hypothesis.md) | Rigorous experiments to validate simulator behavior |
 
@@ -49,4 +49,4 @@ See [CONTRIBUTING.md](https://github.com/inference-sim/inference-sim/blob/main/C
 | Template | Purpose |
 |----------|---------|
 | [Design Guidelines](templates/design-guidelines.md) | DES foundations, module architecture, extension framework |
-| [RFC to Plan](../templates/rfc-to-plan.md) | Claude prompt: encode .archon from agreed RFC + create sub-issues |
+| [RFC to Plan](templates/rfc-to-plan.md) | Claude prompt: encode .archon from agreed RFC + create sub-issues |

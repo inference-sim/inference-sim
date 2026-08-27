@@ -185,7 +185,7 @@ The full pipeline for features that introduce new module boundaries, new interfa
 3. **Human approval** — agreement to proceed
 
 **Phase 2 — Plan** (after agreement):
-4. **Encode .archon plan** — following [`docs/templates/rfc-to-plan.md`](docs/templates/rfc-to-plan.md) (Claude encodes, creates sub-issues)
+4. **Encode .archon plan** — following [`docs/contributing/templates/rfc-to-plan.md`](docs/contributing/templates/rfc-to-plan.md) (Claude encodes, creates sub-issues)
 5. **PR0** — persist plan to `specs/NNN-feature/` on feature branch
 
 **Phase 3 — Deliver** (repeat for each sub-issue):
@@ -330,4 +330,4 @@ See design guidelines Section 5.4 for the full two-phase recipe.
 | `docs/concepts/` | System architecture, core engine, concepts glossary, roofline estimation | When learning how BLIS works before contributing |
 | `docs/contributing/templates/design-guidelines.md` | DES foundations, module architecture, extension framework | Before designing a new feature or extending BLIS |
 | `docs/contributing/rfc.md` | RFC template for large features (holes/surfaces/contracts) | When planning a multi-PR feature |
-| `docs/templates/rfc-to-plan.md` | Claude prompt for encoding RFC into .archon plan | After RFC agreement, before implementation |
+| `docs/contributing/templates/rfc-to-plan.md` | Claude prompt for encoding RFC into .archon plan | After RFC agreement, before implementation |

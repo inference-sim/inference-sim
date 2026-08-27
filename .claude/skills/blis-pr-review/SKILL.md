@@ -12,7 +12,7 @@ Invoke the `/pr-review-toolkit:review-pr` skill with the following BLIS-specific
 
 --- ARCHON CONTEXT (read-only — never run archon yourself) ---
 
-Check if `/archon-pr-review` output exists in a previous PR comment (from CI or manual invocation). Do NOT run archon yourself — just read the CI output. If it exists, incorporate its verdict (FAST-TRACK / REALIZES / EXCEEDS / CONFLICTS) and findings per @docs/contributing/archon/pr-review-context.md. If it doesn't exist yet, note this but proceed.
+Check if `/archon-pr-review` output exists in a previous PR comment (triggered manually by a contributor or maintainer). Do NOT run archon yourself — just read the output if it exists. If it does, incorporate its verdict (FAST-TRACK / REALIZES / EXCEEDS / CONFLICTS) and findings per @docs/contributing/archon/pr-review-context.md. If it doesn't exist yet, note this but proceed.
 
 Evaluate whether the PR fully and correctly addresses all requirements and reviewer concerns. In particular, assess:
 

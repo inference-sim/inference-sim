@@ -367,7 +367,7 @@ BLIS follows a layered design document hierarchy. Each tier has a specific abstr
 
 - **Design guidelines** (`docs/contributing/templates/design-guidelines.md`): Target architecture, DES foundations, module contracts, extension framework. Read this first when designing a new feature or extending BLIS.
 - **Design docs** (per-feature): Behavioral specifications written per the guidelines. Describe what modules do and why, never how they're implemented. Four species: decision record, specification, problem analysis, system overview.
-- **RFC + .archon plan** (multi-PR features): Tracking issue with holes/surfaces/contracts (see `docs/contributing/rfc.md`), encoded into a machine-checkable `.archon` plan (see `docs/templates/rfc-to-plan.md`). Sub-issues created per hole, each delivered as a PR.
+- **RFC + .archon plan** (multi-PR features): Tracking issue with holes/surfaces/contracts (see `docs/contributing/rfc.md`), encoded into a machine-checkable `.archon` plan (see `docs/contributing/templates/rfc-to-plan.md`). Sub-issues created per hole, each delivered as a PR.
 - **Implementation plans** (single PR): Behavioral contracts, TDD tasks. Follow `docs/contributing/pr-workflow.md`.
 
 **The abstraction rule:** Design docs and RFCs describe *what a module does and what it guarantees*. The `.archon` plan describes *what structure to build and in what order*. Implementation plans describe *how to implement each piece*.
@@ -611,12 +611,12 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 
 - `docs/contributing/pr-workflow.md`: End-to-end PR workflow (worktree → plan → review → implement → audit → commit)
 - `docs/contributing/rfc.md`: RFC template for large features (tracking issue with holes/surfaces/contracts)
-- `docs/templates/rfc-to-plan.md`: Claude prompt for encoding RFC into .archon plan + creating sub-issues
+- `docs/contributing/templates/rfc-to-plan.md`: Claude prompt for encoding RFC into .archon plan + creating sub-issues
 
 ### Templates (what to produce)
 
 - `docs/contributing/templates/design-guidelines.md`: **BLIS Design Guidelines** — DES foundations, module architecture, extension framework. **Start here when designing anything new.**
-- `docs/templates/rfc-to-plan.md`: Claude prompt for .archon encoding + sub-issue creation
+- `docs/contributing/templates/rfc-to-plan.md`: Claude prompt for .archon encoding + sub-issue creation
 
 ### Per-Feature Plans
 
