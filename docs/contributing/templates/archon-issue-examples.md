@@ -76,7 +76,7 @@ archon-plan: specs/NNN-feature/feature.plan.json
 
 ## Sub-issue 1–N (per hole)
 
-Each sub-issue is a self-contained work order. PRs target the feature branch. `blis-pr-review` reads this body to verify contracts are delivered.
+Each sub-issue is a self-contained work order. PRs target the feature branch. Developer self-reviews (`@claude /blis-pr-review` + `/archon-pr-review`). `blis-pr-review` reads this body to verify contracts are delivered.
 
 ```markdown
 # [Hole name]: [short description]
@@ -119,9 +119,51 @@ dist [before] → [after] (fills [hole] + [N] arrows)
 
 [Which sub-issues must land first, or "None — can start immediately"]
 
+## Target branch
+
+`feature/<name>` (PR against the feature branch, NOT main)
+
+## Review
+
+Self-reviewed by developer: `@claude /blis-pr-review` + `/archon-pr-review`
+
 ---
 
 archon-plan: specs/[NNN-feature]/[feature].plan.json
+```
+
+---
+
+## Final PR (feature branch → main)
+
+```markdown
+# [Feature name]: merge to main
+
+Closes: #[tracking issue number]
+
+## Summary
+
+[Plain-English: what this feature adds, why, how it behaves — for maintainers who haven't followed the sub-issues]
+
+## What was delivered
+
+- H1: [hole name] — [one sentence]
+- H2: [hole name] — [one sentence]
+- ...
+
+## Archon verification
+
+- dist: 0 (all holes filled, all arrows established)
+- All contracts evidenced (tests pass)
+- No-op default confirmed (byte-identical when feature absent)
+
+## Target branch
+
+`feature/<name>` → `main`
+
+## Review
+
+Maintainer reviews this PR (the whole feature in one diff against main).
 ```
 
 ---

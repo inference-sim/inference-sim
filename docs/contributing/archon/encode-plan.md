@@ -14,9 +14,9 @@ archon-go plan slice feature.plan.json <hole-path>                  # work order
 
 ## Sub-issue structure
 
-- **Sub-issue 0:** Create feature branch (`feature/<name>`) off main. Persist `.archon` + `.plan.json` to `specs/NNN-feature/`. Push. No PR to main — this is the feature branch's first commit.
-- **Sub-issues 1–N:** One per hole, ordered by dependency arrows. PRs target the feature branch. Each states: which hole, expected dist reduction, surface, contracts, allowed imports, dependencies.
-- **Final PR:** Feature branch → main. Merges when dist=0 + all tests pass.
+- **Sub-issue 0 (PR0):** Create feature branch (`feature/<name>`) off main. Persist `.archon` + `.plan.json` to `specs/NNN-feature/`. Push. No PR to main — this is the feature branch's first commit.
+- **Sub-issues 1–N (PR1–PRN):** One per hole, ordered by dependency arrows. PRs target the feature branch. Self-reviewed by the developer (`@claude /blis-pr-review` + `/archon-pr-review`). Each states: which hole, expected dist reduction, surface, contracts, allowed imports, dependencies, target branch.
+- **Final PR (PRN+1):** Feature branch → main. Reviewed by maintainer. Description must include: what tracking issue it closes, plain-English summary of the feature, and the archon design (holes filled, dist=0 confirmed). Merges when dist=0 + all tests pass + maintainer approves.
 
 Every sub-issue body must include this line so `/archon-pr-review` can find the plan:
 ```
