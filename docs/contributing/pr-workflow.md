@@ -185,9 +185,9 @@ Check for: input validation completeness (all CLI flags, YAML fields, config val
 
 ---
 
-### Step 3: Human Review of Plan
+### Step 3: Human Review of Plan — STOP HERE
 
-Final human review of the plan (after automated review).
+**BLOCKING GATE.** Present the plan to the human and STOP. Do NOT proceed to implementation until the human explicitly approves. Wait for their response.
 
 **Focus areas** (full-format plans):
 
