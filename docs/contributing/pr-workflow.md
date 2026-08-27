@@ -59,6 +59,8 @@ cd .worktrees/pr<N>-<feature-name>
 
 All remaining steps happen in the worktree.
 
+> **Multi-PR features (feature branch model):** For large features, PRs don't all target main. PR0 creates a feature branch and persists the archon plan. PR1–N target the feature branch (one hole per PR, self-reviewed). The final PR merges the feature branch → main (maintainer-reviewed). See [archon/encode-plan.md](archon/encode-plan.md) for the full structure.
+
 !!! tip "Automation"
     `/superpowers:using-git-worktrees pr<N>-<feature-name>` creates the worktree and switches your shell into it. Optional pre-cleanup: `/commit-commands:clean_gone` removes stale branches. See [Skills & Plugins](../guide/skills-and-plugins.md).
 

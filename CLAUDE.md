@@ -508,7 +508,7 @@ When filing a GitHub issue, pick the template that matches your situation:
 4. **Testing a hypothesis or running an experiment?** → `Hypothesis Proposal` (`.github/ISSUE_TEMPLATE/hypothesis.md`)
 5. **Fixing an antipattern, hardening, or refactoring?** → `Hardening / refactoring` (`.github/ISSUE_TEMPLATE/custom.md`)
 
-Every issue must have at least one label. Use `gh issue create --template "Template name"` to pre-fill the template.
+Every issue must have at least one label. To file an issue: read the relevant template file under `.github/ISSUE_TEMPLATE/`, reproduce its structure in your issue body, and use `gh issue create --title "..." --body "..." --label "..."`. Apply the template's front-matter labels yourself.
 
 
 ## Post-Hoc Saturation Detection
