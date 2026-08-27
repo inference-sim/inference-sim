@@ -26,9 +26,9 @@ This is NOT a GitHub issue template — it's a reference for Claude to produce c
 - **Responsibility:** [one sentence]
 - **Surface:** [exported functions in plain English]
 - **Allowed imports:** [whitelist]
-- **Contracts:**
-  - BC-X1: [statement] [evidenced: property_test]
-  - BC-X2: [statement] [evidenced: differential_test]
+- **Contracts:** (naming: `BC-<hole-id>-<N>`)
+  - BC-H1-1: [statement] [evidenced: property_test]
+  - BC-H1-2: [statement] [evidenced: differential_test]
 - **Invariants:** [which INV-N this preserves]
 - **Extension type:** policy template / subsystem module / backend swap / tier composition
 - **No-op default:** [behavior when feature is absent — must be byte-identical]
