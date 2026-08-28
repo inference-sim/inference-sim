@@ -139,30 +139,14 @@ Example:
 		if replayShuffleCorpus && replayConcurrentSessions == 0 {
 			logrus.Fatalf("--shuffle-corpus requires --concurrent-sessions > 0")
 		}
-		// Pool mode + output artifacts: guard against silent truncation (R1).
-		// Trace re-export in pool mode would contain only the initial wave of
-		// round-0 requests (follow-ups/clones are never collected for export), so
-		// reject it outright — mirroring how replay fails fast on unsupported
-		// features (INV-13). Per-request results similarly exclude clone sessions
-		// (non-numeric ids), so warn loudly rather than silently subsetting.
-		if replayConcurrentSessions > 0 && replayTraceOutput != "" {
-			logrus.Fatalf("--trace-output is not supported with --concurrent-sessions (pool mode): a re-export would capture only the initial %d-session wave, not all pooled sessions. Re-run without --trace-output.", replayConcurrentSessions)
-		}
-		// Plain closed-loop + accumulate + output artifacts: the same silent-truncation
-		// hazard the pool guard above rejects (R1 / INV-13), for --concurrent-sessions == 0
-		// (#1621). A closed-loop re-export sources only the round-0 request slice (the
-		// export block below builds records from `requests`, never the generated
-		// follow-up rounds collected in followUpRequests); RequestsToTraceRecords then
-		// re-emits each per-round input_tokens as an absolute suffix length rather than
-		// the delta an accumulate loader expects; and the re-export header never carries
-		// session_context_growth. The exported trace therefore could NOT be re-replayed
-		// to reproduce the original per-round input. Reject it outright until faithful
-		// re-export (issue #1621, option (a)) lands. Accumulate implies closed-loop here
-		// (guaranteed by the gate above), and pool mode is already handled by the guard
-		// above, so this covers the remaining plain closed-loop case.
-		if traceData.Header.SessionContextGrowth == "accumulate" && replayConcurrentSessions == 0 && replayTraceOutput != "" {
-			logrus.Fatalf("--trace-output is not supported with --session-mode closed-loop on a session_context_growth=accumulate trace: the re-export would source only the round-0 requests (dropping the generated follow-up rounds), emit absolute per-round input_tokens instead of deltas, and omit session_context_growth from the header, so the result could not be re-replayed to reproduce the original per-round input. Re-run without --trace-output; to re-export, replay the original converter corpus (e.g. from `blis convert otel`) instead.")
-		}
+		// NOTE (#1630): the two #1623 fail-fast guards that rejected --trace-output for
+		// pool mode and for plain-closed-loop accumulate traces are gone — a closed-loop
+		// re-export is now FAITHFUL. It captures every round (round-0 + follow-ups), and
+		// for an accumulate corpus re-derives per-round deltas + input_tokens_reset
+		// markers and sets session_context_growth on the header (see the export block
+		// below via workload.ReExportClosedLoopRecords). Per-request results still exclude
+		// clone/follow-up sessions (non-numeric ids), so the pool --results-path warning
+		// below stays.
 		if replayConcurrentSessions > 0 && resultsPath != "" {
 			logrus.Warnf("--results-path with --concurrent-sessions (pool mode): per-request results cover only the original corpus sessions' round-0; duplicated (clone) sessions and follow-up rounds are excluded (non-numeric request ids).")
 		}
@@ -679,22 +663,34 @@ Example:
 		}
 
 		// Run simulation — wire SessionManager for closed-loop, nil for fixed mode
-		// Collect follow-ups for saturation analysis in closed-loop mode (BC-12, issue #1298)
+		// Collect follow-ups for saturation analysis in closed-loop mode (BC-12, issue #1298).
+		// Also capture each follow-up's think time (arrival − completion clock) so a faithful
+		// --trace-output re-export can reproduce the exact per-round arrivals via the
+		// recorded-think column (#1630). thinkUsByReqID is keyed by request ID and consulted
+		// only for round>0 records, so a pool admission (a round-0 request returned as a
+		// "follow-up" with think 0) never receives a spurious think value.
 		var followUpRequests []*sim.Request
+		thinkUsByReqID := make(map[string]int64)
+		captureFollowUps := func(followUps []*sim.Request, clock int64) {
+			for _, fu := range followUps {
+				followUpRequests = append(followUpRequests, fu)
+				thinkUsByReqID[fu.ID] = fu.ArrivalTime - clock
+			}
+		}
 		var onRequestDone func(*sim.Request, int64) []*sim.Request
 		switch {
 		case poolDriver != nil:
 			baseCb := poolDriver.OnComplete
 			onRequestDone = func(req *sim.Request, clock int64) []*sim.Request {
 				followUps := baseCb(req, clock)
-				followUpRequests = append(followUpRequests, followUps...)
+				captureFollowUps(followUps, clock)
 				return followUps
 			}
 		case sessionMgr != nil:
 			baseCb := sessionMgr.OnComplete
 			onRequestDone = func(req *sim.Request, clock int64) []*sim.Request {
 				followUps := baseCb(req, clock)
-				followUpRequests = append(followUpRequests, followUps...)
+				captureFollowUps(followUps, clock)
 				return followUps
 			}
 		}
@@ -732,15 +728,41 @@ Example:
 		}
 		goodputTargets := mergeGoodputTargets(cliTTFT, cliITL, cliE2E, traceData.Header.GoodputSLOTargets, nil)
 
-		// Export trace if requested (BC-1, BC-2, BC-3)
+		// Export trace if requested.
+		// Closed-loop / pool replay: capture EVERY round (round-0 + generated follow-ups)
+		// and re-derive a faithful record set (#1630) — for an accumulate corpus this means
+		// per-round deltas + input_tokens_reset markers and a session_context_growth header,
+		// via workload.ReExportClosedLoopRecords. Fixed mode (and closed-loop with no session
+		// records) keeps the byte-identical RequestsToTraceRecords(requests) path (INV-6).
 		if replayTraceOutput != "" {
-			records := workload.RequestsToTraceRecords(requests)
+			var records []workload.TraceRecord
+			reexportGrowth := ""
+			if sessionMgr != nil || poolDriver != nil {
+				allReqs := append(append([]*sim.Request{}, requests...), followUpRequests...)
+				var rErr error
+				records, rErr = workload.ReExportClosedLoopRecords(allReqs, thinkUsByReqID, traceData.Header.SessionContextGrowth)
+				if rErr != nil {
+					logrus.Fatalf("faithful closed-loop re-export: %v", rErr)
+				}
+				reexportGrowth = traceData.Header.SessionContextGrowth
+				if poolDriver != nil {
+					// Pool re-export is a COMPLETE session corpus (all originals + clones as
+					// distinct sessions), not a pool config — re-cloning it would double-expand.
+					// Replay it with --session-mode closed-loop (or --concurrent-sessions N for
+					// pool semantics, WITHOUT --total-sessions). Per-request bit-identity is not
+					// guaranteed (data-dependent admission timing); aggregate metrics reproduce.
+					logrus.Infof("--trace-output in pool mode: re-exported %d captured records as a complete closed-loop session corpus; replay with --session-mode closed-loop (not re-cloned).", len(records))
+				}
+			} else {
+				records = workload.RequestsToTraceRecords(requests)
+			}
 			header := &workload.TraceHeader{
-				Version:           3,
-				TimeUnit:          "microseconds",
-				Mode:              "replayed",
-				GoodputSLOTargets: goodputTargets,                   // #1413, BC-7
-				KVOffload:         simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: carry the offload config forward
+				Version:              3,
+				TimeUnit:             "microseconds",
+				Mode:                 "replayed",
+				SessionContextGrowth: reexportGrowth,                   // #1630: carry accumulate forward so deltas re-replay correctly
+				GoodputSLOTargets:    goodputTargets,                   // #1413, BC-7
+				KVOffload:            simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: carry the offload config forward
 				// #1583, BC-4: preserve the real-side observed KV hit-rate verbatim.
 				// It is a real-server observation replay cannot regenerate; carrying it
 				// forward keeps it available to a downstream calibrate and never

@@ -92,9 +92,20 @@ func ReExportClosedLoopRecords(reqs []*sim.Request, thinkUsByReqID map[string]in
 						think = &tv
 					}
 				}
+				// The encoder's delta law is delta_k = abs_k − abs_{k-1} − prevOut, and it
+				// must be the EXACT inverse of the round's accumulate growth
+				// (abs_k = abs_{k-1} + actualOutput_{k-1} + delta_k, session.go). The buffer
+				// grows by actualOutputLen = ProgressIndex − InputLen (which can be < the oracle
+				// MaxOutputLen — e.g. the final decode token is not always counted, or a
+				// length-capped round), NOT len(OutputTokens). Feeding the oracle here would
+				// mis-derive every delta by (MaxOutputLen − actualOutput) and desync the
+				// reconstruction (issue #1630 round-trip). So feed actualOutputLen for the delta;
+				// the emitted OutputTokens column is overwritten with the oracle MaxOutputLen
+				// below (re-replay's OutputSampler must drive the same completion → same
+				// actualOutput → exact abs).
 				rounds[i] = NormalizedRound{
 					InputTokensAbs: int(r.InputLen()),
-					OutputTokens:   len(r.OutputTokens),
+					OutputTokens:   accumulatedOutputLen(r),
 					ArrivalUs:      r.ArrivalTime,
 					ThinkUs:        think,
 					Status:         reexportStatus(r.State),
@@ -102,11 +113,15 @@ func ReExportClosedLoopRecords(reqs []*sim.Request, thinkUsByReqID map[string]in
 			}
 			// EncodeSessionToTraceRecords re-derives per-round deltas + reset markers (the
 			// #1613 law) and sets SessionID/RoundIndex/InputTokens/InputTokensReset/
-			// OutputTokens/ArrivalTimeUs/ThinkTimeUs/Status; Model stays empty. Decorate each
-			// with SendTimeUs + sim-computed chunk timing so the re-export carries the same
-			// timing columns RequestsToTraceRecords produces (for downstream calibrate).
+			// OutputTokens/ArrivalTimeUs/ThinkTimeUs/Status; Model stays empty.
 			recs := EncodeSessionToTraceRecords(g.id, rounds)
 			for i := range recs {
+				// Emit the ORACLE MaxOutputLen in the OutputTokens column (the delta was
+				// computed from actualOutputLen above): re-replay's OutputSampler yields this
+				// as MaxOutputLen, reproducing the same completion → same actualOutput → the
+				// abs sequence reconstructs exactly. Then decorate with SendTimeUs +
+				// sim-computed chunk timing (RequestsToTraceRecords parity, for calibrate).
+				recs[i].OutputTokens = len(g.reqs[i].OutputTokens)
 				decorateReExportTiming(&recs[i], g.reqs[i])
 			}
 			records = append(records, recs...)
@@ -168,6 +183,19 @@ func ReExportClosedLoopRecords(reqs []*sim.Request, thinkUsByReqID map[string]in
 		records[i].RequestID = i
 	}
 	return records, nil
+}
+
+// accumulatedOutputLen returns the number of output tokens that actually grew the
+// session's accumulate buffer for this round — ProgressIndex − InputLen, clamped at 0 —
+// mirroring SessionManager.OnComplete's actualOutputLen. This (not len(OutputTokens),
+// the oracle budget) is the correct prevOut for the delta/reset law, so the re-derived
+// deltas are the exact inverse of the round's accumulate growth (#1630 round-trip).
+func accumulatedOutputLen(req *sim.Request) int {
+	ao := int(req.ProgressIndex) - int(req.InputLen())
+	if ao < 0 {
+		return 0
+	}
+	return ao
 }
 
 // reexportStatus maps a replayed request's terminal state to the trace Status string,

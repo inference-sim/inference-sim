@@ -7,16 +7,26 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-// mkReq builds a minimal replayed request for re-export reconstruction tests.
+// mkReq builds a minimal COMPLETED replayed request for re-export reconstruction tests.
+// ProgressIndex = inputLen + outputLen models a fully-generated round (actualOutput ==
+// oracle MaxOutputLen), the common non-length-capped case. mkReqAO models a round whose
+// actual accumulated output differs from the oracle budget.
 func mkReq(id, sessionID string, round, inputLen, outputLen int, arrival int64, state sim.RequestState) *sim.Request {
+	return mkReqAO(id, sessionID, round, inputLen, outputLen, outputLen, arrival, state)
+}
+
+// mkReqAO is mkReq with an explicit actualOutput (sets ProgressIndex = inputLen +
+// actualOutput) distinct from the oracle outputLen (= len(OutputTokens)).
+func mkReqAO(id, sessionID string, round, inputLen, outputLen, actualOutput int, arrival int64, state sim.RequestState) *sim.Request {
 	return &sim.Request{
-		ID:           id,
-		SessionID:    sessionID,
-		RoundIndex:   round,
-		InputTokens:  make([]sim.TokenID, inputLen),
-		OutputTokens: make([]sim.TokenID, outputLen),
-		ArrivalTime:  arrival,
-		State:        state,
+		ID:            id,
+		SessionID:     sessionID,
+		RoundIndex:    round,
+		InputTokens:   make([]sim.TokenID, inputLen),
+		OutputTokens:  make([]sim.TokenID, outputLen),
+		ProgressIndex: int64(inputLen + actualOutput),
+		ArrivalTime:   arrival,
+		State:         state,
 	}
 }
 
@@ -96,6 +106,30 @@ func TestReExportClosedLoopRecords_Accumulate_DeltasAndResets(t *testing.T) {
 	}
 	if recs[2].ThinkTimeUs == nil || *recs[2].ThinkTimeUs != 2500 {
 		t.Errorf("round 2: ThinkTimeUs = %v, want &2500", recs[2].ThinkTimeUs)
+	}
+}
+
+// T1b (BC-1, #1630 root-cause): the delta law must use the round's ACTUAL accumulated
+// output (ProgressIndex − InputLen), not the oracle len(OutputTokens). A round-0 whose
+// actual output (19) is one below its oracle budget (20) must still yield the exact delta
+// (abs₁ − abs₀ − actualOutput₀), while the emitted OutputTokens column keeps the oracle
+// budget so re-replay reproduces the same completion.
+func TestReExportClosedLoopRecords_Accumulate_ActualOutputVsOracle(t *testing.T) {
+	// abs 100 → 149; round-0 oracle budget 20 but actual accumulated output 19.
+	r0 := mkReqAO("request_0", "s1", 0, 100, 20, 19, 0, sim.StateCompleted)
+	r1 := mkReq("session_s1_round_1_1", "s1", 1, 149, 15, 1_000_000, sim.StateCompleted)
+	recs, err := ReExportClosedLoopRecords([]*sim.Request{r0, r1}, map[string]int64{"session_s1_round_1_1": 500}, "accumulate")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// delta₁ = 149 − 100 − actualOutput₀(19) = 30 (NOT 149−100−20 = 29).
+	if recs[1].InputTokens != 30 {
+		t.Errorf("round-1 delta = %d, want 30 (must use actualOutput 19, not oracle 20)", recs[1].InputTokens)
+	}
+	// Emitted OutputTokens column carries the ORACLE budget (20) so re-replay drives the
+	// same completion.
+	if recs[0].OutputTokens != 20 {
+		t.Errorf("round-0 OutputTokens column = %d, want 20 (oracle MaxOutputLen)", recs[0].OutputTokens)
 	}
 }
 
