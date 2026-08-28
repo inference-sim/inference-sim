@@ -36,8 +36,13 @@ Read the tracking issue discussions and final decisions. Then:
        (CI uses this to auto-detect the plan for dist tracking)
 
    IMPORTANT: Every sub-issue (including sub-issue 0) must contain the
-   `archon-plan:` line with the same path. This is how CI knows to run
-   both the standard delta review AND the plan-based dist tracking.
+   `archon-plan:` line with the same path. This is how CI knows to add
+   plan-based dist tracking to the review.
+
+   The path must end in `.json` and the plan must be committed to the
+   branch — CI reads it out of git, not the working tree. Substitute the
+   placeholders: a literal `specs/[NNN-feature]/...` is rejected and the
+   review posts a warning instead of running the dist ratchet.
 
 4. Report: summary of baseline dist, number of holes, delivery order.
 

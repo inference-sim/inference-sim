@@ -59,6 +59,9 @@ blis
 blis_iter*
 inference-sim
 
+# archon-go pr-review --out
+.archon/
+
 # results
 results/
 largesweep/

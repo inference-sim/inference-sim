@@ -134,6 +134,10 @@ Self-reviewed by developer: `@claude /blis-pr-review` + `/archon-pr-review`
 archon-plan: specs/[NNN-feature]/[feature].plan.json
 ```
 
+Substitute the bracketed placeholders. `/archon-pr-review` rejects a literal
+`specs/[NNN-feature]/...` and posts a warning instead of running the dist ratchet, and it
+reads the plan out of git, so the file must be committed to the branch.
+
 ---
 
 ## Final PR (feature branch → main)

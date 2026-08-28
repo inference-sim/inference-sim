@@ -23,6 +23,12 @@ Every sub-issue body must include this line so `/archon-pr-review` can find the 
 archon-plan: specs/NNN-feature/feature.plan.json
 ```
 
+The path must end in `.json`, and the plan must be **committed** to the branch — CI reads it
+out of git, not the working tree, so an untracked plan is invisible to it. (`.gitignore`
+ignores `*.json` repo-wide; `!specs/**/*.json` is the negation that lets the compiled plan be
+tracked.) A declared path CI cannot read produces a warning on the PR rather than a silent
+delta-only review.
+
 ## Where to persist
 
 ```
