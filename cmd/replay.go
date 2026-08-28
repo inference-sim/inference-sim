@@ -674,7 +674,14 @@ Example:
 		captureFollowUps := func(followUps []*sim.Request, clock int64) {
 			for _, fu := range followUps {
 				followUpRequests = append(followUpRequests, fu)
-				thinkUsByReqID[fu.ID] = fu.ArrivalTime - clock
+				// Only round>0 follow-ups carry a meaningful think (arrival − completion).
+				// A pool admission is a round-0 request returned as a "follow-up" with
+				// arrival == clock (think 0) and is never consulted for think; gate on the
+				// writer side so the round-0-has-no-think invariant is structural, not just
+				// enforced by the round>0 reader guards in ReExportClosedLoopRecords.
+				if fu.RoundIndex > 0 {
+					thinkUsByReqID[fu.ID] = fu.ArrivalTime - clock
+				}
 			}
 		}
 		var onRequestDone func(*sim.Request, int64) []*sim.Request
@@ -728,52 +735,10 @@ Example:
 		}
 		goodputTargets := mergeGoodputTargets(cliTTFT, cliITL, cliE2E, traceData.Header.GoodputSLOTargets, nil)
 
-		// Export trace if requested.
-		// Closed-loop / pool replay: capture EVERY round (round-0 + generated follow-ups)
-		// and re-derive a faithful record set (#1630) — for an accumulate corpus this means
-		// per-round deltas + input_tokens_reset markers and a session_context_growth header,
-		// via workload.ReExportClosedLoopRecords. Fixed mode (and closed-loop with no session
-		// records) keeps the byte-identical RequestsToTraceRecords(requests) path (INV-6).
-		if replayTraceOutput != "" {
-			var records []workload.TraceRecord
-			reexportGrowth := ""
-			if sessionMgr != nil || poolDriver != nil {
-				allReqs := append(append([]*sim.Request{}, requests...), followUpRequests...)
-				var rErr error
-				records, rErr = workload.ReExportClosedLoopRecords(allReqs, thinkUsByReqID, traceData.Header.SessionContextGrowth)
-				if rErr != nil {
-					logrus.Fatalf("faithful closed-loop re-export: %v", rErr)
-				}
-				reexportGrowth = traceData.Header.SessionContextGrowth
-				if poolDriver != nil {
-					// Pool re-export is a COMPLETE session corpus (all originals + clones as
-					// distinct sessions), not a pool config — re-cloning it would double-expand.
-					// Replay it with --session-mode closed-loop (or --concurrent-sessions N for
-					// pool semantics, WITHOUT --total-sessions). Per-request bit-identity is not
-					// guaranteed (data-dependent admission timing); aggregate metrics reproduce.
-					logrus.Infof("--trace-output in pool mode: re-exported %d captured records as a complete closed-loop session corpus; replay with --session-mode closed-loop (not re-cloned).", len(records))
-				}
-			} else {
-				records = workload.RequestsToTraceRecords(requests)
-			}
-			header := &workload.TraceHeader{
-				Version:              3,
-				TimeUnit:             "microseconds",
-				Mode:                 "replayed",
-				SessionContextGrowth: reexportGrowth,                   // #1630: carry accumulate forward so deltas re-replay correctly
-				GoodputSLOTargets:    goodputTargets,                   // #1413, BC-7
-				KVOffload:            simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: carry the offload config forward
-				// #1583, BC-4: preserve the real-side observed KV hit-rate verbatim.
-				// It is a real-server observation replay cannot regenerate; carrying it
-				// forward keeps it available to a downstream calibrate and never
-				// silently drops it.
-				ObservedKVMetrics: traceData.Header.ObservedKVMetrics,
-			}
-			if err := workload.ExportTraceV2(header, records, replayTraceOutput+".yaml", replayTraceOutput+".csv"); err != nil {
-				logrus.Fatalf("Trace export failed: %v", err)
-			}
-			logrus.Infof("Trace exported: %s.yaml, %s.csv (%d records)", replayTraceOutput, replayTraceOutput, len(records))
-		}
+		// NOTE (#1630): the --trace-output re-export block moved to the END of Run (after
+		// EmitOutput / --results-path). The re-export is a SECONDARY artifact; a failure in
+		// it (a reconstruction error, or a disk write error) must not discard the primary
+		// simulation metrics of a run that may have taken minutes/hours.
 
 		// Save aggregate metrics to stdout (same as runCmd). Per-instance output
 		// carries no saturation field — the final label is a cluster-level verdict
@@ -942,6 +907,57 @@ Example:
 				logrus.Fatalf("Failed to write SimResults to %s: %v", resultsPath, err)
 			}
 			logrus.Infof("SimResults written to %s (%d entries)", resultsPath, len(simResults))
+		}
+
+		// Export trace if requested (runs LAST, after all primary metrics are emitted —
+		// #1630 Issue C: a secondary-artifact failure must not discard primary results).
+		// Closed-loop / pool replay: capture EVERY round (round-0 + generated follow-ups)
+		// and re-derive a faithful record set (#1630) — for an accumulate corpus this means
+		// per-round deltas + input_tokens_reset markers and a session_context_growth header,
+		// via workload.ReExportClosedLoopRecords. Fixed mode (and closed-loop with no session
+		// records) keeps the byte-identical RequestsToTraceRecords(requests) path (INV-6).
+		if replayTraceOutput != "" {
+			var records []workload.TraceRecord
+			reexportGrowth := ""
+			if sessionMgr != nil || poolDriver != nil {
+				allReqs := append(append([]*sim.Request{}, requests...), followUpRequests...)
+				var rErr error
+				records, rErr = workload.ReExportClosedLoopRecords(allReqs, thinkUsByReqID, traceData.Header.SessionContextGrowth)
+				if rErr != nil {
+					logrus.Fatalf("faithful closed-loop re-export: %v", rErr)
+				}
+				reexportGrowth = traceData.Header.SessionContextGrowth
+				if poolDriver != nil {
+					// Pool re-export is a COMPLETE session corpus (all originals + clones as
+					// distinct sessions), not a pool config — re-cloning it would double-expand.
+					// Replay it with --session-mode closed-loop (or --concurrent-sessions N for
+					// pool semantics, WITHOUT --total-sessions). Aggregate CONSERVATION metrics
+					// (completed/injected requests, total tokens) reproduce; per-request and
+					// cache/latency aggregates are NOT guaranteed — pool admission timing is
+					// data-dependent, and a non-accumulate clone's cache-busting divergence is
+					// not preserved when it shares a prefix_group (issue #1630, BC-4).
+					logrus.Infof("--trace-output in pool mode: re-exported %d captured records as a complete closed-loop session corpus; replay with --session-mode closed-loop (not re-cloned).", len(records))
+				}
+			} else {
+				records = workload.RequestsToTraceRecords(requests)
+			}
+			header := &workload.TraceHeader{
+				Version:              3,
+				TimeUnit:             "microseconds",
+				Mode:                 "replayed",
+				SessionContextGrowth: reexportGrowth,                   // #1630: carry accumulate forward so deltas re-replay correctly
+				GoodputSLOTargets:    goodputTargets,                   // #1413, BC-7
+				KVOffload:            simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: carry the offload config forward
+				// #1583, BC-4: preserve the real-side observed KV hit-rate verbatim.
+				// It is a real-server observation replay cannot regenerate; carrying it
+				// forward keeps it available to a downstream calibrate and never
+				// silently drops it.
+				ObservedKVMetrics: traceData.Header.ObservedKVMetrics,
+			}
+			if err := workload.ExportTraceV2(header, records, replayTraceOutput+".yaml", replayTraceOutput+".csv"); err != nil {
+				logrus.Fatalf("Trace export failed: %v", err)
+			}
+			logrus.Infof("Trace exported: %s.yaml, %s.csv (%d records)", replayTraceOutput, replayTraceOutput, len(records))
 		}
 
 		logrus.Info("Replay complete.")

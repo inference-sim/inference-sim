@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -90,6 +92,11 @@ func ReExportClosedLoopRecords(reqs []*sim.Request, thinkUsByReqID map[string]in
 					if t, ok := thinkUsByReqID[r.ID]; ok {
 						tv := t
 						think = &tv
+					} else {
+						// Every follow-up is captured in the OnComplete wrapper, so a miss
+						// here should be unreachable; warn (never silently degrade) since the
+						// re-replay would fall back to arrival-gap think for this round.
+						logrus.Warnf("ReExportClosedLoopRecords: session %q round %d (request %q) has no captured think time; re-replay will derive it from arrival gaps", g.id, i, r.ID)
 					}
 				}
 				// The encoder's delta law is delta_k = abs_k − abs_{k-1} − prevOut, and it
@@ -113,16 +120,20 @@ func ReExportClosedLoopRecords(reqs []*sim.Request, thinkUsByReqID map[string]in
 			}
 			// EncodeSessionToTraceRecords re-derives per-round deltas + reset markers (the
 			// #1613 law) and sets SessionID/RoundIndex/InputTokens/InputTokensReset/
-			// OutputTokens/ArrivalTimeUs/ThinkTimeUs/Status; Model stays empty.
+			// OutputTokens/ArrivalTimeUs/ThinkTimeUs/Status. It is a minimal
+			// converter-oriented encoder, so the remaining per-request metadata is copied
+			// below to keep field coverage at parity with the non-accumulate path (R23).
 			recs := EncodeSessionToTraceRecords(g.id, rounds)
 			for i := range recs {
 				// Emit the ORACLE MaxOutputLen in the OutputTokens column (the delta was
 				// computed from actualOutputLen above): re-replay's OutputSampler yields this
 				// as MaxOutputLen, reproducing the same completion → same actualOutput → the
 				// abs sequence reconstructs exactly. Then decorate with SendTimeUs +
-				// sim-computed chunk timing (RequestsToTraceRecords parity, for calibrate).
+				// sim-computed chunk timing (RequestsToTraceRecords parity, for calibrate) and
+				// copy the surviving per-request metadata (SLO/deadline/model/adapter/…).
 				recs[i].OutputTokens = len(g.reqs[i].OutputTokens)
 				decorateReExportTiming(&recs[i], g.reqs[i])
+				copyReExportMetadata(&recs[i], g.reqs[i])
 			}
 			records = append(records, recs...)
 		}
@@ -160,6 +171,8 @@ func ReExportClosedLoopRecords(reqs []*sim.Request, thinkUsByReqID map[string]in
 			if t, ok := thinkUsByReqID[r.ID]; ok {
 				tv := t
 				records[i].ThinkTimeUs = &tv
+			} else {
+				logrus.Warnf("ReExportClosedLoopRecords: session %q round %d (request %q) has no captured think time; re-replay will derive it from arrival gaps", r.SessionID, r.RoundIndex, r.ID)
 			}
 			// Prefix propagation: a non-accumulate follow-up carries the prefix INSIDE
 			// InputTokens but with PrefixLength==0 (SessionManager.OnComplete prepends
@@ -173,6 +186,11 @@ func ReExportClosedLoopRecords(reqs []*sim.Request, thinkUsByReqID map[string]in
 					records[i].InputTokens -= pi.length
 					records[i].PrefixGroup = pi.group
 					records[i].PrefixLength = pi.length
+				} else {
+					// Degenerate: the follow-up input is shorter than the prefix (unreachable
+					// today — OnComplete always prepends the full prefix). Emit as-is rather
+					// than a negative suffix; warn since re-replay would double-count.
+					logrus.Warnf("ReExportClosedLoopRecords: session %q round %d input (%d) < round-0 prefix length (%d); emitting without prefix propagation", r.SessionID, r.RoundIndex, records[i].InputTokens, pi.length)
 				}
 			}
 		}
@@ -196,6 +214,36 @@ func accumulatedOutputLen(req *sim.Request) int {
 		return 0
 	}
 	return ao
+}
+
+// copyReExportMetadata copies the per-request metadata that EncodeSessionToTraceRecords
+// does not emit (it is a minimal converter-oriented encoder) but that the sibling
+// RequestsToTraceRecords path DOES preserve — so the accumulate re-export has the same
+// field coverage as the non-accumulate path (R23 parity, INV-13). This matters for a
+// (rare) accumulate corpus that carries these fields: without it a recorded LoRA adapter,
+// client deadline, SLO class, model, or modality-token split would silently vanish on
+// re-replay.
+//
+// PrefixGroup/PrefixLength are deliberately NOT copied: accumulate folds the prefix into
+// round-0's absolute input and drops the group (a prefix_length on a delta-encoded record
+// would double-count on re-replay). Model IS copied — unlike the converter (which sets
+// Model="" for routing safety), req.Model here came from the original trace and already
+// drove routing in THIS replay, so preserving it keeps re-replay routing consistent (it is
+// empty for converter corpora, which still inherit --model).
+func copyReExportMetadata(rec *TraceRecord, req *sim.Request) {
+	rec.ClientID = req.ClientID
+	rec.TenantID = req.TenantID
+	rec.SLOClass = req.SLOClass
+	rec.SLOTargetUs = req.SLOTargetUs
+	rec.DeadlineUs = req.Deadline
+	rec.Model = req.Model
+	rec.Adapter = req.Adapter
+	rec.Streaming = req.Streaming
+	rec.TextTokens = req.TextTokenCount
+	rec.ImageTokens = req.ImageTokenCount
+	rec.AudioTokens = req.AudioTokenCount
+	rec.VideoTokens = req.VideoTokenCount
+	rec.ReasonRatio = req.ReasonRatio
 }
 
 // reexportStatus maps a replayed request's terminal state to the trace Status string,

@@ -251,8 +251,10 @@ Replay also accepts all shared simulation config flags (`--latency-model`, `--to
     - **Pool mode** (`--concurrent-sessions N`): the re-export is a **complete** session
       corpus — all sessions (originals + clones) with every round, as a closed-loop
       corpus. Replay it with `--session-mode closed-loop` (it is not re-cloned). Aggregate
-      conservation metrics reproduce; per-request bit-identity is not guaranteed for pool
-      (admission timing is data-dependent).
+      **conservation** metrics (completed/injected requests, total input/output tokens)
+      reproduce; per-request and cache/latency aggregates are not guaranteed — pool
+      admission timing is data-dependent, and a non-accumulate clone's cache-busting
+      divergence is not preserved when it shares a `prefix_group`.
 
     Fixed-mode (`--session-mode fixed`) re-export is unchanged. Known boundary: a
     length-capped round (output truncated by `--max-model-len`) reproduces its input

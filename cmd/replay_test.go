@@ -3389,3 +3389,142 @@ func TestReplayCmd_Pool_FaithfulReExport(t *testing.T) {
 		t.Errorf("pool run completed_requests = %v, want 6 (all sessions/rounds ran)", mPool["completed_requests"])
 	}
 }
+
+// TestReplayCmd_ClosedLoopNonAccumulate_FaithfulReExport is the non-accumulate (BC-3)
+// integration analogue of the accumulate round-trip test: a multi-round session corpus
+// with NO session_context_growth, replayed closed-loop --trace-output, captures every
+// follow-up round with ABSOLUTE per-round input_tokens + the captured think column and no
+// growth header; re-replaying it closed-loop reproduces the original run byte-for-byte.
+// This closes the residual non-accumulate follow-up-drop the issue names.
+func TestReplayCmd_ClosedLoopNonAccumulate_FaithfulReExport(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
+	// Non-accumulate corpus (no SessionContextGrowth): one 3-round session with independent
+	// absolute per-round inputs and a recorded think column.
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 60, OutputTokens: 12, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 45, OutputTokens: 10, ArrivalTimeUs: 4_000_000, ThinkTimeUs: i64p(1_500_000), Status: "ok"},
+		{RequestID: 2, SessionID: "s1", RoundIndex: 2, InputTokens: 70, OutputTokens: 8, ArrivalTimeUs: 9_000_000, ThinkTimeUs: i64p(2_000_000), Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export corpus: %v", err)
+	}
+
+	commonArgs := []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000", "--max-model-len", "100000",
+		"--session-mode", "closed-loop",
+	}
+
+	metrics1 := extractMetricsJSON(t, runReplayCaptureStdout(t, commonArgs))
+
+	outPrefix := filepath.Join(dir, "reexport")
+	_ = runReplayCaptureStdout(t, append(append([]string{}, commonArgs...), "--trace-output", outPrefix))
+
+	rx, err := workload.LoadTraceV2(outPrefix+".yaml", outPrefix+".csv")
+	if err != nil {
+		t.Fatalf("load re-export: %v", err)
+	}
+	if rx.Header.SessionContextGrowth != "" {
+		t.Errorf("non-accumulate re-export must NOT set session_context_growth, got %q", rx.Header.SessionContextGrowth)
+	}
+	if len(rx.Records) != 3 {
+		t.Fatalf("re-export has %d records, want 3 (every round captured)", len(rx.Records))
+	}
+	byRound := map[int]workload.TraceRecord{}
+	for _, r := range rx.Records {
+		byRound[r.RoundIndex] = r
+	}
+	// Absolute per-round input preserved; no reset markers; think on follow-ups.
+	if byRound[0].InputTokens != 60 || byRound[1].InputTokens != 45 || byRound[2].InputTokens != 70 {
+		t.Errorf("re-export per-round input = (%d,%d,%d), want absolute (60,45,70)", byRound[0].InputTokens, byRound[1].InputTokens, byRound[2].InputTokens)
+	}
+	if byRound[2].InputTokensReset != nil {
+		t.Errorf("non-accumulate re-export must not carry input_tokens_reset, got %v", *byRound[2].InputTokensReset)
+	}
+	if byRound[1].ThinkTimeUs == nil || byRound[2].ThinkTimeUs == nil {
+		t.Errorf("follow-up rounds must carry recorded think; got r1=%v r2=%v", byRound[1].ThinkTimeUs, byRound[2].ThinkTimeUs)
+	}
+
+	outArgs := []string{
+		"--trace-header", outPrefix + ".yaml", "--trace-data", outPrefix + ".csv",
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000", "--max-model-len", "100000",
+		"--session-mode", "closed-loop",
+	}
+	metrics2 := extractMetricsJSON(t, runReplayCaptureStdout(t, outArgs))
+
+	if metrics1 != metrics2 {
+		t.Errorf("non-accumulate re-export replay metrics differ from original (round-trip not faithful):\noriginal:\n%s\nreexport:\n%s", metrics1, metrics2)
+	}
+}
+
+// TestReplayCmd_Pool_ClonesCapturedInReExport exercises the pool clone path (#1630
+// Issue B): with --total-sessions > corpus size the driver adds cache-busting clone
+// sessions, and the re-export must capture them (all sessions + every round), not just
+// the originals. (Per BC-4 the re-export's cache/latency aggregates are not guaranteed to
+// reproduce for non-accumulate clones sharing a prefix_group — this test asserts capture
+// completeness, the property the removed guard protected.)
+func TestReplayCmd_Pool_ClonesCapturedInReExport(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
+	// Accumulate corpus, 2 sessions x 2 rounds; --total-sessions 4 => 2 clones (s0_dup1, s1_dup2).
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 80, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s0", RoundIndex: 1, InputTokens: 20, OutputTokens: 8, ArrivalTimeUs: 3_000_000, ThinkTimeUs: i64p(1_000_000), Status: "ok"},
+		{RequestID: 2, SessionID: "s1", RoundIndex: 0, InputTokens: 90, OutputTokens: 12, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 3, SessionID: "s1", RoundIndex: 1, InputTokens: 25, OutputTokens: 9, ArrivalTimeUs: 3_500_000, ThinkTimeUs: i64p(1_000_000), Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export corpus: %v", err)
+	}
+
+	outPrefix := filepath.Join(dir, "reexport")
+	_ = runReplayCaptureStdout(t, []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000", "--max-model-len", "100000",
+		"--concurrent-sessions", "1", "--total-sessions", "4", "--horizon", "100000000000",
+		"--trace-output", outPrefix,
+	})
+
+	rx, err := workload.LoadTraceV2(outPrefix+".yaml", outPrefix+".csv")
+	if err != nil {
+		t.Fatalf("load re-export: %v", err)
+	}
+	sessions := map[string]int{}
+	clones := 0
+	for _, r := range rx.Records {
+		sessions[r.SessionID]++
+		if strings.Contains(r.SessionID, "_dup") {
+			clones++
+		}
+	}
+	if len(sessions) != 4 {
+		t.Errorf("re-export has %d distinct sessions, want 4 (2 originals + 2 clones)", len(sessions))
+	}
+	if len(rx.Records) != 8 {
+		t.Errorf("re-export has %d records, want 8 (4 sessions x 2 rounds)", len(rx.Records))
+	}
+	if clones == 0 {
+		t.Errorf("re-export captured no clone (_dup) sessions; the clone path must be captured, not dropped")
+	}
+}
