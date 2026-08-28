@@ -2,6 +2,7 @@ package scripts_test
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -114,7 +115,7 @@ func runReview(t *testing.T, repoDir string, env map[string]string, mutate func(
 	cmd.Stderr = &stderr
 	cmd.Stdout = &strings.Builder{}
 
-	res := reviewResult{stderr: stderr.String()}
+	var res reviewResult
 	err := cmd.Run()
 	res.stderr = stderr.String()
 	var exitErr *exec.ExitError
@@ -126,12 +127,16 @@ func runReview(t *testing.T, repoDir string, env map[string]string, mutate func(
 		t.Fatalf("running review script: %v", err)
 	}
 
-	if b, readErr := os.ReadFile(outputFile); readErr == nil {
-		res.body = string(b)
+	body, readErr := os.ReadFile(outputFile)
+	if readErr != nil && !errors.Is(readErr, fs.ErrNotExist) {
+		t.Fatalf("reading the comment body: %v", readErr)
 	}
-	if b, readErr := os.ReadFile(summaryFile); readErr == nil {
-		res.summary = string(b)
+	res.body = string(body)
+	summary, readErr := os.ReadFile(summaryFile)
+	if readErr != nil && !errors.Is(readErr, fs.ErrNotExist) {
+		t.Fatalf("reading the job summary: %v", readErr)
 	}
+	res.summary = string(summary)
 	if b, readErr := os.ReadFile(stubLog); readErr == nil {
 		for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
 			if line != "" {

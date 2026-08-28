@@ -44,9 +44,13 @@ func gitCmd(t *testing.T, dir string, args ...string) string {
 	}, args...)
 	cmd := exec.Command("git", full...)
 	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
+	// Output, not CombinedOutput: a git warning on stderr would otherwise be returned as
+	// part of a commit SHA.
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, stderr.String())
 	}
 	return strings.TrimSpace(string(out))
 }
@@ -222,6 +226,24 @@ func TestResolve_MissingDeclarationFile_ReportsError(t *testing.T) {
 	}
 }
 
+// Existence is not readability: an unreadable declaration file must not read as "no
+// declaration", which would drop the plan gate silently.
+func TestResolve_UnreadableDeclarationFile_ReportsError(t *testing.T) {
+	repo := newRepo(t)
+	base := commitFileAt(t, repo, declaredPlan, `{"holes":1}`)
+	decl := writeDecl(t, "archon-plan: "+declaredPlan+"\n")
+	if err := os.Chmod(decl, 0o000); err != nil {
+		t.Fatalf("making the declaration unreadable: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(decl, 0o644) })
+
+	got := runResolve(t, repo, base, base, decl)
+
+	if got.status() != "error" {
+		t.Fatalf("status = %q, want error (fields %v)", got.status(), got.fields)
+	}
+}
+
 func TestResolve_WrongArgCount_ExitsTwo(t *testing.T) {
 	repo := newRepo(t)
 
@@ -244,6 +266,7 @@ func TestResolve_UnsafePath_Rejected(t *testing.T) {
 		{"traversal", "../../etc/passwd"},
 		{"embedded traversal", "specs/../../x.json"},
 		{"leading dash", "-rf.json"},
+		// `read` stops at the space, so this is rejected for not ending in .json.
 		{"space", "specs/a b.json"},
 		{"shell metacharacter", "specs/a;b.json"},
 		{"command substitution", "specs/a$(id).json"},

@@ -59,9 +59,12 @@ cd "$repo_root" || fail "" "could not enter the repository root"
 
 # --- detect -----------------------------------------------------------------
 
-# A declaration file that was never written is an error, not "no declaration": treating it
-# as absent would drop the plan gate exactly when the collecting step misbehaved.
+# A declaration file that was never written, or cannot be read, is an error rather than "no
+# declaration": treating it as absent would drop the plan gate exactly when the collecting
+# step misbehaved. Readability is checked too, since `tr` failing below is swallowed by the
+# `|| true` that lets grep report "no match".
 [[ -f "$DECL_FILE" ]] || fail "" "declaration file was not produced; plan detection could not run"
+[[ -r "$DECL_FILE" ]] || fail "" "declaration file is not readable; plan detection could not run"
 
 # GitHub API bodies use CRLF; an unstripped \r survives into the path and fails validation
 # on every real PR while passing every LF-only test.
@@ -110,8 +113,11 @@ for candidate in "base:$BASE_REF" "head:$HEAD_REF"; do
     || fail "$PLAN_PATH" "the $source_name commit ($source_ref) is not available locally"
 
   # `git ls-tree -l` prints: <mode> SP <type> SP <sha> SP <size> TAB <path>
-  # Empty output now means only one thing: the path is absent at this commit.
-  meta=$(git ls-tree -l "$source_ref" -- "$PLAN_PATH")
+  # Its exit status is checked so that empty output means only one thing: the path is absent
+  # at this commit. A failure here (unreadable object store, damaged tree) would otherwise
+  # also read as absent and fall through to the head copy.
+  meta=$(git ls-tree -l "$source_ref" -- "$PLAN_PATH") \
+    || fail "$PLAN_PATH" "could not read the tree at $source_name ($source_ref)"
   [[ -n "$meta" ]] || continue
 
   read -r obj_mode obj_type obj_sha obj_size _ <<< "$meta"

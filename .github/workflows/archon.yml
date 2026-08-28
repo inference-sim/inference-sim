@@ -96,6 +96,7 @@ jobs:
             });
             core.setOutput('base_sha', pr.base.sha);
             core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('body', pr.body || '');
 
       - name: Fetch PR head ref
         run: git fetch origin "pull/${{ github.event.issue.number }}/head"
@@ -103,19 +104,18 @@ jobs:
       - name: Collect plan declarations
         id: decl
         uses: actions/github-script@v8
+        env:
+          PR_BODY: ${{ steps.refs.outputs.body }}
         with:
           script: |
             const fs = require('fs');
             const os = require('os');
             const path = require('path');
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number
-            });
             // PR body first: the earliest declaration wins, so a PR's own declaration
-            // outranks one in a third-party issue it happens to close.
-            const parts = [pr.body || ''];
+            // outranks one in a third-party issue it happens to close. In practice the PR
+            // body is usually the ONLY source: GitHub links closing issues only for a PR
+            // targeting the default branch, so a hole PR against a feature branch links none.
+            const parts = [process.env.PR_BODY || ''];
             const res = await github.graphql(
               `query($owner: String!, $repo: String!, $num: Int!) {
                  repository(owner: $owner, name: $repo) {
@@ -126,8 +126,13 @@ jobs:
                }`,
               { owner: context.repo.owner, repo: context.repo.repo, num: context.issue.number }
             );
-            for (const node of res.repository.pullRequest.closingIssuesReferences.nodes) {
-              parts.push(node.body || '');
+            // Tolerate a partial response rather than failing the step: losing the fallback
+            // costs a warning on the PR, whereas failing here costs the whole review.
+            const nodes = res?.repository?.pullRequest?.closingIssuesReferences?.nodes;
+            if (nodes) {
+              for (const node of nodes) parts.push(node.body || '');
+            } else {
+              core.warning('Could not read closing issues; using the PR body alone.');
             }
             // Written as file CONTENTS, never handed to a shell as an argument.
             const dir = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP || os.tmpdir(), 'archon-'));
@@ -141,22 +146,27 @@ jobs:
           BASE_SHA: ${{ steps.refs.outputs.base_sha }}
           HEAD_SHA: ${{ steps.refs.outputs.head_sha }}
           DECL_FILE: ${{ steps.decl.outputs.file }}
-          OUTPUT_FILE: /tmp/archon-output.md
+          OUTPUT_FILE: ${{ runner.temp }}/archon-output.md
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: scripts/archon-review.sh
 
-      # always(): the review script exits 0 for every reviewed outcome, but an environment
-      # error exits non-zero, and a trigger that silently posts nothing is the failure mode
-      # this feature exists to avoid. The script truncates the output file up front, so an
-      # aborted run leaves it empty and the guard below skips rather than posting a stale body.
+      # always(): the review script reports every reviewed outcome through its output file and
+      # exits 0, but an environment error exits non-zero, and a trigger that silently posts
+      # nothing is the failure mode this feature exists to avoid.
+      #
+      # The body lives under runner.temp, which the runner empties at the start of every job.
+      # A fixed /tmp path would not be safe here: when a step BEFORE the review fails, the
+      # review script never runs to truncate it, and this step would post whatever the
+      # previous job on this self-hosted runner left behind — possibly another PR's review.
       - name: Post PR comment
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.issue.number }}
+          OUTPUT_FILE: ${{ runner.temp }}/archon-output.md
         run: |
-          if [[ ! -s /tmp/archon-output.md ]]; then
+          if [[ ! -s "$OUTPUT_FILE" ]]; then
             echo "::warning::Archon produced no output. Skipping PR comment."
             exit 0
           fi
-          gh pr comment "$PR_NUMBER" --body-file /tmp/archon-output.md
+          gh pr comment "$PR_NUMBER" --body-file "$OUTPUT_FILE"

@@ -138,6 +138,11 @@ Substitute the bracketed placeholders. `/archon-pr-review` rejects a literal
 `specs/[NNN-feature]/...` and posts a warning instead of running the dist ratchet, and it
 reads the plan out of git, so the file must be committed to the branch.
 
+**Copy this line into the PR body too.** CI reads the PR body first and falls back to the
+bodies of the issues the PR closes — but GitHub only links closing issues for a PR that
+targets the **default branch**. A hole PR targets the feature branch, so nothing is linked
+and the sub-issue body is never read. The PR body is the only place the line can be seen.
+
 ---
 
 ## Final PR (feature branch → main)
@@ -187,7 +192,15 @@ Closes: #[tracking issue number]
 ## Review
 
 Maintainer reviews this PR (the whole feature in one diff against main).
+
+---
+
+archon-plan: specs/NNN-feature/feature.plan.json
 ```
+
+The line is required **in the PR body**, not just in the tracking issue. This PR closes the
+tracking issue, which carries no `archon-plan:` line of its own, so without it the dist
+ratchet is silently skipped on the one PR where `dist = 0` is the merge gate.
 
 ---
 

@@ -44,6 +44,14 @@ Read the tracking issue discussions and final decisions. Then:
    placeholders: a literal `specs/[NNN-feature]/...` is rejected and the
    review posts a warning instead of running the dist ratchet.
 
+   The line must also be copied into each PR body, including the final
+   PR to main. CI reads the PR body first and falls back to the bodies of
+   the issues the PR closes, but GitHub only links closing issues for a PR
+   targeting the default branch — a hole PR targets the feature branch, so
+   nothing is linked. The final PR does close the tracking issue, which
+   carries no such line. In both cases the PR body is the only place CI
+   can find it.
+
 4. Report: summary of baseline dist, number of holes, delivery order.
 
 Use the sub-issue format from docs/contributing/templates/archon-issue-examples.md.
