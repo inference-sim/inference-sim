@@ -23,6 +23,7 @@ type ModelConfig struct {
 	KVLoraRank             int     `json:"kv_lora_rank,omitempty"`           // MLA compressed-KV latent rank; 0 = not MLA (standard MHA/GQA KV). When > 0 the KV cache stores a compressed latent of KVLoraRank+QKRopeHeadDim scalars per token per layer (DeepSeek-V2/V3, Kimi-K3, GLM-5.2). See KVBytesPerToken.
 	QKRopeHeadDim          int     `json:"qk_rope_head_dim,omitempty"`       // MLA decoupled-RoPE key dimension; the second summand of the MLA latent width. Meaningful only when KVLoraRank > 0.
 	FirstKDenseReplace     int     `json:"first_k_dense_replace,omitempty"`  // Number of leading layers that are dense (non-MoE) in a MoE model; remaining layers are MoE. 0 = no dense prefix (all layers MoE when IsMoE). Distinct from InterleaveMoELayerStep (every-Nth interleave). Used by weight estimation.
+	KVBearingLayers        int     `json:"kv_bearing_layers,omitempty"`      // Number of KV-cache-bearing (full-attention) layers for hybrid-attention models (Kimi-K3: 24 MLA layers of 93; the other 69 are linear-attention KDA layers with O(1)-in-sequence recurrent state and no growing KV). 0 = not a hybrid model → EffectiveKVBearingLayers falls back to NumLayers (every standard-MHA and non-hybrid MLA model, INV-6). Derived from len(linear_attn_config.full_attn_layers). Used by the MLA KV-capacity path only (NOT weights or step time). See EffectiveKVBearingLayers.
 }
 
 // EffectiveHeadDim returns the attention head dimension to use for KV-cache and
@@ -44,6 +45,30 @@ func (mc ModelConfig) EffectiveHeadDim() int {
 		return 0
 	}
 	return mc.HiddenDim / mc.NumHeads
+}
+
+// EffectiveKVBearingLayers returns the number of layers that store a per-token KV
+// cache, for KV-capacity sizing. Returns KVBearingLayers when explicitly set (> 0),
+// otherwise falls back to NumLayers. Hybrid-attention models (Kimi-K3) interleave
+// full Multi-head Latent Attention layers — which store a compressed KV latent per
+// token — with linear-attention (Kimi Delta Attention) layers, which keep a
+// fixed-size recurrent + short-conv state independent of sequence length and store
+// no growing KV. Sizing the KV cache over KVBearingLayers (K3: 24) rather than all
+// NumLayers (93) corrects the per-token KV footprint, and hence the KV block count
+// and batch sizes, for such models. Returns NumLayers unchanged for every
+// non-hybrid model (KVBearingLayers == 0), so the KV footprint is byte-identical
+// there (INV-6).
+//
+// Like EffectiveHeadDim, this is deliberately scoped to the KV-capacity path: the
+// weight-memory estimate (computeModelWeightBytes) and the step-time
+// (trained-physics/roofline) models retain NumLayers, since the KDA layers still
+// carry weights and compute — only their KV footprint differs. See issue #1635
+// (KDA weights: #1638; KDA step time: #1636).
+func (mc ModelConfig) EffectiveKVBearingLayers() int {
+	if mc.KVBearingLayers > 0 {
+		return mc.KVBearingLayers
+	}
+	return mc.NumLayers
 }
 
 // EffectiveWeightBytesPerParam returns the bytes-per-parameter to use for

@@ -111,7 +111,13 @@ func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
 	// hidden%heads guard is skipped (the latent path never uses that quotient).
 	if mc.IsMLA() {
 		latentWidth := mc.KVLoraRank + mc.QKRopeHeadDim
-		perTokenKVBytesF := float64(mc.NumLayers) * float64(latentWidth) * mc.BytesPerParam
+		// Size the compressed latent over the KV-bearing (full-attention) layers.
+		// For a hybrid-attention MLA model (Kimi-K3) only the full-attention layers
+		// store a per-token KV cache; the linear-attention (KDA) layers keep a
+		// fixed-size recurrent state and bear no growing KV (#1635). For a non-hybrid
+		// MLA model (DeepSeek-V2/V3, GLM-5.2) EffectiveKVBearingLayers == NumLayers,
+		// so this is byte-identical to the pre-#1635 all-layers value (INV-6).
+		perTokenKVBytesF := float64(mc.EffectiveKVBearingLayers()) * float64(latentWidth) * mc.BytesPerParam
 		// Public-API boundary guard: normal configs are validated at parse time
 		// (config.go rejects negative shape fields), but a hand-built ModelConfig
 		// with a negative QKRopeHeadDim could make latentWidth <= 0.

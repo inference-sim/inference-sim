@@ -312,6 +312,90 @@ func TestKVBytesPerToken_MLA_ZeroRopeHeadDim(t *testing.T) {
 	}
 }
 
+func TestKVBytesPerToken_MLA_HybridKVBearingLayers(t *testing.T) {
+	// #1635 (BC-3): GIVEN a hybrid-attention MLA model (Kimi-K3: 93 total layers,
+	// only 24 full-attention/MLA layers bear a per-token KV cache; the other 69 are
+	// linear-attention KDA layers with fixed-size recurrent state), THEN KV
+	// bytes/token is sized over the 24 KV-bearing layers, NOT all 93.
+	mc := sim.ModelConfig{
+		NumLayers:       93,
+		KVBearingLayers: 24,
+		HiddenDim:       7168,
+		NumHeads:        96,
+		NumKVHeads:      96,
+		IntermediateDim: 2048,
+		BytesPerParam:   2.0,
+		KVLoraRank:      512,
+		QKRopeHeadDim:   64,
+	}
+	// (512 + 64) × 24 × 2.0 = 27648 — full-attention layers only, TP-invariant.
+	want := float64((512 + 64) * 24 * 2)
+	for _, tp := range []int{1, 2, 8} {
+		got, err := latency.KVBytesPerToken(mc, tp)
+		if err != nil {
+			t.Fatalf("unexpected error at TP=%d: %v", tp, err)
+		}
+		if got != want {
+			t.Errorf("hybrid MLA KVBytesPerToken(TP=%d) = %v, want %v (24 KV-bearing layers)", tp, got, want)
+		}
+	}
+}
+
+func TestKVBytesPerToken_MLA_KVBearingLayersZero_ByteIdenticalToAllLayers(t *testing.T) {
+	// #1635 (INV-6): GIVEN KVBearingLayers == 0 (every non-hybrid MLA model —
+	// DeepSeek-V2-Lite, GLM-5.2), THEN KV bytes/token is sized over all NumLayers,
+	// byte-identical to the pre-#1635 all-layers value.
+	mc := sim.ModelConfig{
+		NumLayers:       27,
+		KVBearingLayers: 0,
+		HiddenDim:       2048,
+		NumHeads:        16,
+		NumKVHeads:      16,
+		IntermediateDim: 10944,
+		BytesPerParam:   2.0,
+		KVLoraRank:      512,
+		QKRopeHeadDim:   64,
+	}
+	want := float64((512 + 64) * 27 * 2) // all 27 layers (NumLayers fallback)
+	got, err := latency.KVBytesPerToken(mc, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != want {
+		t.Errorf("KVBearingLayers=0 KVBytesPerToken = %v, want %v (fallback to NumLayers)", got, want)
+	}
+}
+
+func TestKVBytesPerToken_MLA_ScalesWithKVBearingNotTotalLayers(t *testing.T) {
+	// #1635 (BC-4, metamorphic — the acceptance invariant): MLA KV bytes/token are
+	// proportional to the KV-BEARING (full-attention) layer count, NOT the total
+	// layer count. Halving KVBearingLayers halves the per-token KV; changing
+	// NumLayers alone (KVBearingLayers fixed) does NOT move it.
+	base := sim.ModelConfig{
+		NumLayers: 93, KVBearingLayers: 24, HiddenDim: 7168, NumHeads: 96,
+		NumKVHeads: 96, IntermediateDim: 2048, BytesPerParam: 2.0,
+		KVLoraRank: 512, QKRopeHeadDim: 64,
+	}
+	b, err := latency.KVBytesPerToken(base, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Halving KVBearingLayers halves the value.
+	half := base
+	half.KVBearingLayers = 12
+	if got, _ := latency.KVBytesPerToken(half, 1); got != b/2 {
+		t.Errorf("halving KVBearingLayers should halve KV bytes/token: got %v, want %v", got, b/2)
+	}
+
+	// Changing NumLayers alone (KVBearingLayers fixed) does NOT change the value.
+	moreTotal := base
+	moreTotal.NumLayers = 200
+	if got, _ := latency.KVBytesPerToken(moreTotal, 1); got != b {
+		t.Errorf("MLA KV bytes/token must track KV-bearing count, not total NumLayers: got %v, want %v", got, b)
+	}
+}
+
 func TestKVBytesPerToken_MLA_IgnoresIndivisibleHiddenHeads(t *testing.T) {
 	// F2 (R2): the MLA branch must be reached BEFORE the hidden%heads divisibility
 	// guard — the latent path never uses that quotient. A config where hidden is

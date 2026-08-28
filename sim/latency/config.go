@@ -133,6 +133,34 @@ func (c *HFConfig) ResolveNumExperts() int {
 	return 0
 }
 
+// LinearAttnFullLayerCount returns the number of full-attention (KV-cache-bearing)
+// layers declared under a hybrid-attention model's linear_attn_config, i.e.
+// len(linear_attn_config.full_attn_layers). ParseHFConfig pivots text_config onto
+// the top-level map, so linear_attn_config is reachable as a top-level nested value.
+//
+// Kimi-K3 is a hybrid model: linear_attn_config lists 24 full_attn_layers (full
+// Multi-head Latent Attention, which store a per-token KV cache) and 69 kda_layers
+// (Kimi Delta Attention — linear attention with a fixed-size recurrent + short-conv
+// state and no growing KV) of 93 total. Sizing the KV cache over the full-attention
+// count alone corrects the per-token KV footprint (issue #1635).
+//
+// Returns 0 when the model is not hybrid — no linear_attn_config, or a block that
+// lacks a full_attn_layers list (or carries one of the wrong type) — so callers
+// fall back to NumLayers (every standard-MHA and non-hybrid MLA model, INV-6). Only
+// the list length is read (elements may be any JSON number type), so the value type
+// of individual entries is irrelevant.
+func (c *HFConfig) LinearAttnFullLayerCount() int {
+	lac, ok := c.Raw["linear_attn_config"].(map[string]any)
+	if !ok {
+		return 0
+	}
+	full, ok := lac["full_attn_layers"].([]any)
+	if !ok {
+		return 0
+	}
+	return len(full)
+}
+
 func parseHWConfig(HWConfigFilePath string) (map[string]sim.HardwareCalib, error) {
 	data, err := os.ReadFile(HWConfigFilePath)
 	if err != nil {
@@ -366,6 +394,16 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	// prefix (INV-6: all-MoE weight accounting unchanged when absent).
 	firstKDenseReplace := getInt("first_k_dense_replace")
 
+	// KV-bearing (full-attention) layer count for hybrid-attention models (#1635).
+	// Kimi-K3 interleaves 24 full-attention (MLA, KV-bearing) layers with 69
+	// linear-attention (KDA, fixed-size recurrent state, no growing KV) layers of 93
+	// total; only the full-attention layers store a per-token KV cache. The count is
+	// len(linear_attn_config.full_attn_layers). 0 for every non-hybrid model →
+	// EffectiveKVBearingLayers falls back to NumLayers, so the KV footprint is
+	// byte-identical there (INV-6). Scoped to the KV-capacity path — KDA weights
+	// (#1638) and KDA step time (#1636) are out of scope and still use all NumLayers.
+	kvBearingLayers := hf.LinearAttnFullLayerCount()
+
 	// Reject negative values for the shape fields parsed above (#1527). getInt
 	// returns the raw JSON number, so a negative would otherwise pass silently: a
 	// negative kv_lora_rank would fall through to the standard MHA path (wrong KV
@@ -406,6 +444,7 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 		KVLoraRank:             kvLoraRank,
 		QKRopeHeadDim:          qkRopeHeadDim,
 		FirstKDenseReplace:     firstKDenseReplace,
+		KVBearingLayers:        kvBearingLayers,
 	}
 	return modelConfig, nil
 }
