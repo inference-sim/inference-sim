@@ -11,28 +11,28 @@
       
       
       
-        <link rel="prev" href="../kv-offload-calibration/">
+        <link rel="prev" href="../micro-plan/">
       
       
-        <link rel="next" href="../archon-pr-review/">
+        <link rel="next" href="../hypothesis/">
       
       
         
       
       
-      <link rel="icon" href="../../assets/images/favicon.png">
+      <link rel="icon" href="../../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
     
     
       
-        <title>Hypothesis Experimentation - BLIS — Blackbox Inference Simulator</title>
+        <title>Archon Issue Examples - BLIS — Blackbox Inference Simulator</title>
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -51,9 +51,9 @@
       
     
     
-      <link rel="stylesheet" href="../../stylesheets/extra.css">
+      <link rel="stylesheet" href="../../../stylesheets/extra.css">
     
-    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#hypothesis-driven-experimentation" class="md-skip">
+        <a href="#archon-issue-examples-for-claude" class="md-skip">
           Skip to content
         </a>
       
@@ -96,7 +96,7 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+    <a href="../../.." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -116,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Hypothesis Experimentation
+              Archon Issue Examples
             
           </span>
         </div>
@@ -229,7 +229,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="../.." class="md-tabs__link">
+      <a href="../../.." class="md-tabs__link">
         
   
   
@@ -250,7 +250,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../getting-started/" class="md-tabs__link">
+        <a href="../../../getting-started/" class="md-tabs__link">
           
   
   
@@ -272,7 +272,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../concepts/" class="md-tabs__link">
+        <a href="../../../concepts/" class="md-tabs__link">
           
   
   
@@ -290,13 +290,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="../" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../../guide/" class="md-tabs__link">
           
   
   
@@ -318,7 +316,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../reference/" class="md-tabs__link">
+        <a href="../../../reference/" class="md-tabs__link">
           
   
   
@@ -340,7 +338,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../methodology/" class="md-tabs__link">
+        <a href="../../../methodology/" class="md-tabs__link">
           
   
   
@@ -358,11 +356,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../../contributing/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../" class="md-tabs__link">
           
   
   
@@ -384,7 +384,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../blog/" class="md-tabs__link">
+        <a href="../../../blog/" class="md-tabs__link">
           
   
   
@@ -420,7 +420,7 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+    <a href="../../.." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -450,7 +450,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../.." class="md-nav__link">
+      <a href="../../.." class="md-nav__link">
         
   
   
@@ -508,7 +508,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../getting-started/" class="md-nav__link ">
+            <a href="../../../getting-started/" class="md-nav__link ">
               
   
   
@@ -552,7 +552,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../getting-started/installation/" class="md-nav__link">
+      <a href="../../../getting-started/installation/" class="md-nav__link">
         
   
   
@@ -580,7 +580,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../getting-started/quickstart/" class="md-nav__link">
+      <a href="../../../getting-started/quickstart/" class="md-nav__link">
         
   
   
@@ -608,7 +608,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../getting-started/tutorial/" class="md-nav__link">
+      <a href="../../../getting-started/tutorial/" class="md-nav__link">
         
   
   
@@ -676,7 +676,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../concepts/" class="md-nav__link ">
+            <a href="../../../concepts/" class="md-nav__link ">
               
   
   
@@ -720,7 +720,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../concepts/glossary/" class="md-nav__link">
+      <a href="../../../concepts/glossary/" class="md-nav__link">
         
   
   
@@ -748,7 +748,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../concepts/architecture/" class="md-nav__link">
+      <a href="../../../concepts/architecture/" class="md-nav__link">
         
   
   
@@ -776,7 +776,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../concepts/core-engine/" class="md-nav__link">
+      <a href="../../../concepts/core-engine/" class="md-nav__link">
         
   
   
@@ -804,7 +804,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../concepts/roofline/" class="md-nav__link">
+      <a href="../../../concepts/roofline/" class="md-nav__link">
         
   
   
@@ -836,8 +836,6 @@
       
   
   
-    
-  
   
   
     
@@ -871,29 +869,26 @@
       
         
       
-        
-      
     
     
     
-      
-        
-        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../" class="md-nav__link ">
+            <a href="../../../guide/" class="md-nav__link ">
               
   
   
@@ -911,13 +906,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
@@ -937,7 +932,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../routing/" class="md-nav__link">
+      <a href="../../../guide/routing/" class="md-nav__link">
         
   
   
@@ -965,7 +960,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../admission/" class="md-nav__link">
+      <a href="../../../guide/admission/" class="md-nav__link">
         
   
   
@@ -993,7 +988,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../scheduling/" class="md-nav__link">
+      <a href="../../../guide/scheduling/" class="md-nav__link">
         
   
   
@@ -1021,7 +1016,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../latency-models/" class="md-nav__link">
+      <a href="../../../guide/latency-models/" class="md-nav__link">
         
   
   
@@ -1049,7 +1044,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../kv-cache/" class="md-nav__link">
+      <a href="../../../guide/kv-cache/" class="md-nav__link">
         
   
   
@@ -1077,7 +1072,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../workloads/" class="md-nav__link">
+      <a href="../../../guide/workloads/" class="md-nav__link">
         
   
   
@@ -1105,7 +1100,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../cluster/" class="md-nav__link">
+      <a href="../../../guide/cluster/" class="md-nav__link">
         
   
   
@@ -1133,7 +1128,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../results/" class="md-nav__link">
+      <a href="../../../guide/results/" class="md-nav__link">
         
   
   
@@ -1161,7 +1156,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../observe-replay-calibrate/" class="md-nav__link">
+      <a href="../../../guide/observe-replay-calibrate/" class="md-nav__link">
         
   
   
@@ -1189,7 +1184,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../kv-offload-calibration/" class="md-nav__link">
+      <a href="../../../guide/kv-offload-calibration/" class="md-nav__link">
         
   
   
@@ -1214,162 +1209,10 @@
                 
   
   
-    
-  
-  
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Hypothesis Experimentation
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Hypothesis Experimentation
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#why-experiment-with-a-simulator" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Why Experiment with a Simulator?
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#capacity-planning-validation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Capacity Planning Validation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#the-hypothesis-experiment-skill" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The /hypothesis-experiment Skill
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#the-experiment-harness" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The Experiment Harness
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#case-studies" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Case Studies
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#convergence-review" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Convergence Review
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#further-reading" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Further Reading
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
   
   
     <li class="md-nav__item">
-      <a href="../archon-pr-review/" class="md-nav__link">
+      <a href="../../../guide/archon-pr-review/" class="md-nav__link">
         
   
   
@@ -1397,7 +1240,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../skills-and-plugins/" class="md-nav__link">
+      <a href="../../../guide/skills-and-plugins/" class="md-nav__link">
         
   
   
@@ -1465,7 +1308,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../reference/" class="md-nav__link ">
+            <a href="../../../reference/" class="md-nav__link ">
               
   
   
@@ -1509,7 +1352,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../reference/project-structure/" class="md-nav__link">
+      <a href="../../../reference/project-structure/" class="md-nav__link">
         
   
   
@@ -1537,7 +1380,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../reference/configuration/" class="md-nav__link">
+      <a href="../../../reference/configuration/" class="md-nav__link">
         
   
   
@@ -1565,7 +1408,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../reference/models/" class="md-nav__link">
+      <a href="../../../reference/models/" class="md-nav__link">
         
   
   
@@ -1593,7 +1436,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../reference/workload-spec/" class="md-nav__link">
+      <a href="../../../reference/workload-spec/" class="md-nav__link">
         
   
   
@@ -1657,7 +1500,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../methodology/" class="md-nav__link ">
+            <a href="../../../methodology/" class="md-nav__link ">
               
   
   
@@ -1701,7 +1544,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../methodology/strategy-evolution/" class="md-nav__link">
+      <a href="../../../methodology/strategy-evolution/" class="md-nav__link">
         
   
   
@@ -1729,7 +1572,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../methodology/hypothesis-bundles/" class="md-nav__link">
+      <a href="../../../methodology/hypothesis-bundles/" class="md-nav__link">
         
   
   
@@ -1761,6 +1604,8 @@
       
   
   
+    
+  
   
   
     
@@ -1790,22 +1635,23 @@
     
     
       
+        
+        
+      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../contributing/" class="md-nav__link ">
+            <a href="../../" class="md-nav__link ">
               
   
   
@@ -1823,13 +1669,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="0">
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_7">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1849,7 +1695,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/extension-recipes/" class="md-nav__link">
+      <a href="../../extension-recipes/" class="md-nav__link">
         
   
   
@@ -1877,7 +1723,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/pr-workflow/" class="md-nav__link">
+      <a href="../../pr-workflow/" class="md-nav__link">
         
   
   
@@ -1905,14 +1751,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/design-process/" class="md-nav__link">
+      <a href="../../rfc/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Design Process
+    RFC Template
   
 
     
@@ -1933,35 +1779,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/macro-planning/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Macro Planning
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../contributing/hypothesis/" class="md-nav__link">
+      <a href="../../hypothesis/" class="md-nav__link">
         
   
   
@@ -1989,14 +1807,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/convergence/" class="md-nav__link">
+      <a href="../../perspectives/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Convergence Protocol
+    Review Perspectives
   
 
     
@@ -2025,6 +1843,163 @@
       
         
       
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7_7" id="__nav_7_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archon
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Archon
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../archon/baseline-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Baseline Analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../archon/encode-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Encode Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../archon/pr-review-context/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PR Review Context
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
         
       
     
@@ -2033,10 +2008,13 @@
       
       
         
+          
+          
+        
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
@@ -2045,7 +2023,7 @@
         <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_8" >
         
           
-          <label class="md-nav__link" for="__nav_7_8" id="__nav_7_8_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_7_8" id="__nav_7_8_label" tabindex="">
             
   
   
@@ -2081,7 +2059,35 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/standards/rules/" class="md-nav__link">
+      <a href="../../standards/experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiment Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/rules/" class="md-nav__link">
         
   
   
@@ -2109,7 +2115,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/standards/invariants/" class="md-nav__link">
+      <a href="../../standards/invariants/" class="md-nav__link">
         
   
   
@@ -2137,7 +2143,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/standards/principles/" class="md-nav__link">
+      <a href="../../standards/principles/" class="md-nav__link">
         
   
   
@@ -2145,34 +2151,6 @@
     
   
     Engineering Principles
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../contributing/standards/experiments/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Experiment Standards
   
 
     
@@ -2198,8 +2176,10 @@
                 
   
   
+    
   
   
+  
     
     
       
@@ -2216,20 +2196,21 @@
     
       
       
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
         
           
+          
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_9" >
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_9" checked>
         
           
-          <label class="md-nav__link" for="__nav_7_9" id="__nav_7_9_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_7_9" id="__nav_7_9_label" tabindex="">
             
   
   
@@ -2247,7 +2228,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_9_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_9_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_7_9">
             <span class="md-nav__icon md-icon"></span>
             
@@ -2265,7 +2246,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/templates/design-guidelines/" class="md-nav__link">
+      <a href="../design-guidelines/" class="md-nav__link">
         
   
   
@@ -2293,35 +2274,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/templates/macro-plan/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Macro Plan
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../contributing/templates/micro-plan/" class="md-nav__link">
+      <a href="../micro-plan/" class="md-nav__link">
         
   
   
@@ -2346,10 +2299,140 @@
                 
   
   
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archon Issue Examples
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archon Issue Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#tracking-issue-rfc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tracking Issue (RFC)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sub-issue-0-create-feature-branch-persist-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sub-issue 0 (create feature branch + persist plan)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sub-issue-1n-per-hole" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sub-issue 1–N (per hole)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#final-pr-feature-branch-main" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Final PR (feature branch → main)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-the-sub-issue-includes-full-hole-content" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why the sub-issue includes full hole content
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/templates/hypothesis/" class="md-nav__link">
+      <a href="../hypothesis/" class="md-nav__link">
         
   
   
@@ -2421,7 +2504,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../blog/" class="md-nav__link ">
+            <a href="../../../blog/" class="md-nav__link ">
               
   
   
@@ -2525,7 +2608,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../blog/archive/2026/" class="md-nav__link">
+      <a href="../../../blog/archive/2026/" class="md-nav__link">
         
   
   
@@ -2627,7 +2710,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../blog/category/architecture/" class="md-nav__link">
+      <a href="../../../blog/category/architecture/" class="md-nav__link">
         
   
   
@@ -2657,7 +2740,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../blog/category/capacity-planning/" class="md-nav__link">
+      <a href="../../../blog/category/capacity-planning/" class="md-nav__link">
         
   
   
@@ -2687,7 +2770,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../blog/category/deep-dives/" class="md-nav__link">
+      <a href="../../../blog/category/deep-dives/" class="md-nav__link">
         
   
   
@@ -2717,7 +2800,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../blog/category/what-is-blis/" class="md-nav__link">
+      <a href="../../../blog/category/what-is-blis/" class="md-nav__link">
         
   
   
@@ -2780,10 +2863,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#why-experiment-with-a-simulator" class="md-nav__link">
+  <a href="#tracking-issue-rfc" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Why Experiment with a Simulator?
+        Tracking Issue (RFC)
       
     </span>
   </a>
@@ -2791,10 +2874,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#capacity-planning-validation" class="md-nav__link">
+  <a href="#sub-issue-0-create-feature-branch-persist-plan" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Capacity Planning Validation
+        Sub-issue 0 (create feature branch + persist plan)
       
     </span>
   </a>
@@ -2802,10 +2885,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#the-hypothesis-experiment-skill" class="md-nav__link">
+  <a href="#sub-issue-1n-per-hole" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The /hypothesis-experiment Skill
+        Sub-issue 1–N (per hole)
       
     </span>
   </a>
@@ -2813,10 +2896,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#the-experiment-harness" class="md-nav__link">
+  <a href="#final-pr-feature-branch-main" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The Experiment Harness
+        Final PR (feature branch → main)
       
     </span>
   </a>
@@ -2824,32 +2907,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#case-studies" class="md-nav__link">
+  <a href="#why-the-sub-issue-includes-full-hole-content" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Case Studies
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#convergence-review" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Convergence Review
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#further-reading" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Further Reading
+        Why the sub-issue includes full hole content
       
     </span>
   </a>
@@ -2876,120 +2937,180 @@
   
 
 
-<h1 id="hypothesis-driven-experimentation">Hypothesis-Driven Experimentation<a class="headerlink" href="#hypothesis-driven-experimentation" title="Permanent link">&para;</a></h1>
-<p>This guide covers using BLIS as a platform for rigorous, reproducible experiments. Because BLIS is a deterministic discrete-event simulator (same seed → byte-identical output), you can run controlled experiments that are impossible with real hardware.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Quick example: compare chunked prefill vs no chunked prefill</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span>--long-prefill-token-threshold<span class="w"> </span><span class="m">0</span>
+<h1 id="archon-issue-examples-for-claude">Archon Issue Examples (for Claude)<a class="headerlink" href="#archon-issue-examples-for-claude" title="Permanent link">&para;</a></h1>
+<p>Examples of how tracking issues and sub-issues should be structured for large features using the archon-based planning flow. Claude follows these when creating issues via <code>rfc.md</code> and <code>rfc-to-plan.md</code>.</p>
+<p>This is NOT a GitHub issue template — it's a reference for Claude to produce consistent, well-structured issues that <code>blis-pr-review</code> can later verify against.</p>
+<hr />
+<h2 id="tracking-issue-rfc">Tracking Issue (RFC)<a class="headerlink" href="#tracking-issue-rfc" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="gh"># [Feature name]</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="gu">## Feature Description</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span>--long-prefill-token-threshold<span class="w"> </span><span class="m">256</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="gs">**What:**</span> One paragraph — the capability being added.
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="gs">**Why:**</span> What problem this solves. What users can't do today.
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="gs">**How it behaves:**</span> CLI flags, output changes, config surface.
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="gs">**Scope in:**</span> [bullet list]
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="gs">**Scope out:**</span> [bullet list]
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="gs">**Modeling decisions:**</span> What is modeled / simplified / omitted, with justification.
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="gu">## Holes</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="gu">### H1: [package path]</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="k">-</span><span class="w"> </span><span class="gs">**Responsibility:**</span> [one sentence]
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="k">-</span><span class="w"> </span><span class="gs">**Surface:**</span> [exported functions in plain English]
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="k">-</span><span class="w"> </span><span class="gs">**Allowed imports:**</span> [whitelist]
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="k">-</span><span class="w"> </span><span class="gs">**Contracts:**</span> (naming: <span class="sb">`BC-&lt;hole-id&gt;-&lt;N&gt;`</span>)
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">  </span><span class="k">-</span><span class="w"> </span>BC-H1-1: [statement] [evidenced: property_test]
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">  </span><span class="k">-</span><span class="w"> </span>BC-H1-2: [statement] [evidenced: differential_test]
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="k">-</span><span class="w"> </span><span class="gs">**Invariants:**</span> [which INV-N this preserves]
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="k">-</span><span class="w"> </span><span class="gs">**Extension type:**</span> policy template / subsystem module / backend swap / tier composition
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="k">-</span><span class="w"> </span><span class="gs">**No-op default:**</span> [behavior when feature is absent — must be byte-identical]
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="gu">### H2: [package path]</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>[same structure]
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="gu">## Trade-offs</span>
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>| Decision | Alternatives | Why this approach | What breaks if wrong |
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>|----------|-------------|-------------------|---------------------|
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>| [decision] | [alt 1, alt 2] | [rationale] | [cost] |
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="gu">## Delivery Order</span>
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>H1 — no dependencies, can start first
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>H2 — no dependencies, parallel with H1
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>H3 — depends on H1
 </code></pre></div>
-<h2 id="why-experiment-with-a-simulator">Why Experiment with a Simulator?<a class="headerlink" href="#why-experiment-with-a-simulator" title="Permanent link">&para;</a></h2>
-<p>Real GPU benchmarks suffer from noise: wall-clock jitter, OS scheduling, GPU thermal throttling, network variability. With BLIS:</p>
-<ul>
-<li><strong>Deterministic replay</strong> — change exactly one variable, attribute all output differences to that change</li>
-<li><strong>No hardware cost</strong> — run thousands of configurations on a laptop</li>
-<li><strong>Controlled conditions</strong> — isolate the effect of a single parameter while holding everything else constant</li>
-<li><strong>Reproducible</strong> — share your seed, workload spec, and CLI flags; anyone can reproduce your results</li>
-</ul>
-<h2 id="capacity-planning-validation">Capacity Planning Validation<a class="headerlink" href="#capacity-planning-validation" title="Permanent link">&para;</a></h2>
-<p>The most common experiment workflow for platform engineers:</p>
-<ol>
-<li><strong>Define your deployment:</strong> model, GPU, TP, instance count</li>
-<li><strong>Define your workload:</strong> arrival rate, token distributions (from production logs if available)</li>
-<li><strong>Define your SLO:</strong> TTFT p99 &lt; 200ms, E2E p99 &lt; 5s, etc.</li>
-<li><strong>Run the simulation</strong> with these parameters</li>
-<li><strong>Interpret:</strong> Does the simulated TTFT p99 meet your SLO? If not, add instances or tune routing.</li>
-</ol>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Example: Will 8 instances of Qwen3 14B handle 20 req/s at TTFT p99 &lt; 500ms?</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">20</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span>--seed<span class="w"> </span><span class="m">42</span>
+<hr />
+<h2 id="sub-issue-0-create-feature-branch-persist-plan">Sub-issue 0 (create feature branch + persist plan)<a class="headerlink" href="#sub-issue-0-create-feature-branch-persist-plan" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="gh"># Encode .archon plan + persist</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>Parent: #[tracking issue number]
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="gu">## What to do</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="k">1.</span> Create feature branch: <span class="sb">`feature/&lt;name&gt;`</span> off main
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="k">2.</span> Commit plan files to <span class="sb">`specs/NNN-feature/`</span>:
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">   </span><span class="k">-</span><span class="w"> </span>design.md (RFC prose from tracking issue)
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">   </span><span class="k">-</span><span class="w"> </span>feature.archon (machine-checkable plan)
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">   </span><span class="k">-</span><span class="w"> </span>feature.plan.json (compiled graph)
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="k">3.</span> Push the feature branch. No PR to main.
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>All subsequent PRs (sub-issues 1–N) target this feature branch.
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>archon-plan: specs/NNN-feature/feature.plan.json
 </code></pre></div>
-<h2 id="the-hypothesis-experiment-skill">The <code>/hypothesis-experiment</code> Skill<a class="headerlink" href="#the-hypothesis-experiment-skill" title="Permanent link">&para;</a></h2>
-<p>For structured hypothesis-driven research, BLIS includes a guided experimentation workflow via the <code>/hypothesis-experiment</code> Claude Code skill:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>/hypothesis-experiment
+<hr />
+<h2 id="sub-issue-1n-per-hole">Sub-issue 1–N (per hole)<a class="headerlink" href="#sub-issue-1n-per-hole" title="Permanent link">&para;</a></h2>
+<p>Each sub-issue is a self-contained work order. PRs target the feature branch. Developer self-reviews (<code>@claude /blis-pr-review</code> + <code>/archon-pr-review</code>). <code>blis-pr-review</code> reads this body to verify contracts are delivered.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="gh"># [Hole name]: [short description]</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>Parent: #[tracking issue number]
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="gu">## What to build</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>[1-2 sentences: what this hole does, why it matters]
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="gu">## Surface</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="k">-</span><span class="w"> </span>FuncName(args) ReturnType
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="k">-</span><span class="w"> </span>FuncName2(args) ReturnType
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="gu">## Allowed imports</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="k">-</span><span class="w"> </span>[package path 1]
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="k">-</span><span class="w"> </span>[package path 2]
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="gu">## Contracts</span>
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>Naming convention: <span class="sb">`BC-&lt;hole-id&gt;-&lt;N&gt;`</span> (e.g., hole H1's contracts are BC-H1-1, BC-H1-2; hole H2's are BC-H2-1, BC-H2-2).
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>
+<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a><span class="k">-</span><span class="w"> </span>BC-H1-1: [statement] [evidenced: property_test]
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a><span class="k">-</span><span class="w"> </span>BC-H1-2: [statement] [evidenced: differential_test]
+<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a><span class="k">-</span><span class="w"> </span>BC-H1-3: [statement] [evidenced: metamorphic_test]
+<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a>
+<a id="__codelineno-2-27" name="__codelineno-2-27" href="#__codelineno-2-27"></a><span class="gu">## Invariants</span>
+<a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a>
+<a id="__codelineno-2-29" name="__codelineno-2-29" href="#__codelineno-2-29"></a><span class="k">-</span><span class="w"> </span>INV-N: [which invariants this hole must preserve]
+<a id="__codelineno-2-30" name="__codelineno-2-30" href="#__codelineno-2-30"></a>
+<a id="__codelineno-2-31" name="__codelineno-2-31" href="#__codelineno-2-31"></a><span class="gu">## No-op default</span>
+<a id="__codelineno-2-32" name="__codelineno-2-32" href="#__codelineno-2-32"></a>
+<a id="__codelineno-2-33" name="__codelineno-2-33" href="#__codelineno-2-33"></a>[Behavior when feature is not configured — must be byte-identical to before]
+<a id="__codelineno-2-34" name="__codelineno-2-34" href="#__codelineno-2-34"></a>
+<a id="__codelineno-2-35" name="__codelineno-2-35" href="#__codelineno-2-35"></a><span class="gu">## Expected dist reduction</span>
+<a id="__codelineno-2-36" name="__codelineno-2-36" href="#__codelineno-2-36"></a>
+<a id="__codelineno-2-37" name="__codelineno-2-37" href="#__codelineno-2-37"></a>dist [before] → [after] (fills [hole] + [N] arrows)
+<a id="__codelineno-2-38" name="__codelineno-2-38" href="#__codelineno-2-38"></a>
+<a id="__codelineno-2-39" name="__codelineno-2-39" href="#__codelineno-2-39"></a><span class="gu">## Dependencies</span>
+<a id="__codelineno-2-40" name="__codelineno-2-40" href="#__codelineno-2-40"></a>
+<a id="__codelineno-2-41" name="__codelineno-2-41" href="#__codelineno-2-41"></a>[Which sub-issues must land first, or "None — can start immediately"]
+<a id="__codelineno-2-42" name="__codelineno-2-42" href="#__codelineno-2-42"></a>
+<a id="__codelineno-2-43" name="__codelineno-2-43" href="#__codelineno-2-43"></a><span class="gu">## Target branch</span>
+<a id="__codelineno-2-44" name="__codelineno-2-44" href="#__codelineno-2-44"></a>
+<a id="__codelineno-2-45" name="__codelineno-2-45" href="#__codelineno-2-45"></a><span class="sb">`feature/&lt;name&gt;`</span> (PR against the feature branch, NOT main)
+<a id="__codelineno-2-46" name="__codelineno-2-46" href="#__codelineno-2-46"></a>
+<a id="__codelineno-2-47" name="__codelineno-2-47" href="#__codelineno-2-47"></a><span class="gu">## Review</span>
+<a id="__codelineno-2-48" name="__codelineno-2-48" href="#__codelineno-2-48"></a>
+<a id="__codelineno-2-49" name="__codelineno-2-49" href="#__codelineno-2-49"></a>Self-reviewed by developer: <span class="sb">`@claude /blis-pr-review`</span> + <span class="sb">`/archon-pr-review`</span>
+<a id="__codelineno-2-50" name="__codelineno-2-50" href="#__codelineno-2-50"></a>
+<a id="__codelineno-2-51" name="__codelineno-2-51" href="#__codelineno-2-51"></a>---
+<a id="__codelineno-2-52" name="__codelineno-2-52" href="#__codelineno-2-52"></a>
+<a id="__codelineno-2-53" name="__codelineno-2-53" href="#__codelineno-2-53"></a>archon-plan: specs/[NNN-feature]/[feature].plan.json
 </code></pre></div>
-<p>This skill guides you through:</p>
-<ol>
-<li><strong>Formulate</strong> — state a testable prediction (e.g., "chunked prefill reduces short-request TTFT p99 by &gt; 30%")</li>
-<li><strong>Classify</strong> — identify the hypothesis family (scheduler invariants, performance-regime, etc.)</li>
-<li><strong>Design</strong> — specify parameters, controls, success criteria</li>
-<li><strong>Implement</strong> — create <code>run.sh</code> (experiment script) and <code>analyze.py</code> (analysis script)</li>
-<li><strong>Run</strong> — execute the experiment</li>
-<li><strong>Analyze</strong> — parse results, compute statistics</li>
-<li><strong>Document</strong> — write FINDINGS.md with conclusions and evidence</li>
-</ol>
-<h2 id="the-experiment-harness">The Experiment Harness<a class="headerlink" href="#the-experiment-harness" title="Permanent link">&para;</a></h2>
-<p>All experiments use a shared harness for consistency. The harness lives in the <a href="https://github.com/inference-sim/inference-sim/tree/hypothesis-archive/hypotheses/lib"><code>hypothesis-archive</code> branch</a> — copy it into your experiment branch at Step 4:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Copy harness from archive branch into your experiment branch</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>git<span class="w"> </span>show<span class="w"> </span>hypothesis-archive:hypotheses/lib/harness.sh<span class="w"> </span>&gt;<span class="w"> </span>hypotheses/lib/harness.sh
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>git<span class="w"> </span>show<span class="w"> </span>hypothesis-archive:hypotheses/lib/analyze_helpers.py<span class="w"> </span>&gt;<span class="w"> </span>hypotheses/lib/analyze_helpers.py
+<hr />
+<h2 id="final-pr-feature-branch-main">Final PR (feature branch → main)<a class="headerlink" href="#final-pr-feature-branch-main" title="Permanent link">&para;</a></h2>
+<p>This PR body must be <strong>self-contained</strong> — a reviewer can validate every contract without opening another issue. To produce it, Claude reads the tracking issue, all sub-issues, and the PRs that closed them.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="gh"># [Feature name]: merge to main</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>Closes: #[tracking issue number]
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="nb">source</span><span class="w"> </span>hypotheses/lib/harness.sh
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="gu">## Summary</span>
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># Run a simulation with standard setup</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>blis_run<span class="w"> </span><span class="m">60</span><span class="w"> </span>results/baseline.json<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>[Plain-English: what this feature adds, why, how it behaves — for a maintainer who followed nothing. No jargon, no hole IDs without explanation.]
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="gu">## Holes delivered</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="gu">### H1: [package path] — [one sentence responsibility]</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="k">-</span><span class="w"> </span><span class="gs">**Surface:**</span> [what it exports]
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="k">-</span><span class="w"> </span><span class="gs">**Allowed imports:**</span> [whitelist]
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="k">-</span><span class="w"> </span><span class="gs">**Contracts:**</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">  </span><span class="k">-</span><span class="w"> </span>BC-H1-1: [statement] [evidenced: property_test]
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="w">  </span><span class="k">-</span><span class="w"> </span>BC-H1-2: [statement] [evidenced: differential_test]
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="k">-</span><span class="w"> </span><span class="gs">**Delivered in:**</span> sub-issue #[N], PR #[N]
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>
+<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="gu">### H2: [package path] — [one sentence responsibility]</span>
+<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a><span class="k">-</span><span class="w"> </span><span class="gs">**Surface:**</span> [what it exports]
+<a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a><span class="k">-</span><span class="w"> </span><span class="gs">**Allowed imports:**</span> [whitelist]
+<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a><span class="k">-</span><span class="w"> </span><span class="gs">**Contracts:**</span>
+<a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a><span class="w">  </span><span class="k">-</span><span class="w"> </span>BC-H2-1: [statement] [evidenced: property_test]
+<a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a><span class="k">-</span><span class="w"> </span><span class="gs">**Delivered in:**</span> sub-issue #[N], PR #[N]
+<a id="__codelineno-3-25" name="__codelineno-3-25" href="#__codelineno-3-25"></a>
+<a id="__codelineno-3-26" name="__codelineno-3-26" href="#__codelineno-3-26"></a><span class="gu">## Archon verification</span>
+<a id="__codelineno-3-27" name="__codelineno-3-27" href="#__codelineno-3-27"></a>
+<a id="__codelineno-3-28" name="__codelineno-3-28" href="#__codelineno-3-28"></a><span class="k">-</span><span class="w"> </span>Baseline dist: [N] → Final dist: 0
+<a id="__codelineno-3-29" name="__codelineno-3-29" href="#__codelineno-3-29"></a><span class="k">-</span><span class="w"> </span>All holes filled, all arrows established
+<a id="__codelineno-3-30" name="__codelineno-3-30" href="#__codelineno-3-30"></a><span class="k">-</span><span class="w"> </span>No-op default confirmed (byte-identical when feature absent)
+<a id="__codelineno-3-31" name="__codelineno-3-31" href="#__codelineno-3-31"></a>
+<a id="__codelineno-3-32" name="__codelineno-3-32" href="#__codelineno-3-32"></a><span class="gu">## Deviations from RFC</span>
+<a id="__codelineno-3-33" name="__codelineno-3-33" href="#__codelineno-3-33"></a>
+<a id="__codelineno-3-34" name="__codelineno-3-34" href="#__codelineno-3-34"></a>[Any changes from the original tracking issue design. If none: "None — implemented as designed."]
+<a id="__codelineno-3-35" name="__codelineno-3-35" href="#__codelineno-3-35"></a>
+<a id="__codelineno-3-36" name="__codelineno-3-36" href="#__codelineno-3-36"></a><span class="gu">## Target branch</span>
+<a id="__codelineno-3-37" name="__codelineno-3-37" href="#__codelineno-3-37"></a>
+<a id="__codelineno-3-38" name="__codelineno-3-38" href="#__codelineno-3-38"></a><span class="sb">`feature/&lt;name&gt;`</span> → <span class="sb">`main`</span>
+<a id="__codelineno-3-39" name="__codelineno-3-39" href="#__codelineno-3-39"></a>
+<a id="__codelineno-3-40" name="__codelineno-3-40" href="#__codelineno-3-40"></a><span class="gu">## Review</span>
+<a id="__codelineno-3-41" name="__codelineno-3-41" href="#__codelineno-3-41"></a>
+<a id="__codelineno-3-42" name="__codelineno-3-42" href="#__codelineno-3-42"></a>Maintainer reviews this PR (the whole feature in one diff against main).
 </code></pre></div>
-<p>The harness provides:
-- <code>blis_run()</code> — wrapper around the simulation binary
-- <code>setup_experiment()</code> — create output directories
-- <code>preflight_kv_check()</code> — verify KV configuration
-- <code>hypotheses/lib/analyze_helpers.py</code> — common analysis functions (<code>parse_blis_output()</code>, etc.)</p>
-<blockquote>
-<p><strong>Note:</strong> The archive is pinned at commit <code>cad4191</code>. Verify harness output format matches the current CLI before use — see Step 4 in <a href="../../contributing/hypothesis/">Hypothesis Process</a>.</p>
-</blockquote>
-<h2 id="case-studies">Case Studies<a class="headerlink" href="#case-studies" title="Permanent link">&para;</a></h2>
-<p>Completed experiments demonstrate the power of hypothesis-driven analysis:</p>
-<table>
-<thead>
-<tr>
-<th>Experiment</th>
-<th>Finding</th>
-<th>Impact</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>H7 (Horizontal Scaling)</strong></td>
-<td>TTFT p99 scales 7.4x (not 2x) when doubling instances near saturation</td>
-<td>Super-linear benefit from queue growth rate reduction</td>
-</tr>
-<tr>
-<td><strong>H27 (Chunked Prefill)</strong></td>
-<td><code>--long-prefill-token-threshold=256</code> reduces short-request TTFT p99 by 52%</td>
-<td>But ITL is unaffected — chunked prefill benefits scheduling, not decode</td>
-</tr>
-<tr>
-<td><strong>H29 (Snapshot Staleness)</strong></td>
-<td><code>--snapshot-refresh-interval</code> 100ms degrades TTFT p99 by +354% for kv-utilization scorer</td>
-<td>Safe zone &lt; 5ms; composite scorer mitigates ~99%</td>
-</tr>
-<tr>
-<td><strong>H20 (Heavy-Tailed)</strong></td>
-<td>ParetoLogNormal produces fewer preemptions than Gaussian despite similar means</td>
-<td>Distribution median, not mean, drives KV pressure</td>
-</tr>
-</tbody>
-</table>
-<p>All findings are documented in <code>hypotheses/*/FINDINGS.md</code> in their respective experiment branches. Completed experiments are also collected in the <a href="https://github.com/inference-sim/inference-sim/tree/hypothesis-archive/hypotheses"><code>hypothesis-archive</code> branch</a>.</p>
-<h2 id="convergence-review">Convergence Review<a class="headerlink" href="#convergence-review" title="Permanent link">&para;</a></h2>
-<p>Experiments go through a multi-perspective review process to ensure rigor:</p>
-<ol>
-<li><strong>Design Review</strong> (5 perspectives) — validates hypothesis quality and experiment design</li>
-<li><strong>Code Review</strong> (5 perspectives) — checks run.sh/analyze.py for correctness</li>
-<li><strong>FINDINGS Review</strong> (10 perspectives) — validates conclusions against evidence</li>
-</ol>
-<p>The <code>/convergence-review</code> skill automates this process. Zero CRITICAL + zero IMPORTANT findings = converged.</p>
-<h2 id="further-reading">Further Reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>
-<ul>
-<li><a href="../../contributing/hypothesis/">Hypothesis Process</a> — full 10-step process for contributors</li>
-<li><a href="../../contributing/standards/experiments/">Experiment Standards</a> — rigor requirements (ED-1 through ED-6, RCV-1 through RCV-6)</li>
-<li><a href="../results/">Metrics &amp; Results</a> — understanding the metrics your experiments produce</li>
-</ul>
+<hr />
+<h2 id="why-the-sub-issue-includes-full-hole-content">Why the sub-issue includes full hole content<a class="headerlink" href="#why-the-sub-issue-includes-full-hole-content" title="Permanent link">&para;</a></h2>
+<p><code>blis-pr-review</code> reads the sub-issue body during review to:
+1. Check if promised contracts have matching tests
+2. Verify evidence types match (property_test → a property test exists)
+3. Confirm the surface was implemented as declared
+4. Verify no-op default holds (byte-identical when feature absent)</p>
+<p>This avoids blis-pr-review needing to read <code>.archon</code> files or run archon. The sub-issue IS the contract between planning and implementation.</p>
 
 
 
@@ -3025,7 +3146,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../kv-offload-calibration/" class="md-footer__link md-footer__link--prev" aria-label="Previous: KV Hit-Rate Calibration">
+          <a href="../micro-plan/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Micro Plan">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -3035,20 +3156,20 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                KV Hit-Rate Calibration
+                Micro Plan
               </div>
             </div>
           </a>
         
         
           
-          <a href="../archon-pr-review/" class="md-footer__link md-footer__link--next" aria-label="Next: Archon PR Review">
+          <a href="../hypothesis/" class="md-footer__link md-footer__link--next" aria-label="Next: Hypothesis">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Archon PR Review
+                Hypothesis
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -3085,14 +3206,14 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.indexes", "navigation.sections", "navigation.expand", "navigation.footer", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.indexes", "navigation.sections", "navigation.expand", "navigation.footer", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
     
     
-      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
-        <script src="../../javascripts/mermaid-text-fix.js"></script>
+        <script src="../../../javascripts/mermaid-text-fix.js"></script>
       
-        <script src="../../javascripts/mathjax.js"></script>
+        <script src="../../../javascripts/mathjax.js"></script>
       
         <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
       

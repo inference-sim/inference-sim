@@ -11,7 +11,7 @@
       
       
       
-        <link rel="prev" href="../design-process/">
+        <link rel="prev" href="../pr-workflow/">
       
       
         <link rel="next" href="../hypothesis/">
@@ -25,7 +25,7 @@
     
     
       
-        <title>Macro Planning - BLIS — Blackbox Inference Simulator</title>
+        <title>RFC Template - BLIS — Blackbox Inference Simulator</title>
       
     
     
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#macro-plan-process" class="md-skip">
+        <a href="#rfc-template-for-large-features" class="md-skip">
           Skip to content
         </a>
       
@@ -116,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Macro Planning
+              RFC Template
             
           </span>
         </div>
@@ -869,8 +869,6 @@
       
         
       
-        
-      
     
     
     
@@ -1194,34 +1192,6 @@
     
   
     KV Hit-Rate Calibration
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../guide/experimentation/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Hypothesis Experimentation
   
 
     
@@ -1778,34 +1748,6 @@
                 
   
   
-  
-  
-    <li class="md-nav__item">
-      <a href="../design-process/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Design Process
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
     
   
   
@@ -1825,7 +1767,7 @@
   <span class="md-ellipsis">
     
   
-    Macro Planning
+    RFC Template
   
 
     
@@ -1843,7 +1785,7 @@
   <span class="md-ellipsis">
     
   
-    Macro Planning
+    RFC Template
   
 
     
@@ -1869,10 +1811,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#when-a-macro-plan-is-needed" class="md-nav__link">
+  <a href="#step-0-baseline-analysis" class="md-nav__link">
     <span class="md-ellipsis">
       
-        When a Macro Plan is Needed
+        Step 0: Baseline Analysis
       
     </span>
   </a>
@@ -1880,10 +1822,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#steps" class="md-nav__link">
+  <a href="#when-an-rfc-is-needed" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Steps
+        When an RFC is Needed
       
     </span>
   </a>
@@ -1891,10 +1833,71 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#macro-plan-review-perspectives-8" class="md-nav__link">
+  <a href="#tracking-issue-structure" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Macro Plan Review Perspectives (8)
+        Tracking Issue Structure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tracking Issue Structure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#section-1-motivation-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Section 1: Motivation &amp; Scope
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#section-2-holes-architectural-intent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Section 2: Holes (architectural intent)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#section-3-trade-offs-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Section 3: Trade-offs &amp; Decisions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#section-4-delivery-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Section 4: Delivery Order
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#self-review-before-opening-the-issue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Self-Review (before opening the issue)
       
     </span>
   </a>
@@ -1902,10 +1905,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#quality-gates" class="md-nav__link">
+  <a href="#quality-gates-check-before-opening-the-issue" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Quality Gates
+        Quality Gates (check before opening the issue)
       
     </span>
   </a>
@@ -1913,10 +1916,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#references" class="md-nav__link">
+  <a href="#example" class="md-nav__link">
     <span class="md-ellipsis">
       
-        References
+        Example
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#after-agreement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        After Agreement
       
     </span>
   </a>
@@ -1967,14 +1981,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../convergence/" class="md-nav__link">
+      <a href="../perspectives/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Convergence Protocol
+    Review Perspectives
   
 
     
@@ -1983,6 +1997,163 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7_7" id="__nav_7_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archon
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Archon
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../archon/baseline-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Baseline Analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../archon/encode-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Encode Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../archon/pr-review-context/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PR Review Context
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -2062,6 +2233,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../standards/experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiment Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../standards/rules/" class="md-nav__link">
         
   
@@ -2126,34 +2325,6 @@
     
   
     Engineering Principles
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../standards/experiments/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Experiment Standards
   
 
     
@@ -2277,14 +2448,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../templates/macro-plan/" class="md-nav__link">
+      <a href="../templates/micro-plan/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Macro Plan
+    Micro Plan
   
 
     
@@ -2305,14 +2476,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../templates/micro-plan/" class="md-nav__link">
+      <a href="../templates/archon-issue-examples/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Micro Plan
+    Archon Issue Examples
   
 
     
@@ -2764,10 +2935,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#when-a-macro-plan-is-needed" class="md-nav__link">
+  <a href="#step-0-baseline-analysis" class="md-nav__link">
     <span class="md-ellipsis">
       
-        When a Macro Plan is Needed
+        Step 0: Baseline Analysis
       
     </span>
   </a>
@@ -2775,10 +2946,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#steps" class="md-nav__link">
+  <a href="#when-an-rfc-is-needed" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Steps
+        When an RFC is Needed
       
     </span>
   </a>
@@ -2786,10 +2957,71 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#macro-plan-review-perspectives-8" class="md-nav__link">
+  <a href="#tracking-issue-structure" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Macro Plan Review Perspectives (8)
+        Tracking Issue Structure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tracking Issue Structure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#section-1-motivation-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Section 1: Motivation &amp; Scope
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#section-2-holes-architectural-intent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Section 2: Holes (architectural intent)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#section-3-trade-offs-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Section 3: Trade-offs &amp; Decisions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#section-4-delivery-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Section 4: Delivery Order
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#self-review-before-opening-the-issue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Self-Review (before opening the issue)
       
     </span>
   </a>
@@ -2797,10 +3029,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#quality-gates" class="md-nav__link">
+  <a href="#quality-gates-check-before-opening-the-issue" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Quality Gates
+        Quality Gates (check before opening the issue)
       
     </span>
   </a>
@@ -2808,10 +3040,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#references" class="md-nav__link">
+  <a href="#example" class="md-nav__link">
     <span class="md-ellipsis">
       
-        References
+        Example
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#after-agreement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        After Agreement
       
     </span>
   </a>
@@ -2838,88 +3081,118 @@
   
 
 
-<h1 id="macro-plan-process">Macro Plan Process<a class="headerlink" href="#macro-plan-process" title="Permanent link">&para;</a></h1>
-<p><strong>Status:</strong> Active (v1.0 — updated 2026-02-26)</p>
-<p>This document describes the process for creating a macro-level implementation plan (multi-PR feature). For the macro plan template, see <a href="../templates/macro-plan/">docs/contributing/templates/macro-plan.md</a>.</p>
-<h2 id="when-a-macro-plan-is-needed">When a Macro Plan is Needed<a class="headerlink" href="#when-a-macro-plan-is-needed" title="Permanent link">&para;</a></h2>
+<h1 id="rfc-template-for-large-features">RFC Template for Large Features<a class="headerlink" href="#rfc-template-for-large-features" title="Permanent link">&para;</a></h1>
+<p><strong>Status:</strong> Active (v1.0)</p>
+<p>Use this template when filing a tracking issue for a feature that introduces new package boundaries or modifies the architecture. Bug fixes and small features (new policy behind existing interface) do not need an RFC.</p>
+<hr />
+<h2 id="step-0-baseline-analysis">Step 0: Baseline Analysis<a class="headerlink" href="#step-0-baseline-analysis" title="Permanent link">&para;</a></h2>
+<p>Before designing, understand the current architecture. Run the <a href="../archon/baseline-analysis/">archon baseline analysis</a> on the area you'll change. This informs where it's safe to add code, what's risky, and what dependencies exist.</p>
+<p>Feed the output into your RFC — it informs modeling decisions and trade-offs.</p>
+<hr />
+<h2 id="when-an-rfc-is-needed">When an RFC is Needed<a class="headerlink" href="#when-an-rfc-is-needed" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Features spanning 2+ PRs</li>
-<li>Work requiring a dependency DAG between PRs</li>
-<li>Features touching multiple module boundaries</li>
+<li>New subsystem modules (new interface + integration)</li>
+<li>Backend swaps (alternative implementations requiring interface extraction)</li>
+<li>Architecture changes affecting module boundaries</li>
+<li>Multi-PR features requiring decomposition</li>
 </ul>
-<p><strong>Not needed for:</strong> Single-PR features, bug fixes, documentation changes.</p>
-<h2 id="steps">Steps<a class="headerlink" href="#steps" title="Permanent link">&para;</a></h2>
-<ol>
-<li><strong>Design doc(s) as input</strong> — read the relevant design doc(s) and/or GitHub issues</li>
-<li><strong>Decompose into PRs</strong> — each PR should be independently mergeable and testable</li>
-<li><strong>Define the dependency DAG</strong> — which PRs can be parallelized? Which must be sequential?</li>
-<li><strong>Define module contracts per PR boundary</strong> — what does each PR guarantee to the next?</li>
-<li><strong>Identify frozen interfaces</strong> — which interfaces are stable (can be developed against in parallel)?</li>
-<li><strong>Identify flexible internals</strong> — which implementation details may change during micro-planning?</li>
-<li><strong>Convergence review</strong> — Run all 8 perspectives in parallel (or sequentially), applying the <a href="../convergence/">convergence protocol</a>. Fix CRITICAL and IMPORTANT findings, re-run until convergence.</li>
-<li><strong>Human review</strong> — approve before micro-planning begins for any PR in the plan</li>
-</ol>
-<h2 id="macro-plan-review-perspectives-8">Macro Plan Review Perspectives (8)<a class="headerlink" href="#macro-plan-review-perspectives-8" title="Permanent link">&para;</a></h2>
-<p>For each perspective, check every item. Classify findings as CRITICAL / IMPORTANT / SUGGESTION per the <a href="../convergence/">convergence protocol</a>. Section references below refer to <a href="../templates/design-guidelines/">design-guidelines.md</a> and <a href="../templates/macro-plan/">macro-plan template</a> unless otherwise noted.</p>
-<p><strong>Perspective 1 — Objective Clarity:</strong>
-- Are 3-7 crisp objectives defined?
-- Are non-goals explicitly listed?
-- Is the model scoping table present (modeled / simplified / omitted / justification)?
-- Are analysis questions specific enough to drive component selection?</p>
-<p><strong>Perspective 2 — Concept Model Quality:</strong>
-- Is the concept model under 80 lines?
-- Does every building block have all 6 module contract aspects (observes, controls, owns, invariants, events, extension friction)?
-- Is real-system correspondence documented (llm-d / vLLM / SGLang mapping table)?
-- Is the state ownership map complete (exactly one owner per mutable state)?</p>
-<p><strong>Perspective 3 — PR Decomposition:</strong>
-- Is every PR independently mergeable and testable?
-- Does the dependency DAG have no cycles?
-- Can module contracts be tested with mocks (parallel development enabled)?
-- Does each PR identify its extension type (policy template / subsystem module / backend swap / tier composition)?</p>
-<p><strong>Perspective 4 — Abstraction Level:</strong>
-- Zero Go code in Sections A-F and H-K (only Section G may have frozen interface signatures)?
-- Are all pre-freeze interfaces described behaviorally, not as Go code?
-- Is every code snippet a FACT about merged code, not an ASPIRATION about unwritten code?
-- Are module contracts using the template from Phase 2, not Go structs?</p>
-<p><strong>Perspective 5 — Risk Register:</strong>
-- Does every non-obvious architectural decision have a risk entry?
-- For decisions with cost-of-being-wrong &gt;= 3 PRs, is validation MANDATORY with a specific gate?
-- Does each validation gate have exact success criteria (not "looks good")?
-- Are abort plans specified (what changes if validation fails)?</p>
-<p><strong>Perspective 6 — Cross-Cutting Infrastructure:</strong>
-- Are test infrastructure, documentation, and CI changes each assigned to a specific PR?
-- Is the interface freeze schedule documented (which PR freezes which interface)?
-- Is CLAUDE.md update ownership clear (the PR that causes the change updates it)?
-- Are no items left as "address when needed"?</p>
-<p><strong>Perspective 7 — Extension Friction:</strong>
-- For each new module boundary, is the touch-point count for adding one more variant specified?
-- Are touch-point counts within reference targets from design guidelines Section 4.5?
-- If friction exceeds targets, is this acknowledged and justified?</p>
-<p><strong>Perspective 8 — Design Bug Prevention:</strong>
-- Is scaffolding creep prevented (every struct/method/flag exercised by end of introducing PR)?
-- Is documentation drift prevented (CLAUDE.md updated in the same PR that causes the change)?
-- Is test infrastructure duplication prevented (shared packages created early)?
-- Is golden dataset staleness prevented (regeneration steps included)?
-- Are DES-specific anti-patterns addressed (type catalog, fidelity for its own sake, golden without invariant)?</p>
-<h2 id="quality-gates">Quality Gates<a class="headerlink" href="#quality-gates" title="Permanent link">&para;</a></h2>
+<p><strong>Not needed for:</strong> Bug fixes, new policy templates behind existing interfaces, documentation changes, single-file refactors.</p>
+<hr />
+<h2 id="tracking-issue-structure">Tracking Issue Structure<a class="headerlink" href="#tracking-issue-structure" title="Permanent link">&para;</a></h2>
+<p>The tracking issue serves as both the feature proposal AND the design document. It has four sections:</p>
+<h3 id="section-1-motivation-scope">Section 1: Motivation &amp; Scope<a class="headerlink" href="#section-1-motivation-scope" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>What:</strong> one paragraph describing the capability being added</li>
+<li><strong>Why:</strong> what problem does this solve? what can't users do today?</li>
+<li><strong>How it behaves:</strong> expected user-visible behavior (CLI flags, output changes, config surface)</li>
+<li><strong>Scope in:</strong> what this RFC covers</li>
+<li><strong>Scope out:</strong> what is explicitly deferred or excluded</li>
+<li><strong>Modeling decisions</strong> (if applicable): what is modeled / simplified / omitted, with justification for each simplification</li>
+</ul>
+<h3 id="section-2-holes-architectural-intent">Section 2: Holes (architectural intent)<a class="headerlink" href="#section-2-holes-architectural-intent" title="Permanent link">&para;</a></h3>
+<p>For each new package or component, provide the <strong>module contract</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Name</strong></td>
+<td>Package path (e.g., <code>sim/kv/tierchain</code>)</td>
+</tr>
+<tr>
+<td><strong>Responsibility</strong></td>
+<td>One sentence — what this package does</td>
+</tr>
+<tr>
+<td><strong>Surface</strong></td>
+<td>What it exports (function signatures in plain English)</td>
+</tr>
+<tr>
+<td><strong>Allowed imports</strong></td>
+<td>What it may depend on (whitelist — anything else is denied)</td>
+</tr>
+<tr>
+<td><strong>Contracts</strong></td>
+<td>Behavioral guarantees (GIVEN/WHEN/THEN or plain statements)</td>
+</tr>
+<tr>
+<td><strong>Evidence type</strong></td>
+<td>How each contract is verified (property_test, differential_test, metamorphic_test)</td>
+</tr>
+<tr>
+<td><strong>Invariants</strong></td>
+<td>Which existing invariants (INV-N) this hole must preserve or extend</td>
+</tr>
+<tr>
+<td><strong>Extension type</strong></td>
+<td>policy template / subsystem module / backend swap / tier composition</td>
+</tr>
+<tr>
+<td><strong>No-op default</strong></td>
+<td>Behavior when feature is not configured (must be byte-identical to before)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="section-3-trade-offs-decisions">Section 3: Trade-offs &amp; Decisions<a class="headerlink" href="#section-3-trade-offs-decisions" title="Permanent link">&para;</a></h3>
+<p>For every non-obvious architectural decision:
+- What alternatives were considered?
+- Why was this approach chosen?
+- What breaks if this decision is wrong?</p>
+<h3 id="section-4-delivery-order">Section 4: Delivery Order<a class="headerlink" href="#section-4-delivery-order" title="Permanent link">&para;</a></h3>
+<p>List which holes depend on which — this determines PR ordering:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>H1 (tierchain) — no dependencies, can start first
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>H2 (transfer) — no dependencies, can parallel with H1
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>H3 (deferral) — depends on H1
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>H4 (blockkey) — no dependencies
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>H5 (config) — no dependencies, but should land early
+</code></pre></div>
+<hr />
+<h2 id="self-review-before-opening-the-issue">Self-Review (before opening the issue)<a class="headerlink" href="#self-review-before-opening-the-issue" title="Permanent link">&para;</a></h2>
+<p>BEFORE creating the tracking issue, self-review the RFC from the <a href="../perspectives/#design-review-perspectives-8">8 design review perspectives</a>. Reason about findings and fix any CRITICAL or IMPORTANT findings. Only open the issue once zero CRITICAL + zero IMPORTANT remain.</p>
+<p>The team will then review the same RFC during discussion — but the author must do the first pass.</p>
+<hr />
+<h2 id="quality-gates-check-before-opening-the-issue">Quality Gates (check before opening the issue)<a class="headerlink" href="#quality-gates-check-before-opening-the-issue" title="Permanent link">&para;</a></h2>
 <ul class="task-list">
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Every PR in the plan is independently mergeable (no PR requires another PR's uncommitted code)</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Dependency DAG has no cycles</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Module contracts are testable with mocks (parallel development enabled)</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> No Go struct definitions or method implementations (those belong in micro plans)</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Extension friction assessed for each new module boundary</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Every hole has a complete module contract (all fields filled)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Every non-obvious decision has alternatives + rationale</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> No-op default specified (existing behavior unchanged when feature absent)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Validation strategy specified (which invariants? what evidence?)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> No implementation details for THIS repo (no Go code, struct definitions, or file paths for unwritten BLIS code). External references are fine (e.g., vLLM <code>scheduler.py:835</code> to explain what behavior you're modeling).</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Invariants cross-referenced (INV-N)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Extension type identified per hole</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Every declared dependency (allowed imports) is actually required by the surface. If a hole's surface doesn't need an import, fix the surface or remove the dependency.</li>
 </ul>
-<div class="admonition tip">
-<p class="admonition-title">Automation</p>
-<p><code>/convergence-review macro-plan &lt;plan-path&gt;</code> dispatches all 8 perspectives and enforces convergence automatically. See <a href="../../guide/skills-and-plugins/">Skills &amp; Plugins</a>.</p>
-</div>
-<h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
-<ul>
-<li>Template: <a href="../templates/macro-plan/">docs/contributing/templates/macro-plan.md</a></li>
-<li>Design guidelines: <a href="../templates/design-guidelines/">docs/contributing/templates/design-guidelines.md</a></li>
-<li>Convergence protocol: <a href="../convergence/">docs/contributing/convergence.md</a></li>
-<li>Standards: <a href="../standards/rules/">docs/contributing/standards/rules.md</a></li>
-</ul>
+<hr />
+<h2 id="example">Example<a class="headerlink" href="#example" title="Permanent link">&para;</a></h2>
+<p>See <a href="https://github.com/inference-sim/inference-sim/issues/1585">inference-sim#1585</a> for a real example of this pattern applied to the multi-tier KV-offload feature (5 holes, 8 arrows, delivered across 6 PRs).</p>
+<p>For the exact issue format Claude should produce, see <a href="../templates/archon-issue-examples/">archon issue examples</a>.</p>
+<hr />
+<h2 id="after-agreement">After Agreement<a class="headerlink" href="#after-agreement" title="Permanent link">&para;</a></h2>
+<p>The next step (encoding into <code>.archon</code> plan + creating sub-issues) is driven by the user — see <code>docs/contributing/templates/rfc-to-plan.md</code> when ready.</p>
 
 
 
@@ -2955,7 +3228,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../design-process/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Design Process">
+          <a href="../pr-workflow/" class="md-footer__link md-footer__link--prev" aria-label="Previous: PR Workflow">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -2965,7 +3238,7 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Design Process
+                PR Workflow
               </div>
             </div>
           </a>
