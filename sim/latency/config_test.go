@@ -1420,6 +1420,7 @@ func TestKVCacheDtypeToBytes(t *testing.T) {
 		{"fp8", "fp8", 1.0, true},
 		{"fp8_e4m3", "fp8_e4m3", 1.0, true},
 		{"fp8_e5m2", "fp8_e5m2", 1.0, true},
+		{"fp8_inc (Gaudi)", "fp8_inc", 1.0, true},
 		{"FP8 uppercase", "FP8", 1.0, true},
 		{"bf16", "bf16", 2.0, true},
 		{"bfloat16", "bfloat16", 2.0, true},

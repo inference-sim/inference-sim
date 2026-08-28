@@ -290,7 +290,7 @@ func applyWeightPrecisionFallback(mc *sim.ModelConfig, model string, hfRaw map[s
 func applyKVCacheDtype(mc *sim.ModelConfig, kvCacheDtype string) {
 	bytes, ok := latency.KVCacheDtypeToBytes(kvCacheDtype)
 	if !ok {
-		logrus.Fatalf("--kv-cache-dtype %q is not recognized; valid values: auto, fp8, fp8_e4m3, fp8_e5m2, bf16, bfloat16, fp16, fp32", kvCacheDtype)
+		logrus.Fatalf("--kv-cache-dtype %q is not recognized; valid values: auto, fp8, fp8_e4m3, fp8_e5m2, fp8_inc, bf16, bfloat16, fp16, fp32", kvCacheDtype)
 	}
 	if bytes <= 0 {
 		return // "auto": follow the compute dtype (KVBytesPerParam stays 0), INV-6.

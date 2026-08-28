@@ -451,7 +451,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	// regardless of backend. "auto" (the default) is a no-op (INV-6). The mapping to
 	// bytes is applied to the ModelConfig on the analytical path below.
 	if _, ok := latency.KVCacheDtypeToBytes(kvCacheDtype); !ok {
-		logrus.Fatalf("--kv-cache-dtype %q is not recognized; valid values: auto, fp8, fp8_e4m3, fp8_e5m2, bf16, bfloat16, fp16, fp32", kvCacheDtype)
+		logrus.Fatalf("--kv-cache-dtype %q is not recognized; valid values: auto, fp8, fp8_e4m3, fp8_e5m2, fp8_inc, bf16, bfloat16, fp16, fp32", kvCacheDtype)
 	}
 
 	var modelConfig sim.ModelConfig
@@ -1152,7 +1152,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&enableExpertParallel, "enable-expert-parallel", false, "Enable expert parallelism for MoE models (mirrors vLLM --enable-expert-parallel; --latency-model trained-physics only)")
 	cmd.Flags().StringVar(&moeCommBackend, "moe-comm-backend", "", "MoE all-to-all comm backend for dispatch/combine cost (mirrors vLLM VLLM_ALL2ALL_BACKEND: naive, allgather_reducescatter [default], pplx, deepep_high_throughput, deepep_low_latency, mori, flashinfer_all2allv; MoE + --latency-model trained-physics + --dp > 1)")
 	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "trained-physics", "Latency model backend: trained-physics (default), roofline")
-	cmd.Flags().StringVar(&kvCacheDtype, "kv-cache-dtype", "auto", "KV-cache storage precision, independent of compute and weight quantization (vLLM --kv-cache-dtype parity): auto (default; follows the model/compute dtype), fp8, fp8_e4m3, fp8_e5m2 (1 byte/elem → ~2x KV capacity under bf16 compute), bf16, fp16, fp32. Only affects analytical backends' auto KV-block sizing (and PD KV-transfer sizing); re-supply identically on replay for run/replay parity (INV-13).")
+	cmd.Flags().StringVar(&kvCacheDtype, "kv-cache-dtype", "auto", "KV-cache storage precision, independent of compute and weight quantization (superset of vLLM's --kv-cache-dtype values): auto (default; follows the model/compute dtype), fp8, fp8_e4m3, fp8_e5m2, fp8_inc (1 byte/elem → ~2x KV capacity under bf16 compute), bf16, fp16, fp32. Only affects analytical backends' auto KV-block sizing (and PD KV-transfer sizing); re-supply identically on replay for run/replay parity (INV-13).")
 	cmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for analytical backends when not set.")
 
 	// Cluster config
