@@ -391,10 +391,10 @@ BLIS follows a layered design document hierarchy. Each tier has a specific abstr
 
 - **Design guidelines** (`docs/contributing/templates/design-guidelines.md`): Target architecture, DES foundations, module contracts, extension framework. Read this first when designing a new feature or extending BLIS.
 - **Design docs** (per-feature): Behavioral specifications written per the guidelines. Describe what modules do and why, never how they're implemented. Four species: decision record, specification, problem analysis, system overview.
-- **Macro plans** (multi-PR features): PR decomposition with module contracts and extension types. Written per `docs/contributing/templates/macro-plan.md` (human template; agent prompt: `macro-plan-prompt.md`). May include frozen interface signatures (facts about merged code) but never method implementations (aspirations about unwritten code).
-- **Micro plans** (single PR): Full implementation detail with behavioral contracts, TDD tasks, exact code. Written per `docs/contributing/templates/micro-plan.md` (human template; agent prompt: `micro-plan-prompt.md`).
+- **RFC + .archon plan** (multi-PR features): Tracking issue with holes/surfaces/contracts (see `docs/contributing/rfc.md`), encoded into a machine-checkable `.archon` plan (see `docs/contributing/templates/rfc-to-plan.md`). Sub-issues created per hole, each delivered as a PR.
+- **Implementation plans** (single PR): Behavioral contracts, TDD tasks. Follow `docs/contributing/pr-workflow.md`.
 
-**The abstraction rule:** Design docs describe *what a module does and what it guarantees*. Macro plans describe *what to build and in what order*. Micro plans describe *how to implement each piece*. Go struct definitions, method implementations, and file:line references belong only in micro plans.
+**The abstraction rule:** Design docs and RFCs describe *what a module does and what it guarantees*. The `.archon` plan describes *what structure to build and in what order*. Implementation plans describe *how to implement each piece*.
 
 **Module architecture:** BLIS has a two-layer architecture — a domain-agnostic simulation kernel (event queue, clock, RNG, statistics) and domain-specific modules (router, scheduler, KV cache manager, latency model, autoscaler, batch formation). Each module is defined by a behavioral contract with six aspects: what it observes, what it controls, what state it owns, what invariants it maintains, what events it produces/consumes, and its extension friction (how many files to add one more variant). See design guidelines Section 4 for the full module map and contract template.
 
@@ -417,7 +417,7 @@ This project follows BDD/TDD practices. When implementing features:
 
 Diligently follow the workflow in docs/contributing/pr-workflow.md. Before I approve any plan, validate it: 1) Check every task's dependencies — can each task actually start given what comes before it? 2) Verify all sections from the template are present and non-empty. 3) Read the executive summary as if you're a new team member — is it clear and human-readable? 4) Flag any tasks that seem under-specified for implementation. List all issues found.
 
-For new features that introduce module boundaries or modify the architecture, a design doc (per the design guidelines) should exist before micro-planning begins. For smaller changes (bug fixes, new policy templates behind existing interfaces), a design doc is optional — proceed directly to micro-planning.
+For new features that introduce module boundaries or modify the architecture, an RFC (per `docs/contributing/rfc.md`) should exist before implementation planning begins. For smaller changes (bug fixes, new policy templates behind existing interfaces), an RFC is optional — proceed directly to `docs/contributing/pr-workflow.md`.
 
 ### Code Review Standards
 
@@ -507,11 +507,9 @@ Run lint locally before pushing: `golangci-lint run ./...`
 
 The following instructions are for Claude Code and other AI assistants working on this codebase. Human contributors can skip this section.
 
-### GitHub Action: Implementing Issues
+### GitHub Action: PR Reviews
 
-When triggered via `@claude /implement-issue` on a GitHub issue, you MUST invoke the `implement-issue` skill and follow it exactly. After implementation, you MUST create the pull request yourself using `gh pr create` — do NOT just push to a branch and leave it. Always open the PR programmatically, then invoke `/blis-pr-review` for self-review and iterate until READY TO MERGE.
-
-For all other triggers (questions, reviews, debugging, etc.), respond normally without creating a PR unless explicitly asked.
+When triggered via `@claude /blis-pr-review` on a PR, follow the blis-pr-review skill exactly. For all other triggers (questions, debugging, etc.), respond normally without creating a PR unless explicitly asked.
 
 ### Context Management
 
@@ -521,9 +519,6 @@ When running multi-agent PR reviews, keep individual agent scopes narrow and sum
 
 When using Task agents: 1) Do NOT poll TaskList repeatedly — check at reasonable intervals (every 30-60 seconds, not continuously). 2) If a sub-agent goes idle or fails, fall back to doing the work directly rather than retrying indefinitely. 3) Keep sub-agent scopes focused to avoid context overflow.
 
-### Macro Plan Updates
-
-When asked to update the macro implementation plan, directly edit the document. Do NOT spend time re-reading all source documents or dispatching sub-agents to gather information you already have in context. Start writing immediately.
 
 ### Issue Filing
 
@@ -537,18 +532,8 @@ When filing a GitHub issue, pick the template that matches your situation:
 4. **Testing a hypothesis or running an experiment?** → `Hypothesis Proposal` (`.github/ISSUE_TEMPLATE/hypothesis.md`)
 5. **Fixing an antipattern, hardening, or refactoring?** → `Hardening / refactoring` (`.github/ISSUE_TEMPLATE/custom.md`)
 
-Every issue must have at least one label. Use `gh issue create --template "Template name"` to pre-fill the template.
+Every issue must have at least one label. To file an issue: read the relevant template file under `.github/ISSUE_TEMPLATE/`, reproduce its structure in your issue body, and use `gh issue create --title "..." --body "..." --label "..."`. Apply the template's front-matter labels yourself.
 
-## Speckit Feature-Development Toolkit
-
-`.specify/` and `.claude/commands/` contain the speckit tooling for structured feature development:
-
-- **Slash commands**: `/speckit.specify`, `/speckit.clarify`, `/speckit.plan`, `/speckit.tasks`, `/speckit.implement`, `/speckit.checklist`, `/speckit.analyze`, `/speckit.constitution`, `/speckit.taskstoissues`
-- **Constitution**: `.specify/memory/constitution.md` — project principles, invariants, and rules distilled for AI agents
-- **Templates**: `.specify/templates/` — spec, plan, tasks, checklist, and agent-file templates
-- **Scripts**: `.specify/scripts/bash/` — feature branch creation, plan setup, and agent context update automation
-
-Speckit does not affect Go build, test, or lint. All `.specify/` artifacts are opt-in for AI-assisted workflows.
 
 ## Post-Hoc Saturation Detection
 
@@ -645,23 +630,18 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 - `docs/contributing/standards/rules.md`: **23 antipattern rules** (R1-R23) — each with evidence, checks, enforcement locations
 - `docs/contributing/standards/invariants.md`: **13 system invariants** (INV-1 through INV-13) — with verification strategies
 - `docs/contributing/standards/principles.md`: **Engineering principles** — separation of concerns, interface design, BDD/TDD
-- `docs/contributing/standards/experiments.md`: **Experiment standards** — hypothesis families (6 families × type classification), rigor requirements, root cause verification (RCV-1 through RCV-6), iterative review protocol (summary; see `docs/contributing/convergence.md`), findings classification
 - `docs/contributing/standards/agent-trust.md`: **Agent trust boundaries** — three trust tiers (Trusted, Verify-after, Never-trust) for agent operations, with known failure modes
 
 ### Process (how to do each activity)
 
 - `docs/contributing/pr-workflow.md`: End-to-end PR workflow (worktree → plan → review → implement → audit → commit)
-- `docs/contributing/design-process.md`: Design document creation process
-- `docs/contributing/macro-planning.md`: Macro-level (multi-PR) planning process
-- `docs/contributing/hypothesis.md`: End-to-end hypothesis experiment process (Steps 0-10, three review gates)
-- `docs/contributing/convergence.md`: Universal Convergence Protocol (used by all review gates across PR, hypothesis, design, and macro-plan workflows)
+- `docs/contributing/rfc.md`: RFC template for large features (tracking issue with holes/surfaces/contracts)
+- `docs/contributing/templates/rfc-to-plan.md`: Claude prompt for encoding RFC into .archon plan + creating sub-issues
 
 ### Templates (what to produce)
 
 - `docs/contributing/templates/design-guidelines.md`: **BLIS Design Guidelines** — DES foundations, module architecture, extension framework. **Start here when designing anything new.**
-- `docs/contributing/templates/macro-plan.md`: Human-readable template for macro-level planning (multi-PR features). **Agent prompt:** `macro-plan-prompt.md`
-- `docs/contributing/templates/micro-plan.md`: Human-readable template for micro-level (per-PR) planning with TDD tasks and behavioral contracts. **Agent prompt:** `micro-plan-prompt.md`
-- `docs/contributing/templates/hypothesis.md`: Template for hypothesis experiment artifacts
+- `docs/contributing/templates/rfc-to-plan.md`: Claude prompt for .archon encoding + sub-issue creation
 
 ### Per-Feature Plans
 

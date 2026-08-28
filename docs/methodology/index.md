@@ -23,5 +23,5 @@ Strategy Evolution is the right approach when:
 Strategy Evolution integrates existing BLIS processes:
 
 - **[Hypothesis Experiments](../contributing/hypothesis.md)** — Each strategy iteration is formulated as a hypothesis bundle. The hypothesis experiment framework provides the per-arm workflow (experiment design standards, review gates, convergence protocol).
-- **[Convergence Protocol](../contributing/convergence.md)** — Three convergence-gated review stages per iteration: Design Review (5 perspectives), Code Review (5 perspectives), FINDINGS Review (10 perspectives).
+- **Convergence Protocol** — Three convergence-gated review stages per iteration: Design Review (5 perspectives), Code Review (5 perspectives), FINDINGS Review (10 perspectives).
 - **[PR Workflow](../contributing/pr-workflow.md)** — Implementation of winning strategies follows the standard PR workflow.

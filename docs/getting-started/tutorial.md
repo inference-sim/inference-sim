@@ -151,4 +151,3 @@ From the simulations above, 8 instances already meet the SLO (TTFT p99 ~60ms), a
 - **[Routing Policies](../guide/routing.md)** — deep dive into scorer composition and signal freshness
 - **[KV Cache & Memory](../guide/kv-cache.md)** — tune KV blocks, prefix caching, and chunked prefill
 - **[Metrics & Results](../guide/results.md)** — understand all output fields and common patterns
-- **[Hypothesis Experimentation](../guide/experimentation.md)** — run rigorous experiments with the `/hypothesis-experiment` skill

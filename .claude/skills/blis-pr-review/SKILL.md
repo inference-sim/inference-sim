@@ -8,7 +8,11 @@ description: Project-specific PR self-review for BLIS. Evaluates correctness, in
 Invoke the `/pr-review-toolkit:review-pr` skill with the following BLIS-specific review prompt:
 
 ```
-/pr-review-toolkit:review-pr Please perform a thorough review of this PR with respect to both the original issue and its tracking parent issue.
+/pr-review-toolkit:review-pr Please perform a thorough review of this PR with respect to both the original issue and its tracking parent issue (if any). Read both to understand the full plan and where this PR fits.
+
+--- ARCHON CONTEXT (read-only — never run archon yourself) ---
+
+Check if `/archon-pr-review` output exists in a previous PR comment (triggered manually by a contributor or maintainer). Do NOT run archon yourself — just read the output if it exists. If it does, incorporate its verdict (FAST-TRACK / REALIZES / EXCEEDS / CONFLICTS) and findings per @docs/contributing/archon/pr-review-context.md. If it doesn't exist yet, note this but proceed.
 
 Evaluate whether the PR fully and correctly addresses all requirements and reviewer concerns. In particular, assess:
 
@@ -18,9 +22,13 @@ Modularity and clarity of API boundaries/contracts
 Behavioral integrity, including both behavioral and non-structural tests
 Test coverage and quality (not just structure, but meaningful validation of behavior)
 Performance implications and potential regressions
-Adherence to our @docs/contributing/standards,
+Adherence to our @docs/contributing/standards
 Documentation quality, completeness, and accuracy (both user-facing and developer-facing)
 All reviews and comments in this PR are addressed
+
+--- 10 CODE REVIEW PERSPECTIVES ---
+
+Review from the 10 code review perspectives defined in @docs/contributing/perspectives.md (Code Review Perspectives section). Each catches issues the others miss: substance, code quality, test quality, UX, automated reviewer sim, DES expert, vLLM expert, distributed platform, performance, security.
 
 --- CROSS-PATH PARITY (run / replay / observe) ---
 
@@ -72,6 +80,45 @@ Is the 300s default consistent across both mechanisms (DefaultTimeoutUs in gener
 
 Also identify any risks, edge cases, or missing considerations.
 
+--- Q/A PHASE (probing questions) ---
+
+After completing the checklist above, perform a Q/A review:
+
+1. Spawn a haiku subagent to generate 10-15 probing questions about this PR. Questions should cover:
+   - Does this PR fully implement the issue it closes, without unnecessary additions?
+   - Is all documentation updated (CLAUDE.md, README, guides)?
+   - Are there stale comments left by this change?
+   - Are there edge cases the tests don't cover?
+   - Additional questions generated from the diff + standards docs
+
+2. Spawn an opus subagent to investigate the code and answer each question with file:line evidence. Tag each answer:
+   - CONFIDENT — verified correct with evidence
+   - FLAW_FOUND — concrete issue with file:line reference
+   - CANNOT_ANSWER — insufficient evidence to determine
+
+Only FLAW_FOUND with concrete evidence (file:line or reproducible scenario) blocks the PR.
+
+--- CONTRACT VERIFICATION ---
+
+**For hole PRs (PR1–N closing a sub-issue):**
+The sub-issue body contains the promised contracts for this hole. Read it and check:
+1. What contracts were promised (e.g., "BC-H1-1: only tier 0 exchanges blocks with GPU [evidenced: differential_test]")
+2. For each promised contract, does a corresponding test exist in this PR?
+3. Does the test match the evidence type (property_test, differential_test, metamorphic_test)?
+4. Does the test actually verify the contract's claim (not just structural)?
+5. Report any promised contracts without matching evidence.
+
+**For the final PR (feature branch → main):**
+The PR body itself is self-contained — it lists every hole with surface, contracts, evidence types, and which sub-issue/PR delivered it. Read the PR body and check:
+1. Every contract from every hole is listed with its evidence type
+2. For each contract, the delivering PR's tests exist in the branch
+3. Any deviations from the original RFC are acknowledged
+4. Archon dist = 0 confirmed
+
+Do NOT read .archon files or run archon commands. The PR body (or sub-issue body) is your source of truth.
+
+---
+
 Finally, provide a clear verdict: Is this PR ready to merge? If not, what specific changes are required?
 ```
 
@@ -84,4 +131,4 @@ Post the review verdict as a PR comment. This skill is READ-ONLY:
 - Do NOT use the Edit or Write tools
 - Do NOT fix findings — only report them
 
-The caller (e.g., `/implement-issue`) is responsible for acting on findings.
+The caller is responsible for acting on findings.

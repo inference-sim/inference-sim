@@ -1,39 +1,20 @@
 # Micro Plan Template (Single-PR Implementation Plan)
 
-This template defines the output format for a single-PR implementation plan. Use this when planning any PR — from bug fixes to new features.
+This template defines the output format for a single-PR implementation plan. Use when planning any PR — from bug fixes to new features.
 
-!!! note "For Claude Code users"
-    The `writing-plans` skill generates plans from this template automatically.
-    The agent prompt version is at [`micro-plan-prompt.md`](micro-plan-prompt.md).
-
-The source of work may be a macro plan section, one or more GitHub issues, a design document, or a feature request.
-
-The plan has **two audiences:**
-
-1. A human reviewer who validates behavioral correctness (Part 1)
-2. An implementer (human or agent) who executes the tasks (Part 2)
+The source of work is a GitHub issue, a sub-issue from an RFC, or a feature request.
 
 ---
 
-## Compact Format (Small Tier PRs)
+## Compact Format (Small PRs)
 
-For Small tier PRs (see [PR Size Tiers](../pr-workflow.md#pr-size-tiers)), use this streamlined format instead of the full template below. The compact format retains behavioral rigor (contracts + TDD) while dropping sections that add no value for mechanical changes.
+For small PRs (≤3 files, mechanical changes, no new interfaces), use this streamlined format:
 
-**Criteria — use compact format when ALL of these apply:**
-
-- Docs-only with no process/workflow semantic changes (typo fixes, formatting, comment updates, link fixes), OR
-- ≤3 files changed AND only mechanical changes (renames, formatting) AND no behavioral logic changes AND no new interfaces/types AND no new CLI flags
-
-!!! note "Process/workflow semantic changes"
-    Changing how the PR workflow operates, adding new template sections, or modifying review criteria are semantic changes — use the full format even if the PR is docs-only.
-
-**Compact plan structure:**
-
-````
+```
 # [Title] Implementation Plan
 
 **Goal:** One sentence a non-contributor could understand.
-**Source:** Link to source of work.
+**Source:** Link to issue or sub-issue.
 **Closes:** GitHub issue numbers (e.g., `Fixes #123`).
 
 ## Behavioral Contracts
@@ -43,229 +24,89 @@ BC-1: <Name>
 - WHEN <action>
 - THEN <observable outcome>
 
-[Repeat for each contract. Quality gate: every THEN clause must describe
-observable behavior, not internal structure.]
-
 ## Tasks
 
 ### Task 1: <Name> (BC-1)
 
 **Files:** create/modify `path/to/file`, test `path/to/test`
-
-**Test:**
-[Complete test code]
-
-**Impl:**
-[Complete implementation code]
-
+**Test:** [complete test code]
+**Impl:** [complete implementation code]
 **Verify:** `go test ./path/... -run TestName`
 **Lint:** `golangci-lint run ./path/...`
 **Commit:** `type(scope): description (BC-1)`
 
-[Repeat for each task.]
-
 ## Sanity Checklist
-
-[Same checklist as full format — antipattern rules still apply.]
-````
-
-**Sections omitted or streamlined in compact format** (compared to full template):
-
-- Document Header — streamlined to Goal/Source/Closes (drops: The problem today, What this PR adds, Why this matters, Architecture, Behavioral Contracts reference)
-- Phase 0: Component Context
-- Part 1 Section A: Executive Summary
-- Part 1 Section C: Component Interaction
-- Part 1 Section D: Deviation Log
-- Part 1 Section E: Review Guide
-- Part 2 Section F: Implementation Overview
-- Part 2 Section H: Test Strategy
-- Part 2 Section I: Risk Analysis
-- Appendix: File-Level Implementation Details
-
-**What's kept and why:**
-
-- **Behavioral contracts** — the substance of what the PR guarantees (non-negotiable)
-- **TDD tasks** — executable implementation steps (non-negotiable)
-- **Sanity checklist** — quality gate (catches antipatterns regardless of PR size)
+- [ ] R1: no silent data loss (no bare `continue` in error paths)
+- [ ] R2: sorted map iteration for deterministic output (INV-6)
+- [ ] R4: all construction sites updated for new fields
+- [ ] R6: no logrus.Fatalf in sim/ (library code)
+- [ ] R8: no exported mutable maps
+- [ ] INV-1: request conservation holds
+- [ ] INV-6: determinism (same seed = byte-identical stdout)
+```
 
 ---
 
-## Document Header
+## Full Format (Medium/Large PRs)
 
-Every plan starts with this header:
+For PRs that change behavior, add interfaces, or touch 4+ files:
 
-- **Goal:** One sentence a non-contributor could understand — what capability does this PR add?
-- **The problem today:** 2–3 sentences explaining what's missing or broken without this PR.
-- **What this PR adds:** Numbered list of 2–4 concrete capabilities, each in plain language with a brief example.
-- **Why this matters:** 1–2 sentences connecting this PR to the broader project vision.
-- **Architecture:** 2–3 sentences about the technical approach (packages, key types, integration points).
-- **Source:** Link to the source of work (macro plan section, issue numbers, design doc).
-- **Closes:** GitHub issue numbers this PR will close on merge (e.g., `Fixes #183, fixes #189`).
-- **Behavioral Contracts:** Reference to Part 1, Section B.
-
----
-
-## Phase 0: Component Context (before writing the plan)
-
-Before writing the plan, identify this PR's place in the system:
-
-1. Which building block is being added or modified?
-2. What are the adjacent blocks it interacts with?
-3. What invariants does this PR touch?
-4. **Construction Site Audit:** For every struct this PR adds fields to, grep for ALL places that struct is constructed. List each site. If there are multiple construction sites, the plan must either add a canonical constructor or update every site explicitly.
-
----
-
-## Part 1: Design Validation (target <120 lines)
-
-### A) Executive Summary
-
-5–10 lines describing what this PR builds (plain language), where it fits in the system, adjacent components it interacts with, and any deviation flags.
-
-### B) Behavioral Contracts
-
-3–15 named contracts defining what this PR guarantees:
+### Header
 
 ```
-BC-N: <Name>
+# [Title] Implementation Plan
+
+**Goal:** One sentence a non-contributor could understand.
+**The problem today:** 2-3 sentences — what's missing or broken.
+**What this PR adds:** Numbered list of concrete capabilities.
+**Source:** Link to issue, sub-issue, or RFC.
+**Closes:** GitHub issue numbers.
+```
+
+### Part 1: Behavioral Contracts
+
+Define what this PR guarantees. Every contract must have:
+- A name (BC-1, BC-2, ...)
+- GIVEN/WHEN/THEN with observable outcomes only
+- No internal type names or field names in THEN clauses
+
+```
+BC-1: <Name>
 - GIVEN <precondition>
 - WHEN <action>
 - THEN <observable outcome>
-- MECHANISM: <one sentence explaining how> (optional)
+- Evidence: <property_test | differential_test | metamorphic_test>
 ```
 
-Group into: positive contracts (what MUST happen), negative contracts (what MUST NOT happen), error handling contracts.
+### Part 2: Task Breakdown (6-12 tasks)
 
-**Quality gate:** Every THEN clause must describe **observable behavior**, not internal structure. If a THEN clause contains a concrete type name or internal field name, rewrite it. The THEN clause drives the test assertion — a structural THEN produces a structural test.
-
-### C) Component Interaction
-
-Text-based component diagram showing this PR's building block, adjacent components, data flow direction, and what crosses each boundary. Include API contracts and state ownership. Target: under 40 lines.
-
-### D) Deviation Log
-
-Table comparing the micro plan against the source document:
-
-| Source Says | Micro Plan Does | Reason |
-|-------------|-----------------|--------|
-| ... | ... | CLARIFICATION / SIMPLIFICATION / CORRECTION / DEFERRAL / ADDITION / SCOPE_CHANGE |
-
-### E) Review Guide
-
-5–10 lines telling the reviewer: the tricky part, what to scrutinize, what's safe to skim, and known debt.
-
----
-
-## Part 2: Executable Implementation
-
-### F) Implementation Overview
-
-Files to create/modify (one-line each), key decisions, confirmation that no dead code exists.
-
-### G) Task Breakdown (6–12 tasks)
-
-Each task follows TDD format:
-
-1. Write failing test
-2. Run test to verify it fails
+Each task follows TDD:
+1. Write the failing test
+2. Run test — verify it fails
 3. Implement minimal code to pass
-4. Run test to verify it passes
-5. Run lint check
+4. Run test — verify it passes
+5. Lint: `golangci-lint run ./path/...`
 6. Commit with contract reference
 
-Each task must specify: contracts implemented (BC-X, BC-Y), files (create/modify/test), complete code in every step, exact commands with expected output.
+Tasks must be ordered so each can start given what comes before. Every task must have complete code — no "add validation" without showing exact code.
 
-**Task design rules:** Each task implements 1–3 related contracts. Complete code in every step (no "add validation" without showing exact code). Exact commands with expected output. Reference shared test infrastructure. Golden dataset updates if needed. Dependency ordering. No dead code. Behavioral assertions only (see [standards/principles.md](../standards/principles.md) for prohibited/required assertion patterns).
+### Part 3: Sanity Checklist
 
-### H) Test Strategy
+Before marking plan complete, verify:
 
-Map contracts to tasks and tests. Include invariant tests alongside golden tests — golden tests answer "did the output change?" while invariant tests answer "is the output correct?"
-
-| Contract | Task | Test Type | Test Name |
-|----------|------|-----------|-----------|
-| BC-1 | Task 1 | Unit | TestFoo_GivenX_ThenY |
-| ... | ... | ... | ... |
-
-Key invariants for this simulator (see [standards/invariants.md](../standards/invariants.md)):
-
-- **Request conservation (INV-1):** completed + still_queued + still_running + dropped_unservable + timed_out = injected (cluster runs add gateway/routing/encode buckets — see canonical INV-1)
-- **KV block conservation (INV-4):** allocated_blocks + free_blocks = total_blocks
-- **Clock monotonicity (INV-3):** simulation clock never decreases
-- **Causality (INV-5):** arrival_time ≤ enqueue_time ≤ schedule_time ≤ completion_time
-- **Determinism (INV-6):** same seed produces byte-identical output across runs
-
-### I) Risk Analysis
-
-For each risk: description, likelihood (low/medium/high), impact (low/medium/high), mitigation (specific test or design choice), and which task mitigates it.
-
----
-
-## Part 3: Quality Assurance
-
-### J) Sanity Checklist
-
-Before implementation, verify:
-
-**Plan-specific checks:**
-- [ ] No unnecessary abstractions.
-- [ ] No feature creep beyond PR scope.
-- [ ] No unexercised flags or interfaces.
-- [ ] No partial implementations.
-- [ ] No breaking changes without explicit contract updates.
-- [ ] No hidden global state impact.
-- [ ] All new code will pass golangci-lint.
-- [ ] Shared test helpers used from existing shared test package (not duplicated locally).
-- [ ] CLAUDE.md updated if: new files/packages added, file organization changed, plan milestone completed, new CLI flags added.
-- [ ] No stale references left in CLAUDE.md.
-- [ ] Documentation DRY: If this PR modifies a canonical source (docs/contributing/standards/rules.md, docs/contributing/standards/invariants.md, docs/contributing/standards/principles.md, docs/contributing/extension-recipes.md), all working copies in the source-of-truth map are updated. If a new file is added, it appears in the CLAUDE.md File Organization tree.
-- [ ] Deviation log reviewed — no unresolved deviations.
-- [ ] Each task produces working, testable code (no scaffolding).
-- [ ] Task dependencies are correctly ordered.
-- [ ] All contracts are mapped to specific tasks.
-- [ ] Golden dataset regeneration documented (if needed).
-- [ ] Construction site audit completed — all struct construction sites listed and covered by tasks.
-- [ ] If this PR is part of a macro plan, the macro plan status is updated.
-
-**Antipattern rules (full details in [standards/rules.md](../standards/rules.md)):**
-- [ ] R1: No silent `continue`/`return` dropping data
-- [ ] R2: Map keys sorted before float accumulation or ordered output
-- [ ] R3: Every new numeric parameter validated (CLI flags AND library constructors)
-- [ ] R4: All struct construction sites audited for new fields
-- [ ] R5: Resource allocation loops handle mid-loop failure with rollback
-- [ ] R6: No `logrus.Fatalf` or `os.Exit` in `sim/` packages
-- [ ] R7: Invariant tests alongside any golden tests
-- [ ] R8: No exported mutable maps
-- [ ] R9: `*float64` for YAML fields where zero is valid
-- [ ] R10: YAML strict parsing (`KnownFields(true)`)
-- [ ] R11: Division by runtime-derived denominators guarded
-- [ ] R12: Golden dataset regenerated if output changed
-- [ ] R13: New interfaces work for 2+ implementations
-- [ ] R14: No method spans multiple module responsibilities
-- [ ] R15: Stale PR references resolved
-- [ ] R16: Config params grouped by module
-- [ ] R17: Routing scorer signals documented for freshness tier
-- [ ] R18: CLI flag values not silently overwritten by defaults.yaml
-- [ ] R19: Unbounded retry/requeue loops have circuit breakers
-- [ ] R20: Detectors and analyzers handle degenerate inputs (empty, skewed, zero)
-- [ ] R21: No `range` over slices that can shrink during iteration
-- [ ] R22: Pre-check estimates consistent with actual operation accounting
-- [ ] R23: Parallel code paths apply equivalent transformations
-
----
-
-## Appendix: File-Level Implementation Details
-
-**This section has NO LENGTH LIMIT.** It should contain everything needed to implement the PR without further codebase exploration.
-
-For each file to be created or modified, provide:
-
-**File: `exact/path/to/file.go`**
-
-- **Purpose:** 1–2 sentences
-- **Complete implementation:** All type definitions, function implementations, test code
-- **Key implementation notes:**
-    - **Event ordering:** Priority? Timestamp? Secondary tie-breaking?
-    - **RNG usage:** Which subsystem from PartitionedRNG?
-    - **Metrics:** What metrics are collected? Where aggregated?
-    - **State mutation:** What gets modified? Who owns it?
-    - **Error handling:** Panic, return error, or log-and-continue?
+- [ ] All behavioral contracts have GIVEN/WHEN/THEN
+- [ ] Every THEN clause describes observable behavior (no type names, no internal fields)
+- [ ] Tasks are ordered by dependency (no task requires code from a later task)
+- [ ] Every task has complete test + impl code
+- [ ] R1: no silent data loss
+- [ ] R2: sorted map iteration (INV-6)
+- [ ] R4: all construction sites updated
+- [ ] R6: no logrus.Fatalf in sim/
+- [ ] R7: invariant tests alongside golden tests
+- [ ] R8: no exported mutable maps
+- [ ] R9: pointer types for YAML zero-value ambiguity
+- [ ] R10: strict YAML parsing
+- [ ] R19: division zero guards
+- [ ] INV-1: request conservation holds
+- [ ] INV-6: determinism preserved
+- [ ] INV-13: run/replay parity (if applicable)

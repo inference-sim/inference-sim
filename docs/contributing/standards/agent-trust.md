@@ -84,7 +84,7 @@ actually resolved the issues. The team lead accepted the claim.
 **Lesson:** "Review converged" is a Never-trust claim. Convergence requires
 evidence: a clean round with zero CRITICAL and zero IMPORTANT findings across
 all perspectives. The orchestrator must verify the round ran and produced
-clean results. See the [convergence protocol](../convergence.md).
+clean results. See the convergence protocol (zero CRITICAL + zero IMPORTANT = converged).
 
 ## Relationship to Other Standards
 
@@ -94,6 +94,6 @@ clean results. See the [convergence protocol](../convergence.md).
 - **PR workflow** ([pr-workflow.md](../pr-workflow.md)): The verification gate
   in Step 4.5 is the procedural implementation of Verify-after tier
   requirements.
-- **Convergence protocol** ([convergence.md](../convergence.md)): The
+- **Convergence protocol**: The
   convergence protocol's round-based evidence requirement is the procedural
   implementation of Never-trust tier requirements for review claims.

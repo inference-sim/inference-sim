@@ -116,7 +116,7 @@ The family determines design rules; the VV&UQ category determines evidence requi
 Then run the **5-perspective Design Review** using the [universal convergence protocol](#universal-convergence-protocol). Review from each perspective below (in parallel or sequentially), then apply the convergence protocol.
 
 !!! tip "Automation"
-    `/convergence-review h-design` dispatches all 5 perspectives and enforces convergence. See [Skills & Plugins](../guide/skills-and-plugins.md).
+    Run the 5 design perspectives in parallel (see [perspectives.md](perspectives.md)). Fix CRITICAL/IMPORTANT findings, re-run until convergence.
 
 #### Design Review Perspectives
 
@@ -207,7 +207,7 @@ Then verify the harness output format matches the current CLI before use — the
 Run the **5-perspective Code Review** using the [universal convergence protocol](#universal-convergence-protocol). Review from each perspective below (in parallel or sequentially), then apply the convergence protocol.
 
 !!! tip "Automation"
-    `/convergence-review h-code hypotheses/<name>/` dispatches all 5 perspectives and enforces convergence. See [Skills & Plugins](../guide/skills-and-plugins.md).
+    Run the 5 code perspectives in parallel (see [perspectives.md](perspectives.md)). Fix CRITICAL/IMPORTANT findings, re-run until convergence.
 
 #### Code Review Perspectives
 
@@ -276,7 +276,7 @@ Execute experiments across required seeds:
 Run the **10-perspective FINDINGS Review** using the [universal convergence protocol](#universal-convergence-protocol). Review from each perspective below (in parallel or sequentially), then apply the convergence protocol.
 
 !!! tip "Automation"
-    `/convergence-review h-findings hypotheses/<name>/FINDINGS.md` dispatches all 10 perspectives and enforces convergence. See [Skills & Plugins](../guide/skills-and-plugins.md).
+    Run the 10 findings perspectives in parallel (see [perspectives.md](perspectives.md)). Fix CRITICAL/IMPORTANT findings, re-run until convergence.
 
 **Cross-gate regression:** If this gate discovers a design-level flaw (e.g., confounding variable not identified in design), loop back to [Step 2](#step-2-design-experiment--design-review) for re-design, re-convergence, and re-approval. Maximum 2 cross-gate regressions per experiment (across all gates combined) — if the design still has fundamental issues after 2 regressions, suspend the experiment and escalate for a re-scoping decision.
 
@@ -411,12 +411,12 @@ The PR description should include:
 
 ## Universal Convergence Protocol
 
-> **Canonical source:** [`docs/contributing/convergence.md`](convergence.md). If this section diverges, convergence.md is authoritative.
 
-All three review gates (Design Review, Code Review, FINDINGS Review) use the same convergence protocol: run all N perspectives in parallel, fix any CRITICAL/IMPORTANT findings, re-run until zero CRITICAL and zero IMPORTANT in a round. Max 10 rounds per gate. See [`docs/contributing/convergence.md`](convergence.md) for the full protocol, severity definitions, agent failure handling, and expected convergence rates.
+
+All three review gates (Design Review, Code Review, FINDINGS Review) use the same convergence protocol: run all N perspectives in parallel, fix any CRITICAL/IMPORTANT findings, re-run until zero CRITICAL and zero IMPORTANT in a round. Max 10 rounds per gate. 
 
 !!! tip "Automation"
-    The `convergence-review` skill automates this protocol: `/convergence-review <gate-type> [artifact-path]`. See [Skills & Plugins](../guide/skills-and-plugins.md).
+    Run all perspectives in parallel, fix CRITICAL/IMPORTANT findings, re-run until zero findings. See [perspectives.md](perspectives.md) for the perspective checklists.
 
 ---
 
@@ -541,7 +541,7 @@ Hypotheses can come from **internal** sources (your own experiments and developm
 | **Analytical models** | Divergence between theory and simulation → "does the DES match M/M/k under matching assumptions?" | "Under Poisson arrivals, queue length should match M/M/k within 5%" |
 | **Literature / external** | Published results about inference serving systems | "Prefix caching should reduce TTFT proportional to prefix length (as in vLLM literature)" |
 | **Design docs** | Claims made in design documents that have never been validated | "The composable scorer framework should produce Pareto-optimal configurations" |
-| **Strategy Evolution** | Each strategy iteration produces a [hypothesis bundle](../methodology/hypothesis-bundles.md) — a main hypothesis plus ablation, control, and robustness arms | "SLO-tiered priority will reduce critical TTFT P99 by >30%" + ablation arms for each component |
+| **Strategy Evolution** | Each strategy iteration produces a hypothesis bundle — a main hypothesis plus ablation, control, and robustness arms | "SLO-tiered priority will reduce critical TTFT P99 by >30%" + ablation arms for each component |
 
 ### What makes a good hypothesis
 
