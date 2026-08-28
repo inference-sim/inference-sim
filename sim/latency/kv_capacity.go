@@ -512,7 +512,7 @@ func ExtractKVCapacityParams(hf *HFConfig) (KVCapacityParams, error) {
 		var sharedExpertFFNDim int
 		if v := hf.MustGetInt("shared_expert_intermediate_size", 0); v > 0 {
 			sharedExpertFFNDim = v
-		} else if nShared := hf.MustGetIntFallback(0, moeSharedExpertFields...); nShared > 0 {
+		} else if nShared := hf.mustGetIntFallback(0, moeSharedExpertFields...); nShared > 0 {
 			perExpert := moeExpertFFNDim
 			if perExpert == 0 {
 				perExpert = hf.MustGetInt("intermediate_size", 0)

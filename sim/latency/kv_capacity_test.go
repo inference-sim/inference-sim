@@ -1217,6 +1217,29 @@ func TestExtractKVCapacityParams_MoEFallback_NumExpertsPerTokOnly_ReturnsError(t
 	}
 }
 
+func TestExtractKVCapacityParams_MoEFallback_KimiK3Aliases_ReturnError(t *testing.T) {
+	// #1640: the Kimi-K3 activation-count spellings (num_shared_experts /
+	// num_experts_per_token) must also signal MoE in the fallback guard, so a
+	// K3-shaped config without a total expert count errors (naming the field)
+	// instead of being silently treated as dense.
+	for _, key := range []string{"num_shared_experts", "num_experts_per_token"} {
+		t.Run(key, func(t *testing.T) {
+			path := writeTempConfigJSON(t, map[string]any{
+				"hidden_act": "silu",
+				key:          2,
+			})
+
+			_, err := latency.ExtractKVCapacityParamsFromFile(path)
+			if err == nil {
+				t.Fatalf("expected error for MoE detected via %s without total expert count", key)
+			}
+			if !strings.Contains(err.Error(), key) {
+				t.Errorf("expected error mentioning %s, got: %v", key, err)
+			}
+		})
+	}
+}
+
 func TestExtractKVCapacityParams_TiedEmbeddings(t *testing.T) {
 	path := writeTempConfigJSON(t, map[string]any{
 		"hidden_act":          "silu",

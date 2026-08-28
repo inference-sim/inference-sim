@@ -68,12 +68,12 @@ func (c *HFConfig) MustGetInt(key string, def int) int {
 	return def
 }
 
-// MustGetIntFallback returns the first of keys that resolves to a non-zero int
+// mustGetIntFallback returns the first of keys that resolves to a non-zero int
 // (tried in order), else def. It centralizes multi-spelling field resolution
 // (e.g. vendor-specific MoE activation-count names) so GetModelConfigFromHF and
 // ExtractKVCapacityParams resolve identical spellings and cannot desync (R23
-// code-path parity).
-func (c *HFConfig) MustGetIntFallback(def int, keys ...string) int {
+// code-path parity). Unexported — used only within package latency.
+func (c *HFConfig) mustGetIntFallback(def int, keys ...string) int {
 	for _, k := range keys {
 		if v, ok := c.GetInt(k); ok && v != 0 {
 			return v
@@ -261,14 +261,7 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	}
 
 	// getIntWithFallbacks tries multiple field names, returning the first non-zero value.
-	getIntWithFallbacks := func(keys ...string) int {
-		for _, k := range keys {
-			if v := getInt(k); v != 0 {
-				return v
-			}
-		}
-		return 0
-	}
+	getIntWithFallbacks := func(keys ...string) int { return hf.mustGetIntFallback(0, keys...) }
 
 	// Extract heads first to handle the KV heads default logic.
 	// Fallback field names: Falcon uses "num_kv_heads", GLM uses "multi_query_group_num".
