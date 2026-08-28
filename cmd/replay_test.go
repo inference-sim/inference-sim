@@ -2699,6 +2699,7 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
 	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 	testCmd.Flags().StringVar(&resultsPath, "results-path", "", "")
+	testCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "")
 	testCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", "")
 	testCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "")
 	testCmd.Flags().IntVar(&replayConcurrentSessions, "concurrent-sessions", 0, "")
@@ -3200,209 +3201,330 @@ func TestReplayCmd_PoolRejectsNonSessionRecords(t *testing.T) {
 	}
 }
 
-// TestReplayCmd_ClosedLoopAccumulateTraceOutputFatal is a regression test for the
-// plain closed-loop accumulate re-export guard (issue #1621). Re-exporting a
-// closed-loop replay via --trace-output sources only the round-0 `requests` slice
-// (the export block never sees the generated follow-up rounds), and
-// RequestsToTraceRecords re-emits per-round input_tokens as absolute suffix
-// lengths (not the deltas an accumulate loader expects) and does not carry
-// session_context_growth onto the re-export header. The exported trace therefore
-// could not be re-replayed to reproduce the original per-round input, so — rather
-// than write a silently-unfaithful trace (INV-13, R1) — cmd/replay.go Fatalfs.
-//
-// This mirrors the sibling pool-mode guard (--concurrent-sessions + --trace-output,
-// TestReplayCmd_PoolTraceOutputFatal); the guard fires up front, before session
-// blueprints are built, so a minimal accumulate corpus reaches it. Fatalf os.Exit's,
-// so — following TestReplayCmd_AccumulateHeaderRequiresClosedLoop — the case runs in
-// a subprocess re-run (BLIS_TEST_SUBPROCESS=1) and is asserted via exit code + stderr.
-func TestReplayCmd_ClosedLoopAccumulateTraceOutputFatal(t *testing.T) {
-	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
-		// Subprocess: an accumulate-header, multi-round session corpus replayed in
-		// plain closed-loop mode (--concurrent-sessions 0) WITH --trace-output set.
-		// Must Fatalf before completing.
-		dir := t.TempDir()
-		headerPath := filepath.Join(dir, "trace.yaml")
-		dataPath := filepath.Join(dir, "trace.csv")
-		header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
-		records := []workload.TraceRecord{
-			{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 10, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
-			{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 4, OutputTokens: 5, ArrivalTimeUs: 100_000, Status: "ok"},
-		}
-		if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
-			os.Exit(2)
-		}
+// TestReplayCmd_ClosedLoopAccumulate_FaithfulReExport verifies faithful closed-loop
+// --trace-output re-export (issue #1630, replacing the #1621/#1623 fail-fast guard).
+// An accumulate corpus replayed --session-mode closed-loop --trace-output captures
+// EVERY round (round-0 + generated follow-ups, not just round 0), re-derives per-round
+// input-token DELTAS + input_tokens_reset compaction markers, sets
+// session_context_growth on the re-export header, and preserves per-round think — so
+// re-replaying the export reproduces the original run's metrics byte-for-byte
+// (INV-13 round-trip). Runs entirely in-process (the success path takes no Fatalf).
+func TestReplayCmd_ClosedLoopAccumulate_FaithfulReExport(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
 
-		mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
-		model = "test-model"
-		latencyModelBackend = "trained-physics"
-		totalKVBlocks = 1000
-		blockSizeTokens = 16
-		maxNumSeqs = 64
-		maxNumBatchedTokens = 2048
-		numInstances = 1
-		seed = 42
-		longPrefillTokenThreshold = 0
-		kvCPUBlocks = 0
-		kvOffloadThreshold = 0.9
-		kvTransferBandwidth = 100.0
-		kvTransferBaseLatency = 0
-		snapshotRefreshInterval = 0
-		admissionPolicy = "always-admit"
-		routingPolicy = "round-robin"
-		scheduler = "fcfs"
-		policyConfigPath = ""
-		maxModelLen = 0
-		traceLevel = "none"
-		counterfactualK = 0
-		traceHeaderPath = headerPath
-		traceDataPath = dataPath
-		modelConfigFolder = mcFolder
-		hwConfigPath = hwPath
-		gpu = "H100"
-		tensorParallelism = 1
-		defaultsFilePath = defaultsPath
-		replaySessionMode = "closed-loop"
-		replayConcurrentSessions = 0
-		replayTotalSessions = 0
-		replayThinkTimeMs = 0
-		replayThinkTimeDist = ""
-		resultsPath = ""
-		replayTraceOutput = filepath.Join(dir, "reexport")
-
-		testCmd := &cobra.Command{}
-		registerSimConfigFlags(testCmd)
-		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
-		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
-		if err := testCmd.ParseFlags([]string{
-			"--model", "test-model", "--latency-model", "trained-physics",
-			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
-			"--model-config-folder", mcFolder, "--hardware-config", hwPath,
-			"--trace-header", headerPath, "--trace-data", dataPath,
-			"--defaults-filepath", defaultsPath,
-		}); err != nil {
-			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)
-			os.Exit(2) // distinct from logrus.Fatalf exit code (1)
-		}
-		replayCmd.Run(testCmd, nil) // must Fatalf before here
-		os.Exit(0)                  // reached only if no fatal = parent test failure
+	// Accumulate corpus: one 3-round session with a compaction round and a recorded
+	// think column. Encoded deltas (100, 30, 0); round 2 compacts (input_tokens_reset=40).
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 100, OutputTokens: 20, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 30, OutputTokens: 15, ArrivalTimeUs: 5_000_000, ThinkTimeUs: i64p(1_000_000), Status: "ok"},
+		{RequestID: 2, SessionID: "s1", RoundIndex: 2, InputTokens: 0, InputTokensReset: i64p(40), OutputTokens: 10, ArrivalTimeUs: 12_000_000, ThinkTimeUs: i64p(2_000_000), Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export corpus: %v", err)
 	}
 
-	// Parent: re-run this test as subprocess and expect exit code 1 (logrus.Fatalf).
-	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_ClosedLoopAccumulateTraceOutputFatal", "-test.v")
-	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatal("expected non-zero exit when re-exporting a closed-loop accumulate replay (--trace-output), got exit 0")
+	commonArgs := []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000",
+		"--max-model-len", "100000", // large: no length cap, so the round-trip is exact
+		"--session-mode", "closed-loop",
 	}
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) {
-		t.Fatalf("unexpected error type: %v", err)
+
+	// (1) Replay the ORIGINAL corpus closed-loop; capture aggregate metrics.
+	metrics1 := extractMetricsJSON(t, runReplayCaptureStdout(t, commonArgs))
+
+	// (2) Replay the original corpus closed-loop WITH --trace-output => faithful re-export.
+	outPrefix := filepath.Join(dir, "reexport")
+	_ = runReplayCaptureStdout(t, append(append([]string{}, commonArgs...), "--trace-output", outPrefix))
+
+	// (3) Assert the re-export structure: accumulate header, ALL 3 rounds, deltas + reset + think.
+	rx, err := workload.LoadTraceV2(outPrefix+".yaml", outPrefix+".csv")
+	if err != nil {
+		t.Fatalf("load re-export: %v", err)
 	}
-	if exitErr.ExitCode() != 1 {
-		t.Fatalf("expected exit code 1 (logrus.Fatalf), got %d; output:\n%s", exitErr.ExitCode(), out)
+	if rx.Header.SessionContextGrowth != "accumulate" {
+		t.Errorf("re-export session_context_growth = %q, want accumulate", rx.Header.SessionContextGrowth)
 	}
-	// Message must name the flag, the mode, and the header field so the operator
-	// knows exactly which combination is rejected and why.
-	for _, want := range []string{"--trace-output", "closed-loop", "accumulate"} {
-		if !strings.Contains(string(out), want) {
-			t.Errorf("fatal message should mention %q, got:\n%s", want, out)
-		}
+	if len(rx.Records) != 3 {
+		t.Fatalf("re-export has %d records, want 3 (every round captured, not just round 0)", len(rx.Records))
+	}
+	byRound := map[int]workload.TraceRecord{}
+	for _, r := range rx.Records {
+		byRound[r.RoundIndex] = r
+	}
+	if byRound[0].InputTokens != 100 || byRound[1].InputTokens != 30 || byRound[2].InputTokens != 0 {
+		t.Errorf("re-export per-round deltas = (%d,%d,%d), want (100,30,0)", byRound[0].InputTokens, byRound[1].InputTokens, byRound[2].InputTokens)
+	}
+	if byRound[2].InputTokensReset == nil || *byRound[2].InputTokensReset != 40 {
+		t.Errorf("re-export round-2 input_tokens_reset = %v, want &40", byRound[2].InputTokensReset)
+	}
+	if byRound[0].ThinkTimeUs != nil {
+		t.Errorf("re-export round-0 think = %v, want nil", *byRound[0].ThinkTimeUs)
+	}
+	if byRound[1].ThinkTimeUs == nil || byRound[2].ThinkTimeUs == nil {
+		t.Errorf("re-export follow-up rounds must carry recorded think; got r1=%v r2=%v", byRound[1].ThinkTimeUs, byRound[2].ThinkTimeUs)
+	}
+
+	// (4) Replay the RE-EXPORT closed-loop; capture aggregate metrics.
+	outArgs := []string{
+		"--trace-header", outPrefix + ".yaml", "--trace-data", outPrefix + ".csv",
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000",
+		"--max-model-len", "100000",
+		"--session-mode", "closed-loop",
+	}
+	metrics2 := extractMetricsJSON(t, runReplayCaptureStdout(t, outArgs))
+
+	// (5) INV-13 round-trip: replaying the re-export reproduces the original run's
+	// aggregate metrics exactly (plain closed-loop => per-request identity => identical JSON).
+	if metrics1 != metrics2 {
+		t.Errorf("re-export replay metrics differ from original replay (round-trip not faithful):\noriginal:\n%s\nreexport:\n%s", metrics1, metrics2)
 	}
 }
 
-// TestReplayCmd_PoolTraceOutputFatal is the companion regression test the sibling
-// pool-mode guard (--concurrent-sessions > 0 + --trace-output) never had (issue
-// #1621 notes it was untested). Pool-mode re-export would capture only the initial
-// wave of round-0 requests — follow-ups/clones are never collected — so the guard
-// in cmd/replay.go rejects it outright (INV-13, R1). Fatalf os.Exit's, so the case
-// runs in a subprocess re-run and is asserted via exit code + stderr content.
-func TestReplayCmd_PoolTraceOutputFatal(t *testing.T) {
-	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
-		// Subprocess: a pure-session corpus replayed with --concurrent-sessions 1
-		// (pool mode) AND --trace-output set. Must Fatalf before completing.
-		dir := t.TempDir()
-		headerPath := filepath.Join(dir, "trace.yaml")
-		dataPath := filepath.Join(dir, "trace.csv")
-		header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
-		records := []workload.TraceRecord{
-			{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 10, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
-		}
-		if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
-			os.Exit(2)
-		}
+// TestReplayCmd_Pool_FaithfulReExport verifies faithful pool-mode --trace-output
+// re-export (issue #1630, replacing the #1623 pool guard). A pooled replay
+// (--concurrent-sessions) re-exports a COMPLETE session corpus — every session
+// (originals + clones) with every round, not just the initial wave — as a closed-loop
+// corpus. Replaying that corpus reproduces the pool run's aggregate conservation
+// metrics. Per-request bit-identity is NOT asserted for pool (data-dependent admission
+// timing / a different inject mechanism than plain-closed-loop; see BC-4).
+func TestReplayCmd_Pool_FaithfulReExport(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
 
-		mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
-		model = "test-model"
-		latencyModelBackend = "trained-physics"
-		totalKVBlocks = 1000
-		blockSizeTokens = 16
-		maxNumSeqs = 64
-		maxNumBatchedTokens = 2048
-		numInstances = 1
-		seed = 42
-		longPrefillTokenThreshold = 0
-		kvCPUBlocks = 0
-		kvOffloadThreshold = 0.9
-		kvTransferBandwidth = 100.0
-		kvTransferBaseLatency = 0
-		snapshotRefreshInterval = 0
-		admissionPolicy = "always-admit"
-		routingPolicy = "round-robin"
-		scheduler = "fcfs"
-		policyConfigPath = ""
-		maxModelLen = 0
-		traceLevel = "none"
-		counterfactualK = 0
-		traceHeaderPath = headerPath
-		traceDataPath = dataPath
-		modelConfigFolder = mcFolder
-		hwConfigPath = hwPath
-		gpu = "H100"
-		tensorParallelism = 1
-		defaultsFilePath = defaultsPath
-		replaySessionMode = "closed-loop"
-		replayConcurrentSessions = 1
-		replayTotalSessions = 0
-		replayThinkTimeMs = 0
-		replayThinkTimeDist = ""
-		resultsPath = ""
-		replayTraceOutput = filepath.Join(dir, "reexport")
-
-		testCmd := &cobra.Command{}
-		registerSimConfigFlags(testCmd)
-		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
-		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
-		if err := testCmd.ParseFlags([]string{
-			"--model", "test-model", "--latency-model", "trained-physics",
-			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
-			"--model-config-folder", mcFolder, "--hardware-config", hwPath,
-			"--trace-header", headerPath, "--trace-data", dataPath,
-			"--defaults-filepath", defaultsPath,
-		}); err != nil {
-			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)
-			os.Exit(2) // distinct from logrus.Fatalf exit code (1)
-		}
-		replayCmd.Run(testCmd, nil) // must Fatalf before here
-		os.Exit(0)                  // reached only if no fatal = parent test failure
+	// Accumulate corpus: 3 sessions x 2 rounds (with think). --total-sessions 3 == corpus
+	// size, so no cache-busting clones are added (keeps the round-trip clean to reason about).
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 80, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s0", RoundIndex: 1, InputTokens: 20, OutputTokens: 8, ArrivalTimeUs: 3_000_000, ThinkTimeUs: i64p(1_000_000), Status: "ok"},
+		{RequestID: 2, SessionID: "s1", RoundIndex: 0, InputTokens: 90, OutputTokens: 12, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 3, SessionID: "s1", RoundIndex: 1, InputTokens: 25, OutputTokens: 9, ArrivalTimeUs: 3_500_000, ThinkTimeUs: i64p(1_000_000), Status: "ok"},
+		{RequestID: 4, SessionID: "s2", RoundIndex: 0, InputTokens: 70, OutputTokens: 11, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 5, SessionID: "s2", RoundIndex: 1, InputTokens: 22, OutputTokens: 7, ArrivalTimeUs: 4_000_000, ThinkTimeUs: i64p(1_000_000), Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export corpus: %v", err)
 	}
 
-	// Parent: re-run this test as subprocess and expect exit code 1 (logrus.Fatalf).
-	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_PoolTraceOutputFatal", "-test.v")
-	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatal("expected non-zero exit when re-exporting a pool-mode replay (--trace-output), got exit 0")
+	const bigHorizon = "100000000000"
+	poolArgs := []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000", "--max-model-len", "100000",
+		"--concurrent-sessions", "2", "--total-sessions", "3", "--horizon", bigHorizon,
 	}
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) {
-		t.Fatalf("unexpected error type: %v", err)
+
+	// (1) Pool replay of the original corpus; capture aggregate metrics.
+	poolMetrics := extractMetricsJSON(t, runReplayCaptureStdout(t, poolArgs))
+
+	// (2) Pool replay WITH --trace-output => faithful re-export of ALL sessions.
+	outPrefix := filepath.Join(dir, "reexport")
+	_ = runReplayCaptureStdout(t, append(append([]string{}, poolArgs...), "--trace-output", outPrefix))
+
+	// (3) Assert the re-export captured all 3 sessions (6 rounds), not just the initial wave.
+	rx, err := workload.LoadTraceV2(outPrefix+".yaml", outPrefix+".csv")
+	if err != nil {
+		t.Fatalf("load re-export: %v", err)
 	}
-	if exitErr.ExitCode() != 1 {
-		t.Fatalf("expected exit code 1 (logrus.Fatalf), got %d; output:\n%s", exitErr.ExitCode(), out)
+	if rx.Header.SessionContextGrowth != "accumulate" {
+		t.Errorf("re-export session_context_growth = %q, want accumulate", rx.Header.SessionContextGrowth)
 	}
-	for _, want := range []string{"--trace-output", "--concurrent-sessions", "pool mode"} {
-		if !strings.Contains(string(out), want) {
-			t.Errorf("fatal message should mention %q, got:\n%s", want, out)
+	if len(rx.Records) != 6 {
+		t.Fatalf("re-export has %d records, want 6 (all 3 sessions x 2 rounds captured, not the initial 2-session wave)", len(rx.Records))
+	}
+	sessions := map[string]int{}
+	for _, r := range rx.Records {
+		sessions[r.SessionID]++
+	}
+	if len(sessions) != 3 {
+		t.Errorf("re-export has %d distinct sessions, want 3 (all pooled sessions captured)", len(sessions))
+	}
+
+	// (4) Replay the re-export as a plain closed-loop corpus; capture aggregate metrics.
+	outArgs := []string{
+		"--trace-header", outPrefix + ".yaml", "--trace-data", outPrefix + ".csv",
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000", "--max-model-len", "100000",
+		"--session-mode", "closed-loop", "--horizon", bigHorizon,
+	}
+	reexportMetrics := extractMetricsJSON(t, runReplayCaptureStdout(t, outArgs))
+
+	// (5) Aggregate conservation reproduces (completeness of the re-export, BC-4).
+	var mPool, mRe map[string]any
+	if err := json.Unmarshal([]byte(poolMetrics), &mPool); err != nil {
+		t.Fatalf("parse pool metrics: %v", err)
+	}
+	if err := json.Unmarshal([]byte(reexportMetrics), &mRe); err != nil {
+		t.Fatalf("parse re-export metrics: %v", err)
+	}
+	for _, k := range []string{"completed_requests", "injected_requests", "total_input_tokens", "total_output_tokens"} {
+		if mPool[k] != mRe[k] {
+			t.Errorf("pool round-trip: %s = %v (pool) vs %v (re-export replay), want equal", k, mPool[k], mRe[k])
 		}
+	}
+	// Sanity: all 6 requests actually completed in the pool run (so the conservation
+	// comparison above is meaningful, not both-zero).
+	if got, _ := mPool["completed_requests"].(float64); int(got) != 6 {
+		t.Errorf("pool run completed_requests = %v, want 6 (all sessions/rounds ran)", mPool["completed_requests"])
+	}
+}
+
+// TestReplayCmd_ClosedLoopNonAccumulate_FaithfulReExport is the non-accumulate (BC-3)
+// integration analogue of the accumulate round-trip test: a multi-round session corpus
+// with NO session_context_growth, replayed closed-loop --trace-output, captures every
+// follow-up round with ABSOLUTE per-round input_tokens + the captured think column and no
+// growth header; re-replaying it closed-loop reproduces the original run byte-for-byte.
+// This closes the residual non-accumulate follow-up-drop the issue names.
+func TestReplayCmd_ClosedLoopNonAccumulate_FaithfulReExport(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
+	// Non-accumulate corpus (no SessionContextGrowth): one 3-round session with independent
+	// absolute per-round inputs and a recorded think column.
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 60, OutputTokens: 12, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 45, OutputTokens: 10, ArrivalTimeUs: 4_000_000, ThinkTimeUs: i64p(1_500_000), Status: "ok"},
+		{RequestID: 2, SessionID: "s1", RoundIndex: 2, InputTokens: 70, OutputTokens: 8, ArrivalTimeUs: 9_000_000, ThinkTimeUs: i64p(2_000_000), Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export corpus: %v", err)
+	}
+
+	commonArgs := []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000", "--max-model-len", "100000",
+		"--session-mode", "closed-loop",
+	}
+
+	metrics1 := extractMetricsJSON(t, runReplayCaptureStdout(t, commonArgs))
+
+	outPrefix := filepath.Join(dir, "reexport")
+	_ = runReplayCaptureStdout(t, append(append([]string{}, commonArgs...), "--trace-output", outPrefix))
+
+	rx, err := workload.LoadTraceV2(outPrefix+".yaml", outPrefix+".csv")
+	if err != nil {
+		t.Fatalf("load re-export: %v", err)
+	}
+	if rx.Header.SessionContextGrowth != "" {
+		t.Errorf("non-accumulate re-export must NOT set session_context_growth, got %q", rx.Header.SessionContextGrowth)
+	}
+	if len(rx.Records) != 3 {
+		t.Fatalf("re-export has %d records, want 3 (every round captured)", len(rx.Records))
+	}
+	byRound := map[int]workload.TraceRecord{}
+	for _, r := range rx.Records {
+		byRound[r.RoundIndex] = r
+	}
+	// Absolute per-round input preserved; no reset markers; think on follow-ups.
+	if byRound[0].InputTokens != 60 || byRound[1].InputTokens != 45 || byRound[2].InputTokens != 70 {
+		t.Errorf("re-export per-round input = (%d,%d,%d), want absolute (60,45,70)", byRound[0].InputTokens, byRound[1].InputTokens, byRound[2].InputTokens)
+	}
+	if byRound[2].InputTokensReset != nil {
+		t.Errorf("non-accumulate re-export must not carry input_tokens_reset, got %v", *byRound[2].InputTokensReset)
+	}
+	if byRound[1].ThinkTimeUs == nil || byRound[2].ThinkTimeUs == nil {
+		t.Errorf("follow-up rounds must carry recorded think; got r1=%v r2=%v", byRound[1].ThinkTimeUs, byRound[2].ThinkTimeUs)
+	}
+
+	outArgs := []string{
+		"--trace-header", outPrefix + ".yaml", "--trace-data", outPrefix + ".csv",
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000", "--max-model-len", "100000",
+		"--session-mode", "closed-loop",
+	}
+	metrics2 := extractMetricsJSON(t, runReplayCaptureStdout(t, outArgs))
+
+	if metrics1 != metrics2 {
+		t.Errorf("non-accumulate re-export replay metrics differ from original (round-trip not faithful):\noriginal:\n%s\nreexport:\n%s", metrics1, metrics2)
+	}
+}
+
+// TestReplayCmd_Pool_ClonesCapturedInReExport exercises the pool clone path (#1630
+// Issue B): with --total-sessions > corpus size the driver adds cache-busting clone
+// sessions, and the re-export must capture them (all sessions + every round), not just
+// the originals. (Per BC-4 the re-export's cache/latency aggregates are not guaranteed to
+// reproduce for non-accumulate clones sharing a prefix_group — this test asserts capture
+// completeness, the property the removed guard protected.)
+func TestReplayCmd_Pool_ClonesCapturedInReExport(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
+	// Accumulate corpus, 2 sessions x 2 rounds; --total-sessions 4 => 2 clones (s0_dup1, s1_dup2).
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 80, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s0", RoundIndex: 1, InputTokens: 20, OutputTokens: 8, ArrivalTimeUs: 3_000_000, ThinkTimeUs: i64p(1_000_000), Status: "ok"},
+		{RequestID: 2, SessionID: "s1", RoundIndex: 0, InputTokens: 90, OutputTokens: 12, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 3, SessionID: "s1", RoundIndex: 1, InputTokens: 25, OutputTokens: 9, ArrivalTimeUs: 3_500_000, ThinkTimeUs: i64p(1_000_000), Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export corpus: %v", err)
+	}
+
+	outPrefix := filepath.Join(dir, "reexport")
+	_ = runReplayCaptureStdout(t, []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000", "--max-model-len", "100000",
+		"--concurrent-sessions", "1", "--total-sessions", "4", "--horizon", "100000000000",
+		"--trace-output", outPrefix,
+	})
+
+	rx, err := workload.LoadTraceV2(outPrefix+".yaml", outPrefix+".csv")
+	if err != nil {
+		t.Fatalf("load re-export: %v", err)
+	}
+	sessions := map[string]int{}
+	clones := 0
+	for _, r := range rx.Records {
+		sessions[r.SessionID]++
+		if strings.Contains(r.SessionID, "_dup") {
+			clones++
+		}
+	}
+	if len(sessions) != 4 {
+		t.Errorf("re-export has %d distinct sessions, want 4 (2 originals + 2 clones)", len(sessions))
+	}
+	if len(rx.Records) != 8 {
+		t.Errorf("re-export has %d records, want 8 (4 sessions x 2 rounds)", len(rx.Records))
+	}
+	if clones == 0 {
+		t.Errorf("re-export captured no clone (_dup) sessions; the clone path must be captured, not dropped")
 	}
 }
