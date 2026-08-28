@@ -63,7 +63,9 @@ var swiGLUActivations = map[string]bool{
 // model config and tensor parallelism degree. This is used for both KV cache
 // capacity sizing and PD transfer duration estimation.
 //
-// The formula is: NumLayers × 2 (K+V) × headDim × numKVHeads × BytesPerParam / TP
+// The formula is: EffectiveKVBearingLayers × 2 (K+V) × headDim × numKVHeads × BytesPerParam / TP
+// (EffectiveKVBearingLayers equals NumLayers for every non-hybrid model, INV-6; for a
+// hybrid-attention model it is the full-attention layer count — #1635.)
 //
 // Uses BytesPerParam (compute/activation dtype), not WeightBytesPerParam, since
 // KV cache is stored at compute precision regardless of weight quantization.
