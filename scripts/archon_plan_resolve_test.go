@@ -460,6 +460,31 @@ func TestResolve_ProseMention_ReportsNone(t *testing.T) {
 	}
 }
 
+// Prose that BEGINS a line with the convention is treated as a malformed declaration, not as
+// no declaration. The anchor cannot distinguish the two, and erring toward a visible warning
+// is the safe direction: reporting `none` here would let a genuinely broken declaration pass
+// as a PR that never asked for a plan check.
+func TestResolve_LineInitialProse_ReportsErrorNotNone(t *testing.T) {
+	repo := newRepo(t)
+	base := commitFileAt(t, repo, declaredPlan, `{"holes":1}`)
+
+	for _, decl := range []string{
+		"- archon-plan: is what we call it",
+		"archon-plan: see the sub-issue for the path",
+	} {
+		t.Run(decl, func(t *testing.T) {
+			got := runResolve(t, repo, base, base, writeDecl(t, decl+"\n"))
+
+			if got.status() != "error" {
+				t.Fatalf("status = %q, want error (fields %v)", got.status(), got.fields)
+			}
+			if got.outExists(t) {
+				t.Error("a plan file was produced from prose")
+			}
+		})
+	}
+}
+
 func TestResolve_PlanInNeitherCommit_ReportsError(t *testing.T) {
 	repo := newRepo(t)
 	base := gitCmd(t, repo, "rev-parse", "HEAD")
