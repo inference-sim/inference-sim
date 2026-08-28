@@ -2910,6 +2910,16 @@
 <p>Every sub-issue body must include this line so <code>/archon-pr-review</code> can find the plan:
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>archon-plan: specs/NNN-feature/feature.plan.json
 </code></pre></div></p>
+<p>The same line must appear in every <strong>PR body</strong> as well, including the final PR to main. CI
+reads the PR body first and falls back to the bodies of the issues the PR closes, but GitHub
+only links closing issues for a PR targeting the default branch: a hole PR targets the feature
+branch, so nothing is linked, and the final PR closes only the tracking issue, which has no
+such line. Without it in the PR body the dist ratchet is skipped with a warning.</p>
+<p>The path must end in <code>.json</code>, and the plan must be <strong>committed</strong> to the branch — CI reads it
+out of git, not the working tree, so an untracked plan is invisible to it. (<code>.gitignore</code>
+ignores <code>*.json</code> repo-wide; <code>!specs/**/*.json</code> is the negation that lets the compiled plan be
+tracked.) A declared path CI cannot read produces a warning on the PR rather than a silent
+delta-only review.</p>
 <h2 id="where-to-persist">Where to persist<a class="headerlink" href="#where-to-persist" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>specs/NNN-feature-name/
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>  design.md            ← RFC prose (from tracking issue)

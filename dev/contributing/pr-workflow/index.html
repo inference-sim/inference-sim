@@ -3912,7 +3912,7 @@
 
 
 <h1 id="pr-development-workflow">PR Development Workflow<a class="headerlink" href="#pr-development-workflow" title="Permanent link">&para;</a></h1>
-<p><strong>Status:</strong> Active (v4.2 — updated 2026-03-17)</p>
+<p><strong>Status:</strong> Active (v4.3 — updated 2026-08-28)</p>
 <p>This document describes the complete workflow for implementing a PR from any source: an RFC sub-issue, GitHub issues, a design document, or a feature request. The same steps apply whether you use Claude Code or standard git tools.</p>
 <hr />
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
@@ -4185,6 +4185,7 @@
 <a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>gh<span class="w"> </span>pr<span class="w"> </span>create<span class="w"> </span>--title<span class="w"> </span><span class="s2">"&lt;title&gt;"</span><span class="w"> </span>--body<span class="w"> </span><span class="s2">"&lt;description with behavioral contracts&gt;"</span>
 </code></pre></div>
 <p>The PR description should include a summary, behavioral contracts (GIVEN/WHEN/THEN), testing verification, and GitHub closing keywords from the plan's <code>Closes:</code> field (e.g., <code>Fixes #183, fixes #189</code>).</p>
+<p><strong>Multi-PR features:</strong> if the sub-issue body carries an <code>archon-plan:</code> line, copy it verbatim into the PR body. CI reads the PR body to find the plan; a hole PR targets a feature branch, so GitHub links no closing issue and the sub-issue is never read. Without the line, the dist ratchet is skipped. The same applies to the final PR to <code>main</code>, which closes the tracking issue — an issue that carries no such line.</p>
 <div class="admonition tip">
 <p class="admonition-title">Automation</p>
 <p><code>/commit-commands:commit-push-pr</code> handles staging, committing, pushing, and PR creation in one command. It analyzes current git state, creates an appropriate commit message referencing behavioral contracts, and opens the PR.</p>
@@ -4339,6 +4340,7 @@
 **v4.0 (2026-02-27):** Human-first rewrite (#464). Steps describe human actions; skills in admonition callouts. Manual path is primary; automation is additive. Templates split into human-readable format descriptions + agent prompt companions.
 **v4.1 (2026-03-17):** Added Step 1.5 (Source Document Audit) between Steps 1 and 2 — structured pre-audit of source documents for ambiguities, contradictions, and missing information before planning begins. Added `CLARIFICATION` as a Deviation Log reason (#664).
 **v4.2 (2026-03-17):** Added Express Lane tier for ≤3-line mechanical changes (implement → self-audit → commit, no plan/review/human gate). Eliminated pre-pass for Small PRs — single convergence round sufficient. Medium/Large unchanged (#673).
+**v4.3 (2026-08-28):** Step 5 now requires copying the sub-issue's `archon-plan:` line into the PR body for multi-PR features. CI reads the PR body; GitHub links closing issues only for PRs targeting the default branch, so a hole PR against a feature branch links none and the sub-issue body is never read (#1631).
 
 </details>
 

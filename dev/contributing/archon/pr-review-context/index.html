@@ -2016,21 +2016,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#when-it-runs" class="md-nav__link">
+  <a href="#what-the-comment-contains" class="md-nav__link">
     <span class="md-ellipsis">
       
-        When it runs
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#convention-archon-plan-in-sub-issues" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Convention: archon-plan: in sub-issues
+        What the comment contains
       
     </span>
   </a>
@@ -2852,21 +2841,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#when-it-runs" class="md-nav__link">
+  <a href="#what-the-comment-contains" class="md-nav__link">
     <span class="md-ellipsis">
       
-        When it runs
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#convention-archon-plan-in-sub-issues" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Convention: archon-plan: in sub-issues
+        What the comment contains
       
     </span>
   </a>
@@ -2919,19 +2897,18 @@
 <p>How to incorporate archon's PR review output during code review.</p>
 <p><strong>Important:</strong> <code>blis-pr-review</code> does NOT run archon. It just reads archon output from a previous PR comment and incorporates the verdict.</p>
 <p><strong>Getting archon (for manual runs):</strong> Run <code>scripts/archon-build.sh</code> from the repo root. It builds the version pinned in <code>.archon-version</code> and prints the binary path. See <a href="https://github.com/AI-native-Systems-Research/archon">archon README</a> for verdict definitions and full examples.</p>
-<h2 id="when-it-runs">When it runs<a class="headerlink" href="#when-it-runs" title="Permanent link">&para;</a></h2>
-<p><code>/archon-pr-review</code> runs when triggered via a comment on the PR (manually by a contributor or maintainer). It is NOT automatic — someone must type <code>/archon-pr-review</code> on the PR. It runs the standard delta review (boundary moves, surface changes, edge deltas). Additionally, if the PR body (or its closing issue body) contains an <code>archon-plan:</code> line with a path to a <code>.plan.json</code>, it also runs <code>--plan</code> for dist tracking.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a># When triggered (pseudocode):
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>archon-go pr-review . $BASE $HEAD --out .archon           # always: delta view
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>if archon-plan path found AND file exists on base branch:
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>  archon-go pr-review . $BASE $HEAD --plan &lt;path&gt; --out .archon  # additionally: dist tracking
-</code></pre></div>
-<p>Both outputs are posted. No failure if the plan path is missing or wrong — falls back to delta-only.</p>
-<h2 id="convention-archon-plan-in-sub-issues">Convention: <code>archon-plan:</code> in sub-issues<a class="headerlink" href="#convention-archon-plan-in-sub-issues" title="Permanent link">&para;</a></h2>
-<p>When sub-issues are created via <code>rfc-to-plan.md</code>, each includes a standard line:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>archon-plan: specs/NNN-feature/feature.plan.json
-</code></pre></div>
-CI greps for this. If absent, dist tracking is skipped (safe default).</p>
+<h2 id="what-the-comment-contains">What the comment contains<a class="headerlink" href="#what-the-comment-contains" title="Permanent link">&para;</a></h2>
+<p>One comment per <code>/archon-pr-review</code>, in one of two shapes:</p>
+<ul>
+<li><strong>three views</strong> — component, witness delta, interface-contract</li>
+<li><strong>three views plus plan checks</strong> — the same, with <code>### G5 — Plan distance ratchet</code> and a plan verdict appended</li>
+</ul>
+<p>The second shape appears when the PR belongs to a planned multi-PR feature. Nothing here needs to know how CI decides that; if a section is present, read it.</p>
+<p>Two lines may precede the review:</p>
+<ul>
+<li>a note naming the plan the checks ran against, and the commit it came from. When that commit is the PR's own head it says the plan is not independently verified — expected on the final feature-branch-to-<code>main</code> PR, since <code>main</code> carries no plan.</li>
+<li>a <code>&gt; [!WARNING]</code> saying the plan check was skipped. The PR asked to be checked against a plan and was not, so there is no ratchet or verdict in that comment — treat it as missing evidence, not as a passing gate.</li>
+</ul>
 <h2 id="verdicts">Verdicts<a class="headerlink" href="#verdicts" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2970,6 +2947,7 @@ CI greps for this. If absent, dist tracking is skipped (safe default).</p>
 <li><strong>FAST-TRACK</strong> → no architectural concern, proceed with normal review</li>
 <li><strong>REALIZES</strong> → verify dist reduction matches sub-issue expectation</li>
 <li><strong>EXCEEDS/CONFLICTS</strong> → flag to maintainer, may need plan-update PR</li>
+<li><strong>Plan check skipped</strong> (the warning above) → the dist gate did not run. Say so; do not read the comment as evidence the plan was satisfied.</li>
 </ol>
 
 

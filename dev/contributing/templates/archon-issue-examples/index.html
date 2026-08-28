@@ -3057,6 +3057,13 @@
 <a id="__codelineno-2-52" name="__codelineno-2-52" href="#__codelineno-2-52"></a>
 <a id="__codelineno-2-53" name="__codelineno-2-53" href="#__codelineno-2-53"></a>archon-plan: specs/[NNN-feature]/[feature].plan.json
 </code></pre></div>
+<p>Substitute the bracketed placeholders. <code>/archon-pr-review</code> rejects a literal
+<code>specs/[NNN-feature]/...</code> and posts a warning instead of running the dist ratchet, and it
+reads the plan out of git, so the file must be committed to the branch.</p>
+<p><strong>Copy this line into the PR body too.</strong> CI reads the PR body first and falls back to the
+bodies of the issues the PR closes — but GitHub only links closing issues for a PR that
+targets the <strong>default branch</strong>. A hole PR targets the feature branch, so nothing is linked
+and the sub-issue body is never read. The PR body is the only place the line can be seen.</p>
 <hr />
 <h2 id="final-pr-feature-branch-main">Final PR (feature branch → main)<a class="headerlink" href="#final-pr-feature-branch-main" title="Permanent link">&para;</a></h2>
 <p>This PR body must be <strong>self-contained</strong> — a reviewer can validate every contract without opening another issue. To produce it, Claude reads the tracking issue, all sub-issues, and the PRs that closed them.</p>
@@ -3102,7 +3109,14 @@
 <a id="__codelineno-3-40" name="__codelineno-3-40" href="#__codelineno-3-40"></a><span class="gu">## Review</span>
 <a id="__codelineno-3-41" name="__codelineno-3-41" href="#__codelineno-3-41"></a>
 <a id="__codelineno-3-42" name="__codelineno-3-42" href="#__codelineno-3-42"></a>Maintainer reviews this PR (the whole feature in one diff against main).
+<a id="__codelineno-3-43" name="__codelineno-3-43" href="#__codelineno-3-43"></a>
+<a id="__codelineno-3-44" name="__codelineno-3-44" href="#__codelineno-3-44"></a>---
+<a id="__codelineno-3-45" name="__codelineno-3-45" href="#__codelineno-3-45"></a>
+<a id="__codelineno-3-46" name="__codelineno-3-46" href="#__codelineno-3-46"></a>archon-plan: specs/NNN-feature/feature.plan.json
 </code></pre></div>
+<p>The line is required <strong>in the PR body</strong>, not just in the tracking issue. This PR closes the
+tracking issue, which carries no <code>archon-plan:</code> line of its own, so without it the dist
+ratchet is silently skipped on the one PR where <code>dist = 0</code> is the merge gate.</p>
 <hr />
 <h2 id="why-the-sub-issue-includes-full-hole-content">Why the sub-issue includes full hole content<a class="headerlink" href="#why-the-sub-issue-includes-full-hole-content" title="Permanent link">&para;</a></h2>
 <p><code>blis-pr-review</code> reads the sub-issue body during review to:

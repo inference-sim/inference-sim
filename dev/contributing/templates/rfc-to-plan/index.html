@@ -2827,20 +2827,33 @@
 <a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>       (CI uses this to auto-detect the plan for dist tracking)
 <a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>
 <a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>   IMPORTANT: Every sub-issue (including sub-issue 0) must contain the
-<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>   `archon-plan:` line with the same path. This is how CI knows to run
-<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>   both the standard delta review AND the plan-based dist tracking.
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>   `archon-plan:` line with the same path. This is how CI knows to add
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>   plan-based dist tracking to the review.
 <a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>
-<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>4. Report: summary of baseline dist, number of holes, delivery order.
-<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>
-<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>Use the sub-issue format from docs/contributing/templates/archon-issue-examples.md.
-<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>Each sub-issue must include the full hole content (surface, contracts,
-<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>evidence types, invariants, no-op default) so blis-pr-review can verify
-<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>delivery without reading .archon files.
-<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>
-<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>CROSS-CHECK before filing: For each hole, verify its surface actually
-<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>requires every arrow the plan declares from it. If a declared import
-<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>isn't reachable from the surface as written, fix the surface or the
-<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>arrow before filing. The sub-issue body and the .archon file must agree.
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>   The path must end in `.json` and the plan must be committed to the
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>   branch — CI reads it out of git, not the working tree. Substitute the
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>   placeholders: a literal `specs/[NNN-feature]/...` is rejected and the
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>   review posts a warning instead of running the dist ratchet.
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>   The line must also be copied into each PR body, including the final
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>   PR to main. CI reads the PR body first and falls back to the bodies of
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>   the issues the PR closes, but GitHub only links closing issues for a PR
+<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>   targeting the default branch — a hole PR targets the feature branch, so
+<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>   nothing is linked. The final PR does close the tracking issue, which
+<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>   carries no such line. In both cases the PR body is the only place CI
+<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>   can find it.
+<a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a>
+<a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a>4. Report: summary of baseline dist, number of holes, delivery order.
+<a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a>
+<a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a>Use the sub-issue format from docs/contributing/templates/archon-issue-examples.md.
+<a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a>Each sub-issue must include the full hole content (surface, contracts,
+<a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a>evidence types, invariants, no-op default) so blis-pr-review can verify
+<a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a>delivery without reading .archon files.
+<a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a>
+<a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a>CROSS-CHECK before filing: For each hole, verify its surface actually
+<a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a>requires every arrow the plan declares from it. If a declared import
+<a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a>isn't reachable from the surface as written, fix the surface or the
+<a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a>arrow before filing. The sub-issue body and the .archon file must agree.
 </code></pre></div>
 <hr />
 <h2 id="branch-strategy">Branch Strategy<a class="headerlink" href="#branch-strategy" title="Permanent link">&para;</a></h2>
