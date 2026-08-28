@@ -6,26 +6,19 @@ How to incorporate archon's PR review output during code review.
 
 **Getting archon (for manual runs):** Run `scripts/archon-build.sh` from the repo root. It builds the version pinned in `.archon-version` and prints the binary path. See [archon README](https://github.com/AI-native-Systems-Research/archon) for verdict definitions and full examples.
 
-## When it runs
+## What the comment contains
 
-`/archon-pr-review` runs when triggered via a comment on the PR (manually by a contributor or maintainer). It is NOT automatic — someone must type `/archon-pr-review` on the PR. It runs the standard delta review (boundary moves, surface changes, edge deltas). Additionally, if the PR body (or its closing issue body) contains an `archon-plan:` line with a path to a `.plan.json`, it also runs `--plan` for dist tracking.
+One comment per `/archon-pr-review`, in one of two shapes:
 
-```
-# When triggered (pseudocode):
-archon-go pr-review . $BASE $HEAD --out .archon           # always: delta view
-if archon-plan path found AND file exists on base branch:
-  archon-go pr-review . $BASE $HEAD --plan <path> --out .archon  # additionally: dist tracking
-```
+- **three views** — component, witness delta, interface-contract
+- **three views plus plan checks** — the same, with `### G5 — Plan distance ratchet` and a plan verdict appended
 
-Both outputs are posted. No failure if the plan path is missing or wrong — falls back to delta-only.
+The second shape appears when the PR belongs to a planned multi-PR feature. Nothing here needs to know how CI decides that; if a section is present, read it.
 
-## Convention: `archon-plan:` in sub-issues
+Two lines may precede the review:
 
-When sub-issues are created via `rfc-to-plan.md`, each includes a standard line:
-```
-archon-plan: specs/NNN-feature/feature.plan.json
-```
-CI greps for this. If absent, dist tracking is skipped (safe default).
+- a note naming the plan the checks ran against, and the commit it came from. When that commit is the PR's own head it says the plan is not independently verified — expected on the final feature-branch-to-`main` PR, since `main` carries no plan.
+- a `> [!WARNING]` saying the plan check was skipped. The PR asked to be checked against a plan and was not, so there is no ratchet or verdict in that comment — treat it as missing evidence, not as a passing gate.
 
 ## Verdicts
 
@@ -42,3 +35,4 @@ CI greps for this. If absent, dist tracking is skipped (safe default).
 2. **FAST-TRACK** → no architectural concern, proceed with normal review
 3. **REALIZES** → verify dist reduction matches sub-issue expectation
 4. **EXCEEDS/CONFLICTS** → flag to maintainer, may need plan-update PR
+5. **Plan check skipped** (the warning above) → the dist gate did not run. Say so; do not read the comment as evidence the plan was satisfied.

@@ -1,6 +1,6 @@
 # PR Development Workflow
 
-**Status:** Active (v4.2 — updated 2026-03-17)
+**Status:** Active (v4.3 — updated 2026-08-28)
 
 This document describes the complete workflow for implementing a PR from any source: an RFC sub-issue, GitHub issues, a design document, or a feature request. The same steps apply whether you use Claude Code or standard git tools.
 
@@ -398,6 +398,8 @@ gh pr create --title "<title>" --body "<description with behavioral contracts>"
 
 The PR description should include a summary, behavioral contracts (GIVEN/WHEN/THEN), testing verification, and GitHub closing keywords from the plan's `Closes:` field (e.g., `Fixes #183, fixes #189`).
 
+**Multi-PR features:** if the sub-issue body carries an `archon-plan:` line, copy it verbatim into the PR body. CI reads the PR body to find the plan; a hole PR targets a feature branch, so GitHub links no closing issue and the sub-issue is never read. Without the line, the dist ratchet is skipped. The same applies to the final PR to `main`, which closes the tracking issue — an issue that carries no such line.
+
 !!! tip "Automation"
     `/commit-commands:commit-push-pr` handles staging, committing, pushing, and PR creation in one command. It analyzes current git state, creates an appropriate commit message referencing behavioral contracts, and opens the PR.
 
@@ -546,5 +548,6 @@ When to use: When Step 2.5 or Step 4.5 hits context limits. Not needed for most 
 **v4.0 (2026-02-27):** Human-first rewrite (#464). Steps describe human actions; skills in admonition callouts. Manual path is primary; automation is additive. Templates split into human-readable format descriptions + agent prompt companions.
 **v4.1 (2026-03-17):** Added Step 1.5 (Source Document Audit) between Steps 1 and 2 — structured pre-audit of source documents for ambiguities, contradictions, and missing information before planning begins. Added `CLARIFICATION` as a Deviation Log reason (#664).
 **v4.2 (2026-03-17):** Added Express Lane tier for ≤3-line mechanical changes (implement → self-audit → commit, no plan/review/human gate). Eliminated pre-pass for Small PRs — single convergence round sufficient. Medium/Large unchanged (#673).
+**v4.3 (2026-08-28):** Step 5 now requires copying the sub-issue's `archon-plan:` line into the PR body for multi-PR features. CI reads the PR body; GitHub links closing issues only for PRs targeting the default branch, so a hole PR against a feature branch links none and the sub-issue body is never read (#1631).
 
 </details>

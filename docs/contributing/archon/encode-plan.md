@@ -23,6 +23,18 @@ Every sub-issue body must include this line so `/archon-pr-review` can find the 
 archon-plan: specs/NNN-feature/feature.plan.json
 ```
 
+The same line must appear in every **PR body** as well, including the final PR to main. CI
+reads the PR body first and falls back to the bodies of the issues the PR closes, but GitHub
+only links closing issues for a PR targeting the default branch: a hole PR targets the feature
+branch, so nothing is linked, and the final PR closes only the tracking issue, which has no
+such line. Without it in the PR body the dist ratchet is skipped with a warning.
+
+The path must end in `.json`, and the plan must be **committed** to the branch — CI reads it
+out of git, not the working tree, so an untracked plan is invisible to it. (`.gitignore`
+ignores `*.json` repo-wide; `!specs/**/*.json` is the negation that lets the compiled plan be
+tracked.) A declared path CI cannot read produces a warning on the PR rather than a silent
+delta-only review.
+
 ## Where to persist
 
 ```
