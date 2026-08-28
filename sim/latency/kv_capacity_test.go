@@ -1217,6 +1217,29 @@ func TestExtractKVCapacityParams_MoEFallback_NumExpertsPerTokOnly_ReturnsError(t
 	}
 }
 
+func TestExtractKVCapacityParams_MoEFallback_KimiK3Aliases_ReturnError(t *testing.T) {
+	// #1640: the Kimi-K3 activation-count spellings (num_shared_experts /
+	// num_experts_per_token) must also signal MoE in the fallback guard, so a
+	// K3-shaped config without a total expert count errors (naming the field)
+	// instead of being silently treated as dense.
+	for _, key := range []string{"num_shared_experts", "num_experts_per_token"} {
+		t.Run(key, func(t *testing.T) {
+			path := writeTempConfigJSON(t, map[string]any{
+				"hidden_act": "silu",
+				key:          2,
+			})
+
+			_, err := latency.ExtractKVCapacityParamsFromFile(path)
+			if err == nil {
+				t.Fatalf("expected error for MoE detected via %s without total expert count", key)
+			}
+			if !strings.Contains(err.Error(), key) {
+				t.Errorf("expected error mentioning %s, got: %v", key, err)
+			}
+		})
+	}
+}
+
 func TestExtractKVCapacityParams_TiedEmbeddings(t *testing.T) {
 	path := writeTempConfigJSON(t, map[string]any{
 		"hidden_act":          "silu",
@@ -1494,6 +1517,56 @@ func TestExtractKVCapacityParams_Qwen2MoE_ExplicitSharedDim(t *testing.T) {
 	}
 	if params.SharedExpertFFNDim != 5632 {
 		t.Errorf("expected SharedExpertFFNDim=5632 (explicit field), got %d", params.SharedExpertFFNDim)
+	}
+}
+
+func TestExtractKVCapacityParams_MoEKeyAliases(t *testing.T) {
+	// #1640: the KV-capacity path (ExtractKVCapacityParams) must resolve shared
+	// experts under BOTH the DeepSeek/GLM spelling (n_shared_experts) and the
+	// Kimi-K3 alias (num_shared_experts), matching GetModelConfigFromHF so the two
+	// paths cannot desync (R23 code-path parity). Before the fix, the K3 alias
+	// yielded SharedExpertFFNDim=0 (silent shared-expert weight under-count).
+	const perExpert = 3072
+	tests := []struct {
+		name          string
+		sharedKey     string
+		activeKey     string
+		wantSharedFFN int
+	}{
+		{"deepseek_glm_spelling", "n_shared_experts", "num_experts_per_tok", 2 * perExpert},
+		{"kimi_k3_spelling", "num_shared_experts", "num_experts_per_token", 2 * perExpert},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeTempConfigJSON(t, map[string]any{
+				"hidden_act":            "silu",
+				"num_hidden_layers":     93,
+				"hidden_size":           7168,
+				"num_attention_heads":   96,
+				"num_key_value_heads":   96,
+				"intermediate_size":     33792,
+				"moe_intermediate_size": perExpert,
+				"num_experts":           896,
+				tc.activeKey:            16,
+				tc.sharedKey:            2,
+				"torch_dtype":           "bfloat16",
+			})
+
+			params, err := latency.ExtractKVCapacityParamsFromFile(path)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !params.IsMoE {
+				t.Error("expected IsMoE=true for an 896-expert config")
+			}
+			if params.NumLocalExperts != 896 {
+				t.Errorf("expected NumLocalExperts=896, got %d", params.NumLocalExperts)
+			}
+			if params.SharedExpertFFNDim != tc.wantSharedFFN {
+				t.Errorf("expected SharedExpertFFNDim=%d (2 shared × %d), got %d — %q alias not resolved on the KV-capacity path",
+					tc.wantSharedFFN, perExpert, params.SharedExpertFFNDim, tc.sharedKey)
+			}
+		})
 	}
 }
 

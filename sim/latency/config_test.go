@@ -1,6 +1,7 @@
 package latency_test
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -681,6 +682,130 @@ func TestGetModelConfig_Qwen2MoEStyle_SharedExpertDimExplicit(t *testing.T) {
 	// Explicit shared_expert_intermediate_size takes precedence
 	if cfg.SharedExpertFFNDim != 5632 {
 		t.Errorf("expected SharedExpertFFNDim=5632 (explicit field), got %d", cfg.SharedExpertFFNDim)
+	}
+}
+
+// TestGetModelConfig_MoEKeyAliases_BothSpellings covers the Kimi-K3 MoE
+// activation-count key aliases (#1634). K3's HF config spells the active-expert
+// count `num_experts_per_token` and the shared-expert count `num_shared_experts`,
+// whereas the DeepSeek/GLM configs BLIS already reads use `num_experts_per_tok` /
+// `n_shared_experts`. Both spellings must resolve to the same parsed values.
+//
+// GIVEN an 896-expert MoE config that spells the activation counts either way
+// WHEN GetModelConfig parses it
+// THEN NumExpertsPerTok reflects the active-expert count (16) and SharedExpertFFNDim
+//
+//	reflects shared_count × per-expert dim (2 × 2048 = 4096), regardless of spelling.
+func TestGetModelConfig_MoEKeyAliases_BothSpellings(t *testing.T) {
+	tests := []struct {
+		name      string
+		perTokKey string // active-experts-per-token field name
+		sharedKey string // shared-experts field name
+	}{
+		{"deepseek_glm_spelling", "num_experts_per_tok", "n_shared_experts"},
+		{"kimi_k3_spelling", "num_experts_per_token", "num_shared_experts"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			configFile := filepath.Join(tmpDir, "config.json")
+			content := fmt.Sprintf(`{
+				"num_hidden_layers": 4,
+				"hidden_size": 4096,
+				"num_attention_heads": 32,
+				"num_key_value_heads": 8,
+				"vocab_size": 32000,
+				"intermediate_size": 14336,
+				"moe_intermediate_size": 2048,
+				"num_experts": 896,
+				"%s": 16,
+				"%s": 2,
+				"torch_dtype": "bfloat16"
+			}`, tc.perTokKey, tc.sharedKey)
+			if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+				t.Fatalf("failed to create test file: %v", err)
+			}
+
+			cfg, err := latency.GetModelConfig(configFile)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			// Detected as MoE via num_experts (unchanged by this PR).
+			if cfg.NumLocalExperts != 896 {
+				t.Errorf("expected NumLocalExperts=896, got %d", cfg.NumLocalExperts)
+			}
+			// Active experts per token resolved from the spelling under test.
+			if cfg.NumExpertsPerTok != 16 {
+				t.Errorf("expected NumExpertsPerTok=16 from %q, got %d", tc.perTokKey, cfg.NumExpertsPerTok)
+			}
+			// SharedExpertFFNDim = shared count (2) × per-expert dim (2048) = 4096.
+			if cfg.SharedExpertFFNDim != 4096 {
+				t.Errorf("expected SharedExpertFFNDim=4096 (2 shared × 2048 per-expert) from %q, got %d", tc.sharedKey, cfg.SharedExpertFFNDim)
+			}
+		})
+	}
+}
+
+// TestGetModelConfig_KimiK3_ConstructsTrainedPhysics is the #1634 regression: a
+// K3-shaped MoE config (896 experts, `num_experts_per_token`, `num_shared_experts`)
+// is detected as MoE, so a missing per-token count trips the MoE-consistency guard
+// at latency-model construction (trained_physics_model.go: "NumExpertsPerTok must
+// be > 0"). With the aliases parsed, the default trained-physics model constructs
+// without that error.
+//
+// GIVEN a K3-spelled 896-expert / num_experts_per_token:16 config
+// WHEN the default trained-physics latency model is constructed from the parsed config
+// THEN construction succeeds (the MoE-consistency guard does not trip).
+func TestGetModelConfig_KimiK3_ConstructsTrainedPhysics(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 4,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"vocab_size": 32000,
+		"intermediate_size": 14336,
+		"moe_intermediate_size": 2048,
+		"num_experts": 896,
+		"num_experts_per_token": 16,
+		"num_shared_experts": 2,
+		"torch_dtype": "bfloat16"
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error parsing config: %v", err)
+	}
+	if cfg.NumLocalExperts != 896 {
+		t.Fatalf("precondition: expected NumLocalExperts=896 (MoE detected), got %d", cfg.NumLocalExperts)
+	}
+	if cfg.NumExpertsPerTok != 16 {
+		t.Fatalf("precondition: expected NumExpertsPerTok=16 from num_experts_per_token, got %d", cfg.NumExpertsPerTok)
+	}
+
+	hw := sim.ModelHardwareConfig{
+		Backend:     "trained-physics", // BLIS default backend
+		TP:          1,
+		ModelConfig: *cfg,
+		HWConfig: sim.HardwareCalib{
+			TFlopsPeak: 989.0,
+			BwPeakTBs:  3.35,
+			MfuPrefill: 0.55,
+			MfuDecode:  0.30,
+		},
+	}
+	coeffs := sim.LatencyCoeffs{
+		AlphaCoeffs: []float64{15563.199579, 777.3455, 45.907545},
+		BetaCoeffs:  []float64{0.152128, 0.0, 1.36252915, 0.752037, 32.09546717, 4.41684444, 126.024825, 481.8613888, 0.0, 1.94710771},
+	}
+
+	if _, err := latency.NewLatencyModel(coeffs, hw); err != nil {
+		t.Fatalf("expected trained-physics model to construct for K3 config, got error: %v", err)
 	}
 }
 
