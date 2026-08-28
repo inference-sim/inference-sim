@@ -104,6 +104,7 @@ Controls GPU and CPU memory simulation for key-value cache blocks. Maps to `KVCa
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--total-kv-blocks` | int64 | 1000000\* | Total GPU-tier KV blocks. |
+| `--kv-cache-dtype` | string | `auto` | KV-cache storage precision, independent of the compute/activation dtype **and** of weight quantization (vLLM `--kv-cache-dtype` parity, #1565). `auto` follows the model/compute dtype (byte-identical default); `fp8`/`fp8_e4m3`/`fp8_e5m2` = 1 byte/element → roughly **doubles** the auto-computed `--total-kv-blocks` under bf16 compute; `bf16`/`fp16`/`fp32` pin it explicitly. Affects only the auto-calc block count (and PD KV-transfer sizing) — inert when `--total-kv-blocks` is set explicitly. **Re-supply identically on replay** to reproduce capacity (not round-tripped through the trace header — see the replay guide). |
 | `--block-size-in-tokens` | int64 | 16 | Tokens per KV block. |
 | `--kv-cpu-blocks` | int64 | 0 | CPU-tier blocks. 0 disables tiered caching. |
 | `--kv-offload-threshold` | float64 | 0.9 | GPU utilization fraction above which blocks are offloaded to CPU. Range [0, 1]. |
