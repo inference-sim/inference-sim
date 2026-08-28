@@ -284,7 +284,11 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	// MoE expert count: resolved via the shared chain (R23 code-path parity with
 	// ExtractKVCapacityParams). Single-expert models are dense-equivalent.
 	numLocalExperts := hf.ResolveNumExperts()
-	numExpertsPerTok := getInt("num_experts_per_tok")
+	// Active experts per token: DeepSeek/GLM spell it num_experts_per_tok; Kimi-K3
+	// (transformers/vLLM) spells it num_experts_per_token (#1634). Missing this on a
+	// detected-MoE model is fatal (trips the MoE-consistency guard at latency-model
+	// construction), not merely inaccurate.
+	numExpertsPerTok := getIntWithFallbacks("num_experts_per_tok", "num_experts_per_token")
 
 	// MoE per-expert FFN dimension (design Section 4.2)
 	// When present and nonzero, takes precedence over general intermediate dim.
@@ -295,7 +299,10 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	var sharedExpertFFNDim int
 	if v := getInt("shared_expert_intermediate_size"); v > 0 {
 		sharedExpertFFNDim = v
-	} else if nShared := getInt("n_shared_experts"); nShared > 0 {
+	} else if nShared := getIntWithFallbacks("n_shared_experts", "num_shared_experts"); nShared > 0 {
+		// DeepSeek/GLM spell it n_shared_experts; Kimi-K3 spells it
+		// num_shared_experts (#1634). Missing this is a silent weight under-count
+		// (shared experts are optional, so no guard trips).
 		// Compute total shared dim from count × per-expert dim
 		perExpert := moeExpertFFNDim
 		if perExpert == 0 {
