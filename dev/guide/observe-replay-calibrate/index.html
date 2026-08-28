@@ -4122,10 +4122,29 @@
 <tr>
 <td><strong>Trace export</strong></td>
 <td><code>--trace-output</code> (header <code>mode: "generated"</code>)</td>
-<td><code>--trace-output</code> (header <code>mode: "replayed"</code>)</td>
+<td><code>--trace-output</code> (header <code>mode: "replayed"</code>); see restrictions below</td>
 </tr>
 </tbody>
 </table>
+<div class="admonition warning">
+<p class="admonition-title"><code>--trace-output</code> cannot re-export closed-loop follow-up rounds</p>
+<p>Replay <strong>rejects <code>--trace-output</code> (fails fast, non-zero exit)</strong> in two cases,
+because a re-export sources only the round-0 request slice — the follow-up rounds
+generated during a closed-loop run are never in the exported set:</p>
+<ul>
+<li><strong>Pool mode</strong> (<code>--concurrent-sessions &gt; 0</code>): the export would capture only the
+  initial round-0 wave, not the pooled/cloned sessions.</li>
+<li><strong>Plain closed-loop replay of an accumulate corpus</strong> (<code>--session-mode
+  closed-loop</code> on a header with <code>session_context_growth: accumulate</code> — e.g. a
+  <code>blis convert otel</code> / <code>blis convert weka</code> corpus): besides dropping the
+  follow-ups, the export would emit absolute per-round <code>input_tokens</code> instead of
+  the deltas an accumulate loader expects and omit <code>session_context_growth</code>, so it
+  could not be re-replayed faithfully.</li>
+</ul>
+<p>To re-export, replay the <strong>original converter corpus</strong> rather than a prior
+closed-loop replay's output. (Faithful closed-loop re-export is a planned
+follow-up.)</p>
+</div>
 <div class="admonition warning">
 <p class="admonition-title">Latency model matters</p>
 <p>The replay command simulates token generation using the configured latency model. For accurate calibration, choose the latency model that best matches the server's behavior. See <a href="../latency-models/">Latency Models</a> for guidance on selecting between roofline and trained-physics modes.</p>
@@ -4209,7 +4228,7 @@ real captured clients carry the session in telemetry, not on the request.</p>
 <p>To calibrate real vs simulated over the same corpus:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>blis<span class="w"> </span>replay<span class="w"> </span>--trace-header<span class="w"> </span>corpus.yaml<span class="w"> </span>--trace-data<span class="w"> </span>corpus.csv<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--concurrent-sessions<span class="w"> </span><span class="m">8</span><span class="w"> </span>--total-sessions<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">  </span>--trace-output<span class="w"> </span>sim
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">  </span>--results-path<span class="w"> </span>sim.results.json
 <a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>blis<span class="w"> </span>calibrate<span class="w"> </span>--trace-header<span class="w"> </span>observed.yaml<span class="w"> </span>--trace-data<span class="w"> </span>observed.csv<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">  </span>--sim-results<span class="w"> </span>sim.results.json<span class="w"> </span>--report<span class="w"> </span>calibration.json
 </code></pre></div>
