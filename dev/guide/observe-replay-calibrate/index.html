@@ -4126,24 +4126,33 @@
 </tr>
 </tbody>
 </table>
-<div class="admonition warning">
-<p class="admonition-title"><code>--trace-output</code> cannot re-export closed-loop follow-up rounds</p>
-<p>Replay <strong>rejects <code>--trace-output</code> (fails fast, non-zero exit)</strong> in two cases,
-because a re-export sources only the round-0 request slice — the follow-up rounds
-generated during a closed-loop run are never in the exported set:</p>
+<div class="admonition note">
+<p class="admonition-title"><code>--trace-output</code> faithfully re-exports closed-loop follow-up rounds (#1630)</p>
+<p>A closed-loop replay's <code>--trace-output</code> captures <strong>every</strong> round — the round-0
+requests <strong>and</strong> the follow-up rounds the session manager / pool driver generate
+during the run (previously only the round-0 wave was exported, #1621):</p>
 <ul>
-<li><strong>Pool mode</strong> (<code>--concurrent-sessions &gt; 0</code>): the export would capture only the
-  initial round-0 wave, not the pooled/cloned sessions.</li>
-<li><strong>Plain closed-loop replay of an accumulate corpus</strong> (<code>--session-mode
-  closed-loop</code> on a header with <code>session_context_growth: accumulate</code> — e.g. a
-  <code>blis convert otel</code> / <code>blis convert weka</code> corpus): besides dropping the
-  follow-ups, the export would emit absolute per-round <code>input_tokens</code> instead of
-  the deltas an accumulate loader expects and omit <code>session_context_growth</code>, so it
-  could not be re-replayed faithfully.</li>
+<li><strong>Accumulate corpus</strong> (<code>session_context_growth: accumulate</code> — e.g. a
+  <code>blis convert otel</code> / <code>blis convert weka</code> corpus): the re-export re-derives per-round
+  <code>input_tokens</code> <strong>deltas</strong> and <code>input_tokens_reset</code> compaction markers from the
+  replayed absolute inputs, sets <code>session_context_growth: accumulate</code> on the header,
+  and records the per-round think time. Re-replaying it (closed-loop) reproduces the
+  original run's per-request per-round input and metrics (INV-13 round-trip).</li>
+<li><strong>Non-accumulate multi-round corpus</strong>: the re-export carries absolute per-round
+  <code>input_tokens</code> (follow-ups inherit their session's <code>prefix_group</code>/<code>prefix_length</code>,
+  so the prefix is not double-counted) plus the captured <code>think_time_us</code>.</li>
+<li><strong>Pool mode</strong> (<code>--concurrent-sessions N</code>): the re-export is a <strong>complete</strong> session
+  corpus — all sessions (originals + clones) with every round, as a closed-loop
+  corpus. Replay it with <code>--session-mode closed-loop</code> (it is not re-cloned). Aggregate
+  <strong>conservation</strong> metrics (completed/injected requests, total input/output tokens)
+  reproduce; per-request and cache/latency aggregates are not guaranteed — pool
+  admission timing is data-dependent, and a non-accumulate clone's cache-busting
+  divergence is not preserved when it shares a <code>prefix_group</code>.</li>
 </ul>
-<p>To re-export, replay the <strong>original converter corpus</strong> rather than a prior
-closed-loop replay's output. (Faithful closed-loop re-export is a planned
-follow-up.)</p>
+<p>Fixed-mode (<code>--session-mode fixed</code>) re-export is unchanged. Known boundary: a
+length-capped round (output truncated by <code>--max-model-len</code>) reproduces its input
+length but may diverge in prefix-cache token <em>content</em> across the cap boundary — the
+huge-ISL agentic corpora are replayed with a large <code>--max-model-len</code> to avoid capping.</p>
 </div>
 <div class="admonition warning">
 <p class="admonition-title">Latency model matters</p>
