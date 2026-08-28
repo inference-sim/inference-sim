@@ -68,6 +68,20 @@ func (c *HFConfig) MustGetInt(key string, def int) int {
 	return def
 }
 
+// MustGetIntFallback returns the first of keys that resolves to a non-zero int
+// (tried in order), else def. It centralizes multi-spelling field resolution
+// (e.g. vendor-specific MoE activation-count names) so GetModelConfigFromHF and
+// ExtractKVCapacityParams resolve identical spellings and cannot desync (R23
+// code-path parity).
+func (c *HFConfig) MustGetIntFallback(def int, keys ...string) int {
+	for _, k := range keys {
+		if v, ok := c.GetInt(k); ok && v != 0 {
+			return v
+		}
+	}
+	return def
+}
+
 // moeExpertCountFields lists the HF config field names that carry the total
 // routed-expert count, in the resolution order used by vLLM's get_num_experts
 // (vllm/transformers_utils/model_arch_config_convertor.py): num_experts (Jamba),
@@ -82,6 +96,15 @@ var moeExpertCountFields = []string{
 	"num_local_experts", // Mixtral
 	"num_routed_experts", // BLIS-historical alias
 }
+
+// moeActiveExpertFields and moeSharedExpertFields list the accepted HF spellings
+// for the MoE *activation* counts (experts active per token; shared experts),
+// tried in order. DeepSeek/GLM spell them num_experts_per_tok / n_shared_experts;
+// Kimi-K3 (transformers/vLLM) spells them num_experts_per_token / num_shared_experts
+// (#1634). Shared as package vars so GetModelConfigFromHF and ExtractKVCapacityParams
+// resolve the same spellings and cannot desync (R23 code-path parity).
+var moeActiveExpertFields = []string{"num_experts_per_tok", "num_experts_per_token"}
+var moeSharedExpertFields = []string{"n_shared_experts", "num_shared_experts"}
 
 // ResolveNumExperts returns the total routed-expert count for the model, trying the
 // known architecture-specific field names (moeExpertCountFields) in order and
@@ -288,7 +311,7 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	// (transformers/vLLM) spells it num_experts_per_token (#1634). Missing this on a
 	// detected-MoE model is fatal (trips the MoE-consistency guard at latency-model
 	// construction), not merely inaccurate.
-	numExpertsPerTok := getIntWithFallbacks("num_experts_per_tok", "num_experts_per_token")
+	numExpertsPerTok := getIntWithFallbacks(moeActiveExpertFields...)
 
 	// MoE per-expert FFN dimension (design Section 4.2)
 	// When present and nonzero, takes precedence over general intermediate dim.
@@ -299,7 +322,7 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	var sharedExpertFFNDim int
 	if v := getInt("shared_expert_intermediate_size"); v > 0 {
 		sharedExpertFFNDim = v
-	} else if nShared := getIntWithFallbacks("n_shared_experts", "num_shared_experts"); nShared > 0 {
+	} else if nShared := getIntWithFallbacks(moeSharedExpertFields...); nShared > 0 {
 		// DeepSeek/GLM spell it n_shared_experts; Kimi-K3 spells it
 		// num_shared_experts (#1634). Missing this is a silent weight under-count
 		// (shared experts are optional, so no guard trips).

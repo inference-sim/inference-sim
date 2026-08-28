@@ -489,8 +489,11 @@ func ExtractKVCapacityParamsFromFile(hfConfigPath string) (KVCapacityParams, err
 // ExtractKVCapacityParams extracts KVCapacityParams from a parsed HFConfig.
 // MoE detection uses the shared (*HFConfig).ResolveNumExperts (>= MoEMinExperts);
 // see that method for the field set and resolution order. Returns an error if MoE
-// is detected via activation-count fields (n_shared_experts, num_experts_per_tok)
-// without a total expert count — weight estimation requires the count.
+// is detected via activation-count fields (n_shared_experts / num_experts_per_tok,
+// and their Kimi-K3 aliases num_shared_experts / num_experts_per_token; #1634)
+// without a total expert count — weight estimation requires the count. Shared-expert
+// resolution uses moeSharedExpertFields so this path matches GetModelConfigFromHF
+// (R23 code-path parity).
 func ExtractKVCapacityParams(hf *HFConfig) (KVCapacityParams, error) {
 	hiddenAct := hf.MustGetString("hidden_act", "")
 	tieWordEmbeddings := false
@@ -509,7 +512,7 @@ func ExtractKVCapacityParams(hf *HFConfig) (KVCapacityParams, error) {
 		var sharedExpertFFNDim int
 		if v := hf.MustGetInt("shared_expert_intermediate_size", 0); v > 0 {
 			sharedExpertFFNDim = v
-		} else if nShared := hf.MustGetInt("n_shared_experts", 0); nShared > 0 {
+		} else if nShared := hf.MustGetIntFallback(0, moeSharedExpertFields...); nShared > 0 {
 			perExpert := moeExpertFFNDim
 			if perExpert == 0 {
 				perExpert = hf.MustGetInt("intermediate_size", 0)
@@ -523,7 +526,8 @@ func ExtractKVCapacityParams(hf *HFConfig) (KVCapacityParams, error) {
 	// a reliable total expert count. Without the total count, weight estimation
 	// would use dense MLP weights — massively underestimating MoE model size.
 	// Return an error so the caller can fall back to --total-kv-blocks.
-	for _, key := range []string{"n_shared_experts", "num_experts_per_tok"} {
+	signalFields := append(append([]string{}, moeSharedExpertFields...), moeActiveExpertFields...)
+	for _, key := range signalFields {
 		if v := hf.MustGetInt(key, 0); v > 0 {
 			return KVCapacityParams{}, fmt.Errorf(
 				"model appears to be MoE (%s=%d) but num_local_experts is missing; "+
