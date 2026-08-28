@@ -611,6 +611,18 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 				modelConfig.KVLoraRank)
 		}
 
+		// Hybrid-attention models (#1635): KV capacity is now sized over the
+		// full-attention (KV-bearing) layers only, but weight-memory and step time
+		// still charge all layers as full attention — so both are PESSIMISTIC for the
+		// linear-attention (KDA) layers (KDA weights #1638, KDA step time #1636).
+		if modelConfig.KVBearingLayers > 0 && modelConfig.KVBearingLayers < modelConfig.NumLayers {
+			logrus.Warnf("--latency-model: hybrid-attention model detected (%d of %d layers bear KV). "+
+				"KV capacity is sized over the full-attention layers only, but weight-memory and step-time "+
+				"estimation still charge all %d layers as full attention — both are PESSIMISTIC for the "+
+				"linear-attention layers. See docs/reference/models.md known approximations",
+				modelConfig.KVBearingLayers, modelConfig.NumLayers, modelConfig.NumLayers)
+		}
+
 		// KV capacity auto-calculation. Precedence: (1) --total-kv-blocks CLI flag,
 		// (2) auto-calculate from model architecture + GPU memory, (3) default value.
 		if !cmd.Flags().Changed("total-kv-blocks") {

@@ -69,6 +69,27 @@ func TestKVBytesPerToken_TPSharding(t *testing.T) {
 	}
 }
 
+func TestKVBytesPerToken_StandardBranch_HonorsKVBearingLayers(t *testing.T) {
+	// #1635 (F4): the standard MHA/GQA branch also sizes KV over EffectiveKVBearingLayers,
+	// not all NumLayers — so a non-MLA hybrid model does not populate KVBearingLayers only
+	// to have it silently ignored here. Byte-identical when KVBearingLayers == 0.
+	base := validDenseModelConfig() // non-MLA (KVLoraRank == 0) → standard branch
+	full, err := latency.KVBytesPerToken(base, 1)
+	if err != nil {
+		t.Fatalf("unexpected error (all layers): %v", err)
+	}
+
+	hybrid := base
+	hybrid.KVBearingLayers = base.NumLayers / 2 // half the layers bear KV
+	half, err := latency.KVBytesPerToken(hybrid, 1)
+	if err != nil {
+		t.Fatalf("unexpected error (hybrid): %v", err)
+	}
+	if half != full/2 {
+		t.Errorf("standard-branch KVBytesPerToken with half the layers KV-bearing = %v, want %v (half of all-layers %v)", half, full/2, full)
+	}
+}
+
 func TestKVBytesPerToken_LinearInNumLayers(t *testing.T) {
 	mc := validDenseModelConfig()
 	base, err := latency.KVBytesPerToken(mc, 1)

@@ -66,6 +66,13 @@ func (mc ModelConfig) EffectiveHeadDim() int {
 // (KDA weights: #1638; KDA step time: #1636).
 func (mc ModelConfig) EffectiveKVBearingLayers() int {
 	if mc.KVBearingLayers > 0 {
+		// Clamp to NumLayers: the KV-bearing (full-attention) layer count can never
+		// exceed the total layer count. A malformed config with KVBearingLayers >
+		// NumLayers would otherwise over-count KV worse than the all-layers default,
+		// so bound it defensively (mirrors FirstKDenseReplace's [0, numLayers] clamp).
+		if mc.NumLayers > 0 && mc.KVBearingLayers > mc.NumLayers {
+			return mc.NumLayers
+		}
 		return mc.KVBearingLayers
 	}
 	return mc.NumLayers

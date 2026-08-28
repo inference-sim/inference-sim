@@ -150,7 +150,12 @@ func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
 
 	// Effective head dim: explicit head_dim (F1) when set, else hidden/heads.
 	headDim := mc.EffectiveHeadDim()
-	perTokenKVBytesF := float64(mc.NumLayers) * 2.0 * float64(headDim) * float64(numKVHeads) * mc.BytesPerParam
+	// KV-bearing layer count (#1635): full-attention layers for a hybrid model, and
+	// == NumLayers for every non-hybrid model (byte-identical, INV-6). Applied on this
+	// standard MHA/GQA branch too — not only the MLA branch — so KVBearingLayers governs
+	// both attention paths consistently; a non-MLA hybrid would otherwise populate the
+	// field but have it silently ignored here.
+	perTokenKVBytesF := float64(mc.EffectiveKVBearingLayers()) * 2.0 * float64(headDim) * float64(numKVHeads) * mc.BytesPerParam
 	perTokenKVBytesPerGPUF := perTokenKVBytesF / float64(tp)
 
 	if perTokenKVBytesPerGPUF <= 0 {

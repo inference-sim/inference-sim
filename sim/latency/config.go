@@ -152,10 +152,16 @@ func (c *HFConfig) ResolveNumExperts() int {
 func (c *HFConfig) LinearAttnFullLayerCount() int {
 	lac, ok := c.Raw["linear_attn_config"].(map[string]any)
 	if !ok {
-		return 0
+		return 0 // not a hybrid-attention model
 	}
+	// linear_attn_config IS present, so this is a hybrid model. A missing / empty /
+	// wrong-typed full_attn_layers would silently fall back to all-layers KV sizing —
+	// reinstating the very ~3.9x over-count #1635 fixes — so warn loudly (R1) instead
+	// of degrading silently.
 	full, ok := lac["full_attn_layers"].([]any)
-	if !ok {
+	if !ok || len(full) == 0 {
+		logrus.Warnf("linear_attn_config present but full_attn_layers is missing/empty/non-list; " +
+			"falling back to all-layers KV sizing for this hybrid model — KV capacity may be over-counted")
 		return 0
 	}
 	return len(full)

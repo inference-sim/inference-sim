@@ -381,6 +381,15 @@ func TestEffectiveKVBearingLayers_WhenZero_ReturnsNumLayers(t *testing.T) {
 	}
 }
 
+func TestEffectiveKVBearingLayers_ClampedToNumLayers(t *testing.T) {
+	// #1635 (F2, defensive): a malformed config with KVBearingLayers > NumLayers must
+	// clamp to NumLayers, never over-count KV worse than the all-layers default.
+	mc := ModelConfig{NumLayers: 32, KVBearingLayers: 40}
+	if got := mc.EffectiveKVBearingLayers(); got != 32 {
+		t.Errorf("EffectiveKVBearingLayers() = %d, want 32 (clamped to NumLayers)", got)
+	}
+}
+
 func TestNewBatchConfig_PanicsOnInvalid(t *testing.T) {
 	tests := []struct {
 		name          string
