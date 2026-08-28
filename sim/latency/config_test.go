@@ -809,6 +809,142 @@ func TestGetModelConfig_KimiK3_ConstructsTrainedPhysics(t *testing.T) {
 	}
 }
 
+// TestGetModelConfig_KimiK3Hybrid_KVBearingLayers is the #1635 parse regression.
+// Kimi-K3 is a hybrid-attention model: its text_config.linear_attn_config lists 24
+// full_attn_layers (MLA, KV-bearing) and 69 kda_layers (linear attention, fixed-size
+// recurrent state, no growing KV) of 93 total. ParseHFConfig pivots text_config, so
+// linear_attn_config is reachable as a nested map; the KV-bearing count is
+// len(full_attn_layers) (24), distinct from NumLayers (93).
+//
+// GIVEN a K3-shaped config with linear_attn_config.full_attn_layers (24 entries)
+// WHEN the config is parsed
+// THEN KVBearingLayers == 24 and EffectiveKVBearingLayers() == 24 while NumLayers == 93.
+func TestGetModelConfig_KimiK3Hybrid_KVBearingLayers(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"text_config": {
+			"num_hidden_layers": 93,
+			"hidden_size": 7168,
+			"num_attention_heads": 96,
+			"num_key_value_heads": 96,
+			"vocab_size": 163840,
+			"intermediate_size": 14336,
+			"moe_intermediate_size": 2048,
+			"num_experts": 896,
+			"num_experts_per_token": 16,
+			"kv_lora_rank": 512,
+			"qk_rope_head_dim": 64,
+			"torch_dtype": "bfloat16",
+			"linear_attn_config": {
+				"full_attn_layers": [4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80, 84, 88, 92, 93],
+				"kda_layers": [1, 2, 3, 5, 6, 7],
+				"short_conv_kernel_size": 4,
+				"use_full_rank_gate": true
+			}
+		}
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error parsing config: %v", err)
+	}
+	if cfg.NumLayers != 93 {
+		t.Fatalf("precondition: expected NumLayers=93, got %d", cfg.NumLayers)
+	}
+	if !cfg.IsMLA() {
+		t.Fatalf("precondition: expected IsMLA()=true (kv_lora_rank=512), got false")
+	}
+	if cfg.KVBearingLayers != 24 {
+		t.Errorf("KVBearingLayers = %d, want 24 (len full_attn_layers)", cfg.KVBearingLayers)
+	}
+	if got := cfg.EffectiveKVBearingLayers(); got != 24 {
+		t.Errorf("EffectiveKVBearingLayers() = %d, want 24", got)
+	}
+}
+
+// TestGetModelConfig_NonHybrid_KVBearingLayersZero covers the #1635 INV-6 no-op: a
+// config WITHOUT linear_attn_config leaves KVBearingLayers at 0, so
+// EffectiveKVBearingLayers falls back to NumLayers — every existing model (standard
+// MHA/GQA and non-hybrid MLA like DeepSeek-V2-Lite / GLM-5.2) is byte-identical.
+func TestGetModelConfig_NonHybrid_KVBearingLayersZero(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 27,
+		"hidden_size": 2048,
+		"num_attention_heads": 16,
+		"num_key_value_heads": 16,
+		"vocab_size": 32000,
+		"intermediate_size": 10944,
+		"kv_lora_rank": 512,
+		"qk_rope_head_dim": 64,
+		"torch_dtype": "bfloat16"
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.KVBearingLayers != 0 {
+		t.Errorf("KVBearingLayers = %d, want 0 (no linear_attn_config)", cfg.KVBearingLayers)
+	}
+	if got := cfg.EffectiveKVBearingLayers(); got != cfg.NumLayers {
+		t.Errorf("EffectiveKVBearingLayers() = %d, want NumLayers=%d", got, cfg.NumLayers)
+	}
+}
+
+// TestLinearAttnFullLayerCount covers the #1635 nested-map parse helper directly,
+// including the robustness edge cases the end-to-end parse tests do not exercise:
+// an absent linear_attn_config, a present block with no full_attn_layers list, and
+// a full_attn_layers value of the wrong type all yield 0 (caller falls back to
+// NumLayers — INV-6). ParseHFConfig has already pivoted text_config, so
+// linear_attn_config sits at the top level of Raw.
+func TestLinearAttnFullLayerCount(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  map[string]any
+		want int
+	}{
+		{"absent", map[string]any{"num_hidden_layers": float64(93)}, 0},
+		{
+			"present_24",
+			map[string]any{"linear_attn_config": map[string]any{
+				"full_attn_layers": []any{4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80, 84, 88, 92, 93},
+			}},
+			24,
+		},
+		{
+			"present_no_full_attn_layers",
+			map[string]any{"linear_attn_config": map[string]any{"kda_layers": []any{1, 2, 3}}},
+			0,
+		},
+		{
+			"full_attn_layers_wrong_type",
+			map[string]any{"linear_attn_config": map[string]any{"full_attn_layers": float64(24)}},
+			0,
+		},
+		{
+			"linear_attn_config_wrong_type",
+			map[string]any{"linear_attn_config": "nope"},
+			0,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			hf := &latency.HFConfig{Raw: tc.raw}
+			if got := hf.LinearAttnFullLayerCount(); got != tc.want {
+				t.Errorf("LinearAttnFullLayerCount() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 // --- MoE validation tests (BC-12, BC-13, BC-14) ---
 
 func TestValidateRooflineConfig_NegativeWeightBytesPerParam_ReturnsError(t *testing.T) {

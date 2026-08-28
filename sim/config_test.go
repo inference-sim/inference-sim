@@ -359,6 +359,37 @@ func TestIsMLA(t *testing.T) {
 	}
 }
 
+func TestEffectiveKVBearingLayers_WhenSet_ReturnsField(t *testing.T) {
+	// #1635 (BC-1): GIVEN a hybrid-attention model whose KV-bearing (full-attention)
+	// layer count is fewer than its total layers (Kimi-K3: 24 MLA layers of 93; the
+	// other 69 are linear-attention KDA layers with O(1)-in-sequence state and no
+	// growing KV), THEN EffectiveKVBearingLayers returns the KV-bearing count, not
+	// NumLayers.
+	mc := ModelConfig{NumLayers: 93, KVBearingLayers: 24}
+	if got := mc.EffectiveKVBearingLayers(); got != 24 {
+		t.Errorf("EffectiveKVBearingLayers() = %d, want 24 (full-attention layers)", got)
+	}
+}
+
+func TestEffectiveKVBearingLayers_WhenZero_ReturnsNumLayers(t *testing.T) {
+	// #1635 (BC-2, INV-6): GIVEN KVBearingLayers == 0 (sentinel / not a hybrid
+	// model), THEN EffectiveKVBearingLayers falls back to NumLayers — byte-identical
+	// to pre-change for every standard-MHA and non-hybrid MLA model.
+	mc := ModelConfig{NumLayers: 32, KVBearingLayers: 0}
+	if got := mc.EffectiveKVBearingLayers(); got != 32 {
+		t.Errorf("EffectiveKVBearingLayers() = %d, want 32 (fallback to NumLayers)", got)
+	}
+}
+
+func TestEffectiveKVBearingLayers_ClampedToNumLayers(t *testing.T) {
+	// #1635 (F2, defensive): a malformed config with KVBearingLayers > NumLayers must
+	// clamp to NumLayers, never over-count KV worse than the all-layers default.
+	mc := ModelConfig{NumLayers: 32, KVBearingLayers: 40}
+	if got := mc.EffectiveKVBearingLayers(); got != 32 {
+		t.Errorf("EffectiveKVBearingLayers() = %d, want 32 (clamped to NumLayers)", got)
+	}
+}
+
 func TestNewBatchConfig_PanicsOnInvalid(t *testing.T) {
 	tests := []struct {
 		name          string

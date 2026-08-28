@@ -63,7 +63,9 @@ var swiGLUActivations = map[string]bool{
 // model config and tensor parallelism degree. This is used for both KV cache
 // capacity sizing and PD transfer duration estimation.
 //
-// The formula is: NumLayers × 2 (K+V) × headDim × numKVHeads × BytesPerParam / TP
+// The formula is: EffectiveKVBearingLayers × 2 (K+V) × headDim × numKVHeads × BytesPerParam / TP
+// (EffectiveKVBearingLayers equals NumLayers for every non-hybrid model, INV-6; for a
+// hybrid-attention model it is the full-attention layer count — #1635.)
 //
 // Uses BytesPerParam (compute/activation dtype), not WeightBytesPerParam, since
 // KV cache is stored at compute precision regardless of weight quantization.
@@ -111,7 +113,13 @@ func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
 	// hidden%heads guard is skipped (the latent path never uses that quotient).
 	if mc.IsMLA() {
 		latentWidth := mc.KVLoraRank + mc.QKRopeHeadDim
-		perTokenKVBytesF := float64(mc.NumLayers) * float64(latentWidth) * mc.BytesPerParam
+		// Size the compressed latent over the KV-bearing (full-attention) layers.
+		// For a hybrid-attention MLA model (Kimi-K3) only the full-attention layers
+		// store a per-token KV cache; the linear-attention (KDA) layers keep a
+		// fixed-size recurrent state and bear no growing KV (#1635). For a non-hybrid
+		// MLA model (DeepSeek-V2/V3, GLM-5.2) EffectiveKVBearingLayers == NumLayers,
+		// so this is byte-identical to the pre-#1635 all-layers value (INV-6).
+		perTokenKVBytesF := float64(mc.EffectiveKVBearingLayers()) * float64(latentWidth) * mc.BytesPerParam
 		// Public-API boundary guard: normal configs are validated at parse time
 		// (config.go rejects negative shape fields), but a hand-built ModelConfig
 		// with a negative QKRopeHeadDim could make latentWidth <= 0.
@@ -144,7 +152,12 @@ func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
 
 	// Effective head dim: explicit head_dim (F1) when set, else hidden/heads.
 	headDim := mc.EffectiveHeadDim()
-	perTokenKVBytesF := float64(mc.NumLayers) * 2.0 * float64(headDim) * float64(numKVHeads) * mc.BytesPerParam
+	// KV-bearing layer count (#1635): full-attention layers for a hybrid model, and
+	// == NumLayers for every non-hybrid model (byte-identical, INV-6). Applied on this
+	// standard MHA/GQA branch too — not only the MLA branch — so KVBearingLayers governs
+	// both attention paths consistently; a non-MLA hybrid would otherwise populate the
+	// field but have it silently ignored here.
+	perTokenKVBytesF := float64(mc.EffectiveKVBearingLayers()) * 2.0 * float64(headDim) * float64(numKVHeads) * mc.BytesPerParam
 	perTokenKVBytesPerGPUF := perTokenKVBytesF / float64(tp)
 
 	if perTokenKVBytesPerGPUF <= 0 {
