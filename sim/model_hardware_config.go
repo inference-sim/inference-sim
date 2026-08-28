@@ -83,7 +83,9 @@ func (mc ModelConfig) EffectiveKVBearingLayers() int {
 // weight memory calculations. Returns WeightBytesPerParam when explicitly set
 // (> 0), otherwise falls back to BytesPerParam (the compute/activation dtype).
 // This decouples weight bandwidth (often quantized, e.g. 0.5 for W4A16) from
-// KV cache and activation memory (which use the compute dtype, e.g. 2.0 for bfloat16).
+// activation memory (which uses the compute dtype, e.g. 2.0 for bfloat16). KV-cache
+// storage precision is likewise decoupled from the compute dtype — see
+// EffectiveKVBytesPerParam (#1565).
 func (mc ModelConfig) EffectiveWeightBytesPerParam() float64 {
 	if mc.WeightBytesPerParam > 0 {
 		return mc.WeightBytesPerParam

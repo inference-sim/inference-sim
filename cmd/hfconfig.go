@@ -262,7 +262,7 @@ func applyWeightPrecisionFallback(mc *sim.ModelConfig, model string, hfRaw map[s
 
 	// Log quantization info when weight precision differs from compute precision
 	if mc.WeightBytesPerParam > 0 && mc.WeightBytesPerParam != mc.BytesPerParam {
-		logrus.Infof("quantized model detected — weight precision: %.2f bytes/param, compute/KV precision: %.1f bytes/param",
+		logrus.Infof("quantized model detected — weight precision: %.2f bytes/param, compute/activation precision: %.1f bytes/param",
 			mc.WeightBytesPerParam, mc.BytesPerParam)
 	} else if mc.WeightBytesPerParam == 0 {
 		// Warn if quantization_config detected but neither parser nor name yielded precision
