@@ -432,6 +432,7 @@ Example:
 				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing, but failed to extract ModelConfig: %v", mcErr)
 			}
 			applyWeightPrecisionFallback(mc, model, hfConfig.Raw)
+			applyKVCacheDtype(mc, kvCacheDtype)
 			if mc.BytesPerParam <= 0 {
 				logrus.Fatalf("PD disaggregation: could not determine model precision (BytesPerParam=%v) from %s — ensure torch_dtype or dtype is present in config.json", mc.BytesPerParam, hfPath)
 			}

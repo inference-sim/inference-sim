@@ -83,6 +83,7 @@ var (
 	maxModelLen               int64     // CLI --max-model-len: max total sequence length (input + output); 0 = unlimited
 	// CLI flags for model, GPU, TP
 	model                string // LLM name
+	kvCacheDtype         string // CLI --kv-cache-dtype: KV-cache storage precision (auto|fp8|fp8_e4m3|fp8_e5m2|bf16|fp16|fp32); "auto" follows compute dtype (vLLM CacheConfig.cache_dtype parity, #1565)
 	gpu                  string // GPU type
 	tensorParallelism    int    // TP value
 	dataParallelism      int    // DP value (MoE only; trained-physics backend only)
@@ -446,6 +447,12 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	if blockSizeTokens <= 0 {
 		logrus.Fatalf("--block-size-in-tokens must be > 0, got %d", blockSizeTokens)
 	}
+	// Fail fast on an unrecognized --kv-cache-dtype (#1565) before any KV auto-calc,
+	// regardless of backend. "auto" (the default) is a no-op (INV-6). The mapping to
+	// bytes is applied to the ModelConfig on the analytical path below.
+	if _, ok := latency.KVCacheDtypeToBytes(kvCacheDtype); !ok {
+		logrus.Fatalf("--kv-cache-dtype %q is not recognized; valid values: auto, fp8, fp8_e4m3, fp8_e5m2, bf16, bfloat16, fp16, fp32", kvCacheDtype)
+	}
 
 	var modelConfig sim.ModelConfig
 	var hwConfig sim.HardwareCalib
@@ -588,6 +595,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		hwConfig = hc
 
 		applyWeightPrecisionFallback(&modelConfig, model, hfConfig.Raw)
+		applyKVCacheDtype(&modelConfig, kvCacheDtype)
 
 		if backend == "roofline" && modelConfig.IsMoE() {
 			logrus.Infof("--latency-model: MoE model detected (%d experts, top_%d). "+
@@ -1144,6 +1152,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&enableExpertParallel, "enable-expert-parallel", false, "Enable expert parallelism for MoE models (mirrors vLLM --enable-expert-parallel; --latency-model trained-physics only)")
 	cmd.Flags().StringVar(&moeCommBackend, "moe-comm-backend", "", "MoE all-to-all comm backend for dispatch/combine cost (mirrors vLLM VLLM_ALL2ALL_BACKEND: naive, allgather_reducescatter [default], pplx, deepep_high_throughput, deepep_low_latency, mori, flashinfer_all2allv; MoE + --latency-model trained-physics + --dp > 1)")
 	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "trained-physics", "Latency model backend: trained-physics (default), roofline")
+	cmd.Flags().StringVar(&kvCacheDtype, "kv-cache-dtype", "auto", "KV-cache storage precision, independent of compute and weight quantization (vLLM --kv-cache-dtype parity): auto (default; follows the model/compute dtype), fp8, fp8_e4m3, fp8_e5m2 (1 byte/elem → ~2x KV capacity under bf16 compute), bf16, fp16, fp32. Only affects analytical backends' auto KV-block sizing (and PD KV-transfer sizing); re-supply identically on replay for run/replay parity (INV-13).")
 	cmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for analytical backends when not set.")
 
 	// Cluster config
@@ -1511,6 +1520,7 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing, but failed to extract ModelConfig: %v", mcErr)
 			}
 			applyWeightPrecisionFallback(mc, model, hfConfig.Raw)
+			applyKVCacheDtype(mc, kvCacheDtype)
 			if mc.BytesPerParam <= 0 {
 				logrus.Fatalf("PD disaggregation: could not determine model precision (BytesPerParam=%v) from %s — ensure torch_dtype or dtype is present in config.json", mc.BytesPerParam, hfPath)
 			}

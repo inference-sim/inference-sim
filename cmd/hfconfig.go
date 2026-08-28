@@ -276,6 +276,32 @@ func applyWeightPrecisionFallback(mc *sim.ModelConfig, model string, hfRaw map[s
 	}
 }
 
+// applyKVCacheDtype resolves the --kv-cache-dtype flag to a KV-cache storage
+// precision (bytes/param) and records it on mc.KVBytesPerParam (#1565). It mirrors
+// applyWeightPrecisionFallback on the KV axis and is called at the same sites, so KV
+// precision rides alongside weight precision wherever a ModelConfig is resolved.
+//
+// "auto" (the default) maps to 0, leaving KVBytesPerParam unset so
+// EffectiveKVBytesPerParam falls back to the compute/activation dtype (BytesPerParam)
+// — byte-identical to a build without the flag (INV-6). An explicit fp8 KV dtype under
+// bf16 compute sets 1.0, halving per-token KV bytes (~2x KV block capacity), matching
+// vLLM's --kv-cache-dtype fp8. KV precision is independent of weight quantization. mc
+// is modified in place; an unrecognized value is a hard error (R1, CLI boundary).
+func applyKVCacheDtype(mc *sim.ModelConfig, kvCacheDtype string) {
+	bytes, ok := latency.KVCacheDtypeToBytes(kvCacheDtype)
+	if !ok {
+		logrus.Fatalf("--kv-cache-dtype %q is not recognized; valid values: auto, fp8, fp8_e4m3, fp8_e5m2, bf16, bfloat16, fp16, fp32", kvCacheDtype)
+	}
+	if bytes <= 0 {
+		return // "auto": follow the compute dtype (KVBytesPerParam stays 0), INV-6.
+	}
+	mc.KVBytesPerParam = bytes
+	if mc.BytesPerParam > 0 && bytes != mc.BytesPerParam {
+		logrus.Infof("--kv-cache-dtype %q: KV cache stored at %.2f byte(s)/param vs compute/activation %.1f byte(s)/param (independent of weight precision)",
+			kvCacheDtype, bytes, mc.BytesPerParam)
+	}
+}
+
 // bundledModelConfigDir returns the expected path for bundled model configs.
 // Model names like "meta-llama/llama-3.1-8b-instruct" map to "<baseDir>/model_configs/llama-3.1-8b-instruct/".
 // When baseDir is empty, returns a relative path (resolved relative to CWD).

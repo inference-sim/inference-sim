@@ -323,6 +323,41 @@ func TestEffectiveWeightBytesPerParam_BothZero_ReturnsZero(t *testing.T) {
 	}
 }
 
+func TestEffectiveKVBytesPerParam_WhenSet_ReturnsKVValue(t *testing.T) {
+	// #1565: GIVEN KVBytesPerParam > 0 (e.g. --kv-cache-dtype fp8 → 1.0 under bf16
+	// compute), THEN EffectiveKVBytesPerParam returns the explicit KV precision,
+	// decoupled from the compute/activation dtype (BytesPerParam).
+	mc := ModelConfig{BytesPerParam: 2.0, KVBytesPerParam: 1.0}
+	got := mc.EffectiveKVBytesPerParam()
+	if got != 1.0 {
+		t.Errorf("expected 1.0 when KVBytesPerParam set, got %v", got)
+	}
+}
+
+func TestEffectiveKVBytesPerParam_WhenZero_ReturnsBytesPerParam(t *testing.T) {
+	// #1565: GIVEN KVBytesPerParam == 0 (the "auto" sentinel / flag absent), THEN
+	// EffectiveKVBytesPerParam falls back to the compute dtype BytesPerParam — so the
+	// KV footprint is byte-identical to a build without the flag (INV-6).
+	mc := ModelConfig{BytesPerParam: 2.0, KVBytesPerParam: 0}
+	got := mc.EffectiveKVBytesPerParam()
+	if got != 2.0 {
+		t.Errorf("expected 2.0 (fallback to BytesPerParam), got %v", got)
+	}
+}
+
+func TestEffectiveKVBytesPerParam_IndependentOfWeightPrecision(t *testing.T) {
+	// #1565: KV storage precision and weight quantization are independent vLLM engine
+	// args. A W4A16 model (WeightBytesPerParam=0.5) with fp8 KV (KVBytesPerParam=1.0)
+	// under bf16 compute reports 1.0 for KV and 0.5 for weights — neither leaks.
+	mc := ModelConfig{BytesPerParam: 2.0, WeightBytesPerParam: 0.5, KVBytesPerParam: 1.0}
+	if got := mc.EffectiveKVBytesPerParam(); got != 1.0 {
+		t.Errorf("expected KV precision 1.0, got %v", got)
+	}
+	if got := mc.EffectiveWeightBytesPerParam(); got != 0.5 {
+		t.Errorf("expected weight precision 0.5, got %v", got)
+	}
+}
+
 func TestEffectiveHeadDim_WhenSet_ReturnsHeadDim(t *testing.T) {
 	// F1 (BC-2): GIVEN explicit HeadDim > 0 (e.g. GLM-5.2: head_dim=192 while
 	// hidden/heads=6144/64=96), THEN EffectiveHeadDim returns the explicit value.

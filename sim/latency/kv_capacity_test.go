@@ -122,6 +122,147 @@ func TestKVBytesPerToken_LinearInBytesPerParam(t *testing.T) {
 	}
 }
 
+func TestKVBytesPerToken_FP8_HalvesStandardBranch(t *testing.T) {
+	// #1565: GIVEN a standard MHA/GQA model at bf16 compute (BytesPerParam=2), WHEN
+	// KV storage precision is fp8 (KVBytesPerParam=1), THEN per-token KV bytes are
+	// exactly half the auto (KVBytesPerParam=0) value — the ~2x KV-capacity win.
+	auto := validDenseModelConfig() // KVBytesPerParam == 0 → follows compute dtype (2)
+	autoBytes, err := latency.KVBytesPerToken(auto, 1)
+	if err != nil {
+		t.Fatalf("unexpected error (auto): %v", err)
+	}
+	fp8 := auto
+	fp8.KVBytesPerParam = 1.0
+	fp8Bytes, err := latency.KVBytesPerToken(fp8, 1)
+	if err != nil {
+		t.Fatalf("unexpected error (fp8): %v", err)
+	}
+	if fp8Bytes != autoBytes/2 {
+		t.Errorf("fp8 KV should halve per-token bytes on the standard branch: got %v, want %v (half of auto %v)", fp8Bytes, autoBytes/2, autoBytes)
+	}
+}
+
+func TestKVBytesPerToken_FP8_HalvesMLABranch(t *testing.T) {
+	// #1565: the KV-storage-precision split applies to the MLA compressed-latent branch
+	// too (GLM-5.2-FP8 / DeepSeek-V3.2 with --kv-cache-dtype fp8). fp8 KV halves the
+	// per-token latent bytes vs the auto (compute-dtype) value, and stays TP-invariant.
+	auto := sim.ModelConfig{
+		NumLayers: 27, HiddenDim: 2048, NumHeads: 16, NumKVHeads: 16,
+		IntermediateDim: 10944, BytesPerParam: 2.0, KVLoraRank: 512, QKRopeHeadDim: 64,
+	}
+	fp8 := auto
+	fp8.KVBytesPerParam = 1.0
+	for _, tp := range []int{1, 2, 8} {
+		autoBytes, err := latency.KVBytesPerToken(auto, tp)
+		if err != nil {
+			t.Fatalf("unexpected error (auto, TP=%d): %v", tp, err)
+		}
+		fp8Bytes, err := latency.KVBytesPerToken(fp8, tp)
+		if err != nil {
+			t.Fatalf("unexpected error (fp8, TP=%d): %v", tp, err)
+		}
+		if fp8Bytes != autoBytes/2 {
+			t.Errorf("fp8 KV should halve MLA per-token bytes at TP=%d: got %v, want %v", tp, fp8Bytes, autoBytes/2)
+		}
+	}
+}
+
+func TestKVBytesPerToken_AutoByteIdenticalToCompute(t *testing.T) {
+	// INV-6: KVBytesPerParam == 0 ("auto" / flag absent) MUST be byte-identical to the
+	// pre-#1565 behavior, which multiplied by BytesPerParam directly. Explicitly setting
+	// KVBytesPerParam to the compute dtype must give the same value as leaving it 0.
+	base := validDenseModelConfig() // BytesPerParam == 2
+	autoBytes, err := latency.KVBytesPerToken(base, 1)
+	if err != nil {
+		t.Fatalf("unexpected error (auto): %v", err)
+	}
+	pinned := base
+	pinned.KVBytesPerParam = base.BytesPerParam // pin KV to compute dtype
+	pinnedBytes, err := latency.KVBytesPerToken(pinned, 1)
+	if err != nil {
+		t.Fatalf("unexpected error (pinned): %v", err)
+	}
+	if autoBytes != pinnedBytes {
+		t.Errorf("auto (KVBytesPerParam=0) must equal KV pinned to compute dtype: %v vs %v", autoBytes, pinnedBytes)
+	}
+}
+
+func TestKVBytesPerToken_InvalidKVBytesPerParam(t *testing.T) {
+	// #1565: an explicitly-set KV precision must be a valid positive number; a
+	// hand-built ModelConfig with a negative/NaN/Inf KVBytesPerParam errors (R1),
+	// mirroring the WeightBytesPerParam guard.
+	for _, tc := range []struct {
+		name string
+		val  float64
+	}{
+		{"negative", -1.0},
+		{"NaN", math.NaN()},
+		{"Inf", math.Inf(1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mc := validDenseModelConfig()
+			mc.KVBytesPerParam = tc.val
+			_, err := latency.KVBytesPerToken(mc, 1)
+			if err == nil || !strings.Contains(err.Error(), "KVBytesPerParam") {
+				t.Errorf("expected KVBytesPerParam error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestCalculateKVBlocks_FP8_RoughlyDoublesCapacity(t *testing.T) {
+	// #1565 (headline): GIVEN a dense model at bf16 compute, WHEN --kv-cache-dtype fp8
+	// halves the per-token KV byte width, THEN the auto-computed KV block count roughly
+	// doubles (subject to integer truncation and the fixed weight/activation overhead).
+	mc := validDenseModelConfig()
+	hc := validHWConfig()
+	params := validDenseKVParams()
+	blockSize := int64(16)
+
+	autoBlocks, err := latency.CalculateKVBlocks(mc, hc, 1, 1, blockSize, 0.9, params)
+	if err != nil {
+		t.Fatalf("unexpected error (auto): %v", err)
+	}
+	fp8 := mc
+	fp8.KVBytesPerParam = 1.0
+	fp8Blocks, err := latency.CalculateKVBlocks(fp8, hc, 1, 1, blockSize, 0.9, params)
+	if err != nil {
+		t.Fatalf("unexpected error (fp8): %v", err)
+	}
+	if fp8Blocks <= autoBlocks {
+		t.Fatalf("fp8 KV must yield more blocks than bf16 KV: fp8=%d auto=%d", fp8Blocks, autoBlocks)
+	}
+	// Allocatable bytes are identical (weights/activation overhead unchanged); only
+	// per-block bytes halve, so blocks ~double. Allow a small tolerance for truncation.
+	ratio := float64(fp8Blocks) / float64(autoBlocks)
+	if ratio < 1.95 || ratio > 2.05 {
+		t.Errorf("fp8 KV blocks should be ~2x bf16: fp8=%d auto=%d (ratio %.3f)", fp8Blocks, autoBlocks, ratio)
+	}
+}
+
+func TestCalculateKVBlocks_AutoByteIdentical(t *testing.T) {
+	// INV-6: the default (KVBytesPerParam == 0) block count is byte-identical to a build
+	// without the flag — the auto path never perturbs the historical capacity.
+	mc := validDenseModelConfig()
+	hc := validHWConfig()
+	params := validDenseKVParams()
+	blockSize := int64(16)
+
+	autoBlocks, err := latency.CalculateKVBlocks(mc, hc, 1, 1, blockSize, 0.9, params)
+	if err != nil {
+		t.Fatalf("unexpected error (auto): %v", err)
+	}
+	pinned := mc
+	pinned.KVBytesPerParam = mc.BytesPerParam // "auto" resolves to the compute dtype
+	pinnedBlocks, err := latency.CalculateKVBlocks(pinned, hc, 1, 1, blockSize, 0.9, params)
+	if err != nil {
+		t.Fatalf("unexpected error (pinned): %v", err)
+	}
+	if autoBlocks != pinnedBlocks {
+		t.Errorf("auto block count must equal KV-pinned-to-compute count: %d vs %d", autoBlocks, pinnedBlocks)
+	}
+}
+
 func TestKVBytesPerToken_MHA_FallbackToNumHeads(t *testing.T) {
 	mc := validDenseModelConfig()
 	mc.NumKVHeads = 0 // MHA: should use NumHeads (32)
