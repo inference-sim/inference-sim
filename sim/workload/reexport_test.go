@@ -242,3 +242,62 @@ func TestReExportClosedLoopRecords_Deterministic(t *testing.T) {
 		t.Errorf("records differ across identical calls (INV-6):\nA=%+v\nB=%+v", a, b)
 	}
 }
+
+// TestReExportClosedLoopRecords_StatusMapping covers reexportStatus's non-"ok" branches
+// (susiejojo non-blocking observation on #1645): a completed round → "ok", a terminal
+// timed-out round → "timeout", a still-running (incomplete) round → "incomplete". Status
+// is informational (the replay loader does not read it), but the mapping should be pinned.
+func TestReExportClosedLoopRecords_StatusMapping(t *testing.T) {
+	// Accumulate session s1: round 0 completed, round 1 timed out (a terminal round —
+	// OnComplete cancels the session, so a timeout is the session's last captured round).
+	r0 := mkReq("request_0", "s1", 0, 100, 20, 0, sim.StateCompleted)
+	r1 := mkReq("session_s1_round_1_1", "s1", 1, 140, 10, 1_000_000, sim.StateTimedOut)
+	// Single-round session s2 still running at horizon → "incomplete" (default branch).
+	inc := mkReq("request_2", "s2", 0, 50, 5, 0, sim.StateRunning)
+
+	recs, err := ReExportClosedLoopRecords([]*sim.Request{r0, r1, inc}, map[string]int64{"session_s1_round_1_1": 500}, "accumulate")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Deterministic emission order: session s1 (rounds 0,1) then s2 (round 0).
+	if len(recs) != 3 {
+		t.Fatalf("expected 3 records, got %d", len(recs))
+	}
+	want := []struct {
+		session string
+		round   int
+		status  string
+	}{
+		{"s1", 0, "ok"},
+		{"s1", 1, "timeout"},
+		{"s2", 0, "incomplete"},
+	}
+	for i, w := range want {
+		if recs[i].SessionID != w.session || recs[i].RoundIndex != w.round {
+			t.Fatalf("record %d = %s/round %d, want %s/round %d", i, recs[i].SessionID, recs[i].RoundIndex, w.session, w.round)
+		}
+		if recs[i].Status != w.status {
+			t.Errorf("record %d (%s round %d): Status = %q, want %q", i, w.session, w.round, recs[i].Status, w.status)
+		}
+	}
+}
+
+// TestAccumulatedOutputLen_ClampsNegative pins accumulatedOutputLen's clamp-at-0
+// (susiejojo non-blocking observation on #1645): a ProgressIndex below InputLen —
+// unreachable under current sim guarantees, but the clamp must hold — yields 0, not a
+// negative that would corrupt the delta law; a normal ProgressIndex yields the difference.
+func TestAccumulatedOutputLen_ClampsNegative(t *testing.T) {
+	neg := &sim.Request{InputTokens: make([]sim.TokenID, 100), ProgressIndex: 40}
+	if got := accumulatedOutputLen(neg); got != 0 {
+		t.Errorf("accumulatedOutputLen with ProgressIndex(40) < InputLen(100) = %d, want 0 (clamped)", got)
+	}
+	normal := &sim.Request{InputTokens: make([]sim.TokenID, 100), ProgressIndex: 118}
+	if got := accumulatedOutputLen(normal); got != 18 {
+		t.Errorf("accumulatedOutputLen with ProgressIndex(118), InputLen(100) = %d, want 18", got)
+	}
+	// Exactly at the boundary (no output generated yet) → 0.
+	boundary := &sim.Request{InputTokens: make([]sim.TokenID, 100), ProgressIndex: 100}
+	if got := accumulatedOutputLen(boundary); got != 0 {
+		t.Errorf("accumulatedOutputLen at ProgressIndex==InputLen = %d, want 0", got)
+	}
+}
