@@ -232,7 +232,25 @@ Replay also accepts all shared simulation config flags (`--latency-model`, `--to
 | **Horizon** | From `--horizon` flag or spec | Auto-computed as 2x max arrival time (override with `--horizon`) |
 | **Output format** | Full `MetricsOutput` JSON | `SimResult` JSON array (request_id, ttft_us, e2e_us, input_tokens, output_tokens) |
 | **Session support** | Session manager creates follow-ups | Session structure encoded in trace (no manager needed) |
-| **Trace export** | `--trace-output` (header `mode: "generated"`) | `--trace-output` (header `mode: "replayed"`) |
+| **Trace export** | `--trace-output` (header `mode: "generated"`) | `--trace-output` (header `mode: "replayed"`); see restrictions below |
+
+!!! warning "`--trace-output` cannot re-export closed-loop follow-up rounds"
+    Replay **rejects `--trace-output` (fails fast, non-zero exit)** in two cases,
+    because a re-export sources only the round-0 request slice — the follow-up rounds
+    generated during a closed-loop run are never in the exported set:
+
+    - **Pool mode** (`--concurrent-sessions > 0`): the export would capture only the
+      initial round-0 wave, not the pooled/cloned sessions.
+    - **Plain closed-loop replay of an accumulate corpus** (`--session-mode
+      closed-loop` on a header with `session_context_growth: accumulate` — e.g. a
+      `blis convert otel` / `blis convert weka` corpus): besides dropping the
+      follow-ups, the export would emit absolute per-round `input_tokens` instead of
+      the deltas an accumulate loader expects and omit `session_context_growth`, so it
+      could not be re-replayed faithfully.
+
+    To re-export, replay the **original converter corpus** rather than a prior
+    closed-loop replay's output. (Faithful closed-loop re-export is a planned
+    follow-up.)
 
 !!! warning "Latency model matters"
     The replay command simulates token generation using the configured latency model. For accurate calibration, choose the latency model that best matches the server's behavior. See [Latency Models](latency-models.md) for guidance on selecting between roofline and trained-physics modes.
@@ -339,7 +357,7 @@ To calibrate real vs simulated over the same corpus:
 ```bash
 blis replay --trace-header corpus.yaml --trace-data corpus.csv \
   --model qwen/qwen3-14b --concurrent-sessions 8 --total-sessions 200 \
-  --trace-output sim
+  --results-path sim.results.json
 blis calibrate --trace-header observed.yaml --trace-data observed.csv \
   --sim-results sim.results.json --report calibration.json
 ```

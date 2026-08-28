@@ -148,6 +148,21 @@ Example:
 		if replayConcurrentSessions > 0 && replayTraceOutput != "" {
 			logrus.Fatalf("--trace-output is not supported with --concurrent-sessions (pool mode): a re-export would capture only the initial %d-session wave, not all pooled sessions. Re-run without --trace-output.", replayConcurrentSessions)
 		}
+		// Plain closed-loop + accumulate + output artifacts: the same silent-truncation
+		// hazard the pool guard above rejects (R1 / INV-13), for --concurrent-sessions == 0
+		// (#1621). A closed-loop re-export sources only the round-0 request slice (the
+		// export block below builds records from `requests`, never the generated
+		// follow-up rounds collected in followUpRequests); RequestsToTraceRecords then
+		// re-emits each per-round input_tokens as an absolute suffix length rather than
+		// the delta an accumulate loader expects; and the re-export header never carries
+		// session_context_growth. The exported trace therefore could NOT be re-replayed
+		// to reproduce the original per-round input. Reject it outright until faithful
+		// re-export (issue #1621, option (a)) lands. Accumulate implies closed-loop here
+		// (guaranteed by the gate above), and pool mode is already handled by the guard
+		// above, so this covers the remaining plain closed-loop case.
+		if traceData.Header.SessionContextGrowth == "accumulate" && replayConcurrentSessions == 0 && replayTraceOutput != "" {
+			logrus.Fatalf("--trace-output is not supported with --session-mode closed-loop on a session_context_growth=accumulate trace: the re-export would source only the round-0 requests (dropping the generated follow-up rounds), emit absolute per-round input_tokens instead of deltas, and omit session_context_growth from the header, so the result could not be re-replayed to reproduce the original per-round input. Re-run without --trace-output; to re-export, replay the original converter corpus (e.g. from `blis convert otel`) instead.")
+		}
 		if replayConcurrentSessions > 0 && resultsPath != "" {
 			logrus.Warnf("--results-path with --concurrent-sessions (pool mode): per-request results cover only the original corpus sessions' round-0; duplicated (clone) sessions and follow-up rounds are excluded (non-numeric request ids).")
 		}
