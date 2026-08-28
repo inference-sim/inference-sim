@@ -434,6 +434,37 @@ func TestReview_ArchonFailsWithPlanWarning_KeepsWarning(t *testing.T) {
 	}
 }
 
+// The runner is self-hosted and the output path is fixed, so a body left by an earlier run
+// must not survive into a run that aborts before composing its own.
+func TestReview_AbortedRun_LeavesNoStaleBody(t *testing.T) {
+	repo := newRepo(t)
+	base := gitCmd(t, repo, "rev-parse", "HEAD")
+	scratch := t.TempDir()
+	outputFile := filepath.Join(scratch, "archon-output.md")
+	if err := os.WriteFile(outputFile, []byte("## Stale review from an earlier run\n"), 0o644); err != nil {
+		t.Fatalf("seeding a stale body: %v", err)
+	}
+
+	// An unset RUN_URL aborts the script after the truncation but before any body exists.
+	got := runReview(t, repo, map[string]string{
+		"BASE_SHA":    base,
+		"HEAD_SHA":    base,
+		"OUTPUT_FILE": outputFile,
+		"RUN_URL":     "",
+	}, nil)
+
+	if got.exitCode == 0 {
+		t.Fatalf("exit code = 0, want non-zero for a missing RUN_URL")
+	}
+	body, err := os.ReadFile(outputFile)
+	if err != nil {
+		t.Fatalf("reading the output file: %v", err)
+	}
+	if len(body) != 0 {
+		t.Errorf("stale body survived an aborted run: %q", body)
+	}
+}
+
 func TestReview_MissingRequiredEnv_ExitsTwo(t *testing.T) {
 	repo, _, head := planRepo(t, "base")
 

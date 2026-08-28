@@ -27,20 +27,26 @@ set -uo pipefail
 
 readonly MAX_COMMENT_CHARS=60000   # GitHub's limit is 65536; leave room for the notice
 
-for var in ARCHON_BIN BASE_SHA HEAD_SHA DECL_FILE OUTPUT_FILE RUN_URL; do
-  if [[ -z "${!var:-}" ]]; then
-    echo "usage: $0 (required environment variable $var is unset)" >&2
-    exit 2
-  fi
+usage() { echo "usage: $0 (required environment variable $1 is unset)" >&2; exit 2; }
+
+# Absolutise the caller's file arguments before anchoring to the repository root.
+abspath() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$PWD" "$1" ;; esac; }
+
+# OUTPUT_FILE is handled first so it can be truncated before anything else can fail. The
+# runner is self-hosted and the path is fixed, so a body left by an earlier run must not be
+# posted if this one exits before composing its own.
+[[ -n "${OUTPUT_FILE:-}" ]] || usage OUTPUT_FILE
+OUTPUT_FILE=$(abspath "$OUTPUT_FILE")
+: > "$OUTPUT_FILE" || { echo "could not write to $OUTPUT_FILE" >&2; exit 2; }
+
+for var in ARCHON_BIN BASE_SHA HEAD_SHA DECL_FILE RUN_URL; do
+  [[ -n "${!var:-}" ]] || usage "$var"
 done
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) \
   || { echo "could not locate the script directory" >&2; exit 2; }
 
-# Absolutise the caller's file arguments before anchoring to the repository root.
-abspath() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$PWD" "$1" ;; esac; }
 DECL_FILE=$(abspath "$DECL_FILE")
-OUTPUT_FILE=$(abspath "$OUTPUT_FILE")
 
 repo_root=$(git rev-parse --show-toplevel) \
   || { echo "not inside a git repository" >&2; exit 2; }
