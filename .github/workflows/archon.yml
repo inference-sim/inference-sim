@@ -116,23 +116,33 @@ jobs:
             // body is usually the ONLY source: GitHub links closing issues only for a PR
             // targeting the default branch, so a hole PR against a feature branch links none.
             const parts = [process.env.PR_BODY || ''];
-            const res = await github.graphql(
-              `query($owner: String!, $repo: String!, $num: Int!) {
-                 repository(owner: $owner, name: $repo) {
-                   pullRequest(number: $num) {
-                     closingIssuesReferences(first: 10) { nodes { body } }
+            // Losing this fallback costs at most a warning on the PR, whereas failing the
+            // step costs the whole review — so neither a thrown error (transient API failure,
+            // missing scope) nor a malformed response is allowed to propagate.
+            let nodes;
+            let failure;
+            try {
+              const res = await github.graphql(
+                `query($owner: String!, $repo: String!, $num: Int!) {
+                   repository(owner: $owner, name: $repo) {
+                     pullRequest(number: $num) {
+                       closingIssuesReferences(first: 10) { nodes { body } }
+                     }
                    }
-                 }
-               }`,
-              { owner: context.repo.owner, repo: context.repo.repo, num: context.issue.number }
-            );
-            // Tolerate a partial response rather than failing the step: losing the fallback
-            // costs a warning on the PR, whereas failing here costs the whole review.
-            const nodes = res?.repository?.pullRequest?.closingIssuesReferences?.nodes;
+                 }`,
+                { owner: context.repo.owner, repo: context.repo.repo, num: context.issue.number }
+              );
+              nodes = res?.repository?.pullRequest?.closingIssuesReferences?.nodes;
+              if (!nodes) { failure = 'the response contained no closingIssuesReferences'; }
+            } catch (error) {
+              // A GraphQL error can still carry partial data alongside it.
+              nodes = error?.data?.repository?.pullRequest?.closingIssuesReferences?.nodes;
+              if (!nodes) { failure = error.message; }
+            }
             if (nodes) {
               for (const node of nodes) parts.push(node.body || '');
             } else {
-              core.warning('Could not read closing issues; using the PR body alone.');
+              core.warning(`Could not read closing issues (${failure}); using the PR body alone.`);
             }
             // Written as file CONTENTS, never handed to a shell as an argument.
             const dir = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP || os.tmpdir(), 'archon-'));
