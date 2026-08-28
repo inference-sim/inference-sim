@@ -234,23 +234,30 @@ Replay also accepts all shared simulation config flags (`--latency-model`, `--to
 | **Session support** | Session manager creates follow-ups | Session structure encoded in trace (no manager needed) |
 | **Trace export** | `--trace-output` (header `mode: "generated"`) | `--trace-output` (header `mode: "replayed"`); see restrictions below |
 
-!!! warning "`--trace-output` cannot re-export closed-loop follow-up rounds"
-    Replay **rejects `--trace-output` (fails fast, non-zero exit)** in two cases,
-    because a re-export sources only the round-0 request slice — the follow-up rounds
-    generated during a closed-loop run are never in the exported set:
+!!! note "`--trace-output` faithfully re-exports closed-loop follow-up rounds (#1630)"
+    A closed-loop replay's `--trace-output` captures **every** round — the round-0
+    requests **and** the follow-up rounds the session manager / pool driver generate
+    during the run (previously only the round-0 wave was exported, #1621):
 
-    - **Pool mode** (`--concurrent-sessions > 0`): the export would capture only the
-      initial round-0 wave, not the pooled/cloned sessions.
-    - **Plain closed-loop replay of an accumulate corpus** (`--session-mode
-      closed-loop` on a header with `session_context_growth: accumulate` — e.g. a
-      `blis convert otel` / `blis convert weka` corpus): besides dropping the
-      follow-ups, the export would emit absolute per-round `input_tokens` instead of
-      the deltas an accumulate loader expects and omit `session_context_growth`, so it
-      could not be re-replayed faithfully.
+    - **Accumulate corpus** (`session_context_growth: accumulate` — e.g. a
+      `blis convert otel` / `blis convert weka` corpus): the re-export re-derives per-round
+      `input_tokens` **deltas** and `input_tokens_reset` compaction markers from the
+      replayed absolute inputs, sets `session_context_growth: accumulate` on the header,
+      and records the per-round think time. Re-replaying it (closed-loop) reproduces the
+      original run's per-request per-round input and metrics (INV-13 round-trip).
+    - **Non-accumulate multi-round corpus**: the re-export carries absolute per-round
+      `input_tokens` (follow-ups inherit their session's `prefix_group`/`prefix_length`,
+      so the prefix is not double-counted) plus the captured `think_time_us`.
+    - **Pool mode** (`--concurrent-sessions N`): the re-export is a **complete** session
+      corpus — all sessions (originals + clones) with every round, as a closed-loop
+      corpus. Replay it with `--session-mode closed-loop` (it is not re-cloned). Aggregate
+      conservation metrics reproduce; per-request bit-identity is not guaranteed for pool
+      (admission timing is data-dependent).
 
-    To re-export, replay the **original converter corpus** rather than a prior
-    closed-loop replay's output. (Faithful closed-loop re-export is a planned
-    follow-up.)
+    Fixed-mode (`--session-mode fixed`) re-export is unchanged. Known boundary: a
+    length-capped round (output truncated by `--max-model-len`) reproduces its input
+    length but may diverge in prefix-cache token *content* across the cap boundary — the
+    huge-ISL agentic corpora are replayed with a large `--max-model-len` to avoid capping.
 
 !!! warning "Latency model matters"
     The replay command simulates token generation using the configured latency model. For accurate calibration, choose the latency model that best matches the server's behavior. See [Latency Models](latency-models.md) for guidance on selecting between roofline and trained-physics modes.
