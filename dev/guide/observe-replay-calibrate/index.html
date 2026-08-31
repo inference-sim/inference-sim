@@ -4079,6 +4079,10 @@
 </tbody>
 </table>
 <p>Replay also accepts all shared simulation config flags (<code>--latency-model</code>, <code>--total-kv-blocks</code>, <code>--max-num-seqs</code>, etc.) — the same flags available in <code>blis run</code>. See <a href="../../reference/configuration/">Configuration</a> for the full list.</p>
+<div class="admonition note">
+<p class="admonition-title">Re-supply capacity-affecting flags identically on replay</p>
+<p>Flags that shape KV-cache capacity are <strong>re-supplied on the replay CLI, not round-tripped through the trace header</strong> — replay recomputes capacity from <code>--model</code> and these flags exactly as <code>blis run</code> does. In particular, <strong><code>--kv-cache-dtype</code> must be passed identically on replay</strong> (e.g. <code>--kv-cache-dtype fp8</code>) to reproduce the run's KV-block count and per-request metrics (INV-13). This mirrors <code>--gpu-memory-utilization</code> and the auto-computed <code>--total-kv-blocks</code> (the header records those only informationally). It is deliberately <strong>not</strong> the header-authoritative model used by <code>--kv-offload-config</code> — a KV dtype only scales a byte width, it drives no runtime mechanism.</p>
+</div>
 <h3 id="how-replay-differs-from-blis-run">How Replay Differs from <code>blis run</code><a class="headerlink" href="#how-replay-differs-from-blis-run" title="Permanent link">&para;</a></h3>
 <table>
 <thead>

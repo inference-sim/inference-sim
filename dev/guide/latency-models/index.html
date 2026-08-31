@@ -3367,7 +3367,7 @@
 </div>
 <div class="admonition warning">
 <p class="admonition-title">Current limitations</p>
-<p>All analytical latency models support tensor parallelism (TP). Data parallelism (DP) and expert parallelism (EP) scheduling overhead are not yet modeled. Quantized weight precision (GPTQ, AWQ, FP8, compressed-tensors) is auto-detected from <code>quantization_config</code>, model name conventions (e.g., <code>w4a16</code>, <code>FP8</code>), or <code>torch_dtype</code> fallback, and is used for weight bandwidth and KV capacity calculations. MFU calibration values are still derived from FP16/BF16 measurements.</p>
+<p>All analytical latency models support tensor parallelism (TP). Data parallelism (DP) and expert parallelism (EP) scheduling overhead are not yet modeled. Quantized weight precision (GPTQ, AWQ, FP8, compressed-tensors) is auto-detected from <code>quantization_config</code>, model name conventions (e.g., <code>w4a16</code>, <code>FP8</code>), or <code>torch_dtype</code> fallback, and is used for weight bandwidth and model-weight memory. KV-cache storage precision is configured <strong>independently</strong> via <code>--kv-cache-dtype</code> (vLLM parity, #1565): <code>auto</code> (default) follows the compute dtype, while <code>fp8</code> stores the KV cache at 1 byte/element — roughly doubling KV-block capacity — regardless of the weight precision. MFU calibration values are still derived from FP16/BF16 measurements.</p>
 </div>
 <h2 id="pluggable-architecture">Pluggable Architecture<a class="headerlink" href="#pluggable-architecture" title="Permanent link">&para;</a></h2>
 <p>The <code>LatencyModel</code> interface (defined in <code>sim/latency_model.go</code>) has four methods:</p>

@@ -4064,6 +4064,12 @@
 <td>Total GPU-tier KV blocks.</td>
 </tr>
 <tr>
+<td><code>--kv-cache-dtype</code></td>
+<td>string</td>
+<td><code>auto</code></td>
+<td>KV-cache storage precision, independent of the compute/activation dtype <strong>and</strong> of weight quantization (vLLM <code>--kv-cache-dtype</code> parity, #1565). <code>auto</code> follows the model/compute dtype (byte-identical default); <code>fp8</code>/<code>fp8_e4m3</code>/<code>fp8_e5m2</code> = 1 byte/element → roughly <strong>doubles</strong> the auto-computed <code>--total-kv-blocks</code> under bf16 compute; <code>bf16</code>/<code>fp16</code>/<code>fp32</code> pin it explicitly. Affects only the auto-calc block count (and PD KV-transfer sizing) — inert when <code>--total-kv-blocks</code> is set explicitly. <strong>Re-supply identically on replay</strong> to reproduce capacity (not round-tripped through the trace header — see the replay guide).</td>
+</tr>
+<tr>
 <td><code>--block-size-in-tokens</code></td>
 <td>int64</td>
 <td>16</td>
