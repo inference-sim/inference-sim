@@ -69,6 +69,27 @@ func TestKVBytesPerToken_TPSharding(t *testing.T) {
 	}
 }
 
+func TestKVBytesPerToken_StandardBranch_HonorsKVBearingLayers(t *testing.T) {
+	// #1635 (F4): the standard MHA/GQA branch also sizes KV over EffectiveKVBearingLayers,
+	// not all NumLayers — so a non-MLA hybrid model does not populate KVBearingLayers only
+	// to have it silently ignored here. Byte-identical when KVBearingLayers == 0.
+	base := validDenseModelConfig() // non-MLA (KVLoraRank == 0) → standard branch
+	full, err := latency.KVBytesPerToken(base, 1)
+	if err != nil {
+		t.Fatalf("unexpected error (all layers): %v", err)
+	}
+
+	hybrid := base
+	hybrid.KVBearingLayers = base.NumLayers / 2 // half the layers bear KV
+	half, err := latency.KVBytesPerToken(hybrid, 1)
+	if err != nil {
+		t.Fatalf("unexpected error (hybrid): %v", err)
+	}
+	if half != full/2 {
+		t.Errorf("standard-branch KVBytesPerToken with half the layers KV-bearing = %v, want %v (half of all-layers %v)", half, full/2, full)
+	}
+}
+
 func TestKVBytesPerToken_LinearInNumLayers(t *testing.T) {
 	mc := validDenseModelConfig()
 	base, err := latency.KVBytesPerToken(mc, 1)
@@ -309,6 +330,90 @@ func TestKVBytesPerToken_MLA_ZeroRopeHeadDim(t *testing.T) {
 		if got != want {
 			t.Errorf("MLA KVBytesPerToken(QKRopeHeadDim=0, TP=%d) = %v, want %v", tp, got, want)
 		}
+	}
+}
+
+func TestKVBytesPerToken_MLA_HybridKVBearingLayers(t *testing.T) {
+	// #1635 (BC-3): GIVEN a hybrid-attention MLA model (Kimi-K3: 93 total layers,
+	// only 24 full-attention/MLA layers bear a per-token KV cache; the other 69 are
+	// linear-attention KDA layers with fixed-size recurrent state), THEN KV
+	// bytes/token is sized over the 24 KV-bearing layers, NOT all 93.
+	mc := sim.ModelConfig{
+		NumLayers:       93,
+		KVBearingLayers: 24,
+		HiddenDim:       7168,
+		NumHeads:        96,
+		NumKVHeads:      96,
+		IntermediateDim: 2048,
+		BytesPerParam:   2.0,
+		KVLoraRank:      512,
+		QKRopeHeadDim:   64,
+	}
+	// (512 + 64) × 24 × 2.0 = 27648 — full-attention layers only, TP-invariant.
+	want := float64((512 + 64) * 24 * 2)
+	for _, tp := range []int{1, 2, 8} {
+		got, err := latency.KVBytesPerToken(mc, tp)
+		if err != nil {
+			t.Fatalf("unexpected error at TP=%d: %v", tp, err)
+		}
+		if got != want {
+			t.Errorf("hybrid MLA KVBytesPerToken(TP=%d) = %v, want %v (24 KV-bearing layers)", tp, got, want)
+		}
+	}
+}
+
+func TestKVBytesPerToken_MLA_KVBearingLayersZero_ByteIdenticalToAllLayers(t *testing.T) {
+	// #1635 (INV-6): GIVEN KVBearingLayers == 0 (every non-hybrid MLA model —
+	// DeepSeek-V2-Lite, GLM-5.2), THEN KV bytes/token is sized over all NumLayers,
+	// byte-identical to the pre-#1635 all-layers value.
+	mc := sim.ModelConfig{
+		NumLayers:       27,
+		KVBearingLayers: 0,
+		HiddenDim:       2048,
+		NumHeads:        16,
+		NumKVHeads:      16,
+		IntermediateDim: 10944,
+		BytesPerParam:   2.0,
+		KVLoraRank:      512,
+		QKRopeHeadDim:   64,
+	}
+	want := float64((512 + 64) * 27 * 2) // all 27 layers (NumLayers fallback)
+	got, err := latency.KVBytesPerToken(mc, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != want {
+		t.Errorf("KVBearingLayers=0 KVBytesPerToken = %v, want %v (fallback to NumLayers)", got, want)
+	}
+}
+
+func TestKVBytesPerToken_MLA_ScalesWithKVBearingNotTotalLayers(t *testing.T) {
+	// #1635 (BC-4, metamorphic — the acceptance invariant): MLA KV bytes/token are
+	// proportional to the KV-BEARING (full-attention) layer count, NOT the total
+	// layer count. Halving KVBearingLayers halves the per-token KV; changing
+	// NumLayers alone (KVBearingLayers fixed) does NOT move it.
+	base := sim.ModelConfig{
+		NumLayers: 93, KVBearingLayers: 24, HiddenDim: 7168, NumHeads: 96,
+		NumKVHeads: 96, IntermediateDim: 2048, BytesPerParam: 2.0,
+		KVLoraRank: 512, QKRopeHeadDim: 64,
+	}
+	b, err := latency.KVBytesPerToken(base, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Halving KVBearingLayers halves the value.
+	half := base
+	half.KVBearingLayers = 12
+	if got, _ := latency.KVBytesPerToken(half, 1); got != b/2 {
+		t.Errorf("halving KVBearingLayers should halve KV bytes/token: got %v, want %v", got, b/2)
+	}
+
+	// Changing NumLayers alone (KVBearingLayers fixed) does NOT change the value.
+	moreTotal := base
+	moreTotal.NumLayers = 200
+	if got, _ := latency.KVBytesPerToken(moreTotal, 1); got != b {
+		t.Errorf("MLA KV bytes/token must track KV-bearing count, not total NumLayers: got %v, want %v", got, b)
 	}
 }
 
@@ -1217,6 +1322,29 @@ func TestExtractKVCapacityParams_MoEFallback_NumExpertsPerTokOnly_ReturnsError(t
 	}
 }
 
+func TestExtractKVCapacityParams_MoEFallback_KimiK3Aliases_ReturnError(t *testing.T) {
+	// #1640: the Kimi-K3 activation-count spellings (num_shared_experts /
+	// num_experts_per_token) must also signal MoE in the fallback guard, so a
+	// K3-shaped config without a total expert count errors (naming the field)
+	// instead of being silently treated as dense.
+	for _, key := range []string{"num_shared_experts", "num_experts_per_token"} {
+		t.Run(key, func(t *testing.T) {
+			path := writeTempConfigJSON(t, map[string]any{
+				"hidden_act": "silu",
+				key:          2,
+			})
+
+			_, err := latency.ExtractKVCapacityParamsFromFile(path)
+			if err == nil {
+				t.Fatalf("expected error for MoE detected via %s without total expert count", key)
+			}
+			if !strings.Contains(err.Error(), key) {
+				t.Errorf("expected error mentioning %s, got: %v", key, err)
+			}
+		})
+	}
+}
+
 func TestExtractKVCapacityParams_TiedEmbeddings(t *testing.T) {
 	path := writeTempConfigJSON(t, map[string]any{
 		"hidden_act":          "silu",
@@ -1494,6 +1622,56 @@ func TestExtractKVCapacityParams_Qwen2MoE_ExplicitSharedDim(t *testing.T) {
 	}
 	if params.SharedExpertFFNDim != 5632 {
 		t.Errorf("expected SharedExpertFFNDim=5632 (explicit field), got %d", params.SharedExpertFFNDim)
+	}
+}
+
+func TestExtractKVCapacityParams_MoEKeyAliases(t *testing.T) {
+	// #1640: the KV-capacity path (ExtractKVCapacityParams) must resolve shared
+	// experts under BOTH the DeepSeek/GLM spelling (n_shared_experts) and the
+	// Kimi-K3 alias (num_shared_experts), matching GetModelConfigFromHF so the two
+	// paths cannot desync (R23 code-path parity). Before the fix, the K3 alias
+	// yielded SharedExpertFFNDim=0 (silent shared-expert weight under-count).
+	const perExpert = 3072
+	tests := []struct {
+		name          string
+		sharedKey     string
+		activeKey     string
+		wantSharedFFN int
+	}{
+		{"deepseek_glm_spelling", "n_shared_experts", "num_experts_per_tok", 2 * perExpert},
+		{"kimi_k3_spelling", "num_shared_experts", "num_experts_per_token", 2 * perExpert},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeTempConfigJSON(t, map[string]any{
+				"hidden_act":            "silu",
+				"num_hidden_layers":     93,
+				"hidden_size":           7168,
+				"num_attention_heads":   96,
+				"num_key_value_heads":   96,
+				"intermediate_size":     33792,
+				"moe_intermediate_size": perExpert,
+				"num_experts":           896,
+				tc.activeKey:            16,
+				tc.sharedKey:            2,
+				"torch_dtype":           "bfloat16",
+			})
+
+			params, err := latency.ExtractKVCapacityParamsFromFile(path)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !params.IsMoE {
+				t.Error("expected IsMoE=true for an 896-expert config")
+			}
+			if params.NumLocalExperts != 896 {
+				t.Errorf("expected NumLocalExperts=896, got %d", params.NumLocalExperts)
+			}
+			if params.SharedExpertFFNDim != tc.wantSharedFFN {
+				t.Errorf("expected SharedExpertFFNDim=%d (2 shared × %d), got %d — %q alias not resolved on the KV-capacity path",
+					tc.wantSharedFFN, perExpert, params.SharedExpertFFNDim, tc.sharedKey)
+			}
+		})
 	}
 }
 

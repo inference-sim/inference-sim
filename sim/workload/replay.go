@@ -295,7 +295,9 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 	var requests []*sim.Request
 	var blueprints []SessionBlueprint
 
-	// Growth mode from header (design §5): "accumulate" → strict growing prefix.
+	// Growth mode from header (design §5): "accumulate" → growing shared prefix,
+	// shrunk back to the recorded absolute at a context-compaction boundary when the
+	// trace carries input_tokens_reset markers (#1609).
 	// Validate up front: an unrecognized value (e.g. a typo like "Accumulate") would
 	// otherwise fall through to the non-accumulate branch silently, disabling the
 	// feature with no feedback — an operator footgun. Fail loudly instead (R1).
@@ -317,6 +319,30 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 		for i, rec := range rounds {
 			inputSeq[i] = effectiveInputTokenCount(rec.InputTokens, rec.ServerInputTokens, rec.PrefixGroup)
 			outputSeq[i] = rec.OutputTokens
+		}
+
+		// Context-compaction reset targets (#1609), aligned with inputSeq. A round's
+		// input_tokens_reset marker (non-nil) becomes its absolute re-seed length; a
+		// round without one gets the -1 "no reset" sentinel. Only meaningful in
+		// accumulate mode, and only built when at least one round 1..N actually carries
+		// a marker — so a trace with no compaction column (or a monotone session within
+		// a compaction-bearing corpus) leaves InputResetSampler nil and replays
+		// byte-identically to pre-#1609 (INV-6).
+		var inputResetSampler LengthSampler
+		if contextGrowth == "accumulate" {
+			resetSeq := make([]int, len(rounds))
+			anyReset := false
+			for i, rec := range rounds {
+				if i > 0 && rec.InputTokensReset != nil {
+					resetSeq[i] = int(*rec.InputTokensReset)
+					anyReset = true
+				} else {
+					resetSeq[i] = -1 // no reset this round
+				}
+			}
+			if anyReset {
+				inputResetSampler = &SequenceSampler{values: resetSeq[1:]} // rounds 1..N, lockstep with InputSampler
+			}
 		}
 
 		// Build think time. Precedence (#1478):
@@ -409,21 +435,22 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 		requests = append(requests, req)
 
 		bp := SessionBlueprint{
-			SessionID:        sessionID,
-			ClientID:         r0.ClientID,
-			MaxRounds:        len(rounds),
-			ContextGrowth:    contextGrowth,
-			ThinkTimeSampler: sessionThinkTimeSampler,
-			Horizon:          horizon,
-			InputSampler:     &SequenceSampler{values: inputSeq[1:]},  // rounds 1..N
-			OutputSampler:    &SequenceSampler{values: outputSeq[1:]}, // rounds 1..N
-			RNG:              sessionRNG,
-			Prefix:           prefix,
-			TenantID:         r0.TenantID,
-			SLOClass:         r0.SLOClass,
-			Model:            r0.Model,
-			SLOTargetUs:      r0.SLOTargetUs,
-			Adapter:          r0.Adapter, // #1464: adapter threads through session follow-up rounds
+			SessionID:         sessionID,
+			ClientID:          r0.ClientID,
+			MaxRounds:         len(rounds),
+			ContextGrowth:     contextGrowth,
+			ThinkTimeSampler:  sessionThinkTimeSampler,
+			Horizon:           horizon,
+			InputSampler:      &SequenceSampler{values: inputSeq[1:]},  // rounds 1..N
+			OutputSampler:     &SequenceSampler{values: outputSeq[1:]}, // rounds 1..N
+			InputResetSampler: inputResetSampler,                       // #1609; nil unless a round compacts
+			RNG:               sessionRNG,
+			Prefix:            prefix,
+			TenantID:          r0.TenantID,
+			SLOClass:          r0.SLOClass,
+			Model:             r0.Model,
+			SLOTargetUs:       r0.SLOTargetUs,
+			Adapter:           r0.Adapter, // #1464: adapter threads through session follow-up rounds
 		}
 		blueprints = append(blueprints, bp)
 	}

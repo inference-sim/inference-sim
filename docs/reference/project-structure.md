@@ -4,11 +4,7 @@ The simulator uses a discrete-event architecture with a min-heap event queue.
 
 ```
 inference-sim/
-├── .claude/commands/          # Claude Code slash commands (speckit.specify, speckit.plan, speckit.tasks, speckit.implement, speckit.clarify, speckit.checklist, speckit.analyze, speckit.constitution, speckit.taskstoissues)
-├── .specify/                  # Speckit feature-development toolkit
-│   ├── memory/constitution.md # BLIS project constitution (principles, invariants, rules)
-│   ├── templates/             # Spec, plan, tasks, checklist, agent-file templates
-│   └── scripts/bash/          # Bash scripts: create-new-feature.sh, setup-plan.sh, update-agent-context.sh, check-prerequisites.sh, common.sh
+├── .claude/skills/            # Claude Code skills (blis-pr-review, issue-review)
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
@@ -82,6 +78,7 @@ inference-sim/
 │   ├── servegen.go            # Native ServeGen data file loading (chunk-*-trace.csv + dataset.json)
 │   ├── tracev2.go             # Trace v2 format (YAML header + CSV data); 27-column schema including finish_reason (backward-compat with 26-column pre-finish_reason traces)
 │   ├── replay.go              # Trace v2 → sim.Request with synthetic token IDs
+│   ├── reexport.go            # ReExportClosedLoopRecords: faithful closed-loop/pool --trace-output re-export (#1630) — captures all rounds, re-derives accumulate deltas+resets, propagates think/prefix
 │   ├── calibrate.go           # CalibrationReport, PrepareCalibrationPairs, MAPE/Pearson r
 │   ├── multimodal.go          # Multimodal token generation (text+image+audio+video)
 │   ├── reasoning.go           # Reasoning multi-turn with context accumulation
@@ -117,7 +114,6 @@ inference-sim/
 │   │   ├── workloads.md       # Workload specifications
 │   │   ├── cluster.md         # Cluster simulation
 │   │   ├── results.md         # Metrics & results
-│   │   ├── experimentation.md # Hypothesis-driven experimentation
 │   │   └── skills-and-plugins.md # Claude Code skills & plugins
 │   ├── concepts/              # Architecture and design documentation
 │   │   ├── index.md           # Concepts overview
@@ -131,27 +127,18 @@ inference-sim/
 │   │   ├── configuration.md   # Configuration reference
 │   │   ├── models.md          # Model compatibility and validation
 │   │   └── workload-spec.md   # Workload spec YAML schema
-│   ├── methodology/           # Research methodology documentation
 │   │   ├── index.md           # Methodology overview
-│   │   ├── strategy-evolution.md # Strategy Evolution methodology guide
-│   │   ├── hypothesis-bundles.md # Hypothesis bundle examples and writing guide
 │   │   └── principles.md     # Discovered principles catalog (30 principles)
 │   ├── contributing/          # Contributor documentation
 │   │   ├── index.md           # Contributing landing page
 │   │   ├── extension-recipes.md # Step-by-step extension guides
 │   │   ├── pr-workflow.md     # PR development workflow
-│   │   ├── design-process.md  # Design document process
-│   │   ├── macro-planning.md  # Macro-level planning process
-│   │   ├── hypothesis.md      # Hypothesis experiment process
-│   │   ├── convergence.md     # Universal Convergence Protocol
+│   │   ├── rfc.md             # RFC template for large features
 │   │   ├── standards/         # Canonical rules, invariants, principles, experiment standards
-│   │   └── templates/         # Artifact templates + agent prompts
+│   │   └── templates/         # Artifact templates
 │   │       ├── design-guidelines.md  # DES foundations, module architecture
-│   │       ├── macro-plan.md         # Multi-PR template (human-readable)
-│   │       ├── macro-plan-prompt.md  # Agent preamble for macro planning
-│   │       ├── micro-plan.md         # Single-PR template (human-readable)
-│   │       ├── micro-plan-prompt.md  # Agent preamble for writing-plans skill
-│   │       └── hypothesis.md         # Experiment FINDINGS.md template
+│   ├── templates/             # Claude prompt templates
+│   │   └── rfc-to-plan.md    # Prompt: encode .archon + create sub-issues
 │   └── plans/                 # Active implementation plans (excluded from MkDocs)
 │       └── archive/           # Completed design docs (architectural reference)
 ├── CONTRIBUTING.md            # Contributor guide (references docs/contributing/standards/)

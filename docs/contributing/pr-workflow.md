@@ -1,8 +1,8 @@
 # PR Development Workflow
 
-**Status:** Active (v4.2 — updated 2026-03-17)
+**Status:** Active (v4.3 — updated 2026-08-28)
 
-This document describes the complete workflow for implementing a PR from any source: a macro plan section, GitHub issues, a design document, or a feature request. The same steps apply whether you use Claude Code or standard git tools.
+This document describes the complete workflow for implementing a PR from any source: an RFC sub-issue, GitHub issues, a design document, or a feature request. The same steps apply whether you use Claude Code or standard git tools.
 
 ---
 
@@ -59,6 +59,8 @@ cd .worktrees/pr<N>-<feature-name>
 
 All remaining steps happen in the worktree.
 
+> **Multi-PR features (feature branch model):** For large features, PRs don't all target main. PR0 creates a feature branch and persists the archon plan. PR1–N target the feature branch (one hole per PR, self-reviewed). The final PR merges the feature branch → main (maintainer-reviewed). See [archon/encode-plan.md](archon/encode-plan.md) for the full structure.
+
 !!! tip "Automation"
     `/superpowers:using-git-worktrees pr<N>-<feature-name>` creates the worktree and switches your shell into it. Optional pre-cleanup: `/commit-commands:clean_gone` removes stale branches. See [Skills & Plugins](../guide/skills-and-plugins.md).
 
@@ -66,13 +68,13 @@ All remaining steps happen in the worktree.
 
 ### Step 1.5: Audit the Source Document
 
-Before writing the plan, scan the source document (design doc, macro plan section, GitHub issue, or feature request) for:
+Before writing the plan, scan the source document (RFC sub-issue, GitHub issue, design doc, or feature request) for:
 
 1. **Ambiguous requirements** — flag and resolve with the document author before planning
 2. **Contradictions with existing invariants or standards** — check against `standards/invariants.md` and `standards/rules.md`
 3. **Missing information needed for planning** — which extension type? which invariants affected? which construction sites?
 
-**Output:** A list of resolved clarifications, appended to the micro plan's Deviation Log with reason `CLARIFICATION`.
+**Output:** A list of resolved clarifications, noted in the implementation plan.
 
 > **CLARIFICATION vs CORRECTION:** Use `CLARIFICATION` when the source was ambiguous or incomplete and you chose an interpretation. Use `CORRECTION` when the source was factually wrong about existing code or behavior.
 
@@ -82,24 +84,22 @@ If the source document is unambiguous and complete, skip this step — but note 
 
 ### Step 2: Write an Implementation Plan
 
-Write an implementation plan following the [micro-plan template](templates/micro-plan.md). The plan must include:
+Read the issue (or sub-issue) you are closing. Write an implementation plan following the [micro-plan template](templates/micro-plan.md). The plan must include:
 
 - **Behavioral contracts** (GIVEN/WHEN/THEN) defining what this PR guarantees
 - **TDD task breakdown** (6–12 tasks, each: test → fail → implement → pass → lint → commit)
-- **Test strategy** mapping contracts to specific tests
+- **Sanity checklist** (R1-R23, relevant invariants)
 
 Save the plan to `docs/plans/<feature-name>-plan.md`.
 
-The source of work can be a macro plan section, a design document, one or more GitHub issues, or a feature request.
-
 !!! tip "Automation"
-    `/superpowers:writing-plans for <work-item> in @docs/plans/<name>-plan.md using @docs/contributing/templates/micro-plan-prompt.md and @<source-document>` generates the plan automatically. The skill reads the source document and the template, inspects the codebase, and produces behavioral contracts with executable tasks.
+    `/superpowers:writing-plans for <work-item> in @docs/plans/<name>-plan.md and @<source-document>` generates the plan automatically. The skill reads the source document and the template, inspects the codebase, and produces behavioral contracts with executable tasks.
 
 ---
 
 ### Step 2.5: Review the Plan
 
-Review the plan from 10 targeted perspectives, applying the [convergence protocol](convergence.md): run all perspectives in parallel as one round; if zero CRITICAL and zero IMPORTANT across all reviewers, the round converged; otherwise fix and re-run the entire round. Max 10 rounds per gate. Hard gate — no exceptions. See [convergence.md](convergence.md) for full rules.
+Review the plan from the [10 plan review perspectives](perspectives.md#plan-review-perspectives-10): run all perspectives in parallel as one round; if zero CRITICAL and zero IMPORTANT across all reviewers, the round converged; otherwise fix and re-run the entire round. Max 10 rounds per gate. Hard gate — no exceptions.
 
 **Two-stage review (Medium/Large PRs; Small PRs skip the pre-pass — see [PR Size Tiers](#pr-size-tiers)):**
 
@@ -107,7 +107,7 @@ Review the plan from 10 targeted perspectives, applying the [convergence protoco
 2. **Formal convergence:** Run all 10 perspectives below in parallel.
 
 !!! tip "Automation"
-    Stage 1: `/pr-review-toolkit:review-pr`. Stage 2: `/convergence-review pr-plan docs/plans/<name>-plan.md`. See [Skills & Plugins](../guide/skills-and-plugins.md).
+    Use `/pr-review-toolkit:review-pr` for a holistic review pass.
 
 **Why two stages?** The holistic sweep catches emergent cross-cutting issues (the kind a human reviewer would spot). Fixing those first means the convergence review starts from a cleaner baseline — fewer rounds needed because obvious issues are already addressed. Small PRs skip the pre-pass because cross-cutting issues are unlikely with ≤3 files; perspectives 1 (Substance) and 2 (Cross-doc) cover the same ground.
 
@@ -123,7 +123,7 @@ Check for: design bugs, mathematical errors, logical inconsistencies, scale mism
 
 #### Perspective 2: Cross-Document Consistency
 
-Check for: scope mismatch between micro plan and source document, stale file paths, deviation log completeness. Does the deviation log account for all differences between what the source says and what the micro plan does? Check for stale references.
+Check for: scope mismatch between plan and source issue, stale file paths. Does the plan account for all differences between what the issue says and what the plan does? Check for stale references.
 
 **Catches:** Stale references, scope mismatch, missing deviations, wrong file paths.
 
@@ -145,7 +145,7 @@ Perform these 4 checks directly (no agent needed):
 
 **Check 1: Task Dependencies** — For each task, verify it can actually start given what comes before it. Trace the dependency chain: what files does each task create/modify? Does any task require a file or type that hasn't been created yet? Flag tasks that modify the same file and could conflict.
 
-**Check 2: Template Completeness** — Verify all sections from the [micro-plan template](templates/micro-plan.md) are present and non-empty: Header, Part 1 (A–E), Part 2 (F–I), Part 3 (J), Appendix. For compact-format plans (Small tier), verify the compact sections are present: Header (Goal/Source/Closes), Behavioral Contracts, Tasks, Sanity Checklist.
+**Check 2: Template Completeness** — Verify the plan includes: Header (Goal/Source/Closes), Behavioral Contracts, TDD Tasks, and Sanity Checklist.
 
 **Check 3: Executive Summary Clarity** — Read the executive summary as if you're a new team member with no context. Is it clear what the PR does and why? Can you understand the scope without reading the rest of the plan?
 
@@ -185,15 +185,15 @@ Check for: input validation completeness (all CLI flags, YAML fields, config val
 
 ---
 
-### Step 3: Human Review of Plan
+### Step 3: Human Review of Plan — STOP HERE
 
-Final human review of the plan (after automated review).
+**BLOCKING GATE.** Present the plan to the human and STOP. Do NOT proceed to implementation until the human explicitly approves. Wait for their response.
 
 **Focus areas** (full-format plans):
 
 1. **Part 1 (Design Validation)** — Review behavioral contracts, component interaction, risks
 2. **Part 2 (Executable Tasks)** — Verify task breakdown makes sense, no dead code
-3. **Deviation Log** — Check if deviations from source document are justified
+3. **Deviations** — Check if differences from source issue are justified
 4. **Appendix** — Spot-check file-level details for accuracy
 
 For compact-format plans (Small tier): review only behavioral contracts (from item 1) and task completeness (from item 2). Skip component interaction, deviation log (item 3), and appendix (item 4). Also review the sanity checklist, which compact plans include directly.
@@ -230,7 +230,7 @@ Execute all tasks sequentially. Stop only on test failure, lint failure, or buil
 
 ### Step 4.5: Review the Code
 
-Review the implementation from 10 targeted perspectives, applying the [convergence protocol](convergence.md): zero CRITICAL + zero IMPORTANT = converged; fix and re-run entire round otherwise. Max 10 rounds. Same structure as Step 2.5 (two-stage for Medium/Large, convergence-only for Small), but the 10 perspectives differ: plan review checks design soundness; code review checks implementation quality.
+Review the implementation from the [10 code review perspectives](perspectives.md#code-review-perspectives-10): zero CRITICAL + zero IMPORTANT = converged; fix and re-run entire round otherwise. Max 10 rounds. Same structure as Step 2.5 (two-stage for Medium/Large, convergence-only for Small), but the perspectives differ: plan review checks design soundness; code review checks implementation quality.
 
 **Two-stage review (Medium/Large PRs; Small PRs skip the pre-pass — see [PR Size Tiers](#pr-size-tiers)):**
 
@@ -238,7 +238,7 @@ Review the implementation from 10 targeted perspectives, applying the [convergen
 2. **Formal convergence:** Run all 10 perspectives below in parallel.
 
 !!! tip "Automation"
-    Stage 1: `/pr-review-toolkit:review-pr`. Stage 2: `/convergence-review pr-code`. See [Skills & Plugins](../guide/skills-and-plugins.md).
+    Use `/pr-review-toolkit:review-pr` for a holistic review pass.
 
 **Why two stages?** The holistic sweep catches emergent cross-cutting issues. In past PRs, this pre-pass found issues (runtime-breaking regressions, stale panic message prefixes) that individual targeted perspectives missed because they were each focused on their narrow lens. Fixing those first reduces convergence rounds. Small PRs skip the pre-pass for the same reason as Step 2.5.
 
@@ -398,6 +398,8 @@ gh pr create --title "<title>" --body "<description with behavioral contracts>"
 
 The PR description should include a summary, behavioral contracts (GIVEN/WHEN/THEN), testing verification, and GitHub closing keywords from the plan's `Closes:` field (e.g., `Fixes #183, fixes #189`).
 
+**Multi-PR features:** if the sub-issue body carries an `archon-plan:` line, copy it verbatim into the PR body. CI reads the PR body to find the plan; a hole PR targets a feature branch, so GitHub links no closing issue and the sub-issue is never read. Without the line, the dist ratchet is skipped. The same applies to the final PR to `main`, which closes the tracking issue — an issue that carries no such line.
+
 !!! tip "Automation"
     `/commit-commands:commit-push-pr` handles staging, committing, pushing, and PR creation in one command. It analyzes current git state, creates an appropriate commit message referencing behavioral contracts, and opens the PR.
 
@@ -427,23 +429,24 @@ Not all PRs need the same level of review. Use these objective criteria:
 
 **Rules:**
 - **Express Lane process:** Implement → self-audit (3 dimensions: correctness, determinism, consistency) → commit. No worktree, plan, convergence review, or human gate required. If the change grows beyond 3 lines, touches a source-of-truth file, or introduces any behavioral change, stop and switch to Small tier.
+- **Hole PRs from an approved archon plan:** Use Medium tier for code review, but **Small tier behavior for plan review** (single round, no pre-pass). The design was already reviewed during RFC (8 perspectives + team agreement + archon plan). The plan review still catches task ordering and under-specified steps, but skips the holistic sweep.
 - **All other tiers require Steps 1–5** — worktree, source audit, plan, human review, execution, and commit apply to Small, Medium, and Large.
 - **Self-audit is always full for Small and above** — the 10-dimension critical thinking check catches substance bugs that no automated review can. It costs 5 minutes and has caught 3+ real bugs in every PR where it was applied.
 - **When in doubt, tier up** — if you're unsure whether a change is Express Lane or Small, use Small. If unsure between Small and Medium, use Medium.
 - **Human reviewer can override** — if the human reviewer at Step 3 believes the tier is wrong, they can request a different tier.
 
 !!! note "Compact Plan Format"
-    Small tier PRs may use the [compact plan format](templates/micro-plan.md#compact-format-small-tier-prs) instead of the full micro-plan template. The compact format retains behavioral contracts and TDD tasks but drops ceremony sections. See the template for criteria and structure.
+    Small tier PRs may use a compact plan format — behavioral contracts and TDD tasks only, no ceremony sections.
 
 ---
 
 ## Example Walkthrough
 
-A typical PR from a macro plan section:
+A typical PR from an RFC sub-issue:
 
 1. **Create worktree:** `git worktree add .worktrees/pr8-routing -b pr8-routing && cd .worktrees/pr8-routing`
 2. **Audit source:** Scan source document for ambiguities, contradictions, missing info. Record clarifications.
-3. **Write plan:** Follow [micro-plan template](templates/micro-plan.md), save to `docs/plans/pr8-routing-plan.md`
+3. **Write plan:** Write plan, save to `docs/plans/pr8-routing-plan.md`
 4. **Review plan:** For Medium/Large PRs, run holistic pre-pass first. Then run all 10 perspectives in convergence rounds. Fix issues, re-run until converged. (Small PRs skip the pre-pass.)
 5. **Human review:** Read plan — contracts, tasks, appendix. Approve to proceed.
 6. **Implement:** Execute TDD tasks: test → fail → implement → pass → lint → commit.
@@ -451,7 +454,7 @@ A typical PR from a macro plan section:
 8. **Self-audit:** Think through all 10 dimensions. Fix issues.
 9. **Commit + PR:** Push branch, create PR with closing keywords.
 
-The workflow is the same regardless of source (macro plan, design doc, GitHub issues). Only the source document passed to the planning step differs.
+The workflow is the same regardless of source (RFC sub-issue, design doc, GitHub issues). Only the source document passed to the planning step differs.
 
 ---
 
@@ -464,7 +467,7 @@ The workflow is the same regardless of source (macro plan, design doc, GitHub is
 5. **Review after execution** — use automated code review (Step 4.5) after all tasks complete
 6. **Reference contracts in commits** — makes review easier and more traceable
 7. **Update CLAUDE.md immediately** — don't defer documentation
-8. **Keep source documents updated** — mark PRs as completed in macro plan; close resolved issues
+8. **Keep source documents updated** — close resolved issues; update tracking issue if needed
 9. **Don't trust automated passes alone** — the self-audit (Step 4.75) catches substance bugs that pattern-matching agents miss. In PR9, 3 real bugs were found by critical thinking after 4 automated passes found 0 issues.
 10. **Checkpoint long sessions** — for PRs with 8+ tasks or multi-round reviews, write a checkpoint summary to `.claude/checkpoint.md` after each major phase. If you hit context limits, read the checkpoint first.
 
@@ -545,5 +548,6 @@ When to use: When Step 2.5 or Step 4.5 hits context limits. Not needed for most 
 **v4.0 (2026-02-27):** Human-first rewrite (#464). Steps describe human actions; skills in admonition callouts. Manual path is primary; automation is additive. Templates split into human-readable format descriptions + agent prompt companions.
 **v4.1 (2026-03-17):** Added Step 1.5 (Source Document Audit) between Steps 1 and 2 — structured pre-audit of source documents for ambiguities, contradictions, and missing information before planning begins. Added `CLARIFICATION` as a Deviation Log reason (#664).
 **v4.2 (2026-03-17):** Added Express Lane tier for ≤3-line mechanical changes (implement → self-audit → commit, no plan/review/human gate). Eliminated pre-pass for Small PRs — single convergence round sufficient. Medium/Large unchanged (#673).
+**v4.3 (2026-08-28):** Step 5 now requires copying the sub-issue's `archon-plan:` line into the PR body for multi-PR features. CI reads the PR body; GitHub links closing issues only for PRs targeting the default branch, so a hole PR against a feature branch links none and the sub-issue body is never read (#1631).
 
 </details>

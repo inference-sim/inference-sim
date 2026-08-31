@@ -4,6 +4,66 @@ Reproducible analysis scripts for BLIS. Each script runs `blis` end-to-end and
 emits a single CSV summary alongside per-run raw outputs, so anyone can
 re-validate a published claim without manually reconstructing the command set.
 
+## archon-review.sh — `/archon-pr-review` review step
+
+Runs `archon-go pr-review` and composes the PR comment. Called by
+`.github/workflows/archon.yml`; it lives here rather than inline in the workflow so its
+behaviour can be tested (`scripts/archon_review_test.go` drives it against a stub
+`archon-go` and throwaway git repositories).
+
+```bash
+ARCHON_BIN=... BASE_SHA=... HEAD_SHA=... DECL_FILE=... OUTPUT_FILE=... RUN_URL=... \
+  scripts/archon-review.sh
+```
+
+| Variable | Meaning |
+|---|---|
+| `ARCHON_BIN` | archon-go binary, from `archon-build.sh` |
+| `BASE_SHA` | the PR's base branch tip (where the plan is looked for first) |
+| `HEAD_SHA` | the PR's head commit, already fetched into the object store |
+| `DECL_FILE` | file holding plan-declaration candidate text (PR body, then closing-issue bodies) |
+| `OUTPUT_FILE` | where the comment body is written; truncated up front |
+| `RUN_URL` | workflow run URL, used in the truncation notice |
+| `GITHUB_STEP_SUMMARY` | optional; the untruncated body is appended when set |
+
+Exits 0 for every reviewed outcome, including archon failure, so the caller always has a
+body to post. Exit 2 only on a usage or environment error. Adds `--plan` to the single
+`archon-go` invocation when a plan resolves; retries once without it if that invocation
+fails, so a bad plan file never costs the three views.
+
+## archon-plan-resolve.sh — find and extract a declared archon plan
+
+Finds the first `archon-plan: <path>` line in the declaration text and extracts that file
+out of git. Tested by `scripts/archon_plan_resolve_test.go`.
+
+```bash
+scripts/archon-plan-resolve.sh <base-ref> <head-ref> <decl-file> <out-file>
+```
+
+Prints one `key=value` per line and exits 0 in all three cases (exit 2 only on a usage error):
+
+| Output | Meaning |
+|---|---|
+| `status=none` | no declaration found — the normal case for a bug fix |
+| `status=resolved` + `plan_path`, `plan_source` (`base`/`head`), `plan_commit` | `<out-file>` written |
+| `status=error` + `plan_path`, `message` | declared but unusable |
+
+The declared path comes from a PR or issue body, so it is untrusted. It must be
+repository-relative, end in `.json`, be at most 256 characters, and match
+`[A-Za-z0-9._/-]+` with no `..`; anything echoed back has out-of-allowlist characters
+replaced, so a rejected path cannot inject markdown or a workflow command into the comment.
+
+Extraction uses git plumbing against an explicit commit — never the filesystem. The
+workflow is `issue_comment`-triggered, so the working tree holds the default branch rather
+than the PR: a filesystem read would find the wrong file and would let a traversal escape
+the repository. The object's type, mode, and size are gated (regular-file blob, non-empty,
+at most 1 MiB) before any bytes are written.
+
+Base is tried before head so a hole PR cannot be graded against a plan it rewrote. A base
+copy that exists but is unusable, and a commit that is not reachable locally, are both hard
+errors rather than a fall-through to the head copy — `git ls-tree` is silent for both, and
+either one would quietly hand grading back to the PR.
+
 ## find-saturation.sh — Rate-sweep saturation finder
 
 Drives `blis run` across a configurable rate sweep against a chosen

@@ -116,6 +116,45 @@ func TestNewSessionTokenBufferWithCapacityRejectsNegative(t *testing.T) {
 // unchanged, even though further appends are no longer visible through
 // them. This locks in the "intentional, bounded" hazard documented in
 // session_buffer.go (susiejojo human review, #1445).
+// TestSessionTokenBufferResetShrinksAndPreservesOrphan verifies the #1609 shrink
+// operation: Reset replaces the accumulated contents with a shorter fresh segment
+// (returning the new [0,len) range), and — like Append's reallocation hazard — a
+// slice returned by a prior Slice() (e.g. the just-completed round's InputTokens)
+// stays content-correct because Reset allocates a NEW backing array rather than
+// mutating the old one in place.
+func TestSessionTokenBufferResetShrinksAndPreservesOrphan(t *testing.T) {
+	b := newSessionTokenBuffer()
+	b.Append([]sim.TokenID{1, 2, 3, 4, 5, 6})
+	prior := b.Slice(0, 6) // a view a completed round would hold
+	priorFirstAddr := &prior[0]
+
+	start, end := b.Reset([]sim.TokenID{7, 8})
+	if start != 0 || end != 2 {
+		t.Fatalf("Reset returned [%d,%d), want [0,2)", start, end)
+	}
+	if b.Len() != 2 {
+		t.Fatalf("buffer len after Reset = %d, want 2 (shrunk)", b.Len())
+	}
+	if got := b.Slice(0, 2); got[0] != 7 || got[1] != 8 {
+		t.Fatalf("buffer after Reset = %v, want [7 8]", got)
+	}
+
+	// Fresh backing array: the reset view must not alias the orphaned prior view.
+	if newView := b.Slice(0, 2); &newView[0] == priorFirstAddr {
+		t.Fatal("Reset reused the old backing array — orphaned prior view would be corrupted")
+	}
+	// Orphan stays content-correct (the pre-Reset round's input is unchanged).
+	want := []sim.TokenID{1, 2, 3, 4, 5, 6}
+	if !reflect.DeepEqual(prior, want) {
+		t.Fatalf("orphan slice content drifted after Reset: got %v, want %v", prior, want)
+	}
+
+	// The buffer keeps growing normally after a Reset.
+	if _, e := b.Append([]sim.TokenID{9}); e != 3 {
+		t.Fatalf("append after Reset ended at %d, want 3", e)
+	}
+}
+
 func TestSessionTokenBufferForcedReallocOrphanContentCorrect(t *testing.T) {
 	// Start with cap=4. The first Slice() returns a view of [1,2,3,4].
 	b := newSessionTokenBufferWithCapacity(4)

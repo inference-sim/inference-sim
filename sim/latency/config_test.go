@@ -1,6 +1,7 @@
 package latency_test
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -681,6 +682,266 @@ func TestGetModelConfig_Qwen2MoEStyle_SharedExpertDimExplicit(t *testing.T) {
 	// Explicit shared_expert_intermediate_size takes precedence
 	if cfg.SharedExpertFFNDim != 5632 {
 		t.Errorf("expected SharedExpertFFNDim=5632 (explicit field), got %d", cfg.SharedExpertFFNDim)
+	}
+}
+
+// TestGetModelConfig_MoEKeyAliases_BothSpellings covers the Kimi-K3 MoE
+// activation-count key aliases (#1634). K3's HF config spells the active-expert
+// count `num_experts_per_token` and the shared-expert count `num_shared_experts`,
+// whereas the DeepSeek/GLM configs BLIS already reads use `num_experts_per_tok` /
+// `n_shared_experts`. Both spellings must resolve to the same parsed values.
+//
+// GIVEN an 896-expert MoE config that spells the activation counts either way
+// WHEN GetModelConfig parses it
+// THEN NumExpertsPerTok reflects the active-expert count (16) and SharedExpertFFNDim
+//
+//	reflects shared_count × per-expert dim (2 × 2048 = 4096), regardless of spelling.
+func TestGetModelConfig_MoEKeyAliases_BothSpellings(t *testing.T) {
+	tests := []struct {
+		name      string
+		perTokKey string // active-experts-per-token field name
+		sharedKey string // shared-experts field name
+	}{
+		{"deepseek_glm_spelling", "num_experts_per_tok", "n_shared_experts"},
+		{"kimi_k3_spelling", "num_experts_per_token", "num_shared_experts"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			configFile := filepath.Join(tmpDir, "config.json")
+			content := fmt.Sprintf(`{
+				"num_hidden_layers": 4,
+				"hidden_size": 4096,
+				"num_attention_heads": 32,
+				"num_key_value_heads": 8,
+				"vocab_size": 32000,
+				"intermediate_size": 14336,
+				"moe_intermediate_size": 2048,
+				"num_experts": 896,
+				"%s": 16,
+				"%s": 2,
+				"torch_dtype": "bfloat16"
+			}`, tc.perTokKey, tc.sharedKey)
+			if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+				t.Fatalf("failed to create test file: %v", err)
+			}
+
+			cfg, err := latency.GetModelConfig(configFile)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			// Detected as MoE via num_experts (unchanged by this PR).
+			if cfg.NumLocalExperts != 896 {
+				t.Errorf("expected NumLocalExperts=896, got %d", cfg.NumLocalExperts)
+			}
+			// Active experts per token resolved from the spelling under test.
+			if cfg.NumExpertsPerTok != 16 {
+				t.Errorf("expected NumExpertsPerTok=16 from %q, got %d", tc.perTokKey, cfg.NumExpertsPerTok)
+			}
+			// SharedExpertFFNDim = shared count (2) × per-expert dim (2048) = 4096.
+			if cfg.SharedExpertFFNDim != 4096 {
+				t.Errorf("expected SharedExpertFFNDim=4096 (2 shared × 2048 per-expert) from %q, got %d", tc.sharedKey, cfg.SharedExpertFFNDim)
+			}
+		})
+	}
+}
+
+// TestGetModelConfig_KimiK3_ConstructsTrainedPhysics is the #1634 regression: a
+// K3-shaped MoE config (896 experts, `num_experts_per_token`, `num_shared_experts`)
+// is detected as MoE, so a missing per-token count trips the MoE-consistency guard
+// at latency-model construction (trained_physics_model.go: "NumExpertsPerTok must
+// be > 0"). With the aliases parsed, the default trained-physics model constructs
+// without that error.
+//
+// GIVEN a K3-spelled 896-expert / num_experts_per_token:16 config
+// WHEN the default trained-physics latency model is constructed from the parsed config
+// THEN construction succeeds (the MoE-consistency guard does not trip).
+func TestGetModelConfig_KimiK3_ConstructsTrainedPhysics(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 4,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"vocab_size": 32000,
+		"intermediate_size": 14336,
+		"moe_intermediate_size": 2048,
+		"num_experts": 896,
+		"num_experts_per_token": 16,
+		"num_shared_experts": 2,
+		"torch_dtype": "bfloat16"
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error parsing config: %v", err)
+	}
+	if cfg.NumLocalExperts != 896 {
+		t.Fatalf("precondition: expected NumLocalExperts=896 (MoE detected), got %d", cfg.NumLocalExperts)
+	}
+	if cfg.NumExpertsPerTok != 16 {
+		t.Fatalf("precondition: expected NumExpertsPerTok=16 from num_experts_per_token, got %d", cfg.NumExpertsPerTok)
+	}
+
+	hw := sim.ModelHardwareConfig{
+		Backend:     "trained-physics", // BLIS default backend
+		TP:          1,
+		ModelConfig: *cfg,
+		HWConfig: sim.HardwareCalib{
+			TFlopsPeak: 989.0,
+			BwPeakTBs:  3.35,
+			MfuPrefill: 0.55,
+			MfuDecode:  0.30,
+		},
+	}
+	coeffs := sim.LatencyCoeffs{
+		AlphaCoeffs: []float64{15563.199579, 777.3455, 45.907545},
+		BetaCoeffs:  []float64{0.152128, 0.0, 1.36252915, 0.752037, 32.09546717, 4.41684444, 126.024825, 481.8613888, 0.0, 1.94710771},
+	}
+
+	if _, err := latency.NewLatencyModel(coeffs, hw); err != nil {
+		t.Fatalf("expected trained-physics model to construct for K3 config, got error: %v", err)
+	}
+}
+
+// TestGetModelConfig_KimiK3Hybrid_KVBearingLayers is the #1635 parse regression.
+// Kimi-K3 is a hybrid-attention model: its text_config.linear_attn_config lists 24
+// full_attn_layers (MLA, KV-bearing) and 69 kda_layers (linear attention, fixed-size
+// recurrent state, no growing KV) of 93 total. ParseHFConfig pivots text_config, so
+// linear_attn_config is reachable as a nested map; the KV-bearing count is
+// len(full_attn_layers) (24), distinct from NumLayers (93).
+//
+// GIVEN a K3-shaped config with linear_attn_config.full_attn_layers (24 entries)
+// WHEN the config is parsed
+// THEN KVBearingLayers == 24 and EffectiveKVBearingLayers() == 24 while NumLayers == 93.
+func TestGetModelConfig_KimiK3Hybrid_KVBearingLayers(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"text_config": {
+			"num_hidden_layers": 93,
+			"hidden_size": 7168,
+			"num_attention_heads": 96,
+			"num_key_value_heads": 96,
+			"vocab_size": 163840,
+			"intermediate_size": 14336,
+			"moe_intermediate_size": 2048,
+			"num_experts": 896,
+			"num_experts_per_token": 16,
+			"kv_lora_rank": 512,
+			"qk_rope_head_dim": 64,
+			"torch_dtype": "bfloat16",
+			"linear_attn_config": {
+				"full_attn_layers": [4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80, 84, 88, 92, 93],
+				"kda_layers": [1, 2, 3, 5, 6, 7],
+				"short_conv_kernel_size": 4,
+				"use_full_rank_gate": true
+			}
+		}
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error parsing config: %v", err)
+	}
+	if cfg.NumLayers != 93 {
+		t.Fatalf("precondition: expected NumLayers=93, got %d", cfg.NumLayers)
+	}
+	if !cfg.IsMLA() {
+		t.Fatalf("precondition: expected IsMLA()=true (kv_lora_rank=512), got false")
+	}
+	if cfg.KVBearingLayers != 24 {
+		t.Errorf("KVBearingLayers = %d, want 24 (len full_attn_layers)", cfg.KVBearingLayers)
+	}
+	if got := cfg.EffectiveKVBearingLayers(); got != 24 {
+		t.Errorf("EffectiveKVBearingLayers() = %d, want 24", got)
+	}
+}
+
+// TestGetModelConfig_NonHybrid_KVBearingLayersZero covers the #1635 INV-6 no-op: a
+// config WITHOUT linear_attn_config leaves KVBearingLayers at 0, so
+// EffectiveKVBearingLayers falls back to NumLayers — every existing model (standard
+// MHA/GQA and non-hybrid MLA like DeepSeek-V2-Lite / GLM-5.2) is byte-identical.
+func TestGetModelConfig_NonHybrid_KVBearingLayersZero(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 27,
+		"hidden_size": 2048,
+		"num_attention_heads": 16,
+		"num_key_value_heads": 16,
+		"vocab_size": 32000,
+		"intermediate_size": 10944,
+		"kv_lora_rank": 512,
+		"qk_rope_head_dim": 64,
+		"torch_dtype": "bfloat16"
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.KVBearingLayers != 0 {
+		t.Errorf("KVBearingLayers = %d, want 0 (no linear_attn_config)", cfg.KVBearingLayers)
+	}
+	if got := cfg.EffectiveKVBearingLayers(); got != cfg.NumLayers {
+		t.Errorf("EffectiveKVBearingLayers() = %d, want NumLayers=%d", got, cfg.NumLayers)
+	}
+}
+
+// TestLinearAttnFullLayerCount covers the #1635 nested-map parse helper directly,
+// including the robustness edge cases the end-to-end parse tests do not exercise:
+// an absent linear_attn_config, a present block with no full_attn_layers list, and
+// a full_attn_layers value of the wrong type all yield 0 (caller falls back to
+// NumLayers — INV-6). ParseHFConfig has already pivoted text_config, so
+// linear_attn_config sits at the top level of Raw.
+func TestLinearAttnFullLayerCount(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  map[string]any
+		want int
+	}{
+		{"absent", map[string]any{"num_hidden_layers": float64(93)}, 0},
+		{
+			"present_24",
+			map[string]any{"linear_attn_config": map[string]any{
+				"full_attn_layers": []any{4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80, 84, 88, 92, 93},
+			}},
+			24,
+		},
+		{
+			"present_no_full_attn_layers",
+			map[string]any{"linear_attn_config": map[string]any{"kda_layers": []any{1, 2, 3}}},
+			0,
+		},
+		{
+			"full_attn_layers_wrong_type",
+			map[string]any{"linear_attn_config": map[string]any{"full_attn_layers": float64(24)}},
+			0,
+		},
+		{
+			"linear_attn_config_wrong_type",
+			map[string]any{"linear_attn_config": "nope"},
+			0,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			hf := &latency.HFConfig{Raw: tc.raw}
+			if got := hf.LinearAttnFullLayerCount(); got != tc.want {
+				t.Errorf("LinearAttnFullLayerCount() = %d, want %d", got, tc.want)
+			}
+		})
 	}
 }
 

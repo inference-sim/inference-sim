@@ -8,7 +8,6 @@ repo_name: inference-sim/inference-sim
 # applies. Only plans/ needs explicit exclusion (internal implementation plans).
 exclude_docs: |
   plans/
-  bob-commands/
 
 theme:
   name: material
@@ -114,7 +113,6 @@ nav:
       - Metrics & Results: guide/results.md
       - Observe / Replay / Calibrate: guide/observe-replay-calibrate.md
       - KV Hit-Rate Calibration: guide/kv-offload-calibration.md
-      - Hypothesis Experimentation: guide/experimentation.md
       - Archon PR Review: guide/archon-pr-review.md
       - Skills & Plugins: guide/skills-and-plugins.md
   - Reference:
@@ -131,19 +129,22 @@ nav:
       - contributing/index.md
       - Extension Recipes: contributing/extension-recipes.md
       - PR Workflow: contributing/pr-workflow.md
-      - Design Process: contributing/design-process.md
-      - Macro Planning: contributing/macro-planning.md
+      - RFC Template: contributing/rfc.md
       - Hypothesis Experiments: contributing/hypothesis.md
-      - Convergence Protocol: contributing/convergence.md
+      - Review Perspectives: contributing/perspectives.md
+      - Archon:
+          - Baseline Analysis: contributing/archon/baseline-analysis.md
+          - Encode Plan: contributing/archon/encode-plan.md
+          - PR Review Context: contributing/archon/pr-review-context.md
       - Standards:
+          - Experiment Standards: contributing/standards/experiments.md
           - "Antipattern Rules (R1-R23)": contributing/standards/rules.md
           - "System Invariants (INV-1-INV-13)": contributing/standards/invariants.md
           - Engineering Principles: contributing/standards/principles.md
-          - Experiment Standards: contributing/standards/experiments.md
       - Templates:
           - Design Guidelines: contributing/templates/design-guidelines.md
-          - Macro Plan: contributing/templates/macro-plan.md
           - Micro Plan: contributing/templates/micro-plan.md
+          - Archon Issue Examples: contributing/templates/archon-issue-examples.md
           - Hypothesis: contributing/templates/hypothesis.md
   - Blog:
       - blog/index.md

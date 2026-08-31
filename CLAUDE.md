@@ -227,17 +227,22 @@ go build -o blis main.go
 # = uncapped, since Weka gaps are genuine away-from-keyboard times). Reads `in` directly
 # (never len(hash_ids)×64). Weka ISL is huge (p50 ≈ 110K, p90 ≈ 395K), so replay MUST raise
 # --max-model-len (the ~41K default drops every request unservable) and scale --total-kv-blocks.
-# Fidelity note (important): real agentic traces compact/trim context heavily — ~30% of
+# Context compaction (#1609): real agentic traces compact/trim context heavily — ~30% of
 # rounds on the full 051926 dataset (219 sessions, 37.7K rounds) have in_N < in_{N-1}+out_{N-1}.
-# Such non-monotone rounds clamp their input delta to 0 (the accumulate buffer can only grow,
-# never shrink), so it OVER-counts the true cumulative input by ≈3–4× on real Claude Code
-# traffic (+312% on this dataset). Replayed input length / KV pressure / hit-rate is therefore
-# a substantial UPPER BOUND — do NOT read it as a faithful reproduction of the recorded ISL.
-# (Property of the PR-A/PR-B accumulate delta law, not this converter; the conversion is exact
-# per that law. Faithful compaction support is tracked in #1609.) The recorded think time is
-# non-lossy (#1608): a genuinely-zero recorded think (an overlapping turn) is a &0 in the
-# think_time_us column, distinct from a not-recorded (empty) cell, so an all-overlap session
-# uses the recorded zeros rather than degrading to arrival-gap think at replay.
+# The shared encoder now emits a per-round input_tokens_reset marker (the recorded absolute)
+# on exactly those non-monotone rounds, and accumulate closed-loop replay RE-SEEDS its growing
+# buffer to that absolute at the boundary — so the reconstructed input tracks the recorded
+# cumulative input (previously it clamped the delta to 0 and over-counted by ≈3–4× / +312% on
+# this dataset). Re-seeding intentionally breaks strict prefix identity across the compaction
+# boundary (the summary is not a literal prefix of the pre-compaction buffer), which also
+# corrects the prefix-cache hit-rate over-estimate. The marker is a trailing conditional CSV
+# column, absent for monotone sessions and for `blis run`, so a trace without any compaction
+# round replays byte-identically to before (INV-6). Traces converted by an OLDER build (no
+# marker column) still over-count — re-run convert to get compaction-aware output.
+# The recorded think time is likewise non-lossy (#1608): a genuinely-zero recorded think (an
+# overlapping turn) is a &0 in the think_time_us column, distinct from a not-recorded (empty)
+# cell, so an all-overlap session uses the recorded zeros rather than degrading to arrival-gap
+# think at replay.
 ./blis convert weka --input traces.jsonl --trace-output corpus \
   --context-growth accumulate --max-think-time 0
 #
@@ -386,10 +391,10 @@ BLIS follows a layered design document hierarchy. Each tier has a specific abstr
 
 - **Design guidelines** (`docs/contributing/templates/design-guidelines.md`): Target architecture, DES foundations, module contracts, extension framework. Read this first when designing a new feature or extending BLIS.
 - **Design docs** (per-feature): Behavioral specifications written per the guidelines. Describe what modules do and why, never how they're implemented. Four species: decision record, specification, problem analysis, system overview.
-- **Macro plans** (multi-PR features): PR decomposition with module contracts and extension types. Written per `docs/contributing/templates/macro-plan.md` (human template; agent prompt: `macro-plan-prompt.md`). May include frozen interface signatures (facts about merged code) but never method implementations (aspirations about unwritten code).
-- **Micro plans** (single PR): Full implementation detail with behavioral contracts, TDD tasks, exact code. Written per `docs/contributing/templates/micro-plan.md` (human template; agent prompt: `micro-plan-prompt.md`).
+- **RFC + .archon plan** (multi-PR features): Tracking issue with holes/surfaces/contracts (see `docs/contributing/rfc.md`), encoded into a machine-checkable `.archon` plan (see `docs/contributing/templates/rfc-to-plan.md`). Sub-issues created per hole, each delivered as a PR.
+- **Implementation plans** (single PR): Behavioral contracts, TDD tasks. Follow `docs/contributing/pr-workflow.md`.
 
-**The abstraction rule:** Design docs describe *what a module does and what it guarantees*. Macro plans describe *what to build and in what order*. Micro plans describe *how to implement each piece*. Go struct definitions, method implementations, and file:line references belong only in micro plans.
+**The abstraction rule:** Design docs and RFCs describe *what a module does and what it guarantees*. The `.archon` plan describes *what structure to build and in what order*. Implementation plans describe *how to implement each piece*.
 
 **Module architecture:** BLIS has a two-layer architecture — a domain-agnostic simulation kernel (event queue, clock, RNG, statistics) and domain-specific modules (router, scheduler, KV cache manager, latency model, autoscaler, batch formation). Each module is defined by a behavioral contract with six aspects: what it observes, what it controls, what state it owns, what invariants it maintains, what events it produces/consumes, and its extension friction (how many files to add one more variant). See design guidelines Section 4 for the full module map and contract template.
 
@@ -412,7 +417,7 @@ This project follows BDD/TDD practices. When implementing features:
 
 Diligently follow the workflow in docs/contributing/pr-workflow.md. Before I approve any plan, validate it: 1) Check every task's dependencies — can each task actually start given what comes before it? 2) Verify all sections from the template are present and non-empty. 3) Read the executive summary as if you're a new team member — is it clear and human-readable? 4) Flag any tasks that seem under-specified for implementation. List all issues found.
 
-For new features that introduce module boundaries or modify the architecture, a design doc (per the design guidelines) should exist before micro-planning begins. For smaller changes (bug fixes, new policy templates behind existing interfaces), a design doc is optional — proceed directly to micro-planning.
+For new features that introduce module boundaries or modify the architecture, an RFC (per `docs/contributing/rfc.md`) should exist before implementation planning begins. For smaller changes (bug fixes, new policy templates behind existing interfaces), an RFC is optional — proceed directly to `docs/contributing/pr-workflow.md`.
 
 ### Code Review Standards
 
@@ -477,6 +482,8 @@ Observe/replay/calibrate pipeline complete: `blis observe` (#659) dispatches wor
 
 Replay injection-origin normalization (#1606): `blis replay` re-bases each request's DES injection time onto the trace's `arrival_time_us`/`deadline_us` origin. A real `blis observe` trace writes `send_time_us` in Unix-epoch µs but `arrival_time_us`/`deadline_us` on a run-relative clock; using the raw epoch `send_time_us` as an absolute injection tick made every request instantly past-due (0 completions, empty `sim_result.json`). `LoadTraceV2Requests`/`LoadTraceV2SessionBlueprints` subtract a single per-trace `injectionOriginShift = min(injectionTime) − min(arrival_time_us)`, preserving #1304's send-delta (concurrency-slot-wait) spacing. Generated `blis run` traces write `send_time_us == arrival_time_us`, so the shift is exactly 0 and replay stays byte-identical (INV-13/INV-6); the closed-loop preliminary horizon uses `workload.MaxNormalizedInjectionTimeUs` (the normalized injection, not raw `arrival_time_us`).
 
+Faithful closed-loop `--trace-output` re-export (#1630, option (a) of #1621): `blis replay --session-mode closed-loop --trace-output` (and pool `--concurrent-sessions`) now re-export a FAITHFUL trace instead of the #1623 fail-fast guards (both removed) or the pre-#1621 silent follow-up drop. `cmd/replay.go` captures every round (`append(requests, followUpRequests...)`) plus each follow-up's think time (`fu.ArrivalTime − completionClock`, captured in the `onRequestDone` wrapper), and `workload.ReExportClosedLoopRecords` (new `sim/workload/reexport.go`) reconstructs the records: for an `accumulate` corpus it re-derives per-round `input_tokens` DELTAS + `input_tokens_reset` compaction markers via the shared `EncodeSessionToTraceRecords` law (#1613) and the header carries `session_context_growth: accumulate`; for a non-accumulate corpus it emits absolute per-round suffix via `RequestsToTraceRecords` with per-follow-up `think_time_us` and round-0 `prefix_group`/`prefix_length` propagated onto follow-ups (no prefix double-count). **The delta law feeds the encoder the ACTUAL accumulated output (`ProgressIndex − InputLen`, `accumulatedOutputLen`) — NOT the oracle `len(OutputTokens)` — so the re-derived deltas are the exact inverse of `SessionManager.OnComplete`'s accumulate growth; the emitted `output_tokens` column keeps the oracle `MaxOutputLen` so re-replay reproduces the same completion → same actual output → the abs sequence reconstructs exactly.** Result: replaying the re-export reproduces the original run's per-request per-round input/metrics (INV-13 round-trip; accumulate reproduces byte-for-byte). Fixed mode (and closed-loop with no session records) keeps the byte-identical `RequestsToTraceRecords(requests)` path (INV-6). Pool re-export is a COMPLETE closed-loop session corpus (all originals + clones, every round; replay with `--session-mode closed-loop`, not re-cloned); its aggregate CONSERVATION metrics (completed/injected requests, total tokens) reproduce, but per-request and cache/latency aggregates are not guaranteed (data-dependent admission timing; and a non-accumulate clone's cache-busting divergence is not preserved when it shares a `prefix_group`). The accumulate branch copies per-request metadata (SLO/deadline/model/adapter/modality) via `copyReExportMetadata` so it has field-coverage parity with the non-accumulate `RequestsToTraceRecords` path (R23); `PrefixGroup`/`PrefixLength` are excluded (accumulate folds the prefix into round-0's absolute). The re-export block runs LAST (after `EmitOutput`/`--results-path`) so a secondary-artifact failure never discards primary metrics. Documented boundary: a length-capped round reproduces its input length but may diverge in prefix-cache token *content* across the cap boundary (huge-ISL corpora use a large `--max-model-len` to avoid capping).
+
 KV cache hit-rate calibration (#1583, epic #1585 S6): `blis observe --scrape-kv-metrics` scrapes the server's Prometheus `/metrics` KV-offload tiering counters (`vllm:kv_offload_tiering_block_hits`/`_block_queries`; released fallback `vllm:gpu_prefix_cache_*`, tagged distinctly) over the measured window and records the observed hit-rate in a new trace-header block (`observed_kv_metrics`, with `--vllm-commit` pinning the unreleased vLLM PR #48798). `blis replay --metrics-path` writes the sim aggregate `cache_hit_rate` (a `*float64` on `MetricsOutput`, populated file-only in `EmitOutput` so stdout stays byte-identical — INV-6). `blis calibrate --sim-metrics` then compares TTFT, E2E, **and** KV hit-rate (`hit_rate` report block, default ≤5 pp band; TTFT MAPE ≤0.15 verdict). On replay a tiered observation with no reproducible `kv_offload` config is a hard error (BC-10, INV-13, never silent GPU-only degradation); the observed block round-trips verbatim on re-export. The sim exposes one aggregate hit-rate (no per-tier), so the automated comparison is overall-hit-rate; per-tier read/write time is recorded for a documented manual bandwidth cross-check. Pure Prometheus-text parser + hit-rate derivation in `sim/workload/prom_hitrate.go` (no new go.mod dep). Empirical cluster tolerance-pass is an operator step (needs an unreleased-vLLM GPU cluster); see `docs/guide/kv-offload-calibration.md`.
 
 Recent work: MkDocs documentation site (#450), roofline auto-fetch flag (#435), metrics substrate fixes (#458), cross-cutting documentation audit (#460).
@@ -504,11 +511,9 @@ Run lint locally before pushing: `golangci-lint run ./...`
 
 The following instructions are for Claude Code and other AI assistants working on this codebase. Human contributors can skip this section.
 
-### GitHub Action: Implementing Issues
+### GitHub Action: PR Reviews
 
-When triggered via `@claude /implement-issue` on a GitHub issue, you MUST invoke the `implement-issue` skill and follow it exactly. After implementation, you MUST create the pull request yourself using `gh pr create` — do NOT just push to a branch and leave it. Always open the PR programmatically, then invoke `/blis-pr-review` for self-review and iterate until READY TO MERGE.
-
-For all other triggers (questions, reviews, debugging, etc.), respond normally without creating a PR unless explicitly asked.
+When triggered via `@claude /blis-pr-review` on a PR, follow the blis-pr-review skill exactly. For all other triggers (questions, debugging, etc.), respond normally without creating a PR unless explicitly asked.
 
 ### Context Management
 
@@ -518,9 +523,6 @@ When running multi-agent PR reviews, keep individual agent scopes narrow and sum
 
 When using Task agents: 1) Do NOT poll TaskList repeatedly — check at reasonable intervals (every 30-60 seconds, not continuously). 2) If a sub-agent goes idle or fails, fall back to doing the work directly rather than retrying indefinitely. 3) Keep sub-agent scopes focused to avoid context overflow.
 
-### Macro Plan Updates
-
-When asked to update the macro implementation plan, directly edit the document. Do NOT spend time re-reading all source documents or dispatching sub-agents to gather information you already have in context. Start writing immediately.
 
 ### Issue Filing
 
@@ -534,18 +536,8 @@ When filing a GitHub issue, pick the template that matches your situation:
 4. **Testing a hypothesis or running an experiment?** → `Hypothesis Proposal` (`.github/ISSUE_TEMPLATE/hypothesis.md`)
 5. **Fixing an antipattern, hardening, or refactoring?** → `Hardening / refactoring` (`.github/ISSUE_TEMPLATE/custom.md`)
 
-Every issue must have at least one label. Use `gh issue create --template "Template name"` to pre-fill the template.
+Every issue must have at least one label. To file an issue: read the relevant template file under `.github/ISSUE_TEMPLATE/`, reproduce its structure in your issue body, and use `gh issue create --title "..." --body "..." --label "..."`. Apply the template's front-matter labels yourself.
 
-## Speckit Feature-Development Toolkit
-
-`.specify/` and `.claude/commands/` contain the speckit tooling for structured feature development:
-
-- **Slash commands**: `/speckit.specify`, `/speckit.clarify`, `/speckit.plan`, `/speckit.tasks`, `/speckit.implement`, `/speckit.checklist`, `/speckit.analyze`, `/speckit.constitution`, `/speckit.taskstoissues`
-- **Constitution**: `.specify/memory/constitution.md` — project principles, invariants, and rules distilled for AI agents
-- **Templates**: `.specify/templates/` — spec, plan, tasks, checklist, and agent-file templates
-- **Scripts**: `.specify/scripts/bash/` — feature branch creation, plan setup, and agent context update automation
-
-Speckit does not affect Go build, test, or lint. All `.specify/` artifacts are opt-in for AI-assisted workflows.
 
 ## Post-Hoc Saturation Detection
 
@@ -619,7 +611,9 @@ See [`docs/guide/latency-models.md`](docs/guide/latency-models.md) for details.
 
 **Quantized model support**: Three-tier auto-detection of weight precision: (1) `quantization_config` in HF `config.json` — GPTQ/AWQ (`bits`), FP8 (implicit), compressed-tensors (`config_groups.*.weights.num_bits`); (2) model name conventions (`w4a16` → 0.5, `FP8` → 1.0 via `InferWeightBytesFromModelName`); (3) fallback to `BytesPerParam` from `torch_dtype`. Uses quantized weight precision for weight bandwidth and KV capacity calculations while keeping compute dtype for KV cache and activations. `ModelConfig.WeightBytesPerParam` (0=fallback to `BytesPerParam`) with `EffectiveWeightBytesPerParam()` accessor decouples weight storage precision from compute/KV dtype.
 
-**MLA / model-shape KV & weight fidelity (#1527, F1–F3)**: The KV-capacity model (`sim/latency/kv_capacity.go`, `config.go`) represents the modern MLA MoE family (DeepSeek-V2/V3, Kimi-K3, GLM-5.2 `glm_moe_dsa`). **F1 — explicit `head_dim`**: `ModelConfig.HeadDim` (`json:"head_dim"`) + `EffectiveHeadDim()` accessor (returns `HeadDim` when >0, else `HiddenDim/NumHeads`) feed `KVBytesPerToken` and `computeModelWeightBytes`; the step-time models (trained-physics/roofline) intentionally still use `hidden/heads`, so step-time goldens + INV-BC-DP1 are byte-identical. **F2 — MLA compressed-KV**: when `ModelConfig.KVLoraRank > 0`, `KVBytesPerToken` returns `(kv_lora_rank + qk_rope_head_dim) × num_layers × BytesPerParam` — a single latent per token per layer, independent of `num_kv_heads`/`head_dim` and **NOT divided by TP** (the latent is replicated across TP ranks, matching vLLM's MLA cache); both auto KV-block sizing and PD KV-transfer sizing inherit it. **F3 — dense-prefix MoE**: `ModelConfig.FirstKDenseReplace` splits `computeModelWeightBytes` into K dense-MLP layers + (L−K) MoE-MLP layers (K clamped to [0,L]), distinct from the every-Nth `InterleaveMoELayerStep`. All three are **no-ops when the config keys are absent** (INV-6 byte-identity); INV-4/INV-13 preserved (`run`/`replay` share the path; `observe` doesn't derive capacity from shape). Committed fixture: `model_configs/glm-5.2-fp8/config.json`. **Documented known approximations (F4/F5a)**: block-wise FP8 (`weight_block_size`, `modules_to_not_convert`) treated as flat 1.0 byte/param (optimistic); DSA indexer and MLA attention weight projections unmodeled. MTP/spec-decode throughput is out of scope (#1528).
+**MLA / model-shape KV & weight fidelity (#1527, F1–F3)**: The KV-capacity model (`sim/latency/kv_capacity.go`, `config.go`) represents the modern MLA MoE family (DeepSeek-V2/V3, Kimi-K3, GLM-5.2 `glm_moe_dsa`). **F1 — explicit `head_dim`**: `ModelConfig.HeadDim` (`json:"head_dim"`) + `EffectiveHeadDim()` accessor (returns `HeadDim` when >0, else `HiddenDim/NumHeads`) feed `KVBytesPerToken` and `computeModelWeightBytes`; the step-time models (trained-physics/roofline) intentionally still use `hidden/heads`, so step-time goldens + INV-BC-DP1 are byte-identical. **F2 — MLA compressed-KV**: when `ModelConfig.KVLoraRank > 0`, `KVBytesPerToken` returns `(kv_lora_rank + qk_rope_head_dim) × EffectiveKVBearingLayers × BytesPerParam` — a single latent per token per layer, independent of `num_kv_heads`/`head_dim` and **NOT divided by TP** (the latent is replicated across TP ranks, matching vLLM's MLA cache); both auto KV-block sizing and PD KV-transfer sizing inherit it. `EffectiveKVBearingLayers` equals `num_layers` for a non-hybrid model, but for a hybrid-attention model (#1635, below) it is the full-attention layer count (Kimi-K3: 24 of 93), so the standard MHA/GQA branch uses it too. **F3 — dense-prefix MoE**: `ModelConfig.FirstKDenseReplace` splits `computeModelWeightBytes` into K dense-MLP layers + (L−K) MoE-MLP layers (K clamped to [0,L]), distinct from the every-Nth `InterleaveMoELayerStep`. All three are **no-ops when the config keys are absent** (INV-6 byte-identity); INV-4/INV-13 preserved (`run`/`replay` share the path; `observe` doesn't derive capacity from shape). Committed fixture: `model_configs/glm-5.2-fp8/config.json`. **Documented known approximations (F4/F5a)**: block-wise FP8 (`weight_block_size`, `modules_to_not_convert`) treated as flat 1.0 byte/param (optimistic); DSA indexer and MLA attention weight projections unmodeled. MTP/spec-decode throughput is out of scope (#1528).
+
+**Hybrid attention (#1635)**: for models that interleave full-attention layers with linear-attention layers (`linear_attn_config.full_attn_layers`, e.g. Kimi-K3: 24 MLA layers + 69 Kimi-Delta-Attention layers of 93), `ModelConfig.KVBearingLayers` (derived from `len(full_attn_layers)`, clamped to `[0, num_layers]`) sizes the KV cache over the full-attention layers only via `EffectiveKVBearingLayers()` (0/absent ⇒ `num_layers` ⇒ byte-identical for every non-hybrid model, INV-6). **Scoped to KV capacity only** — the KDA layers still charge full attention *weights* (#1638) and *step time* (#1636), both PESSIMISTIC for those layers; `blis run` warns when a hybrid model is detected. A hybrid config whose `linear_attn_config` lacks a usable `full_attn_layers` list warns and falls back to all-layers sizing (R1, never silent).
 
 **Per-instance KV capacity for mixed-GPU node pools (#1522)**: When node pools are configured (`--policy-config` with `node_pools`) and `--total-kv-blocks` is NOT explicitly set, each placed instance auto-calculates its KV-block capacity from its ACTUAL placed GPU's `gpu_memory_gib` (plus TP, DP, block size, `--gpu-memory-utilization`, and weight precision) — so an H100 pool and an L40S pool no longer share one global capacity (restores INV-P2-1: an instance's GPU calibration and KV capacity describe the same device). Applied at all three placement sites (startup, deferred `NodeReadyEvent`, autoscaler scale-up) via `cluster.applyPerInstanceKVCapacity`, immediately after the `HWConfigByGPU` execution-calibration override (issue #893) so the placed GPU is authoritative for capacity as well. **Precedence**: an explicit `--total-kv-blocks` disables per-instance recalc (every instance keeps that uniform global capacity); when both node pools and PD per-pool KV overrides are present, the placement-derived per-GPU capacity wins (mirrors how `HWConfigByGPU` overrides the resolved `HWConfig`). A per-GPU capacity smaller than the configured `--max-model-len` auto-caps that instance's `MaxModelLen` to the KV-feasible maximum. Missing pool memory or a capacity-calc error falls back to the inherited global capacity with a warning (never a panic). `blis replay`/`observe` reject node pools, so this is `blis run` only (INV-13 parity N/A). Distinct from #1315 (role-specific capacity correct, latency coefficients wrong) and #633 (per-role overrides that can't express mixed hardware within one role).
 
@@ -642,23 +636,18 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 - `docs/contributing/standards/rules.md`: **23 antipattern rules** (R1-R23) — each with evidence, checks, enforcement locations
 - `docs/contributing/standards/invariants.md`: **13 system invariants** (INV-1 through INV-13) — with verification strategies
 - `docs/contributing/standards/principles.md`: **Engineering principles** — separation of concerns, interface design, BDD/TDD
-- `docs/contributing/standards/experiments.md`: **Experiment standards** — hypothesis families (6 families × type classification), rigor requirements, root cause verification (RCV-1 through RCV-6), iterative review protocol (summary; see `docs/contributing/convergence.md`), findings classification
 - `docs/contributing/standards/agent-trust.md`: **Agent trust boundaries** — three trust tiers (Trusted, Verify-after, Never-trust) for agent operations, with known failure modes
 
 ### Process (how to do each activity)
 
 - `docs/contributing/pr-workflow.md`: End-to-end PR workflow (worktree → plan → review → implement → audit → commit)
-- `docs/contributing/design-process.md`: Design document creation process
-- `docs/contributing/macro-planning.md`: Macro-level (multi-PR) planning process
-- `docs/contributing/hypothesis.md`: End-to-end hypothesis experiment process (Steps 0-10, three review gates)
-- `docs/contributing/convergence.md`: Universal Convergence Protocol (used by all review gates across PR, hypothesis, design, and macro-plan workflows)
+- `docs/contributing/rfc.md`: RFC template for large features (tracking issue with holes/surfaces/contracts)
+- `docs/contributing/templates/rfc-to-plan.md`: Claude prompt for encoding RFC into .archon plan + creating sub-issues
 
 ### Templates (what to produce)
 
 - `docs/contributing/templates/design-guidelines.md`: **BLIS Design Guidelines** — DES foundations, module architecture, extension framework. **Start here when designing anything new.**
-- `docs/contributing/templates/macro-plan.md`: Human-readable template for macro-level planning (multi-PR features). **Agent prompt:** `macro-plan-prompt.md`
-- `docs/contributing/templates/micro-plan.md`: Human-readable template for micro-level (per-PR) planning with TDD tasks and behavioral contracts. **Agent prompt:** `micro-plan-prompt.md`
-- `docs/contributing/templates/hypothesis.md`: Template for hypothesis experiment artifacts
+- `docs/contributing/templates/rfc-to-plan.md`: Claude prompt for .archon encoding + sub-issue creation
 
 ### Per-Feature Plans
 

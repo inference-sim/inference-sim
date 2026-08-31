@@ -9,7 +9,7 @@ Reference file for the hypothesis-experiment skill. Contains exact prompts for a
 Task(subagent_type="general-purpose", model=REVIEW_MODEL, run_in_background=True,
      prompt="<prompt from below>")
 ```
-Model selection is controlled by the `--model` flag in the convergence-review skill (default: `haiku`).
+Model selection: default `haiku` for review agents. Override via model parameter in subagent dispatch.
 
 **After all agents complete**: Read each output file independently. Count CRITICAL and IMPORTANT findings yourself. Do NOT trust agent-reported totals.
 

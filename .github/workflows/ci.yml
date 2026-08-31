@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, 'feature/**']
 
 jobs:
   build:
@@ -45,6 +45,11 @@ jobs:
             timeout: "10m"
           - name: "root & internals"
             packages: ". ./sim/internal/..."
+            timeout: "5m"
+          # The CI shell scripts are driven by a test-only package. The matrix lists
+          # packages explicitly rather than ./..., so this entry is what makes them run.
+          - name: "scripts"
+            packages: "./scripts"
             timeout: "5m"
 
     steps:

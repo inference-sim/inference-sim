@@ -47,7 +47,7 @@ __pycache__/*
 !testdata/roofline_goldendataset.json
 !model_configs/*/config.json
 !hardware_config.json
-!specs/**/testdata/*.json
+!specs/**/*.json
 !cmd/testdata/**/*.json
 data/
 *.txt
@@ -58,6 +58,9 @@ data/
 blis
 blis_iter*
 inference-sim
+
+# archon-go pr-review --out
+.archon/
 
 # results
 results/

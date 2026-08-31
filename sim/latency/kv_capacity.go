@@ -63,7 +63,9 @@ var swiGLUActivations = map[string]bool{
 // model config and tensor parallelism degree. This is used for both KV cache
 // capacity sizing and PD transfer duration estimation.
 //
-// The formula is: NumLayers × 2 (K+V) × headDim × numKVHeads × BytesPerParam / TP
+// The formula is: EffectiveKVBearingLayers × 2 (K+V) × headDim × numKVHeads × BytesPerParam / TP
+// (EffectiveKVBearingLayers equals NumLayers for every non-hybrid model, INV-6; for a
+// hybrid-attention model it is the full-attention layer count — #1635.)
 //
 // Uses BytesPerParam (compute/activation dtype), not WeightBytesPerParam, since
 // KV cache is stored at compute precision regardless of weight quantization.
@@ -111,7 +113,13 @@ func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
 	// hidden%heads guard is skipped (the latent path never uses that quotient).
 	if mc.IsMLA() {
 		latentWidth := mc.KVLoraRank + mc.QKRopeHeadDim
-		perTokenKVBytesF := float64(mc.NumLayers) * float64(latentWidth) * mc.BytesPerParam
+		// Size the compressed latent over the KV-bearing (full-attention) layers.
+		// For a hybrid-attention MLA model (Kimi-K3) only the full-attention layers
+		// store a per-token KV cache; the linear-attention (KDA) layers keep a
+		// fixed-size recurrent state and bear no growing KV (#1635). For a non-hybrid
+		// MLA model (DeepSeek-V2/V3, GLM-5.2) EffectiveKVBearingLayers == NumLayers,
+		// so this is byte-identical to the pre-#1635 all-layers value (INV-6).
+		perTokenKVBytesF := float64(mc.EffectiveKVBearingLayers()) * float64(latentWidth) * mc.BytesPerParam
 		// Public-API boundary guard: normal configs are validated at parse time
 		// (config.go rejects negative shape fields), but a hand-built ModelConfig
 		// with a negative QKRopeHeadDim could make latentWidth <= 0.
@@ -144,7 +152,12 @@ func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
 
 	// Effective head dim: explicit head_dim (F1) when set, else hidden/heads.
 	headDim := mc.EffectiveHeadDim()
-	perTokenKVBytesF := float64(mc.NumLayers) * 2.0 * float64(headDim) * float64(numKVHeads) * mc.BytesPerParam
+	// KV-bearing layer count (#1635): full-attention layers for a hybrid model, and
+	// == NumLayers for every non-hybrid model (byte-identical, INV-6). Applied on this
+	// standard MHA/GQA branch too — not only the MLA branch — so KVBearingLayers governs
+	// both attention paths consistently; a non-MLA hybrid would otherwise populate the
+	// field but have it silently ignored here.
+	perTokenKVBytesF := float64(mc.EffectiveKVBearingLayers()) * 2.0 * float64(headDim) * float64(numKVHeads) * mc.BytesPerParam
 	perTokenKVBytesPerGPUF := perTokenKVBytesF / float64(tp)
 
 	if perTokenKVBytesPerGPUF <= 0 {
@@ -489,8 +502,11 @@ func ExtractKVCapacityParamsFromFile(hfConfigPath string) (KVCapacityParams, err
 // ExtractKVCapacityParams extracts KVCapacityParams from a parsed HFConfig.
 // MoE detection uses the shared (*HFConfig).ResolveNumExperts (>= MoEMinExperts);
 // see that method for the field set and resolution order. Returns an error if MoE
-// is detected via activation-count fields (n_shared_experts, num_experts_per_tok)
-// without a total expert count — weight estimation requires the count.
+// is detected via activation-count fields (n_shared_experts / num_experts_per_tok,
+// and their Kimi-K3 aliases num_shared_experts / num_experts_per_token; #1634)
+// without a total expert count — weight estimation requires the count. Shared-expert
+// resolution uses moeSharedExpertFields so this path matches GetModelConfigFromHF
+// (R23 code-path parity).
 func ExtractKVCapacityParams(hf *HFConfig) (KVCapacityParams, error) {
 	hiddenAct := hf.MustGetString("hidden_act", "")
 	tieWordEmbeddings := false
@@ -509,7 +525,7 @@ func ExtractKVCapacityParams(hf *HFConfig) (KVCapacityParams, error) {
 		var sharedExpertFFNDim int
 		if v := hf.MustGetInt("shared_expert_intermediate_size", 0); v > 0 {
 			sharedExpertFFNDim = v
-		} else if nShared := hf.MustGetInt("n_shared_experts", 0); nShared > 0 {
+		} else if nShared := hf.mustGetIntFallback(0, moeSharedExpertFields...); nShared > 0 {
 			perExpert := moeExpertFFNDim
 			if perExpert == 0 {
 				perExpert = hf.MustGetInt("intermediate_size", 0)
@@ -523,7 +539,8 @@ func ExtractKVCapacityParams(hf *HFConfig) (KVCapacityParams, error) {
 	// a reliable total expert count. Without the total count, weight estimation
 	// would use dense MLP weights — massively underestimating MoE model size.
 	// Return an error so the caller can fall back to --total-kv-blocks.
-	for _, key := range []string{"n_shared_experts", "num_experts_per_tok"} {
+	signalFields := append(append([]string{}, moeSharedExpertFields...), moeActiveExpertFields...)
+	for _, key := range signalFields {
 		if v := hf.MustGetInt(key, 0); v > 0 {
 			return KVCapacityParams{}, fmt.Errorf(
 				"model appears to be MoE (%s=%d) but num_local_experts is missing; "+

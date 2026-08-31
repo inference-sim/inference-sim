@@ -68,6 +68,20 @@ func (c *HFConfig) MustGetInt(key string, def int) int {
 	return def
 }
 
+// mustGetIntFallback returns the first of keys that resolves to a non-zero int
+// (tried in order), else def. It centralizes multi-spelling field resolution
+// (e.g. vendor-specific MoE activation-count names) so GetModelConfigFromHF and
+// ExtractKVCapacityParams resolve identical spellings and cannot desync (R23
+// code-path parity). Unexported — used only within package latency.
+func (c *HFConfig) mustGetIntFallback(def int, keys ...string) int {
+	for _, k := range keys {
+		if v, ok := c.GetInt(k); ok && v != 0 {
+			return v
+		}
+	}
+	return def
+}
+
 // moeExpertCountFields lists the HF config field names that carry the total
 // routed-expert count, in the resolution order used by vLLM's get_num_experts
 // (vllm/transformers_utils/model_arch_config_convertor.py): num_experts (Jamba),
@@ -82,6 +96,15 @@ var moeExpertCountFields = []string{
 	"num_local_experts", // Mixtral
 	"num_routed_experts", // BLIS-historical alias
 }
+
+// moeActiveExpertFields and moeSharedExpertFields list the accepted HF spellings
+// for the MoE *activation* counts (experts active per token; shared experts),
+// tried in order. DeepSeek/GLM spell them num_experts_per_tok / n_shared_experts;
+// Kimi-K3 (transformers/vLLM) spells them num_experts_per_token / num_shared_experts
+// (#1634). Shared as package vars so GetModelConfigFromHF and ExtractKVCapacityParams
+// resolve the same spellings and cannot desync (R23 code-path parity).
+var moeActiveExpertFields = []string{"num_experts_per_tok", "num_experts_per_token"}
+var moeSharedExpertFields = []string{"n_shared_experts", "num_shared_experts"}
 
 // ResolveNumExperts returns the total routed-expert count for the model, trying the
 // known architecture-specific field names (moeExpertCountFields) in order and
@@ -108,6 +131,40 @@ func (c *HFConfig) ResolveNumExperts() int {
 		}
 	}
 	return 0
+}
+
+// LinearAttnFullLayerCount returns the number of full-attention (KV-cache-bearing)
+// layers declared under a hybrid-attention model's linear_attn_config, i.e.
+// len(linear_attn_config.full_attn_layers). ParseHFConfig pivots text_config onto
+// the top-level map, so linear_attn_config is reachable as a top-level nested value.
+//
+// Kimi-K3 is a hybrid model: linear_attn_config lists 24 full_attn_layers (full
+// Multi-head Latent Attention, which store a per-token KV cache) and 69 kda_layers
+// (Kimi Delta Attention — linear attention with a fixed-size recurrent + short-conv
+// state and no growing KV) of 93 total. Sizing the KV cache over the full-attention
+// count alone corrects the per-token KV footprint (issue #1635).
+//
+// Returns 0 when the model is not hybrid — no linear_attn_config, or a block that
+// lacks a full_attn_layers list (or carries one of the wrong type) — so callers
+// fall back to NumLayers (every standard-MHA and non-hybrid MLA model, INV-6). Only
+// the list length is read (elements may be any JSON number type), so the value type
+// of individual entries is irrelevant.
+func (c *HFConfig) LinearAttnFullLayerCount() int {
+	lac, ok := c.Raw["linear_attn_config"].(map[string]any)
+	if !ok {
+		return 0 // not a hybrid-attention model
+	}
+	// linear_attn_config IS present, so this is a hybrid model. A missing / empty /
+	// wrong-typed full_attn_layers would silently fall back to all-layers KV sizing —
+	// reinstating the very ~3.9x over-count #1635 fixes — so warn loudly (R1) instead
+	// of degrading silently.
+	full, ok := lac["full_attn_layers"].([]any)
+	if !ok || len(full) == 0 {
+		logrus.Warnf("linear_attn_config present but full_attn_layers is missing/empty/non-list; " +
+			"falling back to all-layers KV sizing for this hybrid model — KV capacity may be over-counted")
+		return 0
+	}
+	return len(full)
 }
 
 func parseHWConfig(HWConfigFilePath string) (map[string]sim.HardwareCalib, error) {
@@ -238,14 +295,7 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	}
 
 	// getIntWithFallbacks tries multiple field names, returning the first non-zero value.
-	getIntWithFallbacks := func(keys ...string) int {
-		for _, k := range keys {
-			if v := getInt(k); v != 0 {
-				return v
-			}
-		}
-		return 0
-	}
+	getIntWithFallbacks := func(keys ...string) int { return hf.mustGetIntFallback(0, keys...) }
 
 	// Extract heads first to handle the KV heads default logic.
 	// Fallback field names: Falcon uses "num_kv_heads", GLM uses "multi_query_group_num".
@@ -284,7 +334,11 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	// MoE expert count: resolved via the shared chain (R23 code-path parity with
 	// ExtractKVCapacityParams). Single-expert models are dense-equivalent.
 	numLocalExperts := hf.ResolveNumExperts()
-	numExpertsPerTok := getInt("num_experts_per_tok")
+	// Active experts per token: DeepSeek/GLM spell it num_experts_per_tok; Kimi-K3
+	// (transformers/vLLM) spells it num_experts_per_token (#1634). Missing this on a
+	// detected-MoE model is fatal (trips the MoE-consistency guard at latency-model
+	// construction), not merely inaccurate.
+	numExpertsPerTok := getIntWithFallbacks(moeActiveExpertFields...)
 
 	// MoE per-expert FFN dimension (design Section 4.2)
 	// When present and nonzero, takes precedence over general intermediate dim.
@@ -295,7 +349,10 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	var sharedExpertFFNDim int
 	if v := getInt("shared_expert_intermediate_size"); v > 0 {
 		sharedExpertFFNDim = v
-	} else if nShared := getInt("n_shared_experts"); nShared > 0 {
+	} else if nShared := getIntWithFallbacks(moeSharedExpertFields...); nShared > 0 {
+		// DeepSeek/GLM spell it n_shared_experts; Kimi-K3 spells it
+		// num_shared_experts (#1634). Missing this is a silent weight under-count
+		// (shared experts are optional, so no guard trips).
 		// Compute total shared dim from count × per-expert dim
 		perExpert := moeExpertFFNDim
 		if perExpert == 0 {
@@ -343,6 +400,16 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	// prefix (INV-6: all-MoE weight accounting unchanged when absent).
 	firstKDenseReplace := getInt("first_k_dense_replace")
 
+	// KV-bearing (full-attention) layer count for hybrid-attention models (#1635).
+	// Kimi-K3 interleaves 24 full-attention (MLA, KV-bearing) layers with 69
+	// linear-attention (KDA, fixed-size recurrent state, no growing KV) layers of 93
+	// total; only the full-attention layers store a per-token KV cache. The count is
+	// len(linear_attn_config.full_attn_layers). 0 for every non-hybrid model →
+	// EffectiveKVBearingLayers falls back to NumLayers, so the KV footprint is
+	// byte-identical there (INV-6). Scoped to the KV-capacity path — KDA weights
+	// (#1638) and KDA step time (#1636) are out of scope and still use all NumLayers.
+	kvBearingLayers := hf.LinearAttnFullLayerCount()
+
 	// Reject negative values for the shape fields parsed above (#1527). getInt
 	// returns the raw JSON number, so a negative would otherwise pass silently: a
 	// negative kv_lora_rank would fall through to the standard MHA path (wrong KV
@@ -383,6 +450,7 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 		KVLoraRank:             kvLoraRank,
 		QKRopeHeadDim:          qkRopeHeadDim,
 		FirstKDenseReplace:     firstKDenseReplace,
+		KVBearingLayers:        kvBearingLayers,
 	}
 	return modelConfig, nil
 }

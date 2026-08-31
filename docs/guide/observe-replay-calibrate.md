@@ -232,7 +232,34 @@ Replay also accepts all shared simulation config flags (`--latency-model`, `--to
 | **Horizon** | From `--horizon` flag or spec | Auto-computed as 2x max arrival time (override with `--horizon`) |
 | **Output format** | Full `MetricsOutput` JSON | `SimResult` JSON array (request_id, ttft_us, e2e_us, input_tokens, output_tokens) |
 | **Session support** | Session manager creates follow-ups | Session structure encoded in trace (no manager needed) |
-| **Trace export** | `--trace-output` (header `mode: "generated"`) | `--trace-output` (header `mode: "replayed"`) |
+| **Trace export** | `--trace-output` (header `mode: "generated"`) | `--trace-output` (header `mode: "replayed"`); see restrictions below |
+
+!!! note "`--trace-output` faithfully re-exports closed-loop follow-up rounds (#1630)"
+    A closed-loop replay's `--trace-output` captures **every** round — the round-0
+    requests **and** the follow-up rounds the session manager / pool driver generate
+    during the run (previously only the round-0 wave was exported, #1621):
+
+    - **Accumulate corpus** (`session_context_growth: accumulate` — e.g. a
+      `blis convert otel` / `blis convert weka` corpus): the re-export re-derives per-round
+      `input_tokens` **deltas** and `input_tokens_reset` compaction markers from the
+      replayed absolute inputs, sets `session_context_growth: accumulate` on the header,
+      and records the per-round think time. Re-replaying it (closed-loop) reproduces the
+      original run's per-request per-round input and metrics (INV-13 round-trip).
+    - **Non-accumulate multi-round corpus**: the re-export carries absolute per-round
+      `input_tokens` (follow-ups inherit their session's `prefix_group`/`prefix_length`,
+      so the prefix is not double-counted) plus the captured `think_time_us`.
+    - **Pool mode** (`--concurrent-sessions N`): the re-export is a **complete** session
+      corpus — all sessions (originals + clones) with every round, as a closed-loop
+      corpus. Replay it with `--session-mode closed-loop` (it is not re-cloned). Aggregate
+      **conservation** metrics (completed/injected requests, total input/output tokens)
+      reproduce; per-request and cache/latency aggregates are not guaranteed — pool
+      admission timing is data-dependent, and a non-accumulate clone's cache-busting
+      divergence is not preserved when it shares a `prefix_group`.
+
+    Fixed-mode (`--session-mode fixed`) re-export is unchanged. Known boundary: a
+    length-capped round (output truncated by `--max-model-len`) reproduces its input
+    length but may diverge in prefix-cache token *content* across the cap boundary — the
+    huge-ISL agentic corpora are replayed with a large `--max-model-len` to avoid capping.
 
 !!! warning "Latency model matters"
     The replay command simulates token generation using the configured latency model. For accurate calibration, choose the latency model that best matches the server's behavior. See [Latency Models](latency-models.md) for guidance on selecting between roofline and trained-physics modes.
@@ -339,7 +366,7 @@ To calibrate real vs simulated over the same corpus:
 ```bash
 blis replay --trace-header corpus.yaml --trace-data corpus.csv \
   --model qwen/qwen3-14b --concurrent-sessions 8 --total-sessions 200 \
-  --trace-output sim
+  --results-path sim.results.json
 blis calibrate --trace-header observed.yaml --trace-data observed.csv \
   --sim-results sim.results.json --report calibration.json
 ```
@@ -401,18 +428,24 @@ distinct from a not-recorded (empty) cell, so an all-overlap session replays wit
 recorded zeros rather than degrading to arrival-gap think. The recorded `claude-*`
 model names are dropped during conversion (same routing-safety reason as OTel).
 
-!!! warning "Weka replay ISL is an upper bound (context compaction)"
+!!! note "Context compaction is represented (#1609)"
     Weka input token counts are very large (p50 ≈ 110K, p90 ≈ 395K), so the
     `--max-model-len` / `--total-kv-blocks` sizing warning above applies with extra
-    force. More subtly: real Claude Code traffic **compacts/trims context constantly**
-    — ~30% of rounds on the full `051926` dataset have `in_N < in_{N-1}+out_{N-1}`.
-    The accumulate buffer can only grow, never shrink, so each such round clamps its
-    input delta to 0 and the reconstructed cumulative input **over-counts the recorded
-    total by ≈3–4×** (+312% on that dataset). Treat replayed input length, KV pressure,
-    and hit-rate as a substantial **upper bound**, not a faithful reproduction of the
-    recorded workload. (This is a property of the accumulate delta law, not the
-    converter; faithful compaction support is tracked in #1609. The separate
-    think-time lossy-0 sentinel was resolved in #1608 — see the non-lossy note above.)
+    force. Real Claude Code traffic **compacts/trims context constantly** — ~30% of
+    rounds on the full `051926` dataset have `in_N < in_{N-1}+out_{N-1}` (the model
+    summarized or trimmed). The shared agentic-trace encoder emits a per-round
+    `input_tokens_reset` marker (the recorded absolute) on exactly those non-monotone
+    rounds, and accumulate closed-loop replay **re-seeds its growing buffer to that
+    absolute at the compaction boundary**. The reconstructed cumulative input therefore
+    tracks the recorded total — previously the buffer could only grow, clamped the delta
+    to 0, and **over-counted by ≈3–4×** (+312% on that dataset). The re-seed intentionally
+    breaks strict prefix identity across the boundary (a summary is not a literal prefix of
+    the pre-compaction context), which also corrects the prefix-cache hit-rate over-estimate.
+    The marker is a trailing conditional CSV column: absent for monotone sessions and for
+    `blis run`, so a trace with no compaction round replays byte-identically to before
+    (INV-6). Traces converted by an **older build** (no marker column) still over-count —
+    re-run `convert` to get compaction-aware output. (The separate think-time lossy-0
+    sentinel was resolved in #1608 — see the non-lossy note above.)
 
 ---
 

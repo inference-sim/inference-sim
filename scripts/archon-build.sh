@@ -9,7 +9,17 @@
 
 set -euo pipefail
 
-VERSION="${1:-v0.2.0}"
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+VERSION_FILE="$SCRIPT_DIR/.archon-version"
+
+if [[ -n "${1:-}" ]]; then
+  VERSION="$1"
+elif [[ -f "$VERSION_FILE" ]]; then
+  VERSION="$(cat "$VERSION_FILE" | tr -d '[:space:]')"
+else
+  echo "ERROR: No version argument and .archon-version not found at $VERSION_FILE" >&2
+  exit 1
+fi
 ARCHON_REPO="https://github.com/AI-native-Systems-Research/archon.git"
 BUILD_DIR="${RUNNER_TEMP:-/tmp}/archon-build"
 

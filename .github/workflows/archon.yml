@@ -2,6 +2,9 @@ name: Archon PR Review
 
 permissions:
   contents: read
+  # closingIssuesReferences returns issue objects, which the pull-request scope does not
+  # cover. Without this the declaration-collection step fails and nothing is posted.
+  issues: read
   pull-requests: write
 
 on:
@@ -61,8 +64,8 @@ jobs:
           script: |
             const body = context.payload.comment.body;
             const match = body.match(/--archon-ref\s+(\S+)/);
-            const ref = match ? match[1] : 'v0.2.0';
-            if (!/^[a-zA-Z0-9._/-]+$/.test(ref)) {
+            const ref = match ? match[1] : '';
+            if (ref && !/^[a-zA-Z0-9._/-]+$/.test(ref)) {
               core.setFailed(`Invalid archon ref: ${ref}`);
               return;
             }
@@ -73,7 +76,11 @@ jobs:
         env:
           ARCHON_REF: ${{ steps.parse.outputs.ref }}
         run: |
-          ARCHON_BIN=$(scripts/archon-build.sh "$ARCHON_REF")
+          if [[ -n "$ARCHON_REF" ]]; then
+            ARCHON_BIN=$(scripts/archon-build.sh "$ARCHON_REF")
+          else
+            ARCHON_BIN=$(scripts/archon-build.sh)
+          fi
           [[ -n "$ARCHON_BIN" && -x "$ARCHON_BIN" ]] || { echo "::error::archon-build.sh produced no valid binary"; exit 1; }
           echo "archon_bin=$ARCHON_BIN" >> "$GITHUB_OUTPUT"
 
@@ -89,64 +96,87 @@ jobs:
             });
             core.setOutput('base_sha', pr.base.sha);
             core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('body', pr.body || '');
 
       - name: Fetch PR head ref
         run: git fetch origin "pull/${{ github.event.issue.number }}/head"
 
+      - name: Collect plan declarations
+        id: decl
+        uses: actions/github-script@v8
+        env:
+          PR_BODY: ${{ steps.refs.outputs.body }}
+        with:
+          script: |
+            const fs = require('fs');
+            const os = require('os');
+            const path = require('path');
+            // PR body first: the earliest declaration wins, so a PR's own declaration
+            // outranks one in a third-party issue it happens to close. In practice the PR
+            // body is usually the ONLY source: GitHub links closing issues only for a PR
+            // targeting the default branch, so a hole PR against a feature branch links none.
+            const parts = [process.env.PR_BODY || ''];
+            // Losing this fallback costs at most a warning on the PR, whereas failing the
+            // step costs the whole review — so neither a thrown error (transient API failure,
+            // missing scope) nor a malformed response is allowed to propagate.
+            let nodes;
+            let failure;
+            try {
+              const res = await github.graphql(
+                `query($owner: String!, $repo: String!, $num: Int!) {
+                   repository(owner: $owner, name: $repo) {
+                     pullRequest(number: $num) {
+                       closingIssuesReferences(first: 10) { nodes { body } }
+                     }
+                   }
+                 }`,
+                { owner: context.repo.owner, repo: context.repo.repo, num: context.issue.number }
+              );
+              nodes = res?.repository?.pullRequest?.closingIssuesReferences?.nodes;
+              if (!nodes) { failure = 'the response contained no closingIssuesReferences'; }
+            } catch (error) {
+              // A GraphQL error can still carry partial data alongside it.
+              nodes = error?.data?.repository?.pullRequest?.closingIssuesReferences?.nodes;
+              if (!nodes) { failure = error.message; }
+            }
+            if (nodes) {
+              for (const node of nodes) parts.push(node.body || '');
+            } else {
+              core.warning(`Could not read closing issues (${failure}); using the PR body alone.`);
+            }
+            // Written as file CONTENTS, never handed to a shell as an argument.
+            const dir = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP || os.tmpdir(), 'archon-'));
+            const out = path.join(dir, 'plan-decl.txt');
+            fs.writeFileSync(out, parts.join('\n'));
+            core.setOutput('file', out);
+
       - name: Run archon pr-review
-        id: archon
         env:
           ARCHON_BIN: ${{ steps.build.outputs.archon_bin }}
           BASE_SHA: ${{ steps.refs.outputs.base_sha }}
           HEAD_SHA: ${{ steps.refs.outputs.head_sha }}
+          DECL_FILE: ${{ steps.decl.outputs.file }}
+          OUTPUT_FILE: ${{ runner.temp }}/archon-output.md
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          MERGE_BASE=$(git merge-base "$BASE_SHA" "$HEAD_SHA" 2>/dev/null) || {
-            OUTPUT="## Archon Error
+        run: scripts/archon-review.sh
 
-          Could not compute merge-base between base ($BASE_SHA) and head ($HEAD_SHA). The PR head may not be reachable — check that the fetch step succeeded."
-            echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
-            echo "$OUTPUT" > /tmp/archon-output.md
-            exit 0
-          }
-
-          "$ARCHON_BIN" pr-review . "$MERGE_BASE" "$HEAD_SHA" --out .archon || {
-            OUTPUT="## Archon Error
-
-          archon-go pr-review failed. Check the workflow logs."
-            echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
-            echo "$OUTPUT" > /tmp/archon-output.md
-            exit 0
-          }
-
-          if [[ ! -f .archon/review.md ]]; then
-            OUTPUT="## Archon Error
-
-          archon-go exited 0 but did not produce .archon/review.md."
-            echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
-            echo "$OUTPUT" > /tmp/archon-output.md
-            exit 0
-          fi
-
-          OUTPUT=$(cat .archon/review.md)
-          echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
-
-          # GitHub PR comments have a 65536 char limit. Truncate if needed.
-          if [[ ${#OUTPUT} -gt 60000 ]]; then
-            FULL_LEN=${#OUTPUT}
-            OUTPUT="${OUTPUT:0:60000}
-
-          _Output truncated (${FULL_LEN} chars). See the [workflow run](${RUN_URL}) for the full report._"
-          fi
-          echo "$OUTPUT" > /tmp/archon-output.md
-
+      # always(): the review script reports every reviewed outcome through its output file and
+      # exits 0, but an environment error exits non-zero, and a trigger that silently posts
+      # nothing is the failure mode this feature exists to avoid.
+      #
+      # The body lives under runner.temp, which the runner empties at the start of every job.
+      # A fixed /tmp path would not be safe here: when a step BEFORE the review fails, the
+      # review script never runs to truncate it, and this step would post whatever the
+      # previous job on this self-hosted runner left behind — possibly another PR's review.
       - name: Post PR comment
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.issue.number }}
+          OUTPUT_FILE: ${{ runner.temp }}/archon-output.md
         run: |
-          if [[ ! -s /tmp/archon-output.md ]]; then
+          if [[ ! -s "$OUTPUT_FILE" ]]; then
             echo "::warning::Archon produced no output. Skipping PR comment."
             exit 0
           fi
-          gh pr comment "$PR_NUMBER" --body-file /tmp/archon-output.md
+          gh pr comment "$PR_NUMBER" --body-file "$OUTPUT_FILE"

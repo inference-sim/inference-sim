@@ -193,6 +193,15 @@ type TraceRecord struct {
 	// zero recorded think (e.g. Weka's overlap-clamped rounds) uses so it is no longer
 	// conflated with "absent". A negative recorded value is a load error (INV-3).
 	ThinkTimeUs *int64
+	// InputTokensReset is a context-compaction marker (#1609): the recorded ABSOLUTE
+	// input for a non-monotone round (in_N < in_{N-1} + out_{N-1}, where the delta law
+	// clamps to 0). Set only by the shared agentic-trace encoder, only on such rounds.
+	// nil (not recorded / monotone round) is the common case and writes no CSV cell, so
+	// a trace without any compaction round is byte-identical to a pre-#1609 trace (INV-6).
+	// In accumulate closed-loop replay the buffer re-seeds to this absolute at the
+	// boundary (see EncodeSessionToTraceRecords / SessionManager.OnComplete). *int64
+	// presence (nil = absent) mirrors the think_time_us non-lossy encoding (#1608/#1612).
+	InputTokensReset *int64
 }
 
 // TraceV2 combines header and records for a complete trace.
@@ -281,6 +290,19 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 		}
 	}
 
+	// Conditionally include input_tokens_reset column (#1609): present iff any record
+	// carries a compaction reset marker (non-nil). Trailing position (like adapter /
+	// think_time_us) keeps the positional parser's index math untouched. Omitted for
+	// traces with no compaction round, so run/observe/monotone traces add no column
+	// (INV-6 byte-identity).
+	includeInputTokensReset := false
+	for _, r := range records {
+		if r.InputTokensReset != nil {
+			includeInputTokensReset = true
+			break
+		}
+	}
+
 	// Conditionally include vllm_priority column: present iff priority was actually computed.
 	// Include when either:
 	// 1. Any record has non-zero priority (batch, standard, sheddable, background from observe)
@@ -320,6 +342,10 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 	// Append think_time_us at end (#1478): also trailing; parsed by header-position lookup.
 	if includeThinkTime {
 		columns = append(columns, "think_time_us")
+	}
+	// Append input_tokens_reset at end (#1609): also trailing; parsed by header-position lookup.
+	if includeInputTokensReset {
+		columns = append(columns, "input_tokens_reset")
 	}
 
 	// Write header row
@@ -387,6 +413,15 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 				row = append(row, "")
 			}
 		}
+		// Append input_tokens_reset at end (#1609): empty cell for nil (no compaction
+		// this round), integer for a recorded absolute reset target.
+		if includeInputTokensReset {
+			if r.InputTokensReset != nil {
+				row = append(row, strconv.FormatInt(*r.InputTokensReset, 10))
+			} else {
+				row = append(row, "")
+			}
+		}
 		if err := writer.Write(row); err != nil {
 			return fmt.Errorf("writing CSV row %d: %w", r.RequestID, err)
 		}
@@ -427,9 +462,10 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	// Detect optional columns from header
 	hasVLLMPriority := false
 	hasSLOTarget := false
-	xRequestIDIdx := -1  // header-position lookup; -1 = absent (issue #1428)
-	adapterIdx := -1     // header-position lookup; -1 = absent (#1464)
-	thinkTimeUsIdx := -1 // header-position lookup; -1 = absent (#1478)
+	xRequestIDIdx := -1       // header-position lookup; -1 = absent (issue #1428)
+	adapterIdx := -1          // header-position lookup; -1 = absent (#1464)
+	thinkTimeUsIdx := -1      // header-position lookup; -1 = absent (#1478)
+	inputTokensResetIdx := -1 // header-position lookup; -1 = absent (#1609)
 	for i, col := range headerRow {
 		switch col {
 		case "vllm_priority":
@@ -442,6 +478,8 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 			adapterIdx = i
 		case "think_time_us":
 			thinkTimeUsIdx = i
+		case "input_tokens_reset":
+			inputTokensResetIdx = i
 		}
 	}
 
@@ -470,11 +508,14 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 		if thinkTimeUsIdx >= 0 {
 			minCols++
 		}
+		if inputTokensResetIdx >= 0 {
+			minCols++
+		}
 		if len(row) < minCols {
 			return nil, fmt.Errorf("CSV row has %d columns, expected at least %d", len(row), minCols)
 		}
 
-		r, err := parseTraceRecord(row, hasVLLMPriority, hasSLOTarget, xRequestIDIdx, adapterIdx, thinkTimeUsIdx)
+		r, err := parseTraceRecord(row, hasVLLMPriority, hasSLOTarget, xRequestIDIdx, adapterIdx, thinkTimeUsIdx, inputTokensResetIdx)
 		if err != nil {
 			return nil, err
 		}
@@ -486,10 +527,10 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 
 // parseTraceRecord parses a CSV row. Handles optional columns vllm_priority
 // (after slo_class), slo_target_us (after deadline_us), and the trailing
-// columns x_request_id, adapter, and think_time_us. xRequestIDIdx, adapterIdx,
-// and thinkTimeUsIdx are absolute column indices in the row, or -1 if the
-// respective column is absent.
-func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequestIDIdx, adapterIdx, thinkTimeUsIdx int) (*TraceRecord, error) {
+// columns x_request_id, adapter, think_time_us, and input_tokens_reset.
+// xRequestIDIdx, adapterIdx, thinkTimeUsIdx, and inputTokensResetIdx are absolute
+// column indices in the row, or -1 if the respective column is absent.
+func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequestIDIdx, adapterIdx, thinkTimeUsIdx, inputTokensResetIdx int) (*TraceRecord, error) {
 	// Column offset: optional columns shift subsequent indices.
 	// vllm_priority appears after slo_class (index 3) → shifts everything after by +1.
 	// slo_target_us appears after deadline_us → shifts everything after by +1.
@@ -681,6 +722,24 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 		}
 	}
 
+	// Optional input_tokens_reset at trailing column (#1609): looked up by absolute
+	// header position. An empty cell means "no compaction this round" → nil (the common
+	// case); a value is the recorded absolute input the accumulate buffer re-seeds to.
+	// Negative values are rejected — an input length cannot be negative.
+	var inputTokensReset *int64
+	if inputTokensResetIdx >= 0 && inputTokensResetIdx < len(row) {
+		if v := strings.TrimSpace(row[inputTokensResetIdx]); v != "" {
+			parsed, perr := strconv.ParseInt(v, 10, 64)
+			if perr != nil {
+				return nil, fmt.Errorf("parsing input_tokens_reset %q: %w", v, perr)
+			}
+			if parsed < 0 {
+				return nil, fmt.Errorf("parsing input_tokens_reset: negative value %d not allowed", parsed)
+			}
+			inputTokensReset = &parsed
+		}
+	}
+
 	return &TraceRecord{
 		RequestID:         requestID,
 		ClientID:          row[1],
@@ -714,6 +773,7 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 		XRequestID:        xRequestID,
 		Adapter:           adapter,
 		ThinkTimeUs:       thinkTimeUs,
+		InputTokensReset:  inputTokensReset,
 	}, nil
 }
 
