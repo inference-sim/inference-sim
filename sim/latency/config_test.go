@@ -1404,6 +1404,48 @@ func TestInferWeightBytesFromModelName(t *testing.T) {
 	}
 }
 
+func TestKVCacheDtypeToBytes(t *testing.T) {
+	// #1565: maps a --kv-cache-dtype value to KV-storage bytes/element, mirroring
+	// vLLM's CacheConfig.cache_dtype. "auto"/"" → 0 (follow compute dtype, INV-6);
+	// fp8 variants → 1 (vLLM maps them to torch.uint8); bf16/fp16 → 2; fp32 → 4.
+	// Unrecognized → (0, false) so the CLI can fail loudly (R1). Case-insensitive.
+	tests := []struct {
+		name      string
+		dtype     string
+		wantBytes float64
+		wantOK    bool
+	}{
+		{"auto", "auto", 0, true},
+		{"empty", "", 0, true},
+		{"fp8", "fp8", 1.0, true},
+		{"fp8_e4m3", "fp8_e4m3", 1.0, true},
+		{"fp8_e5m2", "fp8_e5m2", 1.0, true},
+		{"fp8_inc (Gaudi)", "fp8_inc", 1.0, true},
+		{"FP8 uppercase", "FP8", 1.0, true},
+		{"bf16", "bf16", 2.0, true},
+		{"bfloat16", "bfloat16", 2.0, true},
+		{"fp16", "fp16", 2.0, true},
+		{"float16", "float16", 2.0, true},
+		{"fp32", "fp32", 4.0, true},
+		{"half alias", "half", 2.0, true},
+		{"float32 alias", "float32", 4.0, true},
+		{"float alias", "float", 4.0, true},
+		{"fp8e4m3 no underscore", "fp8e4m3", 1.0, true},
+		{"fp8e5m2 no underscore", "fp8e5m2", 1.0, true},
+		{"whitespace auto", "  auto  ", 0, true},
+		{"garbage", "int3", 0, false},
+		{"nonsense", "not-a-dtype", 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotBytes, gotOK := latency.KVCacheDtypeToBytes(tt.dtype)
+			if gotBytes != tt.wantBytes || gotOK != tt.wantOK {
+				t.Errorf("KVCacheDtypeToBytes(%q) = (%v, %v), want (%v, %v)", tt.dtype, gotBytes, gotOK, tt.wantBytes, tt.wantOK)
+			}
+		})
+	}
+}
+
 func TestGetModelConfig_NonQuantized_BytesPerParamUnchanged(t *testing.T) {
 	// BC-8: Non-quantized regression anchor — BytesPerParam unchanged
 	tmpDir := t.TempDir()

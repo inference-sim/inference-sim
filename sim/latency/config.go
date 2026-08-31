@@ -481,6 +481,37 @@ func InferWeightBytesFromModelName(name string) float64 {
 	return 0
 }
 
+// KVCacheDtypeToBytes maps a --kv-cache-dtype value to the KV-cache storage
+// precision in bytes per element, mirroring vLLM's CacheConfig.cache_dtype
+// resolution (#1565, vLLM v0.11.0). It returns (bytes, true) for a recognized value
+// and (0, false) for an unrecognized one, so the CLI can fail loudly (R1).
+//
+//   - "auto" (and the empty string) → (0, true): the KV cache follows the
+//     compute/activation dtype (ModelConfig.BytesPerParam via EffectiveKVBytesPerParam).
+//     This is the default and is byte-identical to a build without the flag (INV-6).
+//   - "fp8" / "fp8_e4m3" / "fp8_e5m2" / "fp8_inc" → (1.0, true): vLLM maps every fp8
+//     variant to 1 byte/element (fp8_inc is Intel Gaudi fp8). fp8 KV under bf16 compute
+//     halves KV memory.
+//   - "bf16" / "bfloat16" / "fp16" / "float16" / "half" → (2.0, true)
+//   - "fp32" / "float32" / "float" → (4.0, true)
+//
+// KV storage precision is independent of weight quantization (WeightBytesPerParam) —
+// they are separate vLLM engine args. Matching is case-insensitive and trims spaces.
+func KVCacheDtypeToBytes(dtype string) (float64, bool) {
+	switch strings.ToLower(strings.TrimSpace(dtype)) {
+	case "", "auto":
+		return 0, true
+	case "fp8", "fp8_e4m3", "fp8_e5m2", "fp8_inc", "fp8e4m3", "fp8e5m2":
+		return 1.0, true
+	case "bf16", "bfloat16", "fp16", "float16", "half":
+		return 2.0, true
+	case "fp32", "float32", "float":
+		return 4.0, true
+	default:
+		return 0, false
+	}
+}
+
 // invalidPositiveFloat returns true if v is not a valid positive float64
 // (i.e., v <= 0, NaN, or Inf). Used to validate roofline config denominators.
 func invalidPositiveFloat(v float64) bool {

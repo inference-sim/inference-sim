@@ -19,6 +19,7 @@ type ModelConfig struct {
 	DenseIntermediateDim   int     `json:"intermediate_size_mlp"`            // Dense layer FFN dimension; 0 = use IntermediateDim. For models like Scout where dense layers have different FFN size than MoE expert FFN.
 	HiddenAct              string  `json:"hidden_act"`                       // Activation function (e.g. "silu", "gelu", "relu"); used by KV capacity (3-matrix SwiGLU detection), reserved for future roofline per-activation tuning
 	WeightBytesPerParam    float64 `json:"weight_bytes_per_param,omitempty"` // Quantized weight precision (bytes/param); 0 = not set, use BytesPerParam. Auto-detected from quantization_config or model name conventions.
+	KVBytesPerParam        float64 `json:"kv_bytes_per_param,omitempty"`     // KV-cache storage precision (bytes/param) from --kv-cache-dtype (vLLM CacheConfig.cache_dtype); 0 = "auto", use BytesPerParam. Independent of weight quantization: fp8 KV (1) under bf16 compute (2) halves KV bytes/token → ~2x KV capacity. Used by KV capacity + PD KV-transfer sizing only (NOT step time). See EffectiveKVBytesPerParam.
 	HeadDim                int     `json:"head_dim,omitempty"`               // Explicit attention head dimension; 0 = not set, fall back to HiddenDim/NumHeads. Modern MLA/GQA models (GLM-5.2, Qwen3) declare a head_dim that differs from hidden/heads. Used by KV/weight capacity only (NOT step time). See EffectiveHeadDim.
 	KVLoraRank             int     `json:"kv_lora_rank,omitempty"`           // MLA compressed-KV latent rank; 0 = not MLA (standard MHA/GQA KV). When > 0 the KV cache stores a compressed latent of KVLoraRank+QKRopeHeadDim scalars per token per layer (DeepSeek-V2/V3, Kimi-K3, GLM-5.2). See KVBytesPerToken.
 	QKRopeHeadDim          int     `json:"qk_rope_head_dim,omitempty"`       // MLA decoupled-RoPE key dimension; the second summand of the MLA latent width. Meaningful only when KVLoraRank > 0.
@@ -82,10 +83,33 @@ func (mc ModelConfig) EffectiveKVBearingLayers() int {
 // weight memory calculations. Returns WeightBytesPerParam when explicitly set
 // (> 0), otherwise falls back to BytesPerParam (the compute/activation dtype).
 // This decouples weight bandwidth (often quantized, e.g. 0.5 for W4A16) from
-// KV cache and activation memory (which use the compute dtype, e.g. 2.0 for bfloat16).
+// activation memory (which uses the compute dtype, e.g. 2.0 for bfloat16). KV-cache
+// storage precision is likewise decoupled from the compute dtype — see
+// EffectiveKVBytesPerParam (#1565).
 func (mc ModelConfig) EffectiveWeightBytesPerParam() float64 {
 	if mc.WeightBytesPerParam > 0 {
 		return mc.WeightBytesPerParam
+	}
+	return mc.BytesPerParam
+}
+
+// EffectiveKVBytesPerParam returns the bytes-per-parameter to use for KV-cache
+// capacity (per-token byte width). Returns KVBytesPerParam when explicitly set
+// (> 0, e.g. --kv-cache-dtype fp8 → 1.0), otherwise falls back to BytesPerParam
+// (the compute/activation dtype). This mirrors EffectiveWeightBytesPerParam on the
+// KV axis (#1565): it decouples KV storage precision from both the compute dtype
+// and weight quantization — vLLM's --kv-cache-dtype is an engine arg independent of
+// weight quant, and fp8 KV under bf16 compute roughly halves KV memory (doubling KV
+// block capacity). Returning BytesPerParam when unset keeps the KV footprint
+// byte-identical to a build without the flag (INV-6, "auto" default).
+//
+// Like EffectiveWeightBytesPerParam / EffectiveHeadDim, this is deliberately scoped
+// to the capacity path (KVBytesPerToken): the step-time (trained-physics/roofline)
+// models retain BytesPerParam for the KV-read bandwidth term, so step-time golden
+// datasets and INV-BC-DP1 stay byte-identical.
+func (mc ModelConfig) EffectiveKVBytesPerParam() float64 {
+	if mc.KVBytesPerParam > 0 {
+		return mc.KVBytesPerParam
 	}
 	return mc.BytesPerParam
 }

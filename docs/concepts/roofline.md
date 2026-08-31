@@ -7,7 +7,7 @@ This document describes the analytical approach used to estimate the GPU latency
 
 
 !!! note "Scope: TP-only, quantized weight memory supported"
-    The roofline model accounts for tensor parallelism (TP) but does not model data parallelism (DP) or expert parallelism (EP) scheduling overhead. Quantized weight precision is auto-detected from HuggingFace `quantization_config` (GPTQ, AWQ, FP8, compressed-tensors), model name conventions (e.g., `w4a16`, `FP8`), or `torch_dtype` fallback, and is used for weight bandwidth and KV capacity calculations. KV cache and activation memory continue to use the compute dtype (`BytesPerParam` from `torch_dtype`).
+    The roofline model accounts for tensor parallelism (TP) but does not model data parallelism (DP) or expert parallelism (EP) scheduling overhead. Quantized weight precision is auto-detected from HuggingFace `quantization_config` (GPTQ, AWQ, FP8, compressed-tensors), model name conventions (e.g., `w4a16`, `FP8`), or `torch_dtype` fallback, and is used for weight bandwidth and KV capacity calculations. Activation memory uses the compute dtype (`BytesPerParam` from `torch_dtype`); KV-cache storage precision is configured independently via `--kv-cache-dtype` (#1565).
 
 ## 1. Why Roofline?
 

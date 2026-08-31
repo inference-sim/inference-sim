@@ -218,7 +218,7 @@ Because the dispatch term is the *only* term gated on `DP > 1`, the residual iso
     **Trained-physics** is the default for any model with a HuggingFace `config.json` (generalizes across architectures, workloads, and TP configurations without per-model calibration). **Roofline** for pure analytical estimates when no learned corrections are desired.
 
 !!! warning "Current limitations"
-    All analytical latency models support tensor parallelism (TP). Data parallelism (DP) and expert parallelism (EP) scheduling overhead are not yet modeled. Quantized weight precision (GPTQ, AWQ, FP8, compressed-tensors) is auto-detected from `quantization_config`, model name conventions (e.g., `w4a16`, `FP8`), or `torch_dtype` fallback, and is used for weight bandwidth and KV capacity calculations. MFU calibration values are still derived from FP16/BF16 measurements.
+    All analytical latency models support tensor parallelism (TP). Data parallelism (DP) and expert parallelism (EP) scheduling overhead are not yet modeled. Quantized weight precision (GPTQ, AWQ, FP8, compressed-tensors) is auto-detected from `quantization_config`, model name conventions (e.g., `w4a16`, `FP8`), or `torch_dtype` fallback, and is used for weight bandwidth and model-weight memory. KV-cache storage precision is configured **independently** via `--kv-cache-dtype` (vLLM parity, #1565): `auto` (default) follows the compute dtype, while `fp8` stores the KV cache at 1 byte/element — roughly doubling KV-block capacity — regardless of the weight precision. MFU calibration values are still derived from FP16/BF16 measurements.
 
 ## Pluggable Architecture
 

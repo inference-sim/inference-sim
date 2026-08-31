@@ -63,12 +63,16 @@ var swiGLUActivations = map[string]bool{
 // model config and tensor parallelism degree. This is used for both KV cache
 // capacity sizing and PD transfer duration estimation.
 //
-// The formula is: EffectiveKVBearingLayers × 2 (K+V) × headDim × numKVHeads × BytesPerParam / TP
+// The formula is: EffectiveKVBearingLayers × 2 (K+V) × headDim × numKVHeads × EffectiveKVBytesPerParam / TP
 // (EffectiveKVBearingLayers equals NumLayers for every non-hybrid model, INV-6; for a
 // hybrid-attention model it is the full-attention layer count — #1635.)
 //
-// Uses BytesPerParam (compute/activation dtype), not WeightBytesPerParam, since
-// KV cache is stored at compute precision regardless of weight quantization.
+// Uses EffectiveKVBytesPerParam (the KV-cache storage precision), NOT
+// WeightBytesPerParam. By default (KVBytesPerParam == 0, "auto") this equals
+// BytesPerParam (the compute/activation dtype) — byte-identical to the pre-#1565
+// behavior (INV-6). When --kv-cache-dtype fp8 is set, EffectiveKVBytesPerParam is
+// 1.0 while compute stays bf16 (2.0), so KV bytes/token halve (vLLM parity: KV cache
+// stored at a different, independent precision from compute and from weight quant).
 //
 // Returns a float64 so callers can choose when to truncate. CalculateKVBlocks
 // multiplies by blockSize before truncating (avoids loss when the per-token
@@ -105,6 +109,13 @@ func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
 	if mc.BytesPerParam <= 0 || math.IsNaN(mc.BytesPerParam) || math.IsInf(mc.BytesPerParam, 0) {
 		return 0, fmt.Errorf("KVBytesPerToken: precision (BytesPerParam) must be a valid positive number, got %v", mc.BytesPerParam)
 	}
+	// KV-storage precision (#1565) is optional (0 = "auto", fall back to BytesPerParam
+	// via EffectiveKVBytesPerParam). When explicitly set (e.g. --kv-cache-dtype fp8) it
+	// must be a valid positive number — a hand-built ModelConfig with a negative/NaN/Inf
+	// value errors here (R1), mirroring the WeightBytesPerParam guard in CalculateKVBlocks.
+	if mc.KVBytesPerParam != 0 && (mc.KVBytesPerParam < 0 || math.IsNaN(mc.KVBytesPerParam) || math.IsInf(mc.KVBytesPerParam, 0)) {
+		return 0, fmt.Errorf("KVBytesPerToken: KVBytesPerParam must be positive when set, got %v", mc.KVBytesPerParam)
+	}
 
 	// --- MLA (Multi-head Latent Attention) path (F2, #1527) ---
 	// See ModelConfig.IsMLA / the field comments: KV is a single compressed latent
@@ -119,7 +130,7 @@ func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
 		// fixed-size recurrent state and bear no growing KV (#1635). For a non-hybrid
 		// MLA model (DeepSeek-V2/V3, GLM-5.2) EffectiveKVBearingLayers == NumLayers,
 		// so this is byte-identical to the pre-#1635 all-layers value (INV-6).
-		perTokenKVBytesF := float64(mc.EffectiveKVBearingLayers()) * float64(latentWidth) * mc.BytesPerParam
+		perTokenKVBytesF := float64(mc.EffectiveKVBearingLayers()) * float64(latentWidth) * mc.EffectiveKVBytesPerParam()
 		// Public-API boundary guard: normal configs are validated at parse time
 		// (config.go rejects negative shape fields), but a hand-built ModelConfig
 		// with a negative QKRopeHeadDim could make latentWidth <= 0.
@@ -157,7 +168,7 @@ func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
 	// standard MHA/GQA branch too — not only the MLA branch — so KVBearingLayers governs
 	// both attention paths consistently; a non-MLA hybrid would otherwise populate the
 	// field but have it silently ignored here.
-	perTokenKVBytesF := float64(mc.EffectiveKVBearingLayers()) * 2.0 * float64(headDim) * float64(numKVHeads) * mc.BytesPerParam
+	perTokenKVBytesF := float64(mc.EffectiveKVBearingLayers()) * 2.0 * float64(headDim) * float64(numKVHeads) * mc.EffectiveKVBytesPerParam()
 	perTokenKVBytesPerGPUF := perTokenKVBytesF / float64(tp)
 
 	if perTokenKVBytesPerGPUF <= 0 {

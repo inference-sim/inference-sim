@@ -222,6 +222,9 @@ Replays a captured TraceV2 file through the BLIS discrete-event simulator. Inste
 
 Replay also accepts all shared simulation config flags (`--latency-model`, `--total-kv-blocks`, `--max-num-seqs`, etc.) — the same flags available in `blis run`. See [Configuration](../reference/configuration.md) for the full list.
 
+!!! note "Re-supply capacity-affecting flags identically on replay"
+    Flags that shape KV-cache capacity are **re-supplied on the replay CLI, not round-tripped through the trace header** — replay recomputes capacity from `--model` and these flags exactly as `blis run` does. In particular, **`--kv-cache-dtype` must be passed identically on replay** (e.g. `--kv-cache-dtype fp8`) to reproduce the run's KV-block count and per-request metrics (INV-13). This mirrors `--gpu-memory-utilization` and the auto-computed `--total-kv-blocks` (the header records those only informationally). It is deliberately **not** the header-authoritative model used by `--kv-offload-config` — a KV dtype only scales a byte width, it drives no runtime mechanism.
+
 ### How Replay Differs from `blis run`
 
 | Aspect | `blis run` | `blis replay` |
