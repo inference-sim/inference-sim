@@ -86,7 +86,8 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 	if includeAttention {
 		dKV := nKVHeads * dHead
 
-		// 1. Standard GEMMs (Weights)
+		// 1. Standard GEMMs (Weights). Q/K/V/O projections are weight GEMMs, charged over
+		// ALL layers — KDA layer weights stay full-attention (out of scope, #1638).
 		qkvFlops := 2 * newT * (dModel*dModel + 2*dModel*dKV)
 		projFlops := 2 * newT * dModel * dModel
 		flops.GemmOps = (qkvFlops + projFlops) * nLayers
@@ -106,8 +107,22 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 		ropeOps := 2 * newT * dModel
 		vectorOps := (5 * nHeads * newT * effectiveCtx) + ropeOps
 
-		flops.GemmOps += (attnGemmOps * nLayers)
-		flops.SramOps = (vectorOps * nLayers)
+		// Hybrid attention (#1636): the attention-SCORE ops scale with context (O(N²)
+		// prefill, O(context) decode) only for full-attention layers. KDA (linear-
+		// attention) layers charge an O(state) cost — the fixed d_head state dimension in
+		// place of the growing context — reusing the identical FLOP convention. Non-hybrid
+		// models have nFull == nLayers, taking the byte-identical original branch (INV-6).
+		nFull := float64(config.EffectiveKVBearingLayers())
+		nKDA := nLayers - nFull
+		if nKDA > 0 {
+			attnGemmOpsKDA := (4 * nHeads * newT * dHead * dHead)
+			vectorOpsKDA := (5 * nHeads * newT * dHead) + ropeOps
+			flops.GemmOps += (attnGemmOps * nFull) + (attnGemmOpsKDA * nKDA)
+			flops.SramOps = (vectorOps * nFull) + (vectorOpsKDA * nKDA)
+		} else {
+			flops.GemmOps += (attnGemmOps * nLayers)
+			flops.SramOps = (vectorOps * nLayers)
+		}
 	}
 
 	if includeMLP {
@@ -246,14 +261,20 @@ func calculateMemoryAccessBytes(
 	mem.ModelWeights = weightsPerLayer * config.EffectiveWeightBytesPerParam()
 
 	if includeKVCache {
+		// Growing KV cache lives in the full-attention layers only (#1635/#1636): KDA
+		// layers keep a fixed-size recurrent state, not a per-token KV cache, so they
+		// generate no growing-KV traffic. nFull == nLayers for non-hybrid models, so this
+		// is a value-preserving substitution there (byte-identical, INV-6).
+		nFull := float64(config.EffectiveKVBearingLayers())
+
 		// KV Growth: Writing new tokens to HBM.
-		kvWritePerNewToken := 2 * nLayers * nKVHeads * dHead * config.BytesPerParam
+		kvWritePerNewToken := 2 * nFull * nKVHeads * dHead * config.BytesPerParam
 		mem.KVCacheGrowth = kvWritePerNewToken * newT
 
 		// KV Access: Only read PAST history.
 		// IMPORTANT: For Prefill (newT > 1), the newT tokens attend to each other in SRAM.
 		// They do NOT generate HBM read traffic for themselves.
-		kvReadPerToken := 2 * nLayers * nKVHeads * dHead * config.BytesPerParam
+		kvReadPerToken := 2 * nFull * nKVHeads * dHead * config.BytesPerParam
 		mem.KVCacheAccess = kvReadPerToken * seq
 	}
 
