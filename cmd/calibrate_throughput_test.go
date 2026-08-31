@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim/workload"
@@ -139,6 +140,95 @@ func TestCalibrateCmd_Throughput_PerGPUAndVerdict(t *testing.T) {
 	}
 	if tp.TolerancePct == nil || *tp.TolerancePct != 15 {
 		t.Errorf("tolerance_pct = %v, want 15", tp.TolerancePct)
+	}
+}
+
+// warnCapture is a logrus hook that records WARN-level messages so a test can assert
+// a specific warning fired without scraping stderr.
+type warnCapture struct{ msgs []string }
+
+func (w *warnCapture) Levels() []logrus.Level { return []logrus.Level{logrus.WarnLevel} }
+func (w *warnCapture) Fire(e *logrus.Entry) error {
+	w.msgs = append(w.msgs, e.Message)
+	return nil
+}
+
+// TestCalibrateCmd_Throughput_RealFailedSimOK_Warns verifies the qa-review G4 fix: a request
+// that FAILED in the real trace (status != "ok") but COMPLETED in the sim is excluded from the
+// throughput numerator (ok-only) AND surfaced via a stderr warning, so the completion-rate
+// mismatch is visible rather than silently masked (R1).
+func TestCalibrateCmd_Throughput_RealFailedSimOK_Warns(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	simPath := filepath.Join(dir, "results.json")
+	reportPath := filepath.Join(dir, "report.json")
+
+	header := "trace_version: 2\ntime_unit: microseconds\nmode: real\nwarm_up_requests: 0\n"
+	if err := os.WriteFile(headerPath, []byte(header), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Requests 0,1 succeed; request 2 FAILED on the real server (status=error) but has a
+	// matching completed SimResult below → the G4 masking scenario.
+	csv := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
+		"0,c1,t1,standard,s1,0,,0,true,10,10,10,0,0,0,0.0,,0,10,0,0,500000,1000000,10,ok,,stop\n" +
+		"1,c1,t1,standard,s1,0,,0,true,10,10,10,0,0,0,0.0,,0,10,1000000,1000000,1500000,2000000,10,ok,,stop\n" +
+		"2,c1,t1,standard,s1,0,,0,true,10,10,10,0,0,0,0.0,,0,10,2000000,2000000,2500000,3000000,10,error,upstream_timeout,\n"
+	if err := os.WriteFile(dataPath, []byte(csv), 0644); err != nil {
+		t.Fatal(err)
+	}
+	simResults := []workload.SimResult{
+		{RequestID: 0, TTFT: 250000, E2E: 500000, InputTokens: 10, OutputTokens: 10},
+		{RequestID: 1, TTFT: 250000, E2E: 500000, InputTokens: 10, OutputTokens: 10},
+		{RequestID: 2, TTFT: 250000, E2E: 500000, InputTokens: 10, OutputTokens: 10},
+	}
+	simData, _ := json.Marshal(simResults)
+	if err := os.WriteFile(simPath, simData, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	defer saveRestoreCalibrateFlags()()
+	calibrateTraceHeaderPath = headerPath
+	calibrateTraceDataPath = dataPath
+	calibrateSimResultsPath = simPath
+	calibrateReportPath = reportPath
+	calibrateWarmUpRequests = -1
+	calibrateNetworkRTTUs = -1
+	calibrateNetworkBandwidthMbps = 0
+	calibrateNumGPUs = 0
+	calibrateThroughputTolerancePct = 0
+
+	hook := &warnCapture{}
+	logger := logrus.StandardLogger()
+	logger.AddHook(hook)
+	defer func() { logger.ReplaceHooks(make(logrus.LevelHooks)) }()
+
+	calibrateCmd.Run(calibrateCmd, []string{})
+
+	// The failed-real/sim-completed request must be excluded (only 2 ok requests counted).
+	var report workload.CalibrationReport
+	data, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("report not written: %v", err)
+	}
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if report.Throughput == nil {
+		t.Fatal("throughput block should still be derivable from the 2 ok requests")
+	}
+	if report.Throughput.MatchedRequests != 2 {
+		t.Errorf("matched = %d, want 2 (the failed real request is excluded)", report.Throughput.MatchedRequests)
+	}
+	// The G4 warning must have fired naming the excluded count.
+	var fired bool
+	for _, m := range hook.msgs {
+		if strings.Contains(m, "failed in the real trace") && strings.Contains(m, "completed in the sim") {
+			fired = true
+		}
+	}
+	if !fired {
+		t.Errorf("expected a status-mismatch warning (real-failed/sim-completed); got warnings: %v", hook.msgs)
 	}
 }
 

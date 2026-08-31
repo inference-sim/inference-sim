@@ -223,6 +223,11 @@ Example:
 				itlByRequest[r.RequestID] = append(itlByRequest[r.RequestID], r)
 			}
 			// Real-side runtime: span from earliest send to latest last-chunk over matched set.
+			// NOTE: this goodput makespan spans ALL matched statuses (ok/error/timeout) — a
+			// non-ok request still occupies wall-clock time, so goodput (attained/elapsed) must
+			// count it in the denominator. Throughput's makespan is ok-only (computed inside
+			// ComputeThroughputComparison), because a throughput rate is defined over completed
+			// output tokens. The two eligibility windows differ intentionally (deferred issue 4).
 			var firstSend, lastChunk int64
 			firstSend = -1
 			for _, rec := range trace.Records {
@@ -289,6 +294,11 @@ Example:
 			// eligible real requests, real tok/s is deflated toward sim and the verdict can
 			// spuriously PASS. Warn when matched coverage of the (warm-up-filtered) real set
 			// is low, so a dropped-request gap is visible, not masked (R1).
+			//
+			// SCOPE: this guard targets SIM drops (a real request unmatched by any sim result).
+			// pairs.MatchedCount counts every request-ID-matched pair regardless of status, while
+			// ComputeThroughputComparison filters to Status=="ok"; the status-mismatch guard just
+			// below covers the complementary gap (real failed / sim completed).
 			eligibleReal := pairs.MatchedCount + pairs.UnmatchedReal
 			if eligibleReal > 0 {
 				coverage := float64(pairs.MatchedCount) / float64(eligibleReal)
@@ -297,11 +307,38 @@ Example:
 						pairs.MatchedCount, eligibleReal, coverage*100)
 				}
 			}
+			// Status-mismatch guard (qa-review G4): a request that FAILED in the real trace
+			// (Status != "ok") but COMPLETED in the sim is request-ID-matched, so the coverage
+			// guard above counts it as covered — yet ComputeThroughputComparison drops the pair
+			// (ok-only numerator). Silently excluding it would hide a completion-rate fidelity
+			// gap (the sim modeled a success the real server did not deliver). Surface the count
+			// so the exclusion is visible, not masked (R1).
+			var realFailedSimOK int
+			for _, rec := range trace.Records {
+				if !matched[rec.RequestID] || rec.Status == "ok" {
+					continue
+				}
+				if _, ok := simByID[rec.RequestID]; ok {
+					realFailedSimOK++
+				}
+			}
+			if realFailedSimOK > 0 {
+				logrus.Warnf("calibrate: throughput excluded %d matched request(s) that failed in the real trace (status != \"ok\") but completed in the sim — throughput is over the ok-only subset, so this completion-rate mismatch is NOT reflected in the throughput numbers.",
+					realFailedSimOK)
+			}
 			// Validity boundary (open-loop only): the reconstructed sim makespan
 			// (send + simE2E) is a physical timeline only for fixed-mode replay. A
 			// delta-encoded / closed-loop corpus regenerates its own arrival schedule,
 			// so the real send schedule is not the sim's — warn rather than silently
 			// emit a verdict that violates the boundary.
+			//
+			// KNOWN BLIND SPOT (qa-review G3): this detects only the delta-corpus signal
+			// (session_context_growth in the header). It does NOT catch a PLAIN trace replayed
+			// with `--session-mode closed-loop`, because the replay mode is a `blis replay` CLI
+			// choice not carried in the trace header or SimResult — calibrate cannot observe it.
+			// In that case the throughput makespan is silently open-loop-invalid. The reliable
+			// contract is therefore on the operator: only calibrate throughput against a
+			// FIXED-mode replay (documented in docs/guide/observe-replay-calibrate.md).
 			if trace.Header.SessionContextGrowth != "" {
 				logrus.Warnf("calibrate: throughput validity boundary — trace session_context_growth=%q indicates a closed-loop/delta corpus; the throughput comparison is open-loop only and may not be meaningful here.", trace.Header.SessionContextGrowth)
 			}
