@@ -29,6 +29,7 @@ func saveRestoreCalibrateFlags() func() {
 	origTTFTThresh := calibrateTTFTMapeThreshold
 	origTputTol := calibrateThroughputTolerancePct
 	origNumGPUs := calibrateNumGPUs
+	origReplayMode := calibrateReplayMode
 	return func() {
 		calibrateTraceHeaderPath = origHeader
 		calibrateTraceDataPath = origData
@@ -43,6 +44,7 @@ func saveRestoreCalibrateFlags() func() {
 		calibrateTTFTMapeThreshold = origTTFTThresh
 		calibrateThroughputTolerancePct = origTputTol
 		calibrateNumGPUs = origNumGPUs
+		calibrateReplayMode = origReplayMode
 	}
 }
 

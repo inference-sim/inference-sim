@@ -43,6 +43,14 @@ var (
 	// verdict on raw output-token throughput; --num-gpus gates the per-GPU normalization.
 	calibrateThroughputTolerancePct float64
 	calibrateNumGPUs                int
+	// Replay-mode provenance (qa-review G3, #1647). The throughput makespan is a physical
+	// sim timeline only for FIXED-mode replay; under closed-loop replay the sim regenerates
+	// its own arrival schedule, so the real SendTimeUs schedule is not the sim's and the
+	// reconstructed makespan is invalid. calibrate cannot observe the `blis replay
+	// --session-mode` choice (it is in neither the trace header nor SimResult — the durable
+	// auto-stamp is #1652), so the operator affirms it here. Default "fixed" = the documented
+	// standard observe→replay→calibrate path.
+	calibrateReplayMode string
 )
 
 var calibrateCmd = &cobra.Command{
@@ -145,6 +153,14 @@ Example:
 		}
 		if calibrateNumGPUs < 0 {
 			logrus.Fatalf("--num-gpus must be >= 0, got %d", calibrateNumGPUs)
+		}
+		// --replay-mode gates the throughput makespan's validity (qa-review G3): only "fixed"
+		// and "closed-loop" are meaningful, so reject anything else up front (R1, no silent
+		// coercion of a typo to fixed).
+		switch calibrateReplayMode {
+		case "fixed", "closed-loop":
+		default:
+			logrus.Fatalf("--replay-mode must be \"fixed\" or \"closed-loop\", got %q", calibrateReplayMode)
 		}
 
 		config := workload.CalibrationConfig{
@@ -279,13 +295,75 @@ Example:
 		// throughput and request-completion rate over the same matched set, both in the
 		// client frame (config supplies the network normalization). Emitted when derivable
 		// from the required inputs (nil otherwise, so no Inf/NaN reaches JSON marshaling).
-		report.Throughput = workload.ComputeThroughputComparison(
-			trace.Records, simByID, matched, &config, calibrateNumGPUs, calibrateThroughputTolerancePct,
-		)
+		// Replay-mode provenance gate (qa-review G3/F1): the throughput makespan
+		// (SendTimeUs + simE2E) is a physical sim timeline ONLY for fixed-mode replay. Under
+		// closed-loop replay the sim regenerates its own arrival schedule (round N+1 depends on
+		// the sim's completion of round N, INV-10), so the real SendTimeUs schedule is not the
+		// sim's and the reconstructed makespan is meaningless. calibrate cannot observe the
+		// `blis replay --session-mode` choice, so it REFUSES to emit the block unless the
+		// operator affirms fixed mode AND the trace itself carries no delta-corpus signal —
+		// turning the prior silently-invalid output into a loud refusal (R1). The durable
+		// auto-detection (stamp the replay mode into SimResult) is tracked in #1652.
+		deltaCorpus := trace.Header.SessionContextGrowth != ""
+		throughputProvenanceOK := calibrateReplayMode == "fixed" && !deltaCorpus
+		if throughputProvenanceOK {
+			report.Throughput = workload.ComputeThroughputComparison(
+				trace.Records, simByID, matched, &config, calibrateNumGPUs, calibrateThroughputTolerancePct,
+			)
+		} else if calibrateThroughputTolerancePct > 0 || calibrateNumGPUs > 0 {
+			// The operator asked for a throughput verdict but provenance can't establish the
+			// makespan is valid — never silently drop the request (R1); say WHY it was refused.
+			switch {
+			case deltaCorpus:
+				logrus.Warnf("calibrate: throughput comparison REFUSED — trace session_context_growth=%q indicates a closed-loop/delta corpus, so the reconstructed sim makespan is not a physical timeline; --throughput-tolerance-pct/--num-gpus have no effect. Calibrate throughput only against a fixed-mode replay of a plain trace.", trace.Header.SessionContextGrowth)
+			default: // calibrateReplayMode == "closed-loop"
+				logrus.Warnf("calibrate: throughput comparison REFUSED — --replay-mode=closed-loop means the sim regenerated its own arrival schedule, so the real send schedule is not the sim's and the makespan-based throughput is invalid; --throughput-tolerance-pct/--num-gpus have no effect. Pass --replay-mode fixed only for a fixed-mode replay.")
+			}
+		}
+
+		// Status-mismatch guard (qa-review G4/F1): a request that FAILED in the real trace
+		// (Status != "ok") but COMPLETED in the sim is request-ID-matched, yet
+		// ComputeThroughputComparison drops the pair (ok-only numerator) — hiding a
+		// completion-rate fidelity gap (the sim modeled a success the real server did not
+		// deliver). This scan runs UNCONDITIONALLY, BEFORE the nil check, so it also fires in
+		// the degenerate case where EVERY matched real request failed (⇒ Throughput == nil):
+		// there the whole comparison collapsed for exactly this reason and it must not pass
+		// silently (R1). Placing it inside the non-nil branch (the prior fix) left that case
+		// hidden. O(records), point map lookups only.
+		var realFailedSimOK int
+		for _, rec := range trace.Records {
+			if !matched[rec.RequestID] || rec.Status == "ok" {
+				continue
+			}
+			if _, ok := simByID[rec.RequestID]; ok {
+				realFailedSimOK++
+			}
+		}
+		if realFailedSimOK > 0 {
+			// The completion-rate mismatch is real regardless of whether a throughput block was
+			// emitted; the suffix explains why it isn't reflected in the numbers. Three cases:
+			// block emitted (ok-only numerator), block refused on provenance (never computed),
+			// or block not derivable because every matched request failed.
+			var suffix string
+			switch {
+			case report.Throughput != nil:
+				suffix = "throughput is computed over the ok-only subset, so this completion-rate mismatch is NOT reflected in the throughput numbers"
+			case !throughputProvenanceOK:
+				suffix = "the throughput block was refused on replay-mode provenance, so this completion-rate mismatch is not reflected there"
+			default:
+				suffix = "ALL matched real requests failed, so no throughput block was derivable — the entire comparison is suppressed by this completion-rate mismatch"
+			}
+			logrus.Warnf("calibrate: %d matched request(s) failed in the real trace (status != \"ok\") but completed in the sim — %s.",
+				realFailedSimOK, suffix)
+		}
+
 		if report.Throughput == nil {
 			// Never silently drop the block when the operator asked for a verdict (R1):
-			// distinguish "not derivable" from "feature absent".
-			if calibrateThroughputTolerancePct > 0 || calibrateNumGPUs > 0 {
+			// distinguish "not derivable" from "feature absent". A provenance refusal
+			// (!throughputProvenanceOK) already warned above with its specific reason, so
+			// don't also emit the generic "not derivable" message — that path is only for a
+			// fixed-mode replay whose matched set yielded no positive makespan/tokens.
+			if throughputProvenanceOK && (calibrateThroughputTolerancePct > 0 || calibrateNumGPUs > 0) {
 				logrus.Warnf("calibrate: throughput comparison skipped — not derivable over the matched set (no positive real+sim makespan or zero matched output tokens); --throughput-tolerance-pct/--num-gpus have no effect.")
 			}
 		} else {
@@ -297,8 +375,8 @@ Example:
 			//
 			// SCOPE: this guard targets SIM drops (a real request unmatched by any sim result).
 			// pairs.MatchedCount counts every request-ID-matched pair regardless of status, while
-			// ComputeThroughputComparison filters to Status=="ok"; the status-mismatch guard just
-			// below covers the complementary gap (real failed / sim completed).
+			// ComputeThroughputComparison filters to Status=="ok"; the status-mismatch guard
+			// above (unconditional) covers the complementary gap (real failed / sim completed).
 			eligibleReal := pairs.MatchedCount + pairs.UnmatchedReal
 			if eligibleReal > 0 {
 				coverage := float64(pairs.MatchedCount) / float64(eligibleReal)
@@ -307,41 +385,10 @@ Example:
 						pairs.MatchedCount, eligibleReal, coverage*100)
 				}
 			}
-			// Status-mismatch guard (qa-review G4): a request that FAILED in the real trace
-			// (Status != "ok") but COMPLETED in the sim is request-ID-matched, so the coverage
-			// guard above counts it as covered — yet ComputeThroughputComparison drops the pair
-			// (ok-only numerator). Silently excluding it would hide a completion-rate fidelity
-			// gap (the sim modeled a success the real server did not deliver). Surface the count
-			// so the exclusion is visible, not masked (R1).
-			var realFailedSimOK int
-			for _, rec := range trace.Records {
-				if !matched[rec.RequestID] || rec.Status == "ok" {
-					continue
-				}
-				if _, ok := simByID[rec.RequestID]; ok {
-					realFailedSimOK++
-				}
-			}
-			if realFailedSimOK > 0 {
-				logrus.Warnf("calibrate: throughput excluded %d matched request(s) that failed in the real trace (status != \"ok\") but completed in the sim — throughput is over the ok-only subset, so this completion-rate mismatch is NOT reflected in the throughput numbers.",
-					realFailedSimOK)
-			}
-			// Validity boundary (open-loop only): the reconstructed sim makespan
-			// (send + simE2E) is a physical timeline only for fixed-mode replay. A
-			// delta-encoded / closed-loop corpus regenerates its own arrival schedule,
-			// so the real send schedule is not the sim's — warn rather than silently
-			// emit a verdict that violates the boundary.
-			//
-			// KNOWN BLIND SPOT (qa-review G3): this detects only the delta-corpus signal
-			// (session_context_growth in the header). It does NOT catch a PLAIN trace replayed
-			// with `--session-mode closed-loop`, because the replay mode is a `blis replay` CLI
-			// choice not carried in the trace header or SimResult — calibrate cannot observe it.
-			// In that case the throughput makespan is silently open-loop-invalid. The reliable
-			// contract is therefore on the operator: only calibrate throughput against a
-			// FIXED-mode replay (documented in docs/guide/observe-replay-calibrate.md).
-			if trace.Header.SessionContextGrowth != "" {
-				logrus.Warnf("calibrate: throughput validity boundary — trace session_context_growth=%q indicates a closed-loop/delta corpus; the throughput comparison is open-loop only and may not be meaningful here.", trace.Header.SessionContextGrowth)
-			}
+			// NOTE: the closed-loop / delta-corpus validity boundary is enforced UPSTREAM by the
+			// provenance gate (throughputProvenanceOK) — report.Throughput is non-nil here only
+			// for a fixed-mode replay of a plain trace, so no makespan-validity warning is needed
+			// in this branch. See #1652 for the durable auto-detection of the replay mode.
 		}
 
 		// TTFT-MAPE tolerance verdict (#1583, BC-7): recorded in the report (not just
@@ -654,5 +701,6 @@ func init() {
 	calibrateCmd.Flags().Float64Var(&calibrateAdapterMAPEThresh, "adapter-mape-threshold", 0.20, "MAPE bound (fraction) for the adapter-reference comparison (SC-007 target 0.20).")
 	calibrateCmd.Flags().Float64Var(&calibrateThroughputTolerancePct, "throughput-tolerance-pct", 0, "Within-tolerance verdict (percent) on real-vs-sim output-token throughput (#1647). Verdict emitted only when > 0.")
 	calibrateCmd.Flags().IntVar(&calibrateNumGPUs, "num-gpus", 0, "GPU count (TP×PP×DP×instances) for per-GPU throughput normalization (#1647). Per-GPU fields emitted only when > 0. Operator-supplied since the trace header records only TP.")
+	calibrateCmd.Flags().StringVar(&calibrateReplayMode, "replay-mode", "fixed", "Replay mode the SimResults were produced under: \"fixed\" or \"closed-loop\" (#1647, qa-review G3). The throughput makespan is valid ONLY for fixed-mode replay of a plain trace; calibrate REFUSES the throughput block otherwise (closed-loop replay, or a delta corpus). calibrate cannot observe the `blis replay --session-mode` choice, so the operator affirms it here (durable auto-stamp: #1652).")
 	rootCmd.AddCommand(calibrateCmd)
 }

@@ -232,6 +232,210 @@ func TestCalibrateCmd_Throughput_RealFailedSimOK_Warns(t *testing.T) {
 	}
 }
 
+// runCalibrateCapturingWarns runs calibrate with the given flags already set and returns the
+// WARN messages it emitted. Callers set flags via saveRestoreCalibrateFlags before calling.
+func runCalibrateCapturingWarns(t *testing.T) []string {
+	t.Helper()
+	hook := &warnCapture{}
+	logger := logrus.StandardLogger()
+	logger.AddHook(hook)
+	defer func() { logger.ReplaceHooks(make(logrus.LevelHooks)) }()
+	calibrateCmd.Run(calibrateCmd, []string{})
+	return hook.msgs
+}
+
+// TestCalibrateCmd_Throughput_RefusedOnClosedLoopReplayMode verifies the qa-review G3/F1 fix:
+// with --replay-mode=closed-loop the reconstructed sim makespan is not a physical timeline, so
+// calibrate REFUSES to emit the throughput block (loud warning) instead of silently emitting an
+// invalid verdict. The plain-trace closed-loop case the adjudicator flagged as undetectable is
+// now caught by the operator-affirmed replay mode.
+func TestCalibrateCmd_Throughput_RefusedOnClosedLoopReplayMode(t *testing.T) {
+	dir := t.TempDir()
+	headerPath, dataPath, simPath := writeThroughputFixture(t, dir)
+	reportPath := filepath.Join(dir, "report.json")
+
+	defer saveRestoreCalibrateFlags()()
+	calibrateTraceHeaderPath = headerPath
+	calibrateTraceDataPath = dataPath
+	calibrateSimResultsPath = simPath
+	calibrateReportPath = reportPath
+	calibrateWarmUpRequests = -1
+	calibrateNetworkRTTUs = -1
+	calibrateNetworkBandwidthMbps = 0
+	calibrateNumGPUs = 0
+	calibrateThroughputTolerancePct = 15 // operator asked for a verdict
+	calibrateReplayMode = "closed-loop"
+
+	msgs := runCalibrateCapturingWarns(t)
+
+	var report workload.CalibrationReport
+	data, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("report not written: %v", err)
+	}
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if report.Throughput != nil {
+		t.Fatalf("throughput block must be REFUSED under --replay-mode closed-loop, got %+v", report.Throughput)
+	}
+	var refused bool
+	for _, m := range msgs {
+		if strings.Contains(m, "throughput comparison REFUSED") && strings.Contains(m, "closed-loop") {
+			refused = true
+		}
+	}
+	if !refused {
+		t.Errorf("expected a closed-loop provenance-refusal warning; got: %v", msgs)
+	}
+}
+
+// TestCalibrateCmd_Throughput_RefusedOnDeltaCorpus verifies the qa-review G3 fix for the
+// delta-corpus signal: a trace whose header carries session_context_growth is a closed-loop /
+// delta corpus, so the throughput block is refused even under the default --replay-mode fixed.
+func TestCalibrateCmd_Throughput_RefusedOnDeltaCorpus(t *testing.T) {
+	dir := t.TempDir()
+	_, dataPath, simPath := writeThroughputFixture(t, dir)
+	// Rewrite the header WITH a delta-corpus marker.
+	headerPath := filepath.Join(dir, "trace.yaml")
+	header := "trace_version: 2\ntime_unit: microseconds\nmode: real\nwarm_up_requests: 0\nsession_context_growth: accumulate\n"
+	if err := os.WriteFile(headerPath, []byte(header), 0644); err != nil {
+		t.Fatal(err)
+	}
+	reportPath := filepath.Join(dir, "report.json")
+
+	defer saveRestoreCalibrateFlags()()
+	calibrateTraceHeaderPath = headerPath
+	calibrateTraceDataPath = dataPath
+	calibrateSimResultsPath = simPath
+	calibrateReportPath = reportPath
+	calibrateWarmUpRequests = -1
+	calibrateNetworkRTTUs = -1
+	calibrateNetworkBandwidthMbps = 0
+	calibrateNumGPUs = 0
+	calibrateThroughputTolerancePct = 15
+	calibrateReplayMode = "fixed" // operator affirms fixed, but the header betrays a delta corpus
+
+	msgs := runCalibrateCapturingWarns(t)
+
+	var report workload.CalibrationReport
+	data, _ := os.ReadFile(reportPath)
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if report.Throughput != nil {
+		t.Fatalf("throughput block must be REFUSED for a delta corpus, got %+v", report.Throughput)
+	}
+	var refused bool
+	for _, m := range msgs {
+		if strings.Contains(m, "throughput comparison REFUSED") && strings.Contains(m, "delta corpus") {
+			refused = true
+		}
+	}
+	if !refused {
+		t.Errorf("expected a delta-corpus provenance-refusal warning; got: %v", msgs)
+	}
+}
+
+// TestCalibrateCmd_Throughput_AllRealFailed_StillWarns verifies the exact scenario the qa-review
+// G4/F1 adjudication said the prior fix missed: a SINGLE request that failed in the real trace
+// but completed in the sim. ComputeThroughputComparison returns nil (no ok records), yet the
+// completion-rate mismatch must STILL surface — the status-mismatch guard runs unconditionally,
+// before the nil check, so the mismatch is not swallowed when the whole block collapses.
+func TestCalibrateCmd_Throughput_AllRealFailed_StillWarns(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	simPath := filepath.Join(dir, "results.json")
+	reportPath := filepath.Join(dir, "report.json")
+
+	header := "trace_version: 2\ntime_unit: microseconds\nmode: real\nwarm_up_requests: 0\n"
+	if err := os.WriteFile(headerPath, []byte(header), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// The ONLY request failed on the real server but has a matching completed SimResult.
+	csv := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
+		"0,c1,t1,standard,s1,0,,0,true,10,10,10,0,0,0,0.0,,0,10,0,0,500000,1000000,10,error,upstream_timeout,\n"
+	if err := os.WriteFile(dataPath, []byte(csv), 0644); err != nil {
+		t.Fatal(err)
+	}
+	simResults := []workload.SimResult{
+		{RequestID: 0, TTFT: 250000, E2E: 500000, InputTokens: 10, OutputTokens: 10},
+	}
+	simData, _ := json.Marshal(simResults)
+	if err := os.WriteFile(simPath, simData, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	defer saveRestoreCalibrateFlags()()
+	calibrateTraceHeaderPath = headerPath
+	calibrateTraceDataPath = dataPath
+	calibrateSimResultsPath = simPath
+	calibrateReportPath = reportPath
+	calibrateWarmUpRequests = -1
+	calibrateNetworkRTTUs = -1
+	calibrateNetworkBandwidthMbps = 0
+	calibrateNumGPUs = 0
+	calibrateThroughputTolerancePct = 0
+	calibrateReplayMode = "fixed"
+
+	msgs := runCalibrateCapturingWarns(t)
+
+	var report workload.CalibrationReport
+	data, _ := os.ReadFile(reportPath)
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if report.Throughput != nil {
+		t.Fatalf("throughput block must be nil when the only real request failed, got %+v", report.Throughput)
+	}
+	var fired bool
+	for _, m := range msgs {
+		if strings.Contains(m, "failed in the real trace") && strings.Contains(m, "completed in the sim") {
+			fired = true
+		}
+	}
+	if !fired {
+		t.Errorf("the completion-rate mismatch must surface even when the throughput block collapses to nil (qa-review G4/F1); got: %v", msgs)
+	}
+}
+
+// TestCalibrateCmd_Throughput_InvalidReplayMode verifies --replay-mode rejects an unknown value
+// loudly (logrus.Fatalf), never silently coercing a typo to fixed (R1).
+func TestCalibrateCmd_Throughput_InvalidReplayMode(t *testing.T) {
+	dir := t.TempDir()
+	headerPath, dataPath, simPath := writeThroughputFixture(t, dir)
+	reportPath := filepath.Join(dir, "report.json")
+
+	defer saveRestoreCalibrateFlags()()
+	calibrateTraceHeaderPath = headerPath
+	calibrateTraceDataPath = dataPath
+	calibrateSimResultsPath = simPath
+	calibrateReportPath = reportPath
+	calibrateWarmUpRequests = -1
+	calibrateNetworkRTTUs = -1
+	calibrateNetworkBandwidthMbps = 0
+	calibrateNumGPUs = 0
+	calibrateThroughputTolerancePct = 0
+	calibrateReplayMode = "open-loop" // not a valid mode
+
+	exited := false
+	logger := logrus.StandardLogger()
+	origExit := logger.ExitFunc
+	logger.ExitFunc = func(int) { exited = true; panic("fatal") }
+	defer func() {
+		logger.ExitFunc = origExit
+		if r := recover(); r != "fatal" {
+			t.Fatalf("expected fatal guard for an invalid --replay-mode, recover=%v", r)
+		}
+		if !exited {
+			t.Errorf("expected ExitFunc to be invoked for an invalid --replay-mode")
+		}
+	}()
+	calibrateCmd.Run(calibrateCmd, []string{})
+	t.Fatalf("expected invalid --replay-mode to trigger a fatal exit, but Run returned")
+}
+
 func almostEq(a, b, tol float64) bool {
 	d := a - b
 	if d < 0 {
