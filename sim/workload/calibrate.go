@@ -213,6 +213,14 @@ func ComputeThroughputComparison(
 		if !ok {
 			continue
 		}
+		// Only successfully-completed requests contribute to throughput (matches the
+		// goodput numerator, goodput_compare.go): a failed/timed-out real record can
+		// carry partial OutputTokens with a LastChunkTimeUs at the failure instant,
+		// which would bias the compared quantity. Records with an unset Status (only
+		// hand-built fixtures; real observe/run traces always populate it) are excluded.
+		if rec.Status != "ok" {
+			continue
+		}
 		// Same validity guards as the latency leg (calibrate.go real-latency guard):
 		// a non-positive real makespan or corrupt (negative) sim E2E is excluded rather
 		// than allowed to distort the aggregate window.

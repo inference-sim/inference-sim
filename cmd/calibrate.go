@@ -277,6 +277,35 @@ Example:
 		report.Throughput = workload.ComputeThroughputComparison(
 			trace.Records, simByID, matched, &config, calibrateNumGPUs, calibrateThroughputTolerancePct,
 		)
+		if report.Throughput == nil {
+			// Never silently drop the block when the operator asked for a verdict (R1):
+			// distinguish "not derivable" from "feature absent".
+			if calibrateThroughputTolerancePct > 0 || calibrateNumGPUs > 0 {
+				logrus.Warnf("calibrate: throughput comparison skipped — not derivable over the matched set (no positive real+sim makespan or zero matched output tokens); --throughput-tolerance-pct/--num-gpus have no effect.")
+			}
+		} else {
+			// Coverage guard: throughput normalizes matched output tokens by a makespan
+			// over the SAME survivor set, so if the sim completed only a fraction of the
+			// eligible real requests, real tok/s is deflated toward sim and the verdict can
+			// spuriously PASS. Warn when matched coverage of the (warm-up-filtered) real set
+			// is low, so a dropped-request gap is visible, not masked (R1).
+			eligibleReal := pairs.MatchedCount + pairs.UnmatchedReal
+			if eligibleReal > 0 {
+				coverage := float64(pairs.MatchedCount) / float64(eligibleReal)
+				if coverage < 0.9 {
+					logrus.Warnf("calibrate: throughput matched only %d/%d (%.0f%%) of eligible real requests — the sim did not complete the rest, so real throughput is measured over the survivor subset and the comparison may understate a coverage gap.",
+						pairs.MatchedCount, eligibleReal, coverage*100)
+				}
+			}
+			// Validity boundary (open-loop only): the reconstructed sim makespan
+			// (send + simE2E) is a physical timeline only for fixed-mode replay. A
+			// delta-encoded / closed-loop corpus regenerates its own arrival schedule,
+			// so the real send schedule is not the sim's — warn rather than silently
+			// emit a verdict that violates the boundary.
+			if trace.Header.SessionContextGrowth != "" {
+				logrus.Warnf("calibrate: throughput validity boundary — trace session_context_growth=%q indicates a closed-loop/delta corpus; the throughput comparison is open-loop only and may not be meaningful here.", trace.Header.SessionContextGrowth)
+			}
+		}
 
 		// TTFT-MAPE tolerance verdict (#1583, BC-7): recorded in the report (not just
 		// logged) so automation consumers see it. Set before the write below.

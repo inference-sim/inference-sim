@@ -2,11 +2,13 @@ package cmd
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim/workload"
+	"github.com/sirupsen/logrus"
 )
 
 // writeThroughputFixture writes a 3-request TraceV2 + matching SimResults where the sim
@@ -146,4 +148,56 @@ func almostEq(a, b, tol float64) bool {
 		d = -d
 	}
 	return d <= tol
+}
+
+// TestCalibrateCmd_Throughput_FlagValidation verifies BC-6: a negative --num-gpus and a
+// negative/NaN/Inf --throughput-tolerance-pct are rejected loudly (logrus.Fatalf → exit),
+// never silently accepted. Intercepts the fatal exit via logrus ExitFunc.
+func TestCalibrateCmd_Throughput_FlagValidation(t *testing.T) {
+	dir := t.TempDir()
+	headerPath, dataPath, simPath := writeThroughputFixture(t, dir)
+	reportPath := filepath.Join(dir, "report.json")
+
+	cases := []struct {
+		name    string
+		numGPUs int
+		tolPct  float64
+	}{
+		{"negative num-gpus", -1, 0},
+		{"negative tolerance", 0, -5},
+		{"NaN tolerance", 0, math.NaN()},
+		{"Inf tolerance", 0, math.Inf(1)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer saveRestoreCalibrateFlags()()
+			calibrateTraceHeaderPath = headerPath
+			calibrateTraceDataPath = dataPath
+			calibrateSimResultsPath = simPath
+			calibrateReportPath = reportPath
+			calibrateWarmUpRequests = -1
+			calibrateNetworkRTTUs = -1
+			calibrateNetworkBandwidthMbps = 0
+			calibrateNumGPUs = tc.numGPUs
+			calibrateThroughputTolerancePct = tc.tolPct
+
+			// Intercept logrus.Fatalf's exit so the test observes the guard firing
+			// instead of terminating the process.
+			exited := false
+			logger := logrus.StandardLogger()
+			origExit := logger.ExitFunc
+			logger.ExitFunc = func(int) { exited = true; panic("fatal") }
+			defer func() {
+				logger.ExitFunc = origExit
+				if r := recover(); r != "fatal" {
+					t.Fatalf("expected fatal guard to fire for %s, recover=%v", tc.name, r)
+				}
+				if !exited {
+					t.Errorf("expected ExitFunc to be invoked for %s", tc.name)
+				}
+			}()
+			calibrateCmd.Run(calibrateCmd, []string{})
+			t.Fatalf("expected %s to trigger a fatal exit, but Run returned", tc.name)
+		})
+	}
 }
