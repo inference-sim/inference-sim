@@ -282,6 +282,12 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 				// sequence. Substituting (si + ti/2) → dH makes the per-layer cost O(N)
 				// (linear in ti), reusing the identical 4·h·(...)·dH FlashAttention FLOP
 				// convention and the same β₁ₐ compute coefficient (no new coefficient).
+				//
+				// PESSIMISM at very short prompts: this is a per-KDA-layer cost of ~dH,
+				// which EXCEEDS the full-attention cost (si + ti/2) whenever the sequence
+				// is shorter than ~dH tokens (K3: dH ≈ 85–128). There, a KDA layer can be
+				// charged MORE than a full-attention layer, so the "hybrid ≤ all-full"
+				// relationship holds only for sequences ≳ dH — do not assume it universally.
 				prefillAttnFlopsKDA += 4 * hPerGPU * ti * dH * dH
 			}
 		} else if len(req.OutputTokens) > 0 {
@@ -348,6 +354,12 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 		// reduction comes from the KV-read term below.)
 		flopsAttn := lFull * 4 * hPerGPU * sumCtx * dH / dpf // /dp: each rank attends only its token slice
 		if lKDA > 0 {
+			// KDA linear-attention decode FLOPs (#1636): O(state) per token — the fixed
+			// dH state dimension replaces the per-token context. PESSIMISM at very short
+			// context: this ~dH·dH per-token cost exceeds full attention's context·dH
+			// whenever context < dH (K3: dH ≈ 85–128 tokens), so a KDA layer can cost more
+			// than a full-attention layer there — "hybrid ≤ all-full" holds only for
+			// context ≳ dH, not universally.
 			flopsAttn += lKDA * 4 * hPerGPU * dH * dH * totalDecodeTokens / dpf
 		}
 

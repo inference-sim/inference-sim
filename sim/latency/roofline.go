@@ -112,6 +112,15 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 		// attention) layers charge an O(state) cost — the fixed d_head state dimension in
 		// place of the growing context — reusing the identical FLOP convention. Non-hybrid
 		// models have nFull == nLayers, taking the byte-identical original branch (INV-6).
+		//
+		// PESSIMISM at very short sequences: the KDA per-layer cost is ~dHead² per token,
+		// which exceeds full attention's ~context·dHead when the sequence is shorter than
+		// ~dHead tokens (K3: dHead ≈ 85–128), so a KDA layer can cost more than a
+		// full-attention layer there — "hybrid ≤ all-full" holds only for context ≳ dHead.
+		//
+		// RoPE note: ropeOps is included for KDA layers too. KDA layers do not apply RoPE
+		// in practice, so this is a slight (numerically tiny) additional pessimism — NOT a
+		// double-count: per-layer RoPE is charged exactly once per layer.
 		nFull := float64(config.EffectiveKVBearingLayers())
 		nKDA := nLayers - nFull
 		if nKDA > 0 {

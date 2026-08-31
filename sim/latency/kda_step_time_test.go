@@ -104,8 +104,11 @@ func TestKDAStepTime_ContextGrowthScalesWithFullAttentionLayers(t *testing.T) {
 		"hybrid grows less steeply with context — the 69 KDA layers do not scale with sequence length")
 
 	ratio := float64(dHybrid) / float64(dFull)
-	assert.InDelta(t, 24.0/93.0, ratio, 0.02,
-		"context-growth ratio (%.4f) must equal the KV-bearing layer fraction 24/93 (%.4f): KDA layers add no context-dependent term",
+	// Tight tolerance (1e-3): the only deviation from exactly 24/93 is int64 step-time
+	// truncation (~1e-4 here). A loose band would let an off-by-one in the KV-bearing
+	// layer count (e.g. 23/93 or 25/93, ~0.01 away) pass silently.
+	assert.InDelta(t, 24.0/93.0, ratio, 1e-3,
+		"context-growth ratio (%.5f) must equal the KV-bearing layer fraction 24/93 (%.5f): KDA layers add no context-dependent term",
 		ratio, 24.0/93.0)
 }
 
@@ -127,6 +130,35 @@ func TestKDAStepTime_HybridPrefillGrowsSubQuadratically(t *testing.T) {
 	assert.Greater(t, dHybrid, int64(0), "hybrid prefill step time must still grow (24 full-attention layers are O(N²))")
 	assert.Less(t, dHybrid, dFull,
 		"hybrid prefill grows less: the 69 KDA layers are O(N), not O(N²)")
+}
+
+// TestKDAStepTime_DecodeComputeBranchWiredWhenBeta2aPositive exercises the decode
+// attention-SCORE compute split, which is dead under the default/test coefficients
+// (β₂ₐ == Beta[1] == 0, so the decode-compute term is multiplied by zero). It uses a
+// coefficient set that ISOLATES that term: β₂ₐ > 0 turns the decode-compute term on,
+// and β₂ᵦ (Beta[9], the decode KV-read) is set to 0 so the KV-read split does NOT
+// drive the difference. Every other term uses numLayers (not numKVBearingLayers) and
+// is therefore identical for the hybrid and all-full models, cancelling in the
+// comparison — so any hybrid < all-full gap here is attributable ONLY to the
+// decode-compute KDA split. This keeps the branch green for a future calibrated
+// coefficient with β₂ₐ > 0. Context (4096) ≫ dHead (128), so the split is a reduction.
+func TestKDAStepTime_DecodeComputeBranchWiredWhenBeta2aPositive(t *testing.T) {
+	hw := testHardwareConfig()
+	coeffs := &sim.LatencyCoeffs{
+		AlphaCoeffs: []float64{15563.199579, 777.3455, 45.907545},
+		// Beta[1] = β₂ₐ > 0 (decode compute ON); Beta[9] = β₂ᵦ = 0 (decode KV-read OFF).
+		BetaCoeffs: []float64{0.152128, 1.0, 1.36252915, 0.752037, 32.09546717, 4.41684444, 126.024825, 481.8613888, 0.0, 0.0},
+	}
+	mHybrid := newTestTrainedPhysicsModel(t, hybridTestModelConfig(93, 24), hw, coeffs)
+	mAllFull := newTestTrainedPhysicsModel(t, hybridTestModelConfig(93, 93), hw, coeffs)
+
+	batch := makeDecodeBatch(16, 4096)
+	hybrid := mHybrid.StepTime(batch)
+	allFull := mAllFull.StepTime(batch)
+
+	assert.Less(t, hybrid, allFull,
+		"with β₂ₐ>0 and β₂ᵦ=0 the decode-compute KDA split alone must make hybrid (%d µs) < all-full (%d µs)", hybrid, allFull)
+	assert.Greater(t, hybrid, int64(0), "hybrid decode step time must stay positive")
 }
 
 // rooflineDecodeStep builds a decode-only StepConfig of `count` requests, each at
