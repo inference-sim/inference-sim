@@ -39,6 +39,10 @@ var (
 	// verdicts (absolute pp for hit-rate, MAPE fraction for TTFT).
 	calibrateHitRateTolerancePP float64
 	calibrateTTFTMapeThreshold  float64
+	// Throughput comparison (#1647). --throughput-tolerance-pct gates the within-tolerance
+	// verdict on raw output-token throughput; --num-gpus gates the per-GPU normalization.
+	calibrateThroughputTolerancePct float64
+	calibrateNumGPUs                int
 )
 
 var calibrateCmd = &cobra.Command{
@@ -135,6 +139,14 @@ Example:
 			logrus.Fatalf("--ttft-mape-threshold must be a finite number >= 0, got %v", calibrateTTFTMapeThreshold)
 		}
 
+		// Validate throughput comparison flags (#1647, R3/R20).
+		if math.IsNaN(calibrateThroughputTolerancePct) || math.IsInf(calibrateThroughputTolerancePct, 0) || calibrateThroughputTolerancePct < 0 {
+			logrus.Fatalf("--throughput-tolerance-pct must be a finite number >= 0, got %v", calibrateThroughputTolerancePct)
+		}
+		if calibrateNumGPUs < 0 {
+			logrus.Fatalf("--num-gpus must be >= 0, got %d", calibrateNumGPUs)
+		}
+
 		config := workload.CalibrationConfig{
 			WarmUpRequests: warmUp,
 			NetworkRTTUs:   networkRTTUs,
@@ -185,22 +197,27 @@ Example:
 			logrus.Fatalf("%v", gpErr)
 		}
 		goodputTargets := mergeGoodputTargets(cliTTFT, cliITL, cliE2E, trace.Header.GoodputSLOTargets, nil)
+
+		// Build the matched-set shared by the goodput (#1413) and throughput (#1647)
+		// comparisons: trace records whose RequestID has a matching SimResult AND that
+		// survived warm-up exclusion. Constructed once here (cheap, already O(N)); it is
+		// read-only for both consumers.
+		simByID := make(map[int]workload.SimResult, len(simResults))
+		for _, sr := range simResults {
+			simByID[sr.RequestID] = sr
+		}
+		matched := make(map[int]bool, pairs.MatchedCount)
+		for _, rec := range trace.Records {
+			if rec.RequestID < warmUp {
+				continue
+			}
+			if _, ok := simByID[rec.RequestID]; ok {
+				matched[rec.RequestID] = true
+			}
+		}
+
 		if len(goodputTargets) > 0 {
-			// Build matched-set: trace records whose RequestID has a matching SimResult
-			// AND that survived warm-up exclusion. Also need an ITL index by RequestID.
-			simByID := make(map[int]workload.SimResult, len(simResults))
-			for _, sr := range simResults {
-				simByID[sr.RequestID] = sr
-			}
-			matched := make(map[int]bool, pairs.MatchedCount)
-			for _, rec := range trace.Records {
-				if rec.RequestID < warmUp {
-					continue
-				}
-				if _, ok := simByID[rec.RequestID]; ok {
-					matched[rec.RequestID] = true
-				}
-			}
+			// ITL index by RequestID (goodput-only).
 			itlByRequest := make(map[int][]workload.ITLRecord)
 			for _, r := range itlRecords {
 				itlByRequest[r.RequestID] = append(itlByRequest[r.RequestID], r)
@@ -252,6 +269,14 @@ Example:
 				}
 			}
 		}
+
+		// Step 6.8: Throughput comparison (#1647). Real vs sim aggregate output-token
+		// throughput and request-completion rate over the same matched set, both in the
+		// client frame (config supplies the network normalization). Emitted when derivable
+		// from the required inputs (nil otherwise, so no Inf/NaN reaches JSON marshaling).
+		report.Throughput = workload.ComputeThroughputComparison(
+			trace.Records, simByID, matched, &config, calibrateNumGPUs, calibrateThroughputTolerancePct,
+		)
 
 		// TTFT-MAPE tolerance verdict (#1583, BC-7): recorded in the report (not just
 		// logged) so automation consumers see it. Set before the write below.
@@ -350,6 +375,29 @@ Example:
 				logrus.Infof("TTFT MAPE=%.1f%% (threshold %.1f%%) [WITHIN]", mapePct, threshPct)
 			} else {
 				logrus.Warnf("TTFT MAPE=%.1f%% (threshold %.1f%%) [EXCEEDS]", mapePct, threshPct)
+			}
+		}
+
+		// Throughput summary (#1647).
+		if tp := report.Throughput; tp != nil {
+			// When tp != nil, both real rates are guaranteed > 0 (matched > 0, real runtime > 0,
+			// real output tokens > 0), so the signed relative errors below never divide by zero.
+			logrus.Infof("Throughput: output tok/s Real=%.1f Sim=%.1f (%+.1f%%), req/s Real=%.2f Sim=%.2f (%+.1f%%)",
+				tp.RealOutputTokensPerSec, tp.SimOutputTokensPerSec, tp.OutputTokensPerSecError/tp.RealOutputTokensPerSec*100,
+				tp.RealRequestsPerSec, tp.SimRequestsPerSec, tp.RequestsPerSecError/tp.RealRequestsPerSec*100)
+			if tp.RealOutputTokensPerSecPerGPU != nil {
+				logrus.Infof("            output tok/s/GPU Real=%.1f Sim=%.1f (num_gpus=%d)",
+					*tp.RealOutputTokensPerSecPerGPU, *tp.SimOutputTokensPerSecPerGPU, *tp.NumGPUs)
+			}
+			if tp.Within != nil {
+				verdict := "WITHIN"
+				logFn := logrus.Infof
+				if !*tp.Within {
+					verdict = "EXCEEDS"
+					logFn = logrus.Warnf
+				}
+				logFn("Throughput output-token error=%.1f%% (tolerance %.1f%%) [%s]",
+					tp.OutputTokensPerSecPercentError*100, *tp.TolerancePct, verdict)
 			}
 		}
 
@@ -538,5 +586,7 @@ func init() {
 	calibrateCmd.Flags().Float64Var(&calibrateTTFTMapeThreshold, "ttft-mape-threshold", 0.15, "TTFT MAPE threshold (fraction) for the informational TTFT tolerance verdict (#1583; issue target 0.15).")
 	calibrateCmd.Flags().StringVar(&calibrateSimMetricsBlind, "sim-metrics-blind", "", "Optional BLIS MetricsOutput JSON for the adapter-blind baseline run; enables the delta-normalized (aware/blind) diagnostic that isolates the ported adapter physics.")
 	calibrateCmd.Flags().Float64Var(&calibrateAdapterMAPEThresh, "adapter-mape-threshold", 0.20, "MAPE bound (fraction) for the adapter-reference comparison (SC-007 target 0.20).")
+	calibrateCmd.Flags().Float64Var(&calibrateThroughputTolerancePct, "throughput-tolerance-pct", 0, "Within-tolerance verdict (percent) on real-vs-sim output-token throughput (#1647). Verdict emitted only when > 0.")
+	calibrateCmd.Flags().IntVar(&calibrateNumGPUs, "num-gpus", 0, "GPU count (TP×PP×DP×instances) for per-GPU throughput normalization (#1647). Per-GPU fields emitted only when > 0. Operator-supplied since the trace header records only TP.")
 	rootCmd.AddCommand(calibrateCmd)
 }

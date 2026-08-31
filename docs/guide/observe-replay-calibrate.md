@@ -468,6 +468,8 @@ Compares real observed latencies (from `blis observe`) against simulator predict
 | `--network-rtt-us` | `int64` | `-1` | Network RTT in microseconds added to sim-side latencies (-1 = use trace header value) |
 | `--network-bandwidth-mbps` | `float64` | `0` | Network bandwidth in Mbps for upload/download delay (0 = no delay) |
 | `--itl-data` | `string` | `""` | Path to ITL CSV from `blis observe --record-itl` to include ITL metric in the calibration report |
+| `--throughput-tolerance-pct` | `float64` | `0` | Within-tolerance verdict (percent) on real-vs-sim output-token throughput (#1647). Verdict emitted only when > 0 |
+| `--num-gpus` | `int` | `0` | GPU count (TP×PP×DP×instances) for per-GPU throughput normalization (#1647). Per-GPU fields emitted only when > 0 |
 
 !!! info "Sentinel defaults"
     The `--warmup-requests` and `--network-rtt-us` flags use `-1` as a sentinel meaning "read the value from the trace header." This allows the calibration to automatically use the warmup count and RTT recorded during observation. Pass `0` explicitly to override (include all requests or apply no RTT correction).
@@ -557,6 +559,37 @@ The report uses two levels of analysis because they catch different problems. **
 **`config_match`** — Tracks which simulator config parameters matched the observed server config (currently reports `matched` and `defaulted` arrays).
 
 **`known_limitations`** — Documents known sources of sim/real divergence (batch step granularity, synthetic prefix tokens, speculative decoding).
+
+**`throughput`** (optional, #1647) — Aggregate throughput comparison over the same `request_id`-matched set used for latency. Present automatically whenever it is derivable from the required inputs (a positive real *and* sim makespan and non-zero matched output tokens); omitted otherwise, so a non-derivable run keeps the legacy report shape and no `Inf`/`NaN` value is ever written.
+
+```json
+{
+  "matched_requests": 95,
+  "real_runtime_sec": 148.2,
+  "sim_runtime_sec": 132.7,
+  "real_output_tokens": 12040,
+  "sim_output_tokens": 12040,
+  "real_output_tokens_per_sec": 81.2,
+  "sim_output_tokens_per_sec": 90.7,
+  "output_tokens_per_sec_error": 9.5,
+  "output_tokens_per_sec_percent_error": 0.117,
+  "real_requests_per_sec": 0.64,
+  "sim_requests_per_sec": 0.72,
+  "requests_per_sec_error": 0.08,
+  "requests_per_sec_percent_error": 0.117,
+  "num_gpus": 4,
+  "real_output_tokens_per_sec_per_gpu": 20.3,
+  "sim_output_tokens_per_sec_per_gpu": 22.7,
+  "tolerance_pct": 15,
+  "within": true
+}
+```
+
+- **Makespan (both sides in the client frame).** `real_runtime_sec` = latest client last-chunk − earliest client send; `sim_runtime_sec` = latest (client send + client-frame sim E2E) − earliest send, where the sim E2E is normalized with the *same* network shift (`+ network-rtt-us + upload + download`) the latency comparison applies. Both share the identical earliest-send origin, so the block isolates the batching/contention difference between real and sim rather than a frame offset — and stays consistent with the `e2e` metric block.
+- **Why throughput and latency can disagree.** A sim can track per-request latency ordering well (high Pearson) yet mispredict aggregate throughput if it mismodels batching/contention. This block is the throughput counterpart to the latency verdicts.
+- **`num_gpus` / `*_per_gpu`** appear only with `--num-gpus N` (the standard normalized benchmark metric; lets a 70B/TP4 run be compared against a 7B/TP1 run). Since one GPU count divides both sides, the per-GPU `percent_error` equals the raw `percent_error` — the per-GPU figures add comparability, not a new tolerance dimension.
+- **`tolerance_pct` / `within`** appear only with `--throughput-tolerance-pct P`; `within` tests the raw output-token-throughput percent error against `P`.
+- **Validity boundary.** The reconstructed sim makespan (`send + simE2E`) is a physical sim timeline only for **fixed-mode replay** (the standard observe→replay→calibrate path, arrivals pinned from the trace). Under **closed-loop / concurrent-session replay** the sim regenerates the arrival schedule (round N+1 depends on the sim's completion of round N), so the real send schedule is not the sim's arrival schedule — treat the number as an open-loop metric there.
 
 ### Known Gap: Scheduling Delay
 
