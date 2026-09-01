@@ -78,6 +78,14 @@ type CalibrationReport struct {
 	// report so automation consumers see it, not only the stderr log. Populated
 	// whenever a TTFT metric exists; omitted otherwise.
 	TTFTTolerance *ToleranceVerdict `json:"ttft_tolerance,omitempty"`
+	// Throughput holds the real-vs-simulated aggregate throughput comparison (#1647):
+	// output-token throughput and request-completion rate over the same request_id-matched
+	// set used for latency. Populated whenever a positive real AND sim makespan and non-zero
+	// matched output tokens make it derivable from the already-required inputs (the
+	// present-when-derivable precedent of TTFTTolerance, not the flag-gated Goodput/HitRate);
+	// omitted otherwise so no Inf/NaN value is ever written. NOTE: this is a calibrate report
+	// (file artifact) shape addition, distinct from INV-6 sim-stdout byte-identity.
+	Throughput *ThroughputComparison `json:"throughput,omitempty"`
 }
 
 // ToleranceVerdict is a compact machine-readable pass/fail against a MAPE threshold
@@ -121,6 +129,180 @@ func ComputeHitRateComparison(realHitRate, simHitRate, tolerancePP float64, sour
 		Within:      absErrPP <= tolerancePP+boundaryEps,
 		Source:      source,
 	}
+}
+
+// ThroughputComparison holds the real-vs-simulated aggregate throughput comparison (#1647).
+// Both endpoints live in the CLIENT frame: the real makespan runs from the earliest client
+// SendTimeUs to the latest client LastChunkTimeUs; the sim makespan runs from the same earliest
+// SendTimeUs to the latest (SendTimeUs + client-frame sim E2E), where the sim E2E is normalized
+// with the identical network shift PrepareCalibrationPairs applies to the latency comparison
+// (sr.E2E + NetworkRTTUs + upload + download). Throughput = matched output tokens / runtime and
+// matched requests / runtime. The per-GPU fields divide output-token throughput by a caller-supplied
+// GPU count; since one count divides both sides, per-GPU PercentError equals the raw PercentError.
+//
+// Validity boundary: the reconstructed sim makespan (SendTimeUs + simE2E) is a physical sim
+// timeline only for FIXED-mode replay (the standard observe→replay→calibrate path, arrivals pinned
+// from the trace). Under closed-loop / concurrent-session replay the sim regenerates the arrival
+// schedule (round N+1 depends on the sim's completion of round N, INV-10), so the real SendTimeUs
+// schedule is not the sim's arrival schedule — treat the number as an open-loop metric there.
+type ThroughputComparison struct {
+	MatchedRequests  int     `json:"matched_requests"`
+	RealRuntimeSec   float64 `json:"real_runtime_sec"`
+	SimRuntimeSec    float64 `json:"sim_runtime_sec"`
+	RealOutputTokens int     `json:"real_output_tokens"`
+	SimOutputTokens  int     `json:"sim_output_tokens"`
+
+	RealOutputTokensPerSec         float64 `json:"real_output_tokens_per_sec"`
+	SimOutputTokensPerSec          float64 `json:"sim_output_tokens_per_sec"`
+	OutputTokensPerSecError        float64 `json:"output_tokens_per_sec_error"`         // sim − real
+	OutputTokensPerSecPercentError float64 `json:"output_tokens_per_sec_percent_error"` // |error| / real
+
+	RealRequestsPerSec         float64 `json:"real_requests_per_sec"`
+	SimRequestsPerSec          float64 `json:"sim_requests_per_sec"`
+	RequestsPerSecError        float64 `json:"requests_per_sec_error"`         // sim − real
+	RequestsPerSecPercentError float64 `json:"requests_per_sec_percent_error"` // |error| / real
+
+	// Per-GPU normalization — set only when numGPUs > 0 (pointers so omitempty drops them otherwise).
+	NumGPUs                      *int     `json:"num_gpus,omitempty"`
+	RealOutputTokensPerSecPerGPU *float64 `json:"real_output_tokens_per_sec_per_gpu,omitempty"`
+	SimOutputTokensPerSecPerGPU  *float64 `json:"sim_output_tokens_per_sec_per_gpu,omitempty"`
+
+	// Within-tolerance verdict on raw output-token throughput — set only when tolerancePct > 0.
+	TolerancePct *float64 `json:"tolerance_pct,omitempty"`
+	Within       *bool    `json:"within,omitempty"`
+}
+
+// ComputeThroughputComparison compares real vs simulated aggregate throughput over the
+// request_id-matched set (#1647). Both endpoints live in the CLIENT frame: real end =
+// LastChunkTimeUs (already client-side); sim end = SendTimeUs + client-frame sim E2E, where
+// client-frame sim E2E = sr.E2E + config.NetworkRTTUs + upload + download — identical to the sim
+// latency PrepareCalibrationPairs uses (so throughput stays consistent with the report's e2e block
+// and is not biased by the server/client frame difference). numGPUs > 0 emits the per-GPU
+// normalization; tolerancePct > 0 emits the within-tolerance verdict on raw output-token throughput.
+//
+// Returns nil (no fabricated comparison, R1) when the matched set is empty, either makespan is
+// non-positive, or matched output tokens are zero — so the report key is omitted and no Inf/NaN
+// value can reach json.MarshalIndent (which errors on non-finite floats and would discard the
+// entire calibration report).
+func ComputeThroughputComparison(
+	realRecords []TraceRecord,
+	simByID map[int]SimResult,
+	matchedReqIDs map[int]bool,
+	config *CalibrationConfig,
+	numGPUs int,
+	tolerancePct float64,
+) *ThroughputComparison {
+	if config == nil {
+		config = &CalibrationConfig{}
+	}
+
+	var (
+		minSend    int64 = -1
+		maxRealEnd int64
+		maxSimEnd  int64
+		realOutTok int
+		simOutTok  int
+		matched    int
+	)
+
+	for _, rec := range realRecords {
+		if !matchedReqIDs[rec.RequestID] {
+			continue
+		}
+		sr, ok := simByID[rec.RequestID]
+		if !ok {
+			continue
+		}
+		// Only successfully-completed requests contribute to throughput (matches the
+		// goodput numerator, goodput_compare.go): a failed/timed-out real record can
+		// carry partial OutputTokens with a LastChunkTimeUs at the failure instant,
+		// which would bias the compared quantity. Records with an unset Status (only
+		// hand-built fixtures; real observe/run traces always populate it) are excluded.
+		if rec.Status != "ok" {
+			continue
+		}
+		// Same validity guards as the latency leg (calibrate.go real-latency guard):
+		// a non-positive real makespan or corrupt (negative) sim E2E is excluded rather
+		// than allowed to distort the aggregate window.
+		if rec.SendTimeUs < 0 || rec.LastChunkTimeUs <= rec.SendTimeUs || sr.E2E < 0 {
+			continue
+		}
+
+		// Client-frame sim completion time: server-side sim E2E shifted into the client
+		// frame with the identical normalization the latency comparison applies.
+		clientSimE2E := sr.E2E +
+			float64(config.NetworkRTTUs) +
+			computeUploadDelay(config.BandwidthMbps, sr.InputTokens) +
+			computeDownloadDelay(config.BandwidthMbps, sr.OutputTokens)
+		simEndUs := rec.SendTimeUs + int64(clientSimE2E)
+
+		if minSend == -1 || rec.SendTimeUs < minSend {
+			minSend = rec.SendTimeUs
+		}
+		if rec.LastChunkTimeUs > maxRealEnd {
+			maxRealEnd = rec.LastChunkTimeUs
+		}
+		if simEndUs > maxSimEnd {
+			maxSimEnd = simEndUs
+		}
+		realOutTok += rec.OutputTokens
+		simOutTok += sr.OutputTokens
+		matched++
+	}
+
+	if matched == 0 || minSend < 0 {
+		return nil
+	}
+	realRuntimeSec := float64(maxRealEnd-minSend) / 1e6
+	simRuntimeSec := float64(maxSimEnd-minSend) / 1e6
+	// Guard against non-derivable makespans and empty token numerator (R11, I3): return nil
+	// rather than emit an Inf/NaN throughput that would fail JSON marshaling and discard the
+	// whole report.
+	if realRuntimeSec <= 0 || simRuntimeSec <= 0 || realOutTok == 0 {
+		return nil
+	}
+
+	tc := &ThroughputComparison{
+		MatchedRequests:        matched,
+		RealRuntimeSec:         realRuntimeSec,
+		SimRuntimeSec:          simRuntimeSec,
+		RealOutputTokens:       realOutTok,
+		SimOutputTokens:        simOutTok,
+		RealOutputTokensPerSec: float64(realOutTok) / realRuntimeSec,
+		SimOutputTokensPerSec:  float64(simOutTok) / simRuntimeSec,
+		RealRequestsPerSec:     float64(matched) / realRuntimeSec,
+		SimRequestsPerSec:      float64(matched) / simRuntimeSec,
+	}
+	tc.OutputTokensPerSecError = tc.SimOutputTokensPerSec - tc.RealOutputTokensPerSec
+	if tc.RealOutputTokensPerSec > 0 {
+		tc.OutputTokensPerSecPercentError = math.Abs(tc.OutputTokensPerSecError) / tc.RealOutputTokensPerSec
+	}
+	tc.RequestsPerSecError = tc.SimRequestsPerSec - tc.RealRequestsPerSec
+	if tc.RealRequestsPerSec > 0 {
+		tc.RequestsPerSecPercentError = math.Abs(tc.RequestsPerSecError) / tc.RealRequestsPerSec
+	}
+
+	// Per-GPU normalization (numGPUs > 0). One GPU count divides both sides, so the per-GPU
+	// PercentError is identical to the raw PercentError — reporting/comparability value only.
+	if numGPUs > 0 {
+		n := numGPUs
+		realPerGPU := tc.RealOutputTokensPerSec / float64(numGPUs)
+		simPerGPU := tc.SimOutputTokensPerSec / float64(numGPUs)
+		tc.NumGPUs = &n
+		tc.RealOutputTokensPerSecPerGPU = &realPerGPU
+		tc.SimOutputTokensPerSecPerGPU = &simPerGPU
+	}
+
+	// Within-tolerance verdict on raw output-token throughput (tolerancePct > 0).
+	if tolerancePct > 0 {
+		tol := tolerancePct
+		const boundaryEps = 1e-9
+		within := tc.OutputTokensPerSecPercentError*100 <= tolerancePct+boundaryEps
+		tc.TolerancePct = &tol
+		tc.Within = &within
+	}
+
+	return tc
 }
 
 // GoodputComparisonReport summarizes observed-vs-simulated goodput per SLO class.

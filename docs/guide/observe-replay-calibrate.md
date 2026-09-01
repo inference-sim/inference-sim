@@ -468,6 +468,9 @@ Compares real observed latencies (from `blis observe`) against simulator predict
 | `--network-rtt-us` | `int64` | `-1` | Network RTT in microseconds added to sim-side latencies (-1 = use trace header value) |
 | `--network-bandwidth-mbps` | `float64` | `0` | Network bandwidth in Mbps for upload/download delay (0 = no delay) |
 | `--itl-data` | `string` | `""` | Path to ITL CSV from `blis observe --record-itl` to include ITL metric in the calibration report |
+| `--throughput-tolerance-pct` | `float64` | `0` | Within-tolerance verdict (percent) on real-vs-sim output-token throughput (#1647). Verdict emitted only when > 0 |
+| `--num-gpus` | `int` | `0` | GPU count (TP×PP×DP×instances) for per-GPU throughput normalization (#1647). Per-GPU fields emitted only when > 0 |
+| `--replay-mode` | `string` | `"fixed"` | Replay mode the SimResults were produced under: `fixed` or `closed-loop` (#1647). The throughput makespan is valid only for `fixed`; calibrate **refuses** the throughput block under `closed-loop` (or a delta corpus). Operator-affirmed since calibrate cannot observe the `blis replay --session-mode` choice (durable auto-stamp: #1652) |
 
 !!! info "Sentinel defaults"
     The `--warmup-requests` and `--network-rtt-us` flags use `-1` as a sentinel meaning "read the value from the trace header." This allows the calibration to automatically use the warmup count and RTT recorded during observation. Pass `0` explicitly to override (include all requests or apply no RTT correction).
@@ -557,6 +560,39 @@ The report uses two levels of analysis because they catch different problems. **
 **`config_match`** — Tracks which simulator config parameters matched the observed server config (currently reports `matched` and `defaulted` arrays).
 
 **`known_limitations`** — Documents known sources of sim/real divergence (batch step granularity, synthetic prefix tokens, speculative decoding).
+
+**`throughput`** (optional, #1647) — Aggregate throughput comparison over the `request_id`-matched set, further restricted to real records with `status == "ok"` and a positive client-frame duration (a superset filter of the latency leg: latency matches on request-ID alone, throughput additionally drops failed and zero-duration records). Present automatically whenever (a) replay-mode provenance confirms the makespan is valid — `--replay-mode fixed` (the default) **and** no delta-corpus header marker (see the validity boundary below) — and (b) it is derivable from the required inputs (a positive real *and* sim makespan and non-zero matched output tokens); omitted otherwise, so a refused or non-derivable run keeps the legacy report shape and no `Inf`/`NaN` value is ever written. Matched requests that failed in the real trace but completed in the sim are excluded and reported via a stderr warning **unconditionally** — including when *every* matched request failed (so the block collapses to nil) — so the completion-rate mismatch is never swallowed even though the throughput numbers cannot reflect it.
+
+```json
+{
+  "matched_requests": 95,
+  "real_runtime_sec": 148.2,
+  "sim_runtime_sec": 132.7,
+  "real_output_tokens": 12040,
+  "sim_output_tokens": 12040,
+  "real_output_tokens_per_sec": 81.2,
+  "sim_output_tokens_per_sec": 90.7,
+  "output_tokens_per_sec_error": 9.5,
+  "output_tokens_per_sec_percent_error": 0.117,
+  "real_requests_per_sec": 0.64,
+  "sim_requests_per_sec": 0.72,
+  "requests_per_sec_error": 0.08,
+  "requests_per_sec_percent_error": 0.117,
+  "num_gpus": 4,
+  "real_output_tokens_per_sec_per_gpu": 20.3,
+  "sim_output_tokens_per_sec_per_gpu": 22.7,
+  "tolerance_pct": 15,
+  "within": true
+}
+```
+
+- **Makespan (both sides in the client frame).** `real_runtime_sec` = latest client last-chunk − earliest client send; `sim_runtime_sec` = latest (client send + client-frame sim E2E) − earliest send, where the sim E2E is normalized with the *same* network shift (`+ network-rtt-us + upload + download`) the latency comparison applies. Both share the identical earliest-send origin, so the block isolates the batching/contention difference between real and sim rather than a frame offset — and stays consistent with the `e2e` metric block.
+- **Why throughput and latency can disagree.** A sim can track per-request latency ordering well (high Pearson) yet mispredict aggregate throughput if it mismodels batching/contention. This block is the throughput counterpart to the latency verdicts.
+- **`num_gpus` / `*_per_gpu`** appear only with `--num-gpus N` (the standard normalized benchmark metric; lets a 70B/TP4 run be compared against a 7B/TP1 run). Since one GPU count divides both sides, the per-GPU `percent_error` equals the raw `percent_error` — the per-GPU figures add comparability, not a new tolerance dimension.
+- **`tolerance_pct` / `within`** appear only with `--throughput-tolerance-pct P`; `within` tests the raw output-token-throughput percent error against `P`. **Units:** `*_percent_error` fields are stored as a **fraction** (`0.117` = 11.7%, the BLIS-wide convention shared with `mean_percent_error` etc.), whereas `tolerance_pct` is a **percentage** (`15` = 15%). The verdict compares them correctly (`percent_error × 100 ≤ tolerance_pct`); a consumer reading both must apply the ×100.
+- **Only `status == "ok"` records contribute** (matching the goodput numerator). Failed/timed-out records are excluded on both the numerator and the makespan. If the sim completes only a fraction of the eligible real requests, calibrate logs a coverage warning (real throughput would otherwise be measured over the survivor subset and understate the gap); cross-check `trace_info.matched_pairs` against `num_requests`.
+- **Validity boundary (enforced by refusal).** The reconstructed sim makespan (`send + simE2E`) is a physical sim timeline only for **fixed-mode replay** (the standard observe→replay→calibrate path, arrivals pinned from the trace). Under **closed-loop / concurrent-session replay** the sim regenerates the arrival schedule (round N+1 depends on the sim's completion of round N), so the real send schedule is not the sim's arrival schedule and the makespan-based throughput is meaningless.
+    - **`calibrate` refuses the throughput block unless provenance confirms fixed mode.** The block is emitted **only** when `--replay-mode fixed` (the default) **and** the trace header carries no delta-corpus marker (`session_context_growth`). Under `--replay-mode closed-loop`, or when the header betrays a delta/accumulate corpus, calibrate **omits the throughput block and logs a loud `REFUSED` warning** rather than emitting a silently-invalid verdict — turning the earlier documented blind spot into a fail-loud guard (R1). Because calibrate cannot itself observe the `blis replay --session-mode` choice (it is recorded in neither the trace header nor `SimResult`), the operator affirms it via `--replay-mode`; if you replayed closed-loop, pass `--replay-mode closed-loop` (or simply do not request a throughput verdict). The durable fix — stamping the replay mode into `SimResult` so calibrate can auto-detect it without the operator flag — is tracked in **[#1652](https://github.com/inference-sim/inference-sim/issues/1652)**.
 
 ### Known Gap: Scheduling Delay
 

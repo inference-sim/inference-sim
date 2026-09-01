@@ -27,6 +27,9 @@ func saveRestoreCalibrateFlags() func() {
 	origSimMetrics := calibrateSimMetrics
 	origHRTol := calibrateHitRateTolerancePP
 	origTTFTThresh := calibrateTTFTMapeThreshold
+	origTputTol := calibrateThroughputTolerancePct
+	origNumGPUs := calibrateNumGPUs
+	origReplayMode := calibrateReplayMode
 	return func() {
 		calibrateTraceHeaderPath = origHeader
 		calibrateTraceDataPath = origData
@@ -39,6 +42,9 @@ func saveRestoreCalibrateFlags() func() {
 		calibrateSimMetrics = origSimMetrics
 		calibrateHitRateTolerancePP = origHRTol
 		calibrateTTFTMapeThreshold = origTTFTThresh
+		calibrateThroughputTolerancePct = origTputTol
+		calibrateNumGPUs = origNumGPUs
+		calibrateReplayMode = origReplayMode
 	}
 }
 
@@ -115,7 +121,7 @@ warm_up_requests: 0
 func TestCalibrateCmd_Flags_Registered(t *testing.T) {
 	// GIVEN the calibrate command
 	// WHEN we inspect its registered flags
-	// THEN all 8 flags must be present
+	// THEN all core + throughput flags must be present
 	flags := []string{
 		"trace-header",
 		"trace-data",
@@ -125,6 +131,8 @@ func TestCalibrateCmd_Flags_Registered(t *testing.T) {
 		"network-rtt-us",
 		"network-bandwidth-mbps",
 		"itl-data",
+		"throughput-tolerance-pct",
+		"num-gpus",
 	}
 	for _, name := range flags {
 		f := calibrateCmd.Flags().Lookup(name)

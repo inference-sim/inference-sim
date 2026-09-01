@@ -155,6 +155,21 @@ go build -o blis main.go
 ./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json \
   --slo-ttft "critical=100ms" --slo-e2e "critical=5s" --report calibration.json
 
+# Compare aggregate throughput too (#1647). A `throughput` block is added to the report
+# automatically from the already-required inputs (no flag), comparing real vs simulated
+# output-token throughput (total output tokens / makespan) and request throughput (matched
+# requests / makespan). Both makespans are in the CLIENT frame over the same request_id-matched
+# set: real end = last-chunk time; sim end = send + client-frame sim E2E (sr.E2E normalized with
+# the same network shift as the latency comparison). Omitted (never Inf/NaN) when the makespan is
+# non-derivable. --throughput-tolerance-pct adds a within-tolerance verdict on raw output-token
+# throughput; --num-gpus adds per-GPU normalization (output_tokens_per_sec_per_gpu, real+sim) —
+# operator-supplied since the trace header records only TP (not DP/PP/instances). Per-GPU
+# percent_error equals raw percent_error (one GPU count divides both sides). Validity boundary:
+# the reconstructed sim makespan is a physical sim timeline only for FIXED-mode replay; under
+# closed-loop replay the sim regenerates the arrival schedule, so treat it as open-loop only.
+./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json \
+  --throughput-tolerance-pct 15 --num-gpus 4 --report calibration.json
+
 # Compare LoRA adapter-cost fidelity vs a Digital Twin reference (#1470, US5).
 # Standalone mode: BLIS aggregate (from blis run --metrics-path) vs a committed DT
 # reference (per-config adapter_aware/adapter_blind), per-metric MAPE on TTFT +
