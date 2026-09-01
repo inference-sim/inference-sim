@@ -223,3 +223,39 @@ func TestRooflineKDA_ContextGrowthLessForHybrid(t *testing.T) {
 	assert.Greater(t, dHybrid, int64(0), "hybrid roofline step time must still grow (24 full-attention layers)")
 	assert.Less(t, dHybrid, dFull, "hybrid grows less: KDA layers keep a fixed-size state, not a growing KV cache")
 }
+
+// TestRooflineKDA_DecodeComputeGemmContextIndependentForKDA closes the G10 coverage
+// gap and is the roofline analogue of the trained-physics decode-compute branch test.
+// The other roofline KDA tests compare final step time, which max(compute, memory) can
+// leave memory-bound — so a regression that made the KDA decode-compute GEMM
+// context-DEPENDENT (e.g. dHead·dHead → context·dHead) could pass silently there. This
+// asserts the decode attention-compute FLOPs DIRECTLY via calculateTransformerFlops
+// (includeMLP=false isolates the attention terms), with no roofline crossover in the
+// way. Law: the context-dependent growth of decode-attention GEMM FLOPs is proportional
+// to the FULL-attention layer count — a 24/93 hybrid grows exactly 24/93 as fast as
+// all-93-full, which holds ONLY if the 69 KDA layers add ZERO context-dependent term.
+// (float64 FLOPs, no int64 truncation ⇒ the ratio is exact to fp rounding.)
+func TestRooflineKDA_DecodeComputeGemmContextIndependentForKDA(t *testing.T) {
+	const (
+		small = 2000
+		large = 8000
+	)
+	// Decode step: newTokens = 1; includeAttention=true, includeMLP=false isolates the
+	// attention GEMM FLOPs (the context-independent QKVO projections cancel in the
+	// difference, leaving only the attention-score growth).
+	gemmAt := func(full int, ctx int64) float64 {
+		return calculateTransformerFlops(*hybridTestModelConfig(93, full), ctx, 1, true, false).GemmOps
+	}
+	dFull := gemmAt(93, large) - gemmAt(93, small)   // all-93-full-attention
+	dHybrid := gemmAt(24, large) - gemmAt(24, small) // 24 full + 69 KDA
+
+	require.Greater(t, dFull, 0.0, "all-full decode-attention GEMM FLOPs must grow with context")
+	assert.Greater(t, dHybrid, 0.0, "hybrid still grows (the 24 full-attention layers are context-dependent)")
+	assert.Less(t, dHybrid, dFull, "hybrid grows less: the 69 KDA layers add no context-dependent GEMM term")
+
+	ratio := dHybrid / dFull
+	assert.InDelta(t, 24.0/93.0, ratio, 1e-9,
+		"decode-attention GEMM growth ratio (%.9f) must equal the full-attention layer fraction 24/93 (%.9f): "+
+			"if the KDA decode-compute GEMM regressed to context-dependent, this ratio would rise toward 1",
+		ratio, 24.0/93.0)
+}
