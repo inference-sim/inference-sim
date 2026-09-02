@@ -23,7 +23,7 @@ Then leave. Every phase posts a comment, so the whole delivery history is readab
   │
   ├─ Deliver — Implement    branch deliver/issue-N, tests, PR, self-review
   │      ↓
-  ├─ Deliver — Verify       waits for CI → archon review → methodology review
+  ├─ Deliver — Verify       build/test/lint → archon review → methodology review
   │      │                  ready-for-merge → STOP
   │      │                  needs-human    → STOP
   │      ↓ correct
@@ -32,7 +32,12 @@ Then leave. Every phase posts a comment, so the whole delivery history is readab
   └─ back to Verify              (at most 3 correction rounds)
 ```
 
-Phases chain with `workflow_run`, which is exempt from the rule that stops `GITHUB_TOKEN`-created events from triggering workflows — so **no PAT and no GitHub App are needed**. The PR number is carried between phases in a `deliver-context` artifact, because a `workflow_run` event chained off an `issue_comment` workflow reports the default branch's SHA rather than the PR's.
+Phases chain with `workflow_dispatch`, passing the PR and sub-issue numbers as inputs. **No PAT and no GitHub App are needed** — `workflow_dispatch` and `repository_dispatch` are the two events that always create workflow runs even when triggered with `GITHUB_TOKEN`.
+
+`workflow_run` is deliberately *not* used, for two documented reasons:
+
+- **It caps at three levels.** "You can't use `workflow_run` to chain together more than three levels of workflows." implement → verify → correct → verify exhausts the budget, so the fourth link never fires and the loop dies after a single correction round — silently, since nothing runs to report it.
+- **It cannot get a CI verdict anyway.** When a workflow using `GITHUB_TOKEN` opens or updates a PR, "the resulting `pull_request` event creates workflow runs in an **approval-required** state". The delivery's own CI runs would sit waiting for a human to click *Approve and run*, so polling for a conclusion would time out every round.
 
 ## How it ends
 
@@ -49,14 +54,19 @@ The decision is not the reviewing agent's to make. `deliver-verify.yml` collects
 
 | Signal | Source |
 |---|---|
-| `CI_STATUS` | every `pull_request`-triggered Actions run on the PR head; any conclusion other than `success` counts as failure |
-| `PLAN_GATE` | `.archon/review.json` — `planRatchet.ok` and `planClassify.verdict`. Absent keys mean no plan, which delivers exactly as a satisfied plan does |
-| `AGENT_VERDICT` | the `DELIVER-VERDICT: GREEN` / `NOT-GREEN` marker ending the review comment |
+| `CI_STATUS` | verify runs `go build ./...`, `go test ./...` and `golangci-lint run` itself, against the PR tree checked out under `./pr`. Anything other than all three passing is `failure` |
+| `PLAN_GATE` | `.archon/review.json` — `planRatchet.ok` and `planClassify.verdict`. `absent` (the PR never claimed a plan) delivers exactly as a satisfied plan does; `unverified` (the PR declares an `archon-plan:` but the check did not run) **blocks** |
+| `AGENT_VERDICT` | the `DELIVER-VERDICT: GREEN` / `NOT-GREEN` marker, required to be the last line of a comment posted by the automation itself |
+
+**Why verify runs the checks rather than reading `ci.yml`'s verdict:** see the approval-required note above — the delivery's own CI runs are gated on a human click, so they cannot be the unattended signal. Running the commands directly is also a stronger signal, since we observe the tests instead of trusting an API. The cost is that these three commands must stay in step with `ci.yml`.
+
+**`unverified` is the subtle one.** `archon-review.sh` exits 0 and falls back to a plan-less delta review when plan resolution fails, so an absent `planRatchet` does *not* by itself mean "no plan" — it can equally mean "a plan was declared and never checked". Treating those alike would let a PR whose dist ratchet silently did not run reach `ready-for-merge` on a GREEN review.
 
 Two properties hold structurally rather than by prompt adherence:
 
 - **A GREEN review cannot override red CI or a plan regression.** That combination returns `needs-human` with the disagreement named — the loop does not get to resolve a contradiction between a judgment and an objective signal.
-- **Verify never reads CI before CI has run.** It polls until every PR-triggered workflow run on the head commit has completed. A timeout or an empty run list is `unknown`, which stops the delivery rather than passing it.
+- **`ready-for-merge` is never applied to unverified code.** The PR tree is checked out at a pinned SHA, and that SHA is re-confirmed as the branch head before the label goes on. A push landing during the checks or the review downgrades the outcome to `needs-human`, because what passed is no longer what a human would merge.
+- **A phase that fails or times out still reports.** Every phase has a reporter guarded on `failure() || cancelled()` — `cancelled()` because a job timeout cancels rather than fails, which would otherwise skip the comment entirely and leave the PR silent.
 
 Archon is optional throughout: with a plan there is a deterministic number that must not move the wrong way, without one the gate is CI plus the review verdict.
 
@@ -64,7 +74,7 @@ Archon is optional throughout: with a plan there is a deterministic number that 
 
 **Pause.** Add the `deliver:paused` label to the PR (or, before a PR exists, to the sub-issue). Every phase checks it as its first step and exits without invoking an agent or moving a label. Remove the label and re-issue the command to resume. You are never racing the loop.
 
-**Round count.** The `deliver:round-N` label is the only record of how many corrections have been spent — nothing else survives between `workflow_run` invocations.
+**Round count.** The `deliver:round-N` label is the only record of how many corrections have been spent, and — since `workflow_dispatch` has no chain-depth cap — the only thing bounding the loop. It is advanced *before* the correction agent runs, so a crashed or timed-out round still consumes its budget rather than being retried forever. A missing round label is therefore fatal to the correct phase, unlike other label failures, which only warn.
 
 ## Configuration
 
@@ -104,6 +114,10 @@ Not yet automated, each its own follow-up: sequencing sub-issues `0..N` and open
 
 ## Security
 
-The verify phase checks out the **default branch** and only fetches the PR head into the object store, matching `archon.yml`. A pull request therefore never gets its own copy of `scripts/` executed on the self-hosted runner; the review agent reads the diff through `gh`, which needs no checkout. Adding a `ref:` to that checkout would turn any pull request into arbitrary code execution.
+The repository root checkout is the **default branch**, so `scripts/` and `.archon-version` always come from trusted code — matching `archon.yml`. The PR's own tree is checked out separately under `./pr`, at a pinned SHA, and is used only as a build/test working directory; the PR's copy of `scripts/` is never executed.
+
+Because the phases are dispatchable with arbitrary inputs, verify and correct both require the target PR to be **same-repository** (never a fork), **open**, and on `deliver/issue-<N>` — the branch this loop owns. Without that guard, dispatching verify at a fork PR would run fork code on the self-hosted runner. `workflow_dispatch` is itself restricted to users with write access.
 
 The sub-issue number is parsed out of an untrusted comment body, validated as digits, and only ever used as a number.
+
+The verdict marker is read only from comments authored by the automation and only when it is the comment's last line — otherwise any human could set a delivery's verdict by quoting it.

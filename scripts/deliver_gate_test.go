@@ -12,11 +12,13 @@ import (
 // added without a case covering every combination it could capture.
 var (
 	allCIStatus = []string{"success", "failure", "unknown"}
-	allPlanGate = []string{"pass", "absent", "regression", "conflicts"}
+	allPlanGate = []string{"pass", "absent", "regression", "conflicts", "unverified"}
 	allVerdicts = []string{"GREEN", "NOT-GREEN", "MISSING"}
 
 	// blockingPlanGate are the plan signals that must stop a delivery.
-	blockingPlanGate = []string{"regression", "conflicts"}
+	// `unverified` blocks like a regression: the PR claimed a plan and the check did not run,
+	// which is missing evidence rather than a pass.
+	blockingPlanGate = []string{"regression", "conflicts", "unverified"}
 	// cleanPlanGate are the plan signals that must not stop a delivery. `absent` is the
 	// planless case and must behave exactly like `pass` — archon is optional.
 	cleanPlanGate = []string{"pass", "absent"}

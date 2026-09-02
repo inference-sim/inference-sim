@@ -1,84 +1,92 @@
 name: Deliver — Verify
 
-# Phase 2 of the L1 delivery loop (#1654). Chained off Implement or Correct completing.
-# Determines a verdict and applies exactly one of: ready-for-merge, needs-human, or nothing
-# (which lets Deliver — Correct pick the delivery up).
+# Phase 2 of the L1 delivery loop (#1654). Determines a verdict and applies exactly one of:
+# ready-for-merge, needs-human, or a hand-off to Deliver — Correct.
 #
-# This workflow does not decide anything itself. It gathers three machine-readable signals
-# and hands them to scripts/deliver-gate.sh, which is unit-tested. Keeping the decision in
-# one tested place is what makes "GREEN cannot override red CI" a structural property rather
-# than something to re-audit on every edit to this file.
+# This workflow decides nothing itself. It gathers three machine-readable signals and hands
+# them to scripts/deliver-gate.sh, which is unit-tested. Keeping the decision in one tested
+# place is what makes "a GREEN review cannot override red CI" structural rather than something
+# to re-audit on every edit here.
 #
-# SECURITY: like archon.yml, this checks out the DEFAULT BRANCH and only fetches the PR head
-# into the object store. The PR's own copy of scripts/ is never executed. Adding a `ref:` to
-# the checkout would turn a pull request into arbitrary code execution on the self-hosted
-# runner. The review agent reads the diff through `gh`, which needs no checkout.
+# WHY THE CHECKS RUN HERE instead of reading ci.yml's conclusion: when a workflow using
+# GITHUB_TOKEN opens or updates a pull request, "the resulting pull_request event creates
+# workflow runs in an approval-required state". The delivery's own PR and pushes therefore
+# produce CI runs that sit waiting for a human to click "Approve and run" — so polling for a
+# conclusion would time out every round and defeat the whole walk-away premise. Running the
+# same three commands directly is both unattended and a stronger signal: we observe the tests
+# rather than trusting an API. The cost is that these commands must stay in step with ci.yml.
+#
+# SECURITY: the repository root checkout is the DEFAULT BRANCH, so scripts/ and .archon-version
+# always come from trusted code. The PR's own tree is checked out separately under ./pr and is
+# only ever used as a build/test working directory — the PR's copy of scripts/ is never
+# executed. The input PR is additionally required to be same-repo and to sit on the branch this
+# loop owns, so dispatching this workflow at an arbitrary (or forked) PR cannot run its code.
 
 permissions:
   contents: read
   issues: read
   pull-requests: write
-  actions: read
+  actions: write        # required to dispatch the correct phase
 
 on:
-  workflow_run:
-    workflows: ["Deliver — Implement", "Deliver — Correct"]
-    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to verify'
+        required: true
+      issue_number:
+        description: 'Sub-issue number being delivered'
+        required: true
 
 jobs:
   verify:
-    # A phase that failed has already reported on the PR or the sub-issue; re-verifying an
-    # unchanged PR would only add a duplicate verdict.
-    if: github.event.workflow_run.conclusion == 'success'
     runs-on: [self-hosted]
-    timeout-minutes: 60
+    # Generous: the full test suite plus an archon build plus an agent review. The single
+    # self-hosted runner is a known contention point, tracked as a follow-up on #1654.
+    timeout-minutes: 120
     env:
       REPO: ${{ github.repository }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # Deliberately NOT the implement phase's model. The reviewer and the implementer being
-      # different models is what keeps this from being an agent grading its own homework.
-      # Override with the DELIVER_VERIFY_MODEL repository variable.
+      PR: ${{ inputs.pr_number }}
+      ISSUE_NUMBER: ${{ inputs.issue_number }}
+      # Deliberately NOT the implement phase's model. Reviewer and implementer being different
+      # models is what keeps this from being an agent grading its own homework. Override with
+      # the DELIVER_VERIFY_MODEL repository variable.
       DELIVER_MODEL: ${{ vars.DELIVER_VERIFY_MODEL || 'claude-sonnet-4-6' }}
       MAX_ROUNDS: ${{ vars.DELIVER_MAX_ROUNDS || '3' }}
 
     steps:
-      # workflow_run carries no PR number, and it cannot be inferred: the upstream phase is
-      # issue_comment-triggered, so this event's head_sha is the default branch's. The number
-      # is passed forward explicitly instead.
-      - name: Download the delivery context
-        id: context_artifact
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: deliver-context
-          path: deliver-context
-          run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Read the delivery context
-        id: context
-        if: steps.context_artifact.outcome == 'success'
+      # Inputs are numbers a collaborator can type. Validate before use, and confirm the PR is
+      # one this loop actually owns: same repository (never a fork) and on deliver/issue-<N>.
+      # Without that guard, dispatching this workflow at a fork PR would run fork code on the
+      # self-hosted runner.
+      - name: Validate the target PR
+        id: target
         run: |
-          file=deliver-context/context.env
-          if [[ ! -s "$file" ]]; then
-            echo "::warning::delivery context is empty; nothing to verify"
-            exit 0
-          fi
-          pr=$(sed -n 's/^pr_number=//p' "$file")
-          issue=$(sed -n 's/^issue_number=//p' "$file")
-          # Both came from a validated numeric source upstream; re-check rather than trust an
-          # artifact, which is the one input to this workflow that a prior run controls.
-          [[ "$pr" =~ ^[0-9]+$ && "$issue" =~ ^[0-9]+$ ]] || {
-            echo "::error::malformed delivery context: pr='$pr' issue='$issue'"; exit 1; }
-          echo "pr_number=$pr"    >> "$GITHUB_OUTPUT"
-          echo "issue_number=$issue" >> "$GITHUB_OUTPUT"
+          set -uo pipefail
+          [[ "$PR" =~ ^[0-9]+$ && "$ISSUE_NUMBER" =~ ^[0-9]+$ ]] \
+            || { echo "::error::pr_number and issue_number must be numeric"; exit 1; }
+          gh pr view "$PR" --repo "$REPO" \
+            --json isCrossRepository,headRefName,headRefOid,baseRefOid,body,state \
+            > "$RUNNER_TEMP/pr.json"
+          cross=$(jq -r .isCrossRepository "$RUNNER_TEMP/pr.json")
+          branch=$(jq -r .headRefName "$RUNNER_TEMP/pr.json")
+          state=$(jq -r .state "$RUNNER_TEMP/pr.json")
+          [[ "$cross" == "false" ]] \
+            || { echo "::error::#$PR is a cross-repository (fork) PR; refusing to build it on a self-hosted runner"; exit 1; }
+          [[ "$branch" == "deliver/issue-${ISSUE_NUMBER}" ]] \
+            || { echo "::error::#$PR is on '$branch', not the expected deliver/issue-${ISSUE_NUMBER}"; exit 1; }
+          [[ "$state" == "OPEN" ]] \
+            || { echo "::error::#$PR is $state"; exit 1; }
+          {
+            echo "sha=$(jq -r .headRefOid "$RUNNER_TEMP/pr.json")"
+            echo "base_sha=$(jq -r .baseRefOid "$RUNNER_TEMP/pr.json")"
+            echo "branch=$branch"
+          } >> "$GITHUB_OUTPUT"
 
       # BC-9, before any agent runs or any label moves.
       - name: Honour deliver:paused
         id: paused
-        if: steps.context.outputs.pr_number != ''
-        env:
-          PR: ${{ steps.context.outputs.pr_number }}
         run: |
           if gh pr view "$PR" --repo "$REPO" --json labels \
                --jq '.labels[].name' | grep -qx 'deliver:paused'; then
@@ -88,83 +96,71 @@ jobs:
             echo "paused=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # Re-resolved every round, never carried in the artifact: Correct pushes new commits, so
-      # a carried SHA would poll CI for the pre-correction commit and could read its stale
-      # PASSING conclusion as this round's result.
-      - name: Resolve the PR head
-        id: head
-        if: steps.paused.outputs.paused == 'false'
-        env:
-          PR: ${{ steps.context.outputs.pr_number }}
-        # Written under runner.temp, not the workspace: actions/checkout runs after this step
-        # and cleans the workspace, which would delete a file left there.
-        run: |
-          pr_json="${{ runner.temp }}/pr.json"
-          gh pr view "$PR" --repo "$REPO" --json headRefOid,baseRefOid,headRefName,body > "$pr_json"
-          {
-            echo "sha=$(jq -r .headRefOid "$pr_json")"
-            echo "base_sha=$(jq -r .baseRefOid "$pr_json")"
-            echo "branch=$(jq -r .headRefName "$pr_json")"
-          } >> "$GITHUB_OUTPUT"
-
-      # BC-8. Verify is chained off the previous phase completing, so CI on this head may not
-      # have started yet. Reading a conclusion now would be reading nothing.
-      #
-      # The Actions API is used rather than `gh pr checks` on purpose: that surface also
-      # returns COMMIT STATUSES, and claude.yml's report-status job creates one on the PR head
-      # whenever a human comments @claude on the PR. A poll satisfied by that status would
-      # read a delivery-unrelated success as the CI verdict. `event=pull_request` additionally
-      # keeps the three deliver phases (workflow_run / issue_comment) out of their own gate,
-      # and picks up every PR workflow — including path-filtered docs.yml — without naming
-      # any job.
-      - name: Wait for CI to settle
-        id: ci
-        if: steps.paused.outputs.paused == 'false'
-        env:
-          SHA: ${{ steps.head.outputs.sha }}
-          POLL_SECONDS: '20'
-          MAX_ATTEMPTS: '90'   # 30 minutes
-        run: |
-          set -uo pipefail
-          status=unknown
-          for (( attempt = 1; attempt <= MAX_ATTEMPTS; attempt++ )); do
-            runs=$(gh api "/repos/$REPO/actions/runs?head_sha=$SHA&event=pull_request&per_page=100" \
-                     --jq '.workflow_runs' 2>/dev/null) || runs=''
-            if [[ -z "$runs" || "$runs" == "null" ]]; then
-              sleep "$POLL_SECONDS"; continue
-            fi
-            # One workflow can have several runs on the same SHA (a re-run creates another).
-            # Only the newest per workflow counts, or an earlier failed attempt would outvote
-            # the passing re-run that replaced it.
-            latest=$(jq -c '[group_by(.workflow_id)[] | max_by(.run_number)]' <<< "$runs")
-            total=$(jq 'length' <<< "$latest")
-            if (( total == 0 )); then sleep "$POLL_SECONDS"; continue; fi
-            pending=$(jq '[.[] | select(.status != "completed")] | length' <<< "$latest")
-            if (( pending > 0 )); then
-              echo "attempt $attempt: $pending of $total run(s) still going"
-              sleep "$POLL_SECONDS"; continue
-            fi
-            # Every conclusion that is not success maps to failure — including neutral,
-            # cancelled, skipped, timed_out, action_required and stale. Deliberately blunt:
-            # a legitimately skipped job costs a human glance, which is the safe direction.
-            failed=$(jq -r '[.[] | select(.conclusion != "success") | .name] | join(", ")' <<< "$latest")
-            if [[ -z "$failed" ]]; then status=success; else status=failure; fi
-            jq -r '.[] | "  \(.name): \(.conclusion)"' <<< "$latest"
-            echo "failing=$failed" >> "$GITHUB_OUTPUT"
-            break
-          done
-          echo "CI_STATUS=$status"
-          echo "status=$status" >> "$GITHUB_OUTPUT"
-
+      # Trusted tree: our scripts, our .archon-version.
       - uses: actions/checkout@v5
         if: steps.paused.outputs.paused == 'false'
         with:
+          fetch-depth: 0
+
+      # The PR's tree, isolated under ./pr. Pinned to the exact SHA validated above rather than
+      # to the ref, so a push landing mid-run cannot swap the code under us.
+      - uses: actions/checkout@v5
+        if: steps.paused.outputs.paused == 'false'
+        with:
+          ref: ${{ steps.target.outputs.sha }}
+          path: pr
           fetch-depth: 0
 
       - uses: actions/setup-go@v5
         if: steps.paused.outputs.paused == 'false'
         with:
           go-version: '1.26'
+
+      # The three check steps mirror ci.yml. Each is continue-on-error so a genuine failure
+      # becomes a SIGNAL rather than aborting the job: a failing test must reach the gate as
+      # CI_STATUS=failure and produce a correction round, not kill the verify phase.
+      - name: Check — build
+        id: check_build
+        if: steps.paused.outputs.paused == 'false'
+        continue-on-error: true
+        working-directory: pr
+        run: go build -v ./...
+
+      - name: Check — test
+        id: check_test
+        if: steps.paused.outputs.paused == 'false'
+        continue-on-error: true
+        working-directory: pr
+        run: go test -timeout 25m ./...
+
+      - name: Check — lint
+        id: check_lint
+        if: steps.paused.outputs.paused == 'false'
+        continue-on-error: true
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.9.0
+          working-directory: pr
+
+      - name: Derive the CI signal
+        id: ci
+        if: steps.paused.outputs.paused == 'false'
+        env:
+          BUILD: ${{ steps.check_build.outcome }}
+          TEST: ${{ steps.check_test.outcome }}
+          LINT: ${{ steps.check_lint.outcome }}
+        run: |
+          set -uo pipefail
+          failing=""
+          [[ "$BUILD" == "success" ]] || failing="build"
+          [[ "$TEST"  == "success" ]] || failing="${failing:+$failing, }test"
+          [[ "$LINT"  == "success" ]] || failing="${failing:+$failing, }lint"
+          # Any outcome that is not success counts as failure. Deliberately blunt: the safe
+          # direction for an unexpected outcome is a stopped delivery, not a passed one.
+          if [[ -z "$failing" ]]; then status=success; else status=failure; fi
+          echo "build=$BUILD test=$TEST lint=$LINT -> CI_STATUS=$status"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "failing=$failing" >> "$GITHUB_OUTPUT"
 
       - name: Build archon
         id: archon_build
@@ -174,31 +170,28 @@ jobs:
           [[ -n "$ARCHON_BIN" && -x "$ARCHON_BIN" ]] || { echo "::error::archon-build.sh produced no binary"; exit 1; }
           echo "bin=$ARCHON_BIN" >> "$GITHUB_OUTPUT"
 
-      - name: Fetch the PR head
+      - name: Fetch the PR head into the trusted tree
         if: steps.paused.outputs.paused == 'false'
-        env:
-          PR: ${{ steps.context.outputs.pr_number }}
         run: git fetch origin "pull/${PR}/head"
 
-      # The PR body is the only declaration source. archon.yml also reads closing-issue
-      # bodies, but a hole PR targets a feature branch and GitHub links no closing issue
-      # there, which is exactly why P1 is told to copy the `archon-plan:` line into the body.
+      # The PR body is the only declaration source. archon.yml also reads closing-issue bodies,
+      # but a hole PR targets a feature branch where GitHub links no closing issue — which is
+      # exactly why P1 is told to copy the `archon-plan:` line into the body.
       - name: Run the archon review
         if: steps.paused.outputs.paused == 'false'
         env:
           ARCHON_BIN: ${{ steps.archon_build.outputs.bin }}
-          BASE_SHA: ${{ steps.head.outputs.base_sha }}
-          HEAD_SHA: ${{ steps.head.outputs.sha }}
+          BASE_SHA: ${{ steps.target.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.target.outputs.sha }}
           OUTPUT_FILE: ${{ runner.temp }}/archon-output.md
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          jq -r .body "${{ runner.temp }}/pr.json" > "${{ runner.temp }}/plan-decl.txt"
-          DECL_FILE="${{ runner.temp }}/plan-decl.txt" scripts/archon-review.sh
+          jq -r .body "$RUNNER_TEMP/pr.json" > "$RUNNER_TEMP/plan-decl.txt"
+          DECL_FILE="$RUNNER_TEMP/plan-decl.txt" scripts/archon-review.sh
 
       - name: Post the archon review
         if: steps.paused.outputs.paused == 'false'
         env:
-          PR: ${{ steps.context.outputs.pr_number }}
           OUTPUT_FILE: ${{ runner.temp }}/archon-output.md
         run: |
           if [[ -s "$OUTPUT_FILE" ]]; then
@@ -208,30 +201,38 @@ jobs:
           fi
 
       # review.json is the machine-readable half of the bundle archon-review.sh just wrote.
-      # Both keys are omitempty, so their absence IS the planless case — which must behave
-      # exactly like a satisfied plan, since archon is optional.
+      #
+      # The `unverified` case is the subtle one. archon-review.sh exits 0 and falls back to a
+      # PLAN-LESS delta review when plan resolution fails or the plan-aware run crashes, so an
+      # absent planRatchet does NOT by itself mean "this PR has no plan" — it can equally mean
+      # "this PR declared a plan that was never checked". Treating those alike would let a PR
+      # whose dist ratchet silently did not run reach ready-for-merge on a GREEN review. So the
+      # PR body is consulted: declared-but-unevaluated is `unverified`, which blocks.
       - name: Derive the plan signal
         id: plan
         if: steps.paused.outputs.paused == 'false'
         run: |
           set -uo pipefail
           gate=absent
+          ok=""; verdict=""
           if [[ -f .archon/review.json ]]; then
             ok=$(jq -r '.planRatchet.ok // empty' .archon/review.json)
             verdict=$(jq -r '.planClassify.verdict // empty' .archon/review.json)
-            if [[ "$verdict" == "CONFLICTS" ]]; then
-              gate=conflicts
-            elif [[ "$ok" == "false" ]]; then
-              gate=regression
-            elif [[ -n "$ok" || -n "$verdict" ]]; then
-              gate=pass
-            fi
+          fi
+          if [[ "$verdict" == "CONFLICTS" ]]; then
+            gate=conflicts
+          elif [[ "$ok" == "false" ]]; then
+            gate=regression
+          elif [[ -n "$ok" || -n "$verdict" ]]; then
+            gate=pass
+          elif grep -qiE '^[[:space:]]*archon-plan:[[:space:]]*\S' "$RUNNER_TEMP/plan-decl.txt"; then
+            gate=unverified
           fi
           echo "PLAN_GATE=$gate"
           echo "gate=$gate" >> "$GITHUB_OUTPUT"
 
-      # Recorded BEFORE the agent runs. The marker is only read from comments newer than
-      # this, so the previous round's verdict can never be mistaken for this round's.
+      # Recorded BEFORE the agent runs. The marker is only read from comments newer than this,
+      # so the previous round's verdict can never be mistaken for this round's.
       - name: Mark the review start
         id: since
         if: steps.paused.outputs.paused == 'false'
@@ -249,61 +250,66 @@ jobs:
           claude_args: '--model ${{ env.DELIVER_MODEL }} --allowed-tools Skill Agent Bash Read Edit Write'
           show_full_output: true
           prompt: |
-            PR #${{ steps.context.outputs.pr_number }} is open for sub-issue
-            #${{ steps.context.outputs.issue_number }} and something changed. Determine the
-            verdict. You are NOT fixing anything — do not edit files, do not push.
+            PR #${{ inputs.pr_number }} is open for sub-issue #${{ inputs.issue_number }} and
+            something changed. Determine the verdict. You are NOT fixing anything — do not edit
+            files and do not push.
 
-            The objective signals have already been gathered for you:
+            The objective signals have already been gathered:
 
-            - CI: `${{ steps.ci.outputs.status }}`${{ steps.ci.outputs.failing && format(' (failing: {0})', steps.ci.outputs.failing) || '' }}
+            - build / test / lint: `${{ steps.ci.outputs.status }}`${{ steps.ci.outputs.failing && format(' (failing: {0})', steps.ci.outputs.failing) || '' }}
             - archon plan signal: `${{ steps.plan.outputs.gate }}`
             - archon's full review is at `${{ runner.temp }}/archon-output.md` and has already
               been posted to the PR. Read it.
 
-            Read the sub-issue for its contracts (`gh issue view ${{ steps.context.outputs.issue_number }}`)
-            and the diff (`gh pr diff ${{ steps.context.outputs.pr_number }}`). Then run the
-            BLIS methodology review — use the `blis-pr-review` skill — with archon's output and
-            those contracts as your inputs.
+            Read the sub-issue for its contracts (`gh issue view ${{ inputs.issue_number }}`)
+            and the diff (`gh pr diff ${{ inputs.pr_number }}`). Then run the BLIS methodology
+            review — use the `blis-pr-review` skill — with archon's output and those contracts
+            as your inputs.
 
             For each contract, say whether it holds and how you know. Read the PR's earlier
             comments: treat the previous round's findings as still open unless you can see they
             were addressed, and for each dismissal in the most recent correction comment,
-            explicitly ACCEPT or RE-RAISE it. A dismissal you neither accept nor re-raise
-            counts as unresolved.
+            explicitly ACCEPT or RE-RAISE it. A dismissal you neither accept nor re-raise counts
+            as unresolved.
 
             Post ONE comment on the PR with your verdict. A finding must name a file and what
-            specifically is wrong — "consider improving error handling" is not a finding.
-            Number them.
+            specifically is wrong — "consider improving error handling" is not a finding. Number
+            them.
 
-            End that comment with a line reading exactly one of:
+            The LAST line of that comment must be exactly one of these two, and nothing else:
+            `DELIVER-VERDICT: GREEN` or `DELIVER-VERDICT: NOT-GREEN`. The delivery reads only
+            that final line; if it is missing or is not last, the delivery stops for a human.
 
-            DELIVER-VERDICT: GREEN
-            DELIVER-VERDICT: NOT-GREEN
+            You may not return GREEN if the checks are failing or if the plan signal is
+            `regression`, `conflicts`, or `unverified`. If any of those is true and the code
+            nonetheless looks correct to you, say so explicitly and return NOT-GREEN — a
+            disagreement between you and the objective signals is something a human needs to
+            see, not something for you to resolve.
 
-            The workflow reads that line and nothing else. If it is missing, the delivery stops
-            for a human, so do not omit it or reword it.
-
-            You may not return GREEN if CI is failing or if the plan signal is `regression` or
-            `conflicts`. If either is true and the code nonetheless looks correct to you, say
-            so explicitly and return NOT-GREEN — a disagreement between you and the objective
-            signals is something a human needs to see, not something for you to resolve.
-
+      # Read only from comments posted by the automation itself, and only when the marker is the
+      # comment's LAST non-empty line. Both guards matter: without the author filter any human
+      # could set the verdict by quoting the marker, and without the last-line rule a comment
+      # that merely MENTIONS it — including an echo of the prompt above — would count.
       - name: Read the verdict marker
         id: verdict
         if: steps.paused.outputs.paused == 'false'
         env:
-          PR: ${{ steps.context.outputs.pr_number }}
           SINCE: ${{ steps.since.outputs.at }}
         run: |
           set -uo pipefail
           # Lexicographic compare is valid: both sides are UTC ISO-8601 to the second.
-          # Every stage is guarded with `|| true`: no marker is the MISSING case, which the
-          # gate turns into needs-human. A failing grep must not fail the step, or the one
-          # outcome this branch exists to report would instead kill the workflow silently.
-          comments=$(gh api "/repos/$REPO/issues/$PR/comments?per_page=100" --paginate \
-                       --jq ".[] | select(.created_at > \"$SINCE\") | .body" 2>/dev/null || true)
-          marker=$(grep -oE '^DELIVER-VERDICT: (GREEN|NOT-GREEN)[[:space:]]*$' <<< "$comments" \
-                   | tail -n 1 | sed 's/^DELIVER-VERDICT: //' | tr -d '[:space:]' || true)
+          # One line of output per qualifying comment: its last non-empty line, trimmed.
+          lastlines=$(gh api "/repos/$REPO/issues/$PR/comments?per_page=100" --paginate \
+            --jq ".[]
+                  | select(.created_at > \"$SINCE\")
+                  | select(.user.login == \"github-actions[bot]\")
+                  | .body
+                  | split(\"\n\")
+                  | map(select(test(\"\\\\S\")))
+                  | (last // \"\")
+                  | gsub(\"^\\\\s+|\\\\s+$\"; \"\")" 2>/dev/null || true)
+          marker=$(grep -xE 'DELIVER-VERDICT: (GREEN|NOT-GREEN)' <<< "$lastlines" \
+                   | tail -n 1 | sed 's/^DELIVER-VERDICT: //' || true)
           [[ -n "$marker" ]] || marker=MISSING
           echo "AGENT_VERDICT=$marker"
           echo "value=$marker" >> "$GITHUB_OUTPUT"
@@ -311,8 +317,6 @@ jobs:
       - name: Read the round counter
         id: round
         if: steps.paused.outputs.paused == 'false'
-        env:
-          PR: ${{ steps.context.outputs.pr_number }}
         run: |
           round=$(gh pr view "$PR" --repo "$REPO" --json labels \
                     --jq '[.labels[].name | select(startswith("deliver:round-"))
@@ -328,104 +332,118 @@ jobs:
           PLAN_GATE: ${{ steps.plan.outputs.gate }}
           AGENT_VERDICT: ${{ steps.verdict.outputs.value }}
           ROUND: ${{ steps.round.outputs.value }}
-        # pipefail is essential here: without it the pipeline reports tee's exit status, so
-        # the gate exiting 2 on a wiring error would look like a successful step that simply
-        # produced no decision.
+        # pipefail is essential: without it the pipeline reports tee's status, so the gate
+        # exiting 2 on a wiring error would look like a successful step with no decision.
         run: |
           set -o pipefail
           scripts/deliver-gate.sh | tee -a "$GITHUB_OUTPUT"
 
+      # The checks and the review together take a long time, so re-confirm the code that was
+      # actually verified is still the head before declaring it mergeable. A push landing
+      # mid-run was never checked by anything.
+      - name: Confirm the head did not move
+        id: recheck
+        if: steps.paused.outputs.paused == 'false' && steps.gate.outputs.decision == 'ready'
+        env:
+          VERIFIED_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          set -uo pipefail
+          now=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)
+          if [[ "$now" != "$VERIFIED_SHA" ]]; then
+            echo "moved=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::head moved from $VERIFIED_SHA to $now during verification"
+          else
+            echo "moved=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Apply the decision
         if: steps.paused.outputs.paused == 'false'
         env:
-          PR: ${{ steps.context.outputs.pr_number }}
           DECISION: ${{ steps.gate.outputs.decision }}
           REASON: ${{ steps.gate.outputs.reason }}
+          MOVED: ${{ steps.recheck.outputs.moved }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -uo pipefail
-          case "$DECISION" in
+          decision="$DECISION"
+          reason="$REASON"
+          # A moved head downgrades ready to needs-human: what passed the checks is no longer
+          # what a human would merge.
+          if [[ "$decision" == "ready" && "$MOVED" == "true" ]]; then
+            decision=needs-human
+            reason="the delivery verified ${{ steps.target.outputs.sha }} and returned green, but the branch head moved during verification, so the current head is unverified"
+          fi
+          case "$decision" in
             ready)       label=ready-for-merge; headline='Ready for merge' ;;
             needs-human) label=needs-human;     headline='Stopped — a human is needed' ;;
             correct)     label='';              headline='Correction round starting' ;;
-            *) echo "::error::unexpected decision '$DECISION'"; exit 1 ;;
+            *) echo "::error::unexpected decision '$decision'"; exit 1 ;;
           esac
           {
             echo "## $headline"
             echo
-            echo "$REASON"
+            echo "$reason"
             echo
             echo "| signal | value |"
             echo "|---|---|"
-            echo "| CI | \`${{ steps.ci.outputs.status }}\` |"
+            echo "| build / test / lint | \`${{ steps.ci.outputs.status }}\`${{ steps.ci.outputs.failing && format(' (failing: {0})', steps.ci.outputs.failing) || '' }} |"
             echo "| archon plan | \`${{ steps.plan.outputs.gate }}\` |"
             echo "| review verdict | \`${{ steps.verdict.outputs.value }}\` |"
             echo "| correction rounds spent | ${{ steps.round.outputs.value }} of ${MAX_ROUNDS} |"
+            echo "| verified commit | \`${{ steps.target.outputs.sha }}\` |"
             echo
-            if [[ "$DECISION" == ready ]]; then
-              echo "Nothing further is automated. A human reviews the history above and merges."
-            elif [[ "$DECISION" == needs-human ]]; then
-              echo "The delivery loop has stopped and will not resume on its own."
-            else
-              echo "The correct phase will address the findings above and hand back for re-verification."
-            fi
+            case "$decision" in
+              ready)       echo "Nothing further is automated. A human reviews the history above and merges." ;;
+              needs-human) echo "The delivery loop has stopped and will not resume on its own." ;;
+              correct)     echo "The correct phase will address the findings above and hand back for re-verification." ;;
+            esac
             echo
             echo "_[Verify run](${RUN_URL})_"
-          } > "${{ runner.temp }}/decision.md"
-          gh pr comment "$PR" --repo "$REPO" --body-file "${{ runner.temp }}/decision.md"
+          } > "$RUNNER_TEMP/decision.md"
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/decision.md"
+          # A label failure must not abort this step: the hand-off below is what keeps the
+          # delivery moving, and a missing label would otherwise strand a promised correction
+          # round right after the comment above announced it.
           if [[ -n "$label" ]]; then
-            gh pr edit "$PR" --repo "$REPO" --add-label "$label"
+            gh pr edit "$PR" --repo "$REPO" --add-label "$label" \
+              || echo "::warning::could not apply the '$label' label — does it exist in this repository?"
           fi
+          # Carried in the environment rather than as a step output because the moved-head
+          # downgrade above can differ from what the gate returned, and the hand-off must follow
+          # the applied decision, not the gate's.
+          echo "final_decision=$decision" >> "$GITHUB_ENV"
 
-      # Handed to Deliver — Correct, which exits unless decision=correct. Keeping the stop
-      # condition in the gate's output rather than duplicating it as a workflow `if:` means
-      # there is only one place the loop can decide to continue.
-      - name: Write the delivery context
-        if: steps.paused.outputs.paused == 'false'
+      - name: Hand off to correct
+        if: steps.paused.outputs.paused == 'false' && env.final_decision == 'correct'
         run: |
-          out="${{ runner.temp }}/deliver-context-out"
-          mkdir -p "$out"
-          {
-            echo "pr_number=${{ steps.context.outputs.pr_number }}"
-            echo "issue_number=${{ steps.context.outputs.issue_number }}"
-            echo "decision=${{ steps.gate.outputs.decision }}"
-          } > "$out/context.env"
-          cat "$out/context.env"
+          gh workflow run deliver-correct.yml --repo "$REPO" --ref "${{ github.ref_name }}" \
+            -f pr_number="$PR" -f issue_number="$ISSUE_NUMBER"
+          echo "Dispatched correct for PR #$PR."
 
-      - name: Upload the delivery context
-        if: steps.paused.outputs.paused == 'false'
-        uses: actions/upload-artifact@v4
-        with:
-          name: deliver-context
-          path: ${{ runner.temp }}/deliver-context-out/context.env
-          retention-days: 7
-
-      # A failed STEP aborts the job and skips every step after it — including the two above
-      # that comment and label. Without this, a gate wiring error or a crashed agent leaves the
-      # PR silent, and because Deliver — Correct requires conclusion == 'success' the chain
-      # stops too. Silence is indistinguishable from "still working", and there is no stall
-      # detector yet, so the one thing this phase must never do is fail quietly.
+      # `cancelled()` matters as much as `failure()`: the job timeout CANCELS rather than fails,
+      # and this phase is the long one (full test suite plus an agent review). Without this a
+      # timeout would skip the comment and the label, leaving the PR silent — and silence is
+      # indistinguishable from "still working" while there is no stall detector.
       - name: Report a failed verify
-        if: failure() && steps.context.outputs.pr_number != ''
+        if: failure() || cancelled()
         env:
-          PR: ${{ steps.context.outputs.pr_number }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -uo pipefail
           {
-            echo "## Delivery stopped — the verify phase failed"
+            echo "## Delivery stopped — the verify phase failed or timed out"
             echo
-            echo "A step in the verify phase errored, so no verdict was reached. This is a"
-            echo "failure of the automation, not a verdict on the code."
+            echo "A step errored, or the job hit its 120-minute timeout, so no verdict was"
+            echo "reached. This is a failure of the automation, not a verdict on the code."
             echo
             echo "| signal | value |"
             echo "|---|---|"
-            echo "| CI | \`${{ steps.ci.outputs.status || 'not reached' }}\` |"
+            echo "| build / test / lint | \`${{ steps.ci.outputs.status || 'not reached' }}\` |"
             echo "| archon plan | \`${{ steps.plan.outputs.gate || 'not reached' }}\` |"
             echo "| review verdict | \`${{ steps.verdict.outputs.value || 'not reached' }}\` |"
             echo
-            echo "The loop will not resume on its own. See the [failed run](${RUN_URL}) for the"
-            echo "step that errored, then re-issue \`/approve-issue-for-pr-delivery\` once fixed."
-          } > "${{ runner.temp }}/failure.md"
-          gh pr comment "$PR" --repo "$REPO" --body-file "${{ runner.temp }}/failure.md" || true
+            echo "The loop will not resume on its own. See the [run](${RUN_URL}) for the failing"
+            echo "step, then re-issue \`/approve-issue-for-pr-delivery\` once fixed."
+          } > "$RUNNER_TEMP/failure.md"
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/failure.md" || true
           gh pr edit "$PR" --repo "$REPO" --add-label needs-human || true

@@ -4,7 +4,7 @@
 #
 # Environment (all required):
 #   CI_STATUS      success | failure | unknown
-#   PLAN_GATE      pass | regression | conflicts | absent
+#   PLAN_GATE      pass | regression | conflicts | unverified | absent
 #   AGENT_VERDICT  GREEN | NOT-GREEN | MISSING
 #   ROUND          correction rounds already spent (non-negative integer)
 #   MAX_ROUNDS     hard cap on correction rounds (non-negative integer)
@@ -59,8 +59,8 @@ case "$CI_STATUS" in
   *) emit needs-human "unrecognised CI_STATUS '$CI_STATUS' — the CI derivation step needs to map this to success, failure, or unknown" ;;
 esac
 case "$PLAN_GATE" in
-  pass | regression | conflicts | absent) ;;
-  *) emit needs-human "unrecognised PLAN_GATE '$PLAN_GATE' — expected pass, regression, conflicts, or absent" ;;
+  pass | regression | conflicts | unverified | absent) ;;
+  *) emit needs-human "unrecognised PLAN_GATE '$PLAN_GATE' — expected pass, regression, conflicts, unverified, or absent" ;;
 esac
 case "$AGENT_VERDICT" in
   GREEN | NOT-GREEN | MISSING) ;;
@@ -83,6 +83,12 @@ add_blocking() { blocking="${blocking:+$blocking; }$1"; }
 case "$PLAN_GATE" in
   regression) add_blocking "archon plan distance increased" ;;
   conflicts) add_blocking "archon plan verdict is CONFLICTS" ;;
+  # The PR declared an archon-plan but the plan check did not evaluate it. That is MISSING
+  # EVIDENCE, not a pass: archon-review.sh exits 0 and falls back to a plan-less delta review
+  # when plan resolution fails, so without this the dist ratchet would silently not apply and
+  # a GREEN review could carry the PR to ready. Distinct from `absent`, which means the PR
+  # never claimed a plan at all and is legitimately gated on CI plus the review alone.
+  unverified) add_blocking "the PR declares an archon-plan but the plan check did not run, so the dist ratchet is unverified" ;;
 esac
 
 # The decision itself. `reason` is only set on paths that fall through to the round cap;
