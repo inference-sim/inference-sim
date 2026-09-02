@@ -45,8 +45,11 @@ type BatchContext struct {
 	// consume the carry (FormBatch caps g afterward by KV budget / MaxModelLen; the
 	// Simulator commits the granted count in executeBatchStep). nil ⇒ 1 token/step
 	// (byte-identical to a pre-feature build, INV-6). Supplied by the Simulator, which
-	// owns the per-request fractional-carry state; this keeps FormBatch oracle-blind
-	// (it never reads OutputTokens to size the decode step, INV-9).
+	// owns the per-request fractional-carry state; the peek itself is oracle-blind
+	// (mean rate + carry only). FormBatch then caps the proposal, including by the
+	// request's distance to its completion boundary (decodeTokensToCompletion, #1657) —
+	// a per-step execution read of OutputTokens that INV-9 permits here, not a
+	// servability decision.
 	DecodeTokensPerStep func(req *Request) int64
 }
 
@@ -81,6 +84,27 @@ const (
 	// vLLM scheduler.py:1086: max(self.running, key=lambda r: (r.priority, r.arrival_time)).
 	PreemptionPriority PreemptionPolicy = "priority"
 )
+
+// decodeTokensToCompletion returns how many more decode tokens a request needs to reach
+// its completion boundary (Request.CompletionProgressIndex — the same value
+// processCompletions tests against). Zero means the request already sits at, or past,
+// the boundary.
+//
+// It exists so a speculative-decoding / MTP step (#1528) that advances g > 1 tokens
+// lands exactly ON the boundary instead of past it (#1657). vLLM does the same thing:
+// _update_from_output appends the accepted tokens one at a time and trims the tail once
+// check_stop fires, so a request never records more output tokens than it was budgeted
+// (the forward pass still cost the full verify width). An overshoot inflates
+// ProgressIndex beyond the request's assigned output, which a closed-loop accumulate
+// session reads back as output-accounting corruption (SessionManager.OnComplete
+// cancels the whole session).
+//
+// Reading OutputTokens here is per-step execution planning — which INV-9 explicitly
+// permits for FormBatch, the same read the decode-phase gate already performs — not a
+// servability decision.
+func decodeTokensToCompletion(req *Request) int64 {
+	return max(req.CompletionProgressIndex()-req.ProgressIndex, 0)
+}
 
 // VLLMBatchFormation implements the vLLM FCFS + chunked-prefill + preemption strategy.
 type VLLMBatchFormation struct {
@@ -155,6 +179,14 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 				decodeTokens = ctx.DecodeTokensPerStep(req)
 				// Cap g by remaining token budget (spec-decode only; g can exceed 1).
 				decodeTokens = min(decodeTokens, tokenBudget)
+				// Output-budget cap (#1657): land exactly ON the completion boundary,
+				// never past it. A running decode request is always at least one token
+				// short of the boundary — processCompletions completes every batch member
+				// that reaches it, in the same step — so in practice this only reduces a
+				// multi-token grant and never zeroes one (INV-12 holds). Should it ever
+				// return 0, the outcome is the benign MaxModelLen-boundary one below: a
+				// zero-work step, after which processCompletions finishes the request.
+				decodeTokens = min(decodeTokens, decodeTokensToCompletion(req))
 			}
 			// Proactive MaxModelLen cap (BC-1): stop exactly at the boundary.
 			// For g=1 this reproduces the pre-feature "skip decode at boundary" logic:
@@ -240,6 +272,18 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			// stays 1 and every line below is unchanged (BC-1/INV-6).
 			if ctx.DecodeTokensPerStep != nil {
 				decodeTokens = ctx.DecodeTokensPerStep(next)
+				// Output-budget cap (#1657): land exactly ON the completion boundary.
+				// Floored at 1 for the same reason the MaxModelLen cap below is: a
+				// 1-output-token decode sub-request is admitted ALREADY at its boundary
+				// (ProgressIndex == InputLen == boundary), and granting 0 would break out
+				// of the admission loop every step forever — it is not yet in
+				// RunningBatch, so nothing force-completes it (INV-8/INV-11). Emitting
+				// that one final token is exactly what the pre-feature (k=0) PD path did.
+				if outRoom := decodeTokensToCompletion(next); outRoom >= 1 {
+					decodeTokens = min(decodeTokens, outRoom)
+				} else {
+					decodeTokens = 1
+				}
 				// Cap the multi-token advance so it can't overshoot the model-length
 				// window by more than the single token the pre-feature (k=0) PD path
 				// already allowed.

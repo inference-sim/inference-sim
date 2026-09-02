@@ -734,10 +734,12 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	if decodeTokens < len(req.OutputTokens) {
 		decodeTokens++ // prefill-generated first token (vLLM parity)
 	}
-	// Speculative decoding / MTP overshoot clamp (#1528, BC-4): a multi-token step
-	// can carry ProgressIndex past the target, making (PI-InputLen) exceed the
-	// pre-specified output length. Clamp so a request never counts MORE output tokens
-	// than it was assigned (INV-1 conservation). No-op for g=1 (feature off).
+	// Speculative decoding / MTP overshoot clamp (#1528, BC-4): DEFENSE-IN-DEPTH.
+	// Since #1657, FormBatch caps each decode grant at the request's completion
+	// boundary, so a multi-token step no longer carries ProgressIndex past the target
+	// and this clamp is not expected to bind. It stays as a last line of defense for
+	// INV-1 conservation: a request must never count MORE output tokens than it was
+	// assigned, whatever a future step-sizing path does. No-op for g=1 (feature off).
 	if decodeTokens > len(req.OutputTokens) {
 		decodeTokens = len(req.OutputTokens)
 	}
@@ -1008,10 +1010,12 @@ func (sim *Simulator) completeAdapterLoad(now int64, adapter string) {
 // request under speculative decoding / MTP (#1528): floor(carry + mean-rate), floored
 // at 1 (the always-generated bonus token, so INV-12 NumNewTokens>0 holds). PURE — it
 // does NOT mutate the carry, so FormBatch may call it while sizing the step and then
-// cap g by KV budget / MaxModelLen without desyncing the carry (the Simulator commits
-// the granted count afterward in executeBatchStep). Oracle-blind: reads only the mean
-// rate and the request's carry, never OutputTokens (INV-9). Only wired into FormBatch
-// when specEnabled; feature off ⇒ the caller uses the literal 1 (byte-identical).
+// cap g by KV budget / MaxModelLen / the distance to the completion boundary (#1657)
+// without desyncing the carry (the Simulator commits the granted count afterward in
+// executeBatchStep). Oracle-blind: reads only the mean rate and the request's carry,
+// never OutputTokens (INV-9) — the output-budget cap is applied by the caller. Only
+// wired into FormBatch when specEnabled; feature off ⇒ the caller uses the literal 1
+// (byte-identical).
 func (sim *Simulator) peekDecodeTokens(req *Request) int64 {
 	proposed := int64(req.specDecodeCarry + sim.specTokensPerStep) // floor of accumulated
 	if proposed < 1 {
@@ -1130,7 +1134,7 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 	remaining := []*Request{}
 	for _, req := range sim.RunningBatch.Requests {
 		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
-		if req.ProgressIndex >= req.InputLen()+max(util.Len64(req.OutputTokens), 1)-1 {
+		if req.ProgressIndex >= req.CompletionProgressIndex() {
 			// State transitions
 			req.State = StateCompleted
 			// Zero-output requests complete at prefill end with no decode phase.

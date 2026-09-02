@@ -89,8 +89,8 @@ func runOneSpecDecodeRequest(t *testing.T, k int, acceptance float64, input, out
 func TestSpecDecode_ThroughputReducesStepCount(t *testing.T) {
 	const input, output = 8, 9
 
-	_, reqOff := runOneSpecDecodeRequest(t, 0, 0, input, output)   // g=1
-	_, reqG3 := runOneSpecDecodeRequest(t, 2, 1.0, input, output)  // g=1+1.0*2=3
+	_, reqOff := runOneSpecDecodeRequest(t, 0, 0, input, output)  // g=1
+	_, reqG3 := runOneSpecDecodeRequest(t, 2, 1.0, input, output) // g=1+1.0*2=3
 
 	stepsOff := len(reqOff.ITL)
 	stepsG3 := len(reqG3.ITL)
@@ -104,14 +104,23 @@ func TestSpecDecode_ThroughputReducesStepCount(t *testing.T) {
 	}
 }
 
-// BC-4 / INV-1: output-token conservation holds under spec-decode, including the
-// overshoot case where a multi-token final step carries ProgressIndex past the target.
+// BC-4 / INV-1: output-token conservation holds under spec-decode, and (#1657) a
+// multi-token step lands EXACTLY on the completion boundary rather than past it.
+// The boundary is InputLen + max(outputLen,1) - 1: BLIS charges output token #1 to
+// prefill and the rest to decode steps, so this is also the ProgressIndex a K=0 run
+// finishes at — i.e. spec-decode changes step count, never token accounting.
 func TestSpecDecode_OutputTokenConservation(t *testing.T) {
-	cases := []struct{ k, input, output int; acc float64 }{
-		{k: 0, acc: 0, input: 8, output: 9},   // baseline g=1
-		{k: 2, acc: 1.0, input: 8, output: 9}, // g=3, exact landing
-		{k: 4, acc: 1.0, input: 10, output: 2}, // g=5, heavy overshoot (PI jumps well past target)
-		{k: 3, acc: 0.5, input: 16, output: 20}, // g=2.5 fractional carry
+	cases := []struct {
+		k, input, output int
+		acc              float64
+	}{
+		{k: 0, acc: 0, input: 8, output: 9},      // baseline g=1
+		{k: 2, acc: 1.0, input: 8, output: 9},    // g=3, exact landing
+		{k: 4, acc: 1.0, input: 10, output: 2},   // g=5 vs a 1-step budget (heaviest clamp)
+		{k: 3, acc: 0.5, input: 16, output: 20},  // g=2.5 fractional carry
+		{k: 2, acc: 0.755, input: 20, output: 4}, // #1657 repro: overshot the boundary by 2
+		{k: 2, acc: 0.755, input: 20, output: 9}, // #1657 repro: overshot the boundary by 2
+		{k: 5, acc: 0.8, input: 20, output: 13},  // wide verify block, fractional carry
 	}
 	for _, c := range cases {
 		s, req := runOneSpecDecodeRequest(t, c.k, c.acc, c.input, c.output)
@@ -119,16 +128,42 @@ func TestSpecDecode_OutputTokenConservation(t *testing.T) {
 			t.Errorf("k=%d in=%d out=%d: state=%q, want completed", c.k, c.input, c.output, req.State)
 			continue
 		}
-		// Exactly `output` tokens counted — never more, even on overshoot.
+		// Exactly `output` tokens counted — never more, even on the widest verify block.
 		if got := s.Metrics.TotalOutputTokens; got != c.output {
 			t.Errorf("k=%d out=%d: TotalOutputTokens=%d, want %d (overshoot must be clamped)", c.k, c.output, got, c.output)
 		}
-		// ProgressIndex must not be counted beyond the assigned output either.
-		if req.ProgressIndex > int64(c.input+c.output) {
-			// Overshoot of PI itself is allowed (final multi-token step), but the
-			// COUNTED output is clamped above; assert PI didn't run away unboundedly.
-			if req.ProgressIndex > int64(c.input+c.output)+int64(c.k) {
-				t.Errorf("k=%d: ProgressIndex=%d ran away past input+output+k=%d", c.k, req.ProgressIndex, c.input+c.output+c.k)
+		// #1657: the final step stops AT the completion boundary — no overshoot.
+		wantPI := int64(c.input + max(c.output, 1) - 1)
+		if req.ProgressIndex != wantPI {
+			t.Errorf("k=%d in=%d out=%d: final ProgressIndex=%d, want %d (InputLen + max(outputLen,1) - 1; a spec-decode step must not advance past the completion boundary)",
+				c.k, c.input, c.output, req.ProgressIndex, wantPI)
+		}
+	}
+}
+
+// #1657 (BC-3): the final ProgressIndex — the quantity closed-loop accumulate sessions
+// read back as "how much output did this round actually produce" — is INDEPENDENT of the
+// spec-decode config. Spec-decode buys fewer, wider decode steps; it must not change the
+// request's token accounting. This is the law the per-case boundary assertion above
+// encodes, stated as a direct comparison against the feature-off run.
+func TestSpecDecode_FinalProgressIndexMatchesBaseline(t *testing.T) {
+	specs := []struct {
+		k   int
+		acc float64
+	}{{2, 0.755}, {2, 1.0}, {3, 0.5}, {5, 0.8}, {7, 0.25}}
+	for _, output := range []int{1, 2, 3, 4, 5, 8, 9, 13, 20} {
+		_, base := runOneSpecDecodeRequest(t, 0, 0, 20, output)
+		for _, sp := range specs {
+			_, got := runOneSpecDecodeRequest(t, sp.k, sp.acc, 20, output)
+			if got.ProgressIndex != base.ProgressIndex {
+				t.Errorf("out=%d k=%d acc=%v: final ProgressIndex=%d, want %d (K=0 baseline)",
+					output, sp.k, sp.acc, got.ProgressIndex, base.ProgressIndex)
+			}
+			// Fewer decode steps is the point of the feature (sanity: the comparison
+			// above is not passing because spec-decode silently did nothing).
+			if sp.acc > 0 && output > 3 && len(got.ITL) >= len(base.ITL) {
+				t.Errorf("out=%d k=%d acc=%v: decode steps=%d, want fewer than baseline %d",
+					output, sp.k, sp.acc, len(got.ITL), len(base.ITL))
 			}
 		}
 	}
