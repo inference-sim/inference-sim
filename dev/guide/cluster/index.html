@@ -1193,6 +1193,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Tensor Parallelism">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#multi-node-tensor-parallelism" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Multi-node tensor parallelism
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2939,6 +2956,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Tensor Parallelism">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#multi-node-tensor-parallelism" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Multi-node tensor parallelism
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -3114,6 +3148,22 @@
 <div class="admonition note">
 <p class="admonition-title">Homogeneous instances</p>
 <p>All instances share the same SimConfig (model, GPU, TP, KV blocks). BLIS does not currently model heterogeneous fleets (mixed GPU types or TP configurations).</p>
+</div>
+<h3 id="multi-node-tensor-parallelism">Multi-node tensor parallelism<a class="headerlink" href="#multi-node-tensor-parallelism" title="Permanent link">&para;</a></h3>
+<p>When node pools are configured (<code>--policy-config</code> with <code>node_pools</code>), an instance whose <code>--tp</code> exceeds a pool's <code>gpus_per_node</code> can occupy <strong>whole nodes across the same pool</strong> — enabling multi-node TP for models too large for a single node (e.g. TP=16 on 2×8 H100). This happens automatically and only as a fallback: BLIS first tries to fit the instance on a single node in any matching pool, and spans nodes only when no single node can host the full TP group.</p>
+<p>Multi-node TP is modeled as <strong>whole-node occupancy</strong>: it engages only when <code>tp</code> is a whole multiple of <code>gpus_per_node</code> (e.g. <code>tp=16</code> on 8-GPU nodes → 2 nodes), and the instance takes complete nodes so every node carries an equal TP rank count. This is the shape vLLM's multiprocessing (<code>mp</code>) executor enforces (it asserts <code>world_size % nnodes == 0</code> and derives an equal per-node rank count); vLLM's Ray backend tolerates an asymmetric spread but warns against it, so BLIS is deliberately stricter than the most permissive backend. (vLLM's docs actually recommend avoiding multi-node TP altogether in favor of TP-within-node + PP-across-nodes — see the interconnect note below.) If <code>tp ≤ gpus_per_node</code> but the pool is merely fragmented (no single node momentarily has room), the instance is <strong>not</strong> spanned (the resulting asymmetric rank split is discouraged and not modeled); it stays pending, exactly as before. Single-node placement is unchanged.</p>
+<p>A spanning instance is billed for every node it occupies (<code>cost_per_hour × nodes_spanned</code>).</p>
+<div class="admonition note">
+<p class="admonition-title">Configuration constraints</p>
+<p>Two node-pool configurations are rejected at startup (with a clear panic) because they would otherwise produce silently-wrong span/cost numbers — both tracked for proper support by <a href="https://github.com/inference-sim/inference-sim/issues/1543">#1543</a>:</p>
+<ul>
+<li>A per-role tensor-parallel override (<code>--prefill-tp</code> / <code>--decode-tp</code>) that <strong>differs from the global <code>--tp</code></strong> is not supported with <code>node_pools</code>: placement, node-span, and cost all use the global <code>--tp</code>, so a differing per-role TP would be simulated at one degree but placed and billed at another. Use a uniform <code>--tp</code>.</li>
+<li>Every pool must have a <strong>distinct <code>gpu_type</code></strong>: cost (<code>cost_per_hour</code>) and capacity (<code>gpu_memory_gib</code>) are resolved by first-match on <code>gpu_type</code>, so two pools sharing a type would resolve ambiguously.</li>
+</ul>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Cross-node interconnect not yet priced</p>
+<p>The TP all-reduce latency term currently assumes intra-node NVLink and does not add a cross-node network penalty (tracked by <a href="https://github.com/inference-sim/inference-sim/issues/1530">#1530</a>). Latency and throughput for a multi-node instance are therefore <strong>optimistic</strong> until that lands; BLIS emits a one-time warning when an instance first spans nodes. Note that cross-node TP is itself the aggressive topology: vLLM recommends <strong>pipeline parallelism across nodes and tensor parallelism within a node</strong>, precisely because per-layer TP all-reduce is punishing over inter-node links (InfiniBand/Ethernet, roughly an order of magnitude below NVLink). So the optimism here is not a small rounding gap — a comm-dominated step can be under-priced substantially. Multi-node placement is <code>blis run</code> only (<code>blis replay</code>/<code>observe</code> reject node pools). Pipeline parallelism is not yet modeled (tracked by <a href="https://github.com/inference-sim/inference-sim/issues/1535">#1535</a>).</p>
 </div>
 <h2 id="scaling-and-saturation">Scaling and Saturation<a class="headerlink" href="#scaling-and-saturation" title="Permanent link">&para;</a></h2>
 <p>Instance scaling produces <strong>super-linear</strong> TTFT improvement near saturation. With the default model (Qwen3-14B / H100 / TP=1, ~17 req/s per instance at saturation), scaling from 4→12 instances at rate=200 improves TTFT p99 from ~1,500ms to ~54ms.</p>
