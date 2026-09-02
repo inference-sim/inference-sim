@@ -192,8 +192,11 @@ jobs:
       # BC-11. Without this the command looks ignored: there is no PR to comment on, and the
       # workflow_run chain simply never starts. The sub-issue is the only place a human will
       # look, so the report goes there.
+      # `!failure()` keeps this mutually exclusive with the failure reporter below: this step is
+      # the phase deciding NOT to open a PR (a blocked dependency, an agent that gave up
+      # cleanly), which reads differently to a phase that errored.
       - name: Report a delivery that opened no PR
-        if: always() && steps.paused.outputs.paused == 'false' && steps.pr.outputs.number == ''
+        if: always() && !failure() && steps.paused.outputs.paused == 'false' && steps.pr.outputs.number == ''
         uses: actions/github-script@v8
         with:
           script: |
@@ -234,3 +237,30 @@ jobs:
           name: deliver-context
           path: ${{ runner.temp }}/deliver-context/context.env
           retention-days: 7
+
+      # A step failing before the reporter above (a bad issue number, a checkout error, a
+      # crashed agent) would otherwise leave the command looking ignored: no PR exists yet, so
+      # there is nowhere else a human would look. The sub-issue is the only address available.
+      - name: Report a failed implement
+        if: failure()
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const pr = '${{ steps.pr.outputs.number }}';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: Number(process.env.ISSUE_NUMBER),
+              body: [
+                '## Delivery stopped — the implement phase failed',
+                '',
+                'A step errored before the phase could hand off. This is a failure of the',
+                'automation, not a verdict on the issue.',
+                '',
+                pr ? `A PR was opened (#${pr}) but the handoff did not complete, so nothing will verify it.`
+                   : 'No PR was opened.',
+                '',
+                `The loop will not resume on its own. See the [failed run](${run}), then re-issue`,
+                '`/approve-issue-for-pr-delivery` once the cause is fixed.'
+              ].join('\n')
+            });

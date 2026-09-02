@@ -166,3 +166,28 @@ jobs:
           name: deliver-context
           path: ${{ runner.temp }}/deliver-context-out/context.env
           retention-days: 7
+
+      # Same reasoning as the verify phase: a failed step skips the artifact upload, so Verify
+      # never re-runs and nothing says why. The round counter has already been consumed at this
+      # point, which is deliberate — a crashed correction must not get a free retry — so the
+      # comment states the round so a human can see how many remain.
+      - name: Report a failed correction
+        if: failure() && steps.context.outputs.pr_number != ''
+        env:
+          PR: ${{ steps.context.outputs.pr_number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          {
+            echo "## Delivery stopped — the correct phase failed"
+            echo
+            echo "A step in correction round ${{ steps.round.outputs.round || '?' }} errored, so"
+            echo "the findings were not addressed and no re-verification was requested."
+            echo
+            echo "The round was already counted, so a re-issued delivery resumes from this round"
+            echo "rather than starting over. The loop will not resume on its own."
+            echo
+            echo "_[Failed run](${RUN_URL})_"
+          } > "${{ runner.temp }}/failure.md"
+          gh pr comment "$PR" --repo "$REPO" --body-file "${{ runner.temp }}/failure.md" || true
+          gh pr edit "$PR" --repo "$REPO" --add-label needs-human || true

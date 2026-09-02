@@ -399,3 +399,33 @@ jobs:
           name: deliver-context
           path: ${{ runner.temp }}/deliver-context-out/context.env
           retention-days: 7
+
+      # A failed STEP aborts the job and skips every step after it — including the two above
+      # that comment and label. Without this, a gate wiring error or a crashed agent leaves the
+      # PR silent, and because Deliver — Correct requires conclusion == 'success' the chain
+      # stops too. Silence is indistinguishable from "still working", and there is no stall
+      # detector yet, so the one thing this phase must never do is fail quietly.
+      - name: Report a failed verify
+        if: failure() && steps.context.outputs.pr_number != ''
+        env:
+          PR: ${{ steps.context.outputs.pr_number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          {
+            echo "## Delivery stopped — the verify phase failed"
+            echo
+            echo "A step in the verify phase errored, so no verdict was reached. This is a"
+            echo "failure of the automation, not a verdict on the code."
+            echo
+            echo "| signal | value |"
+            echo "|---|---|"
+            echo "| CI | \`${{ steps.ci.outputs.status || 'not reached' }}\` |"
+            echo "| archon plan | \`${{ steps.plan.outputs.gate || 'not reached' }}\` |"
+            echo "| review verdict | \`${{ steps.verdict.outputs.value || 'not reached' }}\` |"
+            echo
+            echo "The loop will not resume on its own. See the [failed run](${RUN_URL}) for the"
+            echo "step that errored, then re-issue \`/approve-issue-for-pr-delivery\` once fixed."
+          } > "${{ runner.temp }}/failure.md"
+          gh pr comment "$PR" --repo "$REPO" --body-file "${{ runner.temp }}/failure.md" || true
+          gh pr edit "$PR" --repo "$REPO" --add-label needs-human || true
