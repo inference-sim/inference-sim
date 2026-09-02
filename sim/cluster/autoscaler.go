@@ -20,7 +20,7 @@ import (
 // Use NewVariantSpec to construct — it validates the invariants at the call site (R4).
 type VariantSpec struct {
 	GPUType  string // e.g. "A100-80GB", "H100-80GB"; must not be empty
-	TPDegree int    // tensor-parallel degree: 1, 2, 4, 8; must be ≥1
+	TPDegree int    // tensor-parallel degree: 1, 2, 4, 8, 16 (16 spans nodes, #1529); must be ≥1
 }
 
 // NewVariantSpec constructs a VariantSpec and panics on invalid inputs (R4).
