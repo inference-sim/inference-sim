@@ -234,19 +234,23 @@ func TestRunReplay_DPEPFlags_BothRegistered(t *testing.T) {
 	}
 }
 
-// TestRunReplay_DPEPFlags_ThreadedIntoConstructor is a source-level wiring guard.
-// The DP/EP flag values are threaded directly into NewModelHardwareConfig at the
-// run (root.go) and replay (replay.go) call sites — they are NOT carried in
-// latencyResolution, so no behavioral test exercises that threading (the only
-// tests that set --dp>1 fatal before the config is built, by design). A
-// regression that passed a literal "1, false" or swapped the two args would pass
-// every other test in this PR. This guard reads both sources and asserts the
-// constructor is called with the flag variables, in the correct positions
-// (tensorParallelism, dataParallelism, enableExpertParallel) — defending INV-13
-// parity at the one place it is established (identical wiring in run and replay).
+// TestRunReplay_DPEPFlags_ThreadedIntoConstructor is a source-level wiring guard
+// for the TP/EP args and the DP arg at the run (root.go) and replay (replay.go)
+// NewModelHardwareConfig call sites. Since #1531, run threads the placement-adjusted
+// DP (`dpPlan.PerRankDP` — equals the CLI dataParallelism except in the run-only
+// DP-as-placement case, where it is 1) while replay threads the raw `dataParallelism`
+// and Fatalf's on MoE --dp>1 before constructing. So the DP arg intentionally
+// DIFFERS between the two paths; TP and EP stay identical (INV-13 parity for every
+// config both paths support). TestRunReplay_DPEPFlags_ThreadedIntoConstructor guards
+// the wiring; TestDPPlacement_PerRankDP_ConfiguresConstructor is the behavioral
+// companion that proves PerRankDP produces a DP=1 (moeGroup=TP) config.
 func TestRunReplay_DPEPFlags_ThreadedIntoConstructor(t *testing.T) {
-	// The exact positional substring both call sites must contain.
-	const wantWiring = "tensorParallelism, dataParallelism, enableExpertParallel,"
+	wantWiring := map[string]string{
+		// run wires the placement-adjusted per-rank DP (#1531).
+		"root.go": "tensorParallelism, dpPlan.PerRankDP, enableExpertParallel,",
+		// replay wires the raw CLI DP and guards MoE --dp>1 separately.
+		"replay.go": "tensorParallelism, dataParallelism, enableExpertParallel,",
+	}
 	for _, src := range []string{"root.go", "replay.go"} {
 		data, err := os.ReadFile(src)
 		if err != nil {
@@ -256,9 +260,10 @@ func TestRunReplay_DPEPFlags_ThreadedIntoConstructor(t *testing.T) {
 		if !strings.Contains(content, "sim.NewModelHardwareConfig(") {
 			t.Fatalf("%s: expected a NewModelHardwareConfig call site", src)
 		}
-		if !strings.Contains(content, wantWiring) {
+		if !strings.Contains(content, wantWiring[src]) {
 			t.Errorf("%s: NewModelHardwareConfig must thread the flag vars in order %q "+
-				"(guards against literal/swapped DP/EP args; INV-13 parity)", src, wantWiring)
+				"(guards against literal/swapped DP/EP args; INV-13 parity for TP/EP, "+
+				"run-only DP-as-placement for DP)", src, wantWiring[src])
 		}
 	}
 }

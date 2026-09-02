@@ -188,7 +188,7 @@ A single iteration of the inference engine. Each step processes one batch: prefi
 
 ### Tensor Parallelism (TP)
 
-A parallelism strategy that shards a model's weight tensors across multiple GPUs, reducing per-GPU compute load and KV memory requirements. Configured via `--tp`. Higher TP reduces per-request latency (fewer FLOPs per GPU, less KV memory per rank) but adds All-Reduce communication overhead per transformer layer (modeled by the β₄ coefficient in trained-physics mode). Increasing the instance count (replication) instead increases throughput without reducing per-request latency. BLIS does not model data parallelism (DP) or expert parallelism (EP). See [Latency Models Guide](../guide/latency-models.md#tensor-parallelism-and-roofline) and [Roofline Estimation](roofline.md).
+A parallelism strategy that shards a model's weight tensors across multiple GPUs, reducing per-GPU compute load and KV memory requirements. Configured via `--tp`. Higher TP reduces per-request latency (fewer FLOPs per GPU, less KV memory per rank) but adds All-Reduce communication overhead per transformer layer (modeled by the β₄ coefficient in trained-physics mode). Increasing the instance count (replication) instead increases throughput without reducing per-request latency. For MoE models, BLIS models data parallelism (`--dp`, trained-physics only) as both a latency/KV term (#1419) and — on `blis run` — real placement: `--dp N` spawns N single-node engine replicas per `--num-instances` (#1531). Expert parallelism (`--enable-expert-parallel`) is a latency-model term today; EP-as-placement is #1548. See [Latency Models Guide](../guide/latency-models.md#tensor-parallelism-and-roofline) and [Roofline Estimation](roofline.md).
 
 ### Tick
 
