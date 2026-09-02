@@ -1,0 +1,236 @@
+name: Deliver — Implement
+
+# Phase 1 of the L1 delivery loop (#1654). Triggered by a collaborator commenting
+#   /approve-issue-for-pr-delivery #N
+# on any issue. Opens a PR for sub-issue #N against its target branch, then hands off to
+# Deliver — Verify via workflow_run.
+#
+# The PR number cannot be recovered from a workflow_run event downstream: this workflow is
+# issue_comment-triggered, so the event that chains off it carries the DEFAULT BRANCH's ref
+# and SHA, not the PR's. Both the PR number and the sub-issue number are therefore passed
+# forward in the `deliver-context` artifact.
+#
+# The branch name is fixed as deliver/issue-<N> rather than chosen by the agent, so the PR
+# can be found deterministically by head ref instead of by parsing bodies.
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  check-permissions:
+    # `!github.event.issue.pull_request` — the command is issued on a sub-issue, not a PR.
+    if: |
+      !github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/approve-issue-for-pr-delivery')
+    runs-on: ubuntu-latest
+    outputs:
+      allowed: ${{ steps.check.outputs.allowed }}
+      issue_number: ${{ steps.parse.outputs.issue_number }}
+    steps:
+      - name: Check invoker permissions
+        id: check
+        uses: actions/github-script@v8
+        with:
+          script: |
+            try {
+              const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                username: context.actor
+              });
+              const allowed = ['admin', 'write', 'maintain'].includes(data.permission);
+              core.setOutput('allowed', allowed ? 'true' : 'false');
+              if (!allowed) {
+                core.info(`User ${context.actor} has '${data.permission}' permission — skipping.`);
+              }
+            } catch (e) {
+              core.setOutput('allowed', 'false');
+              core.info(`User ${context.actor} is not a collaborator — skipping.`);
+            }
+
+      # The sub-issue number is UNTRUSTED input: anyone who can comment controls the string.
+      # It is validated to digits here and only ever used as a number afterwards, never
+      # interpolated into a shell command. Same treatment as archon.yml's --archon-ref parse.
+      - name: Parse sub-issue number
+        id: parse
+        if: steps.check.outputs.allowed == 'true'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const match = context.payload.comment.body.match(/\/approve-issue-for-pr-delivery\s+#(\d+)\b/);
+            if (!match) {
+              const body = 'The delivery command needs a sub-issue number:\n\n```\n/approve-issue-for-pr-delivery #<number>\n```';
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: context.issue.number, body
+              });
+              core.setFailed('no sub-issue number in the command');
+              return;
+            }
+            core.setOutput('issue_number', match[1]);
+
+  deliver:
+    needs: check-permissions
+    if: needs.check-permissions.outputs.allowed == 'true'
+    runs-on: [self-hosted]
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    env:
+      ISSUE_NUMBER: ${{ needs.check-permissions.outputs.issue_number }}
+      BRANCH: deliver/issue-${{ needs.check-permissions.outputs.issue_number }}
+      # Overridable without editing this file: set the DELIVER_IMPLEMENT_MODEL repository
+      # variable. Verified present on the LiteLLM proxy this runner uses.
+      DELIVER_MODEL: ${{ vars.DELIVER_IMPLEMENT_MODEL || 'claude-opus-4-8' }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      # BC-9. First step, before any agent runs: a human who pauses a delivery is never
+      # racing it. At P1 there is no PR yet, so the label is read from the sub-issue.
+      - name: Honour deliver:paused
+        id: paused
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { data: issue } = await github.rest.issues.get({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: Number(process.env.ISSUE_NUMBER)
+            });
+            const paused = issue.labels.some(l => (l.name || l) === 'deliver:paused');
+            core.setOutput('paused', paused ? 'true' : 'false');
+            if (paused) core.info('deliver:paused is set — exiting without doing anything.');
+
+      - uses: actions/checkout@v5
+        if: steps.paused.outputs.paused == 'false'
+        with:
+          fetch-depth: 0
+
+      - name: Implement the sub-issue
+        if: steps.paused.outputs.paused == 'false'
+        uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
+          CLAUDE_CODE_DISABLE_THINKING: "1"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          anthropic_api_key: ${{ secrets.LITELLM_API_KEY }}
+          claude_args: '--model ${{ env.DELIVER_MODEL }} --allowed-tools Skill Agent Bash Read Edit Write'
+          show_full_output: true
+          prompt: |
+            You are delivering sub-issue #${{ env.ISSUE_NUMBER }} in this repository.
+            Read it first: `gh issue view ${{ env.ISSUE_NUMBER }}`.
+
+            The sub-issue names one hole: a package path, its surface, its contracts, its
+            allowed imports, the target branch, and an `archon-plan:` path. Some of those may
+            be absent for a small issue that has no archon plan — that is expected, and you
+            should proceed with whatever it does specify.
+
+            FIRST, check whether you are blocked. If the body carries a `Depends on: #M` line,
+            check whether #M's PR is merged. If it is not, post a comment on
+            sub-issue #${{ env.ISSUE_NUMBER }} saying `blocked by #M`, and STOP. Do not open a
+            PR, do not create a branch. A later delivery will pick this up once #M lands.
+
+            Otherwise, follow @docs/contributing/pr-workflow.md and implement it.
+
+            - Use the branch name `${{ env.BRANCH }}` exactly. The workflow finds your PR by
+              this ref, so a different name breaks the delivery chain.
+            - Implement exactly the declared surface, no more. Do not import anything outside
+              the allow list.
+            - Every contract in the sub-issue gets a test that would fail if the contract were
+              violated.
+            - Before you push: run the tests and the linter. If the sub-issue names an
+              `archon-plan:`, run `scripts/archon-build.sh` and check `archon plan dist`
+              against the target branch to confirm you moved distance DOWN. If it did not go
+              down, you have implemented the wrong thing — fix that before pushing, not after.
+
+            Open a PR against the target branch the sub-issue names (its default is the
+            repository default branch). The PR body must contain:
+
+            - the `archon-plan:` line copied verbatim from the sub-issue, if it has one. CI
+              reads the plan from the PR body, and a PR to a feature branch links no closing
+              issue, so without this line the dist ratchet is silently skipped.
+            - a contract-by-contract statement of what you did
+            - `Closes #${{ env.ISSUE_NUMBER }}`
+
+            Then post ONE comment on the PR summarising what you built, what you deliberately
+            left out, and anything you were unsure about. The uncertainty note is the first
+            thing the verify phase reads, so it is worth being honest in it.
+
+            Do not merge anything. Do not push to the default branch.
+
+      # Deterministic: the branch name was dictated above, so no body parsing is needed.
+      - name: Locate the PR
+        id: pr
+        if: always() && steps.paused.outputs.paused == 'false'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner, repo: context.repo.repo,
+              head: `${context.repo.owner}:${process.env.BRANCH}`,
+              state: 'open'
+            });
+            if (prs.length === 0) {
+              core.setOutput('number', '');
+              core.info(`No open PR for ${process.env.BRANCH}.`);
+              return;
+            }
+            // Newest wins if a previous attempt left an open PR on the same ref.
+            const pr = prs.sort((a, b) => b.number - a.number)[0];
+            core.setOutput('number', String(pr.number));
+
+      # BC-11. Without this the command looks ignored: there is no PR to comment on, and the
+      # workflow_run chain simply never starts. The sub-issue is the only place a human will
+      # look, so the report goes there.
+      - name: Report a delivery that opened no PR
+        if: always() && steps.paused.outputs.paused == 'false' && steps.pr.outputs.number == ''
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: Number(process.env.ISSUE_NUMBER),
+              body: [
+                '## Delivery stopped — no PR was opened',
+                '',
+                `The implement phase finished without an open PR on \`${process.env.BRANCH}\`.`,
+                'The usual reasons are an unmerged `Depends on:` blocker (look for a',
+                '`blocked by #M` comment above), or the phase failing before it could push.',
+                '',
+                `Nothing else will run: the delivery chain starts from the PR, so it has not started. [Workflow run](${run})`,
+                '',
+                'Re-issue `/approve-issue-for-pr-delivery` on this issue once the blocker is resolved.'
+              ].join('\n')
+            });
+
+      # The handoff. Written only when there is a PR to hand off, so a failed P1 leaves no
+      # artifact and Deliver — Verify has nothing to pick up.
+      - name: Write the delivery context
+        if: steps.pr.outputs.number != ''
+        run: |
+          out="${{ runner.temp }}/deliver-context"
+          mkdir -p "$out"
+          {
+            echo "pr_number=${{ steps.pr.outputs.number }}"
+            echo "issue_number=${ISSUE_NUMBER}"
+          } > "$out/context.env"
+          cat "$out/context.env"
+
+      - name: Upload the delivery context
+        if: steps.pr.outputs.number != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: deliver-context
+          path: ${{ runner.temp }}/deliver-context/context.env
+          retention-days: 7

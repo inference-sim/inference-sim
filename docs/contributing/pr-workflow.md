@@ -43,6 +43,12 @@ flowchart TD
 
 ## Step-by-Step Process
 
+> **Automated alternative (L1):** a collaborator can comment
+> `/approve-issue-for-pr-delivery #N` on a sub-issue to have agents run Steps 1–5 and the two
+> review commands, stopping at `ready-for-merge` for a human to merge or at `needs-human` with
+> a reason. The implement phase follows this document, so the rules below are still the source
+> of truth. See [Automated Delivery (L1)](automated-delivery.md).
+
 ### Step 1: Create an Isolated Workspace
 
 Create a git worktree BEFORE any work begins:

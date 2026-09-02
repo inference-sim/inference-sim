@@ -1,0 +1,168 @@
+name: Deliver — Correct
+
+# Phase 3 of the L1 delivery loop (#1654). Chained off Verify completing. Fixes the findings
+# in the most recent verdict and hands control back to Verify.
+#
+# workflow_run cannot be filtered on an upstream job's output, so this workflow decides for
+# itself whether to run: it reads the decision the gate wrote into the delivery context and
+# exits unless it is `correct`. The stop condition therefore lives only in
+# scripts/deliver-gate.sh — never duplicated here, where it could drift out of agreement.
+
+permissions:
+  contents: write
+  issues: read
+  pull-requests: write
+  actions: read
+  id-token: write
+
+on:
+  workflow_run:
+    workflows: ["Deliver — Verify"]
+    types: [completed]
+
+jobs:
+  correct:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: [self-hosted]
+    timeout-minutes: 60
+    env:
+      REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Matches the implement phase: this writes code, so it gets the same model. Override
+      # with the DELIVER_CORRECT_MODEL repository variable.
+      DELIVER_MODEL: ${{ vars.DELIVER_CORRECT_MODEL || 'claude-opus-4-8' }}
+
+    steps:
+      - name: Download the delivery context
+        id: context_artifact
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: deliver-context
+          path: deliver-context
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # The chain stop. Verify writes `decision=` from the gate's output; anything other than
+      # `correct` means this phase must not run at all.
+      - name: Read the delivery context
+        id: context
+        if: steps.context_artifact.outcome == 'success'
+        run: |
+          set -uo pipefail
+          file=deliver-context/context.env
+          [[ -s "$file" ]] || { echo "::warning::empty delivery context; nothing to correct"; exit 0; }
+          decision=$(sed -n 's/^decision=//p' "$file")
+          if [[ "$decision" != "correct" ]]; then
+            echo "decision='$decision' — this phase only runs for 'correct'. Exiting."
+            exit 0
+          fi
+          pr=$(sed -n 's/^pr_number=//p' "$file")
+          issue=$(sed -n 's/^issue_number=//p' "$file")
+          [[ "$pr" =~ ^[0-9]+$ && "$issue" =~ ^[0-9]+$ ]] || {
+            echo "::error::malformed delivery context: pr='$pr' issue='$issue'"; exit 1; }
+          echo "pr_number=$pr" >> "$GITHUB_OUTPUT"
+          echo "issue_number=$issue" >> "$GITHUB_OUTPUT"
+
+      # BC-9, before any agent runs and before the round counter moves.
+      - name: Honour deliver:paused
+        id: paused
+        if: steps.context.outputs.pr_number != ''
+        env:
+          PR: ${{ steps.context.outputs.pr_number }}
+        run: |
+          if gh pr view "$PR" --repo "$REPO" --json labels \
+               --jq '.labels[].name' | grep -qx 'deliver:paused'; then
+            echo "deliver:paused is set on #$PR — exiting."
+            echo "paused=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "paused=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Incremented BEFORE the agent runs, so a crashed correction still consumes its round.
+      # Otherwise a phase that dies mid-fix would loop forever at the same count.
+      - name: Advance the round counter
+        id: round
+        if: steps.paused.outputs.paused == 'false'
+        env:
+          PR: ${{ steps.context.outputs.pr_number }}
+        run: |
+          set -uo pipefail
+          current=$(gh pr view "$PR" --repo "$REPO" --json labels \
+                      --jq '[.labels[].name | select(startswith("deliver:round-"))
+                             | ltrimstr("deliver:round-") | tonumber] | max // 0')
+          next=$(( current + 1 ))
+          if (( current > 0 )); then
+            gh pr edit "$PR" --repo "$REPO" --remove-label "deliver:round-${current}" || true
+          fi
+          gh pr edit "$PR" --repo "$REPO" --add-label "deliver:round-${next}"
+          echo "round=$next" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+        if: steps.paused.outputs.paused == 'false'
+        with:
+          fetch-depth: 0
+
+      - name: Correct the findings
+        if: steps.paused.outputs.paused == 'false'
+        uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
+          CLAUDE_CODE_DISABLE_THINKING: "1"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          anthropic_api_key: ${{ secrets.LITELLM_API_KEY }}
+          claude_args: '--model ${{ env.DELIVER_MODEL }} --allowed-tools Skill Agent Bash Read Edit Write'
+          show_full_output: true
+          prompt: |
+            PR #${{ steps.context.outputs.pr_number }} (sub-issue
+            #${{ steps.context.outputs.issue_number }}) has an open verdict with numbered
+            findings. This is correction round ${{ steps.round.outputs.round }}.
+
+            Read the most recent comment on the PR ending in `DELIVER-VERDICT: NOT-GREEN`
+            (`gh pr view ${{ steps.context.outputs.pr_number }} --comments`). Fix those
+            findings and nothing else.
+
+            Check out the PR branch first:
+
+            ```bash
+            gh pr checkout ${{ steps.context.outputs.pr_number }}
+            ```
+
+            For each finding: fix it, or explain why it is wrong and should be dismissed.
+            Dismissing is allowed and sometimes correct — but you must say which finding and
+            why. A dismissal counts as unresolved until the reviewer accepts it, so do not
+            treat dismissing as closing.
+
+            Constraints, in order of how much they matter:
+
+            - DO NOT WEAKEN A TEST TO MAKE IT PASS. If a test fails because the contract
+              genuinely cannot hold as written, that is a design problem — stop, leave the test
+              failing, and say so in your comment. Adjusting the test to go green is the one
+              outcome that makes this whole loop worthless.
+            - Do not refactor code the findings did not mention.
+            - Do not expand the surface beyond what the sub-issue declared.
+            - Do not merge anything, and do not push to the default branch.
+
+            Run the tests and the linter before you push. Then push to the PR branch, and post
+            ONE comment on the PR going finding by finding: fixed or dismissed, with the
+            reason for each.
+
+      - name: Write the delivery context
+        if: steps.paused.outputs.paused == 'false'
+        run: |
+          out="${{ runner.temp }}/deliver-context-out"
+          mkdir -p "$out"
+          {
+            echo "pr_number=${{ steps.context.outputs.pr_number }}"
+            echo "issue_number=${{ steps.context.outputs.issue_number }}"
+          } > "$out/context.env"
+          cat "$out/context.env"
+
+      - name: Upload the delivery context
+        if: steps.paused.outputs.paused == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: deliver-context
+          path: ${{ runner.temp }}/deliver-context-out/context.env
+          retention-days: 7
