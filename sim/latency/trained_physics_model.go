@@ -125,6 +125,14 @@ import (
 //
 //  3. Tensor Parallelism Scaling: All compute and bandwidth terms are divided by TP
 //     degree, while β₄ captures All-Reduce communication overhead explicitly.
+//
+//  4. Hybrid Attention (#1636): Models like Kimi-K3 interleave full-attention (MLA)
+//     layers with linear-attention (Kimi Delta Attention) layers. The sequence-length-
+//     dependent attention cost — the O(context)/O(N²) attention-score compute and the
+//     growing-KV read/write bandwidth — is charged over the full-attention layers only
+//     (numKVBearingLayers). The remaining KDA layers charge a linear-attention cost:
+//     O(N) in prefill, O(state) per token in decode (context-independent). No-op for
+//     non-hybrid models (numKVBearingLayers == numLayers). See numKVBearingLayers.
 type TrainedPhysicsModel struct {
 	Alpha [3]float64 // [α₀, α₁, α₂]
 	Beta  []float64  // [β₁..β_EP] — length 11 (7→β₈=0, 8→MoE, 9→pf split, 10→dc split, 11→β_EP; β_EP defaults to β₄)
@@ -134,22 +142,49 @@ type TrainedPhysicsModel struct {
 	decodeSplit  bool // true when ≥10 betas: β₂ₐ·compute + β₂ᵦ·kv instead of β₂·max
 
 	// Pre-computed architecture features (frozen at construction).
-	numLayers         int
-	numMoELayers      int // Interleaved MoE layers (0 for dense models)
-	numDenseLayers    int // Dense layers (= numLayers for dense models)
-	hiddenDim         int
-	numHeads          int
-	headDim           int     // d_h = hiddenDim / numHeads
-	dKV               int     // kvHeads * d_h (differs from hiddenDim for GQA)
-	dFFMoE            int     // MoE expert FFN dim
-	dFFDense          int     // Dense layer FFN dim (may differ for interleaved archs)
-	kEff              int     // max(1, NumExpertsPerTok)
-	numExperts        int     // NumLocalExperts (0 for dense)
-	isMoE             bool    // ModelConfig.IsMoE() (NumLocalExperts >= MoEMinExperts)
-	hasInterleavedMoE bool    // InterleaveMoELayerStep > 0 && ModelConfig.IsMoE() (Scout-style alternating MoE/dense)
-	tp                int     // Tensor parallelism degree
-	weightBPP         float64 // EffectiveWeightBytesPerParam (FP8-aware) — weight memory only
-	activationBPP     float64 // BytesPerParam (compute/activation dtype) — hidden-state comm volume
+	numLayers      int
+	numMoELayers   int // Interleaved MoE layers (0 for dense models)
+	numDenseLayers int // Dense layers (= numLayers for dense models)
+
+	// numKVBearingLayers is the count of full-attention (KV-cache-bearing) layers,
+	// = ModelConfig.EffectiveKVBearingLayers() (#1635/#1636). It equals numLayers for
+	// every non-hybrid model, and is LESS than numLayers only for hybrid-attention
+	// models (Kimi-K3: 24 full Multi-head-Latent-Attention layers of 93; the other 69
+	// are Kimi-Delta-Attention linear-attention layers). It scopes the SEQUENCE-LENGTH-
+	// DEPENDENT attention cost — the O(context)/O(N²) attention-score compute and the
+	// growing-KV-cache read/write bandwidth — to the full-attention layers only. The
+	// numLayers − numKVBearingLayers KDA layers instead charge a linear-attention cost:
+	// O(N) in prefill, O(state) per token in decode. See StepTime for the cost model.
+	//
+	// Calibration note (#1636): the KDA compute term reuses the existing FlashAttention
+	// FLOP convention (4·h·(...)·d_head) and the existing β₁ₐ/β₂ₐ compute coefficients —
+	// it introduces NO new empirical coefficient. It substitutes the growing context
+	// dimension with the fixed KDA state dimension (head_dim); the delta-rule state
+	// update/readout are d_head×d_head GEMMs, so the "sequence" axis is d_head, not
+	// context. This is a principled physics basis, not a fitted number. Two documented
+	// approximations: (1) the KDA layers reuse the full-attention head count/head_dim
+	// (linear_attn_config is NOT re-parsed here — the KDA count is derived from
+	// numLayers − numKVBearingLayers per #1635); (2) the KDA fixed recurrent-state
+	// read/write is context-independent and small, and is left folded into the per-layer
+	// overhead β₅·L (charged over ALL layers) rather than given a separate fabricated
+	// state-bandwidth coefficient. A precise KDA state-bandwidth term is a calibration
+	// follow-up. KDA layer WEIGHTS remain charged as full attention (out of scope,
+	// #1638). For non-hybrid models this field == numLayers, so every KDA-guarded branch
+	// is skipped and step time is byte-identical (INV-6/INV-BC-DP1).
+	numKVBearingLayers int
+	hiddenDim          int
+	numHeads           int
+	headDim            int     // d_h = hiddenDim / numHeads
+	dKV                int     // kvHeads * d_h (differs from hiddenDim for GQA)
+	dFFMoE             int     // MoE expert FFN dim
+	dFFDense           int     // Dense layer FFN dim (may differ for interleaved archs)
+	kEff               int     // max(1, NumExpertsPerTok)
+	numExperts         int     // NumLocalExperts (0 for dense)
+	isMoE              bool    // ModelConfig.IsMoE() (NumLocalExperts >= MoEMinExperts)
+	hasInterleavedMoE  bool    // InterleaveMoELayerStep > 0 && ModelConfig.IsMoE() (Scout-style alternating MoE/dense)
+	tp                 int     // Tensor parallelism degree
+	weightBPP          float64 // EffectiveWeightBytesPerParam (FP8-aware) — weight memory only
+	activationBPP      float64 // BytesPerParam (compute/activation dtype) — hidden-state comm volume
 
 	// DP/EP features (#1419), frozen at construction.
 	//
@@ -194,13 +229,23 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 
 	// Single-pass accumulation: classify prefill/decode, accumulate aggregates.
 	var (
-		totalPrefillTokens float64
-		totalDecodeTokens  float64
-		sumCtx             float64 // Σ ProgressIndex for decode requests
-		prefillAttnFlops   float64 // per-request attention FLOPs sum
+		totalPrefillTokens  float64
+		totalDecodeTokens   float64
+		sumCtx              float64 // Σ ProgressIndex for decode requests
+		prefillAttnFlops    float64 // per-request full-attention FLOPs sum (O(N²))
+		prefillAttnFlopsKDA float64 // per-request KDA linear-attention FLOPs sum (O(N)); used only when lKDA > 0
 	)
 	batchSize := float64(len(batch))
 	L := float64(m.numLayers)
+
+	// Hybrid-attention layer split (#1636). lFull = full-attention (KV-cache-bearing,
+	// MLA) layers; lKDA = Kimi-Delta-Attention linear-attention layers. For every
+	// non-hybrid model EffectiveKVBearingLayers() == numLayers ⇒ lFull == L and
+	// lKDA == 0, so every KDA-guarded branch below is skipped and the full-attention
+	// terms keep their pre-#1636 arithmetic (L → lFull is a value-preserving rename when
+	// lFull == L) — step time is byte-identical (INV-6/INV-BC-DP1).
+	lFull := float64(m.numKVBearingLayers)
+	lKDA := L - lFull
 	d := float64(m.hiddenDim)
 	dKV := float64(m.dKV)
 	dH := float64(m.headDim)
@@ -230,6 +275,21 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 			si := float64(req.InputLen())
 			totalPrefillTokens += ti
 			prefillAttnFlops += 4 * hPerGPU * ti * (si + ti/2) * dH
+			if lKDA > 0 {
+				// KDA linear-attention prefill FLOPs (#1636): the delta-rule state
+				// update/readout are d_head×d_head GEMMs, so the "context" each token
+				// attends to is the FIXED state dimension d_head — not the growing
+				// sequence. Substituting (si + ti/2) → dH makes the per-layer cost O(N)
+				// (linear in ti), reusing the identical 4·h·(...)·dH FlashAttention FLOP
+				// convention and the same β₁ₐ compute coefficient (no new coefficient).
+				//
+				// PESSIMISM at very short prompts: this is a per-KDA-layer cost of ~dH,
+				// which EXCEEDS the full-attention cost (si + ti/2) whenever the sequence
+				// is shorter than ~dH tokens (K3: dH ≈ 85–128). There, a KDA layer can be
+				// charged MORE than a full-attention layer, so the "hybrid ≤ all-full"
+				// relationship holds only for sequences ≳ dH — do not assume it universally.
+				prefillAttnFlopsKDA += 4 * hPerGPU * ti * dH * dH
+			}
 		} else if len(req.OutputTokens) > 0 {
 			// Decode
 			totalDecodeTokens++
@@ -244,7 +304,13 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	var tPfCompute float64
 	if totalPrefillTokens > 0 {
 		flopsProj := L * 2 * totalPrefillTokens * d * (2*d + 2*dKV) / tpdp
-		flopsAttn := L * prefillAttnFlops / dpf // /dp: each rank attends only its token slice
+		// Attention-score FLOPs split by layer type (#1636): full-attention layers pay
+		// the O(N²) score cost, KDA layers the O(N) linear-attention cost. Projections
+		// (flopsProj) stay over ALL L layers — those are weight GEMMs, out of scope (#1638).
+		flopsAttn := lFull * prefillAttnFlops / dpf // /dp: each rank attends only its token slice
+		if lKDA > 0 {
+			flopsAttn += lKDA * prefillAttnFlopsKDA / dpf
+		}
 
 		// MLP FLOPs: split between MoE and dense layers (#877 fix). MoE-FFN compute
 		// is scoped to the busiest GPU's routed token·activation load via ExpertPlacement
@@ -268,7 +334,10 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	// T_pf_kv: prefill KV cache write bandwidth (µs)
 	var tPfKv float64
 	if totalPrefillTokens > 0 {
-		bytesPfKv := L * 2 * (dKV / tpdp) * totalPrefillTokens * bytesPerKVElement
+		// Growing-KV write is charged over the full-attention layers only (#1635/#1636):
+		// KDA layers keep a fixed-size recurrent state, not a per-token KV cache, so they
+		// write no growing KV. lFull == L for non-hybrid models ⇒ byte-identical.
+		bytesPfKv := lFull * 2 * (dKV / tpdp) * totalPrefillTokens * bytesPerKVElement
 		tPfKv = bytesPfKv / m.bwHbmUs
 	}
 
@@ -277,7 +346,22 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	var tDcCompute float64
 	if totalDecodeTokens > 0 {
 		flopsProj := L * 2 * totalDecodeTokens * d * (2*d + 2*dKV) / tpdp
-		flopsAttn := L * 4 * hPerGPU * sumCtx * dH / dpf // /dp: each rank attends only its token slice
+		// Decode attention-score FLOPs split by layer type (#1636): full-attention layers
+		// pay O(context) per token, KDA layers pay O(state) per token (context-independent,
+		// = the fixed d_head state dimension in place of the growing context). lFull == L
+		// for non-hybrid models ⇒ byte-identical. (β₂ₐ is 0 in the default coefficients, so
+		// this compute term does not move default-config decode step time; the decode
+		// reduction comes from the KV-read term below.)
+		flopsAttn := lFull * 4 * hPerGPU * sumCtx * dH / dpf // /dp: each rank attends only its token slice
+		if lKDA > 0 {
+			// KDA linear-attention decode FLOPs (#1636): O(state) per token — the fixed
+			// dH state dimension replaces the per-token context. PESSIMISM at very short
+			// context: this ~dH·dH per-token cost exceeds full attention's context·dH
+			// whenever context < dH (K3: dH ≈ 85–128 tokens), so a KDA layer can cost more
+			// than a full-attention layer there — "hybrid ≤ all-full" holds only for
+			// context ≳ dH, not universally.
+			flopsAttn += lKDA * 4 * hPerGPU * dH * dH * totalDecodeTokens / dpf
+		}
 
 		// MoE-FFN compute via ExpertPlacement on the decode population (B1, R-SPLIT:
 		// a separate Resolve call from prefill so the two populations are not conflated).
@@ -297,7 +381,11 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	// T_dc_kv: decode KV cache read+write bandwidth (µs)
 	var tDcKv float64
 	if totalDecodeTokens > 0 {
-		bytesDcKv := L * 2 * (dKV / tpdp) * bytesPerKVElement * (sumCtx + totalDecodeTokens)
+		// Growing-KV read is the dominant (memory-bound) decode term. It is charged over
+		// the full-attention layers only (#1635/#1636): the KDA layers hold no growing KV
+		// cache, so their O(context) read vanishes — this is the primary decode-step-time
+		// correction for hybrid models. lFull == L for non-hybrid models ⇒ byte-identical.
+		bytesDcKv := lFull * 2 * (dKV / tpdp) * bytesPerKVElement * (sumCtx + totalDecodeTokens)
 		tDcKv = bytesDcKv / m.bwHbmUs
 	}
 
@@ -669,6 +757,7 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 		numLayers:          hw.ModelConfig.NumLayers,
 		numMoELayers:       numMoELayers,
 		numDenseLayers:     numDenseLayers,
+		numKVBearingLayers: hw.ModelConfig.EffectiveKVBearingLayers(), // #1636: full-attention layers; == numLayers for non-hybrid models
 		hiddenDim:          hw.ModelConfig.HiddenDim,
 		numHeads:           hw.ModelConfig.NumHeads,
 		headDim:            headDim,
