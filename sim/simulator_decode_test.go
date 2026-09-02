@@ -104,7 +104,7 @@ func TestSpecDecode_ThroughputReducesStepCount(t *testing.T) {
 	}
 }
 
-// BC-4 / INV-1: output-token conservation holds under spec-decode, and (#1657) a
+// #1528 BC-4 / INV-1: output-token conservation holds under spec-decode, and (#1657) a
 // multi-token step lands EXACTLY on the completion boundary rather than past it.
 // The boundary is InputLen + max(outputLen,1) - 1: BLIS charges output token #1 to
 // prefill and the rest to decode steps, so this is also the ProgressIndex a K=0 run
@@ -141,7 +141,7 @@ func TestSpecDecode_OutputTokenConservation(t *testing.T) {
 	}
 }
 
-// #1657 (BC-3): the final ProgressIndex — the quantity closed-loop accumulate sessions
+// #1657: the final ProgressIndex — the quantity closed-loop accumulate sessions
 // read back as "how much output did this round actually produce" — is INDEPENDENT of the
 // spec-decode config. Spec-decode buys fewer, wider decode steps; it must not change the
 // request's token accounting. This is the law the per-case boundary assertion above

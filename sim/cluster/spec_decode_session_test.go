@@ -10,6 +10,11 @@ import (
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
+// specSessionInputLen is the constant per-round NEW input length used by the session
+// blueprints below AND the length of the round-0 seed request — the two must agree, so
+// they read the same constant.
+const specSessionInputLen = 20
+
 // sessionRun captures the token-accounting observables of one closed-loop
 // accumulate session: how many rounds actually ran, each round's input length
 // (the accumulate buffer's growth), and each round's terminal ProgressIndex.
@@ -46,7 +51,7 @@ func runAccumulateSession(t *testing.T, cfg DeploymentConfig, outLen, maxRounds 
 	t.Helper()
 
 	inputSampler, err := workload.NewLengthSampler(workload.DistSpec{
-		Type: "constant", Params: map[string]float64{"value": 20},
+		Type: "constant", Params: map[string]float64{"value": float64(specSessionInputLen)},
 	})
 	if err != nil {
 		t.Fatalf("NewLengthSampler (input): %v", err)
@@ -74,7 +79,7 @@ func runAccumulateSession(t *testing.T, cfg DeploymentConfig, outLen, maxRounds 
 	seed := &sim.Request{
 		ID:           sessID + "_r0",
 		ArrivalTime:  0,
-		InputTokens:  make([]sim.TokenID, 20),
+		InputTokens:  make([]sim.TokenID, specSessionInputLen),
 		OutputTokens: make([]sim.TokenID, outLen),
 		MaxOutputLen: outLen,
 		State:        sim.StateQueued,
@@ -102,12 +107,11 @@ func runAccumulateSession(t *testing.T, cfg DeploymentConfig, outLen, maxRounds 
 	return out
 }
 
-// TestSpecDecode_AccumulateSession_AccountingMatchesBaseline pins BC-1/BC-3/BC-4
-// (issue #1657): speculative decoding changes a session's TIMING, never its token
-// ACCOUNTING. A decode step that advances g > 1 tokens must land exactly on the
-// completion boundary, so every round's terminal ProgressIndex — and therefore the
-// accumulate buffer's growth and the session's round count — is identical to a
-// K=0 run.
+// TestSpecDecode_AccumulateSession_AccountingMatchesBaseline pins the #1657 contracts:
+// a spec-decode step never advances past the completion boundary; a request's final
+// ProgressIndex and a session's per-round context growth equal the K=0 baseline's; and
+// the session completes every round (INV-11). In one sentence: speculative decoding
+// changes a session's TIMING, never its token ACCOUNTING.
 //
 // Before the fix, an overshooting final step pushed ProgressIndex past the boundary;
 // SessionManager.OnComplete read that back as actualOutputLen > len(OutputTokens) and
@@ -149,7 +153,7 @@ func TestSpecDecode_AccumulateSession_AccountingMatchesBaseline(t *testing.T) {
 				cfg.SpeculativeConfig = sim.SpeculativeConfig{K: sc.k, Acceptance: sc.acc, Method: "mtp"}
 				got := runAccumulateSession(t, cfg, outLen, maxRounds)
 
-				// BC-4 / INV-11: the session completes every round; it is never cancelled.
+				// #1657 / INV-11: the session completes every round; it is never cancelled.
 				if got.rounds != maxRounds {
 					t.Errorf("rounds = %d, want %d (session must not be cancelled by a spec-decode overshoot)",
 						got.rounds, maxRounds)
@@ -157,10 +161,10 @@ func TestSpecDecode_AccumulateSession_AccountingMatchesBaseline(t *testing.T) {
 				if got.completed != base.completed {
 					t.Errorf("CompletedRequests = %d, want %d (baseline)", got.completed, base.completed)
 				}
-				// BC-1: round 0 lands exactly on the completion boundary (round 0's input
-				// length is the seed request's 20 tokens; later rounds' inputs grow, and
-				// the baseline comparison below covers them).
-				boundary := int64(20 + max(outLen, 1) - 1)
+				// #1657: round 0 lands exactly on the completion boundary. Round 0's input
+				// length is the seed request's specSessionInputLen tokens; later rounds'
+				// inputs grow, and the baseline comparison below covers them.
+				boundary := int64(specSessionInputLen + max(outLen, 1) - 1)
 				if len(got.terminalPI) == 0 {
 					t.Fatalf("no rounds recorded — cannot check the completion boundary")
 				}
@@ -168,7 +172,7 @@ func TestSpecDecode_AccumulateSession_AccountingMatchesBaseline(t *testing.T) {
 					t.Errorf("round 0 terminal ProgressIndex = %d, want %d (InputLen + max(outputLen,1) - 1)",
 						got.terminalPI[0], boundary)
 				}
-				// BC-3: accounting parity with the K=0 baseline, round by round.
+				// #1657: accounting parity with the K=0 baseline, round by round.
 				assertSameSequence(t, "terminal ProgressIndex", got.terminalPI, base.terminalPI)
 				assertSameSequence(t, "InputLen (accumulate growth must not depend on spec-decode)",
 					got.inputLens, base.inputLens)
@@ -180,9 +184,9 @@ func TestSpecDecode_AccumulateSession_AccountingMatchesBaseline(t *testing.T) {
 // TestSpecDecode_PDAccumulateSession_AccountingMatchesBaseline is the PD twin of the
 // test above: it exercises the Phase-2 decode-sub-request branch of batch formation,
 // whose control flow (break-on-<1, floor-at-1) differs from the Phase-1 decode branch.
-// outLen=1 specifically pins BC-5: a decode sub-request admitted already AT its
-// completion boundary must still be granted one token, or it would be stranded in the
-// wait queue forever (INV-8/INV-11).
+// outLen=1 specifically pins the #1657 floor-at-1 contract: a decode sub-request
+// admitted already AT its completion boundary must still be granted one token, or it
+// would be stranded in the wait queue forever (INV-8/INV-11).
 func TestSpecDecode_PDAccumulateSession_AccountingMatchesBaseline(t *testing.T) {
 	const maxRounds = 3
 
@@ -203,6 +207,9 @@ func TestSpecDecode_PDAccumulateSession_AccountingMatchesBaseline(t *testing.T) 
 				if got.rounds != maxRounds {
 					t.Errorf("PD rounds = %d, want %d (session must not be cancelled, and no sub-request stranded)",
 						got.rounds, maxRounds)
+				}
+				if got.completed != base.completed {
+					t.Errorf("PD CompletedRequests = %d, want %d (K=0 baseline)", got.completed, base.completed)
 				}
 				assertSameSequence(t, "PD terminal ProgressIndex", got.terminalPI, base.terminalPI)
 				assertSameSequence(t, "PD InputLen", got.inputLens, base.inputLens)
