@@ -39,6 +39,15 @@ type BatchContext struct {
 	// kernel-scheduled adapter load completes. nil ⇒ no LoRA gating; admission is
 	// byte-identical to a pre-feature build (INV-6).
 	AdapterResident func(id string) bool
+
+	// DecodeTokensPerStep returns the PROPOSED accepted-token count g for a decode
+	// request under speculative decoding / MTP (#1528) — a PURE peek that does not
+	// consume the carry (FormBatch caps g afterward by KV budget / MaxModelLen; the
+	// Simulator commits the granted count in executeBatchStep). nil ⇒ 1 token/step
+	// (byte-identical to a pre-feature build, INV-6). Supplied by the Simulator, which
+	// owns the per-request fractional-carry state; this keeps FormBatch oracle-blind
+	// (it never reads OutputTokens to size the decode step, INV-9).
+	DecodeTokensPerStep func(req *Request) int64
 }
 
 // ScheduledRequest carries metadata about a newly scheduled request.
@@ -136,17 +145,26 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			req.NumNewTokens = int(numNewTokens)
 			ctx.ComputedTokens[req.ID] += numNewTokens
 		}
-		// Decode phase: allocate 1 token
+		// Decode phase: allocate the accepted-token count for this step.
 		if req.ProgressIndex >= req.InputLen() && len(req.OutputTokens) > 0 {
+			// Base is 1 token/step. Under speculative decoding / MTP (#1528) the
+			// step advances by g = accepted tokens (1 + accepted drafts), proposed by
+			// the pure DecodeTokensPerStep peek. nil predicate ⇒ g=1 ⇒ byte-identical.
 			decodeTokens := int64(1)
-			// Proactive MaxModelLen cap (BC-1): skip decode at boundary.
-			// Equivalent to max(0, maxModelLen-1-PI) < 1, specialized for single-token decode.
-			// Note: when decodeTokens=0, the request stays in RunningBatch with its
-			// previously-allocated KV blocks for one zero-work step until processCompletions
-			// releases them via ReleaseKVBlocks. Under tight KV pressure this transiently
-			// reduces available blocks by the request's allocation.
-			if ctx.MaxModelLen > 0 && req.ProgressIndex+decodeTokens > ctx.MaxModelLen-1 {
-				decodeTokens = 0
+			if ctx.DecodeTokensPerStep != nil {
+				decodeTokens = ctx.DecodeTokensPerStep(req)
+				// Cap g by remaining token budget (spec-decode only; g can exceed 1).
+				decodeTokens = min(decodeTokens, tokenBudget)
+			}
+			// Proactive MaxModelLen cap (BC-1): stop exactly at the boundary.
+			// For g=1 this reproduces the pre-feature "skip decode at boundary" logic:
+			// min(1, max(M-1-PI,0)) == 0 iff PI+1 > M-1 (byte-identical). For g>1 it
+			// clamps the multi-token advance so a spec-decode step can't overshoot the
+			// model-length cap. Note: when decodeTokens=0, the request stays in
+			// RunningBatch with its previously-allocated KV blocks for one zero-work
+			// step until processCompletions releases them via ReleaseKVBlocks.
+			if ctx.MaxModelLen > 0 {
+				decodeTokens = min(decodeTokens, max(ctx.MaxModelLen-1-req.ProgressIndex, 0))
 			}
 			if decodeTokens > 0 {
 				canSchedule, adj := v.preemptForTokens(req, decodeTokens, &result, ctx, &tokenBudget, reqIndex)
@@ -154,9 +172,9 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 				if !canSchedule {
 					break
 				}
-				tokenBudget--
-				req.NumNewTokens = 1
-				ctx.ComputedTokens[req.ID] += 1
+				tokenBudget -= decodeTokens
+				req.NumNewTokens = int(decodeTokens)
+				ctx.ComputedTokens[req.ID] += decodeTokens
 			}
 		}
 		reqIndex++
@@ -214,6 +232,40 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		// ProgressIndex has already been set to len(InputTokens) by ReserveTransferredKV.
 		if next.IsDecodeSubRequest {
 			decodeTokens := int64(1)
+			// Speculative decoding / MTP (#1528): a PD decode sub-request advances by
+			// g accepted tokens per step, same as a non-PD decode request. This whole
+			// block is byte-identity-gated (I-4): unlike Phase 1, the pre-feature PD
+			// path applied NO MaxModelLen/budget cap, so caps fire ONLY when the
+			// feature is on (DecodeTokensPerStep != nil). Feature off ⇒ decodeTokens
+			// stays 1 and every line below is unchanged (BC-1/INV-6).
+			if ctx.DecodeTokensPerStep != nil {
+				decodeTokens = ctx.DecodeTokensPerStep(next)
+				// Cap the multi-token advance so it can't overshoot the model-length
+				// window by more than the single token the pre-feature (k=0) PD path
+				// already allowed.
+				if ctx.MaxModelLen > 0 {
+					room := max(ctx.MaxModelLen-1-next.ProgressIndex, 0)
+					if room >= 1 {
+						decodeTokens = min(decodeTokens, room)
+					} else {
+						// At/past the boundary: emit exactly one final token — identical
+						// to the k=0 PD path, which never capped here — so
+						// processCompletions force-completes it next step. Flooring at 1
+						// (never 0) is essential: a PD decode sub-request is NOT yet in
+						// RunningBatch, so a 0-token break would strand it in WaitQ forever
+						// (unlike Phase 1, where a boundary request already sits in the
+						// batch and is force-completed at zero work). INV-8/INV-11.
+						decodeTokens = 1
+					}
+				}
+				// Token-budget cap: this alone may hit 0, which is transient (next step
+				// has fresh budget), so breaking here — like the KV-alloc-failure break
+				// below — is safe and does not strand the request.
+				decodeTokens = min(decodeTokens, tokenBudget)
+				if decodeTokens < 1 {
+					break
+				}
+			}
 			if ok := ctx.KVCache.AllocateKVBlocks(next, next.ProgressIndex, next.ProgressIndex+decodeTokens, nil); !ok {
 				break
 			}
@@ -223,7 +275,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			result.NewlyScheduled = append(result.NewlyScheduled, ScheduledRequest{Request: next})
 			tokenBudget -= decodeTokens
 			next.State = StateRunning
-			next.NumNewTokens = 1
+			next.NumNewTokens = int(decodeTokens)
 			ctx.ComputedTokens[next.ID] = next.ProgressIndex + decodeTokens
 			continue
 		}
@@ -358,7 +410,8 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 			preemptedRequest.State = StateQueued
 			preemptedRequest.ProgressIndex = 0
 			preemptedRequest.ITL = nil
-			preemptedRequest.TTFTSet = false // lets the !TTFTSet guard in executeBatchStep fire on re-prefill, updating FirstTokenTime (#1122)
+			preemptedRequest.specDecodeCarry = 0 // reset spec-decode carry with progress; re-prefill starts a fresh decode phase (#1528)
+			preemptedRequest.TTFTSet = false     // lets the !TTFTSet guard in executeBatchStep fire on re-prefill, updating FirstTokenTime (#1122)
 			ctx.KVCache.ReleaseKVBlocks(preemptedRequest)
 			delete(ctx.ComputedTokens, preemptedRequest.ID)
 			ctx.WaitQ.PrependFront(preemptedRequest)

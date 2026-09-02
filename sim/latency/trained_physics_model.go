@@ -208,6 +208,19 @@ type TrainedPhysicsModel struct {
 	// when the LoRA subsystem is inert, in which case StepTime is byte-identical to
 	// a pre-feature build (INV-6/INV-BC-DP1). Set via WithAdapterCost at construction.
 	adapterCost sim.AdapterCost
+
+	// specTokens is num_speculative_tokens (K) for speculative decoding / MTP (#1528);
+	// 0 when off. The target verifies K+1 positions per decode forward pass, so decode
+	// token-population terms scale by verifyWidth() = K+1. 0 ⇒ verify width 1 ⇒ StepTime
+	// byte-identical to a pre-feature build (INV-6/INV-BC-DP1). Set via
+	// WithSpeculativeDecode at construction.
+	specTokens int
+}
+
+// verifyWidth is the number of token positions the target processes per decode
+// forward pass under speculative decoding: K+1 (K drafts + 1 bonus), or 1 when off.
+func (m *TrainedPhysicsModel) verifyWidth() float64 {
+	return float64(m.specTokens + 1)
 }
 
 // bytesPerKVElement is 2 bytes (FP16) for KV cache, matching vLLM's default.
@@ -252,6 +265,7 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	tp := float64(m.tp)
 	kEff := float64(m.kEff)
 	hPerGPU := float64(m.numHeads) / tp
+	w := m.verifyWidth() // speculative decode: K+1 verified positions/decode step (1 when off, #1528)
 
 	// DP scaling (#1419): sequences are split disjointly across DP ranks (each rank is
 	// an independent EngineCore over its own requests — vllm v1/engine/core.py
@@ -291,8 +305,14 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 				prefillAttnFlopsKDA += 4 * hPerGPU * ti * dH * dH
 			}
 		} else if len(req.OutputTokens) > 0 {
-			// Decode
-			totalDecodeTokens++
+			// Decode. Under speculative decoding / MTP (#1528) the target verifies
+			// w = K+1 token positions in a single forward pass, so the decode
+			// token-population count scales by w (drives compute FLOPs and the KV
+			// write-byte term). sumCtx (context length read) is per active sequence
+			// and does NOT scale by w: the w verified positions attend the same shared
+			// context, read once per step; the marginal per-position reads are the
+			// +totalDecodeTokens term in tDcKv. w=1 when off ⇒ byte-identical (INV-BC-DP1).
+			totalDecodeTokens += w
 			sumCtx += float64(req.ProgressIndex)
 		}
 	}

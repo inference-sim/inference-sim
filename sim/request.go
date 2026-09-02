@@ -122,6 +122,14 @@ type Request struct {
 	// Flow control timestamps (issue #882). Zero when flow control is disabled.
 	GatewayEnqueueTime  int64 // microseconds: when request entered the gateway queue
 	GatewayDispatchTime int64 // microseconds: when request was dispatched from the gateway queue
+
+	// specDecodeCarry accumulates the fractional part of the mean accepted-token
+	// count (1+α·K) across decode steps for speculative decoding / MTP (#1528).
+	// Unexported: owned and mutated only by Simulator.commitDecodeTokens; the zero
+	// value is correct (and the only value ever seen) when the feature is off, so no
+	// Request construction site needs updating. Reset to 0 on preemption (alongside
+	// ProgressIndex) and at completion.
+	specDecodeCarry float64
 }
 
 // This method returns a human-readable string representation of a Request.

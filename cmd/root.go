@@ -126,6 +126,14 @@ var (
 	loraLoadBandwidthBytesUs  float64 // --lora-load-bandwidth-bytes-us
 	loraFootprintBytesPerRank float64 // --lora-footprint-bytes-per-rank
 
+	// Speculative decoding / MTP (#1528). All default-off; num-speculative-tokens=0
+	// => feature inert, output byte-identical (INV-6). --speculative-acceptance-rate
+	// is required (Changed-gated) when --num-speculative-tokens > 0 to prevent the
+	// α=0 "pure slowdown" footgun.
+	numSpeculativeTokens  int     // --num-speculative-tokens (K)
+	speculativeAcceptance float64 // --speculative-acceptance-rate (α ∈ [0,1])
+	speculativeMethod     string  // --speculative-method (informational label)
+
 	// loraReservedBytesForKV carries the resolved static LoRA HBM reservation
 	// (bytes) into KV auto-capacity, mirroring how totalKVBlocks is threaded as a
 	// package var. Set once per command RunE from the single resolveLoRAConfig call
@@ -1343,6 +1351,12 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&loraLoadBandwidthBytesUs, "lora-load-bandwidth-bytes-us", 0, "Cold adapter-load bandwidth in bytes/µs (>0). Applied only when set; else --lora-config / defaults.yaml.")
 	cmd.Flags().Float64Var(&loraFootprintBytesPerRank, "lora-footprint-bytes-per-rank", 0, "Adapter HBM footprint per rank unit in bytes (>0). Applied only when set; else --lora-config / defaults.yaml.")
 
+	// Speculative decoding / MTP (#1528). Model-level; shared by run and replay so a
+	// trace round-trips under identical flags (INV-13). Default off => byte-identical.
+	cmd.Flags().IntVar(&numSpeculativeTokens, "num-speculative-tokens", 0, "Speculative decoding: draft tokens proposed per decode step (MTP/EAGLE/Medusa). 0 = off. When >0, --speculative-acceptance-rate is required (#1528).")
+	cmd.Flags().Float64Var(&speculativeAcceptance, "speculative-acceptance-rate", 0.0, "Speculative decoding: mean fraction of draft tokens accepted, in [0,1]. Required when --num-speculative-tokens > 0.")
+	cmd.Flags().StringVar(&speculativeMethod, "speculative-method", "", "Speculative decoding method label (informational; BLIS labels, not verbatim vLLM strings — 'draft' is shorthand for vLLM's 'draft_model'): mtp|eagle|medusa|ngram|draft. Optional; requires --num-speculative-tokens > 0.")
+
 	// KV-cache offload config surface (H5, #1587). One flag: a strict-YAML file with a
 	// single top-level kv_offload: block (CPU tier + ordered secondary tiers, per-tier
 	// device physics). Registered on run and replay (INV-13). Absent => the offload
@@ -1441,6 +1455,35 @@ func resolveLoRAConfig(cmd *cobra.Command) sim.LoRAConfig {
 		logrus.Fatalf("Invalid LoRA configuration: %v", err)
 	}
 	return cfg
+}
+
+// resolveSpeculativeConfig builds the speculative-decoding / MTP config from CLI
+// flags (#1528). Shared by run and replay via the shared flag set, so a trace
+// round-trips under identical flags (INV-13). Fatalf on invalid config (CLI boundary,
+// R6).
+func resolveSpeculativeConfig(cmd *cobra.Command) sim.SpeculativeConfig {
+	// Footgun guard: --num-speculative-tokens k>0 with an unsupplied
+	// --speculative-acceptance-rate would default α=0, modeling spec-decode as PURE
+	// SLOWDOWN (verify width k+1 raises per-step cost while g=1 gives no throughput
+	// gain) — the opposite of the feature's intent. Require α to be supplied
+	// explicitly when k>0 (α=0 stays legal, but must be a deliberate choice). Mirrors
+	// the codebase's Changed()-gated required-flag idiom.
+	if numSpeculativeTokens > 0 && !cmd.Flags().Changed("speculative-acceptance-rate") {
+		logrus.Fatalf("--speculative-acceptance-rate is required when --num-speculative-tokens > 0 " +
+			"(set it explicitly, e.g. --speculative-acceptance-rate 0.7; use 0 only to deliberately model 0%% acceptance)")
+	}
+	c, err := sim.NewSpeculativeConfig(numSpeculativeTokens, speculativeAcceptance, speculativeMethod)
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	if c.IsEnabled() {
+		logrus.Infof("speculative decoding enabled: method=%q k=%d acceptance=%.3f (mean %.3f tokens/step, verify width %d)",
+			c.Method, c.K, c.Acceptance, c.EffectiveTokensPerStep(), c.VerifyWidth())
+		if c.Acceptance == 0 {
+			logrus.Warnf("speculative decoding: acceptance-rate=0 => no throughput gain but verify-width cost applies (net slowdown); this is usually not intended")
+		}
+	}
+	return c
 }
 
 // adapterReservedBytesFor returns the static LoRA HBM reservation (bytes) to carve
@@ -2263,6 +2306,7 @@ var runCmd = &cobra.Command{
 				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				LoRAConfig:           loraCfg,
+				SpeculativeConfig:    resolveSpeculativeConfig(cmd),
 				SLOPriorityOverrides: sloPriorityOverrides,
 			},
 			NumInstances:                    numInstances,

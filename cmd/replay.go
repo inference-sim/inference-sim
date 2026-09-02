@@ -626,6 +626,7 @@ Example:
 				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dataParallelism, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				LoRAConfig:           loraCfg,
+				SpeculativeConfig:    resolveSpeculativeConfig(cmd),
 				SLOPriorityOverrides: sloPriorityOverrides,
 			},
 			NumInstances:                    numInstances,

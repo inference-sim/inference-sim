@@ -64,7 +64,9 @@ func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	if err != nil {
 		panic(fmt.Sprintf("NewInstanceSimulator(%s): adapter cost model: %v", id, err))
 	}
-	latencyModel, err := latency.NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig, latency.WithAdapterCost(adapterCost))
+	latencyModel, err := latency.NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig,
+		latency.WithAdapterCost(adapterCost),
+		latency.WithSpeculativeDecode(cfg.K))
 	if err != nil {
 		panic(fmt.Sprintf("NewInstanceSimulator(%s): NewLatencyModel: %v", id, err))
 	}

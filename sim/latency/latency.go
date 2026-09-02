@@ -32,9 +32,11 @@ func clampToInt64(v float64) int64 {
 // the same options, so an adapter effect applies identically (R23).
 type Option func(*latencyOptions)
 
-// latencyOptions accumulates the applied Options. Zero value ⇒ no adapter effect.
+// latencyOptions accumulates the applied Options. Zero value ⇒ no adapter effect
+// and verify width 1 (spec-decode off).
 type latencyOptions struct {
 	adapterCost sim.AdapterCost
+	specTokens  int // num_speculative_tokens (K); 0 ⇒ verify width 1 ⇒ unchanged (#1528)
 }
 
 // WithAdapterCost supplies the LoRA per-step compute-overhead accessor. A nil
@@ -43,6 +45,18 @@ type latencyOptions struct {
 // sim.AdapterCost interface — sim/latency never imports sim/lora.
 func WithAdapterCost(ac sim.AdapterCost) Option {
 	return func(o *latencyOptions) { o.adapterCost = ac }
+}
+
+// WithSpeculativeDecode supplies K (num_speculative_tokens) for speculative decoding
+// / MTP (#1528). Decode step-time cost then reflects a verify width of K+1 positions
+// per forward pass — verifying drafts is not free. K<=0 (or no option) leaves StepTime
+// byte-identical to a pre-feature build (INV-6/INV-BC-DP1).
+func WithSpeculativeDecode(k int) Option {
+	return func(o *latencyOptions) {
+		if k > 0 {
+			o.specTokens = k
+		}
+	}
 }
 
 // applyAdapterOverhead multiplies a base step time by the batch's LoRA
@@ -80,6 +94,12 @@ type RooflineLatencyModel struct {
 	// when the LoRA subsystem is inert, in which case StepTime is byte-identical to
 	// a pre-feature build (INV-6). Set via WithAdapterCost at construction.
 	adapterCost sim.AdapterCost
+	// specTokens is num_speculative_tokens (K) for speculative decoding / MTP (#1528);
+	// 0 when off. Decode FLOPs and dynamic KV bytes use K+1 new tokens per decode
+	// request (the target verifies K drafts + 1 bonus in one forward pass). 0 ⇒ verify
+	// width 1 ⇒ StepTime byte-identical to a pre-feature build (INV-6). Set via
+	// WithSpeculativeDecode at construction.
+	specTokens int
 }
 
 func (m *RooflineLatencyModel) StepTime(batch []*sim.Request) int64 {
@@ -94,9 +114,15 @@ func (m *RooflineLatencyModel) StepTime(batch []*sim.Request) int64 {
 				NumNewPrefillTokens: req.NumNewTokens,
 			})
 		} else if len(req.OutputTokens) > 0 {
+			// NumNewDecodeTokens carries the verify WIDTH (K+1) — the COST quantity:
+			// the target processes K+1 positions per decode forward pass under
+			// speculative decoding / MTP (#1528). This is deliberately NOT
+			// req.NumNewTokens, which under MTP is the accepted-token count g (throughput,
+			// drives ProgressIndex) — sizing cost by g would model acceptance as free.
+			// specTokens=0 (feature off) ⇒ width 1 ⇒ byte-identical to pre-feature (INV-6).
 			stepConfig.DecodeRequests = append(stepConfig.DecodeRequests, DecodeRequestConfig{
 				ProgressIndex:      req.ProgressIndex,
-				NumNewDecodeTokens: req.NumNewTokens,
+				NumNewDecodeTokens: m.specTokens + 1,
 			})
 		}
 	}
@@ -166,6 +192,7 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig, opts 
 			tp:          hw.TP,
 			alphaCoeffs: coeffs.AlphaCoeffs,
 			adapterCost: o.adapterCost,
+			specTokens:  o.specTokens,
 		}, nil
 	case "trained-physics":
 		// TrainedPhysicsModel: physics-informed roofline with architecture-aware MoE overhead.
@@ -176,6 +203,7 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig, opts 
 			return nil, err
 		}
 		model.adapterCost = o.adapterCost
+		model.specTokens = o.specTokens
 		return model, nil
 	default:
 		return nil, fmt.Errorf("latency model: unknown backend %q; valid options: %s",
