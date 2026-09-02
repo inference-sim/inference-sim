@@ -214,18 +214,27 @@ jobs:
         run: |
           set -uo pipefail
           gate=absent
-          ok=""; verdict=""
+          ratchet=""; verdict=""
           if [[ -f .archon/review.json ]]; then
-            ok=$(jq -r '.planRatchet.ok // empty' .archon/review.json)
-            verdict=$(jq -r '.planClassify.verdict // empty' .archon/review.json)
+            # `has()` + `tostring`, NOT `.planRatchet.ok // empty`. archon declares `OK bool`,
+            # so the field is a JSON boolean, and jq's `//` treats false as falsy — meaning
+            # `.ok // empty` yields "" for exactly the regression it is meant to detect. That
+            # made the regression branch unreachable, masked only by archon also reporting
+            # CONFLICTS when distance rises.
+            ratchet=$(jq -r 'if has("planRatchet") then (.planRatchet.ok | tostring) else "" end' .archon/review.json)
+            verdict=$(jq -r 'if has("planClassify") then (.planClassify.verdict | tostring) else "" end' .archon/review.json)
           fi
           if [[ "$verdict" == "CONFLICTS" ]]; then
             gate=conflicts
-          elif [[ "$ok" == "false" ]]; then
+          elif [[ "$ratchet" == "false" ]]; then
             gate=regression
-          elif [[ -n "$ok" || -n "$verdict" ]]; then
+          elif [[ -n "$ratchet" || -n "$verdict" ]]; then
             gate=pass
-          elif grep -qiE '^[[:space:]]*archon-plan:[[:space:]]*\S' "$RUNNER_TEMP/plan-decl.txt"; then
+          # The prefix anchor MUST match archon-plan-resolve.sh's, which admits markdown list,
+          # quote, bold and backtick markers (`^[^A-Za-z0-9]*`). A narrower pattern here would
+          # read `- archon-plan: x.json` as "no plan declared" while the resolver read it as a
+          # declaration — the exact case `unverified` exists to catch.
+          elif grep -qiE '^[^A-Za-z0-9]*archon-plan:[[:space:]]*\S' "$RUNNER_TEMP/plan-decl.txt"; then
             gate=unverified
           fi
           echo "PLAN_GATE=$gate"

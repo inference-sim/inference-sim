@@ -145,6 +145,14 @@ jobs:
             Run `go build ./...`, `go test ./...` and `golangci-lint run ./...` before you push —
             the verify phase runs exactly these three and will raise anything still failing.
 
+            One caveat on those three: the verify phase cannot tell a real failure from an
+            INFRASTRUCTURE failure — a lint binary that would not download, a runner that ran
+            out of memory, a network blip during the build all arrive here as "lint is failing"
+            or "tests are failing". If you run them and they pass, or the reported failure has
+            nothing addressable in the diff, do NOT invent a fix. Say so plainly in your
+            comment and name what you observed, so the next verification (and the human reading
+            this PR) can tell a phantom finding from a real one.
+
             Then push to the PR branch and post ONE comment going finding by finding: fixed or
             dismissed, with the reason for each.
 
