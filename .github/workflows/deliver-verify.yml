@@ -228,12 +228,27 @@ jobs:
             gate=conflicts
           elif [[ "$ratchet" == "false" ]]; then
             gate=regression
-          elif [[ -n "$ratchet" || -n "$verdict" ]]; then
+          elif [[ "$ratchet" == "true" || -n "$verdict" ]]; then
             gate=pass
-          # The prefix anchor MUST match archon-plan-resolve.sh's, which admits markdown list,
+          elif [[ -n "$ratchet" ]]; then
+            # planRatchet exists but `ok` is neither true nor false. A Go `bool` cannot marshal
+            # to anything else, so this means archon's schema changed under us. Treat an
+            # unrecognised serialisation as missing evidence rather than as a pass — the same
+            # fail-closed rule the gate applies to its own out-of-domain inputs.
+            gate=unverified
+          # The prefix anchor matches archon-plan-resolve.sh's, which admits markdown list,
           # quote, bold and backtick markers (`^[^A-Za-z0-9]*`). A narrower pattern here would
           # read `- archon-plan: x.json` as "no plan declared" while the resolver read it as a
           # declaration — the exact case `unverified` exists to catch.
+          #
+          # The `-i` is a DELIBERATE asymmetry, not an oversight: the resolver is
+          # case-sensitive, so `ARCHON-PLAN:` resolves no plan there. This check must be the
+          # WIDER of the two, because its job is "does this body look like it declared a plan
+          # that nothing then evaluated" — a superset of "what the resolver accepted". Matching
+          # the resolver's case-sensitivity here would turn a case-variant declaration into
+          # `absent`, i.e. silently treat the PR as plan-less and let a GREEN review reach
+          # ready-for-merge with the ratchet never having run. A false `unverified` costs a
+          # human a glance; a false `absent` costs the gate.
           elif grep -qiE '^[^A-Za-z0-9]*archon-plan:[[:space:]]*\S' "$RUNNER_TEMP/plan-decl.txt"; then
             gate=unverified
           fi
