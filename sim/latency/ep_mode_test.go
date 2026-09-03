@@ -1,0 +1,286 @@
+package latency
+
+// Behavioral contracts for the live expert-parallel MODE (#1548): what changes when
+// --enable-expert-parallel is on, what must not change when it is off, and that the
+// per-mode all-to-all profile is really the seam the backend selection travels through.
+//
+// The laws asserted here are relationships between two models that differ in exactly one
+// input, never re-implementations of the step-time formula — so a legitimate refactor of
+// the basis functions keeps them passing (refactor-survival).
+
+import (
+	"testing"
+
+	"github.com/inference-sim/inference-sim/sim"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// newEPModel builds a trained-physics model at (tp, dp, ep) with an explicit LOGICAL
+// EP-group DP width, the way cmd stamps it onto a DP-as-placement replica. epGroupDP == 0
+// omits the option entirely (the pre-#1548 construction).
+func newEPModel(t *testing.T, mc sim.ModelConfig, tp, dp int, ep bool, backend string, epGroupDP int) *TrainedPhysicsModel {
+	t.Helper()
+	var opts []sim.ModelHardwareOption
+	if epGroupDP > 0 {
+		opts = append(opts, sim.WithExpertParallelGroupDP(epGroupDP))
+	}
+	mhw := sim.NewModelHardwareConfig(mc, dpepTestHW(), "m", "H100", tp, dp, ep, backend, "trained-physics", 0, opts...)
+	m, err := NewTrainedPhysicsModel(*testCoeffs(), mhw)
+	require.NoError(t, err)
+	return m
+}
+
+// ─── AC-2: the toggle is no longer inert ────────────────────────────────────
+
+// TestStepTime_EPModeIsLive is AC-2 / BC-2, the "no longer inert" pass condition: with
+// every other input held fixed, toggling expert parallelism must change StepTime for a real
+// MoE config. Two independent routes are asserted, because they exercise different halves of
+// the change: the COLLECTIVE (a modular all-to-all moves top_k-routed tokens, not dense
+// hidden states) and the WEIGHT footprint (a wider EP group puts fewer experts on each GPU).
+func TestStepTime_EPModeIsLive(t *testing.T) {
+	mc := *dpepMoEModelConfig()
+	batch := stepBatch()
+
+	for _, tc := range []struct {
+		name      string
+		tp        int
+		backend   string
+		epGroupDP int
+	}{
+		{"collective: tp8 dp1 on a modular all-to-all backend", 8, "deepep_high_throughput", 0},
+		{"weights: tp2 replica of a logical dp4 EP group", 2, "", 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			off := newEPModel(t, mc, tc.tp, 1, false, tc.backend, tc.epGroupDP).StepTime(batch)
+			on := newEPModel(t, mc, tc.tp, 1, true, tc.backend, tc.epGroupDP).StepTime(batch)
+			assert.NotEqual(t, off, on,
+				"--enable-expert-parallel must change MoE step time (EP off=%dµs, on=%dµs)", off, on)
+		})
+	}
+}
+
+// TestStepTime_EPOnAllGatherAtDP1EqualsAllReduce records — as a deliberate law, not an
+// oversight — the one EP-on configuration whose step time does NOT move: vLLM's DEFAULT
+// all-to-all backend at DP=1.
+//
+// It is a real property of the physics, not a gap in the wiring. allgather_reducescatter
+// IS the ring all-reduce decomposition: dispatch all-gathers the dense hidden states and
+// combine reduce-scatters them, so over a group of g the wire volume is
+// 2·(g-1)/g·tokens·hidden either way. With β_EP defaulting to β₄ (the ≤10-coefficient
+// default) the two terms are therefore numerically equal, and BLIS says so instead of
+// inventing a difference.
+//
+// The toggle becomes observable through the three routes that carry real physics: a modular
+// all-to-all backend (top_k volume — asserted above), a wider EP group than the TP group
+// (weight sharding — asserted above and in
+// TestStepTime_EPShardsExpertWeightsAcrossTheGroup), and a coefficient set that calibrates
+// β_EP away from β₄.
+func TestStepTime_EPOnAllGatherAtDP1EqualsAllReduce(t *testing.T) {
+	mc := *dpepMoEModelConfig()
+	batch := stepBatch()
+	off := newEPModel(t, mc, 8, 1, false, "allgather_reducescatter", 0).StepTime(batch)
+	on := newEPModel(t, mc, 8, 1, true, "allgather_reducescatter", 0).StepTime(batch)
+	assert.Equal(t, off, on,
+		"all-gather+reduce-scatter moves exactly the ring-all-reduce volume, so at DP=1 with "+
+			"β_EP == β₄ the EP toggle is numerically neutral for this backend — a documented "+
+			"property, not an inert toggle (see the other routes in this file)")
+}
+
+// TestStepTime_EPReplacesReduceWithDispatch pins the MECHANISM behind AC-2, so a future
+// change cannot satisfy the "differs" assertion above by some unrelated route: at DP=1 the
+// MoE-FFN communication switches from the TP all-reduce family to the dispatch/combine
+// family. The discriminator is that the two families respond differently to the comm
+// backend — an all-reduce does not read --moe-comm-backend at all, while dispatch/combine
+// picks its byte volume from it (all-gather moves dense hidden states, a modular all-to-all
+// moves top_k-routed tokens).
+//
+// So: with EP OFF, two different backends must give identical step time (no dispatch term
+// exists to select). With EP ON they must differ (the term exists and the family matters).
+func TestStepTime_EPReplacesReduceWithDispatch(t *testing.T) {
+	mc := *dpepMoEModelConfig()
+	batch := stepBatch()
+
+	offAG := newEPModel(t, mc, 8, 1, false, "allgather_reducescatter", 0).StepTime(batch)
+	offA2A := newEPModel(t, mc, 8, 1, false, "deepep_high_throughput", 0).StepTime(batch)
+	assert.Equal(t, offAG, offA2A,
+		"with EP off at DP=1 the MoE FFN all-reduces, so the comm backend must not matter")
+
+	onAG := newEPModel(t, mc, 8, 1, true, "allgather_reducescatter", 0).StepTime(batch)
+	onA2A := newEPModel(t, mc, 8, 1, true, "deepep_high_throughput", 0).StepTime(batch)
+	assert.NotEqual(t, onAG, onA2A,
+		"with EP on the MoE FFN dispatches/combines, so the comm backend must select the volume")
+}
+
+// TestStepTime_EPShardsExpertWeightsAcrossTheGroup is BC-3, the physics that makes expert
+// parallelism worth deploying: EP-on holds num_experts/EP WHOLE experts per GPU instead of
+// num_experts/TP tensor slices, so a WIDER logical EP group must reduce step time.
+//
+// It is asserted on a weight-dominated batch (a single decode token: no prefill compute,
+// minimal KV) where the routed-expert weight term is the dominant cost, and across a
+// SEQUENCE of group widths so the direction — monotone decrease — is the law rather than
+// one magic pair.
+func TestStepTime_EPShardsExpertWeightsAcrossTheGroup(t *testing.T) {
+	mc := *dpepMoEModelConfig()
+	// 64 experts so a group of 2/4/8 divides it without hitting the one-expert-per-rank
+	// floor that would make the widths indistinguishable.
+	mc.NumLocalExperts = 64
+	batch := makeDecodeBatch(1, 64)
+
+	prev := newEPModel(t, mc, 2, 1, true, "", 1).StepTime(batch) // EP group = TP = 2
+	require.Positive(t, prev)
+	for _, groupDP := range []int{2, 4, 8} {
+		got := newEPModel(t, mc, 2, 1, true, "", groupDP).StepTime(batch)
+		assert.Less(t, got, prev,
+			"widening the EP group to TP·%d must put fewer experts on each GPU and so cost less "+
+				"(previous=%dµs, got=%dµs)", groupDP, prev, got)
+		prev = got
+	}
+}
+
+// TestStepTime_EPDoesNotChangeExpertCompute is the counterpart law, and the one a naive
+// implementation gets wrong: routed-expert COMPUTE is EP-mode-invariant. With EP on, the
+// G-GPU group jointly processes the whole group's tokens, so per-GPU FLOPs land on the same
+// value tensor-sharding gives — widening the EP group must NOT divide compute.
+//
+// It is asserted by making compute dominant (a large prefill batch on a model whose expert
+// weights are tiny) and checking that the EP-group width moves step time by far less than
+// the compute term would if it were being divided: dividing compute by 4 would remove most
+// of a compute-bound step, whereas the (small) weight reduction may not.
+func TestStepTime_EPDoesNotChangeExpertCompute(t *testing.T) {
+	mc := *dpepMoEModelConfig()
+	mc.NumLocalExperts = 8
+	mc.MoEExpertFFNDim = 512 // small expert weights ⇒ weight term is not the driver
+	batch := makePrefillBatch(16, 2048)
+
+	narrow := newEPModel(t, mc, 2, 1, true, "", 1).StepTime(batch)
+	wide := newEPModel(t, mc, 2, 1, true, "", 4).StepTime(batch) // EP group 2 → 8
+	require.Positive(t, narrow)
+
+	// If expert compute were (incorrectly) divided by the EP group, a 4× wider group would
+	// cut the dominant term ~4×, i.e. step time would fall well below half. The correct
+	// model leaves compute untouched, so it stays above half.
+	assert.Greater(t, wide, narrow/2,
+		"widening the EP group must not divide routed-expert COMPUTE (narrow=%dµs, wide=%dµs)", narrow, wide)
+}
+
+// ─── AC-6: the per-mode profile is the seam ─────────────────────────────────
+
+// TestAll2AllProfile_SharedPlaceholderIsExact is AC-6's honesty condition. Every backend
+// currently resolves to the same nominal profile, deliberately — differentiated DeepEP
+// high-throughput vs low-latency curves need their own calibration (#1568). This test
+// states that as a fact rather than leaving it to be discovered: the two DeepEP modes cost
+// the SAME today, and commScale is exactly 1.0 so the placeholder cannot perturb any step
+// time (INV-6).
+//
+// It is also the sentinel #1568 will trip: when the curves are populated, this test fails
+// and must be replaced by a differentiation assertion.
+func TestAll2AllProfile_SharedPlaceholderIsExact(t *testing.T) {
+	for _, name := range ValidMoECommBackends {
+		p, err := moeCommProfileFor(name)
+		require.NoError(t, err)
+		assert.Equal(t, 1.0, p.commScale,
+			"backend %q must ship the exact nominal commScale placeholder until #1568 calibrates it", name)
+	}
+
+	mc := *dpepMoEModelConfig()
+	batch := stepBatch()
+	ht := newEPModel(t, mc, 8, 1, true, "deepep_high_throughput", 0).StepTime(batch)
+	ll := newEPModel(t, mc, 8, 1, true, "deepep_low_latency", 0).StepTime(batch)
+	assert.Equal(t, ht, ll,
+		"DeepEP HT and LL share one placeholder cost today (#1568 differentiates them); if this "+
+			"fails, the differentiation landed and this assertion must be replaced")
+}
+
+// TestAll2AllProfile_ScalesTheDispatchTerm proves the profile is WIRED, not merely stored —
+// the point of AC-6 ("no re-plumbing when #1568 populates them"). It multiplies the field
+// on an already-constructed model and asserts the dispatch-bearing step time moves, which
+// no amount of table-filling can achieve if the multiplication site is missing.
+func TestAll2AllProfile_ScalesTheDispatchTerm(t *testing.T) {
+	mc := *dpepMoEModelConfig()
+	batch := stepBatch()
+
+	base := newEPModel(t, mc, 8, 1, true, "deepep_high_throughput", 0)
+	nominal := base.StepTime(batch)
+
+	scaled := newEPModel(t, mc, 8, 1, true, "deepep_high_throughput", 0)
+	scaled.all2All.commScale = 100.0
+	assert.Greater(t, scaled.StepTime(batch), nominal,
+		"a larger per-mode commScale must raise the dispatch/combine cost — the profile has to be "+
+			"multiplied into the basis, not just resolved and stored")
+
+	// And it must reach ONLY the dispatch term: with EP off (no dispatch term) the same
+	// scale must be inert.
+	offBase := newEPModel(t, mc, 8, 1, false, "deepep_high_throughput", 0)
+	offScaled := newEPModel(t, mc, 8, 1, false, "deepep_high_throughput", 0)
+	offScaled.all2All.commScale = 100.0
+	assert.Equal(t, offBase.StepTime(batch), offScaled.StepTime(batch),
+		"commScale must not reach any term other than MoE dispatch/combine")
+}
+
+// TestMoECommProfileFor_UnknownIsHardError is R1: an unrecognized backend must not resolve
+// to a nominal-looking profile.
+func TestMoECommProfileFor_UnknownIsHardError(t *testing.T) {
+	_, err := moeCommProfileFor("deepep_medium_throughput")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "deepep_medium_throughput")
+}
+
+// ─── BC-4 / INV-6: everything else is byte-identical ────────────────────────
+
+// TestStepTime_EPGroupDPIsInertWithoutEP is the tight regression guard: the new option must
+// change nothing unless expert parallelism is actually on. A dense model ignores it
+// outright (EP is MoE-only), and an EP-OFF MoE model must be bit-for-bit unchanged however
+// wide a group width is supplied.
+func TestStepTime_EPGroupDPIsInertWithoutEP(t *testing.T) {
+	batch := stepBatch()
+	for _, tc := range []struct {
+		name string
+		mc   sim.ModelConfig
+		ep   bool
+	}{
+		{"dense, EP off", testModelConfig(), false},
+		{"MoE, EP off", *dpepMoEModelConfig(), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			noOption := newEPModel(t, tc.mc, 8, 1, tc.ep, "", 0).StepTime(batch)
+			for _, groupDP := range []int{1, 2, 16} {
+				assert.Equal(t, noOption, newEPModel(t, tc.mc, 8, 1, tc.ep, "", groupDP).StepTime(batch),
+					"WithExpertParallelGroupDP(%d) must be inert here", groupDP)
+			}
+		})
+	}
+}
+
+// TestStepTime_DenseEPGroupDPIsInert covers the dense case explicitly against INV-BC-DP1:
+// a dense model must be byte-identical whatever is passed, even with the EP flag set (the
+// CLI rejects that combination, but the latency model must not depend on the CLI for it).
+func TestStepTime_DenseEPGroupDPIsInert(t *testing.T) {
+	mc := testModelConfig()
+	batch := stepBatch()
+	base := newEPModel(t, mc, 8, 1, false, "", 0).StepTime(batch)
+	assert.Equal(t, base, newEPModel(t, mc, 8, 1, true, "", 8).StepTime(batch),
+		"expert parallelism has no meaning for a dense model, so step time must not move (INV-BC-DP1)")
+}
+
+// TestTpAllReduceBasis_LatencyIsNotSharedAcrossDPRanks pins the delegated #1530 fix: the
+// per-collective launch latency is charged in full per DP rank, while the byte VOLUME is
+// divided. Halving the volume divisor must therefore NOT halve a latency-dominated basis.
+func TestTpAllReduceBasis_LatencyIsNotSharedAcrossDPRanks(t *testing.T) {
+	mc := *dpepMoEModelConfig()
+	hw := fabricHW(9)
+	hw.InterNodeLatencyUs = 1000 // latency-dominated, so the two halves are separable
+	// A 4-GPU node cannot contain the TP=8 group, so the cross-node latency is charged.
+	mhw := sim.NewModelHardwareConfig(mc, hw, "m", "H100", 8, 1, false, "", "trained-physics", 0,
+		sim.WithNetworkTopology(sim.NewNetworkTopology(4)))
+	m, err := NewTrainedPhysicsModel(*testCoeffs(), mhw)
+	require.NoError(t, err)
+	require.Positive(t, m.tpCrossNodeLatencyUs, "precondition: the cross-node latency must be charged")
+
+	at1 := m.tpAllReduceBasis(32, 1024, 1)
+	at4 := m.tpAllReduceBasis(32, 1024, 4)
+	assert.Less(t, at4, at1, "a larger volume divisor must reduce the basis")
+	assert.Greater(t, at4, at1/4,
+		"the per-collective launch latency must NOT be divided by dp — DP ranks launch their "+
+			"collectives concurrently, so each pays it in full (dp=1: %.3fµs, dp=4: %.3fµs)", at1, at4)
+}

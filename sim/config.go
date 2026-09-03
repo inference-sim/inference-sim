@@ -246,6 +246,26 @@ type ModelHardwareConfig struct {
 	// expert-parallel group. Only affects the trained-physics latency backend.
 	EnableExpertParallel bool
 
+	// EPGroupDP is the data-parallel WIDTH of the expert-parallel group, for a config
+	// whose own DP has been rewritten to 1 by DP-as-real-placement (#1531/#1556). 0 (the
+	// default) means "use this config's own DP", which is every configuration that
+	// existed before #1548 — so the zero value is inert.
+	//
+	// It exists because the EP group is a LOGICAL topology fact that survives placement:
+	// `--tp 8 --dp 2 --enable-expert-parallel` is ONE 16-GPU expert-parallel group, but
+	// DP-as-placement expresses it as 2 engine replicas each configured DP=1. A
+	// config-bound EP size read off such a replica collapses to TP and silently no-ops
+	// the sharding (the exact trap #1656 documents on the KV-capacity side).
+	//
+	// It carries the DP WIDTH rather than an absolute group size on purpose: PD
+	// disaggregation can override a pool's TP (cluster.ResolvePoolConfig), and an absolute
+	// group size stamped from the global TP would then contradict the pool's own TP. A
+	// width composes — the pool's group is poolTP·EPGroupDP.
+	//
+	// Supplied via WithExpertParallelGroupDP. Only meaningful for an MoE model with
+	// expert parallelism enabled; EffectiveEP ignores it otherwise.
+	EPGroupDP int
+
 	// MoECommBackend mirrors vLLM VLLM_ALL2ALL_BACKEND. It selects the MoE
 	// dispatch/combine communication cost model used by the trained-physics
 	// backend when DP > 1. Empty string resolves to the vLLM default
@@ -290,6 +310,17 @@ type ModelHardwareOption func(*ModelHardwareConfig)
 // a placement fact, never a user-declared knob.
 func WithNetworkTopology(topo NetworkTopology) ModelHardwareOption {
 	return func(c *ModelHardwareConfig) { c.NetworkTopology = topo }
+}
+
+// WithExpertParallelGroupDP supplies the data-parallel width of the expert-parallel group
+// (#1548) for a per-replica config whose own DP was rewritten to 1 by DP-as-real-placement.
+// Omitting it leaves EPGroupDP at 0, which means "use this config's own DP" — the
+// pre-#1548 behaviour, so every existing configuration is byte-identical (INV-6).
+//
+// Pass the LOGICAL, user-requested --dp. A value at or below the config's own DP is
+// absorbed by EffectiveEPGroupDP's max, so it can never SHRINK a group.
+func WithExpertParallelGroupDP(dp int) ModelHardwareOption {
+	return func(c *ModelHardwareConfig) { c.EPGroupDP = dp }
 }
 
 // NewModelHardwareConfig creates a ModelHardwareConfig with all fields explicitly set.
@@ -367,8 +398,12 @@ func (c ModelHardwareConfig) EffectiveDP() int {
 // EffectiveMoEGroupSize returns the size of the flattened MoE tensor-parallel
 // group. For MoE models this is TP·DP (mirroring vLLM's flattened dp·pcp·tp MoE
 // group; PCP is not modeled here and is assumed 1), used by both the EP-off and
-// EP-on MoE paths. For dense models it is just TP. This is the sharding divisor
-// for routed-expert weights/compute.
+// EP-on MoE paths. For dense models it is just TP.
+//
+// This is the sharding divisor for routed-expert COMPUTE. Since #1548 it is no longer
+// also the divisor for routed-expert WEIGHTS: see EffectiveExpertShardGroupSize for why
+// the two separate under expert parallelism (compute is EP-mode-invariant, weights are
+// not). The two are equal for every configuration that existed before #1548.
 func (c ModelHardwareConfig) EffectiveMoEGroupSize() int {
 	if c.isMoE() {
 		return c.TP * c.EffectiveDP()
@@ -406,12 +441,58 @@ func EffectiveEPSize(isMoE bool, tp, dp int, enableExpertParallel bool) int {
 	return tp * dp
 }
 
+// EffectiveEPGroupDP is the data-parallel width of the expert-parallel group: the
+// explicitly-supplied EPGroupDP when it is WIDER than this config's own DP, else the
+// config's own DP. Taking the max (rather than preferring EPGroupDP outright) means the
+// option can only ever widen a group, so a stale or too-small value cannot silently
+// shrink one — and the unset 0 falls straight through to EffectiveDP() (INV-6).
+func (c ModelHardwareConfig) EffectiveEPGroupDP() int {
+	if dp := c.EffectiveDP(); c.EPGroupDP < dp {
+		return dp
+	}
+	return c.EPGroupDP
+}
+
 // EffectiveEP is the config-bound accessor for EffectiveEPSize: the expert-parallel
-// group size implied by THIS config's (possibly per-replica) parallelism degrees.
-// Semantics are unchanged from before #1656 — TP·DP when EP is enabled for an MoE
-// model, else 1.
+// group size implied by this config's parallelism degrees — TP·DP when EP is enabled for
+// an MoE model, else 1.
+//
+// Since #1548 the DP it uses is EffectiveEPGroupDP(), so a per-replica config produced by
+// DP-as-placement (own DP rewritten to 1) still reports the LOGICAL TP·DP group when the
+// CLI supplied WithExpertParallelGroupDP. With the option absent this is exactly
+// EffectiveDP(), i.e. the pre-#1548 value.
 func (c ModelHardwareConfig) EffectiveEP() int {
-	return EffectiveEPSize(c.isMoE(), c.TP, c.EffectiveDP(), c.EnableExpertParallel)
+	return EffectiveEPSize(c.isMoE(), c.TP, c.EffectiveEPGroupDP(), c.EnableExpertParallel)
+}
+
+// EffectiveExpertShardGroupSize is the group the routed (FusedMoE) expert WEIGHTS are
+// sharded over — the divisor behind "how many full-expert-equivalents does one GPU hold".
+// It is deliberately distinct from EffectiveMoEGroupSize, which is the group that shares
+// the routed-expert COMPUTE:
+//
+//   - COMPUTE is EP-mode-invariant. With EP on, G GPUs jointly process the whole group's
+//     tokens (n_dp · T_local of them) over G ranks ⇒ T_local·k/TP per GPU — the same value
+//     EP-off gets from tensor-sharding the FFN width by TP. EP re-organises expert
+//     OWNERSHIP, not FLOPs.
+//   - WEIGHTS are not. EP-off holds all num_experts at 1/TP of their width (num_experts/TP
+//     full-expert-equivalents); EP-on holds num_experts/EP WHOLE experts. At EP > TP (i.e.
+//     DP > 1) that is a genuine per-GPU reduction, and it is the reason expert parallelism
+//     exists.
+//
+// Returns EffectiveEP() when expert parallelism is really in force (> 1), else
+// EffectiveMoEGroupSize(). Those two coincide for every pre-#1548 configuration — EP-off
+// gives 1 and falls through; EP-on at this config's own DP gives TP·DP, which IS
+// EffectiveMoEGroupSize — so the value only diverges for a DP-as-placement replica
+// carrying EPGroupDP (INV-6).
+//
+// This mirrors the KV-capacity side, where #1656 already charges routed-expert weights
+// against sim.EffectiveEPSize(...). Step-time and capacity therefore agree on the
+// footprint of the same experts.
+func (c ModelHardwareConfig) EffectiveExpertShardGroupSize() int {
+	if ep := c.EffectiveEP(); ep > 1 {
+		return ep
+	}
+	return c.EffectiveMoEGroupSize()
 }
 
 // PolicyConfig groups scheduling and preemption policy selection.

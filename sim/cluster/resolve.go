@@ -22,6 +22,18 @@ type PoolOverrides struct {
 	LatencyBackend string // latency model backend ("" = use global)
 	MaxModelLen    *int64 // max sequence length (nil = use global)
 	TotalKVBlocks  *int64 // KV blocks (nil = use global; set by CLI after auto-calc)
+
+	// MoECommBackend is the MoE all-to-all backend for this pool ("" = use global),
+	// mirroring vLLM's VLLM_ALL2ALL_BACKEND being a per-process environment variable
+	// (#1548). It is per-pool because the production recipe is per-ROLE: DeepEP
+	// high-throughput on the prefill engines (large batched dispatches) and DeepEP
+	// low-latency on the decode engines (tiny latency-critical dispatches). A single
+	// global mode cannot express that.
+	//
+	// Validated by the CLI against latency.IsValidMoECommBackend; an unrecognized name is
+	// rejected there rather than silently resolved (R1). The trained-physics constructor
+	// re-checks it, so a library caller cannot smuggle one past.
+	MoECommBackend string
 }
 
 // Validate checks that non-nil pointer fields satisfy their constraints (R3).
@@ -44,7 +56,7 @@ func (o PoolOverrides) Validate(name string) error {
 // IsEmpty returns true when no overrides are set.
 func (o PoolOverrides) IsEmpty() bool {
 	return o.TP == nil && o.GPU == "" && o.LatencyBackend == "" &&
-		o.MaxModelLen == nil && o.TotalKVBlocks == nil
+		o.MaxModelLen == nil && o.TotalKVBlocks == nil && o.MoECommBackend == ""
 }
 
 // ResolvePoolConfig applies per-pool overrides to a global SimConfig.
@@ -74,6 +86,9 @@ func ResolvePoolConfig(global sim.SimConfig, overrides PoolOverrides) sim.SimCon
 	}
 	if overrides.LatencyBackend != "" {
 		resolved.Backend = overrides.LatencyBackend
+	}
+	if overrides.MoECommBackend != "" {
+		resolved.MoECommBackend = overrides.MoECommBackend
 	}
 	if overrides.MaxModelLen != nil {
 		resolved.MaxModelLen = *overrides.MaxModelLen

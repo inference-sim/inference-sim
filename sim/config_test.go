@@ -877,3 +877,90 @@ func TestEffectiveEPSize_ClampsUnsetDP(t *testing.T) {
 	assert.Equal(t, 4, EffectiveEPSize(true, 4, 0, true), "dp=0 must clamp to 1 → TP")
 	assert.Equal(t, 4, EffectiveEPSize(true, 4, -3, true), "negative dp must clamp to 1 → TP")
 }
+
+// TestEffectiveEPGroupDP_CarriesTheLogicalWidth is the #1548 companion to
+// TestEffectiveEPSize_LogicalVsPerReplica: the per-replica collapse documented there is
+// exactly what WithExpertParallelGroupDP repairs, and this pins how.
+func TestEffectiveEPGroupDP_CarriesTheLogicalWidth(t *testing.T) {
+	moe := ModelConfig{NumLayers: 32, NumLocalExperts: 8}
+	newCfg := func(tp, dp int, ep bool, opts ...ModelHardwareOption) ModelHardwareConfig {
+		return NewModelHardwareConfig(moe, HardwareCalib{}, "m", "H100", tp, dp, ep, "", "trained-physics", 0, opts...)
+	}
+
+	// A DP-as-placement replica of the logical --tp 8 --dp 2 --enable-expert-parallel
+	// deployment: its own DP is 1, but the option restores the 16-GPU group.
+	replica := newCfg(8, 1, true, WithExpertParallelGroupDP(2))
+	assert.Equal(t, 2, replica.EffectiveEPGroupDP())
+	assert.Equal(t, 16, replica.EffectiveEP(), "the logical EP group is TP·EPGroupDP = 8·2")
+	assert.Equal(t, EffectiveEPSize(true, 8, 2, true), replica.EffectiveEP(),
+		"the repaired accessor must agree with the pure logical formula (R23)")
+
+	// Omitting the option is the pre-#1548 behaviour, unchanged.
+	assert.Equal(t, 8, newCfg(8, 1, true).EffectiveEP())
+
+	// The option can only WIDEN: a stale or too-small width cannot shrink a group that
+	// already has a real DP of its own.
+	lumped := newCfg(8, 4, true, WithExpertParallelGroupDP(2))
+	assert.Equal(t, 32, lumped.EffectiveEP(), "a smaller supplied width must not shrink TP·DP")
+}
+
+// TestEffectiveExpertShardGroupSize_SeparatesWeightsFromCompute is BC-3 at the config
+// level: the routed-expert WEIGHT shard group widens under expert parallelism while the
+// COMPUTE group does not. Conflating them is the specific defect this split exists to
+// prevent (dividing compute by the EP group would under-charge it by DP).
+func TestEffectiveExpertShardGroupSize_SeparatesWeightsFromCompute(t *testing.T) {
+	dense := ModelConfig{NumLayers: 32}
+	moe := ModelConfig{NumLayers: 32, NumLocalExperts: 8}
+
+	tests := []struct {
+		name        string
+		mc          ModelConfig
+		tp, dp      int
+		ep          bool
+		epGroupDP   int // 0 ⇒ option omitted
+		wantCompute int
+		wantWeights int
+	}{
+		// Every pre-#1548 shape: the two groups coincide, so nothing can move (INV-6).
+		{"dense", dense, 8, 1, false, 0, 8, 8},
+		{"dense ep flag ignored", dense, 8, 1, true, 0, 8, 8},
+		{"moe ep off dp1", moe, 8, 1, false, 0, 8, 8},
+		{"moe ep off dp2", moe, 8, 2, false, 0, 16, 16},
+		{"moe ep on dp1", moe, 8, 1, true, 0, 8, 8},
+		{"moe ep on dp2 lumped", moe, 8, 2, true, 0, 16, 16},
+		{"moe ep on tp1 dp1 degenerate", moe, 1, 1, true, 0, 1, 1},
+		// The #1548 shape: a per-replica config carrying the logical width. Compute stays
+		// on the replica's own TP·DP; weights shard across the whole logical EP group.
+		{"replica of logical tp8 dp2", moe, 8, 1, true, 2, 8, 16},
+		{"replica of Wide-EP tp1 dp16", moe, 1, 1, true, 16, 1, 16},
+		// EP off ⇒ the width is inert even when supplied.
+		{"replica width without ep is inert", moe, 8, 1, false, 2, 8, 8},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var opts []ModelHardwareOption
+			if tc.epGroupDP > 0 {
+				opts = append(opts, WithExpertParallelGroupDP(tc.epGroupDP))
+			}
+			c := NewModelHardwareConfig(tc.mc, HardwareCalib{}, "m", "H100", tc.tp, tc.dp, tc.ep, "", "trained-physics", 0, opts...)
+			assert.Equal(t, tc.wantCompute, c.EffectiveMoEGroupSize(), "compute (routed-expert FLOPs) group")
+			assert.Equal(t, tc.wantWeights, c.EffectiveExpertShardGroupSize(), "weight (expert-ownership) group")
+		})
+	}
+}
+
+// TestEffectiveExpertShardGroupSize_ScalesWithPoolTP is BC-7: the option carries a DP
+// WIDTH, not an absolute group size, so a per-pool TP override (cluster.ResolvePoolConfig
+// rewrites TP on a struct copy) yields poolTP·width rather than contradicting the pool's
+// own TP. An absolute group size stamped from the global TP would be wrong here.
+func TestEffectiveExpertShardGroupSize_ScalesWithPoolTP(t *testing.T) {
+	moe := ModelConfig{NumLayers: 32, NumLocalExperts: 64}
+	global := NewModelHardwareConfig(moe, HardwareCalib{}, "m", "H100", 8, 1, true, "", "trained-physics", 0,
+		WithExpertParallelGroupDP(2))
+	assert.Equal(t, 16, global.EffectiveExpertShardGroupSize())
+
+	pool := global // the struct copy ResolvePoolConfig makes
+	pool.TP = 4    // ... then overrides TP, exactly as --prefill-tp does
+	assert.Equal(t, 8, pool.EffectiveExpertShardGroupSize(),
+		"the EP group must follow the pool's own TP (4·2), not stay pinned to the global TP")
+}

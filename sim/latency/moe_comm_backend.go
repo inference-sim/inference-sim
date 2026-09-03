@@ -34,22 +34,53 @@ const (
 // value resolves to this.
 const DefaultMoECommBackend = "allgather_reducescatter"
 
+// all2AllProfile is the PER-BACKEND-MODE step-time profile for the MoE dispatch/combine
+// collective (#1548). It exists so that backend selection reaches the step-time model
+// through a named per-mode parameter rather than only through the volume family: two
+// backends can share a family (both DeepEP modes are commFamilyAll2All — they move the
+// same top_k-routed bytes) and still cost differently, because DeepEP's high-throughput
+// and low-latency kernels make opposite tradeoffs on the same wire volume.
+//
+// Every backend currently ships commScale = 1.0 — a deliberate SHARED PLACEHOLDER, not a
+// measurement. Differentiating DeepEP HT from LL needs its own calibration (plus the
+// inter-node fabric model, #1530) and is delegated to #1568. What this PR guarantees is
+// that #1568 populates THIS TABLE and nothing else: the selector, the per-role plumbing,
+// and the step-time multiplication site are all in place, so no re-plumbing is required.
+// A future differentiation may add fields here (e.g. a per-collective launch cost for the
+// LL mode); adding a field does not touch the selector either.
+type all2AllProfile struct {
+	// commScale multiplies the dispatch/combine communication basis — a dimensionless
+	// efficiency dial where 1.0 means "exactly the family's nominal volume ÷ effective
+	// bandwidth". Values > 1 make the backend slower than nominal, < 1 faster. 1.0 is an
+	// exact IEEE-754 multiplicative identity, so the shared placeholder leaves every
+	// step time bit-for-bit unchanged (INV-6/INV-BC-DP1).
+	commScale float64
+}
+
+// nominalAll2AllProfile is the shared placeholder every backend resolves to today: the
+// family's nominal cost, unscaled. Named (rather than repeated inline) so that #1568
+// differentiating one backend is a one-line change that cannot accidentally leave the
+// others at a hand-copied literal.
+var nominalAll2AllProfile = all2AllProfile{commScale: 1.0}
+
 // moeCommBackends is the single source of truth for the accepted --moe-comm-backend
-// values and their volume families, mirroring vLLM's VLLM_ALL2ALL_BACKEND choices
-// (vllm@f6ec81c7 vllm/envs.py:186), in vLLM's declared order. ValidMoECommBackends
-// (the display/validation list) and moeCommFamilyFor (the family lookup) are both
-// derived from this slice, so they cannot drift apart.
+// values, their volume families, and their per-mode step-time profiles, mirroring vLLM's
+// VLLM_ALL2ALL_BACKEND choices (vllm@f6ec81c7 vllm/envs.py:186), in vLLM's declared
+// order. ValidMoECommBackends (the display/validation list), moeCommFamilyFor (the family
+// lookup) and moeCommProfileFor (the profile lookup) are all derived from this slice, so
+// they cannot drift apart.
 var moeCommBackends = []struct {
-	name   string
-	family moeCommFamily
+	name    string
+	family  moeCommFamily
+	profile all2AllProfile
 }{
-	{"naive", commFamilyAllGather},
-	{"allgather_reducescatter", commFamilyAllGather},
-	{"pplx", commFamilyAll2All},
-	{"deepep_high_throughput", commFamilyAll2All},
-	{"deepep_low_latency", commFamilyAll2All},
-	{"mori", commFamilyAll2All},
-	{"flashinfer_all2allv", commFamilyAll2All},
+	{"naive", commFamilyAllGather, nominalAll2AllProfile},
+	{"allgather_reducescatter", commFamilyAllGather, nominalAll2AllProfile},
+	{"pplx", commFamilyAll2All, nominalAll2AllProfile},
+	{"deepep_high_throughput", commFamilyAll2All, nominalAll2AllProfile},
+	{"deepep_low_latency", commFamilyAll2All, nominalAll2AllProfile},
+	{"mori", commFamilyAll2All, nominalAll2AllProfile},
+	{"flashinfer_all2allv", commFamilyAll2All, nominalAll2AllProfile},
 }
 
 // ValidMoECommBackends is the ordered list of accepted --moe-comm-backend values,
@@ -82,4 +113,17 @@ func moeCommFamilyFor(name string) (moeCommFamily, error) {
 		}
 	}
 	return 0, fmt.Errorf("unknown MoE comm backend %q (valid: %v)", name, ValidMoECommBackends)
+}
+
+// moeCommProfileFor maps a vLLM backend name to its per-mode step-time profile (#1548),
+// looking it up in moeCommBackends. An unrecognized name is a hard error (R1) for the same
+// reason moeCommFamilyFor rejects one: silently falling back to a nominal profile would
+// hide a typo behind a plausible-looking number.
+func moeCommProfileFor(name string) (all2AllProfile, error) {
+	for _, b := range moeCommBackends {
+		if b.name == name {
+			return b.profile, nil
+		}
+	}
+	return all2AllProfile{}, fmt.Errorf("unknown MoE comm backend %q (valid: %v)", name, ValidMoECommBackends)
 }
