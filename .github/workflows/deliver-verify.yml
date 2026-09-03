@@ -8,19 +8,24 @@ name: Deliver — Verify
 # place is what makes "a GREEN review cannot override red CI" structural rather than something
 # to re-audit on every edit here.
 #
-# WHY THE CHECKS RUN HERE instead of reading ci.yml's conclusion: when a workflow using
-# GITHUB_TOKEN opens or updates a pull request, "the resulting pull_request event creates
-# workflow runs in an approval-required state". The delivery's own PR and pushes therefore
-# produce CI runs that sit waiting for a human to click "Approve and run" — so polling for a
-# conclusion would time out every round and defeat the whole walk-away premise. Running the
-# same three commands directly is both unattended and a stronger signal: we observe the tests
-# rather than trusting an API. The cost is that these commands must stay in step with ci.yml.
+# WHERE THE CI SIGNAL COMES FROM: this phase dispatches the repository's own ci.yml against the
+# delivery branch and waits for it. Two constraints force that, and an earlier version of this
+# workflow satisfied neither by running build/test/lint inline:
+#   - a bot-opened PR has its pull_request runs held in an approval-required state, so the loop
+#     cannot wait on the runs GitHub would normally create;
+#   - a workflow_dispatch run's check runs attach to the dispatch ref, NOT to the PR head, so
+#     checks run inside this job satisfy none of the branch ruleset's required contexts. The loop
+#     could label a PR ready-for-merge with a merge button that does not work.
+# Dispatching ci.yml always starts (workflow_dispatch is exempt from the token rule) and produces
+# ci.yml's own job names on the branch head commit — which is exactly what the ruleset matches.
+# It also removes any obligation to keep package groups, per-group timeouts or the Go version in
+# step with ci.yml, since ci.yml is what runs.
 #
-# SECURITY: the repository root checkout is the DEFAULT BRANCH, so scripts/ and .archon-version
-# always come from trusted code. The PR's own tree is checked out separately under ./pr and is
-# only ever used as a build/test working directory — the PR's copy of scripts/ is never
-# executed. The input PR is additionally required to be same-repo and to sit on the branch this
-# loop owns, so dispatching this workflow at an arbitrary (or forked) PR cannot run its code.
+# SECURITY: the only checkout here is the DEFAULT BRANCH, so scripts/ and .archon-version always
+# come from trusted code. The PR's tree is never checked out and the PR's code never executes on
+# the self-hosted runner — ci.yml runs it on ephemeral hosted runners instead. The input PR is
+# still required to be same-repo, open and on the branch this loop owns, so a misdirected
+# dispatch cannot aim the phase at someone else's PR.
 
 permissions:
   contents: read
@@ -117,67 +122,90 @@ jobs:
         with:
           fetch-depth: 0
 
-      # The PR's tree, isolated under ./pr. Pinned to the exact SHA validated above rather than
-      # to the ref, so a push landing mid-run cannot swap the code under us.
-      - uses: actions/checkout@v5
-        if: steps.paused.outputs.paused == 'false'
-        with:
-          ref: ${{ steps.target.outputs.sha }}
-          path: pr
-          fetch-depth: 0
-
-      # Sourced from go.mod rather than pinned, so the gate always compiles and tests with the
-      # toolchain the repository declares — which is what ci.yml resolves to as well. A pinned
-      # number here drifted from ci.yml on day one. archon needs a newer Go than blis does; its
-      # own go.mod directive makes GOTOOLCHAIN=auto fetch that for the archon build only.
+      # No PR checkout. The repository's own CI compiles and tests the delivery branch, so this
+      # job never needs the PR's tree — which also means the PR's code no longer runs on the
+      # self-hosted runner at all. Go is still installed, but only to build archon.
       - uses: actions/setup-go@v5
         if: steps.paused.outputs.paused == 'false'
         with:
-          go-version-file: go.mod
+          go-version: '1.26'   # archon's own requirement; matches archon.yml
 
-      # The three check steps mirror ci.yml. Each is continue-on-error so a genuine failure
-      # becomes a SIGNAL rather than aborting the job: a failing test must reach the gate as
-      # CI_STATUS=failure and produce a correction round, not kill the verify phase.
-      - name: Check — build
-        id: check_build
-        if: steps.paused.outputs.paused == 'false'
-        continue-on-error: true
-        working-directory: pr
-        run: go build -v ./...
-
-      - name: Check — test
-        id: check_test
-        if: steps.paused.outputs.paused == 'false'
-        continue-on-error: true
-        working-directory: pr
-        run: go test -timeout 25m ./...
-
-      - name: Check — lint
-        id: check_lint
-        if: steps.paused.outputs.paused == 'false'
-        continue-on-error: true
-        uses: golangci/golangci-lint-action@v7
-        with:
-          version: v2.9.0
-          working-directory: pr
-
-      - name: Derive the CI signal
+      # THE required checks, produced by the repository's real CI on the delivery branch.
+      #
+      # Running build/test/lint inside this job was wrong, and the reason is subtle: a
+      # workflow_dispatch run's check runs attach to the DISPATCH ref, not to the PR head, so
+      # none of them counted toward the branch ruleset. The loop could label a PR
+      # ready-for-merge while GitHub still showed zero of the seven required contexts — a
+      # merge button that does not work. And the PR's own pull_request runs cannot fill the gap
+      # because a GITHUB_TOKEN-opened PR holds them for human approval.
+      #
+      # Dispatching ci.yml on the delivery branch fixes both: workflow_dispatch always starts
+      # even under GITHUB_TOKEN, and the resulting check runs carry ci.yml's own job names on
+      # the branch head commit, which is exactly what the ruleset matches. It also stops this
+      # job duplicating ci.yml's package groups, per-group timeouts and Go version — a parity
+      # obligation that had already drifted.
+      - name: Run the repository CI on the delivery branch
         id: ci
         if: steps.paused.outputs.paused == 'false'
         env:
-          BUILD: ${{ steps.check_build.outcome }}
-          TEST: ${{ steps.check_test.outcome }}
-          LINT: ${{ steps.check_lint.outcome }}
+          BRANCH: ${{ steps.target.outputs.branch }}
+          VERIFIED_SHA: ${{ steps.target.outputs.sha }}
+          POLL_SECONDS: '20'
+          MAX_ATTEMPTS: '120'   # 40 minutes; ci.yml's heaviest job allows 15
         run: |
           set -uo pipefail
+          status=unknown
           failing=""
-          [[ "$BUILD" == "success" ]] || failing="build"
-          [[ "$TEST"  == "success" ]] || failing="${failing:+$failing, }test"
-          [[ "$LINT"  == "success" ]] || failing="${failing:+$failing, }lint"
-          # Any outcome that is not success counts as failure. Deliberately blunt: the safe
-          # direction for an unexpected outcome is a stopped delivery, not a passed one.
-          if [[ -z "$failing" ]]; then status=success; else status=failure; fi
-          echo "build=$BUILD test=$TEST lint=$LINT -> CI_STATUS=$status"
+          dispatched_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          if ! gh workflow run ci.yml --repo "$REPO" --ref "$BRANCH"; then
+            echo "::error::could not dispatch ci.yml on $BRANCH"
+            echo "status=unknown" >> "$GITHUB_OUTPUT"; echo "failing=dispatch failed" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          # gh workflow run returns no id, so find the run it created: newest workflow_dispatch
+          # run of ci.yml on this branch at or after the moment we dispatched.
+          run_id=""
+          for (( i = 0; i < 30; i++ )); do
+            run_id=$(gh api "/repos/$REPO/actions/workflows/ci.yml/runs?branch=$BRANCH&event=workflow_dispatch&per_page=20" \
+                       --jq "[.workflow_runs[] | select(.created_at >= \"$dispatched_at\")] | sort_by(.created_at) | last | .id // empty" 2>/dev/null || true)
+            [[ -n "$run_id" ]] && break
+            sleep 5
+          done
+          if [[ -z "$run_id" ]]; then
+            echo "::error::dispatched ci.yml but could not find the resulting run"
+            echo "status=unknown" >> "$GITHUB_OUTPUT"; echo "failing=run not found" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "ci run: $REPO/actions/runs/$run_id"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+
+          # The run must be on the exact commit this delivery verified. A push landing between
+          # validation and dispatch would otherwise have CI vouch for a different commit.
+          run_sha=$(gh api "/repos/$REPO/actions/runs/$run_id" --jq .head_sha)
+          if [[ "$run_sha" != "$VERIFIED_SHA" ]]; then
+            echo "::error::ci run is on $run_sha, not the verified $VERIFIED_SHA"
+            echo "status=unknown" >> "$GITHUB_OUTPUT"; echo "failing=head moved before CI started" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          for (( attempt = 1; attempt <= MAX_ATTEMPTS; attempt++ )); do
+            read -r run_status conclusion < <(gh api "/repos/$REPO/actions/runs/$run_id" \
+              --jq '"\(.status) \(.conclusion // "none")"' 2>/dev/null || echo "unreadable none")
+            if [[ "$run_status" == "completed" ]]; then
+              # Anything other than success is a failure: neutral, cancelled, skipped, timed_out,
+              # action_required and stale all mean the required contexts are not satisfied.
+              if [[ "$conclusion" == "success" ]]; then
+                status=success
+              else
+                status=failure
+                failing=$(gh api "/repos/$REPO/actions/runs/$run_id/jobs?per_page=100" --paginate \
+                  --jq '[.jobs[] | select(.conclusion != "success") | .name] | join(", ")' 2>/dev/null || echo "$conclusion")
+              fi
+              break
+            fi
+            echo "attempt $attempt: ci run is $run_status"
+            sleep "$POLL_SECONDS"
+          done
+          echo "CI_STATUS=$status  failing=$failing"
           echo "status=$status" >> "$GITHUB_OUTPUT"
           echo "failing=$failing" >> "$GITHUB_OUTPUT"
 

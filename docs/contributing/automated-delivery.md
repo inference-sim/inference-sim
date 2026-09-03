@@ -70,11 +70,18 @@ The decision is not the reviewing agent's to make. `deliver-verify.yml` collects
 
 | Signal | Source |
 |---|---|
-| `CI_STATUS` | verify runs `go build ./...`, `go test ./...` and `golangci-lint run` itself, against the PR tree checked out under `./pr`. Anything other than all three passing is `failure` |
+| `CI_STATUS` | verify dispatches the repository's own `ci.yml` against the delivery branch and waits for it. Anything other than a `success` conclusion is `failure` |
 | `PLAN_GATE` | `.archon/review.json` — `planRatchet.ok` and `planClassify.verdict`. `absent` (the PR never claimed a plan) delivers exactly as a satisfied plan does; `unverified` (the PR declares an `archon-plan:` but the check did not run) **blocks** |
 | `AGENT_VERDICT` | the `DELIVER-VERDICT: GREEN` / `NOT-GREEN` marker, required to be the last line of a comment posted by the automation itself |
 
-**Why verify runs the checks rather than reading `ci.yml`'s verdict:** see the approval-required note above — the delivery's own CI runs are gated on a human click, so they cannot be the unattended signal. Running the commands directly is also a stronger signal, since we observe the tests instead of trusting an API. The three commands must stay in step with `ci.yml`; the Go toolchain no longer has to, because verify reads `go-version-file: go.mod` rather than pinning a number that drifted from `ci.yml` on day one.
+**Why verify dispatches `ci.yml` rather than running the checks itself.** `main` requires seven status contexts (`build`, `lint`, and five `test (...)` groups) before a PR can merge, and those must be present **on the PR's head commit**. Two things make that awkward, and an earlier version of this feature got both wrong by running the commands inline:
+
+- a bot-opened PR has its `pull_request` runs held in an **approval-required** state, so the loop cannot simply wait for the runs GitHub would normally create;
+- a `workflow_dispatch` run's check runs attach to the **dispatch ref, not the PR head** — so checks executed inside the verify job satisfy *none* of the required contexts. The loop would label a PR `ready-for-merge` while GitHub still showed zero checks and refused to merge it.
+
+Dispatching `ci.yml` on the delivery branch solves both: `workflow_dispatch` always starts even under `GITHUB_TOKEN`, and the run produces `ci.yml`'s own job names against the branch head — exactly what the ruleset matches. It also removes any obligation to keep package groups, per-group timeouts or the Go version in step with `ci.yml`, because `ci.yml` is what runs.
+
+The delivery still verifies the commit it pinned: the dispatched run's `head_sha` is compared to it, and a mismatch stops the delivery rather than letting CI vouch for different code.
 
 **`unverified` is the subtle one.** `archon-review.sh` exits 0 and falls back to a plan-less delta review when plan resolution fails, so an absent `planRatchet` does *not* by itself mean "no plan" — it can equally mean "a plan was declared and never checked". Treating those alike would let a PR whose dist ratchet silently did not run reach `ready-for-merge` on a GREEN review.
 
@@ -132,7 +139,9 @@ Not yet automated, each its own follow-up: sequencing sub-issues `0..N` and open
 
 **The workflow's own steps run trusted code.** The repository root checkout is the default branch, so `scripts/` and `.archon-version` always come from `main` — matching `archon.yml`. The archon review and `deliver-gate.sh` are executed from that trusted tree, never from the PR.
 
-**The PR's code does execute, and that is the point.** The PR tree is checked out separately under `./pr` at a pinned SHA, and `go build` / `go test` / `golangci-lint` run against it. Running a PR's test suite means running the PR's code — including, in this repository, `scripts/deliver_gate_test.go`, which shells out to the PR's own `.sh` files. There is no way to gate on tests without doing that. What makes it acceptable is that this is **never fork code**: verify and correct both require the target PR to be same-repository, open, and on `deliver/issue-<N>` — the branch this loop owns. Note the difference from `ci.yml`, which runs the same commands on an ephemeral `ubuntu-latest` runner; here they run on the self-hosted runner, so the same-repo guard is doing real work rather than being belt-and-braces.
+**The PR's code never runs on the self-hosted runner.** The verify phase does not check the PR out at all — it dispatches `ci.yml`, which runs the PR's build and tests on ephemeral `ubuntu-latest` runners, exactly as it does for any other PR. An earlier version did check the PR out and run its test suite on the self-hosted runner, which meant executing PR code (including `deliver_gate_test.go`, which shells out to the PR's own `.sh` files) on persistent infrastructure. Dispatching removes that exposure rather than guarding it.
+
+The correct phase does still check out and push to the delivery branch, so it requires the target PR to be same-repository, open, and on `deliver/issue-<N>` — the branch this loop owns.
 
 `workflow_dispatch` is itself restricted to users with write access, and a refused dispatch stops before any checkout.
 

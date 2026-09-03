@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
     branches: [main, 'feature/**']
+  # On-demand, so the L1 delivery loop (#1654) can run the REAL required checks against a
+  # delivery branch. A bot-opened PR has its pull_request runs held for human approval, so the
+  # loop cannot rely on them; a workflow_dispatch run always starts and produces check runs with
+  # the same names on the same commit, which is what the branch ruleset requires. Inert
+  # otherwise — it only adds a manual "Run workflow" button.
+  workflow_dispatch:
 
 jobs:
   build:
