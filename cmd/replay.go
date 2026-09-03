@@ -286,20 +286,6 @@ Example:
 		// Resolve latency backend configuration (single code path shared with runCmd).
 		lr := resolveLatencyConfig(cmd)
 
-		// DP-as-real-placement is run-only (#1531, INV-13). On an MoE model `--dp N`
-		// makes `blis run` spawn N real engine replicas (changing routing/queueing/
-		// batching, hence per-request metrics), while replay keeps the single-instance
-		// DP-math model — so the two paths would diverge for identical flags. Fail fast
-		// rather than silently degrade, mirroring the autoscaler/node-pool guards below.
-		// (Dense --dp>1 and roofline --dp>1 are already rejected in resolveLatencyConfig.)
-		if lr.ModelConfig.IsMoE() && dataParallelism > 1 {
-			logrus.Fatalf("--dp %d on an MoE model is not supported in blis replay: DP-as-placement is a "+
-				"run-only feature (blis run spawns %d real engine replicas). Replay keeps the single-instance "+
-				"DP model, so the two paths would diverge for identical flags (INV-13). Use blis run instead; "+
-				"replay parity is tracked by #1556.",
-				dataParallelism, dataParallelism)
-		}
-
 		// #1583: derive PerBlockBytes for an offload config supplied by --kv-offload-config
 		// (the observe-trace calibration path). A sim-generated trace header already
 		// carries the run-computed value (>0), so this is skipped for run/replay parity;
@@ -608,6 +594,27 @@ Example:
 			}
 		}
 
+		// DP-as-real-placement (#1531 for run, #1556 for replay): on an MoE model, `--dp N`
+		// means N independent single-node engine replicas (vLLM's internal DP EngineCores),
+		// not one lumped instance. resolveDPPlacement is the ONE code path run and replay
+		// share (R23) — it expands numInstances × N, divides the auto-KV total back to the
+		// per-rank budget, and re-caps --max-model-len to that budget — so identical flags
+		// over the same trace produce identical metrics (INV-13). Placed AFTER the PD /
+		// autoscaler / node-pool validation above so the guarded-combo decision sees the
+		// validated topology, and BEFORE the DeploymentConfig literal below, which reads
+		// all three adjusted quantities. A no-op for --dp 1 and dense models (INV-6).
+		// autoscalerActive / nodePoolsActive: replay rejects both unconditionally above
+		// (the --model-autoscaler-interval-us flag guard and the bundle guards), so these
+		// are structurally false here. They are still computed as the real predicates —
+		// the same set run folds into bundleAutoscalerIntervalUs / bundleNodePools — so the
+		// guarded-combo decision stays correct if replay ever gains support for either.
+		dpPlan, dpErr := resolveDPPlacement(lr,
+			cmd.Flags().Changed("model-autoscaler-interval-us") || (bundle != nil && bundle.Autoscaler.IntervalUs > 0),
+			bundle != nil && len(bundle.NodePools) > 0)
+		if dpErr != nil {
+			logrus.Fatalf("%v", dpErr)
+		}
+
 		logrus.Infof("Starting replay with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v",
 			totalKVBlocks, replayHorizon, lr.AlphaCoeffs, lr.BetaCoeffs)
 
@@ -623,9 +630,13 @@ Example:
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency,
 					sim.WithKVOffload(kvOffloadCfg)),
-				BatchConfig:          sim.NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold),
-				LatencyCoeffs:        sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
-				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dataParallelism, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen),
+				BatchConfig:   sim.NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold),
+				LatencyCoeffs: sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
+				// DP-as-placement (#1531 run / #1556 replay): dpPlan.PerRankDP is the
+				// per-replica DP — 1 when the plan is active (each replica is one rank),
+				// else the CLI dataParallelism unchanged. Identical to the run wiring
+				// (cmd/root.go), from the same shared resolveDPPlacement (INV-13).
+				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				LoRAConfig:           loraCfg,
 				SpeculativeConfig:    resolveSpeculativeConfig(cmd),

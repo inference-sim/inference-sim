@@ -225,6 +225,38 @@ Replay also accepts all shared simulation config flags (`--latency-model`, `--to
 !!! note "Re-supply capacity-affecting flags identically on replay"
     Flags that shape KV-cache capacity are **re-supplied on the replay CLI, not round-tripped through the trace header** — replay recomputes capacity from `--model` and these flags exactly as `blis run` does. In particular, **`--kv-cache-dtype` must be passed identically on replay** (e.g. `--kv-cache-dtype fp8`) to reproduce the run's KV-block count and per-request metrics (INV-13). This mirrors `--gpu-memory-utilization` and the auto-computed `--total-kv-blocks` (the header records those only informationally). It is deliberately **not** the header-authoritative model used by `--kv-offload-config` — a KV dtype only scales a byte width, it drives no runtime mechanism.
 
+!!! note "MoE `--dp N` (DP-as-placement) is supported on replay — re-supply it, and match `--horizon`"
+    On an MoE model, `--dp N` spawns **N real single-node engine replicas** per
+    `--num-instances`, each sized per-rank (`DP=1`). Since #1556 `blis replay` resolves
+    that placement through the same shared code path as `blis run` (#1531), so replaying
+    a `blis run --dp N` trace with the same flags reproduces the run's per-request
+    metrics (INV-13). Two things to get right:
+
+    - **`--dp` is re-supplied on the replay CLI**, like `--tp` / `--kv-cache-dtype` — it
+      is model-level, and the trace header records it (if at all) only informationally;
+      replay never reads it back. Omitting it on the replay leg silently compares an
+      `N`-replica run against a 1-replica replay.
+    - **Pass `--horizon` on both legs.** `blis run` defaults the horizon to unlimited
+      while `blis replay` auto-computes 2x the max arrival time (see the table below),
+      so a default-horizon replay may truncate a run that was still draining.
+
+    ```bash
+    # Run N=2 DP replicas and export the workload...
+    ./blis run --model deepseek-ai/deepseek-v2-lite --dp 2 --num-instances 1 \
+      --rate 10 --num-requests 40 --total-kv-blocks 20000 --seed 42 \
+      --horizon 9223372036854775807 --trace-output traces/dp2
+
+    # ...then replay it with the SAME --dp, --num-instances, --seed and --horizon.
+    ./blis replay --trace-header traces/dp2.yaml --trace-data traces/dp2.csv \
+      --model deepseek-ai/deepseek-v2-lite --dp 2 --num-instances 1 \
+      --total-kv-blocks 20000 --seed 42 --horizon 9223372036854775807
+    ```
+
+    The physics guards still apply: `--enable-expert-parallel` with `--dp > 1` and PD
+    disaggregation with `--dp > 1` are unmodeled and fail fast on **both** commands
+    (#1548 / #1553); the autoscaler and node pools are rejected by `blis replay`
+    unconditionally, independently of `--dp`.
+
 ### How Replay Differs from `blis run`
 
 | Aspect | `blis run` | `blis replay` |
@@ -233,7 +265,7 @@ Replay also accepts all shared simulation config flags (`--latency-model`, `--to
 | **Arrival times** | Synthesized by arrival process (Poisson, etc.) | Exact timestamps from trace |
 | **Token counts** | Sampled from distributions | Actual observed values |
 | **Horizon** | From `--horizon` flag or spec | Auto-computed as 2x max arrival time (override with `--horizon`) |
-| **Output format** | Full `MetricsOutput` JSON | `SimResult` JSON array (request_id, ttft_us, e2e_us, input_tokens, output_tokens) |
+| **Output format** | Full `MetricsOutput` JSON on stdout | Same full `MetricsOutput` JSON on stdout; `--results-path` additionally writes a `SimResult` JSON array (request_id, ttft_us, e2e_us, input_tokens, output_tokens) for `blis calibrate` |
 | **Session support** | Session manager creates follow-ups | Session structure encoded in trace (no manager needed) |
 | **Trace export** | `--trace-output` (header `mode: "generated"`) | `--trace-output` (header `mode: "replayed"`); see restrictions below |
 
