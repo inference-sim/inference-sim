@@ -813,3 +813,67 @@ func TestSpeculativeConfig_Helpers(t *testing.T) {
 	assert.InDelta(t, 1.0, noGain.EffectiveTokensPerStep(), 1e-9)
 	assert.Equal(t, 5, noGain.VerifyWidth())
 }
+
+// TestEffectiveEPSize_LogicalVsPerReplica is the #1656 BC-5 law: the EP group size
+// must be derived from the LOGICAL (user-requested) topology, not from a per-replica
+// config whose DP has been collapsed to 1 by DP-as-placement (#1531).
+//
+// The two values are deliberately different, and the difference is the whole point:
+// a consumer that sizes routed-expert weights per EP rank and reads the group size off
+// a per-replica config would silently get "no sharding" for exactly the TP×DP topology
+// that needs it. This test pins both values so that collapse can never be mistaken for
+// the logical answer.
+func TestEffectiveEPSize_LogicalVsPerReplica(t *testing.T) {
+	moe := ModelConfig{NumLayers: 32, NumLocalExperts: 8}
+
+	// Logical topology as requested on the CLI: --tp 8 --dp 2 --enable-expert-parallel.
+	logical := EffectiveEPSize(true, 8, 2, true)
+	assert.Equal(t, 16, logical, "logical EP group is TP·DP = 8·2")
+
+	// The same deployment after DP-as-placement expands it into 2 engine replicas,
+	// each reconfigured with DP=1.
+	perReplica := NewModelHardwareConfig(moe, HardwareCalib{}, "m", "H100", 8, 1, true, "", "trained-physics", 0)
+	assert.Equal(t, 8, perReplica.EffectiveEP(), "a per-replica DP=1 config yields TP, not TP·DP")
+	assert.NotEqual(t, logical, perReplica.EffectiveEP(),
+		"BC-5: the per-replica EP group must not be mistaken for the logical group")
+}
+
+// TestEffectiveEPSize_MatchesAccessor is the R23 code-path-parity guard: the free
+// function and the config-bound accessor are one formula, so they agree for every
+// topology (the accessor is defined in terms of the function).
+func TestEffectiveEPSize_MatchesAccessor(t *testing.T) {
+	dense := ModelConfig{NumLayers: 32}
+	moe := ModelConfig{NumLayers: 32, NumLocalExperts: 8}
+
+	tests := []struct {
+		name   string
+		mc     ModelConfig
+		tp, dp int
+		ep     bool
+		want   int
+	}{
+		{"dense_ep_off", dense, 4, 1, false, 1},
+		{"dense_ep_on_ignored", dense, 4, 1, true, 1},
+		{"moe_ep_off", moe, 4, 1, false, 1},
+		{"moe_ep_on_dp1", moe, 4, 1, true, 4},
+		{"moe_ep_on_dp2", moe, 4, 2, true, 8},
+		{"moe_ep_on_tp1_dp16", moe, 1, 16, true, 16},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := EffectiveEPSize(tc.mc.IsMoE(), tc.tp, tc.dp, tc.ep)
+			assert.Equal(t, tc.want, got, "EffectiveEPSize")
+
+			c := NewModelHardwareConfig(tc.mc, HardwareCalib{}, "m", "H100", tc.tp, tc.dp, tc.ep, "", "trained-physics", 0)
+			assert.Equal(t, got, c.EffectiveEP(), "accessor must equal the free function")
+		})
+	}
+}
+
+// TestEffectiveEPSize_ClampsUnsetDP verifies the free function treats an unset (zero)
+// DP as a single rank, matching EffectiveDP's clamp, so a zero-valued struct or a
+// caller that forwards an unset degree cannot produce a zero divisor.
+func TestEffectiveEPSize_ClampsUnsetDP(t *testing.T) {
+	assert.Equal(t, 4, EffectiveEPSize(true, 4, 0, true), "dp=0 must clamp to 1 → TP")
+	assert.Equal(t, 4, EffectiveEPSize(true, 4, -3, true), "negative dp must clamp to 1 → TP")
+}

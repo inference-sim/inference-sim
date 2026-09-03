@@ -399,6 +399,35 @@ type dpPlacementPlan struct {
 // surfaced before the run consumes a large amount of memory/time.
 const dpPlacementInstanceWarnThreshold = 512
 
+// epSizeForKVCapacity returns the expert-parallel group size to charge routed-expert
+// weights against in a KV-capacity auto-calculation (#1656), for a pool/instance whose
+// tensor-parallel degree is tp.
+//
+// It reads the LOGICAL, user-requested topology (--dp / --enable-expert-parallel) rather
+// than any per-replica config: DP-as-placement (#1531) reconfigures each engine replica
+// to DP=1, so a config-derived group size would collapse to tp and the sharding would
+// silently vanish for exactly the TP×DP deployments that need it. Every CLI auto-calc
+// site funnels through here so one formula serves all of them (R23).
+//
+// Note the capacity effect only appears when the EP group exceeds tp — i.e. with DP>1.
+// `--dp>1` together with `--enable-expert-parallel` is currently rejected downstream
+// (planDPPlacement, #1548 on run; the MoE dp>1 guard on replay, #1556), so today this is
+// a no-op in practice; it makes the capacity arithmetic correct ahead of those, and stops
+// the weight over-count from masking their diagnostics.
+//
+// Two of resolveLatencyConfig's own EP rejections (roofline + EP, dense + EP) also fire
+// AFTER the auto-calc that calls this, so an EP group can be resolved for a config that is
+// about to be rejected. That is safe by construction rather than by ordering: a dense model
+// yields 1 here (EffectiveEPSize's isMoE gate), and a roofline MoE's reduced capacity is
+// discarded by the Fatalf. The same reasoning the dense-dp>1 gate documents in
+// sim/latency/kv_capacity.go applies — the gate is load-bearing, not merely redundant.
+//
+// Per-pool EP is not expressible, exactly as per-pool DP is not (#1420): --dp and
+// --enable-expert-parallel apply uniformly, so each PD pool's group is poolTP·dp.
+func epSizeForKVCapacity(isMoE bool, tp int) int {
+	return sim.EffectiveEPSize(isMoE, tp, dataParallelism, enableExpertParallel)
+}
+
 // planDPPlacement decides DP-as-real-placement expansion for `blis run` and
 // rejects placement combinations #1531 does not yet model. It is pure (no
 // package state) so the decision is unit-testable independently of the runCmd
@@ -751,15 +780,20 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 				if kvParams.HiddenAct == "" {
 					logrus.Infof("--latency-model: hidden_act not set in config.json; assuming SwiGLU (3-matrix MLP) for weight estimation")
 				}
+				// One resolved group size for both the calculation and the log line, so the
+				// number reported is provably the number charged.
+				epSize := epSizeForKVCapacity(modelConfig.IsMoE(), tensorParallelism)
 				autoBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, hwConfig, tensorParallelism, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParams,
-					latency.WithAdapterReservedBytes(loraReservedBytesForKV))
+					latency.WithAdapterReservedBytes(loraReservedBytesForKV),
+					latency.WithExpertParallelSize(epSize))
 				if calcErr != nil {
 					logrus.Fatalf("--latency-model: KV capacity auto-calculation failed: %v", calcErr)
 				}
 				totalKVBlocks = autoBlocks
 				logrus.Infof("--gpu-memory-utilization: %.2f used for KV block auto-calculation", gpuMemoryUtilization)
-				logrus.Infof("--latency-model: auto-calculated total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d, block_size=%d, MoE=%v)",
-					totalKVBlocks, hwConfig.MemoryGiB, tensorParallelism, dataParallelism, blockSizeTokens, kvParams.IsMoE)
+				logrus.Infof("--latency-model: auto-calculated total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d, EP=%d, block_size=%d, MoE=%v)",
+					totalKVBlocks, hwConfig.MemoryGiB, tensorParallelism, dataParallelism,
+					epSize, blockSizeTokens, kvParams.IsMoE)
 				logAdapterHBMReservation("--latency-model")
 			}
 		} else if loraReservedBytesForKV > 0 {
@@ -1704,7 +1738,8 @@ var runCmd = &cobra.Command{
 							// Per-pool TP but GLOBAL dp: per-pool DP is out of scope (#1420);
 							// --dp applies uniformly to all pools. Not a bug — see issue #1420.
 							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolPrefillTP, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
-								latency.WithAdapterReservedBytes(loraReservedBytesForKV))
+								latency.WithAdapterReservedBytes(loraReservedBytesForKV),
+								latency.WithExpertParallelSize(epSizeForKVCapacity(lr.ModelConfig.IsMoE(), poolPrefillTP)))
 							if calcErr != nil {
 								logrus.Fatalf("--prefill-tp/--prefill-hardware: KV capacity auto-calculation failed for prefill pool: %v", calcErr)
 							} else {
@@ -1740,7 +1775,8 @@ var runCmd = &cobra.Command{
 						} else {
 							// Per-pool TP, global dp (see prefill-pool note above; #1420).
 							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolDecodeTP, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
-								latency.WithAdapterReservedBytes(loraReservedBytesForKV))
+								latency.WithAdapterReservedBytes(loraReservedBytesForKV),
+								latency.WithExpertParallelSize(epSizeForKVCapacity(lr.ModelConfig.IsMoE(), poolDecodeTP)))
 							if calcErr != nil {
 								logrus.Fatalf("--decode-tp/--decode-hardware: KV capacity auto-calculation failed for decode pool: %v", calcErr)
 							} else {

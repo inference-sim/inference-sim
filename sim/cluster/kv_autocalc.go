@@ -69,10 +69,17 @@ func applyPerInstanceKVCapacity(simCfg *sim.SimConfig, gpuMemoryGiB float64, cfg
 	}
 
 	hc := sim.HardwareCalib{MemoryGiB: gpuMemoryGiB}
+	// Expert-parallel weight sharding (#1656): this instance's own EP group size.
+	// simCfg is a per-instance config, so EffectiveEP() is TP·(this instance's DP) —
+	// which is the logical group here because node pools reject --dp>1 (#1553), leaving
+	// the instance DP equal to the deployment DP. When EP-on DP placement lands (#1548)
+	// its per-replica configs will carry DP=1, and the deployment-wide group size must be
+	// threaded in through KVAutoCalcConfig rather than read off the replica.
 	blocks, err := latency.CalculateKVBlocks(
 		simCfg.ModelConfig, hc, simCfg.TP, simCfg.EffectiveDP(),
 		simCfg.BlockSizeTokens, cfg.GPUMemoryUtilization, cfg.Params,
 		latency.WithAdapterReservedBytes(cfg.AdapterReservedBytes),
+		latency.WithExpertParallelSize(simCfg.EffectiveEP()),
 	)
 	if err != nil {
 		logrus.Warnf("[cluster] per-instance KV auto-calc for GPU %q failed: %v; "+
@@ -96,5 +103,6 @@ func applyPerInstanceKVCapacity(simCfg *sim.SimConfig, gpuMemoryGiB float64, cfg
 	}
 
 	logrus.Infof("[cluster] per-instance KV auto-calc for GPU %q: total-kv-blocks=%d "+
-		"(GPU=%.0f GiB, TP=%d, DP=%d)", gpuType, blocks, gpuMemoryGiB, simCfg.TP, simCfg.EffectiveDP())
+		"(GPU=%.0f GiB, TP=%d, DP=%d, EP=%d)", gpuType, blocks, gpuMemoryGiB,
+		simCfg.TP, simCfg.EffectiveDP(), simCfg.EffectiveEP())
 }
