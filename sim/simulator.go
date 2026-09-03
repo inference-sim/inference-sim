@@ -1134,7 +1134,7 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 	remaining := []*Request{}
 	for _, req := range sim.RunningBatch.Requests {
 		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
-		if req.ProgressIndex >= req.CompletionProgressIndex() {
+		if req.ProgressIndex >= req.completionProgressIndex() {
 			// State transitions
 			req.State = StateCompleted
 			// Zero-output requests complete at prefill end with no decode phase.

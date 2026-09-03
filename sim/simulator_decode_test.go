@@ -160,7 +160,10 @@ func TestSpecDecode_FinalProgressIndexMatchesBaseline(t *testing.T) {
 					output, sp.k, sp.acc, got.ProgressIndex, base.ProgressIndex)
 			}
 			// Fewer decode steps is the point of the feature (sanity: the comparison
-			// above is not passing because spec-decode silently did nothing).
+			// above is not passing because spec-decode silently did nothing). Gated on
+			// output > 3 because a 1-3-token output needs at most two decode steps even
+			// at g=1, so there is no room to save one; those rows rely on the same
+			// (K, acc) pairs being proven active by the larger-output rows.
 			if sp.acc > 0 && output > 3 && len(got.ITL) >= len(base.ITL) {
 				t.Errorf("out=%d k=%d acc=%v: decode steps=%d, want fewer than baseline %d",
 					output, sp.k, sp.acc, len(got.ITL), len(base.ITL))
@@ -252,5 +255,78 @@ func TestSpecDecode_CarryNoDrift(t *testing.T) {
 	}
 	if !sawRecovery {
 		t.Error("capped carry did not recover deferred tokens (drift): expected a post-cap peek > 3")
+	}
+}
+
+// #1657 (Request.completionProgressIndex): pins the boundary law that BOTH the
+// completion test (processCompletions) and the spec-decode grant cap now read. The −1
+// and the max(...,1) are load-bearing: BLIS charges output token #1 to prefill
+// completion, and a zero-output request finishes at the end of prefill.
+func TestCompletionProgressIndex_BoundaryLaw(t *testing.T) {
+	cases := []struct {
+		name          string
+		input, output int
+		want          int64
+	}{
+		{name: "zero output finishes at prefill end", input: 8, output: 0, want: 8},
+		{name: "one output finishes at prefill end", input: 8, output: 1, want: 8},
+		{name: "two outputs need one decode token", input: 8, output: 2, want: 9},
+		{name: "n outputs need n-1 decode tokens", input: 20, output: 13, want: 32},
+		{name: "empty input", input: 0, output: 5, want: 4},
+	}
+	for _, c := range cases {
+		req := &Request{
+			ID:           c.name,
+			InputTokens:  make([]TokenID, c.input),
+			OutputTokens: make([]TokenID, c.output),
+		}
+		if got := req.completionProgressIndex(); got != c.want {
+			t.Errorf("%s: completionProgressIndex() = %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
+// #1657 (floor-at-1 liveness, INV-8/INV-11): a PD decode sub-request admitted ALREADY at
+// its completion boundary (a 1-output-token request, whose ProgressIndex starts at
+// InputLen == boundary) must still be granted one token. Its remaining output budget is
+// 0, so a plain min() would grant 0; FormBatch would `break` out of the admission loop
+// and — since the sub-request is not yet in RunningBatch, so nothing force-completes it —
+// it would sit in the wait queue forever. This asserts the grant directly, so the failure
+// mode is a one-line diff rather than a package-level test timeout.
+func TestSpecDecode_PDDecodeSubRequest_AtBoundary_GrantsOneToken(t *testing.T) {
+	s := mustNewSimulator(t, specDecodeSimConfig(5, 1.0)) // g = 1 + 1.0*5 = 6 proposed
+
+	sub := &Request{
+		ID:                 "pd_decode_sub",
+		InputTokens:        make([]TokenID, 16),
+		OutputTokens:       make([]TokenID, 1), // boundary == InputLen: zero budget left
+		State:              StateQueued,
+		IsDecodeSubRequest: true,
+		ProgressIndex:      16, // PD: prefill ran elsewhere, KV was transferred
+	}
+	if sub.completionProgressIndex() != sub.ProgressIndex {
+		t.Fatalf("test setup: want the sub-request admitted AT its boundary, got PI=%d boundary=%d",
+			sub.ProgressIndex, sub.completionProgressIndex())
+	}
+	s.WaitQ.Enqueue(sub)
+
+	result := s.batchFormation.FormBatch(BatchContext{
+		RunningBatch:        &Batch{},
+		WaitQ:               s.WaitQ,
+		KVCache:             s.KVCache,
+		MaxNumBatchedTokens: 10000,
+		MaxNumSeqs:          10,
+		Now:                 1000,
+		ComputedTokens:      make(map[string]int64),
+		DecodeTokensPerStep: s.peekDecodeTokens,
+	})
+
+	if len(result.RunningBatch.Requests) != 1 {
+		t.Fatalf("decode sub-request was not admitted (%d in batch, %d still queued) — it would be stranded forever",
+			len(result.RunningBatch.Requests), s.WaitQ.Len())
+	}
+	if sub.NumNewTokens != 1 {
+		t.Errorf("NumNewTokens = %d, want 1 (floored at 1 at the boundary; 0 strands the request, >1 overshoots)",
+			sub.NumNewTokens)
 	}
 }

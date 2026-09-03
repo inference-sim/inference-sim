@@ -155,7 +155,7 @@ func (req *Request) InputLen() int64 {
 	return int64(len(req.InputTokens))
 }
 
-// CompletionProgressIndex returns the ProgressIndex at which this request is finished:
+// completionProgressIndex returns the ProgressIndex at which this request is finished:
 // InputLen + max(len(OutputTokens), 1) - 1. BLIS charges output token #1 to prefill
 // completion and every later token to a decode step, so a request that generated its
 // full assigned output sits exactly `len(OutputTokens) - 1` decode tokens past its
@@ -167,7 +167,11 @@ func (req *Request) InputLen() int64 {
 // grant by the distance to it (#1657) so a step lands exactly ON it rather than past
 // it. Were the two to disagree, a step could overshoot and inflate the request's
 // apparent output.
-func (req *Request) CompletionProgressIndex() int64 {
+//
+// Unexported deliberately: both callers live in package sim (the execution engine), and
+// the value is oracle-derived from len(OutputTokens), so keeping it package-private also
+// keeps it out of reach of any out-of-package control-plane code (INV-9).
+func (req *Request) completionProgressIndex() int64 {
 	return req.InputLen() + max(int64(len(req.OutputTokens)), 1) - 1
 }
 

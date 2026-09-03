@@ -86,7 +86,7 @@ const (
 )
 
 // decodeTokensToCompletion returns how many more decode tokens a request needs to reach
-// its completion boundary (Request.CompletionProgressIndex — the same value
+// its completion boundary (Request.completionProgressIndex — the same value
 // processCompletions tests against). Zero means the request already sits at, or past,
 // the boundary.
 //
@@ -99,11 +99,13 @@ const (
 // session reads back as output-accounting corruption (SessionManager.OnComplete
 // cancels the whole session).
 //
-// Reading OutputTokens here is per-step execution planning — which INV-9 explicitly
-// permits for FormBatch, the same read the decode-phase gate already performs — not a
-// servability decision.
+// Reading OutputTokens here is per-step execution planning — which INV-9's Scope
+// paragraph permits for FormBatch, the same read the decode-phase gate already performs
+// — not a servability decision. The Phase-2 (admission-loop) call site is covered by
+// INV-9's explicit bounded carve-out: the cap is monotone-shrinking and floored at 1, so
+// it can never reject or reorder an admission — see invariants.md INV-9.
 func decodeTokensToCompletion(req *Request) int64 {
-	return max(req.CompletionProgressIndex()-req.ProgressIndex, 0)
+	return max(req.completionProgressIndex()-req.ProgressIndex, 0)
 }
 
 // VLLMBatchFormation implements the vLLM FCFS + chunked-prefill + preemption strategy.
