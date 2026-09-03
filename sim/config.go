@@ -329,15 +329,42 @@ func (c ModelHardwareConfig) EffectiveMoEGroupSize() int {
 	return c.TP
 }
 
-// EffectiveEP returns the expert-parallel group size: TP·DP when expert
-// parallelism is enabled for an MoE model, else 1. This is an EP-mode
-// predicate/size only — it is NOT the EP-off sharding divisor (that is
-// EffectiveMoEGroupSize).
-func (c ModelHardwareConfig) EffectiveEP() int {
-	if c.EnableExpertParallel && c.isMoE() {
-		return c.TP * c.EffectiveDP()
+// EffectiveEPSize is the canonical expert-parallel group-size formula: TP·DP when
+// expert parallelism is enabled for an MoE model (mirroring vLLM, where
+// --enable-expert-parallel makes ep_size = dp_size·tp_size), else 1 meaning "EP off"
+// — routed experts are then replicated per DP rank and tensor-sharded across the TP
+// group. It is an EP-mode predicate/size only: it is NOT the EP-off sharding divisor
+// (that is EffectiveMoEGroupSize).
+//
+// It is a free function, not only the ModelHardwareConfig accessor below, because the
+// consumers that need the LOGICAL (user-requested) group size — the CLI KV-capacity
+// auto-calculation paths (#1656), which hold the raw --tp / --dp /
+// --enable-expert-parallel values — cannot read it off a per-instance config:
+// DP-as-placement (#1531) reconfigures each engine replica to DP=1, so a config-bound
+// EP collapses to TP and any EP-dependent sizing would silently no-op for exactly the
+// TP×DP topology that needs it. Pure (no receiver state), so both the logical and the
+// config-bound value are computed by one formula (R23).
+//
+// dp is clamped at 1 (an unset/zero DP is a single rank). tp is NOT clamped: TP=0 is a
+// meaningful "invalid config" vehicle rejected downstream by the latency-model factory
+// and by CalculateKVBlocks (see NewModelHardwareConfig), and returning 0 there keeps
+// this a pure formula rather than a second validation site.
+func EffectiveEPSize(isMoE bool, tp, dp int, enableExpertParallel bool) int {
+	if !enableExpertParallel || !isMoE {
+		return 1
 	}
-	return 1
+	if dp < 1 {
+		dp = 1
+	}
+	return tp * dp
+}
+
+// EffectiveEP is the config-bound accessor for EffectiveEPSize: the expert-parallel
+// group size implied by THIS config's (possibly per-replica) parallelism degrees.
+// Semantics are unchanged from before #1656 — TP·DP when EP is enabled for an MoE
+// model, else 1.
+func (c ModelHardwareConfig) EffectiveEP() int {
+	return EffectiveEPSize(c.isMoE(), c.TP, c.EffectiveDP(), c.EnableExpertParallel)
 }
 
 // PolicyConfig groups scheduling and preemption policy selection.

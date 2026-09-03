@@ -2035,19 +2035,28 @@ func TestCalculateKVBlocks_DPScaling_MoE(t *testing.T) {
 	}
 }
 
-// TestCalculateKVBlocks_DPScaling_EPIndependent verifies KV capacity is independent of
-// expert-parallel mode (#1420): KV serves attention, and EP touches only MoE expert
-// sharding, never attention/KV. CalculateKVBlocks has no EP parameter at all — this test
-// documents that contract: the same (mc, hc, tp, dp, params) gives the same capacity
-// regardless of how the caller intends to shard experts. (EP-off vs EP-on both arrive
-// here identically.)
-func TestCalculateKVBlocks_DPScaling_EPIndependent(t *testing.T) {
+// TestCalculateKVBlocks_DPScaling_KVSizingEPIndependent verifies the part of #1420's
+// EP-independence that survives #1656: what EP can and cannot touch.
+//
+// EP shards MoE experts, never attention — so PER-TOKEN KV bytes (hence per-block bytes)
+// are EP-independent, structurally: KVBytesPerToken takes no EP input at all. What EP
+// does change (#1656) is the WEIGHT footprint subtracted from the memory budget, and
+// therefore how many blocks are left over. This test pins both halves: the per-block size
+// is identical across EP settings, and DP block scaling stays exactly ×dp at a fixed EP
+// group — so a future change cannot smuggle an EP effect into the attention sizing or
+// into the DP multiplier.
+func TestCalculateKVBlocks_DPScaling_KVSizingEPIndependent(t *testing.T) {
 	mc := validMoEModelConfig()
 	hc := validHWConfig()
 	params := validMoEKVParams()
-	// There is no EP knob to vary; capacity is a pure function of (tp, dp). Assert the
-	// dp=2 result is deterministic and exactly 2× dp=1 — the EP-independence is structural
-	// (no EP input exists), and this pins it so a future EP param can't silently change KV.
+
+	// Per-token/per-block KV bytes: no EP input exists, and the value is TP-sized only.
+	perBlockTP2 := perBlockBytesFor(t, mc, 2, 16)
+	if perBlockTP2 <= 0 {
+		t.Fatalf("per-block bytes must be positive, got %d", perBlockTP2)
+	}
+
+	// DP scaling is exactly ×dp with EP off ...
 	dp1, err := latency.CalculateKVBlocks(mc, hc, 2, 1, 16, 0.9, params)
 	if err != nil {
 		t.Fatalf("dp=1: %v", err)
@@ -2057,7 +2066,21 @@ func TestCalculateKVBlocks_DPScaling_EPIndependent(t *testing.T) {
 		t.Fatalf("dp=2: %v", err)
 	}
 	if dp2 != dp1*2 {
-		t.Errorf("EP-independent DP scaling: dp2=%d, want %d", dp2, dp1*2)
+		t.Errorf("DP scaling with EP off: dp2=%d, want %d", dp2, dp1*2)
+	}
+
+	// ... and also exactly ×dp at a FIXED EP group size (EP changes the per-rank budget,
+	// never the number of ranks).
+	epDP2, err := latency.CalculateKVBlocks(mc, hc, 2, 2, 16, 0.9, params, latency.WithExpertParallelSize(2))
+	if err != nil {
+		t.Fatalf("dp=2, ep=2: %v", err)
+	}
+	epDP4, err := latency.CalculateKVBlocks(mc, hc, 2, 4, 16, 0.9, params, latency.WithExpertParallelSize(2))
+	if err != nil {
+		t.Fatalf("dp=4, ep=2: %v", err)
+	}
+	if epDP4 != epDP2*2 {
+		t.Errorf("DP scaling at fixed EP group: dp=4 gave %d, want %d (= 2 × dp=2)", epDP4, epDP2*2)
 	}
 }
 

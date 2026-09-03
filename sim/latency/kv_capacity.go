@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/sirupsen/logrus"
 )
 
 // KVCapacityParams holds model-architecture parameters that are not part of
@@ -31,6 +32,15 @@ func NewKVCapacityParams(isMoE bool, numLocalExperts int, tieWordEmbeddings bool
 		MoEExpertFFNDim:    moeExpertFFNDim,
 		SharedExpertFFNDim: sharedExpertFFNDim,
 	}
+}
+
+// hasRoutedExperts reports whether the weight estimator's MoE branch applies — i.e.
+// whether the model carries routed (FusedMoE) expert weights at all. It is the single
+// predicate for that question (R23): the expert-parallel resolution and the weight
+// arithmetic must agree on it, or a group size could be validated against experts the
+// weight term does not charge.
+func (p KVCapacityParams) hasRoutedExperts() bool {
+	return p.IsMoE && p.NumLocalExperts >= sim.MoEMinExperts
 }
 
 // Constants matching the llm-d-benchmark capacity_planner.py reference.
@@ -184,6 +194,7 @@ func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
 // #1467) keeps the existing positional call sites unchanged.
 type kvCapacityOptions struct {
 	adapterReservedBytes int64
+	expertParallelSize   int
 }
 
 // KVCapacityOption customizes CalculateKVBlocks.
@@ -197,6 +208,126 @@ type KVCapacityOption func(*kvCapacityOptions)
 // rejected by CalculateKVBlocks.
 func WithAdapterReservedBytes(bytes int64) KVCapacityOption {
 	return func(o *kvCapacityOptions) { o.adapterReservedBytes = bytes }
+}
+
+// WithExpertParallelSize declares the expert-parallel (EP) group size: the number of
+// GPUs the model's ROUTED-EXPERT weights are sharded across (#1656). Under vLLM's
+// --enable-expert-parallel, ep_size = dp_size·tp_size and each rank owns
+// num_experts/ep_size WHOLE experts; every other weight (attention, shared experts,
+// dense-prefix MLP, the router/gate, embeddings, norms) stays on the TP-sharded path,
+// so the EP-ON per-GPU routed footprint this option produces (R/ep) matches vLLM.
+//
+// The EP-OFF baseline it is differenced against is BLIS's own DP model, NOT vLLM's:
+// BLIS models MoE --dp N as N independent single-node engine replicas (#1531), each
+// holding the full model tensor-sharded across its TP GPUs, so routed experts are
+// charged at R/tp per GPU. vLLM instead flattens TP across DP for MoE layers
+// unconditionally (FusedMoEParallelConfig.make → flatten_tp_across_dp_and_pcp: at
+// TP=2/DP=2 with EP OFF the MoE tp_size is 4), so real vLLM per-GPU routed bytes are
+// R/(tp·dp) in BOTH modes. BLIS's EP-off DP>1 capacity is therefore CONSERVATIVE
+// (over-charges) relative to vLLM — a divergence in BLIS's DP model rather than in this
+// option, tracked separately; the trained-physics step-time model already uses the
+// flattened TP·DP group.
+//
+// The canonical value is sim.EffectiveEPSize(isMoE, tp, dp, enableExpertParallel) —
+// computed from the LOGICAL, user-requested topology. A per-instance config is not a
+// safe source: DP-as-placement (#1531) reconfigures each engine replica to DP=1, so a
+// config-bound EP collapses to TP and the sharding silently vanishes.
+//
+// 0 (the option absent), 1 (sim.EffectiveEPSize's "EP off" value), and any value <= tp
+// all mean "no sharding beyond the TP group": the pre-#1656 accounting ⇒ byte-identical
+// block counts (INV-6). A larger value must satisfy ep <= tp·dp — the EP group cannot
+// span more GPUs than the deployment has — and a group wider than the routed-expert
+// count is CLAMPED to that count with a warning (the loaded ranks still hold one whole
+// expert each; charging the sub-one-expert average would be optimistic).
+func WithExpertParallelSize(ep int) KVCapacityOption {
+	return func(o *kvCapacityOptions) { o.expertParallelSize = ep }
+}
+
+// resolveExpertShardSize resolves the WithExpertParallelSize option into the number of
+// GPUs routed-expert weights are sharded across, given the rank's TP degree, the
+// deployment's DP degree, and the model's routed-expert count (0 for a model with no
+// routed experts). EP off (0 or 1) resolves to tp — the pre-#1656 accounting.
+//
+// Callers must have validated tp > 0 and dp >= 1 before calling (CalculateKVBlocks does,
+// via KVBytesPerToken and its own dp guard), so the bounds below cannot be reported
+// against a degenerate topology. int64 arithmetic in the upper bound keeps an absurd
+// tp·dp from overflowing into a permissive comparison.
+//
+// The bounds encode vLLM's flattened MoE group (ep_size = dp_size·tp_size), which is the
+// deployment model BLIS represents; they are deliberately not a general law (SGLang's
+// independent --ep-size, for instance, satisfies ep_size <= tp_size).
+//
+// Two bad-input directions, handled differently on purpose — the resolved value is a
+// DIVISOR of the routed-expert bytes (charge = R·tp/shard), so a LARGER resolved value
+// charges LESS memory and a SMALLER one charges MORE:
+//
+//   - ep > tp·dp is REJECTED. There is no safe value to substitute: the caller has
+//     described a deployment with more EP ranks than GPUs, and honouring it would charge
+//     only tp·dp/ep of the routed experts — capacity for memory that does not exist.
+//     This bound is load-bearing and is deliberately NOT clamped.
+//   - ep > num_routed_experts is CLAMPED DOWN to num_routed_experts. Clamping down
+//     shrinks the divisor, so it charges MORE memory than the caller asked for — the
+//     conservative direction, and the physically right one (see the clamp site below).
+//
+// So both directions end up at or above the true footprint; neither can inflate capacity.
+func resolveExpertShardSize(ep, tp, dp, numRoutedExperts int) (int, error) {
+	if ep < 0 {
+		return 0, fmt.Errorf("expert-parallel group size must be >= 0 (0 or 1 means EP off), got %d", ep)
+	}
+	// Defensive: CalculateKVBlocks guarantees tp > 0 here, but this function divides by tp
+	// below (the overflow probe), so a future caller must not be able to reach that with a
+	// zero TP.
+	if tp < 1 {
+		return 0, fmt.Errorf("expert-parallel group size cannot be resolved for TP %d (must be > 0)", tp)
+	}
+	// Anything at or below tp means "no sharding beyond the TP group" and resolves to the
+	// pre-#1656 accounting. This includes the option's off sentinels (0, 1) AND the very
+	// common ep == tp case — a DP=1 deployment with --enable-expert-parallel, where the EP
+	// group IS the TP group. Those must never fail validation: the weight arithmetic is a
+	// strict no-op for them (INV-6), so a bound rejection here would break configurations
+	// that size fine, without changing any number. A value in (1, tp) is not a vLLM
+	// topology (its EP group is tp·dp ≥ tp), and BLIS's arithmetic cannot express charging
+	// MORE than the TP-sharded footprint, so it too resolves to tp rather than pretending
+	// to model it.
+	if ep <= tp {
+		return tp, nil
+	}
+	// Go's int64 multiply wraps silently, and a wrapped (negative or small) product would
+	// turn the upper bound below into a permissive one. Detect it instead of trusting it.
+	maxGroup := int64(tp) * int64(dp)
+	if maxGroup/int64(tp) != int64(dp) {
+		return 0, fmt.Errorf("expert-parallel bound is not computable: TP·DP overflows int64 (tp=%d, dp=%d)", tp, dp)
+	}
+	if int64(ep) > maxGroup {
+		return 0, fmt.Errorf("expert-parallel group size (%d) must be <= TP·DP (%d·%d = %d): the EP group cannot span more GPUs than the deployment has", ep, tp, dp, maxGroup)
+	}
+	// A group wider than the routed-expert count is a real planning input for wide EP
+	// (DeepSeek-class EP320 over 256 experts, and any deployment using --enable-eplb /
+	// --num-redundant-experts; vLLM does not reject it either — only --enable-eplb requires
+	// an even distribution), so it is CLAMPED, not rejected.
+	//
+	// Why num_routed_experts is the right clamp: the ranks that hold an expert hold one
+	// WHOLE expert, so num_experts is the widest divisor the weight footprint can support.
+	// Charging the sub-one-expert average num_experts/ep would be optimistic — capacity for
+	// memory that does not exist — while clamping DOWN to num_experts shrinks the divisor
+	// and therefore charges MORE memory (fewer KV blocks): the safe direction.
+	//
+	// Why not reject: rejecting was tried during review of #1656 and is strictly worse. It
+	// fired on the INERT ep == tp case (every DP=1 --enable-expert-parallel run, where the
+	// block count does not change at all), breaking configurations that had always sized —
+	// e.g. --tp 16 --enable-expert-parallel on an 8-expert Mixtral — and for genuine wide EP
+	// it replaced the CLI's honest unsupported-topology diagnostic (#1548) with an
+	// expert-count fatal, which is the masking the feature exists to remove.
+	//
+	// Warned, never silent (R1): the caller's requested group, the model's expert count and
+	// the substituted divisor are all named on stderr.
+	if numRoutedExperts > 0 && ep > numRoutedExperts {
+		logrus.Warnf("KV capacity: expert-parallel group size %d exceeds the model's routed-expert count %d; "+
+			"charging routed-expert weights over %d GPUs (one whole expert each) instead. Expert redundancy "+
+			"(--enable-eplb / --num-redundant-experts) is not modeled.", ep, numRoutedExperts, numRoutedExperts)
+		return numRoutedExperts, nil
+	}
+	return ep, nil
 }
 
 // CalculateKVBlocks computes the maximum number of KV cache blocks that fit
@@ -217,8 +348,10 @@ func WithAdapterReservedBytes(bytes int64) KVCapacityOption {
 //     EngineCore with its own full KV budget on its own GPUs, and requests split
 //     disjointly across ranks (vllm@f6ec81c7 v1/engine/core.py:1243-1276). Per-GPU KV
 //     bytes are unaffected (sized by attention TP only), so dp multiplies only the
-//     final block total. KV capacity is EP-mode-independent — EP shards only MoE
-//     experts, never attention/KV — so there is intentionally no EP parameter.
+//     final block total. Per-token KV bytes stay EP-mode-independent — EP shards only
+//     MoE experts, never attention/KV — but the model's WEIGHT footprint is not: see
+//     WithExpertParallelSize (#1656), which shards the routed-expert term across the
+//     EP group and so changes how much memory is left over for KV.
 //
 //     The isMoE gate below is the active correctness guard for dense dp > 1: the CLI
 //     also rejects dense dp > 1 and roofline dp > 1 (in resolveLatencyConfig,
@@ -283,6 +416,21 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, dp int,
 		return 0, fmt.Errorf("CalculateKVBlocks: %w", err)
 	}
 
+	// --- Expert-parallel weight sharding (#1656) ---
+	// Resolved after KVBytesPerToken so tp > 0 is already guaranteed (and after the dp
+	// guard above), keeping the bound messages meaningful. EP off ⇒ tp ⇒ the weight
+	// term below is bit-identical to the pre-#1656 expression (INV-6).
+	// routedExpertCount is 0 unless the weight estimator's own MoE branch will run, so the
+	// resolver's expert-count clamp uses exactly the predicate the arithmetic uses (R23).
+	routedExpertCount := 0
+	if params.hasRoutedExperts() {
+		routedExpertCount = params.NumLocalExperts
+	}
+	expertShardSize, epErr := resolveExpertShardSize(opts.expertParallelSize, tp, dp, routedExpertCount)
+	if epErr != nil {
+		return 0, fmt.Errorf("CalculateKVBlocks: %w", epErr)
+	}
+
 	// --- Step 3: Per-block bytes ---
 	// Multiply by blockSize before truncating to int64 to avoid loss when the
 	// per-token value is fractional (e.g., INT4 quantization with small head dims).
@@ -299,7 +447,7 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, dp int,
 	totalAvailableGiB := hc.MemoryGiB * gpuMemoryUtilization * float64(tp)
 
 	// Model weights: total model size (distributed across TP GPUs, but sum = total)
-	modelWeightBytes := computeModelWeightBytes(mc, params)
+	modelWeightBytes := computeModelWeightBytes(mc, params, tp, expertShardSize)
 	modelWeightGiB := float64(modelWeightBytes) / float64(gibToBytes)
 
 	// Activation memory: per-replica constant, NOT multiplied by TP. This budget is
@@ -356,12 +504,26 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, dp int,
 		tpIndependentOverhead := modelWeightGiB + activationGiB + adapterReservedGiB
 		minTP := int(math.Ceil(tpIndependentOverhead / perGPUCapacity))
 
+		// Under expert parallelism the weight term already reflects routed experts sharded
+		// across the EP group, so the minimum-GPU estimate is only meaningful under the
+		// assumption the CLI actually satisfies: that the EP group grows with TP at the
+		// same DP (ep = TP·DP), which makes the routed term R/DP and hence TP-independent.
+		// Under a literally fixed group the per-GPU floor R/ep never shrinks with TP and
+		// the number can be unreachable, so name the assumption rather than let the number
+		// read as EP-blind. Empty (message byte-identical to the pre-#1656 text) whenever
+		// the EP reduction is not active.
+		epNote := ""
+		if expertShardSize > tp {
+			epNote = fmt.Sprintf(" Routed-expert weights are sharded across the expert-parallel group (size %d); "+
+				"the minimum-GPU estimate assumes that group grows with TP at the same DP (ep = TP·DP).", expertShardSize)
+		}
+
 		return 0, fmt.Errorf(
 			"CalculateKVBlocks: model overhead (%.2f GiB = %.2f weights + %.2f activation + %.2f non-torch + %.2f lora-adapter-reservation) "+
 				"exceeds available GPU memory (%.2f GiB = %.1f GiB × %.0f%% util × %d GPUs). "+
-				"Minimum GPUs required per instance: %d",
+				"Minimum GPUs required per instance: %d%s",
 			overheadGiB, modelWeightGiB, activationGiB, nonTorchGiB, adapterReservedGiB,
-			totalAvailableGiB, hc.MemoryGiB, gpuMemoryUtilization*100, tp, minTP)
+			totalAvailableGiB, hc.MemoryGiB, gpuMemoryUtilization*100, tp, minTP, epNote)
 	}
 
 	allocatableGiB := totalAvailableGiB - overheadGiB
@@ -389,9 +551,27 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, dp int,
 	return totalBlocks, nil
 }
 
-// computeModelWeightBytes estimates total model weight bytes using the
-// standard transformer architecture formula. Matches capacity_planner.py.
-func computeModelWeightBytes(mc sim.ModelConfig, params KVCapacityParams) int64 {
+// computeModelWeightBytes estimates the model weight bytes CHARGED AGAINST ONE DP
+// RANK's TP-GPU memory budget, using the standard transformer architecture formula.
+// Matches capacity_planner.py.
+//
+// The value is a TOTAL over the rank's tp GPUs: CalculateKVBlocks compares it against
+// gpu_mem × util × tp, so the implicit per-GPU charge is (returned bytes)/tp — i.e.
+// weights are modeled as tensor-sharded across the TP group.
+//
+// expertShardSize is the number of GPUs the ROUTED-EXPERT weights are sharded across
+// (#1656): tp when expert parallelism is off (experts replicated per DP rank, the
+// pre-#1656 accounting), or the EP group size tp·dp when it is on. Because the return
+// value is a per-rank total on a tp basis, the routed-expert term is scaled by
+// tp/expertShardSize — which makes the per-GPU charge routedBytes/expertShardSize,
+// NOT routedBytes/(tp·expertShardSize). Every other term (attention, shared experts,
+// dense-prefix MLP, router/gate, embeddings, norms) stays TP-sharded, mirroring vLLM:
+// only FusedMoE routed-expert weights are distributed over the EP group.
+//
+// expertShardSize <= tp (or a model with no routed experts) returns the original
+// expression evaluated in the original order, so EP-off results are bit-identical
+// (INV-6).
+func computeModelWeightBytes(mc sim.ModelConfig, params KVCapacityParams, tp, expertShardSize int) int64 {
 	hiddenDim := int64(mc.HiddenDim)
 	vocabSize := int64(mc.VocabSize)
 	numLayers := int64(mc.NumLayers)
@@ -429,19 +609,25 @@ func computeModelWeightBytes(mc sim.ModelConfig, params KVCapacityParams) int64 
 	// distinct from the every-Nth InterleaveMoELayerStep. K == 0 (or absent) ⇒ all
 	// layers MoE ⇒ byte-identical to the pre-F3 all-MoE accounting (INV-6).
 	var totalMLPParams int64
-	// The NumLocalExperts >= MoEMinExperts clause is a defensive guard, not a
-	// duplicate of IsMoE: NewKVCapacityParams is a public positional constructor, so
-	// a caller could pass an inconsistent (IsMoE=true, NumLocalExperts<2) pair. The
-	// MoE arithmetic below multiplies by NumLocalExperts, so a degenerate count would
-	// silently produce zero/under-weighted MLP bytes — this keeps it on the dense path.
-	if params.IsMoE && params.NumLocalExperts >= sim.MoEMinExperts {
+	// routedExpertParams is the routed-expert (FusedMoE) share of totalMLPParams — the
+	// only term expert parallelism shards differently from tensor parallelism (#1656).
+	// It stays 0 for a dense model and for a degenerate sub-threshold expert count, so
+	// those models are EP-inert by construction.
+	var routedExpertParams int64
+	// hasRoutedExperts requires NumLocalExperts >= MoEMinExperts as well as IsMoE, which is
+	// a defensive guard rather than a duplicate: NewKVCapacityParams is a public positional
+	// constructor, so a caller could pass an inconsistent (IsMoE=true, NumLocalExperts<2)
+	// pair. The MoE arithmetic below multiplies by NumLocalExperts, so a degenerate count
+	// would silently produce zero/under-weighted MLP bytes — this keeps it on the dense path.
+	if params.hasRoutedExperts() {
 		// MoE per-layer term: use per-expert FFN dim for routed experts, add shared and gate.
 		expertFFNDim := intermediateDim // Mixtral convention: IntermediateDim IS per-expert
 		if params.MoEExpertFFNDim > 0 {
 			expertFFNDim = int64(params.MoEExpertFFNDim)
 		}
 		// All routed experts (total model weight, not active)
-		moeMLPPerLayer := 3 * hiddenDim * expertFFNDim * int64(params.NumLocalExperts)
+		routedExpertPerLayer := 3 * hiddenDim * expertFFNDim * int64(params.NumLocalExperts)
+		moeMLPPerLayer := routedExpertPerLayer
 		// Shared experts
 		if params.SharedExpertFFNDim > 0 {
 			moeMLPPerLayer += 3 * hiddenDim * int64(params.SharedExpertFFNDim)
@@ -471,6 +657,8 @@ func computeModelWeightBytes(mc sim.ModelConfig, params KVCapacityParams) int64 
 		}
 		numMoELayers := numLayers - numDenseLayers
 		totalMLPParams = numDenseLayers*densePrefixMLPPerLayer + numMoELayers*moeMLPPerLayer
+		// Only the MoE layers carry routed experts; the dense-prefix layers do not.
+		routedExpertParams = numMoELayers * routedExpertPerLayer
 	} else {
 		// Dense model: every layer uses the dense MLP term.
 		totalMLPParams = numLayers * denseMLPPerLayer
@@ -493,6 +681,16 @@ func computeModelWeightBytes(mc sim.ModelConfig, params KVCapacityParams) int64 
 	finalNorm := hiddenDim
 
 	totalParams := embeddings + attentionAndNormsAllLayers + totalMLPParams + lmHead + finalNorm
+
+	// Expert-parallel sharding of the routed-expert term (#1656). Guarded so the EP-off
+	// path returns the original expression untouched (INV-6), and so a non-MoE model —
+	// which has no routed experts to shard — is inert even if a group size is supplied.
+	if expertShardSize > tp && routedExpertParams > 0 {
+		nonRoutedParams := totalParams - routedExpertParams
+		scaledRoutedParams := float64(routedExpertParams) * float64(tp) / float64(expertShardSize)
+		return int64((float64(nonRoutedParams) + scaledRoutedParams) * mc.EffectiveWeightBytesPerParam())
+	}
+
 	return int64(float64(totalParams) * mc.EffectiveWeightBytesPerParam())
 }
 

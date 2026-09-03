@@ -474,7 +474,8 @@ Example:
 							// Per-pool TP but GLOBAL dp: per-pool DP is out of scope (#1420);
 							// --dp applies uniformly to all pools. Mirrors run (cmd/root.go).
 							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolPrefillTP, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
-								latency.WithAdapterReservedBytes(loraReservedBytesForKV))
+								latency.WithAdapterReservedBytes(loraReservedBytesForKV),
+								latency.WithExpertParallelSize(epSizeForKVCapacity(lr.ModelConfig.IsMoE(), poolPrefillTP)))
 							if calcErr != nil {
 								logrus.Fatalf("--prefill-tp/--prefill-hardware: KV capacity auto-calculation failed for prefill pool: %v", calcErr)
 							} else {
@@ -510,7 +511,8 @@ Example:
 						} else {
 							// Per-pool TP, global dp (see prefill-pool note above; #1420).
 							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolDecodeTP, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
-								latency.WithAdapterReservedBytes(loraReservedBytesForKV))
+								latency.WithAdapterReservedBytes(loraReservedBytesForKV),
+								latency.WithExpertParallelSize(epSizeForKVCapacity(lr.ModelConfig.IsMoE(), poolDecodeTP)))
 							if calcErr != nil {
 								logrus.Fatalf("--decode-tp/--decode-hardware: KV capacity auto-calculation failed for decode pool: %v", calcErr)
 							} else {
