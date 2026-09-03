@@ -1,8 +1,9 @@
 name: Deliver — Implement
 
 # Phase 1 of the L1 delivery loop (#1654). A collaborator comments
-#   /approve-issue-for-pr-delivery #N
-# on a sub-issue. This opens a PR for it, then hands off to Deliver — Verify.
+#   /approve-issue-for-pr-delivery
+# on a sub-issue. The target is the issue the comment was made on — no argument. This opens a
+# PR for it, then hands off to Deliver — Verify.
 #
 # WHY workflow_dispatch AND NOT workflow_run: GitHub caps workflow_run chains at three levels
 # ("You can't use workflow_run to chain together more than three levels of workflows"), which
@@ -58,26 +59,42 @@ jobs:
               core.info(`User ${context.actor} is not a collaborator — skipping.`);
             }
 
-      # The sub-issue number is UNTRUSTED input: anyone who can comment controls the string.
-      # Validated to digits here and only ever used as a number afterwards, never interpolated
-      # into a shell command. Same treatment as archon.yml's --archon-ref parse.
-      - name: Parse sub-issue number
+      # The target is WHERE THE COMMAND WAS TYPED — `github.event.issue.number`. There is
+      # deliberately no `#N` argument: the comment already lives on the sub-issue being
+      # delivered, so an argument would be redundant in the common case and a footgun in the
+      # rest (commenting on #100 with `#200` would deliver something other than the issue you
+      # are reading). This also removes an untrusted string from the flow entirely — the number
+      # now comes from the event payload, never from comment text.
+      #
+      # A `#N` is still tolerated when it AGREES with the current issue, because the earlier
+      # documented form used one and people will type it out of habit. A disagreeing number is
+      # refused rather than silently ignored: quietly delivering a different issue than the one
+      # named is the surprise this guard exists to prevent.
+      - name: Resolve the target sub-issue
         id: parse
         if: steps.check.outputs.allowed == 'true'
         uses: actions/github-script@v8
         with:
           script: |
-            const match = context.payload.comment.body.match(/\/approve-issue-for-pr-delivery\s+#(\d+)\b/);
-            if (!match) {
+            const here = context.issue.number;
+            const named = context.payload.comment.body.match(/\/approve-issue-for-pr-delivery\s+#(\d+)\b/);
+            if (named && Number(named[1]) !== here) {
               await github.rest.issues.createComment({
-                owner: context.repo.owner, repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: 'The delivery command needs a sub-issue number:\n\n```\n/approve-issue-for-pr-delivery #<number>\n```'
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: here,
+                body: [
+                  `This command delivers the issue it is commented on (#${here}), but it names #${named[1]}.`,
+                  '',
+                  `Refusing rather than guessing. To deliver #${named[1]}, comment on that issue instead:`,
+                  '',
+                  '```',
+                  '/approve-issue-for-pr-delivery',
+                  '```'
+                ].join('\n')
               });
-              core.setFailed('no sub-issue number in the command');
+              core.setFailed(`command names #${named[1]} but was issued on #${here}`);
               return;
             }
-            core.setOutput('issue_number', match[1]);
+            core.setOutput('issue_number', String(here));
 
   deliver:
     needs: check-permissions

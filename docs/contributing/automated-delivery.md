@@ -6,11 +6,13 @@ This is the automated counterpart to [PR Workflow](pr-workflow.md), which remain
 
 ## The command
 
-Comment on the sub-issue:
+Comment on the sub-issue you want delivered:
 
 ```
-/approve-issue-for-pr-delivery #1234
+/approve-issue-for-pr-delivery
 ```
+
+**No issue number.** The target is the issue you commented on. An argument would be redundant — you are already on the issue — and a hazard: commenting on #100 with `#200` would deliver something other than what you are reading. A `#N` that *agrees* with the current issue is tolerated, since the earlier documented form used one; a disagreeing one is refused with an explanation rather than silently ignored.
 
 Restricted to repository collaborators, same as `/archon-pr-review` and `@claude`.
 
@@ -19,7 +21,7 @@ Then leave. Every phase posts a comment, so the whole delivery history is readab
 ## What happens
 
 ```
-/approve-issue-for-pr-delivery #N
+/approve-issue-for-pr-delivery
   │
   ├─ Deliver — Implement    branch deliver/issue-N, tests, PR, self-review
   │      ↓
