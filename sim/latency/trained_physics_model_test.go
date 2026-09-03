@@ -275,8 +275,8 @@ func TestTrainedPhysicsModel_FactoryConstruction(t *testing.T) {
 
 	t.Run("invalid_moe_missing_experts_per_tok", func(t *testing.T) {
 		cfg := trainedPhysicsTestModelConfig()
-		cfg.NumLocalExperts = 8      // MoE model
-		cfg.NumExpertsPerTok = 0     // Invalid: must be > 0 for MoE
+		cfg.NumLocalExperts = 8  // MoE model
+		cfg.NumExpertsPerTok = 0 // Invalid: must be > 0 for MoE
 		hw := sim.ModelHardwareConfig{
 			Backend:     "trained-physics",
 			TP:          1,
@@ -337,7 +337,7 @@ func trainedPhysicsTestModelConfig() *sim.ModelConfig {
 		NumHeads:               32,
 		NumKVHeads:             8,
 		IntermediateDim:        14336,
-		NumLocalExperts:        0,  // Dense by default
+		NumLocalExperts:        0, // Dense by default
 		NumExpertsPerTok:       0,
 		InterleaveMoELayerStep: 0,
 		DenseIntermediateDim:   0,
@@ -583,4 +583,51 @@ func TestRoofline_SpecDecodeVerifyWidthCost(t *testing.T) {
 
 	assert.Greater(t, t1, t0, "K=1 verify width must cost more than K=0 (roofline)")
 	assert.Greater(t, t4, t1, "step cost must be monotone in K (roofline)")
+}
+
+// #1657 guard on the #1528 cost/progress split: a decode step's cost is the VERIFY
+// WIDTH (K+1 positions in one forward pass), NOT the number of tokens the scheduler
+// granted. This matters because #1657 clamps the granted count on a request's final
+// step so it lands exactly on its completion boundary — vLLM likewise trims the
+// accepted tokens in _update_from_output AFTER the forward pass already ran at full
+// width. If StepTime ever started reading req.NumNewTokens for decode requests, that
+// clamped final step would get silently CHEAPER: the simulator would then bill
+// speculative decoding for progress it did not pay for, which inverts the whole point
+// of the split. Both backends must be insensitive to the granted count.
+func TestSpecDecode_DecodeStepCostIsVerifyWidth_NotGrantedTokens(t *testing.T) {
+	const k = 5
+	const count, seqLen = 256, 512
+
+	// grantedTokens varies from a fully-accepted step (K+1) down to the single-token
+	// grant a boundary clamp produces. Cost must not move.
+	withGrant := func(g int) []*sim.Request {
+		batch := makeDecodeBatch(count, seqLen)
+		for _, r := range batch {
+			r.NumNewTokens = g
+		}
+		return batch
+	}
+
+	backends := map[string]sim.LatencyModel{
+		"trained-physics": newTestTrainedPhysicsModelSpec(t, k),
+		"roofline":        newTestRooflineModelSpec(t, k),
+	}
+	for name, m := range backends {
+		full := m.StepTime(withGrant(k + 1))
+		clamped := m.StepTime(withGrant(1))
+		assert.Equal(t, full, clamped,
+			"%s: a boundary-clamped decode step (granted 1) must cost the same as a fully-accepted one (granted K+1=%d) — cost is verify width, not granted tokens (#1528/#1657)",
+			name, k+1)
+		// Non-vacuity: the width itself must still matter, otherwise the equality
+		// above would pass on a model that ignores spec-decode entirely.
+		k0 := m.StepTime(withGrant(1))
+		var zero sim.LatencyModel
+		if name == "trained-physics" {
+			zero = newTestTrainedPhysicsModelSpec(t, 0)
+		} else {
+			zero = newTestRooflineModelSpec(t, 0)
+		}
+		assert.Greater(t, k0, zero.StepTime(withGrant(1)),
+			"%s: K=%d must still cost more than K=0 at the same granted count (guards against a vacuous equality)", name, k)
+	}
 }
