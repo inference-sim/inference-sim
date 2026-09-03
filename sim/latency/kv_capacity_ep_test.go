@@ -470,3 +470,53 @@ func TestCalculateKVBlocks_EP_RoutedWeightConservation(t *testing.T) {
 			gotFreedTotal, wantFreedTotal, routedBytes, dp)
 	}
 }
+
+// TestCalculateKVBlocks_EP_ComposesWithAdapterReservation covers the cross-product the
+// two features never exercise together: a static LoRA adapter reservation alongside an
+// ACTIVE EP reduction. They are independent terms of the same budget — EP shrinks the
+// routed-expert weight charge, the reservation carves out a fixed block beside it — so the
+// EP gain must be the same with and without the reservation, and the reservation must cost
+// the same with and without EP. A refactor that folded either into the other (e.g. scaled
+// the reservation by the EP group) breaks one of the two equalities.
+func TestCalculateKVBlocks_EP_ComposesWithAdapterReservation(t *testing.T) {
+	mc, hc, params := validMoEModelConfig(), validHWConfig(), validMoEKVParams()
+	const tp, dp, blockSize, util = 2, 4, int64(16), 0.9
+	const ep = tp * dp
+	reserved := int64(2) << 30 // 2 GiB
+
+	blocks := func(epSize int, res int64) int64 {
+		t.Helper()
+		opts := []latency.KVCapacityOption{latency.WithAdapterReservedBytes(res)}
+		if epSize > 0 {
+			opts = append(opts, latency.WithExpertParallelSize(epSize))
+		}
+		got, err := latency.CalculateKVBlocks(mc, hc, tp, dp, blockSize, util, params, opts...)
+		if err != nil {
+			t.Fatalf("ep=%d reserved=%d: %v", epSize, res, err)
+		}
+		return got
+	}
+
+	offNoRes, onNoRes := blocks(0, 0), blocks(ep, 0)
+	offRes, onRes := blocks(0, reserved), blocks(ep, reserved)
+
+	// The EP gain is independent of the reservation (both are per-rank byte terms, so the
+	// gain can differ only by the int64 truncation of the two budgets — bounded by dp blocks
+	// after Step 6's ×dp).
+	slack := int64(dp)
+	gainNoRes, gainRes := onNoRes-offNoRes, onRes-offRes
+	if gainNoRes-gainRes > slack || gainRes-gainNoRes > slack {
+		t.Errorf("EP gain must not depend on the adapter reservation: %d blocks without, %d with",
+			gainNoRes, gainRes)
+	}
+	// Symmetrically, the reservation's cost is independent of EP.
+	costOff, costOn := offNoRes-offRes, onNoRes-onRes
+	if costOff-costOn > slack || costOn-costOff > slack {
+		t.Errorf("adapter-reservation cost must not depend on EP: %d blocks with EP off, %d with EP on",
+			costOff, costOn)
+	}
+	// And both terms actually moved, so the equalities above are not vacuous.
+	if gainNoRes <= 0 || costOff <= 0 {
+		t.Fatalf("test is vacuous: EP gain=%d, reservation cost=%d (both must be positive)", gainNoRes, costOff)
+	}
+}
