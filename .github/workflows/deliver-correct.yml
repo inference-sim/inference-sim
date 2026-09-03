@@ -46,6 +46,7 @@ jobs:
       # owns. This phase has contents: write and pushes, so it must never be pointed at a PR it
       # does not own.
       - name: Validate the target PR
+        id: target
         run: |
           set -uo pipefail
           [[ "$PR" =~ ^[0-9]+$ && "$ISSUE_NUMBER" =~ ^[0-9]+$ ]] \
@@ -57,6 +58,8 @@ jobs:
             || { echo "::error::#$PR is not on the expected deliver/issue-${ISSUE_NUMBER}"; exit 1; }
           [[ "$(jq -r .state "$RUNNER_TEMP/pr.json")" == "OPEN" ]] \
             || { echo "::error::#$PR is not open"; exit 1; }
+          # Consumed by the failure reporter, which must not write to a PR this loop does not own.
+          echo "owned=true" >> "$GITHUB_OUTPUT"
 
       # BC-9, before any agent runs and before the round counter moves.
       - name: Honour deliver:paused
@@ -75,15 +78,19 @@ jobs:
       # same count forever, and with no workflow_run depth cap to backstop it that is an
       # unbounded loop.
       #
-      # A missing label is fatal here, unlike elsewhere: if the counter cannot advance the loop
-      # loses its only bound, so stopping (and reporting) is the safe failure.
+      # Failing to APPLY the next round label is fatal here, unlike other label failures. Note
+      # this is not about a missing PRIOR label: no round label at all reads as 0 via `max // 0`
+      # and proceeds normally to round 1. What is fatal is being unable to record the new round,
+      # because then the counter cannot advance and the loop loses its only bound.
       - name: Advance the round counter
         id: round
         if: steps.paused.outputs.paused == 'false'
         run: |
           set -uo pipefail
+          # test("^deliver:round-[0-9]+$") not startswith(): `tonumber` throws on a label like
+          # `deliver:round-x`. Here that crash would land AFTER the agent run was already spent.
           current=$(gh pr view "$PR" --repo "$REPO" --json labels \
-                      --jq '[.labels[].name | select(startswith("deliver:round-"))
+                      --jq '[.labels[].name | select(test("^deliver:round-[0-9]+$"))
                              | ltrimstr("deliver:round-") | tonumber] | max // 0')
           next=$(( current + 1 ))
           # REST, not `gh pr edit`: that command pulls `projectCards` over GraphQL, which GitHub
@@ -115,6 +122,17 @@ jobs:
           anthropic_api_key: ${{ secrets.LITELLM_API_KEY }}
           claude_args: '--model ${{ env.DELIVER_MODEL }} --allowed-tools Skill Agent Bash Read Edit Write'
           show_full_output: true
+          # Same reason as the other two phases: the prompts reference skills that live in
+          # plugins. Kept identical to claude.yml.
+          plugin_marketplaces: |
+            https://github.com/anthropics/claude-plugins-official.git
+            https://github.com/obra/superpowers-marketplace.git
+          plugins: |
+            code-review@claude-plugins-official
+            code-simplifier@claude-plugins-official
+            frontend-design@claude-plugins-official
+            pr-review-toolkit@claude-plugins-official
+            superpowers@superpowers-marketplace
           prompt: |
             PR #${{ inputs.pr_number }} (sub-issue #${{ inputs.issue_number }}) has an open
             verdict with numbered findings. This is correction round
@@ -169,8 +187,10 @@ jobs:
       # `cancelled()` as well as `failure()`: the job timeout cancels rather than fails, and a
       # hung agent would otherwise skip the hand-back AND this report, leaving the PR silent
       # with a consumed round and nothing explaining why.
+      # Gated on `owned` for the same reason as the verify phase: a validation refusal must not
+      # be followed by a comment and a label on a PR the loop does not own.
       - name: Report a failed correction
-        if: failure() || cancelled()
+        if: (failure() || cancelled()) && steps.target.outputs.owned == 'true'
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -188,4 +208,5 @@ jobs:
             echo "_[Failed run](${RUN_URL})_"
           } > "$RUNNER_TEMP/failure.md"
           gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/failure.md" || true
+          gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
           gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null || true

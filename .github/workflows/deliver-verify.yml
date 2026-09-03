@@ -27,6 +27,7 @@ permissions:
   issues: read
   pull-requests: write
   actions: write        # required to dispatch the correct phase
+  id-token: write       # required by claude-code-action; every other invocation in the repo has it
 
 on:
   workflow_dispatch:
@@ -84,6 +85,8 @@ jobs:
             echo "sha=$(jq -r '.head.sha' "$RUNNER_TEMP/pr.json")"
             echo "base_sha=$(jq -r '.base.sha' "$RUNNER_TEMP/pr.json")"
             echo "branch=$branch"
+            # Consumed by the failure reporter: it must not write to a PR this loop does not own.
+            echo "owned=true"
           } >> "$GITHUB_OUTPUT"
 
       # BC-9, before any agent runs or any label moves.
@@ -113,10 +116,14 @@ jobs:
           path: pr
           fetch-depth: 0
 
+      # Sourced from go.mod rather than pinned, so the gate always compiles and tests with the
+      # toolchain the repository declares — which is what ci.yml resolves to as well. A pinned
+      # number here drifted from ci.yml on day one. archon needs a newer Go than blis does; its
+      # own go.mod directive makes GOTOOLCHAIN=auto fetch that for the archon build only.
       - uses: actions/setup-go@v5
         if: steps.paused.outputs.paused == 'false'
         with:
-          go-version: '1.26'
+          go-version-file: go.mod
 
       # The three check steps mirror ci.yml. Each is continue-on-error so a genuine failure
       # becomes a SIGNAL rather than aborting the job: a failing test must reach the gate as
@@ -275,6 +282,19 @@ jobs:
           anthropic_api_key: ${{ secrets.LITELLM_API_KEY }}
           claude_args: '--model ${{ env.DELIVER_MODEL }} --allowed-tools Skill Agent Bash Read Edit Write'
           show_full_output: true
+          # The blis-pr-review skill's entire body is an invocation of
+          # /pr-review-toolkit:review-pr, which lives in a plugin. Without these the prompt below
+          # asks for a skill that cannot resolve, and the review silently improvises instead of
+          # running the methodology. Kept identical to claude.yml so the two stay comparable.
+          plugin_marketplaces: |
+            https://github.com/anthropics/claude-plugins-official.git
+            https://github.com/obra/superpowers-marketplace.git
+          plugins: |
+            code-review@claude-plugins-official
+            code-simplifier@claude-plugins-official
+            frontend-design@claude-plugins-official
+            pr-review-toolkit@claude-plugins-official
+            superpowers@superpowers-marketplace
           prompt: |
             PR #${{ inputs.pr_number }} is open for sub-issue #${{ inputs.issue_number }} and
             something changed. Determine the verdict. You are NOT fixing anything — do not edit
@@ -351,8 +371,10 @@ jobs:
         id: round
         if: steps.paused.outputs.paused == 'false'
         run: |
+          # test("^deliver:round-[0-9]+$") not startswith(): `tonumber` throws on a label like
+          # `deliver:round-x`, which kills the whole step rather than reading a counter.
           round=$(gh pr view "$PR" --repo "$REPO" --json labels \
-                    --jq '[.labels[].name | select(startswith("deliver:round-"))
+                    --jq '[.labels[].name | select(test("^deliver:round-[0-9]+$"))
                            | ltrimstr("deliver:round-") | tonumber] | max // 0')
           echo "ROUND=$round"
           echo "value=$round" >> "$GITHUB_OUTPUT"
@@ -437,6 +459,18 @@ jobs:
           # A label failure must not abort this step: the hand-off below is what keeps the
           # delivery moving, and a missing label would otherwise strand a promised correction
           # round right after the comment above announced it.
+          # Terminal labels are mutually exclusive. A delivery that stopped at needs-human, was
+          # resumed, and then earned ready-for-merge would otherwise carry BOTH, leaving a human
+          # unable to tell which verdict is current. Remove the opposing one first; a 404 when it
+          # was never applied is the normal case, hence the silent ignore.
+          case "$decision" in
+            ready)       opposing=needs-human ;;
+            needs-human) opposing=ready-for-merge ;;
+            *)           opposing='' ;;
+          esac
+          if [[ -n "$opposing" ]]; then
+            gh api -X DELETE "/repos/$REPO/issues/$PR/labels/$opposing" >/dev/null 2>&1 || true
+          fi
           if [[ -n "$label" ]]; then
             gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=$label" >/dev/null \
               || echo "::warning::could not apply the '$label' label — does it exist in this repository?"
@@ -457,8 +491,13 @@ jobs:
       # and this phase is the long one (full test suite plus an agent review). Without this a
       # timeout would skip the comment and the label, leaving the PR silent — and silence is
       # indistinguishable from "still working" while there is no stall detector.
+      # Gated on `owned`, not just on failure: when Validate the target PR correctly REFUSES a
+      # fork, a wrong-branch or a closed PR, the job fails — and without this guard the reporter
+      # would then comment and apply needs-human to a PR the loop was just told it does not own.
+      # Any write-access user can send a misdirected dispatch, so that write must not happen. A
+      # refused dispatch is already reported by the ::error:: in the validation step itself.
       - name: Report a failed verify
-        if: failure() || cancelled()
+        if: (failure() || cancelled()) && steps.target.outputs.owned == 'true'
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -479,4 +518,5 @@ jobs:
             echo "step, then re-issue \`/approve-issue-for-pr-delivery\` once fixed."
           } > "$RUNNER_TEMP/failure.md"
           gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/failure.md" || true
+          gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
           gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null || true

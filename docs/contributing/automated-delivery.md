@@ -74,7 +74,7 @@ The decision is not the reviewing agent's to make. `deliver-verify.yml` collects
 | `PLAN_GATE` | `.archon/review.json` — `planRatchet.ok` and `planClassify.verdict`. `absent` (the PR never claimed a plan) delivers exactly as a satisfied plan does; `unverified` (the PR declares an `archon-plan:` but the check did not run) **blocks** |
 | `AGENT_VERDICT` | the `DELIVER-VERDICT: GREEN` / `NOT-GREEN` marker, required to be the last line of a comment posted by the automation itself |
 
-**Why verify runs the checks rather than reading `ci.yml`'s verdict:** see the approval-required note above — the delivery's own CI runs are gated on a human click, so they cannot be the unattended signal. Running the commands directly is also a stronger signal, since we observe the tests instead of trusting an API. The cost is that these three commands must stay in step with `ci.yml`.
+**Why verify runs the checks rather than reading `ci.yml`'s verdict:** see the approval-required note above — the delivery's own CI runs are gated on a human click, so they cannot be the unattended signal. Running the commands directly is also a stronger signal, since we observe the tests instead of trusting an API. The three commands must stay in step with `ci.yml`; the Go toolchain no longer has to, because verify reads `go-version-file: go.mod` rather than pinning a number that drifted from `ci.yml` on day one.
 
 **`unverified` is the subtle one.** `archon-review.sh` exits 0 and falls back to a plan-less delta review when plan resolution fails, so an absent `planRatchet` does *not* by itself mean "no plan" — it can equally mean "a plan was declared and never checked". Treating those alike would let a PR whose dist ratchet silently did not run reach `ready-for-merge` on a GREEN review.
 
@@ -130,10 +130,12 @@ Not yet automated, each its own follow-up: sequencing sub-issues `0..N` and open
 
 ## Security
 
-The repository root checkout is the **default branch**, so `scripts/` and `.archon-version` always come from trusted code — matching `archon.yml`. The PR's own tree is checked out separately under `./pr`, at a pinned SHA, and is used only as a build/test working directory; the PR's copy of `scripts/` is never executed.
+**The workflow's own steps run trusted code.** The repository root checkout is the default branch, so `scripts/` and `.archon-version` always come from `main` — matching `archon.yml`. The archon review and `deliver-gate.sh` are executed from that trusted tree, never from the PR.
 
-Because the phases are dispatchable with arbitrary inputs, verify and correct both require the target PR to be **same-repository** (never a fork), **open**, and on `deliver/issue-<N>` — the branch this loop owns. Without that guard, dispatching verify at a fork PR would run fork code on the self-hosted runner. `workflow_dispatch` is itself restricted to users with write access.
+**The PR's code does execute, and that is the point.** The PR tree is checked out separately under `./pr` at a pinned SHA, and `go build` / `go test` / `golangci-lint` run against it. Running a PR's test suite means running the PR's code — including, in this repository, `scripts/deliver_gate_test.go`, which shells out to the PR's own `.sh` files. There is no way to gate on tests without doing that. What makes it acceptable is that this is **never fork code**: verify and correct both require the target PR to be same-repository, open, and on `deliver/issue-<N>` — the branch this loop owns. Note the difference from `ci.yml`, which runs the same commands on an ephemeral `ubuntu-latest` runner; here they run on the self-hosted runner, so the same-repo guard is doing real work rather than being belt-and-braces.
 
-The sub-issue number is parsed out of an untrusted comment body, validated as digits, and only ever used as a number.
+`workflow_dispatch` is itself restricted to users with write access, and a refused dispatch stops before any checkout.
 
-The verdict marker is read only from comments authored by the automation and only when it is the comment's last line — otherwise any human could set a delivery's verdict by quoting it.
+**The delivery target comes from the event, not from comment text.** The issue delivered is `github.event.issue.number` — where the command was typed. An optional `#N` is accepted only when it agrees with that issue and refused when it disagrees, so no untrusted string ever selects the target.
+
+**The verdict marker is read only from bot-authored comments, and only as a comment's last line** — otherwise any human could set a delivery's verdict by quoting it.
