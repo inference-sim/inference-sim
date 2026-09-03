@@ -3012,7 +3012,12 @@
 <p>Comment on any PR:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>/archon-pr-review
 </code></pre></div>
-<p>The GitHub Action runs automatically and posts a comment with the results.</p>
+<p>The GitHub Action runs automatically and posts the results as a PR comment. Re-running
+<code>/archon-pr-review</code> <strong>updates that same comment in place</strong> rather than adding a new one, so
+a long-running PR keeps one current report instead of a stack of near-identical ones.</p>
+<p>Each round's full body is also written to its own workflow run's job summary. That is
+retention-bound, not an archive: it disappears when the run is aged out under the
+repository's retention policy. If you need a round preserved, quote it in a PR comment.</p>
 <h2 id="what-it-reports">What It Reports<a class="headerlink" href="#what-it-reports" title="Permanent link">&para;</a></h2>
 <h3 id="empty-delta-no-architectural-change">Empty Delta (No Architectural Change)<a class="headerlink" href="#empty-delta-no-architectural-change" title="Permanent link">&para;</a></h3>
 <p>If the PR only changes internal implementation (file renames, function body rewrites, new files within existing packages without new exports), Archon reports:</p>
@@ -3038,7 +3043,7 @@
 <li>Runs <code>archon-go delta --json</code> to detect structural changes</li>
 <li>If empty: posts fast-track message</li>
 <li>If non-empty: runs <code>archon-go delta</code> (human report), <code>archon-go impact</code> (blast radius per changed package), and <code>archon-go evidence</code> (contract test coverage)</li>
-<li>Posts combined output as a PR comment</li>
+<li>Posts combined output as a PR comment, editing the existing archon comment if one exists</li>
 </ol>
 <h2 id="key-properties">Key Properties<a class="headerlink" href="#key-properties" title="Permanent link">&para;</a></h2>
 <ul>

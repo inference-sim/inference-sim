@@ -2898,7 +2898,10 @@
 <p><strong>Important:</strong> <code>blis-pr-review</code> does NOT run archon. It just reads archon output from a previous PR comment and incorporates the verdict.</p>
 <p><strong>Getting archon (for manual runs):</strong> Run <code>scripts/archon-build.sh</code> from the repo root. It builds the version pinned in <code>.archon-version</code> and prints the binary path. See <a href="https://github.com/AI-native-Systems-Research/archon">archon README</a> for verdict definitions and full examples.</p>
 <h2 id="what-the-comment-contains">What the comment contains<a class="headerlink" href="#what-the-comment-contains" title="Permanent link">&para;</a></h2>
-<p>One comment per <code>/archon-pr-review</code>, in one of two shapes:</p>
+<p>One archon comment per PR — re-running <code>/archon-pr-review</code> edits it in place, so what you
+read is always the latest round. Earlier rounds are not in the thread; they are in each
+workflow run's job summary, for as long as that run is retained. It comes in one of two
+shapes:</p>
 <ul>
 <li><strong>three views</strong> — component, witness delta, interface-contract</li>
 <li><strong>three views plus plan checks</strong> — the same, with <code>### G5 — Plan distance ratchet</code> and a plan verdict appended</li>
