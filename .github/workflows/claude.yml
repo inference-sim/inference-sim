@@ -96,7 +96,15 @@ jobs:
 
   report-status:
     needs: claude
-    if: always() && github.event_name == 'issue_comment' && github.event.issue.pull_request
+    # needs.claude.result != 'skipped' is load-bearing. claude[bot]'s own review comment
+    # fires issue_comment, so the claude job correctly skips — but with a bare always()
+    # this job still ran and wrote "pending / Claude Code: skipped" OVER the real result.
+    # Verified on head 4be14710: failure @ 15:17:20 then pending @ 15:21:11, stale last and
+    # sticking, masking a genuine failure behind a required check that never resolves
+    # (run 33770188054: claude skipped, report-status success, 34 s after the real run).
+    if: |
+      always() && needs.claude.result != 'skipped' &&
+      github.event_name == 'issue_comment' && github.event.issue.pull_request
     runs-on: ubuntu-latest
     permissions:
       statuses: write

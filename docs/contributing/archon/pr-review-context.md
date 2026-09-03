@@ -9,7 +9,9 @@ How to incorporate archon's PR review output during code review.
 ## What the comment contains
 
 One archon comment per PR — re-running `/archon-pr-review` edits it in place, so what you
-read is always the latest round. It comes in one of two shapes:
+read is always the latest round. Earlier rounds are not in the thread; they are in each
+workflow run's job summary, for as long as that run is retained. It comes in one of two
+shapes:
 
 - **three views** — component, witness delta, interface-contract
 - **three views plus plan checks** — the same, with `### G5 — Plan distance ratchet` and a plan verdict appended

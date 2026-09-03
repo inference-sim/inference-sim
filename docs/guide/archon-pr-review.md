@@ -12,8 +12,11 @@ Comment on any PR:
 
 The GitHub Action runs automatically and posts the results as a PR comment. Re-running
 `/archon-pr-review` **updates that same comment in place** rather than adding a new one, so
-a long-running PR keeps one current report instead of a stack of near-identical ones. Every
-round's full body is still kept on its own workflow run page (job summary).
+a long-running PR keeps one current report instead of a stack of near-identical ones.
+
+Each round's full body is also written to its own workflow run's job summary. That is
+retention-bound, not an archive: it disappears when the run is aged out under the
+repository's retention policy. If you need a round preserved, quote it in a PR comment.
 
 ## What It Reports
 
