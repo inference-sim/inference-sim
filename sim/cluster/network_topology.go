@@ -86,7 +86,7 @@ func (cs *ClusterSimulator) warnIfCrossNodeUnpriced(simCfg *sim.SimConfig, topo 
 	if realSpan <= 1 {
 		return // contained in one node — nothing to price, nothing to warn about
 	}
-	group := widestCollectiveGroup(*simCfg)
+	group := widestCollectiveGroup(simCfg)
 	switch {
 	case simCfg.Backend != sim.LatencyBackendTrainedPhysics:
 		if !cs.crossNodeBackendWarned {
@@ -149,7 +149,7 @@ func backendDisplayName(backend string) string {
 // pools — so today this always returns simCfg.TP and the diagnostics are byte-identical to
 // their pre-#1548 text for every reachable config. It is here so that whoever lifts #1553
 // inherits a correct diagnostic rather than a silent gap.
-func widestCollectiveGroup(simCfg sim.SimConfig) int {
+func widestCollectiveGroup(simCfg *sim.SimConfig) int {
 	if g := simCfg.EffectiveExpertShardGroupSize(); g > simCfg.TP {
 		return g
 	}
