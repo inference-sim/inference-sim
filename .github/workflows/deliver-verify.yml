@@ -191,14 +191,41 @@ jobs:
             read -r run_status conclusion < <(gh api "/repos/$REPO/actions/runs/$run_id" \
               --jq '"\(.status) \(.conclusion // "none")"' 2>/dev/null || echo "unreadable none")
             if [[ "$run_status" == "completed" ]]; then
-              # Anything other than success is a failure: neutral, cancelled, skipped, timed_out,
-              # action_required and stale all mean the required contexts are not satisfied.
-              if [[ "$conclusion" == "success" ]]; then
-                status=success
-              else
+              if [[ "$conclusion" != "success" ]]; then
                 status=failure
                 failing=$(gh api "/repos/$REPO/actions/runs/$run_id/jobs?per_page=100" --paginate \
                   --jq '[.jobs[] | select(.conclusion != "success") | .name] | join(", ")' 2>/dev/null || echo "$conclusion")
+                break
+              fi
+              # A green run conclusion is NOT proof the ruleset is satisfied. The dispatch runs
+              # the DELIVERY BRANCH's copy of ci.yml, so a delivery that renames, removes or
+              # skips a required job — by accident or otherwise — can still conclude success
+              # while the ruleset waits on contexts that were never emitted. So assert the
+              # required contexts themselves, on the exact commit this delivery verified.
+              #
+              # Contexts come from the repo's active branch rulesets rather than a hardcoded
+              # list, so this cannot drift. Unioning across rulesets can only over-include,
+              # which makes the gate stricter and never looser.
+              ruleset_ids=$(gh api "/repos/$REPO/rulesets" \
+                --jq '.[] | select(.target=="branch" and .enforcement=="active") | .id' 2>/dev/null || true)
+              required=$(for rid in $ruleset_ids; do
+                gh api "/repos/$REPO/rulesets/$rid" \
+                  --jq '.rules[]? | select(.type=="required_status_checks") | .parameters.required_status_checks[]?.context' 2>/dev/null || true
+              done | sort -u)
+              if [[ -z "$required" ]]; then
+                # No required contexts configured: the run conclusion is all there is to go on.
+                status=success
+                break
+              fi
+              green=$(gh api "/repos/$REPO/commits/$VERIFIED_SHA/check-runs?per_page=100" --paginate \
+                --jq '.check_runs[] | select(.conclusion=="success") | .name' 2>/dev/null | sort -u || true)
+              missing=$(comm -23 <(printf '%s\n' "$required") <(printf '%s\n' "$green") | grep . || true)
+              if [[ -n "$missing" ]]; then
+                status=failure
+                failing="required checks not satisfied on $VERIFIED_SHA: $(printf '%s' "$missing" | paste -sd ', ' -)"
+                echo "::error::$failing"
+              else
+                status=success
               fi
               break
             fi
@@ -301,6 +328,28 @@ jobs:
           fi
           echo "PLAN_GATE=$gate"
           echo "gate=$gate" >> "$GITHUB_OUTPUT"
+
+      # The dispatched CI runs the DELIVERY BRANCH's copy of ci.yml, so a delivery that edits CI
+      # could keep the required job names and replace the commands — the branch vouching for
+      # itself. Asserting the required contexts (above) catches renames and omissions but cannot
+      # detect a job that still reports green while checking nothing. There is no way to run a
+      # trusted workflow definition and still land its check runs on the PR head, so the honest
+      # rule is that the loop does not get to declare such a change ready: touching the
+      # verification machinery forces a human. This is the same trust model normal CI has for
+      # same-repo branches, except a human reviewer is not implied here.
+      - name: Does this delivery modify its own verification?
+        id: ci_edit
+        if: steps.paused.outputs.paused == 'false'
+        run: |
+          set -uo pipefail
+          touched=$(gh api "/repos/$REPO/pulls/$PR/files?per_page=100" --paginate \
+            --jq '[.[] | select(.filename | startswith(".github/workflows/")) | .filename] | join(", ")' 2>/dev/null || echo "unreadable")
+          if [[ "$touched" == "unreadable" ]]; then
+            echo "::warning::could not list changed files; treating as a verification-affecting change"
+            touched="(file list unreadable)"
+          fi
+          [[ -n "$touched" ]] && echo "self-verification files touched: $touched" || echo "no workflow files touched"
+          echo "touched=$touched" >> "$GITHUB_OUTPUT"
 
       # Recorded BEFORE the agent runs. The marker is only read from comments newer than this,
       # so the previous round's verdict can never be mistaken for this round's.
@@ -455,6 +504,7 @@ jobs:
           DECISION: ${{ steps.gate.outputs.decision }}
           REASON: ${{ steps.gate.outputs.reason }}
           MOVED: ${{ steps.recheck.outputs.moved }}
+          CI_TOUCHED: ${{ steps.ci_edit.outputs.touched }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -uo pipefail
@@ -465,6 +515,12 @@ jobs:
           if [[ "$decision" == "ready" && "$MOVED" == "true" ]]; then
             decision=needs-human
             reason="the delivery verified ${{ steps.target.outputs.sha }} and returned green, but the branch head moved during verification, so the current head is unverified"
+          fi
+          # A delivery that edits the verification machinery may not be declared ready by that
+          # same machinery. Correction rounds are unaffected — only `ready` is withheld.
+          if [[ "$decision" == "ready" && -n "$CI_TOUCHED" ]]; then
+            decision=needs-human
+            reason="every signal was green, but this delivery modifies the workflows that verify it ($CI_TOUCHED). The dispatched CI ran the branch's own copy of those files, so the loop is not in a position to vouch for the change — a human needs to read it"
           fi
           case "$decision" in
             ready)       label=ready-for-merge; headline='Ready for merge' ;;

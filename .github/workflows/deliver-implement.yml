@@ -134,9 +134,13 @@ jobs:
             // the expensive self-hosted agent job had already started. Checked here, before
             // anything is scheduled; the prompt keeps its copy as defence in depth.
             //
-            // "Blocker resolved" is read as "the blocker issue is closed" rather than by hunting
-            // for its merged PR: a sub-issue is closed by the PR that delivers it (`Closes #N`),
-            // so closed is the deterministic, one-call signal for the same thing.
+            // "Blocker resolved" must mean THE DEPENDENCY'S CODE LANDED, not "its issue is
+            // closed". Issue state is wrong in BOTH directions. This repository's feature-branch
+            // model merges hole PRs into feature/<name>, and GitHub only auto-closes a `Closes
+            // #N` issue for a PR targeting the DEFAULT branch — so a fully merged dependency
+            // leaves its issue open, and every downstream hole would be refused until the final
+            // feature-to-main merge. Conversely, a hand-closed issue would let a delivery
+            // proceed with no dependency code anywhere.
             // `[^A-Za-z0-9#]*` after "on", not `:?\s*`: the bold form `**Depends on:** #7` puts
             // markdown markers between the colon and the number, and the leading anchor already
             // tolerates list/quote/bold prefixes. Verified not to match mid-line prose such as
@@ -144,16 +148,44 @@ jobs:
             const dependsOn = [...(issue.body || '').matchAll(/^[^A-Za-z0-9]*depends\s+on[^A-Za-z0-9#]*#(\d+)/gim)]
               .map(m => Number(m[1]));
             const blockers = [];
-            for (const dep of [...new Set(dependsOn)]) {
+            // Look for a MERGED PR by two routes, because neither covers both branch models:
+            //   - closedByPullRequestsReferences: GitHub's own link, populated when the PR
+            //     targets the default branch
+            //   - head ref deliver/issue-<M>: this loop's own naming convention, which holds
+            //     whatever branch the PR targeted
+            // No merged PR found means blocked. There is deliberately no issue-state fallback:
+            // the loop acts on evidence that code landed, or it stops and says what it looked for.
+            const mergedPrFor = async (dep) => {
               try {
-                const { data: b } = await github.rest.issues.get({
-                  owner: context.repo.owner, repo: context.repo.repo, issue_number: dep
-                });
-                if (b.state !== 'closed') blockers.push(dep);
+                const res = await github.graphql(
+                  `query($owner:String!,$repo:String!,$num:Int!){
+                     repository(owner:$owner,name:$repo){ issue(number:$num){
+                       closedByPullRequestsReferences(first:10, includeClosedPrs:true){
+                         nodes { number state } } } } }`,
+                  { owner: context.repo.owner, repo: context.repo.repo, num: dep }
+                );
+                const nodes = res?.repository?.issue?.closedByPullRequestsReferences?.nodes ?? [];
+                const merged = nodes.find(n => n.state === 'MERGED');
+                if (merged) return merged.number;
               } catch (e) {
-                // An unreadable blocker is not a green light.
-                blockers.push(dep);
+                core.info(`closedByPullRequestsReferences failed for #${dep}: ${e.message}`);
               }
+              try {
+                const { data: prs } = await github.rest.pulls.list({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  head: `${context.repo.owner}:deliver/issue-${dep}`,
+                  state: 'closed', per_page: 20
+                });
+                const merged = prs.find(pr => pr.merged_at);
+                if (merged) return merged.number;
+              } catch (e) {
+                core.info(`branch-convention lookup failed for #${dep}: ${e.message}`);
+              }
+              return null;
+            };
+            for (const dep of [...new Set(dependsOn)]) {
+              const pr = await mergedPrFor(dep);
+              if (pr) { core.info(`#${dep} satisfied by merged PR #${pr}`); } else { blockers.push(dep); }
             }
             if (blockers.length > 0) {
               const list = blockers.map(n => `#${n}`).join(', ');
@@ -162,10 +194,15 @@ jobs:
                 body: [
                   `## Blocked — not delivering yet`,
                   '',
-                  `#${here} declares \`Depends on:\` ${list}, which ${blockers.length === 1 ? 'is' : 'are'} still open.`,
+                  `#${here} declares \`Depends on:\` ${list}, and no MERGED pull request could be found for ${blockers.length === 1 ? 'it' : 'them'}.`,
                   '',
-                  'Delivering now would build against a package that does not exist yet, so nothing',
-                  'was started — no branch, no PR, and no agent run was spent.',
+                  'Delivering now would build against code that has not landed, so nothing was',
+                  'started — no branch, no PR, and no agent run was spent.',
+                  '',
+                  'Two routes were checked and neither found a merged PR: the linked closing PRs,',
+                  'and a PR on `deliver/issue-<N>`. Issue state is deliberately NOT used — a hole',
+                  'PR merged into a feature branch leaves its issue open, and a hand-closed issue',
+                  'would otherwise let this proceed with no code.',
                   '',
                   `Re-issue \`/approve-issue-for-pr-delivery\` once ${list} ${blockers.length === 1 ? 'has' : 'have'} landed.`
                 ].join('\n')
