@@ -67,10 +67,13 @@ jobs:
           set -uo pipefail
           [[ "$PR" =~ ^[0-9]+$ && "$ISSUE_NUMBER" =~ ^[0-9]+$ ]] \
             || { echo "::error::pr_number and issue_number must be numeric"; exit 1; }
-          # REST, not `gh pr view --json`: the latter has no base-commit field at all. An
-          # earlier version asked it for `baseRefOid`, which does not exist — `gh` errors with
-          # "Unknown JSON field", so this step failed and every delivery died here. REST exposes
-          # base.sha directly, which is also what archon.yml already relies on.
+          # REST, not `gh pr view --json`, because the REST schema does not depend on which `gh`
+          # is installed on the runner. An earlier version asked `gh pr view` for `baseRefOid`;
+          # that field was added to `gh` at some point, so whether it resolves depends entirely
+          # on the CLI version present. On gh 2.32.1 it does not exist and `gh` exits with
+          # "Unknown JSON field" — which killed this step, and with it every delivery, during the
+          # #1655 dry run. We do not pin the runner's `gh`, so a field-availability dependency is
+          # a latent break. `.base.sha` over REST is stable and is what archon.yml already uses.
           gh api "/repos/$REPO/pulls/$PR" > "$RUNNER_TEMP/pr.json"
           head_repo=$(jq -r '.head.repo.full_name // ""' "$RUNNER_TEMP/pr.json")
           branch=$(jq -r '.head.ref' "$RUNNER_TEMP/pr.json")
