@@ -319,3 +319,133 @@ func TestTpAllReduceBasis_ZeroDPDivisorIsCoerced(t *testing.T) {
 	assert.False(t, math.IsInf(zero, 0))
 	assert.False(t, math.IsNaN(m.tpAllReduceBasis(32, 1024, math.NaN())), "a NaN divisor must not poison the term")
 }
+
+// ─── Attributing the Wide-EP speedup to a named term ────────────────────────
+
+// TestStepTime_WideEPSpeedupIsWeightSharding attributes the large Wide-EP step-time
+// improvement to a specific term, so the headline number is a physical claim rather than
+// "the model says so". The shape is the real GLM/Kimi Wide-EP recipe: TP=1, DP=16, EP=16 —
+// i.e. a per-replica config at TP=1, DP=1 carrying a logical EP-group width of 16.
+//
+// TP=1 forces the attribution, which is what makes this shape the right probe. There is no
+// TP collective at all (tpAllReduceBasis returns 0 at tp <= 1) and tMoEReduce additionally
+// requires tp > 1, so the all-reduce leg is 0 in BOTH modes — the gate change cannot improve
+// this shape, it can only ADD the dispatch term. Routed-expert COMPUTE is scoped by
+// moeGroup = TP·DP = 1 in both modes (asserted separately in
+// TestStepTime_WideEPDoesNotAlsoReduceCompute). That leaves exactly two moving parts, and
+// they move in OPPOSITE directions when the EP group widens to 16:
+//
+//	routed-expert WEIGHTS  numExperts/1 → numExperts/16   (cheaper)
+//	dispatch/combine       none         → a 16-way all-to-all  (more expensive)
+//
+// So the law is a SIGN FLIP on the size of the expert weights, which is stronger than any
+// magnitude comparison: with realistically large experts the same flag must be a speed-UP,
+// and with the expert FFN shrunk to almost nothing it must become a slow-DOWN, because only
+// the dispatch cost is left. That simultaneously proves the win IS the weight term and that
+// the added collective is genuinely charged rather than silently zero.
+//
+// (An earlier attempt ablated by forcing expertShardGroup back to 1. That cannot separate the
+// two: the dispatch collective runs over the expert-owning group, so a group of 1 zeroes the
+// dispatch term as well — EP-on at TP=1 with an un-widened group is exactly EP-off, which is
+// itself the right answer and is pinned below.)
+func TestStepTime_WideEPSpeedupIsWeightSharding(t *testing.T) {
+	base := *dpepMoEModelConfig()
+	base.NumLocalExperts = 64 // deepseek-v2-lite / GLM-class routed-expert count
+	// A token-HEAVY batch, deliberately: the dispatch/combine cost scales with tokens while
+	// the weight saving does not, so this is where the added collective is large enough for
+	// the sign flip to be a real test rather than a rounding artefact. See the note below on
+	// why that asymmetry is itself the reason Wide-EP is a decode-phase strategy.
+	batch := makePrefillBatch(16, 2048)
+
+	delta := func(mc sim.ModelConfig) (off, on int64) {
+		return newEPModel(t, mc, 1, 1, false, "", 0).StepTime(batch),
+			newEPModel(t, mc, 1, 1, true, "", 16).StepTime(batch)
+	}
+
+	bigExperts := base
+	bigExperts.MoEExpertFFNDim = 1408 // deepseek-v2-lite's real moe_intermediate_size
+	offBig, onBig := delta(bigExperts)
+	assert.Less(t, onBig, offBig,
+		"with realistic expert weights, sharding them across the 16-GPU EP group must dominate the "+
+			"all-to-all it introduces (EP off=%dµs, on=%dµs)", offBig, onBig)
+
+	tinyExperts := base
+	tinyExperts.MoEExpertFFNDim = 8 // expert weights ≈ 0, so only the dispatch cost remains
+	offTiny, onTiny := delta(tinyExperts)
+	assert.Greater(t, onTiny, offTiny,
+		"with the expert weights shrunk away there is no weight saving left, so the SAME flag must "+
+			"become a slow-down — proving the Wide-EP win is routed-expert WEIGHT sharding and that "+
+			"the added all-to-all is really charged (EP off=%dµs, on=%dµs)", offTiny, onTiny)
+}
+
+// TestStepTime_EPWinIsLargerInDecodeThanPrefill records the asymmetry the sign-flip law above
+// exposes, which is a genuine consequence of the two moving terms rather than a modelling
+// artefact: the dispatch/combine cost scales with the step's TOKEN count, while the
+// routed-expert weight saving is token-INDEPENDENT (numExperts/group). So expert parallelism
+// pays best on token-sparse, weight-bound steps — decode — and pays worst on a large prefill
+// step, where the all-to-all volume is at its largest and the weight saving is unchanged.
+//
+// That is a useful external sanity check on the whole feature: production Wide-EP recipes
+// (DeepSeek's DEP guidance, and the GLM-5.2 recipe this issue is filed against) deploy wide
+// expert parallelism on the DECODE side for exactly this reason. The model reproduces the
+// qualitative shape of that recommendation without having been calibrated to it.
+func TestStepTime_EPWinIsLargerInDecodeThanPrefill(t *testing.T) {
+	mc := *dpepMoEModelConfig()
+	mc.NumLocalExperts = 64
+	mc.MoEExpertFFNDim = 1408
+
+	relWin := func(batch []*sim.Request) float64 {
+		off := newEPModel(t, mc, 1, 1, false, "", 16).StepTime(batch)
+		on := newEPModel(t, mc, 1, 1, true, "", 16).StepTime(batch)
+		return float64(off-on) / float64(off)
+	}
+	decodeWin := relWin(makeDecodeBatch(8, 512))
+	prefillWin := relWin(makePrefillBatch(16, 2048))
+
+	assert.Greater(t, decodeWin, prefillWin,
+		"the relative EP win must be larger in decode (%.3f) than in a large prefill step (%.3f): the "+
+			"dispatch cost grows with tokens while the weight saving does not", decodeWin, prefillWin)
+}
+
+// TestStepTime_EPOnAtTP1WithUnwidenedGroupIsInert pins the degenerate case the ablation above
+// uncovered, because it is a correctness property in its own right: at TP=1 with the EP group
+// NOT widened beyond the config's own degrees, the EP group is a single GPU — it owns every
+// expert and has no peer to dispatch to — so EP-on must be exactly EP-off.
+func TestStepTime_EPOnAtTP1WithUnwidenedGroupIsInert(t *testing.T) {
+	mc := *dpepMoEModelConfig()
+	mc.NumLocalExperts = 64
+	batch := makeDecodeBatch(8, 512)
+	assert.Equal(t,
+		newEPModel(t, mc, 1, 1, false, "", 0).StepTime(batch),
+		newEPModel(t, mc, 1, 1, true, "", 0).StepTime(batch),
+		"a one-GPU expert-parallel group holds every expert and has nobody to exchange with, so the "+
+			"EP toggle must be exactly neutral there")
+}
+
+// TestStepTime_WideEPDoesNotAlsoReduceCompute is the "not double-counting in the other
+// direction" check for the shape above. Routed-expert compute is scoped by moeGroup, which
+// is 1 for BOTH modes at TP=1/DP=1 — so the compute term must be computed identically, and
+// the weight reduction must not be accompanied by a second, illegitimate compute reduction.
+//
+// The probe is again top_k sensitivity, which on the all-gather family reaches only the
+// routed-expert compute basis: neither the weight term (numExperts/group, no top_k) nor that
+// family's dispatch volume (dense hidden states, no top_k) carries kEff. Equal sensitivity in
+// both modes therefore means the compute term is untouched.
+func TestStepTime_WideEPDoesNotAlsoReduceCompute(t *testing.T) {
+	base := *dpepMoEModelConfig()
+	base.NumLocalExperts = 64
+	lowK, highK := base, base
+	lowK.NumExpertsPerTok, highK.NumExpertsPerTok = 1, 6
+	batch := makePrefillBatch(4, 1024)
+
+	sensitivity := func(ep bool, epGroupDP int) int64 {
+		return newEPModel(t, highK, 1, 1, ep, "", epGroupDP).StepTime(batch) -
+			newEPModel(t, lowK, 1, 1, ep, "", epGroupDP).StepTime(batch)
+	}
+	off, on := sensitivity(false, 0), sensitivity(true, 16)
+	require.Positive(t, off, "precondition: top_k must move routed-expert compute")
+	assert.InDelta(t, off, on, 1.0,
+		"routed-expert COMPUTE must be identical in both EP modes at TP=1/DP=1 (moeGroup is 1 for "+
+			"both): top_k sensitivity was %dµs EP-off and %dµs EP-on. A difference would mean the "+
+			"weight saving is accompanied by an illegitimate compute reduction", off, on)
+}
