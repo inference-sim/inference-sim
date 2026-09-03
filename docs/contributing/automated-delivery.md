@@ -16,6 +16,20 @@ Comment on the sub-issue you want delivered:
 
 Restricted to repository collaborators, same as `/archon-pr-review` and `@claude`.
 
+## What can be delivered
+
+**Any single deliverable issue.** It does not have to be a sub-issue of a planned feature:
+
+| | Works | Notes |
+|---|---|---|
+| A **sub-issue** of an archon-planned feature | yes | the surface, contracts, allow list, target branch and `archon-plan:` are all honoured |
+| A **standalone** issue — bug, enhancement, hardening | yes | no plan, no declared surface, targets the default branch. Small issues here legitimately skip the RFC and plan; the issue's own acceptance criteria are the contract |
+| A **tracking issue** | **refused** | see below |
+
+**Archon is optional, not required.** With a plan there is a deterministic number that must not move the wrong way (`PLAN_GATE=pass`); with no plan at all the signal is `absent`, which delivers exactly as `pass` does, and the gate is CI plus the review verdict. The honest cost of running plan-less is that the exit condition becomes entirely judgement — no worse than what a human reviewer works from, but proportionally less mechanically checkable.
+
+**A tracking issue is refused, by design.** It is an umbrella over several holes, so delivering it would mean one PR attempting the whole feature — the thing one-hole-per-PR exists to avoid — and it would spend an agent run producing something unreviewable. Two signals detect it, because this repository uses both conventions: the issue has linked native GitHub sub-issues, or its title begins with `Tracking` / `Epic`. Either one refuses with a comment pointing you at a specific sub-issue. If an issue really is a single deliverable unit, rename it and unlink its children.
+
 Then leave. Every phase posts a comment, so the whole delivery history is readable on the PR page without opening a single Actions log.
 
 ## What happens

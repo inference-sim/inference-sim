@@ -94,6 +94,40 @@ jobs:
               core.setFailed(`command names #${named[1]} but was issued on #${here}`);
               return;
             }
+            // A TRACKING issue must not be delivered. It is an umbrella over several holes,
+            // so one PR trying to implement all of them is exactly what the methodology exists
+            // to prevent — and it would burn an agent hour producing something unreviewable.
+            // Two signals, because neither alone covers this repo: some tracking issues link
+            // their children as native GitHub sub-issues (#1585, #1477) and some only follow
+            // the title convention (#1638, #1552, #1532).
+            const { data: issue } = await github.rest.issues.get({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: here
+            });
+            const childCount = issue.sub_issues_summary?.total ?? 0;
+            const titledTracking = /^\s*(tracking|epic)\b/i.test(issue.title || '');
+            if (childCount > 0 || titledTracking) {
+              const why = childCount > 0
+                ? `it has ${childCount} linked sub-issue(s)`
+                : 'its title marks it as a tracking issue';
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: here,
+                body: [
+                  `## Not deliverable — this looks like a tracking issue`,
+                  '',
+                  `Refusing to deliver #${here} because ${why}.`,
+                  '',
+                  'A tracking issue is an umbrella over several holes. Delivering it would mean one',
+                  'PR attempting the whole feature, which is the thing one-hole-per-PR exists to',
+                  'avoid — and it would spend an agent run producing something unreviewable.',
+                  '',
+                  'Comment `/approve-issue-for-pr-delivery` on a specific sub-issue instead. If this',
+                  'issue really is a single deliverable unit, rename it so it does not begin with',
+                  '"Tracking" or "Epic", and unlink any sub-issues.'
+                ].join('\n')
+              });
+              core.setFailed(`#${here} looks like a tracking issue (${why})`);
+              return;
+            }
             core.setOutput('issue_number', String(here));
 
   deliver:
@@ -147,13 +181,19 @@ jobs:
           claude_args: '--model ${{ env.DELIVER_MODEL }} --allowed-tools Skill Agent Bash Read Edit Write'
           show_full_output: true
           prompt: |
-            You are delivering sub-issue #${{ env.ISSUE_NUMBER }} in this repository.
+            You are delivering issue #${{ env.ISSUE_NUMBER }} in this repository.
             Read it first: `gh issue view ${{ env.ISSUE_NUMBER }}`.
 
-            The sub-issue names one hole: a package path, its surface, its contracts, its
-            allowed imports, the target branch, and an `archon-plan:` path. Some of those may be
-            absent for a small issue with no archon plan — that is expected; proceed with
-            whatever it does specify.
+            It is one of two kinds, and BOTH are normal — decide which by reading it:
+
+            - **A sub-issue of an archon-planned feature.** It names one hole: a package path,
+              its surface, its contracts, its allowed imports, a target branch, and an
+              `archon-plan:` path. Honour all of them.
+            - **A standalone issue** — a bug, an enhancement, a hardening task. It has none of
+              that machinery: no plan, no declared surface, no allow list, and it targets the
+              default branch. That is not missing information; small issues in this repository
+              legitimately skip the RFC and plan entirely. Take the issue's own acceptance
+              criteria as the contract, and do not invent an archon plan for it.
 
             FIRST, check whether you are blocked. If the body carries a `Depends on: #M` line,
             check whether #M's PR is merged. If it is not, post a comment on
