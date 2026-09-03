@@ -86,12 +86,15 @@ jobs:
                       --jq '[.labels[].name | select(startswith("deliver:round-"))
                              | ltrimstr("deliver:round-") | tonumber] | max // 0')
           next=$(( current + 1 ))
-          if ! gh pr edit "$PR" --repo "$REPO" --add-label "deliver:round-${next}"; then
+          # REST, not `gh pr edit`: that command pulls `projectCards` over GraphQL, which GitHub
+          # has deprecated and now errors on in this repository. Using it here would have made
+          # this step — which is fatal by design — fail on every single correction round.
+          if ! gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=deliver:round-${next}" >/dev/null; then
             echo "::error::could not apply deliver:round-${next} — the label must exist, or the loop has no round bound"
             exit 1
           fi
           if (( current > 0 )); then
-            gh pr edit "$PR" --repo "$REPO" --remove-label "deliver:round-${current}" \
+            gh api -X DELETE "/repos/$REPO/issues/$PR/labels/deliver:round-${current}" >/dev/null \
               || echo "::warning::could not remove deliver:round-${current}; the counter reads the maximum so this is cosmetic"
           fi
           echo "round=$next" >> "$GITHUB_OUTPUT"
@@ -185,4 +188,4 @@ jobs:
             echo "_[Failed run](${RUN_URL})_"
           } > "$RUNNER_TEMP/failure.md"
           gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/failure.md" || true
-          gh pr edit "$PR" --repo "$REPO" --add-label needs-human || true
+          gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null || true

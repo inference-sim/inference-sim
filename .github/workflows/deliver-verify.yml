@@ -66,21 +66,23 @@ jobs:
           set -uo pipefail
           [[ "$PR" =~ ^[0-9]+$ && "$ISSUE_NUMBER" =~ ^[0-9]+$ ]] \
             || { echo "::error::pr_number and issue_number must be numeric"; exit 1; }
-          gh pr view "$PR" --repo "$REPO" \
-            --json isCrossRepository,headRefName,headRefOid,baseRefOid,body,state \
-            > "$RUNNER_TEMP/pr.json"
-          cross=$(jq -r .isCrossRepository "$RUNNER_TEMP/pr.json")
-          branch=$(jq -r .headRefName "$RUNNER_TEMP/pr.json")
-          state=$(jq -r .state "$RUNNER_TEMP/pr.json")
-          [[ "$cross" == "false" ]] \
-            || { echo "::error::#$PR is a cross-repository (fork) PR; refusing to build it on a self-hosted runner"; exit 1; }
+          # REST, not `gh pr view --json`: the latter has no base-commit field at all. An
+          # earlier version asked it for `baseRefOid`, which does not exist — `gh` errors with
+          # "Unknown JSON field", so this step failed and every delivery died here. REST exposes
+          # base.sha directly, which is also what archon.yml already relies on.
+          gh api "/repos/$REPO/pulls/$PR" > "$RUNNER_TEMP/pr.json"
+          head_repo=$(jq -r '.head.repo.full_name // ""' "$RUNNER_TEMP/pr.json")
+          branch=$(jq -r '.head.ref' "$RUNNER_TEMP/pr.json")
+          state=$(jq -r '.state' "$RUNNER_TEMP/pr.json")
+          [[ "$head_repo" == "$REPO" ]] \
+            || { echo "::error::#$PR head is on '$head_repo', not '$REPO' — refusing to build a fork on a self-hosted runner"; exit 1; }
           [[ "$branch" == "deliver/issue-${ISSUE_NUMBER}" ]] \
             || { echo "::error::#$PR is on '$branch', not the expected deliver/issue-${ISSUE_NUMBER}"; exit 1; }
-          [[ "$state" == "OPEN" ]] \
+          [[ "$state" == "open" ]] \
             || { echo "::error::#$PR is $state"; exit 1; }
           {
-            echo "sha=$(jq -r .headRefOid "$RUNNER_TEMP/pr.json")"
-            echo "base_sha=$(jq -r .baseRefOid "$RUNNER_TEMP/pr.json")"
+            echo "sha=$(jq -r '.head.sha' "$RUNNER_TEMP/pr.json")"
+            echo "base_sha=$(jq -r '.base.sha' "$RUNNER_TEMP/pr.json")"
             echo "branch=$branch"
           } >> "$GITHUB_OUTPUT"
 
@@ -436,7 +438,7 @@ jobs:
           # delivery moving, and a missing label would otherwise strand a promised correction
           # round right after the comment above announced it.
           if [[ -n "$label" ]]; then
-            gh pr edit "$PR" --repo "$REPO" --add-label "$label" \
+            gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=$label" >/dev/null \
               || echo "::warning::could not apply the '$label' label — does it exist in this repository?"
           fi
           # Carried in the environment rather than as a step output because the moved-head
@@ -477,4 +479,4 @@ jobs:
             echo "step, then re-issue \`/approve-issue-for-pr-delivery\` once fixed."
           } > "$RUNNER_TEMP/failure.md"
           gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/failure.md" || true
-          gh pr edit "$PR" --repo "$REPO" --add-label needs-human || true
+          gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null || true
