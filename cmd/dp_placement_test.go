@@ -736,6 +736,9 @@ func TestResolveDPPlacement_MutatesDeploymentVars(t *testing.T) {
 		inTotalKV       int64
 		inMaxModelLen   int64
 		wantErrContains string
+		// wantPerRankDP is only checked on the success rows: when wantErrContains is set
+		// the returned plan is the zero value and is not asserted, so those rows leave
+		// this field at Go's 0 rather than stating an expectation.
 		wantPerRankDP   int
 		wantNumInst     int
 		wantTotalKV     int64

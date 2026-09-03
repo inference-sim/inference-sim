@@ -2385,6 +2385,12 @@ var runCmd = &cobra.Command{
 		// fail fast rather than being silently mis-modeled. resolveDPPlacement is the ONE
 		// code path run and replay share (R23), so INV-13 parity is structural (#1556).
 		// A no-op for --dp 1 and dense models.
+		//
+		// Ordering caveat (mirrored in cmd/replay.go): the per-pool KV auto-calc earlier in
+		// this body also reads maxModelLen (for prefillOverrides / decodeOverrides) and so
+		// sees the pre-division value. Safe only because PD + --dp>1 is a guarded combo
+		// (#1553): an active DP plan Fatalf's, and a PD run never has an active plan. If
+		// #1553 is lifted, recompute the per-pool overrides after this call.
 		dpPlan, dpErr := resolveDPPlacement(lr, bundleAutoscalerIntervalUs > 0, len(bundleNodePools) > 0)
 		if dpErr != nil {
 			logrus.Fatalf("%v", dpErr)

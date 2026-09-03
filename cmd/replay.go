@@ -603,6 +603,15 @@ Example:
 		// autoscaler / node-pool validation above so the guarded-combo decision sees the
 		// validated topology, and BEFORE the DeploymentConfig literal below, which reads
 		// all three adjusted quantities. A no-op for --dp 1 and dense models (INV-6).
+		//
+		// Ordering caveat: this is NOT the only reader of the three quantities. The
+		// per-pool KV auto-calc above also reads maxModelLen (for prefillOverrides /
+		// decodeOverrides) and runs BEFORE this call, so it would see the pre-division
+		// value. That is safe only because PD + --dp>1 is a guarded combo (#1553) — an
+		// active DP plan Fatalf's before any PD run reaches the cluster, and a PD run
+		// never has an active plan. If #1553 is ever lifted, the per-pool overrides must
+		// be recomputed after this call (or this call moved above them). runCmd carries
+		// the same ordering and the same caveat.
 		// autoscalerActive / nodePoolsActive: replay rejects both unconditionally above
 		// (the --model-autoscaler-interval-us flag guard and the bundle guards), so these
 		// are structurally false here. They are still computed as the real predicates —

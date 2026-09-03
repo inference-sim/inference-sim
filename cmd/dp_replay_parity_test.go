@@ -401,7 +401,11 @@ func TestReplayCmd_MoEDPPlacement_GuardedCombos_Rejected(t *testing.T) {
 			wantRef: "1548",
 		},
 		{
-			label:   "PD disaggregation",
+			label: "PD disaggregation",
+			// --num-instances 2 (vs 1 for the EP case): ValidatePoolTopology runs BEFORE
+			// the DP guard and requires the pool sizes to fit the instance count, so
+			// --prefill-instances 1 --decode-instances 1 needs 2. Without it the run would
+			// exit on the topology error and never reach the #1553 guard under test.
 			numInst: 2,
 			extra: []string{"--total-kv-blocks", "20000",
 				"--prefill-instances", "1", "--decode-instances", "1", "--pd-decider", "always"},
@@ -432,22 +436,63 @@ func TestReplayCmd_MoEDPPlacement_GuardedCombos_Rejected(t *testing.T) {
 // just --dp>1 ones — so the "--dp 1 is byte-identical" claim, previously fenced only on
 // the run side (TestRunCmd_MoEDP1_ByteIdentical), now needs a replay fence too. Catches
 // a future regression that makes the shared resolver perturb the inactive path.
+//
+// Both KV paths are fenced, because they reach the resolver with different state and
+// only one of them is covered elsewhere:
+//
+//   - explicit --total-kv-blocks: KVParamsOK is false, so autoScaledKV is false;
+//   - auto-KV (no --total-kv-blocks): KVParamsOK is true and totalKVBlocks is the
+//     dp-multiplied auto total, i.e. the state that DOES trigger the division and the
+//     max-model-len re-cap at --dp>1. At --dp 1 the inactive-plan early return must skip
+//     both. TestReplayCmd_MoEDPPlacement_AutoKV_Parity exercises auto-KV only at --dp 2,
+//     so without this row the auto-KV × --dp 1 × replay corner — precisely the INV-6
+//     byte-identity path that must never regress — would be unfenced.
 func TestReplayCmd_MoEDP1_ByteIdentical(t *testing.T) {
 	if os.Getenv(dpLegEnv) != "" {
 		dpLegSubprocess()
 		return
 	}
 	name := t.Name()
-	prefix := filepath.Join(t.TempDir(), "trace")
-	dpLegOK(t, name, "run", prefix, 1, 1, "--total-kv-blocks", "20000")
 
-	first := dpLegOK(t, name, "replay", prefix, 1, 1, "--total-kv-blocks", "20000")
-	second := dpLegOK(t, name, "replay", prefix, 1, 1, "--total-kv-blocks", "20000")
-	if completed := clusterMetricInt(t, first, "completed_requests"); completed <= 0 {
-		t.Fatalf("INV-6 check would be vacuous: --dp 1 replay completed %d requests; stdout:\n%s", completed, first)
-	}
-	if first != second {
-		t.Errorf("INV-6: two identical MoE --dp 1 replays produced different stdout")
+	for _, tc := range []struct {
+		label string
+		extra []string
+	}{
+		// --log info makes resolveDPPlacement's activation line visible: at --dp 1 the
+		// division, the re-cap and the expansion are all ×1 or no-ops, so an inactive-plan
+		// early return that regressed into an ACTIVE plan would be byte-identical on
+		// stdout. The diagnostic is the only observable that separates "looks the same"
+		// from "took the early return", and it is a logrus.Infof — invisible at the
+		// default `warn`.
+		{label: "explicit-kv", extra: []string{"--total-kv-blocks", "20000", "--log", "info"}},
+		// No --total-kv-blocks ⇒ the auto-capacity path runs, so KVParamsOK is true and
+		// totalKVBlocks is the dp-multiplied auto total: the exact state that triggers the
+		// division and the re-cap at --dp>1, which --dp 1 must skip.
+		{label: "auto-kv", extra: []string{"--max-model-len", "10000000", "--log", "info"}},
+	} {
+		t.Run(tc.label, func(t *testing.T) {
+			prefix := filepath.Join(t.TempDir(), "trace")
+			dpLegOK(t, name, "run", prefix, 1, 1, tc.extra...)
+
+			first, firstErr, err := dpLeg(t, name, "replay", prefix, 1, 1, tc.extra...)
+			if err != nil {
+				t.Fatalf("--dp 1 replay failed: %v\nstderr:\n%s", err, firstErr)
+			}
+			second := dpLegOK(t, name, "replay", prefix, 1, 1, tc.extra...)
+			if completed := clusterMetricInt(t, first, "completed_requests"); completed <= 0 {
+				t.Fatalf("INV-6 check would be vacuous: --dp 1 replay completed %d requests; stdout:\n%s", completed, first)
+			}
+			if first != second {
+				t.Errorf("INV-6: two identical MoE --dp 1 replays produced different stdout")
+			}
+			// The inactive plan must mutate nothing: no DP-as-placement diagnostic may be
+			// emitted at all. This is what distinguishes "--dp 1 happens to look the same"
+			// from "--dp 1 took the early return" — and on the auto-KV row it is the direct
+			// assertion that neither the per-rank division nor the re-cap ran.
+			if strings.Contains(firstErr, "DP-as-placement") {
+				t.Errorf("INV-6: --dp 1 must not activate DP-as-placement (no division, no re-cap); stderr:\n%s", firstErr)
+			}
+		})
 	}
 }
 
