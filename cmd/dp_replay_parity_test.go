@@ -53,6 +53,11 @@ const (
 	dpExtraSepStr = "\x1f"            // unit separator (never appears in a flag)
 )
 
+// dpLegCobraErrorExit is the code a leg exits with when cobra rejects the arg list —
+// distinct from 0 (success) and from 1 (logrus.Fatalf), so the harness can tell its own
+// bugs apart from the simulator's.
+const dpLegCobraErrorExit = 3
+
 // dpParityHorizon is passed explicitly to BOTH legs so the two commands agree on the
 // simulation horizon. `blis run` defaults to math.MaxInt64 while `blis replay`
 // defaults to computeReplayHorizon(requests) (a drain-time estimate) — a pre-existing
@@ -60,6 +65,11 @@ const (
 // passed to run is run's own default, so it changes no simulation behavior here; note
 // it does flip cmd.Flags().Changed("horizon"), which suppresses a workload spec's
 // `horizon` field (irrelevant for these --rate/--num-requests legs, which use no spec).
+// math.MaxInt64 mirrors `blis run`'s own --horizon default (registerSimConfigFlags in
+// cmd/root.go). The coupling is silent: if that default ever changes, this stays
+// correct as a *shared* value for both legs (which is all the parity law needs) but
+// stops being "run's default", so the "no-op for run" reasoning below would need
+// re-checking.
 var dpParityHorizon = strconv.FormatInt(math.MaxInt64, 10)
 
 // dpMoEFixtureArgs are the model/hardware flags shared by both legs: the git-tracked
@@ -102,12 +112,11 @@ func dpLegSubprocess() {
 		args = append(args, strings.Split(extra, dpExtraSepStr)...)
 	}
 	rootCmd.SetArgs(args)
-	// Exit 3 (distinct from a logrus.Fatalf's 1 and from success's 0) on a cobra-level
-	// error — a flag typo in this harness would otherwise surface as an empty stdout and
-	// a confusing assertion failure instead of a loud one. Cobra already printed the
-	// error and usage to stderr, which dpLeg captures.
+	// dpLegCobraErrorExit on a cobra-level error — a flag typo in this harness would
+	// otherwise surface as an empty stdout and a confusing assertion failure instead of a
+	// loud one. Cobra already printed the error and usage to stderr, which dpLeg captures.
 	if err := rootCmd.Execute(); err != nil {
-		os.Exit(3)
+		os.Exit(dpLegCobraErrorExit)
 	}
 	os.Exit(0)
 }
@@ -131,11 +140,20 @@ func dpLeg(t *testing.T, testName, leg, tracePrefix string, dp, numInst int, ext
 	return out.String(), errBuf.String(), err
 }
 
-// dpLegOK is dpLeg with a required clean exit.
+// dpLegOK is dpLeg with a required clean exit. It separates the harness's own failure
+// mode (exit 3 = a cobra flag error, i.e. THIS FILE built a bad arg list) from a genuine
+// simulator failure (exit 1 = logrus.Fatalf), so a future test-author's flag typo says so
+// instead of surfacing as a confusing downstream assertion failure.
 func dpLegOK(t *testing.T, testName, leg, tracePrefix string, dp, numInst int, extra ...string) string {
 	t.Helper()
 	stdout, stderr, err := dpLeg(t, testName, leg, tracePrefix, dp, numInst, extra...)
 	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == dpLegCobraErrorExit {
+			t.Fatalf("test harness bug, not a simulator failure: `blis %s` rejected the arg list this file "+
+				"built (cobra flag error, exit %d) — check dpMoEFixtureArgs and the extra args %v\nstderr:\n%s",
+				leg, dpLegCobraErrorExit, extra, stderr)
+		}
 		t.Fatalf("subprocess `blis %s` (dp=%d, num-instances=%d) failed: %v\nstderr:\n%s",
 			leg, dp, numInst, err, stderr)
 	}
@@ -198,7 +216,14 @@ func TestINV13_RunReplayParity_MoEDPPlacement(t *testing.T) {
 		t.Run(tc.label, func(t *testing.T) {
 			prefix := filepath.Join(t.TempDir(), "trace")
 			runOut := dpLegOK(t, name, "run", prefix, 2, 1, tc.extra...)
-			replayOut := dpLegOK(t, name, "replay", prefix, 2, 1, tc.extra...)
+			// dpLeg (not dpLegOK) for the replay leg so a divergence report can include the
+			// leg's stderr: the capacity/re-cap diagnostics are warn-level, so they are
+			// present without raising the log level, and they are the first thing to look at
+			// when the two stdouts differ.
+			replayOut, replayErr, err := dpLeg(t, name, "replay", prefix, 2, 1, tc.extra...)
+			if err != nil {
+				t.Fatalf("replay leg failed: %v\nstderr:\n%s", err, replayErr)
+			}
 
 			// Non-vacuity: a parity assertion over two empty runs would pass trivially.
 			if completed := clusterMetricInt(t, runOut, "completed_requests"); completed <= 0 {
@@ -207,7 +232,7 @@ func TestINV13_RunReplayParity_MoEDPPlacement(t *testing.T) {
 			clusterConservationHolds(t, runOut) // INV-1 companion to the byte-identity law
 			if runOut != replayOut {
 				t.Errorf("#1556 BC-2 (INV-13): `blis run --dp 2` and the replay of its trace must produce "+
-					"identical stdout\nRUN:\n%s\nREPLAY:\n%s", runOut, replayOut)
+					"identical stdout\nRUN:\n%s\nREPLAY:\n%s\nREPLAY stderr:\n%s", runOut, replayOut, replayErr)
 			}
 		})
 	}

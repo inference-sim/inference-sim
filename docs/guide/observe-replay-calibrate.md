@@ -241,15 +241,19 @@ Replay also accepts all shared simulation config flags (`--latency-model`, `--to
       so a default-horizon replay may truncate a run that was still draining.
 
     ```bash
+    # 9223372036854775807 is 2^63-1 — `blis run`'s own --horizon default, i.e. unlimited.
+    # Passing it explicitly on BOTH legs is what makes the comparison apples-to-apples;
+    # any other shared value works too, as long as it is the same on both.
+
     # Run N=2 DP replicas and export the workload...
     ./blis run --model deepseek-ai/deepseek-v2-lite --dp 2 --num-instances 1 \
       --rate 10 --num-requests 40 --total-kv-blocks 20000 --seed 42 \
-      --horizon 9223372036854775807 --trace-output traces/dp2
+      --horizon 9223372036854775807 --trace-output traces/dp2   # unlimited
 
     # ...then replay it with the SAME --dp, --num-instances, --seed and --horizon.
     ./blis replay --trace-header traces/dp2.yaml --trace-data traces/dp2.csv \
       --model deepseek-ai/deepseek-v2-lite --dp 2 --num-instances 1 \
-      --total-kv-blocks 20000 --seed 42 --horizon 9223372036854775807
+      --total-kv-blocks 20000 --seed 42 --horizon 9223372036854775807   # unlimited
     ```
 
     The physics guards still apply: `--enable-expert-parallel` with `--dp > 1` and PD
