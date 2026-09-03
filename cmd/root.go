@@ -417,15 +417,27 @@ const dpPlacementInstanceWarnThreshold = 512
 //
 // Two of resolveLatencyConfig's own EP rejections (roofline + EP, dense + EP) also fire
 // AFTER the auto-calc that calls this, so an EP group can be resolved for a config that is
-// about to be rejected. That is safe by construction rather than by ordering: a dense model
-// yields 1 here (EffectiveEPSize's isMoE gate), and a roofline MoE's reduced capacity is
-// discarded by the Fatalf. The same reasoning the dense-dp>1 gate documents in
+// about to be rejected. That is safe because a group produced HERE can never fail the
+// capacity model's validation: it is either 1 (EP off, or a dense model — EffectiveEPSize's
+// isMoE gate) or exactly tp·dp, and the accepted domain is {0,1} ∪ [tp, tp·dp] with a
+// wider-than-expert-count group CLAMPED rather than rejected. So no EP diagnostic can
+// pre-empt the CLI's own; a dense model yields 1, and a roofline MoE's reduced capacity is
+// simply discarded by the Fatalf. The same reasoning the dense-dp>1 gate documents in
 // sim/latency/kv_capacity.go applies — the gate is load-bearing, not merely redundant.
 //
 // Per-pool EP is not expressible, exactly as per-pool DP is not (#1420): --dp and
 // --enable-expert-parallel apply uniformly, so each PD pool's group is poolTP·dp.
 func epSizeForKVCapacity(isMoE bool, tp int) int {
 	return sim.EffectiveEPSize(isMoE, tp, dataParallelism, enableExpertParallel)
+}
+
+// formatEPForLog renders a resolved expert-parallel group size for a log line: "off" for
+// the EP-off value (1), so an operator does not read it as a real one-GPU group.
+func formatEPForLog(ep int) string {
+	if ep <= 1 {
+		return "off"
+	}
+	return strconv.Itoa(ep)
 }
 
 // planDPPlacement decides DP-as-real-placement expansion for `blis run` and
@@ -791,9 +803,9 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 				}
 				totalKVBlocks = autoBlocks
 				logrus.Infof("--gpu-memory-utilization: %.2f used for KV block auto-calculation", gpuMemoryUtilization)
-				logrus.Infof("--latency-model: auto-calculated total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d, EP=%d, block_size=%d, MoE=%v)",
+				logrus.Infof("--latency-model: auto-calculated total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d, EP=%s, block_size=%d, MoE=%v)",
 					totalKVBlocks, hwConfig.MemoryGiB, tensorParallelism, dataParallelism,
-					epSize, blockSizeTokens, kvParams.IsMoE)
+					formatEPForLog(epSize), blockSizeTokens, kvParams.IsMoE)
 				logAdapterHBMReservation("--latency-model")
 			}
 		} else if loraReservedBytesForKV > 0 {

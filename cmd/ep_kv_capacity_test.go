@@ -52,8 +52,15 @@ func TestEPSizeForKVCapacity_ReadsLogicalTopology(t *testing.T) {
 // deployment must not be sized correctly by one code path and over-counted by another.
 // It walks the whole repository (excluding tests and the function's own definition file)
 // and requires every production CalculateKVBlocks call to pass an expert-parallel group
-// size — so a NEW auto-calc site added later fails this test instead of silently
-// reintroducing the #1656 over-count.
+// size DERIVED from the topology — one of the two legitimate sources, the cmd helper
+// epSizeForKVCapacity or the config accessor EffectiveEP. Requiring a derived source (not
+// merely the option's presence) is what makes the guard bite: a site passing a literal
+// WithExpertParallelSize(1) would be EP-blind, which is precisely the #1656 over-count it
+// exists to prevent. A NEW auto-calc site added later fails this test instead.
+//
+// It is a shape check, deliberately cheap; the behavioral companion is
+// TestResolveLatencyConfig_EPRaisesAutoKVCapacity, which drives the shared resolver and
+// asserts the capacity actually changes.
 func TestEveryKVCapacityCallSiteIsEPAware(t *testing.T) {
 	const (
 		callMarker   = "CalculateKVBlocks("
@@ -61,6 +68,9 @@ func TestEveryKVCapacityCallSiteIsEPAware(t *testing.T) {
 		// The definition and doc-comment references live in the implementing file.
 		definitionFile = "kv_capacity.go"
 	)
+	// The only legitimate sources of the group size: the cmd helper (logical topology) or
+	// the config-bound accessor (per-instance topology).
+	derivedSources := []string{"epSizeForKVCapacity(", "EffectiveEP()"}
 
 	found := 0
 	err := filepath.WalkDir("..", func(path string, d fs.DirEntry, err error) error {
@@ -92,17 +102,37 @@ func TestEveryKVCapacityCallSiteIsEPAware(t *testing.T) {
 			}
 			start := idx + hit
 			idx = start + len(callMarker)
-			// A call's options sit on the immediately following lines; 600 bytes covers
-			// the longest of them without reaching a neighbouring call site.
+			// A call's options sit on the immediately following lines; 600 bytes covers the
+			// longest of them without reaching a neighbouring call site. The window also
+			// reaches back 400 bytes, because a site may hoist the resolved group size into
+			// a local just above the call (so the logged value is provably the one charged).
 			end := start + 600
 			if end > len(content) {
 				end = len(content)
 			}
+			from := start - 400
+			if from < 0 {
+				from = 0
+			}
 			found++
-			if !strings.Contains(content[start:end], optionMarker) {
+			window := content[from:end]
+			if !strings.Contains(window, optionMarker) {
 				t.Errorf("%s: CalculateKVBlocks call at byte %d does not pass %s — a MoE+EP "+
 					"deployment sized through this path would over-count routed-expert weights (#1656)",
 					path, start, optionMarker)
+				continue
+			}
+			derived := false
+			for _, src := range derivedSources {
+				if strings.Contains(window, src) {
+					derived = true
+					break
+				}
+			}
+			if !derived {
+				t.Errorf("%s: CalculateKVBlocks call at byte %d passes %s but not a topology-derived "+
+					"group size (one of %v) — a literal value would be EP-blind (#1656)",
+					path, start, optionMarker, derivedSources)
 			}
 		}
 		return nil

@@ -202,9 +202,10 @@ func TestCalculateKVBlocks_EP_RejectsInvalidGroupSize(t *testing.T) {
 		wantText string
 	}{
 		{"negative", -1, "must be >= 0"},
-		{"below_tp", tp - 1, "must be >= TP"},
 		{"above_tp_times_dp", tp*dp + 1, "must be <= TP·DP"},
-		{"overflow_guard", math.MaxInt, "must be <= TP·DP"},
+		// MaxInt is still the upper-bound check (not the overflow probe, which needs an
+		// absurd dp — see TestCalculateKVBlocks_EP_RejectsUncomputableBound).
+		{"far_above_tp_times_dp", math.MaxInt, "must be <= TP·DP"},
 	}
 
 	for _, tc := range cases {
@@ -299,32 +300,79 @@ func TestCalculateKVBlocks_EP_RealMoEFixtureSizesOnItsEPTopology(t *testing.T) {
 	}
 }
 
-// TestCalculateKVBlocks_EP_RejectsGroupWiderThanExpertCount is the other half of BC-6: an
-// EP group with more GPUs than the model has routed experts would leave ranks holding no
-// expert, while the per-rank average this model charges (num_experts/ep whole experts)
-// would drop below one expert on the ranks that do hold them. vLLM does not build that
-// deployment, so it is rejected rather than sized optimistically.
-func TestCalculateKVBlocks_EP_RejectsGroupWiderThanExpertCount(t *testing.T) {
-	const numExperts, tp, dp = 4, 4, 2
+// TestCalculateKVBlocks_EP_ClampsGroupToRoutedExpertCount pins the wide-EP law: an EP
+// group with more GPUs than the model has routed experts is CLAMPED to the expert count,
+// not rejected and not charged the sub-one-expert average.
+//
+// Why clamp: a group wider than the expert count is a real planning input (DeepSeek-class
+// EP320 over 256 experts; anything using --enable-eplb / --num-redundant-experts). The
+// ranks that hold an expert still hold one WHOLE expert, so num_experts is the widest
+// divisor the footprint supports — charging num_experts/ep would hand back capacity for
+// memory that does not exist. Rejecting instead would fail deployments whose block count
+// the reduction does not even change, and would mask the CLI's own topology diagnostics.
+func TestCalculateKVBlocks_EP_ClampsGroupToRoutedExpertCount(t *testing.T) {
+	const numExperts, tp, dp = 4, 2, 4
 	mc := validMoEModelConfig()
 	mc.NumLocalExperts = numExperts
 	params := latency.NewKVCapacityParams(true, numExperts, false, "silu", 14336, 0)
 	hc := validHWConfig()
 
-	// tp·dp = 8 is a legal group size for the topology but wider than the 4 experts.
-	_, err := latency.CalculateKVBlocks(mc, hc, tp, dp, 16, 0.9, params,
-		latency.WithExpertParallelSize(tp*dp))
-	if err == nil {
-		t.Fatalf("ep=%d with only %d routed experts must be rejected", tp*dp, numExperts)
+	// The widest supportable group: one whole expert per GPU. This one genuinely shards
+	// (ep=4 > tp=2), so it is not a vacuous "did not error" check.
+	atCount, err := latency.CalculateKVBlocks(mc, hc, tp, dp, 16, 0.9, params,
+		latency.WithExpertParallelSize(numExperts))
+	if err != nil {
+		t.Fatalf("ep=%d (one expert per GPU) must size, got %v", numExperts, err)
 	}
-	if !strings.Contains(err.Error(), "must be <= the routed-expert count") {
-		t.Errorf("error must explain the expert-count bound, got %q", err.Error())
+	epOff, err := latency.CalculateKVBlocks(mc, hc, tp, dp, 16, 0.9, params)
+	if err != nil {
+		t.Fatalf("EP off: %v", err)
+	}
+	if atCount <= epOff {
+		t.Fatalf("ep=%d must free routed-expert memory (got %d blocks, EP off gave %d)",
+			numExperts, atCount, epOff)
 	}
 
-	// The widest legal group — one expert per GPU — still sizes.
-	if _, err := latency.CalculateKVBlocks(mc, hc, tp, dp, 16, 0.9, params,
-		latency.WithExpertParallelSize(numExperts)); err != nil {
-		t.Errorf("ep=%d (one expert per GPU) must be accepted, got %v", numExperts, err)
+	// tp·dp = 8 is legal for the topology but wider than the 4 experts: it must resolve to
+	// the SAME capacity as ep=num_experts, never more.
+	wider, err := latency.CalculateKVBlocks(mc, hc, tp, dp, 16, 0.9, params,
+		latency.WithExpertParallelSize(tp*dp))
+	if err != nil {
+		t.Fatalf("ep=%d wider than %d experts must clamp, not error: %v", tp*dp, numExperts, err)
+	}
+	if wider != atCount {
+		t.Errorf("ep=%d must clamp to the routed-expert count (%d blocks), got %d — a wider group "+
+			"cannot put less than one whole expert on a loaded rank", tp*dp, atCount, wider)
+	}
+}
+
+// TestCalculateKVBlocks_EP_GroupAtOrBelowTPNeverFails is the regression guard for the
+// clamp's predecessor: an EP group at or below TP is a strict no-op on the block count
+// (the reduction needs ep > tp), so validation must never fail there — including when the
+// model has FEWER routed experts than TP, which a bound on the expert count would have
+// rejected. `--tp 16 --enable-expert-parallel` on an 8-expert Mixtral is exactly that
+// shape, and it sizes fine on any build without this feature.
+func TestCalculateKVBlocks_EP_GroupAtOrBelowTPNeverFails(t *testing.T) {
+	mc := validMoEModelConfig() // 8 routed experts
+	params := validMoEKVParams()
+	hc := validHWConfig()
+	const dp, blockSize, util = 1, int64(16), 0.9
+
+	for _, tp := range []int{2, 8, 16} {
+		base, err := latency.CalculateKVBlocks(mc, hc, tp, dp, blockSize, util, params)
+		if err != nil {
+			t.Fatalf("tp=%d EP off: %v", tp, err)
+		}
+		// ep == tp is what every DP=1 EP-on deployment produces.
+		got, err := latency.CalculateKVBlocks(mc, hc, tp, dp, blockSize, util, params,
+			latency.WithExpertParallelSize(tp))
+		if err != nil {
+			t.Fatalf("tp=%d, ep=tp (%d experts) must not fail validation: %v", tp, params.NumLocalExperts, err)
+		}
+		if got != base {
+			t.Errorf("tp=%d: ep=tp gave %d blocks, want the EP-off %d (a group equal to TP shards nothing)",
+				tp, got, base)
+		}
 	}
 }
 
@@ -334,12 +382,91 @@ func TestCalculateKVBlocks_EP_RejectsGroupWiderThanExpertCount(t *testing.T) {
 // size and hand back capacity for memory that does not exist).
 func TestCalculateKVBlocks_EP_RejectsUncomputableBound(t *testing.T) {
 	mc, hc, params := validMoEModelConfig(), validHWConfig(), validMoEKVParams()
+	// ep must exceed tp to reach the bound at all (ep <= tp resolves to "no sharding").
 	_, err := latency.CalculateKVBlocks(mc, hc, 4, math.MaxInt, 16, 0.9, params,
-		latency.WithExpertParallelSize(4))
+		latency.WithExpertParallelSize(8))
 	if err == nil {
 		t.Fatal("an overflowing TP·DP bound must be rejected, got nil error")
 	}
 	if !strings.Contains(err.Error(), "overflows") {
 		t.Errorf("error must name the overflow, got %q", err.Error())
+	}
+}
+
+// TestCalculateKVBlocks_EP_ExactLawOnDensePrefixSharedExpertModel runs BC-2's exact-bytes
+// law on the committed glm-5.2-fp8 fixture, which — unlike the Mixtral-shaped fixture —
+// has BOTH a dense prefix (first_k_dense_replace=3 of 78 layers) and a shared expert
+// (n_shared_experts=1). Those are the two terms that must NOT move with the EP group:
+// an implementation that scaled all layers instead of the MoE layers, or that folded the
+// shared expert into the routed subtotal, produces a different freed-bytes figure and
+// fails here while passing every pass/fail test in the file.
+func TestCalculateKVBlocks_EP_ExactLawOnDensePrefixSharedExpertModel(t *testing.T) {
+	mc, params := glmFixtureConfig(t), glmFixtureParams(t)
+	hc := validHWConfig() // 80 GiB
+	// tp=16 fits the model both ways (EP off is ~697 GiB against a 1152 GiB budget), so the
+	// delta is measurable rather than one side erroring.
+	const tp, dp, blockSize, util = 16, 2, int64(16), 0.9
+	const ep = tp * dp
+
+	if params.SharedExpertFFNDim <= 0 || mc.FirstKDenseReplace <= 0 {
+		t.Fatalf("fixture must have a shared expert and a dense prefix for this law to bite: shared=%d firstKDense=%d",
+			params.SharedExpertFFNDim, mc.FirstKDenseReplace)
+	}
+
+	off, err := latency.CalculateKVBlocks(mc, hc, tp, dp, blockSize, util, params)
+	if err != nil {
+		t.Fatalf("EP off: %v", err)
+	}
+	on, err := latency.CalculateKVBlocks(mc, hc, tp, dp, blockSize, util, params,
+		latency.WithExpertParallelSize(ep))
+	if err != nil {
+		t.Fatalf("EP on: %v", err)
+	}
+
+	routedBytes := routedExpertWeightBytes(mc, params)
+	perBlock := perBlockBytesFor(t, mc, tp, blockSize)
+	wantPerRank := routedBytes * (1.0 - float64(tp)/float64(ep)) / float64(perBlock)
+	gotPerRank := float64(on-off) / float64(dp)
+	if math.Abs(gotPerRank-wantPerRank) > 2.0 {
+		t.Errorf("BC-2 on glm-5.2-fp8: EP freed %.1f blocks/rank, want %.1f — only the routed-expert "+
+			"term over the %d MoE layers may move (not the %d dense-prefix layers, not the shared expert)",
+			gotPerRank, wantPerRank, mc.NumLayers-mc.FirstKDenseReplace, mc.FirstKDenseReplace)
+	}
+}
+
+// TestCalculateKVBlocks_EP_RoutedWeightConservation is the conservation companion to the
+// delta law, and the shortest statement of what expert parallelism means: summed over the
+// deployment's dp ranks, the routed-expert weight charged at ep = tp·dp is exactly R —
+// the experts are stored ONCE for the whole deployment — whereas with EP off it is dp·R
+// (a full copy per independent replica, BLIS's #1531 DP model). Asserted in bytes via the
+// allocatable-memory difference, so it holds under any refactor of how the divisor is
+// plumbed.
+func TestCalculateKVBlocks_EP_RoutedWeightConservation(t *testing.T) {
+	mc, hc, params := validMoEModelConfig(), validHWConfig(), validMoEKVParams()
+	const tp, dp, blockSize, util = 2, 4, int64(16), 0.9
+	const ep = tp * dp
+
+	off, err := latency.CalculateKVBlocks(mc, hc, tp, dp, blockSize, util, params)
+	if err != nil {
+		t.Fatalf("EP off: %v", err)
+	}
+	on, err := latency.CalculateKVBlocks(mc, hc, tp, dp, blockSize, util, params,
+		latency.WithExpertParallelSize(ep))
+	if err != nil {
+		t.Fatalf("EP on: %v", err)
+	}
+
+	routedBytes := routedExpertWeightBytes(mc, params)
+	perBlock := perBlockBytesFor(t, mc, tp, blockSize)
+
+	// Bytes freed across the whole deployment = dp·R − R = (dp−1)·R.
+	wantFreedTotal := routedBytes * float64(dp-1)
+	gotFreedTotal := float64(on-off) * float64(perBlock)
+	// Slack: two blocks of truncation per rank, converted back to bytes.
+	slack := 2.0 * float64(dp) * float64(perBlock)
+	if math.Abs(gotFreedTotal-wantFreedTotal) > slack {
+		t.Errorf("routed-weight conservation: EP freed %.0f bytes deployment-wide, want %.0f = (dp−1)·R "+
+			"(R=%.0f, dp=%d) — at ep=tp·dp the experts are stored exactly once",
+			gotFreedTotal, wantFreedTotal, routedBytes, dp)
 	}
 }
