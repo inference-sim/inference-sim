@@ -410,10 +410,19 @@ const dpPlacementInstanceWarnThreshold = 512
 // site funnels through here so one formula serves all of them (R23).
 //
 // Note the capacity effect only appears when the EP group exceeds tp — i.e. with DP>1.
-// `--dp>1` together with `--enable-expert-parallel` is currently rejected downstream
-// (planDPPlacement, #1548 on run; the MoE dp>1 guard on replay, #1556), so today this is
-// a no-op in practice; it makes the capacity arithmetic correct ahead of those, and stops
-// the weight over-count from masking their diagnostics.
+// `--dp>1` together with `--enable-expert-parallel` is currently rejected downstream by
+// planDPPlacement's #1548 guard — on BOTH commands since #1556, which replaced replay's
+// separate "MoE dp>1 is run-only" rejection with the shared resolveDPPlacement, so the
+// one #1548 guard now covers run and replay alike. Today this is therefore a no-op in
+// practice; it makes the capacity arithmetic correct ahead of #1548, and stops the weight
+// over-count from masking its diagnostics.
+//
+// Ordering note (#1556): resolveDPPlacement mutates numInstances / totalKVBlocks /
+// maxModelLen but NEVER dataParallelism — the per-replica DP=1 travels as the returned
+// dpPlan.PerRankDP, straight into NewModelHardwareConfig. So this function reads the
+// logical CLI --dp whatever the call order, which is exactly what it needs; a future
+// change that wrote the per-rank DP back into the flag var would silently collapse the EP
+// group to tp and undo #1656.
 //
 // Two of resolveLatencyConfig's own EP rejections (roofline + EP, dense + EP) also fire
 // AFTER the auto-calc that calls this, so an EP group can be resolved for a config that is
@@ -440,11 +449,12 @@ func formatEPForLog(ep int) string {
 	return strconv.Itoa(ep)
 }
 
-// planDPPlacement decides DP-as-real-placement expansion for `blis run` and
-// rejects placement combinations #1531 does not yet model. It is pure (no
-// package state) so the decision is unit-testable independently of the runCmd
-// wiring that applies it. On error it returns the zero plan (Active=false,
-// Replicas=0); callers MUST `logrus.Fatalf` on error and not use the plan.
+// planDPPlacement decides DP-as-real-placement expansion (for both `blis run`
+// and `blis replay` — see resolveDPPlacement) and rejects placement combinations
+// #1531 does not yet model. It is pure (no package state) so the decision is
+// unit-testable independently of the command wiring that applies it. On error it
+// returns the zero plan (Active=false, Replicas=0); callers MUST `logrus.Fatalf`
+// on error and not use the plan.
 //
 // DP-as-placement applies only to an MoE model with dp>1, expert parallelism
 // OFF, no PD disaggregation, no node pools, and no autoscaler; each replica is
@@ -493,26 +503,135 @@ func planDPPlacement(isMoE bool, dp int, epOn, pdActive, autoscalerActive, nodeP
 	return dpPlacementPlan{Active: true, Replicas: dp, PerRankDP: 1}, nil
 }
 
-// applyDPPlacement applies a DP-as-placement plan to the mutable deployment
-// quantities: it returns the expanded instance count and the per-replica KV-block
-// budget. It is pure so the production per-rank division (the exact defect BC-2
-// guards against — no dp² double-count) is directly unit-testable rather than
-// re-implemented in a test.
+// dpPlacementDeployment carries the three deployment quantities DP-as-real-placement
+// adjusts. It is both the input (pre-expansion) and the output (post-expansion) of
+// applyDPPlacement.
+type dpPlacementDeployment struct {
+	NumInstances  int   // engine replicas (logical --num-instances on the way in)
+	TotalKVBlocks int64 // KV blocks per instance (the dp-multiplied aggregate on the way in when autoScaledKV)
+	MaxModelLen   int64 // --max-model-len (0 = unset/unlimited)
+}
+
+// applyDPPlacement applies a DP-as-placement plan to the deployment quantities: it
+// expands the instance count, divides the KV budget to one rank, and re-caps
+// --max-model-len to that per-rank budget. It is pure (no package state) so the
+// production arithmetic — the exact defect BC-2 guards against, no dp² double-count —
+// is directly unit-testable rather than re-implemented in a test. On error the
+// deployment is returned UNCHANGED.
 //
-// autoScaled must be true iff the incoming totalKVBlocks is the successful global
+// autoScaledKV must be true iff the incoming TotalKVBlocks is the successful global
 // auto-calc value, which kv_capacity.go Step 6 already multiplied by dp for MoE —
 // then it is divided back to one rank (exact: (perRank×dp)/dp). An explicit
-// --total-kv-blocks (autoScaled=false) is per-instance already, so each replica
-// keeps it (aggregate dp×value). A non-Active plan is the identity.
-func applyDPPlacement(plan dpPlacementPlan, dp int, numInstances int, totalKVBlocks int64, autoScaled bool) (newNumInstances int, perRankKVBlocks int64) {
+// --total-kv-blocks (autoScaledKV=false) is per-instance already, so each replica
+// keeps it (aggregate dp×value) and no max-model-len re-cap is needed (no aggregate
+// was ever used as the cap). A non-Active plan is the identity.
+func applyDPPlacement(plan dpPlacementPlan, dp int, dep dpPlacementDeployment, autoScaledKV bool, blockSizeTokens int64) (dpPlacementDeployment, error) {
 	if !plan.Active {
-		return numInstances, totalKVBlocks
+		return dep, nil
 	}
-	perRankKVBlocks = totalKVBlocks
-	if autoScaled {
-		perRankKVBlocks /= int64(dp)
+	out := dep
+	out.NumInstances = dep.NumInstances * plan.Replicas
+	if autoScaledKV {
+		out.TotalKVBlocks = dep.TotalKVBlocks / int64(dp)
 	}
-	return numInstances * plan.Replicas, perRankKVBlocks
+	// The per-rank division floors, so a --dp larger than the auto-derived block count
+	// would leave a 0-block replica — which NewSimulator panics on, and whose derived
+	// kvFeasibleMax of 0 would silently mean "unlimited" in the re-cap below (the
+	// inverse of a cap). Report it as a clean CLI error instead (R1). The guarantee
+	// that the auto path cannot produce this lives in another package
+	// (sim/latency/kv_capacity.go rejects a non-positive total before multiplying by
+	// dp), so this is defense in depth. Unreachable on the explicit
+	// --total-kv-blocks path, which is validated > 0 upstream and is not divided.
+	if out.TotalKVBlocks <= 0 {
+		return dep, fmt.Errorf("--dp %d exceeds the auto-derived KV capacity: dividing it across %d engine "+
+			"replicas leaves %d KV blocks each. Lower --dp, raise --gpu-memory-utilization, use a larger GPU "+
+			"(--hardware), or set --total-kv-blocks explicitly (it is per replica)",
+			dp, plan.Replicas, out.TotalKVBlocks)
+	}
+	// The resolveLatencyConfig max-model-len KV-feasibility cap used the pre-division
+	// aggregate total; each replica now holds only the per-rank budget, so re-cap
+	// max-model-len to the per-rank KV-feasible maximum (mirrors kv_autocalc.go for
+	// node pools). Without this, per-replica NewSimulator would panic ("KV cache too
+	// small for MaxModelLen") on a reachable config — a Go stack trace where the CLI
+	// boundary requires a clean fatal/cap.
+	if autoScaledKV && out.MaxModelLen > 0 && blockSizeTokens > 0 {
+		kvFeasibleMax := out.TotalKVBlocks * blockSizeTokens
+		if out.MaxModelLen > kvFeasibleMax {
+			logrus.Warnf("--max-model-len %d exceeds per-rank KV capacity (%d blocks × %d tokens) under "+
+				"DP-as-placement; capping to %d tokens", out.MaxModelLen, out.TotalKVBlocks, blockSizeTokens, kvFeasibleMax)
+			out.MaxModelLen = kvFeasibleMax
+		}
+	}
+	return out, nil
+}
+
+// resolveDPPlacement plans DP-as-real-placement (#1531) and applies it to the cmd/
+// deployment vars, emitting the operator diagnostics. It is the ONE code path both
+// `blis run` and `blis replay` traverse (R23), so INV-13 parity for MoE --dp>1 is
+// structural (#1556 lifted the former run-only guard in cmd/replay.go).
+//
+// Like resolveLatencyConfig and resolvePolicies, it READS AND WRITES the package-level
+// flag vars itself rather than taking them as arguments — deliberately, so there is no
+// per-command wiring for a future edit to get right in only one of the two command
+// bodies. The pure decision (planDPPlacement) and the pure arithmetic
+// (applyDPPlacement) stay separately unit-testable.
+//
+// Reads: dataParallelism, enableExpertParallel, prefill/decode/prefillDecode/encode
+// instance counts, blockSizeTokens, moeCommBackend, numInstances, totalKVBlocks,
+// maxModelLen.
+//
+// Side effects (package-level vars mutated, only when the plan is active and every
+// guard passes): numInstances, totalKVBlocks, maxModelLen.
+//
+// autoscalerActive / nodePoolsActive are parameters because the two commands hold that
+// state differently: runCmd in its extracted bundleAutoscalerIntervalUs / bundleNodePools,
+// replayCmd in the parsed policy bundle plus its own flag-level rejection.
+//
+// On error NOTHING is mutated and the caller MUST `logrus.Fatalf` — the CLI boundary
+// owns termination; this function only reports. A non-Active plan (dense model, or
+// --dp 1) mutates nothing, which is what makes the feature a byte-identical no-op
+// (INV-6).
+func resolveDPPlacement(lr latencyResolution, autoscalerActive, nodePoolsActive bool) (dpPlacementPlan, error) {
+	plan, err := planDPPlacement(lr.ModelConfig.IsMoE(), dataParallelism, enableExpertParallel,
+		prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0,
+		autoscalerActive, nodePoolsActive)
+	if err != nil {
+		return dpPlacementPlan{}, err
+	}
+	if !plan.Active {
+		return plan, nil
+	}
+	logicalInstances := numInstances
+	// autoScaledKV iff the global auto-calc succeeded (kv_capacity.go Step 6 then
+	// multiplied the total by dp for MoE) — exactly the resolveLatencyConfig auto gate.
+	autoScaledKV := lr.KVParamsOK && lr.HWConfig.MemoryGiB > 0
+	dep, err := applyDPPlacement(plan, dataParallelism, dpPlacementDeployment{
+		NumInstances:  numInstances,
+		TotalKVBlocks: totalKVBlocks,
+		MaxModelLen:   maxModelLen,
+	}, autoScaledKV, blockSizeTokens)
+	if err != nil {
+		return dpPlacementPlan{}, err
+	}
+	numInstances, totalKVBlocks, maxModelLen = dep.NumInstances, dep.TotalKVBlocks, dep.MaxModelLen
+	logrus.Infof("[cluster] DP-as-placement: --dp %d (MoE) → %d single-node engine replicas per logical instance "+
+		"(%d logical × %d = %d instances), each per-rank (DP=1, %d KV blocks/replica)",
+		dataParallelism, plan.Replicas, logicalInstances, plan.Replicas, numInstances, totalKVBlocks)
+	if numInstances > dpPlacementInstanceWarnThreshold {
+		logrus.Warnf("[cluster] DP-as-placement is spawning %d engine replicas (--num-instances %d × --dp %d); "+
+			"if --dp was a typo this will consume a large amount of memory and time", numInstances, logicalInstances, dataParallelism)
+	}
+	// --moe-comm-backend selects the DP>1 dispatch/combine cost; under DP-as-placement
+	// each replica is DP=1, so that term is inert (the MoE FFN all-reduces over the TP
+	// group instead — correct EP-off physics). The resolveLatencyConfig no-op warning
+	// does not fire here (it gates on the CLI dataParallelism, which is >1), so warn
+	// explicitly to avoid a user believing the backend choice affects this run.
+	if moeCommBackend != "" {
+		logrus.Warnf("--moe-comm-backend=%s is inert under DP-as-placement: each of the %d DP replicas runs "+
+			"at DP=1, so the MoE FFN all-reduces over the TP group (no cross-DP dispatch/combine). The DP>1 "+
+			"dispatch term belongs to EP-on placement, deferred to #1548.", moeCommBackend, plan.Replicas)
+	}
+	return plan, nil
 }
 
 // resolveLatencyConfig resolves the latency backend configuration from CLI flags and
@@ -883,6 +1002,16 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	if (dataParallelism > 1 || enableExpertParallel) && backend != "trained-physics" {
 		// INV BC-ROOFLINE: roofline does not model DP/EP step-time effects, so
 		// accepting these flags there would imply unsupported latency semantics.
+		//
+		// LATENT HOLE — READ THIS BEFORE LIFTING #1553. This gate reads the GLOBAL
+		// backend only. A per-pool override (--prefill-latency-model / --decode-latency-model
+		// roofline) can put a pool on roofline while the global backend is trained-physics,
+		// which slips past this check and would give that pool DP/EP-blind step time with
+		// --dp > 1 in force. It is unreachable TODAY only because PD disaggregation with
+		// MoE --dp > 1 is itself rejected by planDPPlacement (#1553) — i.e. two independent
+		// guards happen to compose. Whoever lifts #1553 must revisit this gate and validate
+		// the per-pool backends here (or in the per-pool override block), because at that
+		// moment this becomes a live silent-mis-model path rather than a theoretical one.
 		logrus.Fatalf("--dp > 1 and --enable-expert-parallel require --latency-model trained-physics "+
 			"(got --dp=%d, --enable-expert-parallel=%t, --latency-model %s). The roofline backend is "+
 			"DP/EP-blind for step time.",
@@ -1296,7 +1425,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&model, "model", "", "LLM name")
 	cmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
 	cmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
-	cmd.Flags().IntVar(&dataParallelism, "dp", 1, "Data parallelism degree (MoE models only; --latency-model trained-physics only). On `blis run`, --dp N spawns N real single-node engine replicas per --num-instances, each sized per-rank; run-only (blis replay rejects --dp>1 for MoE, #1556). Not yet supported with --enable-expert-parallel (#1548), or with PD disaggregation / the autoscaler / node pools (#1553)")
+	cmd.Flags().IntVar(&dataParallelism, "dp", 1, "Data parallelism degree (MoE models only; --latency-model trained-physics only). --dp N spawns N real single-node engine replicas per --num-instances, each sized per-rank, on both `blis run` and `blis replay` (#1531, #1556). Not yet supported with --enable-expert-parallel (#1548), or with PD disaggregation / the autoscaler / node pools (#1553)")
 	cmd.Flags().BoolVar(&enableExpertParallel, "enable-expert-parallel", false, "Enable expert parallelism for MoE models (mirrors vLLM --enable-expert-parallel; --latency-model trained-physics only)")
 	cmd.Flags().StringVar(&moeCommBackend, "moe-comm-backend", "", "MoE all-to-all comm backend for dispatch/combine cost (mirrors vLLM VLLM_ALL2ALL_BACKEND: naive, allgather_reducescatter [default], pplx, deepep_high_throughput, deepep_low_latency, mori, flashinfer_all2allv; MoE + --latency-model trained-physics + --dp > 1)")
 	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "trained-physics", "Latency model backend: trained-physics (default), roofline")
@@ -2239,10 +2368,6 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("Invalid --decode-routing-scorers: %v", err)
 			}
 		}
-		// Log configuration after all config sources (CLI, workload spec, policy bundle) are resolved
-		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v",
-			totalKVBlocks, simulationHorizon, lr.AlphaCoeffs, lr.BetaCoeffs)
-
 		// LoRA control-plane (#1464). loraCfg was resolved once at the top of RunE (for
 		// the KV HBM reservation); here we cross-validate every workload adapter
 		// reference against the declared registry (unknown id / base-model mismatch =>
@@ -2267,55 +2392,27 @@ var runCmd = &cobra.Command{
 		// instance. Expand to numInstances × N real replicas — reusing the existing
 		// per-instance placement path — and configure each replica per-rank (DP=1) so its
 		// latency + KV model describe one rank. Guarded combos (EP-on, PD, autoscaler)
-		// fail fast rather than being silently mis-modeled. Run-only: `blis replay`
-		// Fatalf's on the same config (INV-13). A no-op for --dp 1 and dense models.
-		dpPlan, dpErr := planDPPlacement(lr.ModelConfig.IsMoE(), dataParallelism, enableExpertParallel,
-			prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0,
-			bundleAutoscalerIntervalUs > 0,
-			len(bundleNodePools) > 0)
+		// fail fast rather than being silently mis-modeled. resolveDPPlacement is the ONE
+		// code path run and replay share (R23), so INV-13 parity is structural (#1556).
+		// A no-op for --dp 1 and dense models.
+		//
+		// Ordering caveat (mirrored in cmd/replay.go): the per-pool KV auto-calc earlier in
+		// this body also reads maxModelLen (for prefillOverrides / decodeOverrides) and so
+		// sees the pre-division value. Safe only because PD + --dp>1 is a guarded combo
+		// (#1553): an active DP plan Fatalf's, and a PD run never has an active plan. If
+		// #1553 is lifted, recompute the per-pool overrides after this call.
+		dpPlan, dpErr := resolveDPPlacement(lr, bundleAutoscalerIntervalUs > 0, len(bundleNodePools) > 0)
 		if dpErr != nil {
 			logrus.Fatalf("%v", dpErr)
 		}
-		if dpPlan.Active {
-			logicalInstances := numInstances
-			// autoScaled iff the global auto-calc succeeded (kv_capacity.go Step 6 then
-			// multiplied the total by dp for MoE) — exactly the resolveLatencyConfig auto
-			// gate. applyDPPlacement divides that back to one rank (exact) and expands the
-			// instance count; an explicit --total-kv-blocks is kept per-replica.
-			autoScaled := lr.KVParamsOK && lr.HWConfig.MemoryGiB > 0
-			numInstances, totalKVBlocks = applyDPPlacement(dpPlan, dataParallelism, numInstances, totalKVBlocks, autoScaled)
-			// The resolveLatencyConfig max-model-len KV-feasibility cap used the pre-division
-			// aggregate total; each replica now holds only the per-rank budget, so re-cap
-			// max-model-len to the per-rank KV-feasible maximum (mirrors kv_autocalc.go for
-			// node pools). Without this, per-replica NewSimulator would panic ("KV cache too
-			// small for MaxModelLen") on a reachable config — a Go stack trace where the CLI
-			// boundary requires a clean fatal/cap.
-			if autoScaled && maxModelLen > 0 && blockSizeTokens > 0 {
-				kvFeasibleMax := totalKVBlocks * blockSizeTokens
-				if maxModelLen > kvFeasibleMax {
-					logrus.Warnf("--max-model-len %d exceeds per-rank KV capacity (%d blocks × %d tokens) under "+
-						"DP-as-placement; capping to %d tokens", maxModelLen, totalKVBlocks, blockSizeTokens, kvFeasibleMax)
-					maxModelLen = kvFeasibleMax
-				}
-			}
-			logrus.Infof("[cluster] DP-as-placement: --dp %d (MoE) → %d single-node engine replicas per logical instance "+
-				"(%d logical × %d = %d instances), each per-rank (DP=1, %d KV blocks/replica)",
-				dataParallelism, dpPlan.Replicas, logicalInstances, dpPlan.Replicas, numInstances, totalKVBlocks)
-			if numInstances > dpPlacementInstanceWarnThreshold {
-				logrus.Warnf("[cluster] DP-as-placement is spawning %d engine replicas (--num-instances %d × --dp %d); "+
-					"if --dp was a typo this will consume a large amount of memory and time", numInstances, logicalInstances, dataParallelism)
-			}
-			// --moe-comm-backend selects the DP>1 dispatch/combine cost; under DP-as-placement
-			// each replica is DP=1, so that term is inert (the MoE FFN all-reduces over the TP
-			// group instead — correct EP-off physics). The resolveLatencyConfig no-op warning
-			// does not fire here (it gates on the CLI dataParallelism, which is >1), so warn
-			// explicitly to avoid a user believing the backend choice affects this run.
-			if moeCommBackend != "" {
-				logrus.Warnf("--moe-comm-backend=%s is inert under DP-as-placement: each of the %d DP replicas runs "+
-					"at DP=1, so the MoE FFN all-reduces over the TP group (no cross-DP dispatch/combine). The DP>1 "+
-					"dispatch term belongs to EP-on placement, deferred to #1548.", moeCommBackend, dpPlan.Replicas)
-			}
-		}
+
+		// Log configuration after all config sources (CLI, workload spec, policy bundle)
+		// AND the DP-as-placement adjustment are resolved, so the reported block count is
+		// the per-replica one actually configured — matching the equivalent line in
+		// cmd/replay.go, which also logs after the DP block (diagnostic parity for a
+		// feature whose whole point is that the two commands agree).
+		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v",
+			totalKVBlocks, simulationHorizon, lr.AlphaCoeffs, lr.BetaCoeffs)
 
 		// #1590 (H1): derive per_block_bytes for the offload tier chain. sim/kv cannot
 		// import sim/latency, so compute the per-rank KV byte size of one GPU block here
@@ -2348,9 +2445,9 @@ var runCmd = &cobra.Command{
 				// DP-as-placement (#1531): dpPlan.PerRankDP is the per-replica DP — 1 when
 				// the plan is active (each replica is one rank), else the CLI dataParallelism
 				// unchanged. Passing it through the canonical constructor (R4) keeps the config
-				// authoritative from the start (no construct-then-override). replay wires the
-				// raw dataParallelism and Fatalf's on MoE dp>1, so the two paths diverge only
-				// for the run-only DP-as-placement case (INV-13).
+				// authoritative from the start (no construct-then-override). Since #1556 replay
+				// wires the SAME dpPlan.PerRankDP from the SAME resolveDPPlacement, so the two
+				// paths agree for every config both support (INV-13).
 				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				LoRAConfig:           loraCfg,
