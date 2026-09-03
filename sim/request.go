@@ -155,6 +155,26 @@ func (req *Request) InputLen() int64 {
 	return int64(len(req.InputTokens))
 }
 
+// completionProgressIndex returns the ProgressIndex at which this request is finished:
+// InputLen + max(len(OutputTokens), 1) - 1. BLIS charges output token #1 to prefill
+// completion and every later token to a decode step, so a request that generated its
+// full assigned output sits exactly `len(OutputTokens) - 1` decode tokens past its
+// input (hence the -1); the max(...,1) covers a zero-output request, which finishes at
+// the end of prefill.
+//
+// Single source of truth for the boundary (R23): processCompletions tests
+// ProgressIndex against it, and batch formation caps a multi-token speculative-decode
+// grant by the distance to it (#1657) so a step lands exactly ON it rather than past
+// it. Were the two to disagree, a step could overshoot and inflate the request's
+// apparent output.
+//
+// Unexported deliberately: both callers live in package sim (the execution engine), and
+// the value is oracle-derived from len(OutputTokens), so keeping it package-private also
+// keeps it out of reach of any out-of-package control-plane code (INV-9).
+func (req *Request) completionProgressIndex() int64 {
+	return req.InputLen() + max(int64(len(req.OutputTokens)), 1) - 1
+}
+
 // FullInputTokens returns the full input-token sequence as a flat slice. The slice
 // is already flat today (a view into a session-scoped shared buffer when produced
 // by multi-turn workloads); the accessor exists as a forward-compatible migration
