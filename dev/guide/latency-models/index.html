@@ -1207,6 +1207,95 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#inter-node-network-cost-trained-physics-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inter-Node Network Cost (trained-physics only)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inter-Node Network Cost (trained-physics only)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How it works
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-second-size-independent-half" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The second, size-independent half
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-the-inputs-come-from" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where the inputs come from
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Where the inputs come from">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#worked-example-infiniband-vs-a-single-100-gbe-uplink-tp16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Worked example: InfiniBand vs a single 100 GbE uplink, TP=16
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inert-unless-a-boundary-is-actually-crossed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inert unless a boundary is actually crossed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-large-is-the-effect-and-what-is-still-missing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How large is the effect, and what is still missing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#when-to-use-which" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3129,6 +3218,95 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#inter-node-network-cost-trained-physics-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inter-Node Network Cost (trained-physics only)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inter-Node Network Cost (trained-physics only)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How it works
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-second-size-independent-half" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The second, size-independent half
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-the-inputs-come-from" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where the inputs come from
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Where the inputs come from">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#worked-example-infiniband-vs-a-single-100-gbe-uplink-tp16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Worked example: InfiniBand vs a single 100 GbE uplink, TP=16
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inert-unless-a-boundary-is-actually-crossed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inert unless a boundary is actually crossed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-large-is-the-effect-and-what-is-still-missing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How large is the effect, and what is still missing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#when-to-use-which" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3223,7 +3401,7 @@
 <li><strong>Model config</strong> -- checks <code>model_configs/</code> for a cached <code>config.json</code>, fetches from HuggingFace on miss</li>
 <li><strong>Hardware config</strong> -- uses the bundled <code>hardware_config.json</code></li>
 </ol>
-<p><strong>Supported hardware:</strong> The bundled <code>hardware_config.json</code> includes specs for <strong>H100</strong> (80 GB HBM3, 989.5 TFLOPS BF16, 3.35 TB/s), <strong>A100-SXM</strong> (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s), and <strong>A100-80</strong> (alias for A100-SXM). To use a different GPU, add an entry to <code>hardware_config.json</code> with the required fields (<code>TFlopsPeak</code>, <code>BwPeakTBs</code>, <code>mfuPrefill</code>, <code>mfuDecode</code>, <code>MemoryGiB</code>) and reference it via <code>--hardware &lt;name&gt;</code>.</p>
+<p><strong>Supported hardware:</strong> The bundled <code>hardware_config.json</code> includes specs for <strong>H100</strong> (80 GB HBM3, 989.5 TFLOPS BF16, 3.35 TB/s), <strong>A100-SXM</strong> (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s), and <strong>A100-80</strong> (alias for A100-SXM). To use a different GPU, add an entry to <code>hardware_config.json</code> with the required fields (<code>TFlopsPeak</code>, <code>BwPeakTBs</code>, <code>mfuPrefill</code>, <code>mfuDecode</code>, <code>MemoryGiB</code>), plus <code>IntraNodeBwGBps</code>/<code>InterNodeBwGBps</code> if instances on that GPU may span nodes (see <a href="#inter-node-network-cost-trained-physics-only">Inter-Node Network Cost</a>) and reference it via <code>--hardware &lt;name&gt;</code>.</p>
 <p><strong>Validated models:</strong> Any dense or MoE transformer with a HuggingFace <code>config.json</code> works. The following have been validated end-to-end:</p>
 <ul>
 <li><a href="https://huggingface.co/meta-llama/Llama-2-7b-hf">Llama-2-7B</a> / <a href="https://huggingface.co/meta-llama/Llama-2-70b-hf">Llama-2-70B</a></li>
@@ -3375,6 +3553,192 @@
 <li>Fit only β_EP to the residual between observed step time and the model's prediction with the dispatch term zeroed — i.e. attribute the leftover to <code>β_EP · tMoEDispatch</code>.</li>
 </ol>
 <p>Because the dispatch term is the <em>only</em> term gated on <code>DP &gt; 1</code>, the residual isolates it cleanly. Fit per comm-backend <em>family</em> (all-gather vs all-to-all), not per backend name; see the PR #1433 discussion for why per-backend scalars are the wrong granularity (the within-family differences are prefill/decode shape effects a single scalar cannot represent).</p>
+<h2 id="inter-node-network-cost-trained-physics-only">Inter-Node Network Cost (trained-physics only)<a class="headerlink" href="#inter-node-network-cost-trained-physics-only" title="Permanent link">&para;</a></h2>
+<p>By default a tensor-parallel all-reduce and a MoE expert dispatch/combine are both
+priced at the GPU's on-package bandwidth, with the NVLink/HBM ratio folded into the
+learned coefficient β₄. That is right for an instance living inside one node — and
+<em>free</em> for one that spans nodes. Since <a href="https://github.com/inference-sim/inference-sim/issues/1529">#1529</a>
+an instance can occupy whole nodes across a pool (GLM-5.2 at TP=16 on 2×8 H100), so
+BLIS now charges the crossing.</p>
+<h3 id="how-it-works">How it works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h3>
+<p>The two communication bases divide byte volume by an <strong>effective</strong> link bandwidth:
+<code>bwHbmUs</code> when the collective fits inside one node, and <code>bwHbmUs / spanScale</code> when it
+does not. This is a re-scale of the existing term, not an extra one — an additive
+cross-node term would double-charge a <code>DP&gt;1</code> MoE instance whose all-to-all is already
+priced by the dispatch basis.</p>
+<p>Let <code>G</code> be the collective's group size, <code>p</code> the size of the node(s) the instance was
+placed on, <code>n = ceil(G/p)</code> the nodes spanned, <code>g = min(G, p)</code> the group members per
+node, and <code>r = IntraNodeBwGBps / InterNodeBwGBps</code>. Two penalty shapes apply:</p>
+<table>
+<thead>
+<tr>
+<th>Collective</th>
+<th>Applies to</th>
+<th>Penalty</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ring</td>
+<td>TP all-reduce (<code>G = tp</code>: attention, dense FFN, and the <code>DP=1</code> MoE-FFN reduce) and the <code>allgather_reducescatter</code> / <code>naive</code> MoE family, whose volume basis is ring-shaped</td>
+<td><code>1 + (r-1)·(n-1)/(G-1)</code></td>
+</tr>
+<tr>
+<td>All-to-all</td>
+<td><code>deepep_*</code> / <code>pplx</code> / <code>mori</code> / <code>flashinfer_all2allv</code> MoE dispatch (<code>G = TP·DP</code>)</td>
+<td><code>1 + (r-1)·(G-g)/(G-1)</code></td>
+</tr>
+</tbody>
+</table>
+<p>The ring form is derived from the <strong>hierarchical (two-level)</strong> algorithm NCCL uses
+across nodes: an intra-node reduce-scatter + all-gather over the <code>g</code> ranks on a node,
+then an inter-node all-reduce of the <em>reduced</em> <code>S/g</code> chunk across the <code>n</code> nodes.
+Normalized by the flat single-node baseline this simplifies exactly to the expression
+above. The all-to-all form is a per-peer split: a rank's egress goes to <code>G-1</code> peers,
+<code>G-g</code> of which are on other nodes — far more of the traffic leaves the node than in a
+ring, which is why the expert all-to-all rather than the TP all-reduce is the dominant
+cross-node cost for wide expert parallelism.</p>
+<p>Both penalties are exactly <code>1.0</code> when nothing crosses a boundary (<code>n = 1</code>) or when the
+fabric is no slower than the on-node link (<code>r ≤ 1</code>), and both are monotone in <code>r</code>: a
+worse fabric never lowers the cost.</p>
+<h3 id="the-second-size-independent-half">The second, size-independent half<a class="headerlink" href="#the-second-size-independent-half" title="Permanent link">&para;</a></h3>
+<p>Bandwidth is only half the story. Every cross-node collective also pays a fixed cost —
+NCCL launch, fabric round-trip, and the synchronization a two-level collective imposes —
+that does not shrink with the message. For the small messages a decode step produces,
+that fixed cost can exceed the bandwidth half by an order of magnitude, and it is the
+mechanism behind vLLM's guidance to prefer pipeline parallelism across nodes and tensor
+parallelism within a node: per-layer all-reduce means <em>many small</em> collectives, not a few
+large ones.</p>
+<p><code>InterNodeLatencyUs</code> supplies it. It is charged once per comm unit that crosses a node
+boundary, so a step running <code>L</code> layers × 2 phases pays it <code>2L</code> times, and it is skipped
+entirely for a step that communicates no tokens (no collective runs, so nothing launches).</p>
+<p><strong>It is 0 — not charged — in the bundled hardware config, deliberately.</strong> BLIS has no
+measured per-collective latency to ship, and a guessed constant would sit in front of
+every multi-node estimate. So out of the box the cross-node cost is bandwidth-only, and
+the size-independent half is available but off. Supply a measured value to model it; see
+<a href="https://github.com/inference-sim/inference-sim/issues/1661">#1661</a>, which also records
+the calibration-evidence bar. Like the bandwidth half, it rides the learned communication
+coefficient (β₄, or β_EP for MoE dispatch), so calibrate it in that frame — the charge is
+<code>β · units · InterNodeLatencyUs</code>, not a raw wall-clock number.</p>
+<h3 id="where-the-inputs-come-from">Where the inputs come from<a class="headerlink" href="#where-the-inputs-come-from" title="Permanent link">&para;</a></h3>
+<p><strong>Topology is derived from placement, not declared.</strong> There is no CLI flag for it: the
+placement manager reports the size of the node(s) an instance's GPUs actually occupy,
+and that is stamped onto the instance's configuration at every placement site
+(startup, deferred node-ready, autoscaler scale-up). A declared "GPUs per node" knob
+could contradict the real <code>node_pools</code> placement, charging for a boundary that was
+never crossed or missing one that was.</p>
+<p><strong>Fabric speeds are hardware calibration</strong>, in the file <code>--hardware-config</code> already
+points at:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">"H100"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">"TFlopsPeak"</span><span class="p">:</span><span class="w"> </span><span class="mf">989.5</span><span class="p">,</span><span class="w"> </span><span class="nt">"BwPeakTBs"</span><span class="p">:</span><span class="w"> </span><span class="mf">3.35</span><span class="p">,</span><span class="w"> </span><span class="nt">"MemoryGiB"</span><span class="p">:</span><span class="w"> </span><span class="mf">80.0</span><span class="p">,</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">"IntraNodeBwGBps"</span><span class="p">:</span><span class="w"> </span><span class="mi">450</span><span class="p">,</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">"InterNodeBwGBps"</span><span class="p">:</span><span class="w"> </span><span class="mi">50</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="p">}</span>
+</code></pre></div>
+<p>Both are per-GPU <strong>effective unidirectional</strong> GB/s. Only their ratio is used, so the
+absolute scale cancels — but the <em>convention</em> must match on both fields (mixing a
+bidirectional NVLink figure with a unidirectional NIC figure doubles the penalty).
+Committed values: H100 450/50 (NVLink 4 against one 400 Gb/s ConnectX-7 per GPU),
+A100 300/25 (NVLink 3 against HDR-200 per GPU), L40S 32/12.5 (PCIe Gen4 — no NVLink —
+against 100 GbE). Set both or neither; a half-calibration is a hard error.</p>
+<p>To compare fabrics (InfiniBand vs RoCE vs a single uplink), run the same workload twice
+with different <code>InterNodeBwGBps</code> values in that file. (Giving two pools distinct
+<code>gpu_type</code> entries models a <em>mixed-fabric</em> fleet in one run, which is a different
+question — and it leans on the <code>gpu_type</code> keying that
+<a href="https://github.com/inference-sim/inference-sim/issues/1662">#1662</a> tracks.)</p>
+<div class="admonition warning">
+<p class="admonition-title">Check the shape you are comparing actually spans nodes</p>
+<p>A cost that is only charged when a collective crosses a node boundary is zero for a
+deployment where none does. In particular the shape GLM-5.2 is really served with —
+TP=1, DP=16, EP=16, tensor parallelism kept inside the node — charges <strong>nothing</strong>
+today: at TP=1 there is no TP collective, and the expert all-to-all leg is not yet
+reachable (see the last of the known approximations below). Comparing fabrics is
+meaningful for a multi-node <strong>TP</strong> shape now, and for wide expert parallelism once
+<a href="https://github.com/inference-sim/inference-sim/issues/1548">#1548</a> lands.</p>
+</div>
+<h4 id="worked-example-infiniband-vs-a-single-100-gbe-uplink-tp16">Worked example: InfiniBand vs a single 100 GbE uplink, TP=16<a class="headerlink" href="#worked-example-infiniband-vs-a-single-100-gbe-uplink-tp16" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># A pool of 8-GPU H100 nodes; TP=16 forces the instance across two of them.</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>cat<span class="w"> </span>&gt;<span class="w"> </span>pools.yaml<span class="w"> </span><span class="s">&lt;&lt;'YAML'</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="s">node_pools:</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="s">  - name: h100</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="s">    gpu_type: H100</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="s">    gpus_per_node: 8</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="s">    gpu_memory_gib: 80</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="s">    initial_nodes: 4</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="s">    max_nodes: 4</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="s">    cost_per_hour: 30.0</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="s">YAML</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="c1"># Run A — the bundled H100 entry: 450/50 GB/s (one 400 Gb/s NIC per GPU), ratio 9x.</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>&lt;your-model&gt;<span class="w"> </span>--tp<span class="w"> </span><span class="m">16</span><span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w">   </span>--latency-model<span class="w"> </span>trained-physics<span class="w"> </span>--policy-config<span class="w"> </span>pools.yaml<span class="w">   </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">8</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="c1"># Run B — copy hardware_config.json, drop the H100 entry's InterNodeBwGBps to 12.5</span>
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="c1"># (a single 100 GbE uplink shared by the node's 8 GPUs), then:</span>
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>&lt;your-model&gt;<span class="w"> </span>--tp<span class="w"> </span><span class="m">16</span><span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w">   </span>--latency-model<span class="w"> </span>trained-physics<span class="w"> </span>--policy-config<span class="w"> </span>pools.yaml<span class="w">   </span>--hardware-config<span class="w"> </span>./hardware_config.roce.json<span class="w">   </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">8</span>
+</code></pre></div>
+<p>Compare <code>ttft_p50_ms</code> / <code>itl_mean_ms</code> between the two. Run B's ratio is 36× rather than
+9×, so its communication term is larger; the difference is the fabric's contribution.
+Both runs warn once on stderr that an instance spans nodes, and if either run reports
+that the cross-node cost is <em>unpriced</em>, the calibration or the backend is the reason —
+the message says which.</p>
+<h3 id="inert-unless-a-boundary-is-actually-crossed">Inert unless a boundary is actually crossed<a class="headerlink" href="#inert-unless-a-boundary-is-actually-crossed" title="Permanent link">&para;</a></h3>
+<p>Three independent gates each make the cost exactly zero, so every configuration that
+existed before this feature produces bit-identical step times:</p>
+<ol>
+<li>no <code>node_pools</code> ⇒ no placement ⇒ no topology;</li>
+<li>the collective fits inside one node ⇒ <code>n = 1</code>;</li>
+<li>the hardware declares no interconnect calibration at all — neither a bandwidth pair
+   (⇒ <code>r = 1</code>) nor a per-collective latency. Declaring only one of the two halves still
+   charges that half, which is intentional: a fabric can legitimately be modeled as
+   latency-dominated.</li>
+</ol>
+<p>Multi-node placement is <code>blis run</code> only — <code>blis replay</code> rejects <code>node_pools</code> outright
+and <code>blis observe</code> takes its timing from a real server — so a cross-node cost cannot
+arise off the run path.</p>
+<p>That leaves one hole, which is fenced explicitly. A trace exported from a multi-node run
+could be replayed <em>without</em> the <code>node_pools</code> section, and replay would then reproduce the
+workload at single-node speed — faster than the run that produced the trace, with nothing
+to indicate it. So <code>blis run</code> records the widest instance node span in the trace header
+(<code>max_nodes_spanned</code>) and <code>blis replay</code> refuses any trace that reports more than one node.
+Traces from runs without multi-node placement omit the field entirely and replay exactly
+as before.</p>
+<p>If a spanning placement will <em>not</em> be charged (uncalibrated fabric, or a backend with
+no communication term), BLIS says so once on stderr rather than silently returning an
+optimistic number. Watch for this if you use a policy bundle's <code>hw_config_by_gpu</code>
+override: it replaces the whole hardware calibration, so an entry that omits the two
+fabric fields drops them.</p>
+<h3 id="how-large-is-the-effect-and-what-is-still-missing">How large is the effect, and what is still missing<a class="headerlink" href="#how-large-is-the-effect-and-what-is-still-missing" title="Permanent link">&para;</a></h3>
+<p>For TP=16 on 2×8 H100 at <code>r = 9</code>, the TP communication term rises about <strong>1.53×</strong>,
+which is roughly <strong>+10%</strong> on total step time for a mid-size dense model. The penalty
+is modest by design: hierarchical all-reduce moves the same bytes as a flat ring, and
+only the reduced <code>S/g</code> chunk crosses the fabric. A <em>flat</em> multi-node ring would instead
+be throttled to ≈<code>r</code> (9×) — an order of magnitude more. Measured two-node H100
+all-reduce bus-bandwidth degradation (~1.3–1.5×) is why the hierarchical model is the
+one used here; treat that as the assumption to revisit if a deployment's collectives
+are known not to be hierarchical.</p>
+<p>Read <code>IntraNodeBwGBps</code> as <em>the on-node link speed β₄ was calibrated against</em>, not as a
+free-standing hardware spec: β₄ already absorbs the NVLink/HBM ratio, so the
+cross-node cost inherits β₄'s calibration as its baseline.</p>
+<p>Known approximations, each tracked:</p>
+<ul>
+<li><strong>Per-collective launch + round-trip cost is modeled but not calibrated.</strong> The
+  mechanism is <code>InterNodeLatencyUs</code> above; it is 0 in the bundled config, so out of the box
+  the cross-node cost is bandwidth-only — and at decode message sizes the missing fixed
+  cost is plausibly the <em>dominant</em> effect. Supplying a measured value is
+  <a href="https://github.com/inference-sim/inference-sim/issues/1661">#1661</a>.</li>
+<li>The fabric is keyed by GPU type rather than by pool, which is only equivalent while
+  #1529's "one <code>gpu_type</code> per pool" rule holds
+  (<a href="https://github.com/inference-sim/inference-sim/issues/1662">#1662</a>).</li>
+<li>The <strong>roofline</strong> backend models no communication at all, so a spanning placement is
+  unpriced there (<a href="https://github.com/inference-sim/inference-sim/issues/1663">#1663</a>).</li>
+<li>The all-to-all penalty sums the on-node and off-node portions rather than overlapping
+  them, and ignores DeepEP's per-node RDMA coalescing. Both are pessimistic.</li>
+<li>The lumped <code>TP·DP</code> MoE group's span is extrapolated from the placed node size, since
+  BLIS places a TP group. Combined with <code>node_pools</code> + <code>--dp&gt;1</code> being a fail-fast
+  today, the expert-all-to-all leg ships <strong>inert in every reachable configuration</strong>; it
+  becomes reachable with expert-parallel placement
+  (<a href="https://github.com/inference-sim/inference-sim/issues/1548">#1548</a>).</li>
+</ul>
 <h2 id="when-to-use-which">When to Use Which<a class="headerlink" href="#when-to-use-which" title="Permanent link">&para;</a></h2>
 <table>
 <thead>

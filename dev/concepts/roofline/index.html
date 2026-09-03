@@ -3149,7 +3149,7 @@
 <ol>
 <li><strong>Prefill Phase:</strong> Calculated for the initial prompt processing chunk.</li>
 <li><strong>Decode Phase:</strong> Calculated for generating new tokens (usually memory-bound).</li>
-<li><strong>Communication Overhead:</strong> If using Tensor Parallelism (<span class="arithmatex">\(TP &gt; 1\)</span>), adds All-Reduce latency per layer.</li>
+<li><strong>Communication Overhead:</strong> Not modeled. Tensor parallelism enters only as a sharding divisor on compute and memory traffic — there is no All-Reduce term, so TP communication is free in this backend at any <span class="arithmatex">\(TP\)</span>, within a node or across nodes. <code>--latency-model trained-physics</code> does model it (including a cross-node penalty, #1530); closing the gap here is tracked by <a href="https://github.com/inference-sim/inference-sim/issues/1663">#1663</a>.</li>
 <li><strong>Hardware Overheads:</strong> Static kernel launch times and layer-by-layer overhead constants.</li>
 </ol>
 <hr />
