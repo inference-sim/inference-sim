@@ -60,6 +60,21 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          # For issue_comment/pull_request_review_comment, github.ref is the DEFAULT
+          # branch — GitHub does not associate the event with the PR head. Without an
+          # explicit ref the action's own prompt assembly runs `git hash-object` against
+          # main and fails for every file the PR ADDS, dropping those SHAs from the prompt
+          # and emitting dozens of misleading "could not open ... No such file" lines
+          # (12 files on PR #1667). claude-code-action re-checks-out refs/pull/N/head
+          # afterwards, so the review itself was never on main — but the noise reads as
+          # though it were. Empty string falls back to checkout's default, which the
+          # `issues:` trigger needs: a plain issue has no refs/pull/N/head to check out.
+          ref: >-
+            ${{ github.event_name == 'pull_request_review_comment'
+                && format('refs/pull/{0}/head', github.event.pull_request.number)
+             || (github.event.issue.pull_request
+                && format('refs/pull/{0}/head', github.event.issue.number))
+             || '' }}
 
       - uses: anthropics/claude-code-action@v1
         env:

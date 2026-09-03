@@ -10,7 +10,10 @@ Comment on any PR:
 /archon-pr-review
 ```
 
-The GitHub Action runs automatically and posts a comment with the results.
+The GitHub Action runs automatically and posts the results as a PR comment. Re-running
+`/archon-pr-review` **updates that same comment in place** rather than adding a new one, so
+a long-running PR keeps one current report instead of a stack of near-identical ones. Every
+round's full body is still kept on its own workflow run page (job summary).
 
 ## What It Reports
 
@@ -44,7 +47,7 @@ If the PR changes package boundaries, Archon reports three sections:
 2. Runs `archon-go delta --json` to detect structural changes
 3. If empty: posts fast-track message
 4. If non-empty: runs `archon-go delta` (human report), `archon-go impact` (blast radius per changed package), and `archon-go evidence` (contract test coverage)
-5. Posts combined output as a PR comment
+5. Posts combined output as a PR comment, editing the existing archon comment if one exists
 
 ## Key Properties
 

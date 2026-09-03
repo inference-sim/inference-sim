@@ -179,4 +179,14 @@ jobs:
             echo "::warning::Archon produced no output. Skipping PR comment."
             exit 0
           fi
-          gh pr comment "$PR_NUMBER" --body-file "$OUTPUT_FILE"
+          # --edit-last keeps ONE archon comment per PR instead of appending a ~27 KB
+          # report on every push. A long-running PR otherwise accumulates hundreds of KB
+          # of near-identical comments, which the Claude review action later folds into its
+          # prompt until it exceeds the model context window and the review dies with
+          # "Prompt is too long" (run 33772637816: 244,554 tokens against a 200,000 limit).
+          # Per-round history is preserved: emit() in scripts/archon-review.sh also appends
+          # every body to $GITHUB_STEP_SUMMARY, so each round stays on its own run page.
+          # --edit-last scopes to the authenticated user (github-actions[bot]); the Claude
+          # action comments under a separate App identity, so this cannot edit those.
+          gh pr comment "$PR_NUMBER" --body-file "$OUTPUT_FILE" \
+            --edit-last --create-if-none
