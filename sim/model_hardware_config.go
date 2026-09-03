@@ -191,9 +191,16 @@ type HardwareCalib struct {
 
 	// InterNodeLatencyUs is the fixed cost of ONE cross-node collective in
 	// microseconds — NCCL launch plus fabric round-trip plus the synchronization a
-	// hierarchical collective imposes — independent of message size. It is charged per
-	// collective that crosses a node boundary, so a step running L layers × 2 comm
-	// phases pays it L × 2 times.
+	// hierarchical collective imposes — independent of message size. It is charged once
+	// per collective that crosses a node boundary, so the multiplier is the step's
+	// cross-node COLLECTIVE COUNT, which depends on the parallelism shape:
+	//
+	//   - a dense TP step launches 2 per layer (the attention all-reduce and the FFN
+	//     all-reduce), so 2L. Note a ring all-reduce is ONE call even though its byte
+	//     volume has two phases;
+	//   - an MoE step at DP>1 launches 3 per layer: the attention all-reduce plus the
+	//     expert dispatch and combine, which are two separate calls (see
+	//     moeDispatchCollectivesPerLayer in sim/latency).
 	//
 	// This is the size-independent half of the cross-node cost, and for the small
 	// messages a decode step produces it can exceed the bandwidth half by an order of

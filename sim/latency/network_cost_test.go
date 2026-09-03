@@ -740,3 +740,44 @@ func TestStepTime_SpanningPathAllocatesNothing(t *testing.T) {
 		})
 	}
 }
+
+// TestStepTime_MoEDispatchChargesTwoCollectivesPerLayer pins the per-layer cross-node
+// COLLECTIVE COUNT, which differs between the two comm paths and is easy to get wrong in
+// exactly one direction.
+//
+// A TP unit is one NCCL call (a ring all-reduce is a single call even though its byte
+// volume has two phases), and a dense step has two such units per layer — attention and
+// FFN — so 2L. An MoE step at DP>1 has the attention all-reduce plus dispatch AND combine,
+// which are two separate calls, so 3L. The volume side already counts dispatch and combine
+// separately (the `2` in each dispatch-volume branch), so charging the latency only once
+// per MoE layer would make the two halves of the same cost disagree by 2x on the
+// size-independent term.
+//
+// Asserted as a ratio against a dense model of identical shape: 3L versus 2L is 1.5x. If
+// dispatch/combine were charged once, the MoE step would come out at 2L — equal to dense —
+// and the strict inequality below would fail.
+func TestStepTime_MoEDispatchChargesTwoCollectivesPerLayer(t *testing.T) {
+	batch := stepBatch()
+	hw := fabricHW(1) // equal bandwidths ⇒ no bandwidth penalty, isolating the latency
+	hw.InterNodeLatencyUs = 20
+
+	moe := *dpepMoEModelConfig()
+	dense := moe
+	dense.NumLocalExperts = 0
+	dense.NumExpertsPerTok = 0
+
+	// Dense at dp=1: attention + dense-FFN all-reduce = 2 collectives per layer.
+	densePenalty := newNetModel(t, dense, hw, 8, 1, false, "", 4).StepTime(batch) -
+		newNetModel(t, dense, hw, 8, 1, false, "", 8).StepTime(batch)
+	// MoE at dp>1: attention all-reduce + dispatch + combine = 3 collectives per layer.
+	// moeGroup = TP*DP = 8*2 = 16, so a 4-GPU node spans for both groups.
+	moePenalty := newNetModel(t, moe, hw, 8, 2, true, "", 4).StepTime(batch) -
+		newNetModel(t, moe, hw, 8, 2, true, "", 16).StepTime(batch)
+
+	require.Greater(t, densePenalty, int64(0), "precondition: the dense model must pay a latency penalty")
+	assert.Greater(t, moePenalty, densePenalty,
+		"an MoE step at DP>1 launches dispatch AND combine on top of the attention all-reduce, so it "+
+			"must pay strictly more launch cost than an identically-shaped dense step; equality means "+
+			"dispatch/combine was charged as one collective instead of two (moe=%d µs, dense=%d µs)",
+		moePenalty, densePenalty)
+}

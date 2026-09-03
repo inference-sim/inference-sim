@@ -359,18 +359,32 @@ func spanScalesFor(topo sim.NetworkTopology, tp, moeGroup int, commFamily moeCom
 	}
 }
 
-// moeCrossNodeLatency is the size-independent half of the MoE dispatch/combine cost
-// for ONE MoE layer: the fixed launch + fabric round-trip of a cross-node collective.
-// moeDispatchBasis returns a per-layer value that StepTime multiplies by
-// numMoELayers, so charging it here yields one collective per MoE layer. Exactly 0
-// unless the MoE group spans nodes AND the GPU declares a latency, and 0 for a step
-// with no tokens (no collective runs), so the basis stays bit-for-bit unchanged
-// otherwise.
+// moeDispatchCollectivesPerLayer is how many separate cross-node collectives one MoE
+// layer launches: dispatch and combine. They are two distinct NCCL calls — an all-gather
+// then a reduce-scatter for the all-gather family, or two all-to-alls for a modular
+// backend — each with its own launch and its own fabric round-trip. The volume side
+// already counts both (the `2` in each moeDispatchBytes branch), so the latency side must
+// count both too or the two halves disagree.
+//
+// Contrast the TP path, which charges ONE per comm unit and gets its 2L from having two
+// units per layer (an attention all-reduce and an FFN all-reduce). A ring all-reduce is a
+// single NCCL call whose *volume* has two phases; that is not two collectives. So the
+// per-layer collective count genuinely differs between the two paths: 1 for a TP unit,
+// 2 for an MoE dispatch/combine pair.
+const moeDispatchCollectivesPerLayer = 2.0
+
+// moeCrossNodeLatency is the size-independent half of the MoE dispatch/combine cost for
+// ONE MoE layer: the fixed launch + fabric round-trip of each cross-node collective it
+// launches. moeDispatchBasis returns a per-layer value that StepTime multiplies by
+// numMoELayers, so charging moeDispatchCollectivesPerLayer here yields dispatch + combine
+// per MoE layer. Exactly 0 unless the MoE group spans nodes AND the GPU declares a
+// latency, and 0 for a step with no tokens (no collective runs), so the basis stays
+// bit-for-bit unchanged otherwise.
 func (m *TrainedPhysicsModel) moeCrossNodeLatency(globalTokens float64) float64 {
 	if m.moeCrossNodeLatencyUs <= 0 || globalTokens <= 0 {
 		return 0
 	}
-	return m.moeCrossNodeLatencyUs
+	return moeDispatchCollectivesPerLayer * m.moeCrossNodeLatencyUs
 }
 
 // tpCommBwUs is the effective link bandwidth (bytes/µs) for the TP-group ring
