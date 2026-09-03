@@ -819,6 +819,14 @@ func (m *TrainedPhysicsModel) tpAllReduceBasis(units, tokens float64) float64 {
 	// AND the GPU declares a latency, so an intra-node or uncalibrated config is
 	// bit-for-bit unchanged. Gated on tokens > 0 because a step that communicates no
 	// tokens runs no collective and must not pay a launch cost.
+	//
+	// Known inaccuracy at dp > 1: the attention and dense-FFN callers divide this whole
+	// basis by dp, which is right for the VOLUME half (each DP rank all-reduces only its
+	// token slice) but wrong for the latency half (DP groups run in parallel, so a
+	// launch cost is not shared out among them). It is unreachable today — node pools
+	// plus --dp>1 is a fail-fast (#1553), so every placement that can span nodes has
+	// dp == 1 and the divisor is exactly 1.0 — but whoever makes DEP placement real
+	// (#1548) must lift the latency out of the /dp division.
 	if m.tpCrossNodeLatencyUs > 0 && tokens > 0 {
 		t += units * m.tpCrossNodeLatencyUs
 	}

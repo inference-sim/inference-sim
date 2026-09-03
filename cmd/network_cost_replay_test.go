@@ -146,4 +146,7 @@ func TestReplayCmd_SingleNodeSpanTraceAccepted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a span of 1 is not a cross-node fleet and must replay normally, got %v; output:\n%s", err, out)
 	}
+	if strings.Contains(string(out), "max_nodes_spanned") {
+		t.Errorf("the cross-node fence must stay silent for a span of 1; output:\n%s", out)
+	}
 }

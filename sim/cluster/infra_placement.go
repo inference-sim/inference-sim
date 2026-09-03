@@ -469,8 +469,8 @@ func (pm *PlacementManager) placedGPUsPerNode(gpuIDs []string) int {
 			continue
 		}
 		if node.TotalGPUs <= 0 {
-			logrus.Errorf("[cluster] placedGPUsPerNode: node %q reports TotalGPUs=%d — "+
-				"cross-node network cost will be unpriced", node.ID, node.TotalGPUs)
+			logrus.Errorf("[cluster] placedGPUsPerNode: node %q reports TotalGPUs=%d — cross-node "+
+				"collective traffic will be priced at the on-node rate (optimistic)", node.ID, node.TotalGPUs)
 			return 0
 		}
 		if size == 0 {
@@ -480,7 +480,7 @@ func (pm *PlacementManager) placedGPUsPerNode(gpuIDs []string) int {
 		if size != node.TotalGPUs {
 			logrus.Errorf("[cluster] placedGPUsPerNode: instance spans nodes of differing sizes "+
 				"(%d and %d GPUs) — a single gpus-per-node figure cannot describe it, so cross-node "+
-				"network cost is left unpriced", size, node.TotalGPUs)
+				"collective traffic will be priced at the on-node rate (optimistic)", size, node.TotalGPUs)
 			return 0
 		}
 	}

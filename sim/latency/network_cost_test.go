@@ -709,3 +709,34 @@ func BenchmarkTrainedPhysicsStepTime(b *testing.B) {
 		})
 	}
 }
+
+// TestStepTime_SpanningPathAllocatesNothing asserts what the benchmark only reports: the
+// cross-node path adds no heap allocation to StepTime. Both penalties are frozen at
+// construction and the per-collective latency is a scalar add, so the spanning path should
+// allocate exactly as much as the inert one — nothing. Asserting it rather than leaving it
+// as a comment matters because StepTime runs once per simulated scheduler step, and an
+// accidental allocation there would be invisible until someone profiled a long run.
+func TestStepTime_SpanningPathAllocatesNothing(t *testing.T) {
+	mc := testModelConfig()
+	batch := stepBatch()
+	withLatency := fabricHW(9)
+	withLatency.InterNodeLatencyUs = 5
+
+	for _, tc := range []struct {
+		name        string
+		hw          sim.HardwareCalib
+		gpusPerNode int
+	}{
+		{"inert", dpepTestHW(), 0},
+		{"spanning_bandwidth", fabricHW(9), 4},
+		{"spanning_bandwidth_latency", withLatency, 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newNetModel(t, mc, tc.hw, 8, 1, false, "", tc.gpusPerNode)
+			// Warm up once so any lazily-initialized state is not attributed to the measured runs.
+			_ = m.StepTime(batch)
+			allocs := testing.AllocsPerRun(50, func() { _ = m.StepTime(batch) })
+			assert.Zero(t, allocs, "StepTime must not allocate on the %s path, got %.1f allocs/op", tc.name, allocs)
+		})
+	}
+}
