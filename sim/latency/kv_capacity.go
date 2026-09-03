@@ -255,10 +255,21 @@ func WithExpertParallelSize(ep int) KVCapacityOption {
 //
 // The bounds encode vLLM's flattened MoE group (ep_size = dp_size·tp_size), which is the
 // deployment model BLIS represents; they are deliberately not a general law (SGLang's
-// independent --ep-size, for instance, satisfies ep_size <= tp_size). Rejecting rather
-// than clamping matters in the ep > tp·dp direction: an over-large group would charge
-// only tp·dp/ep of the routed experts and hand back capacity for memory that does not
-// exist.
+// independent --ep-size, for instance, satisfies ep_size <= tp_size).
+//
+// Two bad-input directions, handled differently on purpose — the resolved value is a
+// DIVISOR of the routed-expert bytes (charge = R·tp/shard), so a LARGER resolved value
+// charges LESS memory and a SMALLER one charges MORE:
+//
+//   - ep > tp·dp is REJECTED. There is no safe value to substitute: the caller has
+//     described a deployment with more EP ranks than GPUs, and honouring it would charge
+//     only tp·dp/ep of the routed experts — capacity for memory that does not exist.
+//     This bound is load-bearing and is deliberately NOT clamped.
+//   - ep > num_routed_experts is CLAMPED DOWN to num_routed_experts. Clamping down
+//     shrinks the divisor, so it charges MORE memory than the caller asked for — the
+//     conservative direction, and the physically right one (see the clamp site below).
+//
+// So both directions end up at or above the true footprint; neither can inflate capacity.
 func resolveExpertShardSize(ep, tp, dp, numRoutedExperts int) (int, error) {
 	if ep < 0 {
 		return 0, fmt.Errorf("expert-parallel group size must be >= 0 (0 or 1 means EP off), got %d", ep)
@@ -292,12 +303,24 @@ func resolveExpertShardSize(ep, tp, dp, numRoutedExperts int) (int, error) {
 	}
 	// A group wider than the routed-expert count is a real planning input for wide EP
 	// (DeepSeek-class EP320 over 256 experts, and any deployment using --enable-eplb /
-	// --num-redundant-experts), so it is CLAMPED, not rejected: the ranks that hold an
-	// expert still hold one WHOLE expert, so num_experts is the widest divisor the weight
-	// footprint can support. Charging the sub-one-expert average num_experts/ep instead
-	// would be optimistic — capacity for memory that does not exist. Rejecting was tried
-	// and is worse: it fails deployments whose block count is unaffected and it masks the
-	// CLI's own unsupported-topology diagnostics. Warned, never silent (R1).
+	// --num-redundant-experts; vLLM does not reject it either — only --enable-eplb requires
+	// an even distribution), so it is CLAMPED, not rejected.
+	//
+	// Why num_routed_experts is the right clamp: the ranks that hold an expert hold one
+	// WHOLE expert, so num_experts is the widest divisor the weight footprint can support.
+	// Charging the sub-one-expert average num_experts/ep would be optimistic — capacity for
+	// memory that does not exist — while clamping DOWN to num_experts shrinks the divisor
+	// and therefore charges MORE memory (fewer KV blocks): the safe direction.
+	//
+	// Why not reject: rejecting was tried during review of #1656 and is strictly worse. It
+	// fired on the INERT ep == tp case (every DP=1 --enable-expert-parallel run, where the
+	// block count does not change at all), breaking configurations that had always sized —
+	// e.g. --tp 16 --enable-expert-parallel on an 8-expert Mixtral — and for genuine wide EP
+	// it replaced the CLI's honest unsupported-topology diagnostic (#1548) with an
+	// expert-count fatal, which is the masking the feature exists to remove.
+	//
+	// Warned, never silent (R1): the caller's requested group, the model's expert count and
+	// the substituted divisor are all named on stderr.
 	if numRoutedExperts > 0 && ep > numRoutedExperts {
 		logrus.Warnf("KV capacity: expert-parallel group size %d exceeds the model's routed-expert count %d; "+
 			"charging routed-expert weights over %d GPUs (one whole expert each) instead. Expert redundancy "+
