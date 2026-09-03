@@ -55,6 +55,13 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write
+    outputs:
+      # Both are EMPTY when the action returns early ("No trigger found, skipping remaining
+      # steps") — the outer trigger below is a broad substring test, so a comment that merely
+      # mentions @claude in prose admits the job and the action then no-ops. The job still
+      # concludes 'success', so report-status must not read the job result alone (see #1675).
+      execution_file: ${{ steps.claude.outputs.execution_file }}
+      conclusion: ${{ steps.claude.outputs.conclusion }}
 
     steps:
       - uses: actions/checkout@v5
@@ -77,6 +84,7 @@ jobs:
              || '' }}
 
       - uses: anthropics/claude-code-action@v1
+        id: claude
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
           CLAUDE_CODE_DISABLE_THINKING: "1"
@@ -96,15 +104,29 @@ jobs:
 
   report-status:
     needs: claude
-    # needs.claude.result != 'skipped' is load-bearing. claude[bot]'s own review comment
-    # fires issue_comment, so the claude job correctly skips — but with a bare always()
-    # this job still ran and wrote "pending / Claude Code: skipped" OVER the real result.
-    # Verified on head 4be14710: failure @ 15:17:20 then pending @ 15:21:11, stale last and
-    # sticking, masking a genuine failure behind a required check that never resolves
-    # (run 33770188054: claude skipped, report-status success, 34 s after the real run).
+    # Publish a verdict ONLY when Claude actually ran. Two no-op paths otherwise corrupt the
+    # status, and the job RESULT alone cannot tell them apart:
+    #
+    #  - claude SKIPPED (permissions denied, or claude[bot]'s own comment fired the event).
+    #    A bare always() wrote "pending / Claude Code: skipped" OVER the real result. Verified
+    #    on head 4be14710: failure @ 15:17:20 then pending @ 15:21:11 — stale lands last and
+    #    sticks, hiding a genuine failure behind a check that never resolves (run 33770188054).
+    #
+    #  - claude SUCCEEDED WITHOUT RUNNING. The outer trigger is a broad substring test, so a
+    #    comment mentioning @claude in prose admits the job; the action logs "No trigger found,
+    #    skipping remaining steps" and returns, and the job still concludes 'success'. That
+    #    published a FALSE GREEN: run 33785598570 put "Claude Code: success" on head 6c7c3a81
+    #    with no review having run. execution_file is empty on that early return, so it — not
+    #    the job result — is the signal that work happened.
+    #
+    # Stated positively so a new job result cannot silently fall through to a status. A real
+    # success that somehow reported no execution_file publishes NOTHING rather than a verdict:
+    # a missing status is visible and honest, a wrong one is neither.
     if: |
-      always() && needs.claude.result != 'skipped' &&
-      github.event_name == 'issue_comment' && github.event.issue.pull_request
+      always() &&
+      github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+      (needs.claude.result == 'failure' || needs.claude.result == 'cancelled' ||
+       (needs.claude.result == 'success' && needs.claude.outputs.execution_file != ''))
     runs-on: ubuntu-latest
     permissions:
       statuses: write
@@ -137,11 +159,14 @@ jobs:
           script: |
             const result = process.env.CLAUDE_RESULT;
             const sha = process.env.PR_HEAD_SHA;
+            // No 'skipped' entry: the job condition above excludes skipped runs, so a
+            // skipped result reaching here means that gate regressed. Fall through to the
+            // warning + 'error' path rather than silently re-publishing a stale 'pending'
+            // over a real verdict.
             const stateMap = {
               success: 'success',
               failure: 'failure',
-              cancelled: 'error',
-              skipped: 'pending'
+              cancelled: 'error'
             };
             const state = stateMap[result];
             if (!state) {
