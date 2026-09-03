@@ -24,6 +24,14 @@ type ClusterSimulator struct {
 	hasRun            bool
 	aggregatedMetrics *sim.Metrics
 
+	// Cross-node network-cost diagnostics (#1530), latched so a large fleet emits one
+	// line each. crossNodeUnpricedWarned covers a spanning placement whose cross-node
+	// collective traffic will NOT be charged (uncalibrated interconnect, or a latency
+	// backend with no communication term); implausibleFabricWarned covers a
+	// calibration whose intra/inter-node ratio looks like a unit mistake. Never reset.
+	crossNodeUnpricedWarned bool
+	implausibleFabricWarned bool
+
 	// Online routing pipeline fields
 	clusterEvents     ClusterEventQueue
 	seqCounter        int64
@@ -401,6 +409,10 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			// override above, giving the placed GPU authority over KV capacity too.
 			// No-op when KVAutoCalc.Enabled is false (INV-6).
 			applyPerInstanceKVCapacity(&simCfg, poolGPUMemoryGiB, config.KVAutoCalc, matchedGPUType)
+			// Issue #1530: stamp the placement-derived interconnect topology (the size
+			// of the node(s) this instance actually landed on) so the latency model can
+			// price cross-node collective traffic. Inert when unresolvable.
+			cs.applyPlacementTopology(&simCfg, gpuIDs)
 			inst := NewInstanceSimulator(id, simCfg)
 			inst.Model = config.Model
 			inst.nodeID = nodeID

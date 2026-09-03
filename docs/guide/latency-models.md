@@ -206,6 +206,127 @@ The β₄ default assumes the dispatch/combine collective runs at the same per-b
 
 Because the dispatch term is the *only* term gated on `DP > 1`, the residual isolates it cleanly. Fit per comm-backend *family* (all-gather vs all-to-all), not per backend name; see the PR #1433 discussion for why per-backend scalars are the wrong granularity (the within-family differences are prefill/decode shape effects a single scalar cannot represent).
 
+## Inter-Node Network Cost (trained-physics only)
+
+By default a tensor-parallel all-reduce and a MoE expert dispatch/combine are both
+priced at the GPU's on-package bandwidth, with the NVLink/HBM ratio folded into the
+learned coefficient β₄. That is right for an instance living inside one node — and
+*free* for one that spans nodes. Since [#1529](https://github.com/inference-sim/inference-sim/issues/1529)
+an instance can occupy whole nodes across a pool (GLM-5.2 at TP=16 on 2×8 H100), so
+BLIS now charges the crossing.
+
+### How it works
+
+The two communication bases divide byte volume by an **effective** link bandwidth:
+`bwHbmUs` when the collective fits inside one node, and `bwHbmUs / spanScale` when it
+does not. This is a re-scale of the existing term, not an extra one — an additive
+cross-node term would double-charge a `DP>1` MoE instance whose all-to-all is already
+priced by the dispatch basis.
+
+Let `G` be the collective's group size, `p` the size of the node(s) the instance was
+placed on, `n = ceil(G/p)` the nodes spanned, `g = min(G, p)` the group members per
+node, and `r = IntraNodeBwGBps / InterNodeBwGBps`. Two penalty shapes apply:
+
+| Collective | Applies to | Penalty |
+|------------|-----------|---------|
+| Ring | TP all-reduce (`G = tp`: attention, dense FFN, and the `DP=1` MoE-FFN reduce) and the `allgather_reducescatter` / `naive` MoE family, whose volume basis is ring-shaped | `1 + (r-1)·(n-1)/(G-1)` |
+| All-to-all | `deepep_*` / `pplx` / `mori` / `flashinfer_all2allv` MoE dispatch (`G = TP·DP`) | `1 + (r-1)·(G-g)/(G-1)` |
+
+The ring form is derived from the **hierarchical (two-level)** algorithm NCCL uses
+across nodes: an intra-node reduce-scatter + all-gather over the `g` ranks on a node,
+then an inter-node all-reduce of the *reduced* `S/g` chunk across the `n` nodes.
+Normalized by the flat single-node baseline this simplifies exactly to the expression
+above. The all-to-all form is a per-peer split: a rank's egress goes to `G-1` peers,
+`G-g` of which are on other nodes — far more of the traffic leaves the node than in a
+ring, which is why the expert all-to-all rather than the TP all-reduce is the dominant
+cross-node cost for wide expert parallelism.
+
+Both penalties are exactly `1.0` when nothing crosses a boundary (`n = 1`) or when the
+fabric is no slower than the on-node link (`r ≤ 1`), and both are monotone in `r`: a
+worse fabric never lowers the cost.
+
+### Where the inputs come from
+
+**Topology is derived from placement, not declared.** There is no CLI flag for it: the
+placement manager reports the size of the node(s) an instance's GPUs actually occupy,
+and that is stamped onto the instance's configuration at every placement site
+(startup, deferred node-ready, autoscaler scale-up). A declared "GPUs per node" knob
+could contradict the real `node_pools` placement, charging for a boundary that was
+never crossed or missing one that was.
+
+**Fabric speeds are hardware calibration**, in the file `--hardware-config` already
+points at:
+
+```json
+"H100": {
+  "TFlopsPeak": 989.5, "BwPeakTBs": 3.35, "MemoryGiB": 80.0,
+  "IntraNodeBwGBps": 450,
+  "InterNodeBwGBps": 50
+}
+```
+
+Both are per-GPU **effective unidirectional** GB/s. Only their ratio is used, so the
+absolute scale cancels — but the *convention* must match on both fields (mixing a
+bidirectional NVLink figure with a unidirectional NIC figure doubles the penalty).
+Committed values: H100 450/50 (NVLink 4 against one 400 Gb/s ConnectX-7 per GPU),
+A100 300/25 (NVLink 3 against HDR-200 per GPU), L40S 32/12.5 (PCIe Gen4 — no NVLink —
+against 100 GbE). Set both or neither; a half-calibration is a hard error.
+
+To compare fabrics (InfiniBand vs RoCE vs a single uplink), edit `InterNodeBwGBps` in
+that file, or give the pools distinct `gpu_type` entries with different values.
+
+### Inert unless a boundary is actually crossed
+
+Three independent gates each make the cost exactly zero, so every configuration that
+existed before this feature produces bit-identical step times:
+
+1. no `node_pools` ⇒ no placement ⇒ no topology;
+2. the collective fits inside one node ⇒ `n = 1`;
+3. the hardware declares no interconnect bandwidths ⇒ `r = 1`.
+
+Multi-node placement is `blis run` only — `blis replay` rejects `node_pools` outright
+and `blis observe` takes its timing from a real server — so a cross-node cost cannot
+arise off the run path.
+
+If a spanning placement will *not* be charged (uncalibrated fabric, or a backend with
+no communication term), BLIS says so once on stderr rather than silently returning an
+optimistic number. Watch for this if you use a policy bundle's `hw_config_by_gpu`
+override: it replaces the whole hardware calibration, so an entry that omits the two
+fabric fields drops them.
+
+### How large is the effect, and what is still missing
+
+For TP=16 on 2×8 H100 at `r = 9`, the TP communication term rises about **1.53×**,
+which is roughly **+10%** on total step time for a mid-size dense model. The penalty
+is modest by design: hierarchical all-reduce moves the same bytes as a flat ring, and
+only the reduced `S/g` chunk crosses the fabric. A *flat* multi-node ring would instead
+be throttled to ≈`r` (9×) — an order of magnitude more. Measured two-node H100
+all-reduce bus-bandwidth degradation (~1.3–1.5×) is why the hierarchical model is the
+one used here; treat that as the assumption to revisit if a deployment's collectives
+are known not to be hierarchical.
+
+Read `IntraNodeBwGBps` as *the on-node link speed β₄ was calibrated against*, not as a
+free-standing hardware spec: β₄ already absorbs the NVLink/HBM ratio, so the
+cross-node cost inherits β₄'s calibration as its baseline.
+
+Known approximations, each tracked:
+
+- **Per-collective launch + round-trip cost is not modeled** — only bandwidth is. At
+  decode message sizes that fixed cost is plausibly the *dominant* cross-node effect
+  ([#1661](https://github.com/inference-sim/inference-sim/issues/1661)).
+- The fabric is keyed by GPU type rather than by pool, which is only equivalent while
+  #1529's "one `gpu_type` per pool" rule holds
+  ([#1662](https://github.com/inference-sim/inference-sim/issues/1662)).
+- The **roofline** backend models no communication at all, so a spanning placement is
+  unpriced there ([#1663](https://github.com/inference-sim/inference-sim/issues/1663)).
+- The all-to-all penalty sums the on-node and off-node portions rather than overlapping
+  them, and ignores DeepEP's per-node RDMA coalescing. Both are pessimistic.
+- The lumped `TP·DP` MoE group's span is extrapolated from the placed node size, since
+  BLIS places a TP group. Combined with `node_pools` + `--dp>1` being a fail-fast
+  today, the expert-all-to-all leg ships **inert in every reachable configuration**; it
+  becomes reachable with expert-parallel placement
+  ([#1548](https://github.com/inference-sim/inference-sim/issues/1548)).
+
 ## When to Use Which
 
 | Aspect | Roofline | Trained-Physics (default) |

@@ -29,8 +29,8 @@ type PlacementManager struct {
 	loadingRng   *rand.Rand         // RNG for loading delays (subsystemInstanceLoading)
 	nextNodeIdx  map[string]int     // pool name → next sequential node index counter
 	// spanWarned latches true the first time an instance is placed across more than one
-	// node (#1529). Gates a one-time warning that cross-node TP all-reduce is priced with
-	// the intra-node term until #1530 prices the interconnect. Never reset.
+	// node (#1529). Gates a one-time notice that the fleet contains a multi-node
+	// instance. Never reset.
 	spanWarned bool
 }
 
@@ -341,13 +341,17 @@ func (pm *PlacementManager) PlaceInstance(id InstanceID, model, gpuType string, 
 		// report it as the primary node for bookkeeping/logging.
 		primaryNode := selectedNodes[0].ID
 
-		// One-time warning: a spanning instance's TP all-reduce is priced with the
-		// intra-node NVLink term until #1530 prices the cross-node interconnect.
+		// One-time notice that this fleet contains a multi-node instance. Whether its
+		// cross-node collective traffic is actually PRICED depends on the latency backend
+		// and the placed GPU's interconnect calibration, neither of which the placement
+		// manager knows — ClusterSimulator.applyPlacementTopology (#1530) raises the
+		// specific diagnostic when it will not be.
 		if !pm.spanWarned {
 			pm.spanWarned = true
-			logrus.Warnf("[cluster] instance %s spans %d nodes for TP=%d: cross-node TP "+
-				"all-reduce is priced with the intra-node term until #1530 prices the interconnect; "+
-				"latency/throughput for spanning instances is optimistic", id, nodesNeeded, tpDegree)
+			logrus.Warnf("[cluster] instance %s spans %d nodes for TP=%d: its collective traffic "+
+				"crosses a node boundary, which the trained-physics latency model prices at the "+
+				"inter-node fabric bandwidth when the placed GPU's calibration declares one (#1530)",
+				id, nodesNeeded, tpDegree)
 		}
 		return primaryNode, resultIDs, poolState.config.GPUType, nil
 	}
@@ -427,6 +431,55 @@ func (pm *PlacementManager) distinctNodesForGPUs(gpuIDs []string) []string {
 	}
 	sort.Strings(nodes)
 	return nodes
+}
+
+// PlacedGPUsPerNode resolves the GPU count of the node(s) hosting the given GPUs
+// (#1530). It is the ONE topology signal the latency model needs to price
+// cross-node collective traffic, and it is derived entirely from real placement:
+// every GPU ID is resolved through the authoritative gpusByID index to its owning
+// node, and that node's TotalGPUs is reported.
+//
+// Returns 0 — "topology unknown", which makes the network cost inert (INV-6) —
+// when the GPU set is empty, when no GPU resolves, or when the hosting nodes do
+// not all have the same size. A mixed-size span cannot be described by a single
+// GPUs-per-node number; PlaceInstance never produces one (Pass 2 takes whole nodes
+// from a SINGLE pool, and every node in a pool has the pool's gpus_per_node), so
+// this is a defensive branch: it logs the anomaly rather than inventing a node
+// size (R1 — never a silent wrong result, and never a plausible-looking one).
+func (pm *PlacementManager) PlacedGPUsPerNode(gpuIDs []string) int {
+	size := 0
+	for _, id := range gpuIDs {
+		gpu, ok := pm.gpusByID[id]
+		if !ok {
+			// Same invariant as distinctNodesForGPUs: a placed GPU is always in the
+			// index (populated at the single construction site, R4).
+			logrus.Errorf("[cluster] PlacedGPUsPerNode: GPU ID %q not found in index — "+
+				"cross-node network cost will be unpriced; placement invariant violated (R4)", id)
+			continue
+		}
+		node, ok := pm.nodesByID[gpu.NodeID]
+		if !ok {
+			logrus.Errorf("[cluster] PlacedGPUsPerNode: node %q for GPU %q not found in index — "+
+				"cross-node network cost will be unpriced; placement invariant violated (R4)", gpu.NodeID, id)
+			continue
+		}
+		if node.TotalGPUs <= 0 {
+			logrus.Errorf("[cluster] PlacedGPUsPerNode: node %q reports TotalGPUs=%d — "+
+				"cross-node network cost will be unpriced", node.ID, node.TotalGPUs)
+			return 0
+		}
+		if size == 0 {
+			size = node.TotalGPUs
+			continue
+		}
+		if size != node.TotalGPUs {
+			logrus.Errorf("[cluster] PlacedGPUsPerNode: instance spans nodes of differing sizes "+
+				"(%d and %d GPUs) — a single gpus-per-node figure cannot describe it, so cross-node "+
+				"network cost is left unpriced", size, node.TotalGPUs)
+			return 0
+		}
+	}
+	return size
 }
 
 // InstanceCostPerHour returns the per-instance hourly cost for an instance holding

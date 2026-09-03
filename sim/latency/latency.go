@@ -166,6 +166,15 @@ func validateCoeffs(name string, coeffs []float64) error {
 // Options inject optional dependencies; the same options are applied to whichever
 // backend is selected, so an adapter-overhead accessor (WithAdapterCost) affects
 // both identically (R23). No options ⇒ pre-feature behavior (INV-6).
+//
+// The inter-node interconnect topology (#1530) is NOT an Option here: it arrives on
+// hw.NetworkTopology (set by sim.WithNetworkTopology at ModelHardwareConfig
+// construction), alongside the other latency inputs TP/DP/MoECommBackend. Only the
+// trained-physics backend reads it — the roofline backend models no communication
+// term at all (rooflineStepTime uses TP purely as a sharding divisor), so there is
+// no cross-node cost for it to scale. That asymmetry is deliberate, not R23 drift:
+// giving roofline a cross-node cost would mean adding a comm term it does not have,
+// which is a different change from re-scaling an existing one.
 func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig, opts ...Option) (sim.LatencyModel, error) {
 	var o latencyOptions
 	for _, opt := range opts {

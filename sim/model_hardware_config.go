@@ -1,5 +1,7 @@
 package sim
 
+import "math"
+
 // ModelConfig holds model architecture parameters parsed from a HuggingFace config.json.
 // Used by the roofline and cross-model latency models for step time estimation.
 // Parsing functions are in sim/latency/config.go.
@@ -169,4 +171,56 @@ type HardwareCalib struct {
 	MfuPrefill float64 `json:"mfuPrefill"`
 	MfuDecode  float64 `json:"mfuDecode"`
 	MemoryGiB  float64 `json:"MemoryGiB"` // GPU memory capacity in GiB
+
+	// Interconnect calibration (#1530), used only to price CROSS-NODE collective
+	// traffic in the trained-physics step-time model. Both are effective
+	// (achievable, not theoretical-peak) per-GPU unidirectional bandwidths in GB/s.
+	// Only their RATIO enters the cost model, so the absolute scale cancels — what
+	// matters is how much slower the fabric is than the on-node link.
+	//
+	// Either field left at 0 (or non-finite) means "interconnect uncalibrated":
+	// InterconnectBwRatio() then returns 1.0 and cross-node traffic is priced
+	// exactly like intra-node traffic, i.e. byte-identical to a pre-#1530 build
+	// (INV-6). Adding them to a hardware config is what turns the cross-node
+	// penalty on for a spanning placement.
+	IntraNodeBwGBps float64 `json:"IntraNodeBwGBps"` // on-node GPU-to-GPU link (NVLink/xGMI, or PCIe on non-NVLink parts)
+	InterNodeBwGBps float64 `json:"InterNodeBwGBps"` // per-GPU share of the node's inter-node fabric (InfiniBand/RoCE NIC)
+}
+
+// InterconnectBwRatio returns how many times slower this GPU's inter-node fabric
+// is than its on-node link: IntraNodeBwGBps / InterNodeBwGBps.
+//
+// Returns exactly 1.0 — "cross-node traffic costs the same as on-node traffic",
+// the pre-#1530 behavior — whenever the ratio cannot be trusted or would make
+// spanning cheaper than not spanning:
+//   - either bandwidth is unset (0), negative, NaN or Inf (uncalibrated hardware);
+//   - the computed ratio is below 1 (a fabric declared faster than the on-node
+//     link). Clamping instead of honoring a sub-unit ratio matters because the
+//     comm coefficient beta_4 is calibrated ON the intra-node link: scaling BELOW
+//     that baseline would price a spanning instance faster than a single-node one,
+//     which is physically absurd (R20 — degrade to the calibrated baseline, never
+//     to a nonsense value);
+//   - the division itself overflows to +Inf (reachable only from absurd inputs, e.g.
+//     a subnormal inter-node bandwidth against a near-MaxFloat64 on-node one). Every
+//     consumer must be able to treat the result as a finite number, so this returns
+//     the neutral 1.0 rather than a value that would poison the cost model. Callers
+//     that report on the calibration should therefore describe a 1.0 as "no USABLE
+//     bandwidths", which covers both the unset and the unusable case.
+//
+// Pure query, no state (R13).
+func (hc HardwareCalib) InterconnectBwRatio() float64 {
+	intra, inter := hc.IntraNodeBwGBps, hc.InterNodeBwGBps
+	if intra <= 0 || inter <= 0 ||
+		math.IsNaN(intra) || math.IsInf(intra, 0) ||
+		math.IsNaN(inter) || math.IsInf(inter, 0) {
+		return 1.0
+	}
+	ratio := intra / inter
+	// `!(ratio > 1.0)` is false for NaN too — belt-and-braces after the guards above.
+	// The explicit Inf test keeps the contract "always finite": both bandwidths can be
+	// finite and positive while their quotient still overflows.
+	if !(ratio > 1.0) || math.IsInf(ratio, 0) {
+		return 1.0
+	}
+	return ratio
 }
