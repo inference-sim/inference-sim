@@ -310,10 +310,17 @@ jobs:
             disagreement between you and the objective signals is something a human needs to
             see, not something for you to resolve.
 
-      # Read only from comments posted by the automation itself, and only when the marker is the
-      # comment's LAST non-empty line. Both guards matter: without the author filter any human
-      # could set the verdict by quoting the marker, and without the last-line rule a comment
-      # that merely MENTIONS it — including an echo of the prompt above — would count.
+      # Read only from comments posted by a BOT, and only when the marker is the comment's LAST
+      # non-empty line. Both guards matter: without the author filter any human could set the
+      # verdict by quoting the marker, and without the last-line rule a comment that merely
+      # MENTIONS it — including an echo of the prompt above — would count.
+      #
+      # Filtered on `.user.type == "Bot"`, NOT on a login allow-list. An earlier version matched
+      # only `github-actions[bot]`, which would have made EVERY delivery land on needs-human:
+      # claude-code-action posts its output as `claude[bot]`, so the marker was never in a
+      # comment the filter accepted. Type is the property actually wanted here — "not a human
+      # quoting the marker" — and unlike a login it does not break when the action's identity
+      # changes. Humans are always type `User` and cannot forge `Bot`.
       - name: Read the verdict marker
         id: verdict
         if: steps.paused.outputs.paused == 'false'
@@ -326,7 +333,7 @@ jobs:
           lastlines=$(gh api "/repos/$REPO/issues/$PR/comments?per_page=100" --paginate \
             --jq ".[]
                   | select(.created_at > \"$SINCE\")
-                  | select(.user.login == \"github-actions[bot]\")
+                  | select(.user.type == \"Bot\")
                   | .body
                   | split(\"\n\")
                   | map(select(test(\"\\\\S\")))
