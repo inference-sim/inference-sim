@@ -781,3 +781,46 @@ func TestStepTime_MoEDispatchChargesTwoCollectivesPerLayer(t *testing.T) {
 			"dispatch/combine was charged as one collective instead of two (moe=%d µs, dense=%d µs)",
 		moePenalty, densePenalty)
 }
+
+// ─── Cross-feature interaction: speculative decoding ────────────────────────
+
+// TestStepTime_CrossNodePenaltyComposesWithSpecDecode guards the one place this feature
+// and speculative decoding (#1528) touch the same quantity. Spec-decode scales the decode
+// token population by the verify width K+1, and the comm bases consume that same
+// totalTokens — so a mistake in either could silently absorb the other. #1659 added
+// TestSpecDecode_DecodeStepCostIsVerifyWidth_NotGrantedTokens to pin the verify-width
+// relationship; this asserts that relationship survives with a cross-node penalty active,
+// and symmetrically that the cross-node penalty survives under spec-decode.
+//
+// Both halves matter. If the cross-node re-scale had been written as an additive term it
+// could dominate and mask the verify-width effect; if the latency half were charged per
+// token rather than per collective, spec-decode would inflate it.
+func TestStepTime_CrossNodePenaltyComposesWithSpecDecode(t *testing.T) {
+	mc := testModelConfig()
+	hw := fabricHW(9)
+	hw.InterNodeLatencyUs = 5 // exercise both halves of the cross-node cost
+	batch := makeDecodeBatch(8, 1024)
+
+	build := func(k, gpusPerNode int) sim.LatencyModel {
+		mhw := sim.NewModelHardwareConfig(mc, hw, "m", "H100", 8, 1, false, "", "trained-physics", 0,
+			sim.WithNetworkTopology(sim.NewNetworkTopology(gpusPerNode)))
+		lm, err := NewLatencyModel(*testCoeffs(), mhw, WithSpeculativeDecode(k))
+		require.NoError(t, err)
+		return lm
+	}
+
+	// A wider verify width costs more, whether or not the collective spans nodes.
+	for _, shape := range []struct {
+		name        string
+		gpusPerNode int
+	}{{"contained", 8}, {"spanning", 4}} {
+		t.Run(shape.name, func(t *testing.T) {
+			assert.Greater(t, build(4, shape.gpusPerNode).StepTime(batch), build(0, shape.gpusPerNode).StepTime(batch),
+				"a wider verify width must still cost more with the cross-node penalty %s", shape.name)
+		})
+	}
+
+	// And the cross-node penalty still applies at a fixed verify width.
+	assert.Greater(t, build(4, 4).StepTime(batch), build(4, 8).StepTime(batch),
+		"a spanning collective must still cost more than a contained one under speculative decoding")
+}
