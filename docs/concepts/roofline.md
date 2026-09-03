@@ -46,7 +46,7 @@ The final step time is the sum of independent phases and overheads:
 
 1.  **Prefill Phase:** Calculated for the initial prompt processing chunk.
 2.  **Decode Phase:** Calculated for generating new tokens (usually memory-bound).
-3.  **Communication Overhead:** If using Tensor Parallelism ($TP > 1$), adds All-Reduce latency per layer.
+3.  **Communication Overhead:** Not modeled. Tensor parallelism enters only as a sharding divisor on compute and memory traffic — there is no All-Reduce term, so TP communication is free in this backend at any $TP$, within a node or across nodes. `--latency-model trained-physics` does model it (including a cross-node penalty, #1530); closing the gap here is tracked by [#1663](https://github.com/inference-sim/inference-sim/issues/1663).
 4.  **Hardware Overheads:** Static kernel launch times and layer-by-layer overhead constants.
 
 ---

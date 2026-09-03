@@ -215,6 +215,211 @@ type TrainedPhysicsModel struct {
 	// byte-identical to a pre-feature build (INV-6/INV-BC-DP1). Set via
 	// WithSpeculativeDecode at construction.
 	specTokens int
+
+	// ─── Inter-node network cost (#1530) ────────────────────────────────────
+	//
+	// Cross-node cost has two halves, both frozen at construction (nothing re-reads
+	// placement on the hot path).
+	//
+	// The SIZE-DEPENDENT half is a bandwidth penalty: tpSpanScale / moeSpanScale (from
+	// spanScalesFor) reduce the effective link bandwidth for the TP-group collectives
+	// and for MoE dispatch/combine respectively. A value of 1 — single-node placement,
+	// an uncalibrated interconnect, or (for a model built by struct literal) the unset
+	// zero — means no penalty.
+	//
+	// The SIZE-INDEPENDENT half is tpCrossNodeLatencyUs / moeCrossNodeLatencyUs: the
+	// fixed cost of one cross-node collective (launch + fabric round-trip), charged per
+	// comm unit and 0 unless the group actually spans nodes AND the GPU declares a
+	// latency. Both halves ride the same learned coefficient as the term they join.
+	//
+	// The penalties are consumed through the tpCommBwUs / moeCommBwUs ACCESSORS rather
+	// than precomputed divisors. That is deliberate: a precomputed divisor is 0 in a
+	// model built by struct literal (as several tests in this package do), which would
+	// make the divisor infinite and silently DELETE the communication term — the one way
+	// this feature could remove cost instead of adding it. The accessors return bwHbmUs
+	// itself, bit-for-bit, whenever a penalty is inert, so StepTime is byte-identical to
+	// a pre-#1530 build (INV-6/INV-BC-DP1), at the cost of one comparison on a path that
+	// already does dozens of flops. A denormal BwPeakTBs combined with an enormous
+	// penalty could still underflow the effective bandwidth toward 0; clampToInt64
+	// absorbs the resulting non-finite step time, so the clock stays safe (INV-3).
+	tpSpanScale           float64
+	moeSpanScale          float64
+	tpCrossNodeLatencyUs  float64
+	moeCrossNodeLatencyUs float64
+}
+
+// spanScale is the shared form of both cross-node bandwidth penalties (#1530): of
+// totalHops equally-sized transfer units in a collective, crossHops traverse the
+// inter-node fabric and therefore take `ratio` times as long, so the collective's
+// effective bandwidth falls by
+//
+//	1 + (ratio - 1)·crossHops/totalHops
+//
+// Returns exactly 1.0 (no penalty) when nothing crosses a node boundary, when the
+// interconnect is uncalibrated or no slower than the on-node link (ratio <= 1), or
+// for any degenerate/non-finite input — so the caller's divisor stays bwHbmUs
+// unchanged (R20: degrade to the calibrated baseline, never to a nonsense value).
+func spanScale(crossHops, totalHops int, ratio float64) float64 {
+	if crossHops <= 0 || totalHops <= 0 || math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio <= 1.0 {
+		return 1.0
+	}
+	return 1.0 + (ratio-1.0)*float64(crossHops)/float64(totalHops)
+}
+
+// ringSpanScale prices a RING collective (all-reduce, or the equivalent
+// all-gather + reduce-scatter pair) over groupSize ranks placed per topo.
+//
+// The derivation is the HIERARCHICAL (two-level) algorithm NCCL uses for a
+// multi-node all-reduce, and that choice is load-bearing. With G = n·g ranks (n
+// nodes of g), the collective is an intra-node reduce-scatter+all-gather over the g
+// ranks on a node — 2(g-1)/g·S bytes on the fast on-node link — followed by an
+// inter-node all-reduce of the REDUCED S/g chunk across the n nodes, i.e.
+// 2(n-1)/n·S/g bytes on the fabric (per GPU, since InterNodeBwGBps is a per-GPU
+// fabric share). Normalizing by the flat single-node baseline 2(G-1)/G·S and
+// substituting G = n·g simplifies exactly to spanScale(n-1, G-1, ratio).
+//
+// The identity is exact rather than approximate because hierarchical all-reduce
+// moves exactly the same per-rank bytes as a flat ring: 2(g-1)/g + 2(n-1)/(n·g) ==
+// 2(G-1)/G. That is also why the result is exactly 1 at ratio == 1.
+//
+// Assumption and failure mode: if NCCL instead ran a FLAT ring across the node
+// boundary, every step would be throttled by the slowest link and the penalty would
+// be ≈ ratio (9× rather than 1.53× for TP=16 over two H100 nodes) — an order of
+// magnitude more. Measured two-node H100 all-reduce bus-bandwidth degradation
+// (~1.3–1.5×) matches the hierarchical model, which is why it is the one used here.
+// Note also that the "of G-1 hops, n-1 cross a boundary" reading of the formula is
+// an interpretation of the result, NOT the derivation — it does not hold for a flat
+// ring, so do not reapply it where the hierarchical algorithm does not.
+//
+// The G = n·g substitution is exact whenever the node size divides the group, which
+// PlaceInstance guarantees for a TP group (Pass 1 keeps tp <= gpus_per_node; Pass 2
+// requires tp % gpus_per_node == 0). For the lumped MoE group it is an approximation
+// — see spanScalesFor.
+func ringSpanScale(topo sim.NetworkTopology, groupSize int, ratio float64) float64 {
+	if groupSize <= 1 {
+		return 1.0 // no collective at all
+	}
+	return spanScale(topo.NodesSpanned(groupSize)-1, groupSize-1, ratio)
+}
+
+// all2AllSpanScale prices an ALL-TO-ALL collective over groupSize ranks placed per
+// topo. Unlike a ring, every rank must get its data to every other rank with no
+// reduction on the way: its egress splits over the G-1 peers, of which G-g sit on
+// other nodes (g = members sharing its node). So a far larger share of the traffic
+// crosses the fabric than in a ring — which is why the expert all-to-all, not the TP
+// all-reduce, is the dominant cross-node cost for wide expert parallelism. At n == 1
+// (g == G) nothing crosses and this is exactly 1.
+//
+// Two deliberate conservatisms. (1) The on-node and off-node portions are SUMMED;
+// physically NVLink and fabric traffic overlap, so a max() model would be ~10%
+// cheaper at ratio=10, G=16, g=8. (2) A topology-aware backend (DeepEP) coalesces
+// the RDMA sends destined for the same remote node, so this per-peer split
+// over-charges it; the volume side of that optimization is already captured by
+// PerGPUCommTokens, but the per-node coalescing is not. Both push the estimate
+// pessimistic rather than optimistic, which is the safer direction for a cost that
+// was previously zero.
+func all2AllSpanScale(topo sim.NetworkTopology, groupSize int, ratio float64) float64 {
+	if groupSize <= 1 {
+		return 1.0
+	}
+	return spanScale(groupSize-topo.MembersPerNode(groupSize), groupSize-1, ratio)
+}
+
+// spanScalesFor resolves the two cross-node bandwidth penalties for a placement
+// (#1530), returning (tpSpanScale, moeSpanScale). Called once, from the constructor,
+// so the penalties are frozen before any StepTime call and nothing re-reads live
+// placement state on the hot path (INV-6).
+//
+// The TP-group collectives — the attention all-reduce, the dense-FFN all-reduce, and
+// the DP==1 MoE-FFN reduce — are all rings over the tp group, so one penalty prices
+// all three. The MoE dispatch/combine collective runs over the flattened
+// moeGroup = TP·DP, and its SHAPE depends on the comm backend, the same distinction
+// moeDispatchBasis already makes for volume:
+//
+//   - commFamilyAllGather (vLLM's default allgather_reducescatter, and naive): the
+//     volume basis is ring-shaped — 2 phases × (G-1)/G, exactly like the all-reduce
+//     basis — so it takes the RING penalty. Charging it the all-to-all penalty would
+//     over-price vLLM's default backend by ~3.4× at TP·DP=16 over two nodes.
+//   - commFamilyAll2All (pplx / deepep / mori / flashinfer): a genuine all-to-all,
+//     where a rank's data must reach every peer with no reduction on the way, so a
+//     far larger share of its egress leaves the node. See all2AllSpanScale.
+func spanScalesFor(topo sim.NetworkTopology, tp, moeGroup int, commFamily moeCommFamily, ratio float64) (float64, float64) {
+	tpScale := ringSpanScale(topo, tp, ratio)
+	switch commFamily {
+	case commFamilyAllGather:
+		return tpScale, ringSpanScale(topo, moeGroup, ratio)
+	case commFamilyAll2All:
+		return tpScale, all2AllSpanScale(topo, moeGroup, ratio)
+	default:
+		// Unreachable for the same reason as moeDispatchBasis' default: commFamily is
+		// set once at construction from moeCommFamilyFor, which yields only the two
+		// families above. Panic so a future 3rd family gets a deliberate collective
+		// shape here rather than silently inheriting "no cross-node cost".
+		panic(fmt.Sprintf("spanScalesFor: unhandled commFamily %d", commFamily))
+	}
+}
+
+// moeDispatchCollectivesPerLayer is how many separate cross-node collectives one MoE
+// layer launches: dispatch and combine. They are two distinct NCCL calls — an all-gather
+// then a reduce-scatter for the all-gather family, or two all-to-alls for a modular
+// backend — each with its own launch and its own fabric round-trip. The volume side
+// already counts both (the `2` in each moeDispatchBasis branch), so the latency side must
+// count both too or the two halves disagree.
+//
+// Contrast the TP path, which charges ONE per comm unit and gets its 2L from having two
+// units per layer (an attention all-reduce and an FFN all-reduce). A ring all-reduce is a
+// single NCCL call whose *volume* has two phases; that is not two collectives. So the
+// per-layer collective count genuinely differs between the two paths: 1 for a TP unit,
+// 2 for an MoE dispatch/combine pair.
+const moeDispatchCollectivesPerLayer = 2.0
+
+// moeCrossNodeLatency is the size-independent half of the MoE dispatch/combine cost for
+// ONE MoE layer: the fixed launch + fabric round-trip of each cross-node collective it
+// launches. moeDispatchBasis returns a per-layer value that StepTime multiplies by
+// numMoELayers, so charging moeDispatchCollectivesPerLayer here yields dispatch + combine
+// per MoE layer. Exactly 0 unless the MoE group spans nodes AND the GPU declares a
+// latency, and 0 for a step with no tokens (no collective runs), so the basis stays
+// bit-for-bit unchanged otherwise.
+func (m *TrainedPhysicsModel) moeCrossNodeLatency(globalTokens float64) float64 {
+	if m.moeCrossNodeLatencyUs <= 0 || globalTokens <= 0 {
+		return 0
+	}
+	return moeDispatchCollectivesPerLayer * m.moeCrossNodeLatencyUs
+}
+
+// tpCommBwUs is the effective link bandwidth (bytes/µs) for the TP-group ring
+// collectives: bwHbmUs scaled down by the cross-node penalty, or bwHbmUs itself —
+// bit-for-bit — when no penalty applies (INV-6/INV-BC-DP1).
+//
+// `!(scale > 1)` rather than `scale <= 1` so a NaN scale (impossible today —
+// spanScale rejects non-finite ratios — but free to guard) also falls back to
+// bwHbmUs rather than poisoning every comm term with NaN. It also catches the unset
+// zero of a struct-literal-built model, which would otherwise produce an infinite
+// divisor and silently DELETE the communication term.
+func (m *TrainedPhysicsModel) tpCommBwUs() float64 {
+	if !(m.tpSpanScale > 1.0) {
+		return m.bwHbmUs
+	}
+	return m.bwHbmUs / m.tpSpanScale
+}
+
+// moeCommBwUs is the effective link bandwidth for the MoE dispatch/combine
+// collective. Same bit-for-bit fallback and same zero-value safety as tpCommBwUs.
+func (m *TrainedPhysicsModel) moeCommBwUs() float64 {
+	if !(m.moeSpanScale > 1.0) {
+		return m.bwHbmUs
+	}
+	return m.bwHbmUs / m.moeSpanScale
+}
+
+// crossNodeLatencyUs is the fixed per-collective cost to charge for a group placed
+// per topo: the GPU's declared inter-node latency when the group spans nodes, else 0.
+// 0 keeps the comm bases byte-identical to a pre-#1530 build.
+func crossNodeLatencyUs(topo sim.NetworkTopology, groupSize int, hc sim.HardwareCalib) float64 {
+	if groupSize <= 1 || topo.NodesSpanned(groupSize) <= 1 {
+		return 0
+	}
+	return hc.EffectiveInterNodeLatencyUs()
 }
 
 // verifyWidth is the number of token positions the target processes per decode
@@ -576,6 +781,9 @@ func (m *TrainedPhysicsModel) sharedExpertCompute(tokens, d, tpdp float64) float
 // all-gather/reduce-scatter and all-to-all the same (n-1)/n per-phase NVLink
 // efficiency (ring all-reduce, which β_EP defaults to β₄ from, IS reduce-scatter+
 // all-gather), so only the volume basis differs between families.
+// The divisor is the EFFECTIVE link bandwidth (#1530): bwHbmUs itself when the MoE
+// group is contained in one node (bit-for-bit unchanged), or bwHbmUs scaled down by
+// the cross-node penalty when the group spans nodes.
 func (m *TrainedPhysicsModel) moeDispatchBasis(globalTokens, kEff float64) float64 {
 	hidden := float64(m.hiddenDim)
 	group := float64(m.moeGroup)
@@ -587,10 +795,10 @@ func (m *TrainedPhysicsModel) moeDispatchBasis(globalTokens, kEff float64) float
 	// quantized post_quant_allgather path is an explicit opt-in, not the default).
 	switch m.commFamily {
 	case commFamilyAllGather: // dense hidden-state volume, no top_k
-		return (globalTokens / dpf) * (group - 1) / group * 2 * hidden * m.activationBPP / m.bwHbmUs
+		return (globalTokens/dpf)*(group-1)/group*2*hidden*m.activationBPP/m.moeCommBwUs() + m.moeCrossNodeLatency(globalTokens)
 	case commFamilyAll2All:
 		load := m.placement.Resolve(globalTokens, kEff, m.numExperts, m.moeGroup, m.dp)
-		return load.PerGPUCommTokens * hidden * m.activationBPP / m.bwHbmUs
+		return load.PerGPUCommTokens*hidden*m.activationBPP/m.moeCommBwUs() + m.moeCrossNodeLatency(globalTokens)
 	default:
 		// Unreachable: commFamily is set once at construction from moeCommFamilyFor,
 		// which only yields the two families above. Panic on a future 3rd family so a
@@ -616,7 +824,27 @@ func (m *TrainedPhysicsModel) tpAllReduceBasis(units, tokens float64) float64 {
 	// activationBPP (compute dtype) sizes the moved hidden states, not the weight dtype
 	// — same convention as moeDispatchBasis and the KV terms. The trailing 2.0 is the
 	// ring all-reduce phase count (reduce-scatter + all-gather), not a byte width.
-	return units * tokens * float64(m.hiddenDim) * m.activationBPP * 2.0 * tpFactor / m.bwHbmUs
+	// The divisor is the EFFECTIVE link bandwidth (#1530): bwHbmUs itself for an
+	// intra-node TP group (bit-for-bit unchanged), or bwHbmUs scaled down by the
+	// cross-node penalty when the group spans nodes.
+	t := units * tokens * float64(m.hiddenDim) * m.activationBPP * 2.0 * tpFactor / m.tpCommBwUs()
+	// Plus the size-INDEPENDENT half: one cross-node collective per comm unit, each
+	// paying a fixed launch + fabric round-trip. Exactly 0 unless the group spans nodes
+	// AND the GPU declares a latency, so an intra-node or uncalibrated config is
+	// bit-for-bit unchanged. Gated on tokens > 0 because a step that communicates no
+	// tokens runs no collective and must not pay a launch cost.
+	//
+	// Known inaccuracy at dp > 1: the attention and dense-FFN callers divide this whole
+	// basis by dp, which is right for the VOLUME half (each DP rank all-reduces only its
+	// token slice) but wrong for the latency half (DP groups run in parallel, so a
+	// launch cost is not shared out among them). It is unreachable today — node pools
+	// plus --dp>1 is a fail-fast (#1553), so every placement that can span nodes has
+	// dp == 1 and the divisor is exactly 1.0 — but whoever makes DEP placement real
+	// (#1548) must lift the latency out of the /dp division.
+	if m.tpCrossNodeLatencyUs > 0 && tokens > 0 {
+		t += units * m.tpCrossNodeLatencyUs
+	}
+	return t
 }
 
 // QueueingTime computes request-level overhead (ARRIVED → QUEUED).
@@ -724,6 +952,16 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 		return nil, fmt.Errorf("trained-physics model: BytesPerParam (activation dtype width) must be valid positive, got %v", hw.ModelConfig.BytesPerParam)
 	}
 
+	// Interconnect calibration (#1530) is OPTIONAL — declaring none of it means
+	// cross-node traffic is priced like intra-node traffic (INV-6). A value that cannot
+	// be used, or a half-set bandwidth pair, is rejected rather than silently clamped
+	// (R1). The same check runs at the hardware-config load boundary, so a malformed
+	// file fails identically under either latency backend; this one also covers a calib
+	// supplied programmatically (e.g. a policy bundle's hw_config_by_gpu).
+	if err := hw.HWConfig.ValidateInterconnect(); err != nil {
+		return nil, fmt.Errorf("trained-physics model: %w", err)
+	}
+
 	// Validate MoE consistency (same check as ValidateRooflineConfig)
 	if hw.ModelConfig.NumLocalExperts > 1 && hw.ModelConfig.NumExpertsPerTok <= 0 {
 		return nil, fmt.Errorf("trained-physics model: MoE config invalid - NumLocalExperts=%d but NumExpertsPerTok must be > 0", hw.ModelConfig.NumLocalExperts)
@@ -769,34 +1007,47 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 		peakFlops = hw.HWConfig.TFlopsFP8 * 1e6
 	}
 
+	// #1530: freeze the cross-node bandwidth penalties from the placement-derived
+	// topology on hw and the GPU's interconnect calibration (how many times slower its
+	// fabric is than its on-node link). An unknown topology (no node-pool placement) or
+	// an uncalibrated interconnect leaves both penalties at exactly 1.0, which makes the
+	// comm bases divide by bwHbmUs itself, bit-for-bit (INV-6/INV-BC-DP1).
+	tpSpanScale, moeSpanScale := spanScalesFor(hw.NetworkTopology, hw.TP, hw.EffectiveMoEGroupSize(),
+		commFamily, hw.HWConfig.InterconnectBwRatio())
+	bwHbmUs := hw.HWConfig.BwPeakTBs * 1e6
+
 	return &TrainedPhysicsModel{
-		Alpha:              [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
-		Beta:               betaSlice,
-		prefillSplit:       len(coeffs.BetaCoeffs) >= 9,
-		decodeSplit:        len(coeffs.BetaCoeffs) >= 10,
-		numLayers:          hw.ModelConfig.NumLayers,
-		numMoELayers:       numMoELayers,
-		numDenseLayers:     numDenseLayers,
-		numKVBearingLayers: hw.ModelConfig.EffectiveKVBearingLayers(), // #1636: full-attention layers; == numLayers for non-hybrid models
-		hiddenDim:          hw.ModelConfig.HiddenDim,
-		numHeads:           hw.ModelConfig.NumHeads,
-		headDim:            headDim,
-		dKV:                numKVHeads * headDim,
-		dFFMoE:             dFFMoE,
-		dFFDense:           dFFDense,
-		kEff:               max(1, hw.ModelConfig.NumExpertsPerTok),
-		numExperts:         hw.ModelConfig.NumLocalExperts,
-		hasInterleavedMoE:  hw.ModelConfig.InterleaveMoELayerStep > 0 && hw.ModelConfig.IsMoE(),
-		isMoE:              hw.ModelConfig.IsMoE(),
-		tp:                 hw.TP,
-		weightBPP:          weightBPP,
-		activationBPP:      hw.ModelConfig.BytesPerParam,
-		dp:                 hw.EffectiveDP(),
-		moeGroup:           hw.EffectiveMoEGroupSize(),
-		sharedExpertFFNDim: hw.ModelConfig.SharedExpertFFNDim,
-		commFamily:         commFamily,
-		placement:          sim.BalancedPlacement{},
-		flopsPeakUs:        peakFlops,
-		bwHbmUs:            hw.HWConfig.BwPeakTBs * 1e6,
+		Alpha:                 [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
+		Beta:                  betaSlice,
+		prefillSplit:          len(coeffs.BetaCoeffs) >= 9,
+		decodeSplit:           len(coeffs.BetaCoeffs) >= 10,
+		numLayers:             hw.ModelConfig.NumLayers,
+		numMoELayers:          numMoELayers,
+		numDenseLayers:        numDenseLayers,
+		numKVBearingLayers:    hw.ModelConfig.EffectiveKVBearingLayers(), // #1636: full-attention layers; == numLayers for non-hybrid models
+		hiddenDim:             hw.ModelConfig.HiddenDim,
+		numHeads:              hw.ModelConfig.NumHeads,
+		headDim:               headDim,
+		dKV:                   numKVHeads * headDim,
+		dFFMoE:                dFFMoE,
+		dFFDense:              dFFDense,
+		kEff:                  max(1, hw.ModelConfig.NumExpertsPerTok),
+		numExperts:            hw.ModelConfig.NumLocalExperts,
+		hasInterleavedMoE:     hw.ModelConfig.InterleaveMoELayerStep > 0 && hw.ModelConfig.IsMoE(),
+		isMoE:                 hw.ModelConfig.IsMoE(),
+		tp:                    hw.TP,
+		weightBPP:             weightBPP,
+		activationBPP:         hw.ModelConfig.BytesPerParam,
+		dp:                    hw.EffectiveDP(),
+		moeGroup:              hw.EffectiveMoEGroupSize(),
+		sharedExpertFFNDim:    hw.ModelConfig.SharedExpertFFNDim,
+		commFamily:            commFamily,
+		placement:             sim.BalancedPlacement{},
+		flopsPeakUs:           peakFlops,
+		bwHbmUs:               bwHbmUs,
+		tpSpanScale:           tpSpanScale,
+		moeSpanScale:          moeSpanScale,
+		tpCrossNodeLatencyUs:  crossNodeLatencyUs(hw.NetworkTopology, hw.TP, hw.HWConfig),
+		moeCrossNodeLatencyUs: crossNodeLatencyUs(hw.NetworkTopology, hw.EffectiveMoEGroupSize(), hw.HWConfig),
 	}, nil
 }

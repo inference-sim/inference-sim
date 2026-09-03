@@ -44,7 +44,7 @@ This auto-resolves both required inputs:
 1. **Model config** -- checks `model_configs/` for a cached `config.json`, fetches from HuggingFace on miss
 2. **Hardware config** -- uses the bundled `hardware_config.json`
 
-**Supported hardware:** The bundled `hardware_config.json` includes specs for **H100** (80 GB HBM3, 989.5 TFLOPS BF16, 3.35 TB/s), **A100-SXM** (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s), and **A100-80** (alias for A100-SXM). To use a different GPU, add an entry to `hardware_config.json` with the required fields (`TFlopsPeak`, `BwPeakTBs`, `mfuPrefill`, `mfuDecode`, `MemoryGiB`) and reference it via `--hardware <name>`.
+**Supported hardware:** The bundled `hardware_config.json` includes specs for **H100** (80 GB HBM3, 989.5 TFLOPS BF16, 3.35 TB/s), **A100-SXM** (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s), and **A100-80** (alias for A100-SXM). To use a different GPU, add an entry to `hardware_config.json` with the required fields (`TFlopsPeak`, `BwPeakTBs`, `mfuPrefill`, `mfuDecode`, `MemoryGiB`), plus `IntraNodeBwGBps`/`InterNodeBwGBps` if instances on that GPU may span nodes (see [Inter-Node Network Cost](#inter-node-network-cost-trained-physics-only)) and reference it via `--hardware <name>`.
 
 **Validated models:** Any dense or MoE transformer with a HuggingFace `config.json` works. The following have been validated end-to-end:
 
@@ -205,6 +205,204 @@ The β₄ default assumes the dispatch/combine collective runs at the same per-b
 3. Fit only β_EP to the residual between observed step time and the model's prediction with the dispatch term zeroed — i.e. attribute the leftover to `β_EP · tMoEDispatch`.
 
 Because the dispatch term is the *only* term gated on `DP > 1`, the residual isolates it cleanly. Fit per comm-backend *family* (all-gather vs all-to-all), not per backend name; see the PR #1433 discussion for why per-backend scalars are the wrong granularity (the within-family differences are prefill/decode shape effects a single scalar cannot represent).
+
+## Inter-Node Network Cost (trained-physics only)
+
+By default a tensor-parallel all-reduce and a MoE expert dispatch/combine are both
+priced at the GPU's on-package bandwidth, with the NVLink/HBM ratio folded into the
+learned coefficient β₄. That is right for an instance living inside one node — and
+*free* for one that spans nodes. Since [#1529](https://github.com/inference-sim/inference-sim/issues/1529)
+an instance can occupy whole nodes across a pool (GLM-5.2 at TP=16 on 2×8 H100), so
+BLIS now charges the crossing.
+
+### How it works
+
+The two communication bases divide byte volume by an **effective** link bandwidth:
+`bwHbmUs` when the collective fits inside one node, and `bwHbmUs / spanScale` when it
+does not. This is a re-scale of the existing term, not an extra one — an additive
+cross-node term would double-charge a `DP>1` MoE instance whose all-to-all is already
+priced by the dispatch basis.
+
+Let `G` be the collective's group size, `p` the size of the node(s) the instance was
+placed on, `n = ceil(G/p)` the nodes spanned, `g = min(G, p)` the group members per
+node, and `r = IntraNodeBwGBps / InterNodeBwGBps`. Two penalty shapes apply:
+
+| Collective | Applies to | Penalty |
+|------------|-----------|---------|
+| Ring | TP all-reduce (`G = tp`: attention, dense FFN, and the `DP=1` MoE-FFN reduce) and the `allgather_reducescatter` / `naive` MoE family, whose volume basis is ring-shaped | `1 + (r-1)·(n-1)/(G-1)` |
+| All-to-all | `deepep_*` / `pplx` / `mori` / `flashinfer_all2allv` MoE dispatch (`G = TP·DP`) | `1 + (r-1)·(G-g)/(G-1)` |
+
+The ring form is derived from the **hierarchical (two-level)** algorithm NCCL uses
+across nodes: an intra-node reduce-scatter + all-gather over the `g` ranks on a node,
+then an inter-node all-reduce of the *reduced* `S/g` chunk across the `n` nodes.
+Normalized by the flat single-node baseline this simplifies exactly to the expression
+above. The all-to-all form is a per-peer split: a rank's egress goes to `G-1` peers,
+`G-g` of which are on other nodes — far more of the traffic leaves the node than in a
+ring, which is why the expert all-to-all rather than the TP all-reduce is the dominant
+cross-node cost for wide expert parallelism.
+
+Both penalties are exactly `1.0` when nothing crosses a boundary (`n = 1`) or when the
+fabric is no slower than the on-node link (`r ≤ 1`), and both are monotone in `r`: a
+worse fabric never lowers the cost.
+
+### The second, size-independent half
+
+Bandwidth is only half the story. Every cross-node collective also pays a fixed cost —
+NCCL launch, fabric round-trip, and the synchronization a two-level collective imposes —
+that does not shrink with the message. For the small messages a decode step produces,
+that fixed cost can exceed the bandwidth half by an order of magnitude, and it is the
+mechanism behind vLLM's guidance to prefer pipeline parallelism across nodes and tensor
+parallelism within a node: per-layer all-reduce means *many small* collectives, not a few
+large ones.
+
+`InterNodeLatencyUs` supplies it. It is charged once per comm unit that crosses a node
+boundary, so a step running `L` layers × 2 phases pays it `2L` times, and it is skipped
+entirely for a step that communicates no tokens (no collective runs, so nothing launches).
+
+**It is 0 — not charged — in the bundled hardware config, deliberately.** BLIS has no
+measured per-collective latency to ship, and a guessed constant would sit in front of
+every multi-node estimate. So out of the box the cross-node cost is bandwidth-only, and
+the size-independent half is available but off. Supply a measured value to model it; see
+[#1661](https://github.com/inference-sim/inference-sim/issues/1661), which also records
+the calibration-evidence bar. Like the bandwidth half, it rides the learned communication
+coefficient (β₄, or β_EP for MoE dispatch), so calibrate it in that frame — the charge is
+`β · units · InterNodeLatencyUs`, not a raw wall-clock number.
+
+### Where the inputs come from
+
+**Topology is derived from placement, not declared.** There is no CLI flag for it: the
+placement manager reports the size of the node(s) an instance's GPUs actually occupy,
+and that is stamped onto the instance's configuration at every placement site
+(startup, deferred node-ready, autoscaler scale-up). A declared "GPUs per node" knob
+could contradict the real `node_pools` placement, charging for a boundary that was
+never crossed or missing one that was.
+
+**Fabric speeds are hardware calibration**, in the file `--hardware-config` already
+points at:
+
+```json
+"H100": {
+  "TFlopsPeak": 989.5, "BwPeakTBs": 3.35, "MemoryGiB": 80.0,
+  "IntraNodeBwGBps": 450,
+  "InterNodeBwGBps": 50
+}
+```
+
+Both are per-GPU **effective unidirectional** GB/s. Only their ratio is used, so the
+absolute scale cancels — but the *convention* must match on both fields (mixing a
+bidirectional NVLink figure with a unidirectional NIC figure doubles the penalty).
+Committed values: H100 450/50 (NVLink 4 against one 400 Gb/s ConnectX-7 per GPU),
+A100 300/25 (NVLink 3 against HDR-200 per GPU), L40S 32/12.5 (PCIe Gen4 — no NVLink —
+against 100 GbE). Set both or neither; a half-calibration is a hard error.
+
+To compare fabrics (InfiniBand vs RoCE vs a single uplink), run the same workload twice
+with different `InterNodeBwGBps` values in that file. (Giving two pools distinct
+`gpu_type` entries models a *mixed-fabric* fleet in one run, which is a different
+question — and it leans on the `gpu_type` keying that
+[#1662](https://github.com/inference-sim/inference-sim/issues/1662) tracks.)
+
+!!! warning "Check the shape you are comparing actually spans nodes"
+    A cost that is only charged when a collective crosses a node boundary is zero for a
+    deployment where none does. In particular the shape GLM-5.2 is really served with —
+    TP=1, DP=16, EP=16, tensor parallelism kept inside the node — charges **nothing**
+    today: at TP=1 there is no TP collective, and the expert all-to-all leg is not yet
+    reachable (see the last of the known approximations below). Comparing fabrics is
+    meaningful for a multi-node **TP** shape now, and for wide expert parallelism once
+    [#1548](https://github.com/inference-sim/inference-sim/issues/1548) lands.
+
+#### Worked example: InfiniBand vs a single 100 GbE uplink, TP=16
+
+```bash
+# A pool of 8-GPU H100 nodes; TP=16 forces the instance across two of them.
+cat > pools.yaml <<'YAML'
+node_pools:
+  - name: h100
+    gpu_type: H100
+    gpus_per_node: 8
+    gpu_memory_gib: 80
+    initial_nodes: 4
+    max_nodes: 4
+    cost_per_hour: 30.0
+YAML
+
+# Run A — the bundled H100 entry: 450/50 GB/s (one 400 Gb/s NIC per GPU), ratio 9x.
+./blis run --model <your-model> --tp 16 --hardware H100   --latency-model trained-physics --policy-config pools.yaml   --num-requests 500 --rate 8
+
+# Run B — copy hardware_config.json, drop the H100 entry's InterNodeBwGBps to 12.5
+# (a single 100 GbE uplink shared by the node's 8 GPUs), then:
+./blis run --model <your-model> --tp 16 --hardware H100   --latency-model trained-physics --policy-config pools.yaml   --hardware-config ./hardware_config.roce.json   --num-requests 500 --rate 8
+```
+
+Compare `ttft_p50_ms` / `itl_mean_ms` between the two. Run B's ratio is 36× rather than
+9×, so its communication term is larger; the difference is the fabric's contribution.
+Both runs warn once on stderr that an instance spans nodes, and if either run reports
+that the cross-node cost is *unpriced*, the calibration or the backend is the reason —
+the message says which.
+
+### Inert unless a boundary is actually crossed
+
+Three independent gates each make the cost exactly zero, so every configuration that
+existed before this feature produces bit-identical step times:
+
+1. no `node_pools` ⇒ no placement ⇒ no topology;
+2. the collective fits inside one node ⇒ `n = 1`;
+3. the hardware declares no interconnect calibration at all — neither a bandwidth pair
+   (⇒ `r = 1`) nor a per-collective latency. Declaring only one of the two halves still
+   charges that half, which is intentional: a fabric can legitimately be modeled as
+   latency-dominated.
+
+Multi-node placement is `blis run` only — `blis replay` rejects `node_pools` outright
+and `blis observe` takes its timing from a real server — so a cross-node cost cannot
+arise off the run path.
+
+That leaves one hole, which is fenced explicitly. A trace exported from a multi-node run
+could be replayed *without* the `node_pools` section, and replay would then reproduce the
+workload at single-node speed — faster than the run that produced the trace, with nothing
+to indicate it. So `blis run` records the widest instance node span in the trace header
+(`max_nodes_spanned`) and `blis replay` refuses any trace that reports more than one node.
+Traces from runs without multi-node placement omit the field entirely and replay exactly
+as before.
+
+If a spanning placement will *not* be charged (uncalibrated fabric, or a backend with
+no communication term), BLIS says so once on stderr rather than silently returning an
+optimistic number. Watch for this if you use a policy bundle's `hw_config_by_gpu`
+override: it replaces the whole hardware calibration, so an entry that omits the two
+fabric fields drops them.
+
+### How large is the effect, and what is still missing
+
+For TP=16 on 2×8 H100 at `r = 9`, the TP communication term rises about **1.53×**,
+which is roughly **+10%** on total step time for a mid-size dense model. The penalty
+is modest by design: hierarchical all-reduce moves the same bytes as a flat ring, and
+only the reduced `S/g` chunk crosses the fabric. A *flat* multi-node ring would instead
+be throttled to ≈`r` (9×) — an order of magnitude more. Measured two-node H100
+all-reduce bus-bandwidth degradation (~1.3–1.5×) is why the hierarchical model is the
+one used here; treat that as the assumption to revisit if a deployment's collectives
+are known not to be hierarchical.
+
+Read `IntraNodeBwGBps` as *the on-node link speed β₄ was calibrated against*, not as a
+free-standing hardware spec: β₄ already absorbs the NVLink/HBM ratio, so the
+cross-node cost inherits β₄'s calibration as its baseline.
+
+Known approximations, each tracked:
+
+- **Per-collective launch + round-trip cost is modeled but not calibrated.** The
+  mechanism is `InterNodeLatencyUs` above; it is 0 in the bundled config, so out of the box
+  the cross-node cost is bandwidth-only — and at decode message sizes the missing fixed
+  cost is plausibly the *dominant* effect. Supplying a measured value is
+  [#1661](https://github.com/inference-sim/inference-sim/issues/1661).
+- The fabric is keyed by GPU type rather than by pool, which is only equivalent while
+  #1529's "one `gpu_type` per pool" rule holds
+  ([#1662](https://github.com/inference-sim/inference-sim/issues/1662)).
+- The **roofline** backend models no communication at all, so a spanning placement is
+  unpriced there ([#1663](https://github.com/inference-sim/inference-sim/issues/1663)).
+- The all-to-all penalty sums the on-node and off-node portions rather than overlapping
+  them, and ignores DeepEP's per-node RDMA coalescing. Both are pessimistic.
+- The lumped `TP·DP` MoE group's span is extrapolated from the placed node size, since
+  BLIS places a TP group. Combined with `node_pools` + `--dp>1` being a fail-fast
+  today, the expert-all-to-all leg ships **inert in every reachable configuration**; it
+  becomes reachable with expert-parallel placement
+  ([#1548](https://github.com/inference-sim/inference-sim/issues/1548)).
 
 ## When to Use Which
 

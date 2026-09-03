@@ -255,6 +255,41 @@ type ModelHardwareConfig struct {
 
 	Backend     string // latency model backend: "" or "roofline" (default), "trained-physics"
 	MaxModelLen int64  // max total sequence length (input + output); 0 = unlimited (mirrors vLLM --max-model-len)
+
+	// NetworkTopology is the placement-derived inter-node interconnect topology
+	// (#1530): the size of the node(s) this instance was actually placed on. It sits
+	// here, alongside TP/DP/EnableExpertParallel/MoECommBackend, because it is a
+	// latency-model input like them — the trained-physics backend uses it to decide
+	// whether a collective crosses a node boundary and must therefore be charged at
+	// the (slower) inter-node fabric bandwidth.
+	//
+	// In production this is written by sim/cluster's placement sites, which stamp it
+	// onto an already-built per-instance config (the same way they stamp the placed GPU
+	// type and KV capacity) — placement is only known after the config exists. The
+	// WithNetworkTopology option supplies it at construction instead, for tests and for
+	// standalone callers; it mirrors how WithKVOffload extends NewKVCacheConfig and is
+	// what the Validate() guard below covers. Its zero value is inert: no node-pool
+	// placement means no cross-node collective, so step time is byte-identical to a
+	// pre-#1530 build (INV-6/INV-BC-DP1).
+	NetworkTopology NetworkTopology
+}
+
+// ModelHardwareOption customizes a ModelHardwareConfig at construction. Used to add
+// optional inputs without churning NewModelHardwareConfig's ~200 call sites (R4),
+// the same pattern KVCacheOption uses for NewKVCacheConfig.
+type ModelHardwareOption func(*ModelHardwareConfig)
+
+// WithNetworkTopology supplies the placement-derived inter-node interconnect topology
+// (#1530) at construction. Omitting it leaves the topology unknown, which makes every
+// cross-node cost inert (INV-6).
+//
+// The production path does NOT use this option: placement is not known until after the
+// config is built, so sim/cluster stamps the field directly on the per-instance copy.
+// The option serves tests and standalone construction, and is the path the constructor's
+// Validate() guard protects. Either way the value must come from real placement — it is
+// a placement fact, never a user-declared knob.
+func WithNetworkTopology(topo NetworkTopology) ModelHardwareOption {
+	return func(c *ModelHardwareConfig) { c.NetworkTopology = topo }
 }
 
 // NewModelHardwareConfig creates a ModelHardwareConfig with all fields explicitly set.
@@ -273,7 +308,8 @@ type ModelHardwareConfig struct {
 // through NewLatencyModel, so a zero-TP divisor cannot reach latency math.
 func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 	model, gpu string, tp, dp int, enableExpertParallel bool,
-	moeCommBackend, backend string, maxModelLen int64) ModelHardwareConfig {
+	moeCommBackend, backend string, maxModelLen int64,
+	opts ...ModelHardwareOption) ModelHardwareConfig {
 	if maxModelLen < 0 {
 		panic(fmt.Sprintf("NewModelHardwareConfig: MaxModelLen must be >= 0, got %d", maxModelLen))
 	}
@@ -285,7 +321,7 @@ func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 			"(NumLocalExperts >= %d), got DP=%d with NumLocalExperts=%d. Dense data parallelism "+
 			"is expressed via router replicas, not the latency model.", MoEMinExperts, dp, modelConfig.NumLocalExperts))
 	}
-	return ModelHardwareConfig{
+	c := ModelHardwareConfig{
 		ModelConfig:          modelConfig,
 		HWConfig:             hwConfig,
 		Model:                model,
@@ -297,6 +333,17 @@ func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 		Backend:              backend,
 		MaxModelLen:          maxModelLen,
 	}
+	for _, opt := range opts {
+		opt(&c)
+	}
+	// Options can carry a hand-built value, so validate what they applied. The
+	// canonical NewNetworkTopology already normalizes a negative node size, so this
+	// only catches a struct literal built directly (which R4 discourages) — but a
+	// negative node size would make a collective's node span meaningless.
+	if err := c.NetworkTopology.validate(); err != nil {
+		panic(fmt.Sprintf("NewModelHardwareConfig: %v", err))
+	}
+	return c
 }
 
 // isMoE reports whether the model is a mixture-of-experts model. It delegates to
