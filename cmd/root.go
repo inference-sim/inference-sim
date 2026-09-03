@@ -1002,6 +1002,16 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	if (dataParallelism > 1 || enableExpertParallel) && backend != "trained-physics" {
 		// INV BC-ROOFLINE: roofline does not model DP/EP step-time effects, so
 		// accepting these flags there would imply unsupported latency semantics.
+		//
+		// LATENT HOLE — READ THIS BEFORE LIFTING #1553. This gate reads the GLOBAL
+		// backend only. A per-pool override (--prefill-latency-model / --decode-latency-model
+		// roofline) can put a pool on roofline while the global backend is trained-physics,
+		// which slips past this check and would give that pool DP/EP-blind step time with
+		// --dp > 1 in force. It is unreachable TODAY only because PD disaggregation with
+		// MoE --dp > 1 is itself rejected by planDPPlacement (#1553) — i.e. two independent
+		// guards happen to compose. Whoever lifts #1553 must revisit this gate and validate
+		// the per-pool backends here (or in the per-pool override block), because at that
+		// moment this becomes a live silent-mis-model path rather than a theoretical one.
 		logrus.Fatalf("--dp > 1 and --enable-expert-parallel require --latency-model trained-physics "+
 			"(got --dp=%d, --enable-expert-parallel=%t, --latency-model %s). The roofline backend is "+
 			"DP/EP-blind for step time.",
