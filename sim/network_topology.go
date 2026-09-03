@@ -19,12 +19,16 @@ import "fmt"
 // exactly the failure mode this signal exists to avoid.
 //
 // The zero value is inert. Without node_pools there is no placement, so
-// PlacedGPUsPerNode stays 0, NodesSpanned always reports 1, and every latency
-// term is byte-identical to a pre-#1530 build (INV-6, INV-BC-DP1). Because node
-// pools are `blis run`-only (`blis replay`/`observe` reject them with a fatal
-// error), a non-inert topology is unreachable from replay — so no TraceV2
-// round-trip is needed for run/replay parity (INV-13 parity N/A, the same
-// treatment #1522/#1529/#1531 took).
+// PlacedGPUsPerNode stays 0, NodesSpanned always reports 1, and every latency term is
+// byte-identical to a pre-#1530 build (INV-6, INV-BC-DP1).
+//
+// Run/replay parity (INV-13) is handled by REJECTION, not by round-tripping this value.
+// Node pools are `blis run`-only — `blis replay` rejects them with a fatal error, and
+// `blis observe` builds no simulator at all — so a non-inert topology is unreachable from
+// replay and nothing here needs to be serialized to reproduce a cost. What IS serialized,
+// by `blis run --trace-output`, is a separate refusal signal: TraceHeader.MaxNodesSpanned
+// records the fleet's widest span so replay can refuse a trace whose step times it cannot
+// reproduce. That is a guard, not a reconstruction input — see that field's comment.
 type NetworkTopology struct {
 	// PlacedGPUsPerNode is the GPU count of the node(s) hosting this instance, as
 	// resolved from real placement. 0 = no node-pool placement (topology unknown)

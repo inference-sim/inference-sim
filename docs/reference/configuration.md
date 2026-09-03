@@ -461,6 +461,8 @@ node_pools:
       stddev: 5.0  # 0 = constant delay
 
 # Per-GPU hardware calibration overrides for roofline/trained-physics backends (issue #893 — optional)
+# ⚠ NOT settable through --policy-config as shown — PolicyBundle has no such key. Tracked
+#   as a pre-existing doc defect in issue #1668; the block below is programmatic-only today.
 # Key: GPU type string matching a pool's gpu_type. Value: HardwareCalib for that GPU.
 # When a pool's gpu_type is found in this map, the matched calibration overrides the CLI
 # --gpu calibration at instance construction time (both sync and deferred/NodeReadyEvent paths),
@@ -468,9 +470,9 @@ node_pools:
 # Omitting this field (zero value) is safe: no override, backward-compatible with all callers.
 # Keys must exactly match the gpu_type strings used in the node_pools entries above.
 # NOTE (#1530): an entry REPLACES the whole calibration, including the optional
-# interconnect fields. Repeat them here for any pool whose instances may span nodes, or
-# their cross-node collective traffic is priced at the on-node rate. (This field is
-# consumed programmatically; it has no policy-bundle key today — issue #893.)
+# interconnect fields, so a programmatic caller must repeat them for any pool whose
+# instances may span nodes. Until #1668 makes this reachable from a policy bundle, a
+# mixed-gpu_type node-pool fleet shares the single --hardware entry (issue #893).
 # See "Interconnect Calibration" below.
 hw_config_by_gpu:
   H100:

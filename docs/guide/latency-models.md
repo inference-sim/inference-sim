@@ -346,7 +346,10 @@ existed before this feature produces bit-identical step times:
 
 1. no `node_pools` ⇒ no placement ⇒ no topology;
 2. the collective fits inside one node ⇒ `n = 1`;
-3. the hardware declares no interconnect bandwidths ⇒ `r = 1`.
+3. the hardware declares no interconnect calibration at all — neither a bandwidth pair
+   (⇒ `r = 1`) nor a per-collective latency. Declaring only one of the two halves still
+   charges that half, which is intentional: a fabric can legitimately be modeled as
+   latency-dominated.
 
 Multi-node placement is `blis run` only — `blis replay` rejects `node_pools` outright
 and `blis observe` takes its timing from a real server — so a cross-node cost cannot
@@ -383,9 +386,11 @@ cross-node cost inherits β₄'s calibration as its baseline.
 
 Known approximations, each tracked:
 
-- **Per-collective launch + round-trip cost is not modeled** — only bandwidth is. At
-  decode message sizes that fixed cost is plausibly the *dominant* cross-node effect
-  ([#1661](https://github.com/inference-sim/inference-sim/issues/1661)).
+- **Per-collective launch + round-trip cost is modeled but not calibrated.** The
+  mechanism is `InterNodeLatencyUs` above; it is 0 in the bundled config, so out of the box
+  the cross-node cost is bandwidth-only — and at decode message sizes the missing fixed
+  cost is plausibly the *dominant* effect. Supplying a measured value is
+  [#1661](https://github.com/inference-sim/inference-sim/issues/1661).
 - The fabric is keyed by GPU type rather than by pool, which is only equivalent while
   #1529's "one `gpu_type` per pool" rule holds
   ([#1662](https://github.com/inference-sim/inference-sim/issues/1662)).
