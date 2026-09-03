@@ -41,6 +41,10 @@ const DefaultMoECommBackend = "allgather_reducescatter"
 // same top_k-routed bytes) and still cost differently, because DeepEP's high-throughput
 // and low-latency kernels make opposite tradeoffs on the same wire volume.
 //
+// The name follows vLLM's, whose VLLM_ALL2ALL_BACKEND covers the all-gather managers too
+// (naive / allgather_reducescatter), not only the genuine all-to-all kernels — so every row
+// of moeCommBackends carries one of these regardless of volume family.
+//
 // Every backend currently ships commScale = 1.0 — a deliberate SHARED PLACEHOLDER, not a
 // measurement. Differentiating DeepEP HT from LL needs its own calibration (plus the
 // inter-node fabric model, #1530) and is delegated to #1568. What this PR guarantees is
@@ -57,6 +61,14 @@ type all2AllProfile struct {
 	commScale float64
 }
 
+// moeCommBackendEntry is one row of the backend table: a vLLM name, the physical
+// communication-volume family it belongs to, and its per-mode step-time profile.
+type moeCommBackendEntry struct {
+	name    string
+	family  moeCommFamily
+	profile all2AllProfile
+}
+
 // nominalAll2AllProfile is the shared placeholder every backend resolves to today: the
 // family's nominal cost, unscaled. Named (rather than repeated inline) so that #1568
 // differentiating one backend is a one-line change that cannot accidentally leave the
@@ -69,11 +81,7 @@ var nominalAll2AllProfile = all2AllProfile{commScale: 1.0}
 // order. ValidMoECommBackends (the display/validation list), moeCommFamilyFor (the family
 // lookup) and moeCommProfileFor (the profile lookup) are all derived from this slice, so
 // they cannot drift apart.
-var moeCommBackends = []struct {
-	name    string
-	family  moeCommFamily
-	profile all2AllProfile
-}{
+var moeCommBackends = []moeCommBackendEntry{
 	{"naive", commFamilyAllGather, nominalAll2AllProfile},
 	{"allgather_reducescatter", commFamilyAllGather, nominalAll2AllProfile},
 	{"pplx", commFamilyAll2All, nominalAll2AllProfile},
@@ -102,28 +110,36 @@ func IsValidMoECommBackend(name string) bool {
 	return err == nil
 }
 
-// moeCommFamilyFor maps a vLLM backend name to its communication-volume family,
-// looking it up in moeCommBackends. An unrecognized name is a hard error (R1): a
-// typo in the --moe-comm-backend flag must surface, not silently fall back to a
-// default volume model.
+// moeCommFamilyFor maps a vLLM backend name to its communication-volume family.
+// An unrecognized name is a hard error (R1): a typo in the --moe-comm-backend flag must
+// surface, not silently fall back to a default volume model.
 func moeCommFamilyFor(name string) (moeCommFamily, error) {
-	for _, b := range moeCommBackends {
-		if b.name == name {
-			return b.family, nil
-		}
+	b, err := lookupMoECommBackend(name)
+	if err != nil {
+		return 0, err
 	}
-	return 0, fmt.Errorf("unknown MoE comm backend %q (valid: %v)", name, ValidMoECommBackends)
+	return b.family, nil
 }
 
-// moeCommProfileFor maps a vLLM backend name to its per-mode step-time profile (#1548),
-// looking it up in moeCommBackends. An unrecognized name is a hard error (R1) for the same
-// reason moeCommFamilyFor rejects one: silently falling back to a nominal profile would
-// hide a typo behind a plausible-looking number.
+// moeCommProfileFor maps a vLLM backend name to its per-mode step-time profile (#1548).
+// Same hard-error policy as moeCommFamilyFor, for the same reason: silently falling back to
+// a nominal profile would hide a typo behind a plausible-looking number.
 func moeCommProfileFor(name string) (all2AllProfile, error) {
+	b, err := lookupMoECommBackend(name)
+	if err != nil {
+		return all2AllProfile{}, err
+	}
+	return b.profile, nil
+}
+
+// lookupMoECommBackend is the single lookup into moeCommBackends, so the family and the
+// profile can never be resolved from two different rows or disagree about which names are
+// valid (R23). Linear scan over seven entries, once at model construction.
+func lookupMoECommBackend(name string) (moeCommBackendEntry, error) {
 	for _, b := range moeCommBackends {
 		if b.name == name {
-			return b.profile, nil
+			return b, nil
 		}
 	}
-	return all2AllProfile{}, fmt.Errorf("unknown MoE comm backend %q (valid: %v)", name, ValidMoECommBackends)
+	return moeCommBackendEntry{}, fmt.Errorf("unknown MoE comm backend %q (valid: %v)", name, ValidMoECommBackends)
 }

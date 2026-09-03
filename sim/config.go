@@ -473,7 +473,10 @@ func (c ModelHardwareConfig) EffectiveEP() int {
 //   - COMPUTE is EP-mode-invariant. With EP on, G GPUs jointly process the whole group's
 //     tokens (n_dp · T_local of them) over G ranks ⇒ T_local·k/TP per GPU — the same value
 //     EP-off gets from tensor-sharding the FFN width by TP. EP re-organises expert
-//     OWNERSHIP, not FLOPs.
+//     OWNERSHIP, not FLOPs. (That step assumes the DP ranks are in lockstep, which vLLM
+//     enforces with dummy batches. BLIS runs the replicas as independent instances, so the
+//     charge is exact at the saturation operating point this model targets and pessimistic
+//     below it — the same assumption the other MoE terms already make.)
 //   - WEIGHTS are not. EP-off holds all num_experts at 1/TP of their width (num_experts/TP
 //     full-expert-equivalents); EP-on holds num_experts/EP WHOLE experts. At EP > TP (i.e.
 //     DP > 1) that is a genuine per-GPU reduction, and it is the reason expert parallelism

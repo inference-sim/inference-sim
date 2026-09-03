@@ -5,6 +5,7 @@ package cmd
 // and dp_replay_parity_test.go; the step-time physics lives in sim/latency/ep_mode_test.go.
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"testing"
@@ -156,15 +157,20 @@ func TestRunCmd_PerRoleMoECommBackend_ChangesOutput(t *testing.T) {
 		}
 		os.Exit(0)
 	}
+	// stdout ONLY, deliberately: the comparison below is an INEQUALITY, and stderr carries
+	// logrus timestamps that differ between two subprocesses — comparing combined output
+	// would pass vacuously whether or not the flag did anything. stdout is the deterministic
+	// channel (INV-6), so a difference there is attributable to the config.
 	leg := func(mode string) string {
 		t.Helper()
 		c := exec.Command(os.Args[0], "-test.run=^TestRunCmd_PerRoleMoECommBackend_ChangesOutput$")
 		c.Env = append(os.Environ(), env+"="+mode)
-		out, err := c.CombinedOutput()
-		if err != nil {
-			t.Fatalf("%s leg failed: %v\noutput:\n%s", mode, err, out)
+		var stdout, stderr bytes.Buffer
+		c.Stdout, c.Stderr = &stdout, &stderr
+		if err := c.Run(); err != nil {
+			t.Fatalf("%s leg failed: %v\nstdout:\n%s\nstderr:\n%s", mode, err, stdout.String(), stderr.String())
 		}
-		return string(out)
+		return stdout.String()
 	}
 	uniform, split := leg("uniform"), leg("split")
 	assert.NotEqual(t, uniform, split,
@@ -175,8 +181,12 @@ func TestRunCmd_PerRoleMoECommBackend_ChangesOutput(t *testing.T) {
 		assert.Contains(t, l.out, `"completed_requests"`, "%s leg produced no metrics", l.name)
 		assert.NotContains(t, l.out, `"completed_requests": 0`, "%s leg completed nothing", l.name)
 	}
-	// And the run must not be silently ignoring the flag name.
-	assert.NotContains(t, split, "not a recognized vLLM MoE all-to-all backend")
+	// A control leg: repeating the SAME configuration must reproduce stdout byte-for-byte
+	// (INV-6). Without this, the inequality above could be satisfied by run-to-run noise
+	// rather than by the per-role backend.
+	assert.Equal(t, uniform, leg("uniform"),
+		"INV-6: two identical runs must produce byte-identical stdout, or the inequality above "+
+			"proves nothing about the per-role backend")
 }
 
 // TestValidatePerPoolLatencyBackends closes the latent hole #1548 makes live: a per-pool

@@ -215,6 +215,14 @@ Compute is EP-mode-invariant on purpose: with EP on, the `EP` GPUs jointly proce
 whole group's tokens, so per-GPU FLOPs land on the same value tensor-sharding gives. EP
 re-organises expert *ownership*, not FLOPs. Weights are where the win is.
 
+That derivation assumes the DP ranks are **in lockstep** — which is what vLLM enforces (idle
+ranks run dummy batches so the expert all-to-all can complete). BLIS models the replicas as
+independent instances with their own event queues, so it charges each step as if every rank
+carried a comparable token slice. At the saturation operating point this model targets, that
+is exact; **below** saturation, when some replicas are idle, it is pessimistic (a lightly
+loaded replica is charged for expert compute its peers are not actually contributing). Same
+direction and same operating-point assumption as the rest of the MoE terms.
+
 **With `--dp N`** (DP-as-placement, #1531/#1556) the two separate. Each replica is
 configured `DP=1`, so its own degrees understate the group; the CLI carries the **logical**
 DP width into each replica (`sim.WithExpertParallelGroupDP`) and the weight/collective group

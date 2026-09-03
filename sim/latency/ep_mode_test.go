@@ -9,6 +9,7 @@ package latency
 // the basis functions keeps them passing (refactor-survival).
 
 import (
+	"math"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -76,6 +77,11 @@ func TestStepTime_EPModeIsLive(t *testing.T) {
 // (weight sharding — asserted above and in
 // TestStepTime_EPShardsExpertWeightsAcrossTheGroup), and a coefficient set that calibrates
 // β_EP away from β₄.
+//
+// It doubles as the MUTUAL-EXCLUSIVITY guard for the two MoE-FFN comm terms, which is why it
+// is an equality rather than a skipped case: the dispatch volume here equals the all-reduce
+// volume, so if EP-on charged dispatch IN ADDITION to the reduction (the double-charge #1548
+// exists to avoid) this would come out strictly greater, not equal.
 func TestStepTime_EPOnAllGatherAtDP1EqualsAllReduce(t *testing.T) {
 	mc := *dpepMoEModelConfig()
 	batch := stepBatch()
@@ -143,25 +149,41 @@ func TestStepTime_EPShardsExpertWeightsAcrossTheGroup(t *testing.T) {
 // G-GPU group jointly processes the whole group's tokens, so per-GPU FLOPs land on the same
 // value tensor-sharding gives — widening the EP group must NOT divide compute.
 //
-// It is asserted by making compute dominant (a large prefill batch on a model whose expert
-// weights are tiny) and checking that the EP-group width moves step time by far less than
-// the compute term would if it were being divided: dividing compute by 4 would remove most
-// of a compute-bound step, whereas the (small) weight reduction may not.
+// The discriminator is the model's SENSITIVITY TO top_k, which makes the law exact rather
+// than a magnitude bound. On the all-gather comm family (vLLM's default), `kEff` enters the
+// step-time model in exactly one place — the routed-expert compute basis
+// `tokens·kEff/moeGroup`. It does not enter the weight term (`numExperts/group`, no top_k)
+// and it does not enter that family's dispatch volume (dense hidden states, no top_k).
+//
+// So d(step time)/d(kEff) is purely the compute term divided by whatever group scopes it:
+//
+//   - If compute is scoped by `moeGroup` (correct), that divisor is identical for both EP
+//     widths, so the two sensitivities are EQUAL.
+//   - If compute were scoped by the EP group (the defect), the sensitivities would differ by
+//     the width ratio — here 4×.
+//
+// Nothing structural is asserted and there is no tolerance to tune beyond the ±1µs the int64
+// step-time rounding allows.
 func TestStepTime_EPDoesNotChangeExpertCompute(t *testing.T) {
-	mc := *dpepMoEModelConfig()
-	mc.NumLocalExperts = 8
-	mc.MoEExpertFFNDim = 512 // small expert weights ⇒ weight term is not the driver
-	batch := makePrefillBatch(16, 2048)
+	base := *dpepMoEModelConfig()
+	base.NumLocalExperts = 8
+	lowK, highK := base, base
+	lowK.NumExpertsPerTok, highK.NumExpertsPerTok = 1, 4
+	batch := makePrefillBatch(4, 1024)
 
-	narrow := newEPModel(t, mc, 2, 1, true, "", 1).StepTime(batch)
-	wide := newEPModel(t, mc, 2, 1, true, "", 4).StepTime(batch) // EP group 2 → 8
-	require.Positive(t, narrow)
+	// epGroupDP 1 ⇒ EP group == TP == 2; epGroupDP 4 ⇒ EP group == 8. moeGroup is 2 in both.
+	sensitivity := func(epGroupDP int) int64 {
+		return newEPModel(t, highK, 2, 1, true, "", epGroupDP).StepTime(batch) -
+			newEPModel(t, lowK, 2, 1, true, "", epGroupDP).StepTime(batch)
+	}
+	narrow, wide := sensitivity(1), sensitivity(4)
 
-	// If expert compute were (incorrectly) divided by the EP group, a 4× wider group would
-	// cut the dominant term ~4×, i.e. step time would fall well below half. The correct
-	// model leaves compute untouched, so it stays above half.
-	assert.Greater(t, wide, narrow/2,
-		"widening the EP group must not divide routed-expert COMPUTE (narrow=%dµs, wide=%dµs)", narrow, wide)
+	require.Positive(t, narrow,
+		"precondition: raising top_k must raise routed-expert compute, or this law tests nothing")
+	assert.InDelta(t, narrow, wide, 1.0,
+		"routed-expert COMPUTE must be scoped by moeGroup (identical for both EP widths), not by "+
+			"the EP group: top_k sensitivity was %dµs at EP group 2 and %dµs at EP group 8 — a ratio "+
+			"near the 4x width ratio means compute is being divided by the EP group", narrow, wide)
 }
 
 // ─── AC-6: the per-mode profile is the seam ─────────────────────────────────
@@ -283,4 +305,17 @@ func TestTpAllReduceBasis_LatencyIsNotSharedAcrossDPRanks(t *testing.T) {
 	assert.Greater(t, at4, at1/4,
 		"the per-collective launch latency must NOT be divided by dp — DP ranks launch their "+
 			"collectives concurrently, so each pays it in full (dp=1: %.3fµs, dp=4: %.3fµs)", at1, at4)
+}
+
+// TestTpAllReduceBasis_ZeroDPDivisorIsCoerced extends the struct-literal guard
+// (TestTrainedPhysicsModel_StructLiteralKeepsCommTerm) to the dp divisor #1548 introduces.
+// A struct-literal model has dp == 0, so StepTime would hand this basis a divisor of 0 —
+// which, unguarded, makes the whole comm term +Inf rather than merely mis-scaling it.
+func TestTpAllReduceBasis_ZeroDPDivisorIsCoerced(t *testing.T) {
+	m := &TrainedPhysicsModel{tp: 8, hiddenDim: 4096, activationBPP: 2, bwHbmUs: 3.35e6, tpSpanScale: 1.0}
+	zero := m.tpAllReduceBasis(32, 1024, 0)
+	assert.Equal(t, m.tpAllReduceBasis(32, 1024, 1), zero,
+		"a zero dp divisor must behave exactly like the no-division case, not produce +Inf")
+	assert.False(t, math.IsInf(zero, 0))
+	assert.False(t, math.IsNaN(m.tpAllReduceBasis(32, 1024, math.NaN())), "a NaN divisor must not poison the term")
 }

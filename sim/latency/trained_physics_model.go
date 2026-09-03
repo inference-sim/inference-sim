@@ -873,7 +873,14 @@ func (m *TrainedPhysicsModel) tpAllReduceBasis(units, tokens, dpDivisor float64)
 	if m.tp <= 1 {
 		return 0
 	}
-	if !(dpDivisor > 0) { // NaN/zero/negative would poison or delete the term
+	// `!(dpDivisor > 0)` rather than a positive check so a NaN also lands here, for the same
+	// reason tpCommBwUs guards its scale (and this fixes the same latent hole on a new axis):
+	// the caller derives it from float64(m.dp), which is 0 for a model built by struct literal
+	// — as several tests in this package do — and dividing by 0 would make the whole comm term
+	// +Inf. Production callers always pass EffectiveDP() (>= 1) or the literal 1.0, so this is
+	// unreachable there; it is coerced rather than rejected because the basis is a pure
+	// arithmetic helper on the hot path, not a validation boundary.
+	if !(dpDivisor > 0) {
 		dpDivisor = 1
 	}
 	tpFactor := float64(m.tp-1) / float64(m.tp)
