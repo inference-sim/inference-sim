@@ -206,20 +206,59 @@ jobs:
               # Contexts come from the repo's active branch rulesets rather than a hardcoded
               # list, so this cannot drift. Unioning across rulesets can only over-include,
               # which makes the gate stricter and never looser.
-              ruleset_ids=$(gh api "/repos/$REPO/rulesets" \
-                --jq '.[] | select(.target=="branch" and .enforcement=="active") | .id' 2>/dev/null || true)
-              required=$(for rid in $ruleset_ids; do
-                gh api "/repos/$REPO/rulesets/$rid" \
-                  --jq '.rules[]? | select(.type=="required_status_checks") | .parameters.required_status_checks[]?.context' 2>/dev/null || true
-              done | sort -u)
+              # NO `|| true` ON THESE READS. Suppressing them made an API, permission or
+              # rate-limit failure produce an empty `required`, which was then read as "no
+              # contexts are configured" and set status=success — recreating the exact fail-open
+              # this check exists to close. A read that SUCCEEDS and returns nothing is a real
+              # "no requirements"; a read that FAILS is not evidence of anything, so it maps to
+              # unknown and the gate turns that into needs-human.
+              if ! ruleset_ids=$(gh api "/repos/$REPO/rulesets" \
+                   --jq '.[] | select(.target=="branch" and .enforcement=="active") | .id'); then
+                status=unknown
+                failing="could not read the branch rulesets, so the required check contexts are unknown"
+                echo "::error::$failing"
+                break
+              fi
+              required_raw=""
+              unreadable=""
+              for rid in $ruleset_ids; do
+                if ! ctx=$(gh api "/repos/$REPO/rulesets/$rid" \
+                     --jq '.rules[]? | select(.type=="required_status_checks") | .parameters.required_status_checks[]?.context'); then
+                  unreadable="$rid"
+                  break
+                fi
+                required_raw+="$ctx"$'\n'
+              done
+              if [[ -n "$unreadable" ]]; then
+                # A partial read is worse than none: it would check a subset and call it complete.
+                status=unknown
+                failing="could not read ruleset $unreadable, so the required check contexts may be incomplete"
+                echo "::error::$failing"
+                break
+              fi
+              required=$(printf '%s' "$required_raw" | sed '/^$/d' | sort -u)
               if [[ -z "$required" ]]; then
-                # No required contexts configured: the run conclusion is all there is to go on.
+                # Reads succeeded and there genuinely are no required contexts. The run
+                # conclusion, already checked above, is all there is to go on.
+                echo "no required status-check contexts are configured; relying on the run conclusion"
                 status=success
                 break
               fi
-              green=$(gh api "/repos/$REPO/commits/$VERIFIED_SHA/check-runs?per_page=100" --paginate \
-                --jq '.check_runs[] | select(.conclusion=="success") | .name' 2>/dev/null | sort -u || true)
-              missing=$(comm -23 <(printf '%s\n' "$required") <(printf '%s\n' "$green") | grep . || true)
+              echo "required contexts: $(printf '%s' "$required" | paste -sd ', ' -)"
+              # Same treatment as the ruleset reads above. This one already failed SAFELY when
+              # suppressed — an empty `green` makes every required context look missing — but it
+              # failed INACCURATELY, reporting "these checks did not pass" when the truth was
+              # "we could not read them". With a NOT-GREEN verdict that spends a correction round
+              # chasing findings that do not exist.
+              if ! green_raw=$(gh api "/repos/$REPO/commits/$VERIFIED_SHA/check-runs?per_page=100" --paginate \
+                   --jq '.check_runs[] | select(.conclusion=="success") | .name'); then
+                status=unknown
+                failing="could not read the check runs on $VERIFIED_SHA, so the required contexts could not be confirmed"
+                echo "::error::$failing"
+                break
+              fi
+              green=$(printf '%s' "$green_raw" | sed '/^$/d' | sort -u)
+              missing=$(comm -23 <(printf '%s\n' "$required") <(printf '%s\n' "$green") | sed '/^$/d')
               if [[ -n "$missing" ]]; then
                 status=failure
                 failing="required checks not satisfied on $VERIFIED_SHA: $(printf '%s' "$missing" | paste -sd ', ' -)"
