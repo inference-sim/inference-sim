@@ -14,7 +14,7 @@
         <link rel="prev" href="../extension-recipes/">
       
       
-        <link rel="next" href="../rfc/">
+        <link rel="next" href="../automated-delivery/">
       
       
         
@@ -1631,6 +1631,8 @@
       
         
       
+        
+      
     
     
     
@@ -2340,6 +2342,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../automated-delivery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Automated Delivery (L1)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../rfc/" class="md-nav__link">
         
   
@@ -2450,10 +2480,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_7" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_8" >
         
           
-          <label class="md-nav__link" for="__nav_7_7" id="__nav_7_7_label" tabindex="">
+          <label class="md-nav__link" for="__nav_7_8" id="__nav_7_8_label" tabindex="">
             
   
   
@@ -2471,8 +2501,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7_7">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2609,10 +2639,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_8" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_9" >
         
           
-          <label class="md-nav__link" for="__nav_7_8" id="__nav_7_8_label" tabindex="">
+          <label class="md-nav__link" for="__nav_7_9" id="__nav_7_9_label" tabindex="">
             
   
   
@@ -2630,8 +2660,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_8_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7_8">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_9">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2796,10 +2826,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_9" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_10" >
         
           
-          <label class="md-nav__link" for="__nav_7_9" id="__nav_7_9_label" tabindex="">
+          <label class="md-nav__link" for="__nav_7_10" id="__nav_7_10_label" tabindex="">
             
   
   
@@ -2817,8 +2847,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_9_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7_9">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_10">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3946,6 +3976,13 @@
    - <strong>Self-Audit</strong> (Step 4.75) — deliberate critical thinking across 10 dimensions. Catches substance bugs that pattern-matching agents miss.</p>
 <hr />
 <h2 id="step-by-step-process">Step-by-Step Process<a class="headerlink" href="#step-by-step-process" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p><strong>Automated alternative (L1):</strong> a collaborator can comment
+<code>/approve-issue-for-pr-delivery</code> on a sub-issue to have agents run Steps 1–5 and the two
+review commands, stopping at <code>ready-for-merge</code> for a human to merge or at <code>needs-human</code> with
+a reason. The implement phase follows this document, so the rules below are still the source
+of truth. See <a href="../automated-delivery/">Automated Delivery (L1)</a>.</p>
+</blockquote>
 <h3 id="step-1-create-an-isolated-workspace">Step 1: Create an Isolated Workspace<a class="headerlink" href="#step-1-create-an-isolated-workspace" title="Permanent link">&para;</a></h3>
 <p>Create a git worktree BEFORE any work begins:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>worktree<span class="w"> </span>add<span class="w"> </span>.worktrees/pr&lt;N&gt;-&lt;feature-name&gt;<span class="w"> </span>-b<span class="w"> </span>pr&lt;N&gt;-&lt;feature-name&gt;
@@ -4395,13 +4432,13 @@
         
         
           
-          <a href="../rfc/" class="md-footer__link md-footer__link--next" aria-label="Next: RFC Template">
+          <a href="../automated-delivery/" class="md-footer__link md-footer__link--next" aria-label="Next: Automated Delivery (L1)">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                RFC Template
+                Automated Delivery (L1)
               </div>
             </div>
             <div class="md-footer__button md-icon">

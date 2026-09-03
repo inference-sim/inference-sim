@@ -11,28 +11,28 @@
       
       
       
-        <link rel="prev" href="../../../03/05/why-simulate-before-you-scale/">
+        <link rel="prev" href="../pr-workflow/">
       
       
-        <link rel="next" href="../../../08/06/what-weve-learned-about-modeling-llm-latency/">
+        <link rel="next" href="../rfc/">
       
       
         
       
       
-      <link rel="icon" href="../../../../../assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
     
     
       
-        <title>The Physics of High-Fidelity Distributed Inference Platform Simulation - BLIS — Blackbox Inference Simulator</title>
+        <title>Automated Delivery (L1) - BLIS — Blackbox Inference Simulator</title>
       
     
     
-      <link rel="stylesheet" href="../../../../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../../../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -51,9 +51,9 @@
       
     
     
-      <link rel="stylesheet" href="../../../../../stylesheets/extra.css">
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
     
-    <script>__md_scope=new URL("../../../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#the-physics-of-high-fidelity-distributed-inference-platform-simulation" class="md-skip">
+        <a href="#automated-delivery-l1" class="md-skip">
           Skip to content
         </a>
       
@@ -96,7 +96,7 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../../../../.." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -116,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              The Physics of High-Fidelity Distributed Inference Platform Simulation
+              Automated Delivery (L1)
             
           </span>
         </div>
@@ -229,7 +229,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="../../../../.." class="md-tabs__link">
+      <a href="../.." class="md-tabs__link">
         
   
   
@@ -250,7 +250,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../../../getting-started/" class="md-tabs__link">
+        <a href="../../getting-started/" class="md-tabs__link">
           
   
   
@@ -272,7 +272,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../../../concepts/" class="md-tabs__link">
+        <a href="../../concepts/" class="md-tabs__link">
           
   
   
@@ -294,7 +294,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../../../guide/" class="md-tabs__link">
+        <a href="../../guide/" class="md-tabs__link">
           
   
   
@@ -316,7 +316,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../../../reference/" class="md-tabs__link">
+        <a href="../../reference/" class="md-tabs__link">
           
   
   
@@ -338,7 +338,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../../../methodology/" class="md-tabs__link">
+        <a href="../../methodology/" class="md-tabs__link">
           
   
   
@@ -356,11 +356,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../../../../../contributing/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
           
   
   
@@ -378,13 +380,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="../../../../" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../blog/" class="md-tabs__link">
           
   
   
@@ -409,9 +409,7 @@
           
             
               
-                
-              
-              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" hidden>
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
                 <div class="md-sidebar__scrollwrap">
                   <div class="md-sidebar__inner">
                     
@@ -422,7 +420,7 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="../../../../.." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -452,7 +450,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../.." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -510,7 +508,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../../../../getting-started/" class="md-nav__link ">
+            <a href="../../getting-started/" class="md-nav__link ">
               
   
   
@@ -554,7 +552,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../getting-started/installation/" class="md-nav__link">
+      <a href="../../getting-started/installation/" class="md-nav__link">
         
   
   
@@ -582,7 +580,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../getting-started/quickstart/" class="md-nav__link">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
         
   
   
@@ -610,7 +608,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../getting-started/tutorial/" class="md-nav__link">
+      <a href="../../getting-started/tutorial/" class="md-nav__link">
         
   
   
@@ -678,7 +676,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../../../../concepts/" class="md-nav__link ">
+            <a href="../../concepts/" class="md-nav__link ">
               
   
   
@@ -722,7 +720,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../concepts/glossary/" class="md-nav__link">
+      <a href="../../concepts/glossary/" class="md-nav__link">
         
   
   
@@ -750,7 +748,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../concepts/architecture/" class="md-nav__link">
+      <a href="../../concepts/architecture/" class="md-nav__link">
         
   
   
@@ -778,7 +776,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../concepts/core-engine/" class="md-nav__link">
+      <a href="../../concepts/core-engine/" class="md-nav__link">
         
   
   
@@ -806,7 +804,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../concepts/roofline/" class="md-nav__link">
+      <a href="../../concepts/roofline/" class="md-nav__link">
         
   
   
@@ -890,7 +888,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../../../../guide/" class="md-nav__link ">
+            <a href="../../guide/" class="md-nav__link ">
               
   
   
@@ -934,7 +932,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../guide/routing/" class="md-nav__link">
+      <a href="../../guide/routing/" class="md-nav__link">
         
   
   
@@ -962,7 +960,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../guide/admission/" class="md-nav__link">
+      <a href="../../guide/admission/" class="md-nav__link">
         
   
   
@@ -990,7 +988,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../guide/scheduling/" class="md-nav__link">
+      <a href="../../guide/scheduling/" class="md-nav__link">
         
   
   
@@ -1018,7 +1016,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../guide/latency-models/" class="md-nav__link">
+      <a href="../../guide/latency-models/" class="md-nav__link">
         
   
   
@@ -1046,7 +1044,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../guide/kv-cache/" class="md-nav__link">
+      <a href="../../guide/kv-cache/" class="md-nav__link">
         
   
   
@@ -1074,7 +1072,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../guide/workloads/" class="md-nav__link">
+      <a href="../../guide/workloads/" class="md-nav__link">
         
   
   
@@ -1102,7 +1100,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../guide/cluster/" class="md-nav__link">
+      <a href="../../guide/cluster/" class="md-nav__link">
         
   
   
@@ -1130,7 +1128,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../guide/results/" class="md-nav__link">
+      <a href="../../guide/results/" class="md-nav__link">
         
   
   
@@ -1158,7 +1156,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../guide/observe-replay-calibrate/" class="md-nav__link">
+      <a href="../../guide/observe-replay-calibrate/" class="md-nav__link">
         
   
   
@@ -1186,7 +1184,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../guide/kv-offload-calibration/" class="md-nav__link">
+      <a href="../../guide/kv-offload-calibration/" class="md-nav__link">
         
   
   
@@ -1214,7 +1212,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../guide/archon-pr-review/" class="md-nav__link">
+      <a href="../../guide/archon-pr-review/" class="md-nav__link">
         
   
   
@@ -1242,7 +1240,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../guide/skills-and-plugins/" class="md-nav__link">
+      <a href="../../guide/skills-and-plugins/" class="md-nav__link">
         
   
   
@@ -1310,7 +1308,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../../../../reference/" class="md-nav__link ">
+            <a href="../../reference/" class="md-nav__link ">
               
   
   
@@ -1354,7 +1352,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../reference/project-structure/" class="md-nav__link">
+      <a href="../../reference/project-structure/" class="md-nav__link">
         
   
   
@@ -1382,7 +1380,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../reference/configuration/" class="md-nav__link">
+      <a href="../../reference/configuration/" class="md-nav__link">
         
   
   
@@ -1410,7 +1408,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../reference/models/" class="md-nav__link">
+      <a href="../../reference/models/" class="md-nav__link">
         
   
   
@@ -1438,7 +1436,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../reference/workload-spec/" class="md-nav__link">
+      <a href="../../reference/workload-spec/" class="md-nav__link">
         
   
   
@@ -1502,7 +1500,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../../../../methodology/" class="md-nav__link ">
+            <a href="../../methodology/" class="md-nav__link ">
               
   
   
@@ -1546,7 +1544,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../methodology/strategy-evolution/" class="md-nav__link">
+      <a href="../../methodology/strategy-evolution/" class="md-nav__link">
         
   
   
@@ -1574,7 +1572,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../methodology/hypothesis-bundles/" class="md-nav__link">
+      <a href="../../methodology/hypothesis-bundles/" class="md-nav__link">
         
   
   
@@ -1606,6 +1604,8 @@
       
   
   
+    
+  
   
   
     
@@ -1637,22 +1637,23 @@
     
     
       
+        
+        
+      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../../../../contributing/" class="md-nav__link ">
+            <a href="../" class="md-nav__link ">
               
   
   
@@ -1670,13 +1671,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="0">
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_7">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1696,7 +1697,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../contributing/extension-recipes/" class="md-nav__link">
+      <a href="../extension-recipes/" class="md-nav__link">
         
   
   
@@ -1724,7 +1725,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../contributing/pr-workflow/" class="md-nav__link">
+      <a href="../pr-workflow/" class="md-nav__link">
         
   
   
@@ -1749,10 +1750,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../../../../contributing/automated-delivery/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Automated Delivery (L1)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1768,6 +1796,136 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The command
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-can-be-delivered" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What can be delivered
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-happens" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What happens
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-ends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How it ends
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The gate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#controlling-a-delivery-in-flight" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Controlling a delivery in flight
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scope
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1780,7 +1938,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../contributing/rfc/" class="md-nav__link">
+      <a href="../rfc/" class="md-nav__link">
         
   
   
@@ -1808,7 +1966,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../contributing/hypothesis/" class="md-nav__link">
+      <a href="../hypothesis/" class="md-nav__link">
         
   
   
@@ -1836,7 +1994,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../contributing/perspectives/" class="md-nav__link">
+      <a href="../perspectives/" class="md-nav__link">
         
   
   
@@ -1878,10 +2036,13 @@
       
       
         
+          
+          
+        
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
@@ -1890,7 +2051,7 @@
         <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_8" >
         
           
-          <label class="md-nav__link" for="__nav_7_8" id="__nav_7_8_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_7_8" id="__nav_7_8_label" tabindex="">
             
   
   
@@ -1926,7 +2087,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../contributing/archon/baseline-analysis/" class="md-nav__link">
+      <a href="../archon/baseline-analysis/" class="md-nav__link">
         
   
   
@@ -1954,7 +2115,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../contributing/archon/encode-plan/" class="md-nav__link">
+      <a href="../archon/encode-plan/" class="md-nav__link">
         
   
   
@@ -1982,7 +2143,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../contributing/archon/pr-review-context/" class="md-nav__link">
+      <a href="../archon/pr-review-context/" class="md-nav__link">
         
   
   
@@ -2034,10 +2195,13 @@
       
       
         
+          
+          
+        
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
@@ -2046,7 +2210,7 @@
         <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_9" >
         
           
-          <label class="md-nav__link" for="__nav_7_9" id="__nav_7_9_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_7_9" id="__nav_7_9_label" tabindex="">
             
   
   
@@ -2082,7 +2246,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../contributing/standards/experiments/" class="md-nav__link">
+      <a href="../standards/experiments/" class="md-nav__link">
         
   
   
@@ -2110,7 +2274,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../contributing/standards/rules/" class="md-nav__link">
+      <a href="../standards/rules/" class="md-nav__link">
         
   
   
@@ -2138,7 +2302,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../contributing/standards/invariants/" class="md-nav__link">
+      <a href="../standards/invariants/" class="md-nav__link">
         
   
   
@@ -2166,7 +2330,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../contributing/standards/principles/" class="md-nav__link">
+      <a href="../standards/principles/" class="md-nav__link">
         
   
   
@@ -2218,10 +2382,13 @@
       
       
         
+          
+          
+        
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
@@ -2230,7 +2397,7 @@
         <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_10" >
         
           
-          <label class="md-nav__link" for="__nav_7_10" id="__nav_7_10_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_7_10" id="__nav_7_10_label" tabindex="">
             
   
   
@@ -2266,7 +2433,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../contributing/templates/design-guidelines/" class="md-nav__link">
+      <a href="../templates/design-guidelines/" class="md-nav__link">
         
   
   
@@ -2294,7 +2461,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../contributing/templates/micro-plan/" class="md-nav__link">
+      <a href="../templates/micro-plan/" class="md-nav__link">
         
   
   
@@ -2322,7 +2489,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../contributing/templates/archon-issue-examples/" class="md-nav__link">
+      <a href="../templates/archon-issue-examples/" class="md-nav__link">
         
   
   
@@ -2350,7 +2517,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../contributing/templates/hypothesis/" class="md-nav__link">
+      <a href="../templates/hypothesis/" class="md-nav__link">
         
   
   
@@ -2390,8 +2557,6 @@
       
   
   
-    
-  
   
   
     
@@ -2409,23 +2574,22 @@
     
     
       
-        
-        
-      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" checked>
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../../../" class="md-nav__link ">
+            <a href="../../blog/" class="md-nav__link ">
               
   
   
@@ -2443,13 +2607,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_8" id="__nav_8_label" tabindex="">
+              <label class="md-nav__link " for="__nav_8" id="__nav_8_label" tabindex="0">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_8">
             <span class="md-nav__icon md-icon"></span>
             
@@ -2479,13 +2643,10 @@
       
       
         
-          
-          
-        
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
@@ -2494,7 +2655,7 @@
         <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_2" >
         
           
-          <label class="md-nav__link" for="__nav_8_2" id="__nav_8_2_label" tabindex="">
+          <label class="md-nav__link" for="__nav_8_2" id="__nav_8_2_label" tabindex="0">
             
   
   
@@ -2532,7 +2693,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../archive/2026/" class="md-nav__link">
+      <a href="../../blog/archive/2026/" class="md-nav__link">
         
   
   
@@ -2584,13 +2745,10 @@
       
       
         
-          
-          
-        
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
@@ -2599,7 +2757,7 @@
         <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_3" >
         
           
-          <label class="md-nav__link" for="__nav_8_3" id="__nav_8_3_label" tabindex="">
+          <label class="md-nav__link" for="__nav_8_3" id="__nav_8_3_label" tabindex="0">
             
   
   
@@ -2637,7 +2795,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../category/architecture/" class="md-nav__link">
+      <a href="../../blog/category/architecture/" class="md-nav__link">
         
   
   
@@ -2667,7 +2825,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../category/capacity-planning/" class="md-nav__link">
+      <a href="../../blog/category/capacity-planning/" class="md-nav__link">
         
   
   
@@ -2697,7 +2855,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../category/deep-dives/" class="md-nav__link">
+      <a href="../../blog/category/deep-dives/" class="md-nav__link">
         
   
   
@@ -2727,7 +2885,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../category/what-is-blis/" class="md-nav__link">
+      <a href="../../blog/category/what-is-blis/" class="md-nav__link">
         
   
   
@@ -2771,8 +2929,6 @@
             
             
               
-                
-              
               <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
                 <div class="md-sidebar__scrollwrap">
                   <div class="md-sidebar__inner">
@@ -2792,10 +2948,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#building-fidelity-from-first-principles" class="md-nav__link">
+  <a href="#the-command" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Building Fidelity from First Principles
+        The command
       
     </span>
   </a>
@@ -2803,60 +2959,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#a-requests-journey-the-hidden-complexity" class="md-nav__link">
+  <a href="#what-can-be-delivered" class="md-nav__link">
     <span class="md-ellipsis">
       
-        A Request's Journey: The Hidden Complexity
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="A Request&#39;s Journey: The Hidden Complexity">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#layer-1-the-engine-vllm" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Layer 1: The Engine (vLLM)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#layer-2-the-data-plane-cluster-orchestration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Layer 2: The Data Plane (Cluster Orchestration)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#layer-3-the-control-plane-autoscaling" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Layer 3: The Control Plane (Autoscaling)
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#blis-in-action-simulating-a-configuration-decision" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        BLIS in Action: Simulating a Configuration Decision
+        What can be delivered
       
     </span>
   </a>
@@ -2864,10 +2970,87 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#from-modeling-to-validation" class="md-nav__link">
+  <a href="#what-happens" class="md-nav__link">
     <span class="md-ellipsis">
       
-        From Modeling to Validation
+        What happens
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-ends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How it ends
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The gate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#controlling-a-delivery-in-flight" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Controlling a delivery in flight
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scope
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security
       
     </span>
   </a>
@@ -2883,397 +3066,196 @@
             
           
           
-  <div class="md-content md-content--post" data-md-component="content">
-    <div class="md-sidebar md-sidebar--post" data-md-component="sidebar" data-md-type="navigation">
-      <div class="md-sidebar__scrollwrap">
-        <div class="md-sidebar__inner md-post">
-          <nav class="md-nav md-nav--primary">
-            <div class="md-post__back">
-              <div class="md-nav__title md-nav__container">
-                <a href="../../../../" class="md-nav__link">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
-                  <span class="md-ellipsis">
-                    Back to index
-                  </span>
-                </a>
-              </div>
-            </div>
-            
-              <div class="md-post__authors md-typeset">
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
                 
-                  <div class="md-profile md-post__profile">
-                    <span class="md-author md-author--long">
-                      <img src="https://github.com/susiejojo.png" alt="Dipanwita Guhathakurta">
-                    </span>
-                    <span class="md-profile__description">
-                      <strong>
-                        
-                          Dipanwita Guhathakurta
-                        
-                      </strong>
-                      <br>
-                      
-                    </span>
-                  </div>
-                
-                  <div class="md-profile md-post__profile">
-                    <span class="md-author md-author--long">
-                      <img src="https://github.com/toslali-ibm.png" alt="Mert Toslali">
-                    </span>
-                    <span class="md-profile__description">
-                      <strong>
-                        
-                          Mert Toslali
-                        
-                      </strong>
-                      <br>
-                      
-                    </span>
-                  </div>
-                
-                  <div class="md-profile md-post__profile">
-                    <span class="md-author md-author--long">
-                      <img src="https://github.com/jgchn.png" alt="Jing Chen">
-                    </span>
-                    <span class="md-profile__description">
-                      <strong>
-                        
-                          Jing Chen
-                        
-                      </strong>
-                      <br>
-                      
-                    </span>
-                  </div>
-                
-                  <div class="md-profile md-post__profile">
-                    <span class="md-author md-author--long">
-                      <img src="https://github.com/namasl.png" alt="Nick Masluk">
-                    </span>
-                    <span class="md-profile__description">
-                      <strong>
-                        
-                          Nick Masluk
-                        
-                      </strong>
-                      <br>
-                      
-                    </span>
-                  </div>
-                
-                  <div class="md-profile md-post__profile">
-                    <span class="md-author md-author--long">
-                      <img src="https://github.com/kalantar.png" alt="Michael Kalantar">
-                    </span>
-                    <span class="md-profile__description">
-                      <strong>
-                        
-                          Michael Kalantar
-                        
-                      </strong>
-                      <br>
-                      
-                    </span>
-                  </div>
-                
-                  <div class="md-profile md-post__profile">
-                    <span class="md-author md-author--long">
-                      <img src="https://github.com/atantawi.png" alt="Asser Tantawi">
-                    </span>
-                    <span class="md-profile__description">
-                      <strong>
-                        
-                          Asser Tantawi
-                        
-                      </strong>
-                      <br>
-                      
-                    </span>
-                  </div>
-                
-                  <div class="md-profile md-post__profile">
-                    <span class="md-author md-author--long">
-                      <img src="https://github.com/vishakha-r.png" alt="Vishakha Ramani">
-                    </span>
-                    <span class="md-profile__description">
-                      <strong>
-                        
-                          Vishakha Ramani
-                        
-                      </strong>
-                      <br>
-                      
-                    </span>
-                  </div>
-                
-                  <div class="md-profile md-post__profile">
-                    <span class="md-author md-author--long">
-                      <img src="https://github.com/sriumcp.png" alt="Srinivasan Parthasarathy">
-                    </span>
-                    <span class="md-profile__description">
-                      <strong>
-                        
-                          Srinivasan Parthasarathy
-                        
-                      </strong>
-                      <br>
-                      
-                    </span>
-                  </div>
-                
-                  <div class="md-profile md-post__profile">
-                    <span class="md-author md-author--long">
-                      <img src="https://github.com/fabolive.png" alt="Fabio Oliveira">
-                    </span>
-                    <span class="md-profile__description">
-                      <strong>
-                        
-                          Fabio Oliveira
-                        
-                      </strong>
-                      <br>
-                      
-                    </span>
-                  </div>
-                
-              </div>
-            
-            <ul class="md-post__meta md-nav__list">
-              <li class="md-nav__item md-nav__item--section">
-                <div class="md-post__title">
-                  <span class="md-ellipsis">
-                    Metadata
-                  </span>
-                </div>
-                <nav class="md-nav">
-                  <ul class="md-nav__list">
-                    <li class="md-nav__item">
-                      <div class="md-nav__link">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 19H5V8h14m-3-7v2H8V1H6v2H5c-1.11 0-2 .89-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-1V1m-1 11h-5v5h5z"/></svg>
-                        <time datetime="2026-04-09 00:00:00+00:00" class="md-ellipsis">April 9, 2026</time>
-                      </div>
-                    </li>
-                    
-                    
-                      <li class="md-nav__item">
-                        <div class="md-nav__link">
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9 3v15h3V3zm3 2 4 13 3-1-4-13zM5 5v13h3V5zM3 19v2h18v-2z"/></svg>
-                          <span class="md-ellipsis">
-                            in
-                            
-                              <a href="../../../../category/architecture/">Architecture</a>, 
-                              <a href="../../../../category/deep-dives/">Deep Dives</a></span>
-                        </div>
-                      </li>
-                    
-                    
-                      
-                      <li class="md-nav__item">
-                        <div class="md-nav__link">
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 20a8 8 0 0 0 8-8 8 8 0 0 0-8-8 8 8 0 0 0-8 8 8 8 0 0 0 8 8m0-18a10 10 0 0 1 10 10 10 10 0 0 1-10 10C6.47 22 2 17.5 2 12A10 10 0 0 1 12 2m.5 5v5.25l4.5 2.67-.75 1.23L11 13V7z"/></svg>
-                          <span class="md-ellipsis">
-                            
-                              7 min read
-                            
-                          </span>
-                        </div>
-                      </li>
-                    
-                  </ul>
-                </nav>
-              </li>
-            </ul>
-            
-          </nav>
-          
-        </div>
-      </div>
-    </div>
-    <article class="md-content__inner md-typeset">
-      
-        
-  
-
+                  
 
 
   
   
 
 
-<h1 id="the-physics-of-high-fidelity-distributed-inference-platform-simulation">The Physics of High-Fidelity Distributed Inference Platform Simulation<a class="headerlink" href="#the-physics-of-high-fidelity-distributed-inference-platform-simulation" title="Permanent link">&para;</a></h1>
-<p>Production LLM inference platforms are distributed systems where routing policies, admission control, autoscaling, and engine-level scheduling all interact to determine latencies and throughput. How do you explore how different policies and configurations affect these KPIs before deploying to production? Testing a new routing policy or autoscaling threshold on live traffic risks cascading bugs across the fleet, while building separate test environments burns GPU-hours and still cannot predict interactions between cluster-level policies and engine-level batch dynamics.</p>
-<p>The answer is <strong>end-to-end simulation</strong>: model the entire distributed inference stack to explore how policies and configurations affect latencies and throughput for your workloads. <em>What does it take to build a simulator accurate enough to guide these decisions?</em> The challenge lies in capturing the right mechanisms. At the engine level, batches process together — all requests wait for the slowest operation to finish, so KV cache fills trigger preemptions and long prompts stall short decodes. At the cluster level, routing policies operate on stale cache state, admission control gates overload, and prefill/decode disaggregation trades utilization for latency. At the control plane, autoscalers react to lagged metrics, creating oscillations. When these couplings are not modeled, predictions diverge: a back-of-the-envelope model might predict 50ms time-to-first-token while production measures 200ms.</p>
-<!-- more -->
-
-<h2 id="building-fidelity-from-first-principles">Building Fidelity from First Principles<a class="headerlink" href="#building-fidelity-from-first-principles" title="Permanent link">&para;</a></h2>
-<p><a href="https://github.com/inference-sim/inference-sim">BLIS</a> (Blackbox Inference Simulator) models inference serving through discrete-event simulation, advancing from event to event rather than stepping through continuous time. This approach runs orders of magnitude faster than real-time, requires no GPUs, and evaluates hours of production traffic in seconds.</p>
-<p>BLIS uses discrete-event simulation to model the full stack. This full-stack fidelity enables <strong>capacity planning</strong> (instance count, GPU type, TP degree) and <strong>configuration search</strong> (routing weights, admission thresholds). Without modeling distributed system couplings, planners predict linear scaling where production saturates, miss SLO violations from routing pile-on, or deploy autoscalers that oscillate.</p>
-<p>By modeling the behavior of production systems at the server (<a href="https://github.com/vllm-project/vllm">vLLM</a>) and platform (<a href="https://llm-d.ai">llm-d</a>) layers, BLIS enables safe experimentation before deployment:</p>
-<ul>
-<li><strong>Routing policies</strong> — Test new scorer combinations and weights</li>
-<li><strong>Admission control</strong> — Explore saturation thresholds and flow control strategies</li>
-<li><strong>Capacity planning</strong> — Compare model/GPU/TP configurations</li>
-<li><strong>Workload analysis</strong> — Test how switching from TP=2 to TP=4 affects tail latency under production traffic patterns</li>
-</ul>
-<p>This article walks through what it takes to build that level of fidelity — from token batching physics to distributed orchestration, by following a request's end-to-end journey through the system to see where every millisecond of complexity originates.</p>
-<h2 id="a-requests-journey-the-hidden-complexity">A Request's Journey: The Hidden Complexity<a class="headerlink" href="#a-requests-journey-the-hidden-complexity" title="Permanent link">&para;</a></h2>
-<p>A user hits enter, and 50ms later the first token appears. What happened in between? Three architectural layers working together: the inference engine (vLLM), the data plane (cluster orchestration), and the control plane (autoscaling), all of which high-fidelity simulation must model.</p>
-<pre class="mermaid"><code>flowchart TB
-    Request([Request])
-
-    subgraph Layer2["Layer 2: Data Plane"]
-        Admit[Admission]
-        Route[Routing]
-        PD{P/D Split?}
-        Admit --&gt; Route
-        Route --&gt; PD
-    end
-
-    subgraph Layer1["Layer 1: Engine"]
-        Sched[Scheduling]
-        KV[KV Cache]
-        Batch[Batch Formation]
-        Step[Forward Pass]
-        Sched --&gt; KV --&gt; Batch --&gt; Step
-    end
-
-    subgraph Disagg["Prefill/Decode Disaggregation"]
-        PF[Prefill Pool]
-        Dec[Decode Pool]
-        PF --&gt;|KV Transfer| Dec
-    end
-
-    Response([Response])
-
-    subgraph Layer3["Layer 3: Control Plane"]
-        Monitor[Monitor Metrics]
-        Scale[Autoscaling Decisions]
-        Monitor --&gt; Scale
-    end
-
-    Request --&gt; Admit
-    PD --&gt;|Aggregate| Sched
-    PD --&gt;|Disaggregated| PF
-    Step --&gt; Response
-    Dec --&gt; Response
-    Scale -.-&gt;|add/remove instances| Admit</code></pre>
-<h3 id="layer-1-the-engine-vllm">Layer 1: The Engine (vLLM)<a class="headerlink" href="#layer-1-the-engine-vllm" title="Permanent link">&para;</a></h3>
-<blockquote>
-<p><strong>TL;DR:</strong> Batched execution couples requests together - a heavy prompt in the batch slows down fast decodes running alongside it. BLIS models the full vLLM pipeline (continuous batching, request scheduling and preemption, KV cache pressure, chunked prefill) and predicts forward pass timing using a generalizable model that runs on CPUs without needing real GPUs.</p>
-</blockquote>
-<p>The inference engine does not process requests individually. It processes them in continuously evolving batches. A <strong>step</strong> is one GPU forward pass that advances every request in the batch, either processing prompt tokens (prefill) or generating the next output token (decode). The slowest operation determines when the step completes.</p>
-<p>Why does this matter? Consider a batch with three requests decoding single tokens (fast, memory-bound) and one request processing a 512-token prompt (slow, compute-bound). Everyone waits for the slowest. This is not an edge case — batch composition constantly shifts as new requests arrive and completed ones leave.</p>
-<p><strong>What BLIS captures.</strong> vLLM's complexity: continuous batching (requests join and leave mid-flight), mixed prefill-decode execution, block-level KV cache management (prefix reuse, preemption, CPU offloading), and chunked prefill. BLIS models these mechanisms because they determine when requests complete.</p>
-<p><strong>How BLIS predicts step time without GPUs.</strong> BLIS combines physics-based latency models with learned corrections:</p>
-<pre class="mermaid"><code>flowchart LR
-    subgraph Inputs["📊 &lt;b&gt;Inputs&lt;/b&gt;"]
-        Batch["Batch State&lt;br/&gt;(size, sequences)"]
-        LLM["Model Architecture&lt;br/&gt;(layers, params)"]
-        HW["Hardware Specs&lt;br/&gt;(TFLOPs, bandwidth)"]
-    end
-
-    subgraph Physics["⚡ &lt;b&gt;Physics-Based Latency Model&lt;/b&gt;"]
-        Compute["Compute Bound&lt;br/&gt;Compute Operations / GPU Speed"]
-        Memory["Memory Bound&lt;br/&gt;Bytes Transferred / GPU Bandwidth"]
-    end
-
-    subgraph Learned["🎯 &lt;b&gt;Learned Corrections&lt;/b&gt;"]
-        Coeffs["Trained on&lt;br/&gt;Real vLLM Traces"]
-    end
-
-    Batch --&gt; Physics
-    LLM --&gt; Physics
-    HW --&gt; Physics
-
-    Compute --&gt; StepTime["⏱️ Predicted Step Time"]
-    Memory --&gt; StepTime
-    Coeffs --&gt; StepTime</code></pre>
-<p>This approach is intended to generalize across LLM architectures, hardware configurations, and tensor parallelism degrees, enabling seamless experimentation with any model-GPU-TP combination without per-configuration calibration. Accurate forward pass predictions drive accurate end-to-end latency metrics.</p>
-<h3 id="layer-2-the-data-plane-cluster-orchestration">Layer 2: The Data Plane (Cluster Orchestration)<a class="headerlink" href="#layer-2-the-data-plane-cluster-orchestration" title="Permanent link">&para;</a></h3>
-<blockquote>
-<p><strong>TL;DR:</strong> Production clusters run multiple vLLM instances behind a routing gateway. BLIS models saturation-based admission control, composable weighted routing with in-flight tracking, configurable cache signal staleness, and prefill/decode disaggregation. Pluggable interfaces enable algorithm discovery — test new serving policies without writing production code.</p>
-</blockquote>
-<pre class="mermaid"><code>flowchart TB
-    A[Request Arrives]
-    B{Admission Control}
-    C[Routing]
-    D{Disaggregation?}
-    E[Aggregated vLLM Processing]
-    F[Prefill Pool]
-    G[Decode Pool]
-    X[Drop]
-
-    A --&gt; B
-    B -- Rejected --&gt; X
-    B -- Admitted --&gt; C
-    C --&gt; D
-    D -- No --&gt; E
-    D -- Yes --&gt; F
-    F -- KV Transfer --&gt; G</code></pre>
-<p><strong>Admission control</strong> determines whether requests enter the system. BLIS models saturation-based admit/reject decisions, the default behavior in llm-d: when cluster load exceeds thresholds, incoming requests are rejected or queued rather than overwhelming instances. This prevents queue explosion during traffic spikes and avoids pile-on where burst arrivals flood the same "best" instance.</p>
-<p><strong>Routing</strong> assigns each request to an instance by scoring on weighted signals - prefix cache hits, queue depth, KV utilization. The challenge: burst arrivals cause all routing decisions to see the same stale state and pick the same "best" instance. BLIS models in-flight tracking (counting already-dispatched requests) and signal staleness (cache state queries a 2-second-old snapshot, matching llm-d's ZMQ propagation delay).</p>
-<p><strong>Prefill/decode disaggregation</strong> separates compute-bound prefill from memory-bound decode onto dedicated GPU pools, allowing each to be sized for its bottleneck. Requests process prefill first, then transfer their KV cache over the network to a decode instance. BLIS models the full pipeline: prefill routing, KV transfer, decode routing, and fair-share bandwidth contention when multiple transfers run concurrently.</p>
-<h3 id="layer-3-the-control-plane-autoscaling">Layer 3: The Control Plane (Autoscaling)<a class="headerlink" href="#layer-3-the-control-plane-autoscaling" title="Permanent link">&para;</a></h3>
-<blockquote>
-<p><strong>TL;DR:</strong> Real autoscaling experiments are expensive—feedback loops spanning minutes (HPA scrapes, pod scheduling, VM provisioning, model loading) require 30+ minutes and 10+ GPU replicas per test. BLIS models llm-d's <a href="https://github.com/inference-sim/llm-d-workload-variant-autoscaler">WVA</a> (Workload Variant Autoscaler) four-stage pipeline with pluggable Collector/Analyzer/Optimizer/Actuator interfaces, compressing experiments to seconds on a laptop.</p>
-</blockquote>
-<p>Autoscaling dynamically adjusts instance count to match demand. In production, this happens through feedback loops where HPA scrapes, Kubernetes scheduling, VM provisioning, and model loading all add latency before a new replica serves traffic.</p>
-<p><strong>What BLIS captures.</strong> BLIS models llm-d's <a href="https://github.com/inference-sim/llm-d-workload-variant-autoscaler">WVA</a> (Workload Variant Autoscaler) four-stage pipeline — Collect, Analyze, Optimize, Actuate, with pluggable interfaces. <strong>Collector</strong> observes per-replica metrics, <strong>Analyzer</strong> detects saturation and emits scaling signals, <strong>Optimizer</strong> decides which GPU types to add/remove respecting multi-model inventory constraints, and <strong>Actuator</strong> applies decisions with configurable delay.</p>
-<p><strong>What BLIS enables.</strong> Researchers can sweep scaling thresholds, compare analyzer strategies under identical workloads, and test multi-model scenarios where scaling one model steals GPUs from another. Each pluggable interface becomes a research hook: swap in a cost-aware Optimizer or an Analyzer that predicts load spikes. The result: discover and validate better autoscaling policies before deployment, with full control over feedback delays and provisioning latencies.</p>
-<h2 id="blis-in-action-simulating-a-configuration-decision">BLIS in Action: Simulating a Configuration Decision<a class="headerlink" href="#blis-in-action-simulating-a-configuration-decision" title="Permanent link">&para;</a></h2>
-<p>Consider a configuration decision: you are deploying Qwen3-14B for chatbot workloads at 50 req/s with 8 instances. Does routing policy matter? What about hardware choice?</p>
-<p>Testing this in production means provisioning separate GPU pools, running 30+ minutes of traffic per setup and burning GPU-hours to discover the answer. With BLIS, you can simulate these configurations in seconds on a laptop:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Install and build BLIS</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/inference-sim/inference-sim.git
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>go<span class="w"> </span>build<span class="w"> </span>-o<span class="w"> </span>blis<span class="w"> </span>main.go
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># H100 with round-robin routing</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--workload<span class="w"> </span>chatbot<span class="w"> </span>--rate<span class="w"> </span><span class="m">50</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span><span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--routing-policy<span class="w"> </span>round-robin
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="c1"># H100 with prefix-aware routing</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--workload<span class="w"> </span>chatbot<span class="w"> </span>--rate<span class="w"> </span><span class="m">50</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span><span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span>--routing-scorers<span class="w"> </span><span class="s2">"prefix-affinity:2,queue-depth:1"</span>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="c1"># A100-80 with prefix-aware routing</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--workload<span class="w"> </span>chatbot<span class="w"> </span>--rate<span class="w"> </span><span class="m">50</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span><span class="w"> </span>--hardware<span class="w"> </span>A100-80<span class="w"> </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">  </span>--routing-scorers<span class="w"> </span><span class="s2">"prefix-affinity:2,queue-depth:1"</span>
+<h1 id="automated-delivery-l1">Automated Delivery (L1)<a class="headerlink" href="#automated-delivery-l1" title="Permanent link">&para;</a></h1>
+<p>One comment delivers a sub-issue. Agents implement, verify, correct, and re-verify until the PR is either ready for a human to merge or stopped with a reason. <strong>The loop never merges</strong> — it labels, and a human merges.</p>
+<p>This is the automated counterpart to <a href="../pr-workflow/">PR Workflow</a>, which remains the manual path and the source of the rules the implement phase follows.</p>
+<h2 id="the-command">The command<a class="headerlink" href="#the-command" title="Permanent link">&para;</a></h2>
+<p>Comment on the sub-issue you want delivered:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>/approve-issue-for-pr-delivery
 </code></pre></div>
-<p><strong>Simulated Results:</strong></p>
+<p><strong>No issue number.</strong> The target is the issue you commented on. An argument would be redundant — you are already on the issue — and a hazard: commenting on #100 with <code>#200</code> would deliver something other than what you are reading. A <code>#N</code> that <em>agrees</em> with the current issue is tolerated, since the earlier documented form used one; a disagreeing one is refused with an explanation rather than silently ignored.</p>
+<p>Restricted to repository collaborators, same as <code>/archon-pr-review</code> and <code>@claude</code>.</p>
+<h2 id="what-can-be-delivered">What can be delivered<a class="headerlink" href="#what-can-be-delivered" title="Permanent link">&para;</a></h2>
+<p><strong>Any single deliverable issue.</strong> It does not have to be a sub-issue of a planned feature:</p>
 <table>
 <thead>
 <tr>
-<th>Configuration</th>
-<th>Predicted P99 TTFT</th>
-<th>Key Finding</th>
+<th></th>
+<th>Works</th>
+<th>Notes</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>H100 (round-robin)</td>
-<td>12.1ms</td>
-<td>Baseline with naive routing</td>
+<td>A <strong>sub-issue</strong> of an archon-planned feature</td>
+<td>yes</td>
+<td>the surface, contracts, allow list, target branch and <code>archon-plan:</code> are all honoured</td>
 </tr>
 <tr>
-<td>H100 (prefix-aware)</td>
-<td>11.3ms</td>
-<td><strong>7% improvement</strong> from KV cache reuse</td>
+<td>A <strong>standalone</strong> issue — bug, enhancement, hardening</td>
+<td>yes</td>
+<td>no plan, no declared surface, targets the default branch. Small issues here legitimately skip the RFC and plan; the issue's own acceptance criteria are the contract</td>
 </tr>
 <tr>
-<td>A100-80 (prefix-aware)</td>
-<td>45.8ms</td>
-<td><strong>4× slower than H100</strong> — hardware choice dominates</td>
+<td>A <strong>tracking issue</strong></td>
+<td><strong>refused</strong></td>
+<td>see below</td>
 </tr>
 </tbody>
 </table>
-<p><strong>What the simulation predicts:</strong> Prefix-aware routing delivers measurable gains on H100, but hardware choice has far greater impact. These simulated predictions guide configuration decisions without provisioning real GPUs.</p>
-<h2 id="from-modeling-to-validation">From Modeling to Validation<a class="headerlink" href="#from-modeling-to-validation" title="Permanent link">&para;</a></h2>
-<p>We have covered what it takes to build a high-fidelity distributed platform simulator: modeling engine physics, data plane coordination, and control plane feedback loops. But <strong>how do we know this modeling is accurate?</strong></p>
-<p>We have validated BLIS against production workloads and compared its accuracy to commercial simulators. The methodology and results — cross-system benchmarks and achievable accuracy without per-configuration tuning — are covered in a subsequent article.</p>
-<hr />
-<p><em>Next in this series: </em><em><a href="../../../08/06/what-weve-learned-about-modeling-llm-latency/">What We've Learned About Predicting LLM Latency</a></em><em> — the latency model under the hood, how we trained it, and how accurate it is on real workloads without per-configuration tuning.</em></p>
+<p><strong>Archon is optional, not required.</strong> With a plan there is a deterministic number that must not move the wrong way (<code>PLAN_GATE=pass</code>); with no plan at all the signal is <code>absent</code>, which delivers exactly as <code>pass</code> does, and the gate is CI plus the review verdict. The honest cost of running plan-less is that the exit condition becomes entirely judgement — no worse than what a human reviewer works from, but proportionally less mechanically checkable.</p>
+<p><strong>A tracking issue is refused, by design.</strong> It is an umbrella over several holes, so delivering it would mean one PR attempting the whole feature — the thing one-hole-per-PR exists to avoid — and it would spend an agent run producing something unreviewable. Two signals detect it, because this repository uses both conventions: the issue has linked native GitHub sub-issues, or its title begins with <code>Tracking</code> / <code>Epic</code>. Either one refuses with a comment pointing you at a specific sub-issue. If an issue really is a single deliverable unit, rename it and unlink its children.</p>
+<p>Then leave. Every phase posts a comment, so the whole delivery history is readable on the PR page without opening a single Actions log.</p>
+<h2 id="what-happens">What happens<a class="headerlink" href="#what-happens" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>/approve-issue-for-pr-delivery
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  │
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>  ├─ Deliver — Implement    branch deliver/issue-N, tests, PR, self-review
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>  │      ↓
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>  ├─ Deliver — Verify       build/test/lint → archon review → methodology review
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>  │      │                  ready-for-merge → STOP
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>  │      │                  needs-human    → STOP
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>  │      ↓ correct
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>  ├─ Deliver — Correct      fixes the named findings, pushes
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>  │      ↓
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>  └─ back to Verify              (at most 3 correction rounds)
+</code></pre></div>
+<p>Phases chain with <code>workflow_dispatch</code>, passing the PR and sub-issue numbers as inputs. <strong>No PAT and no GitHub App are needed</strong> — <code>workflow_dispatch</code> and <code>repository_dispatch</code> are the two events that always create workflow runs even when triggered with <code>GITHUB_TOKEN</code>.</p>
+<p><code>workflow_run</code> is deliberately <em>not</em> used, for two documented reasons:</p>
+<ul>
+<li><strong>It caps at three levels.</strong> "You can't use <code>workflow_run</code> to chain together more than three levels of workflows." implement → verify → correct → verify exhausts the budget, so the fourth link never fires and the loop dies after a single correction round — silently, since nothing runs to report it.</li>
+<li><strong>It cannot get a CI verdict anyway.</strong> When a workflow using <code>GITHUB_TOKEN</code> opens or updates a PR, "the resulting <code>pull_request</code> event creates workflow runs in an <strong>approval-required</strong> state". The delivery's own CI runs would sit waiting for a human to click <em>Approve and run</em>, so polling for a conclusion would time out every round.</li>
+</ul>
+<h2 id="how-it-ends">How it ends<a class="headerlink" href="#how-it-ends" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Outcome</th>
+<th>Meaning</th>
+<th>What you do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ready-for-merge</code></td>
+<td>CI green, archon plan not regressed, review returned GREEN</td>
+<td>Read the history, merge</td>
+</tr>
+<tr>
+<td><code>needs-human</code></td>
+<td>Signals disagreed, evidence was missing, or 3 rounds did not close the findings</td>
+<td>Read the last comment — it names the phase and the reason</td>
+</tr>
+</tbody>
+</table>
+<p>There is no third outcome. Every unrecognised or contradictory signal resolves to <code>needs-human</code>; the gate is closed by default.</p>
+<h2 id="the-gate">The gate<a class="headerlink" href="#the-gate" title="Permanent link">&para;</a></h2>
+<p>The decision is not the reviewing agent's to make. <code>deliver-verify.yml</code> collects three machine-readable signals and hands them to <code>scripts/deliver-gate.sh</code>, which is unit-tested (<code>scripts/deliver_gate_test.go</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CI_STATUS</code></td>
+<td>verify dispatches the repository's own <code>ci.yml</code> against the delivery branch and waits for it. Anything other than a <code>success</code> conclusion is <code>failure</code></td>
+</tr>
+<tr>
+<td><code>PLAN_GATE</code></td>
+<td><code>.archon/review.json</code> — <code>planRatchet.ok</code> and <code>planClassify.verdict</code>. <code>absent</code> (the PR never claimed a plan) delivers exactly as a satisfied plan does; <code>unverified</code> (the PR declares an <code>archon-plan:</code> but the check did not run) <strong>blocks</strong></td>
+</tr>
+<tr>
+<td><code>AGENT_VERDICT</code></td>
+<td>the <code>DELIVER-VERDICT: GREEN</code> / <code>NOT-GREEN</code> marker, required to be the last line of a comment posted by the automation itself</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Why verify dispatches <code>ci.yml</code> rather than running the checks itself.</strong> <code>main</code> requires seven status contexts (<code>build</code>, <code>lint</code>, and five <code>test (...)</code> groups) before a PR can merge, and those must be present <strong>on the PR's head commit</strong>. Two things make that awkward, and an earlier version of this feature got both wrong by running the commands inline:</p>
+<ul>
+<li>a bot-opened PR has its <code>pull_request</code> runs held in an <strong>approval-required</strong> state, so the loop cannot simply wait for the runs GitHub would normally create;</li>
+<li>a <code>workflow_dispatch</code> run's check runs attach to the <strong>dispatch ref, not the PR head</strong> — so checks executed inside the verify job satisfy <em>none</em> of the required contexts. The loop would label a PR <code>ready-for-merge</code> while GitHub still showed zero checks and refused to merge it.</li>
+</ul>
+<p>Dispatching <code>ci.yml</code> on the delivery branch solves both: <code>workflow_dispatch</code> always starts even under <code>GITHUB_TOKEN</code>, and the run produces <code>ci.yml</code>'s own job names against the branch head — exactly what the ruleset matches. It also removes any obligation to keep package groups, per-group timeouts or the Go version in step with <code>ci.yml</code>, because <code>ci.yml</code> is what runs.</p>
+<p>The delivery still verifies the commit it pinned: the dispatched run's <code>head_sha</code> is compared to it, and a mismatch stops the delivery rather than letting CI vouch for different code.</p>
+<p><strong><code>unverified</code> is the subtle one.</strong> <code>archon-review.sh</code> exits 0 and falls back to a plan-less delta review when plan resolution fails, so an absent <code>planRatchet</code> does <em>not</em> by itself mean "no plan" — it can equally mean "a plan was declared and never checked". Treating those alike would let a PR whose dist ratchet silently did not run reach <code>ready-for-merge</code> on a GREEN review.</p>
+<p>Two properties hold structurally rather than by prompt adherence:</p>
+<ul>
+<li><strong>A GREEN review cannot override red CI or a plan regression.</strong> That combination returns <code>needs-human</code> with the disagreement named — the loop does not get to resolve a contradiction between a judgment and an objective signal.</li>
+<li><strong><code>ready-for-merge</code> is never applied to unverified code.</strong> The PR tree is checked out at a pinned SHA, and that SHA is re-confirmed as the branch head before the label goes on. A push landing during the checks or the review downgrades the outcome to <code>needs-human</code>, because what passed is no longer what a human would merge.</li>
+<li><strong>A phase that fails or times out still reports.</strong> Every phase has a reporter guarded on <code>failure() || cancelled()</code> — <code>cancelled()</code> because a job timeout cancels rather than fails, which would otherwise skip the comment entirely and leave the PR silent.</li>
+</ul>
+<p>Archon is optional throughout: with a plan there is a deterministic number that must not move the wrong way, without one the gate is CI plus the review verdict.</p>
+<h2 id="controlling-a-delivery-in-flight">Controlling a delivery in flight<a class="headerlink" href="#controlling-a-delivery-in-flight" title="Permanent link">&para;</a></h2>
+<p><strong>Pause.</strong> Add the <code>deliver:paused</code> label to the PR (or, before a PR exists, to the sub-issue). Every phase checks it as its first step and exits without invoking an agent or moving a label. Remove the label and re-issue the command to resume. You are never racing the loop.</p>
+<p><strong>Round count.</strong> The <code>deliver:round-N</code> label is the only record of how many corrections have been spent, and — since <code>workflow_dispatch</code> has no chain-depth cap — the only thing bounding the loop. It is advanced <em>before</em> the correction agent runs, so a crashed or timed-out round still consumes its budget rather than being retried forever. A missing round label is therefore fatal to the correct phase, unlike other label failures, which only warn.</p>
+<h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
+<p>Repository variables, all optional:</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DELIVER_IMPLEMENT_MODEL</code></td>
+<td><code>claude-opus-4-8</code></td>
+<td>model for the implement phase</td>
+</tr>
+<tr>
+<td><code>DELIVER_CORRECT_MODEL</code></td>
+<td><code>claude-opus-4-8</code></td>
+<td>model for the correct phase</td>
+</tr>
+<tr>
+<td><code>DELIVER_VERIFY_MODEL</code></td>
+<td><code>claude-sonnet-4-6</code></td>
+<td>model for the review phase</td>
+</tr>
+<tr>
+<td><code>DELIVER_MAX_ROUNDS</code></td>
+<td><code>3</code></td>
+<td>correction rounds before <code>needs-human</code>, per PR</td>
+</tr>
+</tbody>
+</table>
+<p>The verify model is deliberately <em>not</em> the implement model. Two instances of one model reviewing each other's work is closer to an agent grading its own homework; different models give real separation.</p>
+<h2 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h2>
+<p><strong>The labels must exist before the workflows are used.</strong> A workflow applying a label that does not exist fails at the API call, which strands a delivery mid-loop:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'deliver:round-1'</span><span class="w"> </span>--color<span class="w"> </span>ededed<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: correction round 1'</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'deliver:round-2'</span><span class="w"> </span>--color<span class="w"> </span>ededed<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: correction round 2'</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'deliver:round-3'</span><span class="w"> </span>--color<span class="w"> </span>ededed<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: correction round 3'</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'deliver:paused'</span><span class="w">  </span>--color<span class="w"> </span>b60205<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: halted; every phase exits on this'</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'ready-for-merge'</span><span class="w"> </span>--color<span class="w"> </span>0e8a16<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: verified green, awaiting human merge'</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'needs-human'</span><span class="w">     </span>--color<span class="w"> </span>d93f0b<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: stopped, a human must look'</span>
+</code></pre></div>
+<p>Raising <code>DELIVER_MAX_ROUNDS</code> above 3 needs matching <code>deliver:round-N</code> labels.</p>
+<h2 id="scope">Scope<a class="headerlink" href="#scope" title="Permanent link">&para;</a></h2>
+<p>L1 delivers <strong>one sub-issue at a time</strong>, and sequencing is yours: approve one, merge it, approve the next. The implement phase reads a <code>Depends on: #M</code> line and refuses when #M's PR is unmerged, so a mis-ordered approval costs a comment rather than a failed hour-long run.</p>
+<p>Not yet automated, each its own follow-up: sequencing sub-issues <code>0..N</code> and opening the final PR (L2), RFC-to-merge (L3), flaky-test re-runs, stall detection, and the no-progress detector.</p>
+<p><strong>Known limitation.</strong> The correct phase may <em>dismiss</em> a finding rather than fix it, and the review phase is instructed to explicitly accept or re-raise each dismissal — but that is prompt adherence, not enforced state. A dismissal silently treated as resolved would not be caught by the gate. The round cap bounds it, and both the dismissal and its acceptance are comments a human reads before merging.</p>
+<h2 id="security">Security<a class="headerlink" href="#security" title="Permanent link">&para;</a></h2>
+<p><strong>The workflow's own steps run trusted code.</strong> The repository root checkout is the default branch, so <code>scripts/</code> and <code>.archon-version</code> always come from <code>main</code> — matching <code>archon.yml</code>. The archon review and <code>deliver-gate.sh</code> are executed from that trusted tree, never from the PR.</p>
+<p><strong>The PR's code never runs on the self-hosted runner.</strong> The verify phase does not check the PR out at all — it dispatches <code>ci.yml</code>, which runs the PR's build and tests on ephemeral <code>ubuntu-latest</code> runners, exactly as it does for any other PR. An earlier version did check the PR out and run its test suite on the self-hosted runner, which meant executing PR code (including <code>deliver_gate_test.go</code>, which shells out to the PR's own <code>.sh</code> files) on persistent infrastructure. Dispatching removes that exposure rather than guarding it.</p>
+<p>The correct phase does still check out and push to the delivery branch, so it requires the target PR to be same-repository, open, and on <code>deliver/issue-&lt;N&gt;</code> — the branch this loop owns.</p>
+<p><code>workflow_dispatch</code> is itself restricted to users with write access, and a refused dispatch stops before any checkout.</p>
+<p><strong>The delivery target comes from the event, not from comment text.</strong> The issue delivered is <code>github.event.issue.number</code> — where the command was typed. An optional <code>#N</code> is accepted only when it agrees with that issue and refused when it disagrees, so no untrusted string ever selects the target.</p>
+<p><strong>The verdict marker is read only from bot-authored comments, and only as a comment's last line</strong> — otherwise any human could set a delivery's verdict by quoting it.</p>
 
 
 
@@ -3281,20 +3263,15 @@
 
 
 
-  
-  
 
 
 
 
-  
 
-
-
-      
-    </article>
-  </div>
-
+                
+              </article>
+            </div>
+          
           
 <script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
         </div>
@@ -3311,12 +3288,10 @@
   
     
       
-        
-      
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../../../03/05/why-simulate-before-you-scale/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Why Simulate Before You Scale">
+          <a href="../pr-workflow/" class="md-footer__link md-footer__link--prev" aria-label="Previous: PR Workflow">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -3326,20 +3301,20 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Why Simulate Before You Scale
+                PR Workflow
               </div>
             </div>
           </a>
         
         
           
-          <a href="../../../08/06/what-weve-learned-about-modeling-llm-latency/" class="md-footer__link md-footer__link--next" aria-label="Next: What We&#39;ve Learned About Modeling LLM Latency">
+          <a href="../rfc/" class="md-footer__link md-footer__link--next" aria-label="Next: RFC Template">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                What We've Learned About Modeling LLM Latency
+                RFC Template
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -3376,14 +3351,14 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../../../../..", "features": ["navigation.tabs", "navigation.indexes", "navigation.sections", "navigation.expand", "navigation.footer", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../../../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.indexes", "navigation.sections", "navigation.expand", "navigation.footer", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
     
     
-      <script src="../../../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
-        <script src="../../../../../javascripts/mermaid-text-fix.js"></script>
+        <script src="../../javascripts/mermaid-text-fix.js"></script>
       
-        <script src="../../../../../javascripts/mathjax.js"></script>
+        <script src="../../javascripts/mathjax.js"></script>
       
         <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
       
