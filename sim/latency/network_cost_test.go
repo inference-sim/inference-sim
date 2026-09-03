@@ -254,18 +254,168 @@ func TestStepTime_MonotoneInFabricQuality(t *testing.T) {
 	assert.Greater(t, prev, fastFabric, "the slowest fabric must cost strictly more than a fabric as fast as NVLink")
 }
 
-// TestStepTime_MoEReduceLegChargedCrossNode verifies the DP==1 MoE-FFN reduce is
-// priced cross-node too. It flows through the same TP-group basis, so a spanning
-// MoE instance at DP=1 must cost strictly more than a single-node one.
+// TestStepTime_MoEReduceLegChargedCrossNode verifies the DP==1 MoE-FFN reduce is priced
+// cross-node too. Isolating it needs care: it flows through the same TP-group basis as the
+// attention and dense-FFN all-reduces, so the naive check "spanning MoE > single-node MoE"
+// would pass even if this leg alone were skipped — the attention all-reduce is penalized
+// regardless.
+//
+// The sharp test is an EQUALITY. At DP=1 the MoE-FFN reduce replaces the dense-FFN reduce
+// unit for unit (a uniform MoE model has numDenseLayers=0 and numMoELayers=numLayers,
+// where a dense model has the reverse), so both models charge exactly 2·numLayers
+// all-reduce units and must therefore gain exactly the same amount from spanning. If the
+// MoE-FFN reduce were left unpenalized, the MoE model would be charged only numLayers
+// units of penalty and would come out strictly CHEAPER — which is precisely the mutation
+// this equality catches.
 func TestStepTime_MoEReduceLegChargedCrossNode(t *testing.T) {
+	hw := fabricHW(9)
+	batch := stepBatch()
+
+	moe := *dpepMoEModelConfig()
+	// Same layers/hidden/heads/FFN as the MoE config, but dense (no experts), so the only
+	// structural difference is which all-reduce unit the FFN contributes.
+	dense := moe
+	dense.NumLocalExperts = 0
+	dense.NumExpertsPerTok = 0
+
+	penalty := func(mc sim.ModelConfig) int64 {
+		return newNetModel(t, mc, hw, 8, 1, false, "", 4).StepTime(batch) -
+			newNetModel(t, mc, hw, 8, 1, false, "", 8).StepTime(batch)
+	}
+	moePenalty, densePenalty := penalty(moe), penalty(dense)
+
+	assert.Greater(t, densePenalty, int64(0), "precondition: spanning must cost the dense model something")
+	assert.Equal(t, densePenalty, moePenalty,
+		"an MoE model at DP=1 all-reduces its MoE FFN in place of a dense FFN, so its spanning penalty "+
+			"must equal an identically-shaped dense model's. A strictly smaller MoE penalty would mean "+
+			"the MoE-FFN reduce is not being priced cross-node (moe=%d µs, dense=%d µs)",
+		moePenalty, densePenalty)
+}
+
+// TestStepTime_CommFamilyDeterminesPenaltyShape guards the single most load-bearing
+// modeling decision in this feature: WHICH penalty shape each MoE comm family gets.
+//
+// The all-gather family (vLLM's default) moves its volume as a ring — two phases at
+// (G-1)/G efficiency, exactly like an all-reduce — so it takes the ring penalty, where
+// only the reduced inter-node chunk crosses the fabric. A true all-to-all has no
+// reduction, so a far larger share of every rank's egress leaves the node and it takes
+// the per-peer penalty. At TP·DP=16 spanning two nodes at a 9x fabric ratio those differ
+// by ~3.4x, so getting them backwards would badly over-price the default backend.
+//
+// Asserting only "spanning costs more" would NOT catch a swap: both shapes exceed 1. So
+// this compares the two families against each other at identical group, span and fabric.
+func TestStepTime_CommFamilyDeterminesPenaltyShape(t *testing.T) {
 	mc := *dpepMoEModelConfig()
 	hw := fabricHW(9)
 	batch := stepBatch()
 
-	single := newNetModel(t, mc, hw, 8, 1, false, "", 8).StepTime(batch)
-	spanning := newNetModel(t, mc, hw, 8, 1, false, "", 4).StepTime(batch)
-	assert.Greater(t, spanning, single,
-		"a spanning MoE instance at DP=1 must pay a cross-node penalty on its MoE-FFN reduce")
+	// moeGroup = TP·DP = 4·4 = 16, spanning four 4-GPU nodes.
+	ringFamily := newNetModel(t, mc, hw, 4, 4, true, "allgather_reducescatter", 4).StepTime(batch)
+	a2aFamily := newNetModel(t, mc, hw, 4, 4, true, "deepep_high_throughput", 4).StepTime(batch)
+
+	// Contained baselines isolate the cross-node penalty from the families' differing
+	// byte volumes (all-gather moves dense hidden states; all-to-all moves top_k tokens).
+	ringContained := newNetModel(t, mc, hw, 4, 4, true, "allgather_reducescatter", 16).StepTime(batch)
+	a2aContained := newNetModel(t, mc, hw, 4, 4, true, "deepep_high_throughput", 16).StepTime(batch)
+
+	ringPenalty := ringFamily - ringContained
+	a2aPenalty := a2aFamily - a2aContained
+	assert.Greater(t, ringPenalty, int64(0), "precondition: the ring family must be penalized at all")
+	assert.Greater(t, a2aPenalty, ringPenalty,
+		"a true all-to-all sends more of its data off-node than a ring, so it must be penalized more "+
+			"for the same span; equal or inverted penalties mean the two comm families were given the "+
+			"wrong collective shapes (ring=%d µs, all-to-all=%d µs)", ringPenalty, a2aPenalty)
+}
+
+// ─── The size-independent half: per-collective latency ──────────────────────
+
+// TestStepTime_PerCollectiveLatencyIsChargedCrossNode verifies the second half of the
+// cross-node cost: a fixed launch + fabric round-trip per collective that crosses a node
+// boundary, independent of message size. A fabric as fast as the on-node link (ratio 1,
+// no bandwidth penalty at all) isolates it — any increase must come from the latency.
+func TestStepTime_PerCollectiveLatencyIsChargedCrossNode(t *testing.T) {
+	mc := testModelConfig()
+	batch := stepBatch()
+
+	noLatency := fabricHW(1) // equal bandwidths ⇒ zero bandwidth penalty
+	withLatency := noLatency
+	withLatency.InterNodeLatencyUs = 5
+
+	contained := newNetModel(t, mc, withLatency, 8, 1, false, "", 8).StepTime(batch)
+	spanning := newNetModel(t, mc, withLatency, 8, 1, false, "", 4).StepTime(batch)
+	assert.Greater(t, spanning, contained,
+		"a per-collective latency must be charged when the TP group spans nodes, even with no "+
+			"bandwidth penalty")
+
+	// And with no latency declared, the same pair is byte-identical — the term is opt-in.
+	assert.Equal(t,
+		newNetModel(t, mc, noLatency, 8, 1, false, "", 8).StepTime(batch),
+		newNetModel(t, mc, noLatency, 8, 1, false, "", 4).StepTime(batch),
+		"with neither a bandwidth penalty nor a declared latency, spanning must cost nothing extra")
+}
+
+// TestStepTime_MonotoneInPerCollectiveLatency verifies AC-2's latency clause directly:
+// holding the placement fixed, raising the per-collective latency never lowers step time,
+// and strictly raises it across a realistic range.
+func TestStepTime_MonotoneInPerCollectiveLatency(t *testing.T) {
+	mc := testModelConfig()
+	batch := stepBatch()
+
+	prev := int64(0)
+	for _, latencyUs := range []float64{0, 1, 2, 5, 10, 25} {
+		hw := fabricHW(9)
+		hw.InterNodeLatencyUs = latencyUs
+		got := newNetModel(t, mc, hw, 8, 1, false, "", 4).StepTime(batch)
+		assert.GreaterOrEqual(t, got, prev,
+			"step time must not decrease as the per-collective latency rises (latency=%v µs)", latencyUs)
+		prev = got
+	}
+	zeroLatency := func() int64 {
+		hw := fabricHW(9)
+		return newNetModel(t, mc, hw, 8, 1, false, "", 4).StepTime(batch)
+	}()
+	assert.Greater(t, prev, zeroLatency, "the largest latency must cost strictly more than none")
+}
+
+// TestStepTime_PerCollectiveLatencyScalesWithCollectiveCount verifies the latency is
+// charged PER COLLECTIVE rather than once per step: a model with twice the layers runs
+// twice the collectives and must pay about twice the latency. This is what distinguishes
+// a per-collective cost from a flat per-step one, and it is why the term can dominate for
+// a deep model on small messages.
+func TestStepTime_PerCollectiveLatencyScalesWithCollectiveCount(t *testing.T) {
+	batch := stepBatch()
+	hw := fabricHW(1) // no bandwidth penalty — isolate the latency
+	hw.InterNodeLatencyUs = 20
+
+	shallow := testModelConfig()
+	deep := shallow
+	deep.NumLayers = shallow.NumLayers * 2
+
+	penalty := func(mc sim.ModelConfig) int64 {
+		return newNetModel(t, mc, hw, 8, 1, false, "", 4).StepTime(batch) -
+			newNetModel(t, mc, hw, 8, 1, false, "", 8).StepTime(batch)
+	}
+	shallowPenalty, deepPenalty := penalty(shallow), penalty(deep)
+	assert.Greater(t, shallowPenalty, int64(0), "precondition: the shallow model must pay a latency penalty")
+	assert.Greater(t, deepPenalty, shallowPenalty,
+		"twice the layers means twice the cross-node collectives, so the latency penalty must grow "+
+			"(shallow=%d µs, deep=%d µs)", shallowPenalty, deepPenalty)
+	// Roughly proportional: within 10% of 2x, confirming per-collective and not per-step.
+	ratio := float64(deepPenalty) / float64(shallowPenalty)
+	assert.InDelta(t, 2.0, ratio, 0.2, "the latency penalty should scale with the collective count")
+}
+
+// TestStepTime_NoLatencyChargedWithoutTokens verifies a step that communicates nothing
+// pays no launch cost: with no tokens there is no collective to launch.
+func TestStepTime_NoLatencyChargedWithoutTokens(t *testing.T) {
+	mc := testModelConfig()
+	hw := fabricHW(9)
+	hw.InterNodeLatencyUs = 1000 // enormous, so any spurious charge would be obvious
+
+	spanning := newNetModel(t, mc, hw, 8, 1, false, "", 4)
+	contained := newNetModel(t, mc, hw, 8, 1, false, "", 8)
+	assert.Equal(t, contained.StepTime(nil), spanning.StepTime(nil),
+		"an empty batch runs no collective, so no launch cost may be charged")
 }
 
 // TestStepTime_MoEDispatchLegChargedCrossNode verifies BC-2: the expert
@@ -508,7 +658,54 @@ func TestTrainedPhysicsModel_StructLiteralKeepsCommTerm(t *testing.T) {
 	assert.False(t, math.IsInf(basis, 0), "the comm basis must stay finite")
 	assert.False(t, math.IsNaN(basis), "the comm basis must not be NaN")
 
-	// And it must equal the un-penalized value exactly.
-	want := 32.0 * 1024.0 * 4096.0 * 2.0 * 2.0 * (7.0 / 8.0) / 3.35e6
-	assert.Equal(t, want, basis)
+	// And it must equal what an explicitly un-penalized model computes — asserted
+	// against a sibling model rather than a re-implementation of the formula, so a
+	// legitimate refactor of the basis does not break this guard.
+	unpenalized := &TrainedPhysicsModel{
+		tp: 8, hiddenDim: 4096, activationBPP: 2, bwHbmUs: 3.35e6, tpSpanScale: 1.0,
+	}
+	assert.Equal(t, unpenalized.tpAllReduceBasis(32, 1024), basis,
+		"an unset span scale must behave exactly like an explicit no-penalty scale")
+}
+
+// ─── Hot-path guard ─────────────────────────────────────────────────────────
+
+// BenchmarkTrainedPhysicsStepTime measures the path this feature modifies, which had no
+// benchmark before. The three variants isolate what the feature costs: `inert` is the
+// default every run without node pools takes, `spanning_bandwidth` adds the size-dependent
+// penalty, and `spanning_bandwidth_latency` adds the size-independent one too. The
+// penalties are frozen at construction, so the inert case should be indistinguishable
+// from a pre-feature build and the spanning cases should differ only by a comparison and
+// a division.
+func BenchmarkTrainedPhysicsStepTime(b *testing.B) {
+	mc := testModelConfig()
+	batch := stepBatch()
+
+	build := func(hw sim.HardwareCalib, gpusPerNode int) sim.LatencyModel {
+		mhw := sim.NewModelHardwareConfig(mc, hw, "m", "H100", 8, 1, false, "", "trained-physics", 0,
+			sim.WithNetworkTopology(sim.NewNetworkTopology(gpusPerNode)))
+		lm, err := NewLatencyModel(*testCoeffs(), mhw)
+		if err != nil {
+			b.Fatal(err)
+		}
+		return lm
+	}
+	withLatency := fabricHW(9)
+	withLatency.InterNodeLatencyUs = 5
+
+	for _, variant := range []struct {
+		name string
+		lm   sim.LatencyModel
+	}{
+		{"inert", build(dpepTestHW(), 0)},
+		{"spanning_bandwidth", build(fabricHW(9), 4)},
+		{"spanning_bandwidth_latency", build(withLatency, 4)},
+	} {
+		b.Run(variant.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_ = variant.lm.StepTime(batch)
+			}
+		})
+	}
 }

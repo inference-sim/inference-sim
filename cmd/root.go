@@ -2636,6 +2636,10 @@ var runCmd = &cobra.Command{
 				WorkloadSeed:      &spec.Seed,
 				GoodputSLOTargets: goodputTargets,                   // #1413, BC-7: persist resolved targets for downstream replay/calibrate
 				KVOffload:         simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: nil when inert (omitted); round-trips resolved config
+				// #1530: record multi-node placement so replay can refuse a trace whose
+				// step times it cannot reproduce. 0/1 (no span) is omitted, so a run
+				// without multi-node placement writes a byte-identical header (INV-6).
+				MaxNodesSpanned: crossNodeSpanForTrace(cs.MaxNodesSpanned()),
 			}
 			if err := workload.ExportTraceV2(header, records, traceOutput+".yaml", traceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)

@@ -24,13 +24,24 @@ type ClusterSimulator struct {
 	hasRun            bool
 	aggregatedMetrics *sim.Metrics
 
-	// Cross-node network-cost diagnostics (#1530), latched so a large fleet emits one
-	// line each. crossNodeUnpricedWarned covers a spanning placement whose cross-node
-	// collective traffic will NOT be charged (uncalibrated interconnect, or a latency
-	// backend with no communication term); implausibleFabricWarned covers a
-	// calibration whose intra/inter-node ratio looks like a unit mistake. Never reset.
-	crossNodeUnpricedWarned bool
-	implausibleFabricWarned bool
+	// Cross-node network-cost diagnostics (#1530), latched PER CAUSE so a mixed fleet
+	// reports each distinct reason once rather than only whichever happened first. The
+	// three crossNode* latches each cover a way a genuinely spanning placement ends up
+	// unpriced (no comm term in the backend / unresolvable node size / uncalibrated
+	// interconnect); implausibleFabricWarned covers a calibration whose intra-to-inter
+	// ratio looks like a unit mistake. Never reset. See warnIfCrossNodeUnpriced.
+	crossNodeBackendWarned      bool
+	crossNodeUnresolvedWarned   bool
+	crossNodeUncalibratedWarned bool
+	implausibleFabricWarned     bool
+
+	// maxNodesSpanned is the largest number of physical nodes any single instance has
+	// occupied (#1530). 0/1 = every instance is single-node. Exported via
+	// MaxNodesSpanned() so `blis run --trace-output` can record it in the trace header;
+	// replay refuses a trace whose fleet spanned nodes, because it cannot reconstruct
+	// one (node pools are run-only) and would otherwise silently replay the workload at
+	// single-node speed.
+	maxNodesSpanned int
 
 	// Online routing pipeline fields
 	clusterEvents     ClusterEventQueue
@@ -743,6 +754,16 @@ func (cs *ClusterSimulator) fireArrivalHook(req *sim.Request, timeUs int64) {
 //
 // Used by `blis run` to capture TraceV2 records at the arrival boundary
 // (issue #1440), replacing the eager post-run RequestsToTraceRecords pass.
+// MaxNodesSpanned returns the largest number of physical nodes any single model
+// instance in this cluster occupies (#1530). Returns 0 when no node pools are
+// configured (no placement), and 1 when every instance fits on one node.
+//
+// `blis run --trace-output` records it in the trace header so `blis replay` can refuse
+// a trace whose fleet spanned nodes: cross-node collective traffic is charged to step
+// time, but replay cannot reconstruct a multi-node fleet (node pools are run-only), so
+// replaying such a trace would silently be faster than the run it came from.
+func (cs *ClusterSimulator) MaxNodesSpanned() int { return cs.maxNodesSpanned }
+
 func (cs *ClusterSimulator) SetArrivalHook(hook func(*sim.Request)) {
 	if cs.hasRun {
 		panic("ClusterSimulator: SetArrivalHook must be called before Run()")

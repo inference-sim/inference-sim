@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -97,15 +98,24 @@ func TestNetworkTopology_Validate(t *testing.T) {
 // live, rather than silently producing a meaningless node span.
 func TestNewModelHardwareConfig_RejectsNegativeTopology(t *testing.T) {
 	mc := ModelConfig{NumLayers: 4, HiddenDim: 256, NumHeads: 4, NumKVHeads: 4, BytesPerParam: 2, IntermediateDim: 512}
-	assert.PanicsWithValue(t,
-		"NewModelHardwareConfig: NetworkTopology: PlacedGPUsPerNode must be >= 0, got -8",
-		func() {
-			NewModelHardwareConfig(mc, HardwareCalib{}, "m", "H100", 1, 1, false, "", "trained-physics", 0,
-				WithNetworkTopology(NetworkTopology{PlacedGPUsPerNode: -8}))
-		})
+	// Match on the field name rather than the whole message, so a reword of the error
+	// does not break the test (the sibling validation tests use Contains for the same
+	// reason).
+	defer func() {
+		r := recover()
+		require.NotNil(t, r, "a negative node size supplied through the option must panic")
+		assert.Contains(t, fmt.Sprint(r), "PlacedGPUsPerNode")
+	}()
+	NewModelHardwareConfig(mc, HardwareCalib{}, "m", "H100", 1, 1, false, "", "trained-physics", 0,
+		WithNetworkTopology(NetworkTopology{PlacedGPUsPerNode: -8}))
 
-	// The canonical constructor normalizes instead of panicking, so the same intent
-	// expressed through it is accepted and inert.
+}
+
+// TestNewModelHardwareConfig_CanonicalConstructorNormalizes verifies the other half: the
+// canonical NewNetworkTopology normalizes a negative node size instead of panicking, so
+// the same intent expressed through it is accepted and simply inert.
+func TestNewModelHardwareConfig_CanonicalConstructorNormalizes(t *testing.T) {
+	mc := ModelConfig{NumLayers: 4, HiddenDim: 256, NumHeads: 4, NumKVHeads: 4, BytesPerParam: 2, IntermediateDim: 512}
 	assert.NotPanics(t, func() {
 		cfg := NewModelHardwareConfig(mc, HardwareCalib{}, "m", "H100", 1, 1, false, "", "trained-physics", 0,
 			WithNetworkTopology(NewNetworkTopology(-8)))

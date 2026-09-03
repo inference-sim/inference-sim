@@ -144,7 +144,7 @@ Maps to `ModelHardwareConfig`.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--model` | string | (required) | LLM model name (e.g., `qwen/qwen3-14b`). |
-| `--hardware` | string | "" | GPU type. Bundled options: `H100`, `A100-SXM`, `A100-80`. If empty, loaded from `defaults.yaml`. Add new GPUs to `hardware_config.json`. |
+| `--hardware` | string | "" | GPU type. Bundled options: `H100`, `A100-SXM`, `A100-80`. If empty, loaded from `defaults.yaml`. Add new GPUs to `hardware_config.json` (include `IntraNodeBwGBps`/`InterNodeBwGBps` if instances on that GPU may span nodes — see [Interconnect Calibration](#interconnect-calibration)). |
 | `--tp` | int | 0 | Tensor parallelism degree. If 0, loaded from `defaults.yaml`. |
 | `--dp` | int | 1 | Data parallelism degree (MoE models only; `--latency-model trained-physics` only). `--dp N` spawns N real single-node engine replicas per `--num-instances`, each sized per-rank (`DP=1`) — on both `blis run` (#1531) and `blis replay` (#1556); re-supply it identically on replay — the TraceV2 header has no `data_parallel` field at all, and replay reads no parallelism field back from it, so omitting `--dp` on the replay leg silently compares an N-replica run against a 1-replica replay. Rejected with `--enable-expert-parallel` (#1548) and with PD disaggregation / the autoscaler / node pools (#1553). |
 | `--enable-expert-parallel` | bool | false | Enable expert parallelism for MoE models (mirrors vLLM `--enable-expert-parallel`; `--latency-model trained-physics` only). A latency-model term only — EP-as-placement is #1548, so combining it with `--dp > 1` fails fast. |
@@ -468,9 +468,10 @@ node_pools:
 # Omitting this field (zero value) is safe: no override, backward-compatible with all callers.
 # Keys must exactly match the gpu_type strings used in the node_pools entries above.
 # NOTE (#1530): an entry REPLACES the whole calibration, including the optional
-# interconnect fields (intranodebwgbps / internodebwgbps). Repeat them here for any
-# pool whose instances may span nodes, or their cross-node collective traffic is
-# priced at the on-node rate. See "Interconnect Calibration" below.
+# interconnect fields. Repeat them here for any pool whose instances may span nodes, or
+# their cross-node collective traffic is priced at the on-node rate. (This field is
+# consumed programmatically; it has no policy-bundle key today — issue #893.)
+# See "Interconnect Calibration" below.
 hw_config_by_gpu:
   H100:
     tflops_peak: 1979.0    # FP16 TFLOPS
@@ -606,8 +607,6 @@ BLIS uses a data-driven calibration strategy to ensure simulation accuracy. This
 
 For environments where live profiling is not feasible, the [Roofline model](../concepts/roofline.md) provides analytical step time estimation without any training data.
 
-## CLI Flag Summary by Sub-Config
-
 ## Interconnect Calibration
 
 `hardware_config.json` carries two optional per-GPU fields that price **cross-node**
@@ -617,6 +616,7 @@ collective traffic in the trained-physics backend (issue #1530):
 |-------|---------|
 | `IntraNodeBwGBps` | On-node GPU-to-GPU link bandwidth (NVLink/xGMI, or PCIe on parts without NVLink) |
 | `InterNodeBwGBps` | Per-GPU share of the node's inter-node fabric (InfiniBand/RoCE NIC) |
+| `InterNodeLatencyUs` | Fixed cost of ONE cross-node collective in µs (launch + fabric round-trip), charged per comm unit that crosses a node boundary. **0 in the bundled config** — see below |
 
 Both are **effective (achievable, not theoretical-peak) per-GPU unidirectional GB/s**.
 Only their *ratio* is used, so the absolute scale cancels — but the convention must
@@ -633,7 +633,8 @@ one changes the ratio by 2×.
     "mfuDecode": 0.30,
     "MemoryGiB": 80.0,
     "IntraNodeBwGBps": 450,
-    "InterNodeBwGBps": 50
+    "InterNodeBwGBps": 50,
+    "InterNodeLatencyUs": 0
   }
 }
 ```
@@ -645,7 +646,15 @@ Rules:
 - **Omitting both is valid and inert** — cross-node traffic is then priced at the
   on-node rate, exactly as before #1530, and BLIS warns once if an instance actually
   spans nodes so the optimism is visible.
-- A negative, NaN or infinite value is rejected rather than silently clamped.
+- A negative, NaN or infinite value is rejected rather than silently clamped, at load
+  time — so the same malformed file fails identically under either latency backend.
+- `InterNodeLatencyUs` stands alone (a fabric can be modeled as latency-dominated), so it
+  is not paired with the bandwidths. It is **0 in the bundled config**: BLIS has no
+  measured per-collective latency to ship, and a guessed constant would sit in front of
+  every multi-node estimate. Out of the box the cross-node cost is therefore
+  bandwidth-only. Supply a measured value to model the size-independent half — it is
+  often the larger one for decode-sized messages. It rides the learned communication
+  coefficient, so the charge is `β · units · InterNodeLatencyUs`.
 - The topology (*whether* a collective crosses a boundary) is **not** configured here.
   It is derived from real `node_pools` placement; there is no CLI flag for it.
 - Whether the cost applies also depends on the backend: only
@@ -654,24 +663,29 @@ Rules:
 To compare fabrics, change `InterNodeBwGBps` (a slower fabric never lowers the charged
 cost), or give pools distinct `gpu_type` entries with different values.
 
-!!! warning "`hw_config_by_gpu` replaces the whole calibration"
-    A `hw_config_by_gpu` entry (below) overrides the *entire* `HardwareCalib` for the
-    matched GPU type. An entry that omits `intranodebwgbps` / `internodebwgbps` drops
-    them, silently disabling the cross-node cost for exactly the mixed-pool
-    deployments the override exists to calibrate. BLIS warns once when a spanning
-    placement lands on an uncalibrated GPU.
+!!! note "Node-pool instances use the `--hardware` entry"
+    A node-pool instance is calibrated from whichever `hardware_config.json` entry
+    `--hardware` resolved, including these fabric fields — `hw_config_by_gpu` would
+    override it per placed pool, but that field has no policy-bundle key today (issue
+    #893), so a mixed-`gpu_type` fleet currently shares one calibration. Where
+    `hw_config_by_gpu` *is* supplied programmatically it replaces the *entire*
+    `HardwareCalib`, so an entry omitting the interconnect fields drops them. Either way
+    BLIS warns once when a spanning placement lands on an uncalibrated GPU, so the
+    resulting optimism is never silent.
 
 See [Latency Models — Inter-Node Network Cost](../guide/latency-models.md#inter-node-network-cost-trained-physics-only)
 for the cost model and its known approximations.
 
 ---
 
+## CLI Flag Summary by Sub-Config
+
 | Sub-Config | Flags |
 |------------|-------|
 | **KVCacheConfig** | `--total-kv-blocks`, `--block-size-in-tokens`, `--kv-cpu-blocks`, `--kv-offload-threshold`, `--kv-transfer-bandwidth`, `--kv-transfer-base-latency` |
 | **BatchConfig** | `--max-num-seqs`, `--max-num-batched-tokens`, `--long-prefill-token-threshold` |
 | **LatencyCoeffs** | `--alpha-coeffs`, `--beta-coeffs` |
-| **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--latency-model`, `--model-config-folder`, `--hardware-config`, `--max-model-len` | Placement-derived (no flag): inter-node network topology (#1530) |
+| **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--latency-model`, `--model-config-folder`, `--hardware-config`, `--max-model-len`. Placement-derived, no flag: the inter-node network topology (#1530) |
 | **PolicyConfig** | `--scheduler`, `--preemption-policy` |
 | **WorkloadConfig** | `--workload`, `--workload-spec`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
 | **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` | YAML-only (no CLI flag): `node_pools`, `instance_lifecycle`, `hw_config_by_gpu` |

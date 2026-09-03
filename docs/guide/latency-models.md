@@ -44,7 +44,7 @@ This auto-resolves both required inputs:
 1. **Model config** -- checks `model_configs/` for a cached `config.json`, fetches from HuggingFace on miss
 2. **Hardware config** -- uses the bundled `hardware_config.json`
 
-**Supported hardware:** The bundled `hardware_config.json` includes specs for **H100** (80 GB HBM3, 989.5 TFLOPS BF16, 3.35 TB/s), **A100-SXM** (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s), and **A100-80** (alias for A100-SXM). To use a different GPU, add an entry to `hardware_config.json` with the required fields (`TFlopsPeak`, `BwPeakTBs`, `mfuPrefill`, `mfuDecode`, `MemoryGiB`) and reference it via `--hardware <name>`.
+**Supported hardware:** The bundled `hardware_config.json` includes specs for **H100** (80 GB HBM3, 989.5 TFLOPS BF16, 3.35 TB/s), **A100-SXM** (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s), and **A100-80** (alias for A100-SXM). To use a different GPU, add an entry to `hardware_config.json` with the required fields (`TFlopsPeak`, `BwPeakTBs`, `mfuPrefill`, `mfuDecode`, `MemoryGiB`), plus `IntraNodeBwGBps`/`InterNodeBwGBps` if instances on that GPU may span nodes (see [Inter-Node Network Cost](#inter-node-network-cost-trained-physics-only)) and reference it via `--hardware <name>`.
 
 **Validated models:** Any dense or MoE transformer with a HuggingFace `config.json` works. The following have been validated end-to-end:
 
@@ -245,6 +245,29 @@ Both penalties are exactly `1.0` when nothing crosses a boundary (`n = 1`) or wh
 fabric is no slower than the on-node link (`r ≤ 1`), and both are monotone in `r`: a
 worse fabric never lowers the cost.
 
+### The second, size-independent half
+
+Bandwidth is only half the story. Every cross-node collective also pays a fixed cost —
+NCCL launch, fabric round-trip, and the synchronization a two-level collective imposes —
+that does not shrink with the message. For the small messages a decode step produces,
+that fixed cost can exceed the bandwidth half by an order of magnitude, and it is the
+mechanism behind vLLM's guidance to prefer pipeline parallelism across nodes and tensor
+parallelism within a node: per-layer all-reduce means *many small* collectives, not a few
+large ones.
+
+`InterNodeLatencyUs` supplies it. It is charged once per comm unit that crosses a node
+boundary, so a step running `L` layers × 2 phases pays it `2L` times, and it is skipped
+entirely for a step that communicates no tokens (no collective runs, so nothing launches).
+
+**It is 0 — not charged — in the bundled hardware config, deliberately.** BLIS has no
+measured per-collective latency to ship, and a guessed constant would sit in front of
+every multi-node estimate. So out of the box the cross-node cost is bandwidth-only, and
+the size-independent half is available but off. Supply a measured value to model it; see
+[#1661](https://github.com/inference-sim/inference-sim/issues/1661), which also records
+the calibration-evidence bar. Like the bandwidth half, it rides the learned communication
+coefficient (β₄, or β_EP for MoE dispatch), so calibrate it in that frame — the charge is
+`β · units · InterNodeLatencyUs`, not a raw wall-clock number.
+
 ### Where the inputs come from
 
 **Topology is derived from placement, not declared.** There is no CLI flag for it: the
@@ -272,8 +295,49 @@ Committed values: H100 450/50 (NVLink 4 against one 400 Gb/s ConnectX-7 per GPU)
 A100 300/25 (NVLink 3 against HDR-200 per GPU), L40S 32/12.5 (PCIe Gen4 — no NVLink —
 against 100 GbE). Set both or neither; a half-calibration is a hard error.
 
-To compare fabrics (InfiniBand vs RoCE vs a single uplink), edit `InterNodeBwGBps` in
-that file, or give the pools distinct `gpu_type` entries with different values.
+To compare fabrics (InfiniBand vs RoCE vs a single uplink), run the same workload twice
+with different `InterNodeBwGBps` values in that file. (Giving two pools distinct
+`gpu_type` entries models a *mixed-fabric* fleet in one run, which is a different
+question — and it leans on the `gpu_type` keying that
+[#1662](https://github.com/inference-sim/inference-sim/issues/1662) tracks.)
+
+!!! warning "Check the shape you are comparing actually spans nodes"
+    A cost that is only charged when a collective crosses a node boundary is zero for a
+    deployment where none does. In particular the shape GLM-5.2 is really served with —
+    TP=1, DP=16, EP=16, tensor parallelism kept inside the node — charges **nothing**
+    today: at TP=1 there is no TP collective, and the expert all-to-all leg is not yet
+    reachable (see the last of the known approximations below). Comparing fabrics is
+    meaningful for a multi-node **TP** shape now, and for wide expert parallelism once
+    [#1548](https://github.com/inference-sim/inference-sim/issues/1548) lands.
+
+#### Worked example: InfiniBand vs a single 100 GbE uplink, TP=16
+
+```bash
+# A pool of 8-GPU H100 nodes; TP=16 forces the instance across two of them.
+cat > pools.yaml <<'YAML'
+node_pools:
+  - name: h100
+    gpu_type: H100
+    gpus_per_node: 8
+    gpu_memory_gib: 80
+    initial_nodes: 4
+    max_nodes: 4
+    cost_per_hour: 30.0
+YAML
+
+# Run A — the bundled H100 entry: 450/50 GB/s (one 400 Gb/s NIC per GPU), ratio 9x.
+./blis run --model <your-model> --tp 16 --hardware H100   --latency-model trained-physics --policy-config pools.yaml   --num-requests 500 --rate 8
+
+# Run B — copy hardware_config.json, drop the H100 entry's InterNodeBwGBps to 12.5
+# (a single 100 GbE uplink shared by the node's 8 GPUs), then:
+./blis run --model <your-model> --tp 16 --hardware H100   --latency-model trained-physics --policy-config pools.yaml   --hardware-config ./hardware_config.roce.json   --num-requests 500 --rate 8
+```
+
+Compare `ttft_p50_ms` / `itl_mean_ms` between the two. Run B's ratio is 36× rather than
+9×, so its communication term is larger; the difference is the fabric's contribution.
+Both runs warn once on stderr that an instance spans nodes, and if either run reports
+that the cross-node cost is *unpriced*, the calibration or the backend is the reason —
+the message says which.
 
 ### Inert unless a boundary is actually crossed
 
@@ -287,6 +351,14 @@ existed before this feature produces bit-identical step times:
 Multi-node placement is `blis run` only — `blis replay` rejects `node_pools` outright
 and `blis observe` takes its timing from a real server — so a cross-node cost cannot
 arise off the run path.
+
+That leaves one hole, which is fenced explicitly. A trace exported from a multi-node run
+could be replayed *without* the `node_pools` section, and replay would then reproduce the
+workload at single-node speed — faster than the run that produced the trace, with nothing
+to indicate it. So `blis run` records the widest instance node span in the trace header
+(`max_nodes_spanned`) and `blis replay` refuses any trace that reports more than one node.
+Traces from runs without multi-node placement omit the field entirely and replay exactly
+as before.
 
 If a spanning placement will *not* be charged (uncalibrated fabric, or a backend with
 no communication term), BLIS says so once on stderr rather than silently returning an

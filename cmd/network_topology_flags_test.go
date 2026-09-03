@@ -47,11 +47,14 @@ func TestNetworkTopology_HasNoCLIFlag(t *testing.T) {
 	}
 }
 
-// TestInterconnectCalibration_IsHardwareConfigOnly documents where the fabric
-// SPEEDS come from, as distinct from the topology: they are per-GPU-type hardware
-// calibration read from the file --hardware-config already points at, so a
-// mixed-hardware fleet gets per-GPU values and an IB-vs-RoCE comparison is an edit
-// to that file. There is deliberately no separate bandwidth flag to drift from it.
+// TestInterconnectCalibration_IsHardwareConfigOnly documents where the fabric SPEEDS come
+// from, as distinct from the topology: they are per-GPU-type entries in the file
+// --hardware-config already points at, so an IB-vs-RoCE comparison is an edit to that
+// file. There is deliberately no separate bandwidth flag to drift from it.
+//
+// Note the per-GPU keying is not yet per-PLACED-GPU: a node-pool instance uses whichever
+// entry --hardware resolved, because DeploymentConfig.HWConfigByGPU has no policy-bundle
+// key today (issue #893). Fabric values therefore inherit that pre-existing limitation.
 func TestInterconnectCalibration_IsHardwareConfigOnly(t *testing.T) {
 	for _, cmd := range []struct {
 		name string
@@ -69,5 +72,28 @@ func TestInterconnectCalibration_IsHardwareConfigOnly(t *testing.T) {
 					"which is resolved per placed GPU type; a global flag cannot describe a mixed fleet", cmd.name, bad)
 			}
 		}
+	}
+}
+
+// TestCrossNodeSpanForTrace verifies the normalization that keeps the trace header
+// byte-identical for every run without multi-node placement: only a real span (>1) is
+// recorded, and the omitempty zero covers both "no node pools" (0) and "every instance on
+// one node" (1).
+func TestCrossNodeSpanForTrace(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		maxNodes, want int
+	}{
+		{"no placement", 0, 0},
+		{"single-node fleet", 1, 0},
+		{"spans two", 2, 2},
+		{"spans four", 4, 4},
+		{"negative is treated as no placement", -3, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := crossNodeSpanForTrace(tc.maxNodes); got != tc.want {
+				t.Errorf("crossNodeSpanForTrace(%d) = %d, want %d", tc.maxNodes, got, tc.want)
+			}
+		})
 	}
 }

@@ -95,6 +95,22 @@ Example:
 		}
 		logrus.Infof("Loaded trace: %d records (mode=%s)", len(traceData.Records), traceData.Header.Mode)
 
+		// #1530: refuse a trace whose source run had a multi-node fleet. Cross-node
+		// collective traffic is charged to step time, but replay cannot reconstruct a
+		// multi-node fleet — node pools are `blis run`-only and rejected below — so
+		// replaying such a trace would silently reproduce the workload at single-node
+		// speed, faster than the run it came from. INV-13 requires a loud failure for a
+		// feature replay cannot reproduce, never silent degradation. Absent/0/1 (every
+		// run without multi-node placement) passes through untouched.
+		if span := traceData.Header.MaxNodesSpanned; span > 1 {
+			logrus.Fatalf("blis replay cannot reproduce this trace: its source run placed a model "+
+				"instance across %d nodes (max_nodes_spanned=%d in the trace header), and cross-node "+
+				"collective traffic is charged to step time (#1530). Replay does not support node_pools, "+
+				"so it would model the same workload at single-node speed — faster than the run that "+
+				"produced this trace. Re-run the workload with `blis run` if you need multi-node timing.",
+				span, span)
+		}
+
 		// Validate session mode flags (BC-11)
 		if replaySessionMode != "fixed" && replaySessionMode != "closed-loop" {
 			logrus.Fatalf("--session-mode must be \"fixed\" or \"closed-loop\", got %q", replaySessionMode)

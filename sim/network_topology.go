@@ -2,10 +2,13 @@ package sim
 
 import "fmt"
 
-// NetworkTopology is the 9th module sub-config (inter-node interconnect topology,
-// #1530). It carries the ONE placement-derived signal the latency model needs to
-// price cross-node collective traffic: how many GPUs sit on the node(s) an
+// NetworkTopology carries the ONE placement-derived signal the latency model needs to
+// price cross-node collective traffic (#1530): how many GPUs sit on the node(s) an
 // instance was actually placed on.
+//
+// It is a field of ModelHardwareConfig rather than a SimConfig-level sub-config,
+// because it is an input to exactly one module — the latency model — alongside TP, DP
+// and MoECommBackend (R16: config grouped by the module that consumes it).
 //
 // Provenance — placement, never a flag. The value is produced only by
 // PlacementManager (sim/cluster) from the nodes an instance's GPUs actually
@@ -84,10 +87,9 @@ func (t NetworkTopology) MembersPerNode(groupSize int) int {
 // (cmd/ → logrus.Fatalf, sim/ factory → error). The zero value is valid and
 // inert.
 //
-// Note: this method is NOT usable through SimConfig's promoted selector —
-// LoRAConfig already promotes a Validate() at the same embedding depth, which
-// makes the promoted name ambiguous (the same situation SpeculativeConfig
-// documents). Call cfg.NetworkTopology.Validate() explicitly if ever needed.
+// It is called by NewModelHardwareConfig, which is the only path that can receive a
+// hand-built value (through the WithNetworkTopology option); the canonical
+// NewNetworkTopology normalizes rather than producing something invalid.
 func (t NetworkTopology) Validate() error {
 	if t.PlacedGPUsPerNode < 0 {
 		return fmt.Errorf("NetworkTopology: PlacedGPUsPerNode must be >= 0, got %d", t.PlacedGPUsPerNode)

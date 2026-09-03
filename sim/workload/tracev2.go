@@ -64,6 +64,21 @@ type TraceHeader struct {
 	// regenerates it. `blis calibrate` compares it against the simulator's own
 	// aggregate cache_hit_rate.
 	ObservedKVMetrics *TraceObservedKVMetrics `yaml:"observed_kv_metrics,omitempty"`
+
+	// MaxNodesSpanned records the largest number of physical nodes any single model
+	// instance occupied during the source run (#1530). Written by `blis run` only when
+	// node-pool placement actually spread an instance's tensor-parallel group across a
+	// node boundary; absent (0, omitempty) otherwise, so a run without multi-node
+	// placement writes a byte-identical header to a pre-feature build (INV-6).
+	//
+	// It exists to close a replay hole this feature would otherwise open. Cross-node
+	// collective traffic is charged to step time, and node pools are `blis run`-only
+	// (`blis replay` rejects them), so replaying such a trace without node pools would
+	// silently reproduce the workload at single-node speed — faster than the run it came
+	// from, with no indication. `blis replay` therefore treats a value above 1 as a hard
+	// error: the fleet is not reconstructible, and INV-13 requires a loud failure rather
+	// than silent degradation.
+	MaxNodesSpanned int `yaml:"max_nodes_spanned,omitempty"`
 }
 
 // TraceObservedKVMetrics is the real-side KV-cache hit-rate observed from a vLLM

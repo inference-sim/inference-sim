@@ -90,10 +90,10 @@ func (c *HFConfig) mustGetIntFallback(def int, keys ...string) int {
 // compatibility. NumExpertsPerTok / n_shared_experts are activation counts, NOT
 // totals, and are deliberately excluded.
 var moeExpertCountFields = []string{
-	"num_experts",       // Jamba
-	"moe_num_experts",   // Dbrx
-	"n_routed_experts",  // DeepSeek
-	"num_local_experts", // Mixtral
+	"num_experts",        // Jamba
+	"moe_num_experts",    // Dbrx
+	"n_routed_experts",   // DeepSeek
+	"num_local_experts",  // Mixtral
 	"num_routed_experts", // BLIS-historical alias
 }
 
@@ -195,6 +195,15 @@ func GetHWConfig(HWConfigFilePath string, GPU string) (sim.HardwareCalib, error)
 		}
 		sort.Strings(available)
 		return sim.HardwareCalib{}, fmt.Errorf("GPU %q not found in hardware config (available: %v)", GPU, available)
+	}
+	// #1530: the optional interconnect calibration is validated here, at the load
+	// boundary, so a malformed hardware config fails identically regardless of which
+	// latency backend will consume it — the roofline backend ignores these fields, and
+	// silently accepting a typo under roofline while rejecting it under trained-physics
+	// would be a confusing asymmetry (R23). Only the requested GPU is checked, so an
+	// unrelated malformed entry elsewhere in the file does not block an unrelated run.
+	if err := config.ValidateInterconnect(); err != nil {
+		return sim.HardwareCalib{}, fmt.Errorf("hardware config %q, GPU %q: %w", HWConfigFilePath, GPU, err)
 	}
 	return config, nil
 }

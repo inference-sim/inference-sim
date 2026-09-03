@@ -4,6 +4,7 @@
 package cluster
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"testing"
@@ -252,8 +253,8 @@ func TestPlacementTopology_WarnsWhenBackendHasNoCommTerm(t *testing.T) {
 // typo, and would otherwise silently dominate step time.
 func TestPlacementTopology_WarnsOnImplausibleFabric(t *testing.T) {
 	out := placeSpanningAndCaptureWarnings(t, netTestCalib(5000), "trained-physics")
-	assert.Contains(t, out, "plausible")
-	assert.Contains(t, out, "check the")
+	assert.Contains(t, out, "looks like a unit error")
+	assert.Contains(t, out, "per-GPU GB/s")
 }
 
 // TestPlacementTopology_NoWarningWhenPriced verifies the quiet path: a properly
@@ -263,7 +264,8 @@ func TestPlacementTopology_NoWarningWhenPriced(t *testing.T) {
 	out := placeSpanningAndCaptureWarnings(t, netTestCalib(9), "trained-physics")
 	assert.NotContains(t, out, "declares no usable interconnect bandwidths")
 	assert.NotContains(t, out, "models no communication term")
-	assert.NotContains(t, out, "plausible")
+	assert.NotContains(t, out, "looks like a unit error")
+	assert.NotContains(t, out, "could not be resolved from placement")
 }
 
 // TestPlacementTopology_NoWarningWhenContained verifies a single-node placement never
@@ -346,7 +348,9 @@ func TestPlacementTopology_AppliedAtAllThreePlacementSites(t *testing.T) {
 		require.Len(t, cs.instances, 1)
 		// The startup site has already latched its warning; clear the latches so this
 		// subtest observes the scale-up site's own diagnostic.
-		cs.crossNodeUnpricedWarned = false
+		cs.crossNodeBackendWarned = false
+		cs.crossNodeUnresolvedWarned = false
+		cs.crossNodeUncalibratedWarned = false
 		cs.implausibleFabricWarned = false
 
 		out := captureLogWarn(t, func() {
@@ -364,7 +368,7 @@ func TestPlacementTopology_AppliedAtAllThreePlacementSites(t *testing.T) {
 // the cross-node cost must reach the metrics an operator actually reads, not just the
 // step-time function. Two clusters run the same workload with the same model, TP and
 // hardware; only the node size — and therefore whether the TP group spans — differs.
-// The spanning cluster must report a higher p50 TTFT.
+// The spanning cluster must report a higher mean TTFT.
 //
 // Refactor survival: no internal field is inspected; any implementation that routes a
 // spanning placement into the communication cost produces the higher TTFT.
@@ -413,4 +417,90 @@ func TestPlacementTopology_E2E_TTFTReflectsCrossNodeCost(t *testing.T) {
 	assert.Greater(t, spanning, singleNode,
 		"mean TTFT must be higher when the TP group spans a node boundary (mean single=%.1f ms, spanning=%.1f ms)",
 		singleNode, spanning)
+}
+
+// ─── INV-6 and the trace-header signal ──────────────────────────────────────
+
+// TestPlacementTopology_SpanningRunIsByteIdenticalAcrossRuns verifies INV-6 for the case
+// this feature actually changes: two identical SPANNING runs at the same seed must
+// produce byte-identical output. The three inertness tests prove the feature does not
+// perturb configs it should not touch; this proves the configs it DOES touch stay
+// deterministic. The comparison is on the marshalled metrics payload — the same struct
+// stdout is rendered from — so it is a genuine byte-level check rather than a
+// field-by-field one.
+func TestPlacementTopology_SpanningRunIsByteIdenticalAcrossRuns(t *testing.T) {
+	makeReqs := func() []*sim.Request {
+		reqs := make([]*sim.Request, 30)
+		for i := range reqs {
+			reqs[i] = &sim.Request{
+				ID:           fmt.Sprintf("req_%d", i),
+				Model:        "m",
+				ArrivalTime:  int64(i) * 1500,
+				InputTokens:  make([]sim.TokenID, 512),
+				OutputTokens: make([]sim.TokenID, 24),
+				State:        sim.StateQueued,
+			}
+		}
+		return reqs
+	}
+	runOnce := func() string {
+		cfg := DeploymentConfig{
+			SimConfig: sim.SimConfig{
+				Horizon:             math.MaxInt64,
+				Seed:                42,
+				KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+				BatchConfig:         sim.NewBatchConfig(256, 8192, 0),
+				LatencyCoeffs:       netTestCoeffs(),
+				ModelHardwareConfig: sim.NewModelHardwareConfig(netTestModelConfig(), netTestCalib(9), "m", "H100", 16, 1, false, "", "trained-physics", 0),
+			},
+			NumInstances: 1,
+			NodePools:    []NodePoolConfig{newTestPool("p", "H100", 8, 2)}, // tp=16 must span
+		}
+		cs := NewClusterSimulator(cfg, NewSliceRequestSource(makeReqs()), nil)
+		require.Equal(t, 2, cs.MaxNodesSpanned(), "precondition: the instance must span two nodes")
+		mustRun(t, cs)
+		payload, err := json.Marshal(cs.AggregatedMetrics().BuildOutput("cluster"))
+		require.NoError(t, err)
+		return string(payload)
+	}
+
+	assert.Equal(t, runOnce(), runOnce(),
+		"two identical spanning runs at the same seed must produce byte-identical output (INV-6)")
+}
+
+// TestPlacementTopology_MaxNodesSpannedReportsWidestSpan verifies the signal `blis run`
+// records in the trace header, and that replay uses to refuse a trace it cannot
+// reproduce. It must report the widest span in the fleet, and must stay at 0 when there
+// is no placement at all — the value that keeps the header byte-identical for every run
+// without multi-node placement.
+func TestPlacementTopology_MaxNodesSpannedReportsWidestSpan(t *testing.T) {
+	newCluster := func(pools []NodePoolConfig, tp, instances int) *ClusterSimulator {
+		cfg := DeploymentConfig{
+			SimConfig: sim.SimConfig{
+				Horizon:             math.MaxInt64,
+				Seed:                42,
+				KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+				BatchConfig:         sim.NewBatchConfig(256, 8192, 0),
+				LatencyCoeffs:       netTestCoeffs(),
+				ModelHardwareConfig: sim.NewModelHardwareConfig(netTestModelConfig(), netTestCalib(9), "m", "H100", tp, 1, false, "", "trained-physics", 0),
+			},
+			NumInstances: instances,
+			NodePools:    pools,
+		}
+		return NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+	}
+
+	t.Run("no node pools reports nothing", func(t *testing.T) {
+		assert.Equal(t, 0, newCluster(nil, 16, 1).MaxNodesSpanned(),
+			"without placement there is no span to record, and the trace header must stay unchanged")
+	})
+	t.Run("single-node fleet reports one", func(t *testing.T) {
+		assert.Equal(t, 1, newCluster([]NodePoolConfig{newTestPool("p", "H100", 16, 2)}, 16, 1).MaxNodesSpanned())
+	})
+	t.Run("spanning fleet reports the span", func(t *testing.T) {
+		assert.Equal(t, 2, newCluster([]NodePoolConfig{newTestPool("p", "H100", 8, 2)}, 16, 1).MaxNodesSpanned())
+	})
+	t.Run("wider span reported", func(t *testing.T) {
+		assert.Equal(t, 4, newCluster([]NodePoolConfig{newTestPool("p", "H100", 4, 4)}, 16, 1).MaxNodesSpanned())
+	})
 }

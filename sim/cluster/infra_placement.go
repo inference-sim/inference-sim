@@ -440,8 +440,11 @@ func (pm *PlacementManager) distinctNodesForGPUs(gpuIDs []string) []string {
 // node, and that node's TotalGPUs is reported.
 //
 // Returns 0 — "topology unknown", which makes the network cost inert (INV-6) —
-// when the GPU set is empty, when no GPU resolves, or when the hosting nodes do
-// not all have the same size. A mixed-size span cannot be described by a single
+// when the GPU set is empty, when NO GPU resolves, or when the hosting nodes do not
+// all have the same size. An individual unresolvable GPU is logged and SKIPPED rather
+// than failing the whole query: node size is a per-node property, so any GPU that does
+// resolve yields it. The consequence, noted in the log, is that a partially-resolvable
+// set could miss a genuinely mixed span. A mixed-size span cannot be described by a single
 // GPUs-per-node number; PlaceInstance never produces one (Pass 2 takes whole nodes
 // from a SINGLE pool, and every node in a pool has the pool's gpus_per_node), so
 // this is a defensive branch: it logs the anomaly rather than inventing a node
@@ -453,14 +456,16 @@ func (pm *PlacementManager) PlacedGPUsPerNode(gpuIDs []string) int {
 		if !ok {
 			// Same invariant as distinctNodesForGPUs: a placed GPU is always in the
 			// index (populated at the single construction site, R4).
-			logrus.Errorf("[cluster] PlacedGPUsPerNode: GPU ID %q not found in index — "+
-				"cross-node network cost will be unpriced; placement invariant violated (R4)", id)
+			logrus.Errorf("[cluster] PlacedGPUsPerNode: GPU ID %q not found in index — skipping it; "+
+				"the node size is taken from the GPUs that did resolve, so cross-node network cost may "+
+				"be scored against an incomplete placement; placement invariant violated (R4)", id)
 			continue
 		}
 		node, ok := pm.nodesByID[gpu.NodeID]
 		if !ok {
-			logrus.Errorf("[cluster] PlacedGPUsPerNode: node %q for GPU %q not found in index — "+
-				"cross-node network cost will be unpriced; placement invariant violated (R4)", gpu.NodeID, id)
+			logrus.Errorf("[cluster] PlacedGPUsPerNode: node %q for GPU %q not found in index — skipping "+
+				"it; the node size is taken from the GPUs that did resolve, so cross-node network cost may "+
+				"be scored against an incomplete placement; placement invariant violated (R4)", gpu.NodeID, id)
 			continue
 		}
 		if node.TotalGPUs <= 0 {

@@ -263,10 +263,14 @@ type ModelHardwareConfig struct {
 	// whether a collective crosses a node boundary and must therefore be charged at
 	// the (slower) inter-node fabric bandwidth.
 	//
-	// Set via the WithNetworkTopology option (not a positional constructor
-	// parameter), mirroring how WithKVOffload extends NewKVCacheConfig. Its zero
-	// value is inert: no node-pool placement means no cross-node collective, so step
-	// time is byte-identical to a pre-#1530 build (INV-6/INV-BC-DP1).
+	// In production this is written by sim/cluster's placement sites, which stamp it
+	// onto an already-built per-instance config (the same way they stamp the placed GPU
+	// type and KV capacity) — placement is only known after the config exists. The
+	// WithNetworkTopology option supplies it at construction instead, for tests and for
+	// standalone callers; it mirrors how WithKVOffload extends NewKVCacheConfig and is
+	// what the Validate() guard below covers. Its zero value is inert: no node-pool
+	// placement means no cross-node collective, so step time is byte-identical to a
+	// pre-#1530 build (INV-6/INV-BC-DP1).
 	NetworkTopology NetworkTopology
 }
 
@@ -275,10 +279,15 @@ type ModelHardwareConfig struct {
 // the same pattern KVCacheOption uses for NewKVCacheConfig.
 type ModelHardwareOption func(*ModelHardwareConfig)
 
-// WithNetworkTopology supplies the placement-derived inter-node interconnect
-// topology (#1530). Omitting it leaves the topology unknown, which makes every
-// cross-node cost inert (INV-6). Only sim/cluster's placement sites should supply a
-// non-zero topology — it is a placement fact, never a user-declared knob.
+// WithNetworkTopology supplies the placement-derived inter-node interconnect topology
+// (#1530) at construction. Omitting it leaves the topology unknown, which makes every
+// cross-node cost inert (INV-6).
+//
+// The production path does NOT use this option: placement is not known until after the
+// config is built, so sim/cluster stamps the field directly on the per-instance copy.
+// The option serves tests and standalone construction, and is the path the constructor's
+// Validate() guard protects. Either way the value must come from real placement — it is
+// a placement fact, never a user-declared knob.
 func WithNetworkTopology(topo NetworkTopology) ModelHardwareOption {
 	return func(c *ModelHardwareConfig) { c.NetworkTopology = topo }
 }

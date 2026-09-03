@@ -8,18 +8,16 @@ import (
 
 // maxPlausibleInterconnectRatio bounds how much slower an inter-node fabric can
 // credibly be than an on-node link before the numbers look like a unit mistake.
-// Real clusters land around 5–75× (NVLink 450 GB/s per GPU against anything from a
-// 400 Gb/s NIC per GPU down to a single 100 GbE for a whole node). Three orders of
-// magnitude is not a fabric, it is a typo — and because the penalty is linear in the
-// ratio, such a value inflates step time until it clamps, destroying the run. Warn
-// rather than reject: the model stays well-defined, and a user deliberately probing
-// an extreme is not blocked.
+// Real hardware lands roughly between 2× (a PCIe node, whose on-node link is itself
+// slow — the committed L40S entry is 2.6×) and ~75× (NVLink against a single 100 GbE
+// uplink shared by a whole node). The threshold is set far above that band, at three
+// orders of magnitude, on purpose: it is a UNIT-ERROR detector, not a plausibility
+// judgement. Anything near the band could be a real if unusual cluster, and warning
+// about it would train operators to ignore the message; a 1000× ratio is a mistyped
+// exponent or a bits-vs-bytes slip, and because the penalty is linear in the ratio it
+// will dominate step time until it clamps. Warn rather than reject, so a user
+// deliberately probing an extreme is not blocked.
 const maxPlausibleInterconnectRatio = 1000.0
-
-// latencyBackendTrainedPhysics is the only backend that models communication, and
-// therefore the only one a cross-node penalty can apply to. Matches the name
-// validated by sim.IsValidLatencyBackend.
-const latencyBackendTrainedPhysics = "trained-physics"
 
 // applyPlacementTopology stamps the placement-derived inter-node interconnect
 // topology onto a per-instance SimConfig (#1530), so the latency model can price
@@ -32,25 +30,7 @@ const latencyBackendTrainedPhysics = "trained-physics"
 // leaves the config inert, so step time is byte-identical to a pre-#1530 build
 // (INV-6).
 //
-// It also raises the two diagnostics that a spanning placement needs (R1 — a
-// cross-node cost that silently fails to apply is exactly the invisible optimism
-// this feature exists to remove), each latched so a large fleet emits one line:
-//
-//   - the placement spans nodes but nothing will be charged, because the resolved
-//     GPU calibration declares no usable interconnect bandwidths, or because the
-//     configured latency backend models no communication at all. The first case is easy to hit
-//     without noticing: a policy bundle's hw_config_by_gpu entry REPLACES the whole
-//     HardwareCalib, so a per-pool calibration that omits the two fabric bandwidths
-//     drops them — and hw_config_by_gpu is the documented way to calibrate exactly
-//     the mixed-pool deployments this feature targets.
-//   - the calibration is present but implausible (see maxPlausibleInterconnectRatio).
-//
-// Assumption worth knowing: the diagnostics score the span of simCfg.TP, the group the
-// latency model will actually price, while the GPU set comes from the degree placement
-// reserved. Those agree today at every site — the autoscaler's variant inventory is
-// seeded from the cluster's own TP, and #1529 rejects a per-role TP override that
-// differs from the global TP when node pools are configured. If they ever diverged, the
-// priced group and the reserved group would describe different placements.
+// The diagnostics live in warnIfCrossNodeUnpriced.
 func (cs *ClusterSimulator) applyPlacementTopology(simCfg *sim.SimConfig, gpuIDs []string) {
 	if cs.placement == nil {
 		return // no node pools ⇒ no placement ⇒ topology stays unknown (inert)
@@ -58,38 +38,91 @@ func (cs *ClusterSimulator) applyPlacementTopology(simCfg *sim.SimConfig, gpuIDs
 	topo := sim.NewNetworkTopology(cs.placement.PlacedGPUsPerNode(gpuIDs))
 	simCfg.NetworkTopology = topo
 
-	if topo.NodesSpanned(simCfg.TP) <= 1 {
+	// Record the widest span in the fleet. `blis run --trace-output` writes it into the
+	// trace header so replay can refuse a trace whose step times it cannot reproduce
+	// (#1530). Derived from the distinct nodes actually occupied — NOT from
+	// topo.NodesSpanned — so it is right even when the node size could not be resolved
+	// and the topology itself came out inert.
+	realSpan := len(cs.placement.distinctNodesForGPUs(gpuIDs))
+	if realSpan > cs.maxNodesSpanned {
+		cs.maxNodesSpanned = realSpan
+	}
+	cs.warnIfCrossNodeUnpriced(simCfg, topo, realSpan)
+}
+
+// warnIfCrossNodeUnpriced raises the diagnostics a spanning placement needs (#1530, R1
+// — a cross-node cost that silently fails to apply is exactly the invisible optimism
+// this feature exists to remove). Each is latched independently so a large fleet emits
+// one line per distinct cause rather than one line total.
+//
+// Three causes, all of which leave a genuinely spanning instance priced as if it never
+// left the node:
+//
+//   - the configured latency backend models no communication at all;
+//   - the resolved GPU calibration declares no usable interconnect bandwidths and no
+//     per-collective latency, so there is no fabric to price against. Note the
+//     calibration a node-pool instance gets is the one --hardware-config resolved for
+//     the --hardware GPU: a DeploymentConfig.HWConfigByGPU entry would override it per
+//     placed pool, but that field has no policy-bundle key today (issue #893), so a
+//     mixed-gpu_type fleet currently shares one calibration — including these fields;
+//   - the node size could not be resolved at all (mixed-size span, or unresolvable GPU
+//     ids), so the topology is inert even though the placement really does span. This
+//     is why the span passed in is the REAL distinct-node count rather than
+//     topo.NodesSpanned — scoring the diagnostic off the topology would make it go
+//     quiet in exactly the case where it is most needed.
+//
+// A fourth, non-fatal cause warns separately: the calibration is present but its ratio
+// looks like a unit error (see maxPlausibleInterconnectRatio).
+//
+// Assumption worth knowing: the diagnostics score simCfg.TP, the group the latency
+// model will actually price. Two things must agree with it, and both do today. The GPU
+// set comes from the degree placement reserved — the autoscaler's variant inventory is
+// seeded from the cluster's own TP, and #1529 rejects a per-role TP override that
+// differs from the global TP when node pools are configured. And the cost model prices a
+// second group, the flattened MoE group TP·DP, whose span is NOT checked here; that can
+// only exceed TP at --dp>1, which is a fail-fast alongside node pools today (#1553). If
+// #1548 lifts that, a MoE-group-only span would be priced without being diagnosed.
+func (cs *ClusterSimulator) warnIfCrossNodeUnpriced(simCfg *sim.SimConfig, topo sim.NetworkTopology, realSpan int) {
+	if realSpan <= 1 {
 		return // contained in one node — nothing to price, nothing to warn about
 	}
-	ratio := simCfg.HWConfig.InterconnectBwRatio()
 	switch {
-	case simCfg.Backend != latencyBackendTrainedPhysics:
-		if !cs.crossNodeUnpricedWarned {
-			cs.crossNodeUnpricedWarned = true
+	case simCfg.Backend != sim.LatencyBackendTrainedPhysics:
+		if !cs.crossNodeBackendWarned {
+			cs.crossNodeBackendWarned = true
 			logrus.Warnf("[cluster] an instance spans %d nodes for TP=%d, but the %q latency backend "+
 				"models no communication term, so its cross-node collective traffic is unpriced and "+
 				"latency/throughput for spanning instances are optimistic (#1530). Use "+
 				"--latency-model trained-physics to price it",
-				topo.NodesSpanned(simCfg.TP), simCfg.TP, backendDisplayName(simCfg.Backend))
+				realSpan, simCfg.TP, backendDisplayName(simCfg.Backend))
 		}
-	case ratio == 1.0:
-		if !cs.crossNodeUnpricedWarned {
-			cs.crossNodeUnpricedWarned = true
+	case !topo.IsKnown():
+		if !cs.crossNodeUnresolvedWarned {
+			cs.crossNodeUnresolvedWarned = true
+			logrus.Warnf("[cluster] an instance spans %d nodes for TP=%d, but its node size could not be "+
+				"resolved from placement, so cross-node collective traffic is priced at the on-node rate "+
+				"and latency/throughput for spanning instances are optimistic (#1530). See the "+
+				"PlacedGPUsPerNode errors above for the cause", realSpan, simCfg.TP)
+		}
+	case !simCfg.HWConfig.HasInterconnectCalibration():
+		if !cs.crossNodeUncalibratedWarned {
+			cs.crossNodeUncalibratedWarned = true
 			logrus.Warnf("[cluster] an instance spans %d nodes for TP=%d, but the hardware calibration "+
-				"for GPU %q declares no usable interconnect bandwidths (IntraNodeBwGBps/InterNodeBwGBps), so "+
-				"its cross-node collective traffic is priced at the on-node rate and latency/throughput for "+
-				"spanning instances are optimistic (#1530). Add both bandwidths to the hardware config "+
-				"(and to any hw_config_by_gpu override, which replaces the whole calibration)",
-				topo.NodesSpanned(simCfg.TP), simCfg.TP, simCfg.GPU)
+				"for GPU %q declares no usable interconnect bandwidths (IntraNodeBwGBps/InterNodeBwGBps) "+
+				"and no per-collective latency (InterNodeLatencyUs), so its cross-node collective traffic "+
+				"is priced at the on-node rate and latency/throughput for spanning instances are "+
+				"optimistic (#1530). Add them to the entry for this GPU in --hardware-config",
+				realSpan, simCfg.TP, simCfg.GPU)
 		}
-	case ratio > maxPlausibleInterconnectRatio:
+	case simCfg.HWConfig.InterconnectBwRatio() > maxPlausibleInterconnectRatio:
 		if !cs.implausibleFabricWarned {
 			cs.implausibleFabricWarned = true
 			logrus.Warnf("[cluster] hardware calibration for GPU %q implies an inter-node fabric %.0f× "+
-				"slower than its on-node link (IntraNodeBwGBps=%v, InterNodeBwGBps=%v) — that is far outside "+
-				"the plausible 5–75× range and will dominate step time for spanning instances; check the "+
-				"units (both are per-GPU GB/s)",
-				simCfg.GPU, ratio, simCfg.HWConfig.IntraNodeBwGBps, simCfg.HWConfig.InterNodeBwGBps)
+				"slower than its on-node link (IntraNodeBwGBps=%v, InterNodeBwGBps=%v) — real hardware "+
+				"lands roughly between 2× and 75×, so this looks like a unit error and will dominate step "+
+				"time for spanning instances; check that both values are per-GPU GB/s",
+				simCfg.GPU, simCfg.HWConfig.InterconnectBwRatio(),
+				simCfg.HWConfig.IntraNodeBwGBps, simCfg.HWConfig.InterNodeBwGBps)
 		}
 	}
 }
@@ -98,7 +131,7 @@ func (cs *ClusterSimulator) applyPlacementTopology(simCfg *sim.SimConfig, gpuIDs
 // empty string (which resolves to roofline) rather than printing "".
 func backendDisplayName(backend string) string {
 	if backend == "" {
-		return "roofline (default)"
+		return sim.LatencyBackendRoofline + " (default)"
 	}
 	return backend
 }
