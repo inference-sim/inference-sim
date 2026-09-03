@@ -62,7 +62,7 @@ func TestPlanDPPlacement(t *testing.T) {
 			isMoE:           true,
 			dp:              2,
 			epOn:            true,
-			wantErrContains: "1548",
+			wantErrContains: "#1548",
 		},
 		{
 			name:            "MoE dp>1 with PD disaggregation is guarded",
@@ -519,8 +519,8 @@ func TestRunCmd_MoEDPPlacement_GuardedCombo_Rejected(t *testing.T) {
 	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
 		t.Fatalf("expected exit code 1 (logrus.Fatalf), got %v; output:\n%s", err, out)
 	}
-	if !strings.Contains(string(out), "1548") {
-		t.Errorf("EP-on guard message should reference #1548; got:\n%s", out)
+	if !strings.Contains(string(out), "#1548") {
+		t.Errorf("EP-on guard message should reference #1548 (hashed, as production writes it); got:\n%s", out)
 	}
 }
 
@@ -765,28 +765,28 @@ func TestResolveDPPlacement_MutatesDeploymentVars(t *testing.T) {
 			name: "EP-on guard errors and mutates nothing",
 			dp:   4, epOn: true, autoKV: true,
 			inNumInstances: 2, inTotalKV: 40000, inMaxModelLen: 1_000_000,
-			wantErrContains: "1548",
+			wantErrContains: "#1548",
 			wantNumInst:     2, wantTotalKV: 40000, wantMaxModelLen: 1_000_000,
 		},
 		{
 			name: "PD guard errors and mutates nothing",
 			dp:   4, prefill: 1, autoKV: true,
 			inNumInstances: 2, inTotalKV: 40000, inMaxModelLen: 1_000_000,
-			wantErrContains: "1553",
+			wantErrContains: "#1553",
 			wantNumInst:     2, wantTotalKV: 40000, wantMaxModelLen: 1_000_000,
 		},
 		{
 			name: "autoscaler guard errors and mutates nothing",
 			dp:   4, autoscaler: true, autoKV: true,
 			inNumInstances: 2, inTotalKV: 40000, inMaxModelLen: 1_000_000,
-			wantErrContains: "1553",
+			wantErrContains: "#1553",
 			wantNumInst:     2, wantTotalKV: 40000, wantMaxModelLen: 1_000_000,
 		},
 		{
 			name: "node-pool guard errors and mutates nothing",
 			dp:   4, nodePools: true, autoKV: true,
 			inNumInstances: 2, inTotalKV: 40000, inMaxModelLen: 1_000_000,
-			wantErrContains: "1553",
+			wantErrContains: "#1553",
 			wantNumInst:     2, wantTotalKV: 40000, wantMaxModelLen: 1_000_000,
 		},
 		{
