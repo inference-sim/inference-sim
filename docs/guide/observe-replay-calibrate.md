@@ -245,14 +245,24 @@ Replay also accepts all shared simulation config flags (`--latency-model`, `--to
     # Passing it explicitly on BOTH legs is what makes the comparison apples-to-apples;
     # any other shared value works too, as long as it is the same on both.
 
+    # deepseek-v2-lite has no defaults.yaml entry, so --hardware and --tp must be given
+    # explicitly (trained-physics fatals without them, before any DP logic runs).
+
     # Run N=2 DP replicas and export the workload...
-    ./blis run --model deepseek-ai/deepseek-v2-lite --dp 2 --num-instances 1 \
+    ./blis run --model deepseek-ai/deepseek-v2-lite \
+      --model-config-folder model_configs/deepseek-v2-lite \
+      --hardware H100 --hardware-config hardware_config.json --tp 1 \
+      --dp 2 --num-instances 1 \
       --rate 10 --num-requests 40 --total-kv-blocks 20000 --seed 42 \
       --horizon 9223372036854775807 --trace-output traces/dp2   # unlimited
 
-    # ...then replay it with the SAME --dp, --num-instances, --seed and --horizon.
+    # ...then replay it with the SAME model/hardware flags and the SAME
+    # --dp, --num-instances, --total-kv-blocks, --seed and --horizon.
     ./blis replay --trace-header traces/dp2.yaml --trace-data traces/dp2.csv \
-      --model deepseek-ai/deepseek-v2-lite --dp 2 --num-instances 1 \
+      --model deepseek-ai/deepseek-v2-lite \
+      --model-config-folder model_configs/deepseek-v2-lite \
+      --hardware H100 --hardware-config hardware_config.json --tp 1 \
+      --dp 2 --num-instances 1 \
       --total-kv-blocks 20000 --seed 42 --horizon 9223372036854775807   # unlimited
     ```
 

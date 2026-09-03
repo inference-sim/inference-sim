@@ -230,6 +230,16 @@ func TestINV13_RunReplayParity_MoEDPPlacement(t *testing.T) {
 				t.Fatalf("INV-13 parity would be vacuous: run leg completed %d requests; stdout:\n%s", completed, runOut)
 			}
 			clusterConservationHolds(t, runOut) // INV-1 companion to the byte-identity law
+			// Activation check: byte-identity is also satisfied by two legs that BOTH failed
+			// to expand (e.g. a regression making planDPPlacement inactive for MoE dp>1
+			// everywhere). --dp 2 must therefore be visible as a second replica on both
+			// sides, or the parity assertion above is comparing two wrong runs.
+			for _, leg := range []struct{ label, out string }{{"run", runOut}, {"replay", replayOut}} {
+				if !strings.Contains(leg.out, `"instance_id": "instance_1"`) {
+					t.Errorf("#1556 BC-2: %s leg must show DP-as-placement active (instance_1 present) — "+
+						"byte-identity between two UN-expanded legs would pass vacuously; stdout:\n%s", leg.label, leg.out)
+				}
+			}
 			if runOut != replayOut {
 				t.Errorf("#1556 BC-2 (INV-13): `blis run --dp 2` and the replay of its trace must produce "+
 					"identical stdout\nRUN:\n%s\nREPLAY:\n%s\nREPLAY stderr:\n%s", runOut, replayOut, replayErr)
@@ -423,7 +433,7 @@ func TestReplayCmd_MoEDPPlacement_GuardedCombos_Rejected(t *testing.T) {
 			label:   "expert parallelism on",
 			numInst: 1,
 			extra:   []string{"--total-kv-blocks", "20000", "--enable-expert-parallel"},
-			wantRef: "1548",
+			wantRef: "#1548",
 		},
 		{
 			label: "PD disaggregation",
@@ -434,7 +444,7 @@ func TestReplayCmd_MoEDPPlacement_GuardedCombos_Rejected(t *testing.T) {
 			numInst: 2,
 			extra: []string{"--total-kv-blocks", "20000",
 				"--prefill-instances", "1", "--decode-instances", "1", "--pd-decider", "always"},
-			wantRef: "1553",
+			wantRef: "#1553",
 		},
 	}
 	for _, tc := range cases {
@@ -449,7 +459,7 @@ func TestReplayCmd_MoEDPPlacement_GuardedCombos_Rejected(t *testing.T) {
 				t.Fatalf("expected exit code 1 (logrus.Fatalf), got %v; stderr:\n%s", err, stderr)
 			}
 			if !strings.Contains(stderr, tc.wantRef) {
-				t.Errorf("guard message must reference #%s so the user can find the tracking issue; stderr:\n%s",
+				t.Errorf("guard message must reference %s so the user can find the tracking issue; stderr:\n%s",
 					tc.wantRef, stderr)
 			}
 		})
@@ -602,7 +612,7 @@ func TestReplayCmd_MoEDPPlacement_ForeignTrace_Mixtral(t *testing.T) {
 			"--defaults-filepath", "../defaults.yaml",
 		})
 		if err := rootCmd.Execute(); err != nil {
-			os.Exit(3)
+			os.Exit(dpLegCobraErrorExit)
 		}
 		os.Exit(0)
 	}
@@ -616,6 +626,13 @@ func TestReplayCmd_MoEDPPlacement_ForeignTrace_Mixtral(t *testing.T) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		// Same harness-vs-simulator separation as dpLegOK: exit 3 means THIS test built a
+		// bad arg list, not that replay rejected the config.
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == dpLegCobraErrorExit {
+			t.Fatalf("test harness bug, not a simulator failure: `blis replay` rejected the arg list this test "+
+				"built (cobra flag error, exit %d)\nstderr:\n%s", dpLegCobraErrorExit, stderr.String())
+		}
 		t.Fatalf("#1556 BC-1: replaying a hand-authored trace for a non-MLA MoE model with --dp 2 must "+
 			"succeed (it exited 1 with the #1531 run-only guard): %v\nstderr:\n%s", err, stderr.String())
 	}
