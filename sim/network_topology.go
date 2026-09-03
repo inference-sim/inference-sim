@@ -82,15 +82,17 @@ func (t NetworkTopology) MembersPerNode(groupSize int) int {
 	return t.PlacedGPUsPerNode
 }
 
-// Validate checks the NetworkTopology for internal consistency. It is a pure
-// query; the library boundary returns an error and the caller decides fatality
+// validate checks the NetworkTopology for internal consistency. It is unexported
+// because nothing outside this package needs it: the only way to obtain a value the
+// canonical constructor would not have normalized is the WithNetworkTopology option, and
+// NewModelHardwareConfig (same package) is what applies that. It is a pure query; the library boundary returns an error and the caller decides fatality
 // (cmd/ → logrus.Fatalf, sim/ factory → error). The zero value is valid and
 // inert.
 //
 // It is called by NewModelHardwareConfig, which is the only path that can receive a
 // hand-built value (through the WithNetworkTopology option); the canonical
 // NewNetworkTopology normalizes rather than producing something invalid.
-func (t NetworkTopology) Validate() error {
+func (t NetworkTopology) validate() error {
 	if t.PlacedGPUsPerNode < 0 {
 		return fmt.Errorf("NetworkTopology: PlacedGPUsPerNode must be >= 0, got %d", t.PlacedGPUsPerNode)
 	}

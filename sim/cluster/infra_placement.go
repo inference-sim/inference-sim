@@ -433,7 +433,7 @@ func (pm *PlacementManager) distinctNodesForGPUs(gpuIDs []string) []string {
 	return nodes
 }
 
-// PlacedGPUsPerNode resolves the GPU count of the node(s) hosting the given GPUs
+// placedGPUsPerNode resolves the GPU count of the node(s) hosting the given GPUs
 // (#1530). It is the ONE topology signal the latency model needs to price
 // cross-node collective traffic, and it is derived entirely from real placement:
 // every GPU ID is resolved through the authoritative gpusByID index to its owning
@@ -449,27 +449,27 @@ func (pm *PlacementManager) distinctNodesForGPUs(gpuIDs []string) []string {
 // from a SINGLE pool, and every node in a pool has the pool's gpus_per_node), so
 // this is a defensive branch: it logs the anomaly rather than inventing a node
 // size (R1 — never a silent wrong result, and never a plausible-looking one).
-func (pm *PlacementManager) PlacedGPUsPerNode(gpuIDs []string) int {
+func (pm *PlacementManager) placedGPUsPerNode(gpuIDs []string) int {
 	size := 0
 	for _, id := range gpuIDs {
 		gpu, ok := pm.gpusByID[id]
 		if !ok {
 			// Same invariant as distinctNodesForGPUs: a placed GPU is always in the
 			// index (populated at the single construction site, R4).
-			logrus.Errorf("[cluster] PlacedGPUsPerNode: GPU ID %q not found in index — skipping it; "+
+			logrus.Errorf("[cluster] placedGPUsPerNode: GPU ID %q not found in index — skipping it; "+
 				"the node size is taken from the GPUs that did resolve, so cross-node network cost may "+
 				"be scored against an incomplete placement; placement invariant violated (R4)", id)
 			continue
 		}
 		node, ok := pm.nodesByID[gpu.NodeID]
 		if !ok {
-			logrus.Errorf("[cluster] PlacedGPUsPerNode: node %q for GPU %q not found in index — skipping "+
+			logrus.Errorf("[cluster] placedGPUsPerNode: node %q for GPU %q not found in index — skipping "+
 				"it; the node size is taken from the GPUs that did resolve, so cross-node network cost may "+
 				"be scored against an incomplete placement; placement invariant violated (R4)", gpu.NodeID, id)
 			continue
 		}
 		if node.TotalGPUs <= 0 {
-			logrus.Errorf("[cluster] PlacedGPUsPerNode: node %q reports TotalGPUs=%d — "+
+			logrus.Errorf("[cluster] placedGPUsPerNode: node %q reports TotalGPUs=%d — "+
 				"cross-node network cost will be unpriced", node.ID, node.TotalGPUs)
 			return 0
 		}
@@ -478,7 +478,7 @@ func (pm *PlacementManager) PlacedGPUsPerNode(gpuIDs []string) int {
 			continue
 		}
 		if size != node.TotalGPUs {
-			logrus.Errorf("[cluster] PlacedGPUsPerNode: instance spans nodes of differing sizes "+
+			logrus.Errorf("[cluster] placedGPUsPerNode: instance spans nodes of differing sizes "+
 				"(%d and %d GPUs) — a single gpus-per-node figure cannot describe it, so cross-node "+
 				"network cost is left unpriced", size, node.TotalGPUs)
 			return 0

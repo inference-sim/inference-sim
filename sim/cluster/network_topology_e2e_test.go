@@ -208,7 +208,7 @@ func TestPlacementTopology_SpanMatchesCostAccounting(t *testing.T) {
 			// Cost accounting bills one unit per distinct node occupied.
 			billedNodes := pm.InstanceCostPerHour(gpuIDs, 1.0)
 			// Latency pricing scores the collective over the hosting node size.
-			topo := sim.NewNetworkTopology(pm.PlacedGPUsPerNode(gpuIDs))
+			topo := sim.NewNetworkTopology(pm.placedGPUsPerNode(gpuIDs))
 			pricedNodes := float64(topo.NodesSpanned(shape.tp))
 
 			assert.Equal(t, billedNodes, pricedNodes,

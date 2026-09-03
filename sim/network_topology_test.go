@@ -18,7 +18,7 @@ func TestNetworkTopology_ZeroValueIsInert(t *testing.T) {
 		assert.Equal(t, 1, topo.NodesSpanned(group),
 			"unknown topology must never span more than one node (group=%d)", group)
 	}
-	require.NoError(t, topo.Validate())
+	require.NoError(t, topo.validate())
 }
 
 // TestNewNetworkTopology_ClampsNegative verifies BC-8: a negative node size is
@@ -28,7 +28,7 @@ func TestNewNetworkTopology_ClampsNegative(t *testing.T) {
 	assert.False(t, topo.IsKnown())
 	assert.Equal(t, 1, topo.NodesSpanned(16))
 	assert.Equal(t, 0, topo.PlacedGPUsPerNode)
-	require.NoError(t, topo.Validate())
+	require.NoError(t, topo.validate())
 }
 
 // TestNetworkTopology_NodesSpanned verifies the span arithmetic (BC-5's
@@ -84,10 +84,10 @@ func TestNetworkTopology_SpanTimesMembersCoversGroup(t *testing.T) {
 
 // TestNetworkTopology_Validate verifies the validation boundary: only a
 // hand-built negative value (bypassing the canonical constructor) is rejected.
-func TestNetworkTopology_Validate(t *testing.T) {
-	require.NoError(t, NetworkTopology{PlacedGPUsPerNode: 0}.Validate())
-	require.NoError(t, NetworkTopology{PlacedGPUsPerNode: 8}.Validate())
-	err := NetworkTopology{PlacedGPUsPerNode: -1}.Validate()
+func TestNetworkTopology_validate(t *testing.T) {
+	require.NoError(t, NetworkTopology{PlacedGPUsPerNode: 0}.validate())
+	require.NoError(t, NetworkTopology{PlacedGPUsPerNode: 8}.validate())
+	err := NetworkTopology{PlacedGPUsPerNode: -1}.validate()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "PlacedGPUsPerNode")
 }

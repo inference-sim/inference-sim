@@ -35,7 +35,7 @@ func (cs *ClusterSimulator) applyPlacementTopology(simCfg *sim.SimConfig, gpuIDs
 	if cs.placement == nil {
 		return // no node pools ⇒ no placement ⇒ topology stays unknown (inert)
 	}
-	topo := sim.NewNetworkTopology(cs.placement.PlacedGPUsPerNode(gpuIDs))
+	topo := sim.NewNetworkTopology(cs.placement.placedGPUsPerNode(gpuIDs))
 	simCfg.NetworkTopology = topo
 
 	// Record the widest span in the fleet. `blis run --trace-output` writes it into the

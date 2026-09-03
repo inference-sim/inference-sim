@@ -340,7 +340,7 @@ func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 	// canonical NewNetworkTopology already normalizes a negative node size, so this
 	// only catches a struct literal built directly (which R4 discourages) — but a
 	// negative node size would make a collective's node span meaningless.
-	if err := c.NetworkTopology.Validate(); err != nil {
+	if err := c.NetworkTopology.validate(); err != nil {
 		panic(fmt.Sprintf("NewModelHardwareConfig: %v", err))
 	}
 	return c

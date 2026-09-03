@@ -71,13 +71,23 @@ type TraceHeader struct {
 	// node boundary; absent (0, omitempty) otherwise, so a run without multi-node
 	// placement writes a byte-identical header to a pre-feature build (INV-6).
 	//
-	// It exists to close a replay hole this feature would otherwise open. Cross-node
-	// collective traffic is charged to step time, and node pools are `blis run`-only
-	// (`blis replay` rejects them), so replaying such a trace without node pools would
-	// silently reproduce the workload at single-node speed — faster than the run it came
-	// from, with no indication. `blis replay` therefore treats a value above 1 as a hard
-	// error: the fleet is not reconstructible, and INV-13 requires a loud failure rather
-	// than silent degradation.
+	// READ BY REPLAY, BUT ONLY AS A REFUSAL SIGNAL — never to reconstruct anything.
+	// This is the distinction to keep in mind before building on this field. #1530 offered
+	// two designs for run/replay parity: round-trip the cross-node signal so replay
+	// reproduces the run's step times, or keep a loud rejection. This is the SECOND one,
+	// extended to cover the trace path. Cross-node collective traffic is charged to step
+	// time, and node pools are `blis run`-only, so a trace from a multi-node run replayed
+	// without them would silently reproduce the workload at single-node speed — faster
+	// than the run it came from. `blis replay` therefore treats a value above 1 as a hard
+	// error (INV-13: a feature replay cannot reproduce must fail loudly, never degrade
+	// silently). It does NOT use the value to rebuild a fleet, and a future change that
+	// wanted replay to reproduce cross-node timing would need the topology per instance,
+	// not this single fleet-wide maximum.
+	//
+	// Normalization note: `omitempty` drops only 0, so a span of exactly 1 WOULD be
+	// serialized. The writer normalizes 1 to 0 (see cmd.crossNodeSpanForTrace) so that a
+	// single-node node-pool run does not start emitting a new header key; the coupling is
+	// pinned by TestTraceHeader_MaxNodesSpanned_OneIsNotOmittedBySerialization.
 	MaxNodesSpanned int `yaml:"max_nodes_spanned,omitempty"`
 }
 

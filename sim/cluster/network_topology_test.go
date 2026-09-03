@@ -1,5 +1,5 @@
 // network_topology_test.go — tests for the placement-derived inter-node network
-// topology signal (#1530). PlacedGPUsPerNode reports the size of the node(s) an
+// topology signal (#1530). placedGPUsPerNode reports the size of the node(s) an
 // instance's GPUs actually occupy; the latency model turns that into a cross-node
 // collective cost. See docs/guide/latency-models.md.
 package cluster
@@ -21,7 +21,7 @@ func TestPlacedGPUsPerNode_SingleNodePlacement(t *testing.T) {
 	_, gpus, _, err := pm.PlaceInstance("inst-0", "model-a", "H100", 4)
 	require.NoError(t, err)
 
-	assert.Equal(t, 8, pm.PlacedGPUsPerNode(gpus),
+	assert.Equal(t, 8, pm.placedGPUsPerNode(gpus),
 		"a 4-GPU instance on an 8-GPU node must report the node size, not the instance size")
 }
 
@@ -32,7 +32,7 @@ func TestPlacedGPUsPerNode_SpanningPlacement(t *testing.T) {
 	_, gpus, _, err := pm.PlaceInstance("inst-0", "model-a", "H100", 16)
 	require.NoError(t, err)
 
-	assert.Equal(t, 8, pm.PlacedGPUsPerNode(gpus))
+	assert.Equal(t, 8, pm.placedGPUsPerNode(gpus))
 }
 
 // TestPlacedGPUsPerNode_SpanAgreesWithRealNodeCount verifies BC-5, the law that
@@ -64,7 +64,7 @@ func TestPlacedGPUsPerNode_SpanAgreesWithRealNodeCount(t *testing.T) {
 			realNodes := len(pm.distinctNodesForGPUs(gpus))
 			require.Equal(t, tc.wantNodes, realNodes, "precondition: expected node span")
 
-			topo := sim.NewNetworkTopology(pm.PlacedGPUsPerNode(gpus))
+			topo := sim.NewNetworkTopology(pm.placedGPUsPerNode(gpus))
 			assert.Equal(t, realNodes, topo.NodesSpanned(tc.tpDegree),
 				"NodesSpanned(tp) must equal the real distinct-node count")
 		})
@@ -77,11 +77,11 @@ func TestPlacedGPUsPerNode_SpanAgreesWithRealNodeCount(t *testing.T) {
 func TestPlacedGPUsPerNode_UnknownGPUsAreInert(t *testing.T) {
 	pm := newTestPM([]NodePoolConfig{newTestPool("h100", "H100", 8, 1)})
 
-	assert.Equal(t, 0, pm.PlacedGPUsPerNode(nil), "empty GPU set")
-	assert.Equal(t, 0, pm.PlacedGPUsPerNode([]string{}), "empty GPU slice")
-	assert.Equal(t, 0, pm.PlacedGPUsPerNode([]string{"no-such-gpu"}), "unknown GPU ID")
+	assert.Equal(t, 0, pm.placedGPUsPerNode(nil), "empty GPU set")
+	assert.Equal(t, 0, pm.placedGPUsPerNode([]string{}), "empty GPU slice")
+	assert.Equal(t, 0, pm.placedGPUsPerNode([]string{"no-such-gpu"}), "unknown GPU ID")
 
-	topo := sim.NewNetworkTopology(pm.PlacedGPUsPerNode([]string{"no-such-gpu"}))
+	topo := sim.NewNetworkTopology(pm.placedGPUsPerNode([]string{"no-such-gpu"}))
 	assert.False(t, topo.IsKnown())
 	assert.Equal(t, 1, topo.NodesSpanned(16), "an unknown topology must never charge a cross-node cost")
 }
@@ -99,7 +99,7 @@ func TestPlacedGPUsPerNode_MixedNodeSizesAreInert(t *testing.T) {
 	bigGPU := pm.nodesByPool["big"][0].GPUs[0].ID
 	smallGPU := pm.nodesByPool["small"][0].GPUs[0].ID
 
-	assert.Equal(t, 0, pm.PlacedGPUsPerNode([]string{bigGPU, smallGPU}),
+	assert.Equal(t, 0, pm.placedGPUsPerNode([]string{bigGPU, smallGPU}),
 		"a span over differently-sized nodes must report an unknown topology")
 }
 
@@ -112,5 +112,5 @@ func TestPlacedGPUsPerNode_ReleasedGPUsStillResolve(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, pm.ReleaseInstance("inst-0"))
 
-	assert.Equal(t, 8, pm.PlacedGPUsPerNode(gpus))
+	assert.Equal(t, 8, pm.placedGPUsPerNode(gpus))
 }
