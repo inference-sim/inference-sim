@@ -96,8 +96,15 @@ jobs:
       - name: Honour deliver:paused
         id: paused
         run: |
-          if gh pr view "$PR" --repo "$REPO" --json labels \
-               --jq '.labels[].name' | grep -qx 'deliver:paused'; then
+          # Read and status-check separately. Piping straight into grep FAILS OPEN: a failed API
+          # call produces no output, grep finds no match, and the phase proceeds as though the
+          # label were absent — so a paused delivery would keep running. BC-9 has to hold even
+          # when the read fails, so an unreadable label set stops the phase instead.
+          if ! labels=$(gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name'); then
+            echo "::error::could not read labels on #$PR; refusing to proceed without knowing whether deliver:paused is set"
+            exit 1
+          fi
+          if grep -qx 'deliver:paused' <<< "$labels"; then
             echo "deliver:paused is set on #$PR — exiting."
             echo "paused=true" >> "$GITHUB_OUTPUT"
           else
@@ -462,18 +469,14 @@ jobs:
           # A label failure must not abort this step: the hand-off below is what keeps the
           # delivery moving, and a missing label would otherwise strand a promised correction
           # round right after the comment above announced it.
-          # Terminal labels are mutually exclusive. A delivery that stopped at needs-human, was
-          # resumed, and then earned ready-for-merge would otherwise carry BOTH, leaving a human
-          # unable to tell which verdict is current. Remove the opposing one first; a 404 when it
-          # was never applied is the normal case, hence the silent ignore.
-          case "$decision" in
-            ready)       opposing=needs-human ;;
-            needs-human) opposing=ready-for-merge ;;
-            *)           opposing='' ;;
-          esac
-          if [[ -n "$opposing" ]]; then
-            gh api -X DELETE "/repos/$REPO/issues/$PR/labels/$opposing" >/dev/null 2>&1 || true
-          fi
+          # Clear BOTH terminal labels before applying any, on EVERY decision including
+          # `correct`. Only clearing the opposing one left a hole: a PR marked ready-for-merge
+          # whose head then moved and re-verified as `correct` kept that label while the
+          # correction agent pushed further unverified commits — advertising merge-ready during
+          # an active correction. A 404 when a label was never applied is the normal case.
+          for stale in ready-for-merge needs-human; do
+            gh api -X DELETE "/repos/$REPO/issues/$PR/labels/$stale" >/dev/null 2>&1 || true
+          done
           if [[ -n "$label" ]]; then
             gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=$label" >/dev/null \
               || echo "::warning::could not apply the '$label' label — does it exist in this repository?"

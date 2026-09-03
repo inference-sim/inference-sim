@@ -128,6 +128,51 @@ jobs:
               core.setFailed(`#${here} looks like a tracking issue (${why})`);
               return;
             }
+            // AC-7 of #1654 lists the blocked-dependency refusal as an invariant enforced by
+            // WORKFLOW LOGIC, not only by a prompt. It was prompt-only, which meant a model that
+            // overlooked or misread a `Depends on:` line could implement a blocked issue after
+            // the expensive self-hosted agent job had already started. Checked here, before
+            // anything is scheduled; the prompt keeps its copy as defence in depth.
+            //
+            // "Blocker resolved" is read as "the blocker issue is closed" rather than by hunting
+            // for its merged PR: a sub-issue is closed by the PR that delivers it (`Closes #N`),
+            // so closed is the deterministic, one-call signal for the same thing.
+            // `[^A-Za-z0-9#]*` after "on", not `:?\s*`: the bold form `**Depends on:** #7` puts
+            // markdown markers between the colon and the number, and the leading anchor already
+            // tolerates list/quote/bold prefixes. Verified not to match mid-line prose such as
+            // "This does not depend on: #99" or "It depends on how you look at it".
+            const dependsOn = [...(issue.body || '').matchAll(/^[^A-Za-z0-9]*depends\s+on[^A-Za-z0-9#]*#(\d+)/gim)]
+              .map(m => Number(m[1]));
+            const blockers = [];
+            for (const dep of [...new Set(dependsOn)]) {
+              try {
+                const { data: b } = await github.rest.issues.get({
+                  owner: context.repo.owner, repo: context.repo.repo, issue_number: dep
+                });
+                if (b.state !== 'closed') blockers.push(dep);
+              } catch (e) {
+                // An unreadable blocker is not a green light.
+                blockers.push(dep);
+              }
+            }
+            if (blockers.length > 0) {
+              const list = blockers.map(n => `#${n}`).join(', ');
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: here,
+                body: [
+                  `## Blocked — not delivering yet`,
+                  '',
+                  `#${here} declares \`Depends on:\` ${list}, which ${blockers.length === 1 ? 'is' : 'are'} still open.`,
+                  '',
+                  'Delivering now would build against a package that does not exist yet, so nothing',
+                  'was started — no branch, no PR, and no agent run was spent.',
+                  '',
+                  `Re-issue \`/approve-issue-for-pr-delivery\` once ${list} ${blockers.length === 1 ? 'has' : 'have'} landed.`
+                ].join('\n')
+              });
+              core.setFailed(`#${here} is blocked by ${list}`);
+              return;
+            }
             core.setOutput('issue_number', String(here));
 
   deliver:
@@ -156,8 +201,15 @@ jobs:
       - name: Honour deliver:paused
         id: paused
         run: |
-          if gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json labels \
-               --jq '.labels[].name' | grep -qx 'deliver:paused'; then
+          # Read and status-check separately. Piping straight into grep FAILS OPEN: a failed API
+          # call produces no output, grep finds no match, and the phase proceeds as though the
+          # label were absent — so a paused delivery would keep running. BC-9 has to hold even
+          # when the read fails, so an unreadable label set stops the phase instead.
+          if ! labels=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json labels --jq '.labels[].name'); then
+            echo "::error::could not read labels on #$ISSUE_NUMBER; refusing to proceed without knowing whether deliver:paused is set"
+            exit 1
+          fi
+          if grep -qx 'deliver:paused' <<< "$labels"; then
             echo "deliver:paused is set on #$ISSUE_NUMBER — exiting."
             echo "paused=true" >> "$GITHUB_OUTPUT"
           else

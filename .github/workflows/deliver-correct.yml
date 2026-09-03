@@ -65,8 +65,15 @@ jobs:
       - name: Honour deliver:paused
         id: paused
         run: |
-          if gh pr view "$PR" --repo "$REPO" --json labels \
-               --jq '.labels[].name' | grep -qx 'deliver:paused'; then
+          # Read and status-check separately. Piping straight into grep FAILS OPEN: a failed API
+          # call produces no output, grep finds no match, and the phase proceeds as though the
+          # label were absent — so a paused delivery would keep running. BC-9 has to hold even
+          # when the read fails, so an unreadable label set stops the phase instead.
+          if ! labels=$(gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name'); then
+            echo "::error::could not read labels on #$PR; refusing to proceed without knowing whether deliver:paused is set"
+            exit 1
+          fi
+          if grep -qx 'deliver:paused' <<< "$labels"; then
             echo "deliver:paused is set on #$PR — exiting."
             echo "paused=true" >> "$GITHUB_OUTPUT"
           else
