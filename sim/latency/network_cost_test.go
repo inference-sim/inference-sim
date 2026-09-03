@@ -285,7 +285,11 @@ func TestStepTime_MoEReduceLegChargedCrossNode(t *testing.T) {
 	moePenalty, densePenalty := penalty(moe), penalty(dense)
 
 	assert.Greater(t, densePenalty, int64(0), "precondition: spanning must cost the dense model something")
-	assert.Equal(t, densePenalty, moePenalty,
+	// InDelta, not Equal: both penalties are differences of truncated microsecond step
+	// times, so they can legitimately land 1 µs apart from rounding alone. The mutation
+	// this guards against — an unpenalized MoE-FFN reduce — would halve the MoE penalty,
+	// which is orders of magnitude outside a 1 µs band.
+	assert.InDelta(t, densePenalty, moePenalty, 1,
 		"an MoE model at DP=1 all-reduces its MoE FFN in place of a dense FFN, so its spanning penalty "+
 			"must equal an identically-shaped dense model's. A strictly smaller MoE penalty would mean "+
 			"the MoE-FFN reduce is not being priced cross-node (moe=%d µs, dense=%d µs)",

@@ -334,7 +334,7 @@ func all2AllSpanScale(topo sim.NetworkTopology, groupSize int, ratio float64) fl
 // the DP==1 MoE-FFN reduce — are all rings over the tp group, so one penalty prices
 // all three. The MoE dispatch/combine collective runs over the flattened
 // moeGroup = TP·DP, and its SHAPE depends on the comm backend, the same distinction
-// moeDispatchBytes already makes for volume:
+// moeDispatchBasis already makes for volume:
 //
 //   - commFamilyAllGather (vLLM's default allgather_reducescatter, and naive): the
 //     volume basis is ring-shaped — 2 phases × (G-1)/G, exactly like the all-reduce
@@ -351,7 +351,7 @@ func spanScalesFor(topo sim.NetworkTopology, tp, moeGroup int, commFamily moeCom
 	case commFamilyAll2All:
 		return tpScale, all2AllSpanScale(topo, moeGroup, ratio)
 	default:
-		// Unreachable for the same reason as moeDispatchBytes' default: commFamily is
+		// Unreachable for the same reason as moeDispatchBasis' default: commFamily is
 		// set once at construction from moeCommFamilyFor, which yields only the two
 		// families above. Panic so a future 3rd family gets a deliberate collective
 		// shape here rather than silently inheriting "no cross-node cost".
@@ -363,7 +363,7 @@ func spanScalesFor(topo sim.NetworkTopology, tp, moeGroup int, commFamily moeCom
 // layer launches: dispatch and combine. They are two distinct NCCL calls — an all-gather
 // then a reduce-scatter for the all-gather family, or two all-to-alls for a modular
 // backend — each with its own launch and its own fabric round-trip. The volume side
-// already counts both (the `2` in each moeDispatchBytes branch), so the latency side must
+// already counts both (the `2` in each moeDispatchBasis branch), so the latency side must
 // count both too or the two halves disagree.
 //
 // Contrast the TP path, which charges ONE per comm unit and gets its 2L from having two

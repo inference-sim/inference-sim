@@ -754,16 +754,6 @@ func (cs *ClusterSimulator) fireArrivalHook(req *sim.Request, timeUs int64) {
 //
 // Used by `blis run` to capture TraceV2 records at the arrival boundary
 // (issue #1440), replacing the eager post-run RequestsToTraceRecords pass.
-// MaxNodesSpanned returns the largest number of physical nodes any single model
-// instance in this cluster occupies (#1530). Returns 0 when no node pools are
-// configured (no placement), and 1 when every instance fits on one node.
-//
-// `blis run --trace-output` records it in the trace header so `blis replay` can refuse
-// a trace whose fleet spanned nodes: cross-node collective traffic is charged to step
-// time, but replay cannot reconstruct a multi-node fleet (node pools are run-only), so
-// replaying such a trace would silently be faster than the run it came from.
-func (cs *ClusterSimulator) MaxNodesSpanned() int { return cs.maxNodesSpanned }
-
 func (cs *ClusterSimulator) SetArrivalHook(hook func(*sim.Request)) {
 	if cs.hasRun {
 		panic("ClusterSimulator: SetArrivalHook must be called before Run()")
@@ -775,6 +765,16 @@ func (cs *ClusterSimulator) SetArrivalHook(hook func(*sim.Request)) {
 		cs.lastArrivalHookTime = 0
 	}
 }
+
+// MaxNodesSpanned returns the largest number of physical nodes any single model
+// instance in this cluster occupies (#1530). Returns 0 when no node pools are
+// configured (no placement), and 1 when every instance fits on one node.
+//
+// `blis run --trace-output` records it in the trace header so `blis replay` can refuse
+// a trace whose fleet spanned nodes: cross-node collective traffic is charged to step
+// time, but replay cannot reconstruct a multi-node fleet (node pools are run-only), so
+// replaying such a trace would silently be faster than the run it came from.
+func (cs *ClusterSimulator) MaxNodesSpanned() int { return cs.maxNodesSpanned }
 
 // Run executes the cluster simulation using online routing pipeline: drains the
 // configured RequestSource into ClusterArrivalEvents, runs a shared-clock event
