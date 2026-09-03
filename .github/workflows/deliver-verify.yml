@@ -1,0 +1,651 @@
+name: Deliver — Verify
+
+# Phase 2 of the L1 delivery loop (#1654). Determines a verdict and applies exactly one of:
+# ready-for-merge, needs-human, or a hand-off to Deliver — Correct.
+#
+# This workflow decides nothing itself. It gathers three machine-readable signals and hands
+# them to scripts/deliver-gate.sh, which is unit-tested. Keeping the decision in one tested
+# place is what makes "a GREEN review cannot override red CI" structural rather than something
+# to re-audit on every edit here.
+#
+# WHERE THE CI SIGNAL COMES FROM: this phase dispatches the repository's own ci.yml against the
+# delivery branch and waits for it. Two constraints force that, and an earlier version of this
+# workflow satisfied neither by running build/test/lint inline:
+#   - a bot-opened PR has its pull_request runs held in an approval-required state, so the loop
+#     cannot wait on the runs GitHub would normally create;
+#   - a workflow_dispatch run's check runs attach to the dispatch ref, NOT to the PR head, so
+#     checks run inside this job satisfy none of the branch ruleset's required contexts. The loop
+#     could label a PR ready-for-merge with a merge button that does not work.
+# Dispatching ci.yml always starts (workflow_dispatch is exempt from the token rule) and produces
+# ci.yml's own job names on the branch head commit — which is exactly what the ruleset matches.
+# It also removes any obligation to keep package groups, per-group timeouts or the Go version in
+# step with ci.yml, since ci.yml is what runs.
+#
+# SECURITY: the only checkout here is the DEFAULT BRANCH, so scripts/ and .archon-version always
+# come from trusted code. The PR's tree is never checked out and the PR's code never executes on
+# the self-hosted runner — ci.yml runs it on ephemeral hosted runners instead. The input PR is
+# still required to be same-repo, open and on the branch this loop owns, so a misdirected
+# dispatch cannot aim the phase at someone else's PR.
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: write
+  actions: write        # required to dispatch the correct phase
+  id-token: write       # required by claude-code-action; every other invocation in the repo has it
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to verify'
+        required: true
+      issue_number:
+        description: 'Sub-issue number being delivered'
+        required: true
+
+jobs:
+  verify:
+    runs-on: [self-hosted]
+    # Generous: the full test suite plus an archon build plus an agent review. The single
+    # self-hosted runner is a known contention point, tracked as a follow-up on #1654.
+    timeout-minutes: 120
+    env:
+      REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR: ${{ inputs.pr_number }}
+      ISSUE_NUMBER: ${{ inputs.issue_number }}
+      # Deliberately NOT the implement phase's model. Reviewer and implementer being different
+      # models is what keeps this from being an agent grading its own homework. Override with
+      # the DELIVER_VERIFY_MODEL repository variable.
+      DELIVER_MODEL: ${{ vars.DELIVER_VERIFY_MODEL || 'claude-sonnet-4-6' }}
+      MAX_ROUNDS: ${{ vars.DELIVER_MAX_ROUNDS || '3' }}
+
+    steps:
+      # Inputs are numbers a collaborator can type. Validate before use, and confirm the PR is
+      # one this loop actually owns: same repository (never a fork) and on deliver/issue-<N>.
+      # Without that guard, dispatching this workflow at a fork PR would run fork code on the
+      # self-hosted runner.
+      - name: Validate the target PR
+        id: target
+        run: |
+          set -uo pipefail
+          [[ "$PR" =~ ^[0-9]+$ && "$ISSUE_NUMBER" =~ ^[0-9]+$ ]] \
+            || { echo "::error::pr_number and issue_number must be numeric"; exit 1; }
+          # REST, not `gh pr view --json`, because the REST schema does not depend on which `gh`
+          # is installed on the runner. An earlier version asked `gh pr view` for `baseRefOid`;
+          # that field was added to `gh` at some point, so whether it resolves depends entirely
+          # on the CLI version present. On gh 2.32.1 it does not exist and `gh` exits with
+          # "Unknown JSON field" — which killed this step, and with it every delivery, during the
+          # #1655 dry run. We do not pin the runner's `gh`, so a field-availability dependency is
+          # a latent break. `.base.sha` over REST is stable and is what archon.yml already uses.
+          gh api "/repos/$REPO/pulls/$PR" > "$RUNNER_TEMP/pr.json"
+          head_repo=$(jq -r '.head.repo.full_name // ""' "$RUNNER_TEMP/pr.json")
+          branch=$(jq -r '.head.ref' "$RUNNER_TEMP/pr.json")
+          state=$(jq -r '.state' "$RUNNER_TEMP/pr.json")
+          [[ "$head_repo" == "$REPO" ]] \
+            || { echo "::error::#$PR head is on '$head_repo', not '$REPO' — refusing to build a fork on a self-hosted runner"; exit 1; }
+          [[ "$branch" == "deliver/issue-${ISSUE_NUMBER}" ]] \
+            || { echo "::error::#$PR is on '$branch', not the expected deliver/issue-${ISSUE_NUMBER}"; exit 1; }
+          [[ "$state" == "open" ]] \
+            || { echo "::error::#$PR is $state"; exit 1; }
+          {
+            echo "sha=$(jq -r '.head.sha' "$RUNNER_TEMP/pr.json")"
+            echo "base_sha=$(jq -r '.base.sha' "$RUNNER_TEMP/pr.json")"
+            echo "branch=$branch"
+            # Consumed by the failure reporter: it must not write to a PR this loop does not own.
+            echo "owned=true"
+          } >> "$GITHUB_OUTPUT"
+
+      # BC-9, before any agent runs or any label moves.
+      - name: Honour deliver:paused
+        id: paused
+        run: |
+          # Read and status-check separately. Piping straight into grep FAILS OPEN: a failed API
+          # call produces no output, grep finds no match, and the phase proceeds as though the
+          # label were absent — so a paused delivery would keep running. BC-9 has to hold even
+          # when the read fails, so an unreadable label set stops the phase instead.
+          if ! labels=$(gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name'); then
+            echo "::error::could not read labels on #$PR; refusing to proceed without knowing whether deliver:paused is set"
+            exit 1
+          fi
+          if grep -qx 'deliver:paused' <<< "$labels"; then
+            echo "deliver:paused is set on #$PR — exiting."
+            echo "paused=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "paused=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Trusted tree: our scripts, our .archon-version.
+      - uses: actions/checkout@v5
+        if: steps.paused.outputs.paused == 'false'
+        with:
+          fetch-depth: 0
+
+      # No PR checkout. The repository's own CI compiles and tests the delivery branch, so this
+      # job never needs the PR's tree — which also means the PR's code no longer runs on the
+      # self-hosted runner at all. Go is still installed, but only to build archon.
+      - uses: actions/setup-go@v5
+        if: steps.paused.outputs.paused == 'false'
+        with:
+          go-version: '1.26'   # archon's own requirement; matches archon.yml
+
+      # THE required checks, produced by the repository's real CI on the delivery branch.
+      #
+      # Running build/test/lint inside this job was wrong, and the reason is subtle: a
+      # workflow_dispatch run's check runs attach to the DISPATCH ref, not to the PR head, so
+      # none of them counted toward the branch ruleset. The loop could label a PR
+      # ready-for-merge while GitHub still showed zero of the seven required contexts — a
+      # merge button that does not work. And the PR's own pull_request runs cannot fill the gap
+      # because a GITHUB_TOKEN-opened PR holds them for human approval.
+      #
+      # Dispatching ci.yml on the delivery branch fixes both: workflow_dispatch always starts
+      # even under GITHUB_TOKEN, and the resulting check runs carry ci.yml's own job names on
+      # the branch head commit, which is exactly what the ruleset matches. It also stops this
+      # job duplicating ci.yml's package groups, per-group timeouts and Go version — a parity
+      # obligation that had already drifted.
+      - name: Run the repository CI on the delivery branch
+        id: ci
+        if: steps.paused.outputs.paused == 'false'
+        env:
+          BRANCH: ${{ steps.target.outputs.branch }}
+          VERIFIED_SHA: ${{ steps.target.outputs.sha }}
+          POLL_SECONDS: '20'
+          MAX_ATTEMPTS: '120'   # 40 minutes; ci.yml's heaviest job allows 15
+        run: |
+          set -uo pipefail
+          status=unknown
+          failing=""
+          dispatched_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          if ! gh workflow run ci.yml --repo "$REPO" --ref "$BRANCH"; then
+            echo "::error::could not dispatch ci.yml on $BRANCH"
+            echo "status=unknown" >> "$GITHUB_OUTPUT"; echo "failing=dispatch failed" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          # gh workflow run returns no id, so find the run it created: newest workflow_dispatch
+          # run of ci.yml on this branch at or after the moment we dispatched.
+          run_id=""
+          for (( i = 0; i < 30; i++ )); do
+            run_id=$(gh api "/repos/$REPO/actions/workflows/ci.yml/runs?branch=$BRANCH&event=workflow_dispatch&per_page=20" \
+                       --jq "[.workflow_runs[] | select(.created_at >= \"$dispatched_at\")] | sort_by(.created_at) | last | .id // empty" 2>/dev/null || true)
+            [[ -n "$run_id" ]] && break
+            sleep 5
+          done
+          if [[ -z "$run_id" ]]; then
+            echo "::error::dispatched ci.yml but could not find the resulting run"
+            echo "status=unknown" >> "$GITHUB_OUTPUT"; echo "failing=run not found" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "ci run: $REPO/actions/runs/$run_id"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+
+          # The run must be on the exact commit this delivery verified. A push landing between
+          # validation and dispatch would otherwise have CI vouch for a different commit.
+          run_sha=$(gh api "/repos/$REPO/actions/runs/$run_id" --jq .head_sha)
+          if [[ "$run_sha" != "$VERIFIED_SHA" ]]; then
+            echo "::error::ci run is on $run_sha, not the verified $VERIFIED_SHA"
+            echo "status=unknown" >> "$GITHUB_OUTPUT"; echo "failing=head moved before CI started" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          for (( attempt = 1; attempt <= MAX_ATTEMPTS; attempt++ )); do
+            read -r run_status conclusion < <(gh api "/repos/$REPO/actions/runs/$run_id" \
+              --jq '"\(.status) \(.conclusion // "none")"' 2>/dev/null || echo "unreadable none")
+            if [[ "$run_status" == "completed" ]]; then
+              if [[ "$conclusion" != "success" ]]; then
+                status=failure
+                failing=$(gh api "/repos/$REPO/actions/runs/$run_id/jobs?per_page=100" --paginate \
+                  --jq '[.jobs[] | select(.conclusion != "success") | .name] | join(", ")' 2>/dev/null || echo "$conclusion")
+                break
+              fi
+              # A green run conclusion is NOT proof the ruleset is satisfied. The dispatch runs
+              # the DELIVERY BRANCH's copy of ci.yml, so a delivery that renames, removes or
+              # skips a required job — by accident or otherwise — can still conclude success
+              # while the ruleset waits on contexts that were never emitted. So assert the
+              # required contexts themselves, on the exact commit this delivery verified.
+              #
+              # Contexts come from the repo's active branch rulesets rather than a hardcoded
+              # list, so this cannot drift. Unioning across rulesets can only over-include,
+              # which makes the gate stricter and never looser.
+              # NO `|| true` ON THESE READS. Suppressing them made an API, permission or
+              # rate-limit failure produce an empty `required`, which was then read as "no
+              # contexts are configured" and set status=success — recreating the exact fail-open
+              # this check exists to close. A read that SUCCEEDS and returns nothing is a real
+              # "no requirements"; a read that FAILS is not evidence of anything, so it maps to
+              # unknown and the gate turns that into needs-human.
+              if ! ruleset_ids=$(gh api "/repos/$REPO/rulesets" \
+                   --jq '.[] | select(.target=="branch" and .enforcement=="active") | .id'); then
+                status=unknown
+                failing="could not read the branch rulesets, so the required check contexts are unknown"
+                echo "::error::$failing"
+                break
+              fi
+              required_raw=""
+              unreadable=""
+              for rid in $ruleset_ids; do
+                if ! ctx=$(gh api "/repos/$REPO/rulesets/$rid" \
+                     --jq '.rules[]? | select(.type=="required_status_checks") | .parameters.required_status_checks[]?.context'); then
+                  unreadable="$rid"
+                  break
+                fi
+                required_raw+="$ctx"$'\n'
+              done
+              if [[ -n "$unreadable" ]]; then
+                # A partial read is worse than none: it would check a subset and call it complete.
+                status=unknown
+                failing="could not read ruleset $unreadable, so the required check contexts may be incomplete"
+                echo "::error::$failing"
+                break
+              fi
+              required=$(printf '%s' "$required_raw" | sed '/^$/d' | sort -u)
+              if [[ -z "$required" ]]; then
+                # Reads succeeded and there genuinely are no required contexts. The run
+                # conclusion, already checked above, is all there is to go on.
+                echo "no required status-check contexts are configured; relying on the run conclusion"
+                status=success
+                break
+              fi
+              echo "required contexts: $(printf '%s' "$required" | paste -sd ', ' -)"
+              # Same treatment as the ruleset reads above. This one already failed SAFELY when
+              # suppressed — an empty `green` makes every required context look missing — but it
+              # failed INACCURATELY, reporting "these checks did not pass" when the truth was
+              # "we could not read them". With a NOT-GREEN verdict that spends a correction round
+              # chasing findings that do not exist.
+              if ! green_raw=$(gh api "/repos/$REPO/commits/$VERIFIED_SHA/check-runs?per_page=100" --paginate \
+                   --jq '.check_runs[] | select(.conclusion=="success") | .name'); then
+                status=unknown
+                failing="could not read the check runs on $VERIFIED_SHA, so the required contexts could not be confirmed"
+                echo "::error::$failing"
+                break
+              fi
+              green=$(printf '%s' "$green_raw" | sed '/^$/d' | sort -u)
+              missing=$(comm -23 <(printf '%s\n' "$required") <(printf '%s\n' "$green") | sed '/^$/d')
+              if [[ -n "$missing" ]]; then
+                status=failure
+                failing="required checks not satisfied on $VERIFIED_SHA: $(printf '%s' "$missing" | paste -sd ', ' -)"
+                echo "::error::$failing"
+              else
+                status=success
+              fi
+              break
+            fi
+            echo "attempt $attempt: ci run is $run_status"
+            sleep "$POLL_SECONDS"
+          done
+          echo "CI_STATUS=$status  failing=$failing"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "failing=$failing" >> "$GITHUB_OUTPUT"
+
+      - name: Build archon
+        id: archon_build
+        if: steps.paused.outputs.paused == 'false'
+        run: |
+          ARCHON_BIN=$(scripts/archon-build.sh)
+          [[ -n "$ARCHON_BIN" && -x "$ARCHON_BIN" ]] || { echo "::error::archon-build.sh produced no binary"; exit 1; }
+          echo "bin=$ARCHON_BIN" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch the PR head into the trusted tree
+        if: steps.paused.outputs.paused == 'false'
+        run: git fetch origin "pull/${PR}/head"
+
+      # The PR body is the only declaration source. archon.yml also reads closing-issue bodies,
+      # but a hole PR targets a feature branch where GitHub links no closing issue — which is
+      # exactly why P1 is told to copy the `archon-plan:` line into the body.
+      - name: Run the archon review
+        if: steps.paused.outputs.paused == 'false'
+        env:
+          ARCHON_BIN: ${{ steps.archon_build.outputs.bin }}
+          BASE_SHA: ${{ steps.target.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.target.outputs.sha }}
+          OUTPUT_FILE: ${{ runner.temp }}/archon-output.md
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          jq -r .body "$RUNNER_TEMP/pr.json" > "$RUNNER_TEMP/plan-decl.txt"
+          DECL_FILE="$RUNNER_TEMP/plan-decl.txt" scripts/archon-review.sh
+
+      - name: Post the archon review
+        if: steps.paused.outputs.paused == 'false'
+        env:
+          OUTPUT_FILE: ${{ runner.temp }}/archon-output.md
+        run: |
+          if [[ -s "$OUTPUT_FILE" ]]; then
+            gh pr comment "$PR" --repo "$REPO" --body-file "$OUTPUT_FILE"
+          else
+            echo "::warning::archon produced no output to post"
+          fi
+
+      # review.json is the machine-readable half of the bundle archon-review.sh just wrote.
+      #
+      # The `unverified` case is the subtle one. archon-review.sh exits 0 and falls back to a
+      # PLAN-LESS delta review when plan resolution fails or the plan-aware run crashes, so an
+      # absent planRatchet does NOT by itself mean "this PR has no plan" — it can equally mean
+      # "this PR declared a plan that was never checked". Treating those alike would let a PR
+      # whose dist ratchet silently did not run reach ready-for-merge on a GREEN review. So the
+      # PR body is consulted: declared-but-unevaluated is `unverified`, which blocks.
+      - name: Derive the plan signal
+        id: plan
+        if: steps.paused.outputs.paused == 'false'
+        run: |
+          set -uo pipefail
+          gate=absent
+          ratchet=""; verdict=""
+          if [[ -f .archon/review.json ]]; then
+            # `has()` + `tostring`, NOT `.planRatchet.ok // empty`. archon declares `OK bool`,
+            # so the field is a JSON boolean, and jq's `//` treats false as falsy — meaning
+            # `.ok // empty` yields "" for exactly the regression it is meant to detect. That
+            # made the regression branch unreachable, masked only by archon also reporting
+            # CONFLICTS when distance rises.
+            ratchet=$(jq -r 'if has("planRatchet") then (.planRatchet.ok | tostring) else "" end' .archon/review.json)
+            verdict=$(jq -r 'if has("planClassify") then (.planClassify.verdict | tostring) else "" end' .archon/review.json)
+          fi
+          if [[ "$verdict" == "CONFLICTS" ]]; then
+            gate=conflicts
+          elif [[ "$ratchet" == "false" ]]; then
+            gate=regression
+          elif [[ "$ratchet" == "true" || -n "$verdict" ]]; then
+            gate=pass
+          elif [[ -n "$ratchet" ]]; then
+            # planRatchet exists but `ok` is neither true nor false. A Go `bool` cannot marshal
+            # to anything else, so this means archon's schema changed under us. Treat an
+            # unrecognised serialisation as missing evidence rather than as a pass — the same
+            # fail-closed rule the gate applies to its own out-of-domain inputs.
+            gate=unverified
+          # The prefix anchor matches archon-plan-resolve.sh's, which admits markdown list,
+          # quote, bold and backtick markers (`^[^A-Za-z0-9]*`). A narrower pattern here would
+          # read `- archon-plan: x.json` as "no plan declared" while the resolver read it as a
+          # declaration — the exact case `unverified` exists to catch.
+          #
+          # The `-i` is a DELIBERATE asymmetry, not an oversight: the resolver is
+          # case-sensitive, so `ARCHON-PLAN:` resolves no plan there. This check must be the
+          # WIDER of the two, because its job is "does this body look like it declared a plan
+          # that nothing then evaluated" — a superset of "what the resolver accepted". Matching
+          # the resolver's case-sensitivity here would turn a case-variant declaration into
+          # `absent`, i.e. silently treat the PR as plan-less and let a GREEN review reach
+          # ready-for-merge with the ratchet never having run. A false `unverified` costs a
+          # human a glance; a false `absent` costs the gate.
+          elif grep -qiE '^[^A-Za-z0-9]*archon-plan:[[:space:]]*\S' "$RUNNER_TEMP/plan-decl.txt"; then
+            gate=unverified
+          fi
+          echo "PLAN_GATE=$gate"
+          echo "gate=$gate" >> "$GITHUB_OUTPUT"
+
+      # The dispatched CI runs the DELIVERY BRANCH's copy of ci.yml, so a delivery that edits CI
+      # could keep the required job names and replace the commands — the branch vouching for
+      # itself. Asserting the required contexts (above) catches renames and omissions but cannot
+      # detect a job that still reports green while checking nothing. There is no way to run a
+      # trusted workflow definition and still land its check runs on the PR head, so the honest
+      # rule is that the loop does not get to declare such a change ready: touching the
+      # verification machinery forces a human. This is the same trust model normal CI has for
+      # same-repo branches, except a human reviewer is not implied here.
+      - name: Does this delivery modify its own verification?
+        id: ci_edit
+        if: steps.paused.outputs.paused == 'false'
+        run: |
+          set -uo pipefail
+          touched=$(gh api "/repos/$REPO/pulls/$PR/files?per_page=100" --paginate \
+            --jq '[.[] | select(.filename | startswith(".github/workflows/")) | .filename] | join(", ")' 2>/dev/null || echo "unreadable")
+          if [[ "$touched" == "unreadable" ]]; then
+            echo "::warning::could not list changed files; treating as a verification-affecting change"
+            touched="(file list unreadable)"
+          fi
+          [[ -n "$touched" ]] && echo "self-verification files touched: $touched" || echo "no workflow files touched"
+          echo "touched=$touched" >> "$GITHUB_OUTPUT"
+
+      # Recorded BEFORE the agent runs. The marker is only read from comments newer than this,
+      # so the previous round's verdict can never be mistaken for this round's.
+      - name: Mark the review start
+        id: since
+        if: steps.paused.outputs.paused == 'false'
+        run: echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Review the PR
+        if: steps.paused.outputs.paused == 'false'
+        uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
+          CLAUDE_CODE_DISABLE_THINKING: "1"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          anthropic_api_key: ${{ secrets.LITELLM_API_KEY }}
+          claude_args: '--model ${{ env.DELIVER_MODEL }} --allowed-tools Skill Agent Bash Read Edit Write'
+          show_full_output: true
+          # The blis-pr-review skill's entire body is an invocation of
+          # /pr-review-toolkit:review-pr, which lives in a plugin. Without these the prompt below
+          # asks for a skill that cannot resolve, and the review silently improvises instead of
+          # running the methodology. Kept identical to claude.yml so the two stay comparable.
+          plugin_marketplaces: |
+            https://github.com/anthropics/claude-plugins-official.git
+            https://github.com/obra/superpowers-marketplace.git
+          plugins: |
+            code-review@claude-plugins-official
+            code-simplifier@claude-plugins-official
+            frontend-design@claude-plugins-official
+            pr-review-toolkit@claude-plugins-official
+            superpowers@superpowers-marketplace
+          prompt: |
+            PR #${{ inputs.pr_number }} is open for sub-issue #${{ inputs.issue_number }} and
+            something changed. Determine the verdict. You are NOT fixing anything — do not edit
+            files and do not push.
+
+            The objective signals have already been gathered:
+
+            - build / test / lint: `${{ steps.ci.outputs.status }}`${{ steps.ci.outputs.failing && format(' (failing: {0})', steps.ci.outputs.failing) || '' }}
+            - archon plan signal: `${{ steps.plan.outputs.gate }}`
+            - archon's full review is at `${{ runner.temp }}/archon-output.md` and has already
+              been posted to the PR. Read it.
+
+            Read the sub-issue for its contracts (`gh issue view ${{ inputs.issue_number }}`)
+            and the diff (`gh pr diff ${{ inputs.pr_number }}`). Then run the BLIS methodology
+            review — use the `blis-pr-review` skill — with archon's output and those contracts
+            as your inputs.
+
+            For each contract, say whether it holds and how you know. Read the PR's earlier
+            comments: treat the previous round's findings as still open unless you can see they
+            were addressed, and for each dismissal in the most recent correction comment,
+            explicitly ACCEPT or RE-RAISE it. A dismissal you neither accept nor re-raise counts
+            as unresolved.
+
+            Post ONE comment on the PR with your verdict. A finding must name a file and what
+            specifically is wrong — "consider improving error handling" is not a finding. Number
+            them.
+
+            The LAST line of that comment must be exactly one of these two, and nothing else:
+            `DELIVER-VERDICT: GREEN` or `DELIVER-VERDICT: NOT-GREEN`. The delivery reads only
+            that final line; if it is missing or is not last, the delivery stops for a human.
+
+            You may not return GREEN if the checks are failing or if the plan signal is
+            `regression`, `conflicts`, or `unverified`. If any of those is true and the code
+            nonetheless looks correct to you, say so explicitly and return NOT-GREEN — a
+            disagreement between you and the objective signals is something a human needs to
+            see, not something for you to resolve.
+
+      # Read only from comments posted by a BOT, and only when the marker is the comment's LAST
+      # non-empty line. Both guards matter: without the author filter any human could set the
+      # verdict by quoting the marker, and without the last-line rule a comment that merely
+      # MENTIONS it — including an echo of the prompt above — would count.
+      #
+      # Filtered on `.user.type == "Bot"`, NOT on a login allow-list. An earlier version matched
+      # only `github-actions[bot]`, which would have made EVERY delivery land on needs-human:
+      # claude-code-action posts its output as `claude[bot]`, so the marker was never in a
+      # comment the filter accepted. Type is the property actually wanted here — "not a human
+      # quoting the marker" — and unlike a login it does not break when the action's identity
+      # changes. Humans are always type `User` and cannot forge `Bot`.
+      - name: Read the verdict marker
+        id: verdict
+        if: steps.paused.outputs.paused == 'false'
+        env:
+          SINCE: ${{ steps.since.outputs.at }}
+        run: |
+          set -uo pipefail
+          # Lexicographic compare is valid: both sides are UTC ISO-8601 to the second.
+          # One line of output per qualifying comment: its last non-empty line, trimmed.
+          lastlines=$(gh api "/repos/$REPO/issues/$PR/comments?per_page=100" --paginate \
+            --jq ".[]
+                  | select(.created_at > \"$SINCE\")
+                  | select(.user.type == \"Bot\")
+                  | .body
+                  | split(\"\n\")
+                  | map(select(test(\"\\\\S\")))
+                  | (last // \"\")
+                  | gsub(\"^\\\\s+|\\\\s+$\"; \"\")" 2>/dev/null || true)
+          marker=$(grep -xE 'DELIVER-VERDICT: (GREEN|NOT-GREEN)' <<< "$lastlines" \
+                   | tail -n 1 | sed 's/^DELIVER-VERDICT: //' || true)
+          [[ -n "$marker" ]] || marker=MISSING
+          echo "AGENT_VERDICT=$marker"
+          echo "value=$marker" >> "$GITHUB_OUTPUT"
+
+      - name: Read the round counter
+        id: round
+        if: steps.paused.outputs.paused == 'false'
+        run: |
+          # test("^deliver:round-[0-9]+$") not startswith(): `tonumber` throws on a label like
+          # `deliver:round-x`, which kills the whole step rather than reading a counter.
+          round=$(gh pr view "$PR" --repo "$REPO" --json labels \
+                    --jq '[.labels[].name | select(test("^deliver:round-[0-9]+$"))
+                           | ltrimstr("deliver:round-") | tonumber] | max // 0')
+          echo "ROUND=$round"
+          echo "value=$round" >> "$GITHUB_OUTPUT"
+
+      - name: Decide
+        id: gate
+        if: steps.paused.outputs.paused == 'false'
+        env:
+          CI_STATUS: ${{ steps.ci.outputs.status }}
+          PLAN_GATE: ${{ steps.plan.outputs.gate }}
+          AGENT_VERDICT: ${{ steps.verdict.outputs.value }}
+          ROUND: ${{ steps.round.outputs.value }}
+        # pipefail is essential: without it the pipeline reports tee's status, so the gate
+        # exiting 2 on a wiring error would look like a successful step with no decision.
+        run: |
+          set -o pipefail
+          scripts/deliver-gate.sh | tee -a "$GITHUB_OUTPUT"
+
+      # The checks and the review together take a long time, so re-confirm the code that was
+      # actually verified is still the head before declaring it mergeable. A push landing
+      # mid-run was never checked by anything.
+      - name: Confirm the head did not move
+        id: recheck
+        if: steps.paused.outputs.paused == 'false' && steps.gate.outputs.decision == 'ready'
+        env:
+          VERIFIED_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          set -uo pipefail
+          now=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)
+          if [[ "$now" != "$VERIFIED_SHA" ]]; then
+            echo "moved=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::head moved from $VERIFIED_SHA to $now during verification"
+          else
+            echo "moved=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Apply the decision
+        if: steps.paused.outputs.paused == 'false'
+        env:
+          DECISION: ${{ steps.gate.outputs.decision }}
+          REASON: ${{ steps.gate.outputs.reason }}
+          MOVED: ${{ steps.recheck.outputs.moved }}
+          CI_TOUCHED: ${{ steps.ci_edit.outputs.touched }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          decision="$DECISION"
+          reason="$REASON"
+          # A moved head downgrades ready to needs-human: what passed the checks is no longer
+          # what a human would merge.
+          if [[ "$decision" == "ready" && "$MOVED" == "true" ]]; then
+            decision=needs-human
+            reason="the delivery verified ${{ steps.target.outputs.sha }} and returned green, but the branch head moved during verification, so the current head is unverified"
+          fi
+          # A delivery that edits the verification machinery may not be declared ready by that
+          # same machinery. Correction rounds are unaffected — only `ready` is withheld.
+          if [[ "$decision" == "ready" && -n "$CI_TOUCHED" ]]; then
+            decision=needs-human
+            reason="every signal was green, but this delivery modifies the workflows that verify it ($CI_TOUCHED). The dispatched CI ran the branch's own copy of those files, so the loop is not in a position to vouch for the change — a human needs to read it"
+          fi
+          case "$decision" in
+            ready)       label=ready-for-merge; headline='Ready for merge' ;;
+            needs-human) label=needs-human;     headline='Stopped — a human is needed' ;;
+            correct)     label='';              headline='Correction round starting' ;;
+            *) echo "::error::unexpected decision '$decision'"; exit 1 ;;
+          esac
+          {
+            echo "## $headline"
+            echo
+            echo "$reason"
+            echo
+            echo "| signal | value |"
+            echo "|---|---|"
+            echo "| build / test / lint | \`${{ steps.ci.outputs.status }}\`${{ steps.ci.outputs.failing && format(' (failing: {0})', steps.ci.outputs.failing) || '' }} |"
+            echo "| archon plan | \`${{ steps.plan.outputs.gate }}\` |"
+            echo "| review verdict | \`${{ steps.verdict.outputs.value }}\` |"
+            echo "| correction rounds spent | ${{ steps.round.outputs.value }} of ${MAX_ROUNDS} |"
+            echo "| verified commit | \`${{ steps.target.outputs.sha }}\` |"
+            echo
+            case "$decision" in
+              ready)       echo "Nothing further is automated. A human reviews the history above and merges." ;;
+              needs-human) echo "The delivery loop has stopped and will not resume on its own." ;;
+              correct)     echo "The correct phase will address the findings above and hand back for re-verification." ;;
+            esac
+            echo
+            echo "_[Verify run](${RUN_URL})_"
+          } > "$RUNNER_TEMP/decision.md"
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/decision.md"
+          # A label failure must not abort this step: the hand-off below is what keeps the
+          # delivery moving, and a missing label would otherwise strand a promised correction
+          # round right after the comment above announced it.
+          # Clear BOTH terminal labels before applying any, on EVERY decision including
+          # `correct`. Only clearing the opposing one left a hole: a PR marked ready-for-merge
+          # whose head then moved and re-verified as `correct` kept that label while the
+          # correction agent pushed further unverified commits — advertising merge-ready during
+          # an active correction. A 404 when a label was never applied is the normal case.
+          for stale in ready-for-merge needs-human; do
+            gh api -X DELETE "/repos/$REPO/issues/$PR/labels/$stale" >/dev/null 2>&1 || true
+          done
+          if [[ -n "$label" ]]; then
+            gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=$label" >/dev/null \
+              || echo "::warning::could not apply the '$label' label — does it exist in this repository?"
+          fi
+          # Carried in the environment rather than as a step output because the moved-head
+          # downgrade above can differ from what the gate returned, and the hand-off must follow
+          # the applied decision, not the gate's.
+          echo "final_decision=$decision" >> "$GITHUB_ENV"
+
+      - name: Hand off to correct
+        if: steps.paused.outputs.paused == 'false' && env.final_decision == 'correct'
+        run: |
+          gh workflow run deliver-correct.yml --repo "$REPO" --ref "${{ github.ref_name }}" \
+            -f pr_number="$PR" -f issue_number="$ISSUE_NUMBER"
+          echo "Dispatched correct for PR #$PR."
+
+      # `cancelled()` matters as much as `failure()`: the job timeout CANCELS rather than fails,
+      # and this phase is the long one (full test suite plus an agent review). Without this a
+      # timeout would skip the comment and the label, leaving the PR silent — and silence is
+      # indistinguishable from "still working" while there is no stall detector.
+      # Gated on `owned`, not just on failure: when Validate the target PR correctly REFUSES a
+      # fork, a wrong-branch or a closed PR, the job fails — and without this guard the reporter
+      # would then comment and apply needs-human to a PR the loop was just told it does not own.
+      # Any write-access user can send a misdirected dispatch, so that write must not happen. A
+      # refused dispatch is already reported by the ::error:: in the validation step itself.
+      - name: Report a failed verify
+        if: (failure() || cancelled()) && steps.target.outputs.owned == 'true'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          {
+            echo "## Delivery stopped — the verify phase failed or timed out"
+            echo
+            echo "A step errored, or the job hit its 120-minute timeout, so no verdict was"
+            echo "reached. This is a failure of the automation, not a verdict on the code."
+            echo
+            echo "| signal | value |"
+            echo "|---|---|"
+            echo "| build / test / lint | \`${{ steps.ci.outputs.status || 'not reached' }}\` |"
+            echo "| archon plan | \`${{ steps.plan.outputs.gate || 'not reached' }}\` |"
+            echo "| review verdict | \`${{ steps.verdict.outputs.value || 'not reached' }}\` |"
+            echo
+            echo "The loop will not resume on its own. See the [run](${RUN_URL}) for the failing"
+            echo "step, then re-issue \`/approve-issue-for-pr-delivery\` once fixed."
+          } > "$RUNNER_TEMP/failure.md"
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/failure.md" || true
+          gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
+          gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null || true

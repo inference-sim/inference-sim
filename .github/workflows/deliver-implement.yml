@@ -1,0 +1,416 @@
+name: Deliver — Implement
+
+# Phase 1 of the L1 delivery loop (#1654). A collaborator comments
+#   /approve-issue-for-pr-delivery
+# on a sub-issue. The target is the issue the comment was made on — no argument. This opens a
+# PR for it, then hands off to Deliver — Verify.
+#
+# WHY workflow_dispatch AND NOT workflow_run: GitHub caps workflow_run chains at three levels
+# ("You can't use workflow_run to chain together more than three levels of workflows"), which
+# would kill this loop after a single correction round — silently, since the fourth link simply
+# never fires. workflow_dispatch has no such cap and is one of exactly two events that "always
+# create workflow runs" even when triggered with GITHUB_TOKEN, so no PAT or GitHub App is
+# needed. It also carries inputs, which removes the artifact hand-off the earlier design used
+# to smuggle the PR number downstream.
+#
+# The branch name is fixed as deliver/issue-<N> rather than chosen by the agent, so the PR can
+# be found deterministically by head ref instead of by parsing bodies.
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write        # required to dispatch the verify phase
+  id-token: write
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  check-permissions:
+    # `!github.event.issue.pull_request` — the command is issued on a sub-issue, not a PR.
+    if: |
+      !github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/approve-issue-for-pr-delivery')
+    runs-on: ubuntu-latest
+    outputs:
+      allowed: ${{ steps.check.outputs.allowed }}
+      issue_number: ${{ steps.parse.outputs.issue_number }}
+    steps:
+      - name: Check invoker permissions
+        id: check
+        uses: actions/github-script@v8
+        with:
+          script: |
+            try {
+              const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                username: context.actor
+              });
+              const allowed = ['admin', 'write', 'maintain'].includes(data.permission);
+              core.setOutput('allowed', allowed ? 'true' : 'false');
+              if (!allowed) {
+                core.info(`User ${context.actor} has '${data.permission}' permission — skipping.`);
+              }
+            } catch (e) {
+              core.setOutput('allowed', 'false');
+              core.info(`User ${context.actor} is not a collaborator — skipping.`);
+            }
+
+      # The target is WHERE THE COMMAND WAS TYPED — `github.event.issue.number`. There is
+      # deliberately no `#N` argument: the comment already lives on the sub-issue being
+      # delivered, so an argument would be redundant in the common case and a footgun in the
+      # rest (commenting on #100 with `#200` would deliver something other than the issue you
+      # are reading). This also removes an untrusted string from the flow entirely — the number
+      # now comes from the event payload, never from comment text.
+      #
+      # A `#N` is still tolerated when it AGREES with the current issue, because the earlier
+      # documented form used one and people will type it out of habit. A disagreeing number is
+      # refused rather than silently ignored: quietly delivering a different issue than the one
+      # named is the surprise this guard exists to prevent.
+      - name: Resolve the target sub-issue
+        id: parse
+        if: steps.check.outputs.allowed == 'true'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const here = context.issue.number;
+            const named = context.payload.comment.body.match(/\/approve-issue-for-pr-delivery\s+#(\d+)\b/);
+            if (named && Number(named[1]) !== here) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: here,
+                body: [
+                  `This command delivers the issue it is commented on (#${here}), but it names #${named[1]}.`,
+                  '',
+                  `Refusing rather than guessing. To deliver #${named[1]}, comment on that issue instead:`,
+                  '',
+                  '```',
+                  '/approve-issue-for-pr-delivery',
+                  '```'
+                ].join('\n')
+              });
+              core.setFailed(`command names #${named[1]} but was issued on #${here}`);
+              return;
+            }
+            // A TRACKING issue must not be delivered. It is an umbrella over several holes,
+            // so one PR trying to implement all of them is exactly what the methodology exists
+            // to prevent — and it would burn an agent hour producing something unreviewable.
+            // Two signals, because neither alone covers this repo: some tracking issues link
+            // their children as native GitHub sub-issues (#1585, #1477) and some only follow
+            // the title convention (#1638, #1552, #1532).
+            const { data: issue } = await github.rest.issues.get({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: here
+            });
+            const childCount = issue.sub_issues_summary?.total ?? 0;
+            const titledTracking = /^\s*(tracking|epic)\b/i.test(issue.title || '');
+            if (childCount > 0 || titledTracking) {
+              const why = childCount > 0
+                ? `it has ${childCount} linked sub-issue(s)`
+                : 'its title marks it as a tracking issue';
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: here,
+                body: [
+                  `## Not deliverable — this looks like a tracking issue`,
+                  '',
+                  `Refusing to deliver #${here} because ${why}.`,
+                  '',
+                  'A tracking issue is an umbrella over several holes. Delivering it would mean one',
+                  'PR attempting the whole feature, which is the thing one-hole-per-PR exists to',
+                  'avoid — and it would spend an agent run producing something unreviewable.',
+                  '',
+                  'Comment `/approve-issue-for-pr-delivery` on a specific sub-issue instead. If this',
+                  'issue really is a single deliverable unit, rename it so it does not begin with',
+                  '"Tracking" or "Epic", and unlink any sub-issues.'
+                ].join('\n')
+              });
+              core.setFailed(`#${here} looks like a tracking issue (${why})`);
+              return;
+            }
+            // AC-7 of #1654 lists the blocked-dependency refusal as an invariant enforced by
+            // WORKFLOW LOGIC, not only by a prompt. It was prompt-only, which meant a model that
+            // overlooked or misread a `Depends on:` line could implement a blocked issue after
+            // the expensive self-hosted agent job had already started. Checked here, before
+            // anything is scheduled; the prompt keeps its copy as defence in depth.
+            //
+            // "Blocker resolved" must mean THE DEPENDENCY'S CODE LANDED, not "its issue is
+            // closed". Issue state is wrong in BOTH directions. This repository's feature-branch
+            // model merges hole PRs into feature/<name>, and GitHub only auto-closes a `Closes
+            // #N` issue for a PR targeting the DEFAULT branch — so a fully merged dependency
+            // leaves its issue open, and every downstream hole would be refused until the final
+            // feature-to-main merge. Conversely, a hand-closed issue would let a delivery
+            // proceed with no dependency code anywhere.
+            // `[^A-Za-z0-9#]*` after "on", not `:?\s*`: the bold form `**Depends on:** #7` puts
+            // markdown markers between the colon and the number, and the leading anchor already
+            // tolerates list/quote/bold prefixes. Verified not to match mid-line prose such as
+            // "This does not depend on: #99" or "It depends on how you look at it".
+            const dependsOn = [...(issue.body || '').matchAll(/^[^A-Za-z0-9]*depends\s+on[^A-Za-z0-9#]*#(\d+)/gim)]
+              .map(m => Number(m[1]));
+            const blockers = [];
+            // Look for a MERGED PR by two routes, because neither covers both branch models:
+            //   - closedByPullRequestsReferences: GitHub's own link, populated when the PR
+            //     targets the default branch
+            //   - head ref deliver/issue-<M>: this loop's own naming convention, which holds
+            //     whatever branch the PR targeted
+            // No merged PR found means blocked. There is deliberately no issue-state fallback:
+            // the loop acts on evidence that code landed, or it stops and says what it looked for.
+            const mergedPrFor = async (dep) => {
+              try {
+                const res = await github.graphql(
+                  `query($owner:String!,$repo:String!,$num:Int!){
+                     repository(owner:$owner,name:$repo){ issue(number:$num){
+                       closedByPullRequestsReferences(first:10, includeClosedPrs:true){
+                         nodes { number state } } } } }`,
+                  { owner: context.repo.owner, repo: context.repo.repo, num: dep }
+                );
+                const nodes = res?.repository?.issue?.closedByPullRequestsReferences?.nodes ?? [];
+                const merged = nodes.find(n => n.state === 'MERGED');
+                if (merged) return merged.number;
+              } catch (e) {
+                core.info(`closedByPullRequestsReferences failed for #${dep}: ${e.message}`);
+              }
+              try {
+                const { data: prs } = await github.rest.pulls.list({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  head: `${context.repo.owner}:deliver/issue-${dep}`,
+                  state: 'closed', per_page: 20
+                });
+                const merged = prs.find(pr => pr.merged_at);
+                if (merged) return merged.number;
+              } catch (e) {
+                core.info(`branch-convention lookup failed for #${dep}: ${e.message}`);
+              }
+              return null;
+            };
+            for (const dep of [...new Set(dependsOn)]) {
+              const pr = await mergedPrFor(dep);
+              if (pr) { core.info(`#${dep} satisfied by merged PR #${pr}`); } else { blockers.push(dep); }
+            }
+            if (blockers.length > 0) {
+              const list = blockers.map(n => `#${n}`).join(', ');
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: here,
+                body: [
+                  `## Blocked — not delivering yet`,
+                  '',
+                  `#${here} declares \`Depends on:\` ${list}, and no MERGED pull request could be found for ${blockers.length === 1 ? 'it' : 'them'}.`,
+                  '',
+                  'Delivering now would build against code that has not landed, so nothing was',
+                  'started — no branch, no PR, and no agent run was spent.',
+                  '',
+                  'Two routes were checked and neither found a merged PR: the linked closing PRs,',
+                  'and a PR on `deliver/issue-<N>`. Issue state is deliberately NOT used — a hole',
+                  'PR merged into a feature branch leaves its issue open, and a hand-closed issue',
+                  'would otherwise let this proceed with no code.',
+                  '',
+                  `Re-issue \`/approve-issue-for-pr-delivery\` once ${list} ${blockers.length === 1 ? 'has' : 'have'} landed.`
+                ].join('\n')
+              });
+              core.setFailed(`#${here} is blocked by ${list}`);
+              return;
+            }
+            core.setOutput('issue_number', String(here));
+
+  deliver:
+    needs: check-permissions
+    if: needs.check-permissions.outputs.allowed == 'true'
+    runs-on: [self-hosted]
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+      id-token: write
+    env:
+      REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ISSUE_NUMBER: ${{ needs.check-permissions.outputs.issue_number }}
+      BRANCH: deliver/issue-${{ needs.check-permissions.outputs.issue_number }}
+      # Overridable without editing this file via the DELIVER_IMPLEMENT_MODEL repository
+      # variable. The default is verified present on the LiteLLM proxy this runner uses.
+      DELIVER_MODEL: ${{ vars.DELIVER_IMPLEMENT_MODEL || 'claude-opus-4-8' }}
+
+    steps:
+      # BC-9. First step, before any agent runs: a human who pauses a delivery is never racing
+      # it. At P1 there is no PR yet, so the label is read from the sub-issue.
+      - name: Honour deliver:paused
+        id: paused
+        run: |
+          # Read and status-check separately. Piping straight into grep FAILS OPEN: a failed API
+          # call produces no output, grep finds no match, and the phase proceeds as though the
+          # label were absent — so a paused delivery would keep running. BC-9 has to hold even
+          # when the read fails, so an unreadable label set stops the phase instead.
+          if ! labels=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json labels --jq '.labels[].name'); then
+            echo "::error::could not read labels on #$ISSUE_NUMBER; refusing to proceed without knowing whether deliver:paused is set"
+            exit 1
+          fi
+          if grep -qx 'deliver:paused' <<< "$labels"; then
+            echo "deliver:paused is set on #$ISSUE_NUMBER — exiting."
+            echo "paused=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "paused=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v5
+        if: steps.paused.outputs.paused == 'false'
+        with:
+          fetch-depth: 0
+
+      - name: Implement the sub-issue
+        if: steps.paused.outputs.paused == 'false'
+        uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
+          CLAUDE_CODE_DISABLE_THINKING: "1"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          anthropic_api_key: ${{ secrets.LITELLM_API_KEY }}
+          claude_args: '--model ${{ env.DELIVER_MODEL }} --allowed-tools Skill Agent Bash Read Edit Write'
+          show_full_output: true
+          # pr-workflow.md, which the prompt below tells the agent to follow, leans on the
+          # superpowers skills. Without these the referenced workflow cannot be executed as
+          # written. Kept identical to claude.yml.
+          plugin_marketplaces: |
+            https://github.com/anthropics/claude-plugins-official.git
+            https://github.com/obra/superpowers-marketplace.git
+          plugins: |
+            code-review@claude-plugins-official
+            code-simplifier@claude-plugins-official
+            frontend-design@claude-plugins-official
+            pr-review-toolkit@claude-plugins-official
+            superpowers@superpowers-marketplace
+          prompt: |
+            You are delivering issue #${{ env.ISSUE_NUMBER }} in this repository.
+            Read it first: `gh issue view ${{ env.ISSUE_NUMBER }}`.
+
+            It is one of two kinds, and BOTH are normal — decide which by reading it:
+
+            - **A sub-issue of an archon-planned feature.** It names one hole: a package path,
+              its surface, its contracts, its allowed imports, a target branch, and an
+              `archon-plan:` path. Honour all of them.
+            - **A standalone issue** — a bug, an enhancement, a hardening task. It has none of
+              that machinery: no plan, no declared surface, no allow list, and it targets the
+              default branch. That is not missing information; small issues in this repository
+              legitimately skip the RFC and plan entirely. Take the issue's own acceptance
+              criteria as the contract, and do not invent an archon plan for it.
+
+            FIRST, check whether you are blocked. If the body carries a `Depends on: #M` line,
+            check whether #M's PR is merged. If it is not, post a comment on
+            sub-issue #${{ env.ISSUE_NUMBER }} saying `blocked by #M`, and STOP. Do not open a
+            PR and do not create a branch. A later delivery picks this up once #M lands.
+
+            Otherwise, follow @docs/contributing/pr-workflow.md and implement it.
+
+            - Use the branch name `${{ env.BRANCH }}` exactly. The delivery finds your PR by
+              this ref, so a different name breaks the chain.
+            - Implement exactly the declared surface, no more. Do not import anything outside
+              the allow list.
+            - Every contract in the sub-issue gets a test that would fail if the contract were
+              violated.
+            - Before you push, run `go build ./...`, `go test ./...` and
+              `golangci-lint run ./...`. The verify phase runs these same three commands, so
+              anything failing here becomes a finding you will be asked to fix.
+            - If the sub-issue names an `archon-plan:`, run `scripts/archon-build.sh` and check
+              `archon plan dist` against the target branch to confirm you moved distance DOWN.
+              If it did not go down, you have implemented the wrong thing — fix that before
+              pushing, not after.
+
+            Open a PR against the target branch the sub-issue names (default: the repository
+            default branch). The PR body must contain:
+
+            - the `archon-plan:` line copied verbatim from the sub-issue, if it has one. The
+              plan is read from the PR body, and a PR to a feature branch links no closing
+              issue, so without this line the dist ratchet cannot run — and the verify phase
+              treats a declared-but-unverified plan as a blocking signal, not a pass.
+            - a contract-by-contract statement of what you did
+            - `Closes #${{ env.ISSUE_NUMBER }}`
+
+            Then post ONE comment on the PR summarising what you built, what you deliberately
+            left out, and anything you were unsure about. The uncertainty note is the first
+            thing the verify phase reads, so be honest in it.
+
+            Do not merge anything. Do not push to the default branch.
+
+      # Deterministic: the branch name was dictated above, so no body parsing is needed.
+      - name: Locate the PR
+        id: pr
+        if: always() && steps.paused.outputs.paused == 'false'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner, repo: context.repo.repo,
+              head: `${context.repo.owner}:${process.env.BRANCH}`,
+              state: 'open'
+            });
+            if (prs.length === 0) {
+              core.setOutput('number', '');
+              core.info(`No open PR for ${process.env.BRANCH}.`);
+              return;
+            }
+            // Newest wins if an earlier attempt left an open PR on the same ref.
+            core.setOutput('number', String(prs.sort((a, b) => b.number - a.number)[0].number));
+
+      - name: Hand off to verify
+        if: steps.pr.outputs.number != ''
+        env:
+          PR: ${{ steps.pr.outputs.number }}
+        run: |
+          gh workflow run deliver-verify.yml --repo "$REPO" --ref "${{ github.ref_name }}" \
+            -f pr_number="$PR" -f issue_number="$ISSUE_NUMBER"
+          echo "Dispatched verify for PR #$PR."
+
+      # BC-11. `!failure()` keeps this mutually exclusive with the failure reporter below: this
+      # is the phase deciding NOT to open a PR (a blocked dependency, an agent stopping
+      # cleanly), which reads differently to a phase that errored. Without it the command looks
+      # ignored — there is no PR, so the sub-issue is the only place a human would look.
+      - name: Report a delivery that opened no PR
+        if: always() && !failure() && !cancelled() && steps.paused.outputs.paused == 'false' && steps.pr.outputs.number == ''
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: Number(process.env.ISSUE_NUMBER),
+              body: [
+                '## Delivery stopped — no PR was opened',
+                '',
+                `The implement phase finished without an open PR on \`${process.env.BRANCH}\`.`,
+                'The usual reason is an unmerged `Depends on:` blocker — look for a',
+                '`blocked by #M` comment above.',
+                '',
+                `Nothing else will run: the delivery chain starts from the PR. [Workflow run](${run})`,
+                '',
+                'Re-issue `/approve-issue-for-pr-delivery` once the blocker is resolved.'
+              ].join('\n')
+            });
+
+      # `cancelled()` matters as much as `failure()`: the 60-minute job timeout CANCELS the
+      # job, so a hung agent or model call would otherwise skip every reporter and leave the
+      # command looking ignored. That is the most likely silent death in this phase.
+      - name: Report a failed implement
+        if: failure() || cancelled()
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const pr = '${{ steps.pr.outputs.number }}';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: Number(process.env.ISSUE_NUMBER),
+              body: [
+                '## Delivery stopped — the implement phase failed or timed out',
+                '',
+                'A step errored, or the job hit its 60-minute timeout, before the phase could',
+                'hand off. This is a failure of the automation, not a verdict on the issue.',
+                '',
+                pr ? `A PR was opened (#${pr}) but the hand-off did not complete, so nothing will verify it.`
+                   : 'No PR was opened.',
+                '',
+                `The loop will not resume on its own. See the [run](${run}), then re-issue`,
+                '`/approve-issue-for-pr-delivery` once the cause is fixed.'
+              ].join('\n')
+            });

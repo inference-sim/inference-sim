@@ -1,0 +1,219 @@
+name: Deliver — Correct
+
+# Phase 3 of the L1 delivery loop (#1654). Fixes the findings in the most recent verdict and
+# hands control back to Deliver — Verify.
+#
+# Dispatched by the verify phase only when the gate returned `correct`, so the stop condition
+# lives in scripts/deliver-gate.sh alone. This phase never re-derives it — a second copy of that
+# logic is a second place for the two to disagree.
+#
+# NOTE ON RUNAWAY: workflow_dispatch has no chain-depth cap (unlike workflow_run), so the ONLY
+# thing bounding this loop is the gate's round cap read from the deliver:round-N label. The
+# counter is therefore advanced before any agent runs — see below.
+
+permissions:
+  contents: write
+  issues: read
+  pull-requests: write
+  actions: write        # required to dispatch the verify phase
+  id-token: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to correct'
+        required: true
+      issue_number:
+        description: 'Sub-issue number being delivered'
+        required: true
+
+jobs:
+  correct:
+    runs-on: [self-hosted]
+    timeout-minutes: 60
+    env:
+      REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR: ${{ inputs.pr_number }}
+      ISSUE_NUMBER: ${{ inputs.issue_number }}
+      # Matches the implement phase: this writes code, so it gets the same model. Override with
+      # the DELIVER_CORRECT_MODEL repository variable.
+      DELIVER_MODEL: ${{ vars.DELIVER_CORRECT_MODEL || 'claude-opus-4-8' }}
+
+    steps:
+      # Same guard as the verify phase: a numeric, same-repo, open PR on the branch this loop
+      # owns. This phase has contents: write and pushes, so it must never be pointed at a PR it
+      # does not own.
+      - name: Validate the target PR
+        id: target
+        run: |
+          set -uo pipefail
+          [[ "$PR" =~ ^[0-9]+$ && "$ISSUE_NUMBER" =~ ^[0-9]+$ ]] \
+            || { echo "::error::pr_number and issue_number must be numeric"; exit 1; }
+          gh pr view "$PR" --repo "$REPO" --json isCrossRepository,headRefName,state > "$RUNNER_TEMP/pr.json"
+          [[ "$(jq -r .isCrossRepository "$RUNNER_TEMP/pr.json")" == "false" ]] \
+            || { echo "::error::#$PR is a cross-repository (fork) PR; refusing to push to it"; exit 1; }
+          [[ "$(jq -r .headRefName "$RUNNER_TEMP/pr.json")" == "deliver/issue-${ISSUE_NUMBER}" ]] \
+            || { echo "::error::#$PR is not on the expected deliver/issue-${ISSUE_NUMBER}"; exit 1; }
+          [[ "$(jq -r .state "$RUNNER_TEMP/pr.json")" == "OPEN" ]] \
+            || { echo "::error::#$PR is not open"; exit 1; }
+          # Consumed by the failure reporter, which must not write to a PR this loop does not own.
+          echo "owned=true" >> "$GITHUB_OUTPUT"
+
+      # BC-9, before any agent runs and before the round counter moves.
+      - name: Honour deliver:paused
+        id: paused
+        run: |
+          # Read and status-check separately. Piping straight into grep FAILS OPEN: a failed API
+          # call produces no output, grep finds no match, and the phase proceeds as though the
+          # label were absent — so a paused delivery would keep running. BC-9 has to hold even
+          # when the read fails, so an unreadable label set stops the phase instead.
+          if ! labels=$(gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name'); then
+            echo "::error::could not read labels on #$PR; refusing to proceed without knowing whether deliver:paused is set"
+            exit 1
+          fi
+          if grep -qx 'deliver:paused' <<< "$labels"; then
+            echo "deliver:paused is set on #$PR — exiting."
+            echo "paused=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "paused=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Advanced BEFORE the agent runs, deliberately: a crashed or timed-out correction still
+      # consumes its round. Otherwise a phase that dies mid-fix would be re-dispatched at the
+      # same count forever, and with no workflow_run depth cap to backstop it that is an
+      # unbounded loop.
+      #
+      # Failing to APPLY the next round label is fatal here, unlike other label failures. Note
+      # this is not about a missing PRIOR label: no round label at all reads as 0 via `max // 0`
+      # and proceeds normally to round 1. What is fatal is being unable to record the new round,
+      # because then the counter cannot advance and the loop loses its only bound.
+      - name: Advance the round counter
+        id: round
+        if: steps.paused.outputs.paused == 'false'
+        run: |
+          set -uo pipefail
+          # test("^deliver:round-[0-9]+$") not startswith(): `tonumber` throws on a label like
+          # `deliver:round-x`. Here that crash would land AFTER the agent run was already spent.
+          current=$(gh pr view "$PR" --repo "$REPO" --json labels \
+                      --jq '[.labels[].name | select(test("^deliver:round-[0-9]+$"))
+                             | ltrimstr("deliver:round-") | tonumber] | max // 0')
+          next=$(( current + 1 ))
+          # REST, not `gh pr edit`: that command pulls `projectCards` over GraphQL, which GitHub
+          # has deprecated and now errors on in this repository. Using it here would have made
+          # this step — which is fatal by design — fail on every single correction round.
+          if ! gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=deliver:round-${next}" >/dev/null; then
+            echo "::error::could not apply deliver:round-${next} — the label must exist, or the loop has no round bound"
+            exit 1
+          fi
+          if (( current > 0 )); then
+            gh api -X DELETE "/repos/$REPO/issues/$PR/labels/deliver:round-${current}" >/dev/null \
+              || echo "::warning::could not remove deliver:round-${current}; the counter reads the maximum so this is cosmetic"
+          fi
+          echo "round=$next" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+        if: steps.paused.outputs.paused == 'false'
+        with:
+          fetch-depth: 0
+
+      - name: Correct the findings
+        if: steps.paused.outputs.paused == 'false'
+        uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
+          CLAUDE_CODE_DISABLE_THINKING: "1"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          anthropic_api_key: ${{ secrets.LITELLM_API_KEY }}
+          claude_args: '--model ${{ env.DELIVER_MODEL }} --allowed-tools Skill Agent Bash Read Edit Write'
+          show_full_output: true
+          # Same reason as the other two phases: the prompts reference skills that live in
+          # plugins. Kept identical to claude.yml.
+          plugin_marketplaces: |
+            https://github.com/anthropics/claude-plugins-official.git
+            https://github.com/obra/superpowers-marketplace.git
+          plugins: |
+            code-review@claude-plugins-official
+            code-simplifier@claude-plugins-official
+            frontend-design@claude-plugins-official
+            pr-review-toolkit@claude-plugins-official
+            superpowers@superpowers-marketplace
+          prompt: |
+            PR #${{ inputs.pr_number }} (sub-issue #${{ inputs.issue_number }}) has an open
+            verdict with numbered findings. This is correction round
+            ${{ steps.round.outputs.round }}.
+
+            Read the most recent PR comment whose last line is `DELIVER-VERDICT: NOT-GREEN`
+            (`gh pr view ${{ inputs.pr_number }} --comments`). Fix those findings and nothing
+            else.
+
+            Check out the PR branch first:
+
+            ```bash
+            gh pr checkout ${{ inputs.pr_number }}
+            ```
+
+            For each finding: fix it, or explain why it is wrong and should be dismissed.
+            Dismissing is allowed and sometimes correct — but say which finding and why. A
+            dismissal counts as unresolved until the reviewer accepts it, so do not treat
+            dismissing as closing.
+
+            Constraints, in order of how much they matter:
+
+            - DO NOT WEAKEN A TEST TO MAKE IT PASS. If a test fails because the contract
+              genuinely cannot hold as written, that is a design problem — stop, leave the test
+              failing, and say so in your comment. Adjusting a test to go green is the one
+              outcome that makes this whole loop worthless.
+            - Do not refactor code the findings did not mention.
+            - Do not expand the surface beyond what the sub-issue declared.
+            - Do not merge anything, and do not push to the default branch.
+
+            Run `go build ./...`, `go test ./...` and `golangci-lint run ./...` before you push —
+            the verify phase runs exactly these three and will raise anything still failing.
+
+            One caveat on those three: the verify phase cannot tell a real failure from an
+            INFRASTRUCTURE failure — a lint binary that would not download, a runner that ran
+            out of memory, a network blip during the build all arrive here as "lint is failing"
+            or "tests are failing". If you run them and they pass, or the reported failure has
+            nothing addressable in the diff, do NOT invent a fix. Say so plainly in your
+            comment and name what you observed, so the next verification (and the human reading
+            this PR) can tell a phantom finding from a real one.
+
+            Then push to the PR branch and post ONE comment going finding by finding: fixed or
+            dismissed, with the reason for each.
+
+      - name: Hand back to verify
+        if: steps.paused.outputs.paused == 'false'
+        run: |
+          gh workflow run deliver-verify.yml --repo "$REPO" --ref "${{ github.ref_name }}" \
+            -f pr_number="$PR" -f issue_number="$ISSUE_NUMBER"
+          echo "Dispatched verify for PR #$PR."
+
+      # `cancelled()` as well as `failure()`: the job timeout cancels rather than fails, and a
+      # hung agent would otherwise skip the hand-back AND this report, leaving the PR silent
+      # with a consumed round and nothing explaining why.
+      # Gated on `owned` for the same reason as the verify phase: a validation refusal must not
+      # be followed by a comment and a label on a PR the loop does not own.
+      - name: Report a failed correction
+        if: (failure() || cancelled()) && steps.target.outputs.owned == 'true'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          {
+            echo "## Delivery stopped — the correct phase failed or timed out"
+            echo
+            echo "A step errored, or the job hit its 60-minute timeout, during correction round"
+            echo "${{ steps.round.outputs.round || '?' }}. The findings may be partly addressed;"
+            echo "no re-verification was requested."
+            echo
+            echo "The round was already counted, so a resumed delivery continues from this round"
+            echo "rather than starting over. The loop will not resume on its own."
+            echo
+            echo "_[Failed run](${RUN_URL})_"
+          } > "$RUNNER_TEMP/failure.md"
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/failure.md" || true
+          gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
+          gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null || true

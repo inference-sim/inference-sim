@@ -31,6 +31,39 @@ body to post. Exit 2 only on a usage or environment error. Adds `--plan` to the 
 `archon-go` invocation when a plan resolves; retries once without it if that invocation
 fails, so a bad plan file never costs the three views.
 
+## deliver-gate.sh — the L1 delivery loop's decision
+
+Decides what happens next in a delivery round: label the PR ready, run another correction, or
+stop for a human. Called by `.github/workflows/deliver-verify.yml`; it lives here rather than
+inline in the workflow because it is the one place in the loop where a bug could mark broken
+code ready to merge, so it is the one place that needs tests
+(`scripts/deliver_gate_test.go`). See
+[docs/contributing/automated-delivery.md](../docs/contributing/automated-delivery.md).
+
+```bash
+CI_STATUS=success PLAN_GATE=pass AGENT_VERDICT=GREEN ROUND=0 MAX_ROUNDS=3 \
+  scripts/deliver-gate.sh
+# decision=ready
+# reason=CI passed, plan signal 'pass', and the review returned GREEN
+```
+
+| Variable | Domain | Meaning |
+|---|---|---|
+| `CI_STATUS` | `success` \| `failure` \| `unknown` | verify runs `go build`, `go test` and `golangci-lint` against the PR tree; anything but all three passing is `failure`, and an unread signal is `unknown` |
+| `PLAN_GATE` | `pass` \| `regression` \| `conflicts` \| `unverified` \| `absent` | from `.archon/review.json`; `absent` (no plan claimed) delivers exactly as `pass`, while `unverified` (a plan declared but never checked) blocks — `archon-review.sh` exits 0 after falling back to a plan-less review, so the two must not be conflated |
+| `AGENT_VERDICT` | `GREEN` \| `NOT-GREEN` \| `MISSING` | the review comment's `DELIVER-VERDICT:` marker |
+| `ROUND` | integer | correction rounds already spent, read from the `deliver:round-N` label |
+| `MAX_ROUNDS` | integer | cap before stopping for a human |
+
+Prints `decision=ready|correct|needs-human` and a one-line `reason`, exiting 0. Exit 2 only on a
+wiring error — an unset input or a non-integer counter — so a misconfigured workflow fails
+loudly instead of receiving a verdict. A value outside a declared domain is different: it takes
+a catch-all and returns `needs-human`, because GitHub has eight check conclusions rather than
+two and an unmapped one must not fall through with no decision at all.
+
+`ready` requires the checks passing, a non-regressing (or absent) plan signal, **and** an explicit GREEN. A GREEN that contradicts an objective signal returns `needs-human` naming the
+disagreement — never `ready`, at any round.
+
 ## archon-plan-resolve.sh — find and extract a declared archon plan
 
 Finds the first `archon-plan: <path>` line in the declaration text and extracts that file
