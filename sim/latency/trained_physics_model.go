@@ -736,7 +736,7 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 		tTpDenseFFN = m.tpAllReduceBasis(float64(m.numDenseLayers), totalTokens, dpf)
 	}
 
-	// MoE-FFN communication partitions on the DP boundary (vLLM, #1419), so exactly
+	// MoE-FFN communication partitions on the DP-or-EP boundary (vLLM, #1419, #1548), so exactly
 	// one of the two terms below fires for an MoE model:
 	//   tMoEReduce (DP==1, TP>1): the MoE FFN all-reduces over the TP group, exactly
 	//     like a dense FFN unit. vLLM reduces over tp_size or ep_size (both = TP here).

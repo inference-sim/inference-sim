@@ -114,3 +114,37 @@ func TestPlacedGPUsPerNode_ReleasedGPUsStillResolve(t *testing.T) {
 
 	assert.Equal(t, 8, pm.placedGPUsPerNode(gpus))
 }
+
+// TestWidestCollectiveGroup is the direct contract for the group the cross-node diagnostics
+// score (#1548). It exists because the EP-wider branch is unreachable today (node pools
+// alongside --dp>1 is the #1553 fail-fast), so without a unit test the "inherit a correct
+// diagnostic rather than a silent gap" intent would rest on inspection alone.
+func TestWidestCollectiveGroup(t *testing.T) {
+	moe := sim.ModelConfig{NumLayers: 4, NumLocalExperts: 8, NumExpertsPerTok: 2}
+	dense := sim.ModelConfig{NumLayers: 4}
+	cfgFor := func(mc sim.ModelConfig, tp, dp int, ep bool, opts ...sim.ModelHardwareOption) sim.SimConfig {
+		return sim.SimConfig{ModelHardwareConfig: sim.NewModelHardwareConfig(mc, sim.HardwareCalib{},
+			"m", "H100", tp, dp, ep, "", "trained-physics", 0, opts...)}
+	}
+	for _, tc := range []struct {
+		name string
+		cfg  sim.SimConfig
+		want int
+	}{
+		{"dense scores TP", cfgFor(dense, 8, 1, false), 8},
+		{"MoE EP off scores TP", cfgFor(moe, 8, 1, false), 8},
+		{"MoE EP on at own DP is still TP", cfgFor(moe, 8, 1, true), 8},
+		// The branch #1553 will make reachable: TP fits a node, the EP group does not.
+		{"MoE EP on with a wider logical group scores the EP group",
+			cfgFor(moe, 8, 1, true, sim.WithExpertParallelGroupDP(2)), 16},
+		{"a width without EP is inert",
+			cfgFor(moe, 8, 1, false, sim.WithExpertParallelGroupDP(2)), 8},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := tc.cfg
+			if got := widestCollectiveGroup(&cfg); got != tc.want {
+				t.Errorf("widestCollectiveGroup = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}

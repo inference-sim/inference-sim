@@ -43,6 +43,18 @@ func TestPlanDPPlacement(t *testing.T) {
 			wantPerRankDP: 1,
 		},
 		{
+			// The short-circuit at dp=1 with EP on: no expansion, so nothing erases the
+			// config's own DP and there is no logical width to carry (EPGroupDP stays 0).
+			// Distinct from the dp>1 EP-on row below, which does carry one.
+			name:          "MoE dp=1 with expert parallel is a no-op and carries no width",
+			isMoE:         true,
+			dp:            1,
+			epOn:          true,
+			wantActive:    false,
+			wantReplicas:  1,
+			wantPerRankDP: 1,
+		},
+		{
 			name:          "dense dp>1 is a no-op here (rejected upstream)",
 			isMoE:         false,
 			dp:            4,
