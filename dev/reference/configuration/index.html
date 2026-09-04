@@ -3910,19 +3910,31 @@
 <td><code>--dp</code></td>
 <td>int</td>
 <td>1</td>
-<td>Data parallelism degree (MoE models only; <code>--latency-model trained-physics</code> only). <code>--dp N</code> spawns N real single-node engine replicas per <code>--num-instances</code>, each sized per-rank (<code>DP=1</code>) — on both <code>blis run</code> (#1531) and <code>blis replay</code> (#1556); re-supply it identically on replay — the TraceV2 header has no <code>data_parallel</code> field at all, and replay reads no parallelism field back from it, so omitting <code>--dp</code> on the replay leg silently compares an N-replica run against a 1-replica replay. Rejected with <code>--enable-expert-parallel</code> (#1548) and with PD disaggregation / the autoscaler / node pools (#1553).</td>
+<td>Data parallelism degree (MoE models only; <code>--latency-model trained-physics</code> only). <code>--dp N</code> spawns N real single-node engine replicas per <code>--num-instances</code>, each sized per-rank (<code>DP=1</code>) — on both <code>blis run</code> (#1531) and <code>blis replay</code> (#1556); re-supply it identically on replay — the TraceV2 header has no <code>data_parallel</code> field at all, and replay reads no parallelism field back from it, so omitting <code>--dp</code> on the replay leg silently compares an N-replica run against a 1-replica replay. Supported with <code>--enable-expert-parallel</code> since #1548 (the EP group is those same replicas' GPUs; re-supply both flags on replay). Rejected with PD disaggregation / the autoscaler / node pools (#1553).</td>
 </tr>
 <tr>
 <td><code>--enable-expert-parallel</code></td>
 <td>bool</td>
 <td>false</td>
-<td>Enable expert parallelism for MoE models (mirrors vLLM <code>--enable-expert-parallel</code>; <code>--latency-model trained-physics</code> only). A latency-model term only — EP-as-placement is #1548, so combining it with <code>--dp &gt; 1</code> fails fast.</td>
+<td>Enable expert parallelism for MoE models (mirrors vLLM <code>--enable-expert-parallel</code>; <code>--latency-model trained-physics</code> only). Since #1548 it affects <strong>step time</strong> (routed-expert weights shard across the <code>TP·DP</code> EP group; the MoE FFN dispatch/combines instead of all-reducing) as well as KV-capacity sizing (#1656), and is supported alongside <code>--dp &gt; 1</code>. Reserves no GPUs beyond those <code>--dp</code> placement already takes.</td>
 </tr>
 <tr>
 <td><code>--moe-comm-backend</code></td>
 <td>string</td>
 <td>""</td>
-<td>MoE all-to-all comm backend for the DP&gt;1 dispatch/combine cost (mirrors vLLM <code>VLLM_ALL2ALL_BACKEND</code>): <code>naive</code>, <code>allgather_reducescatter</code> (default), <code>pplx</code>, <code>deepep_high_throughput</code>, <code>deepep_low_latency</code>, <code>mori</code>, <code>flashinfer_all2allv</code>. Inert under DP-as-placement (each replica runs at <code>DP=1</code>).</td>
+<td>MoE all-to-all comm backend for the dispatch/combine cost (mirrors vLLM <code>VLLM_ALL2ALL_BACKEND</code>): <code>naive</code>, <code>allgather_reducescatter</code> (default), <code>pplx</code>, <code>deepep_high_throughput</code>, <code>deepep_low_latency</code>, <code>mori</code>, <code>flashinfer_all2allv</code>. Charged when <code>--dp &gt; 1</code> <strong>or</strong> <code>--enable-expert-parallel</code> (#1548); inert otherwise. The two DeepEP modes share one placeholder cost until #1568 calibrates them.</td>
+</tr>
+<tr>
+<td><code>--prefill-moe-comm-backend</code></td>
+<td>string</td>
+<td>""</td>
+<td>Per-role MoE all-to-all backend for prefill pool instances (<code>""</code> = inherit <code>--moe-comm-backend</code>). Mirrors <code>VLLM_ALL2ALL_BACKEND</code> being per-process, so prefill and decode engines can run different modes (#1548).</td>
+</tr>
+<tr>
+<td><code>--decode-moe-comm-backend</code></td>
+<td>string</td>
+<td>""</td>
+<td>Per-role MoE all-to-all backend for decode pool instances (<code>""</code> = inherit <code>--moe-comm-backend</code>) (#1548).</td>
 </tr>
 <tr>
 <td><code>--max-model-len</code></td>
