@@ -97,7 +97,27 @@ Archon is optional throughout: with a plan there is a deterministic number that 
 
 **Pause.** Add the `deliver:paused` label to the PR (or, before a PR exists, to the sub-issue). Every phase checks it as its first step and exits without invoking an agent or moving a label. Remove the label and re-issue the command to resume. You are never racing the loop.
 
+**Dismissals.** If the correct phase dismisses a finding rather than fixing it, it applies `deliver:has-dismissals`. The gate refuses `ready-for-merge` while that label is present, so a dismissal cannot quietly become a resolution — only the review phase removes it, and only when it has explicitly accepted each one. A reviewer that forgets costs a human glance rather than passing a waved-away finding.
+
 **Round count.** The `deliver:round-N` label is the only record of how many corrections have been spent, and — since `workflow_dispatch` has no chain-depth cap — the only thing bounding the loop. It is advanced *before* the correction agent runs, so a crashed or timed-out round still consumes its budget rather than being retried forever. A missing round label is therefore fatal to the correct phase, unlike other label failures, which only warn.
+
+## When a delivery goes quiet, and how to resume one
+
+**Every phase reports its own failure**, including a step that was cancelled, and applies `needs-human`.
+
+**A dead runner cannot report itself.** If the runner is lost mid-job, no step executes — not `always()` ones, not even the action's own post-steps. That happened once during development and the delivery left no branch, no PR, no comment and no label, which is indistinguishable from nobody having run the command. `deliver-stall-sweep.yml` exists for exactly that: it runs on a schedule and flags any open PR on a `deliver/issue-*` branch that carries neither terminal label and has had no comment for 90 minutes.
+
+The sweep stands down whenever a phase is genuinely running, because a legitimate verify can be silent for a long stretch while it waits on CI and then on a review. It also cannot say *which* phase stopped — a `workflow_dispatch` run records the dispatch ref rather than the PR, so runs cannot be attributed to a PR — so it links the run list instead.
+
+**To resume a stopped delivery without repeating the implementation**, dispatch **Deliver — Verify** directly with the PR and issue numbers, from the Actions tab or:
+
+```bash
+gh workflow run deliver-verify.yml -f pr_number=<PR> -f issue_number=<N>
+```
+
+The correction round count lives on the PR's `deliver:round-N` label, so resuming this way keeps it. Re-issuing `/approve-issue-for-pr-delivery` instead restarts the *implement* phase against the existing branch, which is rarely what you want after an infrastructure failure — nothing about the code needed redoing.
+
+**Any human push to a delivery branch re-verifies it**, so a verdict always describes the current head and a terminal label never outlives the commit it was granted to. An automation push does not double-trigger: a push made with `GITHUB_TOKEN` creates no workflow run, so the correct phase's own push cannot race the hand-off it performs. A new review or review comment on the PR also re-verifies, so a finding that arrives after the loop has converged is acted on rather than ignored.
 
 ## Configuration
 

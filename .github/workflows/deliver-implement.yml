@@ -23,6 +23,12 @@ permissions:
   actions: write        # required to dispatch the verify phase
   id-token: write
 
+# Shares one group with the other phases, keyed on the delivery branch this run will create,
+# so two deliveries of the same issue cannot run at once. Never cancel in progress.
+concurrency:
+  group: delivery-deliver/issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
 on:
   issue_comment:
     types: [created]
@@ -367,7 +373,7 @@ jobs:
       # cleanly), which reads differently to a phase that errored. Without it the command looks
       # ignored — there is no PR, so the sub-issue is the only place a human would look.
       - name: Report a delivery that opened no PR
-        if: always() && !failure() && !cancelled() && steps.paused.outputs.paused == 'false' && steps.pr.outputs.number == ''
+        if: success() && steps.paused.outputs.paused == 'false' && steps.pr.outputs.number == ''
         uses: actions/github-script@v8
         with:
           script: |
@@ -391,8 +397,17 @@ jobs:
       # `cancelled()` matters as much as `failure()`: the 60-minute job timeout CANCELS the
       # job, so a hung agent or model call would otherwise skip every reporter and leave the
       # command looking ignored. That is the most likely silent death in this phase.
+      # `always() && !success()`, NOT `failure() || cancelled()`. Per the GitHub expression
+      # docs, `failure()` is true when a previous step FAILS and `cancelled()` is true when the
+      # WORKFLOW is cancelled — a cancelled *step* is neither, so the old guard skipped the
+      # reporter exactly when a step was cancelled. Observed live on #1685.
+      #
+      # Scope note, so this is not over-claimed: this cannot report a dead RUNNER. When the
+      # runner receives a shutdown signal no step executes, whatever its `if:` says — even
+      # `always()` ones, and even the action's own post-steps. That class is the stall sweep's
+      # job (deliver-stall-sweep.yml), not this reporter's.
       - name: Report a failed implement
-        if: failure() || cancelled()
+        if: always() && !success() && steps.paused.outputs.paused != 'true'
         uses: actions/github-script@v8
         with:
           script: |

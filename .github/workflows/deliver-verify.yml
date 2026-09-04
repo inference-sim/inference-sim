@@ -43,9 +43,51 @@ on:
       issue_number:
         description: 'Sub-issue number being delivered'
         required: true
+  # A verdict must describe the CURRENT head, so any human push to a delivery branch
+  # re-verifies it. An automation push cannot reach here: a push made with GITHUB_TOKEN
+  # creates no workflow run, so the correct phase's own push does not double-trigger
+  # alongside the hand-off it performs.
+  push:
+    branches:
+      - 'deliver/issue-*'
+  # A finding that arrives after the loop converged should be acted on, not just able to
+  # halt it. Both review events re-verify.
+  pull_request_review:
+    types: [submitted]
+  pull_request_review_comment:
+    types: [created]
+
+# One delivery at a time, across all three phases. Every trigger resolves to the same
+# key — `deliver/issue-N` — so a dispatched verify and a human push cannot race, and a
+# verify cannot overlap the correct phase for the same PR. Never cancel in progress: a
+# half-finished phase that is killed reports nothing.
+concurrency:
+  group: delivery-${{ inputs.issue_number && format('deliver/issue-{0}', inputs.issue_number) || github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   verify:
+    # A review event authored by a bot must never re-trigger this phase. GITHUB_TOKEN-created
+    # events do not start workflows, so the loop's own comments are already inert — but
+    # claude-code-action can post inline review comments, and if it ever does so under an App
+    # token that would be a live trigger. Verify triggering itself is an unbounded agent loop,
+    # so this is guarded rather than assumed.
+    # Three guards, each authoritative for a different event shape:
+    #   - review.user.type   — pull_request_review (payload has `review`, not `comment`)
+    #   - comment.user.type  — pull_request_review_comment (payload has `comment`, not `review`)
+    # A bot-authored review event must never re-trigger this phase: verify triggering itself is
+    # an unbounded agent loop.
+    #   - the head-ref test — review triggers cannot be branch-filtered in `on:`, so without it
+    #     every review comment anywhere in the repo wakes the single self-hosted runner just to
+    #     have Resolve exit quietly. That runner is a known bottleneck, so the wakeup is skipped
+    #     rather than absorbed.
+    if: |
+      github.event.review.user.type != 'Bot' &&
+      github.event.comment.user.type != 'Bot' &&
+      (
+        (github.event_name != 'pull_request_review' && github.event_name != 'pull_request_review_comment')
+        || startsWith(github.event.pull_request.head.ref, 'deliver/issue-')
+      )
     runs-on: [self-hosted]
     # Generous: the full test suite plus an archon build plus an agent review. The single
     # self-hosted runner is a known contention point, tracked as a follow-up on #1654.
@@ -53,8 +95,10 @@ jobs:
     env:
       REPO: ${{ github.repository }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      PR: ${{ inputs.pr_number }}
-      ISSUE_NUMBER: ${{ inputs.issue_number }}
+      # Empty on push and review events; the Resolve step below fills them via GITHUB_ENV,
+      # which overrides these for every later step and expression.
+      PR: ${{ inputs.pr_number || '' }}
+      ISSUE_NUMBER: ${{ inputs.issue_number || '' }}
       # Deliberately NOT the implement phase's model. Reviewer and implementer being different
       # models is what keeps this from being an agent grading its own homework. Override with
       # the DELIVER_VERIFY_MODEL repository variable.
@@ -62,12 +106,54 @@ jobs:
       MAX_ROUNDS: ${{ vars.DELIVER_MAX_ROUNDS || '3' }}
 
     steps:
+      # workflow_dispatch supplies both numbers as inputs. A push or review event supplies
+      # neither, so they are derived here and written to GITHUB_ENV, which overrides the
+      # job-level env for every later step — so nothing downstream needs to know which
+      # event started this run.
+      #
+      # The issue number comes from the branch name (`deliver/issue-<N>`), which this loop
+      # owns and always creates, and the PR is the open PR whose head ref is that branch.
+      # A delivery branch with no open PR is not a delivery: exit quietly rather than
+      # guessing, since re-verifying a branch nobody proposed has no meaning.
+      - name: Resolve the delivery target
+        id: resolve
+        env:
+          # Via env, never interpolated into the script: a ref name is attacker-influenceable
+          # and inlining it is a script-injection vector.
+          EVENT_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+        run: |
+          set -uo pipefail
+          branch="$EVENT_BRANCH"
+          if [[ -n "$PR" && -n "$ISSUE_NUMBER" ]]; then
+            echo "dispatched for PR #$PR / issue #$ISSUE_NUMBER"
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ ! "$branch" =~ ^deliver/issue-([0-9]+)$ ]]; then
+            echo "'$branch' is not a delivery branch — nothing to verify."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          issue="${BASH_REMATCH[1]}"
+          pr=$(gh pr list --repo "$REPO" --head "$branch" --state open --json number \
+                 --jq '.[0].number // empty') || pr=""
+          if [[ -z "$pr" ]]; then
+            echo "no open PR on $branch — nothing to verify."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "resolved PR #$pr / issue #$issue from $branch (event: ${{ github.event_name }})"
+          echo "PR=$pr" >> "$GITHUB_ENV"
+          echo "ISSUE_NUMBER=$issue" >> "$GITHUB_ENV"
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+
       # Inputs are numbers a collaborator can type. Validate before use, and confirm the PR is
       # one this loop actually owns: same repository (never a fork) and on deliver/issue-<N>.
       # Without that guard, dispatching this workflow at a fork PR would run fork code on the
       # self-hosted runner.
       - name: Validate the target PR
         id: target
+        if: steps.resolve.outputs.proceed == 'true'
         run: |
           set -uo pipefail
           [[ "$PR" =~ ^[0-9]+$ && "$ISSUE_NUMBER" =~ ^[0-9]+$ ]] \
@@ -100,6 +186,7 @@ jobs:
       # BC-9, before any agent runs or any label moves.
       - name: Honour deliver:paused
         id: paused
+        if: steps.resolve.outputs.proceed == 'true'
         run: |
           # Read and status-check separately. Piping straight into grep FAILS OPEN: a failed API
           # call produces no output, grep finds no match, and the phase proceeds as though the
@@ -390,6 +477,24 @@ jobs:
           [[ -n "$touched" ]] && echo "self-verification files touched: $touched" || echo "no workflow files touched"
           echo "touched=$touched" >> "$GITHUB_OUTPUT"
 
+      # Item 5: a dismissal must not become a resolution silently. The correct phase applies
+      # `deliver:has-dismissals` when it dismisses a finding; the review phase is told to
+      # remove it only when it has explicitly accepted each one. Reading it here makes the
+      # state visible to the GATE rather than depending on the reviewer's prose — and it fails
+      # closed: a reviewer that forgets to clear it blocks `ready` instead of passing quietly.
+      - name: Read the dismissal state
+        id: dismissals
+        if: steps.paused.outputs.paused == 'false'
+        run: |
+          set -uo pipefail
+          if ! labels=$(gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name'); then
+            echo "::error::could not read labels on #$PR; refusing to judge the dismissal state"
+            echo "state=unknown" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if grep -qx 'deliver:has-dismissals' <<< "$labels"; then state=open; else state=none; fi
+          echo "DISMISSALS=$state"
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+
       # Recorded BEFORE the agent runs. The marker is only read from comments newer than this,
       # so the previous round's verdict can never be mistaken for this round's.
       - name: Mark the review start
@@ -432,7 +537,7 @@ jobs:
             pr-review-toolkit@claude-plugins-official
             superpowers@superpowers-marketplace
           prompt: |
-            PR #${{ inputs.pr_number }} is open for sub-issue #${{ inputs.issue_number }} and
+            PR #${{ env.PR }} is open for sub-issue #${{ env.ISSUE_NUMBER }} and
             something changed. Determine the verdict. You are NOT fixing anything — do not edit
             files and do not push.
 
@@ -443,8 +548,8 @@ jobs:
             - archon's full review is at `${{ runner.temp }}/archon-output.md` and has already
               been posted to the PR. Read it.
 
-            Read the sub-issue for its contracts (`gh issue view ${{ inputs.issue_number }}`)
-            and the diff (`gh pr diff ${{ inputs.pr_number }}`). Then run the BLIS methodology
+            Read the sub-issue for its contracts (`gh issue view ${{ env.ISSUE_NUMBER }}`)
+            and the diff (`gh pr diff ${{ env.PR }}`). Then run the BLIS methodology
             review — use the `blis-pr-review` skill — with archon's output and those contracts
             as your inputs.
 
@@ -453,6 +558,21 @@ jobs:
             were addressed, and for each dismissal in the most recent correction comment,
             explicitly ACCEPT or RE-RAISE it. A dismissal you neither accept nor re-raise counts
             as unresolved.
+
+            The dismissal state for this PR is currently: `${{ steps.dismissals.outputs.state }}`.
+
+            If that is `open`, the correction phase dismissed at least one finding. Address each
+            one explicitly in your comment. THEN, and only if you have accepted every one of
+            them, clear the state:
+
+            ```bash
+            gh api -X DELETE /repos/${{ github.repository }}/issues/${{ env.PR }}/labels/deliver:has-dismissals
+            ```
+
+            Do not clear it because the PR otherwise looks fine — while it is set, the gate
+            refuses `ready-for-merge` and sends the delivery to a human instead. That is the
+            intended outcome when a dismissal has not been adjudicated. If you re-raise a
+            dismissed finding, leave the label in place and return NOT-GREEN.
 
             Post ONE comment on the PR with your verdict. A finding must name a file and what
             specifically is wrong — "consider improving error handling" is not a finding. Number
@@ -522,6 +642,7 @@ jobs:
           CI_STATUS: ${{ steps.ci.outputs.status }}
           PLAN_GATE: ${{ steps.plan.outputs.gate }}
           AGENT_VERDICT: ${{ steps.verdict.outputs.value }}
+          DISMISSALS: ${{ steps.dismissals.outputs.state }}
           ROUND: ${{ steps.round.outputs.value }}
         # pipefail is essential: without it the pipeline reports tee's status, so the gate
         # exiting 2 on a wiring error would look like a successful step with no decision.
@@ -635,8 +756,17 @@ jobs:
       # would then comment and apply needs-human to a PR the loop was just told it does not own.
       # Any write-access user can send a misdirected dispatch, so that write must not happen. A
       # refused dispatch is already reported by the ::error:: in the validation step itself.
+      # `always() && !success()`, NOT `failure() || cancelled()`. Per the GitHub expression
+      # docs, `failure()` is true when a previous step FAILS and `cancelled()` is true when the
+      # WORKFLOW is cancelled — a cancelled *step* is neither, so the old guard skipped the
+      # reporter exactly when a step was cancelled. Observed live on #1685.
+      #
+      # Scope note, so this is not over-claimed: this cannot report a dead RUNNER. When the
+      # runner receives a shutdown signal no step executes, whatever its `if:` says — even
+      # `always()` ones, and even the action's own post-steps. That class is the stall sweep's
+      # job (deliver-stall-sweep.yml), not this reporter's.
       - name: Report a failed verify
-        if: (failure() || cancelled()) && steps.target.outputs.owned == 'true'
+        if: always() && !success() && steps.target.outputs.owned == 'true' && steps.paused.outputs.paused != 'true'
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |

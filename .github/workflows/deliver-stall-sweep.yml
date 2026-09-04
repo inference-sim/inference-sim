@@ -1,0 +1,145 @@
+name: Deliver — Stall Sweep
+
+# The backstop for a delivery that goes quiet without any phase reporting (#1684 item 2).
+#
+# The per-phase reporters cover a step failing or being cancelled. They cannot cover the
+# runner dying: when a self-hosted runner receives a shutdown signal, NO step executes —
+# not `always()` ones, not even the action's own post-steps. That was observed live on
+# #1685, where a delivery left no branch, no PR, no comment and no label, and was therefore
+# indistinguishable from an issue nobody had run the command on. Only an observer outside
+# the job can see that.
+#
+# A delivery is identified from the PR side, deliberately not from a phase label. An open PR
+# whose head ref matches `deliver/issue-*`, which carries neither terminal label, and which is
+# not paused, is in flight.
+# The obvious alternative does not work and is worth recording so nobody retries it: a
+# workflow_dispatch run reports `head_branch` as the DISPATCH ref (`main`) and does not
+# expose its inputs, so a verify or correct run cannot be attributed to a PR from run
+# metadata at all.
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  schedule:
+    # Every 30 minutes at an off-round minute, so a 90-minute silence is caught within
+    # about half an hour of crossing the threshold without every repo in the world
+    # hitting the API on :00.
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: deliver-stall-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      QUIET_MINUTES: '90'
+
+    steps:
+      # A legitimate verify can be silent for a long stretch — it waits on the repository CI
+      # and then on an agent review, inside a 120-minute budget. Flagging a delivery that is
+      # merely slow would train people to ignore the label, so the sweep stands down whenever
+      # any phase is genuinely running.
+      #
+      # This does not hide the case it exists for: a run killed by a dead runner does not stay
+      # `in_progress` forever — GitHub reconciles it to a conclusion (observed at roughly 17
+      # minutes on #1685), after which the sweep sees no active phase and can act.
+      - name: Stand down if any delivery phase is running
+        id: active
+        run: |
+          set -uo pipefail
+          active=0
+          # `queued` as well as `in_progress`: with one self-hosted runner a phase can sit
+          # queued for a long time, and that is a delivery in flight, not a dead one. Without
+          # this the sweep would flag it and tell a human "a phase most likely died", which is
+          # a misdiagnosis of a queue.
+          for wf in deliver-implement.yml deliver-verify.yml deliver-correct.yml; do
+            for st in in_progress queued; do
+              if ! n=$(gh api "/repos/$REPO/actions/workflows/$wf/runs?status=$st&per_page=1" \
+                         --jq '.total_count'); then
+                echo "::warning::could not read $wf $st runs; assuming a phase may be active and standing down"
+                active=1; break 2
+              fi
+              if [[ "$n" != "0" ]]; then
+                echo "$wf has a $st run"
+                active=1; break 2
+              fi
+            done
+          done
+          echo "active=$active" >> "$GITHUB_OUTPUT"
+          [[ "$active" == "0" ]] && echo "no phase running — sweeping" || echo "standing down"
+
+      - name: Flag deliveries that have gone quiet
+        if: steps.active.outputs.active == '0'
+        run: |
+          set -uo pipefail
+          if ! prs=$(gh pr list --repo "$REPO" --state open --limit 100 \
+                       --json number,headRefName,labels,createdAt); then
+            echo "::error::could not list pull requests"; exit 1
+          fi
+
+          # In flight = a delivery branch, open, no terminal verdict, and NOT paused.
+          #
+          # Excluding deliver:paused matters: a paused delivery goes quiet BY DESIGN, so it
+          # crosses the 90-minute threshold every time. Flagging it would apply needs-human over
+          # a human's explicit hold and force manual cleanup before the delivery could resume —
+          # the automation overruling the operator, which is the opposite of what the pause is
+          # for.
+          candidates=$(jq -r '.[]
+            | select(.headRefName | test("^deliver/issue-[0-9]+$"))
+            | select([.labels[].name] | any(. == "ready-for-merge" or . == "needs-human") | not)
+            | select([.labels[].name] | any(. == "deliver:paused") | not)
+            | "\(.number)\t\(.createdAt)"' <<< "$prs")
+
+          if [[ -z "$candidates" ]]; then echo "no deliveries in flight"; exit 0; fi
+
+          cutoff=$(date -u -d "-${QUIET_MINUTES} minutes" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+                   || date -u -v-"${QUIET_MINUTES}"M +%Y-%m-%dT%H:%M:%SZ)
+          echo "cutoff: $cutoff"
+
+          while IFS=$'\t' read -r pr created; do
+            [[ -n "$pr" ]] || continue
+            # Newest comment, or the PR's own creation time when it has none at all — a
+            # delivery that never got as far as commenting is exactly the case in question.
+            if ! last=$(gh api "/repos/$REPO/issues/$pr/comments?per_page=100" --paginate \
+                          --jq '[.[].created_at] | max // empty'); then
+              echo "::warning::could not read comments on #$pr; skipping rather than guessing"
+              continue
+            fi
+            [[ -n "$last" ]] || last="$created"
+            if [[ "$last" > "$cutoff" ]]; then
+              echo "#$pr last activity $last — within the window, leaving alone"
+              continue
+            fi
+
+            echo "#$pr last activity $last — older than $cutoff, flagging"
+            runs="${{ github.server_url }}/${{ github.repository }}/actions"
+            {
+              echo "## Delivery stalled — no activity for ${QUIET_MINUTES} minutes"
+              echo
+              echo "No delivery phase is running and nothing has been posted here since \`$last\`."
+              echo "A phase most likely died without reporting — the usual cause is the runner"
+              echo "being lost, in which case no step inside the job can execute, not even its"
+              echo "failure reporter."
+              echo
+              echo "This sweep cannot say which phase stopped: a \`workflow_dispatch\` run records"
+              echo "the dispatch ref rather than the PR, so runs cannot be attributed to a PR."
+              echo "The [workflow run list]($runs) shows it immediately."
+              echo
+              echo "The delivery will not resume on its own. Re-issue"
+              echo "\`/approve-issue-for-pr-delivery\` on the sub-issue, or dispatch"
+              echo "**Deliver — Verify** directly with this PR and issue number to resume at"
+              echo "verification without repeating the implementation."
+            } > /tmp/stall-$pr.md
+            gh pr comment "$pr" --repo "$REPO" --body-file /tmp/stall-$pr.md \
+              || echo "::warning::could not comment on #$pr"
+            gh api -X POST "/repos/$REPO/issues/$pr/labels" -f 'labels[]=needs-human' >/dev/null \
+              || echo "::warning::could not label #$pr"
+          done <<< "$candidates"
