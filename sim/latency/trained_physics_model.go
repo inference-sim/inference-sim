@@ -2,10 +2,10 @@ package latency
 
 import (
 	"fmt"
-	"github.com/sirupsen/logrus"
 	"math"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/sirupsen/logrus"
 )
 
 // TrainedPhysicsModel implements a physics-informed latency model that combines
