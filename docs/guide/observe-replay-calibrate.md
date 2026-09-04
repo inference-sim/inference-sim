@@ -266,10 +266,11 @@ Replay also accepts all shared simulation config flags (`--latency-model`, `--to
       --total-kv-blocks 20000 --seed 42 --horizon 9223372036854775807   # unlimited
     ```
 
-    The physics guards still apply: `--enable-expert-parallel` with `--dp > 1` and PD
-    disaggregation with `--dp > 1` are unmodeled and fail fast on **both** commands
-    (#1548 / #1553); the autoscaler and node pools are rejected by `blis replay`
-    unconditionally, independently of `--dp`.
+    `--enable-expert-parallel` is supported alongside `--dp > 1` on both commands since
+    #1548, and — like `--dp` itself — must be re-supplied identically on the replay leg
+    (the EP-group width is a model-level input, not a trace field). PD disaggregation with
+    `--dp > 1` remains unmodeled and fails fast on both commands (#1553); the autoscaler
+    and node pools are rejected by `blis replay` unconditionally, independently of `--dp`.
 
 ### How Replay Differs from `blis run`
 

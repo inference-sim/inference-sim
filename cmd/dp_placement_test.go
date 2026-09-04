@@ -31,12 +31,25 @@ func TestPlanDPPlacement(t *testing.T) {
 		wantActive       bool
 		wantReplicas     int
 		wantPerRankDP    int
+		wantEPGroupDP    int    // logical EP-group DP width the plan must carry (#1548); 0 = none
 		wantErrContains  string // non-empty ⇒ expect an error containing this substring
 	}{
 		{
 			name:          "default dp=1 MoE is a no-op",
 			isMoE:         true,
 			dp:            1,
+			wantActive:    false,
+			wantReplicas:  1,
+			wantPerRankDP: 1,
+		},
+		{
+			// The short-circuit at dp=1 with EP on: no expansion, so nothing erases the
+			// config's own DP and there is no logical width to carry (EPGroupDP stays 0).
+			// Distinct from the dp>1 EP-on row below, which does carry one.
+			name:          "MoE dp=1 with expert parallel is a no-op and carries no width",
+			isMoE:         true,
+			dp:            1,
+			epOn:          true,
 			wantActive:    false,
 			wantReplicas:  1,
 			wantPerRankDP: 1,
@@ -58,11 +71,18 @@ func TestPlanDPPlacement(t *testing.T) {
 			wantPerRankDP: 1,
 		},
 		{
-			name:            "MoE dp>1 with expert parallel is guarded (→#1548)",
-			isMoE:           true,
-			dp:              2,
-			epOn:            true,
-			wantErrContains: "#1548",
+			// #1548 lifted this rejection: expert parallelism reserves no GPUs beyond the
+			// N×TP the DP placement already takes, so the PLAN is identical to EP-off. What
+			// EP changes is how experts map onto that group, which travels separately as the
+			// logical EP-group DP width (epGroupDPForPlacement), not in the plan.
+			name:          "MoE dp>1 with expert parallel is allowed and plans identically (#1548)",
+			isMoE:         true,
+			dp:            2,
+			epOn:          true,
+			wantActive:    true,
+			wantReplicas:  2,
+			wantPerRankDP: 1,
+			wantEPGroupDP: 2, // the one thing EP adds: the logical group width to carry
 		},
 		{
 			name:            "MoE dp>1 with PD disaggregation is guarded",
@@ -110,6 +130,16 @@ func TestPlanDPPlacement(t *testing.T) {
 			}
 			if plan.PerRankDP != tc.wantPerRankDP {
 				t.Errorf("PerRankDP: got %d, want %d", plan.PerRankDP, tc.wantPerRankDP)
+			}
+			// #1548: the logical EP-group width must survive PerRankDP's erasure of DP —
+			// and must be absent (0 ⇒ no option) whenever expert parallelism is off, which
+			// is what keeps every pre-#1548 config byte-identical.
+			if plan.EPGroupDP != tc.wantEPGroupDP {
+				t.Errorf("EPGroupDP: got %d, want %d", plan.EPGroupDP, tc.wantEPGroupDP)
+			}
+			if opts := plan.EPGroupOptions(); (len(opts) > 0) != (tc.wantEPGroupDP > 1) {
+				t.Errorf("EPGroupOptions() returned %d options for EPGroupDP=%d; a width of 0 or 1 "+
+					"must yield none (INV-6)", len(opts), plan.EPGroupDP)
 			}
 		})
 	}
@@ -495,15 +525,21 @@ func TestRunCmd_MoEDP1_ByteIdentical(t *testing.T) {
 	}
 }
 
-// TestRunCmd_MoEDPPlacement_GuardedCombo_Rejected is the BC-7 system guard: the
-// planDPPlacement error for an unsupported combo (here --enable-expert-parallel +
-// MoE --dp>1) is actually converted to a logrus.Fatalf by runCmd (exit 1), not
-// merely returned. Complements the pure-function TestPlanDPPlacement guard cases.
+// TestRunCmd_MoEDPPlacement_GuardedCombo_Rejected is the BC-7 system guard: a
+// planDPPlacement error for a still-unsupported combo (PD disaggregation + MoE --dp>1,
+// #1553) is actually converted to a logrus.Fatalf by runCmd (exit 1), not merely
+// returned. Complements the pure-function TestPlanDPPlacement guard cases.
+//
+// It used to exercise --enable-expert-parallel; #1548 made that combination SUPPORTED
+// (see TestRunCmd_MoEDPPlacement_EPOn_Runs), so the system-level "the error really does
+// terminate" coverage moved to a combo that is still guarded.
 func TestRunCmd_MoEDPPlacement_GuardedCombo_Rejected(t *testing.T) {
 	if os.Getenv("BLIS_RUN_DP_EPGUARD") == "1" {
 		args := append(dpRunBaseArgs(),
-			"--dp", "2", "--num-instances", "1", "--total-kv-blocks", "20000",
-			"--enable-expert-parallel",
+			// --num-instances must cover the pools, or the PD topology check fatals first
+			// on its own (unrelated) message before planDPPlacement is reached.
+			"--dp", "2", "--num-instances", "2", "--total-kv-blocks", "20000",
+			"--prefill-instances", "1", "--decode-instances", "1",
 		)
 		rootCmd.SetArgs(args)
 		_ = rootCmd.Execute()
@@ -513,15 +549,53 @@ func TestRunCmd_MoEDPPlacement_GuardedCombo_Rejected(t *testing.T) {
 	cmd.Env = append(os.Environ(), "BLIS_RUN_DP_EPGUARD=1")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("expected non-zero exit (Fatalf) for --enable-expert-parallel + MoE --dp>1, got exit 0; output:\n%s", out)
+		t.Fatalf("expected non-zero exit (Fatalf) for PD disaggregation + MoE --dp>1, got exit 0; output:\n%s", out)
 	}
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
 		t.Fatalf("expected exit code 1 (logrus.Fatalf), got %v; output:\n%s", err, out)
 	}
-	if !strings.Contains(string(out), "#1548") {
-		t.Errorf("EP-on guard message should reference #1548 (hashed, as production writes it); got:\n%s", out)
+	if !strings.Contains(string(out), "#1553") {
+		t.Errorf("PD guard message should reference #1553 (hashed, as production writes it); got:\n%s", out)
 	}
+}
+
+// TestRunCmd_MoEDPPlacement_EPOn_Runs is BC-1 at the system level: MoE --dp N with
+// --enable-expert-parallel — rejected before #1548 — now completes, spawns exactly the
+// same num_instances × N replicas as the EP-off run (expert parallelism reserves NO extra
+// GPUs; the EP group IS those replicas' GPUs), and conserves requests (INV-1).
+func TestRunCmd_MoEDPPlacement_EPOn_Runs(t *testing.T) {
+	if os.Getenv("BLIS_RUN_EP_PLACEMENT") == "1" {
+		args := append(dpRunBaseArgs(),
+			"--dp", "2", "--num-instances", "2", "--total-kv-blocks", "20000",
+			"--enable-expert-parallel", "--latency-model", "trained-physics",
+		)
+		rootCmd.SetArgs(args)
+		if err := rootCmd.Execute(); err != nil {
+			os.Exit(2)
+		}
+		os.Exit(0)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRunCmd_MoEDPPlacement_EPOn_Runs$")
+	cmd.Env = append(os.Environ(), "BLIS_RUN_EP_PLACEMENT=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("MoE --dp 2 --enable-expert-parallel must now run (#1548), got %v; output:\n%s", err, out)
+	}
+	got := string(out)
+	// 2 logical × dp 2 = 4 replicas — the same count the EP-off plan produces, which is
+	// AC-1: expert parallelism reserves no GPUs beyond the ones DP placement already took.
+	if !strings.Contains(got, `"instance_id": "instance_3"`) {
+		t.Errorf("BC-1: expected 4 engine replicas (2 logical × --dp 2), same as EP-off; output:\n%s", got)
+	}
+	if strings.Contains(got, `"instance_id": "instance_4"`) {
+		t.Errorf("BC-1: expected exactly 4 replicas, but instance_4 is present")
+	}
+	// The unpriced inter-replica fabric must be disclosed, not silently optimistic (R1).
+	if !strings.Contains(got, "inter-replica fabric cost is NOT priced") {
+		t.Errorf("expected the unpriced inter-replica fabric disclosure; output:\n%s", got)
+	}
+	clusterConservationHolds(t, got) // INV-1
 }
 
 // TestDPPlacement_PerRankKV_NoDoubleCount is the BC-2 law: with DP-as-placement,
@@ -760,13 +834,13 @@ func TestResolveDPPlacement_MutatesDeploymentVars(t *testing.T) {
 			wantPerRankDP: 1, wantNumInst: 2, wantTotalKV: 40000, wantMaxModelLen: 1_000_000,
 		},
 		{
-			// A guard error must leave every var untouched, so a caller that (incorrectly)
-			// ignored the error cannot run a half-applied plan.
-			name: "EP-on guard errors and mutates nothing",
+			// #1548: EP-on is no longer a guard. It mutates the deployment vars EXACTLY as
+			// the EP-off active plan does (same row values as "active plan expands the
+			// count..." above), because expert parallelism reserves no extra GPUs.
+			name: "EP-on is allowed and mutates identically to EP-off",
 			dp:   4, epOn: true, autoKV: true,
 			inNumInstances: 2, inTotalKV: 40000, inMaxModelLen: 1_000_000,
-			wantErrContains: "#1548",
-			wantNumInst:     2, wantTotalKV: 40000, wantMaxModelLen: 1_000_000,
+			wantPerRankDP: 1, wantNumInst: 8, wantTotalKV: 10000, wantMaxModelLen: 160000,
 		},
 		{
 			name: "PD guard errors and mutates nothing",

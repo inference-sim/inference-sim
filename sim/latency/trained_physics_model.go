@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/sirupsen/logrus"
 )
 
 // TrainedPhysicsModel implements a physics-informed latency model that combines
@@ -38,8 +39,10 @@ import (
 //   - T_weight: Model weight loading bandwidth (per-step fixed cost)
 //   - T_tp_attn, T_tp_denseFFN: attention / dense-FFN tensor-parallel all-reduce
 //     (the pre-#1419 monolithic T_tp, split so DP scales each by /dp)
-//   - T_moe_reduce: MoE-FFN all-reduce, charged only at DP=1, TP>1 (#1419)
-//   - T_moe_dispatch: MoE dispatch/combine all-to-all, charged only at DP>1 (#1419)
+//   - T_moe_reduce: MoE-FFN all-reduce, charged at DP=1, TP>1 with expert parallelism
+//     OFF (#1419, #1548)
+//   - T_moe_dispatch: MoE dispatch/combine all-to-all, charged at DP>1 OR with expert
+//     parallelism ON (#1419, #1548). Exactly one of these two is charged for an MoE model.
 //   - L: Number of transformer layers
 //   - B: Batch size (number of requests)
 //   - nMoE: Number of MoE layers (0 for dense models)
@@ -186,19 +189,74 @@ type TrainedPhysicsModel struct {
 	weightBPP          float64 // EffectiveWeightBytesPerParam (FP8-aware) — weight memory only
 	activationBPP      float64 // BytesPerParam (compute/activation dtype) — hidden-state comm volume
 
-	// DP/EP features (#1419), frozen at construction.
-	//
-	// Note: there is intentionally no `ep` field. Expert parallelism does not enter
-	// the cost model as a separate divisor — routed-expert weight/compute are scoped
-	// to the flattened moeGroup = TP·DP (EP-mode-agnostic: EP-off tensor-shards experts,
-	// EP-on owns whole experts, identical per-GPU bytes), and the dispatch gate is DP>1,
-	// not EP. EnableExpertParallel therefore has no step-time effect today; if a future
-	// per-EP-mode profile is added, read it from the ModelHardwareConfig at that point.
+	// DP/EP features (#1419, #1548), frozen at construction.
 	dp                 int                 // Data parallelism degree (>= 1)
 	moeGroup           int                 // Flattened MoE group = TP·DP for MoE, TP for dense (EffectiveMoEGroupSize)
 	sharedExpertFFNDim int                 // Shared-expert FFN dim; 0 = no shared experts (B3 gate)
 	commFamily         moeCommFamily       // MoE dispatch/combine volume family (resolved from MoECommBackend)
+	all2All            all2AllProfile      // Per-backend-mode dispatch/combine step-time profile (#1548)
 	placement          sim.ExpertPlacement // Maps routed-token population → per-GPU MoE load (default BalancedPlacement)
+
+	// ─── Expert-parallel mode (#1548) ────────────────────────────────────────
+	//
+	// epOn is "expert parallelism is really in force here": an MoE model with
+	// --enable-expert-parallel AND an EP group wider than one GPU. It makes the toggle
+	// step-time-LIVE by moving the MoE-FFN communication boundary, which mirrors what
+	// vLLM actually does rather than adding a term:
+	//
+	//   EP off → the routed experts are TENSOR-sharded and replicated per DP rank, so the
+	//            MoE FFN output is completed by a TP all-reduce (tMoEReduce).
+	//   EP on  → each rank owns WHOLE experts out of the EP group, so tokens reach their
+	//            owner by a dispatch/combine all-to-all (tMoEDispatch) instead.
+	//
+	// There is deliberately NO second additive comm term: the two existing terms are
+	// mutually exclusive and epOn only moves the boundary between them (adding a term
+	// would double-charge the DP>1 dispatch cost the model already prices, #1530).
+	//
+	// expertShardGroup is the group routed-expert WEIGHTS are sharded over
+	// (EffectiveExpertShardGroupSize). It is NOT moeGroup: routed-expert COMPUTE is
+	// EP-mode-invariant (with EP on, G GPUs jointly process the whole group's tokens, so
+	// per-GPU FLOPs land on the same T_local·k/TP as tensor-sharding does), while the
+	// per-GPU WEIGHT footprint falls from num_experts/TP to num_experts/EP. Conflating
+	// them would divide compute by the EP group too and under-charge it by DP.
+	//
+	// It also sizes the dispatch/combine collective, because the all-to-all runs over the
+	// expert-owning group.
+	//
+	// Inertness, stated precisely (the INV-6/INV-BC-DP1 boundary). With expert parallelism
+	// OFF — and for every dense model, whose isMoE gate forces it — epOn is false and
+	// expertShardGroup == moeGroup, so StepTime is bit-for-bit unchanged from a pre-#1548
+	// build. That is the byte-identity guarantee.
+	//
+	// It does NOT extend to EP-ON configs, which were expressible before #1548 and whose
+	// step time this feature deliberately changes — that IS the feature. The one exception is
+	// documented and tested: at DP=1 on the all-gather comm family (vLLM's default) EP-on and
+	// EP-off come out numerically EQUAL, because all-gather+reduce-scatter moves exactly the
+	// ring-all-reduce volume and β_EP defaults to β₄. On a modular all-to-all backend at the
+	// same DP=1 they differ (see TestStepTime_EPReplacesReduceWithDispatch), so "EP-on is
+	// inert at DP=1" would be an overclaim.
+	epOn             bool
+	expertShardGroup int
+
+	// expertWeightShardGroup is expertShardGroup with the "a loaded rank holds one WHOLE
+	// expert" clamp applied (ClampExpertShardToExpertCount), and is the divisor for the
+	// routed-expert WEIGHT term only. It exists because the two consumers of the group need
+	// different bounds:
+	//
+	//   - WEIGHTS (this field) cannot be divided by more ranks than there are experts. At
+	//     EP=16 over 8 experts, num_experts/EP = 0.5 charges half an expert's bytes to a GPU
+	//     that in reality holds one whole expert — modelling memory that does not exist.
+	//     The KV-capacity model already clamps this exact divisor (resolveExpertShardSize),
+	//     so leaving step time unclamped would falsify the agreement between them.
+	//   - The DISPATCH/COMBINE collective (expertShardGroup, unclamped) genuinely runs over
+	//     every rank in the group, however few experts there are.
+	//
+	// The clamp is applied ONLY when expert parallelism is on. Under EP-off the experts are
+	// TENSOR-sharded, so a rank really does hold a FRACTION of every expert and a
+	// sub-one-expert charge is correct — clamping there would both be wrong physics and
+	// change the step time of every pre-#1548 MoE config whose TP·DP group exceeds its
+	// expert count (INV-6).
+	expertWeightShardGroup int
 
 	// Pre-converted hardware specs for hot-path efficiency.
 	flopsPeakUs float64 // FLOP/µs (divide FLOPs by this → µs)
@@ -618,20 +676,26 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	// Enhancement: use EffectiveWeightBytesPerParam (FP8-aware) and split MoE/dense.
 	//
 	// Routed-expert weight bytes are scoped via ExpertPlacement (B1 fix, #1419):
-	// PerGPUExpertCount = numExperts/moeGroup full-expert-equivalents resident per GPU,
-	// replacing the old batch-dependent nEff = min(N, max(k, B·k))/tp. This matches both
-	// vLLM EP modes (EP-off tensor-shards experts over the flattened TP·DP group; EP-on
-	// owns numExperts/(TP·DP) whole experts) and is applied unconditionally for MoE,
-	// including DP=1/EP-off. It is the saturation-point behaviour the model targets and
-	// INTENTIONALLY changes MoE step-time output versus the old batch-dependent term.
-	// Weight loading is /tp (not /dp): weights are replicated across DP groups.
+	// PerGPUExpertCount = numExperts/expertShardGroup full-expert-equivalents resident per
+	// GPU, replacing the old batch-dependent nEff = min(N, max(k, B·k))/tp. It is applied
+	// unconditionally for MoE, including DP=1/EP-off. It is the saturation-point behaviour
+	// the model targets and INTENTIONALLY changes MoE step-time output versus the old
+	// batch-dependent term. Weight loading is /tp (not /dp): weights are replicated across
+	// DP groups.
+	//
+	// The divisor is expertWeightShardGroup, NOT moeGroup (#1548). They coincide for every
+	// pre-#1548 config — EP-off tensor-shards the experts over the flattened TP·DP group,
+	// EP-on at this config's own DP owns numExperts/(TP·DP) whole experts, identical
+	// per-GPU bytes — and diverge only for a DP-as-placement replica (own DP rewritten to
+	// 1) whose LOGICAL EP group is wider, where EP-on really does put fewer experts on
+	// each GPU. See ModelHardwareConfig.EffectiveExpertShardGroupSize.
 	bpp := m.weightBPP
 	bytesAttn := L * d * (2*d + 2*dKV) * bpp / tp
 
 	// MoE and dense layers have different FFN dims and different weight loading.
 	var bytesFfn float64
 	if m.numMoELayers > 0 {
-		wLoad := m.placement.Resolve(totalPrefillTokens+totalDecodeTokens, kEff, m.numExperts, m.moeGroup, m.dp)
+		wLoad := m.placement.Resolve(totalPrefillTokens+totalDecodeTokens, kEff, m.numExperts, m.expertWeightShardGroup, m.dp)
 		bytesFfn += float64(m.numMoELayers) * wLoad.PerGPUExpertCount * 3 * d * float64(m.dFFMoE) * bpp
 		// Shared-expert weight (B3): a standard MLP sharded over the attention TP group
 		// (size tp, NOT the flattened MoE group), loaded once per MoE layer.
@@ -656,7 +720,8 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	//   tTpAttention — attention all-reduce, one unit per layer (computed here).
 	//   tTpDenseFFN  — dense-FFN all-reduce, one unit per dense layer (computed here).
 	//   tMoEReduce / tMoEDispatch — MoE-FFN communication, computed just below and
-	//     partitioned on the DP boundary (DP=1 all-reduce vs DP>1 dispatch/combine).
+	//     partitioned on the DP-or-EP boundary (#1548): an all-reduce at DP=1 with expert
+	//     parallelism off, dispatch/combine at DP>1 or with expert parallelism on.
 	//
 	// tpAllReduceBasis(units, tokens, tp) is the ring-all-reduce basis: units × tokens ×
 	// hidden × activationBPP × 2 (ring phases) × (tp-1)/tp / bwHbmUs. β₄ absorbs the
@@ -671,31 +736,42 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	totalTokens := totalPrefillTokens + totalDecodeTokens
 	var tTpAttention, tTpDenseFFN float64
 	if m.tp > 1 {
-		tTpAttention = m.tpAllReduceBasis(float64(m.numLayers), totalTokens) / dpf
-		tTpDenseFFN = m.tpAllReduceBasis(float64(m.numDenseLayers), totalTokens) / dpf
+		// dpf divides only the VOLUME half of the basis, never the per-collective launch
+		// latency (#1548, lifting the known inaccuracy #1530 left here): DP groups run
+		// their all-reduces in parallel, so a launch cost is paid in full by each, not
+		// shared out. At dp == 1 the divisor is exactly 1.0, so this is bit-for-bit the
+		// pre-#1548 expression (INV-6/INV-BC-DP1).
+		tTpAttention = m.tpAllReduceBasis(float64(m.numLayers), totalTokens, dpf)
+		tTpDenseFFN = m.tpAllReduceBasis(float64(m.numDenseLayers), totalTokens, dpf)
 	}
 
-	// MoE-FFN communication partitions on the DP boundary (vLLM, #1419), so exactly
+	// MoE-FFN communication partitions on the DP-or-EP boundary (vLLM, #1419, #1548), so exactly
 	// one of the two terms below fires for an MoE model:
 	//   tMoEReduce (DP==1, TP>1): the MoE FFN all-reduces over the TP group, exactly
 	//     like a dense FFN unit. vLLM reduces over tp_size or ep_size (both = TP here).
 	//     This was previously unmodeled (deferred to β₈, which is 0 for uniform MoE) —
 	//     charging it is a deliberate fidelity gain.
-	//   tMoEDispatch (DP>1): dispatch/combine all-to-all (see below).
-	// Their gates (dp==1 && tp>1) and (dp>1) are mutually exclusive and, together with
-	// the dp==1,tp==1 single-GPU case (no comm), exhaustive — so the MoE-FFN comm is
-	// charged exactly once.
+	//   tMoEDispatch (DP>1, or expert parallelism on): dispatch/combine all-to-all (below).
+	// Their gates (dp==1 && tp>1 && !epOn) and (dp>1 || epOn) are mutually exclusive and,
+	// together with the dp==1,tp==1,EP-off single-GPU case (no comm), exhaustive — so the
+	// MoE-FFN comm is charged exactly once. The !epOn term is what makes
+	// --enable-expert-parallel step-time-LIVE (#1548): with whole experts owned per rank
+	// there is no tensor-sharded FFN output to all-reduce, so the reduction is REPLACED by
+	// dispatch/combine rather than joined by it (a second additive term would double-charge
+	// — see the epOn field comment).
 	var tMoEReduce float64
-	if m.isMoE && m.numMoELayers > 0 && m.dp == 1 && m.tp > 1 {
-		tMoEReduce = m.tpAllReduceBasis(float64(m.numMoELayers), totalTokens)
+	if m.isMoE && m.numMoELayers > 0 && m.dp == 1 && m.tp > 1 && !m.epOn {
+		tMoEReduce = m.tpAllReduceBasis(float64(m.numMoELayers), totalTokens, 1.0)
 	}
 
 	// tMoEDispatch (B2, #1419): MoE dispatch/combine all-to-all, charged under β_EP
-	// (Beta[10]) whenever DP>1. The per-rank byte volume depends on the comm backend
-	// family (see moeDispatchBasis) — all-gather backends move dense hidden states
-	// (no top_k), modular all-to-all backends move top_k-routed tokens.
+	// (Beta[10]) whenever DP>1 OR expert parallelism is on (#1548 — at EP-on the experts
+	// are owned whole per rank, so tokens must be routed to their owner even at DP=1). The
+	// per-rank byte volume depends on the comm backend family (see moeDispatchBasis) —
+	// all-gather backends move dense hidden states (no top_k), modular all-to-all backends
+	// move top_k-routed tokens.
 	var tMoEDispatch float64
-	if m.isMoE && m.dp > 1 {
+	if m.isMoE && (m.dp > 1 || m.epOn) {
 		tMoEDispatch = m.moeDispatchBasis(totalTokens, kEff) * float64(m.numMoELayers)
 	}
 
@@ -738,7 +814,7 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 		decodeTerm +
 		m.Beta[2]*tWeight +
 		m.Beta[3]*(tTpAttention+tTpDenseFFN+tMoEReduce) +
-		m.Beta[10]*tMoEDispatch + // β_EP: MoE dispatch/combine all-to-all (DP>1)
+		m.Beta[10]*tMoEDispatch + // β_EP: MoE dispatch/combine all-to-all (DP>1 or EP-on)
 		m.Beta[4]*L +
 		m.Beta[5]*batchSize +
 		m.Beta[6] +
@@ -786,19 +862,29 @@ func (m *TrainedPhysicsModel) sharedExpertCompute(tokens, d, tpdp float64) float
 // the cross-node penalty when the group spans nodes.
 func (m *TrainedPhysicsModel) moeDispatchBasis(globalTokens, kEff float64) float64 {
 	hidden := float64(m.hiddenDim)
-	group := float64(m.moeGroup)
+	// The all-to-all runs over the EXPERT-OWNING group (#1548), not the compute group:
+	// dispatch has to reach whichever rank owns a token's expert. Equal to moeGroup for
+	// every pre-#1548 config.
+	group := float64(m.expertShardGroup)
 	dpf := float64(m.dp)
 	// Dispatch/combine moves hidden-state ACTIVATIONS, so size them with the
 	// compute/activation dtype (BytesPerParam), NOT the quantized weight dtype —
 	// matching tpAllReduceBasis and the KV terms (vLLM dispatches the BF16 hidden
 	// states: NaiveAll2AllManager.naive_multicast allocates dtype=x.dtype; the
 	// quantized post_quant_allgather path is an explicit opt-in, not the default).
+	// scale is the per-backend-mode step-time parameter (#1548): the selected backend's
+	// deviation from its family's nominal cost. Every shipped backend is 1.0 today (an
+	// exact multiplicative identity, so this is byte-identical); #1568 differentiates
+	// DeepEP high-throughput from low-latency by filling moeCommBackends, with no change
+	// here. It scales the VOLUME half only — the cross-node launch latency is a property
+	// of the fabric, not of the kernel that rides it.
+	scale := m.all2All.commScale
 	switch m.commFamily {
 	case commFamilyAllGather: // dense hidden-state volume, no top_k
-		return (globalTokens/dpf)*(group-1)/group*2*hidden*m.activationBPP/m.moeCommBwUs() + m.moeCrossNodeLatency(globalTokens)
+		return (globalTokens/dpf)*(group-1)/group*2*hidden*m.activationBPP*scale/m.moeCommBwUs() + m.moeCrossNodeLatency(globalTokens)
 	case commFamilyAll2All:
-		load := m.placement.Resolve(globalTokens, kEff, m.numExperts, m.moeGroup, m.dp)
-		return load.PerGPUCommTokens*hidden*m.activationBPP/m.moeCommBwUs() + m.moeCrossNodeLatency(globalTokens)
+		load := m.placement.Resolve(globalTokens, kEff, m.numExperts, m.expertShardGroup, m.dp)
+		return load.PerGPUCommTokens*hidden*m.activationBPP*scale/m.moeCommBwUs() + m.moeCrossNodeLatency(globalTokens)
 	default:
 		// Unreachable: commFamily is set once at construction from moeCommFamilyFor,
 		// which only yields the two families above. Panic on a future 3rd family so a
@@ -816,9 +902,19 @@ func (m *TrainedPhysicsModel) moeDispatchBasis(globalTokens, kEff float64) float
 // all-reduce-class TP communication term (attention, dense-FFN, and the DP=1
 // MoE-FFN reduction). Returns 0 at tp == 1 (no communication). β₄ absorbs the
 // NVLink/HBM bandwidth ratio (~0.27 on H100) and ring-collective efficiency.
-func (m *TrainedPhysicsModel) tpAllReduceBasis(units, tokens float64) float64 {
+func (m *TrainedPhysicsModel) tpAllReduceBasis(units, tokens, dpDivisor float64) float64 {
 	if m.tp <= 1 {
 		return 0
+	}
+	// `!(dpDivisor > 0)` rather than a positive check so a NaN also lands here, for the same
+	// reason tpCommBwUs guards its scale (and this fixes the same latent hole on a new axis):
+	// the caller derives it from float64(m.dp), which is 0 for a model built by struct literal
+	// — as several tests in this package do — and dividing by 0 would make the whole comm term
+	// +Inf. Production callers always pass EffectiveDP() (>= 1) or the literal 1.0, so this is
+	// unreachable there; it is coerced rather than rejected because the basis is a pure
+	// arithmetic helper on the hot path, not a validation boundary.
+	if !(dpDivisor > 0) {
+		dpDivisor = 1
 	}
 	tpFactor := float64(m.tp-1) / float64(m.tp)
 	// activationBPP (compute dtype) sizes the moved hidden states, not the weight dtype
@@ -827,20 +923,18 @@ func (m *TrainedPhysicsModel) tpAllReduceBasis(units, tokens float64) float64 {
 	// The divisor is the EFFECTIVE link bandwidth (#1530): bwHbmUs itself for an
 	// intra-node TP group (bit-for-bit unchanged), or bwHbmUs scaled down by the
 	// cross-node penalty when the group spans nodes.
-	t := units * tokens * float64(m.hiddenDim) * m.activationBPP * 2.0 * tpFactor / m.tpCommBwUs()
+	t := units * tokens * float64(m.hiddenDim) * m.activationBPP * 2.0 * tpFactor / m.tpCommBwUs() / dpDivisor
 	// Plus the size-INDEPENDENT half: one cross-node collective per comm unit, each
 	// paying a fixed launch + fabric round-trip. Exactly 0 unless the group spans nodes
 	// AND the GPU declares a latency, so an intra-node or uncalibrated config is
 	// bit-for-bit unchanged. Gated on tokens > 0 because a step that communicates no
 	// tokens runs no collective and must not pay a launch cost.
 	//
-	// Known inaccuracy at dp > 1: the attention and dense-FFN callers divide this whole
-	// basis by dp, which is right for the VOLUME half (each DP rank all-reduces only its
-	// token slice) but wrong for the latency half (DP groups run in parallel, so a
-	// launch cost is not shared out among them). It is unreachable today — node pools
-	// plus --dp>1 is a fail-fast (#1553), so every placement that can span nodes has
-	// dp == 1 and the divisor is exactly 1.0 — but whoever makes DEP placement real
-	// (#1548) must lift the latency out of the /dp division.
+	// Deliberately OUTSIDE the dpDivisor division applied to the volume above (#1548,
+	// resolving the inaccuracy #1530 flagged here): each DP rank launches its own
+	// collective concurrently, so a launch cost is paid in full per rank rather than
+	// shared out among them. dpDivisor is exactly 1.0 in every config reachable from the
+	// CLI today (DP-as-placement gives every replica DP=1), so this is byte-identical.
 	if m.tpCrossNodeLatencyUs > 0 && tokens > 0 {
 		t += units * m.tpCrossNodeLatencyUs
 	}
@@ -907,6 +1001,12 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 		commBackend = DefaultMoECommBackend
 	}
 	commFamily, err := moeCommFamilyFor(commBackend)
+	if err != nil {
+		return nil, fmt.Errorf("trained-physics model: %w", err)
+	}
+	// ... and to its per-mode step-time profile (#1548). Same table, same hard-error
+	// policy; today every entry is the shared nominal placeholder (#1568 differentiates).
+	commProfile, err := moeCommProfileFor(commBackend)
 	if err != nil {
 		return nil, fmt.Errorf("trained-physics model: %w", err)
 	}
@@ -1012,42 +1112,65 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 	// fabric is than its on-node link). An unknown topology (no node-pool placement) or
 	// an uncalibrated interconnect leaves both penalties at exactly 1.0, which makes the
 	// comm bases divide by bwHbmUs itself, bit-for-bit (INV-6/INV-BC-DP1).
-	tpSpanScale, moeSpanScale := spanScalesFor(hw.NetworkTopology, hw.TP, hw.EffectiveMoEGroupSize(),
+	// The MoE leg is scored over the group that actually runs the collective — the
+	// expert-owning group (#1548), which is EffectiveMoEGroupSize for every pre-#1548
+	// config and widens to the logical EP group under DP-as-placement + EP.
+	expertShardGroup := hw.EffectiveExpertShardGroupSize()
+	// The WEIGHT divisor additionally obeys the "one whole expert per loaded rank" clamp,
+	// under expert parallelism only (see the expertWeightShardGroup field comment for why
+	// EP-off must stay unclamped). Warned once at construction, never per step, and never
+	// silent (R1) — the KV-capacity model warns on the same substitution.
+	expertWeightShardGroup := expertShardGroup
+	if hw.EffectiveEP() > 1 {
+		if clamped, wasClamped := ClampExpertShardToExpertCount(expertShardGroup, hw.ModelConfig.NumLocalExperts); wasClamped {
+			logrus.Warnf("trained-physics: expert-parallel group size %d exceeds the model's routed-expert "+
+				"count %d; charging routed-expert WEIGHTS over %d GPUs (one whole expert each) instead. The "+
+				"dispatch/combine collective still spans all %d ranks. Expert redundancy (--enable-eplb / "+
+				"--num-redundant-experts) is not modeled.",
+				expertShardGroup, hw.ModelConfig.NumLocalExperts, clamped, expertShardGroup)
+			expertWeightShardGroup = clamped
+		}
+	}
+	tpSpanScale, moeSpanScale := spanScalesFor(hw.NetworkTopology, hw.TP, expertShardGroup,
 		commFamily, hw.HWConfig.InterconnectBwRatio())
 	bwHbmUs := hw.HWConfig.BwPeakTBs * 1e6
 
 	return &TrainedPhysicsModel{
-		Alpha:                 [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
-		Beta:                  betaSlice,
-		prefillSplit:          len(coeffs.BetaCoeffs) >= 9,
-		decodeSplit:           len(coeffs.BetaCoeffs) >= 10,
-		numLayers:             hw.ModelConfig.NumLayers,
-		numMoELayers:          numMoELayers,
-		numDenseLayers:        numDenseLayers,
-		numKVBearingLayers:    hw.ModelConfig.EffectiveKVBearingLayers(), // #1636: full-attention layers; == numLayers for non-hybrid models
-		hiddenDim:             hw.ModelConfig.HiddenDim,
-		numHeads:              hw.ModelConfig.NumHeads,
-		headDim:               headDim,
-		dKV:                   numKVHeads * headDim,
-		dFFMoE:                dFFMoE,
-		dFFDense:              dFFDense,
-		kEff:                  max(1, hw.ModelConfig.NumExpertsPerTok),
-		numExperts:            hw.ModelConfig.NumLocalExperts,
-		hasInterleavedMoE:     hw.ModelConfig.InterleaveMoELayerStep > 0 && hw.ModelConfig.IsMoE(),
-		isMoE:                 hw.ModelConfig.IsMoE(),
-		tp:                    hw.TP,
-		weightBPP:             weightBPP,
-		activationBPP:         hw.ModelConfig.BytesPerParam,
-		dp:                    hw.EffectiveDP(),
-		moeGroup:              hw.EffectiveMoEGroupSize(),
-		sharedExpertFFNDim:    hw.ModelConfig.SharedExpertFFNDim,
-		commFamily:            commFamily,
-		placement:             sim.BalancedPlacement{},
-		flopsPeakUs:           peakFlops,
-		bwHbmUs:               bwHbmUs,
-		tpSpanScale:           tpSpanScale,
-		moeSpanScale:          moeSpanScale,
-		tpCrossNodeLatencyUs:  crossNodeLatencyUs(hw.NetworkTopology, hw.TP, hw.HWConfig),
-		moeCrossNodeLatencyUs: crossNodeLatencyUs(hw.NetworkTopology, hw.EffectiveMoEGroupSize(), hw.HWConfig),
+		Alpha:                  [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
+		Beta:                   betaSlice,
+		prefillSplit:           len(coeffs.BetaCoeffs) >= 9,
+		decodeSplit:            len(coeffs.BetaCoeffs) >= 10,
+		numLayers:              hw.ModelConfig.NumLayers,
+		numMoELayers:           numMoELayers,
+		numDenseLayers:         numDenseLayers,
+		numKVBearingLayers:     hw.ModelConfig.EffectiveKVBearingLayers(), // #1636: full-attention layers; == numLayers for non-hybrid models
+		hiddenDim:              hw.ModelConfig.HiddenDim,
+		numHeads:               hw.ModelConfig.NumHeads,
+		headDim:                headDim,
+		dKV:                    numKVHeads * headDim,
+		dFFMoE:                 dFFMoE,
+		dFFDense:               dFFDense,
+		kEff:                   max(1, hw.ModelConfig.NumExpertsPerTok),
+		numExperts:             hw.ModelConfig.NumLocalExperts,
+		hasInterleavedMoE:      hw.ModelConfig.InterleaveMoELayerStep > 0 && hw.ModelConfig.IsMoE(),
+		isMoE:                  hw.ModelConfig.IsMoE(),
+		tp:                     hw.TP,
+		weightBPP:              weightBPP,
+		activationBPP:          hw.ModelConfig.BytesPerParam,
+		dp:                     hw.EffectiveDP(),
+		moeGroup:               hw.EffectiveMoEGroupSize(),
+		sharedExpertFFNDim:     hw.ModelConfig.SharedExpertFFNDim,
+		commFamily:             commFamily,
+		all2All:                commProfile,
+		placement:              sim.BalancedPlacement{},
+		epOn:                   hw.EffectiveEP() > 1,
+		expertShardGroup:       expertShardGroup,
+		expertWeightShardGroup: expertWeightShardGroup,
+		flopsPeakUs:            peakFlops,
+		bwHbmUs:                bwHbmUs,
+		tpSpanScale:            tpSpanScale,
+		moeSpanScale:           moeSpanScale,
+		tpCrossNodeLatencyUs:   crossNodeLatencyUs(hw.NetworkTopology, hw.TP, hw.HWConfig),
+		moeCrossNodeLatencyUs:  crossNodeLatencyUs(hw.NetworkTopology, expertShardGroup, hw.HWConfig),
 	}, nil
 }

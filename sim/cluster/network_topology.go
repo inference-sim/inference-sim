@@ -74,45 +74,46 @@ func (cs *ClusterSimulator) applyPlacementTopology(simCfg *sim.SimConfig, gpuIDs
 // A fourth, non-fatal cause warns separately: the calibration is present but its ratio
 // looks like a unit error (see maxPlausibleInterconnectRatio).
 //
-// Assumption worth knowing: the diagnostics score simCfg.TP, the group the latency
-// model will actually price. Two things must agree with it, and both do today. The GPU
-// set comes from the degree placement reserved — the autoscaler's variant inventory is
-// seeded from the cluster's own TP, and #1529 rejects a per-role TP override that
-// differs from the global TP when node pools are configured. And the cost model prices a
-// second group, the flattened MoE group TP·DP, whose span is NOT checked here; that can
-// only exceed TP at --dp>1, which is a fail-fast alongside node pools today (#1553). If
-// #1548 lifts that, a MoE-group-only span would be priced without being diagnosed.
+// Assumption worth knowing: the diagnostics score the WIDEST collective group the latency
+// model will price on this instance (widestCollectiveGroup) — the TP group, or the
+// expert-owning group when expert parallelism makes that wider. Scoring only TP, as this
+// did before #1548, would let a MoE-group-only span (TP fits inside a node, the expert
+// group does not) be priced without being diagnosed. The GPU set still comes from the
+// degree placement reserved: the autoscaler's variant inventory is seeded from the
+// cluster's own TP, and #1529 rejects a per-role TP override that differs from the global
+// TP when node pools are configured.
 func (cs *ClusterSimulator) warnIfCrossNodeUnpriced(simCfg *sim.SimConfig, topo sim.NetworkTopology, realSpan int) {
 	if realSpan <= 1 {
 		return // contained in one node — nothing to price, nothing to warn about
 	}
+	group := widestCollectiveGroup(simCfg)
 	switch {
 	case simCfg.Backend != sim.LatencyBackendTrainedPhysics:
 		if !cs.crossNodeBackendWarned {
 			cs.crossNodeBackendWarned = true
-			logrus.Warnf("[cluster] an instance spans %d nodes for TP=%d, but the %q latency backend "+
+			logrus.Warnf("[cluster] an instance spans %d nodes for a %d-GPU collective group, but the %q latency backend "+
 				"models no communication term, so its cross-node collective traffic is unpriced and "+
 				"latency/throughput for spanning instances are optimistic (#1530). Use "+
 				"--latency-model trained-physics to price it",
-				realSpan, simCfg.TP, backendDisplayName(simCfg.Backend))
+				realSpan, group, backendDisplayName(simCfg.Backend))
 		}
 	case !topo.IsKnown():
 		if !cs.crossNodeUnresolvedWarned {
 			cs.crossNodeUnresolvedWarned = true
-			logrus.Warnf("[cluster] an instance spans %d nodes for TP=%d, but its node size could not be "+
+			logrus.Warnf("[cluster] an instance spans %d nodes for a %d-GPU collective group, but its node size could not be "+
 				"resolved from placement, so cross-node collective traffic is priced at the on-node rate "+
 				"and latency/throughput for spanning instances are optimistic (#1530). See the "+
-				"PlacedGPUsPerNode errors above for the cause", realSpan, simCfg.TP)
+				"PlacedGPUsPerNode errors above for the cause", realSpan, group)
 		}
 	case !simCfg.HWConfig.HasInterconnectCalibration():
 		if !cs.crossNodeUncalibratedWarned {
 			cs.crossNodeUncalibratedWarned = true
-			logrus.Warnf("[cluster] an instance spans %d nodes for TP=%d, but the hardware calibration "+
+			logrus.Warnf("[cluster] an instance spans %d nodes for a %d-GPU collective group, but the hardware calibration "+
 				"for GPU %q declares no usable interconnect bandwidths (IntraNodeBwGBps/InterNodeBwGBps) "+
 				"and no per-collective latency (InterNodeLatencyUs), so its cross-node collective traffic "+
 				"is priced at the on-node rate and latency/throughput for spanning instances are "+
 				"optimistic (#1530). Add them to the entry for this GPU in --hardware-config",
-				realSpan, simCfg.TP, simCfg.GPU)
+				realSpan, group, simCfg.GPU)
 		}
 	case simCfg.HWConfig.InterconnectBwRatio() > maxPlausibleInterconnectRatio:
 		if !cs.implausibleFabricWarned {
@@ -134,4 +135,23 @@ func backendDisplayName(backend string) string {
 		return sim.LatencyBackendRoofline + " (default)"
 	}
 	return backend
+}
+
+// widestCollectiveGroup is the largest participant group whose traffic the latency model
+// prices for one instance: its TP group, or — when expert parallelism is in force on an
+// MoE model — the wider expert-owning group the dispatch/combine all-to-all runs over
+// (#1548). The diagnostics score it so a span that only the wider group crosses is still
+// reported (R1: a cross-node cost that silently fails to apply is the invisible optimism
+// #1530 exists to remove).
+//
+// Reachability, stated honestly: the two groups can only differ at --dp>1, which remains a
+// fail-fast alongside node pools (#1553), and a topology is only ever resolved from node
+// pools — so today this always returns simCfg.TP and the diagnostics are byte-identical to
+// their pre-#1548 text for every reachable config. It is here so that whoever lifts #1553
+// inherits a correct diagnostic rather than a silent gap.
+func widestCollectiveGroup(simCfg *sim.SimConfig) int {
+	if g := simCfg.EffectiveExpertShardGroupSize(); g > simCfg.TP {
+		return g
+	}
+	return simCfg.TP
 }

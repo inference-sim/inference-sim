@@ -15,7 +15,8 @@ package cmd
 //     flags produces byte-identical stdout — the parity the issue asks for.
 //   - #1556 BC-3: the auto-KV path (no --total-kv-blocks) divides to the per-rank budget
 //     and re-caps --max-model-len, so no replica's NewSimulator panics.
-//   - #1556 BC-4: the #1548 / #1553 guarded combos still fail fast on replay.
+//   - #1556 BC-4: the #1553 guarded combos still fail fast on replay. (The #1548 EP-on
+//     combo was one of them until #1548 landed; it is now supported on both commands.)
 //   - #1556 BC-5 (INV-6): --dp 1 on replay stays byte-identical run to run.
 //   - #1556 BC-6 (INV-1): request conservation holds across the expanded replicas.
 //
@@ -211,6 +212,12 @@ func TestINV13_RunReplayParity_MoEDPPlacement(t *testing.T) {
 		{label: "tp1", extra: []string{"--total-kv-blocks", "20000"}},
 		// A trailing --tp overrides the fixture's --tp 1 (cobra keeps the last value).
 		{label: "tp2", extra: []string{"--total-kv-blocks", "20000", "--tp", "2"}},
+		// #1548 AC-3: expert parallelism now makes the step time DIFFER from EP-off, so
+		// the run→replay parity law has to be re-established for the EP-on topology. The
+		// logical EP-group width is re-supplied from the CLI on both legs (it is a
+		// model-level input like --dp itself, not a trace field), which is exactly what
+		// makes this hold — see epGroupDPForPlacement.
+		{label: "tp2-ep", extra: []string{"--total-kv-blocks", "20000", "--tp", "2", "--enable-expert-parallel"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.label, func(t *testing.T) {
@@ -418,23 +425,19 @@ func TestReplayCmd_MoEDPPlacement_GuardedCombos_Rejected(t *testing.T) {
 	prefix := filepath.Join(t.TempDir(), "trace")
 	dpLegOK(t, name, "run", prefix, 1, 1, "--total-kv-blocks", "20000")
 
-	// Only EP and PD are listed: the autoscaler and node pools are rejected by
-	// blis replay unconditionally (before DP is considered), so their #1553 DP guard is
-	// unreachable here — TestReplayCmd_AutoscalerBundleFatal /
-	// TestReplayCmd_NodePoolsBundleFatal cover those, and
-	// TestResolveDPPlacement_MutatesDeploymentVars covers their DP guard directly.
+	// Only PD is listed. The autoscaler and node pools are rejected by blis replay
+	// unconditionally (before DP is considered), so their #1553 DP guard is unreachable
+	// here — TestReplayCmd_AutoscalerBundleFatal / TestReplayCmd_NodePoolsBundleFatal cover
+	// those, and TestResolveDPPlacement_MutatesDeploymentVars covers their DP guard
+	// directly. Expert parallelism was listed here until #1548 made it SUPPORTED on both
+	// commands; its parity is now asserted positively by the tp2-ep case of
+	// TestINV13_RunReplayParity_MoEDPPlacement.
 	cases := []struct {
 		label   string
 		numInst int
 		extra   []string
 		wantRef string // tracking issue the message must name
 	}{
-		{
-			label:   "expert parallelism on",
-			numInst: 1,
-			extra:   []string{"--total-kv-blocks", "20000", "--enable-expert-parallel"},
-			wantRef: "#1548",
-		},
 		{
 			label: "PD disaggregation",
 			// --num-instances 2 (vs 1 for the EP case): ValidatePoolTopology runs BEFORE

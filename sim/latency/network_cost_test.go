@@ -657,7 +657,7 @@ func TestTrainedPhysicsModel_StructLiteralKeepsCommTerm(t *testing.T) {
 		bwHbmUs:       3.35e6,
 		// tpSpanScale / moeSpanScale deliberately left at their zero value.
 	}
-	basis := m.tpAllReduceBasis(32, 1024)
+	basis := m.tpAllReduceBasis(32, 1024, 1)
 	assert.Greater(t, basis, 0.0, "an unset span scale must not zero the TP all-reduce term")
 	assert.False(t, math.IsInf(basis, 0), "the comm basis must stay finite")
 	assert.False(t, math.IsNaN(basis), "the comm basis must not be NaN")
@@ -668,7 +668,7 @@ func TestTrainedPhysicsModel_StructLiteralKeepsCommTerm(t *testing.T) {
 	unpenalized := &TrainedPhysicsModel{
 		tp: 8, hiddenDim: 4096, activationBPP: 2, bwHbmUs: 3.35e6, tpSpanScale: 1.0,
 	}
-	assert.Equal(t, unpenalized.tpAllReduceBasis(32, 1024), basis,
+	assert.Equal(t, unpenalized.tpAllReduceBasis(32, 1024, 1), basis,
 		"an unset span scale must behave exactly like an explicit no-penalty scale")
 }
 

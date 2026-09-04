@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -180,12 +179,13 @@ func writeBigMoEFixture(t *testing.T) (mcDir, hwPath string) {
 	return mcDir, hwPath
 }
 
-// TestRunCmd_EPMoE_CapacityErrorNoLongerMasksPlacementGuard is BC-9, the user-visible
-// effect of #1656 today. A large MoE at --tp 8 --dp 2 --enable-expert-parallel is a real
-// EP deployment that fits on its 16 GPUs, so KV auto-calculation must now succeed and the
-// run must fail on the honest reason — EP-on DP placement is not modelled yet (#1548) —
-// rather than on a weight over-count that told the operator to buy more GPUs.
-func TestRunCmd_EPMoE_CapacityErrorNoLongerMasksPlacementGuard(t *testing.T) {
+// TestRunCmd_EPMoE_CapacityFitsAndRuns is BC-9 of #1656, now completed by #1548. A large
+// MoE at --tp 8 --dp 2 --enable-expert-parallel is a real EP deployment that fits on its 16
+// GPUs. #1656 made KV auto-calculation succeed for it (previously a weight over-count told
+// the operator to buy more GPUs), but the run still stopped at the #1548 EP-placement
+// guard. With that guard lifted the whole deployment now runs end to end, which is the
+// strongest form of this contract: the arithmetic is not merely un-masked, it is USED.
+func TestRunCmd_EPMoE_CapacityFitsAndRuns(t *testing.T) {
 	if os.Getenv("BLIS_RUN_EP_KV") == "1" {
 		mcDir, hwPath := writeBigMoEFixture(t)
 		rootCmd.SetArgs([]string{
@@ -207,25 +207,22 @@ func TestRunCmd_EPMoE_CapacityErrorNoLongerMasksPlacementGuard(t *testing.T) {
 		_ = rootCmd.Execute()
 		os.Exit(0)
 	}
-	cmd := exec.Command(os.Args[0], "-test.run=^TestRunCmd_EPMoE_CapacityErrorNoLongerMasksPlacementGuard$")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRunCmd_EPMoE_CapacityFitsAndRuns$")
 	cmd.Env = append(os.Environ(), "BLIS_RUN_EP_KV=1")
 	out, err := cmd.CombinedOutput()
 
-	// The run still ends at the #1548 EP-placement guard (exit 1) — that is the honest
-	// unsupported-feature signal, and it is what must be visible.
-	if err == nil {
-		t.Fatalf("expected non-zero exit (the #1548 EP-placement guard), got exit 0; output:\n%s", out)
-	}
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
-		t.Fatalf("expected exit code 1 (logrus.Fatalf), got %v; output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("a --tp 8 --dp 2 --enable-expert-parallel MoE must now run to completion "+
+			"(#1656 capacity + #1548 EP placement), got %v; output:\n%s", err, out)
 	}
 	if strings.Contains(string(out), "KV capacity auto-calculation failed") {
 		t.Errorf("BC-9: KV auto-calculation must succeed for an EP-sharded MoE — the weight "+
-			"over-count must no longer mask the placement guard; output:\n%s", out)
+			"over-count must not return; output:\n%s", out)
 	}
-	if !strings.Contains(string(out), "1548") {
-		t.Errorf("BC-9: expected the #1548 EP-placement guard to be the failure reason; output:\n%s", out)
+	// Activation check: the run must really be the EP-sharded 16-GPU deployment, not a
+	// silently-degraded single replica.
+	if !strings.Contains(string(out), `"instance_id": "instance_1"`) {
+		t.Errorf("BC-9: --dp 2 must place a second engine replica; output:\n%s", out)
 	}
 }
 

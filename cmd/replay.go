@@ -535,10 +535,7 @@ Example:
 			}
 		}
 
-		perPoolFlagsChanged := cmd.Flags().Changed("prefill-tp") || cmd.Flags().Changed("decode-tp") ||
-			cmd.Flags().Changed("prefill-hardware") || cmd.Flags().Changed("decode-hardware") ||
-			cmd.Flags().Changed("prefill-latency-model") || cmd.Flags().Changed("decode-latency-model") ||
-			cmd.Flags().Changed("prefill-max-model-len") || cmd.Flags().Changed("decode-max-model-len")
+		perPoolFlagsChanged := anyPerPoolHardwareFlagChanged(cmd.Flags().Changed)
 		if perPoolFlagsChanged && prefillInstances == 0 {
 			logrus.Fatalf("per-pool hardware flags (--prefill-tp, --decode-tp, etc.) have no effect when --prefill-instances=0 (disaggregation is disabled); either set --prefill-instances > 0 or remove the per-pool flags")
 		}
@@ -590,6 +587,18 @@ Example:
 				}
 				ml := decodeMaxModelLen
 				decodeOverrides.MaxModelLen = &ml
+			}
+			// A per-pool latency-model override must not silently opt a pool out of the
+			// DP/EP step-time physics the rest of the cluster is using (#1548).
+			if err := validatePerPoolLatencyBackends(dataParallelism > 1 || enableExpertParallel,
+				prefillOverrides, decodeOverrides); err != nil {
+				logrus.Fatalf("%v", err)
+			}
+			// Per-ROLE MoE all-to-all backend (#1548), the same shared resolver blis run
+			// calls, so the two commands cannot validate it differently (R23, INV-13).
+			if err := applyPerRoleMoECommBackends(cmd.Flags().Changed, lr.ModelConfig.IsMoE(),
+				dataParallelism > 1 || enableExpertParallel, &prefillOverrides, &decodeOverrides); err != nil {
+				logrus.Fatalf("%v", err)
 			}
 		}
 
@@ -661,7 +670,7 @@ Example:
 				// per-replica DP — 1 when the plan is active (each replica is one rank),
 				// else the CLI dataParallelism unchanged. Identical to the run wiring
 				// (cmd/root.go), from the same shared resolveDPPlacement (INV-13).
-				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen),
+				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen, dpPlan.EPGroupOptions()...),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				LoRAConfig:           loraCfg,
 				SpeculativeConfig:    resolveSpeculativeConfig(cmd),

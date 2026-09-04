@@ -66,6 +66,7 @@ func TestResolvePoolConfig_AllOverrides_Applied(t *testing.T) {
 		LatencyBackend: "trained-physics",
 		MaxModelLen:    &maxLen,
 		TotalKVBlocks:  &kvBlocks,
+		MoECommBackend: "deepep_low_latency",
 	}
 
 	resolved := ResolvePoolConfig(global, overrides)
@@ -84,6 +85,9 @@ func TestResolvePoolConfig_AllOverrides_Applied(t *testing.T) {
 	}
 	if resolved.TotalKVBlocks != 3000 {
 		t.Errorf("TotalKVBlocks = %d, want 3000", resolved.TotalKVBlocks)
+	}
+	if resolved.MoECommBackend != "deepep_low_latency" {
+		t.Errorf("MoECommBackend = %q, want %q", resolved.MoECommBackend, "deepep_low_latency")
 	}
 	// Non-overridden fields stay global
 	if resolved.Horizon != global.Horizon {
@@ -930,5 +934,75 @@ func TestINV_P2_1_RequestConservation(t *testing.T) {
 	if conserved != injected {
 		t.Errorf("INV-1 violated: injected=%d, completed=%d+queued=%d+running=%d+dropped=%d+timedout=%d = %d",
 			injected, m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable, m.TimedOutRequests, conserved)
+	}
+}
+
+// TestResolvePoolConfig_MoECommBackend_PerRole is #1548 AC-5: the MoE all-to-all backend
+// is selectable INDEPENDENTLY per pool, mirroring vLLM's VLLM_ALL2ALL_BACKEND being a
+// per-process environment variable. The production recipe needs exactly this — DeepEP
+// high-throughput on the prefill engines, low-latency on the decode engines — which a
+// single global mode cannot express.
+func TestResolvePoolConfig_MoECommBackend_PerRole(t *testing.T) {
+	global := sim.SimConfig{
+		KVCacheConfig: sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
+		BatchConfig:   sim.NewBatchConfig(256, 2048, 0),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(),
+			"test-model", "H100", 4, 1, false, "allgather_reducescatter", "trained-physics", 8192),
+	}
+
+	prefill := ResolvePoolConfig(global, PoolOverrides{MoECommBackend: "deepep_high_throughput"})
+	decode := ResolvePoolConfig(global, PoolOverrides{MoECommBackend: "deepep_low_latency"})
+
+	if prefill.MoECommBackend != "deepep_high_throughput" {
+		t.Errorf("prefill pool backend = %q, want deepep_high_throughput", prefill.MoECommBackend)
+	}
+	if decode.MoECommBackend != "deepep_low_latency" {
+		t.Errorf("decode pool backend = %q, want deepep_low_latency", decode.MoECommBackend)
+	}
+	if prefill.MoECommBackend == decode.MoECommBackend {
+		t.Error("AC-5: prefill and decode must be able to select DIFFERENT all-to-all backends")
+	}
+	// An empty override inherits the global one (the documented "" = use global contract),
+	// and the global config itself is never mutated.
+	if inherited := ResolvePoolConfig(global, PoolOverrides{}); inherited.MoECommBackend != "allgather_reducescatter" {
+		t.Errorf("empty override must inherit the global backend, got %q", inherited.MoECommBackend)
+	}
+	if global.MoECommBackend != "allgather_reducescatter" {
+		t.Errorf("ResolvePoolConfig must not mutate the global config, got %q", global.MoECommBackend)
+	}
+}
+
+// TestPoolOverrides_IsEmpty_CountsMoECommBackend guards the field against being forgotten
+// by IsEmpty — a per-pool override that reports "empty" would let a caller skip resolution
+// and silently drop the selected backend.
+func TestPoolOverrides_IsEmpty_CountsMoECommBackend(t *testing.T) {
+	if (PoolOverrides{}).IsEmpty() != true {
+		t.Error("a zero PoolOverrides must be empty")
+	}
+	if (PoolOverrides{MoECommBackend: "pplx"}).IsEmpty() {
+		t.Error("a PoolOverrides carrying only MoECommBackend must NOT report empty")
+	}
+}
+
+// TestPoolOverrides_Validate_RejectsUnknownMoECommBackend is R1 for the per-role backend
+// (#1548): the CLI validates the name, but a library caller building PoolOverrides directly
+// bypasses that. Relying on the trained-physics constructor is not enough — it only fires on
+// that backend, so a pool resolving to roofline would silently ignore a bad value.
+func TestPoolOverrides_Validate_RejectsUnknownMoECommBackend(t *testing.T) {
+	err := PoolOverrides{MoECommBackend: "deepep_medium_throughput"}.Validate("prefill pool")
+	if err == nil {
+		t.Fatal("an unrecognized MoE comm backend must be rejected by Validate")
+	}
+	for _, want := range []string{"prefill pool", "deepep_medium_throughput"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should name %q, got: %v", want, err)
+		}
+	}
+	// A recognized name, and the empty "use global" value, must both pass.
+	if err := (PoolOverrides{MoECommBackend: "deepep_low_latency"}).Validate("decode pool"); err != nil {
+		t.Errorf("a recognized backend must validate, got: %v", err)
+	}
+	if err := (PoolOverrides{}).Validate("decode pool"); err != nil {
+		t.Errorf("an empty backend (use global) must validate, got: %v", err)
 	}
 }
