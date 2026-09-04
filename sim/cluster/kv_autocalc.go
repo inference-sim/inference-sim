@@ -69,14 +69,28 @@ func applyPerInstanceKVCapacity(simCfg *sim.SimConfig, gpuMemoryGiB float64, cfg
 	}
 
 	hc := sim.HardwareCalib{MemoryGiB: gpuMemoryGiB}
-	// Expert-parallel weight sharding (#1656): this instance's own EP group size.
-	// simCfg is a per-instance config, so EffectiveEP() is TP·(this instance's DP) —
-	// which is the logical group here because node pools reject --dp>1 (#1553), leaving
-	// the instance DP equal to the deployment DP. When EP-on DP placement lands (#1548)
-	// its per-replica configs will carry DP=1, and the deployment-wide group size must be
-	// threaded in through KVAutoCalcConfig rather than read off the replica.
+	// Expert-parallel weight sharding (#1656) and its deployment width (#1548).
+	//
+	// The two arguments must describe the SAME topology or CalculateKVBlocks rejects the
+	// pair: it bounds the EP group by tp·dp ("the EP group cannot span more GPUs than the
+	// deployment has"). Since #1548, EffectiveEP() reads EffectiveEPGroupDP() — the LOGICAL
+	// data-parallel width, which survives DP-as-placement rewriting a replica's own DP to 1.
+	// Passing the replica's own DP alongside that group would trip the bound and silently
+	// fall back to the inherited global capacity, on the very path whose purpose is per-GPU
+	// capacity correctness. So pass the logical width for both.
+	//
+	// CalculateKVBlocks then scales the block count by that width for an MoE model (its
+	// aggregate-over-DP-ranks contract), while THIS function wants one instance's budget — so
+	// the aggregate is divided back to per-rank below, exactly as cmd.applyDPPlacement does.
+	//
+	// Every configuration reachable today has epGroupDP == 1 (node pools reject --dp>1,
+	// #1553), where the multiply never fires and the division is by 1 — so this is
+	// byte-identical to the pre-#1548 call (INV-6). It is written now, rather than left as a
+	// comment for whoever lifts #1553, because a latent degradation path is exactly what this
+	// PR inherited from #1556 and became the trigger for.
+	epGroupDP := simCfg.EffectiveEPGroupDP()
 	blocks, err := latency.CalculateKVBlocks(
-		simCfg.ModelConfig, hc, simCfg.TP, simCfg.EffectiveDP(),
+		simCfg.ModelConfig, hc, simCfg.TP, epGroupDP,
 		simCfg.BlockSizeTokens, cfg.GPUMemoryUtilization, cfg.Params,
 		latency.WithAdapterReservedBytes(cfg.AdapterReservedBytes),
 		latency.WithExpertParallelSize(simCfg.EffectiveEP()),
@@ -85,6 +99,18 @@ func applyPerInstanceKVCapacity(simCfg *sim.SimConfig, gpuMemoryGiB float64, cfg
 		logrus.Warnf("[cluster] per-instance KV auto-calc for GPU %q failed: %v; "+
 			"using inherited total-kv-blocks=%d", gpuType, err, simCfg.TotalKVBlocks)
 		return
+	}
+	// Divide the DP-aggregate back to this instance's own budget. Gated on exactly the
+	// condition CalculateKVBlocks multiplies under (MoE && dp > 1), so a dense model — or the
+	// epGroupDP == 1 case that is all anything reachable produces — is untouched.
+	if cfg.Params.IsMoE && epGroupDP > 1 {
+		blocks /= int64(epGroupDP)
+		if blocks <= 0 {
+			logrus.Warnf("[cluster] per-instance KV auto-calc for GPU %q: the per-rank share of the "+
+				"auto-derived capacity across %d expert-parallel DP ranks is not positive; using inherited "+
+				"total-kv-blocks=%d", gpuType, epGroupDP, simCfg.TotalKVBlocks)
+			return
+		}
 	}
 
 	simCfg.TotalKVBlocks = blocks
@@ -103,6 +129,6 @@ func applyPerInstanceKVCapacity(simCfg *sim.SimConfig, gpuMemoryGiB float64, cfg
 	}
 
 	logrus.Infof("[cluster] per-instance KV auto-calc for GPU %q: total-kv-blocks=%d "+
-		"(GPU=%.0f GiB, TP=%d, DP=%d, EP=%d)", gpuType, blocks, gpuMemoryGiB,
-		simCfg.TP, simCfg.EffectiveDP(), simCfg.EffectiveEP())
+		"(GPU=%.0f GiB, TP=%d, DP=%d, EP-group DP=%d, EP=%d)", gpuType, blocks, gpuMemoryGiB,
+		simCfg.TP, simCfg.EffectiveDP(), epGroupDP, simCfg.EffectiveEP())
 }

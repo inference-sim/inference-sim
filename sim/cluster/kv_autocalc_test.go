@@ -460,3 +460,116 @@ func TestKVAutoCalcConfig_ZeroValueDisabled(t *testing.T) {
 		t.Error("zero-value DeploymentConfig.KVAutoCalc must be disabled")
 	}
 }
+
+// kvAutoCalcMoEModel is kvAutoCalcTestModel plus the routed-expert fields an
+// expert-parallel deployment needs, so the EP-group-width path below is exercised on a model
+// CalculateKVBlocks will actually apply expert sharding to.
+func kvAutoCalcMoEModel() sim.ModelConfig {
+	mc := kvAutoCalcTestModel()
+	mc.NumLocalExperts = 8
+	mc.NumExpertsPerTok = 2
+	mc.MoEExpertFFNDim = 512
+	return mc
+}
+
+func kvAutoCalcMoEParams() latency.KVCapacityParams {
+	return latency.NewKVCapacityParams(true, 8, false, "silu", 512, 2)
+}
+
+// TestApplyPerInstanceKVCapacity_EPGroupWidth closes the latent degradation path #1548's
+// review flagged, rather than leaving it as a comment for whoever lifts #1553.
+//
+// A DP-as-placement replica carries its own DP=1 but a LOGICAL expert-parallel group width on
+// the config. Before this was reconciled, this function passed the replica's own DP alongside
+// an EP group of TP·width, which trips CalculateKVBlocks' bound ("the EP group cannot span
+// more GPUs than the deployment has") — and the error path here is a `logrus.Warnf` plus a
+// fallback to the INHERITED GLOBAL capacity, i.e. a silent degradation on the one path whose
+// entire purpose is per-GPU capacity correctness.
+//
+// Two laws: the recomputation must actually happen (not fall back to the global sentinel), and
+// the result must equal one DP rank's share — not the DP-aggregate.
+func TestApplyPerInstanceKVCapacity_EPGroupWidth(t *testing.T) {
+	const (
+		gpuMem         = 48.0
+		globalSentinel = 9999
+		blockSize      = 16
+		epGroupDP      = 2
+		tp             = 1
+	)
+	simCfg := sim.SimConfig{
+		Horizon:       1_000_000,
+		Seed:          42,
+		KVCacheConfig: sim.NewKVCacheConfig(globalSentinel, blockSize, 0, 0, 0, 0),
+		BatchConfig:   sim.NewBatchConfig(8, 2048, 0),
+		LatencyCoeffs: sim.NewLatencyCoeffs(nil, []float64{0, 0, 0}),
+		// A per-replica config: own DP=1, expert parallelism on, logical EP-group width 2.
+		ModelHardwareConfig: sim.NewModelHardwareConfig(kvAutoCalcMoEModel(), testRooflineHWCalib(),
+			"test-moe", "H100", tp, 1, true, "", "roofline", 0,
+			sim.WithExpertParallelGroupDP(epGroupDP)),
+	}
+	cfg := KVAutoCalcConfig{
+		Enabled:              true,
+		GPUMemoryUtilization: 0.9,
+		Params:               kvAutoCalcMoEParams(),
+	}
+
+	// Precondition: the config really does report the wider logical group, or the test is
+	// asserting nothing about the reconciliation.
+	if got := simCfg.EffectiveEP(); got != tp*epGroupDP {
+		t.Fatalf("precondition: EffectiveEP() = %d, want %d (the logical TP·width)", got, tp*epGroupDP)
+	}
+
+	// Independent expected value: the DP-aggregate for the logical topology, divided back to
+	// one rank — computed here rather than copied from the implementation.
+	aggregate, err := latency.CalculateKVBlocks(
+		kvAutoCalcMoEModel(), sim.HardwareCalib{MemoryGiB: gpuMem},
+		tp, epGroupDP, blockSize, 0.9, kvAutoCalcMoEParams(),
+		latency.WithExpertParallelSize(tp*epGroupDP),
+	)
+	if err != nil {
+		t.Fatalf("setup: CalculateKVBlocks for the logical topology failed: %v", err)
+	}
+	want := aggregate / int64(epGroupDP)
+
+	applyPerInstanceKVCapacity(&simCfg, gpuMem, cfg, "H100")
+
+	if simCfg.TotalKVBlocks == globalSentinel {
+		t.Fatalf("a replica carrying a logical EP-group width fell back to the inherited global "+
+			"capacity (%d): the EP bound rejected the pair, which is the silent degradation this "+
+			"reconciliation exists to prevent", globalSentinel)
+	}
+	if simCfg.TotalKVBlocks != want {
+		t.Errorf("per-instance capacity = %d, want %d (one DP rank's share of the aggregate, not the "+
+			"aggregate %d itself)", simCfg.TotalKVBlocks, want, aggregate)
+	}
+}
+
+// TestApplyPerInstanceKVCapacity_NoEPGroupWidthIsUnchanged is the INV-6 companion: with no
+// logical EP-group width supplied — every configuration reachable today, since node pools
+// reject --dp>1 (#1553) — the reconciliation must be a no-op, passing DP=1 and dividing by 1.
+func TestApplyPerInstanceKVCapacity_NoEPGroupWidthIsUnchanged(t *testing.T) {
+	const gpuMem = 48.0
+	cfg := KVAutoCalcConfig{
+		Enabled:              true,
+		GPUMemoryUtilization: 0.9,
+		Params:               kvAutoCalcMoEParams(),
+	}
+	withOption := sim.SimConfig{
+		Horizon: 1_000_000, Seed: 42,
+		KVCacheConfig: sim.NewKVCacheConfig(9999, 16, 0, 0, 0, 0),
+		BatchConfig:   sim.NewBatchConfig(8, 2048, 0),
+		LatencyCoeffs: sim.NewLatencyCoeffs(nil, []float64{0, 0, 0}),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(kvAutoCalcMoEModel(), testRooflineHWCalib(),
+			"test-moe", "H100", 1, 1, true, "", "roofline", 0, sim.WithExpertParallelGroupDP(1)),
+	}
+	without := withOption
+	without.ModelHardwareConfig = sim.NewModelHardwareConfig(kvAutoCalcMoEModel(), testRooflineHWCalib(),
+		"test-moe", "H100", 1, 1, true, "", "roofline", 0)
+
+	applyPerInstanceKVCapacity(&withOption, gpuMem, cfg, "H100")
+	applyPerInstanceKVCapacity(&without, gpuMem, cfg, "H100")
+	if withOption.TotalKVBlocks != without.TotalKVBlocks {
+		t.Errorf("a width of 1 must be indistinguishable from the option being absent: %d vs %d",
+			withOption.TotalKVBlocks, without.TotalKVBlocks)
+	}
+}

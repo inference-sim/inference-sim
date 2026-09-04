@@ -983,3 +983,26 @@ func TestPoolOverrides_IsEmpty_CountsMoECommBackend(t *testing.T) {
 		t.Error("a PoolOverrides carrying only MoECommBackend must NOT report empty")
 	}
 }
+
+// TestPoolOverrides_Validate_RejectsUnknownMoECommBackend is R1 for the per-role backend
+// (#1548): the CLI validates the name, but a library caller building PoolOverrides directly
+// bypasses that. Relying on the trained-physics constructor is not enough — it only fires on
+// that backend, so a pool resolving to roofline would silently ignore a bad value.
+func TestPoolOverrides_Validate_RejectsUnknownMoECommBackend(t *testing.T) {
+	err := PoolOverrides{MoECommBackend: "deepep_medium_throughput"}.Validate("prefill pool")
+	if err == nil {
+		t.Fatal("an unrecognized MoE comm backend must be rejected by Validate")
+	}
+	for _, want := range []string{"prefill pool", "deepep_medium_throughput"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should name %q, got: %v", want, err)
+		}
+	}
+	// A recognized name, and the empty "use global" value, must both pass.
+	if err := (PoolOverrides{MoECommBackend: "deepep_low_latency"}).Validate("decode pool"); err != nil {
+		t.Errorf("a recognized backend must validate, got: %v", err)
+	}
+	if err := (PoolOverrides{}).Validate("decode pool"); err != nil {
+		t.Errorf("an empty backend (use global) must validate, got: %v", err)
+	}
+}

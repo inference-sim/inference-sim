@@ -130,7 +130,7 @@ The model supports 7-11 beta coefficients. Bundled defaults use 11 coefficients 
 - **β₆** (per-request, ~4 µs/request): Scheduling overhead per request: queue management, attention mask construction.
 - **β₇** (per-step, ~126 µs/step): Fixed overhead per step: CUDA synchronization, sampler invocation.
 - **β₈** (MoE-layer, ~482 µs/layer): Per-MoE-layer overhead for router gating, token permutation. Architecture-aware: applies only to interleaved MoE architectures (InterleaveMoELayerStep > 0). Zero for uniform MoE and dense models.
-- **β_EP** (MoE dispatch/combine, defaults to β₄): Corrects MoE expert-/data-parallel dispatch+combine all-to-all communication. Active only when `ModelHardwareConfig.DP > 1` on an MoE model — the gate is `m.isMoE && m.dp > 1` (`sim/latency/trained_physics_model.go:493`), where `m.dp` is `hw.EffectiveDP()` (same file, ~line 794). This is **not** reachable by passing `--dp > 1` on the CLI: under DP-as-placement (#1531 / #1556) every replica is configured at `DP=1`, so `EffectiveDP() == 1` and this term is inert — a config with `DP > 1` now comes only from constructing one directly (e.g. tests). With the term inert, an MoE model at `TP > 1` instead pays the MoE-FFN all-reduce over the TP group (the `m.dp == 1 && m.tp > 1` branch, ~line 484); at `TP == 1` there is no collective at all. See the DP-as-placement note below. Defaults to β₄ because both comm-backend families run over the same NVLink fabric and share the ring-collective per-phase efficiency β₄ captures (the per-family *volume* difference is in the basis, not the coefficient). The 11th coefficient overrides the default.
+- **β_EP** (MoE dispatch/combine, defaults to β₄): Corrects MoE expert-/data-parallel dispatch+combine all-to-all communication. The gate is `m.isMoE && (m.dp > 1 || m.epOn)` — since #1548 expert parallelism activates it too, because EP-on owns whole experts per rank and so must route tokens to their owner even at `DP=1`. The `m.dp > 1` half is **not** reachable from the CLI: under DP-as-placement (#1531 / #1556) every replica is configured at `DP=1`, so a `DP > 1` config now comes only from constructing one directly (e.g. tests); `--enable-expert-parallel` is the reachable activation path. With neither active, an MoE model at `TP > 1` instead pays the MoE-FFN all-reduce over the TP group (the `m.dp == 1 && m.tp > 1 && !m.epOn` branch) — exactly one of the two is ever charged; at `TP == 1` with EP off there is no collective at all. See the DP-as-placement and [Expert Parallelism](#expert-parallelism-ep-1548) notes below. Defaults to β₄ because both comm-backend families run over the same NVLink fabric and share the ring-collective per-phase efficiency β₄ captures (the per-family *volume* difference is in the basis, not the coefficient). The 11th coefficient overrides the default.
 
 **Alpha coefficients** (3 terms, API/framework overheads in µs):
 
@@ -207,9 +207,18 @@ things, both derived from what vLLM does rather than from a fitted number:
 
 | | EP **off** | EP **on** |
 |---|---|---|
-| routed-expert **weights** per GPU | `numExperts/(TP·DP)` tensor slices | `numExperts/EP` **whole** experts |
+| routed-expert **weights** per GPU | `numExperts/(TP·DP)` tensor slices — may be **below 1**, correctly | `numExperts/min(EP, numExperts)` **whole** experts |
 | routed-expert **compute** per GPU | `tokens·k/(TP·DP)` | **unchanged** |
-| MoE-FFN collective | all-reduce over the TP group | dispatch/combine all-to-all over the EP group |
+| MoE-FFN collective | all-reduce over the TP group | dispatch/combine all-to-all over the **full** EP group (unclamped) |
+
+The `min(EP, numExperts)` clamp on the **weight** divisor is the "a loaded rank holds one
+WHOLE expert" rule (`latency.ClampExpertShardToExpertCount`, shared with the KV-capacity
+model so the two agree on the same experts). Charging `numExperts/EP` below one expert would
+model memory that does not exist; clamping down charges *more* bytes, the safe direction, and
+warns. It applies to EP-**on** only: with EP off the experts are tensor-sharded, so a rank
+genuinely holds a *fraction* of every expert and a sub-1 value is the correct charge. The
+dispatch collective is deliberately **not** clamped — it really does span every rank in the
+group, however few experts they hold.
 
 Compute is EP-mode-invariant on purpose: with EP on, the `EP` GPUs jointly process the
 whole group's tokens, so per-GPU FLOPs land on the same value tensor-sharding gives. EP
@@ -266,11 +275,11 @@ between *families* (all-gather vs all-to-all) does change cost.
 
 The β₄ default assumes the dispatch/combine collective runs at the same per-byte efficiency as the TP all-reduce — true when both share one NVLink fabric, but not when EP spans nodes (e.g. inter-node InfiniBand for EP while TP stays intra-node NVLink). To fit β_EP for such a deployment:
 
-1. Collect real per-step latencies for a **MoE model at `--dp > 1`** with a fixed `--moe-comm-backend`, holding everything else constant.
+1. Collect real per-step latencies for a **MoE model with the dispatch term active** — since #1548 that means either `--enable-expert-parallel` (the CLI-reachable path; `--dp > 1` alone gives every replica `DP=1`) or a directly-constructed `DP > 1` config — with a fixed `--moe-comm-backend`, holding everything else constant.
 2. Freeze the other 10 β coefficients (and the α coefficients) at their bundled values.
 3. Fit only β_EP to the residual between observed step time and the model's prediction with the dispatch term zeroed — i.e. attribute the leftover to `β_EP · tMoEDispatch`.
 
-Because the dispatch term is the *only* term gated on `DP > 1`, the residual isolates it cleanly. Fit per comm-backend *family* (all-gather vs all-to-all), not per backend name; see the PR #1433 discussion for why per-backend scalars are the wrong granularity (the within-family differences are prefill/decode shape effects a single scalar cannot represent).
+Because the dispatch term is the *only* term gated on `DP > 1 || EP-on`, the residual isolates it cleanly. Note the EP-on route also *replaces* the `tMoEReduce` all-reduce rather than joining it, so the β₄-weighted reduction disappears from the same prediction — do not fit β_EP against a baseline that still charges it. Fit per comm-backend *family* (all-gather vs all-to-all), not per backend name; see the PR #1433 discussion for why per-backend scalars are the wrong granularity (the within-family differences are prefill/decode shape effects a single scalar cannot represent).
 
 ## Inter-Node Network Cost (trained-physics only)
 

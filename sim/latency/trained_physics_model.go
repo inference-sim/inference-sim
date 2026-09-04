@@ -2,6 +2,7 @@ package latency
 
 import (
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"math"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -38,8 +39,10 @@ import (
 //   - T_weight: Model weight loading bandwidth (per-step fixed cost)
 //   - T_tp_attn, T_tp_denseFFN: attention / dense-FFN tensor-parallel all-reduce
 //     (the pre-#1419 monolithic T_tp, split so DP scales each by /dp)
-//   - T_moe_reduce: MoE-FFN all-reduce, charged only at DP=1, TP>1 (#1419)
-//   - T_moe_dispatch: MoE dispatch/combine all-to-all, charged only at DP>1 (#1419)
+//   - T_moe_reduce: MoE-FFN all-reduce, charged at DP=1, TP>1 with expert parallelism
+//     OFF (#1419, #1548)
+//   - T_moe_dispatch: MoE dispatch/combine all-to-all, charged at DP>1 OR with expert
+//     parallelism ON (#1419, #1548). Exactly one of these two is charged for an MoE model.
 //   - L: Number of transformer layers
 //   - B: Batch size (number of requests)
 //   - nMoE: Number of MoE layers (0 for dense models)
@@ -225,6 +228,26 @@ type TrainedPhysicsModel struct {
 	// unchanged (INV-6/INV-BC-DP1).
 	epOn             bool
 	expertShardGroup int
+
+	// expertWeightShardGroup is expertShardGroup with the "a loaded rank holds one WHOLE
+	// expert" clamp applied (ClampExpertShardToExpertCount), and is the divisor for the
+	// routed-expert WEIGHT term only. It exists because the two consumers of the group need
+	// different bounds:
+	//
+	//   - WEIGHTS (this field) cannot be divided by more ranks than there are experts. At
+	//     EP=16 over 8 experts, num_experts/EP = 0.5 charges half an expert's bytes to a GPU
+	//     that in reality holds one whole expert — modelling memory that does not exist.
+	//     The KV-capacity model already clamps this exact divisor (resolveExpertShardSize),
+	//     so leaving step time unclamped would falsify the agreement between them.
+	//   - The DISPATCH/COMBINE collective (expertShardGroup, unclamped) genuinely runs over
+	//     every rank in the group, however few experts there are.
+	//
+	// The clamp is applied ONLY when expert parallelism is on. Under EP-off the experts are
+	// TENSOR-sharded, so a rank really does hold a FRACTION of every expert and a
+	// sub-one-expert charge is correct — clamping there would both be wrong physics and
+	// change the step time of every pre-#1548 MoE config whose TP·DP group exceeds its
+	// expert count (INV-6).
+	expertWeightShardGroup int
 
 	// Pre-converted hardware specs for hot-path efficiency.
 	flopsPeakUs float64 // FLOP/µs (divide FLOPs by this → µs)
@@ -651,7 +674,7 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	// batch-dependent term. Weight loading is /tp (not /dp): weights are replicated across
 	// DP groups.
 	//
-	// The divisor is expertShardGroup, NOT moeGroup (#1548). They coincide for every
+	// The divisor is expertWeightShardGroup, NOT moeGroup (#1548). They coincide for every
 	// pre-#1548 config — EP-off tensor-shards the experts over the flattened TP·DP group,
 	// EP-on at this config's own DP owns numExperts/(TP·DP) whole experts, identical
 	// per-GPU bytes — and diverge only for a DP-as-placement replica (own DP rewritten to
@@ -663,7 +686,7 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	// MoE and dense layers have different FFN dims and different weight loading.
 	var bytesFfn float64
 	if m.numMoELayers > 0 {
-		wLoad := m.placement.Resolve(totalPrefillTokens+totalDecodeTokens, kEff, m.numExperts, m.expertShardGroup, m.dp)
+		wLoad := m.placement.Resolve(totalPrefillTokens+totalDecodeTokens, kEff, m.numExperts, m.expertWeightShardGroup, m.dp)
 		bytesFfn += float64(m.numMoELayers) * wLoad.PerGPUExpertCount * 3 * d * float64(m.dFFMoE) * bpp
 		// Shared-expert weight (B3): a standard MLP sharded over the attention TP group
 		// (size tp, NOT the flattened MoE group), loaded once per MoE layer.
@@ -781,7 +804,7 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 		decodeTerm +
 		m.Beta[2]*tWeight +
 		m.Beta[3]*(tTpAttention+tTpDenseFFN+tMoEReduce) +
-		m.Beta[10]*tMoEDispatch + // β_EP: MoE dispatch/combine all-to-all (DP>1)
+		m.Beta[10]*tMoEDispatch + // β_EP: MoE dispatch/combine all-to-all (DP>1 or EP-on)
 		m.Beta[4]*L +
 		m.Beta[5]*batchSize +
 		m.Beta[6] +
@@ -1083,45 +1106,61 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 	// expert-owning group (#1548), which is EffectiveMoEGroupSize for every pre-#1548
 	// config and widens to the logical EP group under DP-as-placement + EP.
 	expertShardGroup := hw.EffectiveExpertShardGroupSize()
+	// The WEIGHT divisor additionally obeys the "one whole expert per loaded rank" clamp,
+	// under expert parallelism only (see the expertWeightShardGroup field comment for why
+	// EP-off must stay unclamped). Warned once at construction, never per step, and never
+	// silent (R1) — the KV-capacity model warns on the same substitution.
+	expertWeightShardGroup := expertShardGroup
+	if hw.EffectiveEP() > 1 {
+		if clamped, wasClamped := ClampExpertShardToExpertCount(expertShardGroup, hw.ModelConfig.NumLocalExperts); wasClamped {
+			logrus.Warnf("trained-physics: expert-parallel group size %d exceeds the model's routed-expert "+
+				"count %d; charging routed-expert WEIGHTS over %d GPUs (one whole expert each) instead. The "+
+				"dispatch/combine collective still spans all %d ranks. Expert redundancy (--enable-eplb / "+
+				"--num-redundant-experts) is not modeled.",
+				expertShardGroup, hw.ModelConfig.NumLocalExperts, clamped, expertShardGroup)
+			expertWeightShardGroup = clamped
+		}
+	}
 	tpSpanScale, moeSpanScale := spanScalesFor(hw.NetworkTopology, hw.TP, expertShardGroup,
 		commFamily, hw.HWConfig.InterconnectBwRatio())
 	bwHbmUs := hw.HWConfig.BwPeakTBs * 1e6
 
 	return &TrainedPhysicsModel{
-		Alpha:                 [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
-		Beta:                  betaSlice,
-		prefillSplit:          len(coeffs.BetaCoeffs) >= 9,
-		decodeSplit:           len(coeffs.BetaCoeffs) >= 10,
-		numLayers:             hw.ModelConfig.NumLayers,
-		numMoELayers:          numMoELayers,
-		numDenseLayers:        numDenseLayers,
-		numKVBearingLayers:    hw.ModelConfig.EffectiveKVBearingLayers(), // #1636: full-attention layers; == numLayers for non-hybrid models
-		hiddenDim:             hw.ModelConfig.HiddenDim,
-		numHeads:              hw.ModelConfig.NumHeads,
-		headDim:               headDim,
-		dKV:                   numKVHeads * headDim,
-		dFFMoE:                dFFMoE,
-		dFFDense:              dFFDense,
-		kEff:                  max(1, hw.ModelConfig.NumExpertsPerTok),
-		numExperts:            hw.ModelConfig.NumLocalExperts,
-		hasInterleavedMoE:     hw.ModelConfig.InterleaveMoELayerStep > 0 && hw.ModelConfig.IsMoE(),
-		isMoE:                 hw.ModelConfig.IsMoE(),
-		tp:                    hw.TP,
-		weightBPP:             weightBPP,
-		activationBPP:         hw.ModelConfig.BytesPerParam,
-		dp:                    hw.EffectiveDP(),
-		moeGroup:              hw.EffectiveMoEGroupSize(),
-		sharedExpertFFNDim:    hw.ModelConfig.SharedExpertFFNDim,
-		commFamily:            commFamily,
-		all2All:               commProfile,
-		placement:             sim.BalancedPlacement{},
-		epOn:                  hw.EffectiveEP() > 1,
-		expertShardGroup:      expertShardGroup,
-		flopsPeakUs:           peakFlops,
-		bwHbmUs:               bwHbmUs,
-		tpSpanScale:           tpSpanScale,
-		moeSpanScale:          moeSpanScale,
-		tpCrossNodeLatencyUs:  crossNodeLatencyUs(hw.NetworkTopology, hw.TP, hw.HWConfig),
-		moeCrossNodeLatencyUs: crossNodeLatencyUs(hw.NetworkTopology, expertShardGroup, hw.HWConfig),
+		Alpha:                  [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
+		Beta:                   betaSlice,
+		prefillSplit:           len(coeffs.BetaCoeffs) >= 9,
+		decodeSplit:            len(coeffs.BetaCoeffs) >= 10,
+		numLayers:              hw.ModelConfig.NumLayers,
+		numMoELayers:           numMoELayers,
+		numDenseLayers:         numDenseLayers,
+		numKVBearingLayers:     hw.ModelConfig.EffectiveKVBearingLayers(), // #1636: full-attention layers; == numLayers for non-hybrid models
+		hiddenDim:              hw.ModelConfig.HiddenDim,
+		numHeads:               hw.ModelConfig.NumHeads,
+		headDim:                headDim,
+		dKV:                    numKVHeads * headDim,
+		dFFMoE:                 dFFMoE,
+		dFFDense:               dFFDense,
+		kEff:                   max(1, hw.ModelConfig.NumExpertsPerTok),
+		numExperts:             hw.ModelConfig.NumLocalExperts,
+		hasInterleavedMoE:      hw.ModelConfig.InterleaveMoELayerStep > 0 && hw.ModelConfig.IsMoE(),
+		isMoE:                  hw.ModelConfig.IsMoE(),
+		tp:                     hw.TP,
+		weightBPP:              weightBPP,
+		activationBPP:          hw.ModelConfig.BytesPerParam,
+		dp:                     hw.EffectiveDP(),
+		moeGroup:               hw.EffectiveMoEGroupSize(),
+		sharedExpertFFNDim:     hw.ModelConfig.SharedExpertFFNDim,
+		commFamily:             commFamily,
+		all2All:                commProfile,
+		placement:              sim.BalancedPlacement{},
+		epOn:                   hw.EffectiveEP() > 1,
+		expertShardGroup:       expertShardGroup,
+		expertWeightShardGroup: expertWeightShardGroup,
+		flopsPeakUs:            peakFlops,
+		bwHbmUs:                bwHbmUs,
+		tpSpanScale:            tpSpanScale,
+		moeSpanScale:           moeSpanScale,
+		tpCrossNodeLatencyUs:   crossNodeLatencyUs(hw.NetworkTopology, hw.TP, hw.HWConfig),
+		moeCrossNodeLatencyUs:  crossNodeLatencyUs(hw.NetworkTopology, expertShardGroup, hw.HWConfig),
 	}, nil
 }

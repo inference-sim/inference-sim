@@ -449,3 +449,84 @@ func TestStepTime_WideEPDoesNotAlsoReduceCompute(t *testing.T) {
 			"both): top_k sensitivity was %dµs EP-off and %dµs EP-on. A difference would mean the "+
 			"weight saving is accompanied by an illegitimate compute reduction", off, on)
 }
+
+// ─── The "one whole expert per rank" clamp on the WEIGHT divisor ─────────────
+
+// TestStepTime_EPWeightDivisorClampedToExpertCount is the boundary the review flagged as
+// untested: an expert-parallel group WIDER than the model's routed-expert count. A rank that
+// holds an expert holds one WHOLE expert, so num_experts is the widest divisor the weight
+// footprint can support — charging num_experts/EP below 1 would model memory that does not
+// exist (the optimistic direction), and the KV-capacity model already clamps this exact
+// divisor, so leaving step time unclamped would falsify the agreement between them.
+//
+// The law: past the expert count, widening the EP group must stop reducing the WEIGHT term.
+// It is asserted on a weight-dominated decode batch, and via a sibling model rather than a
+// re-implemented formula — a group of exactly num_experts must cost the same as any wider one.
+func TestStepTime_EPWeightDivisorClampedToExpertCount(t *testing.T) {
+	mc := *dpepMoEModelConfig()
+	mc.NumLocalExperts = 8 // Mixtral-class: an 8-expert model under a 16- or 64-wide EP group
+	batch := makeDecodeBatch(4, 256)
+
+	atCount := newEPModel(t, mc, 8, 1, true, "", 1).StepTime(batch) // EP group = TP = 8
+	// Wider groups: 8·2 = 16 and 8·8 = 64, both beyond the 8 routed experts.
+	for _, groupDP := range []int{2, 8} {
+		wider := newEPModel(t, mc, 8, 1, true, "", groupDP).StepTime(batch)
+		assert.GreaterOrEqual(t, wider, atCount,
+			"an EP group of TP·%d exceeds the model's %d routed experts, so the WEIGHT divisor must be "+
+				"clamped to the expert count — a wider group must not keep making weights cheaper "+
+				"(at-count=%dµs, wider=%dµs)", groupDP, mc.NumLocalExperts, atCount, wider)
+	}
+}
+
+// TestStepTime_EPOffFractionalExpertShareIsNotClamped is the counterpart, and the reason the
+// clamp is gated on expert parallelism rather than applied unconditionally. With EP OFF the
+// experts are TENSOR-sharded: a rank genuinely holds a FRACTION of every expert, so
+// num_experts/group below one full-expert-equivalent is the CORRECT charge (8 experts
+// tensor-sharded over a 16-GPU group is 0.5 each). Clamping there would be wrong physics AND
+// would change the step time of every pre-#1548 MoE config whose flattened TP·DP group
+// exceeds its expert count — an INV-6 break.
+//
+// The probe varies num_routed_experts at a FIXED group, which isolates the weight term
+// exactly: in BalancedPlacement.Resolve, numExperts enters PerGPUExpertCount and nothing else
+// (PerGPUComputeTokens and PerGPUCommTokens are functions of tokens, kEff and the group). So
+// at a 16-wide group, an 8-expert model must be strictly cheaper than a 16-expert one (0.5 vs
+// 1.0 full-expert-equivalents). Were the 8-expert case clamped to 8, its divisor would also
+// yield 1.0 and the two would be EQUAL — which is exactly what this rules out.
+func TestStepTime_EPOffFractionalExpertShareIsNotClamped(t *testing.T) {
+	base := *dpepMoEModelConfig()
+	batch := makeDecodeBatch(4, 256)
+	withExperts := func(n int) int64 {
+		mc := base
+		mc.NumLocalExperts = n
+		// EP off ⇒ the weight divisor is the flattened moeGroup = TP·DP = 8·2 = 16. (TP=16
+		// directly is not expressible on this fixture: NumKVHeads=8 must divide TP.)
+		return newEPModel(t, mc, 8, 2, false, "", 0).StepTime(batch)
+	}
+	eight, sixteen := withExperts(8), withExperts(16)
+	assert.Less(t, eight, sixteen,
+		"with EP off the experts are tensor-sharded, so 8 experts over a 16-wide group must charge "+
+			"0.5 full-expert-equivalents per GPU — strictly less than a 16-expert model's 1.0. Equality "+
+			"would mean the EP-off divisor was clamped to the expert count, which is wrong physics here "+
+			"and an INV-6 break for pre-#1548 configs (8=%dµs, 16=%dµs)", eight, sixteen)
+}
+
+// TestStepTime_EPOnClampLandsExactlyOnTheExpertCount pins the clamp VALUE, not just its
+// direction: under EP-on with a group wider than the expert count, the weight divisor must be
+// exactly num_routed_experts. So an 8-expert model at EP=16 must cost precisely what a
+// 16-expert model at EP=16 costs — both charge one whole expert per loaded rank.
+//
+// Same isolation as above (numExperts reaches only the weight term), and it is the assertion
+// the EP-off test proves must NOT hold when expert parallelism is off.
+func TestStepTime_EPOnClampLandsExactlyOnTheExpertCount(t *testing.T) {
+	base := *dpepMoEModelConfig()
+	batch := makeDecodeBatch(4, 256)
+	withExperts := func(n int) int64 {
+		mc := base
+		mc.NumLocalExperts = n
+		// EP on, group = TP·2 = 16, wider than either expert count.
+		return newEPModel(t, mc, 8, 1, true, "", 2).StepTime(batch)
+	}
+	assert.Equal(t, withExperts(16), withExperts(8),
+		"under EP-on the weight divisor must clamp to exactly num_routed_experts, so an 8-expert model "+
+			"at EP=16 charges one whole expert per rank — identical to a 16-expert model at EP=16")
+}
