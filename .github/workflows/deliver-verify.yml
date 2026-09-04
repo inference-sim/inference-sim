@@ -72,9 +72,22 @@ jobs:
     # claude-code-action can post inline review comments, and if it ever does so under an App
     # token that would be a live trigger. Verify triggering itself is an unbounded agent loop,
     # so this is guarded rather than assumed.
+    # Three guards, each authoritative for a different event shape:
+    #   - review.user.type   — pull_request_review (payload has `review`, not `comment`)
+    #   - comment.user.type  — pull_request_review_comment (payload has `comment`, not `review`)
+    # A bot-authored review event must never re-trigger this phase: verify triggering itself is
+    # an unbounded agent loop.
+    #   - the head-ref test — review triggers cannot be branch-filtered in `on:`, so without it
+    #     every review comment anywhere in the repo wakes the single self-hosted runner just to
+    #     have Resolve exit quietly. That runner is a known bottleneck, so the wakeup is skipped
+    #     rather than absorbed.
     if: |
       github.event.review.user.type != 'Bot' &&
-      github.event.comment.user.type != 'Bot'
+      github.event.comment.user.type != 'Bot' &&
+      (
+        (github.event_name != 'pull_request_review' && github.event_name != 'pull_request_review_comment')
+        || startsWith(github.event.pull_request.head.ref, 'deliver/issue-')
+      )
     runs-on: [self-hosted]
     # Generous: the full test suite plus an archon build plus an agent review. The single
     # self-hosted runner is a known contention point, tracked as a follow-up on #1654.

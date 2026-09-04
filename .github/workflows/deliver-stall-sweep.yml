@@ -9,8 +9,9 @@ name: Deliver — Stall Sweep
 # indistinguishable from an issue nobody had run the command on. Only an observer outside
 # the job can see that.
 #
-# A delivery is identified from the PR side, deliberately not from a label. An open PR whose
-# head ref matches `deliver/issue-*` and which carries neither terminal label is in flight.
+# A delivery is identified from the PR side, deliberately not from a phase label. An open PR
+# whose head ref matches `deliver/issue-*`, which carries neither terminal label, and which is
+# not paused, is in flight.
 # The obvious alternative does not work and is worth recording so nobody retries it: a
 # workflow_dispatch run reports `head_branch` as the DISPATCH ref (`main`) and does not
 # expose its inputs, so a verify or correct run cannot be attributed to a PR from run
@@ -55,16 +56,22 @@ jobs:
         run: |
           set -uo pipefail
           active=0
+          # `queued` as well as `in_progress`: with one self-hosted runner a phase can sit
+          # queued for a long time, and that is a delivery in flight, not a dead one. Without
+          # this the sweep would flag it and tell a human "a phase most likely died", which is
+          # a misdiagnosis of a queue.
           for wf in deliver-implement.yml deliver-verify.yml deliver-correct.yml; do
-            if ! n=$(gh api "/repos/$REPO/actions/workflows/$wf/runs?status=in_progress&per_page=1" \
-                       --jq '.total_count'); then
-              echo "::warning::could not read $wf runs; assuming a phase may be active and standing down"
-              active=1; break
-            fi
-            if [[ "$n" != "0" ]]; then
-              echo "$wf has a run in progress"
-              active=1; break
-            fi
+            for st in in_progress queued; do
+              if ! n=$(gh api "/repos/$REPO/actions/workflows/$wf/runs?status=$st&per_page=1" \
+                         --jq '.total_count'); then
+                echo "::warning::could not read $wf $st runs; assuming a phase may be active and standing down"
+                active=1; break 2
+              fi
+              if [[ "$n" != "0" ]]; then
+                echo "$wf has a $st run"
+                active=1; break 2
+              fi
+            done
           done
           echo "active=$active" >> "$GITHUB_OUTPUT"
           [[ "$active" == "0" ]] && echo "no phase running — sweeping" || echo "standing down"
@@ -78,10 +85,17 @@ jobs:
             echo "::error::could not list pull requests"; exit 1
           fi
 
-          # In flight = a delivery branch, open, and no terminal verdict yet.
+          # In flight = a delivery branch, open, no terminal verdict, and NOT paused.
+          #
+          # Excluding deliver:paused matters: a paused delivery goes quiet BY DESIGN, so it
+          # crosses the 90-minute threshold every time. Flagging it would apply needs-human over
+          # a human's explicit hold and force manual cleanup before the delivery could resume —
+          # the automation overruling the operator, which is the opposite of what the pause is
+          # for.
           candidates=$(jq -r '.[]
             | select(.headRefName | test("^deliver/issue-[0-9]+$"))
             | select([.labels[].name] | any(. == "ready-for-merge" or . == "needs-human") | not)
+            | select([.labels[].name] | any(. == "deliver:paused") | not)
             | "\(.number)\t\(.createdAt)"' <<< "$prs")
 
           if [[ -z "$candidates" ]]; then echo "no deliveries in flight"; exit 0; fi
