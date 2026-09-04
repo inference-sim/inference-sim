@@ -223,9 +223,18 @@ type TrainedPhysicsModel struct {
 	// It also sizes the dispatch/combine collective, because the all-to-all runs over the
 	// expert-owning group.
 	//
-	// Both fields are inert for every configuration expressible before #1548: EP off
-	// leaves epOn false and expertShardGroup == moeGroup, so StepTime is bit-for-bit
-	// unchanged (INV-6/INV-BC-DP1).
+	// Inertness, stated precisely (the INV-6/INV-BC-DP1 boundary). With expert parallelism
+	// OFF — and for every dense model, whose isMoE gate forces it — epOn is false and
+	// expertShardGroup == moeGroup, so StepTime is bit-for-bit unchanged from a pre-#1548
+	// build. That is the byte-identity guarantee.
+	//
+	// It does NOT extend to EP-ON configs, which were expressible before #1548 and whose
+	// step time this feature deliberately changes — that IS the feature. The one exception is
+	// documented and tested: at DP=1 on the all-gather comm family (vLLM's default) EP-on and
+	// EP-off come out numerically EQUAL, because all-gather+reduce-scatter moves exactly the
+	// ring-all-reduce volume and β_EP defaults to β₄. On a modular all-to-all backend at the
+	// same DP=1 they differ (see TestStepTime_EPReplacesReduceWithDispatch), so "EP-on is
+	// inert at DP=1" would be an overclaim.
 	epOn             bool
 	expertShardGroup int
 

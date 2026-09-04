@@ -6,11 +6,14 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim/cluster"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -214,4 +217,100 @@ func TestValidatePerPoolLatencyBackends(t *testing.T) {
 	decodeErr := validatePerPoolLatencyBackends(true, none, roofline)
 	require.Error(t, decodeErr)
 	assert.Contains(t, decodeErr.Error(), "decode-latency-model")
+}
+
+// captureLogrus runs fn with logrus redirected to a buffer and returns what it wrote.
+// Mirrors the existing pattern in cmd/calibrate_test.go and sim/cluster/cluster_warnings_test.go.
+func captureLogrus(t *testing.T, fn func()) string {
+	t.Helper()
+	var buf bytes.Buffer
+	orig := logrus.StandardLogger().Out
+	logrus.SetOutput(&buf)
+	t.Cleanup(func() { logrus.SetOutput(orig) })
+	fn()
+	return buf.String()
+}
+
+// TestApplyPerRoleMoECommBackends_InertnessDiagnostics covers the two operator-feedback
+// branches (round-5 observation 1). A per-role backend that cannot possibly take effect must
+// SAY so — silence would let an operator believe the GLM HT-prefill / LL-decode recipe was
+// applied when no dispatch term is charged at all. The value is still written through in both
+// cases (the flag is inert, not invalid), which is what distinguishes these from the R1 hard
+// error above.
+func TestApplyPerRoleMoECommBackends_InertnessDiagnostics(t *testing.T) {
+	origP, origD := prefillMoECommBackend, decodeMoECommBackend
+	t.Cleanup(func() { prefillMoECommBackend, decodeMoECommBackend = origP, origD })
+	prefillMoECommBackend, decodeMoECommBackend = "deepep_high_throughput", "deepep_low_latency"
+	changedAll := func(string) bool { return true }
+
+	t.Run("dense model warns and still records", func(t *testing.T) {
+		var p, d cluster.PoolOverrides
+		out := captureLogrus(t, func() {
+			require.NoError(t, applyPerRoleMoECommBackends(changedAll, false /*isMoE*/, true, &p, &d))
+		})
+		assert.Contains(t, out, "no effect on a dense model")
+		assert.Contains(t, out, "prefill-moe-comm-backend")
+		assert.Contains(t, out, "decode-moe-comm-backend", "both roles must be diagnosed, not just the first")
+		assert.Equal(t, "deepep_high_throughput", p.MoECommBackend, "an inert flag is still recorded")
+	})
+
+	t.Run("MoE with no dispatch term warns", func(t *testing.T) {
+		var p, d cluster.PoolOverrides
+		out := captureLogrus(t, func() {
+			require.NoError(t, applyPerRoleMoECommBackends(changedAll, true, false /*dispatchActive*/, &p, &d))
+		})
+		assert.Contains(t, out, "without --enable-expert-parallel")
+		assert.Equal(t, "deepep_low_latency", d.MoECommBackend)
+	})
+
+	t.Run("MoE with an active dispatch term is silent", func(t *testing.T) {
+		var p, d cluster.PoolOverrides
+		out := captureLogrus(t, func() {
+			require.NoError(t, applyPerRoleMoECommBackends(changedAll, true, true, &p, &d))
+		})
+		assert.NotContains(t, out, "no effect",
+			"a backend that really is charged must not be reported as inert")
+	})
+}
+
+// TestRunCmd_PerRoleFlagErrors_AreFatal is round-5 observation 2: the unit tests prove these
+// helpers RETURN errors, but only a subprocess proves the command bodies convert them to
+// logrus.Fatalf (exit 1) rather than logging and continuing with a half-applied config. Both
+// helpers are covered, on both commands, since each has two call sites that could drift.
+func TestRunCmd_PerRoleFlagErrors_AreFatal(t *testing.T) {
+	const env = "BLIS_EP_FATAL_CASE"
+	if v := os.Getenv(env); v != "" {
+		var extra []string
+		switch v {
+		case "run-bad-backend":
+			extra = []string{"--decode-moe-comm-backend", "deepep_medium_throughput"}
+		case "run-roofline-pool":
+			extra = []string{"--decode-latency-model", "roofline"}
+		}
+		rootCmd.SetArgs(epPDRunArgs(extra...))
+		_ = rootCmd.Execute()
+		os.Exit(0) // reached only if no Fatalf fired
+	}
+	for _, tc := range []struct {
+		name, mode, want string
+	}{
+		{"invalid per-role backend", "run-bad-backend", "decode-moe-comm-backend"},
+		{"per-pool roofline under EP", "run-roofline-pool", "decode-latency-model"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := exec.Command(os.Args[0], "-test.run=^TestRunCmd_PerRoleFlagErrors_AreFatal$")
+			c.Env = append(os.Environ(), env+"="+tc.mode)
+			out, err := c.CombinedOutput()
+			if err == nil {
+				t.Fatalf("expected exit 1 (logrus.Fatalf), got exit 0; output:\n%s", out)
+			}
+			var exitErr *exec.ExitError
+			if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+				t.Fatalf("expected exit code 1, got %v; output:\n%s", err, out)
+			}
+			if !strings.Contains(string(out), tc.want) {
+				t.Errorf("fatal message should name --%s; output:\n%s", tc.want, out)
+			}
+		})
+	}
 }

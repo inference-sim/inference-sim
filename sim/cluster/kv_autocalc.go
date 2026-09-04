@@ -103,6 +103,18 @@ func applyPerInstanceKVCapacity(simCfg *sim.SimConfig, gpuMemoryGiB float64, cfg
 	// Divide the DP-aggregate back to this instance's own budget. Gated on exactly the
 	// condition CalculateKVBlocks multiplies under (MoE && dp > 1), so a dense model — or the
 	// epGroupDP == 1 case that is all anything reachable produces — is untouched.
+	//
+	// The non-positive guard below is DEFENSE IN DEPTH and is unreachable BY CONSTRUCTION, not
+	// merely in practice: CalculateKVBlocks rejects a non-positive block count *before* it
+	// multiplies by dp (sim/latency/kv_capacity.go, "computed 0 blocks"), so what comes back is
+	// perRank·dp with perRank >= 1 and the quotient is >= 1. The guarantee therefore lives in
+	// another package, which is exactly why the check is kept — cmd.applyDPPlacement carries the
+	// same guard, for the same reason. It cannot be covered by a behavioral test without
+	// violating the callee's contract; a test that could reach it would be asserting a
+	// CalculateKVBlocks bug rather than this function's behavior.
+	//
+	// It matters because zero is not merely wrong here: NewSimulator panics on a zero capacity,
+	// and the derived kvFeasibleMax of 0 reads downstream as "unlimited" — the inverse of a cap.
 	if cfg.Params.IsMoE && epGroupDP > 1 {
 		blocks /= int64(epGroupDP)
 		if blocks <= 0 {
