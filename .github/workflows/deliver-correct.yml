@@ -18,6 +18,12 @@ permissions:
   actions: write        # required to dispatch the verify phase
   id-token: write
 
+# Shares one group with the other phases, keyed on the delivery branch, so a correction
+# cannot overlap a verify for the same PR. Never cancel in progress.
+concurrency:
+  group: delivery-deliver/issue-${{ inputs.issue_number }}
+  cancel-in-progress: false
+
 on:
   workflow_dispatch:
     inputs:
@@ -170,6 +176,19 @@ jobs:
             dismissal counts as unresolved until the reviewer accepts it, so do not treat
             dismissing as closing.
 
+            IF YOU DISMISS ANY FINDING, record it as state, not just as prose:
+
+            ```bash
+            gh api -X POST /repos/${{ github.repository }}/issues/${{ inputs.pr_number }}/labels \
+              -f 'labels[]=deliver:has-dismissals'
+            ```
+
+            The gate reads that label and will not let this PR reach `ready-for-merge` while it
+            is present. Only the review phase removes it, and only when it has explicitly
+            accepted each dismissal. This is what stops a waved-away finding from becoming a
+            resolution — so apply it honestly. If you fixed everything and dismissed nothing,
+            do not apply it.
+
             Constraints, in order of how much they matter:
 
             - DO NOT WEAKEN A TEST TO MAKE IT PASS. If a test fails because the contract
@@ -206,8 +225,17 @@ jobs:
       # with a consumed round and nothing explaining why.
       # Gated on `owned` for the same reason as the verify phase: a validation refusal must not
       # be followed by a comment and a label on a PR the loop does not own.
+      # `always() && !success()`, NOT `failure() || cancelled()`. Per the GitHub expression
+      # docs, `failure()` is true when a previous step FAILS and `cancelled()` is true when the
+      # WORKFLOW is cancelled — a cancelled *step* is neither, so the old guard skipped the
+      # reporter exactly when a step was cancelled. Observed live on #1685.
+      #
+      # Scope note, so this is not over-claimed: this cannot report a dead RUNNER. When the
+      # runner receives a shutdown signal no step executes, whatever its `if:` says — even
+      # `always()` ones, and even the action's own post-steps. That class is the stall sweep's
+      # job (deliver-stall-sweep.yml), not this reporter's.
       - name: Report a failed correction
-        if: (failure() || cancelled()) && steps.target.outputs.owned == 'true'
+        if: always() && !success() && steps.target.outputs.owned == 'true' && steps.paused.outputs.paused != 'true'
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
