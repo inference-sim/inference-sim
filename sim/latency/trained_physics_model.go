@@ -711,7 +711,8 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	//   tTpAttention — attention all-reduce, one unit per layer (computed here).
 	//   tTpDenseFFN  — dense-FFN all-reduce, one unit per dense layer (computed here).
 	//   tMoEReduce / tMoEDispatch — MoE-FFN communication, computed just below and
-	//     partitioned on the DP boundary (DP=1 all-reduce vs DP>1 dispatch/combine).
+	//     partitioned on the DP-or-EP boundary (#1548): an all-reduce at DP=1 with expert
+	//     parallelism off, dispatch/combine at DP>1 or with expert parallelism on.
 	//
 	// tpAllReduceBasis(units, tokens, tp) is the ring-all-reduce basis: units × tokens ×
 	// hidden × activationBPP × 2 (ring phases) × (tp-1)/tp / bwHbmUs. β₄ absorbs the

@@ -530,3 +530,33 @@ func TestStepTime_EPOnClampLandsExactlyOnTheExpertCount(t *testing.T) {
 		"under EP-on the weight divisor must clamp to exactly num_routed_experts, so an 8-expert model "+
 			"at EP=16 charges one whole expert per rank — identical to a 16-expert model at EP=16")
 }
+
+// TestStepTime_EPDispatchGroupIsNotClampedToExpertCount is the other half of the clamp
+// contract, and the discriminating test the qa-review gate asked for: the WEIGHT divisor is
+// clamped to the routed-expert count, but the DISPATCH/COMBINE collective is deliberately NOT
+// — it genuinely spans every rank in the expert-parallel group, however few experts they hold.
+//
+// The isolation is exact. Past the expert count the weight term is PINNED (both groups below
+// clamp to the same 8), so any remaining step-time difference between two wider groups can only
+// come from the dispatch term. On the all-gather family the dispatch volume carries
+// (group-1)/group, which keeps rising with the real group: 15/16 at EP=16, 63/64 at EP=64. So
+// a strictly larger step time at the wider group proves the collective saw the unclamped group.
+//
+// Were the dispatch group clamped too, both would use 7/8 and the two step times would be
+// EQUAL — which is exactly what this rules out. A token-heavy batch makes the dispatch term
+// large enough for the comparison to be decisive rather than a rounding artefact.
+func TestStepTime_EPDispatchGroupIsNotClampedToExpertCount(t *testing.T) {
+	mc := *dpepMoEModelConfig()
+	mc.NumLocalExperts = 8 // both groups below exceed this, so the weight term is pinned
+	batch := makePrefillBatch(16, 2048)
+
+	at16 := newEPModel(t, mc, 8, 1, true, "allgather_reducescatter", 2).StepTime(batch) // EP=16
+	at64 := newEPModel(t, mc, 8, 1, true, "allgather_reducescatter", 8).StepTime(batch) // EP=64
+
+	assert.Greater(t, at64, at16,
+		"the dispatch/combine collective must span the FULL expert-parallel group, unclamped: past "+
+			"the %d-expert clamp the weight term is identical for EP=16 and EP=64, so the wider group's "+
+			"larger (group-1)/group dispatch volume must still show up as more step time. Equality "+
+			"would mean the collective was clamped to the expert count too (EP=16: %dµs, EP=64: %dµs)",
+		mc.NumLocalExperts, at16, at64)
+}

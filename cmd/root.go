@@ -1086,9 +1086,10 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		logrus.Fatalf("--enable-expert-parallel requires a MoE model (got dense model %q with no experts); "+
 			"vLLM fatally rejects this configuration.", model)
 	}
-	// --moe-comm-backend selects the MoE dispatch/combine cost model (trained-physics
-	// only, DP>1). Validate the name and reject non-default values on other backends so
-	// the flag never silently no-ops. Empty string defers to the model factory's default.
+	// --moe-comm-backend selects the MoE dispatch/combine cost model (trained-physics only;
+	// charged at DP>1 OR with --enable-expert-parallel since #1548). Validate the name and
+	// reject non-default values on other backends so the flag never silently no-ops. Empty
+	// string defers to the model factory's default.
 	if moeCommBackend != "" {
 		if !latency.IsValidMoECommBackend(moeCommBackend) {
 			logrus.Fatalf("--moe-comm-backend %q is not a recognized vLLM MoE all-to-all backend (valid: %s).",
@@ -1479,7 +1480,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&model, "model", "", "LLM name")
 	cmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
 	cmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
-	cmd.Flags().IntVar(&dataParallelism, "dp", 1, "Data parallelism degree (MoE models only; --latency-model trained-physics only). --dp N spawns N real single-node engine replicas per --num-instances, each sized per-rank, on both `blis run` and `blis replay` (#1531, #1556). Not yet supported with --enable-expert-parallel (#1548), or with PD disaggregation / the autoscaler / node pools (#1553)")
+	cmd.Flags().IntVar(&dataParallelism, "dp", 1, "Data parallelism degree (MoE models only; --latency-model trained-physics only). --dp N spawns N real single-node engine replicas per --num-instances, each sized per-rank, on both `blis run` and `blis replay` (#1531, #1556). Supported with --enable-expert-parallel since #1548 (the EP group is those replicas' GPUs; re-supply both flags on replay). Not supported with PD disaggregation / the autoscaler / node pools (#1553)")
 	cmd.Flags().BoolVar(&enableExpertParallel, "enable-expert-parallel", false, "Enable expert parallelism for MoE models (mirrors vLLM --enable-expert-parallel; --latency-model trained-physics only)")
 	cmd.Flags().StringVar(&moeCommBackend, "moe-comm-backend", "", "MoE all-to-all comm backend for dispatch/combine cost (mirrors vLLM VLLM_ALL2ALL_BACKEND: naive, allgather_reducescatter [default], pplx, deepep_high_throughput, deepep_low_latency, mori, flashinfer_all2allv; MoE + --latency-model trained-physics + --dp > 1)")
 	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "trained-physics", "Latency model backend: trained-physics (default), roofline")
