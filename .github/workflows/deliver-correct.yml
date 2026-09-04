@@ -127,6 +127,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           anthropic_api_key: ${{ secrets.LITELLM_API_KEY }}
+          # claude-code-action refuses to run when a BOT initiated the workflow, and its
+          # allowed_bots input defaults to "" (no bots at all). This phase is always dispatched by
+          # the preceding phase via `gh workflow run` under GITHUB_TOKEN, so its initiating actor
+          # is always github-actions[bot] — meaning without this the agent step fails every time
+          # and no delivery can reach a verdict (#1681).
+          #
+          # Named rather than "*": the action's docs warn that on a public repo "*" lets external
+          # Apps invoke this action with prompts they control. github-actions is the only
+          # initiator these dispatched phases can legitimately have.
+          allowed_bots: "github-actions"
           claude_args: '--model ${{ env.DELIVER_MODEL }} --allowed-tools Skill Agent Bash Read Edit Write'
           show_full_output: true
           # Same reason as the other two phases: the prompts reference skills that live in
