@@ -28,4 +28,12 @@ type RouterState struct {
 	// and an ID that has no corresponding entry in Snapshots (e.g., the pod
 	// was removed after routing) and guard accordingly.
 	SelectedInstance string
+	// ActiveTransfers is the live count of in-flight KV transfers at the
+	// moment RouterState is built, as observed by ClusterSimulator. It is
+	// populated only when --pd-transfer-contention is enabled; otherwise
+	// it is zero. DisaggregationDecider implementations may read it for
+	// backpressure-aware decisions (G2). No built-in decider currently
+	// reads it — adoption by an external policy in llm-d would require a
+	// cross-repo metric-emission PR; see issue #1342.
+	ActiveTransfers int
 }
