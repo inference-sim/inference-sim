@@ -1,0 +1,143 @@
+# BLIS Autoscaler Demo — Scale-Up Under Sustained Load
+#
+# Demonstrates the WVA-aligned model autoscaler pipeline:
+#   DefaultCollector → V2SaturationAnalyzer → UnlimitedEngine → DirectActuator
+#
+# The autoscaler fires every `interval_us` of simulated time, measures KV
+# utilization and queue depth via the V2SaturationAnalyzer, and:
+#   - Scales UP   when demand exceeds `scale_up_threshold` of total supply
+#   - Scales DOWN when removing one replica still leaves utilization below
+#     `scale_down_boundary`
+#
+# Stability is enforced by HPA-style stabilization windows (PR #1117) — a
+# scale decision must persist across the window before it is actuated.
+#
+# ============================================================================
+# TRY IT
+# ============================================================================
+#
+#   # Build first
+#   go build -o blis main.go
+#
+#   # Baseline: 1 fixed instance, no autoscaler — observe queue buildup under load.
+#   # The chatbot preset uses a constant 30 req/s arrival process, sustained for
+#   # 50s of simulated time. One A100-80 cannot keep up, so e2e and TTFT explode.
+#   ./blis run \
+#     --model meta-llama/Llama-2-7b-hf \
+#     --latency-model roofline --hardware A100-80 --tp 1 \
+#     --num-instances 1 \
+#     --workload chatbot --rate 30 --num-requests 1500
+#
+#   # With autoscaler: starts at 1 instance, scales up under load to 3 instances.
+#   ./blis run \
+#     --model meta-llama/Llama-2-7b-hf \
+#     --latency-model roofline --hardware A100-80 --tp 1 \
+#     --num-instances 1 \
+#     --policy-config examples/autoscaler-demo.yaml \
+#     --workload chatbot --rate 30 --num-requests 1500 \
+#     --log info
+#
+# Expected results (roofline, A100-80, TP=1):
+#
+#   Metric          Baseline (1 inst)   Autoscaler (1 → 3 inst)   Δ
+#   ----------------------------------------------------------------------
+#   throughput      14.4 r/s            28.6 r/s                  +98%
+#   e2e mean        36.4 s              8.0 s                     -78%
+#   e2e p99         60.6 s              26.6 s                    -56%
+#   TTFT mean       20.0 s              1.1 s                     -94%
+#   TTFT p99        45.5 s              10.4 s                    -77%
+#   preemptions     2                   0                         -100%
+#   scale-ups                           2 (instance, no failures)
+#   scale-downs                         0 (see Note on scale-down)
+#
+# ============================================================================
+# What to observe in the log output (--log info)
+# ============================================================================
+#
+#   [actuator] scale-up: placed instance autoscale-...  — scale-up actuated
+#   [actuator] scale-down: draining instance ...        — scale-down actuated
+#
+# ============================================================================
+# Tuning guide
+# ============================================================================
+#
+#   interval_us                          Lower = more responsive (try 10000000 = 10s)
+#   scale_up_stabilization_window_us     Higher = require sustained load before scaling up
+#   scale_down_stabilization_window_us   Higher = wait longer before draining
+#                                        (Kubernetes HPA default is 300000000 = 5 min)
+#   hpa_scrape_delay.mean                Models HPA/KEDA scrape lag; set 0.0 for ideal
+#   provisioning_delay.mean              Set to 30.0–120.0 to model realistic node boot
+#   scale_up_threshold                   Lower = scale up earlier (try 0.7 for headroom)
+#   scale_down_boundary                  Higher = scale down later, more conservatively
+#
+# ============================================================================
+# Note on engine selection
+# ============================================================================
+#
+# The default cluster wiring uses `UnlimitedEngine` (sim/cluster/cluster.go), which
+# ignores GPU inventory — so the autoscaler can request more replicas than the node
+# pool can supply, producing "PlaceInstance" errors when the pool ceiling is reached.
+# `GreedyEngine` (PR #1199) respects inventory, but is not yet wired as the default
+# and not yet selectable from this YAML. To avoid overshoot in this demo, the node
+# pool below pre-provisions 8 nodes — well above the 3 instances the analyzer
+# converges on for this workload.
+#
+# ============================================================================
+# Note on scale-down
+# ============================================================================
+#
+# The autoscaler's tick-scheduling guard (sim/cluster/autoscaler.go scheduleNextTick)
+# stops emitting ticks once `pendingArrivals == 0 && inFlight == 0`. With a single
+# arrival burst that drains within a few seconds, the cluster never has a sustained
+# quiet phase long enough for the scale-down stabilization window to elapse — so
+# this demo only showcases scale-up. A workload with explicit ramp-down phases
+# (or a long sustained tail at low rate) would exercise scale-down.
+# ============================================================================
+
+admission:
+  policy: always-admit
+
+routing:
+  policy: weighted
+  scorers:
+    - name: queue-depth
+      weight: 2.0
+    - name: kv-utilization
+      weight: 1.0
+
+# Node pool: spare GPU capacity the autoscaler can grow into.
+# Each node holds 1 GPU, allowing 1 instance per node at TP=1.
+# initial_nodes=8: pre-provision 8 nodes — 1 consumed by --num-instances=1 startup,
+#                  7 free for the autoscaler to claim under load.
+# max_nodes=8:     upper bound on total instances at any time.
+# cost_per_hour:   used by future cost-aware engines (GreedyEngine, etc.).
+node_pools:
+  - name: demo-pool
+    gpu_type: A100-80    # must match --hardware flag value
+    gpus_per_node: 1     # 1 GPU per node → 1 instance at TP=1
+    gpu_memory_gib: 40.0
+    initial_nodes: 8
+    min_nodes: 0
+    max_nodes: 8
+    cost_per_hour: 2.0
+    provisioning_delay:
+      mean: 0.0          # 0s for demo clarity; set to 30.0 for realistic K8s node boot
+      stddev: 0.0
+
+# Autoscaler pipeline configuration.
+autoscaler:
+  interval_us: 5000000                          # tick every 5s of simulated time
+  scale_up_stabilization_window_us: 5000000     # require 5s of sustained scale-up signal
+  scale_down_stabilization_window_us: 60000000  # require 60s of sustained scale-down signal
+                                                # (HPA default is 300s/5min — set to 300000000 for
+                                                # production parity; this demo doesn't observe
+                                                # scale-down because the autoscaler termination
+                                                # guard stops ticks once in-flight reaches zero)
+  hpa_scrape_delay:
+    mean: 2.0    # 2s mean HPA/KEDA scrape lag (reduced for demo clarity)
+    stddev: 0.5  # ±0.5s variance
+  analyzer:
+    kv_cache_threshold: 0.8    # treat 80% of KV capacity as effective supply
+    scale_up_threshold: 0.7    # scale up when demand > 70% of supply
+    scale_down_boundary: 0.15  # scale down only when utilization < 15% (very conservative)
+    avg_input_tokens: 512.0    # converts queue depth to token demand units
