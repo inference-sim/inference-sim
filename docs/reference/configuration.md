@@ -652,6 +652,12 @@ Rules:
   spans nodes so the optimism is visible.
 - A negative, NaN or infinite value is rejected rather than silently clamped, at load
   time — so the same malformed file fails identically under either latency backend.
+- **Migrating from the pre-#1694 `InterNodeLatencyUs` key:** it was renamed to
+  `InterNodeHopLatencyUs` **and its unit changed** from µs-per-collective to µs-per-hop.
+  A config still carrying the old key is **rejected at load** with an error naming the GPU
+  and the new key — it is not silently accepted (which would drop the value to 0). This is
+  a *recalibration*, not a rename: divide the old per-collective value by the collective's
+  cross-node hop count before setting the new key; do not copy it verbatim.
 - `InterNodeHopLatencyUs` (α_hop) stands alone (a fabric can be modeled as
   latency-dominated), so it is not paired with the bandwidths. It is **0 in the bundled
   config**: BLIS has no measured per-hop latency to ship, and a guessed constant would sit

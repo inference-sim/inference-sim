@@ -173,11 +173,50 @@ func parseHWConfig(HWConfigFilePath string) (map[string]sim.HardwareCalib, error
 		return nil, fmt.Errorf("read hardware config %q: %w", HWConfigFilePath, err)
 	}
 
+	// #1694: reject the pre-#1694 per-COLLECTIVE key. The decoder is permissive
+	// (no DisallowUnknownFields), so a legacy "InterNodeLatencyUs" would parse cleanly
+	// and drop to 0 — silently discarding an operator's calibrated value, with no warning
+	// (the bandwidths alone already satisfy HasInterconnectCalibration, so
+	// warnIfCrossNodeUnpriced stays quiet). That is the R1 "never silent" case this
+	// feature's own diagnostics exist to prevent. The value is NOT a drop-in rename: the
+	// unit changed from µs-per-collective to µs-per-hop, so it must be re-divided by the
+	// hop count, not copied. Fail loudly and tell the operator exactly that.
+	if err := rejectLegacyInterNodeLatencyKey(data); err != nil {
+		return nil, err
+	}
+
 	var HardwareList map[string]sim.HardwareCalib
 	if err := json.Unmarshal(data, &HardwareList); err != nil {
 		return nil, fmt.Errorf("parse hardware config JSON: %w", err)
 	}
 	return HardwareList, nil
+}
+
+// rejectLegacyInterNodeLatencyKey scans a hardware-config file for the pre-#1694
+// per-collective "InterNodeLatencyUs" key on any GPU entry and returns a fatal,
+// actionable error if present. Named per-GPU so the operator knows where to look.
+func rejectLegacyInterNodeLatencyKey(data []byte) error {
+	var raw map[string]map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		// Not the expected shape; the main decode below will produce the real parse error.
+		return nil //nolint:nilerr // defer the diagnostic to the primary json.Unmarshal
+	}
+	var offenders []string
+	for gpu, fields := range raw {
+		if _, ok := fields["InterNodeLatencyUs"]; ok {
+			offenders = append(offenders, gpu)
+		}
+	}
+	if len(offenders) == 0 {
+		return nil
+	}
+	sort.Strings(offenders)
+	return fmt.Errorf("hardware config declares the removed per-collective key %q on GPU(s) %v; "+
+		"it was replaced by the per-HOP key %q in #1694 (the charge is now n_steps·α_hop, so the "+
+		"unit changed from µs-per-collective to µs-per-hop). This is a RECALIBRATION, not a rename: "+
+		"divide the old value by the collective's cross-node hop count before setting %q — do not "+
+		"copy it verbatim. Remove the old key to proceed",
+		"InterNodeLatencyUs", offenders, "InterNodeHopLatencyUs", "InterNodeHopLatencyUs")
 }
 
 // GetHWConfig returns hardware calibration data for the specified GPU.

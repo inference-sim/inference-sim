@@ -19,6 +19,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/require"
 )
 
 // TestCommSerializationFlags_RegisteredOnRunAndReplay pins INV-13 at the flag surface:
@@ -62,9 +63,18 @@ func TestCommSerializationFlags_AbsentOnObserve(t *testing.T) {
 // logrus ExitFunc override. Returns (factor, fatal).
 func resolveCommSerialForTest(t *testing.T, args []string) (result float64, fatal bool) {
 	t.Helper()
-	// Reset the package vars the resolver reads, so cases don't leak into each other.
+	// Reset every package var the resolver reads, so cases don't leak into each other and
+	// the S-inert warning (which reads latencyModelBackend/policyConfigPath) is deterministic.
+	// Default to the trained-physics + node-pool shape so a valid S>1 does NOT warn here;
+	// the warning paths have their own test.
 	origFactor, origEager := commSerializationFactor, enforceEager
-	defer func() { commSerializationFactor, enforceEager = origFactor, origEager }()
+	origBackend, origPolicy := latencyModelBackend, policyConfigPath
+	defer func() {
+		commSerializationFactor, enforceEager = origFactor, origEager
+		latencyModelBackend, policyConfigPath = origBackend, origPolicy
+	}()
+	latencyModelBackend = "trained-physics"
+	policyConfigPath = "some-policy.yaml"
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
@@ -139,6 +149,57 @@ func TestResolveCommSerializationFactor_EnforceEagerWithFactor(t *testing.T) {
 	}
 	if got != 25.0 {
 		t.Errorf("factor = %v, want 25.0", got)
+	}
+}
+
+// TestResolveCommSerializationFactor_WarnsWhenInert verifies finding #3 from the #1695
+// review: an S > 1 that provably cannot fire must warn loudly (R1), not vanish silently.
+// The two cheaply-knowable inert cases are a non-trained-physics backend and no node pools;
+// a genuinely-live shape (trained-physics + node pools) must NOT warn.
+func TestResolveCommSerializationFactor_WarnsWhenInert(t *testing.T) {
+	cases := []struct {
+		name       string
+		backend    string
+		policyPath string
+		wantWarn   string // substring the warning must contain; "" = must NOT warn
+	}{
+		{"roofline backend", "roofline", "some-policy.yaml", "only the trained-physics backend models"},
+		{"no node pools", "trained-physics", "", "no node_pools"},
+		{"live shape does not warn", "trained-physics", "some-policy.yaml", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			origFactor, origEager := commSerializationFactor, enforceEager
+			origBackend, origPolicy := latencyModelBackend, policyConfigPath
+			defer func() {
+				commSerializationFactor, enforceEager = origFactor, origEager
+				latencyModelBackend, policyConfigPath = origBackend, origPolicy
+			}()
+			var buf bytes.Buffer
+			logger := logrus.StandardLogger()
+			origOut, origLevel := logger.Out, logger.Level
+			logger.SetOutput(&buf)
+			logger.SetLevel(logrus.WarnLevel)
+			defer func() { logger.SetOutput(origOut); logger.SetLevel(origLevel) }()
+
+			testCmd := &cobra.Command{}
+			registerSimConfigFlags(testCmd)
+			require.NoError(t, testCmd.ParseFlags([]string{"--comm-serialization-factor", "5"}))
+			// Set the resolver's inputs AFTER ParseFlags — cobra resets bound vars
+			// (latencyModelBackend, policyConfigPath) to their flag defaults during parse.
+			commSerializationFactor, enforceEager = 5.0, false
+			latencyModelBackend, policyConfigPath = tc.backend, tc.policyPath
+			resolveCommSerializationFactor(testCmd)
+
+			out := buf.String()
+			if tc.wantWarn == "" {
+				require.NotContains(t, out, "will have NO effect",
+					"a live trained-physics + node-pool shape must not warn about inert S")
+			} else {
+				require.Contains(t, out, "will have NO effect", "an inert S>1 must warn (R1)")
+				require.Contains(t, out, tc.wantWarn)
+			}
+		})
 	}
 }
 

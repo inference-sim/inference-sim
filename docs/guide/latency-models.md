@@ -338,13 +338,18 @@ T_collective_fixed = n_steps(algorithm, topology) · α_hop · S
 ```
 
 **`n_steps` is the analytic cross-node hop count** — derived purely from the collective
-algorithm and the placed node span, with no free parameters. A hierarchical (two-level)
-ring all-reduce does its inter-node phase in `2·(nodes−1)` hops; a true all-to-all does
-`(nodes−1)` per direction. This replaces the flat per-collective term (#1667), which was
-node-span-*invariant* and under-charged a wide span by ~`(nodes−1)×`. The per-layer
-collective count (one comm unit per TP collective; dispatch + combine for MoE) still
-multiplies it, so a step running `L` layers pays `units · n_steps · α_hop` and skips it
-entirely for a step that communicates no tokens.
+algorithm and the placed node span, with no free parameters. The count is **per
+collective**: one whole ring all-reduce (reduce-scatter + all-gather) is `2·(nodes−1)`
+hops, while a single-phase collective (one all-to-all direction, or one phase of the
+all-gather family) is `(nodes−1)`. This replaces the flat per-collective term (#1667),
+which was node-span-*invariant* and under-charged a wide span by ~`(nodes−1)×`. The
+per-layer collective count is a *separate* factor applied by the caller: the TP leg is one
+whole all-reduce per comm unit (so `2·(nodes−1)` per unit), and the MoE leg is dispatch +
+combine, two single-phase collectives (`(nodes−1)` each ⇒ `2·(nodes−1)` per layer). So the
+MoE latency term is the **same for both comm families** — the family split is real only for
+the bandwidth *volume*, not the hop count; charging the all-gather family a whole ring here
+would double-count. A step running `L` layers pays `collectives · n_steps · α_hop` and
+skips it entirely for a step that communicates no tokens.
 
 **`α_hop` (`InterNodeHopLatencyUs`) is the per-fabric constant** — the cost of one
 inter-node hop. **It is 0 — not charged — in the bundled hardware config, deliberately.**

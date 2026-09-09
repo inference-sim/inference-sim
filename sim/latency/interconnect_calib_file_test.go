@@ -117,3 +117,43 @@ func TestCommittedHardwareConfig_LatencyIsUncalibrated(t *testing.T) {
 				"plausibility range rather than removing it", gpu)
 	}
 }
+
+// TestLegacyInterNodeLatencyKeyIsRejected verifies the #1694 migration guard: a
+// hardware config carrying the removed per-collective "InterNodeLatencyUs" key (the
+// three-key shape #1667's docs told operators to populate) is rejected at load with an
+// actionable error, rather than silently parsing to α_hop=0. Without this the permissive
+// JSON decoder would discard the operator's calibrated value with NO diagnostic — the
+// bandwidths alone satisfy HasInterconnectCalibration, so warnIfCrossNodeUnpriced stays
+// quiet (the R1 "never silent" case). The error must name both the new key and the
+// unit change so the operator knows to re-divide by the hop count, not copy.
+func TestLegacyInterNodeLatencyKeyIsRejected(t *testing.T) {
+	dir := t.TempDir()
+	legacy := filepath.Join(dir, "hw_legacy.json")
+	// Exactly the three-key shape the pre-#1694 docs' example showed.
+	require.NoError(t, os.WriteFile(legacy, []byte(`{
+	  "H100": {
+	    "TFlopsPeak": 989.5, "BwPeakTBs": 3.35, "MemoryGiB": 80.0,
+	    "IntraNodeBwGBps": 450, "InterNodeBwGBps": 50,
+	    "InterNodeLatencyUs": 542
+	  }
+	}`), 0644))
+
+	_, err := latency.GetHWConfig(legacy, "H100")
+	require.Error(t, err, "a config with the removed InterNodeLatencyUs key must be rejected, not silently zeroed")
+	assert.Contains(t, err.Error(), "InterNodeLatencyUs", "error must name the removed key")
+	assert.Contains(t, err.Error(), "InterNodeHopLatencyUs", "error must name the replacement key")
+	assert.Contains(t, err.Error(), "H100", "error must name the offending GPU")
+
+	// Control: the same file with the NEW key loads cleanly and yields the value.
+	modern := filepath.Join(dir, "hw_modern.json")
+	require.NoError(t, os.WriteFile(modern, []byte(`{
+	  "H100": {
+	    "TFlopsPeak": 989.5, "BwPeakTBs": 3.35, "MemoryGiB": 80.0,
+	    "IntraNodeBwGBps": 450, "InterNodeBwGBps": 50,
+	    "InterNodeHopLatencyUs": 5
+	  }
+	}`), 0644))
+	hc, err := latency.GetHWConfig(modern, "H100")
+	require.NoError(t, err)
+	assert.Equal(t, 5.0, hc.EffectiveInterNodeHopLatencyUs(), "the new per-hop key must load")
+}

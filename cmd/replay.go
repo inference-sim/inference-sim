@@ -654,14 +654,12 @@ Example:
 
 		startTime := time.Now()
 
-		// Cross-node collective serialization S (#1694, Part B): resolved and threaded
-		// identically to the run path so a run and its replay under the same flags stay
-		// byte-identical (INV-13). Not round-tripped through the trace header. Note the S
-		// term is STRUCTURALLY UNREACHABLE on replay today: it only fires for a multi-node
-		// span, and replay logrus.Fatalf's on node_pools and on any trace with
-		// max_nodes_spanned > 1 (#1530) — so registering the flag here is flag-surface
-		// parity, and re-supplying S keeps the non-spanning path byte-identical regardless.
-		mhwOpts := append(dpPlan.EPGroupOptions(), sim.WithCommSerializationFactor(resolveCommSerializationFactor(cmd)))
+		// ModelHardwareOptions composed via the SAME shared helper as the run path, so the
+		// two cannot diverge (R23, INV-13). Note the #1694 S term is STRUCTURALLY UNREACHABLE
+		// on replay: it only fires for a multi-node span, and replay logrus.Fatalf's on
+		// node_pools and on any trace with max_nodes_spanned > 1 (#1530) — so this is
+		// flag-surface parity, and re-supplying S keeps the non-spanning path byte-identical.
+		mhwOpts := modelHardwareOptions(cmd, dpPlan)
 
 		// Build cluster config (same as runCmd, using replayHorizon instead of simulationHorizon).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/root.go (runCmd

@@ -491,12 +491,19 @@ func crossNodeRingHops(nodes int) int {
 	return 2 * (nodes - 1)
 }
 
-// crossNodeAll2AllHops is the analytic inter-node hop count of ONE all-to-all
-// collective (the MoE expert dispatch or combine on an all-to-all backend) over a
-// group spanning `nodes` physical nodes (#1694): (nodes−1) steps per direction, since
-// each node must exchange with every other with no reduction on the way. Returns 0 for
-// a single node. The all-to-all counterpart of all2AllSpanScale's bandwidth half, and
-// like crossNodeRingHops it carries no free parameters.
+// crossNodeAll2AllHops is the analytic inter-node hop count of ONE SINGLE-PHASE
+// cross-node collective over a group spanning `nodes` physical nodes (#1694): (nodes−1)
+// steps, since data must traverse the (nodes−1) inter-node links with no reduction that
+// would let it stop early. Returns 0 for a single node.
+//
+// This is the per-collective count for the MoE dispatch/combine leg on BOTH comm
+// families: an all-to-all direction (modular backends) is one such collective, and so is
+// each phase of the all-gather family (dispatch = all-gather, combine = reduce-scatter).
+// moeCrossNodeLatency multiplies by moeDispatchCollectivesPerLayer (=2), giving 2·(nodes−1)
+// per MoE layer either way. Contrast crossNodeRingHops, which is a WHOLE all-reduce (both
+// phases) — correct only for the TP leg, where one comm unit is one all-reduce. Charging
+// the all-gather MoE family the full ring here would double-count. Carries no free
+// parameters.
 func crossNodeAll2AllHops(nodes int) int {
 	if nodes <= 1 {
 		return 0
@@ -1188,18 +1195,29 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 		commFamily, hw.HWConfig.InterconnectBwRatio())
 	bwHbmUs := hw.HWConfig.BwPeakTBs * 1e6
 
-	// Cross-node latency (#1694): each leg's fixed per-comm-unit cost is
-	// n_steps·α_hop·S. The TP-group collectives are hierarchical rings; the MoE
-	// dispatch/combine follows the SAME algorithm split as its bandwidth half
-	// (spanScalesFor) — a ring for the all-gather family (whose volume is ring-shaped),
-	// a true all-to-all for the modular backends. S (the eager/no-overlap serialization
-	// multiplier) is a global per-run input; it is applied identically to both legs and
-	// is exactly 1.0 (inert) unless calibrated (INV-6).
+	// Cross-node latency (#1694): each leg's fixed per-comm-UNIT cost is
+	// hops_per_collective·α_hop·S, where a comm unit is ONE NCCL collective. The hop
+	// count is therefore per-collective, and the number of collectives per layer is a
+	// SEPARATE factor applied by the caller (1 per TP unit; moeDispatchCollectivesPerLayer
+	// for MoE dispatch+combine).
+	//
+	//   - TP leg (:tpCrossNodeLatencyUs): one comm unit is one whole ring ALL-REDUCE
+	//     (reduce-scatter + all-gather), so its per-collective count is the full-ring
+	//     crossNodeRingHops = 2·(nodes−1).
+	//   - MoE dispatch/combine leg: dispatch and combine are each ONE single-phase
+	//     collective (dispatch = all-gather, combine = reduce-scatter for the all-gather
+	//     family; one all-to-all per direction for the modular family). Each is (nodes−1)
+	//     hops — crossNodeAll2AllHops — and moeCrossNodeLatency multiplies by the count of
+	//     two, giving 2·(nodes−1) per MoE layer. This is family-INDEPENDENT: unlike the
+	//     bandwidth half (spanScalesFor), where the moved VOLUMES genuinely differ between
+	//     the ring and all-to-all families, the hop COUNT of a single-phase collective is
+	//     (nodes−1) either way. Charging the all-gather family crossNodeRingHops here would
+	//     double-count (4·(nodes−1)/layer) — the ring's own two phases are the two
+	//     collectives moeDispatchCollectivesPerLayer already counts.
+	//
+	// S (the eager/no-overlap serialization multiplier) is a global per-run input, applied
+	// identically to both legs; exactly 1.0 (inert) unless calibrated (INV-6).
 	commSerialization := hw.EffectiveCommSerializationFactor()
-	moeHops := crossNodeRingHops
-	if commFamily == commFamilyAll2All {
-		moeHops = crossNodeAll2AllHops
-	}
 
 	return &TrainedPhysicsModel{
 		Alpha:                  [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
@@ -1236,7 +1254,10 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 		bwHbmUs:                bwHbmUs,
 		tpSpanScale:            tpSpanScale,
 		moeSpanScale:           moeSpanScale,
-		tpCrossNodeLatencyUs:   crossNodeHopLatencyUs(hw.NetworkTopology, hw.TP, hw.HWConfig, crossNodeRingHops, commSerialization),
-		moeCrossNodeLatencyUs:  crossNodeHopLatencyUs(hw.NetworkTopology, expertShardGroup, hw.HWConfig, moeHops, commSerialization),
+		// TP unit = one whole all-reduce ⇒ full-ring hop count. MoE dispatch/combine =
+		// two single-phase collectives ⇒ per-collective (nodes−1), family-independent
+		// (see the comment above); moeCrossNodeLatency applies the ×2 collective count.
+		tpCrossNodeLatencyUs:  crossNodeHopLatencyUs(hw.NetworkTopology, hw.TP, hw.HWConfig, crossNodeRingHops, commSerialization),
+		moeCrossNodeLatencyUs: crossNodeHopLatencyUs(hw.NetworkTopology, expertShardGroup, hw.HWConfig, crossNodeAll2AllHops, commSerialization),
 	}, nil
 }

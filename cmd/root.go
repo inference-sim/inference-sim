@@ -430,6 +430,16 @@ func (p dpPlacementPlan) EPGroupOptions() []sim.ModelHardwareOption {
 	return []sim.ModelHardwareOption{sim.WithExpertParallelGroupDP(p.EPGroupDP)}
 }
 
+// modelHardwareOptions assembles the full ModelHardwareOption list for a NewModelHardwareConfig
+// call, in ONE place so `blis run` and `blis replay` cannot diverge on it (R23, INV-13) — the
+// same reason EPGroupOptions exists. Every latency-model input that rides an option
+// (the #1548 EP-group width, the #1694 cross-node serialization factor S) is composed here;
+// a new one is added once, not at both call sites. Reads the CLI (S resolution + its guards)
+// and the resolved placement plan.
+func modelHardwareOptions(cmd *cobra.Command, dpPlan dpPlacementPlan) []sim.ModelHardwareOption {
+	return append(dpPlan.EPGroupOptions(), sim.WithCommSerializationFactor(resolveCommSerializationFactor(cmd)))
+}
+
 // dpPlacementInstanceWarnThreshold: warn (not fatal) when DP-as-placement expands
 // to more than this many engine replicas, so an accidental large --dp (a typo) is
 // surfaced before the run consumes a large amount of memory/time.
@@ -1602,7 +1612,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// only for a multi-node span with a calibrated α_hop (InterNodeHopLatencyUs). Default
 	// 1.0 is inert (byte-identical, INV-6). Re-supply identically on replay (INV-13).
 	cmd.Flags().Float64Var(&commSerializationFactor, "comm-serialization-factor", 1.0, "Cross-node collective serialization multiplier S on the size-independent inter-node latency term (#1694). 1.0 (default) = CUDA graphs / comm-compute overlap (inert). >1 = enforce-eager / no-overlap regime, where collectives serialize behind a full barrier. Must be >= 1. Multiplies an existing cross-node latency term (spanning nodes AND a calibrated per-hop α_hop); never creates cost on its own.")
-	cmd.Flags().BoolVar(&enforceEager, "enforce-eager", false, "Mirror vLLM --enforce-eager for latency purposes: declares the deployment runs without CUDA graphs / comm-compute overlap. Provenance + guard for --comm-serialization-factor: when set, requires an explicit --comm-serialization-factor > 1 (BLIS ships no fitted eager magnitude — #1694). Does not itself pick a value.")
+	cmd.Flags().BoolVar(&enforceEager, "enforce-eager", false, "Declare that the deployment runs without CUDA graphs / comm-compute overlap, for the CROSS-NODE COLLECTIVE latency term ONLY (#1694). This is a provenance + guard flag for --comm-serialization-factor: when set it requires an explicit --comm-serialization-factor > 1 (BLIS ships no fitted eager magnitude) and picks no value itself. It does NOT model vLLM enforce_eager generally — the broader per-step eager kernel-launch overhead (which affects single-node runs too) is not modeled, so on any config without node_pools and a calibrated α_hop this flag changes nothing.")
 
 	// KV-cache offload config surface (H5, #1587). One flag: a strict-YAML file with a
 	// single top-level kv_offload: block (CPU tier + ordered secondary tiers, per-tier
@@ -1759,8 +1769,34 @@ func resolveCommSerializationFactor(cmd *cobra.Command) float64 {
 		logrus.Infof("cross-node collective serialization factor S=%.3f%s: charged on the size-independent "+
 			"inter-node latency term for spanning collectives (#1694)", s,
 			map[bool]string{true: " (enforce-eager)", false: ""}[enforceEager])
+		// R1: an S>1 that provably cannot fire is silent optimism in reverse — the operator
+		// asked for a penalty that will not appear. S multiplies the cross-node latency term,
+		// which requires the trained-physics backend AND a multi-node placement AND a
+		// calibrated α_hop. Two of those three are cheaply knowable here and, when either
+		// fails, S is guaranteed inert; warn loudly rather than let it vanish (the third,
+		// α_hop>0 on the placed GPU, is placement-time and is covered by
+		// warnIfCrossNodeUnpriced). Not latched — resolved once per command.
+		if latencyModelBackend != sim.LatencyBackendTrainedPhysics {
+			logrus.Warnf("--comm-serialization-factor %.3f will have NO effect: it scales the cross-node "+
+				"collective latency term, which only the trained-physics backend models (got %q). #1694", s,
+				backendDisplayNameForWarn(latencyModelBackend))
+		} else if policyConfigPath == "" {
+			logrus.Warnf("--comm-serialization-factor %.3f will have NO effect: it scales the CROSS-NODE "+
+				"collective latency term, but without --policy-config there are no node_pools, so no "+
+				"collective spans a node boundary. It applies only to multi-node placements with a "+
+				"calibrated α_hop (InterNodeHopLatencyUs). #1694", s)
+		}
 	}
 	return s
+}
+
+// backendDisplayNameForWarn renders the latency backend for a diagnostic, spelling out the
+// empty-string default (which resolves to roofline) rather than printing "".
+func backendDisplayNameForWarn(backend string) string {
+	if backend == "" {
+		return sim.LatencyBackendRoofline + " (default)"
+	}
+	return backend
 }
 
 // adapterReservedBytesFor returns the static LoRA HBM reservation (bytes) to carve
@@ -2540,10 +2576,9 @@ var runCmd = &cobra.Command{
 			}
 		}
 
-		// Cross-node collective serialization S (#1694, Part B): a model-level latency
-		// input appended to the EP-group options, resolved once and threaded identically on
-		// replay (INV-13). Inert at the default S=1.
-		mhwOpts := append(dpPlan.EPGroupOptions(), sim.WithCommSerializationFactor(resolveCommSerializationFactor(cmd)))
+		// All ModelHardwareOptions (EP-group width #1548, cross-node serialization S #1694)
+		// are composed in one shared helper so run and replay cannot diverge (R23, INV-13).
+		mhwOpts := modelHardwareOptions(cmd, dpPlan)
 
 		// Unified cluster path (used for all values of numInstances).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/replay.go (replayCmd
