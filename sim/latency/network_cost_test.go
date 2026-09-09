@@ -375,7 +375,7 @@ func TestStepTime_CommFamilyDeterminesPenaltyShape(t *testing.T) {
 // cross-node cost: a fixed launch + fabric round-trip per collective that crosses a node
 // boundary, independent of message size. A fabric as fast as the on-node link (ratio 1,
 // no bandwidth penalty at all) isolates it — any increase must come from the latency.
-func TestStepTime_PerCollectiveLatencyIsChargedCrossNode(t *testing.T) {
+func TestStepTime_PerHopLatencyIsChargedCrossNode(t *testing.T) {
 	mc := testModelConfig()
 	batch := stepBatch()
 
@@ -386,7 +386,7 @@ func TestStepTime_PerCollectiveLatencyIsChargedCrossNode(t *testing.T) {
 	contained := newNetModel(t, mc, withLatency, 8, 1, false, "", 8).StepTime(batch)
 	spanning := newNetModel(t, mc, withLatency, 8, 1, false, "", 4).StepTime(batch)
 	assert.Greater(t, spanning, contained,
-		"a per-collective latency must be charged when the TP group spans nodes, even with no "+
+		"a per-hop latency must be charged when the TP group spans nodes, even with no "+
 			"bandwidth penalty")
 
 	// And with no latency declared, the same pair is byte-identical — the term is opt-in.
@@ -396,10 +396,38 @@ func TestStepTime_PerCollectiveLatencyIsChargedCrossNode(t *testing.T) {
 		"with neither a bandwidth penalty nor a declared latency, spanning must cost nothing extra")
 }
 
-// TestStepTime_MonotoneInPerCollectiveLatency verifies AC-2's latency clause directly:
-// holding the placement fixed, raising the per-collective latency never lowers step time,
+// TestStepTime_PerHopLatencyScalesWithNodeSpan is the core #1694 behavior: the fixed
+// cross-node latency is now node-span-AWARE, not flat. A hierarchical ring does
+// 2·(nodes−1) inter-node hops, so a 4-node TP span (hop count 6) must cost 3× a 2-node
+// span (hop count 2) in the latency term — the ~(nodes−1)× the flat #1667 term
+// under-charged. Isolated with ratio 1 (no bandwidth penalty) and measured against the
+// single-node baseline so only the latency term moves. Uses a ≥3-node span (TP=8 over
+// 2 GPUs/node = 4 nodes) so the factor is unambiguous (see the hop-count test). TP is 8
+// because testModelConfig has 8 KV heads (TP must divide NumKVHeads).
+func TestStepTime_PerHopLatencyScalesWithNodeSpan(t *testing.T) {
+	mc := testModelConfig()
+	batch := stepBatch()
+	hw := fabricHW(1) // no bandwidth penalty — isolate the latency
+	hw.InterNodeHopLatencyUs = 10
+
+	base := newNetModel(t, mc, hw, 8, 1, false, "", 8).StepTime(batch)  // fits one node
+	span2 := newNetModel(t, mc, hw, 8, 1, false, "", 4).StepTime(batch) // 2 nodes: 2 hops
+	span4 := newNetModel(t, mc, hw, 8, 1, false, "", 2).StepTime(batch) // 4 nodes: 6 hops
+
+	pen2 := span2 - base
+	pen4 := span4 - base
+	assert.Greater(t, pen2, int64(0), "precondition: a 2-node span must pay a latency penalty")
+	assert.Greater(t, pen4, pen2, "a wider span must cost more — the flat #1667 term did not (BC-4)")
+	// Ring hops: 2·(2−1)=2 vs 2·(4−1)=6, so the 4-node penalty is 3× the 2-node one.
+	ratio := float64(pen4) / float64(pen2)
+	assert.InDelta(t, 3.0, ratio, 0.15,
+		"4-node latency penalty must be ~3× the 2-node one (6 hops vs 2), got %.2f×", ratio)
+}
+
+// TestStepTime_MonotoneInPerHopLatency verifies AC-2's latency clause directly:
+// holding the placement fixed, raising the per-hop latency never lowers step time,
 // and strictly raises it across a realistic range.
-func TestStepTime_MonotoneInPerCollectiveLatency(t *testing.T) {
+func TestStepTime_MonotoneInPerHopLatency(t *testing.T) {
 	mc := testModelConfig()
 	batch := stepBatch()
 
@@ -409,7 +437,7 @@ func TestStepTime_MonotoneInPerCollectiveLatency(t *testing.T) {
 		hw.InterNodeHopLatencyUs = latencyUs
 		got := newNetModel(t, mc, hw, 8, 1, false, "", 4).StepTime(batch)
 		assert.GreaterOrEqual(t, got, prev,
-			"step time must not decrease as the per-collective latency rises (latency=%v µs)", latencyUs)
+			"step time must not decrease as the per-hop latency rises (latency=%v µs)", latencyUs)
 		prev = got
 	}
 	zeroLatency := func() int64 {
@@ -419,12 +447,13 @@ func TestStepTime_MonotoneInPerCollectiveLatency(t *testing.T) {
 	assert.Greater(t, prev, zeroLatency, "the largest latency must cost strictly more than none")
 }
 
-// TestStepTime_PerCollectiveLatencyScalesWithCollectiveCount verifies the latency is
-// charged PER COLLECTIVE rather than once per step: a model with twice the layers runs
-// twice the collectives and must pay about twice the latency. This is what distinguishes
-// a per-collective cost from a flat per-step one, and it is why the term can dominate for
-// a deep model on small messages.
-func TestStepTime_PerCollectiveLatencyScalesWithCollectiveCount(t *testing.T) {
+// TestStepTime_PerHopLatencyScalesWithCollectiveCount verifies the latency is charged
+// PER COMM UNIT (per collective) rather than once per step: a model with twice the layers
+// runs twice the collectives and must pay about twice the latency. This is orthogonal to
+// the per-hop node-span scaling (TestStepTime_PerHopLatencyScalesWithNodeSpan) — the total
+// charge is units·n_steps·α_hop·S — and it is why the term can dominate for a deep model on
+// small messages.
+func TestStepTime_PerHopLatencyScalesWithCollectiveCount(t *testing.T) {
 	batch := stepBatch()
 	hw := fabricHW(1) // no bandwidth penalty — isolate the latency
 	hw.InterNodeHopLatencyUs = 20
@@ -442,7 +471,7 @@ func TestStepTime_PerCollectiveLatencyScalesWithCollectiveCount(t *testing.T) {
 	assert.Greater(t, deepPenalty, shallowPenalty,
 		"twice the layers means twice the cross-node collectives, so the latency penalty must grow "+
 			"(shallow=%d µs, deep=%d µs)", shallowPenalty, deepPenalty)
-	// Roughly proportional: within 10% of 2x, confirming per-collective and not per-step.
+	// Roughly proportional: within 10% of 2x, confirming per-comm-unit and not per-step.
 	ratio := float64(deepPenalty) / float64(shallowPenalty)
 	assert.InDelta(t, 2.0, ratio, 0.2, "the latency penalty should scale with the collective count")
 }
@@ -865,4 +894,81 @@ func TestStepTime_CrossNodePenaltyComposesWithSpecDecode(t *testing.T) {
 	// And the cross-node penalty still applies at a fixed verify width.
 	assert.Greater(t, build(4, 4).StepTime(batch), build(4, 8).StepTime(batch),
 		"a spanning collective must still cost more than a contained one under speculative decoding")
+}
+
+// ─── Serialization multiplier S (#1694, Part B) ─────────────────────────────
+
+// newNetModelS builds a spanning trained-physics model with a serialization factor S,
+// threaded through the WithCommSerializationFactor option — the twin of newNetModel.
+func newNetModelS(t *testing.T, mc sim.ModelConfig, hw sim.HardwareCalib, tp, gpusPerNode int, s float64) *TrainedPhysicsModel {
+	t.Helper()
+	mhw := sim.NewModelHardwareConfig(mc, hw, "m", "H100", tp, 1, false, "", "trained-physics", 0,
+		sim.WithNetworkTopology(sim.NewNetworkTopology(gpusPerNode)),
+		sim.WithCommSerializationFactor(s))
+	lm, err := NewLatencyModel(*testCoeffs(), mhw)
+	require.NoError(t, err)
+	m, ok := lm.(*TrainedPhysicsModel)
+	require.True(t, ok)
+	return m
+}
+
+// TestStepTime_SerializationFactorDefaultIsInert verifies BC-5: S = 1 (the default /
+// unset regime) produces byte-identical step time to a model built with no S option at
+// all — the whole Part B term vanishes, output equals Part A alone (INV-6). Checked with
+// a live cross-node latency term (spanning, α_hop > 0) so the equality is meaningful.
+func TestStepTime_SerializationFactorDefaultIsInert(t *testing.T) {
+	mc := testModelConfig()
+	batch := stepBatch()
+	hw := fabricHW(9)
+	hw.InterNodeHopLatencyUs = 5
+
+	noOpt := newNetModel(t, mc, hw, 8, 1, false, "", 4).StepTime(batch)
+	s1 := newNetModelS(t, mc, hw, 8, 4, 1.0).StepTime(batch)
+	assert.Equal(t, noOpt, s1, "S=1 must be byte-identical to no serialization factor (BC-5)")
+
+	// A sub-unit S is clamped to 1.0 (S must never lower cost), so it is also inert.
+	sBelow1 := newNetModelS(t, mc, hw, 8, 4, 0.5).StepTime(batch)
+	assert.Equal(t, noOpt, sBelow1, "S<1 clamps to 1.0 and stays inert")
+}
+
+// TestStepTime_MonotoneInSerializationFactor verifies BC-6: raising S never lowers the
+// charged cross-node latency, and strictly raises it across a realistic eager range.
+func TestStepTime_MonotoneInSerializationFactor(t *testing.T) {
+	mc := testModelConfig()
+	batch := stepBatch()
+	hw := fabricHW(1) // isolate the latency term S multiplies
+	hw.InterNodeHopLatencyUs = 10
+
+	prev := int64(0)
+	for _, s := range []float64{1, 2, 5, 10, 30} {
+		got := newNetModelS(t, mc, hw, 8, 4, s).StepTime(batch)
+		assert.GreaterOrEqual(t, got, prev, "step time must not decrease as S rises (S=%v)", s)
+		prev = got
+	}
+	assert.Greater(t, prev, newNetModelS(t, mc, hw, 8, 4, 1.0).StepTime(batch),
+		"a large S must cost strictly more than S=1")
+}
+
+// TestStepTime_SerializationFactorInertWithoutLatency verifies #1694 Part-B acceptance
+// #4: S multiplies an EXISTING cross-node latency term and never creates cost on its own.
+// With α_hop = 0 (no fabric latency declared) a large S must charge nothing extra — and
+// with the group contained in one node, likewise.
+func TestStepTime_SerializationFactorInertWithoutLatency(t *testing.T) {
+	mc := testModelConfig()
+	batch := stepBatch()
+
+	// α_hop = 0: no latency term for S to scale, even spanning.
+	noAlpha := fabricHW(9) // bandwidth calibrated, but InterNodeHopLatencyUs stays 0
+	assert.Equal(t,
+		newNetModelS(t, mc, noAlpha, 8, 4, 1.0).StepTime(batch),
+		newNetModelS(t, mc, noAlpha, 8, 4, 30.0).StepTime(batch),
+		"with α_hop=0 there is no latency term, so S charges nothing (Part-B AC #4)")
+
+	// Contained group (fits one node): hop count 0, so S again charges nothing.
+	withAlpha := noAlpha
+	withAlpha.InterNodeHopLatencyUs = 10
+	assert.Equal(t,
+		newNetModelS(t, mc, withAlpha, 8, 8, 1.0).StepTime(batch),
+		newNetModelS(t, mc, withAlpha, 8, 8, 30.0).StepTime(batch),
+		"a group contained in one node spans no hops, so S charges nothing")
 }

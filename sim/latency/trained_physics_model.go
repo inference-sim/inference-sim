@@ -286,9 +286,13 @@ type TrainedPhysicsModel struct {
 	// zero — means no penalty.
 	//
 	// The SIZE-INDEPENDENT half is tpCrossNodeLatencyUs / moeCrossNodeLatencyUs: the
-	// fixed cost of one cross-node collective (launch + fabric round-trip), charged per
-	// comm unit and 0 unless the group actually spans nodes AND the GPU declares a
-	// latency. Both halves ride the same learned coefficient as the term they join.
+	// analytic-hop-count cost of one cross-node collective, n_steps·α_hop·S (#1694 —
+	// n_steps = crossNodeRingHops or crossNodeAll2AllHops of the placed node span, α_hop
+	// the per-fabric InterNodeHopLatencyUs, S the deployment serialization multiplier).
+	// Charged per comm unit and 0 unless the group actually spans nodes AND the GPU
+	// declares a latency. Both halves ride the same learned coefficient as the term they
+	// join. These fields already fold in n_steps and S (frozen at construction), so the
+	// charge sites just multiply by the per-layer collective count.
 	//
 	// The penalties are consumed through the tpCommBwUs / moeCommBwUs ACCESSORS rather
 	// than precomputed divisors. That is deliberate: a precomputed divisor is 0 in a
@@ -500,14 +504,33 @@ func crossNodeAll2AllHops(nodes int) int {
 	return nodes - 1
 }
 
-// crossNodeLatencyUs is the fixed per-collective cost to charge for a group placed
-// per topo: the GPU's declared inter-node latency when the group spans nodes, else 0.
-// 0 keeps the comm bases byte-identical to a pre-#1530 build.
-func crossNodeLatencyUs(topo sim.NetworkTopology, groupSize int, hc sim.HardwareCalib) float64 {
-	if groupSize <= 1 || topo.NodesSpanned(groupSize) <= 1 {
+// crossNodeHopLatencyUs is the fixed cost to charge PER COMM UNIT for ONE cross-node
+// collective of the given algorithm over a group placed per topo (#1694):
+//
+//	n_steps(algorithm, nodesSpanned) · α_hop · S
+//
+// where n_steps is the analytic hop count (hops(nodesSpanned) — crossNodeRingHops for a
+// hierarchical ring, crossNodeAll2AllHops for an all-to-all), α_hop is the per-fabric
+// EffectiveInterNodeHopLatencyUs, and S is the deployment's serialization multiplier.
+// The caller multiplies this by the per-layer collective count already modeled (one comm
+// unit per TP collective; moeDispatchCollectivesPerLayer for MoE dispatch/combine), so the
+// full charge is `units · n_steps · α_hop · S`.
+//
+// Returns 0 — keeping the comm bases byte-identical to a pre-#1694 build (INV-6) — when the
+// group fits in one node (hop count 0) or α_hop is uncalibrated (0). S is applied LAST and
+// only scales a term that already fired, so an S>1 with α_hop==0 charges nothing (#1694
+// Part-B acceptance #4). S is pre-clamped to ≥ 1.0 by EffectiveCommSerializationFactor, so
+// it can only raise the cost.
+func crossNodeHopLatencyUs(topo sim.NetworkTopology, groupSize int, hc sim.HardwareCalib, hops func(int) int, s float64) float64 {
+	if groupSize <= 1 {
 		return 0
 	}
-	return hc.EffectiveInterNodeHopLatencyUs()
+	nodes := topo.NodesSpanned(groupSize)
+	nSteps := hops(nodes)
+	if nSteps <= 0 {
+		return 0 // contained in one node — no cross-node hop
+	}
+	return float64(nSteps) * hc.EffectiveInterNodeHopLatencyUs() * s
 }
 
 // verifyWidth is the number of token positions the target processes per decode
@@ -1165,6 +1188,19 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 		commFamily, hw.HWConfig.InterconnectBwRatio())
 	bwHbmUs := hw.HWConfig.BwPeakTBs * 1e6
 
+	// Cross-node latency (#1694): each leg's fixed per-comm-unit cost is
+	// n_steps·α_hop·S. The TP-group collectives are hierarchical rings; the MoE
+	// dispatch/combine follows the SAME algorithm split as its bandwidth half
+	// (spanScalesFor) — a ring for the all-gather family (whose volume is ring-shaped),
+	// a true all-to-all for the modular backends. S (the eager/no-overlap serialization
+	// multiplier) is a global per-run input; it is applied identically to both legs and
+	// is exactly 1.0 (inert) unless calibrated (INV-6).
+	commSerialization := hw.EffectiveCommSerializationFactor()
+	moeHops := crossNodeRingHops
+	if commFamily == commFamilyAll2All {
+		moeHops = crossNodeAll2AllHops
+	}
+
 	return &TrainedPhysicsModel{
 		Alpha:                  [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
 		Beta:                   betaSlice,
@@ -1200,7 +1236,7 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 		bwHbmUs:                bwHbmUs,
 		tpSpanScale:            tpSpanScale,
 		moeSpanScale:           moeSpanScale,
-		tpCrossNodeLatencyUs:   crossNodeLatencyUs(hw.NetworkTopology, hw.TP, hw.HWConfig),
-		moeCrossNodeLatencyUs:  crossNodeLatencyUs(hw.NetworkTopology, expertShardGroup, hw.HWConfig),
+		tpCrossNodeLatencyUs:   crossNodeHopLatencyUs(hw.NetworkTopology, hw.TP, hw.HWConfig, crossNodeRingHops, commSerialization),
+		moeCrossNodeLatencyUs:  crossNodeHopLatencyUs(hw.NetworkTopology, expertShardGroup, hw.HWConfig, moeHops, commSerialization),
 	}, nil
 }
