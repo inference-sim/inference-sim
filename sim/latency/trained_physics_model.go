@@ -470,6 +470,36 @@ func (m *TrainedPhysicsModel) moeCommBwUs() float64 {
 	return m.bwHbmUs / m.moeSpanScale
 }
 
+// crossNodeRingHops is the analytic inter-node hop count of ONE hierarchical
+// (two-level) ring all-reduce over a group spanning `nodes` physical nodes (#1694).
+// NCCL runs the inter-node phase as a ring across the nodes, which reduce-scatters
+// then all-gathers the reduced chunk — 2·(nodes−1) inter-node steps. Returns 0 for a
+// single node (or a degenerate count): no boundary is crossed, so no hop is charged.
+//
+// This is the ring counterpart of ringSpanScale's BANDWIDTH derivation: that half
+// scales the reduced S/g chunk's transfer time, this half counts the fixed launch +
+// round-trip each of the 2·(nodes−1) steps pays. Carries NO free parameters — it is a
+// pure function of the placed node span (anti-overfitting guardrail #1, #1694).
+func crossNodeRingHops(nodes int) int {
+	if nodes <= 1 {
+		return 0
+	}
+	return 2 * (nodes - 1)
+}
+
+// crossNodeAll2AllHops is the analytic inter-node hop count of ONE all-to-all
+// collective (the MoE expert dispatch or combine on an all-to-all backend) over a
+// group spanning `nodes` physical nodes (#1694): (nodes−1) steps per direction, since
+// each node must exchange with every other with no reduction on the way. Returns 0 for
+// a single node. The all-to-all counterpart of all2AllSpanScale's bandwidth half, and
+// like crossNodeRingHops it carries no free parameters.
+func crossNodeAll2AllHops(nodes int) int {
+	if nodes <= 1 {
+		return 0
+	}
+	return nodes - 1
+}
+
 // crossNodeLatencyUs is the fixed per-collective cost to charge for a group placed
 // per topo: the GPU's declared inter-node latency when the group spans nodes, else 0.
 // 0 keeps the comm bases byte-identical to a pre-#1530 build.

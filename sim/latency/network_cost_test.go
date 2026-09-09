@@ -42,6 +42,44 @@ func newNetModel(t *testing.T, mc sim.ModelConfig, hw sim.HardwareCalib, tp, dp 
 	return m
 }
 
+// ─── Analytic cross-node hop count (#1694, Part A) ───────────────────────────
+
+// TestCrossNodeHopCounts_MatchAlgorithmDerivation pins the analytic hop count for
+// both collective algorithms against hand-derived values, with NO reference to any
+// InferenceX run (anti-overfitting guardrail #1: n_steps carries zero free
+// parameters). The ≥3-node cases are the load-bearing ones: a hierarchical ring does
+// 2·(nodes−1) inter-node steps and an all-to-all does (nodes−1). At a 2-node span the
+// ring value is 2, which also equals the per-layer collective-count factor of 2 that
+// multiplies α_hop elsewhere — so a 2-node test cannot tell "2 hops" from "2
+// collectives × 1 hop." Only a span of 3+ nodes makes the ring's factor of 2
+// unambiguous and distinguishes it from the all-to-all form. Testing n=3,4,8 does so.
+func TestCrossNodeHopCounts_MatchAlgorithmDerivation(t *testing.T) {
+	cases := []struct {
+		nodes       int
+		wantRing    int // 2·(nodes−1), 0 at a single node
+		wantAll2All int // (nodes−1),   0 at a single node
+	}{
+		{nodes: 0, wantRing: 0, wantAll2All: 0}, // degenerate
+		{nodes: 1, wantRing: 0, wantAll2All: 0}, // single node — no cross-node hop
+		{nodes: 2, wantRing: 2, wantAll2All: 1},
+		{nodes: 3, wantRing: 4, wantAll2All: 2}, // ≥3: ring is unambiguously 2× the all-to-all
+		{nodes: 4, wantRing: 6, wantAll2All: 3},
+		{nodes: 8, wantRing: 14, wantAll2All: 7},
+	}
+	for _, c := range cases {
+		assert.Equalf(t, c.wantRing, crossNodeRingHops(c.nodes),
+			"ring hop count at %d nodes must be 2·(nodes−1)", c.nodes)
+		assert.Equalf(t, c.wantAll2All, crossNodeAll2AllHops(c.nodes),
+			"all-to-all hop count at %d nodes must be (nodes−1)", c.nodes)
+	}
+	// The ring is exactly twice the all-to-all for every genuine span (nodes ≥ 2) —
+	// the structural relationship the two algorithms guarantee.
+	for n := 2; n <= 16; n++ {
+		assert.Equalf(t, 2*crossNodeAll2AllHops(n), crossNodeRingHops(n),
+			"ring hops must be 2× all-to-all hops at %d nodes", n)
+	}
+}
+
 // ─── The penalty algebra ────────────────────────────────────────────────────
 
 // TestSpanScale_NeutralCases verifies that the shared penalty form is exactly 1.0
