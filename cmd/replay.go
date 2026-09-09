@@ -112,14 +112,26 @@ Example:
 		}
 
 		// Validate session mode flags (BC-11)
-		if replaySessionMode != "fixed" && replaySessionMode != "closed-loop" {
-			logrus.Fatalf("--session-mode must be \"fixed\" or \"closed-loop\", got %q", replaySessionMode)
+		// fixed-accumulate (#1692): recorded (open-loop) arrivals like "fixed", but with
+		// the growing accumulate-delta input reconstructed like "closed-loop". It is the
+		// only faithful replay mode for a high-concurrency agentic corpus — see the guards
+		// and request-building branch below.
+		if replaySessionMode != "fixed" && replaySessionMode != "closed-loop" && replaySessionMode != "fixed-accumulate" {
+			logrus.Fatalf("--session-mode must be \"fixed\", \"closed-loop\", or \"fixed-accumulate\", got %q", replaySessionMode)
 		}
 		if replayThinkTimeMs < 0 {
 			logrus.Fatalf("--think-time-ms must be non-negative, got %d", replayThinkTimeMs)
 		}
 		if replayConcurrentSessions < 0 {
 			logrus.Fatalf("--concurrent-sessions must be >= 0, got %d", replayConcurrentSessions)
+		}
+		// fixed-accumulate is an open-loop mode: it injects every round at its recorded
+		// arrival, so there is no session pool to maintain. --concurrent-sessions (which
+		// auto-promotes to closed-loop below) is incompatible — reject it here, BEFORE
+		// the auto-promote block, so the conflict is reported rather than silently
+		// overridden into closed-loop (R1).
+		if replaySessionMode == "fixed-accumulate" && replayConcurrentSessions > 0 {
+			logrus.Fatalf("--concurrent-sessions is incompatible with --session-mode fixed-accumulate (fixed-accumulate injects every round at its recorded arrival time; use --concurrent-sessions with --session-mode closed-loop for a pooled prediction instead)")
 		}
 		if replayTotalSessions < 0 {
 			logrus.Fatalf("--total-sessions must be >= 0, got %d", replayTotalSessions)
@@ -142,8 +154,18 @@ Example:
 		// produce wrong-but-plausible-looking metrics. Fail fast instead. This
 		// check runs after the auto-promote block above, so a pool run
 		// (--concurrent-sessions > 0, already promoted to closed-loop) passes.
-		if traceData.Header.SessionContextGrowth == "accumulate" && replaySessionMode != "closed-loop" {
-			logrus.Fatalf("trace header has session_context_growth=accumulate (per-round input_tokens are deltas that only reconstruct correctly in closed-loop replay), but --session-mode is %q. Re-run with --session-mode closed-loop, or use --concurrent-sessions N for pooled replay.", replaySessionMode)
+		// fixed-accumulate (#1692) is the third way to reconstruct the deltas correctly:
+		// it walks the same accumulate delta law on the request-building path while
+		// keeping recorded (open-loop) arrivals, so it is EXEMPT from this reject.
+		if traceData.Header.SessionContextGrowth == "accumulate" && replaySessionMode != "closed-loop" && replaySessionMode != "fixed-accumulate" {
+			logrus.Fatalf("trace header has session_context_growth=accumulate (per-round input_tokens are deltas that only reconstruct correctly in closed-loop or fixed-accumulate replay), but --session-mode is %q. Re-run with --session-mode closed-loop (load-adaptive arrivals), --session-mode fixed-accumulate (recorded arrivals — faithful for high-concurrency runs), or use --concurrent-sessions N for pooled replay.", replaySessionMode)
+		}
+		// fixed-accumulate only makes sense on an accumulate corpus: on a non-accumulate
+		// trace the per-round inputs are already absolute, so plain --session-mode fixed
+		// is correct and fixed-accumulate would needlessly walk an inert delta law. Reject
+		// rather than silently behave like fixed (R1).
+		if replaySessionMode == "fixed-accumulate" && traceData.Header.SessionContextGrowth != "accumulate" {
+			logrus.Fatalf("--session-mode fixed-accumulate requires an accumulate corpus (trace header session_context_growth=accumulate), but this trace's session_context_growth is %q. Use --session-mode fixed for a trace with absolute per-round inputs.", traceData.Header.SessionContextGrowth)
 		}
 		if replayTotalSessions > 0 && replayConcurrentSessions == 0 {
 			logrus.Fatalf("--total-sessions requires --concurrent-sessions > 0")
@@ -198,7 +220,8 @@ Example:
 		var requests []*sim.Request
 		var sessionMgr *workload.SessionManager
 		var poolDriver *workload.SessionPoolDriver
-		if replaySessionMode == "closed-loop" {
+		switch replaySessionMode {
+		case "closed-loop":
 			// Closed-loop: inject only round-0 requests; SessionManager drives follow-ups.
 			// Compute the preliminary horizon from trace records directly (O(n)) so we can
 			// call LoadTraceV2SessionBlueprints exactly once with correct parameters.
@@ -249,7 +272,20 @@ Example:
 				sessionMgr = workload.NewSessionManager(blueprints)
 				logrus.Infof("Closed-loop mode: %d session blueprints, %d round-0 requests", len(blueprints), len(requests))
 			}
-		} else {
+		case "fixed-accumulate":
+			// fixed-accumulate (#1692): pre-bake every session round as a request at its
+			// RECORDED arrival time (open-loop, breaks the closed-loop self-throttling
+			// feedback loop) while reconstructing the growing accumulate-delta input purely
+			// from trace data. The real cross-session arrival overlap is preserved, so N
+			// large prefills pile into the scheduler at the real clock and produce genuine
+			// queueing delay — the whole point for high-concurrency agentic corpora.
+			var bErr error
+			requests, bErr = workload.LoadTraceV2FixedAccumulateRequests(traceData, seed)
+			if bErr != nil {
+				logrus.Fatalf("Failed to build fixed-accumulate requests from trace: %v", bErr)
+			}
+			logrus.Infof("Built %d fixed-accumulate requests for replay (recorded arrivals, reconstructed accumulate inputs)", len(requests))
+		default:
 			// Fixed mode (default): pre-baked arrivals, existing behavior (BC-8)
 			var bErr error
 			requests, bErr = workload.LoadTraceV2Requests(traceData, seed)
@@ -1038,7 +1074,7 @@ func init() {
 	// Saturation trace flags (#1516): --detectors + --saturation-config + --saturation-report.
 	registerDetectorFlags(replayCmd)
 
-	replayCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", `Session replay mode: "fixed" (pre-baked arrivals from trace) or "closed-loop" (load-adaptive follow-ups via SessionManager)`)
+	replayCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", `Session replay mode: "fixed" (pre-baked arrivals from trace), "closed-loop" (load-adaptive follow-ups via SessionManager), or "fixed-accumulate" (recorded arrivals + reconstructed accumulate-delta inputs; faithful replay of high-concurrency agentic corpora, #1692)`)
 	replayCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "Override think time between session rounds in milliseconds (0 = derive from trace inter-round arrival gaps; mutually exclusive with --think-time-dist; requires --session-mode closed-loop)")
 	replayCmd.Flags().StringVar(&replayThinkTimeDist, "think-time-dist", "", `Think-time distribution spec for closed-loop replay (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s" or "constant:value=500ms"). Mutually exclusive with --think-time-ms. Requires --session-mode closed-loop.`)
 	replayCmd.Flags().IntVar(&replayConcurrentSessions, "concurrent-sessions", 0, "Replay a fixed pool of N concurrent closed-loop sessions drawn from the trace corpus (0 = disabled). Implies closed-loop session semantics.")
