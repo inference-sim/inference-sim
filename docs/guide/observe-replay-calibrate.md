@@ -497,6 +497,41 @@ model names are dropped during conversion (same routing-safety reason as OTel).
     re-run `convert` to get compaction-aware output. (The separate think-time lossy-0
     sentinel was resolved in #1608 — see the non-lossy note above.)
 
+### Faithful high-concurrency replay: `--session-mode fixed-accumulate` (#1692)
+
+An accumulate corpus can be replayed three ways. Only the third is faithful at
+concurrency > 1:
+
+| Mode | Arrivals | Accumulate inputs | Faithful high-conc? |
+|------|----------|-------------------|---------------------|
+| `--session-mode closed-loop` | regenerated (`completion + think`) | ✅ reconstructed | ❌ self-throttles — arrivals chain to sim completion, so the queue drains instead of piling up and TTFT collapses to compute-only (30–100× low at conc ≥ 8) |
+| `--session-mode fixed` | recorded | ❌ **hard-rejected** on an accumulate corpus (reads deltas as absolutes) | ❌ not usable |
+| `--session-mode fixed-accumulate` | **recorded** | ✅ reconstructed | ✅ recorded arrivals carry the real cross-session overlap, so N large prefills pile into the scheduler at the real clock and produce genuine queue wait |
+
+```bash
+# Convert once, then replay with recorded arrivals AND reconstructed growing context.
+blis convert weka --input traces.jsonl --trace-output corpus --context-growth accumulate
+blis replay --trace-header corpus.yaml --trace-data corpus.csv \
+  --model kimi-k3 --hardware H200 --tp 16 --dp 2 --enable-expert-parallel \
+  --session-mode fixed-accumulate --max-model-len 1000000
+```
+
+The arrival timestamps are already in the corpus (`ArrivalTimeUs`, written per round by
+the converter) — this mode consumes data that exists today; no trace-format change. It
+requires an accumulate corpus, and is mutually exclusive with `--concurrent-sessions`
+(open-loop, so there is no session pool to maintain) and `--think-time-*` (arrivals are
+recorded, not regenerated). INV-10 (session causality) is **scoped to closed-loop** and
+does not apply — chaining arrivals to sim completion is exactly the feedback loop this
+mode breaks.
+
+!!! warning "Necessary, not sufficient (decode-side gap, #1627)"
+    Even with faithful arrivals, BLIS's decode/step model currently runs ~5–10× fast on
+    this workload (the unmodeled `--enforce-eager` regime plus MTP-speedup-without-
+    contention, #1627), so queue depth is still under-predicted until decode is
+    calibrated. Treat `fixed-accumulate` as a **necessary precondition** for high-
+    concurrency fidelity — land and validate it alongside (or ahead of) the decode-side
+    work, not as a standalone fix.
+
 ---
 
 ## `blis calibrate`

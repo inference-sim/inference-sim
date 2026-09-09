@@ -139,7 +139,9 @@ Invariants are properties that must hold at all times during and after simulatio
 
 ## INV-10: Session Causality
 
-**Statement:** For all rounds N in a closed-loop session: `round[N+1].ArrivalTime >= round[N].CompletionTime + ThinkTimeUs`. Boundary: ThinkTimeUs = 0 produces equality.
+**Statement:** For all rounds N in a **closed-loop** session: `round[N+1].ArrivalTime >= round[N].CompletionTime + ThinkTimeUs`. Boundary: ThinkTimeUs = 0 produces equality.
+
+**Scope (#1692):** INV-10 is scoped to closed-loop arrival *regeneration* — it constrains arrivals the `SessionManager` derives from sim completion. The `fixed-accumulate` replay mode (`blis replay --session-mode fixed-accumulate`) is **exempt by design**: it injects every round at its *recorded* arrival time (open-loop, like `--session-mode fixed`) regardless of sim completion, precisely so N large prefills pile into the scheduler at the real clock and produce genuine queueing delay. Chaining arrivals to sim completion (INV-10) is the self-throttling feedback loop that mode exists to break, so INV-10 does not apply to it. `fixed-accumulate` still reconstructs the growing accumulate-delta input (the closed-loop reconstruction) — only the arrival source differs.
 
 **Verification:** `sim/workload/session_test.go` — `TestSession_RoundGeneration_CorrectArrivalTime` verifies the arrival time formula. The ThinkTimeUs=0 boundary is inherent in the formula.
 

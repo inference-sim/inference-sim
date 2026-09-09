@@ -283,6 +283,23 @@ go build -o blis main.go
 # to closed-loop). Same huge-ISL caveat — raise --max-model-len and scale --total-kv-blocks.
 ./blis replay --trace-header corpus.yaml --trace-data corpus.csv \
   --model qwen/qwen3-14b --concurrent-sessions 8 --total-sessions 200 --max-model-len 1000000
+# FAITHFUL replay of a high-concurrency agentic run (#1692): --session-mode fixed-accumulate
+# injects each round at its RECORDED arrival time (open-loop, like fixed) WHILE reconstructing
+# the growing accumulate-delta input (like closed-loop). Closed-loop regenerates arrivals as
+# completion+think, a self-throttling feedback loop that drains the queue and collapses TTFT to
+# compute-only (30–100× low at conc≥8); fixed mode is hard-rejected on an accumulate corpus (it
+# would misread the deltas as absolutes). fixed-accumulate is the only mode that reproduces the
+# real cross-session overlap, so N large prefills pile into the scheduler at the real clock and
+# produce genuine queue wait. Requires an accumulate corpus; mutually exclusive with
+# --concurrent-sessions (open-loop, no pool) and --think-time-* (arrivals are recorded, not
+# regenerated). INV-10 (session causality) is scoped to closed-loop and does not apply here.
+# Second-order caveat: BLIS's decode/step model still runs ~5–10× fast on this workload
+# (unmodeled enforce-eager + MTP-without-contention, #1627), so queue depth is under-predicted
+# until decode is calibrated — this mode is a NECESSARY precondition for high-conc fidelity, not
+# sufficient alone. Same huge-ISL caveat: raise --max-model-len and scale --total-kv-blocks.
+./blis replay --trace-header corpus.yaml --trace-data corpus.csv \
+  --model kimi-k3 --hardware H200 --tp 16 --dp 2 --enable-expert-parallel \
+  --session-mode fixed-accumulate --max-model-len 1000000
 
 # Observe corpus-mode: drive the SAME corpus as a fixed session pool against a
 # LIVE server (observe-side twin of `blis replay --concurrent-sessions`), so
