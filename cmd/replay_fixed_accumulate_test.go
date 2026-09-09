@@ -21,6 +21,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
 // accumulateCorpusCSV is a 2-session accumulate corpus (deltas, with a
@@ -50,18 +52,25 @@ func writeAccumulateCorpus(t *testing.T) (headerPath, dataPath string) {
 }
 
 // runFixedAccumulateReplay runs replayCmd.Run with --session-mode fixed-accumulate over
-// the given corpus and captures stdout. Returns the captured stdout bytes.
+// the given corpus and captures stdout. Returns the captured stdout bytes. When
+// traceOutPrefix != "", it also sets --trace-output to re-export the replay.
 func runFixedAccumulateReplay(t *testing.T, headerPath, dataPath string, seedVal int64) []byte {
+	return runFixedAccumulateReplayWithOutput(t, headerPath, dataPath, seedVal, "")
+}
+
+func runFixedAccumulateReplayWithOutput(t *testing.T, headerPath, dataPath string, seedVal int64, traceOutPrefix string) []byte {
 	t.Helper()
 	restore := captureCmdLevelVars()
 	origSession := replaySessionMode
 	origHeader := traceHeaderPath
 	origData := traceDataPath
+	origTraceOut := replayTraceOutput // captureCmdLevelVars covers run's traceOutput, not replay's
 	defer func() {
 		restore.restore()
 		replaySessionMode = origSession
 		traceHeaderPath = origHeader
 		traceDataPath = origData
+		replayTraceOutput = origTraceOut
 	}()
 
 	mcFolder, hwPath := setupTrainedPhysicsTestFixtures(t)
@@ -95,7 +104,7 @@ func runFixedAccumulateReplay(t *testing.T, headerPath, dataPath string, seedVal
 	tensorParallelism = 1
 	defaultsFilePath = "../defaults.yaml"
 	replaySessionMode = "fixed-accumulate"
-	replayTraceOutput = ""
+	replayTraceOutput = traceOutPrefix
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
@@ -152,6 +161,44 @@ func TestReplayFixedAccumulate_Deterministic(t *testing.T) {
 	}
 	if len(a) == 0 {
 		t.Fatal("stdout is empty; determinism test must produce output to be meaningful")
+	}
+}
+
+// TestReplayFixedAccumulate_TraceOutput_AbsoluteCorpus documents and pins the
+// re-export behavior flagged in PR review: fixed-accumulate reconstructs the growing
+// context in memory, so --trace-output writes the ALREADY-RECONSTRUCTED ABSOLUTE
+// per-round inputs. The exported header carries NO session_context_growth and the CSV
+// records absolute input_tokens (not deltas), so the export is a faithful absolute-mode
+// corpus: re-replay it with --session-mode fixed, NOT fixed-accumulate.
+func TestReplayFixedAccumulate_TraceOutput_AbsoluteCorpus(t *testing.T) {
+	headerPath, dataPath := writeAccumulateCorpus(t)
+	outPrefix := filepath.Join(t.TempDir(), "reexport")
+	_ = runFixedAccumulateReplayWithOutput(t, headerPath, dataPath, 42, outPrefix)
+
+	// Load the re-exported trace and assert it is an absolute (non-accumulate) corpus.
+	trace, err := workload.LoadTraceV2(outPrefix+".yaml", outPrefix+".csv")
+	if err != nil {
+		t.Fatalf("re-exported trace failed to load: %v", err)
+	}
+	if trace.Header.SessionContextGrowth != "" {
+		t.Errorf("re-export header session_context_growth = %q, want empty (absolute corpus)", trace.Header.SessionContextGrowth)
+	}
+	// The reconstructed absolute inputs for session s1 are 100, 180, 245 (deltas
+	// 100/30/25 + prev outputs 50/40). The re-export must record those absolutes, not deltas.
+	byRound := map[int]int{}
+	for _, rec := range trace.Records {
+		if rec.SessionID == "s1" {
+			byRound[rec.RoundIndex] = rec.InputTokens
+		}
+		if rec.InputTokensReset != nil {
+			t.Errorf("re-export should carry no input_tokens_reset markers (absolute corpus), round %d has one", rec.RoundIndex)
+		}
+	}
+	want := map[int]int{0: 100, 1: 180, 2: 245}
+	for r, w := range want {
+		if byRound[r] != w {
+			t.Errorf("re-export s1 round %d input_tokens = %d, want absolute %d", r, byRound[r], w)
+		}
 	}
 }
 

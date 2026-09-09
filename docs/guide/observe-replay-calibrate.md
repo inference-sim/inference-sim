@@ -532,6 +532,16 @@ mode breaks.
     concurrency fidelity — land and validate it alongside (or ahead of) the decode-side
     work, not as a standalone fix.
 
+!!! note "`--trace-output` produces an absolute (non-accumulate) corpus"
+    fixed-accumulate reconstructs each round's growing context in memory, so
+    `--trace-output` re-exports the **already-reconstructed absolute** per-round inputs —
+    the exported header carries **no** `session_context_growth`, and the CSV records
+    absolute `input_tokens` (not deltas). This export is a faithful absolute-mode corpus:
+    re-replay it with `--session-mode fixed` (the default). It is **not** an accumulate
+    corpus, so `--session-mode fixed-accumulate` will reject it (the accumulate-corpus
+    guard) — re-run the original `convert` step if you need to re-export deltas. This is
+    lossless: the absolute inputs are exactly what fixed-accumulate reconstructed.
+
 ---
 
 ## `blis calibrate`

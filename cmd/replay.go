@@ -1068,7 +1068,7 @@ func init() {
 	replayCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "Path to TraceV2 header YAML file (required)")
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
 	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us) for blis calibrate consumption.")
-	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\"")
+	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\". Under --session-mode fixed-accumulate the export records reconstructed ABSOLUTE per-round inputs (no session_context_growth header) — re-replay it with --session-mode fixed, not fixed-accumulate.")
 	replayCmd.Flags().StringVar(&replayMetricsPath, "metrics-path", "", "File to write aggregate MetricsOutput JSON (incl. cache_hit_rate for `blis calibrate --sim-metrics`, #1583). Symmetric with `blis run --metrics-path`; stdout is unaffected.")
 
 	// Saturation trace flags (#1516): --detectors + --saturation-config + --saturation-report.
