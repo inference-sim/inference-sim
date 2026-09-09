@@ -654,6 +654,11 @@ Example:
 
 		startTime := time.Now()
 
+		// Cross-node collective serialization S (#1694, Part B): resolved and threaded
+		// identically to the run path so a run and its replay under the same flags stay
+		// byte-identical (INV-13). Not round-tripped through the trace header.
+		mhwOpts := append(dpPlan.EPGroupOptions(), sim.WithCommSerializationFactor(resolveCommSerializationFactor(cmd)))
+
 		// Build cluster config (same as runCmd, using replayHorizon instead of simulationHorizon).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/root.go (runCmd
 		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
@@ -670,7 +675,7 @@ Example:
 				// per-replica DP — 1 when the plan is active (each replica is one rank),
 				// else the CLI dataParallelism unchanged. Identical to the run wiring
 				// (cmd/root.go), from the same shared resolveDPPlacement (INV-13).
-				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen, dpPlan.EPGroupOptions()...),
+				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen, mhwOpts...),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				LoRAConfig:           loraCfg,
 				SpeculativeConfig:    resolveSpeculativeConfig(cmd),

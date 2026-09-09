@@ -134,6 +134,15 @@ var (
 	speculativeAcceptance float64 // --speculative-acceptance-rate (α ∈ [0,1])
 	speculativeMethod     string  // --speculative-method (informational label)
 
+	// Cross-node collective serialization S (#1694, Part B). A deployment-regime
+	// multiplier on the cross-node latency term: 1.0 (default) = graphs-on/overlap
+	// (inert, byte-identical INV-6); >1 = enforce-eager/no-overlap. --enforce-eager is a
+	// provenance+guard bool that REQUIRES an explicit --comm-serialization-factor > 1
+	// (BLIS ships no fitted eager magnitude, #1694 guardrail). Re-supplied on both run
+	// and replay, not round-tripped through the trace header (INV-13).
+	commSerializationFactor float64 // --comm-serialization-factor (S ≥ 1)
+	enforceEager            bool    // --enforce-eager (regime flag; requires S > 1)
+
 	// loraReservedBytesForKV carries the resolved static LoRA HBM reservation
 	// (bytes) into KV auto-capacity, mirroring how totalKVBlocks is threaded as a
 	// package var. Set once per command RunE from the single resolveLoRAConfig call
@@ -1589,6 +1598,12 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&speculativeAcceptance, "speculative-acceptance-rate", 0.0, "Speculative decoding: mean fraction of draft tokens accepted, in [0,1]. Required when --num-speculative-tokens > 0.")
 	cmd.Flags().StringVar(&speculativeMethod, "speculative-method", "", "Speculative decoding method label (informational; BLIS labels, not verbatim vLLM strings — 'draft' is shorthand for vLLM's 'draft_model'): mtp|eagle|medusa|ngram|draft. Optional; requires --num-speculative-tokens > 0.")
 
+	// Cross-node collective serialization S (#1694, Part B). trained-physics only; fires
+	// only for a multi-node span with a calibrated α_hop (InterNodeHopLatencyUs). Default
+	// 1.0 is inert (byte-identical, INV-6). Re-supply identically on replay (INV-13).
+	cmd.Flags().Float64Var(&commSerializationFactor, "comm-serialization-factor", 1.0, "Cross-node collective serialization multiplier S on the size-independent inter-node latency term (#1694). 1.0 (default) = CUDA graphs / comm-compute overlap (inert). >1 = enforce-eager / no-overlap regime, where collectives serialize behind a full barrier. Must be >= 1. Multiplies an existing cross-node latency term (spanning nodes AND a calibrated per-hop α_hop); never creates cost on its own.")
+	cmd.Flags().BoolVar(&enforceEager, "enforce-eager", false, "Mirror vLLM --enforce-eager for latency purposes: declares the deployment runs without CUDA graphs / comm-compute overlap. Provenance + guard for --comm-serialization-factor: when set, requires an explicit --comm-serialization-factor > 1 (BLIS ships no fitted eager magnitude — #1694). Does not itself pick a value.")
+
 	// KV-cache offload config surface (H5, #1587). One flag: a strict-YAML file with a
 	// single top-level kv_offload: block (CPU tier + ordered secondary tiers, per-tier
 	// device physics). Registered on run and replay (INV-13). Absent => the offload
@@ -1716,6 +1731,36 @@ func resolveSpeculativeConfig(cmd *cobra.Command) sim.SpeculativeConfig {
 		}
 	}
 	return c
+}
+
+// resolveCommSerializationFactor builds the cross-node collective serialization factor S
+// (#1694, Part B) from the CLI, validating it at the command boundary (CLI → Fatalf, R6).
+// Threaded identically into run and replay so a run and its replay under the same flags
+// stay byte-identical (INV-13); it is a model-level input like --kv-cache-dtype, not
+// round-tripped through the trace header.
+func resolveCommSerializationFactor(cmd *cobra.Command) float64 {
+	s := commSerializationFactor
+	// S must never make a spanning step cheaper (R3, monotonicity BC-6). A value below 1
+	// is a user error, not something to silently clamp at the CLI boundary.
+	if s < 1.0 || math.IsNaN(s) || math.IsInf(s, 0) {
+		logrus.Fatalf("--comm-serialization-factor must be a finite value >= 1 (1.0 = graphs-on/overlap, the inert default), got %v", s)
+	}
+	// --enforce-eager declares the no-overlap regime but ships NO magnitude: BLIS has no
+	// fitted eager S to supply, and inventing one would put a fabricated constant in front
+	// of every eager multi-node estimate (#1694 guardrail #2). Require the operator to
+	// supply the calibrated factor explicitly, mirroring the --speculative-acceptance-rate
+	// Changed-gated required-companion idiom.
+	if enforceEager && (!cmd.Flags().Changed("comm-serialization-factor") || s <= 1.0) {
+		logrus.Fatalf("--enforce-eager requires an explicit --comm-serialization-factor > 1: BLIS ships no measured " +
+			"eager serialization magnitude, so the multiplier must be supplied from a calibrated source (#1694). " +
+			"Set it explicitly, e.g. --enforce-eager --comm-serialization-factor 30")
+	}
+	if s > 1.0 {
+		logrus.Infof("cross-node collective serialization factor S=%.3f%s: charged on the size-independent "+
+			"inter-node latency term for spanning collectives (#1694)", s,
+			map[bool]string{true: " (enforce-eager)", false: ""}[enforceEager])
+	}
+	return s
 }
 
 // adapterReservedBytesFor returns the static LoRA HBM reservation (bytes) to carve
@@ -2495,6 +2540,11 @@ var runCmd = &cobra.Command{
 			}
 		}
 
+		// Cross-node collective serialization S (#1694, Part B): a model-level latency
+		// input appended to the EP-group options, resolved once and threaded identically on
+		// replay (INV-13). Inert at the default S=1.
+		mhwOpts := append(dpPlan.EPGroupOptions(), sim.WithCommSerializationFactor(resolveCommSerializationFactor(cmd)))
+
 		// Unified cluster path (used for all values of numInstances).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/replay.go (replayCmd
 		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
@@ -2513,7 +2563,7 @@ var runCmd = &cobra.Command{
 				// authoritative from the start (no construct-then-override). Since #1556 replay
 				// wires the SAME dpPlan.PerRankDP from the SAME resolveDPPlacement, so the two
 				// paths agree for every config both support (INV-13).
-				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen, dpPlan.EPGroupOptions()...),
+				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen, mhwOpts...),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				LoRAConfig:           loraCfg,
 				SpeculativeConfig:    resolveSpeculativeConfig(cmd),
