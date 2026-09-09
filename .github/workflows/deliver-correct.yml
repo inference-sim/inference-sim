@@ -286,10 +286,24 @@ jobs:
             apply=true
           fi
 
+          # FAILING TO APPLY IS FATAL, unlike most label failures in this loop — the same rule the
+          # round counter follows, and for the same reason. Once `apply=true` we have concluded a
+          # dismissal may be outstanding; if that cannot be recorded, the next verify reads
+          # `DISMISSALS=none` and the gate can reach `ready-for-merge` with the dismissal
+          # unadjudicated. A warning here would defeat the entire mechanism precisely when it is
+          # needed, so the phase stops instead. The most likely cause is the label not existing in
+          # the repository (HTTP 422) — a setup step, hence the hint.
+          #
+          # Stopping is safe rather than disruptive: this step failing skips `Hand back to verify`
+          # (a step whose `if:` has no status function carries an implicit `success()`), and the
+          # failure reporter below applies needs-human. A human picks it up with the reason.
           if [[ "$apply" == "true" ]]; then
-            gh api -X POST "/repos/$REPO/issues/$PR/labels" -f 'labels[]=deliver:has-dismissals' \
-              >/dev/null \
-              || echo "::warning::could not apply deliver:has-dismissals — does the label exist in this repository?"
+            if ! gh api -X POST "/repos/$REPO/issues/$PR/labels" \
+                   -f 'labels[]=deliver:has-dismissals' >/dev/null; then
+              echo "::error::could not apply deliver:has-dismissals to #$PR. Does the label exist in this repository? Refusing to hand back to verify, because the gate would read the dismissal state as 'none' and could reach ready-for-merge with a dismissal nobody accepted."
+              exit 1
+            fi
+            echo "recorded deliver:has-dismissals on #$PR"
           fi
           # Never REMOVED here. Only the review phase clears it, and only on explicit acceptance;
           # a round that dismisses nothing must not wipe an earlier round's unaccepted dismissal.

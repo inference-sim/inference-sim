@@ -101,7 +101,9 @@ Archon is optional throughout: with a plan there is a deterministic number that 
 
 **Dismissals.** If the correct phase dismisses a finding rather than fixing it, it says so in a `DELIVER-DISMISSALS: <n>` line and a workflow step applies `deliver:has-dismissals` when that count is above zero — or when the count is missing, since an unreported state is not a report of zero. The gate refuses `ready-for-merge` while the label is present, so a dismissal cannot quietly become a resolution. Only the review phase removes it, and only when it has explicitly accepted each one; a reviewer that forgets costs a human glance rather than passing a waved-away finding.
 
-**Round count.** The `deliver:round-N` label is the only record of how many corrections have been spent, and — since `workflow_dispatch` has no chain-depth cap — the only thing bounding the loop. It is advanced *before* the correction agent runs, so a crashed or timed-out round still consumes its budget rather than being retried forever. A missing round label is therefore fatal to the correct phase, unlike other label failures, which only warn.
+**Round count.** The `deliver:round-N` label is the only record of how many corrections have been spent, and — since `workflow_dispatch` has no chain-depth cap — the only thing bounding the loop. It is advanced *before* the correction agent runs, so a crashed or timed-out round still consumes its budget rather than being retried forever. A missing round label is therefore fatal to the correct phase, unlike most label failures, which only warn.
+
+**Two label writes are fatal, and for the same reason: both are the mechanism that bounds or blocks the loop.** Failing to advance `deliver:round-N` loses the loop's only bound. Failing to apply `deliver:has-dismissals` when a dismissal was reported loses the gate's only record of it — the next verify would read `none` and could reach `ready-for-merge` with a dismissal nobody accepted. In both cases the phase stops and a human picks it up, rather than continuing with the safeguard silently absent.
 
 ## When a delivery goes quiet, and how to resume one
 
