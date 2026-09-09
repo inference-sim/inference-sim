@@ -44,9 +44,14 @@ on:
         description: 'Sub-issue number being delivered'
         required: true
   # A verdict must describe the CURRENT head, so any human push to a delivery branch
-  # re-verifies it. An automation push cannot reach here: a push made with GITHUB_TOKEN
-  # creates no workflow run, so the correct phase's own push does not double-trigger
-  # alongside the hand-off it performs.
+  # re-verifies it.
+  #
+  # A GITHUB_TOKEN push creates no workflow run, so the correct phase's hand-off would not
+  # double-trigger — but the correct phase does not push from a workflow step. Its agent
+  # pushes from inside claude-code-action, and this workflow cannot establish which
+  # credential that uses (the action performs an OIDC exchange and may hold an App
+  # installation token). The job therefore refuses a Bot-sent push outright rather than
+  # resting on the token rule, so the property holds whichever credential is in play.
   push:
     branches:
       - 'deliver/issue-*'
@@ -61,29 +66,97 @@ on:
 # key — `deliver/issue-N` — so a dispatched verify and a human push cannot race, and a
 # verify cannot overlap the correct phase for the same PR. Never cancel in progress: a
 # half-finished phase that is killed reports nothing.
+#
+# This is evaluated before any job's `if:`, so a review event on a delivery PR joins the group
+# even when the authorize job will go on to deny it: the run waits, then skips. That is the
+# intended trade — a review-triggered verify MUST share the key, or it could overlap the correct
+# phase for the same PR. GitHub holds at most one pending run per group, so a denied review
+# cannot be used to build a queue.
 concurrency:
   group: delivery-${{ inputs.issue_number && format('deliver/issue-{0}', inputs.issue_number) || github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
+  # WHY THIS JOB EXISTS: on a PUBLIC repository, submitting a review or a review comment
+  # requires only READ access. Both review events also run in the base-repository context with
+  # access to secrets, so without a permission check any GitHub user could start an agent run
+  # holding LITELLM_API_KEY, with pull-requests: write and actions: write, on the single
+  # self-hosted runner — repeatedly, at will. `workflow_dispatch` and `push` carry that property
+  # for free (both already require write access); the review triggers removed it, so it is
+  # restored here with the same check the implement phase uses.
+  #
+  # A permission check needs an API call, and therefore a runner. It runs on a hosted runner so
+  # an unauthorised review never wakes the self-hosted one. This job has no `if:` — a skipped
+  # job would skip the dependent one regardless of the event.
+  authorize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      allowed: ${{ steps.check.outputs.allowed }}
+    steps:
+      - name: Check that a review-triggered run came from a collaborator
+        id: check
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const reviewEvent = context.eventName === 'pull_request_review'
+              || context.eventName === 'pull_request_review_comment';
+            if (!reviewEvent) {
+              core.info(`${context.eventName} already requires write access — no check needed.`);
+              core.setOutput('allowed', 'true');
+              return;
+            }
+            try {
+              const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                username: context.actor
+              });
+              const allowed = ['admin', 'write', 'maintain'].includes(data.permission);
+              if (!allowed) {
+                core.info(`User ${context.actor} has '${data.permission}' permission — skipping.`);
+              }
+              core.setOutput('allowed', allowed ? 'true' : 'false');
+            } catch (err) {
+              // Only a 404 means "not a collaborator". Mapping every error to that would drop a
+              // maintainer's `changes_requested` on a 500 or a rate limit with nothing to notice —
+              // the run would simply skip, silently, exactly like an unauthorised one. So anything
+              // else is rethrown and this job goes red, which is visible.
+              if (err.status === 404) {
+                core.info(`User ${context.actor} is not a collaborator — skipping.`);
+                core.setOutput('allowed', 'false');
+                return;
+              }
+              throw err;
+            }
+
   verify:
-    # A review event authored by a bot must never re-trigger this phase. GITHUB_TOKEN-created
-    # events do not start workflows, so the loop's own comments are already inert — but
-    # claude-code-action can post inline review comments, and if it ever does so under an App
-    # token that would be a live trigger. Verify triggering itself is an unbounded agent loop,
-    # so this is guarded rather than assumed.
-    # Three guards, each authoritative for a different event shape:
-    #   - review.user.type   — pull_request_review (payload has `review`, not `comment`)
-    #   - comment.user.type  — pull_request_review_comment (payload has `comment`, not `review`)
-    # A bot-authored review event must never re-trigger this phase: verify triggering itself is
-    # an unbounded agent loop.
+    needs: authorize
+    # Four guards, each authoritative for a different event shape:
+    #   - the authorize job — the only thing standing between a read-access user and an agent
+    #     run with this workflow's secrets. See that job's comment.
+    #   - review.user.type / comment.user.type — a bot-authored review event must never
+    #     re-trigger this phase, because verify triggering itself is an unbounded agent loop.
+    #     GITHUB_TOKEN-created events do not start workflows, so the loop's own comments are
+    #     already inert; claude-code-action can post inline review comments, and if it ever does
+    #     so under an App token that would be a live trigger. `pull_request_review` carries
+    #     `review`, `pull_request_review_comment` carries `comment`, hence both tests.
+    #   - sender.type on a push — see the `on: push` comment. Removes the assumption that the
+    #     correct phase's agent pushes with GITHUB_TOKEN; an App-token push is Bot-sent too, so
+    #     this covers the case either way and no correction round can produce two verify runs.
     #   - the head-ref test — review triggers cannot be branch-filtered in `on:`, so without it
     #     every review comment anywhere in the repo wakes the single self-hosted runner just to
     #     have Resolve exit quietly. That runner is a known bottleneck, so the wakeup is skipped
     #     rather than absorbed.
+    # An `approved` review is excluded: an approval carries no finding to act on, so re-running
+    # a full CI dispatch plus an agent review for a drive-by "LGTM" is cost with no signal.
+    # `commented` is NOT excluded — on #1655 most of the real findings arrived that way.
     if: |
+      needs.authorize.outputs.allowed == 'true' &&
       github.event.review.user.type != 'Bot' &&
       github.event.comment.user.type != 'Bot' &&
+      github.event.review.state != 'approved' &&
+      (github.event_name != 'push' || github.event.sender.type != 'Bot') &&
       (
         (github.event_name != 'pull_request_review' && github.event_name != 'pull_request_review_comment')
         || startsWith(github.event.pull_request.head.ref, 'deliver/issue-')
@@ -135,8 +208,16 @@ jobs:
             exit 0
           fi
           issue="${BASH_REMATCH[1]}"
-          pr=$(gh pr list --repo "$REPO" --head "$branch" --state open --json number \
-                 --jq '.[0].number // empty') || pr=""
+          # An API failure is NOT the same answer as "there is no PR". Collapsing the two into
+          # `proceed=false` made a transient failure exit green and silent, discarding a real
+          # push or human review with no comment, no label and nothing to notice. There is no
+          # PR number to report against at this point, so the only honest outcome is a red run;
+          # the stall sweep is the backstop that makes the missing comment visible.
+          if ! pr=$(gh pr list --repo "$REPO" --head "$branch" --state open --json number \
+                      --jq '.[0].number // empty'); then
+            echo "::error::could not list PRs for $branch — cannot tell whether a delivery PR exists, so this run is failing rather than exiting quietly"
+            exit 1
+          fi
           if [[ -z "$pr" ]]; then
             echo "no open PR on $branch — nothing to verify."
             echo "proceed=false" >> "$GITHUB_OUTPUT"
@@ -202,6 +283,37 @@ jobs:
           else
             echo "paused=false" >> "$GITHUB_OUTPUT"
           fi
+
+      # A terminal label describes a FINISHED verification, so it must not survive the start of
+      # a new one. `Apply the decision` also clears both, but it runs at the very end — after the
+      # CI dispatch and the agent review, up to the full 120-minute budget later. That left a
+      # window in which a push to a PR already labelled `ready-for-merge` kept advertising
+      # merge-readiness for the whole re-verification, on a commit nothing had checked. Clearing
+      # here makes "no terminal label" mean "being verified", which is also exactly what the
+      # stall sweep reads as a delivery in flight.
+      #
+      # Losing a previous `needs-human` is intended: the delivery is genuinely under verification
+      # again, and the failure reporter or the sweep re-applies it if this run does not finish.
+      #
+      # A 404 means the label was not there, which is the normal case and the only benign failure.
+      # Anything else — 403, a rate limit, a 5xx — must NOT be swallowed: a `ready-for-merge` that
+      # survives is the exact window this step exists to close, and it also removes the PR from the
+      # stall sweep's candidate set, so the backstop would not catch it either. The step warns and
+      # keeps going rather than failing, because a stale label is not a reason to abandon the
+      # verification that would replace it — but it says so, instead of logging success regardless.
+      - name: Retire the previous verdict
+        if: steps.paused.outputs.paused == 'false'
+        run: |
+          set -uo pipefail
+          for stale in ready-for-merge needs-human; do
+            if err=$(gh api -X DELETE "/repos/$REPO/issues/$PR/labels/$stale" 2>&1 >/dev/null); then
+              echo "removed '$stale' from #$PR"
+            elif grep -q 'HTTP 404' <<< "$err"; then
+              echo "'$stale' was not set on #$PR"
+            else
+              echo "::warning::could not remove '$stale' from #$PR — a stale verdict may be visible during this verification: $err"
+            fi
+          done
 
       # Trusted tree: our scripts, our .archon-version.
       - uses: actions/checkout@v5
@@ -477,10 +589,11 @@ jobs:
           [[ -n "$touched" ]] && echo "self-verification files touched: $touched" || echo "no workflow files touched"
           echo "touched=$touched" >> "$GITHUB_OUTPUT"
 
-      # Item 5: a dismissal must not become a resolution silently. The correct phase applies
-      # `deliver:has-dismissals` when it dismisses a finding; the review phase is told to
-      # remove it only when it has explicitly accepted each one. Reading it here makes the
-      # state visible to the GATE rather than depending on the reviewer's prose — and it fails
+      # Item 5: a dismissal must not become a resolution silently. The correct phase reports a
+      # `DELIVER-DISMISSALS: <n>` count and one of ITS workflow steps derives
+      # `deliver:has-dismissals` from that count — not the agent, so a correction that dismisses a
+      # finding and forgets a label cannot leave this reading `none`. Reading the label here makes
+      # the state visible to the GATE rather than depending on the reviewer's prose, and it fails
       # closed: a reviewer that forgets to clear it blocks `ready` instead of passing quietly.
       - name: Read the dismissal state
         id: dismissals
@@ -606,6 +719,11 @@ jobs:
           SINCE: ${{ steps.since.outputs.at }}
         run: |
           set -uo pipefail
+          # An empty SINCE would make `select(.created_at > "")` match every comment on the PR, so
+          # `tail -n 1` could return a PREVIOUS round's verdict as this round's — including a stale
+          # GREEN. The marker is the gate's most consequential input, so refuse rather than guess.
+          [[ -n "$SINCE" ]] \
+            || { echo "::error::the review-start marker is empty; refusing to read a verdict that may belong to an earlier round"; exit 1; }
           # Lexicographic compare is valid: both sides are UTC ISO-8601 to the second.
           # One line of output per qualifying comment: its last non-empty line, trimmed.
           lastlines=$(gh api "/repos/$REPO/issues/$PR/comments?per_page=100" --paginate \
@@ -747,19 +865,17 @@ jobs:
             -f pr_number="$PR" -f issue_number="$ISSUE_NUMBER"
           echo "Dispatched correct for PR #$PR."
 
-      # `cancelled()` matters as much as `failure()`: the job timeout CANCELS rather than fails,
-      # and this phase is the long one (full test suite plus an agent review). Without this a
-      # timeout would skip the comment and the label, leaving the PR silent — and silence is
-      # indistinguishable from "still working" while there is no stall detector.
+      # `always() && !success()`, NOT `failure() || cancelled()`. Per the GitHub expression docs
+      # `failure()` is true when a previous step FAILS and `cancelled()` when the WORKFLOW is
+      # cancelled — a cancelled *step* is neither, so the old guard skipped this reporter exactly
+      # when a step was cancelled. Observed live on #1685. The job timeout also cancels rather
+      # than fails, and this is the long phase (full test suite plus an agent review), so without
+      # a reporter that fires on both a timeout would leave the PR silent.
       # Gated on `owned`, not just on failure: when Validate the target PR correctly REFUSES a
       # fork, a wrong-branch or a closed PR, the job fails — and without this guard the reporter
       # would then comment and apply needs-human to a PR the loop was just told it does not own.
       # Any write-access user can send a misdirected dispatch, so that write must not happen. A
       # refused dispatch is already reported by the ::error:: in the validation step itself.
-      # `always() && !success()`, NOT `failure() || cancelled()`. Per the GitHub expression
-      # docs, `failure()` is true when a previous step FAILS and `cancelled()` is true when the
-      # WORKFLOW is cancelled — a cancelled *step* is neither, so the old guard skipped the
-      # reporter exactly when a step was cancelled. Observed live on #1685.
       #
       # Scope note, so this is not over-claimed: this cannot report a dead RUNNER. When the
       # runner receives a shutdown signal no step executes, whatever its `if:` says — even
