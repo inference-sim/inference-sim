@@ -152,6 +152,34 @@ func TestFixedAccumulate_NonSessionPassThrough(t *testing.T) {
 	}
 }
 
+// TestFixedAccumulate_PrefixMetadataParity: round 0 carries PrefixGroup/PrefixLength
+// (for cross-session prefix-affinity routing, parity with LoadTraceV2SessionBlueprints),
+// but follow-up rounds do NOT (accumulate folds the prefix into the growing buffer).
+func TestFixedAccumulate_PrefixMetadataParity(t *testing.T) {
+	records := []TraceRecord{
+		{RequestID: 0, SessionID: "s1", RoundIndex: 0, PrefixGroup: "sys", PrefixLength: 8, InputTokens: 20, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 4, OutputTokens: 3, ArrivalTimeUs: 1000, Status: "ok"},
+	}
+	trace := buildAccumulateTrace(t, records)
+	reqs, err := LoadTraceV2FixedAccumulateRequests(trace, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reqs) != 2 {
+		t.Fatalf("expected 2 requests, got %d", len(reqs))
+	}
+	if reqs[0].PrefixGroup != "sys" || reqs[0].PrefixLength != 8 {
+		t.Errorf("round 0 prefix = %q/%d, want sys/8", reqs[0].PrefixGroup, reqs[0].PrefixLength)
+	}
+	// round 0 input = prefix(8) + suffix(20) = 28 tokens.
+	if int(reqs[0].InputLen()) != 28 {
+		t.Errorf("round 0 input len = %d, want 28 (prefix 8 + suffix 20)", reqs[0].InputLen())
+	}
+	if reqs[1].PrefixGroup != "" || reqs[1].PrefixLength != 0 {
+		t.Errorf("follow-up prefix = %q/%d, want empty (prefix folded into buffer)", reqs[1].PrefixGroup, reqs[1].PrefixLength)
+	}
+}
+
 // TestFixedAccumulate_NonConsecutiveRounds_Error (R1): a session with a round gap
 // must error rather than silently misreconstruct.
 func TestFixedAccumulate_NonConsecutiveRounds_Error(t *testing.T) {

@@ -221,9 +221,18 @@ func buildFixedAccumulateRequest(rec TraceRecord, sessionID string, inputTokens,
 		Streaming:        rec.Streaming,
 		Adapter:          rec.Adapter,
 	}
-	// Non-session records carry their prefix metadata (suffix-only input); session
-	// rounds do not (prefix already folded into the reconstructed absolute).
-	if sessionID == "" {
+	// Prefix metadata parity with the other loaders (router prefix-affinity scoring
+	// reads PrefixGroup/PrefixLength; the tokens themselves are already baked into
+	// InputTokens):
+	//   - Non-session records: carry it (suffix-only input), like LoadTraceV2Requests.
+	//   - Session ROUND 0: carry it, matching LoadTraceV2SessionBlueprints' round-0
+	//     request — so two sessions sharing a system-prompt group still get cross-session
+	//     prefix-cache affinity. No-op for converter corpora (PrefixGroup == "").
+	//   - Session follow-up rounds (RoundIndex > 0): DO NOT carry it — accumulate folds
+	//     the prefix into the growing buffer, so a PrefixLength here would double-count
+	//     (mirrors SessionManager.OnComplete, which prepends the prefix but leaves the
+	//     follow-up's PrefixGroup/PrefixLength unset).
+	if sessionID == "" || rec.RoundIndex == 0 {
 		req.PrefixGroup = rec.PrefixGroup
 		req.PrefixLength = rec.PrefixLength
 	}
