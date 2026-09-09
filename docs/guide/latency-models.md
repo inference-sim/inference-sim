@@ -330,18 +330,45 @@ mechanism behind vLLM's guidance to prefer pipeline parallelism across nodes and
 parallelism within a node: per-layer all-reduce means *many small* collectives, not a few
 large ones.
 
-`InterNodeLatencyUs` supplies it. It is charged once per comm unit that crosses a node
-boundary, so a step running `L` layers × 2 phases pays it `2L` times, and it is skipped
-entirely for a step that communicates no tokens (no collective runs, so nothing launches).
+The charge has the analytic form ([#1694](https://github.com/inference-sim/inference-sim/issues/1694)):
 
-**It is 0 — not charged — in the bundled hardware config, deliberately.** BLIS has no
-measured per-collective latency to ship, and a guessed constant would sit in front of
-every multi-node estimate. So out of the box the cross-node cost is bandwidth-only, and
-the size-independent half is available but off. Supply a measured value to model it; see
-[#1661](https://github.com/inference-sim/inference-sim/issues/1661), which also records
-the calibration-evidence bar. Like the bandwidth half, it rides the learned communication
-coefficient (β₄, or β_EP for MoE dispatch), so calibrate it in that frame — the charge is
-`β · units · InterNodeLatencyUs`, not a raw wall-clock number.
+```
+T_collective_fixed = n_steps(algorithm, topology) · α_hop · S
+                     └──── analytic, no fit ────┘  └fabric┘ └regime┘
+```
+
+**`n_steps` is the analytic cross-node hop count** — derived purely from the collective
+algorithm and the placed node span, with no free parameters. A hierarchical (two-level)
+ring all-reduce does its inter-node phase in `2·(nodes−1)` hops; a true all-to-all does
+`(nodes−1)` per direction. This replaces the flat per-collective term (#1667), which was
+node-span-*invariant* and under-charged a wide span by ~`(nodes−1)×`. The per-layer
+collective count (one comm unit per TP collective; dispatch + combine for MoE) still
+multiplies it, so a step running `L` layers pays `units · n_steps · α_hop` and skips it
+entirely for a step that communicates no tokens.
+
+**`α_hop` (`InterNodeHopLatencyUs`) is the per-fabric constant** — the cost of one
+inter-node hop. **It is 0 — not charged — in the bundled hardware config, deliberately.**
+BLIS has no measured per-hop latency to ship, and a guessed constant would sit in front of
+every multi-node estimate. `α_hop` must come from an independent NCCL microbenchmark on a
+reference cluster (the MFU / [Discussion #589](https://github.com/inference-sim/inference-sim/discussions/589)
+pattern) and be reused unchanged across fabrics — **never back-solved from one run's
+residual**. Like the bandwidth half it rides the learned communication coefficient (β₄, or
+β_EP for MoE dispatch), so calibrate it in that frame — the charge is
+`β · units · n_steps · α_hop · S`, not a raw wall-clock number.
+
+**`S` is the serialization multiplier** (`--comm-serialization-factor`, default `1.0`) — a
+*deployment-regime* input, not a fabric property. A deployment running CUDA graphs with
+comm/compute overlap hides most of each collective's launch cost (`S ≈ 1`, inert); one
+running `enforce-eager` with no overlap serializes every collective behind a full barrier
+(`S ≫ 1`). It multiplies **only** this cross-node latency term, and is kept strictly
+separate from `α_hop` — folding it in would make a graphs-on deployment inherit a
+graphs-off fabric constant. Set `--enforce-eager` to declare the regime; it *requires* an
+explicit `--comm-serialization-factor > 1`, because BLIS ships no fitted eager magnitude.
+`S` is re-supplied on both `run` and `replay` (like `--kv-cache-dtype`), not round-tripped
+through the trace header.
+
+Both `α_hop = 0` and `S = 1` are inert defaults, so out of the box the cross-node cost is
+bandwidth-only and the size-independent half is off.
 
 ### Where the inputs come from
 
@@ -464,11 +491,12 @@ cross-node cost inherits β₄'s calibration as its baseline.
 
 Known approximations, each tracked:
 
-- **Per-collective launch + round-trip cost is modeled but not calibrated.** The
-  mechanism is `InterNodeLatencyUs` above; it is 0 in the bundled config, so out of the box
-  the cross-node cost is bandwidth-only — and at decode message sizes the missing fixed
-  cost is plausibly the *dominant* effect. Supplying a measured value is
-  [#1661](https://github.com/inference-sim/inference-sim/issues/1661).
+- **Per-hop launch + round-trip cost is modeled but not calibrated.** The mechanism is the
+  analytic `n_steps · α_hop · S` term above (`InterNodeHopLatencyUs`, #1694); `α_hop` is 0
+  in the bundled config, so out of the box the cross-node cost is bandwidth-only — and at
+  decode message sizes the missing fixed cost is plausibly the *dominant* effect. Supplying
+  a measured `α_hop` from an NCCL microbenchmark is
+  [#1694](https://github.com/inference-sim/inference-sim/issues/1694).
 - The fabric is keyed by GPU type rather than by pool, which is only equivalent while
   #1529's "one `gpu_type` per pool" rule holds
   ([#1662](https://github.com/inference-sim/inference-sim/issues/1662)).

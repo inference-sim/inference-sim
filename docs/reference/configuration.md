@@ -620,7 +620,7 @@ collective traffic in the trained-physics backend (issue #1530):
 |-------|---------|
 | `IntraNodeBwGBps` | On-node GPU-to-GPU link bandwidth (NVLink/xGMI, or PCIe on parts without NVLink) |
 | `InterNodeBwGBps` | Per-GPU share of the node's inter-node fabric (InfiniBand/RoCE NIC) |
-| `InterNodeLatencyUs` | Fixed cost of ONE cross-node collective in µs (launch + fabric round-trip), charged per comm unit that crosses a node boundary. **0 in the bundled config** — see below |
+| `InterNodeHopLatencyUs` | Per-**hop** inter-node latency α_hop in µs (launch + fabric round-trip of one collective step). The charge is `n_steps · α_hop · S`, where `n_steps` is the analytic hop count of the placed span (#1694). **0 in the bundled config** — see below |
 
 Both are **effective (achievable, not theoretical-peak) per-GPU unidirectional GB/s**.
 Only their *ratio* is used, so the absolute scale cancels — but the convention must
@@ -638,7 +638,7 @@ one changes the ratio by 2×.
     "MemoryGiB": 80.0,
     "IntraNodeBwGBps": 450,
     "InterNodeBwGBps": 50,
-    "InterNodeLatencyUs": 0
+    "InterNodeHopLatencyUs": 0
   }
 }
 ```
@@ -652,15 +652,23 @@ Rules:
   spans nodes so the optimism is visible.
 - A negative, NaN or infinite value is rejected rather than silently clamped, at load
   time — so the same malformed file fails identically under either latency backend.
-- `InterNodeLatencyUs` stands alone (a fabric can be modeled as latency-dominated), so it
-  is not paired with the bandwidths. It is **0 in the bundled config**: BLIS has no
-  measured per-collective latency to ship, and a guessed constant would sit in front of
-  every multi-node estimate. Out of the box the cross-node cost is therefore
-  bandwidth-only. Supply a measured value to model the size-independent half — it is
-  often the larger one for decode-sized messages. It rides the learned communication
-  coefficient, so the charge is `β · units · InterNodeLatencyUs`.
-- The topology (*whether* a collective crosses a boundary) is **not** configured here.
-  It is derived from real `node_pools` placement; there is no CLI flag for it.
+- `InterNodeHopLatencyUs` (α_hop) stands alone (a fabric can be modeled as
+  latency-dominated), so it is not paired with the bandwidths. It is **0 in the bundled
+  config**: BLIS has no measured per-hop latency to ship, and a guessed constant would sit
+  in front of every multi-node estimate. Out of the box the cross-node cost is therefore
+  bandwidth-only. Supply a measured value (from an independent NCCL microbenchmark, reused
+  across fabrics — never back-solved from one run, #1694) to model the size-independent
+  half — it is often the larger one for decode-sized messages. It rides the learned
+  communication coefficient, so the charge is `β · units · n_steps · α_hop · S`, where
+  `n_steps` is the analytic hop count of the placed span.
+- The topology (*whether* a collective crosses a boundary, and over how many nodes) is
+  **not** configured here. It is derived from real `node_pools` placement; there is no CLI
+  flag for it.
+- The **serialization factor `S`** (`--comm-serialization-factor`, default 1.0) is a
+  *deployment-regime* input, **not** a hardware field — it captures eager / no-overlap
+  execution and multiplies only the α_hop term. It lives on the CLI (both `run` and
+  `replay`), never in this file, so a graphs-on deployment cannot inherit a graphs-off
+  constant. `--enforce-eager` requires an explicit `S > 1`.
 - Whether the cost applies also depends on the backend: only
   `--latency-model trained-physics` models communication.
 
