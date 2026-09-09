@@ -19,6 +19,12 @@ name: Deliver — Stall Sweep
 permissions:
   contents: read
   pull-requests: write
+  # Required to list workflow runs for the stand-down check. Declaring ANY `permissions:` block
+  # sets every unlisted scope to `none`, so omitting this left the sweep's central query depending
+  # on the runs of a public repo being readable without it. That happens to be true today (they are
+  # readable unauthenticated) but it is not a property to rest a safety backstop on — a private
+  # fork of this repo would silently lose stall detection entirely.
+  actions: read
 
 on:
   schedule:
@@ -102,13 +108,19 @@ jobs:
           # still arrive here — where it silently disables the stand-down (see that step).
           [[ -n "$CUTOFF" ]] || { echo "::error::the quiet cutoff did not reach this step"; exit 1; }
           active=0
+          unreadable=0
+          # `pending` and `waiting` as well as `queued`: all three phases now share one concurrency
+          # group, and a run held behind that group is NOT reported as `queued`. Without them a
+          # legitimately waiting phase would not stand the sweep down, leaving a healthy delivery one
+          # activity-clock miss from needs-human. The runs API returns total_count 0 rather than an
+          # error for a status it does not recognise, so listing an extra value cannot misfire.
           for wf in deliver-implement.yml deliver-verify.yml deliver-correct.yml; do
-            for st in in_progress queued; do
+            for st in in_progress queued pending waiting; do
               if ! n=$(gh api -X GET "/repos/$REPO/actions/workflows/$wf/runs" \
                          -f "status=$st" -f per_page=1 -f "created=>$CUTOFF" \
                          --jq '.total_count'); then
                 echo "::warning::could not read $wf $st runs; assuming a phase may be active and standing down"
-                active=1; break 2
+                active=1; unreadable=1; break 2
               fi
               if [[ "$n" != "0" ]]; then
                 echo "$wf has a $st run newer than $CUTOFF"
@@ -118,6 +130,15 @@ jobs:
           done
           echo "active=$active" >> "$GITHUB_OUTPUT"
           [[ "$active" == "0" ]] && echo "no recent phase run — sweeping" || echo "standing down"
+          # Standing down because a phase IS running is success. Standing down because the run list
+          # could not be READ is a detector that did not run, and reporting that as a green scheduled
+          # job means stall detection can be off indefinitely with nothing but a buried warning to
+          # show it. Flagging is still withheld — we have no evidence to flag on — but the run goes
+          # red so a persistent failure is visible rather than silently absorbed every 30 minutes.
+          if [[ "$unreadable" == "1" ]]; then
+            echo "::error::stall detection did not run: the workflow run list was unreadable"
+            exit 1
+          fi
 
       - name: Flag deliveries that have gone quiet
         if: steps.active.outputs.active == '0'
@@ -128,8 +149,11 @@ jobs:
           # See the stand-down step: an empty cutoff here makes every PR compare as recent, which
           # turns the sweep into a silent no-op that still reports success every 30 minutes.
           [[ -n "$CUTOFF" ]] || { echo "::error::the quiet cutoff did not reach this step"; exit 1; }
+          # isCrossRepository so the filter can exclude FORK PRs: a fork branch named
+          # `deliver/issue-N` is not a delivery of ours, and commenting "Delivery stalled" plus
+          # needs-human on a contributor's fork PR would be both wrong and confusing.
           if ! prs=$(gh pr list --repo "$REPO" --state open --limit 100 \
-                       --json number,headRefName,labels,createdAt); then
+                       --json number,headRefName,labels,createdAt,isCrossRepository); then
             echo "::error::could not list pull requests"; exit 1
           fi
 

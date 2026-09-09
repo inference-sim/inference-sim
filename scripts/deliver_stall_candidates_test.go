@@ -176,12 +176,33 @@ func TestStallCandidatesSelectsOnlyDeliveriesInFlight(t *testing.T) {
 	}
 }
 
-// A PR carrying no `labels` key at all must not kill the filter. `gh pr list --json labels`
-// always emits the key, but the sweep exits non-zero if jq errors, which would silently disable
-// stall detection for every delivery rather than for one PR.
+// A PR with an empty label list is selected normally.
 func TestStallCandidatesToleratesAnEmptyLabelSet(t *testing.T) {
 	got := candidates(t, `[{"number":30,"headRefName":"deliver/issue-7","createdAt":"2026-01-01T00:00:00Z","labels":[]}]`)
 	if len(got) != 1 || got[0] != "30" {
 		t.Fatalf("selected %v, want [30]", got)
+	}
+}
+
+// A PR carrying NO `labels` key at all must not kill the filter. `.labels[]` on a missing key
+// raises "Cannot iterate over null" and jq exits 5, and the sweep treats a failed filter as fatal —
+// so a single malformed element would disable stall detection for EVERY delivery, not just for that
+// PR. An earlier version of this test asserted the tolerance while only ever passing `"labels":[]`,
+// so it did not actually cover the case its own name claimed.
+func TestStallCandidatesToleratesAMissingLabelsKey(t *testing.T) {
+	got := candidates(t, `[{"number":31,"headRefName":"deliver/issue-8","createdAt":"2026-01-01T00:00:00Z"}]`)
+	if len(got) != 1 || got[0] != "31" {
+		t.Fatalf("selected %v, want [31]", got)
+	}
+}
+
+// A fork PR whose branch happens to be named like a delivery branch is not our delivery. Without
+// this the sweep would post "Delivery stalled" and apply needs-human to a contributor's fork PR.
+func TestStallCandidatesExcludesForkPRs(t *testing.T) {
+	in := `[{"number":40,"headRefName":"deliver/issue-9","createdAt":"2026-01-01T00:00:00Z","labels":[],"isCrossRepository":true},
+	        {"number":41,"headRefName":"deliver/issue-9","createdAt":"2026-01-01T00:00:00Z","labels":[],"isCrossRepository":false}]`
+	got := candidates(t, in)
+	if len(got) != 1 || got[0] != "41" {
+		t.Fatalf("selected %v, want [41] (the same-repo PR only)", got)
 	}
 }

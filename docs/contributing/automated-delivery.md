@@ -73,7 +73,7 @@ The decision is not the reviewing agent's to make. `deliver-verify.yml` collects
 | `CI_STATUS` | verify dispatches the repository's own `ci.yml` against the delivery branch and waits for it. Anything other than a `success` conclusion is `failure` |
 | `PLAN_GATE` | `.archon/review.json` — `planRatchet.ok` and `planClassify.verdict`. `absent` (the PR never claimed a plan) delivers exactly as a satisfied plan does; `unverified` (the PR declares an `archon-plan:` but the check did not run) **blocks** |
 | `AGENT_VERDICT` | the `DELIVER-VERDICT: GREEN` / `NOT-GREEN` marker, required to be the last line of a comment posted by the automation itself |
-| `DISMISSALS` | the `deliver:has-dismissals` label. `open` withholds `ready-for-merge`; `unknown` (the label set could not be read) does too, because an unreadable state is not evidence there is nothing to accept |
+| `DISMISSALS` | the `deliver:has-dismissals` label, **re-read after the review agent has run** so that the reviewer clearing it takes effect in the same round. `open` withholds `ready-for-merge`; `unknown` (the label set could not be read) does too, because an unreadable state is not evidence there is nothing to accept |
 
 **Why verify dispatches `ci.yml` rather than running the checks itself.** `main` requires seven status contexts (`build`, `lint`, and five `test (...)` groups) before a PR can merge, and those must be present **on the PR's head commit**. Two things make that awkward, and an earlier version of this feature got both wrong by running the commands inline:
 
@@ -186,4 +186,11 @@ The check runs in a small `ubuntu-latest` job, so an unauthorised review never w
 
 **The delivery target comes from the event, not from comment text.** The issue delivered is `github.event.issue.number` — where the command was typed. An optional `#N` is accepted only when it agrees with that issue and refused when it disagrees, so no untrusted string ever selects the target.
 
-**The verdict marker is read only from bot-authored comments, and only as a comment's last line** — otherwise any human could set a delivery's verdict by quoting it.
+**The verdict marker is read only from bot-authored comments, and only as a comment's last line** — otherwise any human could set a delivery's verdict by quoting it. The same applies to the `DELIVER-DISMISSALS` count.
+
+**PR text is untrusted input to the agents.** This is a public repository, so anyone can comment on an open delivery PR, and both agents read comments. Two consequences are handled explicitly:
+
+- Both prompts state that comment, review and diff text is data to be assessed and never instructions, and name the specific asks that constitute an attack (return GREEN, clear `deliver:has-dismissals`, report a particular dismissal count, run a command).
+- The verify agent has **no `Edit` or `Write` tool**. It is told not to change code, and withholding the tools makes that structural rather than a request that injected text could argue it out of.
+
+This reduces the exposure but does not eliminate it: the correct phase's agent legitimately needs write access and a shell in order to fix findings, so a sufficiently persuasive injected instruction remains a real risk. Treat an agent-authored commit as untrusted until a human has read it — which is why the loop never merges.

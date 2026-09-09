@@ -19,7 +19,12 @@
 #      apply `needs-human` over a human's explicit hold and force manual cleanup before the
 #      delivery could resume — the automation overruling the operator, which is the opposite of
 #      what the pause exists for.
+# `.labels // []` is load-bearing, not defensive noise: on a PR object with no `labels` key,
+# `.labels[]` raises "Cannot iterate over null" and jq exits 5. The sweep treats a failed filter as
+# fatal, so ONE malformed element would disable stall detection for EVERY delivery. Normalise first.
 .[]
+| . + {labels: (.labels // [])}
+| select(.isCrossRepository != true)
 | select(.headRefName | test("^deliver/issue-[0-9]+$"))
 | select([.labels[].name] | any(. == "ready-for-merge" or . == "needs-human") | not)
 | select([.labels[].name] | any(. == "deliver:paused") | not)
