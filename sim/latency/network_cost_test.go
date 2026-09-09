@@ -510,44 +510,62 @@ func TestStepTime_MoEDispatchLegChargedCrossNode(t *testing.T) {
 	}
 }
 
-// TestStepTime_MoEDispatchLatencyHopCountIsFamilyIndependent pins the corrected #1694
-// hop-count convention: the size-INDEPENDENT MoE dispatch/combine latency term is
-// (nodes−1) per collective × 2 collectives = 2·(nodes−1) per layer for BOTH comm families.
-// dispatch and combine are each ONE single-phase collective (all-gather + reduce-scatter
-// for the all-gather family, or one all-to-all direction each for the modular family), so
-// the per-collective hop count is (nodes−1) either way — the family split is real for the
-// bandwidth VOLUME (spanScalesFor) but spurious for the hop count. Charging the all-gather
-// family the full ring 2·(nodes−1) would double-count (the ring's own two phases ARE the
-// two collectives), 2× over-charging the DEFAULT backend.
+// TestStepTime_CrossNodeLatencyHopConvention pins the corrected #1694 per-leg hop-count
+// convention with ABSOLUTE value anchors on the two frozen fields — not a cross-family
+// comparison. The distinction matters: since the fix, the MoE leg uses crossNodeAll2AllHops
+// UNCONDITIONALLY (no family branch), so a family-equality assertion is invariant to any
+// UNIFORM change in the per-collective count — doubling both legs, or swapping the two
+// helpers' bodies, keeps the families equal and slips past. jgchn's mutation proof: reverting
+// the MoE leg to crossNodeRingHops (the exact bug this PR fixed) left the whole suite green.
+// So this asserts each field equals its analytic value directly:
 //
-// Isolated with fabricHW(1) (no bandwidth penalty) and a positive α_hop so ONLY the latency
-// half moves, measured against a contained baseline that cancels. A ≥3-node span
-// (moeGroup=TP·DP=16 over 4 GPUs/node = 4 nodes) makes the factor of 2 unambiguous — if the
-// all-gather family were charged the ring, its penalty would be 2× the all-to-all one, and
-// this equality assertion would fail. The family DISCRIMINATION lives on the bandwidth half
-// (TestStepTime_CommFamilyDeterminesPenaltyShape).
-func TestStepTime_MoEDispatchLatencyHopCountIsFamilyIndependent(t *testing.T) {
+//   - MoE dispatch/combine leg: ONE single-phase collective = crossNodeAll2AllHops(nodes) =
+//     (nodes−1). moeCrossNodeLatency then multiplies by moeDispatchCollectivesPerLayer (=2),
+//     giving 2·(nodes−1) per layer. Charging the full ring here would double-count.
+//   - TP leg: ONE whole all-reduce = crossNodeRingHops(nodes) = 2·(nodes−1), because one TP
+//     comm unit IS one all-reduce (reduce-scatter + all-gather).
+//
+// The field carries hops·α_hop·S with S=1 (unset), so the expected value is hops·α_hop.
+func TestStepTime_CrossNodeLatencyHopConvention(t *testing.T) {
 	mc := *dpepMoEModelConfig()
-	hw := fabricHW(1) // equal bandwidths ⇒ no bandwidth penalty, isolating the latency half
+	hw := fabricHW(1) // isolate the latency half; α_hop below is the only cross-node cost
 	hw.InterNodeHopLatencyUs = 20
-	batch := stepBatch()
 
-	// moeGroup = TP·DP = 4·4 = 16; a 4-GPU node ⇒ 4-node span, a 16-GPU node contains it.
+	// TP=4, DP=4 over 2 GPUs/node. The two legs span DIFFERENT node counts, so the anchors
+	// exercise each helper on its own group rather than a shared span:
+	//   TP group  = TP     = 4  ⇒ NodesSpanned(4)  = ceil(4/2)  = 2 nodes
+	//   MoE group = TP·DP  = 16 ⇒ NodesSpanned(16) = ceil(16/2) = 8 nodes
+	// Both ≥ 2 (so both terms fire), and the MoE span of 8 is well clear of the 2-node
+	// ambiguity where crossNodeRingHops and 2×crossNodeAll2AllHops coincide.
+	const gpusPerNode = 2
+	topo := sim.NewNetworkTopology(gpusPerNode)
+	tpNodes := topo.NodesSpanned(4)   // 2
+	moeNodes := topo.NodesSpanned(16) // 8
+	require.Equal(t, 2, tpNodes)
+	require.Equal(t, 8, moeNodes)
+	m := newNetModel(t, mc, hw, 4, 4, true, "allgather_reducescatter", gpusPerNode)
+
+	assert.Equal(t, float64(crossNodeAll2AllHops(moeNodes))*hw.InterNodeHopLatencyUs, m.moeCrossNodeLatencyUs,
+		"MoE dispatch/combine is per-collective (nodes−1) hops; the full ring 2·(nodes−1) here would "+
+			"double-count, since moeDispatchCollectivesPerLayer already counts both collectives")
+	assert.Equal(t, float64(crossNodeRingHops(tpNodes))*hw.InterNodeHopLatencyUs, m.tpCrossNodeLatencyUs,
+		"the TP comm unit IS one whole all-reduce, so it keeps the full-ring 2·(nodes−1) count")
+
+	// Secondary guard, kept alongside the anchors: the two comm families must charge the SAME
+	// latency (the split is real only for the bandwidth VOLUME). This catches the DIFFERENT
+	// regression of reintroducing a family branch on the latency half. It cannot catch a
+	// uniform change — that is what the absolute anchors above are for.
+	batch := stepBatch()
 	penalty := func(backend string) int64 {
-		return newNetModel(t, mc, hw, 4, 4, true, backend, 4).StepTime(batch) -
+		return newNetModel(t, mc, hw, 4, 4, true, backend, gpusPerNode).StepTime(batch) -
 			newNetModel(t, mc, hw, 4, 4, true, backend, 16).StepTime(batch)
 	}
-	ringPenalty := penalty("allgather_reducescatter") // all-gather family
-	a2aPenalty := penalty("deepep_high_throughput")   // modular all-to-all family
-
+	ringPenalty := penalty("allgather_reducescatter")
+	a2aPenalty := penalty("deepep_high_throughput")
 	assert.Greater(t, a2aPenalty, int64(0), "precondition: the all-to-all backend must pay a latency penalty")
-	assert.Greater(t, ringPenalty, int64(0), "precondition: the all-gather backend must pay a latency penalty")
-	// Both families charge (nodes−1) hops per collective ⇒ the latency penalties are EQUAL.
-	// (A regression that charged the all-gather family the full ring would make ring ≈ 2×a2a.)
 	assert.Equal(t, ringPenalty, a2aPenalty,
-		"the MoE latency term is family-INDEPENDENT (both are 2·(nodes−1) hops/layer); a difference "+
-			"means a family was charged the wrong per-collective hop count (ring=%d µs, a2a=%d µs)",
-		ringPenalty, a2aPenalty)
+		"the MoE latency term is family-INDEPENDENT; a difference means a family branch was "+
+			"reintroduced on the latency half (ring=%d µs, a2a=%d µs)", ringPenalty, a2aPenalty)
 }
 
 // ─── Inertness: the tight regression guard (BC-4, AC-3, INV-6, INV-BC-DP1) ──

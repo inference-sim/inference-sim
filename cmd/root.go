@@ -1776,10 +1776,14 @@ func resolveCommSerializationFactor(cmd *cobra.Command) float64 {
 		// fails, S is guaranteed inert; warn loudly rather than let it vanish (the third,
 		// α_hop>0 on the placed GPU, is placement-time and is covered by
 		// warnIfCrossNodeUnpriced). Not latched — resolved once per command.
+		// latencyModelBackend is safe to read raw here: --latency-model defaults to
+		// "trained-physics" and registerSimConfigFlags runs for both run and replay, so it
+		// is never "" in production (the only override, at resolveLatencyConfig, sets
+		// trained-physics only when the flag was unchanged — already the default).
 		if latencyModelBackend != sim.LatencyBackendTrainedPhysics {
 			logrus.Warnf("--comm-serialization-factor %.3f will have NO effect: it scales the cross-node "+
 				"collective latency term, which only the trained-physics backend models (got %q). #1694", s,
-				backendDisplayNameForWarn(latencyModelBackend))
+				latencyModelBackend)
 		} else if policyConfigPath == "" {
 			logrus.Warnf("--comm-serialization-factor %.3f will have NO effect: it scales the CROSS-NODE "+
 				"collective latency term, but without --policy-config there are no node_pools, so no "+
@@ -1788,15 +1792,6 @@ func resolveCommSerializationFactor(cmd *cobra.Command) float64 {
 		}
 	}
 	return s
-}
-
-// backendDisplayNameForWarn renders the latency backend for a diagnostic, spelling out the
-// empty-string default (which resolves to roofline) rather than printing "".
-func backendDisplayNameForWarn(backend string) string {
-	if backend == "" {
-		return sim.LatencyBackendRoofline + " (default)"
-	}
-	return backend
 }
 
 // adapterReservedBytesFor returns the static LoRA HBM reservation (bytes) to carve
