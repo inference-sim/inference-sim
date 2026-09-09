@@ -510,6 +510,43 @@ func TestStepTime_MoEDispatchLegChargedCrossNode(t *testing.T) {
 	}
 }
 
+// TestStepTime_MoEDispatchLatencyHopCountByBackend pins the #1694 moeHops selection: the
+// size-INDEPENDENT MoE latency term follows the collective algorithm, so an all-to-all
+// backend (deepep/pplx/mori/flashinfer) charges (nodes−1) hops per collective while the
+// all-gather family charges the ring 2·(nodes−1). Isolated with fabricHW(1) (no bandwidth
+// penalty) and a positive α_hop so ONLY the latency half moves, and measured against a
+// contained placement so the baseline (identical across backends) cancels. Without this,
+// silently swapping crossNodeAll2AllHops→crossNodeRingHops at the moeHops selection would
+// 2× over-charge every all-to-all MoE deployment's latency term and no test would fail.
+//
+// A ≥3-node span (moeGroup=TP·DP=16 over 4 GPUs/node = 4 nodes) is required so the ring's
+// factor of 2 is unambiguous: ring 2·(4−1)=6 vs all-to-all (4−1)=3, so the all-to-all
+// latency penalty must be ~half the all-gather one.
+func TestStepTime_MoEDispatchLatencyHopCountByBackend(t *testing.T) {
+	mc := *dpepMoEModelConfig()
+	hw := fabricHW(1) // equal bandwidths ⇒ no bandwidth penalty, isolating the latency half
+	hw.InterNodeHopLatencyUs = 20
+	batch := stepBatch()
+
+	// moeGroup = TP·DP = 4·4 = 16; a 4-GPU node ⇒ 4-node span, a 16-GPU node contains it.
+	penalty := func(backend string) int64 {
+		return newNetModel(t, mc, hw, 4, 4, true, backend, 4).StepTime(batch) -
+			newNetModel(t, mc, hw, 4, 4, true, backend, 16).StepTime(batch)
+	}
+	ringPenalty := penalty("allgather_reducescatter") // ring family: 2·(nodes−1) hops
+	a2aPenalty := penalty("deepep_high_throughput")   // true all-to-all: (nodes−1) hops
+
+	assert.Greater(t, a2aPenalty, int64(0), "precondition: the all-to-all backend must pay a latency penalty")
+	assert.Greater(t, ringPenalty, a2aPenalty,
+		"the ring (all-gather) latency penalty must exceed the all-to-all one (2·(n−1) vs (n−1) hops); "+
+			"equality means the moeHops selection ignored the comm family (ring=%d µs, a2a=%d µs)",
+		ringPenalty, a2aPenalty)
+	// Ring 2·(4−1)=6 hops vs all-to-all (4−1)=3 hops ⇒ the ring penalty is ~2× the all-to-all.
+	ratio := float64(ringPenalty) / float64(a2aPenalty)
+	assert.InDelta(t, 2.0, ratio, 0.15,
+		"ring latency penalty must be ~2× the all-to-all one (6 hops vs 3), got %.2f×", ratio)
+}
+
 // ─── Inertness: the tight regression guard (BC-4, AC-3, INV-6, INV-BC-DP1) ──
 
 // TestStepTime_NoTopologyIsByteIdentical verifies that omitting the option

@@ -42,6 +42,21 @@ func TestCommSerializationFlags_RegisteredOnRunAndReplay(t *testing.T) {
 	}
 }
 
+// TestCommSerializationFlags_AbsentOnObserve encodes the boundary that S is a
+// step-time (latency-model) input, and `blis observe` is a black-box HTTP dispatcher
+// that builds no simulator and computes no step time — so neither flag belongs there,
+// exactly as --kv-cache-dtype and --kv-offload-config are excluded. Registering S on
+// observe would be a dead knob a user could set expecting an effect. This is the S twin
+// of TestNetworkTopology_HasNoCLIFlag's observe row.
+func TestCommSerializationFlags_AbsentOnObserve(t *testing.T) {
+	for _, name := range []string{"comm-serialization-factor", "enforce-eager"} {
+		if f := observeCmd.Flags().Lookup(name); f != nil {
+			t.Errorf("observeCmd registers --%s, but observe derives no step time — the flag would be a "+
+				"dead knob (same boundary as --kv-cache-dtype / --kv-offload-config)", name)
+		}
+	}
+}
+
 // resolveCommSerialForTest parses the given args onto a fresh command with the real flag
 // registration, then runs resolveCommSerializationFactor, capturing a fatal exit via the
 // logrus ExitFunc override. Returns (factor, fatal).
