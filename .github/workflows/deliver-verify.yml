@@ -94,6 +94,13 @@ jobs:
     # Least privilege, declared rather than inherited: this job only reads a permission level, so
     # it must not carry the workflow's `pull-requests: write` / `actions: write`. Job-level
     # `permissions` replaces the workflow-level set for this job alone.
+    #
+    # Safe to narrow this far: the collaborator-permission endpoint requires only **Metadata:
+    # read** per GitHub's "Permissions required for GitHub Apps" reference, and Actions exposes no
+    # `metadata` scope in `permissions:`, so metadata read is always granted and cannot be removed.
+    # `contents: read` is therefore not what authorises the call — it is simply the narrowest
+    # non-empty set. Do not "fix" a permission error here by widening this block; see the 403
+    # branch below.
     permissions:
       contents: read
     outputs:
@@ -126,17 +133,21 @@ jobs:
               // the run would simply skip, silently, exactly like an unauthorised one. So anything
               // else stops this job, which is visible.
               if (err.status === 403) {
-                // The one assumption in this gate that could not be confirmed from the docs: that
-                // the job-level `contents: read` above is enough to read a collaborator's
-                // permission. The Actions permissions list has no `metadata` scope, implying it is
-                // implicit, and the implement phase's identical call succeeds — but it inherits a
-                // broader set. If that reasoning is wrong it surfaces here, named, instead of
-                // denying every reviewer.
+                // Not expected to be reachable, and kept only because denying every reviewer
+                // silently is the one outcome this gate must never have. The job-level
+                // `contents: read` above is provably sufficient: GitHub's "Permissions required
+                // for GitHub Apps" reference lists
+                //   GET /repos/{owner}/{repo}/collaborators/{username}/permission
+                // under **Metadata** (read, no additional permissions), and Actions has no
+                // `metadata` scope in its `permissions:` key at all — so metadata read cannot be
+                // narrowed away by any permissions block. A 403 here therefore means something
+                // outside the token's declared scope (an org or enterprise policy, say), which is
+                // worth a named failure rather than a denial.
                 core.setFailed(
-                  `Cannot read collaborator permission for ${context.actor} (403). This job ` +
-                  `declares 'contents: read'; if that is insufficient, remove the job-level ` +
-                  `permissions block so it inherits the workflow's. Refusing to allow or deny ` +
-                  `a review on a check that did not run.`
+                  `Cannot read collaborator permission for ${context.actor} (403). This endpoint ` +
+                  `only requires Metadata: read, which Actions always grants — so a 403 points at ` +
+                  `an org or enterprise policy rather than this job's permissions block. Refusing ` +
+                  `to allow or deny a review on a check that did not run.`
                 );
                 return;
               }
