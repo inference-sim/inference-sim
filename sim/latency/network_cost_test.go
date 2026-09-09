@@ -343,7 +343,7 @@ func TestStepTime_PerCollectiveLatencyIsChargedCrossNode(t *testing.T) {
 
 	noLatency := fabricHW(1) // equal bandwidths ⇒ zero bandwidth penalty
 	withLatency := noLatency
-	withLatency.InterNodeLatencyUs = 5
+	withLatency.InterNodeHopLatencyUs = 5
 
 	contained := newNetModel(t, mc, withLatency, 8, 1, false, "", 8).StepTime(batch)
 	spanning := newNetModel(t, mc, withLatency, 8, 1, false, "", 4).StepTime(batch)
@@ -368,7 +368,7 @@ func TestStepTime_MonotoneInPerCollectiveLatency(t *testing.T) {
 	prev := int64(0)
 	for _, latencyUs := range []float64{0, 1, 2, 5, 10, 25} {
 		hw := fabricHW(9)
-		hw.InterNodeLatencyUs = latencyUs
+		hw.InterNodeHopLatencyUs = latencyUs
 		got := newNetModel(t, mc, hw, 8, 1, false, "", 4).StepTime(batch)
 		assert.GreaterOrEqual(t, got, prev,
 			"step time must not decrease as the per-collective latency rises (latency=%v µs)", latencyUs)
@@ -389,7 +389,7 @@ func TestStepTime_MonotoneInPerCollectiveLatency(t *testing.T) {
 func TestStepTime_PerCollectiveLatencyScalesWithCollectiveCount(t *testing.T) {
 	batch := stepBatch()
 	hw := fabricHW(1) // no bandwidth penalty — isolate the latency
-	hw.InterNodeLatencyUs = 20
+	hw.InterNodeHopLatencyUs = 20
 
 	shallow := testModelConfig()
 	deep := shallow
@@ -414,7 +414,7 @@ func TestStepTime_PerCollectiveLatencyScalesWithCollectiveCount(t *testing.T) {
 func TestStepTime_NoLatencyChargedWithoutTokens(t *testing.T) {
 	mc := testModelConfig()
 	hw := fabricHW(9)
-	hw.InterNodeLatencyUs = 1000 // enormous, so any spurious charge would be obvious
+	hw.InterNodeHopLatencyUs = 1000 // enormous, so any spurious charge would be obvious
 
 	spanning := newNetModel(t, mc, hw, 8, 1, false, "", 4)
 	contained := newNetModel(t, mc, hw, 8, 1, false, "", 8)
@@ -695,7 +695,7 @@ func BenchmarkTrainedPhysicsStepTime(b *testing.B) {
 		return lm
 	}
 	withLatency := fabricHW(9)
-	withLatency.InterNodeLatencyUs = 5
+	withLatency.InterNodeHopLatencyUs = 5
 
 	for _, variant := range []struct {
 		name string
@@ -724,7 +724,7 @@ func TestStepTime_SpanningPathAllocatesNothing(t *testing.T) {
 	mc := testModelConfig()
 	batch := stepBatch()
 	withLatency := fabricHW(9)
-	withLatency.InterNodeLatencyUs = 5
+	withLatency.InterNodeHopLatencyUs = 5
 
 	for _, tc := range []struct {
 		name        string
@@ -763,7 +763,7 @@ func TestStepTime_SpanningPathAllocatesNothing(t *testing.T) {
 func TestStepTime_MoEDispatchChargesTwoCollectivesPerLayer(t *testing.T) {
 	batch := stepBatch()
 	hw := fabricHW(1) // equal bandwidths ⇒ no bandwidth penalty, isolating the latency
-	hw.InterNodeLatencyUs = 20
+	hw.InterNodeHopLatencyUs = 20
 
 	moe := *dpepMoEModelConfig()
 	dense := moe
@@ -802,7 +802,7 @@ func TestStepTime_MoEDispatchChargesTwoCollectivesPerLayer(t *testing.T) {
 func TestStepTime_CrossNodePenaltyComposesWithSpecDecode(t *testing.T) {
 	mc := testModelConfig()
 	hw := fabricHW(9)
-	hw.InterNodeLatencyUs = 5 // exercise both halves of the cross-node cost
+	hw.InterNodeHopLatencyUs = 5 // exercise both halves of the cross-node cost
 	batch := makeDecodeBatch(8, 1024)
 
 	build := func(k, gpusPerNode int) sim.LatencyModel {

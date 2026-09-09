@@ -97,10 +97,12 @@ func TestCommittedHardwareConfig_InterconnectRatioIsPlausible(t *testing.T) {
 }
 
 // TestCommittedHardwareConfig_LatencyIsUncalibrated pins the deliberate decision that the
-// bundled file declares NO per-collective inter-node latency. That term is the
-// size-independent half of the cross-node cost and can exceed the bandwidth half for
-// small decode messages, but BLIS has no measured value to ship, and shipping a guessed
-// one would put a fabricated constant in front of every multi-node estimate (#1661).
+// bundled file declares NO per-hop inter-node latency α_hop (#1694, retargeted from the
+// flat per-collective InterNodeLatencyUs of #1667). That term is the size-independent half
+// of the cross-node cost and can exceed the bandwidth half for small decode messages, but
+// BLIS has no measured value to ship, and shipping a guessed one would put a fabricated
+// constant in front of every multi-node estimate. α_hop must come from an independent NCCL
+// microbenchmark, reused across fabrics — never back-solved from one run's residual (#1694).
 //
 // If a calibrated value is ever added, this test should be replaced by a plausibility
 // range — not deleted — so the number stays under review.
@@ -109,9 +111,9 @@ func TestCommittedHardwareConfig_LatencyIsUncalibrated(t *testing.T) {
 	for _, gpu := range names {
 		hc, err := latency.GetHWConfig(path, gpu)
 		require.NoError(t, err)
-		assert.Zero(t, hc.EffectiveInterNodeLatencyUs(),
-			"GPU %q declares a per-collective inter-node latency. That is a real fidelity "+
-				"improvement, but it must come with a measured source (#1661) — update this test with the "+
+		assert.Zero(t, hc.EffectiveInterNodeHopLatencyUs(),
+			"GPU %q declares a per-hop inter-node latency α_hop. That is a real fidelity "+
+				"improvement, but it must come with a measured source (#1694) — update this test with the "+
 				"plausibility range rather than removing it", gpu)
 	}
 }

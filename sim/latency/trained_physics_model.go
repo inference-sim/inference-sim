@@ -477,7 +477,7 @@ func crossNodeLatencyUs(topo sim.NetworkTopology, groupSize int, hc sim.Hardware
 	if groupSize <= 1 || topo.NodesSpanned(groupSize) <= 1 {
 		return 0
 	}
-	return hc.EffectiveInterNodeLatencyUs()
+	return hc.EffectiveInterNodeHopLatencyUs()
 }
 
 // verifyWidth is the number of token positions the target processes per decode

@@ -291,7 +291,7 @@ func TestStepTime_DenseEPGroupDPIsInert(t *testing.T) {
 func TestTpAllReduceBasis_LatencyIsNotSharedAcrossDPRanks(t *testing.T) {
 	mc := *dpepMoEModelConfig()
 	hw := fabricHW(9)
-	hw.InterNodeLatencyUs = 1000 // latency-dominated, so the two halves are separable
+	hw.InterNodeHopLatencyUs = 1000 // latency-dominated, so the two halves are separable
 	// A 4-GPU node cannot contain the TP=8 group, so the cross-node latency is charged.
 	mhw := sim.NewModelHardwareConfig(mc, hw, "m", "H100", 8, 1, false, "", "trained-physics", 0,
 		sim.WithNetworkTopology(sim.NewNetworkTopology(4)))
