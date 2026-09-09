@@ -200,6 +200,15 @@ func TestReplayFixedAccumulate_TraceOutput_AbsoluteCorpus(t *testing.T) {
 			t.Errorf("re-export s1 round %d input_tokens = %d, want absolute %d", r, byRound[r], w)
 		}
 	}
+	// The re-export must be arrival-ordered: the run above completed without the
+	// arrival-hook monotonicity panic (the writeAccumulateCorpus corpus interleaves
+	// s1 and s2 in time), and the exported records are non-decreasing in arrival.
+	for i := 1; i < len(trace.Records); i++ {
+		if trace.Records[i].ArrivalTimeUs < trace.Records[i-1].ArrivalTimeUs {
+			t.Errorf("re-export record %d arrival %d < record %d arrival %d — not arrival-ordered",
+				i, trace.Records[i].ArrivalTimeUs, i-1, trace.Records[i-1].ArrivalTimeUs)
+		}
+	}
 }
 
 // TestReplayFixedAccumulate_RejectsConcurrentSessions (BC-5): --concurrent-sessions is
@@ -344,5 +353,78 @@ func TestReplayFixedAccumulate_RejectsNonAccumulateTrace(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "fixed-accumulate requires an accumulate corpus") {
 		t.Errorf("fatal message should explain the accumulate requirement, got:\n%s", out)
+	}
+}
+
+// TestReplayFixedAccumulate_RejectsThinkTime (BC-5): --think-time-ms requires closed-loop;
+// fixed-accumulate uses recorded arrivals (not regenerated), so it must be rejected.
+func TestReplayFixedAccumulate_RejectsThinkTime(t *testing.T) {
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		headerPath, dataPath := writeAccumulateCorpus(t)
+		restore := captureCmdLevelVars()
+		origThink := replayThinkTimeMs
+		defer func() { restore.restore(); replayThinkTimeMs = origThink }()
+		mcFolder, hwPath := setupTrainedPhysicsTestFixtures(t)
+		model = "test-model"
+		latencyModelBackend = "trained-physics"
+		totalKVBlocks = 100000
+		blockSizeTokens = 16
+		maxNumSeqs = 64
+		maxNumBatchedTokens = 4096
+		numInstances = 1
+		seed = 1
+		admissionPolicy = "always-admit"
+		routingPolicy = "round-robin"
+		scheduler = "fcfs"
+		maxModelLen = 1000000
+		traceLevel = "none"
+		traceHeaderPath = headerPath
+		traceDataPath = dataPath
+		modelConfigFolder = mcFolder
+		hwConfigPath = hwPath
+		gpu = "H100"
+		tensorParallelism = 1
+		defaultsFilePath = "../defaults.yaml"
+		replaySessionMode = "fixed-accumulate"
+		replayThinkTimeMs = 500
+
+		testCmd := &cobra.Command{}
+		registerSimConfigFlags(testCmd)
+		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+		testCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", "")
+		testCmd.Flags().IntVar(&replayConcurrentSessions, "concurrent-sessions", 0, "")
+		testCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "")
+		if err := testCmd.ParseFlags([]string{
+			"--model", "test-model", "--latency-model", "trained-physics",
+			"--total-kv-blocks", "100000", "--hardware", "H100", "--tp", "1",
+			"--max-model-len", "1000000",
+			"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+			"--trace-header", headerPath, "--trace-data", dataPath,
+			"--defaults-filepath", "../defaults.yaml",
+			"--session-mode", "fixed-accumulate", "--think-time-ms", "500",
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)
+			os.Exit(2)
+		}
+		replayCmd.Run(testCmd, nil) // must Fatalf before here
+		os.Exit(0)
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestReplayFixedAccumulate_RejectsThinkTime", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("expected non-zero exit for --think-time-ms + fixed-accumulate, got exit 0")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("unexpected error type: %v", err)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("expected exit code 1 (logrus.Fatalf), got %d; output:\n%s", exitErr.ExitCode(), out)
+	}
+	if !strings.Contains(string(out), "think-time-ms requires --session-mode closed-loop") {
+		t.Errorf("fatal message should explain think-time requires closed-loop, got:\n%s", out)
 	}
 }

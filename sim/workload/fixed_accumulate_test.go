@@ -122,6 +122,62 @@ func TestFixedAccumulate_CompactionReset(t *testing.T) {
 	}
 }
 
+// TestFixedAccumulate_SingleRoundSession: a session with exactly one round is just its
+// round-0 absolute input at its recorded arrival (no growth, no follow-up).
+func TestFixedAccumulate_SingleRoundSession(t *testing.T) {
+	records := []TraceRecord{
+		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 70, OutputTokens: 12, ArrivalTimeUs: 300_000, Status: "ok"},
+	}
+	trace := buildAccumulateTrace(t, records)
+	reqs, err := LoadTraceV2FixedAccumulateRequests(trace, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reqs) != 1 {
+		t.Fatalf("expected 1 request, got %d", len(reqs))
+	}
+	if int(reqs[0].InputLen()) != 70 {
+		t.Errorf("single-round input len = %d, want 70", reqs[0].InputLen())
+	}
+	if reqs[0].ArrivalTime != 300_000 {
+		t.Errorf("single-round arrival = %d, want 300000", reqs[0].ArrivalTime)
+	}
+	if len(reqs[0].OutputTokens) != 12 {
+		t.Errorf("single-round output len = %d, want 12", len(reqs[0].OutputTokens))
+	}
+}
+
+// TestFixedAccumulate_CompactionReset_Content: after a reset round the input tokens are
+// a FRESH segment, NOT a continuation of the pre-compaction buffer — the reset round's
+// input must not share the pre-reset round-0 prefix (real compaction replaces history
+// with a summary, mirroring SessionManager.OnComplete's Reset semantics, #1609).
+func TestFixedAccumulate_CompactionReset_Content(t *testing.T) {
+	reset := int64(120)
+	records := []TraceRecord{
+		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 0, InputTokensReset: &reset, OutputTokens: 30, ArrivalTimeUs: 1_000_000, Status: "ok"},
+	}
+	trace := buildAccumulateTrace(t, records)
+	reqs, err := LoadTraceV2FixedAccumulateRequests(trace, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r0 := reqs[0].FullInputTokens() // 200 tokens
+	r1 := reqs[1].FullInputTokens() // 120 tokens (reset), NOT 200+100+delta
+	if len(r1) != 120 {
+		t.Fatalf("reset round input len = %d, want 120", len(r1))
+	}
+	// The reset segment is freshly generated: it must NOT be a prefix continuation of
+	// round 0 (otherwise the buffer wasn't reset — it just kept growing).
+	sharedPrefix := 0
+	for sharedPrefix < len(r0) && sharedPrefix < len(r1) && r0[sharedPrefix] == r1[sharedPrefix] {
+		sharedPrefix++
+	}
+	if sharedPrefix == len(r1) {
+		t.Error("reset round input is a prefix of round 0 — buffer was not reset (compaction ignored)")
+	}
+}
+
 // TestFixedAccumulate_NonSessionPassThrough (BC-6): non-session single-shot records
 // inject at their recorded arrival with their recorded absolute input.
 func TestFixedAccumulate_NonSessionPassThrough(t *testing.T) {
@@ -177,6 +233,50 @@ func TestFixedAccumulate_PrefixMetadataParity(t *testing.T) {
 	}
 	if reqs[1].PrefixGroup != "" || reqs[1].PrefixLength != 0 {
 		t.Errorf("follow-up prefix = %q/%d, want empty (prefix folded into buffer)", reqs[1].PrefixGroup, reqs[1].PrefixLength)
+	}
+}
+
+// TestFixedAccumulate_MultiSessionArrivalOrder: the returned slice must be
+// non-decreasing in ArrivalTime (the RequestSource contract) even when sessions
+// interleave in time. Sessions are built session-major (all of s1, then s2), but a
+// high-concurrency corpus interleaves arrivals — s2's round 0 lands between s1's rounds.
+func TestFixedAccumulate_MultiSessionArrivalOrder(t *testing.T) {
+	// s1 arrivals 0, 1_000_000, 2_000_000; s2 arrivals 500_000, 1_500_000 — interleaved.
+	records := []TraceRecord{
+		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 30, OutputTokens: 40, ArrivalTimeUs: 1_000_000, Status: "ok"},
+		{RequestID: 2, SessionID: "s1", RoundIndex: 2, InputTokens: 25, OutputTokens: 20, ArrivalTimeUs: 2_000_000, Status: "ok"},
+		{RequestID: 3, SessionID: "s2", RoundIndex: 0, InputTokens: 60, OutputTokens: 15, ArrivalTimeUs: 500_000, Status: "ok"},
+		{RequestID: 4, SessionID: "s2", RoundIndex: 1, InputTokens: 20, OutputTokens: 10, ArrivalTimeUs: 1_500_000, Status: "ok"},
+	}
+	trace := buildAccumulateTrace(t, records)
+	reqs, err := LoadTraceV2FixedAccumulateRequests(trace, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reqs) != 5 {
+		t.Fatalf("expected 5 requests, got %d", len(reqs))
+	}
+	for i := 1; i < len(reqs); i++ {
+		if reqs[i].ArrivalTime < reqs[i-1].ArrivalTime {
+			t.Errorf("request %d arrival %d < request %d arrival %d — RequestSource order violated",
+				i, reqs[i].ArrivalTime, i-1, reqs[i-1].ArrivalTime)
+		}
+	}
+	// Reconstruction must survive the sort: each session's rounds keep their absolute
+	// inputs regardless of interleaving. Verify via a session_id → round → len map.
+	got := map[string]map[int]int{}
+	for _, r := range reqs {
+		if got[r.SessionID] == nil {
+			got[r.SessionID] = map[int]int{}
+		}
+		got[r.SessionID][r.RoundIndex] = int(r.InputLen())
+	}
+	if got["s1"][0] != 100 || got["s1"][1] != 180 || got["s1"][2] != 245 {
+		t.Errorf("s1 absolute inputs = %v, want 100/180/245", got["s1"])
+	}
+	if got["s2"][0] != 60 || got["s2"][1] != 95 {
+		t.Errorf("s2 absolute inputs = %v, want 60/95", got["s2"])
 	}
 }
 

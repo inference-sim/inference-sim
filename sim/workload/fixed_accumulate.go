@@ -186,6 +186,20 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 		requests = append(requests, buildFixedAccumulateRequest(rec, rec.SessionID, inputTokens, outputTokens, originShift))
 	}
 
+	// Sort by arrival time to satisfy the RequestSource contract (cluster.Run
+	// requires non-decreasing ArrivalTime; SliceRequestSource does not re-sort).
+	// This loader emits requests in SESSION-major order (all of session A's rounds,
+	// then all of session B's), but a high-concurrency corpus interleaves sessions
+	// in time — session B's round 0 may arrive between session A's rounds 0 and 1 —
+	// so session order is not arrival order. A stable sort here (matching generator.go)
+	// preserves the per-session round order for equal-arrival ties, keeping INV-6
+	// determinism. Safe because every request is already fully materialized with a
+	// frozen InputTokens slice, so reordering cannot disturb the accumulate
+	// reconstruction (which happened above, per session).
+	sort.SliceStable(requests, func(i, j int) bool {
+		return requests[i].ArrivalTime < requests[j].ArrivalTime
+	})
+
 	return requests, nil
 }
 
