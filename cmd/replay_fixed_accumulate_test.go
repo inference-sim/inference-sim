@@ -148,6 +148,11 @@ func TestReplayFixedAccumulate_EndToEnd(t *testing.T) {
 	if !strings.Contains(s, "\"completed_requests\": 5") && !strings.Contains(s, "\"completed_requests\":5") {
 		t.Errorf("expected 5 completed_requests in output (all rounds), got:\n%s", s)
 	}
+	// INV-1 conservation companion: all 5 rounds injected, and all 5 completed
+	// (nothing queued/dropped) — the corpus arrivals span 2s, well within the horizon.
+	if !strings.Contains(s, "\"injected_requests\": 5") && !strings.Contains(s, "\"injected_requests\":5") {
+		t.Errorf("expected 5 injected_requests (INV-1 conservation), got:\n%s", s)
+	}
 }
 
 // TestReplayFixedAccumulate_Deterministic (BC-4, INV-6): two fixed-accumulate replays at

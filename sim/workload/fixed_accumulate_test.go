@@ -2,6 +2,7 @@ package workload
 
 import (
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -236,6 +237,55 @@ func TestFixedAccumulate_PrefixMetadataParity(t *testing.T) {
 	}
 }
 
+// TestFixedAccumulate_ViewsStableAfterGrowthAndReset pins the shared-buffer view
+// contract (the memory optimization from PR review F1): each round's InputTokens is a
+// VIEW into the session buffer, not a copy, so it must remain content-correct after all
+// later growth AND after a compaction reset reallocates the backing array. We snapshot
+// every round's expected content up front, then re-read after the whole session is built.
+func TestFixedAccumulate_ViewsStableAfterGrowthAndReset(t *testing.T) {
+	// Growth rounds 0,1 then a compaction reset at round 2 (reset reallocates the buffer),
+	// then growth again at round 3 — exercises both hazards the removed copy guarded against.
+	reset := int64(50)
+	records := []TraceRecord{
+		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 40, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 8, OutputTokens: 6, ArrivalTimeUs: 1000, Status: "ok"},
+		{RequestID: 2, SessionID: "s1", RoundIndex: 2, InputTokens: 0, InputTokensReset: &reset, OutputTokens: 5, ArrivalTimeUs: 2000, Status: "ok"},
+		{RequestID: 3, SessionID: "s1", RoundIndex: 3, InputTokens: 7, OutputTokens: 4, ArrivalTimeUs: 3000, Status: "ok"},
+	}
+	trace := buildAccumulateTrace(t, records)
+	reqs, err := LoadTraceV2FixedAccumulateRequests(trace, 99)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reqs) != 4 {
+		t.Fatalf("expected 4 requests, got %d", len(reqs))
+	}
+	// Expected absolute lengths: r0=40, r1=40+10+8=58, r2=reset 50, r3=50+5+7=62.
+	wantLen := []int{40, 58, 50, 62}
+	// Snapshot each round's content immediately (defensive copies) so we can detect
+	// later mutation of a shared backing array.
+	snaps := make([][]sim.TokenID, len(reqs))
+	for i, r := range reqs {
+		if int(r.InputLen()) != wantLen[i] {
+			t.Fatalf("round %d input len = %d, want %d", i, r.InputLen(), wantLen[i])
+		}
+		snaps[i] = append([]sim.TokenID(nil), r.FullInputTokens()...)
+	}
+	// Re-read every round's live view AFTER the whole session is built: it must still
+	// equal the snapshot (no shift from later Append, no orphan-corruption from Reset).
+	for i, r := range reqs {
+		live := r.FullInputTokens()
+		if len(live) != len(snaps[i]) {
+			t.Fatalf("round %d view length changed: %d != %d", i, len(live), len(snaps[i]))
+		}
+		for j := range live {
+			if live[j] != snaps[i][j] {
+				t.Fatalf("round %d view token %d mutated after session build (%d != %d)", i, j, live[j], snaps[i][j])
+			}
+		}
+	}
+}
+
 // TestFixedAccumulate_MultiSessionArrivalOrder: the returned slice must be
 // non-decreasing in ArrivalTime (the RequestSource contract) even when sessions
 // interleave in time. Sessions are built session-major (all of s1, then s2), but a
@@ -277,6 +327,88 @@ func TestFixedAccumulate_MultiSessionArrivalOrder(t *testing.T) {
 	}
 	if got["s2"][0] != 60 || got["s2"][1] != 95 {
 		t.Errorf("s2 absolute inputs = %v, want 60/95", got["s2"])
+	}
+}
+
+// TestFixedAccumulate_FieldParityWithLoadTraceV2Requests (R4/R23): guards against field
+// drift between the two TraceRecord → sim.Request construction sites. A fully-populated
+// NON-session record must map to the SAME sim.Request through both LoadTraceV2Requests
+// and the fixed-accumulate loader (both treat a non-session record as suffix-only input
+// at recorded arrival). Token-slice CONTENTS differ by RNG, so we compare all fields
+// except the token slices (compared by length) and ID. If a future field is added to one
+// loader's struct literal but not the other, this test fails.
+func TestFixedAccumulate_FieldParityWithLoadTraceV2Requests(t *testing.T) {
+	rec := TraceRecord{
+		RequestID: 7, ClientID: "c9", TenantID: "t3", SLOClass: "critical",
+		PrefixGroup: "grp", PrefixLength: 4, Streaming: true,
+		InputTokens: 30, OutputTokens: 12, TextTokens: 20, ImageTokens: 5,
+		AudioTokens: 3, VideoTokens: 2, ReasonRatio: 0.25, Model: "m1",
+		DeadlineUs: 900_000, SLOTargetUs: 120_000, Adapter: "ad1",
+		ArrivalTimeUs: 111_000, Status: "ok",
+	}
+	// No session_id → non-session record. Both loaders take the same construction path.
+	trace := buildAccumulateTrace(t, []TraceRecord{rec})
+	viaFixedAcc, err := LoadTraceV2FixedAccumulateRequests(trace, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	viaFixed, err := LoadTraceV2Requests(trace, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(viaFixedAcc) != 1 || len(viaFixed) != 1 {
+		t.Fatalf("expected 1 request each, got %d / %d", len(viaFixedAcc), len(viaFixed))
+	}
+	a, b := viaFixedAcc[0], viaFixed[0]
+	// Token slice lengths must match; contents are RNG-dependent so not compared here.
+	if a.InputLen() != b.InputLen() || len(a.OutputTokens) != len(b.OutputTokens) {
+		t.Fatalf("token lengths differ: in %d/%d out %d/%d", a.InputLen(), b.InputLen(), len(a.OutputTokens), len(b.OutputTokens))
+	}
+	// Zero the fields that legitimately differ or aren't structural (ID is identical here
+	// anyway, but tokens carry RNG content), then require struct equality on the rest.
+	clear := func(r *sim.Request) sim.Request {
+		c := *r
+		c.InputTokens = nil
+		c.OutputTokens = nil
+		return c
+	}
+	if !reflect.DeepEqual(clear(a), clear(b)) {
+		t.Errorf("field drift between fixed-accumulate and LoadTraceV2Requests construction:\nfixed-acc: %+v\nfixed:     %+v", clear(a), clear(b))
+	}
+}
+
+// TestFixedAccumulate_NormalizesEpochSendOrigin (#1606): a corpus whose send_time_us is
+// epoch-scale while arrival_time_us is run-relative must inject on the arrival origin
+// (not at epoch scale), with send-delta spacing preserved — the same normalization
+// LoadTraceV2Requests applies, exercised on the fixed-accumulate loader.
+func TestFixedAccumulate_NormalizesEpochSendOrigin(t *testing.T) {
+	const epoch = int64(1_787_274_995_712_218)
+	// One session, two rounds. Round 0 waited 100ms for a slot, round 1 waited 300ms,
+	// so the SEND delta (200000) differs from the ARRIVAL delta (50000).
+	records := []TraceRecord{
+		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 40, OutputTokens: 10,
+			ArrivalTimeUs: 0, SendTimeUs: epoch + 100_000, DeadlineUs: 300_000_000, Status: "ok"},
+		{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 5, OutputTokens: 8,
+			ArrivalTimeUs: 50_000, SendTimeUs: epoch + 300_000, DeadlineUs: 350_000_000, Status: "ok"},
+	}
+	trace := buildAccumulateTrace(t, records)
+	reqs, err := LoadTraceV2FixedAccumulateRequests(trace, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reqs) != 2 {
+		t.Fatalf("expected 2 requests, got %d", len(reqs))
+	}
+	// Re-based onto the arrival origin: earliest injection is 0, not epoch-scale.
+	if reqs[0].ArrivalTime != 0 {
+		t.Errorf("round 0 ArrivalTime = %d, want 0 (arrival origin, not epoch)", reqs[0].ArrivalTime)
+	}
+	if reqs[0].ArrivalTime >= reqs[0].Deadline {
+		t.Errorf("round 0 injected at %d >= deadline %d — would instant-timeout (#1606)", reqs[0].ArrivalTime, reqs[0].Deadline)
+	}
+	// Spacing follows the SEND delta (200000), not the arrival delta (50000).
+	if gotDelta := reqs[1].ArrivalTime - reqs[0].ArrivalTime; gotDelta != 200_000 {
+		t.Errorf("injection delta = %d, want 200000 (send delta)", gotDelta)
 	}
 }
 

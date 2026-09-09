@@ -25,12 +25,20 @@ import (
 //
 // The insight: the growing buffer needs no live sim output. The trace's delta chain
 // (abs_N = abs_{N-1} + out_{N-1} + delta_N) plus input_tokens_reset compaction markers
-// fully determines every round's absolute input from trace data alone. So we walk the
-// delta law here — appending each round's generated output then its delta (or Reset-ing
-// to a recorded absolute on a compaction round) into a session-scoped buffer, exactly as
-// SessionManager.OnComplete does — and pre-bake every round as a request at its recorded
-// arrival. The result carries the real cross-session overlap, so N large prefills pile
-// into the scheduler per the real clock and produce genuine queueing delay.
+// fully determines every round's absolute input from trace data alone. So we invert the
+// ENCODER's delta law here (EncodeSessionToTraceRecords) — appending each round's
+// generated output then its delta (or Reset-ing to the recorded absolute on a compaction
+// round) into a session-scoped buffer — and pre-bake every round as a request at its
+// recorded arrival. The result carries the real cross-session overlap, so N large
+// prefills pile into the scheduler per the real clock and produce genuine queueing delay.
+//
+// This mirrors SessionManager.OnComplete's buffer mechanics but feeds it the RECORDED
+// output (rec.OutputTokens), whereas OnComplete appends the ACTUAL sim output
+// (ProgressIndex − InputLen, which a length cap can truncate). The two are the same
+// absent capping; feeding the recorded output is the correct choice here because the
+// encoder's law is written over the recorded output, so this is its exact inverse (no
+// INV-13 claim spans the two modes, and token CONTENT also differs from closed-loop on
+// compaction rounds due to RNG draw order — harmless).
 //
 // # Contract with the encoder (INV-13 with the accumulate closed-loop path)
 //
@@ -119,7 +127,14 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 		// Seed the growing buffer with round 0's input: prefix (if any) + a generated
 		// suffix of effectiveInputTokenCount tokens. Layout mirrors the closed-loop
 		// buffer: [prefix | r0_conversation | r0_output | r1_delta | r1_output | ...].
-		buf := newSessionTokenBuffer()
+		//
+		// Pre-allocate to the session's EXACT peak buffer length (computed from the delta
+		// chain) so the growth phase never reallocates — every round's Slice() view then
+		// aliases ONE backing array, and the session retains O(peak) tokens, not the
+		// O(Σ absolute inputs) an eager per-round copy would retain. On the motivating
+		// Weka corpus (ISL p50 ≈ 110K over ~37K rounds) that is the difference between
+		// ~0.4 GB and ~16–24 GB. Matches the reasoning.go accumulate pattern (#1445).
+		buf := newSessionTokenBufferWithCapacity(accumulatePeakBufferLen(rounds, len(prefix)))
 		if len(prefix) > 0 {
 			buf.Append(prefix)
 		}
@@ -152,10 +167,16 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 				inputTokens = buf.Slice(0, inputEnd)
 			} else {
 				// Normal growth: append prev round's output, then this round's delta.
+				// A round>0 in an accumulate corpus stores its per-round DELTA directly in
+				// rec.InputTokens — read it as-is. (Do NOT route through
+				// effectiveInputTokenCount here: that helper returns the ABSOLUTE
+				// ServerInputTokens when set, which would be a large silent over-count when
+				// consumed as a delta. ServerInputTokens/PrefixGroup are round-0 concerns;
+				// the prefix is already folded into the buffer.)
 				if len(prevOutputTokens) > 0 {
 					buf.Append(prevOutputTokens)
 				}
-				deltaToks := sim.GenerateRandomTokenIDs(sessionRNG, effectiveInputTokenCount(rec.InputTokens, rec.ServerInputTokens, rec.PrefixGroup))
+				deltaToks := sim.GenerateRandomTokenIDs(sessionRNG, rec.InputTokens)
 				_, inputEnd := buf.Append(deltaToks)
 				inputTokens = buf.Slice(0, inputEnd)
 			}
@@ -163,14 +184,17 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 			outputTokens := sim.GenerateRandomTokenIDs(sessionRNG, rec.OutputTokens)
 			prevOutputTokens = outputTokens
 
-			// Copy the buffer view into an independent slice: distinct rounds must not
-			// alias one growable backing array (a later Append/Reset would shift or
-			// orphan an earlier round's view). Copying makes each request's InputTokens
-			// stable and content-frozen at its recorded absolute length.
-			frozen := make([]sim.TokenID, len(inputTokens))
-			copy(frozen, inputTokens)
-
-			requests = append(requests, buildFixedAccumulateRequest(rec, sessionID, frozen, outputTokens, originShift))
+			// inputTokens is a VIEW into the shared session buffer (no copy). This is the
+			// #1445 shared-buffer pattern (see reasoning.go): the simulator treats
+			// Request.InputTokens as read-only (Request.FullInputTokens/InputTokenSlice
+			// hand out capped three-index slices, so a stray append can't overwrite the
+			// buffer), and the buffer's reallocation hazard is documented-safe — Append only
+			// grows (indices [0,end_i) of an earlier view never move) and Reset allocates a
+			// fresh array (earlier views keep pointing at the old, content-correct array).
+			// Because the buffer was pre-sized to the peak above, the no-compaction path
+			// never reallocates, so all views alias one array; a compaction Reset shrinks it
+			// and the pre-reset views remain valid on the old array.
+			requests = append(requests, buildFixedAccumulateRequest(rec, sessionID, inputTokens, outputTokens, originShift))
 		}
 	}
 
@@ -201,6 +225,41 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 	})
 
 	return requests, nil
+}
+
+// accumulatePeakBufferLen returns the maximum shared-buffer length the growth loop in
+// LoadTraceV2FixedAccumulateRequests will reach for a session, so the buffer can be
+// pre-allocated once and never reallocate (keeping every round's Slice() view aliased to
+// one backing array).
+//
+// The buffer length after round i's input is that round's ABSOLUTE input in_i, and it
+// never exceeds in_i mid-round (the transient append of out_{i-1} brings it to
+// in_{i-1}+out_{i-1} = in_i − delta_i ≤ in_i). So the peak is max_i(in_i), reconstructed
+// from the same delta law the loop applies:
+//   - round 0: in_0 = prefixLen + delta_0 (the seeded prefix + round-0 suffix)
+//   - reset round: in_i = *InputTokensReset (the recorded absolute)
+//   - normal round i>0: in_i = in_{i-1} + out_{i-1} + delta_i
+// rounds is assumed sorted ascending and consecutive (validated by the caller).
+func accumulatePeakBufferLen(rounds []TraceRecord, prefixLen int) int64 {
+	var peak, prevAbs, prevOut int64
+	for i, rec := range rounds {
+		var abs int64
+		switch {
+		case i == 0:
+			abs = int64(prefixLen) + int64(effectiveInputTokenCount(rec.InputTokens, rec.ServerInputTokens, rec.PrefixGroup))
+		case rec.InputTokensReset != nil:
+			abs = *rec.InputTokensReset
+		default:
+			// round>0 delta is rec.InputTokens directly (see the growth branch in
+			// LoadTraceV2FixedAccumulateRequests — not effectiveInputTokenCount).
+			abs = prevAbs + prevOut + int64(rec.InputTokens)
+		}
+		if abs > peak {
+			peak = abs
+		}
+		prevAbs, prevOut = abs, int64(rec.OutputTokens)
+	}
+	return peak
 }
 
 // buildFixedAccumulateRequest assembles a sim.Request from a trace record with the
