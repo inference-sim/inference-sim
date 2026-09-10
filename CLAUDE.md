@@ -578,6 +578,8 @@ The following instructions are for Claude Code and other AI assistants working o
 
 When triggered via `@claude /blis-pr-review` on a PR, follow the blis-pr-review skill exactly. For all other triggers (questions, debugging, etc.), respond normally without creating a PR unless explicitly asked.
 
+The `/blis-pr-review` path runs with a **read-only** token (`contents: read`, #1697): it can post the review comment, but cannot push (the commit status is published by a separate job). Report findings — do not fix them, and do not attempt a commit or push, which fails with a 403. Every other `@claude` trigger keeps `contents: write`. See [`docs/contributing/standards/agent-trust.md`](docs/contributing/standards/agent-trust.md).
+
 ### Context Management
 
 When running multi-agent PR reviews, keep individual agent scopes narrow and summarize results concisely. Never try to synthesize all parallel agent outputs into one massive prompt. If hitting context limits, deliver incremental summaries per agent rather than a consolidated report.

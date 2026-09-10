@@ -1,7 +1,13 @@
 name: Claude Code Action
 
+# Default for any job that declares no permissions block of its own (today just
+# check-permissions). `contents` is READ here, not write: a job-level block replaces this
+# one wholesale, so the only thing this default can do is hand push access to a future job
+# that forgets its own block — which is precisely how the read-only review path below would
+# be silently re-armed (#1697). The other three scopes are left as they were, so
+# check-permissions' token is unchanged apart from contents.
 permissions:
-  contents: write
+  contents: read
   pull-requests: write
   issues: write
   id-token: write
@@ -23,12 +29,27 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       allowed: ${{ steps.check.outputs.allowed }}
+      # Routes the trigger to ONE of the two mutually-exclusive agent jobs below.
+      # Computed here, once, so the substring test has a single definition — the two
+      # job-level `if`s then differ only in the sense of the comparison.
+      is_review: ${{ steps.check.outputs.is_review }}
     steps:
       - name: Check invoker permissions
         id: check
         uses: actions/github-script@v8
         with:
           script: |
+            // Before the try, so a bug in these two lines surfaces as a failed job rather
+            // than being absorbed by the catch below and misreported as "not a collaborator".
+            //
+            // The match is deliberately OVER-inclusive: case-insensitive, and satisfied by a
+            // body that merely quotes the command rather than invoking it. Both errors are
+            // one-sided. Over-matching costs the caller write access they may have wanted
+            // (re-comment without the command); under-matching runs a review with a token
+            // that can push, which is the thing #1697 closes. So when in doubt, route here.
+            const body = context.payload.comment?.body ?? context.payload.issue?.body ?? '';
+            const isReview = body.toLowerCase().includes('/blis-pr-review');
+            core.setOutput('is_review', isReview ? 'true' : 'false');
             try {
               const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
                 owner: context.repo.owner,
@@ -45,9 +66,27 @@ jobs:
               core.info(`User ${context.actor} is not a collaborator — skipping.`);
             }
 
+  # Two agent jobs, identical steps, DIFFERENT tokens. They exist as two jobs only because
+  # `permissions:` accepts no expressions — it cannot be varied per trigger inside one job.
+  # report-status reads whichever one was not skipped.
+  #
+  # Both `if`s test is_review against an EXPLICIT value, so they are exclusive without being
+  # exhaustive: an unset is_review (which check-permissions cannot produce today — it is set
+  # before the permission probe that produces `allowed`) runs NEITHER job. That is the safe
+  # direction. Writing the non-review gate as `!= 'true'` would instead make an unset value
+  # route a review down the WRITE path, reintroducing exactly what #1697 closes.
+  #
+  #   claude        — every non-review @claude trigger. contents: write, since CLAUDE.md
+  #                   allows these to be asked for a code change.
+  #   claude-review — /blis-pr-review only. contents: read (#1697).
+  #
+  # KEEP THE STEPS IN SYNC. A fix applied to one belongs in the other; the only intended
+  # difference is the permissions block.
   claude:
     needs: check-permissions
-    if: needs.check-permissions.outputs.allowed == 'true'
+    if: |
+      needs.check-permissions.outputs.allowed == 'true' &&
+      needs.check-permissions.outputs.is_review == 'false'
     runs-on: [self-hosted]
     timeout-minutes: 60
     permissions:
@@ -56,12 +95,11 @@ jobs:
       issues: write
       id-token: write
     outputs:
-      # Both are EMPTY when the action returns early ("No trigger found, skipping remaining
-      # steps") — the outer trigger below is a broad substring test, so a comment that merely
+      # EMPTY when the action returns early ("No trigger found, skipping remaining steps")
+      # — the outer trigger below is a broad substring test, so a comment that merely
       # mentions @claude in prose admits the job and the action then no-ops. The job still
       # concludes 'success', so report-status must not read the job result alone (see #1675).
       execution_file: ${{ steps.claude.outputs.execution_file }}
-      conclusion: ${{ steps.claude.outputs.conclusion }}
 
     steps:
       - uses: actions/checkout@v5
@@ -102,8 +140,73 @@ jobs:
             pr-review-toolkit@claude-plugins-official
             superpowers@superpowers-marketplace
 
+  # The /blis-pr-review path: a reviewer must not be able to change what it reviews.
+  # `contents: read` is the ACTUAL control here — the token cannot push, so nothing the
+  # agent writes in the ephemeral checkout can reach a branch, and a `git push` fails
+  # loudly with a 403 at the point of attempt instead of appearing to work.
+  #
+  # The tool list is deliberately UNCHANGED from the write path (`Edit`/`Write` still
+  # granted). `Bash` is required for a review (gh, reading the diff, the review toolkit)
+  # and `Bash` can create files anyway, so removing Edit/Write would signal intent
+  # without adding a capability boundary — while risking the review itself, since the
+  # toolkit's subagents write scratch/report files. deliver-verify.yml already runs this
+  # same review with this same tool list under `contents: read`, which is the evidence
+  # that the token alone is sufficient and the tool list need not change.
+  claude-review:
+    needs: check-permissions
+    if: |
+      needs.check-permissions.outputs.allowed == 'true' &&
+      needs.check-permissions.outputs.is_review == 'true'
+    runs-on: [self-hosted]
+    timeout-minutes: 60
+    permissions:
+      contents: read          # cannot push — the whole point of this job (#1697)
+      pull-requests: write    # post the review comment
+      issues: write           # post on an issue-shaped trigger
+      id-token: write         # required by claude-code-action, as in every other workflow
+      # No statuses: write. The commit status is published by report-status below, not by
+      # the agent — so the review cannot set its own verdict either.
+    outputs:
+      # Same early-return semantics as the write path above — see that comment.
+      execution_file: ${{ steps.claude.outputs.execution_file }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          # Same PR-head ref resolution as the write path — see the comment there for why
+          # an explicit ref is required.
+          ref: >-
+            ${{ github.event_name == 'pull_request_review_comment'
+                && format('refs/pull/{0}/head', github.event.pull_request.number)
+             || (github.event.issue.pull_request
+                && format('refs/pull/{0}/head', github.event.issue.number))
+             || '' }}
+
+      - uses: anthropics/claude-code-action@v1
+        id: claude
+        env:
+          ANTHROPIC_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
+          CLAUDE_CODE_DISABLE_THINKING: "1"
+        with:
+          anthropic_api_key: ${{ secrets.LITELLM_API_KEY }}
+          claude_args: '--model claude-sonnet-4-6 --allowed-tools Skill Agent Bash Read Edit Write'
+          show_full_output: true
+          plugin_marketplaces: |
+            https://github.com/anthropics/claude-plugins-official.git
+            https://github.com/obra/superpowers-marketplace.git
+          plugins: |
+            code-review@claude-plugins-official
+            code-simplifier@claude-plugins-official
+            frontend-design@claude-plugins-official
+            pr-review-toolkit@claude-plugins-official
+            superpowers@superpowers-marketplace
+
   report-status:
-    needs: claude
+    # Both agent jobs, because either could be the one that ran. They are mutually
+    # exclusive, so the other is always 'skipped' with empty outputs — which is exactly
+    # what the "did work happen?" test below already knows how to reject.
+    needs: [claude, claude-review]
     # Publish a verdict ONLY when Claude actually ran. Two no-op paths otherwise corrupt the
     # status, and the job RESULT alone cannot tell them apart:
     #
@@ -122,11 +225,16 @@ jobs:
     # Stated positively so a new job result cannot silently fall through to a status. A real
     # success that somehow reported no execution_file publishes NOTHING rather than a verdict:
     # a missing status is visible and honest, a wrong one is neither.
+    #
+    # The test is applied to EACH agent job rather than to a pre-collapsed result, so the
+    # skipped one cannot admit the job on its own: 'skipped' matches no clause.
     if: |
       always() &&
       github.event_name == 'issue_comment' && github.event.issue.pull_request &&
       (needs.claude.result == 'failure' || needs.claude.result == 'cancelled' ||
-       (needs.claude.result == 'success' && needs.claude.outputs.execution_file != ''))
+       (needs.claude.result == 'success' && needs.claude.outputs.execution_file != '') ||
+       needs.claude-review.result == 'failure' || needs.claude-review.result == 'cancelled' ||
+       (needs.claude-review.result == 'success' && needs.claude-review.outputs.execution_file != ''))
     runs-on: ubuntu-latest
     permissions:
       statuses: write
@@ -153,7 +261,10 @@ jobs:
         if: steps.pr-info.outcome == 'success'
         uses: actions/github-script@v8
         env:
-          CLAUDE_RESULT: ${{ needs.claude.result }}
+          # Whichever agent job ran. They are mutually exclusive, so at most one is not
+          # 'skipped'; if both are (the gate above regressed) this yields 'skipped', which
+          # stateMap deliberately does not carry — see the comment on it.
+          CLAUDE_RESULT: ${{ needs.claude.result != 'skipped' && needs.claude.result || needs.claude-review.result }}
           PR_HEAD_SHA: ${{ steps.pr-info.outputs.pr_head_sha }}
         with:
           script: |
