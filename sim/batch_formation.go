@@ -375,14 +375,12 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		// so re-bill only the non-reloaded tail. The reload changes how much COMPUTE the
 		// chunk costs (billedTokens, the StepTime input), NOT how far the request advances:
 		// the whole [startIndex, endIndex) range was committed/allocated, so the progress
-		// boundary (ComputedTokens) is unchanged. Clamp the reloaded boundary to endIndex —
-		// a reload can extend the GPU prefix past this (capped) chunk, but only up to
-		// endIndex was committed to the request; the tail beyond it is billed on a later step.
-		// newStart is compared against the SAME startIndex passed to AllocateKVBlocks
-		// above (the store records the boundary under an identical newStart>startIndex
-		// guard), so the two agree by construction. billedTokens = endIndex -
-		// min(newStart, endIndex) is floored at 0 regardless, so it can never go negative
-		// even if a future caller changed the passed startIndex.
+		// boundary (ComputedTokens) is unchanged. Clamping the reloaded boundary to endIndex
+		// handles a reload that extends the GPU prefix past this (capped) chunk — only up to
+		// endIndex was committed, so the tail beyond it is billed on a later step.
+		// The `newStart > startIndex` re-check is defensive: ReloadedPrefixEnd already only
+		// returns ok=true for newStart > startIndex, but re-checking keeps this billing
+		// correct even if a future implementer of the interface relaxed that guarantee.
 		billedTokens := numNewTokens
 		if reloadReporter != nil {
 			if newStart, ok := reloadReporter.ReloadedPrefixEnd(next.ID); ok && newStart > startIndex {
