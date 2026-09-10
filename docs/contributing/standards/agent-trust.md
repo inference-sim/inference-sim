@@ -79,6 +79,15 @@ Two limits worth stating, so nobody reads the guarantee as wider than it is:
   collaborator, and `claude.yml` deliberately does not set `allowed_bots` (the delivery
   workflows do, because their phases are dispatched bot-to-bot by design). Do not add
   `allowed_bots` to `claude.yml` without replacing that barrier.
+- `pull-requests: write` is also not append-only — it permits editing and deleting
+  existing comments, so the review *record* is mutable by the reviewer. Posting a review
+  at all requires that scope, so this is inherent to the token model rather than
+  something the split could have avoided. It is the reason the audit trail worth trusting
+  is the workflow run log, not the comment thread.
+
+The permission split is pinned by `scripts/claude_workflow_test.go`, which fails if the
+review job gains write access, if the workflow-level default returns to `contents: write`,
+if the routing gates stop failing closed, or if the two agent jobs' steps drift apart.
 
 ## Known Failure Modes
 

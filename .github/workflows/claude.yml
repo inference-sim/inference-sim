@@ -228,6 +228,12 @@ jobs:
     #
     # The test is applied to EACH agent job rather than to a pre-collapsed result, so the
     # skipped one cannot admit the job on its own: 'skipped' matches no clause.
+    #
+    # Scope, pre-existing and unchanged here: this fires for issue_comment ONLY, so a review
+    # invoked from a DIFF-LINE comment (pull_request_review_comment) runs and posts its
+    # review but publishes no commit status — that event carries no `issue` object, so the
+    # second clause cannot hold. Extending it means reading the PR number from
+    # github.event.pull_request instead, not just loosening the event test.
     if: |
       always() &&
       github.event_name == 'issue_comment' && github.event.issue.pull_request &&
