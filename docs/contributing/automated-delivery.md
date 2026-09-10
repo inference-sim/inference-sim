@@ -90,7 +90,10 @@ Two properties hold structurally rather than by prompt adherence:
 
 - **A GREEN review cannot override red CI or a plan regression.** That combination returns `needs-human` with the disagreement named — the loop does not get to resolve a contradiction between a judgment and an objective signal.
 - **`ready-for-merge` is never applied to unverified code.** The PR tree is checked out at a pinned SHA, and that SHA is re-confirmed as the branch head before the label goes on. A push landing during the checks or the review downgrades the outcome to `needs-human`, because what passed is no longer what a human would merge.
-- **A phase that fails or times out still reports.** Every phase has a reporter guarded on `always() && !success()`, and `.github/workflows/deliver-guards-selftest.yml` exercises that on real infrastructure rather than reasoning about it: it cancels a step with a step-level timeout and asserts the reporter is reached, plus asserts a `deliver:paused` exit stays quiet.
+- **A phase that fails or times out still reports.** Every phase has a reporter guarded on `always() && !success()`, exercised on real infrastructure rather than reasoned about, in two halves:
+
+    - `.github/workflows/deliver-guards-selftest.yml` cancels a step via a **job** timeout and asserts the reporter is reached, and asserts a `deliver:paused` exit stays quiet. It is **manual/weekly, not per-PR** — cancelling a job is the condition under test, so it necessarily reports a non-green job and would leave a permanently red check. Run it whenever a guard changes. Last verified result: [run 34513953327](https://github.com/inference-sim/inference-sim/actions/runs/34513953327) — `victim_outcome=cancelled new_guard=true`, `reporter=false skip_probe=false`.
+    - `scripts/deliver_guards_test.go` runs on **every** PR and asserts the phases still use the guard that self-test exercises, so a past green result cannot vouch for a file that has since been reverted.
 
     **What the self-test measured, which corrects the reasoning this change was originally made on.** The guard was changed from `failure() || cancelled()` on the docs-based argument that a cancelled *step* satisfies neither term. Exercised on real infrastructure, that argument does not hold — for either mechanism that can actually cancel a step:
 

@@ -29,11 +29,20 @@ name: Deliver — Guard Self-Test
 # individual STEPS: at step level it forces the conclusion to success, `!success()` becomes false,
 # and the test would pass while measuring nothing.
 
+# NOT on `pull_request`, deliberately. Cancelling a job is the condition under test, so a scenario
+# job here necessarily ends non-green — on a PR that shows as a failing check forever, which is
+# worse than no check at all. Two consequences, handled rather than accepted:
+#
+#   - Run it MANUALLY (or wait for the weekly run) whenever a reporter guard changes. The last
+#     result is linked from docs/contributing/automated-delivery.md.
+#   - The half that CAN run on every PR — asserting the phases still use the guard this exercises —
+#     lives in scripts/deliver_guards_test.go, inside the existing `test (scripts)` CI group.
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/deliver-*.yml'
   workflow_dispatch:
+  schedule:
+    # Weekly, off-round. Catches GitHub changing expression or cancellation semantics under us,
+    # which is the kind of drift no amount of local checking would find.
+    - cron: '23 5 * * 1'
 
 # Reads and writes nothing. The whole point is expression semantics.
 permissions: {}
@@ -194,32 +203,3 @@ jobs:
 
           [[ "$fail" == "0" ]] || exit 1
           echo "PASS: a paused exit reports nothing"
-
-  # ── Drift guard ───────────────────────────────────────────────────────────────────────────
-  # The scenarios above prove what the EXPRESSIONS do. They cannot prove the real workflows use
-  # them, so a passing self-test beside a reverted guard would be worse than no test at all.
-  guards-match-the-workflows:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Every phase reporter uses the exercised guard
-        run: |
-          set -uo pipefail
-          fail=0
-          for wf in deliver-implement.yml deliver-verify.yml deliver-correct.yml; do
-            f=".github/workflows/$wf"
-            if ! grep -q "if: always() && !success()" "$f"; then
-              echo "::error file=$f::no reporter guarded on 'always() && !success()' — the self-test exercises a guard this workflow does not use"
-              fail=1
-            fi
-            # The old form must not come back. Matched as a step condition (`if:`) so the
-            # explanatory prose in the surrounding comments does not trip it.
-            if grep -qE '^\s*if:.*failure\(\) \|\| cancelled\(\)' "$f"; then
-              echo "::error file=$f::a reporter still uses 'failure() || cancelled()', which does not fire on a cancelled step (#1684 item 0)"
-              fail=1
-            fi
-          done
-          [[ "$fail" == "0" ]] || exit 1
-          echo "PASS: all three phase reporters use the guard this workflow exercises"
