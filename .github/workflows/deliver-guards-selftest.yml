@@ -5,11 +5,18 @@ name: Deliver — Guard Self-Test
 #   1. A CANCELLED STEP must trigger the failure reporter.
 #   2. A deliver:paused EXIT must not.
 #
-# WHY THIS EXISTS AT ALL. #1684's bug (observed live on #1685) was a guard that looked right and
-# was not: `failure() || cancelled()` skips a reporter exactly when a STEP is cancelled, because
-# `failure()` covers a failed step and `cancelled()` covers a cancelled WORKFLOW. Reading the docs
-# is how that bug was written in the first place, so the issue says plainly: "Do not repeat the
-# mistake of reasoning about these expressions instead of exercising them."
+# WHY THIS EXISTS AT ALL. #1684 argued from the docs that `failure() || cancelled()` skips a
+# reporter when a STEP is cancelled, since `failure()` covers a failed step and `cancelled()` covers
+# a cancelled WORKFLOW. Reading the docs is how the original bug was written, so the issue says
+# plainly: "Do not repeat the mistake of reasoning about these expressions instead of exercising
+# them."
+#
+# WHAT THIS TEST ACTUALLY FOUND, on its first run: the old guard DOES fire on a step cancelled by a
+# step-level timeout, because the job result becomes `failure`. So the docs-based prediction was
+# wrong, and #1685's silence is better explained by the runner being lost — no step executes then,
+# `always()` ones included, which no guard can fix. The new guard is still correct as a strict
+# superset, and it is what the acceptance criterion asks to be exercised; only the rationale changed.
+# Recording that here is the point of having a test rather than an argument.
 #
 # An earlier round of this PR argued the expressions could not be tested because nothing in this
 # repository can evaluate a GitHub Actions expression. That was wrong in the way that matters:
@@ -37,7 +44,13 @@ jobs:
   cancelled-step-scenario:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # This job is SUPPOSED to fail — a cancelled step is the condition under test. Without this,
+    # the whole workflow would be permanently red on every PR and the check would be worthless.
+    # It applies at JOB level, so it changes what the WORKFLOW makes of this job; the step-level
+    # status functions inside still see the real statuses, which is what is being measured.
+    continue-on-error: true
     outputs:
+      victim_outcome: ${{ steps.victim_outcome.outputs.value }}
       new_guard: ${{ steps.new_guard.outputs.fired || 'false' }}
       old_guard: ${{ steps.old_guard.outputs.fired || 'false' }}
     steps:
@@ -49,15 +62,21 @@ jobs:
         timeout-minutes: 1
         run: sleep 120
 
+      # Records that the step really was CANCELLED (not failed, not skipped). Asserted on directly,
+      # rather than inferring it from the job result, which `continue-on-error` above rewrites.
+      - name: Capture the victim step's outcome
+        id: victim_outcome
+        if: always()
+        run: echo "value=${{ steps.victim.outcome }}" >> "$GITHUB_OUTPUT"
+
       # The guard the delivery phases use now.
       - name: New guard — always() && !success()
         id: new_guard
         if: always() && !success()
         run: echo "fired=true" >> "$GITHUB_OUTPUT"
 
-      # The guard they used before, kept ONLY so this test proves the difference rather than
-      # asserting the new form works in isolation. If this ever fires on a cancelled step, the
-      # premise of #1684 item 0 is wrong and the whole change should be revisited.
+      # The guard they used before. Measured for comparison, NOT asserted on — see the assertion
+      # job for what the first run of this test actually found, which was not what #1684 predicted.
       - name: Old guard — failure() || cancelled()
         id: old_guard
         if: failure() || cancelled()
@@ -69,35 +88,51 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: A cancelled step must report, and must not have reported before the fix
+      - name: A cancelled step must report
         env:
-          RESULT: ${{ needs.cancelled-step-scenario.result }}
+          VICTIM: ${{ needs.cancelled-step-scenario.outputs.victim_outcome }}
           NEW: ${{ needs.cancelled-step-scenario.outputs.new_guard }}
           OLD: ${{ needs.cancelled-step-scenario.outputs.old_guard }}
         run: |
           set -uo pipefail
-          echo "scenario result=$RESULT new_guard=$NEW old_guard=$OLD"
+          echo "victim_outcome=$VICTIM new_guard=$NEW old_guard=$OLD"
           fail=0
 
-          # The scenario is only meaningful if the step really was cancelled. A `success` here
-          # means `sleep 120` finished inside a 1-minute step timeout, i.e. the test did not run.
-          [[ "$RESULT" == "failure" ]] || {
-            echo "::error::scenario job result was '$RESULT', expected 'failure' — the cancelled-step condition was not reproduced, so this test proved nothing"
+          # The test is only meaningful if the step really was cancelled. Anything else means
+          # `sleep 120` somehow finished inside a 1-minute step timeout and nothing was exercised.
+          [[ "$VICTIM" == "cancelled" ]] || {
+            echo "::error::victim step outcome was '$VICTIM', expected 'cancelled' — the condition under test was not reproduced, so this proved nothing"
             fail=1
           }
 
+          # THE REQUIREMENT (#1684 acceptance criterion): a cancelled step must reach the reporter.
           [[ "$NEW" == "true" ]] || {
-            echo "::error::always() && !success() did NOT fire on a cancelled step. The delivery phases would go silent exactly as they did on #1685"
+            echo "::error::always() && !success() did NOT fire on a cancelled step — a phase would go silent, which is the #1685 failure"
             fail=1
           }
 
-          [[ "$OLD" == "false" ]] || {
-            echo "::error::failure() || cancelled() DID fire on a cancelled step, contradicting #1684 item 0 — re-examine the diagnosis before trusting the fix"
-            fail=1
-          }
+          # MEASURED, NOT REQUIRED. #1684 item 0 predicted the old guard would NOT fire here. The
+          # first run of this test found that it DOES (`old_guard=true`), so that prediction is not
+          # reproducible for a step cancelled by a STEP-LEVEL TIMEOUT: the job result becomes
+          # `failure`, and `failure()` is satisfied.
+          #
+          # That does not make the change wrong — `always() && !success()` is a strict superset, so
+          # it fires everywhere the old form did and in cases it did not. It makes item 0's stated
+          # JUSTIFICATION wrong, and #1685 is better explained by what the PR body already says:
+          # the runner was lost, so no step ran at all, `always()` ones included. No guard can
+          # report from inside a job that never executes — that is the stall sweep's job.
+          #
+          # Kept as a notice rather than an assertion because the useful signal is a CHANGE here:
+          # if this ever flips to `false`, the platform's behaviour moved and the reasoning in
+          # `docs/contributing/automated-delivery.md` needs revisiting.
+          if [[ "$OLD" == "true" ]]; then
+            echo "::notice::failure() || cancelled() ALSO fires on a step cancelled by a step-level timeout. #1684 item 0 predicted otherwise; the new guard is a superset and remains correct, but the stated rationale does not hold for this case."
+          else
+            echo "::notice::failure() || cancelled() did not fire — matches #1684 item 0's prediction."
+          fi
 
           [[ "$fail" == "0" ]] || exit 1
-          echo "PASS: a cancelled step reports under the new guard and was silent under the old one"
+          echo "PASS: a cancelled step reaches the reporter under the guard the phases use"
 
   # ── Scenario 2: a deliver:paused exit ─────────────────────────────────────────────────────
   # Expected: this job SUCCEEDS and the reporter stays quiet.
