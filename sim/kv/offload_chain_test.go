@@ -124,3 +124,86 @@ func TestOffload_SnapshotCachedBlocksFn(t *testing.T) {
 		t.Fatalf("empty cache snapshot must count 0 cached blocks, got %d", n)
 	}
 }
+
+// #1699: after a CPU->GPU reload during AllocateKVBlocks, the offload store must
+// report the enlarged (post-reload) GPU-cached prefix boundary via the
+// ReloadReportingKVStore capability, so batch formation can re-bill prefill work.
+// The record is one-shot (consumed on read) and recorded only for NEW admissions.
+func TestOffload_ReloadedPrefixEnd_ReportsBoundary(t *testing.T) {
+	// Compile-time capability assertion.
+	var _ sim.ReloadReportingKVStore = (*OffloadCache)(nil)
+
+	t.Run("full-prefix reload reports InputLen and is one-shot", func(t *testing.T) {
+		gpu := NewKVCacheState(64, 2)
+		oc := NewOffloadCache(gpu, enabledOffloadCfg(1<<20, 4096, 1))
+		tokens := []sim.TokenID{1, 2, 3, 4} // 2 blocks, all CPU-resident
+		keys := blockKeysFor(tokens, 2)
+		oc.cpu.store(keys[0])
+		oc.cpu.store(keys[1])
+
+		req := &sim.Request{ID: "r", InputTokens: tokens}
+		if ok := oc.AllocateKVBlocks(req, 0, 4, nil); !ok {
+			t.Fatalf("allocation should succeed")
+		}
+		newStart, ok := oc.ReloadedPrefixEnd("r")
+		if !ok || newStart != 4 {
+			t.Fatalf("full CPU-resident prefix reload must report newStart=4, ok=true; got newStart=%d ok=%v", newStart, ok)
+		}
+		// One-shot: the second read must not see a stale boundary.
+		if _, ok := oc.ReloadedPrefixEnd("r"); ok {
+			t.Fatalf("ReloadedPrefixEnd must be one-shot (consumed on read)")
+		}
+	})
+
+	t.Run("partial reload reports the reloaded boundary", func(t *testing.T) {
+		gpu := NewKVCacheState(64, 2)
+		oc := NewOffloadCache(gpu, enabledOffloadCfg(1<<20, 4096, 1))
+		// 3 blocks of input; only the first block is CPU-resident. The tail (blocks
+		// 1..2) is a genuine miss and is computed fresh.
+		tokens := []sim.TokenID{1, 2, 3, 4, 5, 6}
+		keys := blockKeysFor(tokens, 2)
+		oc.cpu.store(keys[0])
+
+		req := &sim.Request{ID: "p", InputTokens: tokens}
+		if ok := oc.AllocateKVBlocks(req, 0, 6, nil); !ok {
+			t.Fatalf("allocation should succeed")
+		}
+		newStart, ok := oc.ReloadedPrefixEnd("p")
+		if !ok || newStart != 2 {
+			t.Fatalf("partial reload of 1 block must report newStart=2, ok=true; got newStart=%d ok=%v", newStart, ok)
+		}
+	})
+
+	t.Run("no reload reports ok=false", func(t *testing.T) {
+		gpu := NewKVCacheState(64, 2)
+		oc := NewOffloadCache(gpu, enabledOffloadCfg(1<<20, 4096, 1))
+		tokens := []sim.TokenID{1, 2, 3, 4} // nothing CPU-resident: genuine miss
+		req := &sim.Request{ID: "m", InputTokens: tokens}
+		if ok := oc.AllocateKVBlocks(req, 0, 4, nil); !ok {
+			t.Fatalf("allocation should succeed")
+		}
+		if newStart, ok := oc.ReloadedPrefixEnd("m"); ok {
+			t.Fatalf("a request with no CPU reload must report ok=false; got newStart=%d ok=%v", newStart, ok)
+		}
+	})
+
+	t.Run("failed tail alloc records no boundary (no leak)", func(t *testing.T) {
+		// A tiny GPU: 1 reloadable prefix block fits, but the uncached tail cannot be
+		// allocated, so AllocateKVBlocks returns false. The request is NOT admitted, so
+		// batch formation never reads the boundary — recording it would leak a stale
+		// entry into a later step. Assert no boundary is recorded on the failure path.
+		gpu := NewKVCacheState(1, 2) // room for exactly 1 block
+		oc := NewOffloadCache(gpu, enabledOffloadCfg(1<<20, 4096, 1))
+		tokens := []sim.TokenID{1, 2, 3, 4, 5, 6} // 3 blocks; block 0 CPU-resident, tail uncached
+		keys := blockKeysFor(tokens, 2)
+		oc.cpu.store(keys[0])
+
+		req := &sim.Request{ID: "f", InputTokens: tokens}
+		if ok := oc.AllocateKVBlocks(req, 0, 6, nil); ok {
+			t.Fatalf("allocation must fail: the uncached tail cannot fit a 1-block GPU")
+		}
+		if newStart, ok := oc.ReloadedPrefixEnd("f"); ok {
+			t.Fatalf("a failed admission must record no boundary (no leak); got newStart=%d ok=%v", newStart, ok)
+		}
+	})
+}

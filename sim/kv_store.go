@@ -48,6 +48,30 @@ type DeferrableKVStore interface {
 	ClearDeferred(id string)
 }
 
+// ReloadReportingKVStore is the optional capability a KVStore implements when an
+// AllocateKVBlocks call can enlarge a new request's GPU-cached prefix by reloading
+// blocks from a lower tier (CPU/secondary offload) during the call itself. Only
+// kv.OffloadCache implements it; the single-tier and legacy-tiered stores do not, so
+// batch formation type-asserts and the re-bill is inert (byte-identical, INV-6) when
+// offload is off.
+//
+// Without this, batch formation bills prefill work from the pre-reload GPU prefix
+// (GetCachedBlocks, computed before AllocateKVBlocks runs), so a genuine offload cache
+// hit is charged as a full recompute — the reported cache_hit_rate moves but no
+// timing metric does (issue #1699). The reloaded boundary MUST come from the reload
+// logic, not a re-query of GetCachedBlocks: allocation hashes the freshly-computed
+// tail into the GPU index, so a post-alloc re-query would return the whole input as
+// cached and wrongly zero all prefill work.
+type ReloadReportingKVStore interface {
+	// ReloadedPrefixEnd returns the post-reload GPU-cached prefix boundary (token
+	// index) recorded during the most recent AllocateKVBlocks for reqID, with ok=true
+	// iff a CPU->GPU reload extended the cached prefix beyond the caller's startIndex.
+	// One-shot: the record is consumed on read so a later step cannot read a stale
+	// boundary. Recorded for NEW prefill admissions only (a running request bills
+	// incrementally against ProgressIndex and must not be re-billed).
+	ReloadedPrefixEnd(reqID string) (newStart int64, ok bool)
+}
+
 // NewKVCacheStateFunc is a factory function for creating single-tier KVStore implementations.
 // Set by sim/kv package's init() via registration. This breaks the import cycle between
 // sim/ (which defines KVStore) and sim/kv/ (which implements it).
