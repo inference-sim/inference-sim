@@ -101,7 +101,21 @@ func (s *sessionTokenBuffer) Slice(start, end int64) []sim.TokenID {
 // freshly-generated slice; copying keeps Reset's contract independent of caller aliasing,
 // mirroring Append.
 func (s *sessionTokenBuffer) Reset(toks []sim.TokenID) (start, end int64) {
-	nb := make([]sim.TokenID, len(toks))
+	return s.ResetWithCapacity(toks, int64(len(toks)))
+}
+
+// ResetWithCapacity is Reset with an explicit backing-array capacity for the fresh
+// segment. Use it when the caller knows how much the post-reset segment will grow (e.g.
+// a fixed-arrival accumulate loader that knows the remaining epoch's peak from the trace),
+// so the appends after a compaction boundary do not reallocate — keeping every view in
+// the new epoch aliased to ONE array. capacity is clamped up to len(toks) (a smaller
+// value would make the initial segment itself overflow). Same fresh-array safety model as
+// Reset (earlier Slice() views keep pointing at the old, unmutated array).
+func (s *sessionTokenBuffer) ResetWithCapacity(toks []sim.TokenID, capacity int64) (start, end int64) {
+	if capacity < int64(len(toks)) {
+		capacity = int64(len(toks))
+	}
+	nb := make([]sim.TokenID, len(toks), capacity)
 	copy(nb, toks)
 	s.b = nb
 	return 0, int64(len(nb))

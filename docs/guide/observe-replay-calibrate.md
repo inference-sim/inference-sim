@@ -497,6 +497,72 @@ model names are dropped during conversion (same routing-safety reason as OTel).
     re-run `convert` to get compaction-aware output. (The separate think-time lossy-0
     sentinel was resolved in #1608 — see the non-lossy note above.)
 
+### Faithful high-concurrency replay: `--session-mode fixed-accumulate` (#1692)
+
+An accumulate corpus can be replayed three ways. Only the third is faithful at
+concurrency > 1:
+
+| Mode | Arrivals | Accumulate inputs | Faithful high-conc? |
+|------|----------|-------------------|---------------------|
+| `--session-mode closed-loop` | regenerated (`completion + think`) | ✅ reconstructed | ❌ self-throttles — arrivals chain to sim completion, so the queue drains instead of piling up and TTFT collapses to compute-only (30–100× low at conc ≥ 8) |
+| `--session-mode fixed` | recorded | ❌ **hard-rejected** on an accumulate corpus (reads deltas as absolutes) | ❌ not usable |
+| `--session-mode fixed-accumulate` | **recorded** | ✅ reconstructed | ✅ recorded arrivals carry the real cross-session overlap, so N large prefills pile into the scheduler at the real clock and produce genuine queue wait |
+
+```bash
+# Convert once, then replay with recorded arrivals AND reconstructed growing context.
+# (This uses a committed MoE config and a hardware key present in hardware_config.json,
+# so it runs as-is; the motivating shape is a large MLA MoE such as Kimi-K3 on H200.)
+blis convert weka --input traces.jsonl --trace-output corpus --context-growth accumulate
+blis replay --trace-header corpus.yaml --trace-data corpus.csv \
+  --model qwen/qwen3-30b-a3b --hardware H100 --tp 2 --dp 2 --enable-expert-parallel \
+  --session-mode fixed-accumulate --max-model-len 1000000
+```
+
+The arrival timestamps are already in the corpus (`ArrivalTimeUs`, written per round by
+the converter) — this mode consumes data that exists today; no trace-format change. It
+requires an accumulate corpus, and is mutually exclusive with `--concurrent-sessions`
+(open-loop, so there is no session pool to maintain) and `--think-time-*` (arrivals are
+recorded, not regenerated). INV-10 (session causality) is **scoped to closed-loop** and
+does not apply — chaining arrivals to sim completion is exactly the feedback loop this
+mode breaks.
+
+!!! warning "Necessary, not sufficient (decode-side gap, #1627)"
+    Even with faithful arrivals, BLIS's decode/step model currently runs ~5–10× fast on
+    this workload (the unmodeled `--enforce-eager` regime plus MTP-speedup-without-
+    contention, #1627), so queue depth is still under-predicted until decode is
+    calibrated. Treat `fixed-accumulate` as a **necessary precondition** for high-
+    concurrency fidelity — land and validate it alongside (or ahead of) the decode-side
+    work, not as a standalone fix.
+
+!!! warning "Intra-session overlap: recorded arrivals ignore sim completion"
+    Each round is injected at its recorded arrival regardless of when the previous round
+    of the **same** session finishes in the sim. A real agentic client is serial (round N
+    waits for round N−1's response), but the recorded inter-round gap includes the *real*
+    server time; the moment sim service time exceeds that real time — exactly the
+    queueing regime this mode creates — round N is injected while round N−1 is still
+    decoding. Two consequences to keep in mind when reading results:
+
+    1. **Measured concurrency is inflated** above what a real serial client produces,
+       because same-session rounds can be in flight at once.
+    2. **Prefix-cache hit rate is partly fictional**: round N's prompt contains round
+       N−1's output tokens, which (under overlap) round N−1 has not finished emitting —
+       so part of the modeled prefix hit corresponds to tokens that did not yet exist.
+
+    This is a distinct effect from the (faithful) *cross*-session overlap the mode
+    reproduces, and it is not covered by the INV-10 exemption (which is about the arrival
+    *source*). It is inherent to open-loop replay of a serial workload; closed-loop avoids
+    it but at the cost of the self-throttling feedback loop this mode exists to break.
+
+!!! note "`--trace-output` produces an absolute (non-accumulate) corpus"
+    fixed-accumulate reconstructs each round's growing context in memory, so
+    `--trace-output` re-exports the **already-reconstructed absolute** per-round inputs —
+    the exported header carries **no** `session_context_growth`, and the CSV records
+    absolute `input_tokens` (not deltas). This export is a faithful absolute-mode corpus:
+    re-replay it with `--session-mode fixed` (the default). It is **not** an accumulate
+    corpus, so `--session-mode fixed-accumulate` will reject it (the accumulate-corpus
+    guard) — re-run the original `convert` step if you need to re-export deltas. This is
+    lossless: the absolute inputs are exactly what fixed-accumulate reconstructed.
+
 ---
 
 ## `blis calibrate`
