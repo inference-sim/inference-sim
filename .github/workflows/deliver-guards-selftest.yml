@@ -1,0 +1,199 @@
+name: Deliver — Guard Self-Test
+
+# Exercises the two workflow behaviours #1684 requires to be "exercised, not reasoned about":
+#
+#   1. A CANCELLED STEP must trigger the failure reporter.
+#   2. A deliver:paused EXIT must not.
+#
+# WHY THIS EXISTS AT ALL. #1684's bug (observed live on #1685) was a guard that looked right and
+# was not: `failure() || cancelled()` skips a reporter exactly when a STEP is cancelled, because
+# `failure()` covers a failed step and `cancelled()` covers a cancelled WORKFLOW. Reading the docs
+# is how that bug was written in the first place, so the issue says plainly: "Do not repeat the
+# mistake of reasoning about these expressions instead of exercising them."
+#
+# An earlier round of this PR argued the expressions could not be tested because nothing in this
+# repository can evaluate a GitHub Actions expression. That was wrong in the way that matters:
+# GitHub evaluates them, so GitHub is the harness. A step given `timeout-minutes: 1` and told to
+# sleep longer is cancelled by the platform — which is the #1685 case, reproducible on demand.
+#
+# HOW IT ASSERTS. Each scenario job records which guards fired as job OUTPUTS, and a separate
+# `assert-*` job with `if: always()` reads them. The scenario job for the cancelled case is
+# EXPECTED TO FAIL — that is the condition under test — so the assertion cannot live inside it.
+# Deliberately no `continue-on-error` on the cancelled step: that would flip its conclusion to
+# success and make `!success()` false, quietly testing nothing.
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/deliver-*.yml'
+  workflow_dispatch:
+
+# Reads and writes nothing. The whole point is expression semantics.
+permissions: {}
+
+jobs:
+  # ── Scenario 1: a step cancelled by its own timeout ────────────────────────────────────────
+  # Expected: this job FAILS, the new guard fires, the old guard does not.
+  cancelled-step-scenario:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      new_guard: ${{ steps.new_guard.outputs.fired || 'false' }}
+      old_guard: ${{ steps.old_guard.outputs.fired || 'false' }}
+    steps:
+      # `timeout-minutes` on a STEP cancels that step — it does not fail it. This is the exact
+      # shape seen on #1685, where the agent step showed CANCELLED roughly 7 minutes in, nowhere
+      # near the job timeout.
+      - name: A step cancelled by its own timeout
+        id: victim
+        timeout-minutes: 1
+        run: sleep 120
+
+      # The guard the delivery phases use now.
+      - name: New guard — always() && !success()
+        id: new_guard
+        if: always() && !success()
+        run: echo "fired=true" >> "$GITHUB_OUTPUT"
+
+      # The guard they used before, kept ONLY so this test proves the difference rather than
+      # asserting the new form works in isolation. If this ever fires on a cancelled step, the
+      # premise of #1684 item 0 is wrong and the whole change should be revisited.
+      - name: Old guard — failure() || cancelled()
+        id: old_guard
+        if: failure() || cancelled()
+        run: echo "fired=true" >> "$GITHUB_OUTPUT"
+
+  assert-cancelled-step:
+    needs: cancelled-step-scenario
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: A cancelled step must report, and must not have reported before the fix
+        env:
+          RESULT: ${{ needs.cancelled-step-scenario.result }}
+          NEW: ${{ needs.cancelled-step-scenario.outputs.new_guard }}
+          OLD: ${{ needs.cancelled-step-scenario.outputs.old_guard }}
+        run: |
+          set -uo pipefail
+          echo "scenario result=$RESULT new_guard=$NEW old_guard=$OLD"
+          fail=0
+
+          # The scenario is only meaningful if the step really was cancelled. A `success` here
+          # means `sleep 120` finished inside a 1-minute step timeout, i.e. the test did not run.
+          [[ "$RESULT" == "failure" ]] || {
+            echo "::error::scenario job result was '$RESULT', expected 'failure' — the cancelled-step condition was not reproduced, so this test proved nothing"
+            fail=1
+          }
+
+          [[ "$NEW" == "true" ]] || {
+            echo "::error::always() && !success() did NOT fire on a cancelled step. The delivery phases would go silent exactly as they did on #1685"
+            fail=1
+          }
+
+          [[ "$OLD" == "false" ]] || {
+            echo "::error::failure() || cancelled() DID fire on a cancelled step, contradicting #1684 item 0 — re-examine the diagnosis before trusting the fix"
+            fail=1
+          }
+
+          [[ "$fail" == "0" ]] || exit 1
+          echo "PASS: a cancelled step reports under the new guard and was silent under the old one"
+
+  # ── Scenario 2: a deliver:paused exit ─────────────────────────────────────────────────────
+  # Expected: this job SUCCEEDS and the reporter stays quiet.
+  paused-exit-scenario:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      reporter: ${{ steps.reporter.outputs.fired || 'false' }}
+      skip_probe: ${{ steps.skip_probe.outputs.fired || 'false' }}
+    steps:
+      - name: Honour deliver:paused (simulated)
+        id: paused
+        run: echo "paused=true" >> "$GITHUB_OUTPUT"
+
+      # Skipped, exactly as every real phase step is on a paused exit.
+      - name: Work that a paused delivery skips
+        if: steps.paused.outputs.paused == 'false'
+        run: echo "this must not run"
+
+      # Answers a question the PR body flagged as unknown and never settled: does a SKIPPED step
+      # make `success()` false? If this fires, it does — and every reporter guarded on
+      # `!success()` would fire on a paused exit, which is the opposite of what BC-9 requires.
+      - name: Probe — does a skipped step make success() false?
+        id: skip_probe
+        if: always() && !success()
+        run: echo "fired=true" >> "$GITHUB_OUTPUT"
+
+      # The real reporter guard, verbatim.
+      - name: Reporter — must stay quiet when paused
+        id: reporter
+        if: always() && !success() && steps.paused.outputs.paused != 'true'
+        run: echo "fired=true" >> "$GITHUB_OUTPUT"
+
+  assert-paused-exit:
+    needs: paused-exit-scenario
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: A paused exit must report nothing
+        env:
+          RESULT: ${{ needs.paused-exit-scenario.result }}
+          REPORTER: ${{ needs.paused-exit-scenario.outputs.reporter }}
+          SKIP_PROBE: ${{ needs.paused-exit-scenario.outputs.skip_probe }}
+        run: |
+          set -uo pipefail
+          echo "scenario result=$RESULT reporter=$REPORTER skip_probe=$SKIP_PROBE"
+          fail=0
+
+          [[ "$RESULT" == "success" ]] || {
+            echo "::error::a paused exit should leave the job successful, got '$RESULT'"
+            fail=1
+          }
+
+          [[ "$REPORTER" == "false" ]] || {
+            echo "::error::the reporter FIRED on a paused exit — BC-9 requires a paused delivery to move no label and post no comment"
+            fail=1
+          }
+
+          # Recorded either way. `false` means a skipped step does NOT make success() false, so the
+          # explicit `paused != 'true'` term is belt-and-braces; `true` means that term is the only
+          # thing holding BC-9 up, which is worth knowing before anyone removes it as redundant.
+          if [[ "$SKIP_PROBE" == "true" ]]; then
+            echo "::notice::a skipped step DOES make success() false — the paused != 'true' term is load-bearing, do not remove it"
+          else
+            echo "::notice::a skipped step does NOT make success() false"
+          fi
+
+          [[ "$fail" == "0" ]] || exit 1
+          echo "PASS: a paused exit reports nothing"
+
+  # ── Drift guard ───────────────────────────────────────────────────────────────────────────
+  # The scenarios above prove what the EXPRESSIONS do. They cannot prove the real workflows use
+  # them, so a passing self-test beside a reverted guard would be worse than no test at all.
+  guards-match-the-workflows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Every phase reporter uses the exercised guard
+        run: |
+          set -uo pipefail
+          fail=0
+          for wf in deliver-implement.yml deliver-verify.yml deliver-correct.yml; do
+            f=".github/workflows/$wf"
+            if ! grep -q "if: always() && !success()" "$f"; then
+              echo "::error file=$f::no reporter guarded on 'always() && !success()' — the self-test exercises a guard this workflow does not use"
+              fail=1
+            fi
+            # The old form must not come back. Matched as a step condition (`if:`) so the
+            # explanatory prose in the surrounding comments does not trip it.
+            if grep -qE '^\s*if:.*failure\(\) \|\| cancelled\(\)' "$f"; then
+              echo "::error file=$f::a reporter still uses 'failure() || cancelled()', which does not fire on a cancelled step (#1684 item 0)"
+              fail=1
+            fi
+          done
+          [[ "$fail" == "0" ]] || exit 1
+          echo "PASS: all three phase reporters use the guard this workflow exercises"
