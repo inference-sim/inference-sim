@@ -3739,17 +3739,44 @@ that fixed cost can exceed the bandwidth half by an order of magnitude, and it i
 mechanism behind vLLM's guidance to prefer pipeline parallelism across nodes and tensor
 parallelism within a node: per-layer all-reduce means <em>many small</em> collectives, not a few
 large ones.</p>
-<p><code>InterNodeLatencyUs</code> supplies it. It is charged once per comm unit that crosses a node
-boundary, so a step running <code>L</code> layers × 2 phases pays it <code>2L</code> times, and it is skipped
-entirely for a step that communicates no tokens (no collective runs, so nothing launches).</p>
-<p><strong>It is 0 — not charged — in the bundled hardware config, deliberately.</strong> BLIS has no
-measured per-collective latency to ship, and a guessed constant would sit in front of
-every multi-node estimate. So out of the box the cross-node cost is bandwidth-only, and
-the size-independent half is available but off. Supply a measured value to model it; see
-<a href="https://github.com/inference-sim/inference-sim/issues/1661">#1661</a>, which also records
-the calibration-evidence bar. Like the bandwidth half, it rides the learned communication
-coefficient (β₄, or β_EP for MoE dispatch), so calibrate it in that frame — the charge is
-<code>β · units · InterNodeLatencyUs</code>, not a raw wall-clock number.</p>
+<p>The charge has the analytic form (<a href="https://github.com/inference-sim/inference-sim/issues/1694">#1694</a>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>T_collective_fixed = n_steps(algorithm, topology) · α_hop · S
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>                     └──── analytic, no fit ────┘  └fabric┘ └regime┘
+</code></pre></div>
+<p><strong><code>n_steps</code> is the analytic cross-node hop count</strong> — derived purely from the collective
+algorithm and the placed node span, with no free parameters. The count is <strong>per
+collective</strong>: one whole ring all-reduce (reduce-scatter + all-gather) is <code>2·(nodes−1)</code>
+hops, while a single-phase collective (one all-to-all direction, or one phase of the
+all-gather family) is <code>(nodes−1)</code>. This replaces the flat per-collective term (#1667),
+which was node-span-<em>invariant</em> and under-charged a wide span by ~<code>(nodes−1)×</code>. The
+per-layer collective count is a <em>separate</em> factor applied by the caller: the TP leg is one
+whole all-reduce per comm unit (so <code>2·(nodes−1)</code> per unit), and the MoE leg is dispatch +
+combine, two single-phase collectives (<code>(nodes−1)</code> each ⇒ <code>2·(nodes−1)</code> per layer). So the
+MoE latency term is the <strong>same for both comm families</strong> — the family split is real only for
+the bandwidth <em>volume</em>, not the hop count; charging the all-gather family a whole ring here
+would double-count. A step running <code>L</code> layers pays <code>collectives · n_steps · α_hop</code> and
+skips it entirely for a step that communicates no tokens.</p>
+<p><strong><code>α_hop</code> (<code>InterNodeHopLatencyUs</code>) is the per-fabric constant</strong> — the cost of one
+inter-node hop. <strong>It is 0 — not charged — in the bundled hardware config, deliberately.</strong>
+BLIS has no measured per-hop latency to ship, and a guessed constant would sit in front of
+every multi-node estimate. <code>α_hop</code> must come from an independent NCCL microbenchmark on a
+reference cluster (the MFU / <a href="https://github.com/inference-sim/inference-sim/discussions/589">Discussion #589</a>
+pattern) and be reused unchanged across fabrics — <strong>never back-solved from one run's
+residual</strong>. Like the bandwidth half it rides the learned communication coefficient (β₄, or
+β_EP for MoE dispatch), so calibrate it in that frame — the charge is
+<code>β · units · n_steps · α_hop · S</code>, not a raw wall-clock number.</p>
+<p><strong><code>S</code> is the serialization multiplier</strong> (<code>--comm-serialization-factor</code>, default <code>1.0</code>) — a
+<em>deployment-regime</em> input, not a fabric property. A deployment running CUDA graphs with
+comm/compute overlap hides most of each collective's launch cost (<code>S ≈ 1</code>, inert); one
+running <code>enforce-eager</code> with no overlap serializes every collective behind a full barrier
+(<code>S ≫ 1</code>). It multiplies <strong>only</strong> this cross-node latency term, and is kept strictly
+separate from <code>α_hop</code> — folding it in would make a graphs-on deployment inherit a
+graphs-off fabric constant. Set <code>--enforce-eager</code> to declare the regime; it <em>requires</em> an
+explicit <code>--comm-serialization-factor &gt; 1</code>, because BLIS ships no fitted eager magnitude.
+<code>S</code> is re-supplied on both <code>run</code> and <code>replay</code> (like <code>--kv-cache-dtype</code>), not round-tripped
+through the trace header.</p>
+<p>Both <code>α_hop = 0</code> and <code>S = 1</code> are inert defaults, so out of the box the cross-node cost is
+bandwidth-only and the size-independent half is off.</p>
 <h3 id="where-the-inputs-come-from">Where the inputs come from<a class="headerlink" href="#where-the-inputs-come-from" title="Permanent link">&para;</a></h3>
 <p><strong>Topology is derived from placement, not declared.</strong> There is no CLI flag for it: the
 placement manager reports the size of the node(s) an instance's GPUs actually occupy,
@@ -3759,11 +3786,11 @@ could contradict the real <code>node_pools</code> placement, charging for a boun
 never crossed or missing one that was.</p>
 <p><strong>Fabric speeds are hardware calibration</strong>, in the file <code>--hardware-config</code> already
 points at:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">"H100"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">"TFlopsPeak"</span><span class="p">:</span><span class="w"> </span><span class="mf">989.5</span><span class="p">,</span><span class="w"> </span><span class="nt">"BwPeakTBs"</span><span class="p">:</span><span class="w"> </span><span class="mf">3.35</span><span class="p">,</span><span class="w"> </span><span class="nt">"MemoryGiB"</span><span class="p">:</span><span class="w"> </span><span class="mf">80.0</span><span class="p">,</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">"IntraNodeBwGBps"</span><span class="p">:</span><span class="w"> </span><span class="mi">450</span><span class="p">,</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">"InterNodeBwGBps"</span><span class="p">:</span><span class="w"> </span><span class="mi">50</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">"H100"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">"TFlopsPeak"</span><span class="p">:</span><span class="w"> </span><span class="mf">989.5</span><span class="p">,</span><span class="w"> </span><span class="nt">"BwPeakTBs"</span><span class="p">:</span><span class="w"> </span><span class="mf">3.35</span><span class="p">,</span><span class="w"> </span><span class="nt">"MemoryGiB"</span><span class="p">:</span><span class="w"> </span><span class="mf">80.0</span><span class="p">,</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nt">"IntraNodeBwGBps"</span><span class="p">:</span><span class="w"> </span><span class="mi">450</span><span class="p">,</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">  </span><span class="nt">"InterNodeBwGBps"</span><span class="p">:</span><span class="w"> </span><span class="mi">50</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="p">}</span>
 </code></pre></div>
 <p>Both are per-GPU <strong>effective unidirectional</strong> GB/s. Only their ratio is used, so the
 absolute scale cancels — but the <em>convention</em> must match on both fields (mixing a
@@ -3790,24 +3817,24 @@ for a multi-node <strong>TP</strong> shape now, and for wide expert parallelism 
 placement guard.</p>
 </div>
 <h4 id="worked-example-infiniband-vs-a-single-100-gbe-uplink-tp16">Worked example: InfiniBand vs a single 100 GbE uplink, TP=16<a class="headerlink" href="#worked-example-infiniband-vs-a-single-100-gbe-uplink-tp16" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># A pool of 8-GPU H100 nodes; TP=16 forces the instance across two of them.</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>cat<span class="w"> </span>&gt;<span class="w"> </span>pools.yaml<span class="w"> </span><span class="s">&lt;&lt;'YAML'</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="s">node_pools:</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="s">  - name: h100</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="s">    gpu_type: H100</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="s">    gpus_per_node: 8</span>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="s">    gpu_memory_gib: 80</span>
-<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="s">    initial_nodes: 4</span>
-<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="s">    max_nodes: 4</span>
-<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="s">    cost_per_hour: 30.0</span>
-<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="s">YAML</span>
-<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>
-<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="c1"># Run A — the bundled H100 entry: 450/50 GB/s (one 400 Gb/s NIC per GPU), ratio 9x.</span>
-<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>&lt;your-model&gt;<span class="w"> </span>--tp<span class="w"> </span><span class="m">16</span><span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w">   </span>--latency-model<span class="w"> </span>trained-physics<span class="w"> </span>--policy-config<span class="w"> </span>pools.yaml<span class="w">   </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">8</span>
-<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>
-<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="c1"># Run B — copy hardware_config.json, drop the H100 entry's InterNodeBwGBps to 12.5</span>
-<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="c1"># (a single 100 GbE uplink shared by the node's 8 GPUs), then:</span>
-<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>&lt;your-model&gt;<span class="w"> </span>--tp<span class="w"> </span><span class="m">16</span><span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w">   </span>--latency-model<span class="w"> </span>trained-physics<span class="w"> </span>--policy-config<span class="w"> </span>pools.yaml<span class="w">   </span>--hardware-config<span class="w"> </span>./hardware_config.roce.json<span class="w">   </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">8</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># A pool of 8-GPU H100 nodes; TP=16 forces the instance across two of them.</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>cat<span class="w"> </span>&gt;<span class="w"> </span>pools.yaml<span class="w"> </span><span class="s">&lt;&lt;'YAML'</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="s">node_pools:</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="s">  - name: h100</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="s">    gpu_type: H100</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="s">    gpus_per_node: 8</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="s">    gpu_memory_gib: 80</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="s">    initial_nodes: 4</span>
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="s">    max_nodes: 4</span>
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="s">    cost_per_hour: 30.0</span>
+<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="s">YAML</span>
+<a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a>
+<a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="c1"># Run A — the bundled H100 entry: 450/50 GB/s (one 400 Gb/s NIC per GPU), ratio 9x.</span>
+<a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>&lt;your-model&gt;<span class="w"> </span>--tp<span class="w"> </span><span class="m">16</span><span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w">   </span>--latency-model<span class="w"> </span>trained-physics<span class="w"> </span>--policy-config<span class="w"> </span>pools.yaml<span class="w">   </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">8</span>
+<a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a>
+<a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="c1"># Run B — copy hardware_config.json, drop the H100 entry's InterNodeBwGBps to 12.5</span>
+<a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a><span class="c1"># (a single 100 GbE uplink shared by the node's 8 GPUs), then:</span>
+<a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>&lt;your-model&gt;<span class="w"> </span>--tp<span class="w"> </span><span class="m">16</span><span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w">   </span>--latency-model<span class="w"> </span>trained-physics<span class="w"> </span>--policy-config<span class="w"> </span>pools.yaml<span class="w">   </span>--hardware-config<span class="w"> </span>./hardware_config.roce.json<span class="w">   </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">8</span>
 </code></pre></div>
 <p>Compare <code>ttft_p50_ms</code> / <code>itl_mean_ms</code> between the two. Run B's ratio is 36× rather than
 9×, so its communication term is larger; the difference is the fabric's contribution.
@@ -3854,11 +3881,12 @@ free-standing hardware spec: β₄ already absorbs the NVLink/HBM ratio, so the
 cross-node cost inherits β₄'s calibration as its baseline.</p>
 <p>Known approximations, each tracked:</p>
 <ul>
-<li><strong>Per-collective launch + round-trip cost is modeled but not calibrated.</strong> The
-  mechanism is <code>InterNodeLatencyUs</code> above; it is 0 in the bundled config, so out of the box
-  the cross-node cost is bandwidth-only — and at decode message sizes the missing fixed
-  cost is plausibly the <em>dominant</em> effect. Supplying a measured value is
-  <a href="https://github.com/inference-sim/inference-sim/issues/1661">#1661</a>.</li>
+<li><strong>Per-hop launch + round-trip cost is modeled but not calibrated.</strong> The mechanism is the
+  analytic <code>n_steps · α_hop · S</code> term above (<code>InterNodeHopLatencyUs</code>, #1694); <code>α_hop</code> is 0
+  in the bundled config, so out of the box the cross-node cost is bandwidth-only — and at
+  decode message sizes the missing fixed cost is plausibly the <em>dominant</em> effect. Supplying
+  a measured <code>α_hop</code> from an NCCL microbenchmark is
+  <a href="https://github.com/inference-sim/inference-sim/issues/1694">#1694</a>.</li>
 <li>The fabric is keyed by GPU type rather than by pool, which is only equivalent while
   #1529's "one <code>gpu_type</code> per pool" rule holds
   (<a href="https://github.com/inference-sim/inference-sim/issues/1662">#1662</a>).</li>

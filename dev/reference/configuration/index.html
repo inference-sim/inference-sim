@@ -4798,8 +4798,8 @@ collective traffic in the trained-physics backend (issue #1530):</p>
 <td>Per-GPU share of the node's inter-node fabric (InfiniBand/RoCE NIC)</td>
 </tr>
 <tr>
-<td><code>InterNodeLatencyUs</code></td>
-<td>Fixed cost of ONE cross-node collective in µs (launch + fabric round-trip), charged per comm unit that crosses a node boundary. <strong>0 in the bundled config</strong> — see below</td>
+<td><code>InterNodeHopLatencyUs</code></td>
+<td>Per-<strong>hop</strong> inter-node latency α_hop in µs (launch + fabric round-trip of one collective step). The charge is <code>n_steps · α_hop · S</code>, where <code>n_steps</code> is the analytic hop count of the placed span (#1694). <strong>0 in the bundled config</strong> — see below</td>
 </tr>
 </tbody>
 </table>
@@ -4817,7 +4817,7 @@ one changes the ratio by 2×.</p>
 <a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">    </span><span class="nt">"MemoryGiB"</span><span class="p">:</span><span class="w"> </span><span class="mf">80.0</span><span class="p">,</span>
 <a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">    </span><span class="nt">"IntraNodeBwGBps"</span><span class="p">:</span><span class="w"> </span><span class="mi">450</span><span class="p">,</span>
 <a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">    </span><span class="nt">"InterNodeBwGBps"</span><span class="p">:</span><span class="w"> </span><span class="mi">50</span><span class="p">,</span>
-<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">    </span><span class="nt">"InterNodeLatencyUs"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
+<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">    </span><span class="nt">"InterNodeHopLatencyUs"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
 <a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">  </span><span class="p">}</span>
 <a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="p">}</span>
 </code></pre></div>
@@ -4830,15 +4830,29 @@ one changes the ratio by 2×.</p>
   spans nodes so the optimism is visible.</li>
 <li>A negative, NaN or infinite value is rejected rather than silently clamped, at load
   time — so the same malformed file fails identically under either latency backend.</li>
-<li><code>InterNodeLatencyUs</code> stands alone (a fabric can be modeled as latency-dominated), so it
-  is not paired with the bandwidths. It is <strong>0 in the bundled config</strong>: BLIS has no
-  measured per-collective latency to ship, and a guessed constant would sit in front of
-  every multi-node estimate. Out of the box the cross-node cost is therefore
-  bandwidth-only. Supply a measured value to model the size-independent half — it is
-  often the larger one for decode-sized messages. It rides the learned communication
-  coefficient, so the charge is <code>β · units · InterNodeLatencyUs</code>.</li>
-<li>The topology (<em>whether</em> a collective crosses a boundary) is <strong>not</strong> configured here.
-  It is derived from real <code>node_pools</code> placement; there is no CLI flag for it.</li>
+<li><strong>Migrating from the pre-#1694 <code>InterNodeLatencyUs</code> key:</strong> it was renamed to
+  <code>InterNodeHopLatencyUs</code> <strong>and its unit changed</strong> from µs-per-collective to µs-per-hop.
+  A config still carrying the old key is <strong>rejected at load</strong> with an error naming the GPU
+  and the new key — it is not silently accepted (which would drop the value to 0). This is
+  a <em>recalibration</em>, not a rename: divide the old per-collective value by the collective's
+  cross-node hop count before setting the new key; do not copy it verbatim.</li>
+<li><code>InterNodeHopLatencyUs</code> (α_hop) stands alone (a fabric can be modeled as
+  latency-dominated), so it is not paired with the bandwidths. It is <strong>0 in the bundled
+  config</strong>: BLIS has no measured per-hop latency to ship, and a guessed constant would sit
+  in front of every multi-node estimate. Out of the box the cross-node cost is therefore
+  bandwidth-only. Supply a measured value (from an independent NCCL microbenchmark, reused
+  across fabrics — never back-solved from one run, #1694) to model the size-independent
+  half — it is often the larger one for decode-sized messages. It rides the learned
+  communication coefficient, so the charge is <code>β · units · n_steps · α_hop · S</code>, where
+  <code>n_steps</code> is the analytic hop count of the placed span.</li>
+<li>The topology (<em>whether</em> a collective crosses a boundary, and over how many nodes) is
+  <strong>not</strong> configured here. It is derived from real <code>node_pools</code> placement; there is no CLI
+  flag for it.</li>
+<li>The <strong>serialization factor <code>S</code></strong> (<code>--comm-serialization-factor</code>, default 1.0) is a
+  <em>deployment-regime</em> input, <strong>not</strong> a hardware field — it captures eager / no-overlap
+  execution and multiplies only the α_hop term. It lives on the CLI (both <code>run</code> and
+  <code>replay</code>), never in this file, so a graphs-on deployment cannot inherit a graphs-off
+  constant. <code>--enforce-eager</code> requires an explicit <code>S &gt; 1</code>.</li>
 <li>Whether the cost applies also depends on the backend: only
   <code>--latency-model trained-physics</code> models communication.</li>
 </ul>
