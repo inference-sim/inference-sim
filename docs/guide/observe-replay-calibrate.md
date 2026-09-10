@@ -510,9 +510,11 @@ concurrency > 1:
 
 ```bash
 # Convert once, then replay with recorded arrivals AND reconstructed growing context.
+# (This uses a committed MoE config and a hardware key present in hardware_config.json,
+# so it runs as-is; the motivating shape is a large MLA MoE such as Kimi-K3 on H200.)
 blis convert weka --input traces.jsonl --trace-output corpus --context-growth accumulate
 blis replay --trace-header corpus.yaml --trace-data corpus.csv \
-  --model kimi-k3 --hardware H200 --tp 16 --dp 2 --enable-expert-parallel \
+  --model qwen/qwen3-30b-a3b --hardware H100 --tp 2 --dp 2 --enable-expert-parallel \
   --session-mode fixed-accumulate --max-model-len 1000000
 ```
 
@@ -531,6 +533,25 @@ mode breaks.
     calibrated. Treat `fixed-accumulate` as a **necessary precondition** for high-
     concurrency fidelity — land and validate it alongside (or ahead of) the decode-side
     work, not as a standalone fix.
+
+!!! warning "Intra-session overlap: recorded arrivals ignore sim completion"
+    Each round is injected at its recorded arrival regardless of when the previous round
+    of the **same** session finishes in the sim. A real agentic client is serial (round N
+    waits for round N−1's response), but the recorded inter-round gap includes the *real*
+    server time; the moment sim service time exceeds that real time — exactly the
+    queueing regime this mode creates — round N is injected while round N−1 is still
+    decoding. Two consequences to keep in mind when reading results:
+
+    1. **Measured concurrency is inflated** above what a real serial client produces,
+       because same-session rounds can be in flight at once.
+    2. **Prefix-cache hit rate is partly fictional**: round N's prompt contains round
+       N−1's output tokens, which (under overlap) round N−1 has not finished emitting —
+       so part of the modeled prefix hit corresponds to tokens that did not yet exist.
+
+    This is a distinct effect from the (faithful) *cross*-session overlap the mode
+    reproduces, and it is not covered by the INV-10 exemption (which is about the arrival
+    *source*). It is inherent to open-loop replay of a serial workload; closed-loop avoids
+    it but at the cost of the self-throttling feedback loop this mode exists to break.
 
 !!! note "`--trace-output` produces an absolute (non-accumulate) corpus"
     fixed-accumulate reconstructs each round's growing context in memory, so

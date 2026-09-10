@@ -65,6 +65,71 @@ func TestFixedAccumulate_ReconstructsAbsoluteInputs(t *testing.T) {
 	}
 }
 
+// TestFixedAccumulate_EncoderRoundTrip (BC-1, BC-3): pins the reconstruction to the REAL
+// EncodeSessionToTraceRecords law rather than to hand-computed deltas. Every other test in
+// this file hand-computes the delta (e.g. 180-100-50=30), so all would pass even if the
+// loader and encoder disagreed. This drives known absolutes (including shrinking rounds
+// that trigger compaction) through the actual encoder, then asserts the loader
+// reconstructs each round's exact recorded absolute. Randomized over many trials — the RNG
+// only varies the shape (seeded off the trial index; no Math.rand/time), keeping it
+// deterministic and INV-6-safe.
+func TestFixedAccumulate_EncoderRoundTrip(t *testing.T) {
+	for trial := 0; trial < 200; trial++ {
+		// Deterministic pseudo-random shape from the trial index (no wall-clock/global rng).
+		rng := deterministicShapeRNG(int64(trial))
+		nRounds := 1 + rng(8) // 1..8 rounds
+		abs := make([]int, nRounds)
+		out := make([]int, nRounds)
+		prev := 20 + rng(200)
+		for i := 0; i < nRounds; i++ {
+			out[i] = rng(50)
+			if i == 0 {
+				abs[i] = prev
+			} else if rng(3) == 0 {
+				// ~1/3 compaction rounds: shrink below prev+out (forces InputTokensReset).
+				abs[i] = 5 + rng(prev)
+			} else {
+				abs[i] = abs[i-1] + out[i-1] + rng(100) // monotone growth
+			}
+		}
+		rounds := make([]NormalizedRound, nRounds)
+		for i := range rounds {
+			rounds[i] = NormalizedRound{InputTokensAbs: abs[i], OutputTokens: out[i], ArrivalUs: int64(i * 1000), Status: "ok"}
+		}
+		recs := EncodeSessionToTraceRecords("s1", rounds)
+		for i := range recs {
+			recs[i].RequestID = i
+		}
+		trace := buildAccumulateTrace(t, recs)
+		reqs, err := LoadTraceV2FixedAccumulateRequests(trace, int64(trial))
+		if err != nil {
+			t.Fatalf("trial %d: %v", trial, err)
+		}
+		if len(reqs) != nRounds {
+			t.Fatalf("trial %d: got %d requests, want %d", trial, len(reqs), nRounds)
+		}
+		for i, r := range reqs {
+			if int(r.InputLen()) != abs[i] {
+				t.Fatalf("trial %d round %d: reconstructed input = %d, want recorded absolute %d (encoder/loader law drift)", trial, i, r.InputLen(), abs[i])
+			}
+		}
+	}
+}
+
+// deterministicShapeRNG returns a closure yielding a pseudo-random int in [0, n) from a
+// seeded LCG — deterministic (INV-6) and free of Math.rand/time so the round-trip test's
+// shapes are reproducible across runs.
+func deterministicShapeRNG(seed int64) func(n int) int {
+	state := uint64(seed)*2862933555777941757 + 3037000493
+	return func(n int) int {
+		state = state*6364136223846793005 + 1442695040888963407
+		if n <= 0 {
+			return 0
+		}
+		return int((state >> 33) % uint64(n))
+	}
+}
+
 // TestFixedAccumulate_GrowingPrefixConsistent (BC-2): round N's input token IDs are
 // a strict prefix of round N+1's input token IDs (the growing conversation), so a
 // prefix-cache probe across consecutive rounds hits.
@@ -283,6 +348,39 @@ func TestFixedAccumulate_ViewsStableAfterGrowthAndReset(t *testing.T) {
 				t.Fatalf("round %d view token %d mutated after session build (%d != %d)", i, j, live[j], snaps[i][j])
 			}
 		}
+	}
+}
+
+// TestFixedAccumulate_EpochScopedCapacity pins PR-review F1: the backing array of each
+// round's view is sized to its EPOCH's peak, not the session's GLOBAL peak. The failure
+// mode: a tiny first epoch followed by a huge later epoch — sizing to the global peak
+// would pin round 0's tiny view inside a giant array, retaining more than an eager copy.
+func TestFixedAccumulate_EpochScopedCapacity(t *testing.T) {
+	// Epoch 0: round 0 tiny (10 tokens). Round 1 compacts (reset to 5), opening epoch 1,
+	// which then grows huge (delta 5000). Global peak ≈ 5000+; epoch-0 peak is 10.
+	reset := int64(5)
+	records := []TraceRecord{
+		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 10, OutputTokens: 2, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 0, InputTokensReset: &reset, OutputTokens: 3, ArrivalTimeUs: 1000, Status: "ok"},
+		{RequestID: 2, SessionID: "s1", RoundIndex: 2, InputTokens: 5000, OutputTokens: 4, ArrivalTimeUs: 2000, Status: "ok"},
+	}
+	trace := buildAccumulateTrace(t, records)
+	reqs, err := LoadTraceV2FixedAccumulateRequests(trace, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reqs) != 3 {
+		t.Fatalf("expected 3 requests, got %d", len(reqs))
+	}
+	// Round 0's view (epoch 0, peak 10) must NOT be backed by an array sized for the huge
+	// later epoch. cap of the round-0 InputTokens slice reflects its backing array size.
+	r0cap := cap(reqs[0].InputTokens)
+	if int64(r0cap) > 100 { // generous slack over epoch-0 peak (10); the bug gives ~5008
+		t.Errorf("round 0 view cap = %d, want ~10 (epoch-scoped); a global-peak alloc would pin ~5008 (F1 regression)", r0cap)
+	}
+	// Round 2 (epoch 1) is correctly the large one — sanity that reconstruction still works.
+	if int(reqs[2].InputLen()) != 5008 { // reset 5 + out 3 + delta 5000
+		t.Errorf("round 2 input len = %d, want 5008 (reset 5 + prev out 3 + delta 5000)", reqs[2].InputLen())
 	}
 }
 

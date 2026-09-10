@@ -297,8 +297,10 @@ go build -o blis main.go
 # (unmodeled enforce-eager + MTP-without-contention, #1627), so queue depth is under-predicted
 # until decode is calibrated — this mode is a NECESSARY precondition for high-conc fidelity, not
 # sufficient alone. Same huge-ISL caveat: raise --max-model-len and scale --total-kv-blocks.
+# (Example uses a committed MoE config + a hardware key present in hardware_config.json so
+# it runs out of the box; the motivating shape is a large MLA MoE like Kimi-K3 on H200.)
 ./blis replay --trace-header corpus.yaml --trace-data corpus.csv \
-  --model kimi-k3 --hardware H200 --tp 16 --dp 2 --enable-expert-parallel \
+  --model qwen/qwen3-30b-a3b --hardware H100 --tp 2 --dp 2 --enable-expert-parallel \
   --session-mode fixed-accumulate --max-model-len 1000000
 
 # Observe corpus-mode: drive the SAME corpus as a fixed session pool against a

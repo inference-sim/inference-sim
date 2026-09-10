@@ -128,16 +128,30 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 		// suffix of effectiveInputTokenCount tokens. Layout mirrors the closed-loop
 		// buffer: [prefix | r0_conversation | r0_output | r1_delta | r1_output | ...].
 		//
-		// Pre-allocate to the session's EXACT peak buffer length (computed from the delta
-		// chain) so the growth phase never reallocates — every round's Slice() view then
-		// aliases ONE backing array, and the session retains O(peak) tokens, not the
-		// O(Σ absolute inputs) an eager per-round copy would retain. On the motivating
-		// Weka corpus (ISL p50 ≈ 110K over ~37K rounds) that is the difference between
-		// ~0.4 GB and ~16–24 GB. Matches the reasoning.go accumulate pattern (#1445).
-		buf := newSessionTokenBufferWithCapacity(accumulatePeakBufferLen(rounds, len(prefix)))
+		// Pre-allocate to the FIRST EPOCH's peak (rounds up to the first compaction reset),
+		// computed from the delta chain, so the growth phase never reallocates within the
+		// epoch — every round's Slice() view then aliases ONE backing array. At each reset
+		// we re-size to the NEXT epoch's peak (see ResetWithCapacity below). Per-epoch (not
+		// global-peak) sizing is deliberate: sizing to the global peak would pin every
+		// earlier round's small view inside one giant array, retaining more than an eager
+		// copy on a shrinking-then-growing corpus (PR #1696 review F1). Retained memory is
+		// therefore O(Σ per-epoch peaks): for a monotone (no-compaction) session that is a
+		// single O(peak) array (~0.4 GB vs ~16–24 GB of eager copies on the Weka corpus);
+		// for a compacting session it is one right-sized array per live epoch. Matches the
+		// reasoning.go shared-buffer pattern (#1445).
+		buf := newSessionTokenBufferWithCapacity(accumulateEpochPeakLen(rounds, 0, len(prefix)))
 		if len(prefix) > 0 {
 			buf.Append(prefix)
 		}
+		// Round 0 seeds from effectiveInputTokenCount (server-reported count wins when set),
+		// but rounds>0 read rec.InputTokens raw as the DELTA. CAVEAT (latent): if a corpus
+		// ever carried a round-0 ServerInputTokens that differed from InputTokens, seeding
+		// abs_0 from the server count while the encoder wrote deltas over the InputTokens
+		// column would shift every later reconstructed absolute by (server − input).
+		// Unreachable today — no converter (weka/otel) or re-exporter sets ServerInputTokens
+		// on an accumulate corpus, and observe (the only ServerInputTokens producer) never
+		// emits session_context_growth=accumulate, so such a trace is rejected by the CLI
+		// guard before reaching here. Left as a documented boundary rather than a guard.
 		r0Suffix := sim.GenerateRandomTokenIDs(sessionRNG, effectiveInputTokenCount(r0.InputTokens, r0.ServerInputTokens, r0.PrefixGroup))
 		buf.Append(r0Suffix)
 
@@ -163,7 +177,10 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 				// just-completed round's output is intentionally NOT carried forward — it
 				// was folded into the compaction the trace recorded as this round's abs.
 				resetToks := sim.GenerateRandomTokenIDs(sessionRNG, resetTarget)
-				_, inputEnd := buf.Reset(resetToks)
+				// Size the fresh array to THIS epoch's peak (rounds i..next-reset) so the
+				// new epoch's appends don't reallocate and don't keep the prior epoch's
+				// array alive beyond its own live views (PR #1696 review F1).
+				_, inputEnd := buf.ResetWithCapacity(resetToks, accumulateEpochPeakLen(rounds, i, 0))
 				inputTokens = buf.Slice(0, inputEnd)
 			} else {
 				// Normal growth: append prev round's output, then this round's delta.
@@ -227,27 +244,37 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 	return requests, nil
 }
 
-// accumulatePeakBufferLen returns the maximum shared-buffer length the growth loop in
-// LoadTraceV2FixedAccumulateRequests will reach for a session, so the buffer can be
-// pre-allocated once and never reallocate (keeping every round's Slice() view aliased to
-// one backing array).
+// accumulateEpochPeakLen returns the maximum shared-buffer length reached within ONE
+// context epoch of a session — the run of rounds from epochStart up to (but not
+// including) the next context-compaction reset. The loader sizes each backing array to
+// exactly its epoch's peak so no epoch reallocates, and — critically — a later epoch's
+// growth does NOT enlarge (and thus keep alive) an earlier epoch's array. Sizing to the
+// GLOBAL peak instead would pin every earlier round's small view inside one giant array,
+// which can be worse than an eager copy on a shrinking-then-growing corpus (PR #1696
+// review F1).
 //
-// The buffer length after round i's input is that round's ABSOLUTE input in_i, and it
+// The buffer length after a round's input is that round's ABSOLUTE input in_i, and it
 // never exceeds in_i mid-round (the transient append of out_{i-1} brings it to
-// in_{i-1}+out_{i-1} = in_i − delta_i ≤ in_i). So the peak is max_i(in_i), reconstructed
-// from the same delta law the loop applies:
-//   - round 0: in_0 = prefixLen + delta_0 (the seeded prefix + round-0 suffix)
-//   - reset round: in_i = *InputTokensReset (the recorded absolute)
-//   - normal round i>0: in_i = in_{i-1} + out_{i-1} + delta_i
-// rounds is assumed sorted ascending and consecutive (validated by the caller).
-func accumulatePeakBufferLen(rounds []TraceRecord, prefixLen int) int64 {
+// in_{i-1}+out_{i-1} = in_i − delta_i ≤ in_i). Within the epoch, the delta law is:
+//   - epoch's first round: in = prefixLen + delta (round 0, via effectiveInputTokenCount)
+//     OR *InputTokensReset (a reset round that opens a new epoch)
+//   - subsequent round j: in_j = in_{j-1} + out_{j-1} + delta_j (delta = rec.InputTokens)
+//
+// prefixLen is added only when epochStart == 0 (the seeded prefix); a reset epoch carries
+// no prefix. rounds is assumed sorted ascending and consecutive (validated by the caller).
+func accumulateEpochPeakLen(rounds []TraceRecord, epochStart, prefixLen int) int64 {
 	var peak, prevAbs, prevOut int64
-	for i, rec := range rounds {
+	for i := epochStart; i < len(rounds); i++ {
+		rec := rounds[i]
+		isResetRound := i > 0 && rec.InputTokensReset != nil
+		if i > epochStart && isResetRound {
+			break // next epoch begins here
+		}
 		var abs int64
 		switch {
 		case i == 0:
 			abs = int64(prefixLen) + int64(effectiveInputTokenCount(rec.InputTokens, rec.ServerInputTokens, rec.PrefixGroup))
-		case rec.InputTokensReset != nil:
+		case isResetRound: // i == epochStart, a reset round opening this epoch
 			abs = *rec.InputTokensReset
 		default:
 			// round>0 delta is rec.InputTokens directly (see the growth branch in
