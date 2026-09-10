@@ -3872,6 +3872,94 @@ The marker is a trailing conditional CSV column: absent for monotone sessions an
 re-run <code>convert</code> to get compaction-aware output. (The separate think-time lossy-0
 sentinel was resolved in #1608 — see the non-lossy note above.)</p>
 </div>
+<h3 id="faithful-high-concurrency-replay-session-mode-fixed-accumulate-1692">Faithful high-concurrency replay: <code>--session-mode fixed-accumulate</code> (#1692)<a class="headerlink" href="#faithful-high-concurrency-replay-session-mode-fixed-accumulate-1692" title="Permanent link">&para;</a></h3>
+<p>An accumulate corpus can be replayed three ways. Only the third is faithful at
+concurrency &gt; 1:</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Arrivals</th>
+<th>Accumulate inputs</th>
+<th>Faithful high-conc?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--session-mode closed-loop</code></td>
+<td>regenerated (<code>completion + think</code>)</td>
+<td>✅ reconstructed</td>
+<td>❌ self-throttles — arrivals chain to sim completion, so the queue drains instead of piling up and TTFT collapses to compute-only (30–100× low at conc ≥ 8)</td>
+</tr>
+<tr>
+<td><code>--session-mode fixed</code></td>
+<td>recorded</td>
+<td>❌ <strong>hard-rejected</strong> on an accumulate corpus (reads deltas as absolutes)</td>
+<td>❌ not usable</td>
+</tr>
+<tr>
+<td><code>--session-mode fixed-accumulate</code></td>
+<td><strong>recorded</strong></td>
+<td>✅ reconstructed</td>
+<td>✅ recorded arrivals carry the real cross-session overlap, so N large prefills pile into the scheduler at the real clock and produce genuine queue wait</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="c1"># Convert once, then replay with recorded arrivals AND reconstructed growing context.</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="c1"># (This uses a committed MoE config and a hardware key present in hardware_config.json,</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="c1"># so it runs as-is; the motivating shape is a large MLA MoE such as Kimi-K3 on H200.)</span>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>blis<span class="w"> </span>convert<span class="w"> </span>weka<span class="w"> </span>--input<span class="w"> </span>traces.jsonl<span class="w"> </span>--trace-output<span class="w"> </span>corpus<span class="w"> </span>--context-growth<span class="w"> </span>accumulate
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>blis<span class="w"> </span>replay<span class="w"> </span>--trace-header<span class="w"> </span>corpus.yaml<span class="w"> </span>--trace-data<span class="w"> </span>corpus.csv<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-30b-a3b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span><span class="w"> </span>--dp<span class="w"> </span><span class="m">2</span><span class="w"> </span>--enable-expert-parallel<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="w">  </span>--session-mode<span class="w"> </span>fixed-accumulate<span class="w"> </span>--max-model-len<span class="w"> </span><span class="m">1000000</span>
+</code></pre></div>
+<p>The arrival timestamps are already in the corpus (<code>ArrivalTimeUs</code>, written per round by
+the converter) — this mode consumes data that exists today; no trace-format change. It
+requires an accumulate corpus, and is mutually exclusive with <code>--concurrent-sessions</code>
+(open-loop, so there is no session pool to maintain) and <code>--think-time-*</code> (arrivals are
+recorded, not regenerated). INV-10 (session causality) is <strong>scoped to closed-loop</strong> and
+does not apply — chaining arrivals to sim completion is exactly the feedback loop this
+mode breaks.</p>
+<div class="admonition warning">
+<p class="admonition-title">Necessary, not sufficient (decode-side gap, #1627)</p>
+<p>Even with faithful arrivals, BLIS's decode/step model currently runs ~5–10× fast on
+this workload (the unmodeled <code>--enforce-eager</code> regime plus MTP-speedup-without-
+contention, #1627), so queue depth is still under-predicted until decode is
+calibrated. Treat <code>fixed-accumulate</code> as a <strong>necessary precondition</strong> for high-
+concurrency fidelity — land and validate it alongside (or ahead of) the decode-side
+work, not as a standalone fix.</p>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Intra-session overlap: recorded arrivals ignore sim completion</p>
+<p>Each round is injected at its recorded arrival regardless of when the previous round
+of the <strong>same</strong> session finishes in the sim. A real agentic client is serial (round N
+waits for round N−1's response), but the recorded inter-round gap includes the <em>real</em>
+server time; the moment sim service time exceeds that real time — exactly the
+queueing regime this mode creates — round N is injected while round N−1 is still
+decoding. Two consequences to keep in mind when reading results:</p>
+<ol>
+<li><strong>Measured concurrency is inflated</strong> above what a real serial client produces,
+   because same-session rounds can be in flight at once.</li>
+<li><strong>Prefix-cache hit rate is partly fictional</strong>: round N's prompt contains round
+   N−1's output tokens, which (under overlap) round N−1 has not finished emitting —
+   so part of the modeled prefix hit corresponds to tokens that did not yet exist.</li>
+</ol>
+<p>This is a distinct effect from the (faithful) <em>cross</em>-session overlap the mode
+reproduces, and it is not covered by the INV-10 exemption (which is about the arrival
+<em>source</em>). It is inherent to open-loop replay of a serial workload; closed-loop avoids
+it but at the cost of the self-throttling feedback loop this mode exists to break.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title"><code>--trace-output</code> produces an absolute (non-accumulate) corpus</p>
+<p>fixed-accumulate reconstructs each round's growing context in memory, so
+<code>--trace-output</code> re-exports the <strong>already-reconstructed absolute</strong> per-round inputs —
+the exported header carries <strong>no</strong> <code>session_context_growth</code>, and the CSV records
+absolute <code>input_tokens</code> (not deltas). This export is a faithful absolute-mode corpus:
+re-replay it with <code>--session-mode fixed</code> (the default). It is <strong>not</strong> an accumulate
+corpus, so <code>--session-mode fixed-accumulate</code> will reject it (the accumulate-corpus
+guard) — re-run the original <code>convert</code> step if you need to re-export deltas. This is
+lossless: the absolute inputs are exactly what fixed-accumulate reconstructed.</p>
+</div>
 <hr />
 <h2 id="blis-calibrate"><code>blis calibrate</code><a class="headerlink" href="#blis-calibrate" title="Permanent link">&para;</a></h2>
 <p>Compares real observed latencies (from <code>blis observe</code>) against simulator predictions (from <code>blis replay</code>) and produces a calibration report.</p>
@@ -3961,14 +4049,14 @@ sentinel was resolved in #1608 — see the non-lossy note above.)</p>
 <h3 id="interpreting-the-calibration-report">Interpreting the Calibration Report<a class="headerlink" href="#interpreting-the-calibration-report" title="Permanent link">&para;</a></h3>
 <p>The calibration report JSON contains four sections:</p>
 <p><strong><code>trace_info</code></strong> — Summary of the input data:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="p">{</span>
-<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">  </span><span class="nt">"num_requests"</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="p">,</span>
-<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">  </span><span class="nt">"warm_up_excluded"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
-<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="w">  </span><span class="nt">"matched_pairs"</span><span class="p">:</span><span class="w"> </span><span class="mi">95</span><span class="p">,</span>
-<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="w">  </span><span class="nt">"token_mismatches"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
-<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="w">  </span><span class="nt">"itl_dropped"</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span>
-<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="w">  </span><span class="nt">"duration"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2m30s"</span>
-<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="p">{</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">  </span><span class="nt">"num_requests"</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="p">,</span>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="w">  </span><span class="nt">"warm_up_excluded"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="w">  </span><span class="nt">"matched_pairs"</span><span class="p">:</span><span class="w"> </span><span class="mi">95</span><span class="p">,</span>
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="w">  </span><span class="nt">"token_mismatches"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="w">  </span><span class="nt">"itl_dropped"</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span>
+<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="w">  </span><span class="nt">"duration"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2m30s"</span>
+<a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a><span class="p">}</span>
 </code></pre></div>
 <ul>
 <li><code>matched_pairs</code>: Requests matched by ID between trace and sim results</li>
@@ -3976,36 +4064,36 @@ sentinel was resolved in #1608 — see the non-lossy note above.)</p>
 <li><code>itl_dropped</code>: Requests dropped from ITL computation because all inter-chunk deltas were negative (clock skew); only present when greater than 0</li>
 </ul>
 <p><strong><code>metrics</code></strong> — Per-metric comparison. Keys are <code>ttft</code>, <code>e2e</code>, and (if <code>--itl-data</code> was supplied) <code>itl</code>. Each entry has two sub-objects and a top-level <code>count</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="p">{</span>
-<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">  </span><span class="nt">"ttft"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="w">    </span><span class="nt">"workload_level"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="w">      </span><span class="nt">"real_mean"</span><span class="p">:</span><span class="w"> </span><span class="mf">1534.2</span><span class="p">,</span>
-<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="w">      </span><span class="nt">"sim_mean"</span><span class="p">:</span><span class="w"> </span><span class="mf">1498.0</span><span class="p">,</span>
-<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="w">      </span><span class="nt">"mean_error"</span><span class="p">:</span><span class="w"> </span><span class="mf">-36.2</span><span class="p">,</span>
-<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="w">      </span><span class="nt">"mean_percent_error"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.024</span><span class="p">,</span>
-<a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a><span class="w">      </span><span class="nt">"real_median"</span><span class="p">:</span><span class="w"> </span><span class="mf">1234.5</span><span class="p">,</span>
-<a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a><span class="w">      </span><span class="nt">"sim_median"</span><span class="p">:</span><span class="w"> </span><span class="mf">1200.0</span><span class="p">,</span>
-<a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a><span class="w">      </span><span class="nt">"median_error"</span><span class="p">:</span><span class="w"> </span><span class="mf">-34.5</span><span class="p">,</span>
-<a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a><span class="w">      </span><span class="nt">"median_percent_error"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.028</span><span class="p">,</span>
-<a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a><span class="w">      </span><span class="nt">"real_p50"</span><span class="p">:</span><span class="w"> </span><span class="mf">1234.5</span><span class="p">,</span>
-<a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a><span class="w">      </span><span class="nt">"sim_p50"</span><span class="p">:</span><span class="w"> </span><span class="mf">1200.0</span><span class="p">,</span>
-<a id="__codelineno-17-14" name="__codelineno-17-14" href="#__codelineno-17-14"></a><span class="w">      </span><span class="nt">"real_p90"</span><span class="p">:</span><span class="w"> </span><span class="mf">3200.0</span><span class="p">,</span>
-<a id="__codelineno-17-15" name="__codelineno-17-15" href="#__codelineno-17-15"></a><span class="w">      </span><span class="nt">"sim_p90"</span><span class="p">:</span><span class="w"> </span><span class="mf">3150.0</span><span class="p">,</span>
-<a id="__codelineno-17-16" name="__codelineno-17-16" href="#__codelineno-17-16"></a><span class="w">      </span><span class="nt">"real_p95"</span><span class="p">:</span><span class="w"> </span><span class="mf">4000.0</span><span class="p">,</span>
-<a id="__codelineno-17-17" name="__codelineno-17-17" href="#__codelineno-17-17"></a><span class="w">      </span><span class="nt">"sim_p95"</span><span class="p">:</span><span class="w"> </span><span class="mf">3950.0</span><span class="p">,</span>
-<a id="__codelineno-17-18" name="__codelineno-17-18" href="#__codelineno-17-18"></a><span class="w">      </span><span class="nt">"real_p99"</span><span class="p">:</span><span class="w"> </span><span class="mf">4567.8</span><span class="p">,</span>
-<a id="__codelineno-17-19" name="__codelineno-17-19" href="#__codelineno-17-19"></a><span class="w">      </span><span class="nt">"sim_p99"</span><span class="p">:</span><span class="w"> </span><span class="mf">4500.0</span>
-<a id="__codelineno-17-20" name="__codelineno-17-20" href="#__codelineno-17-20"></a><span class="w">    </span><span class="p">},</span>
-<a id="__codelineno-17-21" name="__codelineno-17-21" href="#__codelineno-17-21"></a><span class="w">    </span><span class="nt">"request_level"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-17-22" name="__codelineno-17-22" href="#__codelineno-17-22"></a><span class="w">      </span><span class="nt">"mape"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.05</span><span class="p">,</span>
-<a id="__codelineno-17-23" name="__codelineno-17-23" href="#__codelineno-17-23"></a><span class="w">      </span><span class="nt">"pearson_r"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.95</span><span class="p">,</span>
-<a id="__codelineno-17-24" name="__codelineno-17-24" href="#__codelineno-17-24"></a><span class="w">      </span><span class="nt">"bias_direction"</span><span class="p">:</span><span class="w"> </span><span class="s2">"under-predict"</span><span class="p">,</span>
-<a id="__codelineno-17-25" name="__codelineno-17-25" href="#__codelineno-17-25"></a><span class="w">      </span><span class="nt">"quality"</span><span class="p">:</span><span class="w"> </span><span class="s2">"good"</span>
-<a id="__codelineno-17-26" name="__codelineno-17-26" href="#__codelineno-17-26"></a><span class="w">    </span><span class="p">},</span>
-<a id="__codelineno-17-27" name="__codelineno-17-27" href="#__codelineno-17-27"></a><span class="w">    </span><span class="nt">"count"</span><span class="p">:</span><span class="w"> </span><span class="mi">95</span>
-<a id="__codelineno-17-28" name="__codelineno-17-28" href="#__codelineno-17-28"></a><span class="w">  </span><span class="p">},</span>
-<a id="__codelineno-17-29" name="__codelineno-17-29" href="#__codelineno-17-29"></a><span class="w">  </span><span class="nt">"e2e"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="err">...</span><span class="w"> </span><span class="p">}</span>
-<a id="__codelineno-17-30" name="__codelineno-17-30" href="#__codelineno-17-30"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="p">{</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="w">  </span><span class="nt">"ttft"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="w">    </span><span class="nt">"workload_level"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="w">      </span><span class="nt">"real_mean"</span><span class="p">:</span><span class="w"> </span><span class="mf">1534.2</span><span class="p">,</span>
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="w">      </span><span class="nt">"sim_mean"</span><span class="p">:</span><span class="w"> </span><span class="mf">1498.0</span><span class="p">,</span>
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="w">      </span><span class="nt">"mean_error"</span><span class="p">:</span><span class="w"> </span><span class="mf">-36.2</span><span class="p">,</span>
+<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="w">      </span><span class="nt">"mean_percent_error"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.024</span><span class="p">,</span>
+<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a><span class="w">      </span><span class="nt">"real_median"</span><span class="p">:</span><span class="w"> </span><span class="mf">1234.5</span><span class="p">,</span>
+<a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a><span class="w">      </span><span class="nt">"sim_median"</span><span class="p">:</span><span class="w"> </span><span class="mf">1200.0</span><span class="p">,</span>
+<a id="__codelineno-18-10" name="__codelineno-18-10" href="#__codelineno-18-10"></a><span class="w">      </span><span class="nt">"median_error"</span><span class="p">:</span><span class="w"> </span><span class="mf">-34.5</span><span class="p">,</span>
+<a id="__codelineno-18-11" name="__codelineno-18-11" href="#__codelineno-18-11"></a><span class="w">      </span><span class="nt">"median_percent_error"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.028</span><span class="p">,</span>
+<a id="__codelineno-18-12" name="__codelineno-18-12" href="#__codelineno-18-12"></a><span class="w">      </span><span class="nt">"real_p50"</span><span class="p">:</span><span class="w"> </span><span class="mf">1234.5</span><span class="p">,</span>
+<a id="__codelineno-18-13" name="__codelineno-18-13" href="#__codelineno-18-13"></a><span class="w">      </span><span class="nt">"sim_p50"</span><span class="p">:</span><span class="w"> </span><span class="mf">1200.0</span><span class="p">,</span>
+<a id="__codelineno-18-14" name="__codelineno-18-14" href="#__codelineno-18-14"></a><span class="w">      </span><span class="nt">"real_p90"</span><span class="p">:</span><span class="w"> </span><span class="mf">3200.0</span><span class="p">,</span>
+<a id="__codelineno-18-15" name="__codelineno-18-15" href="#__codelineno-18-15"></a><span class="w">      </span><span class="nt">"sim_p90"</span><span class="p">:</span><span class="w"> </span><span class="mf">3150.0</span><span class="p">,</span>
+<a id="__codelineno-18-16" name="__codelineno-18-16" href="#__codelineno-18-16"></a><span class="w">      </span><span class="nt">"real_p95"</span><span class="p">:</span><span class="w"> </span><span class="mf">4000.0</span><span class="p">,</span>
+<a id="__codelineno-18-17" name="__codelineno-18-17" href="#__codelineno-18-17"></a><span class="w">      </span><span class="nt">"sim_p95"</span><span class="p">:</span><span class="w"> </span><span class="mf">3950.0</span><span class="p">,</span>
+<a id="__codelineno-18-18" name="__codelineno-18-18" href="#__codelineno-18-18"></a><span class="w">      </span><span class="nt">"real_p99"</span><span class="p">:</span><span class="w"> </span><span class="mf">4567.8</span><span class="p">,</span>
+<a id="__codelineno-18-19" name="__codelineno-18-19" href="#__codelineno-18-19"></a><span class="w">      </span><span class="nt">"sim_p99"</span><span class="p">:</span><span class="w"> </span><span class="mf">4500.0</span>
+<a id="__codelineno-18-20" name="__codelineno-18-20" href="#__codelineno-18-20"></a><span class="w">    </span><span class="p">},</span>
+<a id="__codelineno-18-21" name="__codelineno-18-21" href="#__codelineno-18-21"></a><span class="w">    </span><span class="nt">"request_level"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-18-22" name="__codelineno-18-22" href="#__codelineno-18-22"></a><span class="w">      </span><span class="nt">"mape"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.05</span><span class="p">,</span>
+<a id="__codelineno-18-23" name="__codelineno-18-23" href="#__codelineno-18-23"></a><span class="w">      </span><span class="nt">"pearson_r"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.95</span><span class="p">,</span>
+<a id="__codelineno-18-24" name="__codelineno-18-24" href="#__codelineno-18-24"></a><span class="w">      </span><span class="nt">"bias_direction"</span><span class="p">:</span><span class="w"> </span><span class="s2">"under-predict"</span><span class="p">,</span>
+<a id="__codelineno-18-25" name="__codelineno-18-25" href="#__codelineno-18-25"></a><span class="w">      </span><span class="nt">"quality"</span><span class="p">:</span><span class="w"> </span><span class="s2">"good"</span>
+<a id="__codelineno-18-26" name="__codelineno-18-26" href="#__codelineno-18-26"></a><span class="w">    </span><span class="p">},</span>
+<a id="__codelineno-18-27" name="__codelineno-18-27" href="#__codelineno-18-27"></a><span class="w">    </span><span class="nt">"count"</span><span class="p">:</span><span class="w"> </span><span class="mi">95</span>
+<a id="__codelineno-18-28" name="__codelineno-18-28" href="#__codelineno-18-28"></a><span class="w">  </span><span class="p">},</span>
+<a id="__codelineno-18-29" name="__codelineno-18-29" href="#__codelineno-18-29"></a><span class="w">  </span><span class="nt">"e2e"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="err">...</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-18-30" name="__codelineno-18-30" href="#__codelineno-18-30"></a><span class="p">}</span>
 </code></pre></div>
 <p>The report uses two levels of analysis because they catch different problems. <strong>Workload-level</strong> aggregates (mean, median, percentiles) reveal systematic bias — the simulator consistently over- or under-predicting. <strong>Request-level</strong> prediction quality (MAPE, Pearson) captures per-request variance — how tightly the simulator tracks individual latencies regardless of any overall offset.</p>
 <p><strong><code>workload_level</code> fields:</strong></p>
@@ -4082,26 +4170,26 @@ sentinel was resolved in #1608 — see the non-lossy note above.)</p>
 <p><strong><code>config_match</code></strong> — Tracks which simulator config parameters matched the observed server config (currently reports <code>matched</code> and <code>defaulted</code> arrays).</p>
 <p><strong><code>known_limitations</code></strong> — Documents known sources of sim/real divergence (batch step granularity, synthetic prefix tokens, speculative decoding).</p>
 <p><strong><code>throughput</code></strong> (optional, #1647) — Aggregate throughput comparison over the <code>request_id</code>-matched set, further restricted to real records with <code>status == "ok"</code> and a positive client-frame duration (a superset filter of the latency leg: latency matches on request-ID alone, throughput additionally drops failed and zero-duration records). Present automatically whenever (a) replay-mode provenance confirms the makespan is valid — <code>--replay-mode fixed</code> (the default) <strong>and</strong> no delta-corpus header marker (see the validity boundary below) — and (b) it is derivable from the required inputs (a positive real <em>and</em> sim makespan and non-zero matched output tokens); omitted otherwise, so a refused or non-derivable run keeps the legacy report shape and no <code>Inf</code>/<code>NaN</code> value is ever written. Matched requests that failed in the real trace but completed in the sim are excluded and reported via a stderr warning <strong>unconditionally</strong> — including when <em>every</em> matched request failed (so the block collapses to nil) — so the completion-rate mismatch is never swallowed even though the throughput numbers cannot reflect it.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="p">{</span>
-<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="w">  </span><span class="nt">"matched_requests"</span><span class="p">:</span><span class="w"> </span><span class="mi">95</span><span class="p">,</span>
-<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="w">  </span><span class="nt">"real_runtime_sec"</span><span class="p">:</span><span class="w"> </span><span class="mf">148.2</span><span class="p">,</span>
-<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="w">  </span><span class="nt">"sim_runtime_sec"</span><span class="p">:</span><span class="w"> </span><span class="mf">132.7</span><span class="p">,</span>
-<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="w">  </span><span class="nt">"real_output_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">12040</span><span class="p">,</span>
-<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="w">  </span><span class="nt">"sim_output_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">12040</span><span class="p">,</span>
-<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="w">  </span><span class="nt">"real_output_tokens_per_sec"</span><span class="p">:</span><span class="w"> </span><span class="mf">81.2</span><span class="p">,</span>
-<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a><span class="w">  </span><span class="nt">"sim_output_tokens_per_sec"</span><span class="p">:</span><span class="w"> </span><span class="mf">90.7</span><span class="p">,</span>
-<a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a><span class="w">  </span><span class="nt">"output_tokens_per_sec_error"</span><span class="p">:</span><span class="w"> </span><span class="mf">9.5</span><span class="p">,</span>
-<a id="__codelineno-18-10" name="__codelineno-18-10" href="#__codelineno-18-10"></a><span class="w">  </span><span class="nt">"output_tokens_per_sec_percent_error"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.117</span><span class="p">,</span>
-<a id="__codelineno-18-11" name="__codelineno-18-11" href="#__codelineno-18-11"></a><span class="w">  </span><span class="nt">"real_requests_per_sec"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.64</span><span class="p">,</span>
-<a id="__codelineno-18-12" name="__codelineno-18-12" href="#__codelineno-18-12"></a><span class="w">  </span><span class="nt">"sim_requests_per_sec"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.72</span><span class="p">,</span>
-<a id="__codelineno-18-13" name="__codelineno-18-13" href="#__codelineno-18-13"></a><span class="w">  </span><span class="nt">"requests_per_sec_error"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.08</span><span class="p">,</span>
-<a id="__codelineno-18-14" name="__codelineno-18-14" href="#__codelineno-18-14"></a><span class="w">  </span><span class="nt">"requests_per_sec_percent_error"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.117</span><span class="p">,</span>
-<a id="__codelineno-18-15" name="__codelineno-18-15" href="#__codelineno-18-15"></a><span class="w">  </span><span class="nt">"num_gpus"</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span>
-<a id="__codelineno-18-16" name="__codelineno-18-16" href="#__codelineno-18-16"></a><span class="w">  </span><span class="nt">"real_output_tokens_per_sec_per_gpu"</span><span class="p">:</span><span class="w"> </span><span class="mf">20.3</span><span class="p">,</span>
-<a id="__codelineno-18-17" name="__codelineno-18-17" href="#__codelineno-18-17"></a><span class="w">  </span><span class="nt">"sim_output_tokens_per_sec_per_gpu"</span><span class="p">:</span><span class="w"> </span><span class="mf">22.7</span><span class="p">,</span>
-<a id="__codelineno-18-18" name="__codelineno-18-18" href="#__codelineno-18-18"></a><span class="w">  </span><span class="nt">"tolerance_pct"</span><span class="p">:</span><span class="w"> </span><span class="mi">15</span><span class="p">,</span>
-<a id="__codelineno-18-19" name="__codelineno-18-19" href="#__codelineno-18-19"></a><span class="w">  </span><span class="nt">"within"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
-<a id="__codelineno-18-20" name="__codelineno-18-20" href="#__codelineno-18-20"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="p">{</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="w">  </span><span class="nt">"matched_requests"</span><span class="p">:</span><span class="w"> </span><span class="mi">95</span><span class="p">,</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="w">  </span><span class="nt">"real_runtime_sec"</span><span class="p">:</span><span class="w"> </span><span class="mf">148.2</span><span class="p">,</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="w">  </span><span class="nt">"sim_runtime_sec"</span><span class="p">:</span><span class="w"> </span><span class="mf">132.7</span><span class="p">,</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a><span class="w">  </span><span class="nt">"real_output_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">12040</span><span class="p">,</span>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="w">  </span><span class="nt">"sim_output_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">12040</span><span class="p">,</span>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="w">  </span><span class="nt">"real_output_tokens_per_sec"</span><span class="p">:</span><span class="w"> </span><span class="mf">81.2</span><span class="p">,</span>
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a><span class="w">  </span><span class="nt">"sim_output_tokens_per_sec"</span><span class="p">:</span><span class="w"> </span><span class="mf">90.7</span><span class="p">,</span>
+<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a><span class="w">  </span><span class="nt">"output_tokens_per_sec_error"</span><span class="p">:</span><span class="w"> </span><span class="mf">9.5</span><span class="p">,</span>
+<a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a><span class="w">  </span><span class="nt">"output_tokens_per_sec_percent_error"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.117</span><span class="p">,</span>
+<a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a><span class="w">  </span><span class="nt">"real_requests_per_sec"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.64</span><span class="p">,</span>
+<a id="__codelineno-19-12" name="__codelineno-19-12" href="#__codelineno-19-12"></a><span class="w">  </span><span class="nt">"sim_requests_per_sec"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.72</span><span class="p">,</span>
+<a id="__codelineno-19-13" name="__codelineno-19-13" href="#__codelineno-19-13"></a><span class="w">  </span><span class="nt">"requests_per_sec_error"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.08</span><span class="p">,</span>
+<a id="__codelineno-19-14" name="__codelineno-19-14" href="#__codelineno-19-14"></a><span class="w">  </span><span class="nt">"requests_per_sec_percent_error"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.117</span><span class="p">,</span>
+<a id="__codelineno-19-15" name="__codelineno-19-15" href="#__codelineno-19-15"></a><span class="w">  </span><span class="nt">"num_gpus"</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span>
+<a id="__codelineno-19-16" name="__codelineno-19-16" href="#__codelineno-19-16"></a><span class="w">  </span><span class="nt">"real_output_tokens_per_sec_per_gpu"</span><span class="p">:</span><span class="w"> </span><span class="mf">20.3</span><span class="p">,</span>
+<a id="__codelineno-19-17" name="__codelineno-19-17" href="#__codelineno-19-17"></a><span class="w">  </span><span class="nt">"sim_output_tokens_per_sec_per_gpu"</span><span class="p">:</span><span class="w"> </span><span class="mf">22.7</span><span class="p">,</span>
+<a id="__codelineno-19-18" name="__codelineno-19-18" href="#__codelineno-19-18"></a><span class="w">  </span><span class="nt">"tolerance_pct"</span><span class="p">:</span><span class="w"> </span><span class="mi">15</span><span class="p">,</span>
+<a id="__codelineno-19-19" name="__codelineno-19-19" href="#__codelineno-19-19"></a><span class="w">  </span><span class="nt">"within"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<a id="__codelineno-19-20" name="__codelineno-19-20" href="#__codelineno-19-20"></a><span class="p">}</span>
 </code></pre></div>
 <ul>
 <li><strong>Makespan (both sides in the client frame).</strong> <code>real_runtime_sec</code> = latest client last-chunk − earliest client send; <code>sim_runtime_sec</code> = latest (client send + client-frame sim E2E) − earliest send, where the sim E2E is normalized with the <em>same</em> network shift (<code>+ network-rtt-us + upload + download</code>) the latency comparison applies. Both share the identical earliest-send origin, so the block isolates the batching/contention difference between real and sim rather than a frame offset — and stays consistent with the <code>e2e</code> metric block.</li>
@@ -4133,9 +4221,9 @@ instrumentation outside BLIS's scope.</p>
 <li><strong>Do not expect</strong> <code>SchedulingDelay</code> to appear as a separately calibratable field in the calibration report. <code>blis calibrate</code> compares E2E and TTFT only — <code>scheduling_delay_ms</code> is not in <code>SimResult</code> (the format <code>blis replay</code> writes to <code>--results-path</code>). It is a simulator-internal diagnostic only.</li>
 <li>
 <p><strong>When scheduling delay matters:</strong> If <code>blis run</code> or <code>blis replay</code> shows high scheduling delay (e.g., P99 &gt; 500ms — exact thresholds are workload-dependent) <strong>and</strong> calibration MAPE is high, the root cause is likely queue buildup rather than the execution latency model. Enable flow control to add explicit queue depth gating that better models servers with admission backpressure, then re-calibrate:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>./blis<span class="w"> </span>replay<span class="w"> </span>--trace-header<span class="w"> </span>trace.yaml<span class="w"> </span>--trace-data<span class="w"> </span>trace.csv<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--flow-control<span class="w"> </span>--saturation-detector<span class="w"> </span>utilization<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="w">  </span>--queue-depth-threshold<span class="w"> </span><span class="m">5</span><span class="w"> </span>--kv-cache-util-threshold<span class="w"> </span><span class="m">0</span>.8
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>./blis<span class="w"> </span>replay<span class="w"> </span>--trace-header<span class="w"> </span>trace.yaml<span class="w"> </span>--trace-data<span class="w"> </span>trace.csv<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--flow-control<span class="w"> </span>--saturation-detector<span class="w"> </span>utilization<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="w">  </span>--queue-depth-threshold<span class="w"> </span><span class="m">5</span><span class="w"> </span>--kv-cache-util-threshold<span class="w"> </span><span class="m">0</span>.8
 </code></pre></div>
 </li>
 </ul>
@@ -4144,58 +4232,58 @@ instrumentation outside BLIS's scope.</p>
 <p>This walkthrough demonstrates the full pipeline: define a workload, observe a real vLLM server, replay through the simulator, and interpret the calibration report.</p>
 <h3 id="step-1-define-a-workload">Step 1: Define a workload<a class="headerlink" href="#step-1-define-a-workload" title="Permanent link">&para;</a></h3>
 <p>Create a workload spec (<code>workload.yaml</code>):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="nt">rate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5.0</span>
-<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="nt">num_requests</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
-<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="nt">clients</span><span class="p">:</span>
-<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="s">"chat-user"</span>
-<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a><span class="w">    </span><span class="nt">rate_fraction</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0</span>
-<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a><span class="w">    </span><span class="nt">slo_class</span><span class="p">:</span><span class="w"> </span><span class="s">"standard"</span>
-<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="w">    </span><span class="nt">arrival</span><span class="p">:</span>
-<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a><span class="w">      </span><span class="nt">process</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">poisson</span>
-<a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a><span class="w">    </span><span class="nt">input_distribution</span><span class="p">:</span>
-<a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gaussian</span>
-<a id="__codelineno-20-11" name="__codelineno-20-11" href="#__codelineno-20-11"></a><span class="w">      </span><span class="nt">params</span><span class="p">:</span>
-<a id="__codelineno-20-12" name="__codelineno-20-12" href="#__codelineno-20-12"></a><span class="w">        </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
-<a id="__codelineno-20-13" name="__codelineno-20-13" href="#__codelineno-20-13"></a><span class="w">        </span><span class="nt">std_dev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">64</span>
-<a id="__codelineno-20-14" name="__codelineno-20-14" href="#__codelineno-20-14"></a><span class="w">        </span><span class="nt">min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">32</span>
-<a id="__codelineno-20-15" name="__codelineno-20-15" href="#__codelineno-20-15"></a><span class="w">        </span><span class="nt">max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1024</span>
-<a id="__codelineno-20-16" name="__codelineno-20-16" href="#__codelineno-20-16"></a><span class="w">    </span><span class="nt">output_distribution</span><span class="p">:</span>
-<a id="__codelineno-20-17" name="__codelineno-20-17" href="#__codelineno-20-17"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gaussian</span>
-<a id="__codelineno-20-18" name="__codelineno-20-18" href="#__codelineno-20-18"></a><span class="w">      </span><span class="nt">params</span><span class="p">:</span>
-<a id="__codelineno-20-19" name="__codelineno-20-19" href="#__codelineno-20-19"></a><span class="w">        </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">128</span>
-<a id="__codelineno-20-20" name="__codelineno-20-20" href="#__codelineno-20-20"></a><span class="w">        </span><span class="nt">std_dev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">32</span>
-<a id="__codelineno-20-21" name="__codelineno-20-21" href="#__codelineno-20-21"></a><span class="w">        </span><span class="nt">min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span>
-<a id="__codelineno-20-22" name="__codelineno-20-22" href="#__codelineno-20-22"></a><span class="w">        </span><span class="nt">max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">512</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="nt">rate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5.0</span>
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="nt">num_requests</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="nt">clients</span><span class="p">:</span>
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="s">"chat-user"</span>
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a><span class="w">    </span><span class="nt">rate_fraction</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0</span>
+<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a><span class="w">    </span><span class="nt">slo_class</span><span class="p">:</span><span class="w"> </span><span class="s">"standard"</span>
+<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a><span class="w">    </span><span class="nt">arrival</span><span class="p">:</span>
+<a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a><span class="w">      </span><span class="nt">process</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">poisson</span>
+<a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a><span class="w">    </span><span class="nt">input_distribution</span><span class="p">:</span>
+<a id="__codelineno-21-10" name="__codelineno-21-10" href="#__codelineno-21-10"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gaussian</span>
+<a id="__codelineno-21-11" name="__codelineno-21-11" href="#__codelineno-21-11"></a><span class="w">      </span><span class="nt">params</span><span class="p">:</span>
+<a id="__codelineno-21-12" name="__codelineno-21-12" href="#__codelineno-21-12"></a><span class="w">        </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
+<a id="__codelineno-21-13" name="__codelineno-21-13" href="#__codelineno-21-13"></a><span class="w">        </span><span class="nt">std_dev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">64</span>
+<a id="__codelineno-21-14" name="__codelineno-21-14" href="#__codelineno-21-14"></a><span class="w">        </span><span class="nt">min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">32</span>
+<a id="__codelineno-21-15" name="__codelineno-21-15" href="#__codelineno-21-15"></a><span class="w">        </span><span class="nt">max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1024</span>
+<a id="__codelineno-21-16" name="__codelineno-21-16" href="#__codelineno-21-16"></a><span class="w">    </span><span class="nt">output_distribution</span><span class="p">:</span>
+<a id="__codelineno-21-17" name="__codelineno-21-17" href="#__codelineno-21-17"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gaussian</span>
+<a id="__codelineno-21-18" name="__codelineno-21-18" href="#__codelineno-21-18"></a><span class="w">      </span><span class="nt">params</span><span class="p">:</span>
+<a id="__codelineno-21-19" name="__codelineno-21-19" href="#__codelineno-21-19"></a><span class="w">        </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">128</span>
+<a id="__codelineno-21-20" name="__codelineno-21-20" href="#__codelineno-21-20"></a><span class="w">        </span><span class="nt">std_dev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">32</span>
+<a id="__codelineno-21-21" name="__codelineno-21-21" href="#__codelineno-21-21"></a><span class="w">        </span><span class="nt">min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span>
+<a id="__codelineno-21-22" name="__codelineno-21-22" href="#__codelineno-21-22"></a><span class="w">        </span><span class="nt">max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">512</span>
 </code></pre></div>
 <h3 id="step-2-observe-the-real-server">Step 2: Observe the real server<a class="headerlink" href="#step-2-observe-the-real-server" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>./blis<span class="w"> </span>observe<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="w">  </span>--server-url<span class="w"> </span>http://localhost:8000<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="w">  </span>--workload-spec<span class="w"> </span>workload.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a><span class="w">  </span>--warmup-requests<span class="w"> </span><span class="m">5</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a><span class="w">  </span>--trace-header<span class="w"> </span>trace.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a><span class="w">  </span>--trace-data<span class="w"> </span>trace.csv
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>./blis<span class="w"> </span>observe<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="w">  </span>--server-url<span class="w"> </span>http://localhost:8000<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="w">  </span>--workload-spec<span class="w"> </span>workload.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a><span class="w">  </span>--warmup-requests<span class="w"> </span><span class="m">5</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a><span class="w">  </span>--trace-header<span class="w"> </span>trace.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a><span class="w">  </span>--trace-data<span class="w"> </span>trace.csv
 </code></pre></div>
 <p>This sends 50 requests to the server at ~5 req/s, excludes the first 5 from the trace (warmup), and writes the TraceV2 files.</p>
 <h3 id="step-3-replay-through-the-simulator">Step 3: Replay through the simulator<a class="headerlink" href="#step-3-replay-through-the-simulator" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>./blis<span class="w"> </span>replay<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="w">  </span>--trace-header<span class="w"> </span>trace.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="w">  </span>--trace-data<span class="w"> </span>trace.csv<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a><span class="w">  </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a><span class="w">  </span>--results-path<span class="w"> </span>results.json
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>./blis<span class="w"> </span>replay<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a><span class="w">  </span>--trace-header<span class="w"> </span>trace.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a><span class="w">  </span>--trace-data<span class="w"> </span>trace.csv<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a><span class="w">  </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a><span class="w">  </span>--results-path<span class="w"> </span>results.json
 </code></pre></div>
 <p>The simulator replays the same requests (arrival times, token counts) through the DES using the roofline latency model and writes per-request results.</p>
 <h3 id="step-4-calibrate">Step 4: Calibrate<a class="headerlink" href="#step-4-calibrate" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>./blis<span class="w"> </span>calibrate<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a><span class="w">  </span>--trace-header<span class="w"> </span>trace.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a><span class="w">  </span>--trace-data<span class="w"> </span>trace.csv<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a><span class="w">  </span>--sim-results<span class="w"> </span>results.json<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a><span class="w">  </span>--report<span class="w"> </span>calibration.json
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>./blis<span class="w"> </span>calibrate<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a><span class="w">  </span>--trace-header<span class="w"> </span>trace.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a><span class="w">  </span>--trace-data<span class="w"> </span>trace.csv<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a><span class="w">  </span>--sim-results<span class="w"> </span>results.json<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-24-5" name="__codelineno-24-5" href="#__codelineno-24-5"></a><span class="w">  </span>--report<span class="w"> </span>calibration.json
 </code></pre></div>
 <p>The calibration command matches requests by ID, applies warmup exclusion and RTT normalization from the trace header, and produces the report.</p>
 <h3 id="step-5-interpret-results">Step 5: Interpret results<a class="headerlink" href="#step-5-interpret-results" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>cat<span class="w"> </span>calibration.json<span class="w"> </span><span class="p">|</span><span class="w"> </span>python3<span class="w"> </span>-m<span class="w"> </span>json.tool
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>cat<span class="w"> </span>calibration.json<span class="w"> </span><span class="p">|</span><span class="w"> </span>python3<span class="w"> </span>-m<span class="w"> </span>json.tool
 </code></pre></div>
 <p>Look for:</p>
 <ul>
@@ -4248,34 +4336,34 @@ instrumentation outside BLIS's scope.</p>
 <p>If no matching CRD exists, EPP defaults to priority 0.</p>
 <h3 id="prerequisite-deploy-inferenceobjective-crds">Prerequisite: deploy InferenceObjective CRDs<a class="headerlink" href="#prerequisite-deploy-inferenceobjective-crds" title="Permanent link">&para;</a></h3>
 <p>For GIE headers to have any effect, matching <code>InferenceObjective</code> CRDs must exist on the target cluster. The CRD names must match the <code>slo_class</code> values in your workload spec:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="c1"># On your Kubernetes cluster:</span>
-<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">inference.networking.x-k8s.io/v1alpha2</span>
-<a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">InferenceObjective</span>
-<a id="__codelineno-25-4" name="__codelineno-25-4" href="#__codelineno-25-4"></a><span class="nt">metadata</span><span class="p">:</span>
-<a id="__codelineno-25-5" name="__codelineno-25-5" href="#__codelineno-25-5"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">critical</span><span class="w">              </span><span class="c1"># must match slo_class in workload spec</span>
-<a id="__codelineno-25-6" name="__codelineno-25-6" href="#__codelineno-25-6"></a><span class="nt">spec</span><span class="p">:</span>
-<a id="__codelineno-25-7" name="__codelineno-25-7" href="#__codelineno-25-7"></a><span class="w">  </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span><span class="w">               </span><span class="c1"># higher = more important; negative = sheddable</span>
-<a id="__codelineno-25-8" name="__codelineno-25-8" href="#__codelineno-25-8"></a><span class="w">  </span><span class="nt">poolRef</span><span class="p">:</span>
-<a id="__codelineno-25-9" name="__codelineno-25-9" href="#__codelineno-25-9"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-pool</span>
-<a id="__codelineno-25-10" name="__codelineno-25-10" href="#__codelineno-25-10"></a><span class="nn">---</span>
-<a id="__codelineno-25-11" name="__codelineno-25-11" href="#__codelineno-25-11"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">inference.networking.x-k8s.io/v1alpha2</span>
-<a id="__codelineno-25-12" name="__codelineno-25-12" href="#__codelineno-25-12"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">InferenceObjective</span>
-<a id="__codelineno-25-13" name="__codelineno-25-13" href="#__codelineno-25-13"></a><span class="nt">metadata</span><span class="p">:</span>
-<a id="__codelineno-25-14" name="__codelineno-25-14" href="#__codelineno-25-14"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">background</span>
-<a id="__codelineno-25-15" name="__codelineno-25-15" href="#__codelineno-25-15"></a><span class="nt">spec</span><span class="p">:</span>
-<a id="__codelineno-25-16" name="__codelineno-25-16" href="#__codelineno-25-16"></a><span class="w">  </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-10</span><span class="w">               </span><span class="c1"># negative priority → shed under load (HTTP 503)</span>
-<a id="__codelineno-25-17" name="__codelineno-25-17" href="#__codelineno-25-17"></a><span class="w">  </span><span class="nt">poolRef</span><span class="p">:</span>
-<a id="__codelineno-25-18" name="__codelineno-25-18" href="#__codelineno-25-18"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-pool</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="c1"># On your Kubernetes cluster:</span>
+<a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">inference.networking.x-k8s.io/v1alpha2</span>
+<a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">InferenceObjective</span>
+<a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a><span class="nt">metadata</span><span class="p">:</span>
+<a id="__codelineno-26-5" name="__codelineno-26-5" href="#__codelineno-26-5"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">critical</span><span class="w">              </span><span class="c1"># must match slo_class in workload spec</span>
+<a id="__codelineno-26-6" name="__codelineno-26-6" href="#__codelineno-26-6"></a><span class="nt">spec</span><span class="p">:</span>
+<a id="__codelineno-26-7" name="__codelineno-26-7" href="#__codelineno-26-7"></a><span class="w">  </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span><span class="w">               </span><span class="c1"># higher = more important; negative = sheddable</span>
+<a id="__codelineno-26-8" name="__codelineno-26-8" href="#__codelineno-26-8"></a><span class="w">  </span><span class="nt">poolRef</span><span class="p">:</span>
+<a id="__codelineno-26-9" name="__codelineno-26-9" href="#__codelineno-26-9"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-pool</span>
+<a id="__codelineno-26-10" name="__codelineno-26-10" href="#__codelineno-26-10"></a><span class="nn">---</span>
+<a id="__codelineno-26-11" name="__codelineno-26-11" href="#__codelineno-26-11"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">inference.networking.x-k8s.io/v1alpha2</span>
+<a id="__codelineno-26-12" name="__codelineno-26-12" href="#__codelineno-26-12"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">InferenceObjective</span>
+<a id="__codelineno-26-13" name="__codelineno-26-13" href="#__codelineno-26-13"></a><span class="nt">metadata</span><span class="p">:</span>
+<a id="__codelineno-26-14" name="__codelineno-26-14" href="#__codelineno-26-14"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">background</span>
+<a id="__codelineno-26-15" name="__codelineno-26-15" href="#__codelineno-26-15"></a><span class="nt">spec</span><span class="p">:</span>
+<a id="__codelineno-26-16" name="__codelineno-26-16" href="#__codelineno-26-16"></a><span class="w">  </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-10</span><span class="w">               </span><span class="c1"># negative priority → shed under load (HTTP 503)</span>
+<a id="__codelineno-26-17" name="__codelineno-26-17" href="#__codelineno-26-17"></a><span class="w">  </span><span class="nt">poolRef</span><span class="p">:</span>
+<a id="__codelineno-26-18" name="__codelineno-26-18" href="#__codelineno-26-18"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-pool</span>
 </code></pre></div>
 <h3 id="workload-spec-example">Workload spec example<a class="headerlink" href="#workload-spec-example" title="Permanent link">&para;</a></h3>
 <p>Set <code>slo_class</code> and <code>tenant_id</code> on your clients to activate GIE headers. The <code>slo_class</code> value must match an <code>InferenceObjective</code> CRD name on the target cluster:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="nt">clients</span><span class="p">:</span>
-<a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="s">"realtime-api"</span>
-<a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a><span class="w">    </span><span class="nt">slo_class</span><span class="p">:</span><span class="w"> </span><span class="s">"critical"</span><span class="w">       </span><span class="c1"># → sent as x-gateway-inference-objective header</span>
-<a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a><span class="w">    </span><span class="nt">tenant_id</span><span class="p">:</span><span class="w"> </span><span class="s">"team-alpha"</span><span class="w">     </span><span class="c1"># → sent as x-gateway-inference-fairness-id header</span>
-<a id="__codelineno-26-5" name="__codelineno-26-5" href="#__codelineno-26-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="s">"batch-job"</span>
-<a id="__codelineno-26-6" name="__codelineno-26-6" href="#__codelineno-26-6"></a><span class="w">    </span><span class="nt">slo_class</span><span class="p">:</span><span class="w"> </span><span class="s">"background"</span><span class="w">     </span><span class="c1"># → GIE resolves to negative priority via CRD</span>
-<a id="__codelineno-26-7" name="__codelineno-26-7" href="#__codelineno-26-7"></a><span class="w">    </span><span class="nt">tenant_id</span><span class="p">:</span><span class="w"> </span><span class="s">"team-beta"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a><span class="nt">clients</span><span class="p">:</span>
+<a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="s">"realtime-api"</span>
+<a id="__codelineno-27-3" name="__codelineno-27-3" href="#__codelineno-27-3"></a><span class="w">    </span><span class="nt">slo_class</span><span class="p">:</span><span class="w"> </span><span class="s">"critical"</span><span class="w">       </span><span class="c1"># → sent as x-gateway-inference-objective header</span>
+<a id="__codelineno-27-4" name="__codelineno-27-4" href="#__codelineno-27-4"></a><span class="w">    </span><span class="nt">tenant_id</span><span class="p">:</span><span class="w"> </span><span class="s">"team-alpha"</span><span class="w">     </span><span class="c1"># → sent as x-gateway-inference-fairness-id header</span>
+<a id="__codelineno-27-5" name="__codelineno-27-5" href="#__codelineno-27-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="s">"batch-job"</span>
+<a id="__codelineno-27-6" name="__codelineno-27-6" href="#__codelineno-27-6"></a><span class="w">    </span><span class="nt">slo_class</span><span class="p">:</span><span class="w"> </span><span class="s">"background"</span><span class="w">     </span><span class="c1"># → GIE resolves to negative priority via CRD</span>
+<a id="__codelineno-27-7" name="__codelineno-27-7" href="#__codelineno-27-7"></a><span class="w">    </span><span class="nt">tenant_id</span><span class="p">:</span><span class="w"> </span><span class="s">"team-beta"</span>
 </code></pre></div>
 <p>Note: The GIE API version (<code>v1alpha2</code>) shown above may differ on your cluster. Check your installed CRD version with <code>kubectl get crd inferenceobjectives.inference.networking.x-k8s.io</code>.</p>
 <h3 id="direct-vllm-priority-injection">Direct vLLM priority injection<a class="headerlink" href="#direct-vllm-priority-injection" title="Permanent link">&para;</a></h3>
