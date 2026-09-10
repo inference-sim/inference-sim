@@ -123,6 +123,48 @@ func TestEffectiveDP_ClampsUnsetDP(t *testing.T) {
 	assert.Equal(t, 2, c.EffectiveMoEGroupSize(), "TP·EffectiveDP = 2·1")
 }
 
+// TestEffectiveCommSerializationFactor verifies S clamps to the inert 1.0 for every
+// value that must not raise the cross-node latency term (#1694, Part B): unset, ≤ 1,
+// or non-finite. A calibrated value > 1 passes through unchanged. The clamp is the
+// library-side R20 guard; the CLI rejects < 1 loudly (R3).
+func TestEffectiveCommSerializationFactor(t *testing.T) {
+	tests := []struct {
+		name string
+		s    float64
+		want float64
+	}{
+		{"unset (zero)", 0, 1.0},
+		{"exactly 1", 1.0, 1.0},
+		{"below 1", 0.5, 1.0},
+		{"negative", -3, 1.0},
+		{"NaN", math.NaN(), 1.0},
+		{"+Inf", math.Inf(1), 1.0},
+		{"-Inf", math.Inf(-1), 1.0},
+		{"calibrated 4x", 4.0, 4.0},
+		{"large 30x", 30.0, 30.0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := ModelHardwareConfig{CommSerializationFactor: tc.s}
+			assert.Equal(t, tc.want, c.EffectiveCommSerializationFactor())
+		})
+	}
+}
+
+// TestWithCommSerializationFactor_Option verifies the option threads S onto the config
+// through the canonical constructor (R4), and that omitting it leaves S inert.
+func TestWithCommSerializationFactor_Option(t *testing.T) {
+	moe := ModelConfig{NumLayers: 32, NumLocalExperts: 8, BytesPerParam: 2}
+	hw := HardwareCalib{}
+
+	withS := NewModelHardwareConfig(moe, hw, "m", "H100", 8, 1, false, "", "trained-physics", 0,
+		WithCommSerializationFactor(4.0))
+	assert.Equal(t, 4.0, withS.EffectiveCommSerializationFactor(), "option must set S")
+
+	without := NewModelHardwareConfig(moe, hw, "m", "H100", 8, 1, false, "", "trained-physics", 0)
+	assert.Equal(t, 1.0, without.EffectiveCommSerializationFactor(), "omitting the option leaves S inert")
+}
+
 // TestNewModelHardwareConfig_DPValidation verifies the construction-time panics
 // for invalid DP configurations (library boundary → panic).
 func TestNewModelHardwareConfig_DPValidation(t *testing.T) {

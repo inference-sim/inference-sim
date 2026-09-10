@@ -654,6 +654,13 @@ Example:
 
 		startTime := time.Now()
 
+		// ModelHardwareOptions composed via the SAME shared helper as the run path, so the
+		// two cannot diverge (R23, INV-13). Note the #1694 S term is STRUCTURALLY UNREACHABLE
+		// on replay: it only fires for a multi-node span, and replay logrus.Fatalf's on
+		// node_pools and on any trace with max_nodes_spanned > 1 (#1530) — so this is
+		// flag-surface parity, and re-supplying S keeps the non-spanning path byte-identical.
+		mhwOpts := modelHardwareOptions(cmd, dpPlan)
+
 		// Build cluster config (same as runCmd, using replayHorizon instead of simulationHorizon).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/root.go (runCmd
 		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
@@ -670,7 +677,7 @@ Example:
 				// per-replica DP — 1 when the plan is active (each replica is one rank),
 				// else the CLI dataParallelism unchanged. Identical to the run wiring
 				// (cmd/root.go), from the same shared resolveDPPlacement (INV-13).
-				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen, dpPlan.EPGroupOptions()...),
+				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen, mhwOpts...),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				LoRAConfig:           loraCfg,
 				SpeculativeConfig:    resolveSpeculativeConfig(cmd),

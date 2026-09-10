@@ -292,6 +292,25 @@ type ModelHardwareConfig struct {
 	// placement means no cross-node collective, so step time is byte-identical to a
 	// pre-#1530 build (INV-6/INV-BC-DP1).
 	NetworkTopology NetworkTopology
+
+	// CommSerializationFactor is S, the eager/no-overlap serialization multiplier on the
+	// size-independent cross-node collective latency term (#1694, Part B). It captures a
+	// DEPLOYMENT REGIME, not a fabric property: a deployment running CUDA graphs with
+	// comm/compute overlap hides most of each collective's launch+sync cost (S≈1), while
+	// one running enforce-eager + un-fused + no overlap serializes every collective behind
+	// a full barrier (S≫1). It sits here, beside TP/DP/MoECommBackend/NetworkTopology,
+	// because it is a latency-model input like them (R16).
+	//
+	// It multiplies ONLY the cross-node latency term (n_steps·α_hop), never the bandwidth
+	// halves and never the whole step. It is deliberately kept SEPARATE from the per-fabric
+	// α_hop (HardwareCalib.InterNodeHopLatencyUs): folding S into α_hop would make a
+	// graphs-ON deployment inherit a graphs-OFF fabric constant (#1694). Its zero value —
+	// and any value ≤ 1 — is inert: EffectiveCommSerializationFactor clamps to 1.0, so
+	// output is byte-identical to a pre-#1694 build (INV-6/INV-BC-DP1). It is a global,
+	// per-run choice (safe to stamp on every DP replica), supplied via
+	// WithCommSerializationFactor and re-supplied identically on run and replay rather than
+	// round-tripped through the trace header (INV-13, like --kv-cache-dtype).
+	CommSerializationFactor float64
 }
 
 // ModelHardwareOption customizes a ModelHardwareConfig at construction. Used to add
@@ -321,6 +340,15 @@ func WithNetworkTopology(topo NetworkTopology) ModelHardwareOption {
 // absorbed by EffectiveEPGroupDP's max, so it can never SHRINK a group.
 func WithExpertParallelGroupDP(dp int) ModelHardwareOption {
 	return func(c *ModelHardwareConfig) { c.EPGroupDP = dp }
+}
+
+// WithCommSerializationFactor supplies S, the eager/no-overlap serialization multiplier
+// on the cross-node collective latency term (#1694, Part B). Omitting it leaves S at 0,
+// which EffectiveCommSerializationFactor treats as 1.0 (inert) — so every existing
+// configuration is byte-identical (INV-6). Pass the deployment's calibrated factor
+// (≥ 1); a value ≤ 1 is clamped to 1.0 (S must never make a spanning step cheaper).
+func WithCommSerializationFactor(s float64) ModelHardwareOption {
+	return func(c *ModelHardwareConfig) { c.CommSerializationFactor = s }
 }
 
 // NewModelHardwareConfig creates a ModelHardwareConfig with all fields explicitly set.
@@ -393,6 +421,19 @@ func (c ModelHardwareConfig) EffectiveDP() int {
 		return 1
 	}
 	return c.DP
+}
+
+// EffectiveCommSerializationFactor returns S, the cross-node latency serialization
+// multiplier (#1694, Part B), clamped so it can only ever RAISE the charged latency.
+// Returns exactly 1.0 (inert — byte-identical to a pre-#1694 build, INV-6) when the
+// factor is unset, ≤ 1, or non-finite (NaN/Inf); otherwise the calibrated value. The
+// CLI is the loud validation boundary (a value < 1 is rejected there, R3); this clamp
+// is the library-side R20 degrade-to-baseline guard for a struct built directly.
+func (c ModelHardwareConfig) EffectiveCommSerializationFactor() float64 {
+	if c.CommSerializationFactor <= 1.0 || math.IsNaN(c.CommSerializationFactor) || math.IsInf(c.CommSerializationFactor, 0) {
+		return 1.0
+	}
+	return c.CommSerializationFactor
 }
 
 // EffectiveMoEGroupSize returns the size of the flattened MoE tensor-parallel

@@ -110,7 +110,7 @@ func (cs *ClusterSimulator) warnIfCrossNodeUnpriced(simCfg *sim.SimConfig, topo 
 			cs.crossNodeUncalibratedWarned = true
 			logrus.Warnf("[cluster] an instance spans %d nodes for a %d-GPU collective group, but the hardware calibration "+
 				"for GPU %q declares no usable interconnect bandwidths (IntraNodeBwGBps/InterNodeBwGBps) "+
-				"and no per-collective latency (InterNodeLatencyUs), so its cross-node collective traffic "+
+				"and no per-hop latency (InterNodeHopLatencyUs), so its cross-node collective traffic "+
 				"is priced at the on-node rate and latency/throughput for spanning instances are "+
 				"optimistic (#1530). Add them to the entry for this GPU in --hardware-config",
 				realSpan, group, simCfg.GPU)

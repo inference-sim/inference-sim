@@ -97,10 +97,12 @@ func TestCommittedHardwareConfig_InterconnectRatioIsPlausible(t *testing.T) {
 }
 
 // TestCommittedHardwareConfig_LatencyIsUncalibrated pins the deliberate decision that the
-// bundled file declares NO per-collective inter-node latency. That term is the
-// size-independent half of the cross-node cost and can exceed the bandwidth half for
-// small decode messages, but BLIS has no measured value to ship, and shipping a guessed
-// one would put a fabricated constant in front of every multi-node estimate (#1661).
+// bundled file declares NO per-hop inter-node latency α_hop (#1694, retargeted from the
+// flat per-collective InterNodeLatencyUs of #1667). That term is the size-independent half
+// of the cross-node cost and can exceed the bandwidth half for small decode messages, but
+// BLIS has no measured value to ship, and shipping a guessed one would put a fabricated
+// constant in front of every multi-node estimate. α_hop must come from an independent NCCL
+// microbenchmark, reused across fabrics — never back-solved from one run's residual (#1694).
 //
 // If a calibrated value is ever added, this test should be replaced by a plausibility
 // range — not deleted — so the number stays under review.
@@ -109,9 +111,49 @@ func TestCommittedHardwareConfig_LatencyIsUncalibrated(t *testing.T) {
 	for _, gpu := range names {
 		hc, err := latency.GetHWConfig(path, gpu)
 		require.NoError(t, err)
-		assert.Zero(t, hc.EffectiveInterNodeLatencyUs(),
-			"GPU %q declares a per-collective inter-node latency. That is a real fidelity "+
-				"improvement, but it must come with a measured source (#1661) — update this test with the "+
+		assert.Zero(t, hc.EffectiveInterNodeHopLatencyUs(),
+			"GPU %q declares a per-hop inter-node latency α_hop. That is a real fidelity "+
+				"improvement, but it must come with a measured source (#1694) — update this test with the "+
 				"plausibility range rather than removing it", gpu)
 	}
+}
+
+// TestLegacyInterNodeLatencyKeyIsRejected verifies the #1694 migration guard: a
+// hardware config carrying the removed per-collective "InterNodeLatencyUs" key (the
+// three-key shape #1667's docs told operators to populate) is rejected at load with an
+// actionable error, rather than silently parsing to α_hop=0. Without this the permissive
+// JSON decoder would discard the operator's calibrated value with NO diagnostic — the
+// bandwidths alone satisfy HasInterconnectCalibration, so warnIfCrossNodeUnpriced stays
+// quiet (the R1 "never silent" case). The error must name both the new key and the
+// unit change so the operator knows to re-divide by the hop count, not copy.
+func TestLegacyInterNodeLatencyKeyIsRejected(t *testing.T) {
+	dir := t.TempDir()
+	legacy := filepath.Join(dir, "hw_legacy.json")
+	// Exactly the three-key shape the pre-#1694 docs' example showed.
+	require.NoError(t, os.WriteFile(legacy, []byte(`{
+	  "H100": {
+	    "TFlopsPeak": 989.5, "BwPeakTBs": 3.35, "MemoryGiB": 80.0,
+	    "IntraNodeBwGBps": 450, "InterNodeBwGBps": 50,
+	    "InterNodeLatencyUs": 542
+	  }
+	}`), 0644))
+
+	_, err := latency.GetHWConfig(legacy, "H100")
+	require.Error(t, err, "a config with the removed InterNodeLatencyUs key must be rejected, not silently zeroed")
+	assert.Contains(t, err.Error(), "InterNodeLatencyUs", "error must name the removed key")
+	assert.Contains(t, err.Error(), "InterNodeHopLatencyUs", "error must name the replacement key")
+	assert.Contains(t, err.Error(), "H100", "error must name the offending GPU")
+
+	// Control: the same file with the NEW key loads cleanly and yields the value.
+	modern := filepath.Join(dir, "hw_modern.json")
+	require.NoError(t, os.WriteFile(modern, []byte(`{
+	  "H100": {
+	    "TFlopsPeak": 989.5, "BwPeakTBs": 3.35, "MemoryGiB": 80.0,
+	    "IntraNodeBwGBps": 450, "InterNodeBwGBps": 50,
+	    "InterNodeHopLatencyUs": 5
+	  }
+	}`), 0644))
+	hc, err := latency.GetHWConfig(modern, "H100")
+	require.NoError(t, err)
+	assert.Equal(t, 5.0, hc.EffectiveInterNodeHopLatencyUs(), "the new per-hop key must load")
 }

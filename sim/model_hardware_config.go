@@ -189,31 +189,45 @@ type HardwareCalib struct {
 	IntraNodeBwGBps float64 `json:"IntraNodeBwGBps"` // on-node GPU-to-GPU link (NVLink/xGMI, or PCIe on non-NVLink parts)
 	InterNodeBwGBps float64 `json:"InterNodeBwGBps"` // per-GPU share of the node's inter-node fabric (InfiniBand/RoCE NIC)
 
-	// InterNodeLatencyUs is the fixed cost of ONE cross-node collective in
-	// microseconds — NCCL launch plus fabric round-trip plus the synchronization a
-	// hierarchical collective imposes — independent of message size. It is charged once
-	// per collective that crosses a node boundary, so the multiplier is the step's
-	// cross-node COLLECTIVE COUNT, which depends on the parallelism shape:
+	// InterNodeHopLatencyUs is the fixed cost of ONE cross-node collective HOP in
+	// microseconds — the NCCL launch plus fabric round-trip plus synchronization one
+	// inter-node communication step imposes — independent of message size. It is the
+	// per-HOP constant α_hop of the analytic form
 	//
-	//   - a dense TP step launches 2 per layer (the attention all-reduce and the FFN
-	//     all-reduce), so 2L. Note a ring all-reduce is ONE call even though its byte
-	//     volume has two phases;
-	//   - an MoE step at DP>1 launches 3 per layer: the attention all-reduce plus the
-	//     expert dispatch and combine, which are two separate calls (see
-	//     moeDispatchCollectivesPerLayer in sim/latency).
+	//	T_collective_fixed = n_steps(algorithm, topology) · α_hop · S
 	//
-	// This is the size-independent half of the cross-node cost, and for the small
-	// messages a decode step produces it can exceed the bandwidth half by an order of
-	// magnitude. It is nonetheless 0 (uncalibrated ⇒ not charged) in the bundled
-	// hardware config, deliberately: BLIS has no measured per-collective latency to
-	// ship, and inventing one would put a fabricated constant in front of every
-	// multi-node estimate. Supply a measured value here to model it — see #1661.
+	// (#1694, superseding the flat per-COLLECTIVE InterNodeLatencyUs of #1667). n_steps
+	// is the cross-node hop count, derived analytically from the collective algorithm and
+	// the placed node span (NetworkTopology.NodesSpanned) with NO free parameters:
+	//
+	//   - a hierarchical ring all-reduce (the TP-group collectives: attention, dense-FFN,
+	//     and the DP==1 MoE-FFN reduce) does its inter-node phase in 2·(nodes−1) hops per
+	//     collective;
+	//   - an all-to-all (the MoE expert dispatch/combine on an all-to-all backend) does
+	//     (nodes−1) hops per direction per collective.
+	//
+	// The per-layer COLLECTIVE COUNT is a separate, already-modeled factor (one comm unit
+	// per TP collective; moeDispatchCollectivesPerLayer=2 for MoE dispatch+combine) that
+	// multiplies α_hop alongside the hop count in sim/latency. So the flat #1667 term
+	// (node-span-INVARIANT, under-charging a wide span by ~(nodes−1)×) becomes span-aware
+	// without changing those existing multipliers.
+	//
+	// This is the size-independent half of the cross-node cost, and for the small messages
+	// a decode step produces it can exceed the bandwidth half by an order of magnitude. It
+	// is nonetheless 0 (uncalibrated ⇒ not charged) in the bundled hardware config,
+	// deliberately: BLIS has no measured per-hop latency to ship, and inventing one would
+	// put a fabricated constant in front of every multi-node estimate. α_hop must come
+	// from an independent NCCL microbenchmark on a reference cluster (the MFU / Discussion
+	// #589 pattern), reused unchanged across fabrics/topologies — NOT back-solved from any
+	// single run's residual (#1694). Supply a measured value here to model it.
 	//
 	// Calibration frame: like the bandwidth half, this rides the learned communication
 	// coefficient (β₄ for TP collectives, β_EP for MoE dispatch), so the charge is
-	// β·units·InterNodeLatencyUs. Calibrate it in that frame, not as a raw wall-clock
-	// number.
-	InterNodeLatencyUs float64 `json:"InterNodeLatencyUs"`
+	// β·units·n_steps·α_hop·S. Calibrate α_hop in that frame (per-fabric, S=1), not as a
+	// raw wall-clock number. S (the eager/no-overlap serialization multiplier) is a
+	// SEPARATE deployment-regime input on ModelHardwareConfig.CommSerializationFactor,
+	// never folded into this fabric constant.
+	InterNodeHopLatencyUs float64 `json:"InterNodeHopLatencyUs"`
 }
 
 // ValidateInterconnect checks the optional interconnect calibration (#1530). Declaring
@@ -238,7 +252,7 @@ func (hc HardwareCalib) ValidateInterconnect() error {
 	}{
 		{"IntraNodeBwGBps", hc.IntraNodeBwGBps},
 		{"InterNodeBwGBps", hc.InterNodeBwGBps},
-		{"InterNodeLatencyUs", hc.InterNodeLatencyUs},
+		{"InterNodeHopLatencyUs", hc.InterNodeHopLatencyUs},
 	} {
 		if f.v == 0 {
 			continue // not calibrated — the feature stays inert for this field
@@ -258,20 +272,21 @@ func (hc HardwareCalib) ValidateInterconnect() error {
 
 // HasInterconnectCalibration reports whether this GPU declares enough interconnect
 // calibration to charge ANY cross-node cost: either a usable bandwidth ratio (the
-// size-dependent half) or a positive per-collective latency (the size-independent
+// size-dependent half) or a positive per-hop latency α_hop (the size-independent
 // half). When false, a collective that crosses a node boundary is priced exactly as
 // if it had not (INV-6) — which callers should surface rather than leave silent (R1).
 func (hc HardwareCalib) HasInterconnectCalibration() bool {
-	return hc.InterconnectBwRatio() > 1.0 || hc.EffectiveInterNodeLatencyUs() > 0
+	return hc.InterconnectBwRatio() > 1.0 || hc.EffectiveInterNodeHopLatencyUs() > 0
 }
 
-// EffectiveInterNodeLatencyUs returns the per-cross-node-collective latency to
-// charge, or 0 when it is unset or unusable (negative, NaN, Inf). Pure query.
-func (hc HardwareCalib) EffectiveInterNodeLatencyUs() float64 {
-	if hc.InterNodeLatencyUs <= 0 || math.IsNaN(hc.InterNodeLatencyUs) || math.IsInf(hc.InterNodeLatencyUs, 0) {
+// EffectiveInterNodeHopLatencyUs returns the per-cross-node-HOP latency α_hop to
+// charge (#1694), or 0 when it is unset or unusable (negative, NaN, Inf). Pure query.
+// The caller multiplies it by the analytic hop count and the serialization factor S.
+func (hc HardwareCalib) EffectiveInterNodeHopLatencyUs() float64 {
+	if hc.InterNodeHopLatencyUs <= 0 || math.IsNaN(hc.InterNodeHopLatencyUs) || math.IsInf(hc.InterNodeHopLatencyUs, 0) {
 		return 0
 	}
-	return hc.InterNodeLatencyUs
+	return hc.InterNodeHopLatencyUs
 }
 
 // InterconnectBwRatio returns how many times slower this GPU's inter-node fabric
