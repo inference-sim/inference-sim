@@ -376,8 +376,14 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		// chunk costs (billedTokens, the StepTime input), NOT how far the request advances:
 		// the whole [startIndex, endIndex) range was committed/allocated, so the progress
 		// boundary (ComputedTokens) is unchanged. Clamping the reloaded boundary to endIndex
-		// handles a reload that extends the GPU prefix past this (capped) chunk — only up to
-		// endIndex was committed, so the tail beyond it is billed on a later step.
+		// handles a reload that extends the GPU prefix past this (capped) chunk. KNOWN
+		// LIMITATION (#1706): the credit is capped at ONE chunk — the reloaded remainder
+		// beyond endIndex is NOT credited; because ComputedTokens stays at endIndex, later
+		// Phase-1 continuations (which bill InputLen-ProgressIndex and consult no cache)
+		// re-bill it as full recompute. So under chunked prefill this ports only the
+		// single-chunk share of vLLM's num_external_computed_tokens term; vLLM advances
+		// num_computed_tokens to newStart before the chunk cap. Crediting the whole
+		// reloaded prefix requires extending the block commit past endIndex (#1706).
 		// The `newStart > startIndex` re-check is defensive: ReloadedPrefixEnd already only
 		// returns ok=true for newStart > startIndex, but re-checking keeps this billing
 		// correct even if a future implementer of the interface relaxed that guarantee.

@@ -142,9 +142,14 @@ func TestFormBatch_ReloadRespectsMaxModelLen(t *testing.T) {
 }
 
 // A reload can extend the GPU prefix PAST a capped chunk (newStart > endIndex). Only
-// [startIndex, endIndex) was committed this step, so the whole capped chunk is free
-// this step (billed 0), progress reaches endIndex, and the tail beyond it is billed on
-// a later step — never over-crediting progress to InputLen.
+// [startIndex, endIndex) was committed this step, so this step's chunk is billed 0 and
+// progress reaches endIndex (never over-crediting progress to InputLen). KNOWN
+// LIMITATION (#1706): the credit is capped at one chunk — the reloaded remainder beyond
+// endIndex is NOT credited on later steps. Phase 1 continuations bill
+// numNewTokens = InputLen - ProgressIndex and consult no cache, and recordReloadedPrefix
+// skips running continuations, so the remainder is re-billed as full RECOMPUTE. This
+// asserts only the single-chunk credit + no progress over-credit, which is the current
+// (partial) behavior — see the #1706 follow-up for crediting the whole reloaded prefix.
 func TestFormBatch_ReloadBeyondCappedChunk(t *testing.T) {
 	kv := newFakeReloadKV(16)
 	kv.reloadEnd["A"] = 64 // whole input reloaded to GPU...

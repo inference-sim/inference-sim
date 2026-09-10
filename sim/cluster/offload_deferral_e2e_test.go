@@ -200,43 +200,10 @@ func TestInstanceSimulator_Offload_CPUHitReducesTTFT(t *testing.T) {
 	}
 }
 
-// #1699 (T4): the SAME prefill-shrink must hold on the secondary-tier path. A run whose
-// churny workload lands secondary→CPU→GPU reloads must show lower aggregate TTFT than a
-// GPU-only run of the identical workload (the reloaded prefixes are billed as hits, not
-// recomputes). This guards the resolved-deferral branch, which funnels through the same
-// allocateThroughChain reporting point.
-func TestInstanceSimulator_Offload_SecondaryHitReducesTTFT(t *testing.T) {
-	// GPU-only baseline: same GPU/workload, no offload tier.
-	gpuOnlyCfg := func(seed int64) sim.SimConfig {
-		return sim.SimConfig{
-			Horizon:             math.MaxInt64,
-			Seed:                seed,
-			KVCacheConfig:       sim.NewKVCacheConfig(64, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(8, 512, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
-		}
-	}
-	runGPUOnly := func(seed int64) *InstanceSimulator {
-		inst := NewInstanceSimulator(InstanceID("gpu-only"), gpuOnlyCfg(seed))
-		for _, r := range cyclingPrefixWorkload(seed, 12, 4) {
-			inst.InjectRequest(r)
-		}
-		inst.Run()
-		return inst
-	}
-
-	offload := runOffloadE2E(7) // has a secondary tier; workload exercises deferral
-	gpuOnly := runGPUOnly(7)
-
-	// Non-vacuity: the offload run must actually take the secondary-tier deferral path.
-	oc, ok := offload.sim.KVCache.(*kv.OffloadCache)
-	if !ok || oc.DeferralsStarted() == 0 {
-		t.Fatalf("secondary-tier reload path must be exercised (DeferralsStarted>0)")
-	}
-
-	if offload.Metrics().TTFTSum >= gpuOnly.Metrics().TTFTSum {
-		t.Fatalf("secondary-tier reloads must reduce TTFT vs GPU-only recompute (#1699): offload TTFTSum=%d gpu-only TTFTSum=%d",
-			offload.Metrics().TTFTSum, gpuOnly.Metrics().TTFTSum)
-	}
-}
+// Note: the secondary-tier prefill-shrink is guarded discriminatingly at the sim/kv
+// level by TestDeferral_ResolvedAdmitReportsReloadedPrefix (offload_deferral_test.go),
+// which drives the resolved-deferral admit and asserts ReloadedPrefixEnd reports the
+// reloaded boundary — the exact signal this fix adds, which fails on base. An aggregate
+// e2e TTFT comparison against a GPU-only baseline is NOT a valid guard here: it conflates
+// the H3 deferral penalty (which raises secondary-path TTFT) with the prefill shrink, so
+// it holds on base too.
