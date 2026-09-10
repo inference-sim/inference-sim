@@ -11,23 +11,23 @@ name: Deliver — Guard Self-Test
 # plainly: "Do not repeat the mistake of reasoning about these expressions instead of exercising
 # them."
 #
-# WHAT THIS TEST ACTUALLY FOUND, on its first run: the old guard DOES fire on a step cancelled by a
-# step-level timeout, because the job result becomes `failure`. So the docs-based prediction was
-# wrong, and #1685's silence is better explained by the runner being lost — no step executes then,
-# `always()` ones included, which no guard can fix. The new guard is still correct as a strict
-# superset, and it is what the acceptance criterion asks to be exercised; only the rationale changed.
-# Recording that here is the point of having a test rather than an argument.
+# A MEASUREMENT THAT COST TWO ATTEMPTS, recorded so nobody repeats it: a step killed by a
+# STEP-LEVEL `timeout-minutes` has outcome `failure`, NOT `cancelled`. The first version of this
+# test used one, saw the old guard fire, and I wrongly concluded item 0's reasoning was disproved —
+# when in fact `failure()` was simply matching a failed step and no cancellation had occurred.
+# Cancelling a step requires cancelling the thing that owns it, so the JOB timeout is used instead.
+# The lesson is the one #1684 was already making: a test that does not reproduce the condition
+# proves nothing, and it is easy to believe it did.
 #
 # An earlier round of this PR argued the expressions could not be tested because nothing in this
 # repository can evaluate a GitHub Actions expression. That was wrong in the way that matters:
-# GitHub evaluates them, so GitHub is the harness. A step given `timeout-minutes: 1` and told to
-# sleep longer is cancelled by the platform — which is the #1685 case, reproducible on demand.
+# GitHub evaluates them, so GitHub is the harness.
 #
 # HOW IT ASSERTS. Each scenario job records which guards fired as job OUTPUTS, and a separate
-# `assert-*` job with `if: always()` reads them. The scenario job for the cancelled case is
-# EXPECTED TO FAIL — that is the condition under test — so the assertion cannot live inside it.
-# Deliberately no `continue-on-error` on the cancelled step: that would flip its conclusion to
-# success and make `!success()` false, quietly testing nothing.
+# `assert-*` job with `if: always()` reads them — the scenario job itself does not end cleanly, so
+# the assertion cannot live inside it. Note there is deliberately no `continue-on-error` on the
+# individual STEPS: at step level it forces the conclusion to success, `!success()` becomes false,
+# and the test would pass while measuring nothing.
 
 on:
   pull_request:
@@ -39,27 +39,26 @@ on:
 permissions: {}
 
 jobs:
-  # ── Scenario 1: a step cancelled by its own timeout ────────────────────────────────────────
-  # Expected: this job FAILS, the new guard fires, the old guard does not.
+  # ── Scenario 1: a step cancelled by the JOB timeout ───────────────────────────────────────
+  # Expected: the victim step's outcome is `cancelled`, and the new guard fires.
   cancelled-step-scenario:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    # This job is SUPPOSED to fail — a cancelled step is the condition under test. Without this,
-    # the whole workflow would be permanently red on every PR and the check would be worthless.
-    # It applies at JOB level, so it changes what the WORKFLOW makes of this job; the step-level
-    # status functions inside still see the real statuses, which is what is being measured.
+    # JOB-level timeout: this is what cancels the running step. A step-level timeout FAILS the step
+    # instead (measured — see the header), which is a different condition and not the one #1684 is
+    # about.
+    timeout-minutes: 1
+    # This job is SUPPOSED not to finish cleanly — that is the condition under test. Without this,
+    # the workflow would be permanently red on every PR and the check would be worthless. It applies
+    # at JOB level, so it only changes what the WORKFLOW makes of this job; the step-level status
+    # functions inside still see the real statuses, which is what is being measured.
     continue-on-error: true
     outputs:
       victim_outcome: ${{ steps.victim_outcome.outputs.value }}
       new_guard: ${{ steps.new_guard.outputs.fired || 'false' }}
       old_guard: ${{ steps.old_guard.outputs.fired || 'false' }}
     steps:
-      # `timeout-minutes` on a STEP cancels that step — it does not fail it. This is the exact
-      # shape seen on #1685, where the agent step showed CANCELLED roughly 7 minutes in, nowhere
-      # near the job timeout.
-      - name: A step cancelled by its own timeout
+      - name: A step cancelled by the job timeout
         id: victim
-        timeout-minutes: 1
         run: sleep 120
 
       # Records that the step really was CANCELLED (not failed, not skipped). Asserted on directly,
@@ -75,8 +74,7 @@ jobs:
         if: always() && !success()
         run: echo "fired=true" >> "$GITHUB_OUTPUT"
 
-      # The guard they used before. Measured for comparison, NOT asserted on — see the assertion
-      # job for what the first run of this test actually found, which was not what #1684 predicted.
+      # The guard they used before. Measured for comparison, NOT asserted on — see the assertion job.
       - name: Old guard — failure() || cancelled()
         id: old_guard
         if: failure() || cancelled()
@@ -98,8 +96,9 @@ jobs:
           echo "victim_outcome=$VICTIM new_guard=$NEW old_guard=$OLD"
           fail=0
 
-          # The test is only meaningful if the step really was cancelled. Anything else means
-          # `sleep 120` somehow finished inside a 1-minute step timeout and nothing was exercised.
+          # The test is only meaningful if the step really was CANCELLED. `failure` means a
+          # step-level timeout was used by mistake; anything else means the job did not time out.
+          # Either way the condition was not reproduced and the result must not be trusted.
           [[ "$VICTIM" == "cancelled" ]] || {
             echo "::error::victim step outcome was '$VICTIM', expected 'cancelled' — the condition under test was not reproduced, so this proved nothing"
             fail=1
@@ -111,22 +110,14 @@ jobs:
             fail=1
           }
 
-          # MEASURED, NOT REQUIRED. #1684 item 0 predicted the old guard would NOT fire here. The
-          # first run of this test found that it DOES (`old_guard=true`), so that prediction is not
-          # reproducible for a step cancelled by a STEP-LEVEL TIMEOUT: the job result becomes
-          # `failure`, and `failure()` is satisfied.
-          #
-          # That does not make the change wrong — `always() && !success()` is a strict superset, so
-          # it fires everywhere the old form did and in cases it did not. It makes item 0's stated
-          # JUSTIFICATION wrong, and #1685 is better explained by what the PR body already says:
-          # the runner was lost, so no step ran at all, `always()` ones included. No guard can
-          # report from inside a job that never executes — that is the stall sweep's job.
-          #
-          # Kept as a notice rather than an assertion because the useful signal is a CHANGE here:
-          # if this ever flips to `false`, the platform's behaviour moved and the reasoning in
+          # MEASURED, NOT REQUIRED. #1684 item 0 predicts the old guard does not fire on a
+          # cancelled step. Reported either way rather than asserted, because the requirement is
+          # that the NEW guard fires; whether the old one also would is history, and
+          # `always() && !success()` is a strict superset either way. A change in this value is the
+          # useful signal — it means the platform moved, or the rationale in
           # `docs/contributing/automated-delivery.md` needs revisiting.
           if [[ "$OLD" == "true" ]]; then
-            echo "::notice::failure() || cancelled() ALSO fires on a step cancelled by a step-level timeout. #1684 item 0 predicted otherwise; the new guard is a superset and remains correct, but the stated rationale does not hold for this case."
+            echo "::notice::failure() || cancelled() ALSO fired on this cancelled step, which #1684 item 0 predicted it would not. The new guard is a strict superset so nothing regresses, but the rationale in the docs would need revisiting."
           else
             echo "::notice::failure() || cancelled() did not fire — matches #1684 item 0's prediction."
           fi
