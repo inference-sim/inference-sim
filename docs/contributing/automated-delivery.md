@@ -92,9 +92,16 @@ Two properties hold structurally rather than by prompt adherence:
 - **`ready-for-merge` is never applied to unverified code.** The PR tree is checked out at a pinned SHA, and that SHA is re-confirmed as the branch head before the label goes on. A push landing during the checks or the review downgrades the outcome to `needs-human`, because what passed is no longer what a human would merge.
 - **A phase that fails or times out still reports.** Every phase has a reporter guarded on `always() && !success()`, and `.github/workflows/deliver-guards-selftest.yml` exercises that on real infrastructure rather than reasoning about it: it cancels a step with a step-level timeout and asserts the reporter is reached, plus asserts a `deliver:paused` exit stays quiet.
 
-    One measurement from building that test is worth keeping, because it is an easy trap: a step killed by a **step-level** `timeout-minutes` has outcome `failure`, not `cancelled`. Only cancelling the *owner* cancels a step, so the self-test uses a **job-level** timeout. A test using the step-level form looks like it reproduces #1685 and does not.
+    **What the self-test measured, which corrects the reasoning this change was originally made on.** The guard was changed from `failure() || cancelled()` on the docs-based argument that a cancelled *step* satisfies neither term. Exercised on real infrastructure, that argument does not hold — for either mechanism that can actually cancel a step:
 
-    Separately, the silence observed on #1685 is not explained by the guard at all: the runner was lost, and then no step executes — `always()` ones included. No `if:` can report from a job that never runs, which is why the stall sweep exists.
+    | Mechanism | Step outcome | `always() && !success()` | `failure() \|\| cancelled()` |
+    |---|---|---|---|
+    | step-level `timeout-minutes` | `failure` | fires | fires (via `failure()`) |
+    | job-level `timeout-minutes` | `cancelled` | fires | fires (via `cancelled()`) |
+
+    So `always() && !success()` is still the right guard — it is a strict superset and nothing regresses — but the reason is **breadth**, not that the old form was blind to a cancelled step. Note the first row is also a trap: a step-level timeout *fails* a step rather than cancelling it, so a test built on one looks like it reproduces #1685 without doing so.
+
+    And the silence on #1685 was never a guard problem: the runner was lost, and then no step executes — `always()` ones included. No `if:` can report from a job that never runs, which is why the stall sweep exists. That third mechanism cannot be reproduced in CI, so it remains the one untested path.
 
     Also measured, since it was previously an open question: a **skipped** step does *not* make `success()` false. So the explicit `paused != 'true'` term in each reporter is defence-in-depth rather than the only thing preventing a paused delivery from reporting.
 - **A dismissal cannot become a resolution by omission.** The correct phase reports a `DELIVER-DISMISSALS: <n>` count as the last line of its comment and a workflow step derives `deliver:has-dismissals` from it; a missing or unreadable count is treated as outstanding. The label is not applied by the agent, so forgetting to apply it is not a way past the gate.
