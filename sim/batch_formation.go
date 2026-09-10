@@ -233,6 +233,14 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		}
 	}
 
+	// #1699: when the KV store can enlarge a new admission's cached prefix by reloading
+	// from the CPU/secondary offload tier DURING AllocateKVBlocks, re-bill prefill work
+	// against the post-reload boundary (otherwise a genuine cache hit is charged as a
+	// full recompute — hit rate moves but timing does not). The type-assert fails for
+	// single-tier and legacy-tiered stores, so reloadReporter stays nil and Phase 2 is
+	// byte-identical to the pre-#1699 loop (INV-6).
+	reloadReporter, _ := ctx.KVCache.(ReloadReportingKVStore)
+
 	// Phase 2: Dequeue new requests from wait queue.
 	// skipped counts requests set aside this step (offload-deferred). It is the scan
 	// cursor: with no deferrals it stays 0, so PeekAt(0)==Peek() and admissions use
@@ -361,9 +369,30 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			Request: next,
 		})
 
-		tokenBudget -= numNewTokens
+		// #1699: prefill was billed for the whole chunk [startIndex, endIndex)
+		// (numNewTokens above). If AllocateKVBlocks reloaded a CPU/secondary-resident
+		// prefix onto the GPU, part of that chunk was served from cache, not recomputed —
+		// so re-bill only the non-reloaded tail. The reload changes how much COMPUTE the
+		// chunk costs (billedTokens, the StepTime input), NOT how far the request advances:
+		// the whole [startIndex, endIndex) range was committed/allocated, so the progress
+		// boundary (ComputedTokens) is unchanged. Clamp the reloaded boundary to endIndex —
+		// a reload can extend the GPU prefix past this (capped) chunk, but only up to
+		// endIndex was committed to the request; the tail beyond it is billed on a later step.
+		// newStart is compared against the SAME startIndex passed to AllocateKVBlocks
+		// above (the store records the boundary under an identical newStart>startIndex
+		// guard), so the two agree by construction. billedTokens = endIndex -
+		// min(newStart, endIndex) is floored at 0 regardless, so it can never go negative
+		// even if a future caller changed the passed startIndex.
+		billedTokens := numNewTokens
+		if reloadReporter != nil {
+			if newStart, ok := reloadReporter.ReloadedPrefixEnd(next.ID); ok && newStart > startIndex {
+				billedTokens = endIndex - min(newStart, endIndex) // reloaded portion within the chunk is free
+			}
+		}
+
+		tokenBudget -= billedTokens
 		next.State = StateRunning
-		next.NumNewTokens = int(numNewTokens)
+		next.NumNewTokens = int(billedTokens)
 		ctx.ComputedTokens[next.ID] = numNewTokens + util.Len64(cachedBlocks)*ctx.KVCache.BlockSize()
 	}
 
