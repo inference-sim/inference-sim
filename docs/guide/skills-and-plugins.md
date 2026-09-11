@@ -23,6 +23,8 @@ Project skills require no installation — they are checked into the repository 
 
 Both skills are triggered via GitHub Actions (`@claude /blis-pr-review` on PRs, `@claude /issue-review` on issues). Additionally, `/archon-pr-review` runs as a separate CI action for structural architecture review (boundary moves, surface changes, edge deltas). See [Archon PR Review](archon-pr-review.md).
 
+`/blis-pr-review` runs on a **read-only** token — it can post its review comment, but cannot push to the branch it is reviewing (the pass/fail commit status is published by a separate job). Every other `@claude` trigger keeps write access, since those may legitimately be asked to make a change. Do not widen the review token to work around a failure: see [Agent Trust Boundaries](../contributing/standards/agent-trust.md#structural-separation-of-judgement-and-action).
+
 ## Which Skills for Which Workflow
 
 | Workflow | Skills Used |
