@@ -1879,6 +1879,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#when-a-delivery-goes-quiet-and-how-to-resume-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When a delivery goes quiet, and how to resume one
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#configuration" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3014,6 +3025,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#when-a-delivery-goes-quiet-and-how-to-resume-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When a delivery goes quiet, and how to resume one
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#configuration" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3160,7 +3182,7 @@
 </table>
 <p>There is no third outcome. Every unrecognised or contradictory signal resolves to <code>needs-human</code>; the gate is closed by default.</p>
 <h2 id="the-gate">The gate<a class="headerlink" href="#the-gate" title="Permanent link">&para;</a></h2>
-<p>The decision is not the reviewing agent's to make. <code>deliver-verify.yml</code> collects three machine-readable signals and hands them to <code>scripts/deliver-gate.sh</code>, which is unit-tested (<code>scripts/deliver_gate_test.go</code>):</p>
+<p>The decision is not the reviewing agent's to make. <code>deliver-verify.yml</code> collects four machine-readable signals and hands them to <code>scripts/deliver-gate.sh</code>, which is unit-tested (<code>scripts/deliver_gate_test.go</code>):</p>
 <table>
 <thead>
 <tr>
@@ -3181,6 +3203,10 @@
 <td><code>AGENT_VERDICT</code></td>
 <td>the <code>DELIVER-VERDICT: GREEN</code> / <code>NOT-GREEN</code> marker, required to be the last line of a comment posted by the automation itself</td>
 </tr>
+<tr>
+<td><code>DISMISSALS</code></td>
+<td>the <code>deliver:has-dismissals</code> label, <strong>re-read after the review agent has run</strong> so that the reviewer clearing it takes effect in the same round. <code>open</code> withholds <code>ready-for-merge</code>; <code>unknown</code> (the label set could not be read) does too, because an unreadable state is not evidence there is nothing to accept</td>
+</tr>
 </tbody>
 </table>
 <p><strong>Why verify dispatches <code>ci.yml</code> rather than running the checks itself.</strong> <code>main</code> requires seven status contexts (<code>build</code>, <code>lint</code>, and five <code>test (...)</code> groups) before a PR can merge, and those must be present <strong>on the PR's head commit</strong>. Two things make that awkward, and an earlier version of this feature got both wrong by running the commands inline:</p>
@@ -3195,12 +3221,62 @@
 <ul>
 <li><strong>A GREEN review cannot override red CI or a plan regression.</strong> That combination returns <code>needs-human</code> with the disagreement named — the loop does not get to resolve a contradiction between a judgment and an objective signal.</li>
 <li><strong><code>ready-for-merge</code> is never applied to unverified code.</strong> The PR tree is checked out at a pinned SHA, and that SHA is re-confirmed as the branch head before the label goes on. A push landing during the checks or the review downgrades the outcome to <code>needs-human</code>, because what passed is no longer what a human would merge.</li>
-<li><strong>A phase that fails or times out still reports.</strong> Every phase has a reporter guarded on <code>failure() || cancelled()</code> — <code>cancelled()</code> because a job timeout cancels rather than fails, which would otherwise skip the comment entirely and leave the PR silent.</li>
+<li>
+<p><strong>A phase that fails or times out still reports.</strong> Every phase has a reporter guarded on <code>always() &amp;&amp; !success()</code>, exercised on real infrastructure rather than reasoned about, in two halves:</p>
+<ul>
+<li><code>.github/workflows/deliver-guards-selftest.yml</code> cancels a step via a <strong>job</strong> timeout and asserts the reporter is reached, and asserts a <code>deliver:paused</code> exit stays quiet. It is <strong>manual/weekly, not per-PR</strong> — cancelling a job is the condition under test, so it necessarily reports a non-green job and would leave a permanently red check. Run it whenever a guard changes. Last verified result: <a href="https://github.com/inference-sim/inference-sim/actions/runs/34513953327">run 34513953327</a> — <code>victim_outcome=cancelled new_guard=true</code>, <code>reporter=false skip_probe=false</code>.</li>
+<li><code>scripts/deliver_guards_test.go</code> runs on <strong>every</strong> PR and asserts the phases still use the guard that self-test exercises, so a past green result cannot vouch for a file that has since been reverted.</li>
+</ul>
+<p><strong>What the self-test measured, which corrects the reasoning this change was originally made on.</strong> The guard was changed from <code>failure() || cancelled()</code> on the docs-based argument that a cancelled <em>step</em> satisfies neither term. Exercised on real infrastructure, that argument does not hold — for either mechanism that can actually cancel a step:</p>
+<table>
+<thead>
+<tr>
+<th>Mechanism</th>
+<th>Step outcome</th>
+<th><code>always() &amp;&amp; !success()</code></th>
+<th><code>failure() \|\| cancelled()</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>step-level <code>timeout-minutes</code></td>
+<td><code>failure</code></td>
+<td>fires</td>
+<td>fires (via <code>failure()</code>)</td>
+</tr>
+<tr>
+<td>job-level <code>timeout-minutes</code></td>
+<td><code>cancelled</code></td>
+<td>fires</td>
+<td>fires (via <code>cancelled()</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>So <code>always() &amp;&amp; !success()</code> is still the right guard — it is a strict superset and nothing regresses — but the reason is <strong>breadth</strong>, not that the old form was blind to a cancelled step. Note the first row is also a trap: a step-level timeout <em>fails</em> a step rather than cancelling it, so a test built on one looks like it reproduces #1685 without doing so.</p>
+<p>And the silence on #1685 was never a guard problem: the runner was lost, and then no step executes — <code>always()</code> ones included. No <code>if:</code> can report from a job that never runs, which is why the stall sweep exists. That third mechanism cannot be reproduced in CI, so it remains the one untested path.</p>
+<p>Also measured, since it was previously an open question: a <strong>skipped</strong> step does <em>not</em> make <code>success()</code> false. So the explicit <code>paused != 'true'</code> term in each reporter is defence-in-depth rather than the only thing preventing a paused delivery from reporting.
+- <strong>A dismissal cannot become a resolution by omission.</strong> The correct phase reports a <code>DELIVER-DISMISSALS: &lt;n&gt;</code> count as the last line of its comment and a workflow step derives <code>deliver:has-dismissals</code> from it; a missing or unreadable count is treated as outstanding. The label is not applied by the agent, so forgetting to apply it is not a way past the gate.</p>
+</li>
 </ul>
 <p>Archon is optional throughout: with a plan there is a deterministic number that must not move the wrong way, without one the gate is CI plus the review verdict.</p>
 <h2 id="controlling-a-delivery-in-flight">Controlling a delivery in flight<a class="headerlink" href="#controlling-a-delivery-in-flight" title="Permanent link">&para;</a></h2>
 <p><strong>Pause.</strong> Add the <code>deliver:paused</code> label to the PR (or, before a PR exists, to the sub-issue). Every phase checks it as its first step and exits without invoking an agent or moving a label. Remove the label and re-issue the command to resume. You are never racing the loop.</p>
-<p><strong>Round count.</strong> The <code>deliver:round-N</code> label is the only record of how many corrections have been spent, and — since <code>workflow_dispatch</code> has no chain-depth cap — the only thing bounding the loop. It is advanced <em>before</em> the correction agent runs, so a crashed or timed-out round still consumes its budget rather than being retried forever. A missing round label is therefore fatal to the correct phase, unlike other label failures, which only warn.</p>
+<p><strong>Dismissals.</strong> If the correct phase dismisses a finding rather than fixing it, it says so in a <code>DELIVER-DISMISSALS: &lt;n&gt;</code> line and a workflow step applies <code>deliver:has-dismissals</code> when that count is above zero — or when the count is missing, since an unreported state is not a report of zero. The gate refuses <code>ready-for-merge</code> while the label is present, so a dismissal cannot quietly become a resolution. Only the review phase removes it, and only when it has explicitly accepted each one; a reviewer that forgets costs a human glance rather than passing a waved-away finding.</p>
+<p><strong>Round count.</strong> The <code>deliver:round-N</code> label is the only record of how many corrections have been spent, and — since <code>workflow_dispatch</code> has no chain-depth cap — the only thing bounding the loop. It is advanced <em>before</em> the correction agent runs, so a crashed or timed-out round still consumes its budget rather than being retried forever. A missing round label is therefore fatal to the correct phase, unlike most label failures, which only warn.</p>
+<p><strong>Two label writes are fatal, and for the same reason: both are the mechanism that bounds or blocks the loop.</strong> Failing to advance <code>deliver:round-N</code> loses the loop's only bound. Failing to apply <code>deliver:has-dismissals</code> when a dismissal was reported loses the gate's only record of it — the next verify would read <code>none</code> and could reach <code>ready-for-merge</code> with a dismissal nobody accepted. In both cases the phase stops and a human picks it up, rather than continuing with the safeguard silently absent.</p>
+<h2 id="when-a-delivery-goes-quiet-and-how-to-resume-one">When a delivery goes quiet, and how to resume one<a class="headerlink" href="#when-a-delivery-goes-quiet-and-how-to-resume-one" title="Permanent link">&para;</a></h2>
+<p><strong>Every phase reports its own failure</strong>, including a step that was cancelled, and applies <code>needs-human</code>.</p>
+<p><strong>A dead runner cannot report itself.</strong> If the runner is lost mid-job, no step executes — not <code>always()</code> ones, not even the action's own post-steps. That happened once during development and the delivery left no branch, no PR, no comment and no label, which is indistinguishable from nobody having run the command. <code>deliver-stall-sweep.yml</code> exists for exactly that: it runs on a schedule and flags any open PR on a <code>deliver/issue-*</code> branch that carries neither terminal label, is not paused, and has had no activity for 180 minutes. Activity means comments, reviews <em>and</em> review comments — the loop reacts to all three, so counting only comments would flag a delivery that was in fact responding to a review.</p>
+<p>180 minutes is not arbitrary: the threshold has to exceed the longest <em>legitimate</em> silence, which is one phase's own budget (verify is capped at 120 minutes and comments at the end), plus slack for a busy runner.</p>
+<p>The sweep stands down while a delivery phase has <strong>started recently</strong>, because a legitimate verify is silent for long stretches while it waits on CI and then on a review. Recently, not merely "at all": a job that never got a runner sits queued for up to 24 hours, so counting queued runs of any age let an offline runner — the very scenario the sweep is for — keep it silent for a day. A run older than the quiet window is the symptom, not a sign of life.</p>
+<p>The stand-down is repository-wide, so one recent phase run suppresses flagging for every delivery. That is fine while L1 delivers one sub-issue at a time and becomes wrong once deliveries run in parallel; it cannot be narrowed from run state, because a <code>workflow_dispatch</code> run cannot be attributed to a PR at all. For the same reason the sweep cannot say <em>which</em> phase stopped, so it links the run list instead.</p>
+<p><strong>To resume a stopped delivery without repeating the implementation</strong>, dispatch <strong>Deliver — Verify</strong> directly with the PR and issue numbers, from the Actions tab or:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>gh<span class="w"> </span>workflow<span class="w"> </span>run<span class="w"> </span>deliver-verify.yml<span class="w"> </span>-f<span class="w"> </span><span class="nv">pr_number</span><span class="o">=</span>&lt;PR&gt;<span class="w"> </span>-f<span class="w"> </span><span class="nv">issue_number</span><span class="o">=</span>&lt;N&gt;
+</code></pre></div>
+<p>The correction round count lives on the PR's <code>deliver:round-N</code> label, so resuming this way keeps it. Re-issuing <code>/approve-issue-for-pr-delivery</code> instead restarts the <em>implement</em> phase against the existing branch, which is rarely what you want after an infrastructure failure — nothing about the code needed redoing.</p>
+<p><strong>Any human push to a delivery branch re-verifies it</strong>, so a verdict always describes the current head and a terminal label never outlives the commit it was granted to. Both terminal labels are cleared as soon as verification <em>starts</em>, not when it finishes — otherwise a push to a PR already marked <code>ready-for-merge</code> would keep advertising merge-readiness, on an unverified commit, for the whole re-verification.</p>
+<p>An automation push does not double-trigger, and this does not rest on the token rule. A <code>GITHUB_TOKEN</code> push creates no workflow run, but the correct phase does not push from a workflow step — its agent pushes from inside <code>claude-code-action</code>, which performs an OIDC exchange and may hold an App installation token. The push-triggered path therefore refuses a <strong>Bot-sent</strong> push outright, so the property holds whichever credential is in play.</p>
+<p><strong>A new review or review comment on the PR also re-verifies</strong>, so a finding that arrives after the loop has converged is acted on rather than ignored. Because this repository is public and submitting a review needs only read access, the review-triggered path is gated on the same collaborator permission check the <code>/approve-issue-for-pr-delivery</code> command uses — without it, any GitHub user could start an agent run holding this workflow's secrets. An <code>approved</code> review is ignored (it carries no finding to act on); a <code>commented</code> review is not, since that is how most real findings have arrived.</p>
 <h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
 <p>Repository variables, all optional:</p>
 <table>
@@ -3237,25 +3313,38 @@
 <p>The verify model is deliberately <em>not</em> the implement model. Two instances of one model reviewing each other's work is closer to an agent grading its own homework; different models give real separation.</p>
 <h2 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h2>
 <p><strong>The labels must exist before the workflows are used.</strong> A workflow applying a label that does not exist fails at the API call, which strands a delivery mid-loop:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'deliver:round-1'</span><span class="w"> </span>--color<span class="w"> </span>ededed<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: correction round 1'</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'deliver:round-2'</span><span class="w"> </span>--color<span class="w"> </span>ededed<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: correction round 2'</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'deliver:round-3'</span><span class="w"> </span>--color<span class="w"> </span>ededed<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: correction round 3'</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'deliver:paused'</span><span class="w">  </span>--color<span class="w"> </span>b60205<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: halted; every phase exits on this'</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'ready-for-merge'</span><span class="w"> </span>--color<span class="w"> </span>0e8a16<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: verified green, awaiting human merge'</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'needs-human'</span><span class="w">     </span>--color<span class="w"> </span>d93f0b<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: stopped, a human must look'</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'deliver:round-1'</span><span class="w"> </span>--color<span class="w"> </span>ededed<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: correction round 1'</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'deliver:round-2'</span><span class="w"> </span>--color<span class="w"> </span>ededed<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: correction round 2'</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'deliver:round-3'</span><span class="w"> </span>--color<span class="w"> </span>ededed<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: correction round 3'</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'deliver:paused'</span><span class="w">  </span>--color<span class="w"> </span>b60205<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: halted; every phase exits on this'</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'deliver:has-dismissals'</span><span class="w"> </span>--color<span class="w"> </span>fbca04<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: a correction dismissed a finding the review has not accepted'</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'ready-for-merge'</span><span class="w"> </span>--color<span class="w"> </span>0e8a16<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: verified green, awaiting human merge'</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'needs-human'</span><span class="w">     </span>--color<span class="w"> </span>d93f0b<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: stopped, a human must look'</span>
 </code></pre></div>
 <p>Raising <code>DELIVER_MAX_ROUNDS</code> above 3 needs matching <code>deliver:round-N</code> labels.</p>
 <h2 id="scope">Scope<a class="headerlink" href="#scope" title="Permanent link">&para;</a></h2>
 <p>L1 delivers <strong>one sub-issue at a time</strong>, and sequencing is yours: approve one, merge it, approve the next. The implement phase reads a <code>Depends on: #M</code> line and refuses when #M's PR is unmerged, so a mis-ordered approval costs a comment rather than a failed hour-long run.</p>
-<p>Not yet automated, each its own follow-up: sequencing sub-issues <code>0..N</code> and opening the final PR (L2), RFC-to-merge (L3), flaky-test re-runs, stall detection, and the no-progress detector.</p>
-<p><strong>Known limitation.</strong> The correct phase may <em>dismiss</em> a finding rather than fix it, and the review phase is instructed to explicitly accept or re-raise each dismissal — but that is prompt adherence, not enforced state. A dismissal silently treated as resolved would not be caught by the gate. The round cap bounds it, and both the dismissal and its acceptance are comments a human reads before merging.</p>
+<p>Not yet automated, each its own follow-up: sequencing sub-issues <code>0..N</code> and opening the final PR (L2), RFC-to-merge (L3), flaky-test re-runs, and the no-progress detector.</p>
+<p><strong>Known limitations.</strong></p>
+<ul>
+<li><strong>The reviewer's <em>acceptance</em> of a dismissal is still prose.</strong> The correct phase's dismissal count is now machine-readable and the gate enforces it (see <em>Dismissals</em> above), so a dismissal can no longer be treated as resolved by silence. What remains prompt-dependent is the other end: the review phase decides when to clear <code>deliver:has-dismissals</code>, and a reviewer that clears it without genuinely accepting each dismissal is not caught. Failing closed means the cost of <em>forgetting</em> is a human glance; the cost of clearing it wrongly is a human reading the comments, which they do before merging anyway.</li>
+<li><strong>The stall sweep's stand-down is repository-wide.</strong> One recently started phase suppresses flagging for every delivery. Correct while L1 delivers one sub-issue at a time; a blocker for parallel deliveries.</li>
+<li><strong>Workflow expressions are not unit-tested.</strong> <code>scripts/deliver-gate.sh</code> and the sweep's selection filter have tests; the trigger guards, step conditions and concurrency keys are covered by <code>actionlint</code> plus a live delivery, because nothing in this repository can evaluate a GitHub Actions expression.</li>
+</ul>
 <h2 id="security">Security<a class="headerlink" href="#security" title="Permanent link">&para;</a></h2>
 <p><strong>The workflow's own steps run trusted code.</strong> The repository root checkout is the default branch, so <code>scripts/</code> and <code>.archon-version</code> always come from <code>main</code> — matching <code>archon.yml</code>. The archon review and <code>deliver-gate.sh</code> are executed from that trusted tree, never from the PR.</p>
 <p><strong>The PR's code never runs on the self-hosted runner.</strong> The verify phase does not check the PR out at all — it dispatches <code>ci.yml</code>, which runs the PR's build and tests on ephemeral <code>ubuntu-latest</code> runners, exactly as it does for any other PR. An earlier version did check the PR out and run its test suite on the self-hosted runner, which meant executing PR code (including <code>deliver_gate_test.go</code>, which shells out to the PR's own <code>.sh</code> files) on persistent infrastructure. Dispatching removes that exposure rather than guarding it.</p>
 <p>The correct phase does still check out and push to the delivery branch, so it requires the target PR to be same-repository, open, and on <code>deliver/issue-&lt;N&gt;</code> — the branch this loop owns.</p>
-<p><code>workflow_dispatch</code> is itself restricted to users with write access, and a refused dispatch stops before any checkout.</p>
+<p><strong>Every trigger requires write access.</strong> <code>workflow_dispatch</code> is restricted to users with write access by GitHub, and pushing to a branch in this repository requires it too; a refused dispatch stops before any checkout. The two review triggers do <strong>not</strong> carry that property for free — this repository is public, and submitting a review or a review comment needs only <em>read</em> access, while both events run in the base-repository context with access to secrets. A review-triggered verify is therefore gated on an explicit collaborator permission check (<code>admin</code>/<code>write</code>/<code>maintain</code>), the same one the <code>/approve-issue-for-pr-delivery</code> command uses. Without it, any GitHub user could repeatedly start an agent run holding <code>LITELLM_API_KEY</code>, with <code>pull-requests: write</code> and <code>actions: write</code>, on the single self-hosted runner.</p>
+<p>The check runs in a small <code>ubuntu-latest</code> job, so an unauthorised review never wakes the self-hosted runner at all.</p>
 <p><strong>The delivery target comes from the event, not from comment text.</strong> The issue delivered is <code>github.event.issue.number</code> — where the command was typed. An optional <code>#N</code> is accepted only when it agrees with that issue and refused when it disagrees, so no untrusted string ever selects the target.</p>
-<p><strong>The verdict marker is read only from bot-authored comments, and only as a comment's last line</strong> — otherwise any human could set a delivery's verdict by quoting it.</p>
+<p><strong>The verdict marker is read only from bot-authored comments, and only as a comment's last line</strong> — otherwise any human could set a delivery's verdict by quoting it. The same applies to the <code>DELIVER-DISMISSALS</code> count.</p>
+<p><strong>PR text is untrusted input to the agents.</strong> This is a public repository, so anyone can comment on an open delivery PR, and both agents read comments. Two consequences are handled explicitly:</p>
+<ul>
+<li>Both prompts state that comment, review and diff text is data to be assessed and never instructions, and name the specific asks that constitute an attack (return GREEN, clear <code>deliver:has-dismissals</code>, report a particular dismissal count, run a command).</li>
+<li>The verify agent has <strong>no <code>Edit</code> or <code>Write</code> tool</strong>. It is told not to change code, and withholding the tools makes that structural rather than a request that injected text could argue it out of.</li>
+</ul>
+<p>This reduces the exposure but does not eliminate it: the correct phase's agent legitimately needs write access and a shell in order to fix findings, so a sufficiently persuasive injected instruction remains a real risk. Treat an agent-authored commit as untrusted until a human has read it — which is why the loop never merges.</p>
 
 
 
