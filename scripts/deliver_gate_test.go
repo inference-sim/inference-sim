@@ -14,6 +14,8 @@ var (
 	allCIStatus = []string{"success", "failure", "unknown"}
 	allPlanGate = []string{"pass", "absent", "regression", "conflicts", "unverified"}
 	allVerdicts = []string{"GREEN", "NOT-GREEN", "MISSING"}
+	// `open` means a correction dismissed a finding that the reviewer has not accepted.
+	allDismissals = []string{"none", "open", "unknown"}
 
 	// blockingPlanGate are the plan signals that must stop a delivery.
 	// `unverified` blocks like a regression: the PR claimed a plan and the check did not run,
@@ -40,6 +42,7 @@ func gateEnv(overrides map[string]string) map[string]string {
 		"CI_STATUS":     "success",
 		"PLAN_GATE":     "pass",
 		"AGENT_VERDICT": "GREEN",
+		"DISMISSALS":    "none",
 		"ROUND":         "0",
 		"MAX_ROUNDS":    "3",
 	}
@@ -112,7 +115,7 @@ func requireDecision(t *testing.T, out gateOutcome, want string) {
 // TestDeliverGateWiringErrorsAreLoud covers BC-1's first half: an unset or malformed input
 // is a workflow wiring bug and must fail visibly rather than produce a verdict.
 func TestDeliverGateWiringErrorsAreLoud(t *testing.T) {
-	required := []string{"CI_STATUS", "PLAN_GATE", "AGENT_VERDICT", "ROUND", "MAX_ROUNDS"}
+	required := []string{"CI_STATUS", "PLAN_GATE", "AGENT_VERDICT", "DISMISSALS", "ROUND", "MAX_ROUNDS"}
 
 	for _, name := range required {
 		t.Run("unset/"+name, func(t *testing.T) {
@@ -182,6 +185,8 @@ func TestDeliverGateUnrecognisedValuesFailClosed(t *testing.T) {
 		{"verdict-lowercase", "AGENT_VERDICT", "green"},
 		{"verdict-typo", "AGENT_VERDICT", "NOTGREEN"},
 		{"verdict-prose", "AGENT_VERDICT", "looks good to me"},
+		{"dismissals-bogus", "DISMISSALS", "maybe"},
+		{"dismissals-numeric", "DISMISSALS", "2"},
 	}
 
 	for _, tc := range cases {
@@ -264,6 +269,40 @@ func TestDeliverGateDisagreementGoesToAHuman(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestDeliverGateUnacceptedDismissalBlocksReady covers BC-12. A correction may dismiss a
+// finding rather than fix it, and the reviewer is told to accept or re-raise each one. That
+// was prompt adherence the gate could not see. An outstanding dismissal now blocks `ready`
+// structurally, and an unreadable dismissal state blocks it too — a reviewer who forgets to
+// clear the label costs a human glance rather than passing a waved-away finding.
+func TestDeliverGateUnacceptedDismissalBlocksReady(t *testing.T) {
+	for _, d := range []string{"open", "unknown"} {
+		t.Run("dismissals-"+d, func(t *testing.T) {
+			out := runGate(t, gateEnv(map[string]string{
+				"CI_STATUS": "success", "PLAN_GATE": "pass",
+				"AGENT_VERDICT": "GREEN", "DISMISSALS": d,
+			}))
+			requireDecision(t, out, "needs-human")
+			if out.decision == "ready" {
+				t.Fatal("reached ready with an outstanding dismissal")
+			}
+		})
+	}
+
+	// It must not block a correction round — only the terminal ready verdict.
+	t.Run("does-not-block-correction", func(t *testing.T) {
+		out := runGate(t, gateEnv(map[string]string{
+			"AGENT_VERDICT": "NOT-GREEN", "DISMISSALS": "open", "ROUND": "0",
+		}))
+		requireDecision(t, out, "correct")
+	})
+
+	// And `none` must behave exactly as before, so the new input cannot silently gate
+	// deliveries that have no dismissals at all.
+	t.Run("none-still-ready", func(t *testing.T) {
+		requireDecision(t, runGate(t, gateEnv(map[string]string{"DISMISSALS": "none"})), "ready")
+	})
 }
 
 // TestDeliverGateReady covers BC-6: ready requires all three signals to agree, and the
@@ -350,17 +389,19 @@ func TestDeliverGateAlwaysDecides(t *testing.T) {
 	for _, ci := range allCIStatus {
 		for _, plan := range allPlanGate {
 			for _, verdict := range allVerdicts {
-				for _, round := range []string{"0", "3"} {
-					out := runGate(t, gateEnv(map[string]string{
-						"CI_STATUS": ci, "PLAN_GATE": plan,
-						"AGENT_VERDICT": verdict, "ROUND": round,
-					}))
-					if out.exitCode != 0 {
-						t.Errorf("%s/%s/%s round %s: exit %d, want 0", ci, plan, verdict, round, out.exitCode)
-					}
-					if !valid[out.decision] {
-						t.Errorf("%s/%s/%s round %s: decision = %q, want one of ready/correct/needs-human",
-							ci, plan, verdict, round, out.decision)
+				for _, dis := range allDismissals {
+					for _, round := range []string{"0", "3"} {
+						out := runGate(t, gateEnv(map[string]string{
+							"CI_STATUS": ci, "PLAN_GATE": plan, "AGENT_VERDICT": verdict,
+							"DISMISSALS": dis, "ROUND": round,
+						}))
+						if out.exitCode != 0 {
+							t.Errorf("%s/%s/%s/%s round %s: exit %d, want 0", ci, plan, verdict, dis, round, out.exitCode)
+						}
+						if !valid[out.decision] {
+							t.Errorf("%s/%s/%s/%s round %s: decision = %q, want ready/correct/needs-human",
+								ci, plan, verdict, dis, round, out.decision)
+						}
 					}
 				}
 			}

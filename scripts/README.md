@@ -52,6 +52,7 @@ CI_STATUS=success PLAN_GATE=pass AGENT_VERDICT=GREEN ROUND=0 MAX_ROUNDS=3 \
 | `CI_STATUS` | `success` \| `failure` \| `unknown` | verify runs `go build`, `go test` and `golangci-lint` against the PR tree; anything but all three passing is `failure`, and an unread signal is `unknown` |
 | `PLAN_GATE` | `pass` \| `regression` \| `conflicts` \| `unverified` \| `absent` | from `.archon/review.json`; `absent` (no plan claimed) delivers exactly as `pass`, while `unverified` (a plan declared but never checked) blocks — `archon-review.sh` exits 0 after falling back to a plan-less review, so the two must not be conflated |
 | `AGENT_VERDICT` | `GREEN` \| `NOT-GREEN` \| `MISSING` | the review comment's `DELIVER-VERDICT:` marker |
+| `DISMISSALS` | `none` \| `open` \| `unknown` | from the `deliver:has-dismissals` label. `open` withholds `ready` — a correction dismissed a finding the review has not accepted; `unknown` (unreadable) is treated the same way |
 | `ROUND` | integer | correction rounds already spent, read from the `deliver:round-N` label |
 | `MAX_ROUNDS` | integer | cap before stopping for a human |
 
@@ -63,6 +64,19 @@ two and an unmapped one must not fall through with no decision at all.
 
 `ready` requires the checks passing, a non-regressing (or absent) plan signal, **and** an explicit GREEN. A GREEN that contradicts an objective signal returns `needs-human` naming the
 disagreement — never `ready`, at any round.
+
+## deliver-stall-candidates.jq — which deliveries a stall sweep may flag
+
+Reads a `gh pr list --state open --json number,headRefName,labels,createdAt` array on stdin and
+emits one `<number>\t<createdAt>` line per delivery that is genuinely in flight: on a
+`deliver/issue-<N>` branch, carrying neither terminal label, and not paused. Called by
+`.github/workflows/deliver-stall-sweep.yml` via `jq -f`.
+
+It lives here rather than inline in the workflow for the same reason `deliver-gate.sh` does:
+selecting one PR too many means labelling a healthy delivery `needs-human` and halting it, so
+the rule needs tests (`scripts/deliver_stall_candidates_test.go`). Excluding `deliver:paused` is
+the case most easily missed — a paused delivery goes quiet by design, so it crosses any quiet
+threshold every time, and sweeping it would overrule the human who paused it.
 
 ## archon-plan-resolve.sh — find and extract a declared archon plan
 

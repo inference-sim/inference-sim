@@ -6,6 +6,8 @@
 #   CI_STATUS      success | failure | unknown
 #   PLAN_GATE      pass | regression | conflicts | unverified | absent
 #   AGENT_VERDICT  GREEN | NOT-GREEN | MISSING
+#   DISMISSALS     none | open | unknown   (open = a correction dismissed a finding that the
+#                                           reviewer has not accepted; unknown = unreadable)
 #   ROUND          correction rounds already spent (non-negative integer)
 #   MAX_ROUNDS     hard cap on correction rounds (non-negative integer)
 #
@@ -41,7 +43,7 @@ emit() {
   exit 0
 }
 
-for var in CI_STATUS PLAN_GATE AGENT_VERDICT ROUND MAX_ROUNDS; do
+for var in CI_STATUS PLAN_GATE AGENT_VERDICT DISMISSALS ROUND MAX_ROUNDS; do
   [[ -n "${!var:-}" ]] || usage "$var"
 done
 
@@ -65,6 +67,10 @@ esac
 case "$AGENT_VERDICT" in
   GREEN | NOT-GREEN | MISSING) ;;
   *) emit needs-human "unrecognised AGENT_VERDICT '$AGENT_VERDICT' — expected GREEN, NOT-GREEN, or MISSING" ;;
+esac
+case "$DISMISSALS" in
+  none | open | unknown) ;;
+  *) emit needs-human "unrecognised DISMISSALS '$DISMISSALS' — expected none, open, or unknown" ;;
 esac
 
 # Rows 1 and 2: no usable evidence. Checked before anything else so that a GREEN review can
@@ -103,8 +109,19 @@ if [[ -n "$blocking" ]]; then
 else
   case "$AGENT_VERDICT" in
     # Row 5 — the only path to ready. Reached only with CI success, a plan signal of pass or
-    # absent, and an explicit GREEN.
-    GREEN) emit ready "CI passed, plan signal '$PLAN_GATE', and the review returned GREEN" ;;
+    # absent, an explicit GREEN, and no dismissal the reviewer has left unaccepted.
+    #
+    # Checked here rather than alongside CI and the plan signal on purpose: an outstanding
+    # dismissal should withhold the TERMINAL verdict, not divert an honest NOT-GREEN away from
+    # the correction round that would resolve it. `unknown` is treated as outstanding — an
+    # unreadable dismissal state is not evidence that there is nothing to accept.
+    GREEN)
+      case "$DISMISSALS" in
+        none) emit ready "CI passed, plan signal '$PLAN_GATE', and the review returned GREEN" ;;
+        open) emit needs-human "every signal is green, but a correction dismissed a finding that the review has not accepted — a human needs to decide whether the dismissal stands" ;;
+        *)    emit needs-human "every signal is green, but the dismissal state could not be read, so it is not known whether a dismissed finding is outstanding" ;;
+      esac
+      ;;
     NOT-GREEN) reason="the review returned NOT-GREEN with open findings" ;;
     *) emit needs-human "AGENT_VERDICT '$AGENT_VERDICT' reached the decision chain unhandled" ;;
   esac
