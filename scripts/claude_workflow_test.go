@@ -117,6 +117,15 @@ func TestClaudeWorkflow_RoutingGatesFailClosed(t *testing.T) {
 				"to this job. Compare to an explicit literal so unset runs neither:\n%s",
 				job, gate)
 		}
+		// A routing gate is a conjunction of requirements: the caller is allowed AND the
+		// command matched. An `||` can only ADD a way in, which is the shape an accidental
+		// widening takes — including a substring-satisfying `true || ...` that the two
+		// checks above would otherwise accept.
+		if strings.Contains(gate, "||") {
+			t.Errorf("%s gate contains || — a routing gate should only ever be a "+
+				"conjunction, since a disjunct adds an additional way to enter the "+
+				"job:\n%s", job, gate)
+		}
 	}
 }
 

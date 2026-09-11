@@ -47,6 +47,10 @@ jobs:
             // one-sided. Over-matching costs the caller write access they may have wanted
             // (re-comment without the command); under-matching runs a review with a token
             // that can push, which is the thing #1697 closes. So when in doubt, route here.
+            //
+            // Includes the `issues:` trigger, where an issue body quoting the command routes
+            // to the review job and checkout falls back to the default branch. Harmless —
+            // there is no PR to review — and still the safe side of the one-sided choice.
             const body = context.payload.comment?.body ?? context.payload.issue?.body ?? '';
             const isReview = body.toLowerCase().includes('/blis-pr-review');
             core.setOutput('is_review', isReview ? 'true' : 'false');
@@ -149,9 +153,13 @@ jobs:
   # granted). `Bash` is required for a review (gh, reading the diff, the review toolkit)
   # and `Bash` can create files anyway, so removing Edit/Write would signal intent
   # without adding a capability boundary — while risking the review itself, since the
-  # toolkit's subagents write scratch/report files. deliver-verify.yml already runs this
-  # same review with this same tool list under `contents: read`, which is the evidence
-  # that the token alone is sufficient and the tool list need not change.
+  # toolkit's subagents write scratch/report files.
+  #
+  # The evidence that the token alone suffices is deliver-verify.yml, which already runs this
+  # same review read-only in production: `contents: read` (its line 31), the identical
+  # `--allowed-tools Skill Agent Bash Read Edit Write` (line 419), invoking the blis-pr-review
+  # skill (line 448). Cited by line because an AI reviewer on #1704 asserted that workflow no
+  # longer invokes Claude at all — it does; verify before acting on a claim either way.
   claude-review:
     needs: check-permissions
     if: |
