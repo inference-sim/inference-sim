@@ -155,11 +155,24 @@ jobs:
   # without adding a capability boundary — while risking the review itself, since the
   # toolkit's subagents write scratch/report files.
   #
-  # The evidence that the token alone suffices is deliver-verify.yml, which already runs this
-  # same review read-only in production: `contents: read` (its line 31), the identical
+  # Partial evidence that the token alone suffices is deliver-verify.yml, which already runs
+  # this same review read-only in production: `contents: read` (its line 31), the identical
   # `--allowed-tools Skill Agent Bash Read Edit Write` (line 419), invoking the blis-pr-review
   # skill (line 448). Cited by line because an AI reviewer on #1704 asserted that workflow no
   # longer invokes Claude at all — it does; verify before acting on a claim either way.
+  #
+  # That precedent is only PARTIAL, and the gap is worth knowing before anyone "simplifies"
+  # this job. Every other read-only invocation in the repo passes `prompt:` (agent mode);
+  # this is the repo's only TAG-mode one, and tag mode is what runs the action's `setupBranch`
+  # — whose docs justify Contents write as "for reading repository files and creating
+  # branches". Reading the action source (recorded here so the next editor need not redo it):
+  # on an OPEN PR it fetches and checks out, returning no branch to create; on an issue or a
+  # closed/merged PR it does `repos.get` + `git.getRef` (both reads) and then creates the
+  # branch LOCALLY ONLY, because `use_commit_signing` defaults false and is not set here — the
+  # remote `createRef` path is unreachable. The single `git push` is gated on that branch also
+  # existing remotely, which a locally-created one never does. So no reachable path attempts a
+  # push or a ref write, including the `issues:` over-match above — which is what makes
+  # "harmless" there true rather than hopeful.
   claude-review:
     needs: check-permissions
     if: |

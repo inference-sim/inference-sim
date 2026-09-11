@@ -23,14 +23,23 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type claudeWorkflow struct {
+type claudeJob struct {
+	If          string            `yaml:"if"`
+	Needs       yaml.Node         `yaml:"needs"`
 	Permissions map[string]string `yaml:"permissions"`
-	Jobs        map[string]struct {
-		If          string            `yaml:"if"`
-		Needs       yaml.Node         `yaml:"needs"`
-		Permissions map[string]string `yaml:"permissions"`
-		Steps       []yaml.Node       `yaml:"steps"`
-	} `yaml:"jobs"`
+	Steps       []yaml.Node       `yaml:"steps"`
+
+	// Job-level configuration that must also match between the two agent jobs. Steps alone
+	// are not the whole job: moving the review onto a different runner, or giving it a
+	// shorter timeout, changes how it behaves without touching a single step.
+	RunsOn         yaml.Node         `yaml:"runs-on"`
+	TimeoutMinutes int               `yaml:"timeout-minutes"`
+	Outputs        map[string]string `yaml:"outputs"`
+}
+
+type claudeWorkflow struct {
+	Permissions map[string]string    `yaml:"permissions"`
+	Jobs        map[string]claudeJob `yaml:"jobs"`
 }
 
 const (
@@ -129,22 +138,92 @@ func TestClaudeWorkflow_RoutingGatesFailClosed(t *testing.T) {
 	}
 }
 
-// The duplication the split forces. Everything except the permissions block must match, or
-// a fix lands on one trigger and not the other.
-func TestClaudeWorkflow_AgentJobStepsStayInSync(t *testing.T) {
+// The tests above pin which TOKEN each job gets. They say nothing about which job a review
+// actually lands in — that is decided by the classifier in check-permissions, the third
+// moving part of the split. Without this, breaking the command string or inverting the
+// ternary routes every review to the write-capable job and all the other tests stay green,
+// silently restoring what #1697 closed.
+func TestClaudeWorkflow_ClassifierRoutesReviewsToTheReviewJob(t *testing.T) {
 	wf := loadClaudeWorkflow(t)
 
-	write, review := wf.Jobs[writeJob].Steps, wf.Jobs[reviewJob].Steps
-	if len(write) != len(review) {
-		t.Fatalf("%s has %d steps, %s has %d — keep the two agent jobs in sync",
-			writeJob, len(write), reviewJob, len(review))
+	script := classifierScript(t, wf)
+
+	// The command the routing actually keys on. A typo here sends every review to the
+	// write path.
+	if !strings.Contains(script, "includes('/blis-pr-review')") {
+		t.Errorf("check-permissions does not test the body for '/blis-pr-review' — "+
+			"reviews would route to the write-capable job:\n%s", script)
 	}
-	for i := range write {
+
+	// The polarity. Inverted, reviews get write access and everything else gets read-only.
+	if !strings.Contains(script, "isReview ? 'true' : 'false'") {
+		t.Errorf("check-permissions does not map a matched command to is_review=true — "+
+			"check the ternary has not been inverted:\n%s", script)
+	}
+}
+
+// classifierScript returns the inline script of the check-permissions step that computes
+// is_review, failing the test if no step does.
+func classifierScript(t *testing.T, wf claudeWorkflow) string {
+	t.Helper()
+
+	for i, node := range wf.Jobs["check-permissions"].Steps {
+		var step struct {
+			With struct {
+				Script string `yaml:"script"`
+			} `yaml:"with"`
+		}
+		if err := node.Decode(&step); err != nil {
+			t.Fatalf("decode check-permissions step %d: %v", i, err)
+		}
+		if strings.Contains(step.With.Script, "is_review") {
+			return step.With.Script
+		}
+	}
+	t.Fatal("no check-permissions step sets is_review — the routing classifier is gone, " +
+		"so both agent gates compare against a value nothing produces")
+	return ""
+}
+
+// The duplication the split forces. Everything except the permissions block and the routing
+// gate must match, or a fix lands on one trigger and not the other.
+func TestClaudeWorkflow_AgentJobsStayInSync(t *testing.T) {
+	wf := loadClaudeWorkflow(t)
+
+	// Job-level configuration, not just steps: a different runner or a shorter timeout on
+	// the review job is drift the step comparison below cannot see.
+	write, review := wf.Jobs[writeJob], wf.Jobs[reviewJob]
+	var writeRunsOn, reviewRunsOn any
+	if err := write.RunsOn.Decode(&writeRunsOn); err != nil {
+		t.Fatalf("decode %s runs-on: %v", writeJob, err)
+	}
+	if err := review.RunsOn.Decode(&reviewRunsOn); err != nil {
+		t.Fatalf("decode %s runs-on: %v", reviewJob, err)
+	}
+	if !reflect.DeepEqual(writeRunsOn, reviewRunsOn) {
+		t.Errorf("runs-on differs: %s has %#v, %s has %#v",
+			writeJob, writeRunsOn, reviewJob, reviewRunsOn)
+	}
+	if write.TimeoutMinutes != review.TimeoutMinutes {
+		t.Errorf("timeout-minutes differs: %s has %d, %s has %d",
+			writeJob, write.TimeoutMinutes, reviewJob, review.TimeoutMinutes)
+	}
+	if !reflect.DeepEqual(write.Outputs, review.Outputs) {
+		t.Errorf("outputs differ: %s has %v, %s has %v",
+			writeJob, write.Outputs, reviewJob, review.Outputs)
+	}
+
+	writeSteps, reviewSteps := write.Steps, review.Steps
+	if len(writeSteps) != len(reviewSteps) {
+		t.Fatalf("%s has %d steps, %s has %d — keep the two agent jobs in sync",
+			writeJob, len(writeSteps), reviewJob, len(reviewSteps))
+	}
+	for i := range writeSteps {
 		var w, r any
-		if err := write[i].Decode(&w); err != nil {
+		if err := writeSteps[i].Decode(&w); err != nil {
 			t.Fatalf("decode %s step %d: %v", writeJob, i, err)
 		}
-		if err := review[i].Decode(&r); err != nil {
+		if err := reviewSteps[i].Decode(&r); err != nil {
 			t.Fatalf("decode %s step %d: %v", reviewJob, i, err)
 		}
 		// Comments are not part of the decoded value, so the two blocks may explain

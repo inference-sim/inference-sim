@@ -68,7 +68,7 @@ what makes the boundary real. Files written into the ephemeral checkout simply h
 route to a branch, and an attempted push fails visibly with a 403 rather than appearing
 to succeed.
 
-Two limits worth stating, so nobody reads the guarantee as wider than it is:
+Three limits worth stating, so nobody reads the guarantee as wider than it is:
 
 - It covers the **workflow token only**. These jobs run on a self-hosted runner, so
   ambient credentials on that machine (a logged-in `gh`, a PAT in `~/.gitconfig`, an SSH
