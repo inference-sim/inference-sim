@@ -4,6 +4,31 @@ Reproducible analysis scripts for BLIS. Each script runs `blis` end-to-end and
 emits a single CSV summary alongside per-run raw outputs, so anyone can
 re-validate a published claim without manually reconstructing the command set.
 
+## archon-build.sh — clone and build the pinned archon-go binary
+
+Clones `archon-go` at a pinned version and builds it, so the `archon.yml` and
+`deliver-verify.yml` workflows can obtain the binary the same way (`ARCHON_BIN=$(scripts/archon-build.sh)`).
+
+```bash
+# Use the version pinned in .archon-version at the repo root
+ARCHON_BIN=$(scripts/archon-build.sh)
+
+# Or override with an explicit version (git branch/tag)
+ARCHON_BIN=$(scripts/archon-build.sh v1.2.3)
+```
+
+| Argument | Meaning |
+|---|---|
+| `[version]` | optional git branch/tag to build; when omitted, falls back to `.archon-version` at the repo root |
+
+The built binary path is printed on **stdout**; every diagnostic (`Building…`, the `git clone`
+output, `Built: …`) goes to **stderr**. That split is deliberate: it is what lets a caller do
+`ARCHON_BIN=$(scripts/archon-build.sh)` and capture only the path. Mixing a diagnostic into
+stdout would silently corrupt `ARCHON_BIN`, so keep new output on the correct stream.
+
+Exits non-zero when no version can be resolved — no argument given **and** no `.archon-version`
+present — rather than building an arbitrary default. Requires `git` and `go` (1.26+).
+
 ## archon-review.sh — `/archon-pr-review` review step
 
 Runs `archon-go pr-review` and composes the PR comment. Called by
