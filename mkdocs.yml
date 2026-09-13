@@ -73,6 +73,8 @@ plugins:
         - Capacity Planning
         - Architecture
         - Tutorials
+        - Simulator Evaluation
+        - Benchmarking
         - Deep Dives
 
 extra:
