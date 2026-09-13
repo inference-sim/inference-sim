@@ -35,10 +35,10 @@ Examples:
 To add a new scoring dimension for the `weighted` routing policy (e.g., predicted-latency):
 
 1. **Implement the scorer function** in `sim/routing_scorers.go` (stateless) or a new file (stateful) — a `scorerFunc` that takes `(*Request, []RoutingSnapshot)` and returns `map[string]float64` with scores in [0,1] per instance. Stateful scorers also return an `observerFunc` called after each routing decision.
-2. **Register the scorer** in `sim/routing_scorers.go`: add to `validScorerNames` map + `newScorerWithObserver` factory switch
+2. **Register the scorer** in `sim/routing_scorers.go`: add one `registerScorer(name, constructor)` call to the single `init()`. Stateless scorers wrap their func with the `stateless(fn)` helper; stateful/param-backed scorers pass a constructor returning `(scorerFunc, observerFunc)`. Validity (`IsValidScorer`/`ValidScorerNames`) is derived from the registry keys — there is no separate name list to keep in sync.
 3. **Add behavioral tests** — monotonicity, boundary values, INV-1/INV-2 conformance
-4. Extension friction: **2 touch points** (implementation + registration in `newScorerWithObserver`). Stateful scorers (like prefix-affinity) may use a separate file (e.g., `sim/routing_prefix_scorer.go`) but the registration point is the same `newScorerWithObserver` switch in `sim/routing_scorers.go`.
-5. **Stateful scorers** return an `observerFunc` alongside the `scorerFunc` from `newScorerWithObserver`. The `observerFunc` signature is `func(req *Request, targetInstance string)` and is called after each routing decision to update scorer state. The scorer and observer share state via closure.
+4. Extension friction: **2 touch points** (implementation + one `registerScorer` call in the `init()` of `sim/routing_scorers.go`). Stateful scorers (like prefix-affinity) may live in a separate file (e.g., `sim/routing_prefix_scorer.go`) but the registration point is the same `init()` registry in `sim/routing_scorers.go`.
+5. **Stateful scorers** return an `observerFunc` alongside the `scorerFunc` from their registered constructor (surfaced via `newScorerWithObserver`). The `observerFunc` signature is `func(req *Request, targetInstance string)` and is called after each routing decision to update scorer state. The scorer and observer share state via closure.
 
 Examples:
 - See `scoreLoadBalance` in `sim/routing_scorers.go` for a simple stateless scorer
