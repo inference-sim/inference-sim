@@ -44,7 +44,7 @@ This auto-resolves both required inputs:
 1. **Model config** -- checks `model_configs/` for a cached `config.json`, fetches from HuggingFace on miss
 2. **Hardware config** -- uses the bundled `hardware_config.json`
 
-**Supported hardware:** The bundled `hardware_config.json` includes specs for **H100** (80 GB HBM3, 989.5 TFLOPS BF16, 3.35 TB/s), **A100-SXM** (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s), and **A100-80** (alias for A100-SXM). To use a different GPU, add an entry to `hardware_config.json` with the required fields (`TFlopsPeak`, `BwPeakTBs`, `mfuPrefill`, `mfuDecode`, `MemoryGiB`), plus `IntraNodeBwGBps`/`InterNodeBwGBps` if instances on that GPU may span nodes (see [Inter-Node Network Cost](#inter-node-network-cost-trained-physics-only)) and reference it via `--hardware <name>`.
+**Supported hardware:** The bundled `hardware_config.json` includes specs for **H100** (80 GB HBM3, 989.5 TFLOPS BF16, 3.35 TB/s), **H200** (141 GB HBM3e, 989.5 TFLOPS BF16, 4.8 TB/s — same Hopper compute die as H100, more/faster memory), **A100-SXM** (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s), **A100-80** (alias for A100-SXM), and **L40S** (48 GB GDDR6, 362 TFLOPS BF16, 0.864 TB/s). To use a different GPU, add an entry to `hardware_config.json` with the required fields (`TFlopsPeak`, `BwPeakTBs`, `mfuPrefill`, `mfuDecode`, `MemoryGiB`), plus `IntraNodeBwGBps`/`InterNodeBwGBps` if instances on that GPU may span nodes (see [Inter-Node Network Cost](#inter-node-network-cost-trained-physics-only)) and reference it via `--hardware <name>`.
 
 **Validated models:** Any dense or MoE transformer with a HuggingFace `config.json` works. The following have been validated end-to-end:
 
