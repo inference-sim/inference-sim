@@ -50,10 +50,13 @@ type DeferrableKVStore interface {
 
 // ReloadReportingKVStore is the optional capability a KVStore implements when an
 // AllocateKVBlocks call can enlarge a new request's GPU-cached prefix by reloading
-// blocks from a lower tier (CPU/secondary offload) during the call itself. Only
-// kv.OffloadCache implements it; the single-tier and legacy-tiered stores do not, so
-// batch formation type-asserts and the re-bill is inert (byte-identical, INV-6) when
-// offload is off.
+// blocks from a lower tier (CPU/secondary offload) during the call itself. Both offload
+// stores implement it — kv.OffloadCache (the #1590 chain, `--kv-offload-config`) and
+// kv.TieredKVCache (the legacy `--kv-cpu-blocks` store). The single-tier kv.KVCacheState
+// (no offload) does NOT: it never reloads, so batch formation's type-assert fails, the
+// re-bill is dead code, and its output is byte-identical (INV-6). Whether the assertion
+// SUCCEEDS is a property of the store type, not of any runtime flag — a request served
+// by a non-reloading store is unaffected regardless.
 //
 // Without this, batch formation bills prefill work from the pre-reload GPU prefix
 // (GetCachedBlocks, computed before AllocateKVBlocks runs), so a genuine offload cache

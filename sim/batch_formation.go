@@ -236,8 +236,9 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 	// #1699: when the KV store can enlarge a new admission's cached prefix by reloading
 	// from the CPU/secondary offload tier DURING AllocateKVBlocks, re-bill prefill work
 	// against the post-reload boundary (otherwise a genuine cache hit is charged as a
-	// full recompute — hit rate moves but timing does not). The type-assert fails for
-	// single-tier and legacy-tiered stores, so reloadReporter stays nil and Phase 2 is
+	// full recompute — hit rate moves but timing does not). Both offload stores implement
+	// the interface (OffloadCache and the legacy TieredKVCache); the non-offload
+	// single-tier KVCacheState does not, so reloadReporter stays nil and Phase 2 is
 	// byte-identical to the pre-#1699 loop (INV-6).
 	reloadReporter, _ := ctx.KVCache.(ReloadReportingKVStore)
 

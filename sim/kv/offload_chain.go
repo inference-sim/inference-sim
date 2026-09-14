@@ -83,8 +83,10 @@ type OffloadCache struct {
 	// boundary (token index) when a CPU->GPU reload extended the prefix beyond the
 	// caller's startIndex (#1699). Batch formation reads it via ReloadedPrefixEnd to
 	// re-bill prefill work; the read is one-shot (consumed) so a later step cannot see
-	// a stale boundary. Written only for !running requests (a running continuation
-	// bills incrementally against ProgressIndex).
+	// a stale boundary. Written only for genuinely-new prefill admissions
+	// (`!running && !IsDecodeSubRequest`, the gate in recordReloadedPrefix) — a running
+	// continuation bills incrementally against ProgressIndex and a PD decode sub-request
+	// is admitted via the decode branch, neither of which reads this back.
 	reloadedPrefixEnd map[string]int64
 
 	perBlockBytes     int64 // resolved per-rank KV bytes of one GPU block (transfer-job sizing)
