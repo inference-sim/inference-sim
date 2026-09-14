@@ -2823,6 +2823,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#structural-separation-of-judgement-and-action" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Structural Separation of Judgement and Action
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#known-failure-modes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2954,6 +2965,49 @@ unreliable. These require independent verification by a human or by an
 orchestrator using different evidence than the agent's claim.</p>
 <p>Examples: "all construction sites updated," "0 CRITICAL issues," "review
 converged," "tests cover all contracts," "coverage is complete."</p>
+<h2 id="structural-separation-of-judgement-and-action">Structural Separation of Judgement and Action<a class="headerlink" href="#structural-separation-of-judgement-and-action" title="Permanent link">&para;</a></h2>
+<p>The tiers above say which agent outputs to verify. Separately, an agent whose job is
+to <em>judge</em> should not hold the capability to <em>act</em> on its own judgement — verification
+that can be skipped is weaker than a capability that was never granted.</p>
+<p>Two places implement this:</p>
+<ul>
+<li><strong>The delivery loop's verdict</strong> comes from <code>scripts/deliver-gate.sh</code>, not from the
+  reviewing agent.</li>
+<li><strong><code>/blis-pr-review</code> runs with a read-only token</strong> (<code>contents: read</code>), so the reviewer's
+  <code>GITHUB_TOKEN</code> cannot push to the branch it is reviewing (#1697).
+  <code>.github/workflows/claude.yml</code> routes the <code>/blis-pr-review</code> command to a separate
+  <code>claude-review</code> job for this reason; every other <code>@claude</code> trigger keeps
+  <code>contents: write</code>, because those may legitimately be asked to make a change. The
+  review job also has no <code>statuses: write</code> — the commit status is published by a
+  separate <code>report-status</code> job, so the reviewer does not set its own verdict either.</li>
+</ul>
+<p><strong>If a review fails, do not restore <code>contents: write</code> to fix it.</strong> The token scope is
+the control, and a review has no legitimate need to push. Note what the scope does and
+does not buy: <code>Bash</code> is required for a review (<code>gh</code>, reading the diff, running the
+toolkit) and <code>Bash</code> can create files, so the read-only <em>token</em> — not the tool list — is
+what makes the boundary real. Files written into the ephemeral checkout simply have no
+route to a branch, and an attempted push fails visibly with a 403 rather than appearing
+to succeed.</p>
+<p>Three limits worth stating, so nobody reads the guarantee as wider than it is:</p>
+<ul>
+<li>It covers the <strong>workflow token only</strong>. These jobs run on a self-hosted runner, so
+  ambient credentials on that machine (a logged-in <code>gh</code>, a PAT in <code>~/.gitconfig</code>, an SSH
+  key) are outside it. Keep the runner free of push credentials.</li>
+<li>The reviewer keeps <code>pull-requests: write</code>, so it can post a comment — and a comment
+  containing <code>@claude</code> is itself a trigger. Two independent things stop that from
+  reaching the write-capable job: <code>check-permissions</code> finds the bot is not a
+  collaborator, and <code>claude.yml</code> deliberately does not set <code>allowed_bots</code> (the delivery
+  workflows do, because their phases are dispatched bot-to-bot by design). Do not add
+  <code>allowed_bots</code> to <code>claude.yml</code> without replacing that barrier.</li>
+<li><code>pull-requests: write</code> is also not append-only — it permits editing and deleting
+  existing comments, so the review <em>record</em> is mutable by the reviewer. Posting a review
+  at all requires that scope, so this is inherent to the token model rather than
+  something the split could have avoided. It is the reason the audit trail worth trusting
+  is the workflow run log, not the comment thread.</li>
+</ul>
+<p>The permission split is pinned by <code>scripts/claude_workflow_test.go</code>, which fails if the
+review job gains write access, if the workflow-level default returns to <code>contents: write</code>,
+if the routing gates stop failing closed, or if the two agent jobs' steps drift apart.</p>
 <h2 id="known-failure-modes">Known Failure Modes<a class="headerlink" href="#known-failure-modes" title="Permanent link">&para;</a></h2>
 <p>Each failure mode below was discovered in a real PR. The tier system exists
 because these failures occurred.</p>

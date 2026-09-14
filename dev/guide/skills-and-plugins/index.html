@@ -2969,6 +2969,7 @@
 <p>Project skills require no installation — they are checked into the repository and automatically available.</p>
 <h2 id="ci-integration">CI Integration<a class="headerlink" href="#ci-integration" title="Permanent link">&para;</a></h2>
 <p>Both skills are triggered via GitHub Actions (<code>@claude /blis-pr-review</code> on PRs, <code>@claude /issue-review</code> on issues). Additionally, <code>/archon-pr-review</code> runs as a separate CI action for structural architecture review (boundary moves, surface changes, edge deltas). See <a href="../archon-pr-review/">Archon PR Review</a>.</p>
+<p><code>/blis-pr-review</code> runs on a <strong>read-only</strong> token — it can post its review comment, but cannot push to the branch it is reviewing (the pass/fail commit status is published by a separate job). Every other <code>@claude</code> trigger keeps write access, since those may legitimately be asked to make a change. Do not widen the review token to work around a failure: see <a href="../../contributing/standards/agent-trust/#structural-separation-of-judgement-and-action">Agent Trust Boundaries</a>.</p>
 <h2 id="which-skills-for-which-workflow">Which Skills for Which Workflow<a class="headerlink" href="#which-skills-for-which-workflow" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
