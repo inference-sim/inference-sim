@@ -42,6 +42,53 @@ orchestrator using different evidence than the agent's claim.
 Examples: "all construction sites updated," "0 CRITICAL issues," "review
 converged," "tests cover all contracts," "coverage is complete."
 
+## Structural Separation of Judgement and Action
+
+The tiers above say which agent outputs to verify. Separately, an agent whose job is
+to *judge* should not hold the capability to *act* on its own judgement — verification
+that can be skipped is weaker than a capability that was never granted.
+
+Two places implement this:
+
+- **The delivery loop's verdict** comes from `scripts/deliver-gate.sh`, not from the
+  reviewing agent.
+- **`/blis-pr-review` runs with a read-only token** (`contents: read`), so the reviewer's
+  `GITHUB_TOKEN` cannot push to the branch it is reviewing (#1697).
+  `.github/workflows/claude.yml` routes the `/blis-pr-review` command to a separate
+  `claude-review` job for this reason; every other `@claude` trigger keeps
+  `contents: write`, because those may legitimately be asked to make a change. The
+  review job also has no `statuses: write` — the commit status is published by a
+  separate `report-status` job, so the reviewer does not set its own verdict either.
+
+**If a review fails, do not restore `contents: write` to fix it.** The token scope is
+the control, and a review has no legitimate need to push. Note what the scope does and
+does not buy: `Bash` is required for a review (`gh`, reading the diff, running the
+toolkit) and `Bash` can create files, so the read-only *token* — not the tool list — is
+what makes the boundary real. Files written into the ephemeral checkout simply have no
+route to a branch, and an attempted push fails visibly with a 403 rather than appearing
+to succeed.
+
+Three limits worth stating, so nobody reads the guarantee as wider than it is:
+
+- It covers the **workflow token only**. These jobs run on a self-hosted runner, so
+  ambient credentials on that machine (a logged-in `gh`, a PAT in `~/.gitconfig`, an SSH
+  key) are outside it. Keep the runner free of push credentials.
+- The reviewer keeps `pull-requests: write`, so it can post a comment — and a comment
+  containing `@claude` is itself a trigger. Two independent things stop that from
+  reaching the write-capable job: `check-permissions` finds the bot is not a
+  collaborator, and `claude.yml` deliberately does not set `allowed_bots` (the delivery
+  workflows do, because their phases are dispatched bot-to-bot by design). Do not add
+  `allowed_bots` to `claude.yml` without replacing that barrier.
+- `pull-requests: write` is also not append-only — it permits editing and deleting
+  existing comments, so the review *record* is mutable by the reviewer. Posting a review
+  at all requires that scope, so this is inherent to the token model rather than
+  something the split could have avoided. It is the reason the audit trail worth trusting
+  is the workflow run log, not the comment thread.
+
+The permission split is pinned by `scripts/claude_workflow_test.go`, which fails if the
+review job gains write access, if the workflow-level default returns to `contents: write`,
+if the routing gates stop failing closed, or if the two agent jobs' steps drift apart.
+
 ## Known Failure Modes
 
 Each failure mode below was discovered in a real PR. The tier system exists
