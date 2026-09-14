@@ -425,3 +425,35 @@ func TestDeferral_RunningRequestDoesNotDefer(t *testing.T) {
 		t.Fatalf("a running-request continuation must not be registered as deferred (C1 gating)")
 	}
 }
+
+// #1699 (discriminating secondary-path guard): a request whose prefix lives only on a
+// secondary tier takes the resolved-deferral admit (secondary→CPU→GPU), which funnels
+// through allocateThroughChain — so it MUST report the reloaded-prefix boundary via
+// ReloadedPrefixEnd, exactly like a CPU-only hit. This is the signal the #1699 fix adds;
+// it does not exist on base, so this test fails there. Unlike an aggregate TTFT
+// comparison, it isolates the prefill-shrink from the H3 deferral penalty.
+func TestDeferral_ResolvedAdmitReportsReloadedPrefix(t *testing.T) {
+	const step = int64(1000)            // ≫ disk service, so each round is one clean step
+	tokens := []sim.TokenID{1, 2, 3, 4} // 2 blocks, secondary-resident only
+	oc := deferOC(80, 7000)
+	seedSecondary(oc, tokens)
+
+	req := &sim.Request{ID: "r", InputTokens: tokens}
+	admitRound := roundsToAdmit(oc, req, 4, step)
+	if admitRound < 3 {
+		t.Fatalf("a cold secondary hit must admit via the resolved-deferral path (>=3 rounds), got %d", admitRound)
+	}
+
+	// The admit went through allocateThroughChain's reload, so the boundary is reported.
+	newStart, ok := oc.ReloadedPrefixEnd(req.ID)
+	if !ok {
+		t.Fatalf("resolved-deferral admit must report a reloaded-prefix boundary (the #1699 signal); got ok=false")
+	}
+	if newStart != 4 {
+		t.Fatalf("the whole 4-token (2-block) secondary prefix was reloaded, so newStart must be 4, got %d", newStart)
+	}
+	// One-shot, same contract as the CPU-only path.
+	if _, ok := oc.ReloadedPrefixEnd(req.ID); ok {
+		t.Fatalf("ReloadedPrefixEnd must be one-shot (consumed on read)")
+	}
+}

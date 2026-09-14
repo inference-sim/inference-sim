@@ -129,8 +129,21 @@ exactly 1 chunk). With `offload_prompt_only: false` (vLLM's `promptAndDecode`), 
 are offloaded too; because BLIS already hashes every completed block prefix-consistently (for
 `block_size > 1`), a later request on the same instance whose **input contains earlier output
 tokens** (multi-turn / agentic workloads) reloads that decode KV from the tiers instead of
-recomputing it — so the cache hit-rate reflects the policy. Reuse is single-instance (offload tiers
-are per-instance and invisible to the router). At `block_size == 1` decode blocks take a guarded
+recomputing it. A reloaded prefix is billed as a **cache hit** — its tokens are dropped from the
+prefill forward pass, so it lowers that request's prefill compute and TTFT rather than being
+charged as a full recompute (#1699; the same correction applies to the legacy `--kv-cpu-blocks`
+tier). Reuse is single-instance (offload tiers are per-instance and invisible to the router).
+
+!!! note "Chunked-prefill limitation (#1706)"
+    The reload credit is currently capped at **one prefill chunk**. When a reload extends the
+    cached prefix past a request's per-step chunk boundary (set by `--long-prefill-token-threshold`
+    / `--max-num-batched-tokens`), only the first chunk is billed as a hit; the reloaded remainder
+    is re-billed as recompute on later steps. So for long-context prompts that are chunked (the main
+    reason to offload KV), the realized TTFT benefit is roughly `chunk_size / prompt_length` — small
+    at the default batched-token budget. Uncapped (prompt-fits-one-chunk) workloads get the full
+    credit. Tracked in [#1706](https://github.com/inference-sim/inference-sim/issues/1706).
+
+At `block_size == 1` decode blocks take a guarded
 allocation path that leaves them unhashed, so decode-offload is inert there — a degenerate offload
 block size (real offload block sizes track the GPU block size). With no `--kv-offload-config`,
 behavior is unchanged (INV-6).
