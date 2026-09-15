@@ -32,9 +32,11 @@ Invariants are properties that must hold at all times during and after simulatio
 
 ## INV-3: Clock Monotonicity
 
-**Statement:** Simulation clock never decreases. Every event's timestamp >= the previous event's timestamp.
+**Statement:** Simulation clock never decreases. Every **processed** event's timestamp >= the previous processed event's timestamp — except when restoring an optimistic advance after a lazily-cancelled event, where no event was processed.
 
-**Verification:** Clock is advanced in the event loop only via min-heap extraction, which guarantees non-decreasing order.
+**Verification:** Clock is advanced in the event loop only via min-heap extraction, which guarantees non-decreasing order. `sim/simulator_test.go` — `TestINV3_ClockNeverDecreases` drives the loop one event at a time and asserts the processed-timestamp sequence is non-decreasing (with a non-vacuity gate, and at least one orphaned timeout present so the carve-out below is exercised).
+
+**The carve-out, and why it is not a violation:** `sim/cluster/cluster.go` advances the cluster clock to an instance's next event time *before* the event is known to be real, then restores the previous value when `ProcessNextEvent()` turns out to have skipped a lazily-cancelled `TimeoutEvent` (`prevClusterClock`). A no-op orphaned timeout must not advance the cluster clock, so the advance is undone. Nothing was processed across that pair of assignments, which is why the statement is scoped to *processed* events. This also means a test asserting on the raw `c.clock` field would fail here and look like a real bug — assert on processed event timestamps instead.
 
 ---
 

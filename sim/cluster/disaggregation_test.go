@@ -138,6 +138,8 @@ func TestNewClusterSimulator_PDEnabled_InvalidModelConfig_Panics(t *testing.T) {
 	NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
 }
 
+// Verifies INV-PD-2 (pool exclusivity): a prefill sub-request routes only to a
+// prefill-role instance.
 func TestDisaggregation_PrefillRoutedToPrefillPool(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(3)
@@ -161,6 +163,8 @@ func TestDisaggregation_PrefillRoutedToPrefillPool(t *testing.T) {
 	}
 }
 
+// Verifies INV-PD-2 (pool exclusivity): a decode sub-request routes only to a
+// decode-role instance.
 func TestDisaggregation_DecodeRoutedToDecodePool(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(3)
@@ -185,6 +189,8 @@ func TestDisaggregation_DecodeRoutedToDecodePool(t *testing.T) {
 	}
 }
 
+// Verifies INV-PD-1 (KV completeness): a decode sub-request is never enqueued before
+// its KV transfer completes.
 func TestDisaggregation_RequestCompletesFullPath(t *testing.T) {
 	// BC-PD-5: Request completes through full disaggregated path
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
@@ -408,6 +414,11 @@ func TestDisaggregation_DroppedParent_NotInLatencyMaps(t *testing.T) {
 	assertINV1Conservation(t, m, 4, "no-token drop exclusion (#1511)")
 }
 
+// Verifies INV-PD-4 (phase causality) for every parent request: the chain
+// arrival -> prefill_enqueue -> prefill_complete -> transfer_start ->
+// transfer_complete -> decode_enqueue is non-decreasing. INV-PD-4's statement ends
+// with `<= completion`, which this test deliberately does NOT cover — see the note
+// on the chain below for why.
 func TestDisaggregation_PhaseCausality(t *testing.T) {
 	// BC-PD-9 / INV-PD-4: Full causal chain for every disaggregated request
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
@@ -442,6 +453,8 @@ func TestDisaggregation_PhaseCausality(t *testing.T) {
 	}
 }
 
+// Verifies INV-PD-5 (pool stability): pool membership is fixed at construction and
+// is unchanged after Run().
 func TestDisaggregation_PoolStability(t *testing.T) {
 	// INV-PD-5: Pool membership unchanged after initialization
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
@@ -1636,6 +1649,9 @@ func mapKeysRM(m map[string]sim.RequestMetrics) []string {
 	return keys
 }
 
+// Verifies INV-PD-6b (CompletionTime includes PostDecodeFixedOverhead), via the
+// client-visible E2E metric rather than the lifecycle field.
+//
 // BC-3b: PostDecodeFixedOverhead flows into the client-visible E2E metric.
 // Law: for matching completed parents across two runs (zero vs non-zero overhead),
 // E2E_with_overhead - E2E_without_overhead == wantOverhead exactly.

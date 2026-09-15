@@ -1328,6 +1328,113 @@ func TestWorkConserving_StepRestartsWhenWaitQNonEmpty(t *testing.T) {
 	}
 }
 
+// TestINV3_ClockNeverDecreases verifies INV-3 (clock monotonicity):
+// GIVEN a simulator running several requests to completion, each carrying a deadline
+//
+//	far enough out that its TimeoutEvent is orphaned by the request's own
+//	completion (the lazy-cancellation path)
+//
+// WHEN the event loop is driven one event at a time
+// THEN every event the loop actually PROCESSES has a timestamp >= its predecessor's
+// AND the run is non-vacuous: many events processed and the clock advanced past 0.
+//
+// The doc calls INV-3 true "by construction" via min-heap extraction; nothing checked
+// it. This asserts on PROCESSED EVENT TIMESTAMPS rather than on a clock field, which
+// is the formulation INV-3 is stated in and the only one that generalizes to the
+// cluster loop. Scope, stated precisely so nobody over-reads this test: within package
+// sim, sim.Clock is assigned in exactly one place (from the heap pop in
+// ProcessNextEvent), so an assertion on sim.Clock would also pass here. The formulation
+// matters at the CLUSTER level, where ClusterSimulator deliberately RESTORES an
+// optimistic clock advance after an orphaned timeout (the prevClusterClock restore in
+// sim/cluster/cluster.go) — a raw-clock-field assertion fails there and looks like a
+// real bug. This test covers the single-instance skip, not that cluster restore.
+//
+// Skipping orphans below uses exactly the predicate production uses, so the test
+// tracks the real behaviour rather than a paraphrase of it.
+func TestINV3_ClockNeverDecreases(t *testing.T) {
+	const horizon = int64(10_000_000)
+
+	cfg := SimConfig{
+		Horizon:             horizon,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(2, 2048, 0), // small batch: forces queueing, so events interleave
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-inv3", "H100", 1, 1, false, "", "roofline", 0),
+	}
+
+	s := mustNewSimulator(t, cfg)
+
+	// Deadline is inside the horizon (so the TimeoutEvent is actually scheduled) but
+	// far beyond any request's completion, so every timeout is orphaned at pop time.
+	// That is the lazy-cancellation path this test must tolerate rather than trip on.
+	const orphanDeadline = horizon / 2
+	for i := 0; i < 6; i++ {
+		s.InjectArrival(&Request{
+			ID:           fmt.Sprintf("req-%d", i),
+			ArrivalTime:  int64(i) * 500,
+			Deadline:     orphanDeadline,
+			InputTokens:  make([]TokenID, 20),
+			OutputTokens: make([]TokenID, 8),
+			State:        StateQueued,
+		})
+	}
+
+	var (
+		processed int
+		orphans   int
+		// The first processed event has no predecessor, so seed prev below every
+		// possible timestamp: the first comparison is meant to be vacuously true.
+		// It cannot mask a real violation, because event timestamps are non-negative.
+		prev = int64(math.MinInt64)
+	)
+	for s.HasPendingEvents() {
+		ev := s.ProcessNextEvent()
+
+		// Orphaned timeout: popped and returned without Execute() and without
+		// advancing the clock, so no event was processed. This is the one place the
+		// test must know a concrete event type — the skip is type-dispatched in
+		// production, so mirroring ProcessNextEvent's own guard is what keeps the two
+		// in step. An executed TimeoutEvent leaves the request in StateTimedOut, never
+		// StateCompleted, so reading state after the call gives the same answer the
+		// production guard got before it.
+		if te, ok := ev.(*TimeoutEvent); ok && te.Request.State == StateCompleted {
+			orphans++
+			continue
+		}
+
+		ts := ev.Timestamp()
+		if ts < prev {
+			t.Fatalf("INV-3 violated: processed event %T at timestamp %d after an event at %d "+
+				"(processed %d events so far)", ev, ts, prev, processed)
+		}
+		prev = ts
+		processed++
+
+		if s.Clock > s.Horizon {
+			break
+		}
+	}
+
+	// Non-vacuity: a test that processed nothing would pass the ordering check.
+	if processed < 10 {
+		t.Fatalf("non-vacuity: only %d events processed, want >= 10 "+
+			"(the ordering assertion above is meaningless on a near-empty run)", processed)
+	}
+	if prev <= 0 {
+		t.Fatalf("non-vacuity: last processed timestamp = %d, want > 0 (clock never advanced)", prev)
+	}
+	if orphans == 0 {
+		t.Fatalf("setup no longer exercises lazy cancellation: 0 orphaned TimeoutEvents, so the "+
+			"skipped-event branch above went untaken. %d events processed, last at %d, %d requests "+
+			"completed, %d timed out; deadline was %d and horizon %d. A timeout is orphaned only "+
+			"while its request completes before its deadline AND the deadline is inside the horizon "+
+			"(EnqueueRequest skips scheduling otherwise)",
+			processed, prev, s.Metrics.CompletedRequests, s.Metrics.TimedOutRequests,
+			orphanDeadline, horizon)
+	}
+}
+
 // BC-1: Oversized request dropped at enqueue
 func TestEnqueueRequest_OversizedInput_DroppedNotEnqueued(t *testing.T) {
 	// GIVEN a simulator with 10 KV blocks of 16 tokens each (160 token capacity)
