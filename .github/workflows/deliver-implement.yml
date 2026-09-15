@@ -379,7 +379,7 @@ jobs:
             # remote-tracking ref is version-dependent, and checking out a STALE origin/$BRANCH
             # would hand the agent an older tree and lose the very commits this resume exists to
             # continue from.
-            git fetch --quiet origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || exit 1
+            git fetch --quiet origin "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}" || exit 1
             git checkout -B "$BRANCH" "origin/$BRANCH" || exit 1
           else
             git checkout -B "$BRANCH" "origin/$base" || exit 1
@@ -583,8 +583,8 @@ jobs:
           # "no work", which would skip the hand-off and comment that the agent built nothing.
           # That silent-discard is worse than any failure this step can report.
           if ! git fetch --quiet origin \
-                 "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" \
-                 "+refs/heads/$BASE:refs/remotes/origin/$BASE"; then
+                 "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}" \
+                 "+refs/heads/${BASE}:refs/remotes/origin/${BASE}"; then
             echo "::error::could not fetch $BRANCH and $BASE; cannot tell whether the delivery produced work"
             exit 1
           fi
