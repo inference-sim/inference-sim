@@ -215,6 +215,37 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantPlan:    "",
 			wantHeading: "true",
 		},
+
+		// --- case and fence edge cases (round-2 review findings on #1723) ---
+		{
+			// heading_seen is computed with `grep -i`, while extraction used a case-SENSITIVE sed —
+			// so a lowercase heading warned and fell back to the default branch even though the
+			// author had written a perfectly usable section. The two now agree.
+			name:        "lowercase heading is extracted, not merely detected",
+			body:        "## target branch\n\n`feature/lower`\n",
+			wantBranch:  "feature/lower",
+			wantPlan:    "",
+			wantHeading: "true",
+		},
+		{
+			name:        "mixed-case heading is extracted too",
+			body:        "## Target Branch\n\n`feature/mixed`\n",
+			wantBranch:  "feature/mixed",
+			wantPlan:    "",
+			wantHeading: "true",
+		},
+		{
+			// Pins behaviour on a construct that is not valid CommonMark anyway: a ``` opener
+			// closed by ~~~ makes the two toggles cancel, so content after it is NOT stripped and
+			// the real section that follows is read. Safe — such a ref still has to pass the shape
+			// check and exist on the remote — but pinned so a future change to fence handling
+			// cannot alter it unnoticed.
+			name:        "mismatched fence delimiters do not swallow the rest of the body",
+			body:        "```\nexample\n~~~\n\n## Target branch\n\n`feature/after-mismatch`\n",
+			wantBranch:  "feature/after-mismatch",
+			wantPlan:    "",
+			wantHeading: "true",
+		},
 	}
 
 	// An issue body is attacker-writable and the caller feeds this ref to `git ls-remote` and

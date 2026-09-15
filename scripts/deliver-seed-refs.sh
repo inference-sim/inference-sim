@@ -95,8 +95,14 @@ BODY=$(printf '%s\n' "$BODY" | awk '
 # `-o` still prints EVERY match on that line — so the arrow form emitted both `feature/<name>`
 # and `main`, and the two-line result was then rejected by the whitespace guard below, silently
 # falling back to the default branch. Pinned by the arrow-form case in the test.
+#
+# The heading is matched case-INSENSITIVELY, written as bracket classes rather than with sed's `I`
+# flag because that flag is a GNU extension and this script is exercised on macOS (BSD sed) too. It
+# has to agree with the case-insensitive `grep -i` that computes heading_seen below: when detection
+# accepted a spelling extraction rejected, `## target branch` warned and fell back to the default
+# branch even though the author had written a perfectly usable section.
 TARGET_BRANCH=$(printf '%s\n' "$BODY" \
-  | sed -n '/^[[:space:]]*#\{1,6\}[[:space:]]*Target branch[[:space:]]*$/,/^[[:space:]]*#\{1,6\}[[:space:]]/p' \
+  | sed -n '/^[[:space:]]*#\{1,6\}[[:space:]]*[Tt][Aa][Rr][Gg][Ee][Tt][[:space:]][Bb][Rr][Aa][Nn][Cc][Hh][[:space:]]*$/,/^[[:space:]]*#\{1,6\}[[:space:]]/p' \
   | grep -oE '`[^`]+`' \
   | head -n1 \
   | tr -d '`') || true

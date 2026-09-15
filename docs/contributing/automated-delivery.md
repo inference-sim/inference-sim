@@ -37,7 +37,7 @@ Then leave. Every phase posts a comment, so the whole delivery history is readab
 ```
 /approve-issue-for-pr-delivery
   │
-  ├─ Deliver — Implement    draft PR on deliver/issue-N FIRST, then tests, code, self-review
+  ├─ Deliver — Implement    branch + draft PR on deliver/issue-N FIRST, then tests, code
   │      ↓
   ├─ Deliver — Verify       build/test/lint → archon review → methodology review
   │      │                  ready-for-merge → STOP
@@ -48,20 +48,25 @@ Then leave. Every phase posts a comment, so the whole delivery history is readab
   └─ back to Verify              (at most 3 correction rounds)
 ```
 
-**The implement phase opens its draft PR before it starts work, not after it finishes.** The
-workflow — not the agent — creates `deliver/issue-N` with an empty seed commit and opens a draft
-PR against the sub-issue's target branch, then hands the agent a branch and a PR that already
-exist. The agent commits and pushes as it goes, and marks the PR ready for review when it is
-done. Three things follow from that ordering:
+**The implement phase opens its branch and PR before it starts work, not after it finishes.** The
+workflow creates and pushes `deliver/issue-N` — with an empty seed commit, based on the sub-issue's
+target branch — before the agent starts. The agent's own first action, before it writes any code, is
+to open a **draft** PR on that branch; it then commits and pushes as it goes, and marks the PR ready
+for review when it is done. Three things follow from that ordering:
 
 - **An interrupted run leaves recoverable work.** A lost runner executes no step at all, so an
   agent that pushed only at the end left nothing behind — a delivery once lost a finished
-  implementation that way, because the runner was evicted seconds before its single push.
+  implementation that way, because the runner was evicted seconds before its single push. The branch
+  is pushed by the workflow, so this holds regardless of what the agent does.
 - **An interrupted delivery is visible.** `deliver-stall-sweep.yml` finds deliveries *from the PR
-  side*, so a run that died before opening a PR was invisible to the one backstop meant to catch
-  it. A PR that exists from minute one is always sweepable.
-- **A PR still showing the seeded body was interrupted.** The draft body says so in as many
-  words, so an abandoned delivery is recognisable without reading the run log.
+  side*, so a run that died before opening a PR was invisible to the one backstop meant to catch it.
+  Opening the PR first shrinks that window from the whole run to the agent's first action. It does
+  not eliminate it: a runner lost in the first seconds still leaves a pushed branch with no PR, which
+  the sweep cannot see. Teaching the sweep to also consider PR-less delivery branches would close
+  the remainder, and is tracked separately.
+- **A PR still marked draft, saying the work is in progress, was interrupted.** The agent is told
+  to say so in the body it opens, so an abandoned delivery is recognisable without reading the run
+  log.
 
 Because a PR now exists from the start, an open PR is no longer evidence that anything was built.
 The hand-off to verify is gated on the branch actually carrying a file change against its base;
@@ -150,7 +155,7 @@ Archon is optional throughout: with a plan there is a deterministic number that 
 
 **Every phase reports its own failure**, including a step that was cancelled, and applies `needs-human`.
 
-**A dead runner cannot report itself.** If the runner is lost mid-job, no step executes — not `always()` ones, not even the action's own post-steps. This has happened twice: the first time the delivery left no branch, no PR, no comment and no label, which is indistinguishable from nobody having run the command; the second time it also lost a finished implementation that had never been pushed. Two *different* mechanisms close those two holes, and it is worth keeping them apart: **seeding the draft PR up front makes the delivery visible** — to the sweep, and to a human reading the issue — while **incremental pushing is what makes the work survive**. Seeding alone would open an empty PR and still lose everything since the last push, so a phase that pushed only at the end would be findable but no less destroyed. `deliver-stall-sweep.yml` covers the visibility half: it runs on a schedule and flags any open PR on a `deliver/issue-*` branch that carries neither terminal label, is not paused, and has had no activity for 180 minutes. Activity means comments, reviews *and* review comments — the loop reacts to all three, so counting only comments would flag a delivery that was in fact responding to a review.
+**A dead runner cannot report itself.** If the runner is lost mid-job, no step executes — not `always()` ones, not even the action's own post-steps. This has happened twice: the first time the delivery left no branch, no PR, no comment and no label, which is indistinguishable from nobody having run the command; the second time it also lost a finished implementation that had never been pushed. Two *different* mechanisms close those two holes, and it is worth keeping them apart: **opening the branch and PR up front makes the delivery visible** — to the sweep, and to a human reading the issue — while **pushing the branch and then pushing as you go is what makes the work survive**. Visibility alone would leave an empty PR and still lose everything since the last push, so a phase that pushed only at the end would be findable but no less destroyed. `deliver-stall-sweep.yml` covers the visibility half: it runs on a schedule and flags any open PR on a `deliver/issue-*` branch that carries neither terminal label, is not paused, and has had no activity for 180 minutes. Activity means comments, reviews *and* review comments — the loop reacts to all three, so counting only comments would flag a delivery that was in fact responding to a review.
 
 180 minutes is not arbitrary: the threshold has to exceed the longest *legitimate* silence, which is one phase's own budget (implement and verify are both capped at 120 minutes, and each reports at the end), plus slack for a busy runner. `scripts/deliver_guards_test.go` enforces that relationship, so a phase budget cannot be raised past the window without a failing test.
 
@@ -189,14 +194,16 @@ The verify model is deliberately *not* the implement model. Two instances of one
 
 ## Setup
 
-**"Allow GitHub Actions to create and approve pull requests" must be enabled**
-(Settings → Actions → General → Workflow permissions). The implement phase opens the delivery PR
-from a workflow step using `GITHUB_TOKEN`, and that call returns 403 without this setting **no
-matter what `permissions: pull-requests: write` declares**. It is off by default and can also be
-disabled organisation-wide, in which case the org setting wins. Symptom if you miss it: every
-delivery fails at the seed step, before the agent runs, with
-`::error::could not open a draft PR for deliver/issue-N` — loud, but the cause is not obvious from
-the message.
+**"Allow GitHub Actions to create and approve pull requests" is deliberately NOT required, and
+should stay disabled.** This constrains how the loop is allowed to work, so it is worth knowing why.
+GitHub exposes creating and approving pull requests as a **single** toggle
+(`can_approve_pull_request_reviews`) that grants both to *every* workflow in the repository — there
+is no way to take only creation. This loop must never approve anything: it labels, and a human
+merges. So no phase creates a pull request from a workflow step, which would use `GITHUB_TOKEN` and
+need that toggle; the agent opens the PR instead, with the App installation token
+`claude-code-action` obtains via OIDC, which the setting does not govern.
+`scripts/deliver_guards_test.go` fails if a workflow step reintroduces PR creation, so this cannot
+regress quietly.
 
 **The labels must exist before the workflows are used.** A workflow applying a label that does not exist fails at the API call, which strands a delivery mid-loop:
 

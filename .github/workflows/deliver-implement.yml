@@ -288,32 +288,41 @@ jobs:
         with:
           fetch-depth: 0
 
-      # PR-FIRST (#1722). The branch and a DRAFT PR are created HERE, deterministically, before
-      # the agent starts — not by the agent as its last action.
+      # BRANCH-FIRST (#1722). The delivery branch is created and PUSHED HERE, before the agent
+      # runs; the agent opens its draft PR as its own first action.
       #
-      # Two things forced this, both seen on #1706. A runner that dies mid-job executes NO step,
-      # not even `always()` ones (the reporter at the bottom of this file says so, from #1685), so
-      # an agent that pushes only at the end leaves nothing behind: #1706's second attempt lost 52
-      # minutes of FINISHED work because the pod was evicted 75 seconds before it would have
-      # pushed. And deliver-stall-sweep.yml — the backstop built for exactly that class — selects
-      # deliveries FROM THE PR SIDE, so a run that dies before opening a PR is invisible to the one
-      # detector meant to catch it. #1706 was the second delivery lost that way.
+      # WHY ANYTHING IS SEEDED. A runner that dies mid-job executes NO step, not even `always()`
+      # ones (the reporter at the bottom of this file says so, from #1685). An agent that pushes
+      # only at the end therefore leaves nothing: #1706's second attempt lost 52 minutes of
+      # FINISHED work because the pod was evicted 75 seconds before it would have pushed. Pushing
+      # the branch up front means the work survives whatever happens next, and a re-issued command
+      # resumes that branch instead of re-deriving the whole design.
       #
-      # Seeding first fixes both, and a third thing: a re-issued command now has a branch to
-      # resume from instead of re-deriving the whole design from scratch.
+      # WHY THE PR IS NOT OPENED HERE, though an earlier revision of this change did exactly that.
+      # Creating a PR from a workflow step uses GITHUB_TOKEN, which GitHub gates behind the
+      # repository setting "Allow GitHub Actions to create and approve pull requests". That is ONE
+      # toggle (`can_approve_pull_request_reviews`) granting creation AND approval to every workflow
+      # in the repository; there is no way to take only the half this loop needs. This loop must
+      # never approve anything — it labels, and a human merges — so acquiring an approval capability
+      # repo-wide, on a public repository that deliberately runs agent workflows, to save the agent
+      # one command is the wrong trade.
       #
-      # DRAFT, because the PR exists before the work does. The agent marks it ready when the
-      # implementation is complete. Nothing downstream filters on draft state — verified against
-      # deliver-verify.yml, deliver-correct.yml, scripts/deliver-gate.sh and
-      # scripts/deliver-stall-candidates.jq, none of which reads `isDraft`.
+      # claude-code-action already opens PRs with an App installation token obtained via OIDC, which
+      # that setting does not govern: every delivery PR so far (#1680, #1708, #1713) is authored by
+      # `app/claude`. So PR creation stays where it already works and the toggle stays off.
+      # scripts/deliver_guards_test.go fails if a workflow step reintroduces it.
       #
-      # The empty seed commit is load-bearing: GitHub refuses a PR with no commits between base
-      # and head, so without it there is nothing to open a PR against.
+      # WHAT THAT COSTS, stated rather than glossed: PR creation is not workflow-guaranteed. A
+      # runner lost in the first seconds leaves a pushed branch with no PR, and
+      # deliver-stall-sweep.yml selects candidates FROM THE PR SIDE, so it cannot see that. The
+      # exposure shrinks from the whole run (~52 minutes on #1706) to the agent's first action, and
+      # the branch push means WORK is never lost either way. Closing the remainder needs the sweep to
+      # also consider delivery branches with no PR — a change to that workflow, tracked separately.
       #
-      # No blocked-dependency check here: `check-permissions` already refuses a blocked issue
-      # before this job is scheduled (see the `Depends on:` logic above), so reaching this step
-      # means the guard passed. That is why seeding cannot open a PR for a blocked issue.
-      - name: Open the delivery branch and a draft PR
+      # No blocked-dependency check here: `check-permissions` already refuses a blocked issue before
+      # this job is scheduled (see the `Depends on:` logic above), so reaching this step means the
+      # guard passed.
+      - name: Open the delivery branch
         id: seed
         if: steps.paused.outputs.paused == 'false'
         run: |
@@ -391,41 +400,15 @@ jobs:
             echo "::error::could not list PRs for $BRANCH"
             exit 1
           }
-          if [[ -z "$pr" ]]; then
-            # `$plan` is copied VERBATIM so the dist ratchet can read it:
-            # scripts/archon-plan-resolve.sh matches the plan out of the PR BODY, and a PR to a
-            # feature branch links no closing issue, so the body is the only place it can come
-            # from. Seeding it means the declaration survives an agent that never finishes.
-            {
-              echo "Delivering #$ISSUE_NUMBER."
-              echo
-              echo "**Status: in progress — do not review yet.**"
-              echo
-              echo "The implement phase opened this PR before starting work, so that a run"
-              echo "interrupted part-way leaves recoverable commits and a delivery the stall sweep"
-              echo "can see (#1722). The agent replaces this body with a contract-by-contract"
-              echo "statement and marks the PR ready for review when the implementation is done."
-              echo "A PR still showing this text was interrupted."
-              if [[ -n "$plan" ]]; then
-                echo
-                echo "$plan"
-              fi
-              echo
-              echo "Closes #$ISSUE_NUMBER"
-            } > "$RUNNER_TEMP/seed-pr-body.md"
-
-            gh pr create --repo "$REPO" --draft --base "$base" --head "$BRANCH" \
-              --title "$title" --body-file "$RUNNER_TEMP/seed-pr-body.md" || {
-                echo "::error::could not open a draft PR for $BRANCH against $base"
-                exit 1
-              }
-            pr=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number --jq '.[0].number // empty') || true
-            [[ -n "$pr" ]] || { echo "::error::opened a draft PR for $BRANCH but could not read its number"; exit 1; }
-            echo "Opened draft PR #$pr ($BRANCH → $base)."
+          if [[ -n "$pr" ]]; then
+            echo "Reusing open PR #$pr on $BRANCH — the agent continues it."
           else
-            echo "Reusing open PR #$pr on $BRANCH."
+            echo "No open PR on $BRANCH yet — the agent opens the draft PR as its first action."
           fi
           echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          # Handed to the prompt so the agent copies it into the PR body verbatim: the dist ratchet
+          # reads the plan FROM THE BODY, and a PR to a feature branch links no closing issue.
+          echo "plan=$plan" >> "$GITHUB_OUTPUT"
 
       - name: Implement the sub-issue
         if: steps.paused.outputs.paused == 'false'
@@ -492,13 +475,36 @@ jobs:
             catalogue and press you to use it; ignore the rest. These instructions take
             precedence, as that catalogue's own rules acknowledge.
 
-            A branch and a DRAFT PR already exist — you do not create either:
+            The BRANCH already exists and is checked out — you do not create it:
 
             - branch `${{ env.BRANCH }}`, based on `${{ steps.seed.outputs.base }}`
-            - draft PR #${{ steps.seed.outputs.pr }}
+            - PR open on it right now: `${{ steps.seed.outputs.pr }}` — an EMPTY value means none
 
-            Check out that branch and commit to it. Do not rename it, do not open a second PR,
-            and do not change the PR's base.
+            Do not rename the branch, do not open a second PR on it, and do not change its base.
+
+            **YOUR FIRST ACTION, BEFORE YOU WRITE ANY CODE.** If the PR value above is empty, open
+            a DRAFT pull request now:
+
+            ```
+            gh pr create --draft --base ${{ steps.seed.outputs.base }} --head ${{ env.BRANCH }} \
+              --title "<the issue title>" --body-file <a file you write>
+            ```
+
+            Open it FIRST, never last. If this runner dies — and it has, mid-delivery, more than
+            once — nothing you have not pushed and no PR you have not opened survives, and a
+            delivery with no PR is invisible to the stall sweep that exists to catch exactly that.
+            Opening it costs seconds and is what makes an interrupted delivery recoverable.
+
+            The draft body must contain at least:
+
+            - `Closes #${{ env.ISSUE_NUMBER }}`
+            - this line copied VERBATIM if it is not empty: `${{ steps.seed.outputs.plan }}`
+              (the dist ratchet reads the plan from the PR BODY, and a PR to a feature branch links
+              no closing issue, so nothing else can supply it)
+            - a line saying the work is in progress and the PR is not ready to review
+
+            If the PR value above is NOT empty, that PR already exists — use it, do not open
+            another.
 
             RESUMING: `git log --oneline ${{ steps.seed.outputs.base }}..${{ env.BRANCH }}`. If it
             shows more than the single empty `deliver: open the delivery branch` commit, an
@@ -532,7 +538,8 @@ jobs:
             and a PR to a feature branch links no closing issue, so dropping it stops the dist
             ratchet, which the verify phase treats as a blocking signal rather than a pass.
 
-            Then mark the PR ready for review (`gh pr ready ${{ steps.seed.outputs.pr }}`) and
+            Then mark the PR ready for review (`gh pr ready` on YOUR PR — do not paste the value
+            above, it is empty on a first delivery) and
             post ONE comment on it summarising what you built, what you deliberately left out,
             and anything you were unsure about. The uncertainty note is the first thing the
             verify phase reads, so be honest in it. Leave the PR a draft if — and only if — you
@@ -572,7 +579,7 @@ jobs:
       # 120-minute agent review and a full CI dispatch discovering the diff is empty.
       - name: Check whether the delivery produced any work
         id: work
-        if: always() && steps.paused.outputs.paused == 'false' && steps.seed.outputs.pr != ''
+        if: always() && steps.paused.outputs.paused == 'false' && steps.seed.outputs.base != ''
         env:
           BASE: ${{ steps.seed.outputs.base }}
         run: |
@@ -620,35 +627,64 @@ jobs:
       # dependency, and the real cause was an agent ending its turn on a design proposal. A
       # confident wrong cause sent the first hour of diagnosis the wrong way, so this reports only
       # what the phase can actually observe and names the two causes that produce it.
-      - name: Report a delivery that produced no work
-        if: success() && steps.paused.outputs.paused == 'false' && steps.work.outputs.changed == 'false'
+      # TWO distinct dead ends, one reporter, because both mean "the phase finished and verify will
+      # never run" and both were silent before. The second exists only because the AGENT opens the
+      # PR: work can land on the branch with no PR to verify it, and the hand-off is gated on the
+      # PR, so without this the delivery would stop with nothing said.
+      #
+      # Neither branch guesses at a cause. The version this replaced asserted "the usual reason is
+      # an unmerged `Depends on:` blocker", which on #1706 was simply false — that issue declares no
+      # dependency — and the confident wrong cause cost an hour of misdirected diagnosis.
+      - name: Report a delivery that will not reach verify
+        if: >-
+          success() && steps.paused.outputs.paused == 'false' &&
+          (steps.work.outputs.changed == 'false' || steps.pr.outputs.number == '')
         uses: actions/github-script@v8
         with:
           script: |
             const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const pr = '${{ steps.seed.outputs.pr }}';
+            const pr = '${{ steps.pr.outputs.number }}';
             const base = '${{ steps.seed.outputs.base }}';
-            await github.rest.issues.createComment({
-              owner: context.repo.owner, repo: context.repo.repo,
-              issue_number: Number(process.env.ISSUE_NUMBER),
-              body: [
+            const changed = '${{ steps.work.outputs.changed }}';
+            const branch = process.env.BRANCH;
+            let body;
+            if (changed !== 'false' && !pr) {
+              body = [
+                '## Delivery stopped — work was committed but no PR was opened',
+                '',
+                `\`${branch}\` carries committed work, but no PR is open for it, so nothing was`,
+                'handed to verify. **The work is not lost** — it is pushed.',
+                '',
+                'The agent is asked to open its draft PR as its first action, so it did not get that',
+                `far or did not do it. See the [run](${run}).`,
+                '',
+                `Either open a PR from \`${branch}\` into \`${base}\` by hand, or re-issue`,
+                '`/approve-issue-for-pr-delivery` — the phase resumes on that branch and asks the',
+                'agent again.'
+              ].join('\n');
+            } else {
+              body = [
                 '## Delivery stopped — the implement phase changed no files',
                 '',
-                `The agent step completed without error, but \`${process.env.BRANCH}\` carries no`,
-                `file changes against \`${base}\`. Draft PR #${pr} is open and empty, so nothing`,
-                'was handed to verify.',
+                `The agent step completed without error, but \`${branch}\` carries no file changes`,
+                `against \`${base}\`, so nothing was handed to verify.`,
+                pr ? `PR #${pr} is open and empty.` : 'No PR was opened either.',
                 '',
-                'This is the automation producing nothing, not a verdict on the issue. The two',
-                'causes that look like this:',
+                'This is the automation producing nothing, not a verdict on the issue. Two causes',
+                'look like this:',
                 '',
                 '- **the agent ended its turn without implementing** — it asked a question or',
                 '  proposed a design and stopped, which cannot work here because nobody replies.',
                 `  Check the [run](${run}) for what it did with its turn.`,
                 '- **the agent could not start** — it read the issue and found nothing actionable.',
                 '',
-                `Re-issuing \`/approve-issue-for-pr-delivery\` resumes on \`${process.env.BRANCH}\``,
-                'rather than starting over, so a partial attempt is not lost.'
-              ].join('\n')
+                `Re-issuing \`/approve-issue-for-pr-delivery\` resumes on \`${branch}\` rather than`,
+                'starting over, so a partial attempt is not lost.'
+              ].join('\n');
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: Number(process.env.ISSUE_NUMBER), body
             });
 
       # `always() && !success()`, NOT `failure() || cancelled()`. Per the GitHub expression docs
@@ -688,8 +724,8 @@ jobs:
                 'A step errored, or the job hit its 120-minute timeout, before the phase could',
                 'hand off. This is a failure of the automation, not a verdict on the issue.',
                 '',
-                pr ? `Draft PR #${pr} is open. The hand-off did not complete, so nothing will verify it yet.`
-                   : 'No PR is open, which means the phase died before it could even seed one.',
+                pr ? `PR #${pr} is open. The hand-off did not complete, so nothing will verify it yet.`
+                   : `No PR is open for \`${branch}\`. The agent opens it as its first action, so the phase died before that or never did it.`,
                 '',
                 work,
                 '',

@@ -105,25 +105,22 @@ func indexOfStep(steps []implementStep, match func(implementStep) bool) int {
 	return -1
 }
 
-// The delivery branch and its draft PR must be created BEFORE the agent runs (#1722).
+// The delivery BRANCH must be created and pushed BEFORE the agent runs (#1722).
 //
-// This is the property that makes an interrupted delivery recoverable at all. A runner that dies
-// mid-job executes no step, not even `always()` ones, so an agent that pushes only at the end
-// leaves nothing behind — that lost #1706 a finished 52-minute implementation. It is also what
-// makes the delivery visible to deliver-stall-sweep.yml, which selects candidates from the PR
-// side and therefore cannot see a delivery that never opened one.
+// This is what makes an interrupted delivery recoverable. A runner that dies mid-job executes no
+// step, not even `always()` ones, so an agent that pushes only at the end leaves nothing behind —
+// that lost #1706 a finished 52-minute implementation.
 //
-// Asserted as step ORDER rather than mere presence: a seeding step that ran after the agent
-// would satisfy a `strings.Contains` check while restoring exactly the failure mode it exists to
-// remove.
-func TestDeliverImplementSeedsThePRBeforeTheAgentRuns(t *testing.T) {
+// Asserted as step ORDER rather than mere presence: a seeding step placed after the agent would
+// satisfy a `strings.Contains` check while restoring exactly the failure mode it removes.
+func TestDeliverImplementSeedsTheBranchBeforeTheAgentRuns(t *testing.T) {
 	steps := loadImplementSteps(t)
 
 	seed := indexOfStep(steps, func(s implementStep) bool { return s.ID == "seed" })
 	if seed < 0 {
-		t.Fatal("deliver-implement.yml has no step with `id: seed`. The delivery branch and draft " +
-			"PR must be opened by the workflow before the agent runs, so that a run interrupted " +
-			"part-way leaves recoverable commits and a delivery the stall sweep can see (#1722)")
+		t.Fatal("deliver-implement.yml has no step with `id: seed`. The delivery branch must be " +
+			"pushed by the workflow before the agent runs, so that a run interrupted part-way " +
+			"leaves recoverable commits (#1722)")
 	}
 
 	agent := indexOfStep(steps, func(s implementStep) bool {
@@ -135,21 +132,87 @@ func TestDeliverImplementSeedsThePRBeforeTheAgentRuns(t *testing.T) {
 
 	if seed > agent {
 		t.Errorf("the `seed` step is at index %d, AFTER the agent step at index %d. Seeding after "+
-			"the agent means a dead runner again leaves no branch and no PR — the #1706 failure",
+			"the agent means a dead runner again leaves no branch — the #1706 failure",
 			seed, agent)
 	}
 
-	// The hand-off must additionally require real work, because since #1722 an open PR is the
-	// seed's own doing and no longer evidence that anything was built.
+	// The hand-off must require BOTH a PR and real work. The PR because the agent opens it and may
+	// not have; the work because a PR alone is not evidence anything was built.
 	handoff := indexOfStep(steps, func(s implementStep) bool { return s.Name == "Hand off to verify" })
 	if handoff < 0 {
 		t.Fatal("deliver-implement.yml has no `Hand off to verify` step")
 	}
 	if !strings.Contains(steps[handoff].If, "steps.work.outputs.changed == 'true'") {
 		t.Errorf("`Hand off to verify` is guarded on %q, which does not require "+
-			"`steps.work.outputs.changed == 'true'`. A PR now exists from the start, so without "+
-			"that check an agent which built nothing hands an empty PR to a 120-minute verify",
+			"`steps.work.outputs.changed == 'true'`. Without it an agent that built nothing hands "+
+			"an empty PR to a 120-minute verify plus a full CI dispatch",
 			steps[handoff].If)
+	}
+	if !strings.Contains(steps[handoff].If, "steps.pr.outputs.number != ''") {
+		t.Errorf("`Hand off to verify` is guarded on %q, which does not require a PR to exist. "+
+			"Verify is dispatched with a PR number and cannot run without one",
+			steps[handoff].If)
+	}
+}
+
+// The workflow must NOT create the pull request itself, and this is a security property rather
+// than a style preference.
+//
+// `gh pr create` from a workflow step uses GITHUB_TOKEN, which GitHub gates behind the repository
+// setting "Allow GitHub Actions to create and approve pull requests". That is a SINGLE toggle
+// (`can_approve_pull_request_reviews`) granting creation AND approval to every workflow in the
+// repository — there is no way to take only the half this loop needs. The delivery loop must never
+// approve anything: it labels, and a human merges. So PR creation stays with the agent, which uses
+// an App installation token obtained via OIDC that the setting does not govern (every delivery PR
+// to date — #1680, #1708, #1713 — is authored by `app/claude`).
+//
+// Reintroducing a workflow-side `gh pr create` would silently re-acquire that dependency and, to
+// make deliveries work at all, pressure someone into enabling repo-wide PR approval for Actions.
+func TestDeliverImplementDoesNotCreatePRsWithTheWorkflowToken(t *testing.T) {
+	for _, phase := range []string{"deliver-implement.yml", "deliver-verify.yml", "deliver-correct.yml"} {
+		t.Run(phase, func(t *testing.T) {
+			path := filepath.Join("..", ".github", "workflows", phase)
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("reading %s: %v", path, err)
+			}
+			var wf struct {
+				Jobs map[string]struct {
+					Steps []struct {
+						Name string `yaml:"name"`
+						Run  string `yaml:"run"`
+						With struct {
+							Script string `yaml:"script"`
+						} `yaml:"with"`
+					} `yaml:"steps"`
+				} `yaml:"jobs"`
+			}
+			if err := yaml.Unmarshal(raw, &wf); err != nil {
+				t.Fatalf("parsing %s: %v", path, err)
+			}
+			// Only `run:` scripts and github-script bodies — the agent's PROMPT legitimately tells
+			// the agent to call `gh pr create`, and that runs with the App token, not GITHUB_TOKEN.
+			//
+			// Comment lines are stripped before matching, for the reason the reporter-guard test
+			// above gives for itself: the explanatory comment on the seeding step has to NAME
+			// `gh pr create` in order to explain why it deliberately does not call it, and matching
+			// prose would make this test fail on the very code that satisfies it.
+			for job, j := range wf.Jobs {
+				for _, s := range j.Steps {
+					for label, code := range map[string]string{"run": s.Run, "script": s.With.Script} {
+						code = stripCommentLines(code)
+						if strings.Contains(code, "gh pr create") || strings.Contains(code, "pulls.create") {
+							t.Errorf("%s job %q step %q creates a pull request from a workflow %s. "+
+								"That uses GITHUB_TOKEN, which requires the repo-wide \"Allow GitHub "+
+								"Actions to create and approve pull requests\" setting — one toggle that "+
+								"also grants APPROVAL to every workflow here. This loop must never "+
+								"approve. Let the agent open the PR with its App token instead",
+								phase, job, s.Name, label)
+						}
+					}
+				}
+			}
+		})
 	}
 }
 
@@ -195,6 +258,17 @@ func TestDeliverImplementPromptContract(t *testing.T) {
 			needle: "ci.yml",
 			why: "the prompt must point at ci.yml as the build/test/lint authority instead of " +
 				"having the agent run them, which is what exhausted the runner on #1706",
+		},
+		{
+			needle: "YOUR FIRST ACTION",
+			why: "the agent — not the workflow — opens the PR now, so the prompt must demand it " +
+				"before any code is written. Opened last, a dead runner leaves a branch with no PR, " +
+				"which deliver-stall-sweep.yml cannot see because it selects from the PR side",
+		},
+		{
+			needle: "gh pr create --draft",
+			why: "the prompt must spell out the draft PR command, including --draft: a non-draft PR " +
+				"opened before the work exists advertises itself as reviewable",
 		},
 		{
 			needle: "RESUMING",
@@ -378,4 +452,19 @@ func mustAtoi(t *testing.T, s string) int {
 		n = n*10 + int(r-'0')
 	}
 	return n
+}
+
+// stripCommentLines removes whole-line shell (`#`) and JS (`//`) comments, so a test that looks for
+// a command in workflow code is not tripped by a comment explaining why that command is absent.
+// Deliberately line-oriented and not a parser: it only needs to keep prose out of a substring match.
+func stripCommentLines(code string) string {
+	var kept []string
+	for _, line := range strings.Split(code, "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "#") || strings.HasPrefix(t, "//") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
 }
