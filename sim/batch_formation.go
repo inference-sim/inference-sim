@@ -487,6 +487,11 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 				preemptedRequest.NumNewTokens = 0
 			}
 
+			// INV-2 (request lifecycle): preemption is the only place a request moves
+			// BACKWARD, running -> queued, and it is a full reset — progress, ITL, and
+			// TTFT return to their pre-prefill state. INV-2's statement enumerates only
+			// the forward queued -> running -> completed path, so this edge is code
+			// truth the statement does not yet name.
 			preemptedRequest.State = StateQueued
 			preemptedRequest.ProgressIndex = 0
 			preemptedRequest.ITL = nil

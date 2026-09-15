@@ -492,7 +492,7 @@ Full details (verification strategies, evidence): see [`docs/contributing/standa
 
 - **INV-1 Request conservation**: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out + routing_rejections + gateway_queue_depth + gateway_queue_shed + gateway_queue_rejected + gateway_evicted + gateway_expired + encode_routing_rejections` at simulation end. Full pipeline: `num_requests == injected_requests + rejected_requests`. `encode_routing_rejections` (GAP-4, #1264) is always zero when `--encode-instances 0`.
 - **INV-2 Request lifecycle**: Requests transition queued → running → completed; not completed before horizon remain in current state
-- **INV-3 Clock monotonicity**: Simulation clock never decreases
+- **INV-3 Clock monotonicity**: Simulation clock never decreases; every **processed** event's timestamp >= the previous processed event's. Carve-out: restoring an optimistic advance after a lazily-cancelled event, where no event was processed (`sim/cluster/cluster.go`, the `prevClusterClock` restore) — so assert on processed event timestamps, never on a raw clock field. See `docs/contributing/standards/invariants.md`.
 - **INV-4 KV cache conservation**: `allocated_blocks + free_blocks = total_blocks` at all times
 - **INV-5 Causality**: `arrival_time <= enqueue_time <= schedule_time <= completion_time`
 - **INV-6 Determinism**: Same seed must produce byte-identical stdout across runs. Wall-clock timing goes to stderr.
