@@ -150,9 +150,9 @@ Archon is optional throughout: with a plan there is a deterministic number that 
 
 **Every phase reports its own failure**, including a step that was cancelled, and applies `needs-human`.
 
-**A dead runner cannot report itself.** If the runner is lost mid-job, no step executes — not `always()` ones, not even the action's own post-steps. This has happened twice: the first time the delivery left no branch, no PR, no comment and no label, which is indistinguishable from nobody having run the command; the second time it also lost a finished implementation that had never been pushed. Seeding the draft PR up front (above) is what closes both — the work survives, and the delivery is something the sweep can see. `deliver-stall-sweep.yml` exists for exactly that: it runs on a schedule and flags any open PR on a `deliver/issue-*` branch that carries neither terminal label, is not paused, and has had no activity for 180 minutes. Activity means comments, reviews *and* review comments — the loop reacts to all three, so counting only comments would flag a delivery that was in fact responding to a review.
+**A dead runner cannot report itself.** If the runner is lost mid-job, no step executes — not `always()` ones, not even the action's own post-steps. This has happened twice: the first time the delivery left no branch, no PR, no comment and no label, which is indistinguishable from nobody having run the command; the second time it also lost a finished implementation that had never been pushed. Two *different* mechanisms close those two holes, and it is worth keeping them apart: **seeding the draft PR up front makes the delivery visible** — to the sweep, and to a human reading the issue — while **incremental pushing is what makes the work survive**. Seeding alone would open an empty PR and still lose everything since the last push, so a phase that pushed only at the end would be findable but no less destroyed. `deliver-stall-sweep.yml` covers the visibility half: it runs on a schedule and flags any open PR on a `deliver/issue-*` branch that carries neither terminal label, is not paused, and has had no activity for 180 minutes. Activity means comments, reviews *and* review comments — the loop reacts to all three, so counting only comments would flag a delivery that was in fact responding to a review.
 
-180 minutes is not arbitrary: the threshold has to exceed the longest *legitimate* silence, which is one phase's own budget (verify is capped at 120 minutes and comments at the end), plus slack for a busy runner.
+180 minutes is not arbitrary: the threshold has to exceed the longest *legitimate* silence, which is one phase's own budget (implement and verify are both capped at 120 minutes, and each reports at the end), plus slack for a busy runner. `scripts/deliver_guards_test.go` enforces that relationship, so a phase budget cannot be raised past the window without a failing test.
 
 The sweep stands down while a delivery phase has **started recently**, because a legitimate verify is silent for long stretches while it waits on CI and then on a review. Recently, not merely "at all": a job that never got a runner sits queued for up to 24 hours, so counting queued runs of any age let an offline runner — the very scenario the sweep is for — keep it silent for a day. A run older than the quiet window is the symptom, not a sign of life.
 
@@ -188,6 +188,15 @@ Repository variables, all optional:
 The verify model is deliberately *not* the implement model. Two instances of one model reviewing each other's work is closer to an agent grading its own homework; different models give real separation.
 
 ## Setup
+
+**"Allow GitHub Actions to create and approve pull requests" must be enabled**
+(Settings → Actions → General → Workflow permissions). The implement phase opens the delivery PR
+from a workflow step using `GITHUB_TOKEN`, and that call returns 403 without this setting **no
+matter what `permissions: pull-requests: write` declares**. It is off by default and can also be
+disabled organisation-wide, in which case the org setting wins. Symptom if you miss it: every
+delivery fails at the seed step, before the agent runs, with
+`::error::could not open a draft PR for deliver/issue-N` — loud, but the cause is not obvious from
+the message.
 
 **The labels must exist before the workflows are used.** A workflow applying a label that does not exist fails at the API call, which strands a delivery mid-loop:
 

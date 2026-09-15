@@ -21,9 +21,15 @@
 # other people's commits; getting (2) wrong silently skips the dist ratchet. Neither is
 # visible without reading a real delivery, which is not a property that survives the next edit.
 #
-# Prints exactly two lines on stdout, either side of `=` possibly empty:
+# Prints exactly three lines on stdout, the value after `=` possibly empty:
 #   target_branch=<ref or empty>
 #   archon_plan=<the declaration line verbatim, or empty>
+#   heading_seen=true|false   — a `Target branch` heading was present in the body
+#
+# `heading_seen` exists so the caller can tell "no target branch section" from "a target branch
+# section I could not read", and warn on the second (R1: never silent). Without it a heading the
+# pattern does not quite match — `## Target branch (base)`, say — reads identically to a standalone
+# issue and the delivery quietly goes to the default branch.
 #
 # Both are ADVISORY. This script does not decide whether the branch exists — the caller
 # checks that against the remote and falls back to the default branch — because a ref that
@@ -54,6 +60,20 @@ fi
 # trailing \r would otherwise ride along inside the captured ref and make every remote lookup
 # miss.
 BODY=$(tr -d '\r' < "$BODY_FILE")
+
+# FENCED CODE BLOCKS ARE STRIPPED FIRST, and this is not hygiene — it is a correctness fix.
+# docs/contributing/templates/archon-issue-examples.md shows the whole sub-issue template inside a
+# fence, `## Target branch` and a `feature/...` ref included. A contributor who pastes that example
+# into an issue body would otherwise have the FENCED ref win over their real one. A fictional
+# placeholder happens to fail the remote check and fall back, but a fenced REAL branch name would
+# silently become the delivery's base.
+#
+# Toggling on any ``` or ~~~ fence line is enough here: this only ever reads two things out of the
+# body, and both are being deliberately looked for OUTSIDE example blocks.
+BODY=$(printf '%s\n' "$BODY" | awk '
+  /^[[:space:]]*(```|~~~)/ { infence = !infence; next }
+  !infence { print }
+')
 
 # The `## Target branch` section's prose is not fixed. Both of these are documented in
 # docs/contributing/templates/archon-issue-examples.md:
@@ -120,5 +140,14 @@ ARCHON_PLAN=$(printf '%s\n' "$BODY" \
 # key=value pair into a caller reading this output line-by-line.
 ARCHON_PLAN=${ARCHON_PLAN%%$'\n'*}
 
+# Deliberately LOOSER than the section pattern above: it answers "did the author try to declare a
+# target branch", so it must still match the headings the strict pattern rejects — that mismatch is
+# exactly what the caller needs to warn about.
+HEADING_SEEN=false
+if printf '%s\n' "$BODY" | grep -qiE '^[[:space:]]*#{1,6}[[:space:]]*Target branch'; then
+  HEADING_SEEN=true
+fi
+
 echo "target_branch=$TARGET_BRANCH"
 echo "archon_plan=$ARCHON_PLAN"
+echo "heading_seen=$HEADING_SEEN"

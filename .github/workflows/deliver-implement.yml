@@ -340,6 +340,7 @@ jobs:
           fi
           declared=$(sed -n 's/^target_branch=//p' <<< "$refs")
           plan=$(sed -n 's/^archon_plan=//p' <<< "$refs")
+          heading_seen=$(sed -n 's/^heading_seen=//p' <<< "$refs")
 
           # An archon sub-issue targets its feature branch. The declared ref is used only if it
           # actually exists on the remote — a typo falls back to the default branch loudly rather
@@ -355,6 +356,13 @@ jobs:
             else
               echo "::warning::#$ISSUE_NUMBER declares target branch '$declared', which does not exist on the remote — basing on '$base' instead"
             fi
+          elif [[ "$heading_seen" == "true" && -z "$declared" ]]; then
+            # R1, never silent: the author wrote a Target branch heading but no usable ref came out
+            # of it — a heading the pattern does not quite match (`## Target branch (base)`), a ref
+            # not in backticks, or a ref rejected by the shape check. Falling back to the default
+            # branch is right, but doing it quietly means a feature-branch delivery lands on main
+            # with a diff full of unrelated commits and nothing said so.
+            echo "::warning::#$ISSUE_NUMBER has a 'Target branch' heading but no usable ref was read from it — basing on '$base'. Put the branch in backticks on its own under a plain '## Target branch' heading."
           fi
           echo "base=$base" >> "$GITHUB_OUTPUT"
 
@@ -366,7 +374,6 @@ jobs:
           # Both paths leave the working tree ON the delivery branch, so the agent starts from it
           # whether this is a first attempt or a resumed one.
           if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
-            echo "resume=true" >> "$GITHUB_OUTPUT"
             echo "$BRANCH already exists on the remote — this is a RESUMED delivery."
             # Explicit refspec, not `git fetch origin "$BRANCH"`: the bare form's update of the
             # remote-tracking ref is version-dependent, and checking out a STALE origin/$BRANCH
@@ -375,7 +382,6 @@ jobs:
             git fetch --quiet origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || exit 1
             git checkout -B "$BRANCH" "origin/$BRANCH" || exit 1
           else
-            echo "resume=false" >> "$GITHUB_OUTPUT"
             git checkout -B "$BRANCH" "origin/$base" || exit 1
             git commit --allow-empty -m "deliver: open the delivery branch for #$ISSUE_NUMBER" || exit 1
             git push origin "$BRANCH" || exit 1
