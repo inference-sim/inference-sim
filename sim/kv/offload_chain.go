@@ -79,16 +79,6 @@ type OffloadCache struct {
 	deferred       map[string]*deferralState
 	existenceKnown map[kvkey.BlockKey]struct{}
 
-	// reloadedPrefixEnd records, per NEW admission, the post-reload GPU-cached prefix
-	// boundary (token index) when a CPU->GPU reload extended the prefix beyond the
-	// caller's startIndex (#1699). Batch formation reads it via ReloadedPrefixEnd to
-	// re-bill prefill work; the read is one-shot (consumed) so a later step cannot see
-	// a stale boundary. Written only for genuinely-new prefill admissions
-	// (`!running && !IsDecodeSubRequest`, the gate in recordReloadedPrefix) — a running
-	// continuation bills incrementally against ProgressIndex and a PD decode sub-request
-	// is admitted via the decode branch, neither of which reads this back.
-	reloadedPrefixEnd map[string]int64
-
 	perBlockBytes     int64 // resolved per-rank KV bytes of one GPU block (transfer-job sizing)
 	offloadPromptOnly bool
 	// blocksPerChunk is vLLM blocks_per_chunk (== 1 at H1; NewOffloadCache panics otherwise).
@@ -149,7 +139,6 @@ func NewOffloadCache(gpu *KVCacheState, cfg sim.KVOffloadConfig, opts ...Offload
 		inflight:          make(map[kvtransfer.JobID]jobRef),
 		deferred:          make(map[string]*deferralState),
 		existenceKnown:    make(map[kvkey.BlockKey]struct{}),
-		reloadedPrefixEnd: make(map[string]int64),
 		perBlockBytes:     cfg.PerBlockBytes,
 		offloadPromptOnly: cfg.OffloadPromptOnly,
 		blocksPerChunk:    cfg.BlocksPerChunk,
@@ -211,45 +200,60 @@ func (o *OffloadCache) GetCachedBlocks(tokens []sim.TokenID) []int64 {
 	return o.gpu.GetCachedBlocks(tokens)
 }
 
-// ReleaseKVBlocks delegates to the GPU tier and clears any unconsumed reloaded-prefix
-// record (#1699), so a boundary recorded at admission cannot survive into a later
-// admission of the same request ID (e.g. preempt→re-prefill, where ProgressIndex is
-// reset and the request re-enters as a fresh admission).
-func (o *OffloadCache) ReleaseKVBlocks(req *sim.Request) {
-	o.gpu.ReleaseKVBlocks(req)
-	delete(o.reloadedPrefixEnd, req.ID)
-}
-func (o *OffloadCache) BlockSize() int64     { return o.gpu.BlockSize() }
-func (o *OffloadCache) UsedBlocks() int64    { return o.gpu.UsedBlocks() }
-func (o *OffloadCache) TotalCapacity() int64 { return o.gpu.TotalCapacity() }
+func (o *OffloadCache) ReleaseKVBlocks(req *sim.Request) { o.gpu.ReleaseKVBlocks(req) }
+func (o *OffloadCache) BlockSize() int64                 { return o.gpu.BlockSize() }
+func (o *OffloadCache) UsedBlocks() int64                { return o.gpu.UsedBlocks() }
+func (o *OffloadCache) TotalCapacity() int64             { return o.gpu.TotalCapacity() }
 
-// recordReloadedPrefix stores the post-reload cached-prefix boundary for a NEW prefill
-// admission so batch formation can re-bill its prefill work (#1699). It records for the
-// SAME request class that batch formation re-bills — a genuinely new admission — and no
-// other, so no unconsumed entry can leak:
-//   - running continuation: skipped (bills incrementally against ProgressIndex; re-billing
-//     would double-discount it), and its false return is GPU pressure, not a reload signal;
-//   - PD decode sub-request: skipped (admitted via the decode branch, which never reads
-//     ReloadedPrefixEnd).
+// ReloadablePrefixEnd implements sim.ReloadReportingKVStore (#1699/#1706): a PURE
+// pre-allocation query (the analogue of vLLM's get_num_new_matched_tokens) reporting the
+// token boundary to which a same-step CPU->GPU reload WOULD extend this request's
+// GPU-cached prefix, WITHOUT committing or mutating any tier. Batch formation folds it
+// into the computed baseline before the chunk/budget clamp, so the whole reloaded prefix
+// is credited even under chunked prefill.
 //
-// It is called only on the admit success paths of allocateThroughChain — a failed tail
-// alloc leaves the request in the WaitQ, where the boundary would never be consumed.
-func (o *OffloadCache) recordReloadedPrefix(req *sim.Request, newStart int64, running bool) {
-	if !running && !req.IsDecodeSubRequest {
-		o.reloadedPrefixEnd[req.ID] = newStart
+// It walks the uncached tail past startIndex exactly like consultAndReload but only
+// COUNTS contiguous CPU-resident (reloadable) blocks — skipping already-GPU-resident
+// blocks, stopping at the first cpuHitPending/cpuMiss/end. A secondary-tier-only run is
+// NOT counted (it defers via H3). Gated to genuinely-new prefill admissions
+// (`!running && !IsDecodeSubRequest`), matching the class batch formation credits;
+// returns (startIndex, false) for a running continuation, a PD decode sub-request, or
+// when no reload would extend the prefix.
+func (o *OffloadCache) ReloadablePrefixEnd(req *sim.Request, startIndex int64) (int64, bool) {
+	if _, running := o.gpu.RequestMap[req.ID]; running || req.IsDecodeSubRequest {
+		return startIndex, false
 	}
-}
-
-// ReloadedPrefixEnd implements sim.ReloadReportingKVStore (#1699): it returns the
-// post-reload GPU-cached prefix boundary recorded for reqID during the most recent
-// AllocateKVBlocks, ok=true iff a CPU->GPU reload extended the prefix. One-shot: the
-// record is consumed on read so a later step cannot re-bill against a stale boundary.
-func (o *OffloadCache) ReloadedPrefixEnd(reqID string) (int64, bool) {
-	newStart, ok := o.reloadedPrefixEnd[reqID]
-	if ok {
-		delete(o.reloadedPrefixEnd, reqID)
+	bs := o.gpu.BlockSize()
+	tokens := req.FullInputTokens()
+	n := util.Len64(tokens) / bs
+	startBlock := startIndex / bs
+	if startBlock >= n {
+		return startIndex, false
 	}
-	return newStart, ok
+	// Seed the hash chain just past the GPU-cached prefix so only the uncached tail is
+	// keyed (hot-path parity with consultAndReload). startIndex is block-aligned (a GPU
+	// prefix boundary), so startBlock*bs == startIndex.
+	prevHash := ""
+	if startBlock > 0 {
+		if cached := o.gpu.GetCachedBlocks(tokens); int64(len(cached)) >= startBlock {
+			prevHash = o.gpu.Blocks[cached[startBlock-1]].Hash
+		}
+	}
+	tailKeys := kvkey.DeriveChunkKeys(kvkey.BlockKey(prevHash), tokens[startBlock*bs:], int(bs))
+	reloadable := int64(0)
+	for i := startBlock; i < n; i++ {
+		key := tailKeys[i-startBlock]
+		if _, inGPU := o.gpu.HashToBlock[string(key)]; inGPU {
+			reloadable++ // already GPU-resident: part of the same-step-available prefix
+			continue
+		}
+		if o.cpu.lookup(key) != cpuHit {
+			break // cpuHitPending / cpuMiss (secondary or genuine miss): not same-step reloadable
+		}
+		reloadable++
+	}
+	reloadableEnd := startIndex + reloadable*bs
+	return reloadableEnd, reloadableEnd > startIndex
 }
 
 // SnapshotCachedBlocksFn delegates to the GPU tier so cluster routing keeps its
@@ -425,7 +429,6 @@ func (o *OffloadCache) allocateThroughChain(req *sim.Request, startIndex, endInd
 				} else {
 					o.gpu.commitCachedBlocks(req.ID, newCached[:endBlock])
 				}
-				o.recordReloadedPrefix(req, newStart, running)
 				return true
 			}
 			// Partial improvement: commit the reloaded prefix, then allocate the tail.
@@ -437,14 +440,7 @@ func (o *OffloadCache) allocateThroughChain(req *sim.Request, startIndex, endInd
 			} else {
 				o.gpu.commitCachedBlocks(req.ID, newCached[:newStartBlock])
 			}
-			ok := o.gpu.AllocateKVBlocks(req, newStart, endIndex, newCached)
-			if ok {
-				// Record ONLY on success: a failed tail alloc leaves the request in the
-				// WaitQ (batch formation never reads the boundary this step), so recording
-				// here would leak a stale entry into a later step.
-				o.recordReloadedPrefix(req, newStart, running)
-			}
-			return ok
+			return o.gpu.AllocateKVBlocks(req, newStart, endIndex, newCached)
 		}
 		// Reload produced no prefix hit beyond startIndex; allocate as given.
 		return o.gpu.AllocateKVBlocks(req, startIndex, endIndex, cachedBlocks)
