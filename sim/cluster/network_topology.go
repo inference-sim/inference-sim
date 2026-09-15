@@ -144,11 +144,14 @@ func backendDisplayName(backend string) string {
 // reported (R1: a cross-node cost that silently fails to apply is the invisible optimism
 // #1530 exists to remove).
 //
-// Reachability, stated honestly: the two groups can only differ at --dp>1, which remains a
-// fail-fast alongside node pools (#1553), and a topology is only ever resolved from node
-// pools — so today this always returns simCfg.TP and the diagnostics are byte-identical to
-// their pre-#1548 text for every reachable config. It is here so that whoever lifts #1553
-// inherits a correct diagnostic rather than a silent gap.
+// Reachability, stated honestly: the two groups can only differ at --dp>1. Since #1553
+// lifted the node-pools fail-fast, --dp>1 DOES compose with node pools — but DP-as-placement
+// runs each replica as a single-node DP=1 engine, so no per-instance simCfg ever carries a
+// DP>1 group whose expert-owning span exceeds TP. A topology is only ever resolved from node
+// pools, and per replica that span is one node — so this still always returns simCfg.TP and
+// the diagnostics are byte-identical to their pre-#1548 text for every reachable config. It
+// is here so that whoever prices the inter-replica EP boundary (#1548) inherits a correct
+// diagnostic rather than a silent gap.
 func widestCollectiveGroup(simCfg *sim.SimConfig) int {
 	if g := simCfg.EffectiveExpertShardGroupSize(); g > simCfg.TP {
 		return g

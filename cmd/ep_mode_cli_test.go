@@ -109,9 +109,10 @@ func TestApplyPerRoleMoECommBackends(t *testing.T) {
 }
 
 // epPDRunArgs is a PD-disaggregated MoE run with expert parallelism on: the deployment
-// shape #1548's per-role backend exists for. --dp stays 1 because PD + --dp>1 is still a
-// fail-fast (#1553); EP-on is what makes the dispatch/combine term fire at DP=1, and so
-// what makes the per-role selection observable at all.
+// shape #1548's per-role backend exists for. --dp stays 1 to isolate the per-role
+// selection: EP-on is what makes the dispatch/combine term fire at DP=1, and so what
+// makes the per-role backend observable without also expanding into per-rank replicas
+// (PD + --dp>1 is itself supported since #1553, covered by its own tests).
 func epPDRunArgs(extra ...string) []string {
 	return append([]string{
 		"run",

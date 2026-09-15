@@ -83,11 +83,13 @@ func applyPerInstanceKVCapacity(simCfg *sim.SimConfig, gpuMemoryGiB float64, cfg
 	// aggregate-over-DP-ranks contract), while THIS function wants one instance's budget — so
 	// the aggregate is divided back to per-rank below, exactly as cmd.applyDPPlacement does.
 	//
-	// Every configuration reachable today has epGroupDP == 1 (node pools reject --dp>1,
-	// #1553), where the multiply never fires and the division is by 1 — so this is
-	// byte-identical to the pre-#1548 call (INV-6). It is written now, rather than left as a
-	// comment for whoever lifts #1553, because a latent degradation path is exactly what this
-	// PR inherited from #1556 and became the trigger for.
+	// Since #1553 lifted the node-pools + --dp>1 rejection, epGroupDP > 1 IS now reachable
+	// on the node-pool path, and the multiply-then-divide-back below carries a real DP width
+	// (matching cmd.applyDPPlacement). At epGroupDP == 1 (the dense case, --dp 1, or EP off)
+	// the multiply never fires and the division is by 1 — byte-identical to the pre-#1548
+	// call (INV-6). This path was written ahead of #1553 rather than left as a TODO because a
+	// latent degradation path is exactly what this PR's predecessor (#1556) inherited and
+	// became the trigger for.
 	epGroupDP := simCfg.EffectiveEPGroupDP()
 	blocks, err := latency.CalculateKVBlocks(
 		simCfg.ModelConfig, hc, simCfg.TP, epGroupDP,
@@ -102,7 +104,7 @@ func applyPerInstanceKVCapacity(simCfg *sim.SimConfig, gpuMemoryGiB float64, cfg
 	}
 	// Divide the DP-aggregate back to this instance's own budget. Gated on exactly the
 	// condition CalculateKVBlocks multiplies under (MoE && dp > 1), so a dense model — or the
-	// epGroupDP == 1 case that is all anything reachable produces — is untouched.
+	// epGroupDP == 1 case (dense, --dp 1, or EP off) — is untouched.
 	//
 	// The non-positive guard below is DEFENSE IN DEPTH and is unreachable BY CONSTRUCTION, not
 	// merely in practice: CalculateKVBlocks rejects a non-positive block count *before* it

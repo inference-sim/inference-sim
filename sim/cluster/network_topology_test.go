@@ -116,9 +116,11 @@ func TestPlacedGPUsPerNode_ReleasedGPUsStillResolve(t *testing.T) {
 }
 
 // TestWidestCollectiveGroup is the direct contract for the group the cross-node diagnostics
-// score (#1548). It exists because the EP-wider branch is unreachable today (node pools
-// alongside --dp>1 is the #1553 fail-fast), so without a unit test the "inherit a correct
-// diagnostic rather than a silent gap" intent would rest on inspection alone.
+// score (#1548). It exists because the EP-wider branch is unreachable in any PRODUCTION
+// per-instance config: #1553 lets node pools compose with --dp>1, but DP-as-placement gives
+// each placed replica a single-node DP=1 config, so no per-instance simCfg carries a group
+// wider than TP. Without this unit test the "inherit a correct diagnostic rather than a
+// silent gap" intent would rest on inspection alone.
 func TestWidestCollectiveGroup(t *testing.T) {
 	moe := sim.ModelConfig{NumLayers: 4, NumLocalExperts: 8, NumExpertsPerTok: 2}
 	dense := sim.ModelConfig{NumLayers: 4}

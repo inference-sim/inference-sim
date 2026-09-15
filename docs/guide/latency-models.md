@@ -252,10 +252,14 @@ placement already takes — the EP group *is* those GPUs.
 
 !!! warning "The inter-replica fabric is not priced"
     Under `--dp N` the EP group spans `N` independently-placed replicas. Cross-node
-    collective pricing is placement-derived (#1530) and `node_pools` alongside `--dp>1` is
-    still a fail-fast ([#1553](https://github.com/inference-sim/inference-sim/issues/1553)),
-    so the all-to-all is charged at the **on-node** rate. `blis run` warns about this
-    explicitly; step time is optimistic for a genuinely multi-node EP deployment.
+    collective pricing is placement-derived (#1530) but scoped to the collectives WITHIN one
+    instance's TP group; the EP group is formed ACROSS separately-placed single-node replicas,
+    a boundary per-instance topology does not cross. `node_pools` alongside `--dp>1` is
+    supported for GPU reservation since
+    [#1553](https://github.com/inference-sim/inference-sim/issues/1553), but that adds no
+    inter-replica fabric pricing, so the all-to-all is still charged at the **on-node** rate.
+    `blis run` warns about this explicitly; step time is optimistic for a genuinely multi-node
+    EP deployment.
 
 #### Per-role all-to-all backend
 

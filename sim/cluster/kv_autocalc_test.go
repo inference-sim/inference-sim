@@ -545,8 +545,10 @@ func TestApplyPerInstanceKVCapacity_EPGroupWidth(t *testing.T) {
 }
 
 // TestApplyPerInstanceKVCapacity_NoEPGroupWidthIsUnchanged is the INV-6 companion: with no
-// logical EP-group width supplied — every configuration reachable today, since node pools
-// reject --dp>1 (#1553) — the reconciliation must be a no-op, passing DP=1 and dividing by 1.
+// logical EP-group width supplied the reconciliation must be a no-op, passing DP=1 and
+// dividing by 1. Note that since #1553 node pools DO compose with --dp>1, but DP-as-placement
+// hands each placed replica a per-rank DP=1 config, so a per-instance capacity calc with no
+// EP-group width remains the common case even under node pools + --dp>1.
 func TestApplyPerInstanceKVCapacity_NoEPGroupWidthIsUnchanged(t *testing.T) {
 	const gpuMem = 48.0
 	cfg := KVAutoCalcConfig{
