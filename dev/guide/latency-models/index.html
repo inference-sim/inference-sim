@@ -3659,10 +3659,14 @@ sharding), or a calibrated β_EP.</p>
 <div class="admonition warning">
 <p class="admonition-title">The inter-replica fabric is not priced</p>
 <p>Under <code>--dp N</code> the EP group spans <code>N</code> independently-placed replicas. Cross-node
-collective pricing is placement-derived (#1530) and <code>node_pools</code> alongside <code>--dp&gt;1</code> is
-still a fail-fast (<a href="https://github.com/inference-sim/inference-sim/issues/1553">#1553</a>),
-so the all-to-all is charged at the <strong>on-node</strong> rate. <code>blis run</code> warns about this
-explicitly; step time is optimistic for a genuinely multi-node EP deployment.</p>
+collective pricing is placement-derived (#1530) but scoped to the collectives WITHIN one
+instance's TP group; the EP group is formed ACROSS separately-placed single-node replicas,
+a boundary per-instance topology does not cross. <code>node_pools</code> alongside <code>--dp&gt;1</code> is
+supported for GPU reservation since
+<a href="https://github.com/inference-sim/inference-sim/issues/1553">#1553</a>, but that adds no
+inter-replica fabric pricing, so the all-to-all is still charged at the <strong>on-node</strong> rate.
+<code>blis run</code> warns about this explicitly; step time is optimistic for a genuinely multi-node
+EP deployment.</p>
 </div>
 <h4 id="per-role-all-to-all-backend">Per-role all-to-all backend<a class="headerlink" href="#per-role-all-to-all-backend" title="Permanent link">&para;</a></h4>
 <p><code>VLLM_ALL2ALL_BACKEND</code> is a per-process environment variable, so prefill and decode engines

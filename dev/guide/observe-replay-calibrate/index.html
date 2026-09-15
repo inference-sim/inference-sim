@@ -3634,8 +3634,9 @@ metrics (INV-13). Two things to get right:</p>
 <p><code>--enable-expert-parallel</code> is supported alongside <code>--dp &gt; 1</code> on both commands since</p>
 <h1 id="1548-and-like-dp-itself-must-be-re-supplied-identically-on-the-replay-leg">1548, and — like <code>--dp</code> itself — must be re-supplied identically on the replay leg<a class="headerlink" href="#1548-and-like-dp-itself-must-be-re-supplied-identically-on-the-replay-leg" title="Permanent link">&para;</a></h1>
 <p>(the EP-group width is a model-level input, not a trace field). PD disaggregation with
-<code>--dp &gt; 1</code> remains unmodeled and fails fast on both commands (#1553); the autoscaler
-and node pools are rejected by <code>blis replay</code> unconditionally, independently of <code>--dp</code>.</p>
+<code>--dp &gt; 1</code> is supported on both commands since #1553 (each pool spawns N per-rank
+replicas; re-supply the same flags for byte-identical replay). The autoscaler and node
+pools are still rejected by <code>blis replay</code> unconditionally, independently of <code>--dp</code>.</p>
 </div>
 <h3 id="how-replay-differs-from-blis-run">How Replay Differs from <code>blis run</code><a class="headerlink" href="#how-replay-differs-from-blis-run" title="Permanent link">&para;</a></h3>
 <table>
