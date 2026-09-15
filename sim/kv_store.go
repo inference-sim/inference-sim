@@ -48,31 +48,37 @@ type DeferrableKVStore interface {
 	ClearDeferred(id string)
 }
 
-// ReloadReportingKVStore is the optional capability a KVStore implements when an
-// AllocateKVBlocks call can enlarge a new request's GPU-cached prefix by reloading
-// blocks from a lower tier (CPU/secondary offload) during the call itself. Both offload
-// stores implement it — kv.OffloadCache (the #1590 chain, `--kv-offload-config`) and
-// kv.TieredKVCache (the legacy `--kv-cpu-blocks` store). The single-tier kv.KVCacheState
-// (no offload) does NOT: it never reloads, so batch formation's type-assert fails, the
-// re-bill is dead code, and its output is byte-identical (INV-6). Whether the assertion
-// SUCCEEDS is a property of the store type, not of any runtime flag — a request served
-// by a non-reloading store is unaffected regardless.
+// ReloadReportingKVStore is the optional capability a KVStore implements when a
+// same-step CPU->GPU reload can enlarge a new request's GPU-cached prefix beyond what
+// GetCachedBlocks (GPU-only) reports. Both offload stores implement it — kv.OffloadCache
+// (the #1590 chain, `--kv-offload-config`) and kv.TieredKVCache (the legacy `--kv-cpu-blocks`
+// store). The single-tier kv.KVCacheState (no offload) does NOT: it never reloads, so batch
+// formation's type-assert fails, the credit fold-in is dead code, and its output is
+// byte-identical (INV-6). Whether the assertion SUCCEEDS is a property of the store type,
+// not of any runtime flag — a request served by a non-reloading store is unaffected.
 //
-// Without this, batch formation bills prefill work from the pre-reload GPU prefix
-// (GetCachedBlocks, computed before AllocateKVBlocks runs), so a genuine offload cache
-// hit is charged as a full recompute — the reported cache_hit_rate moves but no
-// timing metric does (issue #1699). The reloaded boundary MUST come from the reload
-// logic, not a re-query of GetCachedBlocks: allocation hashes the freshly-computed
-// tail into the GPU index, so a post-alloc re-query would return the whole input as
-// cached and wrongly zero all prefill work.
+// Without this, batch formation would size prefill work from the pre-reload GPU prefix
+// (GetCachedBlocks), so a genuine offload cache hit is charged as a full recompute — the
+// reported cache_hit_rate moves but no timing metric does (issue #1699). Batch formation
+// folds the reloadable boundary into the computed baseline BEFORE the chunk/budget clamp
+// (vLLM's num_computed_tokens = local + external, sized before the chunk cap), so the whole
+// reloaded prefix is credited even under chunked prefill, not just the single committed
+// chunk (issue #1706).
 type ReloadReportingKVStore interface {
-	// ReloadedPrefixEnd returns the post-reload GPU-cached prefix boundary (token
-	// index) recorded during the most recent AllocateKVBlocks for reqID, with ok=true
-	// iff a CPU->GPU reload extended the cached prefix beyond the caller's startIndex.
-	// One-shot: the record is consumed on read so a later step cannot read a stale
-	// boundary. Recorded for NEW prefill admissions only (a running request bills
-	// incrementally against ProgressIndex and must not be re-billed).
-	ReloadedPrefixEnd(reqID string) (newStart int64, ok bool)
+	// ReloadablePrefixEnd reports the token boundary to which a same-step CPU->GPU reload
+	// WOULD extend this request's GPU-cached prefix, given the GPU-cached startIndex,
+	// WITHOUT committing or mutating any tier — the analogue of vLLM's
+	// get_num_new_matched_tokens (a pre-allocation query on the waiting-queue path). It
+	// is a PURE query (no one-shot consumption): the actual reload + commit still happens
+	// inside AllocateKVBlocks. ok=true iff the reloadable prefix extends beyond startIndex.
+	//
+	// Only the CPU-resident (same-step reloadable) prefix is counted. A secondary-tier-only
+	// run is NOT counted here — it stays on the H3 step-boundary deferral path
+	// (DeferrableKVStore), which re-examines it over steps until it becomes CPU-resident.
+	// Reported for NEW prefill admissions only (a running continuation bills incrementally
+	// against ProgressIndex; a PD decode sub-request is admitted via the decode branch),
+	// returning (startIndex, false) otherwise.
+	ReloadablePrefixEnd(req *Request, startIndex int64) (reloadableEnd int64, ok bool)
 }
 
 // NewKVCacheStateFunc is a factory function for creating single-tier KVStore implementations.

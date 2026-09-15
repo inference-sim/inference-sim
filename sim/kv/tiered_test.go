@@ -1270,11 +1270,12 @@ func BenchmarkSingleTierAllocate_GPUCachedPrefix(b *testing.B) {
 	}
 }
 
-// #1699: the legacy --kv-cpu-blocks TieredKVCache must ALSO report the reloaded-prefix
-// boundary via ReloadReportingKVStore, so a CPU→GPU reload is billed as a cache hit
-// rather than a full recompute (the same bug the OffloadCache chain had). Before this
-// fix TieredKVCache did not implement the interface and #1699 persisted on this path.
-func TestTieredKVCache_ReloadedPrefixEnd_ReportsBoundary(t *testing.T) {
+// #1699/#1706: the legacy --kv-cpu-blocks TieredKVCache must ALSO report its
+// CPU-reloadable prefix boundary via the PURE ReloadReportingKVStore query
+// (ReloadablePrefixEnd), so a CPU→GPU reload is billed as a cache hit rather than a full
+// recompute — and, folded in before the chunk cap, the WHOLE reloadable prefix is credited
+// (the same bug/fix the OffloadCache chain has). The query mutates nothing.
+func TestTieredKVCache_ReloadablePrefixEnd_ReportsBoundary(t *testing.T) {
 	var _ sim.ReloadReportingKVStore = (*TieredKVCache)(nil)
 
 	gpu := NewKVCacheState(8, 2) // 8 blocks, blockSize=2
@@ -1301,22 +1302,22 @@ func TestTieredKVCache_ReloadedPrefixEnd_ReportsBoundary(t *testing.T) {
 		tiered.ReleaseKVBlocks(&sim.Request{ID: fmt.Sprintf("fill%d", i)})
 	}
 
-	// Re-admit the same prefix as a NEW request: the reload lands it back on GPU, and
-	// the store must report the reloaded boundary (whole 6-token prefix).
+	// Query the same prefix as a NEW request (not yet admitted): the whole 3-block
+	// (6-token) prefix is CPU-resident and would reload, so the pure query reports 6.
 	newReq := &sim.Request{ID: "new", InputTokens: []sim.TokenID{1, 2, 3, 4, 5, 6}}
-	require.True(t, tiered.AllocateKVBlocks(newReq, 0, 6, []int64{}), "allocation should succeed")
+	reloadableEnd, ok := tiered.ReloadablePrefixEnd(newReq, 0)
+	require.True(t, ok, "legacy tiered store must report a CPU-reloadable prefix boundary (#1699/#1706)")
+	assert.Equal(t, int64(6), reloadableEnd, "the whole 3-block (6-token) prefix is CPU-reloadable")
 
-	newStart, ok := tiered.ReloadedPrefixEnd("new")
-	require.True(t, ok, "legacy tiered reload must report a reloaded-prefix boundary (#1699)")
-	assert.Equal(t, int64(6), newStart, "the whole 3-block (6-token) prefix was reloaded")
-
-	// One-shot: consumed on read.
-	_, ok2 := tiered.ReloadedPrefixEnd("new")
-	assert.False(t, ok2, "ReloadedPrefixEnd must be one-shot (consumed on read)")
+	// PURE query: repeatable and non-mutating — a second call reports the same boundary,
+	// and no CPU->GPU reload happened (the prefix is still absent from GPU).
+	again, ok2 := tiered.ReloadablePrefixEnd(newReq, 0)
+	require.True(t, ok2, "ReloadablePrefixEnd must be a pure repeatable query")
+	assert.Equal(t, int64(6), again, "a pure query must report the same boundary on repeat")
+	assert.Equal(t, 0, len(tiered.GetCachedBlocks([]sim.TokenID{1, 2, 3, 4, 5, 6})), "a pure query must not reload the prefix onto GPU")
 
 	// A request with no CPU-resident prefix reports ok=false.
 	miss := &sim.Request{ID: "miss", InputTokens: []sim.TokenID{200, 201, 202, 203}}
-	tiered.AllocateKVBlocks(miss, 0, 4, []int64{})
-	_, okMiss := tiered.ReloadedPrefixEnd("miss")
-	assert.False(t, okMiss, "a request with no reload must report ok=false")
+	_, okMiss := tiered.ReloadablePrefixEnd(miss, 0)
+	assert.False(t, okMiss, "a request with no CPU-resident prefix must report ok=false")
 }

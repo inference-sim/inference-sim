@@ -336,21 +336,46 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		}
 
 		cachedBlocks := ctx.KVCache.GetCachedBlocks(next.FullInputTokens())
-		numNewTokens := next.InputLen() - util.Len64(cachedBlocks)*ctx.KVCache.BlockSize()
+		startIndex := util.Len64(cachedBlocks) * ctx.KVCache.BlockSize()
 
+		// #1699/#1706: fold the same-step CPU->GPU-reloadable offload prefix into the
+		// computed baseline BEFORE the chunk/budget clamp, mirroring vLLM's ordering
+		// (num_computed_tokens = num_local_computed + num_external_computed, sized before
+		// the long_prefill_token_threshold cap). computedStart advances past the reloadable
+		// prefix; the chunk then covers only the uncached remainder, so the whole reloaded
+		// prefix is credited even under chunked prefill (not just the single committed
+		// chunk — the #1699 one-chunk cap this PR removes). The reloadable boundary comes
+		// from a PURE pre-allocation query (ReloadablePrefixEnd, the analogue of vLLM's
+		// get_num_new_matched_tokens); the actual reload + commit still happens inside
+		// AllocateKVBlocks below, which — because endIndex >= computedStart == the reloaded
+		// boundary — always commits the full reloaded prefix. Both offload stores implement
+		// the interface; the non-offload single-tier KVCacheState does not, so reloadReporter
+		// stays nil, computedStart == startIndex, and Phase 2 is byte-identical (INV-6).
+		// Secondary-tier-only runs are not counted here — they stay on the H3 deferral path.
+		computedStart := startIndex
+		if reloadReporter != nil {
+			if reloadableEnd, ok := reloadReporter.ReloadablePrefixEnd(next, startIndex); ok && reloadableEnd > computedStart {
+				computedStart = reloadableEnd
+			}
+		}
+
+		numNewTokens := next.InputLen() - computedStart
 		if 0 < ctx.PrefillTokenThreshold && ctx.PrefillTokenThreshold < numNewTokens {
 			numNewTokens = ctx.PrefillTokenThreshold
 		}
 		numNewTokens = min(numNewTokens, tokenBudget)
-		startIndex := util.Len64(cachedBlocks) * ctx.KVCache.BlockSize()
 		// Proactive MaxModelLen cap (BC-2): BLIS safety extension (vLLM only caps running requests).
 		// For valid enqueued requests (input < maxModelLen), this is a no-op.
 		if ctx.MaxModelLen > 0 {
-			maxAllowed := max(ctx.MaxModelLen-1-startIndex, 0)
+			maxAllowed := max(ctx.MaxModelLen-1-computedStart, 0)
 			numNewTokens = min(numNewTokens, maxAllowed)
 		}
-		endIndex := startIndex + numNewTokens
+		endIndex := computedStart + numNewTokens
 
+		// AllocateKVBlocks is called with the GPU-cached startIndex and cachedBlocks: the
+		// reload happens inside it, committing [startIndex, computedStart) and allocating
+		// the tail [computedStart, endIndex). Passing computedStart directly would treat the
+		// reloadable prefix as already GPU-committed, which it is not yet.
 		if ok := ctx.KVCache.AllocateKVBlocks(next, startIndex, endIndex, cachedBlocks); !ok {
 			// H3: distinguish a fresh deferral (the offload chain set this request
 			// aside for a secondary fetch — skip and keep it in the WaitQ) from
@@ -370,35 +395,14 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			Request: next,
 		})
 
-		// #1699: prefill was billed for the whole chunk [startIndex, endIndex)
-		// (numNewTokens above). If AllocateKVBlocks reloaded a CPU/secondary-resident
-		// prefix onto the GPU, part of that chunk was served from cache, not recomputed —
-		// so re-bill only the non-reloaded tail. The reload changes how much COMPUTE the
-		// chunk costs (billedTokens, the StepTime input), NOT how far the request advances:
-		// the whole [startIndex, endIndex) range was committed/allocated, so the progress
-		// boundary (ComputedTokens) is unchanged. Clamping the reloaded boundary to endIndex
-		// handles a reload that extends the GPU prefix past this (capped) chunk. KNOWN
-		// LIMITATION (#1706): the credit is capped at ONE chunk — the reloaded remainder
-		// beyond endIndex is NOT credited; because ComputedTokens stays at endIndex, later
-		// Phase-1 continuations (which bill InputLen-ProgressIndex and consult no cache)
-		// re-bill it as full recompute. So under chunked prefill this ports only the
-		// single-chunk share of vLLM's num_external_computed_tokens term; vLLM advances
-		// num_computed_tokens to newStart before the chunk cap. Crediting the whole
-		// reloaded prefix requires extending the block commit past endIndex (#1706).
-		// The `newStart > startIndex` re-check is defensive: ReloadedPrefixEnd already only
-		// returns ok=true for newStart > startIndex, but re-checking keeps this billing
-		// correct even if a future implementer of the interface relaxed that guarantee.
-		billedTokens := numNewTokens
-		if reloadReporter != nil {
-			if newStart, ok := reloadReporter.ReloadedPrefixEnd(next.ID); ok && newStart > startIndex {
-				billedTokens = endIndex - min(newStart, endIndex) // reloaded portion within the chunk is free
-			}
-		}
-
-		tokenBudget -= billedTokens
+		// numNewTokens is the uncached remainder only (the reloaded prefix was folded into
+		// computedStart above), so it is both the billed prefill work (the StepTime input)
+		// and the chunk over which progress advances: ComputedTokens reaches endIndex, which
+		// sits past the whole reloaded prefix.
+		tokenBudget -= numNewTokens
 		next.State = StateRunning
-		next.NumNewTokens = int(billedTokens)
-		ctx.ComputedTokens[next.ID] = numNewTokens + util.Len64(cachedBlocks)*ctx.KVCache.BlockSize()
+		next.NumNewTokens = int(numNewTokens)
+		ctx.ComputedTokens[next.ID] = endIndex
 	}
 
 	return result
