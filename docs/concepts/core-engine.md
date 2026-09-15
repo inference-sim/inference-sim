@@ -29,7 +29,7 @@ The event queue is a min-heap ordered by event timestamp. Events represent state
 | `ScheduledEvent` | Request moves to running batch | Timeline marker for tracing (scheduling delay recorded in `scheduleBatch`) |
 | `RequestLeftEvent` | Request completes | Timeline marker for tracing (E2E metrics recorded in `processCompletions`) |
 
-**Clock monotonicity (INV-3):** The simulation clock never decreases. Processed events are processed in non-decreasing timestamp order — except when restoring an optimistic advance after a lazily-cancelled event, where no event was processed. See [`invariants.md`](../contributing/standards/invariants.md) for the carve-out.
+**Clock monotonicity (INV-3):** The simulation clock never decreases. Each processed event has a timestamp >= its predecessor's — except when restoring an optimistic advance after a lazily-cancelled event, where no event was processed. See [`invariants.md`](../contributing/standards/invariants.md) for the carve-out.
 
 **Work-conserving (INV-8):** After every step completion, if the wait queue is non-empty, a `StepEvent` must exist in the event queue. The simulator never idles while work is waiting.
 

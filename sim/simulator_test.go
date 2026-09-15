@@ -1383,7 +1383,10 @@ func TestINV3_ClockNeverDecreases(t *testing.T) {
 	var (
 		processed int
 		orphans   int
-		prev      = int64(math.MinInt64)
+		// The first processed event has no predecessor, so seed prev below every
+		// possible timestamp: the first comparison is meant to be vacuously true.
+		// It cannot mask a real violation, because event timestamps are non-negative.
+		prev = int64(math.MinInt64)
 	)
 	for s.HasPendingEvents() {
 		ev := s.ProcessNextEvent()
@@ -1423,8 +1426,12 @@ func TestINV3_ClockNeverDecreases(t *testing.T) {
 	}
 	if orphans == 0 {
 		t.Fatalf("setup no longer exercises lazy cancellation: 0 orphaned TimeoutEvents, so the "+
-			"skipped-event branch above went untaken. Check that Deadline=%d is still inside "+
-			"Horizon=%d and still beyond every completion", orphanDeadline, horizon)
+			"skipped-event branch above went untaken. %d events processed, last at %d, %d requests "+
+			"completed, %d timed out; deadline was %d and horizon %d. A timeout is orphaned only "+
+			"while its request completes before its deadline AND the deadline is inside the horizon "+
+			"(EnqueueRequest skips scheduling otherwise)",
+			processed, prev, s.Metrics.CompletedRequests, s.Metrics.TimedOutRequests,
+			orphanDeadline, horizon)
 	}
 }
 
