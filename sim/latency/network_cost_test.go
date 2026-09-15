@@ -491,9 +491,11 @@ func TestStepTime_NoLatencyChargedWithoutTokens(t *testing.T) {
 
 // TestStepTime_MoEDispatchLegChargedCrossNode verifies BC-2: the expert
 // dispatch/combine leg is priced cross-node when the flattened MoE group (TP·DP)
-// does not fit inside one node. Exercised at the latency-model level because a
-// node_pools + --dp>1 run is a fail-fast today (#1553); the placement-driven
-// assertion for this leg lands with expert-parallel placement (#1548).
+// does not fit inside one node. Exercised at the latency-model level because
+// DP-as-placement (#1531/#1553) runs each replica as a single-node DP=1 engine,
+// so no PRODUCTION per-instance config carries a TP·DP group that spans nodes; the
+// placement-driven cross-node MoE leg would land only with a genuinely multi-node
+// expert-parallel group (#1548's inter-replica boundary, still unpriced).
 func TestStepTime_MoEDispatchLegChargedCrossNode(t *testing.T) {
 	mc := *dpepMoEModelConfig()
 	hw := fabricHW(9)

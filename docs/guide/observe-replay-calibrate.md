@@ -269,8 +269,9 @@ Replay also accepts all shared simulation config flags (`--latency-model`, `--to
     `--enable-expert-parallel` is supported alongside `--dp > 1` on both commands since
     #1548, and — like `--dp` itself — must be re-supplied identically on the replay leg
     (the EP-group width is a model-level input, not a trace field). PD disaggregation with
-    `--dp > 1` remains unmodeled and fails fast on both commands (#1553); the autoscaler
-    and node pools are rejected by `blis replay` unconditionally, independently of `--dp`.
+    `--dp > 1` is supported on both commands since #1553 (each pool spawns N per-rank
+    replicas; re-supply the same flags for byte-identical replay). The autoscaler and node
+    pools are still rejected by `blis replay` unconditionally, independently of `--dp`.
 
 ### How Replay Differs from `blis run`
 

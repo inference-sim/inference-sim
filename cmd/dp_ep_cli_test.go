@@ -269,21 +269,24 @@ func TestRunReplay_DPEPFlags_ThreadedIntoConstructor(t *testing.T) {
 	}
 }
 
-// TestPerPoolKVBlocks_ThreadsGlobalDP is a source-level wiring guard for the per-pool
-// KV-capacity call sites (#1420). The four per-pool CalculateKVBlocks calls (run +
-// replay × prefill + decode) pass per-pool TP but GLOBAL dataParallelism — an
-// intentional asymmetry (per-pool DP is out of scope). No behavioral test exercises
-// dp>1 on the pool path (the cmd dp>1 scenarios pin --total-kv-blocks, short-circuiting
-// auto-calc), so a regression that dropped dataParallelism or passed a literal 1 here
-// would scale pool capacity wrong and pass every other test. This guard asserts each
-// pool site threads `<poolTP>, dataParallelism,` in order, in both run and replay
-// (INV-13 parity). Mirrors TestRunReplay_DPEPFlags_ThreadedIntoConstructor.
-func TestPerPoolKVBlocks_ThreadsGlobalDP(t *testing.T) {
+// TestPerPoolKVBlocks_ThreadsPerPoolDP is a source-level wiring guard for the per-pool
+// KV-capacity call sites (#1420, updated for #1553 BC-3). The four per-pool
+// CalculateKVBlocks calls (run + replay × prefill + decode) pass per-pool TP followed by
+// `perPoolKVDP` — the DP the per-pool KV auto-calc must charge. #1553 lifted the PD +
+// `--dp>1` fail-fast, so per-pool DP is no longer out of scope: `perPoolKVDP` is the plan's
+// per-rank DP (=1) under an active DP-as-placement plan and the global `dataParallelism`
+// otherwise. Threading the raw global `dataParallelism` here would `dp²`-inflate each PD
+// pool's per-rank capacity; threading a literal 1 would break the non-PD `--dp>1` pool path.
+// Behavioral coverage: TestRunCmd_MoEDPPlacement_NodePools_NxM (per-rank sizing under node
+// pools) and TestRunCmd_PD_DP1_ByteIdentical (the `--dp 1` no-op). This guard asserts each
+// pool site threads `<poolTP>, perPoolKVDP,` in order, in both run and replay (INV-13
+// parity). Mirrors TestRunReplay_DPEPFlags_ThreadedIntoConstructor.
+func TestPerPoolKVBlocks_ThreadsPerPoolDP(t *testing.T) {
 	// Each per-pool CalculateKVBlocks call must pass per-pool TP immediately followed
-	// by the global dataParallelism var.
+	// by the perPoolKVDP var (per-rank under an active plan, global --dp otherwise).
 	wantWirings := []string{
-		"poolPrefillTP, dataParallelism,",
-		"poolDecodeTP, dataParallelism,",
+		"poolPrefillTP, perPoolKVDP,",
+		"poolDecodeTP, perPoolKVDP,",
 	}
 	for _, src := range []string{"root.go", "replay.go"} {
 		data, err := os.ReadFile(src)
@@ -296,8 +299,8 @@ func TestPerPoolKVBlocks_ThreadsGlobalDP(t *testing.T) {
 		}
 		for _, want := range wantWirings {
 			if !strings.Contains(content, want) {
-				t.Errorf("%s: per-pool CalculateKVBlocks must thread per-pool TP then global DP %q "+
-					"(per-pool TP, global dp; #1420 / INV-13 parity)", src, want)
+				t.Errorf("%s: per-pool CalculateKVBlocks must thread per-pool TP then perPoolKVDP %q "+
+					"(per-pool TP, per-rank DP under an active plan; #1420 / #1553 BC-3 / INV-13 parity)", src, want)
 			}
 		}
 	}
