@@ -148,7 +148,15 @@ jobs:
             // WORKFLOW LOGIC, not only by a prompt. It was prompt-only, which meant a model that
             // overlooked or misread a `Depends on:` line could implement a blocked issue after
             // the expensive self-hosted agent job had already started. Checked here, before
-            // anything is scheduled; the prompt keeps its copy as defence in depth.
+            // anything is scheduled.
+            //
+            // This is now the ONLY place it is checked. The prompt used to carry a defence-in-depth
+            // copy telling the agent to comment and stop without creating a branch or PR; since
+            // #1722 the workflow seeds both BEFORE the agent runs, so that instruction had become
+            // impossible to obey and a contradictory instruction is worse than none. The guard is
+            // sound alone precisely because it gates the whole `deliver` job: reaching the seeding
+            // step at all means no unmerged `Depends on:` was found, so seeding cannot open a PR
+            // for a blocked issue.
             //
             // "Blocker resolved" must mean THE DEPENDENCY'S CODE LANDED, not "its issue is
             // closed". Issue state is wrong in BOTH directions. This repository's feature-branch
@@ -232,7 +240,13 @@ jobs:
     needs: check-permissions
     if: needs.check-permissions.outputs.allowed == 'true'
     runs-on: [self-hosted]
-    timeout-minutes: 60
+    # Matches deliver-verify.yml's budget. This is ALIGNMENT, not a fix for anything observed:
+    # #1706's lost run died at 52 minutes from runner resource pressure, well inside the old 60,
+    # so a higher ceiling on its own would only have lengthened the window it could die in. What
+    # makes a long run survivable is the PR-first seeding below; what makes it shorter is no
+    # longer duplicating ci.yml in the prompt. Still inside deliver-stall-sweep.yml's 180-minute
+    # quiet window, so a healthy phase is never older than the window while alive.
+    timeout-minutes: 120
     permissions:
       contents: write
       pull-requests: write
@@ -274,6 +288,139 @@ jobs:
         with:
           fetch-depth: 0
 
+      # PR-FIRST (#1722). The branch and a DRAFT PR are created HERE, deterministically, before
+      # the agent starts — not by the agent as its last action.
+      #
+      # Two things forced this, both seen on #1706. A runner that dies mid-job executes NO step,
+      # not even `always()` ones (the reporter at the bottom of this file says so, from #1685), so
+      # an agent that pushes only at the end leaves nothing behind: #1706's second attempt lost 52
+      # minutes of FINISHED work because the pod was evicted 75 seconds before it would have
+      # pushed. And deliver-stall-sweep.yml — the backstop built for exactly that class — selects
+      # deliveries FROM THE PR SIDE, so a run that dies before opening a PR is invisible to the one
+      # detector meant to catch it. #1706 was the second delivery lost that way.
+      #
+      # Seeding first fixes both, and a third thing: a re-issued command now has a branch to
+      # resume from instead of re-deriving the whole design from scratch.
+      #
+      # DRAFT, because the PR exists before the work does. The agent marks it ready when the
+      # implementation is complete. Nothing downstream filters on draft state — verified against
+      # deliver-verify.yml, deliver-correct.yml, scripts/deliver-gate.sh and
+      # scripts/deliver-stall-candidates.jq, none of which reads `isDraft`.
+      #
+      # The empty seed commit is load-bearing: GitHub refuses a PR with no commits between base
+      # and head, so without it there is nothing to open a PR against.
+      #
+      # No blocked-dependency check here: `check-permissions` already refuses a blocked issue
+      # before this job is scheduled (see the `Depends on:` logic above), so reaching this step
+      # means the guard passed. That is why seeding cannot open a PR for a blocked issue.
+      - name: Open the delivery branch and a draft PR
+        id: seed
+        if: steps.paused.outputs.paused == 'false'
+        run: |
+          set -uo pipefail
+
+          body=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json body --jq .body) || {
+            echo "::error::could not read #$ISSUE_NUMBER; refusing to seed a branch without knowing its target branch or plan"
+            exit 1
+          }
+          title=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json title --jq .title) || {
+            echo "::error::could not read the title of #$ISSUE_NUMBER"
+            exit 1
+          }
+
+          # Target branch and plan declaration are read by a committed, tested script
+          # (scripts/deliver_seed_refs_test.go) rather than inline, for the same reason
+          # scripts/deliver-stall-candidates.jq is a file: getting the base wrong produces a PR
+          # whose diff is mostly unrelated commits, and dropping the plan line silently skips the
+          # dist ratchet. Neither shows up without reading a real delivery.
+          printf '%s\n' "$body" > "$RUNNER_TEMP/issue-body.md"
+          if ! refs=$(scripts/deliver-seed-refs.sh "$RUNNER_TEMP/issue-body.md"); then
+            echo "::error::could not read the target branch and plan declaration out of #$ISSUE_NUMBER"
+            exit 1
+          fi
+          declared=$(sed -n 's/^target_branch=//p' <<< "$refs")
+          plan=$(sed -n 's/^archon_plan=//p' <<< "$refs")
+
+          # An archon sub-issue targets its feature branch. The declared ref is used only if it
+          # actually exists on the remote — a typo falls back to the default branch loudly rather
+          # than failing the whole delivery.
+          base=$(gh api "/repos/$REPO" --jq .default_branch) || {
+            echo "::error::could not read the default branch of $REPO"
+            exit 1
+          }
+          if [[ -n "$declared" && "$declared" != "$base" ]]; then
+            if git ls-remote --exit-code --heads origin "$declared" >/dev/null 2>&1; then
+              base="$declared"
+              echo "#$ISSUE_NUMBER targets '$base'."
+            else
+              echo "::warning::#$ISSUE_NUMBER declares target branch '$declared', which does not exist on the remote — basing on '$base' instead"
+            fi
+          fi
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+
+          # The seed commit is attributed to the bot that makes it, not to the agent that has not
+          # run yet; claude-code-action sets its own identity for the agent's own commits.
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          # Both paths leave the working tree ON the delivery branch, so the agent starts from it
+          # whether this is a first attempt or a resumed one.
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "resume=true" >> "$GITHUB_OUTPUT"
+            echo "$BRANCH already exists on the remote — this is a RESUMED delivery."
+            # Explicit refspec, not `git fetch origin "$BRANCH"`: the bare form's update of the
+            # remote-tracking ref is version-dependent, and checking out a STALE origin/$BRANCH
+            # would hand the agent an older tree and lose the very commits this resume exists to
+            # continue from.
+            git fetch --quiet origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || exit 1
+            git checkout -B "$BRANCH" "origin/$BRANCH" || exit 1
+          else
+            echo "resume=false" >> "$GITHUB_OUTPUT"
+            git checkout -B "$BRANCH" "origin/$base" || exit 1
+            git commit --allow-empty -m "deliver: open the delivery branch for #$ISSUE_NUMBER" || exit 1
+            git push origin "$BRANCH" || exit 1
+          fi
+
+          pr=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number --jq '.[0].number // empty') || {
+            echo "::error::could not list PRs for $BRANCH"
+            exit 1
+          }
+          if [[ -z "$pr" ]]; then
+            # `$plan` is copied VERBATIM so the dist ratchet can read it:
+            # scripts/archon-plan-resolve.sh matches the plan out of the PR BODY, and a PR to a
+            # feature branch links no closing issue, so the body is the only place it can come
+            # from. Seeding it means the declaration survives an agent that never finishes.
+            {
+              echo "Delivering #$ISSUE_NUMBER."
+              echo
+              echo "**Status: in progress — do not review yet.**"
+              echo
+              echo "The implement phase opened this PR before starting work, so that a run"
+              echo "interrupted part-way leaves recoverable commits and a delivery the stall sweep"
+              echo "can see (#1722). The agent replaces this body with a contract-by-contract"
+              echo "statement and marks the PR ready for review when the implementation is done."
+              echo "A PR still showing this text was interrupted."
+              if [[ -n "$plan" ]]; then
+                echo
+                echo "$plan"
+              fi
+              echo
+              echo "Closes #$ISSUE_NUMBER"
+            } > "$RUNNER_TEMP/seed-pr-body.md"
+
+            gh pr create --repo "$REPO" --draft --base "$base" --head "$BRANCH" \
+              --title "$title" --body-file "$RUNNER_TEMP/seed-pr-body.md" || {
+                echo "::error::could not open a draft PR for $BRANCH against $base"
+                exit 1
+              }
+            pr=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number --jq '.[0].number // empty') || true
+            [[ -n "$pr" ]] || { echo "::error::opened a draft PR for $BRANCH but could not read its number"; exit 1; }
+            echo "Opened draft PR #$pr ($BRANCH → $base)."
+          else
+            echo "Reusing open PR #$pr on $BRANCH."
+          fi
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+
       - name: Implement the sub-issue
         if: steps.paused.outputs.paused == 'false'
         uses: anthropics/claude-code-action@v1
@@ -287,7 +434,19 @@ jobs:
           show_full_output: true
           # pr-workflow.md, which the prompt below tells the agent to follow, leans on the
           # superpowers skills. Without these the referenced workflow cannot be executed as
-          # written. Kept identical to claude.yml.
+          # written. The plugin LIST is identical to claude.yml, but the prompt is NOT: this phase
+          # is non-interactive, and the superpowers `SessionStart` hook injects a skill catalogue
+          # far wider than the six skills pr-workflow.md names, wrapped in `<EXTREMELY_IMPORTANT>`
+          # with "if you think there is even a 1% chance a skill might apply […] you ABSOLUTELY
+          # MUST invoke the skill" and "'Let's build X' → superpowers:brainstorming first".
+          #
+          # A delivery prompt reads exactly like "let's build X", so on #1706 the agent invoked
+          # `superpowers:brainstorming`, posted a design write-up, and ENDED ITS TURN waiting for a
+          # human reply that cannot come — 2m18s, $1.83, zero edits, and the phase reported success.
+          # The hook itself concedes that user instructions take precedence, so the prompt below
+          # states the allowlist explicitly. That is why the fix is a positive allowlist and not a
+          # ban on one skill: any catalogue skill shaped "propose, then await the human" fails the
+          # same way.
           plugin_marketplaces: |
             https://github.com/anthropics/claude-plugins-official.git
             https://github.com/obra/superpowers-marketplace.git
@@ -312,44 +471,74 @@ jobs:
               legitimately skip the RFC and plan entirely. Take the issue's own acceptance
               criteria as the contract, and do not invent an archon plan for it.
 
-            FIRST, check whether you are blocked. If the body carries a `Depends on: #M` line,
-            check whether #M's PR is merged. If it is not, post a comment on
-            sub-issue #${{ env.ISSUE_NUMBER }} saying `blocked by #M`, and STOP. Do not open a
-            PR and do not create a branch. A later delivery picks this up once #M lands.
+            YOU ARE RUNNING UNATTENDED. No human will read your messages or reply to them
+            during this run, so a question, a design proposal, or a plan awaiting approval ends
+            the delivery with nothing built. Never end your turn that way. Decide, implement,
+            push, and record what you were unsure about in the PR comment at the end — that
+            comment is where an open question belongs, and the verify phase reads it.
 
-            Otherwise, follow @docs/contributing/pr-workflow.md and implement it.
+            For the same reason: do NOT invoke `superpowers:brainstorming`. The only skills in
+            scope are the six @docs/contributing/pr-workflow.md actually names —
+            `superpowers:using-git-worktrees`, `superpowers:writing-plans`,
+            `superpowers:executing-plans`, `superpowers:systematic-debugging`,
+            `superpowers:verification-before-completion` and
+            `superpowers:subagent-driven-development`. Your session may advertise a much wider
+            catalogue and press you to use it; ignore the rest. These instructions take
+            precedence, as that catalogue's own rules acknowledge.
 
-            - Use the branch name `${{ env.BRANCH }}` exactly. The delivery finds your PR by
-              this ref, so a different name breaks the chain.
+            A branch and a DRAFT PR already exist — you do not create either:
+
+            - branch `${{ env.BRANCH }}`, based on `${{ steps.seed.outputs.base }}`
+            - draft PR #${{ steps.seed.outputs.pr }}
+
+            Check out that branch and commit to it. Do not rename it, do not open a second PR,
+            and do not change the PR's base.
+
+            RESUMING: `git log --oneline ${{ steps.seed.outputs.base }}..${{ env.BRANCH }}`. If it
+            shows more than the single empty `deliver: open the delivery branch` commit, an
+            earlier attempt was interrupted part-way — most likely its runner died. Read those
+            commits and the PR, say in your final comment what you found and what you kept, and
+            CONTINUE from there. Do not start over and do not revert someone else's work.
+
+            Then follow @docs/contributing/pr-workflow.md and implement the issue.
+
             - Implement exactly the declared surface, no more. Do not import anything outside
               the allow list.
             - Every contract in the sub-issue gets a test that would fail if the contract were
               violated.
-            - Before you push, run `go build ./...`, `go test ./...` and
-              `golangci-lint run ./...`. The verify phase runs these same three commands, so
-              anything failing here becomes a finding you will be asked to fix.
+            - PUSH AS YOU GO — after the first build passes, and after each contract's test goes
+              green. Do not save the push for the end. This job's runner can be evicted at any
+              moment, and whatever you have not pushed is lost; a delivery was lost that way on
+              #1706 with the work already finished. Unpushed work is not work.
+            - Run `go build ./...`, and `go test` for the packages you touched. Do NOT run the
+              full `go test ./...` and do NOT run or install `golangci-lint`: `ci.yml` is the
+              authority on build, test and lint, the verify phase dispatches it on this branch,
+              and it runs on a GitHub-hosted runner with a cached linter. Duplicating it here
+              buys nothing and is what exhausted the runner on #1706.
             - If the sub-issue names an `archon-plan:`, run `scripts/archon-build.sh` and check
               `archon plan dist` against the target branch to confirm you moved distance DOWN.
               If it did not go down, you have implemented the wrong thing — fix that before
               pushing, not after.
 
-            Open a PR against the target branch the sub-issue names (default: the repository
-            default branch). The PR body must contain:
+            When the implementation is complete, replace the PR body — keeping the
+            `archon-plan:` line, if it has one, and `Closes #${{ env.ISSUE_NUMBER }}` — with a
+            contract-by-contract statement of what you did. The plan line is read FROM THE BODY,
+            and a PR to a feature branch links no closing issue, so dropping it stops the dist
+            ratchet, which the verify phase treats as a blocking signal rather than a pass.
 
-            - the `archon-plan:` line copied verbatim from the sub-issue, if it has one. The
-              plan is read from the PR body, and a PR to a feature branch links no closing
-              issue, so without this line the dist ratchet cannot run — and the verify phase
-              treats a declared-but-unverified plan as a blocking signal, not a pass.
-            - a contract-by-contract statement of what you did
-            - `Closes #${{ env.ISSUE_NUMBER }}`
+            Then mark the PR ready for review (`gh pr ready ${{ steps.seed.outputs.pr }}`) and
+            post ONE comment on it summarising what you built, what you deliberately left out,
+            and anything you were unsure about. The uncertainty note is the first thing the
+            verify phase reads, so be honest in it. Leave the PR a draft if — and only if — you
+            could not finish, and say so in the comment.
 
-            Then post ONE comment on the PR summarising what you built, what you deliberately
-            left out, and anything you were unsure about. The uncertainty note is the first
-            thing the verify phase reads, so be honest in it.
+            Do not merge anything. Do not push to `${{ steps.seed.outputs.base }}` or to the
+            default branch.
 
-            Do not merge anything. Do not push to the default branch.
-
-      # Deterministic: the branch name was dictated above, so no body parsing is needed.
+      # Re-read from the API rather than reused from the seeding step's output, deliberately: this
+      # runs on `always()`, after the agent, and the agent can legitimately have changed the PR
+      # (marking it ready) or illegitimately have closed it. The number is looked up by head ref,
+      # which is deterministic because the workflow owns the branch name.
       - name: Locate the PR
         id: pr
         if: always() && steps.paused.outputs.paused == 'false'
@@ -369,8 +558,46 @@ jobs:
             // Newest wins if an earlier attempt left an open PR on the same ref.
             core.setOutput('number', String(prs.sort((a, b) => b.number - a.number)[0].number));
 
+      # Since #1722 a PR EXISTS from the start, so "a PR is open" no longer means "work was done"
+      # — it is now the seed's own doing. What distinguishes a delivery from an empty shell is a
+      # file change on the branch, so that is what gates the hand-off and what the reporters below
+      # branch on. Without this, an agent that produced nothing (as on #1706, where it ended its
+      # turn on a design write-up) would hand a contentless PR to verify, which would spend a
+      # 120-minute agent review and a full CI dispatch discovering the diff is empty.
+      - name: Check whether the delivery produced any work
+        id: work
+        if: always() && steps.paused.outputs.paused == 'false' && steps.seed.outputs.pr != ''
+        env:
+          BASE: ${{ steps.seed.outputs.base }}
+        run: |
+          set -uo pipefail
+          # The agent pushed to the remote; this checkout's refs predate that. EXPLICIT refspecs,
+          # because the bare `git fetch origin <branch>` form's update of the remote-tracking ref
+          # is version-dependent — and a stale `origin/$BRANCH` here reads a finished delivery as
+          # "no work", which would skip the hand-off and comment that the agent built nothing.
+          # That silent-discard is worse than any failure this step can report.
+          if ! git fetch --quiet origin \
+                 "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" \
+                 "+refs/heads/$BASE:refs/remotes/origin/$BASE"; then
+            echo "::error::could not fetch $BRANCH and $BASE; cannot tell whether the delivery produced work"
+            exit 1
+          fi
+          # Three-dot: changes on the branch since it diverged from base, so unrelated commits
+          # landing on base while the agent worked do not read as delivered work.
+          if ! changed=$(git diff --name-only "origin/$BASE...origin/$BRANCH"); then
+            echo "::error::could not diff origin/$BASE...origin/$BRANCH"
+            exit 1
+          fi
+          if [[ -n "$changed" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "$(wc -l <<< "$changed") file(s) changed on $BRANCH."
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No file changes on $BRANCH — the seed commit is all there is."
+          fi
+
       - name: Hand off to verify
-        if: steps.pr.outputs.number != ''
+        if: steps.pr.outputs.number != '' && steps.work.outputs.changed == 'true'
         env:
           PR: ${{ steps.pr.outputs.number }}
         run: |
@@ -379,38 +606,51 @@ jobs:
           echo "Dispatched verify for PR #$PR."
 
       # BC-11. `success()` keeps this mutually exclusive with the failure reporter below (which
-      # requires `!success()`): this is the phase deciding NOT to open a PR (a blocked
-      # dependency, an agent stopping cleanly), which reads differently to a phase that errored.
-      # Without it the command looks ignored — there is no PR, so the sub-issue is the only place
-      # a human would look.
-      - name: Report a delivery that opened no PR
-        if: success() && steps.paused.outputs.paused == 'false' && steps.pr.outputs.number == ''
+      # requires `!success()`): this is the phase running to completion having built NOTHING,
+      # which reads differently to a phase that errored.
+      #
+      # It no longer guesses at a cause. The old version asserted "the usual reason is an unmerged
+      # `Depends on:` blocker", which on #1706 was simply false — that issue declares no
+      # dependency, and the real cause was an agent ending its turn on a design proposal. A
+      # confident wrong cause sent the first hour of diagnosis the wrong way, so this reports only
+      # what the phase can actually observe and names the two causes that produce it.
+      - name: Report a delivery that produced no work
+        if: success() && steps.paused.outputs.paused == 'false' && steps.work.outputs.changed == 'false'
         uses: actions/github-script@v8
         with:
           script: |
             const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const pr = '${{ steps.seed.outputs.pr }}';
+            const base = '${{ steps.seed.outputs.base }}';
             await github.rest.issues.createComment({
               owner: context.repo.owner, repo: context.repo.repo,
               issue_number: Number(process.env.ISSUE_NUMBER),
               body: [
-                '## Delivery stopped — no PR was opened',
+                '## Delivery stopped — the implement phase changed no files',
                 '',
-                `The implement phase finished without an open PR on \`${process.env.BRANCH}\`.`,
-                'The usual reason is an unmerged `Depends on:` blocker — look for a',
-                '`blocked by #M` comment above.',
+                `The agent step completed without error, but \`${process.env.BRANCH}\` carries no`,
+                `file changes against \`${base}\`. Draft PR #${pr} is open and empty, so nothing`,
+                'was handed to verify.',
                 '',
-                `Nothing else will run: the delivery chain starts from the PR. [Workflow run](${run})`,
+                'This is the automation producing nothing, not a verdict on the issue. The two',
+                'causes that look like this:',
                 '',
-                'Re-issue `/approve-issue-for-pr-delivery` once the blocker is resolved.'
+                '- **the agent ended its turn without implementing** — it asked a question or',
+                '  proposed a design and stopped, which cannot work here because nobody replies.',
+                `  Check the [run](${run}) for what it did with its turn.`,
+                '- **the agent could not start** — it read the issue and found nothing actionable.',
+                '',
+                `Re-issuing \`/approve-issue-for-pr-delivery\` resumes on \`${process.env.BRANCH}\``,
+                'rather than starting over, so a partial attempt is not lost.'
               ].join('\n')
             });
 
       # `always() && !success()`, NOT `failure() || cancelled()`. Per the GitHub expression docs
       # `failure()` is true when a previous step FAILS and `cancelled()` when the WORKFLOW is
       # cancelled — a cancelled *step* is neither, so the old guard skipped this reporter exactly
-      # when a step was cancelled. Observed live on #1685. The 60-minute job timeout also cancels
-      # rather than fails, so a hung agent or model call would otherwise skip every reporter and
-      # leave the command looking ignored — the most likely silent death in this phase.
+      # when a step was cancelled. Observed live on #1685. The job timeout also cancels rather than
+      # fails, so a hung agent or model call would otherwise skip every reporter and leave the
+      # command looking ignored — the most likely silent death in this phase.
       #
       # Scope note, so this is not over-claimed: this cannot report a dead RUNNER. When the
       # runner receives a shutdown signal no step executes, whatever its `if:` says — even
@@ -423,17 +663,29 @@ jobs:
           script: |
             const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const pr = '${{ steps.pr.outputs.number }}';
+            const branch = process.env.BRANCH;
+            // Report the observable state rather than a presumed cause. `changed` is '' when the
+            // check itself never ran, which is a different thing from a branch with no changes,
+            // and conflating the two is how a reporter starts telling people something untrue.
+            const changed = '${{ steps.work.outputs.changed }}';
+            const work = changed === 'true'
+              ? `\`${branch}\` HAS committed work on it. It is not lost — re-issuing the command resumes from that branch.`
+              : changed === 'false'
+                ? `\`${branch}\` carries no file changes, so nothing was lost.`
+                : `Whether \`${branch}\` carries work could not be determined; check it before re-issuing.`;
             await github.rest.issues.createComment({
               owner: context.repo.owner, repo: context.repo.repo,
               issue_number: Number(process.env.ISSUE_NUMBER),
               body: [
                 '## Delivery stopped — the implement phase failed or timed out',
                 '',
-                'A step errored, or the job hit its 60-minute timeout, before the phase could',
+                'A step errored, or the job hit its 120-minute timeout, before the phase could',
                 'hand off. This is a failure of the automation, not a verdict on the issue.',
                 '',
-                pr ? `A PR was opened (#${pr}) but the hand-off did not complete, so nothing will verify it.`
-                   : 'No PR was opened.',
+                pr ? `Draft PR #${pr} is open. The hand-off did not complete, so nothing will verify it yet.`
+                   : 'No PR is open, which means the phase died before it could even seed one.',
+                '',
+                work,
                 '',
                 `The loop will not resume on its own. See the [run](${run}), then re-issue`,
                 '`/approve-issue-for-pr-delivery` once the cause is fixed.'

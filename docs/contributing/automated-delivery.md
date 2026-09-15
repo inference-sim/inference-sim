@@ -37,7 +37,7 @@ Then leave. Every phase posts a comment, so the whole delivery history is readab
 ```
 /approve-issue-for-pr-delivery
   │
-  ├─ Deliver — Implement    branch deliver/issue-N, tests, PR, self-review
+  ├─ Deliver — Implement    draft PR on deliver/issue-N FIRST, then tests, code, self-review
   │      ↓
   ├─ Deliver — Verify       build/test/lint → archon review → methodology review
   │      │                  ready-for-merge → STOP
@@ -47,6 +47,31 @@ Then leave. Every phase posts a comment, so the whole delivery history is readab
   │      ↓
   └─ back to Verify              (at most 3 correction rounds)
 ```
+
+**The implement phase opens its draft PR before it starts work, not after it finishes.** The
+workflow — not the agent — creates `deliver/issue-N` with an empty seed commit and opens a draft
+PR against the sub-issue's target branch, then hands the agent a branch and a PR that already
+exist. The agent commits and pushes as it goes, and marks the PR ready for review when it is
+done. Three things follow from that ordering:
+
+- **An interrupted run leaves recoverable work.** A lost runner executes no step at all, so an
+  agent that pushed only at the end left nothing behind — a delivery once lost a finished
+  implementation that way, because the runner was evicted seconds before its single push.
+- **An interrupted delivery is visible.** `deliver-stall-sweep.yml` finds deliveries *from the PR
+  side*, so a run that died before opening a PR was invisible to the one backstop meant to catch
+  it. A PR that exists from minute one is always sweepable.
+- **A PR still showing the seeded body was interrupted.** The draft body says so in as many
+  words, so an abandoned delivery is recognisable without reading the run log.
+
+Because a PR now exists from the start, an open PR is no longer evidence that anything was built.
+The hand-off to verify is gated on the branch actually carrying a file change against its base;
+an agent that produced nothing gets a comment on the sub-issue saying exactly that, instead of
+handing an empty PR to a two-hour review.
+
+`ci.yml` is the single authority on build, test and lint for every phase. Verify dispatches it on
+the delivery branch and reads the resulting check runs; implement deliberately does *not* re-run
+the full suite or the linter, which duplicated a parity obligation and, on the resource-limited
+self-hosted runner, was itself a cause of lost runs.
 
 Phases chain with `workflow_dispatch`, passing the PR and sub-issue numbers as inputs. **No PAT and no GitHub App are needed** — `workflow_dispatch` and `repository_dispatch` are the two events that always create workflow runs even when triggered with `GITHUB_TOKEN`.
 
@@ -125,7 +150,7 @@ Archon is optional throughout: with a plan there is a deterministic number that 
 
 **Every phase reports its own failure**, including a step that was cancelled, and applies `needs-human`.
 
-**A dead runner cannot report itself.** If the runner is lost mid-job, no step executes — not `always()` ones, not even the action's own post-steps. That happened once during development and the delivery left no branch, no PR, no comment and no label, which is indistinguishable from nobody having run the command. `deliver-stall-sweep.yml` exists for exactly that: it runs on a schedule and flags any open PR on a `deliver/issue-*` branch that carries neither terminal label, is not paused, and has had no activity for 180 minutes. Activity means comments, reviews *and* review comments — the loop reacts to all three, so counting only comments would flag a delivery that was in fact responding to a review.
+**A dead runner cannot report itself.** If the runner is lost mid-job, no step executes — not `always()` ones, not even the action's own post-steps. This has happened twice: the first time the delivery left no branch, no PR, no comment and no label, which is indistinguishable from nobody having run the command; the second time it also lost a finished implementation that had never been pushed. Seeding the draft PR up front (above) is what closes both — the work survives, and the delivery is something the sweep can see. `deliver-stall-sweep.yml` exists for exactly that: it runs on a schedule and flags any open PR on a `deliver/issue-*` branch that carries neither terminal label, is not paused, and has had no activity for 180 minutes. Activity means comments, reviews *and* review comments — the loop reacts to all three, so counting only comments would flag a delivery that was in fact responding to a review.
 
 180 minutes is not arbitrary: the threshold has to exceed the longest *legitimate* silence, which is one phase's own budget (verify is capped at 120 minutes and comments at the end), plus slack for a busy runner.
 
@@ -139,7 +164,9 @@ The stand-down is repository-wide, so one recent phase run suppresses flagging f
 gh workflow run deliver-verify.yml -f pr_number=<PR> -f issue_number=<N>
 ```
 
-The correction round count lives on the PR's `deliver:round-N` label, so resuming this way keeps it. Re-issuing `/approve-issue-for-pr-delivery` instead restarts the *implement* phase against the existing branch, which is rarely what you want after an infrastructure failure — nothing about the code needed redoing.
+The correction round count lives on the PR's `deliver:round-N` label, so resuming this way keeps it. Dispatching verify directly remains the right move when the **implementation is already complete** and only the verdict is missing — nothing about the code needed redoing.
+
+**Re-issuing `/approve-issue-for-pr-delivery` resumes the implement phase rather than restarting it.** If `deliver/issue-N` already exists, the phase checks it out instead of creating it, reuses the open PR instead of opening a second one, and the agent is told to read the commits already there and continue from them. That is the right move when the implementation was left **part-finished** — a runner lost mid-flight. It is not a way to get a second opinion on finished work: the agent continues the existing branch, it does not start over.
 
 **Any human push to a delivery branch re-verifies it**, so a verdict always describes the current head and a terminal label never outlives the commit it was granted to. Both terminal labels are cleared as soon as verification *starts*, not when it finishes — otherwise a push to a PR already marked `ready-for-merge` would keep advertising merge-readiness, on an unverified commit, for the whole re-verification.
 
