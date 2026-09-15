@@ -682,6 +682,87 @@ func TestRunCmd_MoEDPPlacement_PD_Runs(t *testing.T) {
 	clusterConservationHolds(t, got) // INV-1
 }
 
+// TestRunCmd_MoEDPPlacement_PD_PerPoolAutoKV_PerRank is the BC-3 behavioral execution test
+// (#1553): a PD + `--dp N` run that actually reaches latency.CalculateKVBlocks on the per-pool
+// auto-KV path must charge the PER-RANK DP (=1), not the global `--dp`, so a pool's per-replica
+// KV is not dp²-inflated.
+//
+// The existing PD tests do NOT cover this execution path: TestRunCmd_MoEDPPlacement_PD_Runs pins
+// `--total-kv-blocks` (which sets KVParamsOK=false and bypasses CalculateKVBlocks entirely), the
+// DP=1 byte-identity test has an inactive plan (perPoolKVDP == dataParallelism == 1 either way),
+// and the node-pool test exercises applyPerInstanceKVCapacity (a different function). So a
+// regression that passed `dataParallelism` in place of `perPoolKVDP` at the per-pool
+// CalculateKVBlocks sites (cmd/root.go) would pass every one of those and only trip the
+// source-string guard — exactly the "refactor survival" gap the review raised.
+//
+// This test forces the per-pool auto-calc to run by giving the prefill pool a TP override
+// (`--prefill-tp 2` while the global `--tp` is 1, so `poolPrefillTP != tensorParallelism` is
+// true) with NO `--total-kv-blocks`, then reads the auto-calc's own Info line. That line prints
+// the DP the calc charged: `DP=1` is per-rank (correct), `DP=2` would be the dp²-inflated
+// regression. A dedicated non-vacuity check confirms the auto-calc actually ran.
+func TestRunCmd_MoEDPPlacement_PD_PerPoolAutoKV_PerRank(t *testing.T) {
+	if os.Getenv("BLIS_RUN_DP_PERPOOL_AUTOKV") == "1" {
+		args := append(dpRunBaseArgs(),
+			"--dp", "2", "--num-instances", "2", // P(1)+D(1) = 2 ≤ num-instances 2
+			"--prefill-instances", "1", "--decode-instances", "1",
+			"--prefill-tp", "2", // differs from global --tp 1 ⇒ per-pool prefill auto-calc runs
+			"--log", "info", // surface the per-pool KV auto-calc line
+			// deliberately NO --total-kv-blocks ⇒ CalculateKVBlocks (the path under test) runs
+		)
+		rootCmd.SetArgs(args)
+		if err := rootCmd.Execute(); err != nil {
+			os.Exit(2)
+		}
+		os.Exit(0)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRunCmd_MoEDPPlacement_PD_PerPoolAutoKV_PerRank$")
+	cmd.Env = append(os.Environ(), "BLIS_RUN_DP_PERPOOL_AUTOKV=1")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("PD + --dp 2 + per-pool auto-KV must run (#1553); err=%v\nstderr:\n%s", err, stderr.String())
+	}
+	logs := stderr.String()
+	// Non-vacuity: the per-pool prefill auto-calc must actually have run (otherwise the
+	// DP assertion below would pass trivially on an absent line).
+	if !strings.Contains(logs, "auto-calculated prefill pool total-kv-blocks=") {
+		t.Fatalf("BC-3: expected the per-pool prefill KV auto-calc to run (TP override + no --total-kv-blocks); "+
+			"stderr:\n%s", logs)
+	}
+	// The auto-calc charged the per-rank DP: the line ends with "DP=1)" — every DP-placement
+	// replica is DP=1. "DP=2)" would be the dp²-inflated regression (charging the global --dp
+	// to a per-replica budget). (The non-vacuity Fatalf above already returned if the line
+	// was absent, so a false here is a genuine wrong-DP.)
+	if !perPoolAutoKVLineHasDP(logs, "prefill", 1) {
+		t.Errorf("BC-3: the per-pool prefill KV auto-calc must charge the PER-RANK DP=1 under an active "+
+			"DP-as-placement plan, not the global --dp 2 (a dp² inflation); stderr:\n%s", logs)
+	}
+	// The regression signature stated explicitly, so the failure message is unambiguous.
+	if perPoolAutoKVLineHasDP(logs, "prefill", 2) {
+		t.Errorf("BC-3: per-pool prefill auto-calc charged DP=2 (the global --dp), meaning perPoolKVDP "+
+			"was not the per-rank value — dp²-inflated per-replica KV; stderr:\n%s", logs)
+	}
+	clusterConservationHolds(t, stdout.String()) // INV-1
+}
+
+// perPoolAutoKVLineHasDP reports whether the per-pool (prefill|decode) KV auto-calc Info line
+// reports the given DP value. It matches the trailing "DP=<n>)" of the auto-calc log line
+// emitted at cmd/root.go, tolerating any block count / GPU / TP before it.
+func perPoolAutoKVLineHasDP(logs, pool string, dp int) bool {
+	prefix := "auto-calculated " + pool + " pool total-kv-blocks="
+	for _, line := range strings.Split(logs, "\n") {
+		i := strings.Index(line, prefix)
+		if i < 0 {
+			continue
+		}
+		if strings.Contains(line[i:], "DP="+strconv.Itoa(dp)+")") {
+			return true
+		}
+	}
+	return false
+}
+
 // TestRunCmd_MoEDPPlacement_PerPoolRoofline_Rejected is BC-7 at the system level (#1553):
 // once PD + --dp>1 is a supported run, a per-pool --prefill-latency-model roofline override
 // must be REJECTED (exit 1) rather than silently putting the prefill pool on DP/EP-blind
