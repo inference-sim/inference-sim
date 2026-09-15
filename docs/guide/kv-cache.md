@@ -143,10 +143,209 @@ tier). Reuse is single-instance (offload tiers are per-instance and invisible to
     at the default batched-token budget. Uncapped (prompt-fits-one-chunk) workloads get the full
     credit. Tracked in [#1706](https://github.com/inference-sim/inference-sim/issues/1706).
 
-At `block_size == 1` decode blocks take a guarded
-allocation path that leaves them unhashed, so decode-offload is inert there — a degenerate offload
-block size (real offload block sizes track the GPU block size). With no `--kv-offload-config`,
-behavior is unchanged (INV-6).
+At `block_size == 1` decode blocks take a guarded allocation path that leaves them unhashed, so
+decode-offload is inert there — a degenerate offload block size (real offload block sizes track
+the GPU block size). With no `--kv-offload-config`, behavior is unchanged (INV-6).
+
+### Enabling and Disabling Offload
+
+Offload is **off by default**. There is one switch — the presence of `--kv-offload-config`:
+
+```bash
+# ENABLED — CPU staging tier
+./blis run --model qwen/qwen3-14b --workload-spec wl.yaml \
+  --total-kv-blocks 3000 --kv-offload-config offload_cpu.yaml
+
+# DISABLED — omit the flag
+./blis run --model qwen/qwen3-14b --workload-spec wl.yaml \
+  --total-kv-blocks 3000
+```
+
+`--kv-offload-config` is mutually exclusive with the legacy scalar `--kv-cpu-blocks` tier.
+
+### Sizing the CPU Tier
+
+Blocks reach the CPU tier only by being evicted from the GPU tier, so a CPU tier that cannot
+outgrow the GPU tier has nothing to hold.
+
+#### Block capacity — what the tier actually holds
+
+The tier is configured in **bytes**, but the cache uses it in **blocks**. BLIS converts once, at
+startup, by integer division:
+
+```
+per_block_bytes = 2 (K+V) × layers × kv_heads × head_dim × dtype_bytes × block_size
+block_capacity  = floor(cpu_bytes_to_use / per_block_bytes)
+```
+
+`block_capacity` is the number that matters: it is what LRU/ARC evicts against, and the only
+figure comparable to the workload's working set. Bytes are not comparable to anything — two
+models with the same `cpu_bytes_to_use` hold wildly different numbers of blocks.
+
+##### `block_capacity` vs `--total-kv-blocks`
+
+They are **the same unit for two different tiers**, and that is the whole point of computing
+`block_capacity` — it is what makes the two tiers comparable:
+
+| | Tier | How it is configured | Value for the example below |
+|---|---|---|---|
+| `--total-kv-blocks` | GPU (HBM) | directly, in blocks — or auto-derived from GPU memory when omitted | 3,000 |
+| `block_capacity` | CPU (host RAM) | *indirectly*, in bytes via `cpu_bytes_to_use`; BLIS divides | 419,430 |
+
+Both count the same thing — whole KV blocks of `block_size` tokens — so `block_capacity > total_kv_blocks`
+is the condition for the CPU tier to be able to hold what the GPU evicts. The asymmetry is only in
+the configured units: the GPU tier is set in blocks, the CPU tier in bytes (matching vLLM's knob
+for each). Both scale with TP, so the comparison must be made at the intended TP.
+
+For Qwen3-14B at TP=1, `2 × 40 layers × 8 KV heads × 128 head-dim × 2 B (bf16) × 16 tokens` =
+**2,621,440 bytes/block**. So the 1 TiB tier in the example above is
+`1099511627776 / 2621440` = **419,430 blocks**, against 3,000 GPU blocks and a working set of
+`100 prefixes × 1024 tokens / 16` = 6,400 blocks — comfortably larger than both.
+
+Because the division is truncating, the remainder is simply unused: at 2,621,440 bytes/block,
+`cpu_bytes_to_use: 5000000` buys 1 block, not 1.9. Sizing from a target block count avoids this
+entirely — `cpu_bytes_to_use = target_blocks × per_block_bytes`.
+
+!!! warning "The capacity of a CPU tier must be larger than the default GPU tier"
+    Check `cpu_bytes_to_use / per_block_bytes` against `--total-kv-blocks` before concluding anything from a run.
+
+#### "Per TP rank" — both sides of that division are per-GPU
+
+Under tensor parallelism the KV cache is **sharded across ranks**: each GPU holds the same
+*logical* blocks (the same token ranges) but only its own slice of the KV heads. So each GPU
+needs only its own slice of host memory to stage those blocks. BLIS therefore treats both sides
+of the division as per-rank — `cpu_bytes_to_use` is the host budget for **one** GPU, and
+`per_block_bytes` is one block's size on **one** rank (`KVBytesPerToken(model, tp) × block_size`,
+divided by TP at [`sim/latency/kv_capacity.go:182`](https://github.com/inference-sim/inference-sim/blob/main/sim/latency/kv_capacity.go#L182)).
+Dividing a per-rank budget by a per-rank block size yields the count of *logical* blocks the
+replica can cache — which is exactly the unit the cache model needs, and the same unit as
+`--total-kv-blocks`.
+
+Two consequences, both easy to get backwards:
+
+1. **The same `cpu_bytes_to_use` buys more blocks at higher TP.** `per_block_bytes` shrinks by a
+   factor of TP, so block capacity grows by the same factor.
+2. **The host RAM a deployment actually consumes is `TP × cpu_bytes_to_use`.** The value in the
+   YAML is per-GPU, so a node-level memory budget must be divided by TP before it goes in the
+   file — not entered whole.
+
+Measured for Qwen3-14B (`--tp N`, verified by reading back the derived value):
+
+| `--tp` | `per_block_bytes` | Blocks from a 16 GiB `cpu_bytes_to_use` | Host RAM used node-wide |
+|---|---|---|---|
+| 1 | 2,621,440 | 6,553 | 16 GiB |
+| 2 | 1,310,720 | 13,107 | 32 GiB |
+| 4 | 655,360 | 26,214 | 64 GiB |
+| 8 | 327,680 | 52,428 | 128 GiB |
+
+This matches vLLM, where `cpu_bytes_to_use` is likewise a per-worker budget.
+
+!!! note "Exception: MLA models are not divided by TP"
+    **MLA models** (DeepSeek-V2/V3, GLM-5.2, Kimi-K3) cache a single compressed latent of
+    `kv_lora_rank + qk_rope_head_dim` per token per layer. That latent is *replicated* on every
+    rank rather than sharded, so `per_block_bytes` is **not** divided by TP — block capacity is
+    the same at TP=8 as at TP=1, while node-wide host RAM still scales with TP.
+
+    Source: the MLA branch in
+    [`sim/latency/kv_capacity.go:130-135`](https://github.com/inference-sim/inference-sim/blob/main/sim/latency/kv_capacity.go#L130-L135)
+    ("replicated across TP ranks (NOT divided by TP), and independent of numKVHeads/headDim"),
+    added in #1527. This mirrors vLLM, which likewise keeps the MLA latent unsharded; the
+    architecture is from the [DeepSeek-V2 paper](https://arxiv.org/abs/2405.04434) §2.1.
+
+!!! note "Known inaccuracy: GQA with fewer KV heads than ranks over-reports block capacity"
+    When `kv_heads < tp` (e.g. 2 KV heads at TP=4) vLLM **replicates** KV heads across GPUs, so
+    per-GPU KV bytes do not keep shrinking. BLIS divides by TP regardless, which *underestimates*
+    per-GPU bytes and therefore *overestimates* CPU-tier block capacity — by `tp / kv_heads`, so
+    2× in that example. The simulator models more cache than the hardware would have.
+
+    This is **deliberate and documented** in
+    [`sim/latency/kv_capacity.go:92-100`](https://github.com/inference-sim/inference-sim/blob/main/sim/latency/kv_capacity.go#L92-L100),
+    which labels it "a known approximation (optimistic)" — but it is an accuracy defect rather
+    than a modeling choice with a justification, and it is silent: nothing warns at startup that
+    the configuration entered this regime. Treat capacity figures as optimistic for any
+    `kv_heads < tp` run, and prefer `tp <= kv_heads` when the comparison matters. Worth raising
+    upstream; not yet filed.
+
+    When `kv_heads >= tp` the division is exact — and a `kv_heads` not evenly divisible by `tp`
+    is rejected outright rather than approximated.
+
+### Example: The Measured Effect of CPU Offload
+
+#### The workload needs prefixes the GPU will evict
+
+Offload only helps if blocks are **evicted** from the GPU and later requested again. A single
+shared prefix (`--prefix-tokens N`) stays pinned hot on the GPU and is never evicted, so the
+lower tiers have nothing to serve and the run is byte-identical with offload on or off. The
+fixture below forces eviction with 100 distinct per-tenant prefixes:
+
+```yaml
+# wl_multitenant.yaml — 100 tenants, each with its own 1,024-token prefix
+version: "2"
+seed: 42
+aggregate_rate: 4.0
+num_requests: 600
+cohorts:
+  - id: tenants
+    population: 100
+    prefix_group: doc
+    prefix_sharing: per_member     # 100 DISTINCT prefixes => GPU must evict
+    prefix_length: 1024            # ADDITIVE on input_distribution
+    rate_fraction: 1.0
+    arrival: {process: poisson}
+    input_distribution:  {type: constant, params: {value: 1280}}
+    output_distribution: {type: constant, params: {value: 16}}
+```
+
+```yaml
+# offload_cpu.yaml — one CPU tier, large enough to hold the whole working set
+kv_offload:
+  cpu_bytes_to_use: 1099511627776   # 1 TiB
+  block_size: 16
+  eviction_policy: lru
+  offload_prompt_only: true
+```
+
+!!! warning "`prefix_length` is added to `input_distribution`"
+    The generator samples `input_distribution` first, then prepends the prefix tokens to that slice:
+
+    ```go
+    // sim/workload/generator.go
+    inputTokens = append(append([]sim.TokenID{}, prefix...), inputTokens...)
+    ```
+
+    So `input_distribution: 1280` with `prefix_length: 1024` gives 1,280 **unique** tokens per
+    request and a **2,304**-token prompt — not a 1,280-token prompt of which 1,024 are shared.
+    Therefore, 600 requests report `total_input_tokens: 1382400` (= 600 × 2,304), and the
+    shareable fraction is `1024 / 2304` = 44%.
+
+    Separately, `--workload-spec` supersedes `--prefix-tokens` / `--rate`: passing them alongside
+    a spec is inert rather than an error, so the arrival rate comes from the spec's
+    `aggregate_rate: 4.0`.
+
+#### Results
+
+Run the enabled and disabled commands from the previous section. `Cache Hit Rate` is printed to
+stdout under `=== KV Cache Metrics ===`; add `--metrics-path m.json` for the full-precision
+`cache_hit_rate` field.
+
+| | `cache_hit_rate` | `ttft_mean_ms` | `e2e_mean_ms` | `responses_per_sec` |
+|---|---|---|---|---|
+| Offload **disabled** | 0.0772 | 52.550 | 250.303 | 4.1640 |
+| Offload **enabled** (1 TiB CPU tier) | **0.3665** | **48.914** | **243.994** | 4.1641 |
+
+Cache hit rate rises **4.7×** and mean TTFT falls **6.9%** (−3.6 ms). Throughput is unchanged
+because this workload is arrival-bound — 4 req/s offered against an unsaturated instance. Offload
+buys latency here; it buys *throughput* only under saturation, where spending fewer prefill tokens
+per request lets more requests into each step.
+
+Why the hit rate lands near 0.37: only the 1,024-token prefix is shareable and each tenant's first
+request must miss, so the ceiling is `1024 × 500 / 1382400` = **37.0%**. The enabled run reaches
+0.3665 — essentially every reuse the workload contains.
+
+!!! tip "Large cohorts need `--lazy-generation`"
+    Eager workload generation costs roughly `population × num_requests × 44 KB` in resident
+    memory, so a 300-member cohort at 3,000 requests needs ~38 GB and is OOM-killed. Add
+    `--lazy-generation` whenever that product exceeds a few tens of thousands.
 
 ## Chunked Prefill
 
