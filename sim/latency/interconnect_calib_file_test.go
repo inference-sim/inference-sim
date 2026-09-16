@@ -143,6 +143,12 @@ func TestLegacyInterNodeLatencyKeyIsRejected(t *testing.T) {
 	assert.Contains(t, err.Error(), "InterNodeLatencyUs", "error must name the removed key")
 	assert.Contains(t, err.Error(), "InterNodeHopLatencyUs", "error must name the replacement key")
 	assert.Contains(t, err.Error(), "H100", "error must name the offending GPU")
+	// #1728: the legacy key is ALSO an unknown key now that parsing is strict, so the
+	// specific migration guard must keep precedence over the generic diagnostic —
+	// otherwise the operator loses the "divide by the hop count, do not copy" hint that
+	// is the whole reason this guard exists.
+	assert.Contains(t, err.Error(), "RECALIBRATION",
+		"the migration message must win over the generic unknown-key error (it carries the unit-change hint)")
 
 	// Control: the same file with the NEW key loads cleanly and yields the value.
 	modern := filepath.Join(dir, "hw_modern.json")

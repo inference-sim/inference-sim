@@ -232,7 +232,7 @@ Before submitting a PR, verify:
 - [ ] R7: Invariant tests alongside any golden tests
 - [ ] R8: No exported mutable maps
 - [ ] R9: `*float64` for YAML fields where zero is valid
-- [ ] R10: YAML strict parsing (`KnownFields(true)`)
+- [ ] R10: strict config parsing, YAML and JSON (`KnownFields(true)` / no unknown keys)
 - [ ] R11: Division by runtime-derived denominators guarded
 - [ ] R12: Golden dataset regenerated if output changed
 - [ ] R13: New interfaces work for 2+ implementations

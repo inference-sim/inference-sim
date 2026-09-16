@@ -28,7 +28,7 @@
 - [ ] Invariant tests alongside golden tests (R7)
 - [ ] No exported mutable maps — use `IsValid*()` accessors (R8)
 - [ ] `*float64` for YAML fields where zero is valid (R9)
-- [ ] YAML strict parsing with `KnownFields(true)` (R10)
+- [ ] Strict config parsing — YAML `KnownFields(true)`, JSON no-unknown-keys (R10)
 - [ ] New interfaces work for 2+ implementations (R13)
 - [ ] No method spans multiple module responsibilities (R14)
 - [ ] Routing scorer signals documented for freshness tier (R17)

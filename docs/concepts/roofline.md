@@ -103,3 +103,5 @@ Alternatively, download the `config.json` manually:
 | `MemoryGiB` | GPU memory capacity in GiB. Used by `CalculateKVBlocks` to auto-derive `--total-kv-blocks` when roofline or trained-physics mode is active and the flag is not explicitly set. |
 
 > Note: The Peak TFLOPS and BW for a given GPU family might vary by GPU connectivity (e.g. SXM vs PCIe). We recommend a separate entry for each GPU connectivity type - e.g. A100-SXM, A100-PCIe etc in `hardware_config.json`.
+
+> Note: the file is parsed **strictly** (#1728) — an unrecognized key is a hard error naming the key and the GPU entry, rather than a field that silently reads 0. Spell the keys exactly as above (a case-only variant is also rejected, with the canonical spelling named). You may add `_comment` and `_comment_interconnect` strings to record where a calibration came from; both are ignored by the parser.

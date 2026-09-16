@@ -652,6 +652,16 @@ Rules:
   spans nodes so the optimism is visible.
 - A negative, NaN or infinite value is rejected rather than silently clamped, at load
   time — so the same malformed file fails identically under either latency backend.
+- **Unrecognized keys are rejected** (#1728). `hardware_config.json` is parsed strictly,
+  like every other BLIS config file: a key that is not one of the fields below fails the
+  load with an error naming the key *and* the GPU entry it appears under, instead of
+  leaving the intended field at 0 (a plausible-but-wrong bandwidth, MFU or memory
+  capacity). Two documentation-only keys are accepted and ignored — `_comment` and
+  `_comment_interconnect`, which the bundled file uses to record calibration provenance
+  next to the numbers. Keys must be spelled canonically: a key differing only in letter
+  case (`IntraNodeBwGbps`) is also rejected, with the canonical spelling named. Valid
+  keys: `TFlopsPeak`, `TFlopsFP8`, `BwPeakTBs`, `mfuPrefill`, `mfuDecode`, `MemoryGiB`,
+  `IntraNodeBwGBps`, `InterNodeBwGBps`, `InterNodeHopLatencyUs`.
 - **Migrating from the pre-#1694 `InterNodeLatencyUs` key:** it was renamed to
   `InterNodeHopLatencyUs` **and its unit changed** from µs-per-collective to µs-per-hop.
   A config still carrying the old key is **rejected at load** with an error naming the GPU

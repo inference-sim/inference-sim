@@ -135,13 +135,13 @@ YAML config structs must use `*float64` (pointer) for fields where zero is a val
 
 ---
 
-### R10: Strict YAML parsing
+### R10: Strict config parsing
 
-Use `yaml.KnownFields(true)` or equivalent strict parsing for all YAML config loading. Typos in field names must cause parse errors, not silent acceptance of malformed config.
+Use `yaml.KnownFields(true)` or equivalent strict parsing for all config loading — YAML *and* JSON. Typos in field names must cause parse errors, not silent acceptance of malformed config.
 
-**Evidence:** YAML typos in field names were silently accepted, producing default behavior instead of the user's intended configuration.
+**Evidence:** YAML typos in field names were silently accepted, producing default behavior instead of the user's intended configuration. The same gap existed in JSON: `hardware_config.json` was decoded permissively until #1728, so a misspelled numeric key read as 0 — a plausible-but-wrong bandwidth, MFU or memory capacity with no diagnostic.
 
-**Check:** Every `yaml.Unmarshal` or decoder usage must enable strict/known-fields mode.
+**Check:** Every `yaml.Unmarshal` / `json.Unmarshal` or decoder usage on a config path must enable strict/known-fields mode (or an equivalent allowlist check — `sim/latency.rejectUnknownHardwareCalibKeys` names the offending key *and* the GPU entry, which `DisallowUnknownFields` cannot). Deliberately exempt: parsers for **external payloads** BLIS does not own (HuggingFace `config.json`, OpenTelemetry and Weka trace records) — those must tolerate unknown fields by contract.
 
 **Enforced:** Micro-plan Phase 8.
 
@@ -328,7 +328,7 @@ For PR authors — check each rule before submitting:
 - [ ] **R7:** Invariant tests alongside any golden tests
 - [ ] **R8:** No exported mutable maps
 - [ ] **R9:** `*float64` for YAML fields where zero is valid
-- [ ] **R10:** YAML strict parsing (`KnownFields(true)`)
+- [ ] **R10:** Strict config parsing, YAML and JSON (`KnownFields(true)` / no unknown keys)
 - [ ] **R11:** Division by runtime-derived denominators guarded
 - [ ] **R12:** Golden dataset regenerated if output changed
 - [ ] **R13:** New interfaces work for 2+ implementations
