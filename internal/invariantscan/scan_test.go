@@ -181,7 +181,7 @@ func f() {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			findings, err := FindConservationSums("fixture.go", tc.src, 3)
+			findings, err := FindConservationSums("fixture.go", tc.src, DefaultThreshold)
 			if err != nil {
 				t.Fatalf("FindConservationSums: %v", err)
 			}
@@ -209,7 +209,7 @@ func b() {
 	total += x
 	_ = total
 }`
-	findings, err := FindConservationSums("fixture.go", src, 3)
+	findings, err := FindConservationSums("fixture.go", src, DefaultThreshold)
 	if err != nil {
 		t.Fatalf("FindConservationSums: %v", err)
 	}
@@ -221,7 +221,7 @@ func b() {
 // TestFindConservationSums_ParseError verifies unparseable input is an error rather
 // than a silent empty result — a caller that ignored it would report a clean scan.
 func TestFindConservationSums_ParseError(t *testing.T) {
-	if _, err := FindConservationSums("bad.go", "package p\nfunc f( {", 3); err == nil {
+	if _, err := FindConservationSums("bad.go", "package p\nfunc f( {", DefaultThreshold); err == nil {
 		t.Error("expected a parse error, got nil — a broken file would read as clean")
 	}
 }

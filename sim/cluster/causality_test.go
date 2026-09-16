@@ -182,6 +182,12 @@ func assertINV5FullChain(t *testing.T, configure func(*DeploymentConfig), numReq
 		t.Errorf("INV-5 enqueue->dispatch was checked for %d requests, want %d (shed=%d rejected=%d stillQueued=%d expired=%d)",
 			dispatchChecked, want, shed, rejected, depth, expired)
 	}
+	// Without this, the two completion-side floors below are satisfied by zero: a config
+	// change that stopped any request completing would leave dispatch->schedule and
+	// schedule->completion entirely unchecked while the test still passed.
+	if m.CompletedRequests == 0 {
+		t.Error("no request completed — the dispatch->schedule and schedule->completion links prove nothing in this leg")
+	}
 	if completionChecked != m.CompletedRequests {
 		t.Errorf("INV-5 schedule->completion was checked for %d requests but %d completed — a completed request is missing a scheduling or completion entry",
 			completionChecked, m.CompletedRequests)

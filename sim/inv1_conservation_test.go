@@ -2,7 +2,6 @@ package sim
 
 import (
 	"os"
-	"sort"
 	"strings"
 	"testing"
 
@@ -142,8 +141,7 @@ func TestINV1_InstanceHelperMatchesRegistry(t *testing.T) {
 // sim/cluster. Both call the same scanner: a line-based check here would miss any
 // gofmt-wrapped sum, which is the shape the cluster guard exists to catch.
 func TestINV1_NoInlineConservationSums(t *testing.T) {
-	// Files allowed to hand-roll the sum, with the reason. Every entry must name a
-	// file that exists, so a stale exemption fails rather than rots.
+	// Files allowed to hand-roll the sum, with the reason.
 	exempt := map[string]string{
 		// Asserts over MetricsOutput (the JSON serialisation), not *Metrics, so the
 		// helper's signature does not apply. It checks that ToOutput's field mapping is
@@ -151,46 +149,18 @@ func TestINV1_NoInlineConservationSums(t *testing.T) {
 		"metrics_test.go": "asserts over MetricsOutput fields, not *Metrics",
 	}
 
-	entries, err := os.ReadDir(".")
+	findings, scanned, stale, err := invariantscan.ScanTestDir(".", "inv1_conservation_test.go", exempt, invariantscan.DefaultThreshold)
 	if err != nil {
-		t.Fatalf("cannot list the package directory: %v", err)
+		t.Fatalf("scan failed: %v", err)
 	}
-	scanned := 0
-	for _, e := range entries {
-		name := e.Name()
-		if !strings.HasSuffix(name, "_test.go") || name == "inv1_conservation_test.go" {
-			continue
-		}
-		if reason, ok := exempt[name]; ok {
-			t.Logf("skipping %s: %s", name, reason)
-			continue
-		}
-		src, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatalf("cannot read %s: %v", name, err)
-		}
-		scanned++
-		findings, err := invariantscan.FindConservationSums(name, string(src), 3)
-		if err != nil {
-			t.Fatalf("cannot scan %s: %v", name, err)
-		}
-		for _, f := range findings {
-			t.Errorf("%s: inline INV-1 conservation sum — use assertINV1Conservation instead, so a bucket added to the invariant is picked up here automatically", f)
-		}
+	for _, f := range findings {
+		t.Errorf("%s: inline INV-1 conservation sum — use assertINV1Conservation instead, so a bucket added to the invariant is picked up here automatically", f)
 	}
 	if scanned == 0 {
-		t.Fatal("scanned no test files — the directory walk is broken, so this test proves nothing")
+		t.Fatal("scanned no test files — the directory walk or the filter is broken, so this test proves nothing")
 	}
-	// Sorted: a multi-failure message must not reorder between runs (R2).
-	names := make([]string, 0, len(exempt))
-	for name := range exempt {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		if _, err := os.Stat(name); err != nil {
-			t.Errorf("exemption for %s (%s) names a file that does not exist — remove the stale entry", name, exempt[name])
-		}
+	for _, name := range stale {
+		t.Errorf("exemption for %s (%s) names a file that does not exist — remove the stale entry", name, exempt[name])
 	}
 }
 

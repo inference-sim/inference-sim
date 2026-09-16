@@ -20,6 +20,10 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 )
 
 // instanceBuckets are the five terminal buckets of INV-1's single-instance
@@ -94,64 +98,22 @@ func bucketNameOf(e ast.Expr, buckets map[string]bool) (string, bool) {
 	return "", false
 }
 
-// aliasesOf maps local variable names to the set of buckets they carry, within a single
-// function body.
-//
-// Two forms matter, and both were used by the sums this guard replaced:
-// `completed := agg.CompletedRequests`, which launders one bucket into a local, and
-// `total += m.StillQueued` in a loop or sequence, which accumulates several into one.
-// Without the second, appending `+=` lines is a thirty-second way around the guard.
-//
-// Scoped per function rather than per file. A file-wide pass would let a `:=` in one
-// test wipe the alias set a different test had built for the same variable name — `m`,
-// `total` and `agg` recur constantly in these files — which judges an expression against
-// aliases established elsewhere. That direction only produces false positives, but a
-// false positive earns an exemption, and an exemption is what actually hides the next
-// real violation.
-func aliasesOf(scope ast.Node, buckets map[string]bool) map[string]map[string]bool {
-	aliases := map[string]map[string]bool{}
-	add := func(name, bucket string) {
-		if aliases[name] == nil {
-			aliases[name] = map[string]bool{}
+// exprKey renders an assignment target as a stable string, so an accumulator that is a
+// struct field (`agg.total += m.StillQueued`) is tracked like a plain local. Anything
+// more complex than an identifier or a chain of selectors is untrackable and returns
+// false.
+func exprKey(e ast.Expr) (string, bool) {
+	switch x := e.(type) {
+	case *ast.Ident:
+		return x.Name, true
+	case *ast.SelectorExpr:
+		prefix, ok := exprKey(x.X)
+		if !ok {
+			return "", false
 		}
-		aliases[name][bucket] = true
+		return prefix + "." + x.Sel.Name, true
 	}
-	merge := func(name string, from map[string]bool) {
-		for bucket := range from {
-			add(name, bucket)
-		}
-	}
-
-	record := func(lhs, rhs []ast.Expr, accumulate bool) {
-		for i, l := range lhs {
-			if i >= len(rhs) {
-				return
-			}
-			id, ok := l.(*ast.Ident)
-			if !ok {
-				continue
-			}
-			if !accumulate {
-				delete(aliases, id.Name)
-			}
-			merge(id.Name, bucketsIn(rhs[i], aliases, buckets))
-		}
-	}
-
-	ast.Inspect(scope, func(n ast.Node) bool {
-		switch x := n.(type) {
-		case *ast.AssignStmt:
-			record(x.Lhs, x.Rhs, x.Tok == token.ADD_ASSIGN || x.Tok == token.SUB_ASSIGN)
-		case *ast.ValueSpec:
-			lhs := make([]ast.Expr, 0, len(x.Names))
-			for _, name := range x.Names {
-				lhs = append(lhs, name)
-			}
-			record(lhs, x.Values, false)
-		}
-		return true
-	})
-	return aliases
+	return "", false
 }
 
 // bucketsIn returns the distinct buckets appearing as operands of the
@@ -160,6 +122,11 @@ func aliasesOf(scope ast.Node, buckets map[string]bool) map[string]map[string]bo
 // Subtraction and the comparison operators are walked as well as addition: moving
 // buckets to the other side of a `!=` is the natural rewrite once a plain sum is
 // rejected, and it is the same equation.
+//
+// Known gap: a composite literal (`for _, v := range []int{m.CompletedRequests, ...}`)
+// is not walked. Adding that case would also flag legitimate struct literals that
+// enumerate metric fields, so it is left out deliberately; a contributor would have to
+// go well out of their way to launder a ledger through one.
 func bucketsIn(e ast.Expr, aliases map[string]map[string]bool, buckets map[string]bool) map[string]bool {
 	seen := map[string]bool{}
 	var walk func(ast.Expr)
@@ -177,9 +144,11 @@ func bucketsIn(e ast.Expr, aliases map[string]map[string]bool, buckets map[strin
 			}
 		case *ast.ParenExpr:
 			walk(x.X)
-		case *ast.Ident:
-			for bucket := range aliases[x.Name] {
-				seen[bucket] = true
+		case *ast.Ident, *ast.SelectorExpr:
+			if key, ok := exprKey(x); ok {
+				for bucket := range aliases[key] {
+					seen[bucket] = true
+				}
 			}
 		}
 	}
@@ -218,9 +187,22 @@ func isLedger(seen map[string]bool, threshold int) bool {
 	return instanceSide >= 2
 }
 
-// FindConservationSums returns every hand-rolled INV-1 ledger in src. threshold is
-// the number of distinct buckets an expression must combine to count; 3 is the value
-// the guards use.
+// DefaultThreshold is the number of distinct buckets an expression must combine before
+// it counts as a conservation ledger. Exported so every guard provably shares one value:
+// if one package bumped its own copy to 4 it would silently stop detecting the
+// three-bucket sums this package exists to catch.
+const DefaultThreshold = 3
+
+// FindConservationSums returns every hand-rolled INV-1 ledger in src.
+//
+// Detection is flow-ordered: aliases are built and findings recorded in a single pass in
+// source order, so a finding is recorded at the moment an accumulator crosses the
+// threshold. That ordering is load-bearing. A two-pass design — build all aliases, then
+// judge every expression against the finished map — lets a later statement retract
+// earlier evidence: `total = 0` after three `+=` lines deletes the alias entry, and the
+// completed map then shows an empty set for every preceding line, so a real ledger
+// reports nothing. Reusing an accumulator name for a second sum is ordinary code, not
+// deliberate evasion, which is what made that gap worth closing.
 func FindConservationSums(filename, src string, threshold int) ([]Finding, error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, filename, src, 0)
@@ -241,38 +223,113 @@ func FindConservationSums(filename, src string, threshold int) ([]Finding, error
 		findings = append(findings, Finding{File: filename, Line: fset.Position(pos).Line, Buckets: names})
 	}
 
-	// Walk each function body with its own alias scope. Declarations outside any
-	// function (package-level vars) get a file-level scope of their own.
-	scopes := []ast.Node{}
+	// One alias scope per function body: a file-wide scope would let a `:=` in one test
+	// wipe the set a different test had built for the same name, and `m`, `total` and
+	// `agg` recur constantly in these files. Declarations outside any function get their
+	// own scope.
 	for _, decl := range file.Decls {
 		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Body != nil {
-			scopes = append(scopes, fn.Body)
+			scanScope(fn.Body, buckets, threshold, report)
 			continue
 		}
-		scopes = append(scopes, decl)
-	}
-
-	for _, scope := range scopes {
-		aliases := aliasesOf(scope, buckets)
-		inspectScope(scope, aliases, buckets, threshold, report)
+		scanScope(decl, buckets, threshold, report)
 	}
 	return findings, nil
 }
 
-// inspectScope reports the ledgers inside one alias scope.
-func inspectScope(
+// scanScope walks one alias scope in source order, maintaining aliases as it goes and
+// reporting a ledger the moment it is complete.
+func scanScope(
 	scope ast.Node,
-	aliases map[string]map[string]bool,
 	buckets map[string]bool,
 	threshold int,
-	report func(token.Pos, map[string]bool),
+	reportRaw func(token.Pos, map[string]bool),
 ) {
-	// An accumulator crosses the threshold once but is written by several `+=` lines,
-	// each of which would otherwise be reported. One finding per accumulator.
+	aliases := map[string]map[string]bool{}
+	// One finding per accumulator: an accumulator crosses the threshold once but is
+	// written by several `+=` lines, and the ones after the crossing add nothing.
 	reported := map[string]bool{}
+	// One finding per distinct bucket set in this scope. A hand-rolled ledger is
+	// typically detected twice — once when the accumulator completes, once at the
+	// comparison that uses it — and reporting both just doubles the noise for a single
+	// thing to fix.
+	reportedSets := map[string]bool{}
+
+	report := func(pos token.Pos, seen map[string]bool) {
+		names := make([]string, 0, len(seen))
+		for name := range seen {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		key := strings.Join(names, "+")
+		if reportedSets[key] {
+			return
+		}
+		reportedSets[key] = true
+		reportRaw(pos, seen)
+	}
+
+	// assign updates the alias set for one target. accumulate distinguishes `+=`, which
+	// merges into whatever the target already carried, from `=` and `:=`, which replace it.
+	assign := func(target ast.Expr, value ast.Expr, accumulate bool) (string, bool) {
+		key, ok := exprKey(target)
+		if !ok {
+			return "", false
+		}
+		carried := bucketsIn(value, aliases, buckets)
+		if !accumulate {
+			delete(aliases, key)
+			delete(reported, key)
+		}
+		if len(carried) == 0 && !accumulate {
+			return key, false
+		}
+		if aliases[key] == nil {
+			aliases[key] = map[string]bool{}
+		}
+		for bucket := range carried {
+			aliases[key][bucket] = true
+		}
+		return key, true
+	}
 
 	ast.Inspect(scope, func(n ast.Node) bool {
 		switch x := n.(type) {
+		case *ast.AssignStmt:
+			accumulate := x.Tok == token.ADD_ASSIGN || x.Tok == token.SUB_ASSIGN
+			for i, lhs := range x.Lhs {
+				if i >= len(x.Rhs) {
+					break
+				}
+				key, tracked := assign(lhs, x.Rhs[i], accumulate)
+				if !tracked || reported[key] {
+					continue
+				}
+				if isLedger(aliases[key], threshold) {
+					reported[key] = true
+					report(x.Pos(), aliases[key])
+				}
+			}
+			// Still descend: the right-hand side may itself be a complete ledger
+			// expression, which the BinaryExpr case below reports.
+			return true
+
+		case *ast.ValueSpec:
+			for i, name := range x.Names {
+				if i >= len(x.Values) {
+					break
+				}
+				key, tracked := assign(name, x.Values[i], false)
+				if !tracked || reported[key] {
+					continue
+				}
+				if isLedger(aliases[key], threshold) {
+					reported[key] = true
+					report(x.Pos(), aliases[key])
+				}
+			}
+			return true
+
 		case *ast.BinaryExpr:
 			switch x.Op {
 			case token.ADD, token.SUB, token.EQL, token.NEQ:
@@ -285,28 +342,55 @@ func inspectScope(
 				// Sub-expressions of a matched ledger would match too.
 				return false
 			}
-		case *ast.AssignStmt:
-			// An accumulator built by `+=` holds no single expression with three
-			// buckets, so the BinaryExpr case above never sees it. Flag the
-			// assignment that pushes its alias set over the threshold.
-			if x.Tok != token.ADD_ASSIGN && x.Tok != token.SUB_ASSIGN {
-				return true
-			}
-			for _, lhs := range x.Lhs {
-				id, ok := lhs.(*ast.Ident)
-				if !ok {
-					continue
-				}
-				if reported[id.Name] {
-					continue
-				}
-				if isLedger(aliases[id.Name], threshold) {
-					reported[id.Name] = true
-					report(x.Pos(), aliases[id.Name])
-					return false
-				}
-			}
 		}
 		return true
 	})
+}
+
+// ScanTestDir scans every *_test.go file in dir for hand-rolled ledgers, skipping
+// selfFile and any file named in exempt. It returns the findings, the number of files
+// actually scanned, and any stale exemption entries (names that no longer exist).
+//
+// The walk lives here rather than in each package's guard because the two guards were
+// copy-pasted and had already diverged — one sorted with a generic helper and the other
+// hand-rolled the same sort, one held its exemption map at package level and the other
+// function-local. That is the R23 parallel-path shape, in the very code meant to prevent
+// a parallel path. Each caller still owns its own non-vacuity assertions, which is why
+// the scanned count and the stale list come back rather than being asserted here.
+func ScanTestDir(dir, selfFile string, exempt map[string]string, threshold int) (findings []Finding, scanned int, stale []string, err error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, 0, nil, fmt.Errorf("read dir %s: %w", dir, err)
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, "_test.go") || name == selfFile {
+			continue
+		}
+		if _, ok := exempt[name]; ok {
+			continue
+		}
+		src, readErr := os.ReadFile(filepath.Join(dir, name))
+		if readErr != nil {
+			return nil, 0, nil, fmt.Errorf("read %s: %w", name, readErr)
+		}
+		scanned++
+		found, scanErr := FindConservationSums(name, string(src), threshold)
+		if scanErr != nil {
+			return nil, 0, nil, scanErr
+		}
+		findings = append(findings, found...)
+	}
+
+	names := make([]string, 0, len(exempt))
+	for name := range exempt {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if _, statErr := os.Stat(filepath.Join(dir, name)); statErr != nil {
+			stale = append(stale, name)
+		}
+	}
+	return findings, scanned, stale, nil
 }

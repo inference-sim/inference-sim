@@ -301,46 +301,54 @@ var inlineSumExemptions = map[string]string{}
 // their operand order, all of which a textual match misses or can be reformatted
 // around.
 func TestINV1_NoInlineClusterConservationSums(t *testing.T) {
-	entries, err := os.ReadDir(".")
+	findings, scanned, stale, err := invariantscan.ScanTestDir(".", "inv1_conservation_test.go", inlineSumExemptions, invariantscan.DefaultThreshold)
 	if err != nil {
-		t.Fatalf("cannot list the package directory: %v", err)
+		t.Fatalf("scan failed: %v", err)
 	}
-
-	scanned := 0
-	for _, e := range entries {
-		name := e.Name()
-		if !strings.HasSuffix(name, "_test.go") || name == "inv1_conservation_test.go" {
-			continue
-		}
-		if reason, exempt := inlineSumExemptions[name]; exempt {
-			t.Logf("skipping %s: %s", name, reason)
-			continue
-		}
-		src, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatalf("cannot read %s: %v", name, err)
-		}
-		scanned++
-		findings, err := invariantscan.FindConservationSums(name, string(src), 3)
-		if err != nil {
-			t.Fatalf("cannot scan %s: %v", name, err)
-		}
-		for _, f := range findings {
-			t.Errorf("%s: inline INV-1 conservation sum — use assertClusterINV1Conservation instead, so a bucket added to the invariant is picked up here automatically", f)
-		}
+	for _, f := range findings {
+		t.Errorf("%s: inline INV-1 conservation sum — use assertClusterINV1Conservation instead, so a bucket added to the invariant is picked up here automatically", f)
 	}
-
-	// Non-vacuity: a broken path or filter must not read as a clean pass.
+	// Non-vacuity: a broken walk or filter must not read as a clean pass.
 	if scanned == 0 {
 		t.Fatal("scanned no test files — the directory walk or the filter is broken, so this test proves nothing")
 	}
+	for _, name := range stale {
+		t.Errorf("exemption for %s (%s) names a file that does not exist — remove the stale entry", name, inlineSumExemptions[name])
+	}
+}
 
-	// Sorted: a multi-failure message must not reorder between runs (R2).
-	for _, name := range sortedStringKeys(inlineSumExemptions) {
-		if _, err := os.Stat(name); err != nil {
-			t.Errorf("exemption for %s (%s) names a file that does not exist — remove the stale entry", name, inlineSumExemptions[name])
+// collectAggregateLocals returns the local names assigned from AggregatedMetrics(),
+// covering both `m := cs.AggregatedMetrics()` and `var m = cs.AggregatedMetrics()`.
+// The var form matters because invariantscan handles it, and a guard that silently
+// covered one spelling but not the other would be the same half-coverage this PR exists
+// to remove.
+func collectAggregateLocals(file *ast.File) map[string]bool {
+	locals := map[string]bool{}
+	record := func(lhs, rhs []ast.Expr) {
+		for i, l := range lhs {
+			id, ok := l.(*ast.Ident)
+			if !ok || i >= len(rhs) {
+				continue
+			}
+			if isAggregateMetricsCall(rhs[i]) {
+				locals[id.Name] = true
+			}
 		}
 	}
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.AssignStmt:
+			record(x.Lhs, x.Rhs)
+		case *ast.ValueSpec:
+			lhs := make([]ast.Expr, 0, len(x.Names))
+			for _, name := range x.Names {
+				lhs = append(lhs, name)
+			}
+			record(lhs, x.Values)
+		}
+		return true
+	})
+	return locals
 }
 
 // isAggregateMetricsCall reports whether e is a call to AggregatedMetrics(), the
@@ -381,23 +389,7 @@ func TestINV1_NoInstanceHelperOnClusterMetrics(t *testing.T) {
 		// followed by `assertInstanceINV1Conservation(t, m, ...)` is the idiomatic way
 		// to write this violation, so matching only the inline call would leave the
 		// guard checking the one spelling nobody uses.
-		aggregateLocals := map[string]bool{}
-		ast.Inspect(file, func(n ast.Node) bool {
-			assign, ok := n.(*ast.AssignStmt)
-			if !ok {
-				return true
-			}
-			for i, lhs := range assign.Lhs {
-				id, ok := lhs.(*ast.Ident)
-				if !ok || i >= len(assign.Rhs) {
-					continue
-				}
-				if isAggregateMetricsCall(assign.Rhs[i]) {
-					aggregateLocals[id.Name] = true
-				}
-			}
-			return true
-		})
+		aggregateLocals := collectAggregateLocals(file)
 		ast.Inspect(file, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
@@ -436,36 +428,37 @@ func TestINV1_NoInstanceHelperOnClusterMetrics(t *testing.T) {
 // TestINV1_NoInstanceHelperOnClusterMetrics works, since that guard has nothing to
 // find in a clean tree and would otherwise pass whether or not it functioned.
 func TestINV1_AggregateLocalDetection(t *testing.T) {
-	src := `package p
+	for _, tc := range []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "short variable declaration",
+			src: `package p
 func f() {
 	m := cs.AggregatedMetrics()
 	assertInstanceINV1Conservation(t, m, 5, "should be flagged")
-}`
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "fixture.go", src, 0)
-	if err != nil {
-		t.Fatalf("cannot parse fixture: %v", err)
-	}
-
-	aggregateLocals := map[string]bool{}
-	ast.Inspect(file, func(n ast.Node) bool {
-		assign, ok := n.(*ast.AssignStmt)
-		if !ok {
-			return true
-		}
-		for i, lhs := range assign.Lhs {
-			id, ok := lhs.(*ast.Ident)
-			if !ok || i >= len(assign.Rhs) {
-				continue
+}`,
+		},
+		{
+			name: "var declaration",
+			src: `package p
+func f() {
+	var m = cs.AggregatedMetrics()
+	assertInstanceINV1Conservation(t, m, 5, "should be flagged")
+}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, "fixture.go", tc.src, 0)
+			if err != nil {
+				t.Fatalf("cannot parse fixture: %v", err)
 			}
-			if isAggregateMetricsCall(assign.Rhs[i]) {
-				aggregateLocals[id.Name] = true
+			if !collectAggregateLocals(file)["m"] {
+				t.Error("alias resolution missed the aggregate local, so the guard would not flag this violation")
 			}
-		}
-		return true
-	})
-	if !aggregateLocals["m"] {
-		t.Error("alias resolution missed `m := cs.AggregatedMetrics()`, so the guard would not flag the idiomatic violation")
+		})
 	}
 }
 
