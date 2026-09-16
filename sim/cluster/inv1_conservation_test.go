@@ -124,8 +124,9 @@ const noRejections = 0
 // failure cannot be attributed to one clause or the other. Where the pipeline clause
 // needs checking against an independent observation of injected — the length of the
 // Metrics.Requests map — the call site does that separately; the map is not a
-// general-purpose baseline because drop, timeout, drain and PD paths all delete from
-// it.
+// general-purpose baseline: the drop guards, drain redirect and PD parent collapse
+// delete from it, while the timeout paths do not delete at all, so it can under- or
+// overcount depending on the fixture.
 //
 // total must come from a source independent of the metrics under test — normally
 // len(requests). That identity holds only when (a) the request source is an eager

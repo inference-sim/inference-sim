@@ -1231,10 +1231,15 @@ func TestClusterSimulator_OverloadConservation(t *testing.T) {
 			// The full-pipeline clause, against an observation independent of the
 			// counters: the Metrics.Requests map. The helper cannot do this — it
 			// folds the pipeline clause into the same equality, and the map is not a
-			// general baseline because drop, timeout, drain and PD paths delete from
-			// it. It is sound here: no request is dropped in these fixtures.
+			// general baseline: the drop guards, drain redirect and PD parent collapse
+			// delete from it (undercount), while the timeout paths do not delete at all
+			// (overcount). Sound here only because this fixture does neither, which the
+			// guards below pin.
 			if agg.DroppedUnservable != 0 {
-				t.Fatalf("fixture now drops %d requests, so len(Requests) is no longer a valid injected count", agg.DroppedUnservable)
+				t.Fatalf("fixture now drops %d requests, so len(Requests) undercounts and is no longer a valid injected count", agg.DroppedUnservable)
+			}
+			if agg.TimedOutRequests != 0 {
+				t.Fatalf("fixture now times out %d requests, which stay in Requests, so len(Requests) overcounts and is no longer a valid injected count", agg.TimedOutRequests)
 			}
 			if injected := len(agg.Requests); injected+cs.RejectedRequests() != numRequests {
 				t.Errorf("INV-1 pipeline: len(Requests)=%d + rejected=%d = %d, want %d generated",
@@ -1505,11 +1510,14 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 		assertClusterINV1Conservation(t, cs, numRequests, rejected, "token-bucket")
 
 		// The full-pipeline clause against the Metrics.Requests map, independent of
-		// the counters the helper reads. Sound here because nothing is dropped; see
-		// the longer note at the equivalent check in
+		// the counters the helper reads. Sound here only because nothing is dropped and
+		// nothing times out; see the longer note at the equivalent check in
 		// TestClusterSimulator_OverloadConservation.
 		if agg.DroppedUnservable != 0 {
-			t.Fatalf("fixture now drops %d requests, so len(Requests) is no longer a valid injected count", agg.DroppedUnservable)
+			t.Fatalf("fixture now drops %d requests, so len(Requests) undercounts and is no longer a valid injected count", agg.DroppedUnservable)
+		}
+		if agg.TimedOutRequests != 0 {
+			t.Fatalf("fixture now times out %d requests, which stay in Requests, so len(Requests) overcounts and is no longer a valid injected count", agg.TimedOutRequests)
 		}
 		if injected := len(agg.Requests); injected+rejected != numRequests {
 			t.Errorf("INV-1 pipeline: len(Requests)=%d + rejected=%d = %d, want %d generated",

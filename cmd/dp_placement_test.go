@@ -419,28 +419,32 @@ func extractJSONObjects(s string) []string {
 	return objs
 }
 
-// clusterConservationHolds parses the aggregate ("cluster") metrics object from
-// blis run stdout and checks INV-1's five-term form: injected == completed +
-// queued + running + dropped + timed_out, with injected > 0.
-//
-// Five terms even though this is a cluster aggregate, because seven of INV-1's
-// twelve buckets are not observable here. GatewayQueueDepth, GatewayQueueShed,
-// GatewayQueueRejected, GatewayEvicted, GatewayExpired, RoutingRejections and
-// EncodeRoutingRejections live on cluster.RawMetrics and are never serialised into
-// sim.MetricsOutput, so no CLI-level test can assert the canonical equation. Issue
-// #1746 tracks exposing them; until then this check is sound only for fixtures that
-// exercise none of those paths — default admission, no flow control, no encode pool
-// — which is the case for every caller below.
-//
-// In-process cluster tests must use assertClusterINV1Conservation
-// (sim/cluster/inv1_conservation_test.go), which checks all twelve.
 // dpFixtureNumRequests is the --num-requests every DP fixture in cmd/ passes. Kept as
 // a constant so clusterConservationHolds has an independent count to compare against
 // rather than re-deriving one from the output it is checking.
 const dpFixtureNumRequests = 40
 
-// expected is the number of requests the fixture generated, or 0 when the caller does
-// not know it (a replay whose request count comes from the trace).
+// clusterConservationHolds parses the aggregate ("cluster") metrics object from blis run
+// stdout and checks what that output can actually prove about INV-1: that
+// injected_requests is positive, and that it equals the number of requests the fixture
+// generated. expected is that count, or 0 when the caller does not know it (a replay
+// whose request count comes from the trace).
+//
+// It deliberately does NOT compare injected_requests against the five-term sum of the
+// same object: sim.Metrics.ToOutput defines injected_requests AS that sum, so the
+// equality holds for any input and catches nothing. That tautology is what this used to
+// assert (#1720).
+//
+// Nor can it check the canonical twelve-term equation. Seven buckets are invisible here
+// — GatewayQueueDepth, GatewayQueueShed, GatewayQueueRejected, GatewayEvicted,
+// GatewayExpired, RoutingRejections and EncodeRoutingRejections live on
+// cluster.RawMetrics and are never serialised into sim.MetricsOutput. #1746 tracks
+// exposing them. Until then a CLI-level conservation check is only meaningful for
+// fixtures that exercise none of those paths: default admission, no flow control, no
+// encode pool, which is the case for every caller below.
+//
+// In-process cluster tests must use assertClusterINV1Conservation
+// (sim/cluster/inv1_conservation_test.go), which checks all twelve.
 func clusterConservationHolds(t *testing.T, stdout string, expected int) {
 	t.Helper()
 	found := false

@@ -90,13 +90,21 @@ func bucketNameOf(e ast.Expr, buckets map[string]bool) (string, bool) {
 	return "", false
 }
 
-// aliasesOf maps local variable names to the set of buckets they carry.
+// aliasesOf maps local variable names to the set of buckets they carry, within a single
+// function body.
 //
 // Two forms matter, and both were used by the sums this guard replaced:
 // `completed := agg.CompletedRequests`, which launders one bucket into a local, and
 // `total += m.StillQueued` in a loop or sequence, which accumulates several into one.
 // Without the second, appending `+=` lines is a thirty-second way around the guard.
-func aliasesOf(file *ast.File, buckets map[string]bool) map[string]map[string]bool {
+//
+// Scoped per function rather than per file. A file-wide pass would let a `:=` in one
+// test wipe the alias set a different test had built for the same variable name — `m`,
+// `total` and `agg` recur constantly in these files — which judges an expression against
+// aliases established elsewhere. That direction only produces false positives, but a
+// false positive earns an exemption, and an exemption is what actually hides the next
+// real violation.
+func aliasesOf(scope ast.Node, buckets map[string]bool) map[string]map[string]bool {
 	aliases := map[string]map[string]bool{}
 	add := func(name, bucket string) {
 		if aliases[name] == nil {
@@ -126,7 +134,7 @@ func aliasesOf(file *ast.File, buckets map[string]bool) map[string]map[string]bo
 		}
 	}
 
-	ast.Inspect(file, func(n ast.Node) bool {
+	ast.Inspect(scope, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.AssignStmt:
 			record(x.Lhs, x.Rhs, x.Tok == token.ADD_ASSIGN || x.Tok == token.SUB_ASSIGN)
@@ -217,7 +225,6 @@ func FindConservationSums(filename, src string, threshold int) ([]Finding, error
 	}
 
 	buckets := bucketSet()
-	aliases := aliasesOf(file, buckets)
 
 	var findings []Finding
 	report := func(pos token.Pos, seen map[string]bool) {
@@ -230,7 +237,37 @@ func FindConservationSums(filename, src string, threshold int) ([]Finding, error
 		findings = append(findings, Finding{File: filename, Line: fset.Position(pos).Line, Buckets: names})
 	}
 
-	ast.Inspect(file, func(n ast.Node) bool {
+	// Walk each function body with its own alias scope. Declarations outside any
+	// function (package-level vars) get a file-level scope of their own.
+	scopes := []ast.Node{}
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Body != nil {
+			scopes = append(scopes, fn.Body)
+			continue
+		}
+		scopes = append(scopes, decl)
+	}
+
+	for _, scope := range scopes {
+		aliases := aliasesOf(scope, buckets)
+		inspectScope(scope, aliases, buckets, threshold, report)
+	}
+	return findings, nil
+}
+
+// inspectScope reports the ledgers inside one alias scope.
+func inspectScope(
+	scope ast.Node,
+	aliases map[string]map[string]bool,
+	buckets map[string]bool,
+	threshold int,
+	report func(token.Pos, map[string]bool),
+) {
+	// An accumulator crosses the threshold once but is written by several `+=` lines,
+	// each of which would otherwise be reported. One finding per accumulator.
+	reported := map[string]bool{}
+
+	ast.Inspect(scope, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.BinaryExpr:
 			switch x.Op {
@@ -256,7 +293,11 @@ func FindConservationSums(filename, src string, threshold int) ([]Finding, error
 				if !ok {
 					continue
 				}
+				if reported[id.Name] {
+					continue
+				}
 				if isLedger(aliases[id.Name], threshold) {
+					reported[id.Name] = true
 					report(x.Pos(), aliases[id.Name])
 					return false
 				}
@@ -264,5 +305,4 @@ func FindConservationSums(filename, src string, threshold int) ([]Finding, error
 		}
 		return true
 	})
-	return findings, nil
 }

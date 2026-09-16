@@ -128,6 +128,48 @@ func f() {
 			want: false,
 		},
 		{
+			// Alias scoping: `total` accumulates a real ledger in one function while a
+			// different function reuses the name for something unrelated. A file-wide
+			// alias pass would let the second function's plain assignment wipe the
+			// first's accumulated set, and the ledger would escape.
+			name: "accumulator name reused in another function",
+			src: `package p
+func a() {
+	total := 0
+	total += m.CompletedRequests
+	total += m.StillQueued
+	total += m.StillRunning
+	_ = total
+}
+func b() {
+	total := somethingElse()
+	_ = total
+}`,
+			want: true,
+		},
+		{
+			// The reverse direction: an unrelated accumulator must not inherit buckets
+			// from a same-named variable in another function.
+			name: "unrelated accumulator does not inherit another function's buckets",
+			src: `package p
+func a() {
+	total := 0
+	total += m.CompletedRequests
+	total += m.StillQueued
+	total += m.StillRunning
+	_ = total
+}
+func b() {
+	total := 0
+	total += x
+	if total != 3 {
+		panic("no")
+	}
+}`,
+			// Flagged once, for function a only.
+			want: true,
+		},
+		{
 			name: "unrelated arithmetic",
 			src: `package p
 func f() {
@@ -147,6 +189,32 @@ func f() {
 				t.Errorf("flagged = %v, want %v (findings: %v)", got, tc.want, findings)
 			}
 		})
+	}
+}
+
+// TestFindConservationSums_AliasScopeIsPerFunction pins the scoping directly: the
+// ledger in a() must be found exactly once, and b()'s reuse of the same variable name
+// must neither suppress it nor add a second finding.
+func TestFindConservationSums_AliasScopeIsPerFunction(t *testing.T) {
+	src := `package p
+func a() {
+	total := 0
+	total += m.CompletedRequests
+	total += m.StillQueued
+	total += m.StillRunning
+	_ = total
+}
+func b() {
+	total := 0
+	total += x
+	_ = total
+}`
+	findings, err := FindConservationSums("fixture.go", src, 3)
+	if err != nil {
+		t.Fatalf("FindConservationSums: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("got %d findings, want exactly 1 (a's ledger): %v", len(findings), findings)
 	}
 }
 
