@@ -124,6 +124,13 @@ Finally, provide a clear verdict: Is this PR ready to merge? If not, what specif
 
 ## Output
 
+The posted comment MUST include, so a local run and a CI run produce the same structure:
+
+- the **Q/A phase** — the probing questions with their `CONFIDENT` / `FLAW_FOUND` / `CANNOT_ANSWER` answers; and
+- a **`Findings Summary` table** — each finding as a row (finding, `file:line`, and `FLAW_FOUND` where it blocks), even when there are none (an explicit "no findings" row is falsifiable; silence is not).
+
+Do not self-dismiss a finding inline in prose — a finding you judge non-blocking still belongs in the table as non-blocking. The automated delivery loop reads these back and treats a verdict missing them as NOT-GREEN (the methodology did not run whole); see `docs/contributing/automated-delivery.md`.
+
 Post the review verdict as a PR comment. This skill is READ-ONLY:
 
 - Do NOT modify any code

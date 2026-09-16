@@ -264,6 +264,45 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantPlan2:   "false",
 		},
 
+		{
+			// #1723 REVIEW, list-item fence. CommonMark measures fence indent RELATIVE to the
+			// containing block, so a fence quoted under a bullet is indented 4+ from the margin and
+			// is still a real fence. The `ind <= 3` rule (added to fix the top-level indented-code
+			// case) therefore stopped stripping it, and the EXAMPLE's ref and plan line leaked out:
+			// `feature/EXAMPLE-IN-LIST` became the delivery's base with no warning.
+			//
+			// The two cases are irreconcilable in a line-oriented fence rule, so the indent
+			// constraint lives on the heading and declaration patterns instead: a heading indented
+			// 4+ is not a heading, and a line indented 4+ is not a declaration.
+			name: "a fence quoted under a list item cannot promote its example to the base",
+			body: "## Target branch\n\n`feature/real`\n\n## Notes\n\n- Template looks like:\n\n" +
+				"    ```\n    ## Target branch\n\n    `feature/EXAMPLE-IN-LIST`\n\n" +
+				"    archon-plan: specs/000-EXAMPLE/x.plan.json\n    ```\n",
+			wantBranch:  "feature/real",
+			wantPlan:    "",
+			wantHeading: "true",
+			wantPlan2:   "false",
+		},
+		{
+			// The same rule, isolated: an indented declaration is not a declaration. Without this a
+			// quoted plan path could be seeded into the PR body and resolved by the dist ratchet.
+			name:        "an indented archon-plan line is not a declaration",
+			body:        "Example:\n\n    archon-plan: specs/000-EXAMPLE/x.plan.json\n",
+			wantBranch:  "",
+			wantPlan:    "",
+			wantHeading: "false",
+			wantPlan2:   "false",
+		},
+		{
+			// And an indented heading is not a heading, so it must not open a section either.
+			name:        "an indented Target branch heading is not a heading",
+			body:        "Example:\n\n    ## Target branch\n\n    `feature/EXAMPLE`\n",
+			wantBranch:  "",
+			wantPlan:    "",
+			wantHeading: "false",
+			wantPlan2:   "false",
+		},
+
 		// --- heading present but unreadable (review finding on #1723) ---
 		{
 			// The strict section pattern requires the heading stand alone on its line, so this
@@ -459,4 +498,48 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// A failure of the fence scan must be loud, never an empty answer.
+//
+// This closes the second instance of one class. The first was a `$(mktemp)` whose failure made the
+// script report a valid issue body as entirely empty at exit 0 — silencing every downstream guard and
+// basing the delivery on the default branch with no plan line (#1723 review). Removing the temp file
+// fixed that route; ANY failure of the awk stage reached the same place, because empty output reads as
+// "closed fence, empty body". The trigger for both is the runner's known storage exhaustion.
+//
+// Exercised by putting a failing `awk` first on PATH, which is the cheapest faithful stand-in for
+// "the fence scan did not run".
+func TestDeliverSeedRefsFailsLoudlyWhenTheFenceScanCannotRun(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not on PATH")
+	}
+	dir := t.TempDir()
+
+	bin := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(bin, 0o700); err != nil {
+		t.Fatalf("creating stub bin: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "awk"), []byte("#!/bin/sh\nexit 127\n"), 0o700); err != nil {
+		t.Fatalf("writing failing awk stub: %v", err)
+	}
+
+	body := filepath.Join(dir, "body.md")
+	if err := os.WriteFile(body, []byte("## Target branch\n\n`feature/real`\n"), 0o600); err != nil {
+		t.Fatalf("writing body: %v", err)
+	}
+
+	cmd := exec.Command("bash", scriptPath(t, "deliver-seed-refs.sh"), body)
+	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	out, err := cmd.CombinedOutput()
+
+	if err == nil {
+		t.Fatalf("script exited 0 with a broken fence scan; output was:\n%s\n"+
+			"An empty result at exit 0 is indistinguishable from a body that declares nothing, so the "+
+			"caller seeds the default branch with no plan line and every guard stays silent", out)
+	}
+	if strings.Contains(string(out), "target_branch=") {
+		t.Errorf("script printed its key=value protocol despite the fence scan failing:\n%s\n"+
+			"It must not emit a parseable answer it cannot stand behind", out)
+	}
 }

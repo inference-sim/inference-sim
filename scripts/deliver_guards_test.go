@@ -284,6 +284,12 @@ func TestDeliverImplementPromptContract(t *testing.T) {
 				"having the agent run them, which is what exhausted the runner on #1706",
 		},
 		{
+			needle: "WITH THE THREE",
+			why: "the three pr-workflow.md exceptions are the fix for this PR's headline failure — the " +
+				"agent ending its turn at a BLOCKING GATE — and were the only load-bearing part of the " +
+				"prompt with nothing pinning them",
+		},
+		{
 			needle: "YOUR FIRST ACTION",
 			why: "the agent — not the workflow — opens the PR now, so the prompt must demand it " +
 				"before any code is written. Opened last, a dead runner leaves a branch with no PR, " +
