@@ -499,3 +499,47 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+// A failure of the fence scan must be loud, never an empty answer.
+//
+// This closes the second instance of one class. The first was a `$(mktemp)` whose failure made the
+// script report a valid issue body as entirely empty at exit 0 — silencing every downstream guard and
+// basing the delivery on the default branch with no plan line (#1723 review). Removing the temp file
+// fixed that route; ANY failure of the awk stage reached the same place, because empty output reads as
+// "closed fence, empty body". The trigger for both is the runner's known storage exhaustion.
+//
+// Exercised by putting a failing `awk` first on PATH, which is the cheapest faithful stand-in for
+// "the fence scan did not run".
+func TestDeliverSeedRefsFailsLoudlyWhenTheFenceScanCannotRun(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not on PATH")
+	}
+	dir := t.TempDir()
+
+	bin := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(bin, 0o700); err != nil {
+		t.Fatalf("creating stub bin: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "awk"), []byte("#!/bin/sh\nexit 127\n"), 0o700); err != nil {
+		t.Fatalf("writing failing awk stub: %v", err)
+	}
+
+	body := filepath.Join(dir, "body.md")
+	if err := os.WriteFile(body, []byte("## Target branch\n\n`feature/real`\n"), 0o600); err != nil {
+		t.Fatalf("writing body: %v", err)
+	}
+
+	cmd := exec.Command("bash", scriptPath(t, "deliver-seed-refs.sh"), body)
+	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	out, err := cmd.CombinedOutput()
+
+	if err == nil {
+		t.Fatalf("script exited 0 with a broken fence scan; output was:\n%s\n"+
+			"An empty result at exit 0 is indistinguishable from a body that declares nothing, so the "+
+			"caller seeds the default branch with no plan line and every guard stays silent", out)
+	}
+	if strings.Contains(string(out), "target_branch=") {
+		t.Errorf("script printed its key=value protocol despite the fence scan failing:\n%s\n"+
+			"It must not emit a parseable answer it cannot stand behind", out)
+	}
+}
