@@ -177,6 +177,12 @@ func TestDeliverImplementDoesNotCreatePRsWithTheWorkflowToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("globbing workflows: %v", err)
 	}
+	// `.yaml` too: GitHub accepts both extensions, so matching only one leaves a way in.
+	yamlPaths, err := filepath.Glob(filepath.Join("..", ".github", "workflows", "*.yaml"))
+	if err != nil {
+		t.Fatalf("globbing workflows: %v", err)
+	}
+	paths = append(paths, yamlPaths...)
 	if len(paths) < 5 {
 		t.Fatalf("found only %d workflow files; the glob is not matching the workflow directory", len(paths))
 	}
@@ -212,7 +218,14 @@ func TestDeliverImplementDoesNotCreatePRsWithTheWorkflowToken(t *testing.T) {
 				for _, s := range j.Steps {
 					for label, code := range map[string]string{"run": s.Run, "script": s.With.Script} {
 						code = stripCommentLines(code)
-						if strings.Contains(code, "gh pr create") || strings.Contains(code, "pulls.create") {
+						// Three spellings of the same call: the gh porcelain, the octokit binding
+						// github-script exposes, and a raw REST POST. Missing the last one was
+						// flagged in review — `gh api -X POST /repos/o/r/pulls` creates a PR just
+						// as effectively.
+						restPost := strings.Contains(code, "gh api") &&
+							strings.Contains(code, "POST") &&
+							strings.Contains(code, "/pulls")
+						if strings.Contains(code, "gh pr create") || strings.Contains(code, "pulls.create") || restPost {
 							t.Errorf("%s job %q step %q creates a pull request from a workflow %s. "+
 								"That uses GITHUB_TOKEN, which requires the repo-wide \"Allow GitHub "+
 								"Actions to create and approve pull requests\" setting — one toggle that "+
@@ -478,4 +491,31 @@ func stripCommentLines(code string) string {
 		kept = append(kept, line)
 	}
 	return strings.Join(kept, "\n")
+}
+
+// No line of the agent prompt may begin with `#`.
+//
+// `prompt: |` is a YAML BLOCK SCALAR, where `#` is ordinary text rather than a comment. An earlier
+// revision of #1723 put seven explanatory lines inside it at the surrounding indentation; they read
+// as YAML comments but were handed to the agent as instructions — and one of them described the COST
+// of pushing frequently, immediately above the bullet telling the agent to push frequently. Caught
+// in review, not by any test, which is why this exists.
+//
+// Deliberately a dumb check. Anything that needs to say `#` at the start of a line (an issue
+// reference, say) should be reworded rather than teaching this test to be clever.
+func TestDeliverImplementPromptHasNoStrayYamlComments(t *testing.T) {
+	steps := loadImplementSteps(t)
+	agent := indexOfStep(steps, func(s implementStep) bool {
+		return strings.HasPrefix(s.Uses, "anthropics/claude-code-action")
+	})
+	if agent < 0 {
+		t.Fatal("deliver-implement.yml no longer runs anthropics/claude-code-action")
+	}
+	for n, line := range strings.Split(steps[agent].With.Prompt, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+			t.Errorf("prompt line %d begins with `#` and is therefore sent to the agent as "+
+				"instruction text, not dropped as a comment: %q. Move it above `prompt:` if it is a "+
+				"note for maintainers, or reword it if it is meant for the agent", n+1, strings.TrimSpace(line))
+		}
+	}
 }

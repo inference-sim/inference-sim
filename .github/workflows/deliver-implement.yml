@@ -317,7 +317,7 @@ jobs:
       # deliver-stall-sweep.yml selects candidates FROM THE PR SIDE, so it cannot see that. The
       # exposure shrinks from the whole run (~52 minutes on #1706) to the agent's first action, and
       # the branch push means WORK is never lost either way. Closing the remainder needs the sweep to
-      # also consider delivery branches with no PR — a change to that workflow, tracked separately.
+      # also consider delivery branches with no PR — a change to that workflow, tracked as #1740.
       #
       # No blocked-dependency check here: `check-permissions` already refuses a blocked issue before
       # this job is scheduled (see the `Depends on:` logic above), so reaching this step means the
@@ -330,10 +330,6 @@ jobs:
 
           body=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json body --jq .body) || {
             echo "::error::could not read #$ISSUE_NUMBER; refusing to seed a branch without knowing its target branch or plan"
-            exit 1
-          }
-          title=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json title --jq .title) || {
-            echo "::error::could not read the title of #$ISSUE_NUMBER"
             exit 1
           }
 
@@ -351,6 +347,7 @@ jobs:
           plan=$(sed -n 's/^archon_plan=//p' <<< "$refs")
           heading_seen=$(sed -n 's/^heading_seen=//p' <<< "$refs")
           plan_seen=$(sed -n 's/^plan_seen=//p' <<< "$refs")
+          unclosed_fence=$(sed -n 's/^unclosed_fence=//p' <<< "$refs")
 
           # An archon sub-issue targets its feature branch. The declared ref is used only if it
           # actually exists on the remote — a typo falls back to the default branch loudly rather
@@ -375,14 +372,26 @@ jobs:
             echo "::warning::#$ISSUE_NUMBER has a 'Target branch' heading but no usable ref was read from it — basing on '$base'. Put the branch in backticks on its own under a plain '## Target branch' heading."
           fi
 
-          # The plan half of the same R1 rule. A declaration the extractor missed (an unclosed fence
-          # hiding it, say) leaves the seeded PR body with no `archon-plan:` line — and
-          # deliver-verify.yml then reads the gate as `absent`, which PASSES, rather than
-          # `unverified`, which blocks. So a silent miss here silently switches the dist ratchet off.
-          if [[ "$plan_seen" == "true" && -z "$plan" ]]; then
-            echo "::error::#$ISSUE_NUMBER declares an 'archon-plan:' line but it could not be read, so the PR body would omit it and the dist ratchet would be skipped as 'absent' rather than blocking. Refusing to seed a delivery that would silently lose its plan gate."
+          # An UNCLOSED fence swallows everything after it — correct per CommonMark, and the one
+          # case the parser cannot rescue. We cannot know WHAT was lost (the target branch, the plan
+          # line, both), so this refuses to seed rather than delivering onto a guessed base with a
+          # possibly-absent plan gate.
+          #
+          # This deliberately does NOT fire for a declaration inside a CLOSED fence: that is an
+          # author quoting the template, which is legitimate and must not block a delivery. An
+          # earlier revision keyed the error off `plan_seen` computed on the raw body and refused
+          # exactly that case, with a message that misdescribed it (#1723 review, F2).
+          if [[ "$unclosed_fence" == "true" ]]; then
+            echo "::error::#$ISSUE_NUMBER contains an unclosed code fence, so everything after it was ignored — which may have included the 'Target branch' section or the 'archon-plan:' line. Refusing to seed a delivery that could land on the wrong base or silently skip the dist ratchet. Close the fence and re-issue."
             exit 1
           fi
+
+          # Visible-but-unreadable declarations only warn: the delivery is still correct on the
+          # default branch, and refusing would be disproportionate. R1 — never silent.
+          if [[ "$plan_seen" == "true" && -z "$plan" ]]; then
+            echo "::warning::#$ISSUE_NUMBER appears to declare an 'archon-plan:' line that could not be extracted; the seeded PR body will omit it. The agent is told to read it from the sub-issue as a fallback."
+          fi
+
           echo "base=$base" >> "$GITHUB_OUTPUT"
 
           # The seed commit is attributed to the bot that makes it, not to the agent that has not
@@ -458,6 +467,16 @@ jobs:
             frontend-design@claude-plugins-official
             pr-review-toolkit@claude-plugins-official
             superpowers@superpowers-marketplace
+          # WHY THE PROMPT ASKS FOR REPEATED PUSHES, and the one interaction that has outside this
+          # phase — recorded here so nobody re-derives it. The extra pushes DO reach
+          # deliver-verify.yml (`on: push`, `deliver/issue-+([0-9])`), but its job guard
+          # `(github.event_name != 'push' || github.event.sender.type != 'Bot')` refuses App-token
+          # pushes, its `authorize` job is `ubuntu-latest` so the self-hosted runner is never woken,
+          # and every agent push precedes the hand-off dispatch, so a push cannot evict the pending
+          # dispatch. Cost is k cheap denied runs per delivery instead of 1 — which is why this note
+          # belongs HERE and not in the prompt: an earlier revision left it inside the `prompt: |`
+          # block scalar, where YAML keeps `#` as literal text, so the agent was being handed a
+          # sentence about the cost of pushing directly above the instruction to push often.
           prompt: |
             You are delivering issue #${{ env.ISSUE_NUMBER }} in this repository.
             Read it first: `gh issue view ${{ env.ISSUE_NUMBER }}`.
@@ -538,11 +557,11 @@ jobs:
             1. **Its human-approval gates do not apply.** Where it says to present a plan and STOP,
                or to wait for approval before continuing, keep going instead. Record what you would
                have asked in your final PR comment.
-            2. **Its verification gate does not apply.** It mandates a full-repository test run and
-               a full-repository lint as non-optional. Do not run either. The bullet below says what
-               to run instead, and why. (Deliberately not quoting those two commands here: the guard
-               test greps the prompt for them, and it is worth more as a dumb check than as a clever
-               one.)
+            2. **Its lint and test gates do not apply** — neither the repository-wide ones it calls
+               non-optional, nor the per-package lint it lists among the numbered steps. Do not run
+               any of them. The bullet below says what to run instead, and why. (Deliberately not
+               quoting those commands here: the guard test greps the prompt for them, and it is worth
+               more as a dumb check than a clever one.)
             3. **The same applies to any skill it points you at.** `superpowers:writing-plans` and
                `superpowers:executing-plans` both describe raising things with a human partner and
                reviewing at checkpoints. Do the work; do not wait.
@@ -551,16 +570,10 @@ jobs:
               the allow list.
             - Every contract in the sub-issue gets a test that would fail if the contract were
               violated.
-            # Interaction outside this phase, recorded so nobody re-derives it: these extra pushes
-            # DO reach deliver-verify.yml (`on: push`, `deliver/issue-+([0-9])`), but its job guard
-            # `(github.event_name != 'push' || github.event.sender.type != 'Bot')` refuses App-token
-            # pushes, its `authorize` job is `ubuntu-latest` so the self-hosted runner is not woken,
-            # and every agent push precedes the hand-off dispatch, so a push cannot evict the pending
-            # dispatch. Cost is k cheap denied runs per delivery instead of 1.
             - PUSH AS YOU GO — after the first build passes, and after each contract's test goes
               green. Do not save the push for the end. This job's runner can be evicted at any
-              moment, and whatever you have not pushed is lost; a delivery was lost that way on
-              #1706 with the work already finished. Unpushed work is not work.
+              moment, and whatever you have not pushed is lost; a delivery was lost that way (see
+              issue 1706) with the work already finished. Unpushed work is not work.
             - Run `go build ./...`, and `go test` for the packages you touched. Do NOT run the
               full `go test ./...` and do NOT run or install `golangci-lint`: `ci.yml` is the
               authority on build, test and lint, the verify phase dispatches it on this branch,

@@ -9,7 +9,7 @@ import (
 )
 
 // seedRefs runs scripts/deliver-seed-refs.sh over a body and returns the three values it prints.
-func seedRefs(t *testing.T, body string) (targetBranch, archonPlan, headingSeen, planSeen string) {
+func seedRefs(t *testing.T, body string) (targetBranch, archonPlan, headingSeen, planSeen, unclosedFence string) {
 	t.Helper()
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash is not on PATH")
@@ -37,26 +37,29 @@ func seedRefs(t *testing.T, body string) (targetBranch, archonPlan, headingSeen,
 			headingSeen = value
 		case "plan_seen":
 			planSeen = value
+		case "unclosed_fence":
+			unclosedFence = value
 		default:
 			t.Fatalf("unexpected key %q in output:\n%s", key, out)
 		}
 	}
-	for name, v := range map[string]string{"heading_seen": headingSeen, "plan_seen": planSeen} {
+	for name, v := range map[string]string{"heading_seen": headingSeen, "plan_seen": planSeen, "unclosed_fence": unclosedFence} {
 		if v != "true" && v != "false" {
 			t.Fatalf("%s = %q, want \"true\" or \"false\"; the caller branches on these to decide "+
 				"whether to warn, and an empty value would silently disable that warning", name, v)
 		}
 	}
-	return targetBranch, archonPlan, headingSeen, planSeen
+	return targetBranch, archonPlan, headingSeen, planSeen, unclosedFence
 }
 
 type seedRefsCase struct {
-	name        string
-	body        string
-	wantBranch  string
-	wantPlan    string
-	wantHeading string
-	wantPlan2   string // plan_seen
+	name         string
+	body         string
+	wantBranch   string
+	wantPlan     string
+	wantHeading  string
+	wantPlan2    string // plan_seen
+	wantUnclosed string // unclosed_fence; "" is treated as "false"
 }
 
 // The two shapes documented in docs/contributing/templates/archon-issue-examples.md, plus the
@@ -188,12 +191,12 @@ func TestDeliverSeedRefs(t *testing.T) {
 			// author write one somewhere", which is what makes the caller warn instead of silently
 			// basing on the default branch. A purely illustrative fence therefore costs one warning,
 			// which is the right trade against a silent wrong base (#1723 review).
-			name: "a body whose ONLY Target branch section is fenced declares nothing but is SEEN",
+			name: "a body whose ONLY Target branch section is fenced declares nothing and is not SEEN",
 			body: "Here is the template:\n\n" +
 				"```markdown\n## Target branch\n\n`feature/example`\n```\n",
 			wantBranch:  "",
 			wantPlan:    "",
-			wantHeading: "true",
+			wantHeading: "false",
 			wantPlan2:   "false",
 		},
 		{
@@ -203,18 +206,21 @@ func TestDeliverSeedRefs(t *testing.T) {
 			body:        "~~~\n## Target branch\n\n`feature/example`\n~~~\n",
 			wantBranch:  "",
 			wantPlan:    "",
-			wantHeading: "true",
+			wantHeading: "false",
 			wantPlan2:   "false",
 		},
 		{
 			// A fenced declaration must not be seeded into the PR body either: the dist ratchet
 			// would then resolve a plan path the author only quoted as an example.
-			name:        "a fenced archon-plan declaration is ignored",
+			// plan_seen is computed on the STRIPPED body, so a quoted example is NOT reported as a
+			// declaration. It used to be, on the raw body, and the caller turned that into a hard
+			// error that refused a perfectly legitimate delivery (#1723 review, F2).
+			name:        "a fenced archon-plan declaration is ignored and NOT reported as seen",
 			body:        "Example:\n\n```\narchon-plan: specs/000-example/x.plan.json\n```\n",
 			wantBranch:  "",
 			wantPlan:    "",
 			wantHeading: "false",
-			wantPlan2:   "true",
+			wantPlan2:   "false",
 		},
 
 		{
@@ -231,6 +237,32 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantPlan:    "archon-plan: specs/x.plan.json",
 			wantHeading: "true",
 			wantPlan2:   "true",
+		},
+
+		{
+			// F4 FROM THE #1723 REVIEW. Fenced lines are removed, so a fence spanning a `## `
+			// boundary deletes that boundary; the section range then ran on into what the author
+			// sees as a LATER section and a ref from there became the delivery's base, SILENTLY.
+			// Reproduced: this body yielded `feature/WRONG`. Reading only the first non-blank line
+			// of the section fixes it — "Not stated here." has no ref, so nothing is declared and
+			// heading_seen makes the caller warn.
+			name: "a fence spanning a ## boundary cannot promote a later ref to the base",
+			body: "## Target branch\n\nNot stated here.\n\n```\n## Notes\n```\n\n" +
+				"See `feature/WRONG` for context.\n",
+			wantBranch:  "",
+			wantPlan:    "",
+			wantHeading: "true",
+			wantPlan2:   "false",
+		},
+		{
+			// The templates all put the ref on the first line of the section, so this is the shape
+			// that must keep working after the narrowing above.
+			name:        "ref on the first line of the section is still read",
+			body:        "## Target branch\n\n`feature/first-line` (PR against the feature branch)\n\n## Review\n\nx\n",
+			wantBranch:  "feature/first-line",
+			wantPlan:    "",
+			wantHeading: "true",
+			wantPlan2:   "false",
 		},
 
 		// --- heading present but unreadable (review finding on #1723) ---
@@ -281,12 +313,13 @@ func TestDeliverSeedRefs(t *testing.T) {
 			// parser can remove: the extraction yields nothing. What saves it is heading_seen, which
 			// is computed on the unstripped body, stays true, and makes the caller WARN rather than
 			// silently base on the default branch (#1723 review).
-			name:        "an unclosed fence swallows the rest of the body but is still SEEN",
-			body:        "```\nexample\n~~~\n\n## Target branch\n\n`feature/after-mismatch`\n",
-			wantBranch:  "",
-			wantPlan:    "",
-			wantHeading: "true",
-			wantPlan2:   "false",
+			name:         "an unclosed fence swallows the rest of the body and is REPORTED",
+			body:         "```\nexample\n~~~\n\n## Target branch\n\n`feature/after-mismatch`\n",
+			wantBranch:   "",
+			wantPlan:     "",
+			wantHeading:  "false",
+			wantUnclosed: "true",
+			wantPlan2:    "false",
 		},
 	}
 
@@ -318,7 +351,7 @@ func TestDeliverSeedRefs(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			branch, plan, heading, planSeen := seedRefs(t, tc.body)
+			branch, plan, heading, planSeen, unclosed := seedRefs(t, tc.body)
 			if branch != tc.wantBranch {
 				t.Errorf("target_branch = %q, want %q", branch, tc.wantBranch)
 			}
@@ -330,6 +363,13 @@ func TestDeliverSeedRefs(t *testing.T) {
 			}
 			if planSeen != tc.wantPlan2 {
 				t.Errorf("plan_seen = %q, want %q", planSeen, tc.wantPlan2)
+			}
+			wantUnclosed := tc.wantUnclosed
+			if wantUnclosed == "" {
+				wantUnclosed = "false"
+			}
+			if unclosed != wantUnclosed {
+				t.Errorf("unclosed_fence = %q, want %q", unclosed, wantUnclosed)
 			}
 		})
 	}
@@ -378,4 +418,46 @@ func TestDeliverImplementWarnsOnUnreadableTargetBranchHeading(t *testing.T) {
 		t.Error("deliver-implement.yml never branches on `heading_seen`, so the value is computed " +
 			"and discarded and no warning is emitted for an unreadable Target branch heading")
 	}
+}
+
+// The workflow must actually REFUSE to seed when the script reports an unclosed fence.
+//
+// The review noted that nothing connected the script's output to the workflow's behaviour — they
+// live in different files, so a correct signal could be computed and then ignored. An unclosed fence
+// means an unknown amount of the issue body was discarded, possibly including the target branch or
+// the plan declaration, so seeding anyway risks the wrong base AND a silently absent dist ratchet.
+func TestDeliverImplementRefusesToSeedOnAnUnclosedFence(t *testing.T) {
+	path := filepath.Join("..", ".github", "workflows", "deliver-implement.yml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	body := string(raw)
+
+	if !strings.Contains(body, "unclosed_fence=") {
+		t.Fatal("deliver-implement.yml does not read `unclosed_fence` from deliver-seed-refs.sh, so " +
+			"a body whose tail was discarded by an unclosed fence would be seeded as if complete")
+	}
+	if !strings.Contains(body, `"$unclosed_fence" == "true"`) {
+		t.Error("deliver-implement.yml never branches on `unclosed_fence`, so the signal is computed " +
+			"and discarded")
+	}
+	// The refusal must be an error-and-exit, not a warning: we cannot know what was lost.
+	idx := strings.Index(body, `"$unclosed_fence" == "true"`)
+	if idx < 0 {
+		return
+	}
+	window := body[idx:min(idx+700, len(body))]
+	if !strings.Contains(window, "::error::") || !strings.Contains(window, "exit 1") {
+		t.Error("the unclosed-fence branch does not `::error::` and `exit 1`. A warning is not enough: " +
+			"an unclosed fence hides an unknown amount of the body, so the target branch and the " +
+			"archon-plan line are both unreliable and the delivery must not be seeded")
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

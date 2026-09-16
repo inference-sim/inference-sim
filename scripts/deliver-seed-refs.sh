@@ -69,6 +69,7 @@ BODY=$(tr -d '\r' < "$BODY_FILE")
 # the caller warns on, so computing them on the stripped body would silence the one signal that
 # catches an extraction failure (#1723).
 RAW_BODY="$BODY"
+FENCE_STATE=$(mktemp)
 
 # FENCED CODE BLOCKS ARE STRIPPED FIRST, and this is not hygiene — it is a correctness fix.
 # docs/contributing/templates/archon-issue-examples.md shows the whole sub-issue template inside a
@@ -115,7 +116,18 @@ BODY=$(printf '%s\n' "$BODY" | awk '
     }
     print
   }
-')
+  END { if (infence) print "@@UNCLOSED_FENCE@@" > "/dev/stderr" }
+' 2>"$FENCE_STATE")
+
+# An UNCLOSED fence swallows everything after it — correct per CommonMark, and the one case a
+# parser cannot rescue. Recorded here so the caller can distinguish it from a deliberately-fenced
+# example: content lost to an unclosed fence deserves a loud signal, content the author chose to
+# put inside a closed fence deserves silence.
+UNCLOSED_FENCE=false
+if [[ -s "$FENCE_STATE" ]] && grep -q '@@UNCLOSED_FENCE@@' "$FENCE_STATE"; then
+  UNCLOSED_FENCE=true
+fi
+rm -f "$FENCE_STATE"
 
 # The `## Target branch` section's prose is not fixed. Both of these are documented in
 # docs/contributing/templates/archon-issue-examples.md:
@@ -143,8 +155,32 @@ BODY=$(printf '%s\n' "$BODY" | awk '
 # has to agree with the case-insensitive `grep -i` that computes heading_seen below: when detection
 # accepted a spelling extraction rejected, `## target branch` warned and fell back to the default
 # branch even though the author had written a perfectly usable section.
+# ONLY THE FIRST NON-BLANK LINE of the section is searched for a ref, which is both simpler than
+# scanning the section and the fix for a real silent-wrong-base bug (#1723 review, F4): fenced lines
+# are removed, so a fence spanning a `## ` boundary deletes that boundary, the section range then
+# runs on into what the author sees as a LATER section, and a ref from there became the delivery's
+# base with no warning. Reproduced: a `## Notes` heading inside a fence made `feature/WRONG` win.
+#
+# Every documented shape puts the ref on the first line of the section
+# (docs/contributing/templates/archon-issue-examples.md):
+#
+#     `feature/<name>` (PR against the feature branch, NOT main)
+#     `feature/<name>` → `main`
+#
+# so nothing legitimate is lost, and a section whose first line is prose ("Not stated.") now yields
+# no ref and warns instead of silently guessing.
+#
+# `head -n1` after `grep -o`, NOT `grep -m1 -o`: `-m1` stops after the first matching LINE while `-o`
+# still prints EVERY match on it, so the arrow form emitted two refs and the pair was then rejected
+# by the whitespace guard — silently falling back to the default branch.
+#
+# The heading is matched case-INSENSITIVELY via bracket classes rather than sed's `I` flag, which is
+# a GNU extension; this script is exercised on macOS (BSD sed) too. It must agree with the
+# case-insensitive `grep -i` computing heading_seen below.
 TARGET_BRANCH=$(printf '%s\n' "$BODY" \
   | sed -n '/^[[:space:]]*#\{1,6\}[[:space:]]*[Tt][Aa][Rr][Gg][Ee][Tt][[:space:]][Bb][Rr][Aa][Nn][Cc][Hh][[:space:]]*$/,/^[[:space:]]*#\{1,6\}[[:space:]]/p' \
+  | sed '1d' \
+  | grep -m1 '[^[:space:]]' \
   | grep -oE '`[^`]+`' \
   | head -n1 \
   | tr -d '`') || true
@@ -192,7 +228,7 @@ ARCHON_PLAN=${ARCHON_PLAN%%$'\n'*}
 # target branch", so it must still match the headings the strict pattern rejects — that mismatch is
 # exactly what the caller needs to warn about.
 HEADING_SEEN=false
-if printf '%s\n' "$RAW_BODY" | grep -qiE '^[[:space:]]*#{1,6}[[:space:]]*Target branch'; then
+if printf '%s\n' "$BODY" | grep -qiE '^[[:space:]]*#{1,6}[[:space:]]*Target branch'; then
   HEADING_SEEN=true
 fi
 
@@ -201,7 +237,7 @@ fi
 # `absent` — which PASSES — rather than `unverified`, which blocks. So a silent miss here would
 # silently switch the dist ratchet off, the exact failure deliver-verify.yml warns about.
 PLAN_SEEN=false
-if printf '%s\n' "$RAW_BODY" | grep -qE '^[^A-Za-z0-9]*archon-plan:[[:space:]]*\S'; then
+if printf '%s\n' "$BODY" | grep -qE '^[^A-Za-z0-9]*archon-plan:[[:space:]]*\S'; then
   PLAN_SEEN=true
 fi
 
@@ -209,3 +245,4 @@ echo "target_branch=$TARGET_BRANCH"
 echo "archon_plan=$ARCHON_PLAN"
 echo "heading_seen=$HEADING_SEEN"
 echo "plan_seen=$PLAN_SEEN"
+echo "unclosed_fence=$UNCLOSED_FENCE"

@@ -63,7 +63,7 @@ for review when it is done. Three things follow from that ordering:
   Opening the PR first shrinks that window from the whole run to the agent's first action. It does
   not eliminate it: a runner lost in the first seconds still leaves a pushed branch with no PR, which
   the sweep cannot see. Teaching the sweep to also consider PR-less delivery branches would close
-  the remainder, and is tracked separately.
+  the remainder, and is tracked as #1740.
 - **A PR still marked draft, saying the work is in progress, was interrupted.** The agent is told
   to say so in the body it opens, so an abandoned delivery is recognisable without reading the run
   log.
@@ -175,6 +175,10 @@ gh workflow run deliver-verify.yml -f pr_number=<PR> -f issue_number=<N>
 ```
 
 The correction round count lives on the PR's `deliver:round-N` label, so resuming this way keeps it. Dispatching verify directly remains the right move when the **implementation is already complete** and only the verdict is missing — nothing about the code needed redoing.
+
+**Closing the delivery PR does not stop the branch being reused.** The phase looks for an *open* PR
+on `deliver/issue-N`; if you close one, a re-issued command leaves the branch alone and the agent
+opens a fresh PR on it. To stop a delivery, use the `deliver:paused` label rather than closing its PR.
 
 **Re-issuing `/approve-issue-for-pr-delivery` resumes the implement phase rather than restarting it.** If `deliver/issue-N` already exists, the phase checks it out instead of creating it, reuses the open PR instead of opening a second one, and the agent is told to read the commits already there and continue from them. That is the right move when the implementation was left **part-finished** — a runner lost mid-flight. It is not a way to get a second opinion on finished work: the agent continues the existing branch, it does not start over.
 
