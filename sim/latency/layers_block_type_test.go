@@ -1,10 +1,14 @@
 package latency_test
 
 import (
+	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/latency"
@@ -192,6 +196,107 @@ func TestGetModelConfig_ScalarWinsOverBlockTypeArray(t *testing.T) {
 	}`
 	if got := parseConfigJSON(t, body).NumLayers; got != 52 {
 		t.Errorf("NumLayers = %d, want 52 (the declared scalar, not len(layers_block_type)=3)", got)
+	}
+}
+
+// TestGetModelConfig_DerivationWarning is the R1 gate: whenever the layer count is
+// DERIVED from the block-type array, the operator gets one stderr line saying so — and
+// whenever the num_hidden_layers scalar is what answered, they get silence.
+//
+// The two must agree, which is the whole point of the test. A warning gated on the
+// scalar KEY being absent, rather than on the scalar having no ANSWER, disagrees with
+// the resolver on exactly one input: "num_hidden_layers": 0 alongside a valid array.
+// That config derives its count (correctly) and used to do it silently — a
+// non-standard reinterpretation of an operator's config at the default log level,
+// which R1 forbids. The zero_scalar case below is the regression guard.
+func TestGetModelConfig_DerivationWarning(t *testing.T) {
+	cases := []struct {
+		name        string
+		body        string
+		wantNumLays int
+		wantWarn    bool
+	}{
+		{
+			// The scalar is present but has no answer, so the array is consulted:
+			// derived ⇒ warn.
+			name: "zero_scalar_derives_and_warns",
+			body: `{
+				"num_hidden_layers": 0,
+				"layers_block_type": ["attention", "mamba", "mamba"],
+				"hidden_size": 4096, "num_attention_heads": 32, "num_key_value_heads": 8,
+				"intermediate_size": 14336, "vocab_size": 32000, "torch_dtype": "bfloat16"
+			}`,
+			wantNumLays: 3,
+			wantWarn:    true,
+		},
+		{
+			name:        "absent_scalar_derives_and_warns",
+			body:        nemotronStyleConfig,
+			wantNumLays: 52,
+			wantWarn:    true,
+		},
+		{
+			// The scalar answered, so nothing was derived: catalogued models stay quiet
+			// (INV-6 — the stderr stream is part of the byte-identity claim).
+			name: "scalar_answers_stays_quiet",
+			body: `{
+				"num_hidden_layers": 52,
+				"layers_block_type": ["attention", "mamba", "mamba"],
+				"hidden_size": 4096, "num_attention_heads": 32, "num_key_value_heads": 8,
+				"intermediate_size": 14336, "vocab_size": 32000, "torch_dtype": "bfloat16"
+			}`,
+			wantNumLays: 52,
+			wantWarn:    false,
+		},
+		{
+			// A negative scalar DOES answer (it is bad input, not a reason to consult a
+			// second source): nothing is derived, so no derivation warning — the
+			// backends' "NumLayers must be > 0" is the loud response instead.
+			name: "negative_scalar_stays_quiet",
+			body: `{
+				"num_hidden_layers": -4,
+				"layers_block_type": ["attention", "mamba", "mamba"],
+				"hidden_size": 4096, "num_attention_heads": 32, "num_key_value_heads": 8,
+				"intermediate_size": 14336, "vocab_size": 32000, "torch_dtype": "bfloat16"
+			}`,
+			wantNumLays: -4,
+			wantWarn:    false,
+		},
+		{
+			// Neither source answers: nothing was derived, so there is nothing to warn
+			// ABOUT — the loud validator failure is the whole message (BC-3).
+			name: "no_evidence_stays_quiet",
+			body: `{
+				"layers_block_type": [],
+				"hidden_size": 4096, "num_attention_heads": 32, "num_key_value_heads": 8,
+				"intermediate_size": 14336, "vocab_size": 32000, "torch_dtype": "bfloat16"
+			}`,
+			wantNumLays: 0,
+			wantWarn:    false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			prev := logrus.StandardLogger().Out
+			logrus.SetOutput(&buf)
+			t.Cleanup(func() { logrus.SetOutput(prev) })
+
+			mc := parseConfigJSON(t, tc.body)
+			if mc.NumLayers != tc.wantNumLays {
+				t.Errorf("NumLayers = %d, want %d", mc.NumLayers, tc.wantNumLays)
+			}
+
+			warned := strings.Contains(buf.String(), "derived NumLayers=")
+			if warned != tc.wantWarn {
+				t.Errorf("derivation warning emitted = %v, want %v; log output: %q",
+					warned, tc.wantWarn, buf.String())
+			}
+			if tc.wantWarn && !strings.Contains(buf.String(),
+				fmt.Sprintf("derived NumLayers=%d from len(%s)", tc.wantNumLays, latency.LayersBlockTypeField)) {
+				t.Errorf("warning must name the derived count and its source, got: %q", buf.String())
+			}
+		})
 	}
 }
 

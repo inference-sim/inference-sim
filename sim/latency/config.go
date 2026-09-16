@@ -212,10 +212,25 @@ func (c *HFConfig) BlockTypeLayerCount() int {
 // This is the single source of truth for layer-count resolution (R23 code-path
 // parity); ExtractKVCapacityParams derives no layer count of its own.
 func (c *HFConfig) ResolveNumLayers() int {
-	if n, ok := c.GetInt("num_hidden_layers"); ok && n != 0 {
+	if n, answered := c.numLayersScalar(); answered {
 		return n
 	}
 	return c.BlockTypeLayerCount()
+}
+
+// numLayersScalar reports the num_hidden_layers scalar and whether it ANSWERS the
+// layer-count question: present AND non-zero. It is the single predicate both
+// ResolveNumLayers and the derivation warning in GetModelConfigFromHF read, so the
+// two can never disagree about whether the fallback fired.
+//
+// Keeping them in one place is the point. The two predicates were briefly separate —
+// the resolver falling back on "absent or 0" while the warning gate fired only on
+// key ABSENCE — which let a config carrying "num_hidden_layers": 0 alongside a
+// block-type list derive its count with no stderr line at all: exactly the silent
+// reinterpretation of an operator's config that R1 forbids.
+func (c *HFConfig) numLayersScalar() (int, bool) {
+	n, ok := c.GetInt("num_hidden_layers")
+	return n, ok && n != 0
 }
 
 func parseHWConfig(HWConfigFilePath string) (map[string]sim.HardwareCalib, error) {
@@ -529,24 +544,29 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 		}
 	}
 
-	// Total layer count: the num_hidden_layers scalar, or the length of the block-type
-	// list when the scalar is absent (#1729 / NS-4). Some configs
-	// (Nemotron-3-Ultra-550B) declare no scalar at all, and BLIS used to abort before any
-	// simulation with "NumLayers must be > 0"; the count was in the config, just phrased
-	// as a list. The scalar still wins whenever it answers, so every config that declares
-	// it parses exactly as before (INV-6).
+	// Total layer count: the num_hidden_layers scalar when it answers, else the length of
+	// the block-type list (#1729 / NS-4). Some configs (Nemotron-3-Ultra-550B) declare no
+	// scalar at all, and BLIS used to abort before any simulation with "NumLayers must be
+	// > 0"; the count was in the config, just phrased as a list. The scalar still wins
+	// whenever it answers, so every config that declares it parses exactly as before
+	// (INV-6).
+	//
+	// The warning gate reads the SAME numLayersScalar predicate the resolver does, so it
+	// fires for every derivation — including the "num_hidden_layers": 0 case, which the
+	// resolver treats as no answer. Gating on mere key absence here would let that config
+	// be silently reinterpreted (R1).
 	numLayers := hf.ResolveNumLayers()
-	if _, scalarPresent := hf.GetInt("num_hidden_layers"); !scalarPresent && numLayers > 0 {
+	if _, scalarAnswered := hf.numLayersScalar(); !scalarAnswered && numLayers > 0 {
 		// Never silent (R1), and warn rather than inform: the count is derived, and every
 		// entry is counted as one transformer layer whatever type it names — so a hybrid
 		// block list (Nemotron's "attention"/"mamba" mix) prices its non-attention layers
 		// as full attention. Pessimistic, and worth one stderr line at the default log
 		// level, exactly as the hybrid-attention detection is (#1635/#1636). Only fires for
-		// a config that omits the scalar, so catalogued models stay quiet.
-		logrus.Warnf("HuggingFace config declares no num_hidden_layers; derived NumLayers=%d from len(%s). "+
-			"Every entry is counted as one transformer layer regardless of the block type it names, so a hybrid "+
-			"(e.g. attention/mamba) block list is priced as all-attention — pessimistic. Per-type layer groups "+
-			"are not modeled",
+		// a config whose scalar has no answer, so catalogued models stay quiet.
+		logrus.Warnf("HuggingFace config declares no usable num_hidden_layers (absent or 0); derived NumLayers=%d "+
+			"from len(%s). Every entry is counted as one transformer layer regardless of the block type it names, "+
+			"so a hybrid (e.g. attention/mamba) block list is priced as all-attention — pessimistic. Per-type "+
+			"layer groups are not modeled",
 			numLayers, LayersBlockTypeField)
 	}
 
