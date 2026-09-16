@@ -18,9 +18,9 @@ import (
 	"go/token"
 )
 
-// InstanceBuckets are the five terminal buckets of INV-1's single-instance
+// instanceBuckets are the five terminal buckets of INV-1's single-instance
 // specialisation, as Go field names.
-var InstanceBuckets = []string{
+var instanceBuckets = []string{
 	"CompletedRequests",
 	"StillQueued",
 	"StillRunning",
@@ -28,12 +28,11 @@ var InstanceBuckets = []string{
 	"TimedOutRequests",
 }
 
-// ClusterOnlyBuckets are the seven buckets that exist only above a single instance,
-// as Go field or accessor names. RejectedRequests is included: it is not one of
-// INV-1's twelve terminal buckets but appears on the right-hand side of the
-// full-pipeline clause, and a sum combining it with the others is still a
-// hand-rolled ledger.
-var ClusterOnlyBuckets = []string{
+// clusterOnlyBuckets are the buckets that exist only above a single instance, as Go
+// field or accessor names. RejectedRequests is included: it is not one of INV-1's
+// twelve terminal buckets but appears on the right-hand side of the full-pipeline
+// clause, and a sum combining it with the others is still a hand-rolled ledger.
+var clusterOnlyBuckets = []string{
 	"RoutingRejections",
 	"GatewayQueueDepth",
 	"GatewayQueueShed",
@@ -43,6 +42,15 @@ var ClusterOnlyBuckets = []string{
 	"EncodeRoutingRejections",
 	"RejectedRequests",
 }
+
+// InstanceBuckets returns the five single-instance bucket names. A copy, because a
+// package-level exported slice is mutable global state (R8) and a caller that
+// reordered or truncated it would silently change what every guard detects.
+func InstanceBuckets() []string { return append([]string(nil), instanceBuckets...) }
+
+// ClusterOnlyBuckets returns the cluster-only bucket names, as a copy. See
+// InstanceBuckets.
+func ClusterOnlyBuckets() []string { return append([]string(nil), clusterOnlyBuckets...) }
 
 // Finding is one hand-rolled sum.
 type Finding struct {
@@ -56,11 +64,11 @@ func (f Finding) String() string {
 }
 
 func bucketSet() map[string]bool {
-	set := make(map[string]bool, len(InstanceBuckets)+len(ClusterOnlyBuckets))
-	for _, name := range InstanceBuckets {
+	set := make(map[string]bool, len(instanceBuckets)+len(clusterOnlyBuckets))
+	for _, name := range instanceBuckets {
 		set[name] = true
 	}
-	for _, name := range ClusterOnlyBuckets {
+	for _, name := range clusterOnlyBuckets {
 		set[name] = true
 	}
 	return set
@@ -190,7 +198,7 @@ func isLedger(seen map[string]bool, threshold int) bool {
 		return true
 	}
 	instanceSide := 0
-	for _, name := range InstanceBuckets {
+	for _, name := range instanceBuckets {
 		if seen[name] {
 			instanceSide++
 		}
@@ -214,7 +222,7 @@ func FindConservationSums(filename, src string, threshold int) ([]Finding, error
 	var findings []Finding
 	report := func(pos token.Pos, seen map[string]bool) {
 		names := make([]string, 0, len(seen))
-		for _, name := range append(append([]string{}, InstanceBuckets...), ClusterOnlyBuckets...) {
+		for _, name := range append(InstanceBuckets(), clusterOnlyBuckets...) {
 			if seen[name] {
 				names = append(names, name)
 			}

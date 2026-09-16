@@ -178,6 +178,18 @@ func assertInstanceINV1Conservation(t *testing.T, m *sim.Metrics, injected int, 
 	}
 }
 
+// sortedStringKeys returns a map's keys in sorted order, so a test that reports several
+// failures reports them in a stable order (R2). Named to avoid colliding with
+// sortedKeys in metrics.go, which is float64-specific.
+func sortedStringKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // invariantsRegistryPath is the INV-1 statement's source of truth, relative to this
 // package directory.
 const invariantsRegistryPath = "../../docs/contributing/standards/invariants.md"
@@ -322,9 +334,10 @@ func TestINV1_NoInlineClusterConservationSums(t *testing.T) {
 		t.Fatal("scanned no test files — the directory walk or the filter is broken, so this test proves nothing")
 	}
 
-	for name, reason := range inlineSumExemptions {
+	// Sorted: a multi-failure message must not reorder between runs (R2).
+	for _, name := range sortedStringKeys(inlineSumExemptions) {
 		if _, err := os.Stat(name); err != nil {
-			t.Errorf("exemption for %s (%s) names a file that does not exist — remove the stale entry", name, reason)
+			t.Errorf("exemption for %s (%s) names a file that does not exist — remove the stale entry", name, inlineSumExemptions[name])
 		}
 	}
 }
@@ -514,14 +527,14 @@ func TestNewClusterLedger_FieldSources(t *testing.T) {
 		return true
 	})
 
-	for field, want := range ledgerFieldSources {
-		if got[field] != want {
+	for _, field := range sortedStringKeys(ledgerFieldSources) {
+		if want := ledgerFieldSources[field]; got[field] != want {
 			t.Errorf("newClusterLedger sets %s from %q, want %q", field, got[field], want)
 		}
 	}
-	for field, source := range got {
+	for _, field := range sortedStringKeys(got) {
 		if _, expected := ledgerFieldSources[field]; !expected {
-			t.Errorf("newClusterLedger sets unexpected field %s from %q — add it to ledgerFieldSources and to clusterLedgerTerms", field, source)
+			t.Errorf("newClusterLedger sets unexpected field %s from %q — add it to ledgerFieldSources and to clusterLedgerTerms", field, got[field])
 		}
 	}
 	if len(ledgerFieldSources) != len(clusterLedgerTerms) {

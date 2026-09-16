@@ -2,6 +2,7 @@ package sim
 
 import (
 	"os"
+	"sort"
 	"strings"
 	"testing"
 
@@ -180,9 +181,15 @@ func TestINV1_NoInlineConservationSums(t *testing.T) {
 	if scanned == 0 {
 		t.Fatal("scanned no test files — the directory walk is broken, so this test proves nothing")
 	}
-	for name, reason := range exempt {
+	// Sorted: a multi-failure message must not reorder between runs (R2).
+	names := make([]string, 0, len(exempt))
+	for name := range exempt {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
 		if _, err := os.Stat(name); err != nil {
-			t.Errorf("exemption for %s (%s) names a file that does not exist — remove the stale entry", name, reason)
+			t.Errorf("exemption for %s (%s) names a file that does not exist — remove the stale entry", name, exempt[name])
 		}
 	}
 }

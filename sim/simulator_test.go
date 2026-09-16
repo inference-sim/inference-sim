@@ -2081,9 +2081,15 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 		}
 	}
 
-	for name, reason := range simControlPlaneExemptions {
+	// Sorted: a multi-failure message must not reorder between runs (R2).
+	exempted := make([]string, 0, len(simControlPlaneExemptions))
+	for name := range simControlPlaneExemptions {
+		exempted = append(exempted, name)
+	}
+	sort.Strings(exempted)
+	for _, name := range exempted {
 		if _, err := os.Stat(name); err != nil {
-			t.Errorf("INV-9 exemption for %s (%s) names a file that does not exist — remove the stale entry", name, reason)
+			t.Errorf("INV-9 exemption for %s (%s) names a file that does not exist — remove the stale entry", name, simControlPlaneExemptions[name])
 		}
 	}
 

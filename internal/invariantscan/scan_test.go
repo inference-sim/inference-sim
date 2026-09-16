@@ -158,17 +158,27 @@ func TestFindConservationSums_ParseError(t *testing.T) {
 	}
 }
 
+// TestBucketAccessorsReturnCopies verifies a caller cannot mutate the package's bucket
+// lists through the accessors, which would silently change what every guard detects.
+func TestBucketAccessorsReturnCopies(t *testing.T) {
+	got := InstanceBuckets()
+	got[0] = "mutated"
+	if again := InstanceBuckets(); again[0] != "CompletedRequests" {
+		t.Errorf("InstanceBuckets() exposes package state: second call returned %q", again[0])
+	}
+}
+
 // TestBucketListsCoverTheEquation pins the bucket lists against INV-1's stated term
 // count: twelve terminal buckets, of which seven are cluster-only, plus
 // RejectedRequests which belongs to the full-pipeline clause.
 func TestBucketListsCoverTheEquation(t *testing.T) {
-	if got := len(InstanceBuckets); got != 5 {
+	if got := len(InstanceBuckets()); got != 5 {
 		t.Errorf("InstanceBuckets has %d entries, want 5 (INV-1's single-instance specialisation)", got)
 	}
-	if got := len(ClusterOnlyBuckets); got != 8 {
+	if got := len(ClusterOnlyBuckets()); got != 8 {
 		t.Errorf("ClusterOnlyBuckets has %d entries, want 8 (seven cluster-only buckets plus RejectedRequests)", got)
 	}
-	if got := len(InstanceBuckets) + len(ClusterOnlyBuckets) - 1; got != 12 {
+	if got := len(InstanceBuckets()) + len(ClusterOnlyBuckets()) - 1; got != 12 {
 		t.Errorf("bucket lists cover %d of INV-1's twelve terms", got)
 	}
 }
