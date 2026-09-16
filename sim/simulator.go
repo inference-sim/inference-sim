@@ -960,6 +960,9 @@ func (sim *Simulator) maybeStartAdapterLoad(now int64) {
 		return
 	}
 	// Cold head: reserve a slot by committing the LRU non-pinned victim now (§7).
+	// The capacity bound itself (INV-L2, |resident| <= capacity) is structural in
+	// residentSet.Store; committing here rather than at completion is what makes the
+	// Store in completeAdapterLoad unable to fail, and §12's no-deadlock argument sound.
 	if sim.residentAdapters.AtCapacity() {
 		evicted, ok := sim.residentAdapters.EvictLRU()
 		if !ok {
@@ -1136,6 +1139,8 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
 		if req.ProgressIndex >= req.completionProgressIndex() {
 			// State transitions
+			// INV-2 (request lifecycle): the terminal running -> completed edge on
+			// the normal path, taken once the request reaches its output-token target.
 			req.State = StateCompleted
 			// Zero-output requests complete at prefill end with no decode phase.
 			// The guard below has two distinct roles depending on output length:
@@ -1205,6 +1210,12 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 				rm.LengthCapped = true
 				sim.Metrics.Requests[req.ID] = rm
 			}
+			// INV-2 (request lifecycle): the terminal running -> completed edge on
+			// the length-capped path. A force-completed request is still completed,
+			// not a distinct terminal state — the LengthCapped flag records why.
+			// Scoped to THIS path: do not generalize to StateCompleted as a whole.
+			// InstanceSimulator.EvictRequest writes StateCompleted as a tombstone
+			// rather than a completion — see the note there.
 			req.State = StateCompleted
 			sim.KVCache.ReleaseKVBlocks(req)
 			req.FinishedStepIdx = sim.stepCount

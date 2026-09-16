@@ -1267,6 +1267,11 @@ func (c *ClusterSimulator) poolsConfigured() bool {
 
 // PoolMembership returns a copy of the pool role membership map (R8: no exported mutable maps).
 // Returns nil when disaggregation is disabled.
+//
+// The copy is also how INV-PD-5 (pool membership fixed at construction) holds against
+// callers outside this package: none of them can reach c.poolMembership to reassign a
+// role mid-run. In-package callers do receive the raw map (see buildPoolFilteredSnapshots)
+// and read it only.
 func (c *ClusterSimulator) PoolMembership() map[string]PoolRole {
 	if c.poolMembership == nil {
 		return nil
@@ -1389,6 +1394,8 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 		// For roofline (overhead=0), value is byte-identical to before.
 		// No zero-output guard needed: decode sub-requests always carry the full
 		// output token list from the original request (set in KVTransferCompletedEvent.Execute).
+		//
+		// This line IS INV-PD-6b (parent completion includes post-decode overhead).
 		parent.CompletionTime = c.clock + inst.PostDecodeFixedOverhead()
 		delete(c.pendingDecodeCompletions, subReqID)
 		c.pdDecodeCompletedCount++
@@ -1420,6 +1427,19 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 	// SessionManager cancels the session. The PD path needs the same treatment.
 	for _, subReqID := range timedOutIDs {
 		parent := c.parentRequests[c.pendingDecodeCompletions[subReqID]]
+		// No PostDecodeFixedOverhead here, unlike the INV-PD-6b line above: a
+		// timed-out parent never finished decoding, so it never pays the
+		// post-decode overhead.
+		//
+		// Note for anyone reconciling this against the doc: these timed-out parents
+		// DO satisfy INV-PD-6b's parenthetical `DecodeInstanceID != ""`
+		// (detectDecodeCompletions reaches them by decode-instance match), so read
+		// on its own that gloss appears to cover this line. It does not: the
+		// statement's governing qualifier is "successfully decoded" parent
+		// requests, and a parent whose decode sub-request timed out is by
+		// definition not successfully decoded. The parenthetical is loose; the
+		// statement is correctly scoped and must NOT be narrowed on the strength
+		// of this line.
 		parent.CompletionTime = c.clock
 		delete(c.pendingDecodeCompletions, subReqID)
 		c.pdDecodeTimedOutCount++

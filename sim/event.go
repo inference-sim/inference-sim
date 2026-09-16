@@ -168,6 +168,11 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 		return
 	}
 	wasRunning := e.Request.State == StateRunning
+	// INV-2 (request lifecycle): a terminal transition to timed-out, reachable from
+	// either queued or running. The guard above makes it one-way — a request that
+	// already reached a terminal state is never re-transitioned. INV-2's statement
+	// names only queued -> running -> completed, so timed-out is a terminal state the
+	// statement does not yet enumerate; this is not the only site that sets it.
 	e.Request.State = StateTimedOut
 	sim.Metrics.TimedOutRequests++
 

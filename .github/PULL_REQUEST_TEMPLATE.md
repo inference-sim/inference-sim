@@ -46,7 +46,7 @@
 
 <!-- Which invariants does this PR maintain or test? Full details: docs/contributing/standards/invariants.md -->
 
-- [ ] Request conservation: injected == completed + still_queued + still_running + dropped_unservable + timed_out (+ gateway/routing/encode buckets for cluster runs) (INV-1)
+- [ ] Request conservation (INV-1): single-instance is the 5-term form `injected == completed + still_queued + still_running + dropped_unservable + timed_out`; a CLUSTER run must use all 12 terms (add routing_rejections + the six gateway/encode buckets)
 - [ ] Request lifecycle: queued -> running -> completed (INV-2)
 - [ ] KV block conservation: allocated + free == total (INV-4)
 - [ ] Causality: arrival <= schedule <= completion (INV-5)

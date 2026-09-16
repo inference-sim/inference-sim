@@ -2460,9 +2460,12 @@ func TestClusterSimulator_SessionFollowUpCausality(t *testing.T) {
 // RoundIndex > 0, and every session generates at least one follow-up.
 // This is the first test of the standard (non-disaggregated) cluster path
 // with real multi-turn session management.
-// NOTE: assertINV1Conservation checks 5 of 8 INV-1 terms; the 3 missing terms
-// (RoutingRejections, GatewayQueueDepth, GatewayQueueShed)
-// are zero for this config (no gateway queue, no deferred queue, no routing rejections).
+// NOTE: assertINV1Conservation checks 5 of INV-1's 12 terms; the 7 missing
+// cluster-only terms (RoutingRejections, GatewayQueueDepth, GatewayQueueShed,
+// GatewayQueueRejected, GatewayEvicted, GatewayExpired, EncodeRoutingRejections)
+// are zero for this config (no gateway queue, no deferred queue, no routing
+// rejections, no encode pool), so the check is incomplete rather than wrong.
+// Replacing the helper with a shared 12-term one is #1720.
 func TestClusterSimulator_MultiTurnSession_EndToEnd(t *testing.T) {
 	inputSampler, err := workload.NewLengthSampler(workload.DistSpec{
 		Type:   "constant",
