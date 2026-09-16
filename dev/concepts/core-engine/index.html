@@ -3609,7 +3609,7 @@
 </tr>
 </tbody>
 </table>
-<p><strong>Clock monotonicity (INV-3):</strong> The simulation clock never decreases. Events are processed in strictly non-decreasing timestamp order.</p>
+<p><strong>Clock monotonicity (INV-3):</strong> The simulation clock never decreases. Each processed event has a timestamp &gt;= its predecessor's — except when restoring an optimistic advance after a lazily-cancelled event, where no event was processed. See <a href="../../contributing/standards/invariants/"><code>invariants.md</code></a> for the carve-out.</p>
 <p><strong>Work-conserving (INV-8):</strong> After every step completion, if the wait queue is non-empty, a <code>StepEvent</code> must exist in the event queue. The simulator never idles while work is waiting.</p>
 <pre class="mermaid"><code>flowchart TD
     EQ["Event Queue (min-heap)&lt;br/&gt;Ordered by timestamp"] --&gt;|Pop min| Clock["Advance clock&lt;br/&gt;to event.timestamp"]
