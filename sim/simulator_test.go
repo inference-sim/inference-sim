@@ -1342,8 +1342,9 @@ func TestWorkConserving_StepRestartsWhenWaitQNonEmpty(t *testing.T) {
 // it. This asserts on PROCESSED EVENT TIMESTAMPS rather than on a clock field, which
 // is the formulation INV-3 is stated in and the only one that generalizes to the
 // cluster loop. Scope, stated precisely so nobody over-reads this test: within package
-// sim, sim.Clock is assigned in exactly one place (from the heap pop in
-// ProcessNextEvent), so an assertion on sim.Clock would also pass here. The formulation
+// sim, sim.Clock is assigned exactly once during the run (from the heap pop in
+// ProcessNextEvent; the only other write is the Clock: 0 constructor initializer,
+// which cannot make it decrease), so an assertion on sim.Clock would also pass here. The formulation
 // matters at the CLUSTER level, where ClusterSimulator deliberately RESTORES an
 // optimistic clock advance after an orphaned timeout (the prevClusterClock restore in
 // sim/cluster/cluster.go) — a raw-clock-field assertion fails there and looks like a

@@ -496,6 +496,13 @@ func (i *InstanceSimulator) DrainWaitQueue() []*sim.Request {
 // Searches WaitQ first, then RunningBatch. Frees KV blocks if allocated.
 // Sets req.State to StateCompleted to prevent dangling TimeoutEvents from double-counting.
 // Returns true if found and removed, false otherwise (idempotent for already-completed).
+//
+// INV-2 (request lifecycle): this is the one semantically anomalous StateCompleted
+// write in the codebase — a TOMBSTONE, not a completion. The request produced no
+// output and is counted as gatewayEvicted (sim/cluster/cluster_event.go), never via
+// the sole CompletedRequests++ in sim/simulator.go. So INV-2's `-> completed` edge
+// does not describe this line; reading StateCompleted as "completed" here would
+// double-count an evicted request.
 func (i *InstanceSimulator) EvictRequest(req *sim.Request) bool {
 	if i.sim.WaitQ.Remove(req) {
 		i.sim.ClearDeferredKV(req.ID) // H3 (#1591): a gateway-evicted queued request may be mid-deferral

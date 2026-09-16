@@ -1210,6 +1210,9 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 			// INV-2 (request lifecycle): the terminal running -> completed edge on
 			// the length-capped path. A force-completed request is still completed,
 			// not a distinct terminal state — the LengthCapped flag records why.
+			// Scoped to THIS path: do not generalize to StateCompleted as a whole.
+			// InstanceSimulator.EvictRequest writes StateCompleted as a tombstone
+			// rather than a completion — see the note there.
 			req.State = StateCompleted
 			sim.KVCache.ReleaseKVBlocks(req)
 			req.FinishedStepIdx = sim.stepCount

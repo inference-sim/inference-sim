@@ -711,7 +711,7 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 ### Standards (what rules apply)
 
 - `docs/contributing/standards/rules.md`: **23 antipattern rules** (R1-R23) — each with evidence, checks, enforcement locations
-- `docs/contributing/standards/invariants.md`: **13 system invariants** (INV-1 through INV-13) — with verification strategies
+- `docs/contributing/standards/invariants.md`: **13 system invariants** (INV-1 through INV-13), plus INV-BC-DP1, PD disaggregation (INV-PD-*) and pool/transfer (INV-P2-*) invariants — with verification strategies
 - `docs/contributing/standards/principles.md`: **Engineering principles** — separation of concerns, interface design, BDD/TDD
 - `docs/contributing/standards/agent-trust.md`: **Agent trust boundaries** — three trust tiers (Trusted, Verify-after, Never-trust) for agent operations, with known failure modes
 

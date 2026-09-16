@@ -1431,13 +1431,15 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 		// timed-out parent never finished decoding, so it never pays the
 		// post-decode overhead.
 		//
-		// Note for anyone reconciling this against the doc: INV-PD-6b's statement
-		// predicates on `DecodeInstanceID != ""`, which these timed-out parents do
-		// satisfy (detectDecodeCompletions reaches them by decode-instance match),
-		// so the statement reads as covering this line while the code correctly
-		// omits the overhead. The code is right and the statement is too broad;
-		// narrowing it changes what the invariant means, so it is left to the team
-		// rather than tightened here.
+		// Note for anyone reconciling this against the doc: these timed-out parents
+		// DO satisfy INV-PD-6b's parenthetical `DecodeInstanceID != ""`
+		// (detectDecodeCompletions reaches them by decode-instance match), so read
+		// on its own that gloss appears to cover this line. It does not: the
+		// statement's governing qualifier is "successfully decoded" parent
+		// requests, and a parent whose decode sub-request timed out is by
+		// definition not successfully decoded. The parenthetical is loose; the
+		// statement is correctly scoped and must NOT be narrowed on the strength
+		// of this line.
 		parent.CompletionTime = c.clock
 		delete(c.pendingDecodeCompletions, subReqID)
 		c.pdDecodeTimedOutCount++
