@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -1954,20 +1955,103 @@ func TestNewModelHardwareConfig_NegativeMaxModelLen_Panics(t *testing.T) {
 	NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", -1)
 }
 
-// INV-9: Oracle Knowledge Boundary — control-plane functions must not reference OutputTokens.
-// This is a structural enforcement test: it reads the source files for servability-decision
-// functions and verifies zero references to OutputTokens.
+// oracleReadPatterns are the two ways a control-plane file can reach oracle output
+// length. The registry claims both are grep-verified; before #1720 only the first
+// was actually checked.
+//
+// completionProgressIndex() derives a request's terminal ProgressIndex from
+// len(OutputTokens) (#1657), so calling it from a servability path smuggles the
+// oracle past a plain OutputTokens grep. Its legitimate callers are execution-side
+// only.
+var oracleReadPatterns = []string{"OutputTokens", "completionProgressIndex"}
+
+// simControlPlaneGlobs resolve the sim/ files subject to INV-9. Globs rather than a
+// hardcoded list so a new file is covered by default: the previous list omitted
+// router_state.go, routing_nohit_lru_scorer.go and routing_precise_prefix_scorer.go,
+// two of which are scorers — the class already covered — so the next scorer added
+// would have escaped silently too (#1720, Finding 3).
+var simControlPlaneGlobs = []string{
+	"routing*.go",
+	"admission*.go",
+	"scheduler*.go",
+	"slo*.go",
+	"router_state.go",
+}
+
+// simControlPlaneExemptions names files the globs match that are legitimately
+// allowed to read oracle output, with the reason. Exempting a file is a deliberate,
+// reviewable act; forgetting to register one is not. Empty today.
+var simControlPlaneExemptions = map[string]string{}
+
+// resolveSimControlPlaneFiles expands simControlPlaneGlobs, drops test files and
+// exempted files, and returns the result sorted (R2: deterministic ordering).
+func resolveSimControlPlaneFiles(t *testing.T) []string {
+	t.Helper()
+	seen := map[string]bool{}
+	for _, pattern := range simControlPlaneGlobs {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			t.Fatalf("bad glob %q: %v", pattern, err)
+		}
+		for _, name := range matches {
+			if strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			if reason, exempt := simControlPlaneExemptions[name]; exempt {
+				t.Logf("INV-9: %s exempted — %s", name, reason)
+				continue
+			}
+			seen[name] = true
+		}
+	}
+	files := make([]string, 0, len(seen))
+	for name := range seen {
+		files = append(files, name)
+	}
+	sort.Strings(files)
+	return files
+}
+
+// oracleReadsIn reports which oracle-read patterns appear in src, ignoring the
+// metric aggregate TotalOutputTokens.
+func oracleReadsIn(src string) []string {
+	cleaned := strings.ReplaceAll(src, "TotalOutputTokens", "")
+	var hits []string
+	for _, pattern := range oracleReadPatterns {
+		if strings.Contains(cleaned, pattern) {
+			hits = append(hits, pattern)
+		}
+	}
+	return hits
+}
+
+// INV-9: Oracle Knowledge Boundary — control-plane functions must not reference
+// OutputTokens or the accessor derived from it. This is a structural enforcement
+// test: it reads the source of servability-decision code rather than testing
+// behaviour, which is why it can catch a violation the moment it is written.
 func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T) {
-	// Control-plane files in sim/ that must not reference OutputTokens.
-	// These files contain no metric-aggregate names like TotalOutputTokens,
-	// so a whole-file scan is safe and maximally conservative.
-	simControlPlaneFiles := []string{
+	simControlPlaneFiles := resolveSimControlPlaneFiles(t)
+
+	// Non-vacuity: the globs must actually resolve, and must cover the three files
+	// the previous hardcoded list missed. Without this, a typo in a pattern would
+	// read as a clean pass.
+	if len(simControlPlaneFiles) == 0 {
+		t.Fatal("INV-9 file globs matched nothing — the scan proves nothing")
+	}
+	for _, required := range []string{
 		"admission.go",
+		"router_state.go",
 		"routing.go",
-		"routing_scorers.go",
+		"routing_nohit_lru_scorer.go",
+		"routing_precise_prefix_scorer.go",
 		"routing_prefix_scorer.go",
+		"routing_scorers.go",
 		"scheduler.go",
 		"slo_priority.go",
+	} {
+		if !slices.Contains(simControlPlaneFiles, required) {
+			t.Errorf("INV-9 scan does not cover %s — the globs or the exemption list regressed", required)
+		}
 	}
 
 	for _, filename := range simControlPlaneFiles {
@@ -1975,15 +2059,23 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 		if err != nil {
 			t.Fatalf("failed to read %s: %v", filename, err)
 		}
-		content := string(data)
-		if strings.Contains(content, "OutputTokens") {
-			t.Errorf("INV-9 violation: %s references OutputTokens — control-plane code must not access oracle output length", filename)
+		for _, hit := range oracleReadsIn(string(data)) {
+			t.Errorf("INV-9 violation: %s references %s — control-plane code must not access oracle output length", filename, hit)
+		}
+	}
+
+	for name, reason := range simControlPlaneExemptions {
+		if _, err := os.Stat(name); err != nil {
+			t.Errorf("INV-9 exemption for %s (%s) names a file that does not exist — remove the stale entry", name, reason)
 		}
 	}
 
 	// Cluster control-plane files that handle *Request in the routing pipeline.
-	// These files may contain TotalOutputTokens (metric aggregation, not oracle access),
-	// so we use line-level scanning with TotalOutputTokens exclusion.
+	// These stay an explicit list rather than a glob: they are large mixed files that
+	// legitimately carry the TotalOutputTokens metric aggregate, so they need
+	// line-level scanning with that exclusion, and no glob shape separates them from
+	// the rest of sim/cluster. A new cluster control-plane file therefore still has
+	// to be added here by hand — the inverse of the sim/ default, and a known gap.
 	clusterControlPlaneFiles := []string{
 		"cluster/cluster.go",
 		"cluster/cluster_event.go",
@@ -1997,11 +2089,9 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 			t.Fatalf("failed to read %s: %v", filename, err)
 		}
 		for lineNum, line := range strings.Split(string(data), "\n") {
-			// Remove known-safe metric aggregate names, then check for remaining OutputTokens
-			cleaned := strings.ReplaceAll(line, "TotalOutputTokens", "")
-			if strings.Contains(cleaned, "OutputTokens") {
-				t.Errorf("INV-9 violation: %s line %d references OutputTokens — control-plane code must not access oracle output length",
-					filename, lineNum+1)
+			for _, hit := range oracleReadsIn(line) {
+				t.Errorf("INV-9 violation: %s line %d references %s — control-plane code must not access oracle output length",
+					filename, lineNum+1, hit)
 			}
 		}
 	}
@@ -2023,8 +2113,57 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 		t.Fatal("could not find end of EnqueueRequest function")
 	}
 	enqueueBody := content[startIdx : startIdx+1+endIdx]
-	if strings.Contains(enqueueBody, "OutputTokens") {
-		t.Error("INV-9 violation: EnqueueRequest references OutputTokens — enqueue guard must not access oracle output length")
+	for _, hit := range oracleReadsIn(enqueueBody) {
+		t.Errorf("INV-9 violation: EnqueueRequest references %s — the enqueue guard must not access oracle output length", hit)
+	}
+}
+
+// TestINV9_OracleReadDetectorFires proves the scan above is not vacuous. The
+// completionProgressIndex clause in particular is new: the registry claimed it was
+// grep-verified while no test checked it, so a fixture is needed to show the
+// predicate actually rejects it (#1720, and #1657 for why the accessor counts).
+func TestINV9_OracleReadDetectorFires(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "direct oracle field read",
+			src:  "package p\nfunc f(r *Request) int { return len(r.OutputTokens) }\n",
+			want: []string{"OutputTokens"},
+		},
+		{
+			name: "oracle read through the derived accessor",
+			src:  "package p\nfunc f(r *Request) bool { return r.ProgressIndex >= r.completionProgressIndex() }\n",
+			want: []string{"completionProgressIndex"},
+		},
+		{
+			name: "metric aggregate is not an oracle read",
+			src:  "package p\nfunc f(m *Metrics) int { return m.TotalOutputTokens }\n",
+			want: nil,
+		},
+		{
+			name: "clean control-plane code",
+			src:  "package p\nfunc f(r *Request) int64 { return r.MaxOutputLen }\n",
+			want: nil,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "fixture.go")
+			if err := os.WriteFile(path, []byte(tc.src), 0o600); err != nil {
+				t.Fatalf("cannot write fixture: %v", err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("cannot read fixture: %v", err)
+			}
+			got := oracleReadsIn(string(data))
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("oracleReadsIn() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
