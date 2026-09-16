@@ -63,36 +63,20 @@ fi
 # miss.
 BODY=$(tr -d '\r' < "$BODY_FILE")
 
-FENCE_STATE=$(mktemp)
-
-# FENCED CODE BLOCKS ARE STRIPPED FIRST, and this is not hygiene — it is a correctness fix.
-# docs/contributing/templates/archon-issue-examples.md shows the whole sub-issue template inside a
-# fence, `## Target branch` and a `feature/...` ref included. A contributor who pastes that example
-# into an issue body would otherwise have the FENCED ref win over their real one. A fictional
-# placeholder happens to fail the remote check and fall back, but a fenced REAL branch name would
-# silently become the delivery's base.
+# The fence state is returned on STDOUT as a first line, not through a temp file or awk's stderr.
+# The previous plumbing did both and was unsafe in a way that mattered: `FENCE_STATE=$(mktemp)` was
+# unchecked and there is no `set -e`, so on a full or unwritable TMPDIR the redirect `2>""` failed,
+# `BODY` came back EMPTY, and a perfectly valid issue body produced
+# `target_branch= archon_plan= heading_seen=false plan_seen=false unclosed_fence=false` with exit 0 —
+# every guard silent, the delivery based on the default branch with no plan line. The trigger is the
+# runner's known failure mode (storage exhaustion), so this was not theoretical. Reported on #1723.
 #
-# The first version of this toggled on ANY line starting with ``` or ~~~, which is a line-PARITY
-# rule, and an ODD number of marker lines therefore discarded the whole rest of the body. A single
-# indented ``` — which GitHub renders as literal text inside an indented code block, so the author
-# sees nothing wrong — was enough to make a real `## Target branch` section and a real
-# `archon-plan:` line both vanish. Reported on #1723.
+# Using stderr as a data channel had a second symptom from the same root: a REAL awk diagnostic would
+# be captured, fail to match the sentinel, and be discarded silently.
 #
-# So the delimiters are tracked properly, per CommonMark: remember the opening character and its
-# run length, close only on a run of the SAME character at least that long with nothing but spaces
-# after it, and ignore any marker indented 4+ spaces (that is an indented code block, not a fence).
-# Run lengths are counted in a loop rather than with an interval regex (`{3,}`), because interval
-# expressions are not portable to the BSD awk this suite also runs under.
-#
-# NOTE the residual: a genuinely UNCLOSED fence still swallows everything after it, because that is
-# what CommonMark says it means, and no parser can fix that. It is reported instead — see
-# `unclosed_fence` below, which is why the caller can refuse rather than seed a guess.
-#
-# The two `*_seen` signals are computed on the STRIPPED body, i.e. on what the author actually
-# declared in visible content. Computing them on the raw body conflated "declared" with "quoted an
-# example", and the caller turned that into a hard error refusing legitimate deliveries (#1723
-# review, F2).
-BODY=$(printf '%s\n' "$BODY" | awk '
+# So: awk buffers the surviving lines, prints `closed`/`unclosed` first, then the body. No temp file
+# to fail, leak, or need a trap; awk's stderr stays a diagnostic channel.
+FENCE_OUT=$(printf '%s\n' "$BODY" | awk '
   function runlen(s, ch,   n) { n = 0; while (substr(s, n + 1, 1) == ch) n++; return n }
   {
     match($0, /^ */); ind = RLENGTH
@@ -113,20 +97,25 @@ BODY=$(printf '%s\n' "$BODY" | awk '
       n = runlen(rest, ch)
       if (n >= 3) { fencechar = ch; fencelen = n; infence = 1; next }
     }
-    print
+    kept[++k] = $0
   }
-  END { if (infence) print "@@UNCLOSED_FENCE@@" > "/dev/stderr" }
-' 2>"$FENCE_STATE")
+  END {
+    print (infence ? "unclosed" : "closed")
+    for (i = 1; i <= k; i++) print kept[i]
+  }
+')
 
-# An UNCLOSED fence swallows everything after it — correct per CommonMark, and the one case a
-# parser cannot rescue. Recorded here so the caller can distinguish it from a deliberately-fenced
-# example: content lost to an unclosed fence deserves a loud signal, content the author chose to
-# put inside a closed fence deserves silence.
 UNCLOSED_FENCE=false
-if [[ -s "$FENCE_STATE" ]] && grep -q '@@UNCLOSED_FENCE@@' "$FENCE_STATE"; then
+if [[ "${FENCE_OUT%%$'\n'*}" == "unclosed" ]]; then
   UNCLOSED_FENCE=true
 fi
-rm -f "$FENCE_STATE"
+# Everything after the first line is the stripped body. A body that reduces to nothing leaves
+# FENCE_OUT as the marker alone, with no newline, so the strip must be conditional.
+if [[ "$FENCE_OUT" == *$'\n'* ]]; then
+  BODY="${FENCE_OUT#*$'\n'}"
+else
+  BODY=""
+fi
 
 # The `## Target branch` section's prose is not fixed. Both of these are documented in
 # docs/contributing/templates/archon-issue-examples.md:
@@ -177,7 +166,7 @@ rm -f "$FENCE_STATE"
 # a GNU extension; this script is exercised on macOS (BSD sed) too. It must agree with the
 # case-insensitive `grep -i` computing heading_seen below.
 TARGET_BRANCH=$(printf '%s\n' "$BODY" \
-  | sed -n '/^[[:space:]]*#\{1,6\}[[:space:]]*[Tt][Aa][Rr][Gg][Ee][Tt][[:space:]][Bb][Rr][Aa][Nn][Cc][Hh][[:space:]]*$/,/^[[:space:]]*#\{1,6\}[[:space:]]/p' \
+  | sed -n '/^ \{0,3\}#\{1,6\}[[:space:]]*[Tt][Aa][Rr][Gg][Ee][Tt][[:space:]][Bb][Rr][Aa][Nn][Cc][Hh][[:space:]]*$/,/^ \{0,3\}#\{1,6\}[[:space:]]/p' \
   | sed '1d' \
   | grep -m1 '[^[:space:]]' \
   | grep -oE '`[^`]+`' \
@@ -217,6 +206,7 @@ fi
 # `archon-plan:` in passing is not a declaration, and requiring `\S` after the colon so a bare
 # `archon-plan:` with no path is not treated as one.
 ARCHON_PLAN=$(printf '%s\n' "$BODY" \
+  | sed -E '/^ {4,}/d' \
   | grep -m1 -E '^[^A-Za-z0-9]*archon-plan:[[:space:]]*\S') || true
 
 # Only ever a single line, so a body carrying an embedded newline cannot inject a second
@@ -227,7 +217,7 @@ ARCHON_PLAN=${ARCHON_PLAN%%$'\n'*}
 # target branch", so it must still match the headings the strict pattern rejects — that mismatch is
 # exactly what the caller needs to warn about.
 HEADING_SEEN=false
-if printf '%s\n' "$BODY" | grep -qiE '^[[:space:]]*#{1,6}[[:space:]]*Target branch'; then
+if printf '%s\n' "$BODY" | grep -qiE '^ {0,3}#{1,6}[[:space:]]*Target branch'; then
   HEADING_SEEN=true
 fi
 
@@ -236,7 +226,7 @@ fi
 # `absent` — which PASSES — rather than `unverified`, which blocks. So a silent miss here would
 # silently switch the dist ratchet off, the exact failure deliver-verify.yml warns about.
 PLAN_SEEN=false
-if printf '%s\n' "$BODY" | grep -qE '^[^A-Za-z0-9]*archon-plan:[[:space:]]*\S'; then
+if printf '%s\n' "$BODY" | sed -E '/^ {4,}/d' | grep -qE '^[^A-Za-z0-9]*archon-plan:[[:space:]]*\S'; then
   PLAN_SEEN=true
 fi
 
