@@ -235,3 +235,48 @@ func TestOffload_ReloadablePrefixEnd_ReportsBoundary(t *testing.T) {
 		}
 	})
 }
+
+// TestOffload_ComposedReloadCommit_ConservesBlocks is the companion COMMIT-PATH test to
+// the pure-query TestOffload_ReloadablePrefixEnd_ReportsBoundary. The #1706 pure query
+// deliberately commits nothing, so it cannot verify block ownership — this test restores
+// the INV-4 GPU-conservation coverage the pre-#1706 one-shot ReloadedPrefixEnd subtest
+// carried (reviewer coverage gap): the pure query is what batch formation READS, but
+// AllocateKVBlocks is what actually reloads the CPU-resident block and allocates the tail,
+// and the two must agree — after the composed (non-zero startIndex) reload+tail alloc the
+// request owns every block of its input and no GPU block is lost or double-owned.
+func TestOffload_ComposedReloadCommit_ConservesBlocks(t *testing.T) {
+	gpu := NewKVCacheState(64, 2)
+	oc := NewOffloadCache(gpu, enabledOffloadCfg(1<<20, 4096, 1))
+	tokens := []sim.TokenID{1, 2, 3, 4, 5, 6, 7, 8} // 4 blocks
+	keys := blockKeysFor(tokens, 2)
+
+	// Warm blocks 0-1 onto the GPU via a prior resident request (startIndex will be 4).
+	warm := &sim.Request{ID: "warm", InputTokens: tokens[:4]} // [1,2,3,4] = blocks 0-1
+	if ok := oc.AllocateKVBlocks(warm, 0, 4, nil); !ok {
+		t.Fatalf("warm allocation should succeed")
+	}
+	// Block 2 ([5,6] = tokens[4:6]) is CPU-resident only.
+	oc.cpu.store(keys[2])
+
+	cached := oc.GetCachedBlocks(tokens) // GPU-matched prefix: blocks 0-1
+	startIndex := int64(len(cached)) * oc.BlockSize()
+	if startIndex != 4 {
+		t.Fatalf("precondition: startIndex must be 4 (blocks 0-1 GPU-resident), got %d", startIndex)
+	}
+
+	// AllocateKVBlocks is called with the UNCHANGED startIndex (C3): the CPU-resident
+	// block 2 is reloaded to GPU and the uncached tail (block 3) is allocated.
+	req := &sim.Request{ID: "r", InputTokens: tokens}
+	if ok := oc.AllocateKVBlocks(req, startIndex, 8, cached); !ok {
+		t.Fatalf("composed reload+tail allocation should succeed")
+	}
+	if oc.reloadCount != 1 {
+		t.Fatalf("exactly one CPU-resident block (block 2) must be reloaded to GPU; reloadCount=%d", oc.reloadCount)
+	}
+	if got := len(oc.gpu.RequestMap["r"]); got != 4 {
+		t.Fatalf("request must own all 4 blocks after reload+tail alloc, got %d", got)
+	}
+	if err := oc.gpu.verifyBlockConservation(); err != nil {
+		t.Fatalf("INV-4 GPU conservation must hold after a composed reload: %v", err)
+	}
+}
