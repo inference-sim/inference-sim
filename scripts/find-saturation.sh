@@ -38,6 +38,21 @@ SEED="${SEED:-42}"
 CFG_ARGS=()
 [[ -n "$MODEL_CONFIG_FOLDER" ]] && CFG_ARGS=(--model-config-folder "$MODEL_CONFIG_FOLDER")
 
+# Required tools, checked before anything expensive happens. Both are used only inside the
+# rate loop (jq to read each report, bc for the goodput ratio), so without this the script
+# builds blis and runs at least one full simulation before failing on something knowable at
+# startup. `column` is deliberately NOT checked: the summary print falls back gracefully when
+# it is missing, so requiring it would break a working setup.
+missing=()
+for tool in jq bc; do
+  command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
+done
+if (( ${#missing[@]} > 0 )); then
+  echo "error: required tool(s) not found on PATH: ${missing[*]}" >&2
+  echo "       install them and re-run; see scripts/README.md for the dependency list." >&2
+  exit 1
+fi
+
 OUT_DIR="${OUT_DIR:-results/saturation-$(date +%Y%m%d-%H%M%S)-$$}"
 mkdir -p "$OUT_DIR"
 SUMMARY="$OUT_DIR/summary.csv"
