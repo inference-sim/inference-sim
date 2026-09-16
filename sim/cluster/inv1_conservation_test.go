@@ -2,7 +2,11 @@ package cluster
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -239,6 +243,303 @@ func TestINV1_HelperMatchesRegistry(t *testing.T) {
 					tc.name, term)
 			}
 		}
+	}
+}
+
+// inv1BucketSelectors are the Go field and accessor names that make up INV-1's
+// buckets. A `+` expression combining three or more of them is a conservation sum.
+var inv1BucketSelectors = map[string]bool{
+	"CompletedRequests":       true,
+	"StillQueued":             true,
+	"StillRunning":            true,
+	"DroppedUnservable":       true,
+	"TimedOutRequests":        true,
+	"RejectedRequests":        true,
+	"RoutingRejections":       true,
+	"GatewayQueueDepth":       true,
+	"GatewayQueueShed":        true,
+	"GatewayQueueRejected":    true,
+	"GatewayEvicted":          true,
+	"GatewayExpired":          true,
+	"EncodeRoutingRejections": true,
+}
+
+// inlineSumExemptions lists files allowed to combine three or more bucket names
+// inline, with the reason. Every entry must name a file that exists, so an
+// exemption left behind after a rewrite fails rather than rots.
+var inlineSumExemptions = map[string]string{
+	// A different equation: sum(ShedByTier) == the four shedding buckets. Not a
+	// conservation ledger — it reconciles the per-tier shed breakdown against the
+	// counters, and there is no injected/accounted comparison.
+	"progress_hook_test.go": "shed-accounting identity over ProgressSnapshot, not an INV-1 ledger",
+	// Per-instance five-term specialisation, which is the correct equation for an
+	// InstanceSimulator's own metrics.
+	"instance_test.go": "single-instance metrics, asserted against the five-term specialisation",
+}
+
+// bucketAliases maps local variable names to the bucket they were assigned from,
+// for assignments of the form `completed := agg.CompletedRequests` or
+// `gwDepth := cs.GatewayQueueDepth()`. Without this, a sum laundered through locals
+// escapes detection — which is exactly the shape cluster_tier_test.go used, one of
+// the three sites that omitted a bucket.
+func bucketAliases(file *ast.File) map[string]string {
+	aliases := map[string]string{}
+	record := func(lhs, rhs []ast.Expr) {
+		for i, l := range lhs {
+			if i >= len(rhs) {
+				return
+			}
+			id, ok := l.(*ast.Ident)
+			if !ok {
+				continue
+			}
+			if name, ok := bucketNameOf(rhs[i]); ok {
+				aliases[id.Name] = name
+			}
+		}
+	}
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.AssignStmt:
+			record(x.Lhs, x.Rhs)
+		case *ast.ValueSpec:
+			lhs := make([]ast.Expr, 0, len(x.Names))
+			for _, name := range x.Names {
+				lhs = append(lhs, name)
+			}
+			record(lhs, x.Values)
+		}
+		return true
+	})
+	return aliases
+}
+
+// bucketNameOf reports the INV-1 bucket that e reads, if any: a field selector
+// (m.StillQueued) or an accessor call (cs.GatewayExpired()).
+func bucketNameOf(e ast.Expr) (string, bool) {
+	switch x := e.(type) {
+	case *ast.SelectorExpr:
+		if inv1BucketSelectors[x.Sel.Name] {
+			return x.Sel.Name, true
+		}
+	case *ast.CallExpr:
+		if sel, ok := x.Fun.(*ast.SelectorExpr); ok && inv1BucketSelectors[sel.Sel.Name] {
+			return sel.Sel.Name, true
+		}
+	}
+	return "", false
+}
+
+// countBucketOperands returns how many distinct INV-1 buckets appear as operands of
+// the + expression tree rooted at n, resolving locals through aliases.
+func countBucketOperands(n ast.Expr, aliases map[string]string) int {
+	seen := map[string]bool{}
+	var walk func(ast.Expr)
+	walk = func(e ast.Expr) {
+		if name, ok := bucketNameOf(e); ok {
+			seen[name] = true
+			return
+		}
+		switch x := e.(type) {
+		case *ast.BinaryExpr:
+			if x.Op == token.ADD {
+				walk(x.X)
+				walk(x.Y)
+			}
+		case *ast.ParenExpr:
+			walk(x.X)
+		case *ast.Ident:
+			if name, ok := aliases[x.Name]; ok {
+				seen[name] = true
+			}
+		}
+	}
+	walk(n)
+	return len(seen)
+}
+
+// findInlineConservationSums reports every + expression in src that combines
+// threshold or more INV-1 bucket names, as "line: source-ish" strings.
+func findInlineConservationSums(t *testing.T, filename, src string, threshold int) []string {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filename, src, 0)
+	if err != nil {
+		t.Fatalf("cannot parse %s: %v", filename, err)
+	}
+	aliases := bucketAliases(file)
+	var hits []string
+	ast.Inspect(file, func(n ast.Node) bool {
+		be, ok := n.(*ast.BinaryExpr)
+		if !ok || be.Op != token.ADD {
+			return true
+		}
+		if countBucketOperands(be, aliases) >= threshold {
+			hits = append(hits, fmt.Sprintf("%s:%d", filename, fset.Position(be.Pos()).Line))
+			// Do not descend: the sub-expressions of a matched sum would match too.
+			return false
+		}
+		return true
+	})
+	return hits
+}
+
+// TestINV1_NoInlineClusterConservationSums forbids new hand-rolled cluster
+// conservation sums. Before issue #1720 there were 29 of them, disagreeing about
+// how many terms conservation has, and three omitted a bucket outright. The shared
+// helper only stays authoritative if writing sum number 30 fails.
+//
+// Detection is AST-based rather than a line grep: the sums this replaced were
+// gofmt-wrapped across lines, accumulated through intermediate locals, and varied
+// their operand order, all of which a textual match misses or can be reformatted
+// around.
+func TestINV1_NoInlineClusterConservationSums(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("cannot list the package directory: %v", err)
+	}
+
+	scanned := 0
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, "_test.go") || name == "inv1_conservation_test.go" {
+			continue
+		}
+		if reason, exempt := inlineSumExemptions[name]; exempt {
+			t.Logf("skipping %s: %s", name, reason)
+			continue
+		}
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("cannot read %s: %v", name, err)
+		}
+		scanned++
+		for _, hit := range findInlineConservationSums(t, name, string(src), 3) {
+			t.Errorf("%s: inline INV-1 conservation sum — use assertClusterINV1Conservation instead, so a bucket added to the invariant is picked up here automatically", hit)
+		}
+	}
+
+	// Non-vacuity: a broken path or filter must not read as a clean pass.
+	if scanned == 0 {
+		t.Fatal("scanned no test files — the directory walk or the filter is broken, so this test proves nothing")
+	}
+
+	for name, reason := range inlineSumExemptions {
+		if _, err := os.Stat(name); err != nil {
+			t.Errorf("exemption for %s (%s) names a file that does not exist — remove the stale entry", name, reason)
+		}
+	}
+}
+
+// TestINV1_InlineSumDetectorFires proves the detector above is not vacuous, by
+// running it over synthetic sources whose shape mirrors the sums it replaced:
+// gofmt-wrapped, accumulated via locals, and reordered.
+func TestINV1_InlineSumDetectorFires(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want bool
+	}{
+		{
+			name: "wrapped across lines",
+			src: `package p
+func f() {
+	_ = m.CompletedRequests + m.StillQueued +
+		m.StillRunning + m.DroppedUnservable
+}`,
+			want: true,
+		},
+		{
+			name: "accumulated through locals",
+			src: `package p
+func f() {
+	completed := agg.CompletedRequests
+	queued := agg.StillQueued
+	running := agg.StillRunning
+	_ = completed + queued + running + cs.RoutingRejections() + cs.GatewayQueueDepth()
+}`,
+			// This is the shape cluster_tier_test.go used, one of the three sites
+			// that omitted a bucket. Detecting it is why the walker resolves locals
+			// back to the bucket they were assigned from.
+			want: true,
+		},
+		{
+			name: "reordered operands with accessors",
+			src: `package p
+func f() {
+	_ = cs.GatewayExpired() + m.StillRunning + cs.RoutingRejections() + m.CompletedRequests
+}`,
+			want: true,
+		},
+		{
+			name: "two buckets is not a conservation sum",
+			src: `package p
+func f() {
+	_ = m.CompletedRequests + m.TimedOutRequests
+}`,
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "fixture.go")
+			if err := os.WriteFile(path, []byte(tc.src), 0o600); err != nil {
+				t.Fatalf("cannot write fixture: %v", err)
+			}
+			hits := findInlineConservationSums(t, path, tc.src, 3)
+			if got := len(hits) > 0; got != tc.want {
+				t.Errorf("detector fired = %v, want %v (hits: %v)", got, tc.want, hits)
+			}
+		})
+	}
+}
+
+// TestINV1_NoInstanceHelperOnClusterMetrics stops the five-term specialisation from
+// becoming a sanctioned weak cluster assertion. The AST guard above only sees
+// inline sums, so a cluster test that called assertInstanceINV1Conservation with
+// cs.AggregatedMetrics() would assert five of twelve terms with nothing
+// complaining — the same gap in a new shape.
+func TestINV1_NoInstanceHelperOnClusterMetrics(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("cannot list the package directory: %v", err)
+	}
+	fset := token.NewFileSet()
+	scanned := 0
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, "_test.go") || name == "inv1_conservation_test.go" {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatalf("cannot parse %s: %v", name, err)
+		}
+		scanned++
+		ast.Inspect(file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			id, ok := call.Fun.(*ast.Ident)
+			if !ok || id.Name != "assertInstanceINV1Conservation" {
+				return true
+			}
+			for _, arg := range call.Args {
+				inner, ok := arg.(*ast.CallExpr)
+				if !ok {
+					continue
+				}
+				if sel, ok := inner.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "AggregatedMetrics" {
+					t.Errorf("%s:%d: assertInstanceINV1Conservation applied to a cluster aggregate — use assertClusterINV1Conservation, which checks all twelve buckets",
+						name, fset.Position(call.Pos()).Line)
+				}
+			}
+			return true
+		})
+	}
+	if scanned == 0 {
+		t.Fatal("scanned no test files — the directory walk is broken, so this test proves nothing")
 	}
 }
 
