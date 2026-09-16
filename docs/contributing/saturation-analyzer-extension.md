@@ -60,11 +60,11 @@ doesn't change on the events it ignores.
 
 ```bash
 # Single detector (streaming path, #1516)
-./blis run --model qwen/qwen3-14b --detectors composite --saturation-report sat.json
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --detectors composite --saturation-report sat.json
 
 # The whole roster, or a named subset, over ONE deterministic replay (bank, #1519)
-./blis run --model qwen/qwen3-14b --detectors all --saturation-report sat.json
-./blis run --model qwen/qwen3-14b --detectors composite,threshold --saturation-report sat.json
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --detectors all --saturation-report sat.json
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --detectors composite,threshold --saturation-report sat.json
 ```
 
 `--detectors` also works on `blis replay` (byte-identical to `run` for the same

@@ -4,7 +4,7 @@ This guide covers KV cache allocation, prefix caching, tiered GPU+CPU offload, a
 
 ```bash
 # Quick example: simulate with reduced KV blocks to observe preemptions
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --total-kv-blocks 5000 --rate 50 --num-requests 200
 ```
 
@@ -29,7 +29,7 @@ When requests share common prefixes (e.g., system prompts in RAG), BLIS can reus
 Prefix caching is automatic when using the `weighted` routing policy. The default profile (`precise-prefix-cache:2, queue-depth:1, kv-utilization:1`) queries actual instance KV cache state to route requests to instances with cached prefix blocks:
 
 ```bash
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --routing-policy weighted \
   --prefix-tokens 512 --rate 100 --num-requests 500
 ```
@@ -60,7 +60,7 @@ For a workload with max 7,000 input tokens and block size 16: `ceil(7000/16) = 4
 BLIS models tiered KV cache with GPU→CPU offloading:
 
 ```bash
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --kv-cpu-blocks 50000 \
   --kv-offload-threshold 0.9 \
   --kv-transfer-bandwidth 100.0 \
@@ -83,7 +83,7 @@ mirrors `--lora-config` / `--saturation-config`: absent ⇒ the offload subsyste
 output is byte-identical to a build without it.
 
 ```bash
-./blis run --model qwen/qwen3-14b --kv-offload-config offload.yaml
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --kv-offload-config offload.yaml
 ```
 
 ```yaml
@@ -155,7 +155,7 @@ Long prefill sequences can cause **head-of-line (HOL) blocking** — a 2,048-tok
 Chunked prefill splits long prefills into smaller chunks:
 
 ```bash
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --long-prefill-token-threshold 256 \
   --rate 100 --num-requests 500
 ```
@@ -182,7 +182,7 @@ Preemption rates spike non-linearly as KV blocks decrease past a threshold. The 
 # Sweep KV blocks to find the cliff
 for blocks in 100000 50000 20000 10000 5000 3000; do
   echo "=== blocks=$blocks ==="
-  ./blis run --model qwen/qwen3-14b \
+  ./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
     --total-kv-blocks $blocks --rate 50 --num-requests 200 2>/dev/null \
     | grep -E "preemption_count|completed_requests"
 done

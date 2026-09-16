@@ -751,6 +751,34 @@ func resolveDPPlacement(lr latencyResolution, plan dpPlacementPlan) (dpPlacement
 	return plan, nil
 }
 
+// requireDeploymentFlags refuses a run whose deployment was not chosen by the operator,
+// naming the flag(s) that are missing (NS-6, #1733).
+//
+// --hardware and --tp are REQUIRED inputs: every latency backend needs both, and the GPU
+// type plus the tensor-parallel degree together decide the KV budget, the step time, and
+// the placement footprint. BLIS previously looked them up per-model in defaults.yaml and
+// emitted a `logrus.Warnf` before continuing, so a run could complete — and emit metrics —
+// on a deployment the operator never chose, which is the failure mode R1 forbids.
+//
+// A pure CLI-boundary guard: it takes the resolved values rather than reading the package
+// vars so the refusal rule is testable in isolation, and it terminates via logrus.Fatalf
+// per the cmd/-layer error-handling boundary.
+func requireDeploymentFlags(resolvedGPU string, resolvedTP int) {
+	var missing []string
+	if resolvedGPU == "" {
+		missing = append(missing, "--hardware (GPU type, e.g. --hardware H100)")
+	}
+	if resolvedTP <= 0 {
+		missing = append(missing, "--tp (tensor parallelism, e.g. --tp 1)")
+	}
+	if len(missing) == 0 {
+		return
+	}
+	logrus.Fatalf("missing required flag(s): %s. BLIS does not infer the deployment — "+
+		"the GPU type and tensor-parallel degree must be chosen explicitly, on both `blis run` and `blis replay`",
+		strings.Join(missing, " and "))
+}
+
 // resolveLatencyConfig resolves the latency backend configuration from CLI flags and
 // defaults.yaml. It is called by both runCmd and replayCmd to ensure a single code path
 // (R23: code path parity). This eliminates the R23 comment-sync markers in replay.go.
@@ -758,7 +786,7 @@ func resolveDPPlacement(lr latencyResolution, plan dpPlacementPlan) (dpPlacement
 // What it does:
 //   - Normalizes model name to lowercase
 //   - Validates gpuMemoryUtilization and blockSizeTokens (used in KV auto-calc)
-//   - Applies defaults.yaml for GPU and TP when not set via CLI
+//   - Requires --hardware and --tp (NS-6: the deployment is never inferred from defaults.yaml)
 //   - Validates alpha/beta coefficients and auto-detects trained-physics mode when coefficients are provided
 //   - For roofline/trained-physics: resolves model config folder and
 //     hardware config, loads coefficients from defaults.yaml, auto-calculates
@@ -839,36 +867,15 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	var kvParams latency.KVCapacityParams
 	var kvParamsOK bool
 
-	// Early defaults resolution: load hardware/TP from defaults.yaml
-	// when not explicitly set via CLI flags.
-	if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
-		hardware, tp := GetDefaultSpecs(model)
-		if tensorParallelism == 0 && tp > 0 {
-			logrus.Warnf("Finding default values of TP for model=%v", model)
-			logrus.Warnf("Using default tp=%v", tp)
-			tensorParallelism = tp
-		}
-		if gpu == "" && len(hardware) > 0 {
-			logrus.Warnf("Finding default values of hardware for model=%v", model)
-			logrus.Warnf("Using default GPU=%v", hardware)
-			gpu = hardware
-		}
-	}
+	// NS-6 (#1733): the deployment is an operator input, never inferred. BLIS used to look
+	// --hardware/--tp up per-model in defaults.yaml and warn-and-continue, so a run could
+	// complete on a deployment nobody chose. Both are now REQUIRED, refused by name (R1).
+	// Checked before any backend branch so run and replay — which share this function —
+	// refuse identically (INV-13), and so no backend can silently skip the requirement.
+	requireDeploymentFlags(gpu, tensorParallelism)
 
 	// --latency-model roofline
 	if backend == "roofline" {
-		var missing []string
-		if gpu == "" {
-			missing = append(missing, "--hardware (GPU type)")
-		}
-		if tensorParallelism <= 0 {
-			missing = append(missing, "--tp (tensor parallelism)")
-		}
-		if len(missing) > 0 {
-			logrus.Fatalf("Roofline mode requires %s. No defaults found in defaults.yaml for model=%s. "+
-				"Provide these flags explicitly, or use --latency-model trained-physics for coefficient-based estimation",
-				strings.Join(missing, " and "), model)
-		}
 		// alphaChanged == betaChanged is guaranteed by the "both or neither" check above,
 		// so checking betaChanged alone is sufficient to confirm both were provided.
 		if cmd.Flags().Changed("latency-model") && betaChanged {
@@ -897,17 +904,6 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	// --latency-model trained-physics: physics-informed roofline with architecture-aware MoE overhead.
 	// Uses trained_physics_coefficients from defaults.yaml (10-beta, 3-alpha).
 	if backend == "trained-physics" {
-		var missing []string
-		if gpu == "" {
-			missing = append(missing, "--hardware (GPU type)")
-		}
-		if tensorParallelism <= 0 {
-			missing = append(missing, "--tp (tensor parallelism)")
-		}
-		if len(missing) > 0 {
-			logrus.Fatalf("--latency-model trained-physics requires %s. No defaults found in defaults.yaml for model=%s. "+
-				"Provide these flags explicitly", strings.Join(missing, " and "), model)
-		}
 		resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
 		if err != nil {
 			logrus.Fatalf("%v", err)
@@ -1518,7 +1514,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&simulationHorizon, "horizon", math.MaxInt64, "Total simulation horizon (in ticks)")
 	cmd.Flags().StringVar(&logLevel, "log", "warn", "Log level for diagnostic messages (trace, debug, info, warn, error, fatal, panic). Simulation results always print to stdout regardless of this setting.")
 	cmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained coefficients, default specs and workloads")
-	cmd.Flags().StringVar(&modelConfigFolder, "model-config-folder", "", "Path to folder containing config.json")
+	cmd.Flags().StringVar(&modelConfigFolder, "model-config-folder", "", "Path to a folder containing the model's HuggingFace config.json. Overrides the catalog lookup at model_configs/<short-name>/. BLIS never fetches or writes a config at run time: an uncatalogued model is refused naming the path its entry belongs at (NS-6, #1733)")
 	cmd.Flags().StringVar(&hwConfigPath, "hardware-config", "", "Path to file containing hardware config")
 
 	// vLLM server configs
@@ -1542,8 +1538,8 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 
 	// BLIS model configs
 	cmd.Flags().StringVar(&model, "model", "", "LLM name")
-	cmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
-	cmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
+	cmd.Flags().StringVar(&gpu, "hardware", "", "GPU type, e.g. H100 (REQUIRED on run and replay). Must name a key in the hardware config. Never inferred from defaults.yaml — a run missing it is refused naming the flag (NS-6, #1733)")
+	cmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism degree, e.g. 1 (REQUIRED on run and replay; must be > 0). Never inferred from defaults.yaml — a run missing it is refused naming the flag (NS-6, #1733)")
 	cmd.Flags().IntVar(&dataParallelism, "dp", 1, "Data parallelism degree (MoE models only; --latency-model trained-physics only). --dp N spawns N real single-node engine replicas per --num-instances, each sized per-rank, on both `blis run` and `blis replay` (#1531, #1556). Supported with --enable-expert-parallel since #1548 (the EP group is those replicas' GPUs; re-supply both flags on replay). Supported with PD disaggregation (each pool spawns N per-rank replicas) and node pools (N×M replicas reserve N×M×TP GPUs) since #1553. Not supported with the model autoscaler (#1553: dp-group co-scaling is undefined)")
 	cmd.Flags().BoolVar(&enableExpertParallel, "enable-expert-parallel", false, "Enable expert parallelism for MoE models (mirrors vLLM --enable-expert-parallel; --latency-model trained-physics only)")
 	cmd.Flags().StringVar(&moeCommBackend, "moe-comm-backend", "", "MoE all-to-all comm backend for dispatch/combine cost (mirrors vLLM VLLM_ALL2ALL_BACKEND: naive, allgather_reducescatter [default], pplx, deepep_high_throughput, deepep_low_latency, mori, flashinfer_all2allv; MoE + --latency-model trained-physics + either --dp > 1 or --enable-expert-parallel)")

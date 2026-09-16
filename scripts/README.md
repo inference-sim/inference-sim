@@ -156,7 +156,7 @@ MODEL=qwen/qwen3-14b MODEL_CONFIG_FOLDER="" TP=1 \
 | Variable | Default | Meaning |
 |---|---|---|
 | `MODEL` | `meta-llama/Llama-3.1-70B-Instruct` | HuggingFace-style model name |
-| `MODEL_CONFIG_FOLDER` | `model_configs/llama-3.1-70b-instruct` | Path to bundled `config.json`; set to `""` to force HF auto-fetch |
+| `MODEL_CONFIG_FOLDER` | `model_configs/llama-3.1-70b-instruct` | Path to the model's `config.json`; set to `""` to resolve it from the catalog by model name |
 | `HARDWARE` | `H100` | GPU type passed to `--hardware` |
 | `TP` | `8` | Tensor parallelism degree |
 | `WORKLOAD` | `chatbot` | Built-in preset (chatbot/summarization/contentgen/multidoc) |

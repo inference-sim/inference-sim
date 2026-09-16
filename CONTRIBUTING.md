@@ -258,12 +258,16 @@ BLIS has four extension types. Identify which type your change is, then follow t
 | **Backend Swap** | Alternative implementation of internal module | Yes (covers both phases) | SGLang latency model |
 | **Tier Composition** | Wrapper layering behavior on existing module | Recommended | NVMe KV tier |
 
-### Adding a New Model to defaults.yaml
+### Adding a New Model to the Catalog
 
-When adding a new model configuration:
+A model runs **if and only if it is in the catalog** (NS-6, #1733): BLIS reads its `config.json` from `model_configs/<short-name>/` and never downloads one at run time, so an uncatalogued model is refused rather than fetched-and-cached. The catalog entry is therefore the load-bearing step:
 
-1. Add an entry to the `defaults:` section with `GPU` and `tensor_parallelism`
-2. Add an `hf_repo` field mapping the BLIS model name (lowercase) to the case-sensitive HuggingFace repository path (e.g., `hf_repo: Qwen/Qwen3-14B`). This enables `--latency-model roofline` auto-fetch. Models without real HuggingFace repos (e.g., synthetic benchmarks) may omit `hf_repo` — document why with a YAML comment.
+1. **Commit the model's HuggingFace `config.json` at `model_configs/<short-name>/config.json`** (`<short-name>` is the part of the model id after the `/`, lowercased). Without it, `blis run` refuses the model.
+
+Then, in `defaults.yaml`:
+
+1. Add an entry to the `defaults:` section. Its `GPU` and `tensor_parallelism` fields are **no longer read on any run path** — `--hardware`/`--tp` must be supplied on the command line — so treat them as inert metadata pending the catalog migration that drops them.
+2. Add an `hf_repo` field mapping the BLIS model name (lowercase) to the case-sensitive HuggingFace repository path (e.g., `hf_repo: Qwen/Qwen3-14B`). This records where the committed `config.json` came from — BLIS does not fetch it at run time. Models without real HuggingFace repos (e.g., synthetic benchmarks) may omit `hf_repo` — document why with a YAML comment.
 3. If trained coefficients exist, add a corresponding entry to the `models:` list
 
 ### Policy Template (lightest — ~3 files)

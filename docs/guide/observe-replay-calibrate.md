@@ -7,7 +7,7 @@ This guide covers the end-to-end pipeline for validating BLIS simulator accuracy
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --workload-spec workload.yaml --trace-header trace.yaml --trace-data trace.csv
 ./blis replay --trace-header trace.yaml --trace-data trace.csv \
-  --model qwen/qwen3-14b --results-path results.json
+  --model qwen/qwen3-14b --hardware H100 --tp 1 --results-path results.json
 ./blis calibrate --trace-header trace.yaml --trace-data trace.csv \
   --sim-results results.json --report calibration.json
 ```
@@ -345,7 +345,7 @@ blis convert otel --input otel_json --trace-output corpus \
 
 # Replay a fixed pool of 8 concurrent sessions, 200 total (corpus duplicated to fill).
 blis replay --trace-header corpus.yaml --trace-data corpus.csv \
-  --model qwen/qwen3-14b --concurrent-sessions 8 --total-sessions 200
+  --model qwen/qwen3-14b --hardware H100 --tp 1 --concurrent-sessions 8 --total-sessions 200
 ```
 
 The recorded source model names are pure provenance and are dropped during
@@ -416,7 +416,7 @@ To calibrate real vs simulated over the same corpus:
 
 ```bash
 blis replay --trace-header corpus.yaml --trace-data corpus.csv \
-  --model qwen/qwen3-14b --concurrent-sessions 8 --total-sessions 200 \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 --concurrent-sessions 8 --total-sessions 200 \
   --results-path sim.results.json
 blis calibrate --trace-header observed.yaml --trace-data observed.csv \
   --sim-results sim.results.json --report calibration.json
@@ -465,7 +465,7 @@ blis convert weka --input traces.jsonl --trace-output corpus \
 
 # Replay closed-loop (or as a concurrent pool, exactly as for OTel above).
 blis replay --trace-header corpus.yaml --trace-data corpus.csv \
-  --model qwen/qwen3-14b --session-mode closed-loop --max-model-len 1000000
+  --model qwen/qwen3-14b --hardware H100 --tp 1 --session-mode closed-loop --max-model-len 1000000
 ```
 
 The reader filters each session's `requests[]` to the **linear main-agent stream** —
@@ -730,7 +730,7 @@ The report uses two levels of analysis because they catch different problems. **
 
     ```bash
     ./blis replay --trace-header trace.yaml --trace-data trace.csv \
-      --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
+      --model qwen/qwen3-14b --hardware H100 --tp 1 --flow-control --saturation-detector utilization \
       --queue-depth-threshold 5 --kv-cache-util-threshold 0.8
     ```
 
@@ -789,7 +789,7 @@ This sends 50 requests to the server at ~5 req/s, excludes the first 5 from the 
 ./blis replay \
   --trace-header trace.yaml \
   --trace-data trace.csv \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --latency-model roofline \
   --results-path results.json
 ```

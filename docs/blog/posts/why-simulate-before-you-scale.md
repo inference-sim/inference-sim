@@ -92,7 +92,7 @@ BLIS requires only [Go 1.21+](https://go.dev/dl/) and Git. Clone, build, and run
 git clone https://github.com/inference-sim/inference-sim.git
 cd inference-sim
 go build -o blis main.go
-./blis run --model qwen/qwen2.5-7b-instruct --num-instances 4 --routing-policy weighted
+./blis run --model qwen/qwen2.5-7b-instruct --hardware H100 --tp 1 --num-instances 4 --routing-policy weighted
 ```
 
 BLIS prints per-instance metrics followed by a cluster-level summary. Here's the cluster output from the command above:
@@ -141,7 +141,7 @@ The key metrics to look at:
 At the default rate of 1 req/s across 4 instances, this cluster has plenty of headroom: TTFT p99 is under 22ms and no requests are queued or preempted. What happens when you crank the rate to 500 req/s? That's where it gets interesting. Try it:
 
 ```bash
-./blis run --model qwen/qwen2.5-7b-instruct --num-instances 4 \
+./blis run --model qwen/qwen2.5-7b-instruct --hardware H100 --tp 1 --num-instances 4 \
   --rate 500 --num-requests 2000 --routing-policy weighted
 ```
 

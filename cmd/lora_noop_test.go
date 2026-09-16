@@ -14,6 +14,13 @@ import (
 
 // baselineNoopGolden is the pre-feature no-op stdout golden captured in T002
 // (./blis run --model qwen/qwen3-14b --seed 42). Path is relative to the cmd/ test cwd.
+//
+// #1733 (NS-6) gave this golden a SECOND load-bearing role. It was captured when
+// --hardware/--tp were absent and inferred per-model from defaults.yaml; the run below now
+// passes them explicitly as --hardware H100 --tp 1, the exact pair defaults.yaml recorded
+// for qwen/qwen3-14b (pinned by TestNS6_ByteIdentityAnchor_GoldenModelDeployment). That it
+// still matches is the INV-6 evidence for #1733's acceptance criterion 4: making an input
+// REQUIRED changed no number.
 const baselineNoopGolden = "../specs/007-lora-control-plane/testdata/baseline_noop.json"
 
 // noopFloatTolerance is the relative tolerance applied when comparing numeric
@@ -47,7 +54,7 @@ const noopFloatTolerance = 1e-9
 func TestNoOpByteIdentity_AdapterBlindRunMatchesBaseline(t *testing.T) {
 	if os.Getenv("BLIS_NOOP_SUBPROCESS") == "1" {
 		rootCmd.SetArgs([]string{
-			"run", "--model", "qwen/qwen3-14b", "--seed", "42",
+			"run", "--model", "qwen/qwen3-14b", "--hardware", "H100", "--tp", "1", "--seed", "42",
 			"--defaults-filepath", "../defaults.yaml",
 		})
 		_ = rootCmd.Execute()

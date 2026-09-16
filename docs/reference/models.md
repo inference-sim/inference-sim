@@ -4,7 +4,7 @@ BLIS supports **any transformer model with a HuggingFace `config.json`** — no 
 
 BLIS has been tested and accuracy validated across a variety of model families and sizes, including both dense transformers and MoE (Mixture-of-Experts) architectures.
 
-The simulator auto-fetches `config.json` from HuggingFace on first use. For gated models, set `HF_TOKEN`. For offline environments, cache configs locally in `model_configs/`.
+The simulator reads each model's `config.json` from the catalog at `model_configs/<model>/`. It never fetches at run time: a model with no catalog entry is refused, naming the path the entry belongs at. Adding a model means committing its `config.json` (set `HF_TOKEN` when downloading a gated model's config by hand).
 
 ## Validated Architectures
 

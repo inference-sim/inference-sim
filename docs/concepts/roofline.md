@@ -1,6 +1,6 @@
 # Roofline Step Time Estimation Logic
 
-This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. Roofline is the default latency model in BLIS — it requires no training and works off-the-shelf for any Huggingface LLM whose `config.json` is saved under `model_configs/` (auto-fetched from HuggingFace on first use).
+This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. Roofline is the default latency model in BLIS — it requires no training and works off-the-shelf for any Huggingface LLM whose `config.json` is committed to the catalog under `model_configs/`.
 
 !!! tip "Trained-Physics: higher accuracy"
     For higher accuracy, use `--latency-model trained-physics` which applies learned correction factors to these roofline basis functions with MoE support. See [Trained-Physics Mode](../guide/latency-models.md#trained-physics-mode).
@@ -68,7 +68,7 @@ The simplest way to run roofline mode is with `--latency-model roofline`, which 
 
 The flag automatically:
 1. Checks `model_configs/` for an existing `config.json` (previously fetched)
-2. Fetches from HuggingFace on miss and writes into `model_configs/` (supports `HF_TOKEN` for gated models)
+2. Refuses the run on miss, naming the catalog path the entry belongs at — no run-time fetch, and no run writes to the catalog (NS-6)
 
 For models not in `defaults.yaml`, add an `hf_repo` entry mapping the BLIS model name to the case-sensitive HuggingFace repo path.
 

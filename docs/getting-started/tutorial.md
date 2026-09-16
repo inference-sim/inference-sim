@@ -10,7 +10,7 @@ Before scaling up, measure the throughput of a single instance under load. Run e
 
 ```bash
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --rate 500 --num-requests 2000
 ```
 
@@ -28,7 +28,7 @@ This means for 200 req/s, you need at minimum `ceil(200/17) = 12` instances. Let
 
 ```bash
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --rate 2 --num-requests 50
 ```
 
@@ -41,17 +41,17 @@ Run simulations at increasing instance counts for 200 req/s:
 ```bash
 # 4 instances (50 req/s per instance vs ~17 saturated capacity → heavily overloaded)
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --rate 200 --num-requests 1000
 
 # 8 instances (25 req/s per instance → still above capacity but batching helps)
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 8 --rate 200 --num-requests 1000
 
 # 12 instances (~17 req/s per instance → balanced, near baseline)
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 12 --rate 200 --num-requests 1000
 ```
 
@@ -87,19 +87,19 @@ With 8 instances at 200 req/s (near saturation), compare routing strategies:
 ```bash
 # Round-robin (baseline)
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 8 --rate 200 --num-requests 1000 \
   --routing-policy round-robin
 
 # Weighted (default profile)
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 8 --rate 200 --num-requests 1000 \
   --routing-policy weighted
 
 # Least-loaded
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 8 --rate 200 --num-requests 1000 \
   --routing-policy least-loaded
 ```
@@ -108,7 +108,7 @@ With uniform workloads (same prompt/output distribution), routing policies produ
 
 ```bash
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 8 --rate 200 --num-requests 1000 \
   --routing-policy weighted \
   --routing-scorers "prefix-affinity:5,queue-depth:1" \
@@ -121,7 +121,7 @@ For automated comparison across many configurations, use fitness evaluation:
 
 ```bash
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 12 --rate 200 --num-requests 1000 \
   --routing-policy weighted \
   --fitness-weights "p99_ttft:3,mean_e2e:1,throughput:2"

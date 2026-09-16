@@ -1,11 +1,10 @@
 package cmd
 
 import (
-	"fmt"
-	"net/http"
-	"net/http/httptest"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -20,8 +19,9 @@ func TestResolveModelConfig_ExplicitOverrideTakesPrecedence(t *testing.T) {
 	}
 }
 
-func TestResolveModelConfig_LocalHit(t *testing.T) {
-	// Create a temporary model_configs directory with valid JSON config.json
+// TestResolveModelConfig_CatalogHit is the happy path: a catalogued model resolves to
+// its catalog directory.
+func TestResolveModelConfig_CatalogHit(t *testing.T) {
 	tmpDir := t.TempDir()
 	localDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
 	if err := os.MkdirAll(localDir, 0o755); err != nil {
@@ -43,146 +43,112 @@ func TestResolveModelConfig_LocalHit(t *testing.T) {
 	}
 }
 
-func TestResolveModelConfig_CorruptedLocal_FallsThrough(t *testing.T) {
-	// Create a model_configs directory with invalid JSON — should skip and fall through
+// TestResolveModelConfig_AbsentFromCatalog_RefusedNamingPath is BC-1 (NS-6, #1733): a
+// model with no catalog entry is REFUSED, and the refusal names the path the entry
+// belongs at so an operator can act on it. Before #1733 this case silently downloaded
+// config.json from HuggingFace and wrote it into the catalog.
+func TestResolveModelConfig_AbsentFromCatalog_RefusedNamingPath(t *testing.T) {
 	tmpDir := t.TempDir()
-	localDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
-	if err := os.MkdirAll(localDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	corruptedPath := filepath.Join(localDir, hfConfigFile)
-	if err := os.WriteFile(corruptedPath, []byte(`<html>not json</html>`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Mock HF fetch to fail so we fall all the way through to error
-	old := fetchHFConfigFunc
-	fetchHFConfigFunc = func(_, _ string) (string, error) {
-		return "", fmt.Errorf("simulated HF failure")
-	}
-	t.Cleanup(func() { fetchHFConfigFunc = old })
-
 	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
-	_, err := resolveModelConfig("test-org/test-model", "", defaultsFile)
+
+	dir, err := resolveModelConfig("test-org/uncatalogued-model", "", defaultsFile)
 	if err == nil {
-		t.Fatal("expected error when local config is corrupted and no fallbacks exist")
+		t.Fatalf("expected an uncatalogued model to be refused, got dir=%q", dir)
 	}
 
-	// Verify the corrupted file is preserved (not deleted — may be user-provided)
-	if _, statErr := os.Stat(corruptedPath); statErr != nil {
-		t.Error("corrupted config file should be preserved, not deleted")
+	wantPath := filepath.Join(tmpDir, modelConfigsDir, "uncatalogued-model", hfConfigFile)
+	if !strings.Contains(err.Error(), wantPath) {
+		t.Errorf("refusal must name the catalog path an entry belongs at (%s), got: %v", wantPath, err)
+	}
+	if !strings.Contains(err.Error(), "test-org/uncatalogued-model") {
+		t.Errorf("refusal must name the model, got: %v", err)
 	}
 }
 
-func TestResolveModelConfig_NonHFConfig_FallsThrough(t *testing.T) {
-	// Valid JSON that is not a HuggingFace config should be skipped,
-	// then fall through to HF fetch (I-1: cache validation parity).
-	// File is preserved — may be a user-provided config with non-standard fields.
+// TestResolveModelConfig_AbsentFromCatalog_CreatesNothing is the other half of BC-1 and
+// the core of BC-3 at the resolution boundary: refusing an uncatalogued model must not
+// create a directory or a file anywhere under the catalog root. This is the observable
+// form of "no run adds a catalog entry as a side effect".
+func TestResolveModelConfig_AbsentFromCatalog_CreatesNothing(t *testing.T) {
 	tmpDir := t.TempDir()
-	localDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
-	if err := os.MkdirAll(localDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	nonHFPath := filepath.Join(localDir, hfConfigFile)
-	if err := os.WriteFile(nonHFPath, []byte(`{"error": "not found"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	old := fetchHFConfigFunc
-	fetchHFConfigFunc = func(_, _ string) (string, error) {
-		return "", fmt.Errorf("simulated HF failure")
-	}
-	t.Cleanup(func() { fetchHFConfigFunc = old })
-
 	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
-	_, err := resolveModelConfig("test-org/test-model", "", defaultsFile)
-	if err == nil {
-		t.Fatal("expected error when local config is valid JSON but not an HF config")
+
+	before := listTree(t, tmpDir)
+
+	if _, err := resolveModelConfig("test-org/uncatalogued-model", "", defaultsFile); err == nil {
+		t.Fatal("expected refusal for an uncatalogued model")
 	}
 
-	// Verify the non-HF config file is preserved (not deleted)
-	if _, statErr := os.Stat(nonHFPath); statErr != nil {
-		t.Error("non-HF config file should be preserved, not deleted")
+	after := listTree(t, tmpDir)
+	if len(after) != len(before) {
+		t.Errorf("resolution must not create anything under the catalog root; before=%v after=%v", before, after)
+	}
+	catalogDir := filepath.Join(tmpDir, modelConfigsDir)
+	if _, statErr := os.Stat(catalogDir); statErr == nil {
+		t.Errorf("resolution must not create the catalog directory %s", catalogDir)
 	}
 }
 
-func TestResolveModelConfig_FetchWritesToModelConfigs(t *testing.T) {
-	// Verify that a successful HF fetch writes into model_configs/<short-name>/
-	tmpDir := t.TempDir()
-	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
-	expectedDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
-
-	// Mock HF fetch to write a real file
-	old := fetchHFConfigFunc
-	fetchHFConfigFunc = func(_, targetDir string) (string, error) {
-		if targetDir != expectedDir {
-			return "", fmt.Errorf("fetch target should be %s, got %s", expectedDir, targetDir)
+// listTree returns every path under root, sorted — used to assert nothing was written.
+func listTree(t *testing.T, root string) []string {
+	t.Helper()
+	var paths []string
+	err := filepath.WalkDir(root, func(path string, _ fs.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
-		if err := os.MkdirAll(targetDir, 0o755); err != nil {
-			return "", err
-		}
-		if err := os.WriteFile(filepath.Join(targetDir, hfConfigFile), []byte(`{"num_hidden_layers":32}`), 0o644); err != nil {
-			return "", err
-		}
-		return targetDir, nil
-	}
-	t.Cleanup(func() { fetchHFConfigFunc = old })
-
-	dir, err := resolveModelConfig("org/test-model", "", defaultsFile)
+		paths = append(paths, path)
+		return nil
+	})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("walk %s: %v", root, err)
 	}
-	if dir != expectedDir {
-		t.Errorf("expected %s, got %s", expectedDir, dir)
-	}
-
-	// Verify the file actually exists
-	data, err := os.ReadFile(filepath.Join(dir, hfConfigFile))
-	if err != nil {
-		t.Fatalf("config.json not found after fetch: %v", err)
-	}
-	if !strings.Contains(string(data), "num_hidden_layers") {
-		t.Errorf("unexpected content: %s", string(data))
-	}
+	sort.Strings(paths)
+	return paths
 }
 
-func TestResolveModelConfig_AllMiss_ReturnsError(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Mock HF fetch to fail
-	old := fetchHFConfigFunc
-	fetchHFConfigFunc = func(_, _ string) (string, error) {
-		return "", fmt.Errorf("simulated HF failure")
+// TestResolveModelConfig_MalformedCatalogEntry_RefusedAndPreserved is BC-2: an existing
+// catalog entry that is not a HuggingFace config.json is refused naming the file, and the
+// file is left byte-for-byte unchanged (never overwritten by a fetch, never deleted — it
+// may be an operator's hand-written entry with a fixable typo).
+func TestResolveModelConfig_MalformedCatalogEntry_RefusedAndPreserved(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{"not JSON at all", `<html>not json</html>`},
+		{"valid JSON but not an HF config", `{"error": "not found"}`},
+		{"empty JSON object", `{}`},
 	}
-	t.Cleanup(func() { fetchHFConfigFunc = old })
 
-	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
-	_, err := resolveModelConfig("nonexistent/model", "", defaultsFile)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			localDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
+			if err := os.MkdirAll(localDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			entryPath := filepath.Join(localDir, hfConfigFile)
+			if err := os.WriteFile(entryPath, []byte(tt.content), 0o644); err != nil {
+				t.Fatal(err)
+			}
 
-func TestResolveModelConfig_AllMiss_IncludesDefaultsError(t *testing.T) {
-	tmpDir := t.TempDir()
+			defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
+			if _, err := resolveModelConfig("test-org/test-model", "", defaultsFile); err == nil {
+				t.Fatal("expected refusal for a malformed catalog entry")
+			} else if !strings.Contains(err.Error(), entryPath) {
+				t.Errorf("refusal must name the offending catalog file (%s), got: %v", entryPath, err)
+			}
 
-	// Mock HF fetch to fail
-	old := fetchHFConfigFunc
-	fetchHFConfigFunc = func(_, _ string) (string, error) {
-		return "", fmt.Errorf("simulated HF failure")
-	}
-	t.Cleanup(func() { fetchHFConfigFunc = old })
-
-	// Use a nonexistent defaults file inside tmpDir so the error message includes it
-	defaultsFile := filepath.Join(tmpDir, "nonexistent-defaults.yaml")
-	_, err := resolveModelConfig("nonexistent/model", "", defaultsFile)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	// Error should mention defaults.yaml read failure
-	errStr := err.Error()
-	if !strings.Contains(errStr, "defaults") {
-		t.Errorf("expected error to mention defaults, got: %s", errStr)
+			// The entry must survive untouched.
+			got, readErr := os.ReadFile(entryPath)
+			if readErr != nil {
+				t.Fatalf("catalog entry must be preserved, not deleted: %v", readErr)
+			}
+			if string(got) != tt.content {
+				t.Errorf("catalog entry must be preserved byte-for-byte; got %q want %q", string(got), tt.content)
+			}
+		})
 	}
 }
 
@@ -211,13 +177,6 @@ func TestResolveModelConfig_MultimodalConfig(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(localDir, hfConfigFile), []byte(multimodalConfig), 0o644); err != nil {
 		t.Fatal(err)
 	}
-
-	// Mock HF fetch to fail (safety net - local config should be found first)
-	old := fetchHFConfigFunc
-	fetchHFConfigFunc = func(_, _ string) (string, error) {
-		return "", fmt.Errorf("test should not reach HF fetch - local config should be found")
-	}
-	t.Cleanup(func() { fetchHFConfigFunc = old })
 
 	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
 	dir, err := resolveModelConfig("test-org/llama4-test", "", defaultsFile)
@@ -261,171 +220,6 @@ func TestResolveHardwareConfig_Missing_ReturnsError(t *testing.T) {
 	_, err := resolveHardwareConfig("", "/nonexistent/dir/defaults.yaml")
 	if err == nil {
 		t.Fatal("expected error, got nil")
-	}
-}
-
-func TestFetchHFConfig_Success(t *testing.T) {
-	// Set up a test HTTP server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/test-org/test-model/resolve/main/config.json" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"num_hidden_layers": 32}`))
-	}))
-	defer server.Close()
-
-	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
-
-	dir, err := fetchHFConfigFromURL(server.URL+"/test-org/test-model/resolve/main/config.json", targetDir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Verify file exists in model_configs/
-	writtenPath := filepath.Join(dir, hfConfigFile)
-	data, err := os.ReadFile(writtenPath)
-	if err != nil {
-		t.Fatalf("config file not found: %v", err)
-	}
-	if string(data) != `{"num_hidden_layers": 32}` {
-		t.Errorf("unexpected content: %s", string(data))
-	}
-	if dir != targetDir {
-		t.Errorf("expected dir %s, got %s", targetDir, dir)
-	}
-}
-
-func TestFetchHFConfig_MultimodalConfig(t *testing.T) {
-	// Verify that fetchHFConfigFromURL accepts multimodal configs with text_config
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		// Multimodal config structure (text_config + vision_config)
-		_, _ = w.Write([]byte(`{
-			"architectures": ["Llama4ForConditionalGeneration"],
-			"model_type": "llama4",
-			"text_config": {
-				"num_hidden_layers": 48,
-				"hidden_size": 5120,
-				"num_attention_heads": 40
-			},
-			"vision_config": {
-				"num_hidden_layers": 34,
-				"hidden_size": 1408
-			}
-		}`))
-	}))
-	defer server.Close()
-
-	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "multimodal-model")
-
-	dir, err := fetchHFConfigFromURL(server.URL+"/test/multimodal/resolve/main/config.json", targetDir)
-	if err != nil {
-		t.Fatalf("multimodal config should be accepted via fetch: %v", err)
-	}
-
-	// Verify the file was written
-	writtenPath := filepath.Join(dir, hfConfigFile)
-	data, err := os.ReadFile(writtenPath)
-	if err != nil {
-		t.Fatalf("config file not found: %v", err)
-	}
-
-	// Verify the config is recognized as a valid HF config (behavioral assertion)
-	if !isHFConfig(data) {
-		t.Errorf("expected config to be recognized as valid HuggingFace config")
-	}
-}
-
-func TestFetchHFConfig_404(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer server.Close()
-
-	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "nonexistent-model")
-
-	_, err := fetchHFConfigFromURL(server.URL+"/nonexistent/model/resolve/main/config.json", targetDir)
-	if err == nil {
-		t.Fatal("expected error for 404, got nil")
-	}
-}
-
-func TestFetchHFConfig_401(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer server.Close()
-
-	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "gated-model")
-
-	_, err := fetchHFConfigFromURL(server.URL+"/gated/model/resolve/main/config.json", targetDir)
-	if err == nil {
-		t.Fatal("expected error for 401, got nil")
-	}
-}
-
-func TestFetchHFConfig_HFTokenHeader(t *testing.T) {
-	var gotAuth string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth = r.Header.Get("Authorization")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"num_hidden_layers":32,"hidden_size":4096}`))
-	}))
-	defer server.Close()
-
-	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
-	t.Setenv("HF_TOKEN", "test-token-123")
-
-	_, err := fetchHFConfigFromURL(server.URL+"/test/model/resolve/main/config.json", targetDir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if gotAuth != "Bearer test-token-123" {
-		t.Errorf("expected Bearer auth header, got %q", gotAuth)
-	}
-}
-
-func TestFetchHFConfig_NoAuthHeaderWithoutToken(t *testing.T) {
-	var gotAuth string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth = r.Header.Get("Authorization")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"num_hidden_layers":32,"hidden_size":4096}`))
-	}))
-	defer server.Close()
-
-	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "test-model-noauth")
-	t.Setenv("HF_TOKEN", "")
-
-	_, err := fetchHFConfigFromURL(server.URL+"/test/model/resolve/main/config.json", targetDir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if gotAuth != "" {
-		t.Errorf("expected no Authorization header when HF_TOKEN is empty, got %q", gotAuth)
-	}
-}
-
-func TestFetchHFConfig_InvalidJSON(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`<html>Error page</html>`))
-	}))
-	defer server.Close()
-
-	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
-
-	_, err := fetchHFConfigFromURL(server.URL+"/test/model/resolve/main/config.json", targetDir)
-	if err == nil {
-		t.Fatal("expected error for invalid JSON response, got nil")
 	}
 }
 
@@ -553,19 +347,20 @@ func TestGetHFRepo_MalformedYAML(t *testing.T) {
 	}
 }
 
-// TestResolveModelConfig_PrecedenceInvariant verifies the documented resolution
-// order: explicit flag > model_configs/ > HF fetch (into model_configs/).
+// TestResolveModelConfig_PrecedenceInvariant verifies the documented resolution order,
+// which after #1733 has exactly TWO steps and no fallback: explicit --model-config-folder
+// > the catalog entry. Removing the catalog entry no longer opens a third path — it makes
+// resolution fail (NS-6).
 func TestResolveModelConfig_PrecedenceInvariant(t *testing.T) {
 	tmpDir := t.TempDir()
 	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
 
-	// Set up all resolution sources
+	// Set up both resolution sources
 	explicitDir := filepath.Join(tmpDir, "explicit")
 	if err := os.MkdirAll(explicitDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	// Set up local model_configs/ with a valid config
 	localDir := filepath.Join(tmpDir, modelConfigsDir, "precedence-model")
 	if err := os.MkdirAll(localDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -574,18 +369,7 @@ func TestResolveModelConfig_PrecedenceInvariant(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Mock HF fetch to succeed
-	old := fetchHFConfigFunc
-	hfDir := filepath.Join(tmpDir, "hf-fetched")
-	fetchHFConfigFunc = func(_, _ string) (string, error) {
-		if err := os.MkdirAll(hfDir, 0o755); err != nil {
-			return "", err
-		}
-		return hfDir, nil
-	}
-	t.Cleanup(func() { fetchHFConfigFunc = old })
-
-	// Precedence 1: Explicit override wins over everything
+	// Precedence 1: Explicit override wins over the catalog
 	dir, err := resolveModelConfig("test-org/precedence-model", explicitDir, defaultsFile)
 	if err != nil {
 		t.Fatalf("explicit override failed: %v", err)
@@ -594,26 +378,22 @@ func TestResolveModelConfig_PrecedenceInvariant(t *testing.T) {
 		t.Errorf("explicit override: expected %s, got %s", explicitDir, dir)
 	}
 
-	// Precedence 2: Local model_configs/ wins over HF fetch
+	// Precedence 2: the catalog entry, when no explicit folder is given
 	expectedLocal := filepath.Join(tmpDir, modelConfigsDir, "precedence-model")
 	dir, err = resolveModelConfig("test-org/precedence-model", "", defaultsFile)
 	if err != nil {
-		t.Fatalf("local hit failed: %v", err)
+		t.Fatalf("catalog hit failed: %v", err)
 	}
 	if dir != expectedLocal {
-		t.Errorf("local precedence: expected %s, got %s", expectedLocal, dir)
+		t.Errorf("catalog precedence: expected %s, got %s", expectedLocal, dir)
 	}
 
-	// Precedence 3: HF fetch when local is missing
+	// There is no third step: with the entry removed, resolution is refused.
 	if err := os.Remove(filepath.Join(localDir, hfConfigFile)); err != nil {
 		t.Fatal(err)
 	}
-	dir, err = resolveModelConfig("test-org/precedence-model", "", defaultsFile)
-	if err != nil {
-		t.Fatalf("HF fetch failed: %v", err)
-	}
-	if dir != hfDir {
-		t.Errorf("HF fetch: expected %s, got %s", hfDir, dir)
+	if dir, err = resolveModelConfig("test-org/precedence-model", "", defaultsFile); err == nil {
+		t.Errorf("expected refusal once the catalog entry is gone, got dir=%q", dir)
 	}
 }
 
@@ -623,12 +403,6 @@ func TestResolveModelConfig_PrecedenceInvariant(t *testing.T) {
 func TestResolveModelConfig_CompletenessInvariant(t *testing.T) {
 	tmpDir := t.TempDir()
 	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
-
-	old := fetchHFConfigFunc
-	fetchHFConfigFunc = func(_, _ string) (string, error) {
-		return "", fmt.Errorf("simulated HF failure")
-	}
-	t.Cleanup(func() { fetchHFConfigFunc = old })
 
 	// Table of inputs covering edge cases
 	tests := []struct {
@@ -694,204 +468,5 @@ func TestIsHFConfig(t *testing.T) {
 				t.Errorf("isHFConfig(%s) = %v, want %v", tt.json, got, tt.want)
 			}
 		})
-	}
-}
-
-// TestFetchHFConfig_MaxResponseBytes verifies the 10 MB response limit (C3/R7).
-// The implementation uses io.LimitReader to prevent unbounded memory allocation
-// from malformed or malicious responses.
-func TestFetchHFConfig_MaxResponseBytes(t *testing.T) {
-	// Create a response body that exceeds maxResponseBytes (10 MB + 1 byte)
-	oversizeBody := make([]byte, maxResponseBytes+1)
-	// Fill with valid JSON prefix to get past any early checks
-	copy(oversizeBody, []byte(`{"num_hidden_layers":32,"padding":"`))
-	for i := len(`{"num_hidden_layers":32,"padding":"`) + 1; i < len(oversizeBody); i++ {
-		oversizeBody[i] = 'x'
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(oversizeBody)
-	}))
-	defer server.Close()
-
-	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "oversize-model")
-
-	_, err := fetchHFConfigFromURL(server.URL+"/test/model/resolve/main/config.json", targetDir)
-	if err == nil {
-		t.Fatal("expected error for oversized response, got nil")
-	}
-	if !strings.Contains(err.Error(), "exceeds") {
-		t.Errorf("expected error about size limit, got: %v", err)
-	}
-}
-
-// TestFetchHFConfig_ExactlyAtLimit verifies responses at exactly maxResponseBytes
-// are accepted (boundary condition for the 10 MB limit).
-func TestFetchHFConfig_ExactlyAtLimit(t *testing.T) {
-	// A valid HF config that's much smaller than 10 MB (normal case)
-	validConfig := `{"num_hidden_layers": 32, "hidden_size": 4096}`
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(validConfig))
-	}))
-	defer server.Close()
-
-	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "normal-model")
-
-	_, err := fetchHFConfigFromURL(server.URL+"/test/model/resolve/main/config.json", targetDir)
-	if err != nil {
-		t.Fatalf("expected success for normal-sized response, got: %v", err)
-	}
-}
-
-// TestFetchHFConfig_5xx verifies that HTTP 5xx responses produce clear errors (I20).
-func TestFetchHFConfig_5xx(t *testing.T) {
-	tests := []struct {
-		name       string
-		statusCode int
-	}{
-		{"500 Internal Server Error", http.StatusInternalServerError},
-		{"503 Service Unavailable", http.StatusServiceUnavailable},
-		{"502 Bad Gateway", http.StatusBadGateway},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(tt.statusCode)
-			}))
-			defer server.Close()
-
-			tmpDir := t.TempDir()
-			targetDir := filepath.Join(tmpDir, modelConfigsDir, "error-model")
-
-			_, err := fetchHFConfigFromURL(server.URL+"/test/model/resolve/main/config.json", targetDir)
-			if err == nil {
-				t.Fatalf("expected error for HTTP %d, got nil", tt.statusCode)
-			}
-			if !strings.Contains(err.Error(), fmt.Sprintf("HTTP %d", tt.statusCode)) {
-				t.Errorf("expected error to mention HTTP %d, got: %v", tt.statusCode, err)
-			}
-		})
-	}
-}
-
-// TestFetchHFConfig_RedirectToNonHuggingFace verifies that redirects to
-// non-HuggingFace hosts are blocked (I11: redirect host validation).
-func TestFetchHFConfig_RedirectToNonHuggingFace(t *testing.T) {
-	// Set up a server that redirects to a non-HuggingFace host
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "https://attacker.example.com/malicious.json", http.StatusFound)
-	}))
-	defer server.Close()
-
-	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "redirect-model")
-
-	_, err := fetchHFConfigFromURL(server.URL+"/test/model/resolve/main/config.json", targetDir)
-	if err == nil {
-		t.Fatal("expected error for redirect to non-HuggingFace host, got nil")
-	}
-}
-
-// TestFetchHFConfig_RedirectStripsAuthHeader verifies that the Authorization
-// header is stripped when following redirects to HuggingFace subdomains,
-// preventing HF_TOKEN leakage to CDN nodes (I-3: defense-in-depth).
-func TestFetchHFConfig_RedirectStripsAuthHeader(t *testing.T) {
-	t.Setenv("HF_TOKEN", "secret-token-123")
-
-	var cdnGotAuth string
-	// CDN server (simulates cdn-lfs.huggingface.co)
-	cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cdnGotAuth = r.Header.Get("Authorization")
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"num_hidden_layers": 32, "hidden_size": 4096}`))
-	}))
-	defer cdn.Close()
-
-	// Primary server redirects to CDN — but since the CDN isn't *.huggingface.co,
-	// the redirect will be blocked. To test auth stripping, we simulate a same-host
-	// redirect where the CDN URL is actually the test server (redirect to self).
-	var primaryGotAuth string
-	callCount := 0
-	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
-		if callCount == 1 {
-			primaryGotAuth = r.Header.Get("Authorization")
-			// Redirect to the CDN server (will be blocked as non-HF host, which is correct)
-			http.Redirect(w, r, cdn.URL+"/config.json", http.StatusFound)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"num_hidden_layers": 32, "hidden_size": 4096}`))
-	}))
-	defer primary.Close()
-
-	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "auth-test")
-
-	// The redirect to cdn (non-HF host) will be blocked, which is the expected behavior
-	_, err := fetchHFConfigFromURL(primary.URL+"/test/model/resolve/main/config.json", targetDir)
-
-	// Primary server should have received the auth header
-	if primaryGotAuth != "Bearer secret-token-123" {
-		t.Errorf("primary server should have received auth header, got %q", primaryGotAuth)
-	}
-
-	// The redirect should be blocked (CDN is not *.huggingface.co)
-	if err == nil {
-		// If somehow the redirect was followed, verify CDN did NOT get the token
-		if cdnGotAuth != "" {
-			t.Errorf("CDN server should NOT have received auth header, got %q", cdnGotAuth)
-		}
-	}
-	// err != nil is expected (redirect blocked) — the auth stripping is an additional
-	// safety layer for when redirects DO pass the host check (*.huggingface.co subdomains)
-}
-
-// TestFetchHFConfig_InvalidRepoPattern verifies that invalid hfRepo names
-// are rejected before URL construction (I14: URL injection prevention).
-func TestFetchHFConfig_InvalidRepoPattern(t *testing.T) {
-	tests := []struct {
-		name   string
-		hfRepo string
-	}{
-		{"URL query injection", "org/model?param=evil"},
-		{"URL fragment injection", "org/model#fragment"},
-		{"URL userinfo injection", "user@org/model"},
-		{"spaces", "org/model name"},
-		{"no slash", "justmodel"},
-		{"empty", ""},
-		{"triple path", "org/sub/model"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tmpDir := t.TempDir()
-			_, err := fetchHFConfig(tt.hfRepo, tmpDir)
-			if err == nil {
-				t.Errorf("expected error for invalid repo name %q, got nil", tt.hfRepo)
-			}
-		})
-	}
-}
-
-// TestValidHFRepoPattern verifies the regex accepts legitimate HuggingFace repos.
-func TestValidHFRepoPattern(t *testing.T) {
-	valid := []string{
-		"meta-llama/Llama-3.1-8B-Instruct",
-		"RedHatAI/phi-4-FP8-dynamic",
-		"Qwen/Qwen2.5-7B-Instruct",
-		"codellama/CodeLlama-34b-Instruct-hf",
-		"ibm-granite/granite-3.1-8b-instruct",
-	}
-	for _, repo := range valid {
-		if !validHFRepoPattern.MatchString(repo) {
-			t.Errorf("expected %q to be valid HF repo pattern", repo)
-		}
 	}
 }
