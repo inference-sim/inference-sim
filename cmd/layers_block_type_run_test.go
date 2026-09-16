@@ -101,7 +101,10 @@ func TestRunCmd_LayersBlockTypeOnly_Runs(t *testing.T) {
 					"(R1: never silent); stderr:\n%s", stderr.String())
 			}
 			out := stdout.String()
-			clusterConservationHolds(t, out) // INV-1: the run really simulated the workload
+			// 20 is this fixture's --num-requests; clusterConservationHolds compares
+			// injected_requests against it, since stdout defines injected_requests as the
+			// five-term sum and so cannot check that sum against itself (#1720, #1746).
+			clusterConservationHolds(t, out, 20) // INV-1: the run really simulated the workload
 			assertCompletedRequests(t, out)
 		})
 	}
