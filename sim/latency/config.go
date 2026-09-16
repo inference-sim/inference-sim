@@ -167,6 +167,57 @@ func (c *HFConfig) LinearAttnFullLayerCount() int {
 	return len(full)
 }
 
+// LayersBlockTypeField is the HF config key whose list length expresses a model's
+// total layer count when no num_hidden_layers scalar is declared (#1729 / NS-4).
+// Exported so the CLI's HF-config presence detection recognizes exactly the key the
+// parser can consume — the two must not disagree about what counts as a usable config.
+const LayersBlockTypeField = "layers_block_type"
+
+// BlockTypeLayerCount returns the number of layers declared as the length of the
+// model's per-layer block-type list, i.e. len(layers_block_type). ParseHFConfig
+// pivots text_config onto the top-level map, so the key is reachable as a top-level
+// value for multimodal configs too.
+//
+// Some configs (Nemotron-3-Ultra-550B) omit the num_hidden_layers scalar entirely and
+// express the layer count only as this list — one entry per layer, naming its block
+// type ("attention", "mamba", …). BLIS read the scalar, got 0, and aborted before any
+// simulation with "NumLayers must be > 0" (#1729), even though the count was right
+// there in the config.
+//
+// Returns 0 when the key is absent, holds an empty list, or holds a non-list value, so
+// the caller keeps the existing layer-count resolution (the scalar, and ultimately the
+// loud validator failure) rather than a silent 0. Only the LENGTH is read — element
+// types are irrelevant, mirroring LinearAttnFullLayerCount. Counting is deliberately
+// all this does: per-type tallies / layer groups are a later release (R4a), so a
+// derived count is a total layer count and nothing more.
+func (c *HFConfig) BlockTypeLayerCount() int {
+	blocks, ok := c.Raw[LayersBlockTypeField].([]any)
+	if !ok {
+		return 0
+	}
+	return len(blocks)
+}
+
+// ResolveNumLayers returns the model's total transformer-layer count: the
+// num_hidden_layers scalar when it is present and non-zero, else the length of the
+// block-type list (#1729 / NS-4). Returns 0 when neither source has an answer, so the
+// per-backend validators still fail loudly (never a silent 0).
+//
+// The scalar wins whenever it answers, which makes the array a pure fallback: every
+// config that declares num_hidden_layers — i.e. every currently-catalogued model —
+// resolves exactly as it did before this fallback existed (INV-6). A present-but-
+// negative scalar is returned as-is rather than overridden: it is bad input, and the
+// validators' "NumLayers must be > 0" is the right response, not a second opinion.
+//
+// This is the single source of truth for layer-count resolution (R23 code-path
+// parity); ExtractKVCapacityParams derives no layer count of its own.
+func (c *HFConfig) ResolveNumLayers() int {
+	if n, ok := c.GetInt("num_hidden_layers"); ok && n != 0 {
+		return n
+	}
+	return c.BlockTypeLayerCount()
+}
+
 func parseHWConfig(HWConfigFilePath string) (map[string]sim.HardwareCalib, error) {
 	data, err := os.ReadFile(HWConfigFilePath)
 	if err != nil {
@@ -478,8 +529,29 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 		}
 	}
 
+	// Total layer count: the num_hidden_layers scalar, or the length of the block-type
+	// list when the scalar is absent (#1729 / NS-4). Some configs
+	// (Nemotron-3-Ultra-550B) declare no scalar at all, and BLIS used to abort before any
+	// simulation with "NumLayers must be > 0"; the count was in the config, just phrased
+	// as a list. The scalar still wins whenever it answers, so every config that declares
+	// it parses exactly as before (INV-6).
+	numLayers := hf.ResolveNumLayers()
+	if _, scalarPresent := hf.GetInt("num_hidden_layers"); !scalarPresent && numLayers > 0 {
+		// Never silent (R1), and warn rather than inform: the count is derived, and every
+		// entry is counted as one transformer layer whatever type it names — so a hybrid
+		// block list (Nemotron's "attention"/"mamba" mix) prices its non-attention layers
+		// as full attention. Pessimistic, and worth one stderr line at the default log
+		// level, exactly as the hybrid-attention detection is (#1635/#1636). Only fires for
+		// a config that omits the scalar, so catalogued models stay quiet.
+		logrus.Warnf("HuggingFace config declares no num_hidden_layers; derived NumLayers=%d from len(%s). "+
+			"Every entry is counted as one transformer layer regardless of the block type it names, so a hybrid "+
+			"(e.g. attention/mamba) block list is priced as all-attention — pessimistic. Per-type layer groups "+
+			"are not modeled",
+			numLayers, LayersBlockTypeField)
+	}
+
 	modelConfig := &sim.ModelConfig{
-		NumLayers:              getInt("num_hidden_layers"),
+		NumLayers:              numLayers,
 		HiddenDim:              getInt("hidden_size"),
 		VocabSize:              getInt("vocab_size"),
 		IntermediateDim:        intermediateDim,
