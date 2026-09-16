@@ -85,25 +85,53 @@ func TestPlanDPPlacement(t *testing.T) {
 			wantEPGroupDP: 2, // the one thing EP adds: the logical group width to carry
 		},
 		{
-			name:            "MoE dp>1 with PD disaggregation is guarded",
-			isMoE:           true,
-			dp:              2,
-			pdActive:        true,
-			wantErrContains: "disaggregation",
+			// #1553 lifted this rejection: each PD pool spawns dp per-rank replicas. The
+			// PLAN is identical to the plain (non-PD) active plan — the per-pool expansion
+			// is applied by applyDPPlacement, not decided here.
+			name:          "MoE dp>1 with PD disaggregation is supported (#1553)",
+			isMoE:         true,
+			dp:            2,
+			pdActive:      true,
+			wantActive:    true,
+			wantReplicas:  2,
+			wantPerRankDP: 1,
 		},
 		{
-			name:             "MoE dp>1 with autoscaler is guarded",
+			// #1553 DECISION: the autoscaler stays rejected. Rank-vs-group scaling of a
+			// dp-expanded population is undefined, and DirectActuator.scaleUp places a
+			// single-role instance with no DP-group awareness. Shipping "support" would
+			// ship an untested, ambiguous path.
+			name:             "MoE dp>1 with autoscaler is rejected (#1553 decision)",
 			isMoE:            true,
 			dp:               2,
 			autoscalerActive: true,
 			wantErrContains:  "autoscaler",
 		},
 		{
-			name:            "MoE dp>1 with node pools is guarded",
+			// #1553 lifted this rejection: the N×M replicas reuse the tested per-instance
+			// node-pool placement path (each PlaceInstance reserves TP GPUs; per-instance
+			// KV sizes per-rank from the placed GPU).
+			name:            "MoE dp>1 with node pools is supported (#1553)",
 			isMoE:           true,
 			dp:              2,
 			nodePoolsActive: true,
-			wantErrContains: "node pools",
+			wantActive:      true,
+			wantReplicas:    2,
+			wantPerRankDP:   1,
+		},
+		{
+			// PD + EP + dp together: PD/nodePools no longer reject, EP carries its group
+			// width. The plan is active with the EP width; per-pool expansion happens in
+			// applyDPPlacement.
+			name:          "MoE dp>1 with PD and expert parallel is supported and carries EP width (#1553/#1548)",
+			isMoE:         true,
+			dp:            2,
+			epOn:          true,
+			pdActive:      true,
+			wantActive:    true,
+			wantReplicas:  2,
+			wantPerRankDP: 1,
+			wantEPGroupDP: 2,
 		},
 	}
 
@@ -204,6 +232,28 @@ func TestApplyDPPlacement(t *testing.T) {
 			in:           dpPlacementDeployment{NumInstances: 1, TotalKVBlocks: 12345, MaxModelLen: 1_000_000},
 			autoScaledKV: false,
 			want:         dpPlacementDeployment{NumInstances: 4, TotalKVBlocks: 12345, MaxModelLen: 1_000_000},
+		},
+		{
+			// BC-2 PD pool expansion: every pool count scales by Replicas alongside the
+			// global NumInstances, so P·N+D·N+S·N+E·N ≤ total·N is preserved and each pool
+			// spawns its own N per-rank replicas. Auto-KV still divides to per-rank.
+			name:         "active plan scales every PD pool count by Replicas",
+			plan:         active4,
+			dp:           4,
+			in:           dpPlacementDeployment{NumInstances: 10, TotalKVBlocks: 40000, MaxModelLen: 4096, PrefillInstances: 3, DecodeInstances: 4, SharedInstances: 2, EncodeInstances: 1},
+			autoScaledKV: true,
+			// 40 instances (10×4), pools 12/16/8/4 (each ×4), 10000 blocks each, max-model-len untouched (fits).
+			want: dpPlacementDeployment{NumInstances: 40, TotalKVBlocks: 10000, MaxModelLen: 4096, PrefillInstances: 12, DecodeInstances: 16, SharedInstances: 8, EncodeInstances: 4},
+		},
+		{
+			// The inactive plan is the identity on the pool counts too (INV-6): a PD run
+			// at --dp 1 spawns exactly its configured pools, byte-identical to pre-#1553.
+			name:         "inactive plan leaves PD pool counts untouched",
+			plan:         inactive,
+			dp:           1,
+			in:           dpPlacementDeployment{NumInstances: 10, TotalKVBlocks: 5000, MaxModelLen: 4096, PrefillInstances: 3, DecodeInstances: 4, SharedInstances: 2, EncodeInstances: 1},
+			autoScaledKV: true,
+			want:         dpPlacementDeployment{NumInstances: 10, TotalKVBlocks: 5000, MaxModelLen: 4096, PrefillInstances: 3, DecodeInstances: 4, SharedInstances: 2, EncodeInstances: 1},
 		},
 		{
 			// The division floors: a --dp bigger than the auto-derived block count would
@@ -525,38 +575,226 @@ func TestRunCmd_MoEDP1_ByteIdentical(t *testing.T) {
 	}
 }
 
-// TestRunCmd_MoEDPPlacement_GuardedCombo_Rejected is the BC-7 system guard: a
-// planDPPlacement error for a still-unsupported combo (PD disaggregation + MoE --dp>1,
-// #1553) is actually converted to a logrus.Fatalf by runCmd (exit 1), not merely
-// returned. Complements the pure-function TestPlanDPPlacement guard cases.
-//
-// It used to exercise --enable-expert-parallel; #1548 made that combination SUPPORTED
-// (see TestRunCmd_MoEDPPlacement_EPOn_Runs), so the system-level "the error really does
-// terminate" coverage moved to a combo that is still guarded.
-func TestRunCmd_MoEDPPlacement_GuardedCombo_Rejected(t *testing.T) {
-	if os.Getenv("BLIS_RUN_DP_EPGUARD") == "1" {
+// TestRunCmd_PD_DP1_ByteIdentical is the BC-8 fence for the code THIS PR touched: the
+// per-pool KV block now threads perPoolKVDP (=plan.PerRankDP) instead of the raw --dp.
+// At --dp 1 the plan is inactive, so perPoolKVDP == dataParallelism == 1 and the per-pool
+// path must compute byte-identically to pre-#1553. A PD topology is the only run that
+// exercises that block, so this is the direct guard that lifting the PD guard changed no
+// accepted config. (--dp 1 keeps the pre-#1553-legal PD run exactly as it was.)
+func TestRunCmd_PD_DP1_ByteIdentical(t *testing.T) {
+	if os.Getenv("BLIS_RUN_PD_DP1") == "1" {
 		args := append(dpRunBaseArgs(),
-			// --num-instances must cover the pools, or the PD topology check fatals first
-			// on its own (unrelated) message before planDPPlacement is reached.
+			"--dp", "1", "--num-instances", "2",
+			"--prefill-instances", "1", "--decode-instances", "1", "--total-kv-blocks", "20000")
+		rootCmd.SetArgs(args)
+		_ = rootCmd.Execute()
+		os.Exit(0)
+	}
+	run := func() string {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestRunCmd_PD_DP1_ByteIdentical$")
+		cmd.Env = append(os.Environ(), "BLIS_RUN_PD_DP1=1")
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("PD --dp 1 run failed: %v\nstderr:\n%s", err, stderr.String())
+		}
+		return stdout.String()
+	}
+	first, second := run(), run()
+	if completed := clusterMetricInt(t, first, "completed_requests"); completed <= 0 {
+		t.Fatalf("INV-6 check would be vacuous: PD --dp 1 completed %d requests", completed)
+	}
+	if first != second {
+		t.Errorf("BC-8/INV-6: two PD --dp 1 MoE runs produced different stdout (the per-pool "+
+			"perPoolKVDP threading must be an exact no-op at --dp 1)")
+	}
+}
+
+// TestRunCmd_MoEDPPlacement_GuardedCombo_Rejected is the BC-4 system guard: a
+// planDPPlacement error for the still-unsupported combo (the autoscaler + MoE --dp>1,
+// #1553 DECISION) is actually converted to a logrus.Fatalf by runCmd (exit 1), not merely
+// returned. Complements the pure-function TestPlanDPPlacement autoscaler case.
+//
+// It used to exercise --enable-expert-parallel (#1548 made that SUPPORTED) and then PD
+// disaggregation (#1553 makes that SUPPORTED too — see TestRunCmd_MoEDPPlacement_PD_Runs),
+// so the system-level "the error really does terminate" coverage now targets the
+// autoscaler — the one combination #1553 keeps guarded.
+func TestRunCmd_MoEDPPlacement_GuardedCombo_Rejected(t *testing.T) {
+	if os.Getenv("BLIS_RUN_DP_ASGUARD") == "1" {
+		args := append(dpRunBaseArgs(),
 			"--dp", "2", "--num-instances", "2", "--total-kv-blocks", "20000",
-			"--prefill-instances", "1", "--decode-instances", "1",
+			"--model-autoscaler-interval-us", "1000000", // autoscaler active ⇒ #1553 rejection
 		)
 		rootCmd.SetArgs(args)
 		_ = rootCmd.Execute()
 		os.Exit(0)
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=^TestRunCmd_MoEDPPlacement_GuardedCombo_Rejected$")
-	cmd.Env = append(os.Environ(), "BLIS_RUN_DP_EPGUARD=1")
+	cmd.Env = append(os.Environ(), "BLIS_RUN_DP_ASGUARD=1")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("expected non-zero exit (Fatalf) for PD disaggregation + MoE --dp>1, got exit 0; output:\n%s", out)
+		t.Fatalf("expected non-zero exit (Fatalf) for the autoscaler + MoE --dp>1, got exit 0; output:\n%s", out)
 	}
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
 		t.Fatalf("expected exit code 1 (logrus.Fatalf), got %v; output:\n%s", err, out)
 	}
-	if !strings.Contains(string(out), "#1553") {
-		t.Errorf("PD guard message should reference #1553 (hashed, as production writes it); got:\n%s", out)
+	got := string(out)
+	if !strings.Contains(got, "#1553") {
+		t.Errorf("autoscaler guard message should reference #1553; got:\n%s", got)
+	}
+	if !strings.Contains(got, "autoscaler") {
+		t.Errorf("autoscaler guard message should name the autoscaler; got:\n%s", got)
+	}
+}
+
+// TestRunCmd_MoEDPPlacement_PD_Runs is BC-1 at the system level (#1553, AC1): PD
+// disaggregation + MoE --dp N — rejected before this PR — now completes. It spawns the
+// expanded topology (each pool ×N per-rank replicas) and conserves requests (INV-1).
+func TestRunCmd_MoEDPPlacement_PD_Runs(t *testing.T) {
+	if os.Getenv("BLIS_RUN_DP_PD") == "1" {
+		args := append(dpRunBaseArgs(),
+			// 1 prefill + 1 decode per logical instance; --dp 2 ⇒ 2 prefill + 2 decode = 4.
+			"--dp", "2", "--num-instances", "2", "--total-kv-blocks", "20000",
+			"--prefill-instances", "1", "--decode-instances", "1",
+		)
+		rootCmd.SetArgs(args)
+		if err := rootCmd.Execute(); err != nil {
+			os.Exit(2)
+		}
+		os.Exit(0)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRunCmd_MoEDPPlacement_PD_Runs$")
+	cmd.Env = append(os.Environ(), "BLIS_RUN_DP_PD=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("PD disaggregation + MoE --dp 2 must now run (#1553), got %v; output:\n%s", err, out)
+	}
+	got := string(out)
+	// 2 logical × dp 2 = 4 replicas ⇒ instance_3 present, instance_4 absent.
+	if !strings.Contains(got, `"instance_id": "instance_3"`) {
+		t.Errorf("AC1: expected 4 engine replicas (2 logical × --dp 2); output:\n%s", got)
+	}
+	if strings.Contains(got, `"instance_id": "instance_4"`) {
+		t.Errorf("AC1: expected exactly 4 replicas, but instance_4 is present")
+	}
+	clusterConservationHolds(t, got) // INV-1
+}
+
+// TestRunCmd_MoEDPPlacement_PD_PerPoolAutoKV_PerRank is the BC-3 behavioral execution test
+// (#1553): a PD + `--dp N` run that actually reaches latency.CalculateKVBlocks on the per-pool
+// auto-KV path must charge the PER-RANK DP (=1), not the global `--dp`, so a pool's per-replica
+// KV is not dp²-inflated.
+//
+// The existing PD tests do NOT cover this execution path: TestRunCmd_MoEDPPlacement_PD_Runs pins
+// `--total-kv-blocks` (which sets KVParamsOK=false and bypasses CalculateKVBlocks entirely), the
+// DP=1 byte-identity test has an inactive plan (perPoolKVDP == dataParallelism == 1 either way),
+// and the node-pool test exercises applyPerInstanceKVCapacity (a different function). So a
+// regression that passed `dataParallelism` in place of `perPoolKVDP` at the per-pool
+// CalculateKVBlocks sites (cmd/root.go) would pass every one of those and only trip the
+// source-string guard — exactly the "refactor survival" gap the review raised.
+//
+// This test forces the per-pool auto-calc to run by giving the prefill pool a TP override
+// (`--prefill-tp 2` while the global `--tp` is 1, so `poolPrefillTP != tensorParallelism` is
+// true) with NO `--total-kv-blocks`, then reads the auto-calc's own Info line. That line prints
+// the DP the calc charged: `DP=1` is per-rank (correct), `DP=2` would be the dp²-inflated
+// regression. A dedicated non-vacuity check confirms the auto-calc actually ran.
+func TestRunCmd_MoEDPPlacement_PD_PerPoolAutoKV_PerRank(t *testing.T) {
+	if os.Getenv("BLIS_RUN_DP_PERPOOL_AUTOKV") == "1" {
+		args := append(dpRunBaseArgs(),
+			"--dp", "2", "--num-instances", "2", // P(1)+D(1) = 2 ≤ num-instances 2
+			"--prefill-instances", "1", "--decode-instances", "1",
+			"--prefill-tp", "2", // differs from global --tp 1 ⇒ per-pool prefill auto-calc runs
+			"--log", "info", // surface the per-pool KV auto-calc line
+			// deliberately NO --total-kv-blocks ⇒ CalculateKVBlocks (the path under test) runs
+		)
+		rootCmd.SetArgs(args)
+		if err := rootCmd.Execute(); err != nil {
+			os.Exit(2)
+		}
+		os.Exit(0)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRunCmd_MoEDPPlacement_PD_PerPoolAutoKV_PerRank$")
+	cmd.Env = append(os.Environ(), "BLIS_RUN_DP_PERPOOL_AUTOKV=1")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("PD + --dp 2 + per-pool auto-KV must run (#1553); err=%v\nstderr:\n%s", err, stderr.String())
+	}
+	logs := stderr.String()
+	// Non-vacuity: the per-pool prefill auto-calc must actually have run (otherwise the
+	// DP assertion below would pass trivially on an absent line).
+	if !strings.Contains(logs, "auto-calculated prefill pool total-kv-blocks=") {
+		t.Fatalf("BC-3: expected the per-pool prefill KV auto-calc to run (TP override + no --total-kv-blocks); "+
+			"stderr:\n%s", logs)
+	}
+	// The auto-calc charged the per-rank DP: the line ends with "DP=1)" — every DP-placement
+	// replica is DP=1. "DP=2)" would be the dp²-inflated regression (charging the global --dp
+	// to a per-replica budget). (The non-vacuity Fatalf above already returned if the line
+	// was absent, so a false here is a genuine wrong-DP.)
+	if !perPoolAutoKVLineHasDP(logs, "prefill", 1) {
+		t.Errorf("BC-3: the per-pool prefill KV auto-calc must charge the PER-RANK DP=1 under an active "+
+			"DP-as-placement plan, not the global --dp 2 (a dp² inflation); stderr:\n%s", logs)
+	}
+	// The regression signature stated explicitly, so the failure message is unambiguous.
+	if perPoolAutoKVLineHasDP(logs, "prefill", 2) {
+		t.Errorf("BC-3: per-pool prefill auto-calc charged DP=2 (the global --dp), meaning perPoolKVDP "+
+			"was not the per-rank value — dp²-inflated per-replica KV; stderr:\n%s", logs)
+	}
+	clusterConservationHolds(t, stdout.String()) // INV-1
+}
+
+// perPoolAutoKVLineHasDP reports whether the per-pool (prefill|decode) KV auto-calc Info line
+// reports the given DP value. It matches the trailing "DP=<n>)" of the auto-calc log line
+// emitted at cmd/root.go, tolerating any block count / GPU / TP before it.
+func perPoolAutoKVLineHasDP(logs, pool string, dp int) bool {
+	prefix := "auto-calculated " + pool + " pool total-kv-blocks="
+	for _, line := range strings.Split(logs, "\n") {
+		i := strings.Index(line, prefix)
+		if i < 0 {
+			continue
+		}
+		if strings.Contains(line[i:], "DP="+strconv.Itoa(dp)+")") {
+			return true
+		}
+	}
+	return false
+}
+
+// TestRunCmd_MoEDPPlacement_PerPoolRoofline_Rejected is BC-7 at the system level (#1553):
+// once PD + --dp>1 is a supported run, a per-pool --prefill-latency-model roofline override
+// must be REJECTED (exit 1) rather than silently putting the prefill pool on DP/EP-blind
+// step time while the rest of the cluster runs the DP physics. This exercises the composed
+// `dataParallelism > 1 || enableExpertParallel` predicate reaching validatePerPoolLatencyBackends
+// through the CLI at --dp 2 — the wiring the unit test (TestValidatePerPoolLatencyBackends)
+// cannot see. The gate itself landed in #1548; #1553 is what makes the PD path that trips it
+// reachable at all.
+func TestRunCmd_MoEDPPlacement_PerPoolRoofline_Rejected(t *testing.T) {
+	if os.Getenv("BLIS_RUN_DP_ROOFLINE") == "1" {
+		args := append(dpRunBaseArgs(),
+			"--dp", "2", "--num-instances", "2", "--total-kv-blocks", "20000",
+			"--prefill-instances", "1", "--decode-instances", "1",
+			"--prefill-latency-model", "roofline", // DP/EP-blind pool while --dp 2 runs DP physics
+		)
+		rootCmd.SetArgs(args)
+		_ = rootCmd.Execute()
+		os.Exit(0)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRunCmd_MoEDPPlacement_PerPoolRoofline_Rejected$")
+	cmd.Env = append(os.Environ(), "BLIS_RUN_DP_ROOFLINE=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected non-zero exit (Fatalf) for a per-pool roofline override + MoE --dp 2, got exit 0; output:\n%s", out)
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+		t.Fatalf("expected exit code 1 (logrus.Fatalf), got %v; output:\n%s", err, out)
+	}
+	got := string(out)
+	if !strings.Contains(got, "prefill-latency-model") {
+		t.Errorf("BC-7: the gate message should name the offending per-pool flag; got:\n%s", got)
 	}
 }
 
@@ -596,6 +834,70 @@ func TestRunCmd_MoEDPPlacement_EPOn_Runs(t *testing.T) {
 		t.Errorf("expected the unpriced inter-replica fabric disclosure; output:\n%s", got)
 	}
 	clusterConservationHolds(t, got) // INV-1
+}
+
+// TestRunCmd_MoEDPPlacement_NodePools_NxM is BC-6 at the system level (#1553, AC3): node
+// pools + MoE --dp N — rejected before this PR — now place N×M real replicas from pool
+// inventory, together reserving N×M×TP GPUs, each sized per-rank from its ACTUAL placed
+// GPU. With --num-instances 2 --dp 2 --tp 1 the deployment expands to 4 single-GPU
+// replicas drawn from the 8-GPU H100 pool.
+//
+// Two observables carry the criterion:
+//   - 4 replicas place (instance_3 present, instance_4 absent) AND conservation holds —
+//     so all N×M reservations succeeded against pool inventory (a failed placement would
+//     drop the instance and break INV-1);
+//   - the per-instance KV auto-calc (no --total-kv-blocks ⇒ applyPerInstanceKVCapacity
+//     runs) logs a PER-RANK total: each replica is DP=1, so its block count equals the
+//     single-rank budget of the placed 80 GiB H100, NOT the dp-multiplied one. The
+//     Info-level auto-calc line is the direct evidence that placement sized per-rank.
+func TestRunCmd_MoEDPPlacement_NodePools_NxM(t *testing.T) {
+	if os.Getenv("BLIS_RUN_DP_NODEPOOLS") == "1" {
+		dir := os.Getenv("BLIS_RUN_DP_NODEPOOLS_DIR")
+		// One H100 pool, 8 GPUs on a single node — room for N×M×TP = 2×2×1 = 4 replicas.
+		bundleYAML := "node_pools:\n  - name: pool-a\n    gpu_type: H100\n    gpus_per_node: 8\n" +
+			"    gpu_memory_gib: 80\n    initial_nodes: 1\n    min_nodes: 1\n    max_nodes: 1\n    cost_per_hour: 32.0\n"
+		bundlePath := filepath.Join(dir, "nodepools.yaml")
+		if err := os.WriteFile(bundlePath, []byte(bundleYAML), 0644); err != nil {
+			os.Exit(2)
+		}
+		args := append(dpRunBaseArgs(),
+			"--dp", "2", "--num-instances", "2", // N×M = 4 replicas
+			"--policy-config", bundlePath,
+			"--log", "info", // surface the per-instance KV auto-calc (per-rank sizing evidence)
+		)
+		rootCmd.SetArgs(args)
+		if err := rootCmd.Execute(); err != nil {
+			os.Exit(2)
+		}
+		os.Exit(0)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRunCmd_MoEDPPlacement_NodePools_NxM$")
+	cmd.Env = append(os.Environ(), "BLIS_RUN_DP_NODEPOOLS=1", "BLIS_RUN_DP_NODEPOOLS_DIR="+t.TempDir())
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("AC3: node pools + MoE --dp 2 must now run (#1553), got %v; output:\n%s", err, out)
+	}
+	got := string(out)
+	// N×M = 4 replicas ⇒ instance_3 present, instance_4 absent.
+	if !strings.Contains(got, `"instance_id": "instance_3"`) {
+		t.Errorf("AC3/BC-6: expected N×M=4 replicas placed from the node pool (instance_3); output:\n%s", got)
+	}
+	if strings.Contains(got, `"instance_id": "instance_4"`) {
+		t.Errorf("AC3/BC-6: expected exactly 4 replicas, but instance_4 is present")
+	}
+	// Per-rank sizing evidence (non-vacuous): the per-instance auto-calc ran (node pools +
+	// no --total-kv-blocks) and sized each DP=1 replica from its placed 80 GiB H100 — the
+	// per-instance line must report DP=1, NOT the lumped DP=2 of the global auto-calc. A
+	// regression that sized replicas dp-multiplied would log "DP=2" here and fail.
+	if !strings.Contains(got, "per-instance KV auto-calc") {
+		t.Errorf("AC3/BC-6: expected the per-instance KV auto-calc to run under node pools "+
+			"(each replica sized per-rank from its placed GPU); output:\n%s", got)
+	}
+	if !strings.Contains(got, `total-kv-blocks=74312 (GPU=80 GiB, TP=1, DP=1`) {
+		t.Errorf("AC3/BC-6: each replica must be sized PER-RANK (DP=1) from its placed 80 GiB H100 "+
+			"— half the DP=2 global auto-calc total, no dp² double-count; output:\n%s", got)
+	}
+	clusterConservationHolds(t, got) // BC-9 / INV-1: every N×M reservation succeeded
 }
 
 // TestDPPlacement_PerRankKV_NoDoubleCount is the BC-2 law: with DP-as-placement,
@@ -803,6 +1105,7 @@ func TestResolveDPPlacement_MutatesDeploymentVars(t *testing.T) {
 		dp              int
 		epOn            bool
 		prefill         int
+		decode          int
 		autoKV          bool
 		autoscaler      bool
 		nodePools       bool
@@ -843,11 +1146,14 @@ func TestResolveDPPlacement_MutatesDeploymentVars(t *testing.T) {
 			wantPerRankDP: 1, wantNumInst: 8, wantTotalKV: 10000, wantMaxModelLen: 160000,
 		},
 		{
-			name: "PD guard errors and mutates nothing",
-			dp:   4, prefill: 1, autoKV: true,
+			// #1553 (AC1): PD is no longer a guard. A PD topology expands like any other
+			// active plan — the global count ×dp, KV divided to per-rank, max-model-len
+			// re-capped — and the single prefill pool scales 1→4 too (asserted separately
+			// in TestApplyDPPlacement / the e2e test). Here we pin the shared quantities.
+			name: "PD is supported and expands the deployment",
+			dp:   4, prefill: 1, decode: 1, autoKV: true,
 			inNumInstances: 2, inTotalKV: 40000, inMaxModelLen: 1_000_000,
-			wantErrContains: "#1553",
-			wantNumInst:     2, wantTotalKV: 40000, wantMaxModelLen: 1_000_000,
+			wantPerRankDP: 1, wantNumInst: 8, wantTotalKV: 10000, wantMaxModelLen: 160000,
 		},
 		{
 			name: "autoscaler guard errors and mutates nothing",
@@ -857,11 +1163,13 @@ func TestResolveDPPlacement_MutatesDeploymentVars(t *testing.T) {
 			wantNumInst:     2, wantTotalKV: 40000, wantMaxModelLen: 1_000_000,
 		},
 		{
-			name: "node-pool guard errors and mutates nothing",
+			// #1553 (AC3): node pools are no longer a guard. The plan is identical to the
+			// plain active plan; the N×M placement / GPU reservation is a cluster concern
+			// exercised in the e2e test, not here.
+			name: "node pools are supported and expand the deployment",
 			dp:   4, nodePools: true, autoKV: true,
 			inNumInstances: 2, inTotalKV: 40000, inMaxModelLen: 1_000_000,
-			wantErrContains: "#1553",
-			wantNumInst:     2, wantTotalKV: 40000, wantMaxModelLen: 1_000_000,
+			wantPerRankDP: 1, wantNumInst: 8, wantTotalKV: 10000, wantMaxModelLen: 160000,
 		},
 		{
 			// Explicit --total-kv-blocks (KVParamsOK false): per-instance already, so the
@@ -882,15 +1190,23 @@ func TestResolveDPPlacement_MutatesDeploymentVars(t *testing.T) {
 
 			dataParallelism = tc.dp
 			enableExpertParallel = tc.epOn
-			prefillInstances = tc.prefill
-			decodeInstances, prefillDecodeInstances, encodeInstances = 0, 0, 0
+			prefillInstances, decodeInstances = tc.prefill, tc.decode
+			prefillDecodeInstances, encodeInstances = 0, 0
 			moeCommBackend = ""
 			numInstances = tc.inNumInstances
 			totalKVBlocks = tc.inTotalKV
 			maxModelLen = tc.inMaxModelLen
 			blockSizeTokens = 16
 
-			plan, err := resolveDPPlacement(dpMoELatencyResolution(tc.autoKV), tc.autoscaler, tc.nodePools)
+			lr := dpMoELatencyResolution(tc.autoKV)
+			// planDPPlacement now owns the autoscaler / node-pool decision (resolveDPPlacement
+			// takes the decided plan); mirror the production caller — plan, then apply.
+			plan, err := planDPPlacement(lr.ModelConfig.IsMoE(), dataParallelism, enableExpertParallel,
+				prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0,
+				tc.autoscaler, tc.nodePools)
+			if err == nil {
+				plan, err = resolveDPPlacement(lr, plan)
+			}
 			if tc.wantErrContains != "" {
 				if err == nil {
 					t.Fatalf("expected an error containing %q, got nil", tc.wantErrContains)
@@ -939,7 +1255,11 @@ func TestResolveDPPlacement_DenseModelIsInert(t *testing.T) {
 		HWConfig:    sim.HardwareCalib{MemoryGiB: 80.0},
 		KVParamsOK:  true,
 	}
-	plan, err := resolveDPPlacement(dense, false, false)
+	plan, err := planDPPlacement(dense.ModelConfig.IsMoE(), dataParallelism, enableExpertParallel,
+		prefillInstances > 0, false, false)
+	if err == nil {
+		plan, err = resolveDPPlacement(dense, plan)
+	}
 	if err != nil {
 		t.Fatalf("dense model must not error: %v", err)
 	}

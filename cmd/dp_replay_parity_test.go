@@ -15,8 +15,11 @@ package cmd
 //     flags produces byte-identical stdout — the parity the issue asks for.
 //   - #1556 BC-3: the auto-KV path (no --total-kv-blocks) divides to the per-rank budget
 //     and re-caps --max-model-len, so no replica's NewSimulator panics.
-//   - #1556 BC-4: the #1553 guarded combos still fail fast on replay. (The #1548 EP-on
-//     combo was one of them until #1548 landed; it is now supported on both commands.)
+//   - #1556 BC-4: PD + MoE --dp N now REPLAYS since #1553 (see
+//     TestReplayCmd_MoEDPPlacement_PD_Parity); the autoscaler and node pools are still
+//     rejected on replay, but by replay's own bundle guards (unconditional, DP-independent),
+//     not by a DP-specific fail-fast. (The #1548 EP-on combo was a #1531/#1556-era guard
+//     until #1548 landed; it is now supported on both commands.)
 //   - #1556 BC-5 (INV-6): --dp 1 on replay stays byte-identical run to run.
 //   - #1556 BC-6 (INV-1): request conservation holds across the expanded replicas.
 //
@@ -412,60 +415,69 @@ func TestReplayCmd_MoEDPPlacement_AutoKV_Parity(t *testing.T) {
 	}
 }
 
-// TestReplayCmd_MoEDPPlacement_GuardedCombos_Rejected is BC-4: #1556 lifted the
-// run-only guard but NOT the physics guards. An unsupported combination must still
-// exit 1 naming its tracking issue, on replay exactly as on run — never a silently
-// mis-modeled replay.
-func TestReplayCmd_MoEDPPlacement_GuardedCombos_Rejected(t *testing.T) {
+// TestReplayCmd_MoEDPPlacement_PD_Parity is #1553 AC1 on the replay path: PD
+// disaggregation + MoE --dp N was a #1531-era fail-fast on BOTH commands; #1553 lifts
+// it, so a trace exported by `blis run --dp N` under a PD topology, replayed with the
+// same flags, must (a) RUN rather than exit 1, and (b) produce byte-identical stdout —
+// the strongest available INV-13 statement, covering the per-pool KV per-rank sizing
+// (BC-3) and the P·N/D·N pool expansion (BC-2) at once.
+//
+// It replaces the #1531/#1556-era rejection case (which asserted PD + --dp 2 exited 1
+// with "#1553"): PD is no longer a guarded combo on replay. The autoscaler and node
+// pools ARE still rejected by `blis replay` unconditionally, before DP is considered —
+// TestReplayCmd_AutoscalerBundleFatal / TestReplayCmd_NodePoolsBundleFatal cover those,
+// and TestResolveDPPlacement_MutatesDeploymentVars pins the autoscaler DP guard directly.
+//
+// --num-instances 2 (not 1): ValidatePoolTopology requires the pool sizes to fit the
+// instance count, so --prefill-instances 1 --decode-instances 1 needs 2 base instances;
+// under --dp 2 that expands to a 4-replica PD deployment (P·N=2 prefill, D·N=2 decode).
+func TestReplayCmd_MoEDPPlacement_PD_Parity(t *testing.T) {
 	if os.Getenv(dpLegEnv) != "" {
 		dpLegSubprocess()
 		return
 	}
 	name := t.Name() // captured before t.Run so subtests address the parent leg
 	prefix := filepath.Join(t.TempDir(), "trace")
-	dpLegOK(t, name, "run", prefix, 1, 1, "--total-kv-blocks", "20000")
 
-	// Only PD is listed. The autoscaler and node pools are rejected by blis replay
-	// unconditionally (before DP is considered), so their #1553 DP guard is unreachable
-	// here — TestReplayCmd_AutoscalerBundleFatal / TestReplayCmd_NodePoolsBundleFatal cover
-	// those, and TestResolveDPPlacement_MutatesDeploymentVars covers their DP guard
-	// directly. Expert parallelism was listed here until #1548 made it SUPPORTED on both
-	// commands; its parity is now asserted positively by the tp2-ep case of
-	// TestINV13_RunReplayParity_MoEDPPlacement.
-	cases := []struct {
-		label   string
-		numInst int
-		extra   []string
-		wantRef string // tracking issue the message must name
-	}{
-		{
-			label: "PD disaggregation",
-			// --num-instances 2 (vs 1 for the EP case): ValidatePoolTopology runs BEFORE
-			// the DP guard and requires the pool sizes to fit the instance count, so
-			// --prefill-instances 1 --decode-instances 1 needs 2. Without it the run would
-			// exit on the topology error and never reach the #1553 guard under test.
-			numInst: 2,
-			extra: []string{"--total-kv-blocks", "20000",
-				"--prefill-instances", "1", "--decode-instances", "1", "--pd-decider", "always"},
-			wantRef: "#1553",
-		},
+	pdExtra := []string{"--total-kv-blocks", "20000",
+		"--prefill-instances", "1", "--decode-instances", "1", "--pd-decider", "always"}
+
+	// Export the trace from a PD + --dp 2 RUN (the harness appends `extra` to both legs),
+	// then replay it with the identical flags. dpLegOK requires a clean exit on the run
+	// leg, so this alone proves PD + --dp 2 no longer fatals on the run path.
+	runOut := dpLegOK(t, name, "run", prefix, 2, 2, pdExtra...)
+
+	// dpLeg (not dpLegOK) for the replay leg so a divergence report can include the leg's
+	// stderr (the capacity/re-cap diagnostics are warn-level, visible without --log info).
+	// A clean exit here is the AC1 "replay RUNS" assertion — the pre-#1553 guard exited 1.
+	replayOut, replayErr, err := dpLeg(t, name, "replay", prefix, 2, 2, pdExtra...)
+	if err != nil {
+		t.Fatalf("#1553 AC1: PD + MoE --dp 2 must now REPLAY (was a #1531/#1556-era fail-fast); "+
+			"got %v\nstderr:\n%s", err, replayErr)
 	}
-	for _, tc := range cases {
-		t.Run(tc.label, func(t *testing.T) {
-			stdout, stderr, err := dpLeg(t, name, "replay", prefix, 2, tc.numInst, tc.extra...)
-			if err == nil {
-				t.Fatalf("expected a non-zero exit for MoE --dp 2 + %s; stdout:\n%s\nstderr:\n%s",
-					tc.label, stdout, stderr)
-			}
-			var exitErr *exec.ExitError
-			if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
-				t.Fatalf("expected exit code 1 (logrus.Fatalf), got %v; stderr:\n%s", err, stderr)
-			}
-			if !strings.Contains(stderr, tc.wantRef) {
-				t.Errorf("guard message must reference %s so the user can find the tracking issue; stderr:\n%s",
-					tc.wantRef, stderr)
-			}
-		})
+
+	// Non-vacuity: a parity assertion over two empty runs would pass trivially.
+	if completed := clusterMetricInt(t, runOut, "completed_requests"); completed <= 0 {
+		t.Fatalf("INV-13 parity would be vacuous: run leg completed %d requests; stdout:\n%s", completed, runOut)
+	}
+	clusterConservationHolds(t, runOut) // INV-1 companion to the byte-identity law (BC-9)
+
+	// Activation check: the PD topology must have EXPANDED by --dp on both legs, or the
+	// parity assertion is comparing two un-expanded runs. --num-instances 2 --dp 2 with
+	// P=1 D=1 expands to 4 replicas (instance_3 present, instance_4 absent).
+	for _, leg := range []struct{ label, out string }{{"run", runOut}, {"replay", replayOut}} {
+		if !strings.Contains(leg.out, `"instance_id": "instance_3"`) {
+			t.Errorf("#1553 BC-2: %s leg must show the PD pools expanded by --dp (M×N=4 replicas, "+
+				"instance_3 present) — byte-identity between two UN-expanded legs would pass vacuously; stdout:\n%s",
+				leg.label, leg.out)
+		}
+		if strings.Contains(leg.out, `"instance_id": "instance_4"`) {
+			t.Errorf("#1553 BC-2: %s leg must show exactly 4 replicas, but instance_4 is present", leg.label)
+		}
+	}
+	if runOut != replayOut {
+		t.Errorf("#1553 AC1 (INV-13): `blis run --dp 2` under a PD topology and the replay of its trace "+
+			"must produce identical stdout\nRUN:\n%s\nREPLAY:\n%s\nREPLAY stderr:\n%s", runOut, replayOut, replayErr)
 	}
 }
 

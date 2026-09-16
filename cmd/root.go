@@ -502,25 +502,35 @@ func formatEPForLog(ep int) string {
 // returns the zero plan (Active=false, Replicas=0); callers MUST `logrus.Fatalf`
 // on error and not use the plan.
 //
-// DP-as-placement applies only to an MoE model with dp>1, no PD disaggregation, no node
-// pools, and no autoscaler; each replica is then a standalone TP engine sized per-rank
-// (DP=1). vLLM data parallelism is N independent EngineCores with an internal load
-// balancer distributing requests disjointly — the BLIS equivalent is N real instances
-// behind the existing cluster router. The lumped single-instance DP model divided token
-// work by dp precisely because it held every request; once the router splits requests
-// across N instances each replica must be DP=1 or the /dp factor double-counts.
+// DP-as-placement applies to an MoE model with dp>1 and no autoscaler; each replica is
+// then a standalone TP engine sized per-rank (DP=1). vLLM data parallelism is N independent
+// EngineCores with an internal load balancer distributing requests disjointly — the BLIS
+// equivalent is N real instances behind the existing cluster router. The lumped
+// single-instance DP model divided token work by dp precisely because it held every
+// request; once the router splits requests across N instances each replica must be DP=1 or
+// the /dp factor double-counts.
 //
-// Expert parallelism is now ALLOWED alongside it (#1548, lifting #1531's rejection). It
+// PD disaggregation and node pools are SUPPORTED alongside it (#1553, lifting #1531's
+// rejections). Neither changes the plan the way the autoscaler would: the PD extension is
+// the same per-replica transformation applied to EACH pool (a topology P+D+S+E ≤ total
+// becomes P·N+D·N+S·N+E·N ≤ total·N, which preserves the topology inequality), and node
+// pools place the N×M replicas through the existing tested per-instance placement path.
+// So the plan is identical to the plain (non-PD, non-node-pool) active plan; the per-pool
+// count expansion is carried out by applyDPPlacement, not decided here.
+//
+// Expert parallelism is ALSO allowed alongside it (#1548, lifting #1531's rejection). It
 // reserves no extra GPUs — the expert-parallel group IS the N×TP GPUs this placement
 // already takes — so the plan is unchanged by it; what EP changes is how experts map onto
 // that group, which resolveDPPlacement carries into each replica's latency model as the
-// logical EP-group DP width. epOn is therefore no longer a rejection reason, and is kept
+// logical EP-group DP width. epOn is therefore not a rejection reason, and is kept
 // as a parameter only so the caller's decision and its diagnostics read from one place.
 //
-// Guarded combinations still fail fast (never silently mis-modeled):
-//   - PD disaggregation / autoscaler / node pools: out of scope for the
-//     independent DP slice (pool-topology arithmetic, dynamic-scaling semantics,
-//     and un-audited N×M pool placement); tracked by #1553.
+// Guarded combination that still fails fast (never silently mis-modeled):
+//   - Autoscaler (#1553 DECISION): the semantics of dynamically scaling a dp-expanded
+//     population are undefined (add one rank? one whole DP group of N?), and
+//     DirectActuator.scaleUp places a single-role instance with no DP-group awareness.
+//     Supporting it would ship an untested, ambiguous path — exactly what #1531 guarded
+//     against. Rejected with a clear message stating the decision.
 //
 // Dense dp>1 is rejected earlier (resolveLatencyConfig, cmd/root.go), so here it
 // is simply a no-op.
@@ -529,21 +539,18 @@ func planDPPlacement(isMoE bool, dp int, epOn, pdActive, autoscalerActive, nodeP
 		// No expansion ⇒ nothing erases the config's own DP ⇒ no EP width to carry.
 		return dpPlacementPlan{Active: false, Replicas: 1, PerRankDP: dp}, nil
 	}
-	if pdActive {
-		return dpPlacementPlan{}, fmt.Errorf("--dp > 1 (MoE) is not yet supported with prefill/decode/encode " +
-			"disaggregation: DP-as-placement (#1531) reuses the --num-instances placement path, not the PD pools (#1553). " +
-			"Use --dp 1 with PD disaggregation, or remove the PD flags")
-	}
 	if autoscalerActive {
-		return dpPlacementPlan{}, fmt.Errorf("--dp > 1 (MoE) is not yet supported with the model autoscaler: " +
-			"DP-as-placement (#1531) spawns a fixed set of dp engine replicas (#1553). " +
+		return dpPlacementPlan{}, fmt.Errorf("--dp > 1 (MoE) is not supported with the model autoscaler (#1553 " +
+			"decision): DP-as-placement spawns a fixed set of dp engine replicas, and the semantics of " +
+			"dynamically scaling that population (add one rank, or one whole DP group of dp?) are undefined — " +
+			"the autoscaler places single-role instances with no DP-group awareness. " +
 			"Use --dp 1 with the autoscaler, or disable the autoscaler")
 	}
-	if nodePoolsActive {
-		return dpPlacementPlan{}, fmt.Errorf("--dp > 1 (MoE) is not yet supported with node pools: the N×M " +
-			"replica placement onto pools is not yet audited/tested (#1553). " +
-			"Use --dp 1 with node_pools, or remove the node_pools policy-bundle section")
-	}
+	// pdActive / nodePoolsActive are no longer rejection reasons (#1553). They are kept as
+	// parameters so resolveDPPlacement's diagnostics and the per-pool KV path can read the
+	// same decision, and so a future combination-specific guard has one home.
+	_ = pdActive
+	_ = nodePoolsActive
 	// epGroupDP is the ONLY effect expert parallelism has on the plan: it reserves no extra
 	// GPUs, so Replicas/PerRankDP are identical either way.
 	epGroupDP := 0
@@ -553,13 +560,27 @@ func planDPPlacement(isMoE bool, dp int, epOn, pdActive, autoscalerActive, nodeP
 	return dpPlacementPlan{Active: true, Replicas: dp, PerRankDP: 1, EPGroupDP: epGroupDP}, nil
 }
 
-// dpPlacementDeployment carries the three deployment quantities DP-as-real-placement
+// dpPlacementDeployment carries the deployment quantities DP-as-real-placement
 // adjusts. It is both the input (pre-expansion) and the output (post-expansion) of
 // applyDPPlacement.
+//
+// The four PD pool counts (#1553) are expanded by the same Replicas factor as
+// NumInstances: a PD topology of P prefill + D decode + S shared + E encode instances
+// (with P+D+S+E ≤ total) becomes P·N + D·N + S·N + E·N replicas of total·N. Scaling
+// every term by the same N preserves ValidatePoolTopology's inequality
+// (P·N+D·N+S·N+E·N ≤ total·N), so a topology that passed at --dp 1 still passes after
+// expansion. They are zero for a non-PD run, so the multiply is a strict no-op there.
 type dpPlacementDeployment struct {
 	NumInstances  int   // engine replicas (logical --num-instances on the way in)
 	TotalKVBlocks int64 // KV blocks per instance (the dp-multiplied aggregate on the way in when autoScaledKV)
 	MaxModelLen   int64 // --max-model-len (0 = unset/unlimited)
+
+	// PD pool counts (#1553), each scaled by Replicas when the plan is active. Zero for
+	// a non-PD deployment.
+	PrefillInstances int
+	DecodeInstances  int
+	SharedInstances  int
+	EncodeInstances  int
 }
 
 // applyDPPlacement applies a DP-as-placement plan to the deployment quantities: it
@@ -581,6 +602,13 @@ func applyDPPlacement(plan dpPlacementPlan, dp int, dep dpPlacementDeployment, a
 	}
 	out := dep
 	out.NumInstances = dep.NumInstances * plan.Replicas
+	// Scale each PD pool count by the same replica factor (#1553). The topology
+	// inequality P+D+S+E ≤ total is preserved because every term (and total) scales by
+	// the same N; the pool counts are 0 for a non-PD run, so this is a no-op there.
+	out.PrefillInstances = dep.PrefillInstances * plan.Replicas
+	out.DecodeInstances = dep.DecodeInstances * plan.Replicas
+	out.SharedInstances = dep.SharedInstances * plan.Replicas
+	out.EncodeInstances = dep.EncodeInstances * plan.Replicas
 	if autoScaledKV {
 		out.TotalKVBlocks = dep.TotalKVBlocks / int64(dp)
 	}
@@ -626,28 +654,26 @@ func applyDPPlacement(plan dpPlacementPlan, dp int, dep dpPlacementDeployment, a
 // bodies. The pure decision (planDPPlacement) and the pure arithmetic
 // (applyDPPlacement) stay separately unit-testable.
 //
-// Reads: dataParallelism, enableExpertParallel, prefill/decode/prefillDecode/encode
-// instance counts, blockSizeTokens, moeCommBackend, numInstances, totalKVBlocks,
-// maxModelLen.
+// Reads: dataParallelism, enableExpertParallel, moeCommBackend, tensorParallelism,
+// numInstances, totalKVBlocks, maxModelLen, and the prefill/decode/prefillDecode/encode
+// instance counts (as pre-expansion pool inputs).
 //
 // Side effects (package-level vars mutated, only when the plan is active and every
-// guard passes): numInstances, totalKVBlocks, maxModelLen.
+// guard passes): numInstances, totalKVBlocks, maxModelLen, and the four PD pool counts
+// (prefillInstances, decodeInstances, prefillDecodeInstances, encodeInstances) — each
+// scaled by Replicas so a PD topology spawns its N per-rank replicas per pool (#1553).
 //
-// autoscalerActive / nodePoolsActive are parameters because the two commands hold that
-// state differently: runCmd in its extracted bundleAutoscalerIntervalUs / bundleNodePools,
-// replayCmd in the parsed policy bundle plus its own flag-level rejection.
+// The plan is decided by the caller (planDPPlacement) and passed in — deliberately, so
+// the ONE decision can be made early enough for the per-pool KV auto-calc to size each
+// pool per-rank (BC-3, #1553), while its application (instance/KV/pool-count expansion)
+// stays here at the single write site. planDPPlacement is pure, so deciding early and
+// applying later is safe.
 //
 // On error NOTHING is mutated and the caller MUST `logrus.Fatalf` — the CLI boundary
 // owns termination; this function only reports. A non-Active plan (dense model, or
 // --dp 1) mutates nothing, which is what makes the feature a byte-identical no-op
 // (INV-6).
-func resolveDPPlacement(lr latencyResolution, autoscalerActive, nodePoolsActive bool) (dpPlacementPlan, error) {
-	plan, err := planDPPlacement(lr.ModelConfig.IsMoE(), dataParallelism, enableExpertParallel,
-		prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0,
-		autoscalerActive, nodePoolsActive)
-	if err != nil {
-		return dpPlacementPlan{}, err
-	}
+func resolveDPPlacement(lr latencyResolution, plan dpPlacementPlan) (dpPlacementPlan, error) {
 	if !plan.Active {
 		return plan, nil
 	}
@@ -656,14 +682,32 @@ func resolveDPPlacement(lr latencyResolution, autoscalerActive, nodePoolsActive 
 	// multiplied the total by dp for MoE) — exactly the resolveLatencyConfig auto gate.
 	autoScaledKV := lr.KVParamsOK && lr.HWConfig.MemoryGiB > 0
 	dep, err := applyDPPlacement(plan, dataParallelism, dpPlacementDeployment{
-		NumInstances:  numInstances,
-		TotalKVBlocks: totalKVBlocks,
-		MaxModelLen:   maxModelLen,
+		NumInstances:     numInstances,
+		TotalKVBlocks:    totalKVBlocks,
+		MaxModelLen:      maxModelLen,
+		PrefillInstances: prefillInstances,
+		DecodeInstances:  decodeInstances,
+		SharedInstances:  prefillDecodeInstances,
+		EncodeInstances:  encodeInstances,
 	}, autoScaledKV, blockSizeTokens)
 	if err != nil {
 		return dpPlacementPlan{}, err
 	}
+	// The scaled PD topology still satisfies P·N+D·N+S·N+E·N ≤ total·N by construction
+	// (the pre-scale topology passed ValidatePoolTopology at the CLI boundary and every
+	// term scales by the same N). Re-validate as defense in depth (#1553, BC-2): a future
+	// change to the scaling arithmetic that broke the invariant must fail loudly here
+	// rather than mis-place instances (R1).
+	if dep.PrefillInstances > 0 || dep.DecodeInstances > 0 || dep.SharedInstances > 0 || dep.EncodeInstances > 0 {
+		if verr := cluster.ValidatePoolTopology(dep.PrefillInstances, dep.DecodeInstances,
+			dep.SharedInstances, dep.EncodeInstances, dep.NumInstances); verr != nil {
+			return dpPlacementPlan{}, fmt.Errorf("DP-as-placement expanded the PD pool topology past the "+
+				"cluster invariant (this should be impossible — every term scales by the same --dp): %w", verr)
+		}
+	}
 	numInstances, totalKVBlocks, maxModelLen = dep.NumInstances, dep.TotalKVBlocks, dep.MaxModelLen
+	prefillInstances, decodeInstances = dep.PrefillInstances, dep.DecodeInstances
+	prefillDecodeInstances, encodeInstances = dep.SharedInstances, dep.EncodeInstances
 	logrus.Infof("[cluster] DP-as-placement: --dp %d (MoE) → %d single-node engine replicas per logical instance "+
 		"(%d logical × %d = %d instances), each per-rank (DP=1, %d KV blocks/replica)",
 		dataParallelism, plan.Replicas, logicalInstances, plan.Replicas, numInstances, totalKVBlocks)
@@ -682,14 +726,17 @@ func resolveDPPlacement(lr latencyResolution, autoscalerActive, nodePoolsActive 
 			"group and the MoE FFN uses dispatch/combine all-to-all instead of a TP all-reduce",
 			tensorParallelism, dataParallelism, tensorParallelism*dataParallelism)
 		// Honesty boundary: the group spans plan.Replicas SEPARATELY placed replicas. BLIS
-		// prices cross-node collective traffic from real placement (#1530), and there is no
-		// placement to read here — node pools alongside --dp>1 remain a fail-fast (#1553) —
-		// so the inter-replica leg of the all-to-all is charged at the on-node rate.
+		// prices cross-node collective traffic from real placement WITHIN one instance's TP
+		// group (#1530), but the expert-parallel group here is formed ACROSS N independently
+		// placed engine replicas — a boundary the per-instance placement topology does not
+		// cross. Node pools alongside --dp>1 are supported for GPU reservation since #1553,
+		// but that does not add inter-replica fabric pricing, so the inter-replica leg of the
+		// all-to-all is still charged at the on-node rate.
 		logrus.Warnf("[cluster] the %d-GPU expert-parallel group spans %d independently-placed engine "+
 			"replicas, whose inter-replica fabric cost is NOT priced: cross-node collective pricing is "+
-			"placement-derived (#1530) and node pools alongside --dp>1 are still a fail-fast (#1553), so "+
-			"the all-to-all is charged at the on-node rate and step time is optimistic for a multi-node "+
-			"expert-parallel deployment", tensorParallelism*dataParallelism, plan.Replicas)
+			"placement-derived within a TP group (#1530) but the EP group is formed across separately-placed "+
+			"replicas, so the all-to-all is charged at the on-node rate and step time is optimistic for a "+
+			"multi-node expert-parallel deployment", tensorParallelism*dataParallelism, plan.Replicas)
 	} else if moeCommBackend != "" {
 		// --moe-comm-backend selects the dispatch/combine cost. With EP off, each replica
 		// runs at DP=1, so that term is inert (the MoE FFN all-reduces over the TP group
@@ -1073,15 +1120,13 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		// INV BC-ROOFLINE: roofline does not model DP/EP step-time effects, so
 		// accepting these flags there would imply unsupported latency semantics.
 		//
-		// LATENT HOLE — READ THIS BEFORE LIFTING #1553. This gate reads the GLOBAL
-		// backend only. A per-pool override (--prefill-latency-model / --decode-latency-model
-		// roofline) can put a pool on roofline while the global backend is trained-physics,
-		// which slips past this check and would give that pool DP/EP-blind step time with
-		// --dp > 1 in force. It is unreachable TODAY only because PD disaggregation with
-		// MoE --dp > 1 is itself rejected by planDPPlacement (#1553) — i.e. two independent
-		// guards happen to compose. Whoever lifts #1553 must revisit this gate and validate
-		// the per-pool backends here (or in the per-pool override block), because at that
-		// moment this becomes a live silent-mis-model path rather than a theoretical one.
+		// This gate reads the GLOBAL backend only. A per-pool override
+		// (--prefill-latency-model / --decode-latency-model roofline) can put a pool on
+		// roofline while the global backend is trained-physics, which slips past THIS check
+		// and would give that pool DP/EP-blind step time with --dp > 1 in force. That
+		// per-pool hole is CLOSED separately by validatePerPoolLatencyBackends (#1548),
+		// called from the PD override block in both runCmd and replayCmd — now a live path
+		// since #1553 made PD + --dp > 1 supported (BC-7).
 		logrus.Fatalf("--dp > 1 and --enable-expert-parallel require --latency-model trained-physics "+
 			"(got --dp=%d, --enable-expert-parallel=%t, --latency-model %s). The roofline backend is "+
 			"DP/EP-blind for step time.",
@@ -1499,7 +1544,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&model, "model", "", "LLM name")
 	cmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
 	cmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
-	cmd.Flags().IntVar(&dataParallelism, "dp", 1, "Data parallelism degree (MoE models only; --latency-model trained-physics only). --dp N spawns N real single-node engine replicas per --num-instances, each sized per-rank, on both `blis run` and `blis replay` (#1531, #1556). Supported with --enable-expert-parallel since #1548 (the EP group is those replicas' GPUs; re-supply both flags on replay). Not supported with PD disaggregation / the autoscaler / node pools (#1553)")
+	cmd.Flags().IntVar(&dataParallelism, "dp", 1, "Data parallelism degree (MoE models only; --latency-model trained-physics only). --dp N spawns N real single-node engine replicas per --num-instances, each sized per-rank, on both `blis run` and `blis replay` (#1531, #1556). Supported with --enable-expert-parallel since #1548 (the EP group is those replicas' GPUs; re-supply both flags on replay). Supported with PD disaggregation (each pool spawns N per-rank replicas) and node pools (N×M replicas reserve N×M×TP GPUs) since #1553. Not supported with the model autoscaler (#1553: dp-group co-scaling is undefined)")
 	cmd.Flags().BoolVar(&enableExpertParallel, "enable-expert-parallel", false, "Enable expert parallelism for MoE models (mirrors vLLM --enable-expert-parallel; --latency-model trained-physics only)")
 	cmd.Flags().StringVar(&moeCommBackend, "moe-comm-backend", "", "MoE all-to-all comm backend for dispatch/combine cost (mirrors vLLM VLLM_ALL2ALL_BACKEND: naive, allgather_reducescatter [default], pplx, deepep_high_throughput, deepep_low_latency, mori, flashinfer_all2allv; MoE + --latency-model trained-physics + either --dp > 1 or --enable-expert-parallel)")
 	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "trained-physics", "Latency model backend: trained-physics (default), roofline")
@@ -1973,6 +2018,26 @@ var runCmd = &cobra.Command{
 			logrus.Infof("PD disaggregation: loaded ModelConfig from %s for KV transfer derivation", hfPath)
 		}
 
+		// perPoolKVDP is the DP the per-pool KV auto-calc (below) charges: the per-rank DP
+		// (=1) when DP-as-placement (#1531, #1553) will be active, else the global --dp.
+		// Under an active plan each pool spawns N DP=1 replicas, so a pool's per-replica KV
+		// must be sized per-rank — the per-pool analogue of the global auto-KV /dp division
+		// applyDPPlacement performs. A pool override is written directly (not routed through
+		// applyDPPlacement), so it must already be per-rank here to avoid a dp² inflation.
+		//
+		// The autoscaler / node-pool predicates come from the policy bundle, parsed later in
+		// this body, so the authoritative plan (with its autoscaler rejection) is decided at
+		// resolveDPPlacement below. Here we need only whether the plan WILL be active for
+		// sizing, and neither the autoscaler nor node pools changes PerRankDP: the autoscaler
+		// case Fatalf's later regardless (so the per-pool sizing is moot), and node pools are
+		// supported. So a provisional plan.PerRankDP with the placement guards left false is
+		// exact for the perRank decision. planDPPlacement is pure — this is not a second write.
+		perPoolKVDP := dataParallelism
+		if provisional, perr := planDPPlacement(lr.ModelConfig.IsMoE(), dataParallelism, enableExpertParallel,
+			prefillInstances > 0, false, false); perr == nil && provisional.Active {
+			perPoolKVDP = provisional.PerRankDP
+		}
+
 		// Per-pool hardware override vars. TotalKVBlocks is populated from per-pool KV
 		// auto-calc in the analytical backend block below (when applicable). TP/GPU/Backend/MaxModelLen
 		// are populated from CLI flags after PD validation. Both paths are no-ops when disaggregation
@@ -2011,7 +2076,10 @@ var runCmd = &cobra.Command{
 						} else {
 							// Per-pool TP but GLOBAL dp: per-pool DP is out of scope (#1420);
 							// --dp applies uniformly to all pools. Not a bug — see issue #1420.
-							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolPrefillTP, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
+							// Under an active DP-as-placement plan (#1553) perPoolKVDP is the
+							// per-rank DP (=1): each pool spawns N DP=1 replicas, so its per-replica
+							// KV is sized per-rank, mirroring the global auto-KV /dp division.
+							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolPrefillTP, perPoolKVDP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
 								latency.WithAdapterReservedBytes(loraReservedBytesForKV),
 								latency.WithExpertParallelSize(epSizeForKVCapacity(lr.ModelConfig.IsMoE(), poolPrefillTP)))
 							if calcErr != nil {
@@ -2019,7 +2087,7 @@ var runCmd = &cobra.Command{
 							} else {
 								prefillOverrides.TotalKVBlocks = &poolBlocks
 								logrus.Infof("--prefill-tp/--prefill-hardware: auto-calculated prefill pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d)",
-									poolBlocks, poolHC.MemoryGiB, poolPrefillTP, dataParallelism)
+									poolBlocks, poolHC.MemoryGiB, poolPrefillTP, perPoolKVDP)
 								if !cmd.Flags().Changed("prefill-max-model-len") {
 									kvFeasibleMax := poolBlocks * int64(blockSizeTokens)
 									if kvFeasibleMax < maxModelLen {
@@ -2048,7 +2116,8 @@ var runCmd = &cobra.Command{
 							logrus.Warnf("--decode-hardware: GPU memory capacity not available for %q in hardware config; decode pool will use global total-kv-blocks=%d", poolDecodeGPU, totalKVBlocks)
 						} else {
 							// Per-pool TP, global dp (see prefill-pool note above; #1420).
-							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolDecodeTP, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
+							// perPoolKVDP is per-rank (=1) under an active DP plan (#1553).
+							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolDecodeTP, perPoolKVDP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
 								latency.WithAdapterReservedBytes(loraReservedBytesForKV),
 								latency.WithExpertParallelSize(epSizeForKVCapacity(lr.ModelConfig.IsMoE(), poolDecodeTP)))
 							if calcErr != nil {
@@ -2056,7 +2125,7 @@ var runCmd = &cobra.Command{
 							} else {
 								decodeOverrides.TotalKVBlocks = &poolBlocks
 								logrus.Infof("--decode-tp/--decode-hardware: auto-calculated decode pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d)",
-									poolBlocks, poolHC.MemoryGiB, poolDecodeTP, dataParallelism)
+									poolBlocks, poolHC.MemoryGiB, poolDecodeTP, perPoolKVDP)
 								if !cmd.Flags().Changed("decode-max-model-len") {
 									kvFeasibleMax := poolBlocks * int64(blockSizeTokens)
 									if kvFeasibleMax < maxModelLen {
@@ -2528,21 +2597,31 @@ var runCmd = &cobra.Command{
 
 		startTime := time.Now() // Get current time (start)
 
-		// DP-as-real-placement (#1531): on an MoE model, `--dp N` means N independent
+		// DP-as-real-placement (#1531, #1553): on an MoE model, `--dp N` means N independent
 		// single-node engine replicas (vLLM's internal DP EngineCores), not one lumped
 		// instance. Expand to numInstances × N real replicas — reusing the existing
 		// per-instance placement path — and configure each replica per-rank (DP=1) so its
-		// latency + KV model describe one rank. Guarded combos (EP-on, PD, autoscaler)
-		// fail fast rather than being silently mis-modeled. resolveDPPlacement is the ONE
-		// code path run and replay share (R23), so INV-13 parity is structural (#1556).
-		// A no-op for --dp 1 and dense models.
+		// latency + KV model describe one rank. PD disaggregation and node pools are SUPPORTED
+		// (#1553, each pool spawns its own N per-rank replicas); the autoscaler still fails
+		// fast (decided above at planDPPlacement). resolveDPPlacement is the ONE code path run
+		// and replay share (R23), so INV-13 parity is structural (#1556). A no-op for --dp 1
+		// and dense models.
 		//
-		// Ordering caveat (mirrored in cmd/replay.go): the per-pool KV auto-calc earlier in
-		// this body also reads maxModelLen (for prefillOverrides / decodeOverrides) and so
-		// sees the pre-division value. Safe only because PD + --dp>1 is a guarded combo
-		// (#1553): an active DP plan Fatalf's, and a PD run never has an active plan. If
-		// #1553 is lifted, recompute the per-pool overrides after this call.
-		dpPlan, dpErr := resolveDPPlacement(lr, bundleAutoscalerIntervalUs > 0, len(bundleNodePools) > 0)
+		// The authoritative plan is decided HERE — after the policy bundle is parsed, so the
+		// autoscaler / node-pool predicates are real (the provisional plan above, used only to
+		// size the per-pool KV per-rank, deliberately left the placement guards false). This is
+		// where the autoscaler rejection (#1553 decision) surfaces. The former ordering caveat —
+		// the per-pool KV block reading a pre-division maxModelLen while PD + --dp>1 was a
+		// fail-fast — is resolved: that block now uses perPoolKVDP (the plan's per-rank DP)
+		// rather than depending on the guard. resolveDPPlacement APPLIES the plan (the single
+		// write site for numInstances / totalKVBlocks / maxModelLen / the four PD pool counts).
+		dpPlan, dpErr := planDPPlacement(lr.ModelConfig.IsMoE(), dataParallelism, enableExpertParallel,
+			prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0,
+			bundleAutoscalerIntervalUs > 0, len(bundleNodePools) > 0)
+		if dpErr != nil {
+			logrus.Fatalf("%v", dpErr)
+		}
+		dpPlan, dpErr = resolveDPPlacement(lr, dpPlan)
 		if dpErr != nil {
 			logrus.Fatalf("%v", dpErr)
 		}
@@ -3196,10 +3275,11 @@ func anyPerPoolHardwareFlagChanged(changed func(string) bool) bool {
 // pool would then be silently DP/EP-blind — a real mis-model, not a cosmetic one.
 //
 // It was harmless before #1548 (expert parallelism had NO step-time effect, so a DP/EP-blind
-// pool computed the same thing as an EP-aware one) and MoE `--dp>1` + PD disaggregation was
-// — and remains — a #1553 fail-fast. Making the EP toggle live is exactly what turns the
-// documented latent hole into a live path, so it is closed here. The gate covers both
-// activation reasons (`--dp>1` and EP-on) so lifting #1553 later inherits it.
+// pool computed the same thing as an EP-aware one) AND while MoE `--dp>1` + PD disaggregation
+// was a #1531-era fail-fast (the per-pool override path was unreachable with `--dp>1`). Making
+// the EP toggle live (#1548) turned the documented latent hole into a live path, and #1553
+// lifting the PD + `--dp>1` fail-fast makes it reachable end-to-end — so this gate is now a
+// live check. It covers both activation reasons (`--dp>1` and EP-on).
 //
 // Returns an error rather than terminating: the CLI boundary owns termination.
 func validatePerPoolLatencyBackends(dpepActive bool, prefill, decode cluster.PoolOverrides) error {

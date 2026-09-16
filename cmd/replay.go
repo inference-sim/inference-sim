@@ -476,6 +476,26 @@ Example:
 			logrus.Infof("PD disaggregation: loaded ModelConfig from %s for KV transfer derivation", hfPath)
 		}
 
+		// DP-as-placement plan DECISION (#1531/#1556, #1553) — decided here, early, so the
+		// per-pool KV auto-calc below sizes each pool per-rank when the plan is active (BC-3),
+		// exactly as runCmd does. planDPPlacement is pure; it is APPLIED below at the shared
+		// resolveDPPlacement (R23). autoscaler / node pools are structurally false on replay
+		// (rejected unconditionally above), so a replay plan is only ever active for PD or a
+		// plain MoE --dp>1.
+		dpPlan, dpErr := planDPPlacement(lr.ModelConfig.IsMoE(), dataParallelism, enableExpertParallel,
+			prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0,
+			cmd.Flags().Changed("model-autoscaler-interval-us") || (bundle != nil && bundle.Autoscaler.IntervalUs > 0),
+			bundle != nil && len(bundle.NodePools) > 0)
+		if dpErr != nil {
+			logrus.Fatalf("%v", dpErr)
+		}
+		// perPoolKVDP: per-rank DP (=1) under an active plan, else global --dp. Same rationale
+		// as runCmd — a pool override is written directly, so it must be per-rank at calc time.
+		perPoolKVDP := dataParallelism
+		if dpPlan.Active {
+			perPoolKVDP = dpPlan.PerRankDP
+		}
+
 		// Per-pool hardware override construction (same as runCmd).
 		var prefillOverrides, decodeOverrides cluster.PoolOverrides
 
@@ -511,7 +531,8 @@ Example:
 						} else {
 							// Per-pool TP but GLOBAL dp: per-pool DP is out of scope (#1420);
 							// --dp applies uniformly to all pools. Mirrors run (cmd/root.go).
-							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolPrefillTP, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
+							// perPoolKVDP is per-rank (=1) under an active DP plan (#1553).
+							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolPrefillTP, perPoolKVDP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
 								latency.WithAdapterReservedBytes(loraReservedBytesForKV),
 								latency.WithExpertParallelSize(epSizeForKVCapacity(lr.ModelConfig.IsMoE(), poolPrefillTP)))
 							if calcErr != nil {
@@ -519,7 +540,7 @@ Example:
 							} else {
 								prefillOverrides.TotalKVBlocks = &poolBlocks
 								logrus.Infof("--prefill-tp/--prefill-hardware: auto-calculated prefill pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d)",
-									poolBlocks, poolHC.MemoryGiB, poolPrefillTP, dataParallelism)
+									poolBlocks, poolHC.MemoryGiB, poolPrefillTP, perPoolKVDP)
 								if !cmd.Flags().Changed("prefill-max-model-len") {
 									kvFeasibleMax := poolBlocks * int64(blockSizeTokens)
 									if kvFeasibleMax < maxModelLen {
@@ -548,7 +569,8 @@ Example:
 							logrus.Warnf("--decode-hardware: GPU memory capacity not available for %q in hardware config; decode pool will use global total-kv-blocks=%d", poolDecodeGPU, totalKVBlocks)
 						} else {
 							// Per-pool TP, global dp (see prefill-pool note above; #1420).
-							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolDecodeTP, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
+							// perPoolKVDP is per-rank (=1) under an active DP plan (#1553).
+							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolDecodeTP, perPoolKVDP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
 								latency.WithAdapterReservedBytes(loraReservedBytesForKV),
 								latency.WithExpertParallelSize(epSizeForKVCapacity(lr.ModelConfig.IsMoE(), poolDecodeTP)))
 							if calcErr != nil {
@@ -556,7 +578,7 @@ Example:
 							} else {
 								decodeOverrides.TotalKVBlocks = &poolBlocks
 								logrus.Infof("--decode-tp/--decode-hardware: auto-calculated decode pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d)",
-									poolBlocks, poolHC.MemoryGiB, poolDecodeTP, dataParallelism)
+									poolBlocks, poolHC.MemoryGiB, poolDecodeTP, perPoolKVDP)
 								if !cmd.Flags().Changed("decode-max-model-len") {
 									kvFeasibleMax := poolBlocks * int64(blockSizeTokens)
 									if kvFeasibleMax < maxModelLen {
@@ -655,32 +677,21 @@ Example:
 			}
 		}
 
-		// DP-as-real-placement (#1531 for run, #1556 for replay): on an MoE model, `--dp N`
-		// means N independent single-node engine replicas (vLLM's internal DP EngineCores),
-		// not one lumped instance. resolveDPPlacement is the ONE code path run and replay
-		// share (R23) — it expands numInstances × N, divides the auto-KV total back to the
-		// per-rank budget, and re-caps --max-model-len to that budget — so identical flags
-		// over the same trace produce identical metrics (INV-13). Placed AFTER the PD /
-		// autoscaler / node-pool validation above so the guarded-combo decision sees the
-		// validated topology, and BEFORE the DeploymentConfig literal below, which reads
-		// all three adjusted quantities. A no-op for --dp 1 and dense models (INV-6).
+		// DP-as-real-placement (#1531 for run, #1556 for replay; #1553 lifts PD/node-pool
+		// guards): on an MoE model, `--dp N` means N independent single-node engine replicas
+		// (vLLM's internal DP EngineCores), not one lumped instance. resolveDPPlacement is the
+		// ONE code path run and replay share (R23) — it expands numInstances × N (and the four
+		// PD pool counts), divides the auto-KV total back to the per-rank budget, and re-caps
+		// --max-model-len to that budget — so identical flags over the same trace produce
+		// identical metrics (INV-13). Placed AFTER the PD / autoscaler / node-pool validation
+		// above and BEFORE the DeploymentConfig literal below, which reads the adjusted
+		// quantities. A no-op for --dp 1 and dense models (INV-6).
 		//
-		// Ordering caveat: this is NOT the only reader of the three quantities. The
-		// per-pool KV auto-calc above also reads maxModelLen (for prefillOverrides /
-		// decodeOverrides) and runs BEFORE this call, so it would see the pre-division
-		// value. That is safe only because PD + --dp>1 is a guarded combo (#1553) — an
-		// active DP plan Fatalf's before any PD run reaches the cluster, and a PD run
-		// never has an active plan. If #1553 is ever lifted, the per-pool overrides must
-		// be recomputed after this call (or this call moved above them). runCmd carries
-		// the same ordering and the same caveat.
-		// autoscalerActive / nodePoolsActive: replay rejects both unconditionally above
-		// (the --model-autoscaler-interval-us flag guard and the bundle guards), so these
-		// are structurally false here. They are still computed as the real predicates —
-		// the same set run folds into bundleAutoscalerIntervalUs / bundleNodePools — so the
-		// guarded-combo decision stays correct if replay ever gains support for either.
-		dpPlan, dpErr := resolveDPPlacement(lr,
-			cmd.Flags().Changed("model-autoscaler-interval-us") || (bundle != nil && bundle.Autoscaler.IntervalUs > 0),
-			bundle != nil && len(bundle.NodePools) > 0)
+		// The plan was DECIDED above (dpPlan), before the per-pool KV auto-calc, so each pool
+		// is sized per-rank via perPoolKVDP (BC-3, #1553) — the former ordering caveat (the
+		// per-pool block reading a pre-division maxModelLen while PD + --dp>1 was a fail-fast)
+		// is resolved rather than merely guarded. runCmd carries the identical structure.
+		dpPlan, dpErr = resolveDPPlacement(lr, dpPlan)
 		if dpErr != nil {
 			logrus.Fatalf("%v", dpErr)
 		}
