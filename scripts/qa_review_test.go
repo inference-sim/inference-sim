@@ -131,8 +131,9 @@ func TestRenderVerdictBlocksOnBlockingStatus(t *testing.T) {
 }
 
 // TestRenderOutputShape asserts the full report shape: the verdict header, the
-// full untruncated table, an Items to fix section listing the blocking finding,
-// and an Important to consider section listing the non-blocking note.
+// full untruncated table, an Items to fix section listing the blocking finding
+// AND its evidence line, and an Important to consider section listing the
+// non-blocking note with its own evidence line.
 func TestRenderOutputShape(t *testing.T) {
 	requirePython3(t)
 
@@ -142,14 +143,16 @@ func TestRenderOutputShape(t *testing.T) {
 	out := renderFixture(t, answers)
 
 	mustContain := []string{
-		"## qa-review — PR #42: ⛔ BLOCK",                        // verdict header
-		"| ID | Topic | Result | Question | Answer |",           // table header
-		"| F1 | fixed | ✅ CONFIDENT | Implements the issue? |",  // full, untruncated row
-		"| G1 | tests | ❌ FLAW_FOUND | Covered by tests? |",     // full, untruncated row
-		"### Items to fix",                                      // blocking section
-		"- **G1 · FLAW_FOUND** — A test is missing.",            // the blocking finding + evidence
-		"### Important to consider",                             // non-blocking section
-		"- **F1** — a minor doc nit",                            // the note field
+		"## qa-review — PR #42: ⛔ BLOCK",                       // verdict header
+		"| ID | Topic | Result | Question | Answer |",          // table header
+		"| F1 | fixed | ✅ CONFIDENT | Implements the issue? |", // full, untruncated row
+		"| G1 | tests | ❌ FLAW_FOUND | Covered by tests? |",    // full, untruncated row
+		"### Items to fix", // blocking section
+		"- **G1 · FLAW_FOUND** — A test is missing.", // the blocking finding
+		"  _y_test.go:9_",            // its evidence line
+		"### Important to consider",  // non-blocking section
+		"- **F1** — a minor doc nit", // the note field
+		"  _x.go:1_",                 // the note's evidence line
 	}
 	for _, want := range mustContain {
 		if !strings.Contains(out, want) {
@@ -157,11 +160,22 @@ func TestRenderOutputShape(t *testing.T) {
 		}
 	}
 
-	// A blocking finding's answer must appear untruncated in the Items to fix
-	// section, not just in the table.
-	fix := out[strings.Index(out, "### Items to fix"):]
+	// A blocking finding's answer and its evidence must both appear in the
+	// Items to fix section itself — not merely somewhere in the report. The
+	// table carries no evidence column, so dropping the renderer's evidence
+	// branch must fail here. The section is bounded by the next header so a
+	// note's evidence line cannot satisfy the blocking finding's assertion.
+	fixStart := strings.Index(out, "### Items to fix")
+	fixEnd := strings.Index(out, "### Important to consider")
+	if fixStart < 0 || fixEnd < fixStart {
+		t.Fatalf("report is missing the Items to fix / Important to consider sections:\n%s", out)
+	}
+	fix := out[fixStart:fixEnd]
 	if !strings.Contains(fix, "A test is missing.") {
 		t.Errorf("Items to fix section did not carry the finding text:\n%s", fix)
+	}
+	if !strings.Contains(fix, "  _y_test.go:9_") {
+		t.Errorf("Items to fix section did not carry the finding's evidence line:\n%s", fix)
 	}
 
 	// The verdict is a header emoji, never a trailing machine marker — deriving
