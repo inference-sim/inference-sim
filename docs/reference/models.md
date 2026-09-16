@@ -1,6 +1,8 @@
 # Model Compatibility
 
-BLIS supports **any transformer model with a HuggingFace `config.json`** — no per-model setup or calibration required. Both latency backends (roofline and trained-physics) generalize across architectures.
+BLIS **runs any transformer model with a HuggingFace `config.json`** on day zero: it reads the architecture out of the config, so onboarding a model needs no BLIS-side code and no per-model coefficient fit — both latency backends (roofline and trained-physics) share one global coefficient set that generalizes across architectures.
+
+**Fidelity, however, is architecture-dependent.** The latency models are validated against real vLLM measurements for the [architectures listed below](#validated-architectures); any other model runs, but its numbers are unvalidated. Hardware MFU is a calibration input (see the *MFU Calibration* note below), several modern shapes — MLA, hybrid attention, block-wise FP8, MTP — carry the *Known approximations* documented on this page, and a run still needs the usual CLI configuration for its deployment topology (`--tp`/`--dp`, `--enable-expert-parallel`, KV capacity, `--kv-cache-dtype`). For an unvalidated architecture, treat absolute latencies as an estimate and calibrate against a real server (`blis observe` → `blis replay` → `blis calibrate`) before relying on them.
 
 BLIS has been tested and accuracy validated across a variety of model families and sizes, including both dense transformers and MoE (Mixture-of-Experts) architectures.
 
