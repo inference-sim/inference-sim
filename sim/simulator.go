@@ -960,10 +960,9 @@ func (sim *Simulator) maybeStartAdapterLoad(now int64) {
 		return
 	}
 	// Cold head: reserve a slot by committing the LRU non-pinned victim now (§7).
-	// Reserving at load-START rather than at completion is what keeps
-	// |resident| <= capacity (INV-L2): the reserved slot counts toward capacity for
-	// the whole load window, so a request arriving mid-load cannot resurrect the
-	// already-committed victim and push the set over capacity.
+	// The capacity bound itself (INV-L2, |resident| <= capacity) is structural in
+	// residentSet.Store; committing here rather than at completion is what makes the
+	// Store in completeAdapterLoad unable to fail, and §12's no-deadlock argument sound.
 	if sim.residentAdapters.AtCapacity() {
 		evicted, ok := sim.residentAdapters.EvictLRU()
 		if !ok {

@@ -6,48 +6,58 @@ Invariants are properties that must hold at all times during and after simulatio
 
 **The resolution rule (#1721):** *if an invariant ID appears in code, it must be resolvable from this registry.* An ID a reader cannot look up is worse than no ID — `INV-A` was cited 11 times and printed `"INV-A violation on node %s"` at runtime while being documented nowhere. The registry therefore lists **every** `INV-*` ID cited in `sim/` or `cmd/`.
 
+Nothing enforces that automatically yet, so re-check it when adding an ID:
+
+```bash
+git grep -ho 'INV-[A-Za-z0-9-]*' -- 'sim/**' 'cmd/**' | sort -u
+```
+
+Every result must appear in the index below. (`INV-6-safe` in `sim/workload/fixed_accumulate_test.go` is a known false positive — it is the adjective "INV-6-safe", not an ID.) A test that fails when a cited ID is undocumented is a tracked follow-up.
+
 Resolvable does not mean restated in full. Where a design plan is already authoritative for a feature-local invariant (the LoRA control plane), this registry carries a **pointer line** and the plan keeps the prose. Full entries live here for everything else.
 
-**Tiers.** Entries are grouped by the scope of the property, so a reader can tell a whole-system guarantee from one module's internal rule at a glance:
+**Grouping.** Entries are grouped so a reader can tell a whole-system guarantee from one module's internal rule at a glance:
 
-| Tier | What it means | If it is violated |
+| Group | What it means | If it is violated |
 |---|---|---|
-| **Tier 1 — Run-level** | A property of the whole run's accounting or output. Holds for every configuration. | The simulator is wrong, wherever the bug lives. |
-| **Tier 2 — Architectural and error-handling boundaries** | A rule about which code may read or do what. Not a statement about simulation state. | The code is structurally wrong even if today's output looks right. |
-| **Tier 3 — Subsystem** | Scoped to one subsystem or one optional feature. | That subsystem is wrong; elsewhere the invariant is not applicable. |
+| **Run-level** | A property of the whole run's accounting or output. Holds for every configuration. | The simulator is wrong, wherever the bug lives. |
+| **Subsystem** | Scoped to one subsystem or one optional feature. | That subsystem is wrong; elsewhere the invariant is not applicable. |
+| **Code-boundary** *(cross-cutting)* | A rule about which code may read or do what — not a statement about simulation state. | The code is structurally wrong even if today's output looks right. |
 
-Tier is **orthogonal to the hypothesis-family mapping** below: the family says which experimental campaign validates an invariant, the tier says how far its blast radius reaches.
+The first two grade an invariant by **scope**. Code-boundary is a different axis — a *kind* of property — so it is deliberately **not** a rung between them: its members are listed together because a contributor needs to find them as a set, and each states its own scope. `INV-L6` is the same kind but is filed under LoRA because it is feature-scoped, and `INV-P2-1`'s "the global `SimConfig` is never mutated" clause is a code-boundary rule inside a subsystem entry. Grouping is a reading aid, not a taxonomy with a single ordering.
+
+Grouping is also **orthogonal to the hypothesis-family mapping** below: the family says which experimental campaign validates an invariant, the group says how far its blast radius reaches.
 
 **Hypothesis family mapping:** INV-1 through INV-3, INV-5, INV-6, INV-10 (session causality), and INV-13 (run/replay parity) belong to the **Scheduler invariants (safety/liveness)** family. INV-4 (KV cache conservation), INV-7 (signal freshness), INV-8 (work-conserving property), INV-9 (oracle knowledge boundary), INV-11 (session completeness), and INV-12 (Phase 1 completeness under priority preemption) belong to the **Structural model** family. The PD disaggregation invariants (INV-PD-*) and pool/transfer invariants (INV-P2-*) below are feature-scoped structural invariants for disaggregated serving.
 
 ## Index
 
-| ID | Tier | Subsystem | Statement lives |
-|---|---|---|---|
-| [INV-1](#inv-1-request-conservation) Request conservation | 1 | — | here |
-| [INV-2](#inv-2-request-lifecycle) Request lifecycle | 1 | — | here |
-| [INV-3](#inv-3-clock-monotonicity) Clock monotonicity | 1 | — | here |
-| [INV-5](#inv-5-causality) Causality | 1 | — | here |
-| [INV-6](#inv-6-determinism) Determinism | 1 | — | here |
-| [INV-13](#inv-13-runreplay-parity) Run/replay parity | 1 | — | here |
-| [INV-9](#inv-9-oracle-knowledge-boundary) Oracle knowledge boundary | 2 | control plane | here |
-| [INV-A2](#inv-a2-placement-failure-visibility) Placement failure visibility | 2 | autoscaler / actuator | here |
-| [INV-4](#inv-4-kv-cache-conservation) KV cache conservation | 3 | KV cache | here |
-| [INV-8](#inv-8-work-conserving-property) Work-conserving property | 3 | scheduler | here |
-| [INV-12](#inv-12-phase-1-completeness-under-priority-preemption) Phase 1 completeness | 3 | batch formation | here |
-| [INV-7](#inv-7-signal-freshness-hierarchy) Signal freshness hierarchy | 3 | routing / observability | here |
-| [INV-A](#inv-a-gpu-conservation) GPU conservation | 3 | cluster placement | here |
-| [INV-W3](#inv-w3-cohort-expansion-purity) Cohort expansion purity | 3 | workload generation | here |
-| [INV-10](#inv-10-session-causality) Session causality | 3 | sessions | here |
-| [INV-11](#inv-11-session-completeness) Session completeness | 3 | sessions | here |
-| [INV-BC-DP1](#inv-bc-dp1-dense-dp1-step-time-byte-identity) Dense DP=1 step-time byte-identity | 3 | latency model | here |
-| [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane | 3 | LoRA | LoRA design plan (pointers here) |
-| [INV-PD-1 … INV-PD-6b](#pd-disaggregation) PD disaggregation | 3 | PD | here |
-| [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | 3 | pools / KV transfer | here |
+| ID | Group | Subsystem |
+|---|---|---|
+| [INV-1](#inv-1-request-conservation) Request conservation | Run-level | — |
+| [INV-2](#inv-2-request-lifecycle) Request lifecycle | Run-level | — |
+| [INV-3](#inv-3-clock-monotonicity) Clock monotonicity | Run-level | — |
+| [INV-5](#inv-5-causality) Causality | Run-level | — |
+| [INV-6](#inv-6-determinism) Determinism | Run-level | — |
+| [INV-8](#inv-8-work-conserving-property) Work-conserving property | Run-level | — |
+| [INV-13](#inv-13-runreplay-parity) Run/replay parity | Run-level | — |
+| [INV-9](#inv-9-oracle-knowledge-boundary) Oracle knowledge boundary | Code-boundary | control plane |
+| [INV-A2](#inv-a2-placement-failure-visibility) Placement failure visibility | Code-boundary | autoscaler / actuator |
+| [INV-4](#inv-4-kv-cache-conservation) KV cache conservation | Subsystem | KV cache |
+| [INV-12](#inv-12-phase-1-completeness-under-priority-preemption) Phase 1 completeness | Subsystem | batch formation |
+| [INV-7](#inv-7-signal-freshness-hierarchy) Signal freshness hierarchy | Subsystem | routing / observability |
+| [INV-A](#inv-a-gpu-conservation) GPU conservation | Subsystem | cluster placement |
+| [INV-W3](#inv-w3-cohort-expansion-purity) Cohort expansion purity | Subsystem | workload generation |
+| [INV-10](#inv-10-session-causality) Session causality | Subsystem | sessions |
+| [INV-11](#inv-11-session-completeness) Session completeness | Subsystem | sessions |
+| [INV-BC-DP1](#inv-bc-dp1-dense-dp1-step-time-byte-identity) Dense DP=1 step-time byte-identity | Subsystem | latency model |
+| [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane — *stated in the LoRA design plan; pointer lines here* | Subsystem | LoRA |
+| [INV-PD-1 … INV-PD-6b](#pd-disaggregation) PD disaggregation | Subsystem | PD |
+| [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
 
 ---
 
-## Tier 1 — Run-level invariants
+## Run-level invariants
 
 These hold for every configuration. A violation is a simulator bug regardless of which subsystem introduced it.
 
@@ -69,7 +79,13 @@ These hold for every configuration. A violation is a simulator bug regardless of
 
 **Verification:** `sim/cluster/cluster_test.go` — conservation tests; the twelve-term equation is asserted verbatim there (search for the `INV-1: injected == completed + queued + running + dropped + timedout + routingRejections + gwDepth + ...` comment). Conservation fields (`still_queued`, `still_running`, `injected_requests`) are included in CLI JSON output.
 
-**Known non-conforming assertion:** `clusterConservationHolds` (`cmd/dp_placement_test.go`) asserts the five-term form against *cluster* aggregate stdout. It passes only because the seven cluster-only buckets are zero in its fixtures (default admission, no flow control), so it is **incomplete rather than incorrect** — it would not catch a request lost to a gateway or routing bucket. Replacing it with a shared twelve-term helper is #1720; this registry entry is the statement it should be generated from.
+**Non-conforming assertions in tree (examples, not an exhaustive list).** Several cluster-level assertions predate this correction and use the narrower equation. They pass only because the cluster-only buckets are zero in their fixtures (default admission, no flow control), so they are **incomplete rather than incorrect** — they would not catch a request lost to a gateway or routing bucket:
+
+- `assertINV1Conservation` (`sim/cluster/disaggregation_test.go`) — a *shared* five-term cluster-level helper with several callers, so it is the highest-leverage one to fix.
+- `clusterConservationHolds` (`cmd/dp_placement_test.go`) — five-term, against cluster aggregate stdout.
+- Inline three- and four-term cluster-level assertions in `sim/cluster/cluster_test.go`, one of which carries a comment describing INV-1 as having eight terms with three cluster-only ones — stale against the twelve/seven above.
+
+Replacing these with one shared twelve-term helper is #1720; this registry entry is the statement it should be generated from.
 
 **Evidence:** Issue #183 — a silently-dropped request violated conservation for months.
 
@@ -82,6 +98,8 @@ These hold for every configuration. A violation is a simulator bug regardless of
 **Statement:** Requests transition `queued -> running -> completed`. No invalid transitions. Requests not completed before horizon remain in current state.
 
 **Verification:** State machine assertions in request processing code.
+
+**Known weakness (#1721):** this is the thinnest entry in the registry — it names no test, and the three states above are fewer than the request states the code actually distinguishes. Correcting the statement was raised separately and is deliberately out of scope here; it is recorded so a reader does not mistake brevity for a tight specification.
 
 ### INV-3: Clock Monotonicity
 
@@ -111,6 +129,20 @@ These hold for every configuration. A violation is a simulator bug regardless of
 
 **Transient sub-invariant — eager ≡ lazy (holds until A8, #1442):** While both the eager generator (`GenerateWorkload`/`GenerateRequests`) and the lazy streaming source (`GenerateWorkloadLazy`, behind `--lazy-generation`, #1441) exist, they MUST produce byte-identical request streams and session blueprints for any seed and any lazy-supported spec — and consequently byte-identical stdout. Determinism is load-bearing for lazy mode: the two paths consume RNG draws in the same order, so a re-ordering breaks both this equality and INV-6 itself. Enforced at the generator layer by the property test `sim/workload/parity_property_test.go` (`TestProperty_EagerEqualsLazy_RequestStreams`), which samples ≥100 random `(seed, spec)` draws (env-gated extended mode via `BLIS_PROPERTY_DRAWS`) and asserts stream + blueprint equality; and at the CLI layer by `cmd/parity_run_replay_test.go` (`TestParity_RunStdout_DeterministicAndEagerLazyIdentical` for stdout, `TestParity_RunReplay_TraceByteIdentity_Matrix` for the exported trace). This invariant is transient by design: it is retired when eager generation is removed (A8, #1451), after which lazy is the sole path.
 
+### INV-8: Work-Conserving Property
+
+**Statement:** After every step completion, if `WaitQ.Len() > 0`, a `StepEvent` must exist in the event queue. The simulator must not idle while there is work waiting.
+
+**Verification:** `sim/simulator_test.go` — `TestWorkConserving_StepRestartsWhenWaitQNonEmpty`. Deterministic test with `MaxNumSeqs=1`, two requests arriving simultaneously. Without the property, the second request is stranded forever (no arrival to trigger a new StepEvent). With the property, both complete.
+
+**Evidence:** H-MMK experiment (PR #325) — without the work-conserving fix, W_q error was 151,000% at ρ=0.3. After fix, error dropped to 47% (remaining gap is discrete step processing, not a bug).
+
+**Additional evidence (hardening wave):** Issue #349, fix #519 — Go `range` over mutable `RunningBatch.Requests` during `FormBatch` Phase 1 visited evicted requests, triggering 102K+ cascading preemptions with zero completions. The simulator never made forward progress (zero completed requests = INV-8 violation). See R21.
+
+**Code location:** Search for `// Work-conserving:` comment in `sim/simulator.go` — the `else` branch of `len(remaining) > 0` checks `WaitQ.Len() > 0` and schedules a new `StepEvent`.
+
+**Hypothesis family:** Structural model (same as INV-4, INV-7).
+
 ### INV-13: Run/Replay Parity
 
 **Statement:** For any configuration supported by both `blis run` and `blis replay`, a trace exported via `blis run --trace-output` and replayed via `blis replay --session-mode fixed` with identical flags MUST produce identical per-request TTFT, E2E, and aggregate metrics. At the CLI boundary the enforceable form of that is stronger and is what new parity tests should assert: **byte-identical stdout**, which subsumes the per-request distributions, the cache/latency aggregates, and the conservation counters in one assertion (`cmd/dp_replay_parity_test.go`'s `TestINV13_RunReplayParity_MoEDPPlacement` is the model; pair it with a non-vacuity gate and a conservation companion, since byte-identity alone is satisfied by two identically-wrong runs). "Identical flags" includes `--horizon`: the two commands have different *defaults* for it (`blis run` defaults to unlimited; `blis replay` auto-computes 2x the max arrival time), so a parity comparison must pass `--horizon` explicitly on both legs or the replay leg may truncate a still-draining run. This is a difference in defaults, not in behavior — the invariant is over the resolved configuration. Features not yet supported by replay (autoscaler, node pools) MUST cause a `logrus.Fatalf` at startup when those flags are explicitly set or when a policy bundle containing those features is passed — never silent degradation or a mere warning. MoE data parallelism as placement (`--dp > 1` on an MoE model) was run-only from #1531 and is **supported on both paths since #1556**: `blis run` and `blis replay` resolve the placement through the one shared `cmd.resolveDPPlacement`, so identical flags over the same trace produce identical metrics. Expert parallelism alongside it (`--dp>1` + `--enable-expert-parallel`) is likewise supported on both paths since #1548: the logical EP-group width is re-supplied from the CLI on both legs (a model-level input, not a trace field — the same treatment `--kv-cache-dtype` gets), so identical flags over the same trace produce identical metrics. PD disaggregation + `--dp>1` is **supported on both paths since #1553** (each pool spawns N per-rank replicas; `blis replay` reproduces it byte-identically). The guard that remains still `logrus.Fatalf`s rather than degrades: the model autoscaler + `--dp>1` is **rejected** (#1553 decision — dp-group co-scaling is undefined). On replay the autoscaler and node pools are additionally rejected unconditionally (before DP is considered) as unreplayable features.
@@ -125,9 +157,9 @@ These hold for every configuration. A violation is a simulator bug regardless of
 
 ---
 
-## Tier 2 — Architectural and error-handling boundaries
+## Code-boundary invariants
 
-These constrain **which code may read or do what**. They are not statements about simulation state, so a violation can leave today's output correct while making the next change unsafe.
+These constrain **which code may read or do what**. They are not statements about simulation state, so a violation can leave today's output correct while making the next change unsafe. This is a *kind*, not a scope: each entry below names the scope it applies to, and code-boundary rules also appear inside subsystem entries (`INV-L6`, and `INV-P2-1`'s no-global-mutation clause).
 
 ### INV-9: Oracle Knowledge Boundary
 
@@ -151,7 +183,7 @@ These constrain **which code may read or do what**. They are not statements abou
 
 **Why this tier:** this is an error-handling and observability rule (a specialization of R1, "never a silent `continue`"), not a property of simulation state. A silently dropped scale-up leaves the cluster under-provisioned with no signal, and the autoscaler's stabilization windows have already been consumed, so the next opportunity is delayed too.
 
-**Verification:** enforced by construction at each site rather than by a dedicated test — `sim/cluster/autoscaler.go:174` (documented at the decision site), `sim/cluster/autoscaler.go:376` (`logrus.Errorf` when decisions are dropped because no actuator is wired, naming the decision count and the consumed stabilization windows), `sim/cluster/direct_actuator.go:33` (documented contract: individual failures are always logged), `:56` (a missing `PlacementManager` returns an error rather than skipping), and `:71` (`logrus.Errorf` per failed `PlaceInstance`, preserving model id and variant).
+**Verification:** enforced by construction at each site rather than by a dedicated test — `sim/cluster/autoscaler.go:174` (the `Actuator` interface contract, where the requirement is stated), `sim/cluster/autoscaler.go:376` (`logrus.Errorf` when decisions are dropped because no actuator is wired, naming the decision count and the consumed stabilization windows), `sim/cluster/direct_actuator.go:33` (documented contract: individual failures are always logged), `:56` (a missing `PlacementManager` returns an error rather than skipping), and `:71` (`logrus.Errorf` per failed `PlaceInstance`, preserving model id and variant).
 
 **Cited in code:** 5 times, all in the two files above.
 
@@ -159,7 +191,7 @@ These constrain **which code may read or do what**. They are not statements abou
 
 ---
 
-## Tier 3 — Subsystem invariants
+## Subsystem invariants
 
 Scoped to one subsystem or one optional feature. Outside that subsystem they are not applicable.
 
@@ -175,21 +207,7 @@ Scoped to one subsystem or one optional feature. Outside that subsystem they are
 
 **Additional evidence (hardening wave):** Two KV conservation bugs discovered in March 2026: (1) Issue #492, fix #502 — prefill capacity pre-check over-estimated by up to 1 block (partial last-block fill not accounted for), causing false allocation failures that triggered unnecessary preemptions. (2) Issue #501, fix #506 — TieredKVCache CPU→GPU reload could produce an inverted range (`newStart >= endIndex`), causing a slice-bounds panic in block allocation. Both bugs directly affected the allocation/deallocation balance that INV-4 protects. (See also #519 in INV-8 — the range-loop livelock primarily violated the work-conserving property, not block-level conservation.)
 
-### Scheduler and batch formation
-
-#### INV-8: Work-Conserving Property
-
-**Statement:** After every step completion, if `WaitQ.Len() > 0`, a `StepEvent` must exist in the event queue. The simulator must not idle while there is work waiting.
-
-**Verification:** `sim/simulator_test.go` — `TestWorkConserving_StepRestartsWhenWaitQNonEmpty`. Deterministic test with `MaxNumSeqs=1`, two requests arriving simultaneously. Without the property, the second request is stranded forever (no arrival to trigger a new StepEvent). With the property, both complete.
-
-**Evidence:** H-MMK experiment (PR #325) — without the work-conserving fix, W_q error was 151,000% at ρ=0.3. After fix, error dropped to 47% (remaining gap is discrete step processing, not a bug).
-
-**Additional evidence (hardening wave):** Issue #349, fix #519 — Go `range` over mutable `RunningBatch.Requests` during `FormBatch` Phase 1 visited evicted requests, triggering 102K+ cascading preemptions with zero completions. The simulator never made forward progress (zero completed requests = INV-8 violation). See R21.
-
-**Code location:** Search for `// Work-conserving:` comment in `sim/simulator.go` — the `else` branch of `len(remaining) > 0` checks `WaitQ.Len() > 0` and schedules a new `StepEvent`.
-
-**Hypothesis family:** Structural model (same as INV-4, INV-7).
+### Batch formation
 
 #### INV-12: Phase 1 Completeness Under Priority Preemption
 
@@ -242,7 +260,7 @@ Scoped to one subsystem or one optional feature. Outside that subsystem they are
 
 **Relationship to INV-4:** the same conservation shape one level up the hierarchy. INV-4 conserves *blocks* inside one instance's KV cache; INV-A conserves *GPUs* inside a node's inventory. Both have a runtime verifier and both are checked around every allocate/release — there is no principled reason to document one and not the other.
 
-**Cited in code:** 11 times — the verifier and its error string in `sim/cluster/infra_placement.go`, plus assertions in `infra_placement_test.go` and `infra_node_test.go`.
+**Cited in code:** 11 times — the verifier and its error string in `sim/cluster/infra_placement.go`, plus assertions in `infra_placement_test.go` and `infra_node_test.go`. Re-derive with `git grep -o 'INV-A[^2]' -- 'sim/**' 'cmd/**' | wc -l`; a plain `INV-A` pattern also matches the five `INV-A2` sites and returns 16.
 
 **Registry note (#1721):** this invariant had a runtime checker and 11 citations while being absent from this registry. It is the finding that motivated the resolution rule at the top of this document.
 
@@ -312,7 +330,7 @@ The LoRA control-plane invariants are stated in full in `docs/plans/2026-07-15-l
 | **INV-L2** | Capacity bound: for every instance at every point in the run, `\|resident adapters\| <= configured capacity`. | — | 1 |
 | **INV-L3** | Cold-load charge: load latency is `>= 0`, charged exactly once per cold `(adapter, instance)` transition, never when the adapter is warm. | — | 6 |
 | **INV-L4** | Memory conservation: per instance, `allocated_blocks + free_blocks + adapter_reserved == total`, with `adapter_reserved` fixed at startup. | extends INV-4 | 11 |
-| **INV-L5** | No eviction of in-use: a pinned adapter is never evicted, and pinning persists through preemption. | — | 7 |
+| **INV-L5** | No eviction of in-use: an adapter is *in use* from the moment a request referencing it enters the running batch until that request completes; an in-use adapter is never evicted, and this persists through preemption (a preempted request has not completed). Also covers the victim reserved at load-start, which is never in use. | — | 7 |
 | **INV-L6** | Oracle boundary: adapter-aware routing/servability reads adapter id, rank and resident sets only — never `Request.OutputTokens`. | specializes INV-9 | 0 |
 | **INV-L7** | Backend parity: roofline and trained-physics apply an identical adapter-overhead factor for the same batch (R23). | — | 0 |
 
@@ -322,7 +340,7 @@ Counts are a snapshot over `sim/` and `cmd/`. Re-derive any row with:
 git grep -o 'INV-L4' -- 'sim/**' 'cmd/**' | wc -l
 ```
 
-**INV-L2's code anchor (#1721).** INV-L2 was documented in the plan and cited nowhere in code — a declared capacity bound with nothing pointing at it. #1721 anchors it at the enforcement point the plan's §7 identifies: `Simulator.maybeStartAdapterLoad` (`sim/simulator.go`) commits the LRU eviction victim and reserves the slot at load **start**, so the reserved slot counts toward capacity for the whole load window. That timing is what makes the bound hold — committing the victim at load *completion* would let a request arriving mid-load resurrect the soon-to-be-evicted adapter and exceed capacity. The structural guarantee is in `sim/lora/resident_set.go`, whose `Store` admits a new id only after an eviction succeeds.
+**INV-L2's code anchor (#1721).** INV-L2 was documented in the plan and cited nowhere in code — a declared capacity bound with nothing pointing at it. #1721 anchors it at the enforcement point the plan's §7 identifies: `Simulator.maybeStartAdapterLoad` (`sim/simulator.go`) commits the LRU eviction victim and reserves the slot at load **start**, so the reserved slot counts toward capacity for the whole load window. That timing is what makes the bound hold — committing the victim at load *completion* would let a request arriving mid-load resurrect the soon-to-be-evicted adapter and exceed capacity. The structural guarantee is in `sim/lora/resident_set.go`: `Store` admits a new id only when a slot is free **or** an eviction succeeds, and returns `false` when the set is full and every entry is pinned. That conditional — not the commit timing — is what makes the bound hold. What load-start commitment buys is that the `Store` at load completion can never fail, plus exact eviction accounting and the plan's §12 no-deadlock argument. Note the ID is written at the load-start site, so `git grep INV-L2` lands there rather than here.
 
 **INV-L6 and INV-L7 have no code anchor.** Both are declared in the plan and both have tests — `sim/latency/adapter_overhead_test.go`'s `TestStepTime_BackendParity_IdenticalFactorApplication` is INV-L7's, and the servability paths carry no `OutputTokens` reference for INV-L6 — but neither test nor production site names the ID. That is the *inverse* of the gap the resolution rule addresses (a declared promise with no citation, rather than a citation with no statement), so this registry records it rather than fixing it. Unlike INV-L2, neither has a runtime message that would leave a reader stranded.
 
