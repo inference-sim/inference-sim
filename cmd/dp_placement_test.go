@@ -420,9 +420,20 @@ func extractJSONObjects(s string) []string {
 }
 
 // clusterConservationHolds parses the aggregate ("cluster") metrics object from
-// blis run stdout and checks INV-1 for a default-admission run (no flow control,
-// no routing rejections): injected == completed + queued + running + dropped +
-// timed_out, with injected > 0.
+// blis run stdout and checks INV-1's five-term form: injected == completed +
+// queued + running + dropped + timed_out, with injected > 0.
+//
+// Five terms even though this is a cluster aggregate, because seven of INV-1's
+// twelve buckets are not observable here. GatewayQueueDepth, GatewayQueueShed,
+// GatewayQueueRejected, GatewayEvicted, GatewayExpired, RoutingRejections and
+// EncodeRoutingRejections live on cluster.RawMetrics and are never serialised into
+// sim.MetricsOutput, so no CLI-level test can assert the canonical equation. Issue
+// #1746 tracks exposing them; until then this check is sound only for fixtures that
+// exercise none of those paths — default admission, no flow control, no encode pool
+// — which is the case for every caller below.
+//
+// In-process cluster tests must use assertClusterINV1Conservation
+// (sim/cluster/inv1_conservation_test.go), which checks all twelve.
 func clusterConservationHolds(t *testing.T, stdout string) {
 	t.Helper()
 	found := false
