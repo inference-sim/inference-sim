@@ -284,7 +284,6 @@ func (o *OffloadCache) IsDeferred(id string) bool {
 // map entry only stops re-polling a request that is gone.
 func (o *OffloadCache) ClearDeferred(id string) {
 	delete(o.deferred, id)
-	delete(o.reloadedPrefixEnd, id) // #1699: don't leak a boundary for a request that's gone
 }
 
 // DeferralsStarted returns the cumulative count of new prefill admissions that were
