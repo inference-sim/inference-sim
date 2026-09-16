@@ -426,34 +426,43 @@ func TestDeferral_RunningRequestDoesNotDefer(t *testing.T) {
 	}
 }
 
-// #1699 (discriminating secondary-path guard): a request whose prefix lives only on a
-// secondary tier takes the resolved-deferral admit (secondary→CPU→GPU), which funnels
-// through allocateThroughChain — so it MUST report the reloaded-prefix boundary via
-// ReloadedPrefixEnd, exactly like a CPU-only hit. This is the signal the #1699 fix adds;
-// it does not exist on base, so this test fails there. Unlike an aggregate TTFT
-// comparison, it isolates the prefill-shrink from the H3 deferral penalty.
-func TestDeferral_ResolvedAdmitReportsReloadedPrefix(t *testing.T) {
+// #1699/#1706 (discriminating secondary-path guard): a secondary-tier-only prefix is NOT
+// credited by the pure ReloadablePrefixEnd query while it is still secondary-resident — it
+// stays on the H3 step-boundary deferral path. Once the deferral resolves (the
+// secondary→CPU promotion lands), the prefix is CPU-resident, so a fresh (not-yet-running)
+// request with the same tokens now reports the whole reloadable boundary. This isolates
+// the prefill-shrink signal (#1699) from the H3 deferral penalty and pins the #1706 rule
+// that only the CPU-resident run is counted pre-allocation.
+func TestDeferral_ResolvedSecondaryBecomesReloadable(t *testing.T) {
 	const step = int64(1000)            // ≫ disk service, so each round is one clean step
 	tokens := []sim.TokenID{1, 2, 3, 4} // 2 blocks, secondary-resident only
 	oc := deferOC(80, 7000)
 	seedSecondary(oc, tokens)
 
+	// Before any promotion, the run is secondary-only: the pure pre-allocation query must
+	// NOT count it (it belongs to the deferral path, not the same-step reload credit).
+	probe := &sim.Request{ID: "probe", InputTokens: tokens}
+	if _, ok := oc.ReloadablePrefixEnd(probe, 0); ok {
+		t.Fatalf("a secondary-tier-only prefix must NOT be reported by ReloadablePrefixEnd (stays on H3 deferral)")
+	}
+
+	// Drive the deferral to resolution: the request defers over rounds until its
+	// secondary→CPU promotion lands, then is admitted (>=3 rounds for a cold hit).
 	req := &sim.Request{ID: "r", InputTokens: tokens}
 	admitRound := roundsToAdmit(oc, req, 4, step)
 	if admitRound < 3 {
 		t.Fatalf("a cold secondary hit must admit via the resolved-deferral path (>=3 rounds), got %d", admitRound)
 	}
 
-	// The admit went through allocateThroughChain's reload, so the boundary is reported.
-	newStart, ok := oc.ReloadedPrefixEnd(req.ID)
+	// The promotion made the prefix CPU-resident. A fresh (not-yet-running) request with
+	// the same tokens is now credited the whole 4-token (2-block) reloadable prefix by the
+	// pure query — the #1699 signal, absent on base.
+	fresh := &sim.Request{ID: "fresh", InputTokens: tokens}
+	reloadableEnd, ok := oc.ReloadablePrefixEnd(fresh, 0)
 	if !ok {
-		t.Fatalf("resolved-deferral admit must report a reloaded-prefix boundary (the #1699 signal); got ok=false")
+		t.Fatalf("a resolved (now CPU-resident) secondary prefix must be reported reloadable (the #1699 signal); got ok=false")
 	}
-	if newStart != 4 {
-		t.Fatalf("the whole 4-token (2-block) secondary prefix was reloaded, so newStart must be 4, got %d", newStart)
-	}
-	// One-shot, same contract as the CPU-only path.
-	if _, ok := oc.ReloadedPrefixEnd(req.ID); ok {
-		t.Fatalf("ReloadedPrefixEnd must be one-shot (consumed on read)")
+	if reloadableEnd != 4 {
+		t.Fatalf("the whole 4-token (2-block) prefix is CPU-reloadable, so reloadableEnd must be 4, got %d", reloadableEnd)
 	}
 }

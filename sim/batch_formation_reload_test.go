@@ -2,21 +2,21 @@ package sim
 
 import "testing"
 
-// fakeReloadKV is a KVStore + ReloadReportingKVStore double (#1699). It models an
-// offload store that, during AllocateKVBlocks, reloads a CPU/secondary-resident prefix
-// onto the GPU and reports the enlarged boundary via ReloadedPrefixEnd. GetCachedBlocks
-// returns the PRE-reload GPU prefix (here: none), exactly as OffloadCache does — so
-// batch formation's first numNewTokens is the full input and must be re-billed down.
+// fakeReloadKV is a KVStore + ReloadReportingKVStore double (#1699, #1706). It models an
+// offload store whose same-step CPU->GPU reload would extend a new request's GPU-cached
+// prefix to reloadEnd[reqID], reported by the PURE pre-allocation query ReloadablePrefixEnd
+// (the analogue of vLLM's get_num_new_matched_tokens). GetCachedBlocks returns the
+// PRE-reload GPU prefix (here: none), exactly as OffloadCache does — so batch formation
+// folds the reloadable boundary into the computed baseline before sizing the chunk.
 type fakeReloadKV struct {
 	blockSize int64
-	// reloadEnd[reqID] = post-reload cached prefix boundary (token index). The value is
-	// returned once by ReloadedPrefixEnd (one-shot), matching OffloadCache.
+	// reloadEnd[reqID] = the CPU-reloadable prefix boundary (token index). Reported by
+	// the pure query ReloadablePrefixEnd; not consumed (matches the #1706 pre-query).
 	reloadEnd map[string]int64
-	consumed  map[string]bool
 }
 
 func newFakeReloadKV(blockSize int64) *fakeReloadKV {
-	return &fakeReloadKV{blockSize: blockSize, reloadEnd: map[string]int64{}, consumed: map[string]bool{}}
+	return &fakeReloadKV{blockSize: blockSize, reloadEnd: map[string]int64{}}
 }
 
 func (f *fakeReloadKV) AllocateKVBlocks(_ *Request, _, _ int64, _ []int64) bool { return true }
@@ -32,15 +32,12 @@ func (f *fakeReloadKV) KVThrashingRate() float64                                
 func (f *fakeReloadKV) SetClock(_ int64)                                        {}
 func (f *fakeReloadKV) MirrorToCPU(_ []*Request)                                {}
 
-func (f *fakeReloadKV) ReloadedPrefixEnd(reqID string) (int64, bool) {
-	if f.consumed[reqID] {
-		return 0, false
+func (f *fakeReloadKV) ReloadablePrefixEnd(req *Request, startIndex int64) (int64, bool) {
+	v, ok := f.reloadEnd[req.ID]
+	if ok && v > startIndex {
+		return v, true
 	}
-	v, ok := f.reloadEnd[reqID]
-	if ok {
-		f.consumed[reqID] = true
-	}
-	return v, ok
+	return startIndex, false
 }
 
 var (
@@ -115,18 +112,18 @@ func TestFormBatch_FullReloadZeroPrefill(t *testing.T) {
 	}
 }
 
-// Under a MaxModelLen-capped chunk, billing is the non-reloaded tail WITHIN the chunk:
-// the cap sets endIndex, the reload covers [startIndex, newStart), so billed =
-// endIndex-newStart. Progress (ComputedTokens) still reaches the capped endIndex.
+// MaxModelLen caps the uncached remainder after the reload is folded in (#1706): with
+// computedStart=32 the remainder is InputLen-32=32, but MaxModelLen=40 caps it to
+// 40-1-32=7, so billed=7 and progress reaches computedStart+7=39.
 func TestFormBatch_ReloadRespectsMaxModelLen(t *testing.T) {
 	kv := newFakeReloadKV(16)
-	kv.reloadEnd["A"] = 32 // 2 blocks reloaded, within the chunk
+	kv.reloadEnd["A"] = 32 // 2 blocks reloadable => computedStart=32
 
 	wq := &WaitQueue{}
 	wq.Enqueue(reloadReq("A", 64))
 
 	ctx := reloadCtx(wq, kv)
-	ctx.MaxModelLen = 40 // caps numNewTokens to 39 => endIndex=39; billed = 39-32 = 7
+	ctx.MaxModelLen = 40 // caps the remainder to 40-1-32=7 => endIndex=39
 	bf := NewBatchFormation("")
 	result := bf.FormBatch(ctx)
 
@@ -134,31 +131,29 @@ func TestFormBatch_ReloadRespectsMaxModelLen(t *testing.T) {
 		t.Fatalf("A must be admitted, got %d", len(result.RunningBatch.Requests))
 	}
 	if a := result.RunningBatch.Requests[0]; a.NumNewTokens != 7 {
-		t.Fatalf("billed tail within the capped chunk must be endIndex-newStart=39-32=7, got NumNewTokens=%d", a.NumNewTokens)
+		t.Fatalf("billed remainder must be MaxModelLen-capped to 40-1-32=7, got NumNewTokens=%d", a.NumNewTokens)
 	}
 	if ctx.ComputedTokens["A"] != 39 {
-		t.Fatalf("progress must reach the capped endIndex=39, got ComputedTokens=%d", ctx.ComputedTokens["A"])
+		t.Fatalf("progress must reach computedStart+billed=32+7=39, got ComputedTokens=%d", ctx.ComputedTokens["A"])
 	}
 }
 
-// A reload can extend the GPU prefix PAST a capped chunk (newStart > endIndex). Only
-// [startIndex, endIndex) was committed this step, so this step's chunk is billed 0 and
-// progress reaches endIndex (never over-crediting progress to InputLen). KNOWN
-// LIMITATION (#1706): the credit is capped at one chunk — the reloaded remainder beyond
-// endIndex is NOT credited on later steps. Phase 1 continuations bill
-// numNewTokens = InputLen - ProgressIndex and consult no cache, and recordReloadedPrefix
-// skips running continuations, so the remainder is re-billed as full RECOMPUTE. This
-// asserts only the single-chunk credit + no progress over-credit, which is the current
-// (partial) behavior — see the #1706 follow-up for crediting the whole reloaded prefix.
+// A reload that covers the WHOLE input must credit the whole reloaded prefix even when a
+// chunk cap is set (#1706): folding the reloadable boundary into the computed baseline
+// BEFORE the chunk clamp (vLLM ordering) means the chunk sizes on the uncached remainder,
+// which is zero here — so the request is billed 0 prefill work and progress reaches
+// InputLen in one step, NOT capped at the (now-irrelevant) chunk size. This replaces the
+// pre-#1706 assertion (NumNewTokens=0 but progress capped at endIndex=16, which re-billed
+// the remainder as recompute on later steps).
 func TestFormBatch_ReloadBeyondCappedChunk(t *testing.T) {
 	kv := newFakeReloadKV(16)
-	kv.reloadEnd["A"] = 64 // whole input reloaded to GPU...
+	kv.reloadEnd["A"] = 64 // whole 64-token input reloadable from CPU...
 
 	wq := &WaitQueue{}
 	wq.Enqueue(reloadReq("A", 64))
 
 	ctx := reloadCtx(wq, kv)
-	ctx.PrefillTokenThreshold = 16 // ...but this step only processes a 16-token chunk
+	ctx.PrefillTokenThreshold = 16 // ...and a 16-token chunk cap must NOT cap the credit
 	bf := NewBatchFormation("")
 	result := bf.FormBatch(ctx)
 
@@ -166,10 +161,38 @@ func TestFormBatch_ReloadBeyondCappedChunk(t *testing.T) {
 		t.Fatalf("A must be admitted, got %d", len(result.RunningBatch.Requests))
 	}
 	if a := result.RunningBatch.Requests[0]; a.NumNewTokens != 0 {
-		t.Fatalf("a chunk fully covered by the reload must bill 0, got NumNewTokens=%d", a.NumNewTokens)
+		t.Fatalf("a fully-reloaded input must bill 0 prefill work regardless of the chunk cap, got NumNewTokens=%d", a.NumNewTokens)
 	}
-	if ctx.ComputedTokens["A"] != 16 {
-		t.Fatalf("progress must advance only to the capped endIndex=16 (not InputLen), got ComputedTokens=%d", ctx.ComputedTokens["A"])
+	if ctx.ComputedTokens["A"] != 64 {
+		t.Fatalf("the whole reloaded prefix must be credited: progress must reach InputLen=64, not the chunk cap, got ComputedTokens=%d", ctx.ComputedTokens["A"])
+	}
+}
+
+// A reload extends the prefix PAST a capped chunk but leaves an uncached remainder
+// (#1706): the chunk covers only the uncached tail beyond the reloadable boundary. Input
+// 96 (6 blocks), 64 reloadable, chunk cap 16 => computedStart=64, remainder=32 capped to
+// 16, so billed=16, progress reaches 64+16=80. The reloaded [0,64) is fully credited (not
+// re-billed as recompute), and only the true uncached remainder is chunked.
+func TestFormBatch_ReloadThenChunkedRemainder(t *testing.T) {
+	kv := newFakeReloadKV(16)
+	kv.reloadEnd["A"] = 64 // 4 of 6 blocks reloadable
+
+	wq := &WaitQueue{}
+	wq.Enqueue(reloadReq("A", 96))
+
+	ctx := reloadCtx(wq, kv)
+	ctx.PrefillTokenThreshold = 16
+	bf := NewBatchFormation("")
+	result := bf.FormBatch(ctx)
+
+	if len(result.RunningBatch.Requests) != 1 {
+		t.Fatalf("A must be admitted, got %d", len(result.RunningBatch.Requests))
+	}
+	if a := result.RunningBatch.Requests[0]; a.NumNewTokens != 16 {
+		t.Fatalf("chunk must cover only the uncached remainder tail (cap 16), got NumNewTokens=%d", a.NumNewTokens)
+	}
+	if ctx.ComputedTokens["A"] != 80 {
+		t.Fatalf("progress must reach computedStart+chunk = 64+16 = 80, got ComputedTokens=%d", ctx.ComputedTokens["A"])
 	}
 }
 

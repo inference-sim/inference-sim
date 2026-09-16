@@ -201,9 +201,9 @@ func TestInstanceSimulator_Offload_CPUHitReducesTTFT(t *testing.T) {
 }
 
 // Note: the secondary-tier prefill-shrink is guarded discriminatingly at the sim/kv
-// level by TestDeferral_ResolvedAdmitReportsReloadedPrefix (offload_deferral_test.go),
-// which drives the resolved-deferral admit and asserts ReloadedPrefixEnd reports the
-// reloaded boundary — the exact signal this fix adds, which fails on base. An aggregate
-// e2e TTFT comparison against a GPU-only baseline is NOT a valid guard here: it conflates
-// the H3 deferral penalty (which raises secondary-path TTFT) with the prefill shrink, so
-// it holds on base too.
+// level by TestDeferral_ResolvedSecondaryBecomesReloadable (offload_deferral_test.go),
+// which drives the deferral to resolution and asserts the now-CPU-resident prefix is
+// reported by the pure ReloadablePrefixEnd query — the exact signal this fix adds, which
+// fails on base. An aggregate e2e TTFT comparison against a GPU-only baseline is NOT a
+// valid guard here: it conflates the H3 deferral penalty (which raises secondary-path
+// TTFT) with the prefill shrink, so it holds on base too.

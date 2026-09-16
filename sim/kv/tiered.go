@@ -157,20 +157,11 @@ type TieredKVCache struct {
 	cpuHitCount  int64
 	cpuMissCount int64
 	mirrorCount  int64 // total blocks stored to CPU via MirrorToCPU
-
-	// reloadedPrefixEnd records, per NEW admission, the post-reload GPU-cached prefix
-	// boundary (token index) when a CPU→GPU reload extended the prefix beyond the
-	// caller's startIndex (#1699). Batch formation reads it via ReloadedPrefixEnd to
-	// re-bill prefill work as a cache hit rather than a full recompute. Read one-shot
-	// (consumed) so a later step cannot see a stale boundary. Written only for genuinely
-	// new prefill admissions (`!running && !IsDecodeSubRequest`), the same class
-	// FormBatch re-bills — identical contract to OffloadCache.reloadedPrefixEnd.
-	reloadedPrefixEnd map[string]int64
 }
 
 // Compile-time capability assertions: the legacy tiered store is a full KVStore and
-// reports reloaded-prefix boundaries (#1699), so the #1699 prefill-shrink covers the
-// --kv-cpu-blocks path as well as the OffloadCache chain. It does NOT implement
+// reports its CPU-reloadable prefix boundary (#1699/#1706), so the offload prefill-shrink
+// covers the --kv-cpu-blocks path as well as the OffloadCache chain. It does NOT implement
 // DeferrableKVStore (no secondary tiers / step-boundary deferral).
 var (
 	_ sim.KVStore                = (*TieredKVCache)(nil)
@@ -207,7 +198,6 @@ func NewTieredKVCache(gpu *KVCacheState, cpuBlocks int64, threshold, bandwidth f
 		cpu:               newCpuTier(cpuBlocks, gpu.BlockSizeTokens),
 		transferBandwidth: bandwidth,
 		baseLatency:       baseLat,
-		reloadedPrefixEnd: make(map[string]int64),
 	}
 }
 
@@ -267,7 +257,6 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 					// New request: commit all cached blocks from block 0.
 					t.gpu.commitCachedBlocks(req.ID, newCached[:endBlock])
 				}
-				t.recordReloadedPrefix(req, newStart, running)
 				return true
 			}
 			// Partial improvement: commit reloaded prefix blocks before allocating tail.
@@ -289,13 +278,7 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 				// New request: commit all reloaded blocks from block 0.
 				t.gpu.commitCachedBlocks(req.ID, newCached[:newStartBlock])
 			}
-			ok := t.gpu.AllocateKVBlocks(req, newStart, endIndex, newCached)
-			if ok {
-				// Record ONLY on success (#1699): a failed tail alloc leaves the request
-				// in the WaitQ where the boundary would never be consumed → stale leak.
-				t.recordReloadedPrefix(req, newStart, running)
-			}
-			return ok
+			return t.gpu.AllocateKVBlocks(req, newStart, endIndex, newCached)
 		}
 		// Reload produced no prefix hit beyond startIndex — allocate with the
 		// caller's original params (any space freed by the reload still helps).
@@ -404,33 +387,55 @@ func (t *TieredKVCache) SnapshotCachedBlocksFn() func([]sim.TokenID) int {
 
 func (t *TieredKVCache) ReleaseKVBlocks(req *sim.Request) {
 	t.gpu.ReleaseKVBlocks(req)
-	delete(t.reloadedPrefixEnd, req.ID) // #1699: don't leak a boundary past a preempt→re-prefill
 	// No offload — freed blocks stay on GPU free list with hashes intact (BC-3).
 	// Hashes are cleared only when popFreeBlock() reuses the slot.
 }
 
-// recordReloadedPrefix stores the post-reload cached-prefix boundary for a NEW prefill
-// admission so batch formation can re-bill its prefill work as a cache hit (#1699).
-// Gated to the SAME request class FormBatch re-bills — a genuinely new admission — and
-// no other: a running continuation bills incrementally against ProgressIndex (re-billing
-// would double-discount), and a PD decode sub-request is admitted via the decode branch
-// which never reads ReloadedPrefixEnd. Identical contract to OffloadCache's.
-func (t *TieredKVCache) recordReloadedPrefix(req *sim.Request, newStart int64, running bool) {
-	if !running && !req.IsDecodeSubRequest {
-		t.reloadedPrefixEnd[req.ID] = newStart
+// ReloadablePrefixEnd implements sim.ReloadReportingKVStore (#1699, #1706): the token
+// boundary to which a same-step CPU→GPU reload WOULD extend this request's GPU-cached
+// prefix, given the GPU-cached startIndex, WITHOUT committing or mutating any tier — the
+// legacy --kv-cpu-blocks twin of OffloadCache.ReloadablePrefixEnd, and the analogue of
+// vLLM's get_num_new_matched_tokens. A PURE query: the actual CPU→GPU reload + commit
+// still happens inside AllocateKVBlocks. It walks the uncached tail exactly like
+// reloadPrefixFromCPU but reads only, counting the contiguous run of blocks that are
+// GPU-resident or CPU-resident (t.cpu.lookup != nil) from startBlock onward, and stops at
+// the first block resident on neither. ok=true iff that run extends beyond startIndex.
+//
+// Gated to NEW prefill admissions (!running && !IsDecodeSubRequest — the class FormBatch
+// re-bills), returning (startIndex, false) otherwise.
+func (t *TieredKVCache) ReloadablePrefixEnd(req *sim.Request, startIndex int64) (int64, bool) {
+	if _, running := t.gpu.RequestMap[req.ID]; running || req.IsDecodeSubRequest {
+		return startIndex, false
 	}
-}
-
-// ReloadedPrefixEnd implements sim.ReloadReportingKVStore (#1699): the post-reload
-// GPU-cached prefix boundary recorded during the most recent AllocateKVBlocks for reqID,
-// ok=true iff a CPU→GPU reload extended the prefix. One-shot (consumed on read). This
-// closes #1699 on the legacy --kv-cpu-blocks path too, not just the OffloadCache chain.
-func (t *TieredKVCache) ReloadedPrefixEnd(reqID string) (int64, bool) {
-	newStart, ok := t.reloadedPrefixEnd[reqID]
-	if ok {
-		delete(t.reloadedPrefixEnd, reqID)
+	bs := t.gpu.BlockSize()
+	tokens := req.FullInputTokens()
+	n := util.Len64(tokens) / bs
+	startBlock := startIndex / bs
+	if startBlock >= n {
+		return startIndex, false
 	}
-	return newStart, ok
+	prevHash := ""
+	if startBlock > 0 {
+		if cached := t.gpu.GetCachedBlocks(tokens); int64(len(cached)) >= startBlock {
+			prevHash = t.gpu.Blocks[cached[startBlock-1]].Hash
+		}
+	}
+	reloadable := int64(0)
+	for i := startBlock; i < n; i++ {
+		h := hash.HashBlock(prevHash, tokens[i*bs:(i+1)*bs])
+		if _, inGPU := t.gpu.HashToBlock[h]; inGPU {
+			reloadable++
+			prevHash = h
+			continue
+		}
+		if t.cpu.lookup(h) == nil {
+			break
+		}
+		reloadable++
+		prevHash = h
+	}
+	reloadableEnd := startIndex + reloadable*bs
+	return reloadableEnd, reloadableEnd > startIndex
 }
 
 func (t *TieredKVCache) BlockSize() int64     { return t.gpu.BlockSize() }
