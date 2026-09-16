@@ -1,9 +1,13 @@
 // Package invariantscan finds hand-rolled INV-1 conservation sums in Go source.
 //
-// It exists because the same guard is needed from three packages — sim, sim/cluster
-// and cmd — and a helper defined in a _test.go file is invisible across package
-// boundaries. It lives at the repository root rather than under sim/internal so cmd
-// can import it too. It is test tooling: nothing in the simulator calls it.
+// It exists because the same guard is needed from both sim and sim/cluster, and a
+// helper defined in a _test.go file is invisible across package boundaries. It is test
+// tooling: nothing in the simulator calls it.
+//
+// It sits at the repository root rather than under sim/internal so that cmd could import
+// it if a use arose. There is none today, and cmd is not a consumer: its only
+// conservation check parses stdout JSON field names, which no AST walk over Go
+// expressions would see.
 //
 // Why a guard at all: before issue #1720 there were 29 hand-rolled conservation sums
 // in the tree, disagreeing about how many terms INV-1 has, and three omitted a bucket

@@ -102,7 +102,7 @@ func dpLegSubprocess() {
 	switch os.Getenv(dpLegEnv) {
 	case "run":
 		args = append([]string{"run"}, dpMoEFixtureArgs()...)
-		args = append(args, "--rate", "10", "--num-requests", "40",
+		args = append(args, "--rate", "10", "--num-requests", strconv.Itoa(dpFixtureNumRequests),
 			"--trace-output", tracePrefix)
 	case "replay":
 		args = append([]string{"replay"}, dpMoEFixtureArgs()...)

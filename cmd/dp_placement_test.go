@@ -354,7 +354,7 @@ func dpRunArgs(numInstances, dp int) []string {
 		"--dp", strconv.Itoa(dp),
 		"--num-instances", strconv.Itoa(numInstances),
 		"--rate", "10",
-		"--num-requests", "40",
+		"--num-requests", strconv.Itoa(dpFixtureNumRequests),
 		"--total-kv-blocks", "20000",
 		"--seed", "42",
 		"--defaults-filepath", "../defaults.yaml",
@@ -532,7 +532,7 @@ func dpRunBaseArgs() []string {
 		"--hardware-config", "../hardware_config.json",
 		"--tp", "1",
 		"--rate", "10",
-		"--num-requests", "40",
+		"--num-requests", strconv.Itoa(dpFixtureNumRequests),
 		"--seed", "42",
 		"--defaults-filepath", "../defaults.yaml",
 	}

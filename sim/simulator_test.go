@@ -1963,6 +1963,10 @@ var simControlPlaneGlobs = []string{
 	"slo*.go",
 	"saturation*.go",
 	"router_state.go",
+	// Self-cites INV-9 in both decider contracts ("Implementations must not read
+	// Request.OutputTokens"), so a new decider reading the oracle is exactly what this
+	// scan is for. Its name matches no pattern above, so it is listed explicitly.
+	"disaggregation.go",
 }
 
 // simControlPlaneExemptions names files the globs match that are legitimately
@@ -2070,6 +2074,7 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 		"routing_nohit_lru_scorer.go",
 		"routing_precise_prefix_scorer.go",
 		"routing_prefix_scorer.go",
+		"disaggregation.go",
 		"routing_scorers.go",
 		"saturation.go",
 		"scheduler.go",

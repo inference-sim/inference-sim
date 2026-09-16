@@ -186,6 +186,14 @@ func assertINV5FullChain(t *testing.T, configure func(*DeploymentConfig), numReq
 		t.Errorf("INV-5 schedule->completion was checked for %d requests but %d completed — a completed request is missing a scheduling or completion entry",
 			completionChecked, m.CompletedRequests)
 	}
+	// Every completed request was necessarily dispatched and then scheduled, so this
+	// link must cover at least the completed set. An exact count is not derivable — a
+	// request can be scheduled and still be running at the horizon — but this is
+	// stronger than "> 0", which would pass while checking 1 of 24.
+	if scheduleChecked < completionChecked {
+		t.Errorf("INV-5 dispatch->schedule was checked for %d requests but %d completed, so a completed request had no dispatch timestamp or no scheduling delay",
+			scheduleChecked, completionChecked)
+	}
 	if scheduleChecked == 0 {
 		t.Error("INV-5 dispatch->schedule was never checked — no request had both a dispatch timestamp and a scheduling delay")
 	}
