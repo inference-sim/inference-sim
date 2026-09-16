@@ -12,7 +12,7 @@ Nothing enforces that automatically yet, so re-check it when adding an ID:
 git grep -ho 'INV-[A-Za-z0-9-]*' -- 'sim/**' 'cmd/**' | sort -u
 ```
 
-Every result must appear in the index below. (`INV-6-safe` in `sim/workload/fixed_accumulate_test.go` is a known false positive — it is the adjective "INV-6-safe", not an ID.) A test that fails when a cited ID is undocumented is a tracked follow-up.
+Every result must appear in the index below. (`INV-6-safe` in `sim/workload/fixed_accumulate_test.go` is a known false positive — it is the adjective "INV-6-safe", not an ID.) A test that fails when a cited ID is undocumented is tracked in #1735.
 
 Resolvable does not mean restated in full. Where a design plan is already authoritative for a feature-local invariant (the LoRA control plane), this registry carries a **pointer line** and the plan keeps the prose. Full entries live here for everything else.
 
