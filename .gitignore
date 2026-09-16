@@ -49,6 +49,7 @@ __pycache__/*
 !hardware_config.json
 !specs/**/*.json
 !cmd/testdata/**/*.json
+!sim/latency/testdata/**/*.json
 data/
 *.txt
 
