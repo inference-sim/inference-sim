@@ -132,9 +132,11 @@ func TestStrictHWConfig_CaseMismatchIsRejectedNamingTheCanonicalKey(t *testing.T
 // zero. The table is generated from the struct, so a field added later is covered
 // automatically.
 //
-// The misspelling appends a character, which cannot accidentally collide with another
-// declared key (nor with a case-folded form of one, which the parser deliberately
-// accepts — see TestStrictHWConfig_CaseFoldedKeyIsAccepted).
+// The misspelling appends a character, so it can neither collide with another declared
+// key nor case-fold onto one. That keeps every case in this table in the UNKNOWN-key
+// class, which is the silent-zero class this test is about; a key that differs from a
+// declared field only in case is also rejected, but as its own diagnostic class — see
+// TestStrictHWConfig_CaseMismatchIsRejectedNamingTheCanonicalKey.
 func TestStrictHWConfig_MisspelledNumericFieldIsRejected(t *testing.T) {
 	for _, key := range hardwareCalibJSONKeys(t) {
 		t.Run(key, func(t *testing.T) {
