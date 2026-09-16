@@ -105,8 +105,18 @@ FENCE_OUT=$(printf '%s\n' "$BODY" | awk '
   }
 ')
 
+# The marker is validated rather than merely read. Without this, ANY failure of the awk stage —
+# a missing or broken awk, an OOM kill, a syntax error introduced by a future edit — yields an empty
+# FENCE_OUT, which reads as "closed" with an empty body: all five values come back empty at exit 0
+# and every downstream guard stays silent. That is the same silent-empty class as the temp file this
+# replaced (#1723 review), reached by a different route, so it is closed explicitly here.
+FENCE_MARKER="${FENCE_OUT%%$'\n'*}"
+if [[ "$FENCE_MARKER" != "closed" && "$FENCE_MARKER" != "unclosed" ]]; then
+  echo "$0: fence scan did not run (awk produced no marker); refusing to report an empty body as a valid one" >&2
+  exit 2
+fi
 UNCLOSED_FENCE=false
-if [[ "${FENCE_OUT%%$'\n'*}" == "unclosed" ]]; then
+if [[ "$FENCE_MARKER" == "unclosed" ]]; then
   UNCLOSED_FENCE=true
 fi
 # Everything after the first line is the stripped body. A body that reduces to nothing leaves
