@@ -21,11 +21,12 @@
 # other people's commits; getting (2) wrong silently skips the dist ratchet. Neither is
 # visible without reading a real delivery, which is not a property that survives the next edit.
 #
-# Prints exactly four lines on stdout, the value after `=` possibly empty:
+# Prints exactly five lines on stdout, the value after `=` possibly empty:
 #   target_branch=<ref or empty>
 #   archon_plan=<the declaration line verbatim, or empty>
 #   heading_seen=true|false   — a `Target branch` heading was present in the body
 #   plan_seen=true|false      — an `archon-plan:` declaration was present in the body
+#   unclosed_fence=true|false — the body ended inside a fence, so content was discarded
 #
 # The two `*_seen` flags exist so the caller can tell "nothing was declared" from "something was
 # declared that I could not read", and warn on the second (R1: never silent). Without them a heading
