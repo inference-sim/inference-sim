@@ -21,15 +21,17 @@
 # other people's commits; getting (2) wrong silently skips the dist ratchet. Neither is
 # visible without reading a real delivery, which is not a property that survives the next edit.
 #
-# Prints exactly three lines on stdout, the value after `=` possibly empty:
+# Prints exactly four lines on stdout, the value after `=` possibly empty:
 #   target_branch=<ref or empty>
 #   archon_plan=<the declaration line verbatim, or empty>
 #   heading_seen=true|false   — a `Target branch` heading was present in the body
+#   plan_seen=true|false      — an `archon-plan:` declaration was present in the body
 #
-# `heading_seen` exists so the caller can tell "no target branch section" from "a target branch
-# section I could not read", and warn on the second (R1: never silent). Without it a heading the
-# pattern does not quite match — `## Target branch (base)`, say — reads identically to a standalone
-# issue and the delivery quietly goes to the default branch.
+# The two `*_seen` flags exist so the caller can tell "nothing was declared" from "something was
+# declared that I could not read", and warn on the second (R1: never silent). Without them a heading
+# the pattern does not quite match — `## Target branch (base)`, say — or a declaration hidden by an
+# unclosed fence reads identically to a standalone issue, and the delivery quietly goes to the
+# default branch with the dist ratchet quietly off.
 #
 # Both are ADVISORY. This script does not decide whether the branch exists — the caller
 # checks that against the remote and falls back to the default branch — because a ref that
@@ -61,6 +63,13 @@ fi
 # miss.
 BODY=$(tr -d '\r' < "$BODY_FILE")
 
+# Kept before fence-stripping. The `*_seen` signals below are computed against THIS, deliberately:
+# they answer "did the author try to declare one", which must stay true even when the fence logic
+# (or an unclosed fence) hides the declaration from the extractor. That mismatch is exactly what
+# the caller warns on, so computing them on the stripped body would silence the one signal that
+# catches an extraction failure (#1723).
+RAW_BODY="$BODY"
+
 # FENCED CODE BLOCKS ARE STRIPPED FIRST, and this is not hygiene — it is a correctness fix.
 # docs/contributing/templates/archon-issue-examples.md shows the whole sub-issue template inside a
 # fence, `## Target branch` and a `feature/...` ref included. A contributor who pastes that example
@@ -68,11 +77,44 @@ BODY=$(tr -d '\r' < "$BODY_FILE")
 # placeholder happens to fail the remote check and fall back, but a fenced REAL branch name would
 # silently become the delivery's base.
 #
-# Toggling on any ``` or ~~~ fence line is enough here: this only ever reads two things out of the
-# body, and both are being deliberately looked for OUTSIDE example blocks.
+# The first version of this toggled on ANY line starting with ``` or ~~~, which is a line-PARITY
+# rule, and an ODD number of marker lines therefore discarded the whole rest of the body. A single
+# indented ``` — which GitHub renders as literal text inside an indented code block, so the author
+# sees nothing wrong — was enough to make a real `## Target branch` section and a real
+# `archon-plan:` line both vanish. Reported on #1723.
+#
+# So the delimiters are tracked properly, per CommonMark: remember the opening character and its
+# run length, close only on a run of the SAME character at least that long with nothing but spaces
+# after it, and ignore any marker indented 4+ spaces (that is an indented code block, not a fence).
+# Run lengths are counted in a loop rather than with an interval regex (`{3,}`), because interval
+# expressions are not portable to the BSD awk this suite also runs under.
+#
+# NOTE the residual, which is why the two `*_seen` signals below are computed on the UNSTRIPPED
+# body: a genuinely UNCLOSED fence still swallows everything after it, because that is what
+# CommonMark says it means. No parser can fix that — only a warning can surface it.
 BODY=$(printf '%s\n' "$BODY" | awk '
-  /^[[:space:]]*(```|~~~)/ { infence = !infence; next }
-  !infence { print }
+  function runlen(s, ch,   n) { n = 0; while (substr(s, n + 1, 1) == ch) n++; return n }
+  {
+    match($0, /^ */); ind = RLENGTH
+    rest = substr($0, ind + 1)
+    ch = substr(rest, 1, 1)
+    if (infence) {
+      if (ind <= 3 && ch == fencechar) {
+        n = runlen(rest, fencechar)
+        if (n >= fencelen) {
+          tail = substr(rest, n + 1)
+          gsub(/[ \t]/, "", tail)
+          if (tail == "") { infence = 0 }
+        }
+      }
+      next
+    }
+    if (ind <= 3 && (ch == "`" || ch == "~")) {
+      n = runlen(rest, ch)
+      if (n >= 3) { fencechar = ch; fencelen = n; infence = 1; next }
+    }
+    print
+  }
 ')
 
 # The `## Target branch` section's prose is not fixed. Both of these are documented in
@@ -150,10 +192,20 @@ ARCHON_PLAN=${ARCHON_PLAN%%$'\n'*}
 # target branch", so it must still match the headings the strict pattern rejects — that mismatch is
 # exactly what the caller needs to warn about.
 HEADING_SEEN=false
-if printf '%s\n' "$BODY" | grep -qiE '^[[:space:]]*#{1,6}[[:space:]]*Target branch'; then
+if printf '%s\n' "$RAW_BODY" | grep -qiE '^[[:space:]]*#{1,6}[[:space:]]*Target branch'; then
   HEADING_SEEN=true
+fi
+
+# The plan half of the same idea. Without it, an extractor that misses a declaration leaves the PR
+# body with no `archon-plan:` line, deliver-verify.yml's grep finds nothing, and the gate reads
+# `absent` — which PASSES — rather than `unverified`, which blocks. So a silent miss here would
+# silently switch the dist ratchet off, the exact failure deliver-verify.yml warns about.
+PLAN_SEEN=false
+if printf '%s\n' "$RAW_BODY" | grep -qE '^[^A-Za-z0-9]*archon-plan:[[:space:]]*\S'; then
+  PLAN_SEEN=true
 fi
 
 echo "target_branch=$TARGET_BRANCH"
 echo "archon_plan=$ARCHON_PLAN"
 echo "heading_seen=$HEADING_SEEN"
+echo "plan_seen=$PLAN_SEEN"

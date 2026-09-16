@@ -73,10 +73,15 @@ The hand-off to verify is gated on the branch actually carrying a file change ag
 an agent that produced nothing gets a comment on the sub-issue saying exactly that, instead of
 handing an empty PR to a two-hour review.
 
-`ci.yml` is the single authority on build, test and lint for every phase. Verify dispatches it on
-the delivery branch and reads the resulting check runs; implement deliberately does *not* re-run
+`ci.yml` is the authority on build, test and lint **for implement and verify**. Verify dispatches it
+on the delivery branch and reads the resulting check runs; implement deliberately does *not* re-run
 the full suite or the linter, which duplicated a parity obligation and, on the resource-limited
 self-hosted runner, was itself a cause of lost runs.
+
+**The correct phase has not been brought into line yet.** Its prompt still tells the agent to run
+`go build ./...`, `go test ./...` and `golangci-lint run ./...` "because the verify phase runs
+exactly these three" — the same false premise, on the same self-hosted runner, under a tighter
+60-minute budget. Tracked as #1737; do not read the paragraph above as describing that phase.
 
 Phases chain with `workflow_dispatch`, passing the PR and sub-issue numbers as inputs. **No PAT and no GitHub App are needed** — `workflow_dispatch` and `repository_dispatch` are the two events that always create workflow runs even when triggered with `GITHUB_TOKEN`.
 

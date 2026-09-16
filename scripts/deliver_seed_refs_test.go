@@ -9,7 +9,7 @@ import (
 )
 
 // seedRefs runs scripts/deliver-seed-refs.sh over a body and returns the three values it prints.
-func seedRefs(t *testing.T, body string) (targetBranch, archonPlan, headingSeen string) {
+func seedRefs(t *testing.T, body string) (targetBranch, archonPlan, headingSeen, planSeen string) {
 	t.Helper()
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash is not on PATH")
@@ -35,16 +35,19 @@ func seedRefs(t *testing.T, body string) (targetBranch, archonPlan, headingSeen 
 			archonPlan = value
 		case "heading_seen":
 			headingSeen = value
+		case "plan_seen":
+			planSeen = value
 		default:
 			t.Fatalf("unexpected key %q in output:\n%s", key, out)
 		}
 	}
-	if headingSeen != "true" && headingSeen != "false" {
-		t.Fatalf("heading_seen = %q, want \"true\" or \"false\"; the caller branches on it to "+
-			"decide whether to warn, and an empty value would silently disable that warning",
-			headingSeen)
+	for name, v := range map[string]string{"heading_seen": headingSeen, "plan_seen": planSeen} {
+		if v != "true" && v != "false" {
+			t.Fatalf("%s = %q, want \"true\" or \"false\"; the caller branches on these to decide "+
+				"whether to warn, and an empty value would silently disable that warning", name, v)
+		}
 	}
-	return targetBranch, archonPlan, headingSeen
+	return targetBranch, archonPlan, headingSeen, planSeen
 }
 
 type seedRefsCase struct {
@@ -53,6 +56,7 @@ type seedRefsCase struct {
 	wantBranch  string
 	wantPlan    string
 	wantHeading string
+	wantPlan2   string // plan_seen
 }
 
 // The two shapes documented in docs/contributing/templates/archon-issue-examples.md, plus the
@@ -71,6 +75,7 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantBranch:  "feature/kv-offload",
 			wantPlan:    "archon-plan: specs/008-kv/kv.plan.json",
 			wantHeading: "true",
+			wantPlan2:   "true",
 		},
 		{
 			// The arrow form names the eventual feature->main base second. Taking the LAST ref
@@ -82,6 +87,7 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantBranch:  "feature/kv-offload",
 			wantPlan:    "archon-plan: specs/008-kv/kv.plan.json",
 			wantHeading: "true",
+			wantPlan2:   "true",
 		},
 		{
 			// The common case in this repository: a standalone hardening/bug issue. Neither value
@@ -91,6 +97,7 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantBranch:  "",
 			wantPlan:    "",
 			wantHeading: "false",
+			wantPlan2:   "false",
 		},
 		{
 			// A backticked ref under a LATER heading must not be mistaken for the target.
@@ -100,6 +107,7 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantBranch:  "",
 			wantPlan:    "",
 			wantHeading: "true",
+			wantPlan2:   "false",
 		},
 		{
 			name:        "plan declared without any target branch section",
@@ -107,6 +115,7 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantBranch:  "",
 			wantPlan:    "archon-plan: specs/009-x/x.plan.json",
 			wantHeading: "false",
+			wantPlan2:   "true",
 		},
 		{
 			// Matches archon-plan-resolve.sh, which requires a non-space after the colon. A bare
@@ -116,6 +125,7 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantBranch:  "",
 			wantPlan:    "",
 			wantHeading: "false",
+			wantPlan2:   "false",
 		},
 		{
 			// Prose mentioning the key mid-line is not a declaration; the pattern is anchored.
@@ -124,6 +134,7 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantBranch:  "",
 			wantPlan:    "",
 			wantHeading: "false",
+			wantPlan2:   "false",
 		},
 		{
 			// A web-UI edit can leave CRLF. An unstripped \r rides inside the ref and makes every
@@ -133,6 +144,7 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantBranch:  "feature/crlf",
 			wantPlan:    "",
 			wantHeading: "true",
+			wantPlan2:   "false",
 		},
 		{
 			// The list form the bold/list variants of these templates produce.
@@ -141,6 +153,7 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantBranch:  "",
 			wantPlan:    "- archon-plan: specs/010-y/y.plan.json",
 			wantHeading: "false",
+			wantPlan2:   "true",
 		},
 		{
 			// Not a branch name. Passing it on would reach `git ls-remote` as two arguments.
@@ -149,6 +162,7 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantBranch:  "",
 			wantPlan:    "",
 			wantHeading: "true",
+			wantPlan2:   "false",
 		},
 
 		// --- Fenced code blocks (review finding on #1723) ---
@@ -166,17 +180,21 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantBranch:  "feature/real",
 			wantPlan:    "",
 			wantHeading: "true",
+			wantPlan2:   "false",
 		},
 		{
-			// Only a fenced section, so there is no declaration at all — and crucially no
-			// heading_seen either, so the caller does not warn about a section the author never
-			// really wrote.
-			name: "a body whose ONLY Target branch section is fenced declares nothing",
+			// Only a fenced section, so nothing is DECLARED — but heading_seen is computed on the
+			// UNSTRIPPED body and so reports true. That is deliberate: heading_seen answers "did the
+			// author write one somewhere", which is what makes the caller warn instead of silently
+			// basing on the default branch. A purely illustrative fence therefore costs one warning,
+			// which is the right trade against a silent wrong base (#1723 review).
+			name: "a body whose ONLY Target branch section is fenced declares nothing but is SEEN",
 			body: "Here is the template:\n\n" +
 				"```markdown\n## Target branch\n\n`feature/example`\n```\n",
 			wantBranch:  "",
 			wantPlan:    "",
-			wantHeading: "false",
+			wantHeading: "true",
+			wantPlan2:   "false",
 		},
 		{
 			// Tilde fences are equally valid CommonMark, and are used for blocks that themselves
@@ -185,7 +203,8 @@ func TestDeliverSeedRefs(t *testing.T) {
 			body:        "~~~\n## Target branch\n\n`feature/example`\n~~~\n",
 			wantBranch:  "",
 			wantPlan:    "",
-			wantHeading: "false",
+			wantHeading: "true",
+			wantPlan2:   "false",
 		},
 		{
 			// A fenced declaration must not be seeded into the PR body either: the dist ratchet
@@ -195,6 +214,23 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantBranch:  "",
 			wantPlan:    "",
 			wantHeading: "false",
+			wantPlan2:   "true",
+		},
+
+		{
+			// THE #1723 REVIEW REPRODUCTION. The old line-parity toggle flipped on this single
+			// INDENTED ``` — which GitHub renders as literal text inside an indented code block, so
+			// the author sees nothing wrong — and discarded everything after it: target_branch and
+			// archon_plan both came back empty AND heading_seen was false, so no warning fired. Two
+			// silent harms at once: the delivery based on the default branch, and the dist ratchet
+			// skipped. A marker indented 4+ spaces is not a fence, so nothing is stripped now.
+			name: "an INDENTED ``` is not a fence and must not swallow the body",
+			body: "## Notes\n\nTo open a fence you write:\n\n    ```\n\n" +
+				"## Target branch\n\n`feature/real`\n\n---\n\narchon-plan: specs/x.plan.json\n",
+			wantBranch:  "feature/real",
+			wantPlan:    "archon-plan: specs/x.plan.json",
+			wantHeading: "true",
+			wantPlan2:   "true",
 		},
 
 		// --- heading present but unreadable (review finding on #1723) ---
@@ -207,6 +243,7 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantBranch:  "",
 			wantPlan:    "",
 			wantHeading: "true",
+			wantPlan2:   "false",
 		},
 		{
 			name:        "heading present with an unbackticked ref is seen but yields no ref",
@@ -214,6 +251,7 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantBranch:  "",
 			wantPlan:    "",
 			wantHeading: "true",
+			wantPlan2:   "false",
 		},
 
 		// --- case and fence edge cases (round-2 review findings on #1723) ---
@@ -226,6 +264,7 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantBranch:  "feature/lower",
 			wantPlan:    "",
 			wantHeading: "true",
+			wantPlan2:   "false",
 		},
 		{
 			name:        "mixed-case heading is extracted too",
@@ -233,18 +272,21 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantBranch:  "feature/mixed",
 			wantPlan:    "",
 			wantHeading: "true",
+			wantPlan2:   "false",
 		},
 		{
-			// Pins behaviour on a construct that is not valid CommonMark anyway: a ``` opener
-			// closed by ~~~ makes the two toggles cancel, so content after it is NOT stripped and
-			// the real section that follows is read. Safe — such a ref still has to pass the shape
-			// check and exist on the remote — but pinned so a future change to fence handling
-			// cannot alter it unnoticed.
-			name:        "mismatched fence delimiters do not swallow the rest of the body",
+			// A ``` fence is NOT closed by ~~~ — per CommonMark the closer must be the same
+			// character — so this fence is unclosed and runs to end of document, swallowing the
+			// section that follows. That is correct parsing, and it is also the residual harm no
+			// parser can remove: the extraction yields nothing. What saves it is heading_seen, which
+			// is computed on the unstripped body, stays true, and makes the caller WARN rather than
+			// silently base on the default branch (#1723 review).
+			name:        "an unclosed fence swallows the rest of the body but is still SEEN",
 			body:        "```\nexample\n~~~\n\n## Target branch\n\n`feature/after-mismatch`\n",
-			wantBranch:  "feature/after-mismatch",
+			wantBranch:  "",
 			wantPlan:    "",
 			wantHeading: "true",
+			wantPlan2:   "false",
 		},
 	}
 
@@ -270,12 +312,13 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantBranch:  "",
 			wantPlan:    "",
 			wantHeading: "true",
+			wantPlan2:   "false",
 		})
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			branch, plan, heading := seedRefs(t, tc.body)
+			branch, plan, heading, planSeen := seedRefs(t, tc.body)
 			if branch != tc.wantBranch {
 				t.Errorf("target_branch = %q, want %q", branch, tc.wantBranch)
 			}
@@ -284,6 +327,9 @@ func TestDeliverSeedRefs(t *testing.T) {
 			}
 			if heading != tc.wantHeading {
 				t.Errorf("heading_seen = %q, want %q", heading, tc.wantHeading)
+			}
+			if planSeen != tc.wantPlan2 {
+				t.Errorf("plan_seen = %q, want %q", planSeen, tc.wantPlan2)
 			}
 		})
 	}

@@ -169,9 +169,20 @@ func TestDeliverImplementSeedsTheBranchBeforeTheAgentRuns(t *testing.T) {
 // Reintroducing a workflow-side `gh pr create` would silently re-acquire that dependency and, to
 // make deliveries work at all, pressure someone into enabling repo-wide PR approval for Actions.
 func TestDeliverImplementDoesNotCreatePRsWithTheWorkflowToken(t *testing.T) {
-	for _, phase := range []string{"deliver-implement.yml", "deliver-verify.yml", "deliver-correct.yml"} {
+	// GLOBBED, not a list of the three delivery phases: the setting this protects is repo-WIDE, so
+	// a `gh pr create` added to any other workflow (archon.yml, claude.yml, …) acquires the same
+	// approval capability. Break-tested on #1723: with a hardcoded list, the same line added to
+	// archon.yml was missed.
+	paths, err := filepath.Glob(filepath.Join("..", ".github", "workflows", "*.yml"))
+	if err != nil {
+		t.Fatalf("globbing workflows: %v", err)
+	}
+	if len(paths) < 5 {
+		t.Fatalf("found only %d workflow files; the glob is not matching the workflow directory", len(paths))
+	}
+	for _, path := range paths {
+		phase := filepath.Base(path)
 		t.Run(phase, func(t *testing.T) {
-			path := filepath.Join("..", ".github", "workflows", phase)
 			raw, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatalf("reading %s: %v", path, err)

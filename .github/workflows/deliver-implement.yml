@@ -350,6 +350,7 @@ jobs:
           declared=$(sed -n 's/^target_branch=//p' <<< "$refs")
           plan=$(sed -n 's/^archon_plan=//p' <<< "$refs")
           heading_seen=$(sed -n 's/^heading_seen=//p' <<< "$refs")
+          plan_seen=$(sed -n 's/^plan_seen=//p' <<< "$refs")
 
           # An archon sub-issue targets its feature branch. The declared ref is used only if it
           # actually exists on the remote — a typo falls back to the default branch loudly rather
@@ -372,6 +373,15 @@ jobs:
             # branch is right, but doing it quietly means a feature-branch delivery lands on main
             # with a diff full of unrelated commits and nothing said so.
             echo "::warning::#$ISSUE_NUMBER has a 'Target branch' heading but no usable ref was read from it — basing on '$base'. Put the branch in backticks on its own under a plain '## Target branch' heading."
+          fi
+
+          # The plan half of the same R1 rule. A declaration the extractor missed (an unclosed fence
+          # hiding it, say) leaves the seeded PR body with no `archon-plan:` line — and
+          # deliver-verify.yml then reads the gate as `absent`, which PASSES, rather than
+          # `unverified`, which blocks. So a silent miss here silently switches the dist ratchet off.
+          if [[ "$plan_seen" == "true" && -z "$plan" ]]; then
+            echo "::error::#$ISSUE_NUMBER declares an 'archon-plan:' line but it could not be read, so the PR body would omit it and the dist ratchet would be skipped as 'absent' rather than blocking. Refusing to seed a delivery that would silently lose its plan gate."
+            exit 1
           fi
           echo "base=$base" >> "$GITHUB_OUTPUT"
 
@@ -433,9 +443,12 @@ jobs:
           # `superpowers:brainstorming`, posted a design write-up, and ENDED ITS TURN waiting for a
           # human reply that cannot come — 2m18s, $1.83, zero edits, and the phase reported success.
           # The hook itself concedes that user instructions take precedence, so the prompt below
-          # states the allowlist explicitly. That is why the fix is a positive allowlist and not a
-          # ban on one skill: any catalogue skill shaped "propose, then await the human" fails the
-          # same way.
+          # states the allowlist explicitly. The allowlist is a positive list rather than a ban on
+          # one skill because any catalogue skill shaped "propose, then await the human" fails the
+          # same way — but it is NOT sufficient on its own, and the comment used to imply it was:
+          # `superpowers:writing-plans` and `superpowers:executing-plans` are both ON the allowlist
+          # and both describe raising things with a human partner. The load-bearing instruction is
+          # the non-interactive clause in the prompt, which names those exceptions explicitly.
           plugin_marketplaces: |
             https://github.com/anthropics/claude-plugins-official.git
             https://github.com/obra/superpowers-marketplace.git
@@ -499,8 +512,12 @@ jobs:
 
             - `Closes #${{ env.ISSUE_NUMBER }}`
             - this line copied VERBATIM if it is not empty: `${{ steps.seed.outputs.plan }}`
-              (the dist ratchet reads the plan from the PR BODY, and a PR to a feature branch links
-              no closing issue, so nothing else can supply it)
+              — and if it IS empty, read the `archon-plan:` line out of the sub-issue yourself and
+              use that. Belt and braces on purpose: the dist ratchet reads the plan from the PR
+              BODY, a PR to a feature branch links no closing issue, and a body with no plan line
+              makes the gate read `absent` (which PASSES) instead of `unverified` (which blocks).
+              So a missed declaration would silently switch the ratchet off — do not rely on this
+              value alone being right.
             - a line saying the work is in progress and the PR is not ready to review
 
             If the PR value above is NOT empty, that PR already exists — use it, do not open
@@ -512,12 +529,34 @@ jobs:
             commits and the PR, say in your final comment what you found and what you kept, and
             CONTINUE from there. Do not start over and do not revert someone else's work.
 
-            Then follow @docs/contributing/pr-workflow.md and implement the issue.
+            Then follow @docs/contributing/pr-workflow.md and implement the issue — WITH THE THREE
+            EXCEPTIONS BELOW, which override it. That document is written for a human working with
+            another human, so parts of it assume a partner who answers. You do not have one, and a
+            pointer to a document that says STOP is a contradictory instruction, which is worse than
+            no instruction at all.
+
+            1. **Its human-approval gates do not apply.** Where it says to present a plan and STOP,
+               or to wait for approval before continuing, keep going instead. Record what you would
+               have asked in your final PR comment.
+            2. **Its verification gate does not apply.** It mandates a full-repository test run and
+               a full-repository lint as non-optional. Do not run either. The bullet below says what
+               to run instead, and why. (Deliberately not quoting those two commands here: the guard
+               test greps the prompt for them, and it is worth more as a dumb check than as a clever
+               one.)
+            3. **The same applies to any skill it points you at.** `superpowers:writing-plans` and
+               `superpowers:executing-plans` both describe raising things with a human partner and
+               reviewing at checkpoints. Do the work; do not wait.
 
             - Implement exactly the declared surface, no more. Do not import anything outside
               the allow list.
             - Every contract in the sub-issue gets a test that would fail if the contract were
               violated.
+            # Interaction outside this phase, recorded so nobody re-derives it: these extra pushes
+            # DO reach deliver-verify.yml (`on: push`, `deliver/issue-+([0-9])`), but its job guard
+            # `(github.event_name != 'push' || github.event.sender.type != 'Bot')` refuses App-token
+            # pushes, its `authorize` job is `ubuntu-latest` so the self-hosted runner is not woken,
+            # and every agent push precedes the hand-off dispatch, so a push cannot evict the pending
+            # dispatch. Cost is k cheap denied runs per delivery instead of 1.
             - PUSH AS YOU GO — after the first build passes, and after each contract's test goes
               green. Do not save the push for the end. This job's runner can be evicted at any
               moment, and whatever you have not pushed is lost; a delivery was lost that way on
@@ -579,7 +618,7 @@ jobs:
       # 120-minute agent review and a full CI dispatch discovering the diff is empty.
       - name: Check whether the delivery produced any work
         id: work
-        if: always() && steps.paused.outputs.paused == 'false' && steps.seed.outputs.base != ''
+        if: always() && steps.paused.outputs.paused == 'false'
         env:
           BASE: ${{ steps.seed.outputs.base }}
         run: |
