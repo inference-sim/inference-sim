@@ -1847,12 +1847,7 @@ func TestSimulator_RuntimeLengthCap_E2E(t *testing.T) {
 	if sim.Metrics.LengthCappedRequests != 1 {
 		t.Errorf("LengthCappedRequests = %d, want 1", sim.Metrics.LengthCappedRequests)
 	}
-	// INV-1: conservation holds
-	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
-	if total != 1 {
-		t.Errorf("INV-1: completed(%d)+queued(%d)+running(%d)+dropped(%d) = %d, want 1",
-			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning, sim.Metrics.DroppedUnservable, total)
-	}
+	assertINV1Conservation(t, sim.Metrics, 1, "length-cap force-completion")
 	// Output was truncated below the full 200
 	if sim.Metrics.TotalOutputTokens >= 200 {
 		t.Errorf("TotalOutputTokens = %d, want < 200 (force-completion should truncate)", sim.Metrics.TotalOutputTokens)
@@ -1915,15 +1910,7 @@ func TestSimulator_Conservation_WithMaxModelLen_Drops(t *testing.T) {
 
 	sim.Run()
 
-	// INV-1: injected == completed + still_queued + still_running + dropped
-	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued +
-		sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
-	if total != numInjected {
-		t.Errorf("INV-1 violation: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want %d",
-			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued,
-			sim.Metrics.StillRunning, sim.Metrics.DroppedUnservable,
-			total, numInjected)
-	}
+	assertINV1Conservation(t, sim.Metrics, numInjected, "oversized-request enqueue guard")
 
 	// Verify: 10 requests should be dropped, 10 should complete
 	if sim.Metrics.DroppedUnservable != 10 {
@@ -2099,14 +2086,8 @@ func TestSimulator_OversizedRequests_TerminatesNoLivelock(t *testing.T) {
 		t.Errorf("CompletedRequests = %d, want 1", sim.Metrics.CompletedRequests)
 	}
 
-	// AND conservation must hold (BC-5):
-	// completed + still_queued + still_running + dropped = total injected into EnqueueRequest
-	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
-	if total != 2 {
-		t.Errorf("conservation: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want 2",
-			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning,
-			sim.Metrics.DroppedUnservable, total)
-	}
+	// AND conservation must hold (BC-5)
+	assertINV1Conservation(t, sim.Metrics, 2, "mixed oversized and normal")
 }
 
 // BC-6: All oversized — simulation still terminates
@@ -2327,12 +2308,7 @@ func TestSimulator_ChunkedPrefill_MaxModelLen_NoSpuriousCap(t *testing.T) {
 		t.Errorf("TotalOutputTokens = %d, want 50 (prefill-generated + decode PI 201→249)", sim.Metrics.TotalOutputTokens)
 	}
 
-	// INV-1 conservation
-	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
-	if total != 1 {
-		t.Errorf("INV-1: completed(%d)+queued(%d)+running(%d)+dropped(%d) = %d, want 1",
-			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning, sim.Metrics.DroppedUnservable, total)
-	}
+	assertINV1Conservation(t, sim.Metrics, 1, "MaxOutputLen auto-fill")
 }
 
 // TestEnqueueRequest_AutoFill_MaxOutputLen verifies the engine-level auto-fill
@@ -2459,12 +2435,7 @@ func TestSimulator_ProactiveCap_EliminatesOvershoot(t *testing.T) {
 	if sim.Metrics.LengthCappedRequests != 1 {
 		t.Errorf("LengthCappedRequests = %d, want 1", sim.Metrics.LengthCappedRequests)
 	}
-	// INV-1 conservation
-	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
-	if total != 1 {
-		t.Errorf("INV-1 violated: %d+%d+%d+%d = %d, want 1",
-			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning, sim.Metrics.DroppedUnservable, total)
-	}
+	assertINV1Conservation(t, sim.Metrics, 1, "proactive MaxModelLen cap")
 }
 
 // TestSimulator_ProactiveCap_MaxModelLen2_ZeroOutput verifies BC-11:
@@ -2497,11 +2468,7 @@ func TestSimulator_ProactiveCap_MaxModelLen2_ZeroOutput(t *testing.T) {
 	if sim.Metrics.LengthCappedRequests != 1 {
 		t.Errorf("LengthCappedRequests = %d, want 1", sim.Metrics.LengthCappedRequests)
 	}
-	// INV-1 conservation
-	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
-	if total != 1 {
-		t.Errorf("INV-1 violated: %d", total)
-	}
+	assertINV1Conservation(t, sim.Metrics, 1, "proactive cap with zero decode budget")
 }
 
 // TestProcessCompletions_LengthCapped_MetricsRefreshed verifies BC-7:
@@ -2919,12 +2886,7 @@ func TestSimulator_TotalOutputTokens_NoDoubleCountAfterPreemption(t *testing.T) 
 			got, want, got-want)
 	}
 
-	// INV-1: all requests must be accounted for.
-	total := s.Metrics.CompletedRequests + s.Metrics.StillQueued + s.Metrics.StillRunning +
-		s.Metrics.DroppedUnservable + s.Metrics.TimedOutRequests
-	if total != 2 {
-		t.Errorf("INV-1 violated: accounted = %d, want 2", total)
-	}
+	assertINV1Conservation(t, s.Metrics, 2, "ITL entries after preemption")
 }
 
 // TestSimulator_ITL_NoDuplicateEntriesAfterPreemption verifies that AllITLs contains

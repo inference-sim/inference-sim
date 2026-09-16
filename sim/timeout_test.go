@@ -482,12 +482,7 @@ func TestTimeout_CascadeDoesNotCreateOrphanedStepEvents(t *testing.T) {
 		t.Errorf("CompletedRequests: got %d, want %d", sim.Metrics.CompletedRequests, numSurviving)
 	}
 
-	// INV-1: conservation across all terminal states.
-	total := sim.Metrics.CompletedRequests + sim.Metrics.TimedOutRequests +
-		sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
-	if total != numRequests {
-		t.Errorf("INV-1 violated: total %d != injected %d", total, numRequests)
-	}
+	assertINV1Conservation(t, sim.Metrics, numRequests, "cascading orphaned StepEvents")
 
 	// THEN: SimEndedTime must reflect realistic per-step latency for the surviving
 	// requests, not the collapsed timing caused by cascading orphaned StepEvents.

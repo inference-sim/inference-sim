@@ -595,13 +595,7 @@ func TestVLLMBatchFormation_LivelockResolution(t *testing.T) {
 			sim.Metrics.PreemptionCount)
 	}
 
-	// AND request conservation must hold (INV-1)
-	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
-	if total != 30 {
-		t.Errorf("INV-1: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, expected 30",
-			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning,
-			sim.Metrics.DroppedUnservable, total)
-	}
+	assertINV1Conservation(t, sim.Metrics, 30, "batch formation under KV pressure")
 
 	t.Logf("Results: completed=%d, queued=%d, running=%d, dropped=%d, preemptions=%d",
 		sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning,

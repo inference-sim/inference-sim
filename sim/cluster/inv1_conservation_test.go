@@ -272,9 +272,6 @@ var inlineSumExemptions = map[string]string{
 	// conservation ledger — it reconciles the per-tier shed breakdown against the
 	// counters, and there is no injected/accounted comparison.
 	"progress_hook_test.go": "shed-accounting identity over ProgressSnapshot, not an INV-1 ledger",
-	// Per-instance five-term specialisation, which is the correct equation for an
-	// InstanceSimulator's own metrics.
-	"instance_test.go": "single-instance metrics, asserted against the five-term specialisation",
 }
 
 // bucketAliases maps local variable names to the bucket they were assigned from,

@@ -287,8 +287,12 @@ func TestSaveResults_ConservationFields(t *testing.T) {
 	assert.Equal(t, 1, output.StillQueued)
 	assert.Equal(t, 1, output.StillRunning)
 	assert.Equal(t, 10, output.InjectedRequests)
-	// Conservation identity: injected = completed + queued + running + dropped (INV-1)
-	assert.Equal(t, output.InjectedRequests, output.CompletedRequests+output.StillQueued+output.StillRunning+output.DroppedUnservable)
+	// MetricsOutput.InjectedRequests is *defined* as the five-term sum
+	// (Metrics.ToOutput), so comparing it against that sum is an arithmetic
+	// identity, not an observation about the simulator. Assert instead that it
+	// matches the count this test actually injected — the same independence rule
+	// assertINV1Conservation documents.
+	assert.Equal(t, 10, output.CompletedRequests+output.StillQueued+output.StillRunning+output.DroppedUnservable+output.TimedOutRequests)
 }
 
 // TestSaveResults_PerRequestITL_InMilliseconds verifies BC-14:
