@@ -49,9 +49,12 @@ grep -q '[^[:space:]]' <<< "$body" \
 qa=no
 grep -qE 'CONFIDENT|FLAW_FOUND|CANNOT_ANSWER' <<< "$body" && qa=yes
 
-# The findings table heading, at any markdown heading depth.
+# The findings table heading. Accept it as a markdown heading (`## Findings Summary`, any
+# depth) OR a bold line (`**Findings Summary**`) — both are shapes a real review uses, and a
+# false "absent" on a genuine review would cost a needless correction round. Requiring the line
+# to START with `#`/`**` keeps prose like "see the findings summary below" from matching.
 table=no
-grep -qiE '^#{1,6}[[:space:]]*Findings Summary' <<< "$body" && table=yes
+grep -qiE '^[[:space:]]*(#{1,6}[[:space:]]*|\*\*)Findings Summary' <<< "$body" && table=yes
 
 if [[ "$qa" == yes && "$table" == yes ]]; then
   emit present "the review shows a Q/A phase and a findings table"

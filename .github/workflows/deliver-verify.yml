@@ -869,7 +869,7 @@ jobs:
                     | select((.body | split(\"\n\") | map(select(test(\"\\\\S\"))) | (last // \"\") | gsub(\"^\\\\s+|\\\\s+$\"; \"\")) == \"DELIVER-VERDICT: GREEN\")
                     | .body ] | last // \"\"" 2>/dev/null || true)
             if [[ -z "$body" ]]; then
-              echo "the GREEN marker's comment body could not be re-read; treating as NOT-GREEN"
+              echo "the GREEN marker's comment body was empty or could not be re-read; treating as NOT-GREEN"
               marker=NOT-GREEN
             else
               mk=$(printf '%s' "$body" | scripts/deliver-methodology-markers.sh | sed -n 's/^markers=//p' || true)

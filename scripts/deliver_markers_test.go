@@ -129,6 +129,39 @@ func TestMarkers_AnyQATag(t *testing.T) {
 	}
 }
 
+// The findings table is accepted as a markdown heading OR a bold line — a real review uses
+// either, and a false "absent" would send a thorough review through a needless correction
+// round. Prose that merely mentions the phrase must NOT satisfy it.
+func TestMarkers_FindingsHeadingShapes(t *testing.T) {
+	const qa = "A: CONFIDENT — file.go:1\n"
+	cases := []struct {
+		name string
+		line string
+		want string
+	}{
+		{"markdown heading", "## Findings Summary", "present"},
+		{"deep heading", "###### Findings Summary", "present"},
+		{"bold line", "**Findings Summary**", "present"},
+		{"prose mention only", "See the Findings Summary below.", "absent"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := runMarkers(t, qa+tc.line+"\n"); got.markers != tc.want {
+				t.Errorf("%q: markers = %q, want %q", tc.line, got.markers, tc.want)
+			}
+		})
+	}
+}
+
+// CRLF line endings (which the GitHub API can return) must not defeat detection: the trailing
+// \r sits past the marker tokens, so a review with both markers still reads present.
+func TestMarkers_CRLF(t *testing.T) {
+	body := "A: FLAW_FOUND — file.go:1\r\n## Findings Summary\r\n| none | — |\r\n"
+	if got := runMarkers(t, body); got.markers != "present" {
+		t.Errorf("CRLF body: markers = %q, want present (stdout: %s)", got.markers, got.stdout)
+	}
+}
+
 // Empty or whitespace-only stdin means the caller failed to capture the comment body. That is a
 // wiring bug, not an absent-markers verdict: exit 2 so the workflow stops rather than silently
 // downgrading a review it never actually read.
