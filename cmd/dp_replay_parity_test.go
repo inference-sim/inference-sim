@@ -239,7 +239,7 @@ func TestINV13_RunReplayParity_MoEDPPlacement(t *testing.T) {
 			if completed := clusterMetricInt(t, runOut, "completed_requests"); completed <= 0 {
 				t.Fatalf("INV-13 parity would be vacuous: run leg completed %d requests; stdout:\n%s", completed, runOut)
 			}
-			clusterConservationHolds(t, runOut) // INV-1 companion to the byte-identity law
+			clusterConservationHolds(t, runOut, dpFixtureNumRequests) // INV-1 companion to the byte-identity law
 			// Activation check: byte-identity is also satisfied by two legs that BOTH failed
 			// to expand (e.g. a regression making planDPPlacement inactive for MoE dp>1
 			// everywhere). --dp 2 must therefore be visible as a second replica on both
@@ -282,7 +282,7 @@ func TestReplayCmd_MoEDPPlacement_SpawnsReplicas(t *testing.T) {
 	if strings.Contains(outA, `"instance_id": "instance_2"`) {
 		t.Errorf("BC-1: replay with --dp 2 must spawn exactly 2 replicas, but instance_2 is present")
 	}
-	clusterConservationHolds(t, outA) // BC-6 / INV-1
+	clusterConservationHolds(t, outA, dpFixtureNumRequests) // BC-6 / INV-1
 
 	// Case B: --num-instances 2 --dp 2 → 4 replicas, confirming the M×N multiply.
 	outB := dpLegOK(t, name, "replay", prefix, 2, 2, "--total-kv-blocks", "20000")
@@ -292,7 +292,7 @@ func TestReplayCmd_MoEDPPlacement_SpawnsReplicas(t *testing.T) {
 	if strings.Contains(outB, `"instance_id": "instance_4"`) {
 		t.Errorf("BC-1: replay with --num-instances 2 --dp 2 must spawn exactly 4 replicas, but instance_4 is present")
 	}
-	clusterConservationHolds(t, outB)
+	clusterConservationHolds(t, outB, dpFixtureNumRequests)
 
 	// INV-6: a repeat of Case A is byte-identical.
 	outA2 := dpLegOK(t, name, "replay", prefix, 2, 1, "--total-kv-blocks", "20000")
@@ -382,7 +382,7 @@ func TestReplayCmd_MoEDPPlacement_AutoKV_Parity(t *testing.T) {
 	if !strings.Contains(replayOut, `"instance_id": "instance_1"`) {
 		t.Errorf("#1556 BC-3: auto-KV replay must spawn 2 replicas (instance_1); stdout:\n%s", replayOut)
 	}
-	clusterConservationHolds(t, replayOut)
+	clusterConservationHolds(t, replayOut, dpFixtureNumRequests)
 	if runOut != replayOut {
 		t.Errorf("#1556 BC-3/INV-13: auto-KV run and replay must agree\nRUN:\n%s\nREPLAY:\n%s", runOut, replayOut)
 	}
@@ -460,7 +460,7 @@ func TestReplayCmd_MoEDPPlacement_PD_Parity(t *testing.T) {
 	if completed := clusterMetricInt(t, runOut, "completed_requests"); completed <= 0 {
 		t.Fatalf("INV-13 parity would be vacuous: run leg completed %d requests; stdout:\n%s", completed, runOut)
 	}
-	clusterConservationHolds(t, runOut) // INV-1 companion to the byte-identity law (BC-9)
+	clusterConservationHolds(t, runOut, dpFixtureNumRequests) // INV-1 companion to the byte-identity law (BC-9)
 
 	// Activation check: the PD topology must have EXPANDED by --dp on both legs, or the
 	// parity assertion is comparing two un-expanded runs. --num-instances 2 --dp 2 with
@@ -658,5 +658,7 @@ func TestReplayCmd_MoEDPPlacement_ForeignTrace_Mixtral(t *testing.T) {
 	if strings.Contains(out, `"instance_id": "instance_2"`) {
 		t.Errorf("#1556 BC-1: --dp 2 must spawn exactly 2 replicas, but instance_2 is present")
 	}
-	clusterConservationHolds(t, out) // INV-1 across the expanded replicas
+	// 6, not dpFixtureNumRequests: this leg replays the hand-authored six-row trace
+	// written above, not the generated fixture.
+	clusterConservationHolds(t, out, 6) // INV-1 across the expanded replicas
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/inference-sim/internal/invariantscan"
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -208,8 +209,16 @@ func parseINV1RegistryEquations(t *testing.T, path string) [][]string {
 		}
 		rhs := strings.TrimSuffix(strings.SplitN(expr, "==", 2)[1], "`")
 		terms := make([]string, 0, 12)
+		seen := map[string]bool{}
 		for _, term := range strings.Split(rhs, "+") {
-			terms = append(terms, strings.TrimSpace(term))
+			term = strings.TrimSpace(term)
+			// A duplicated term would survive the set comparison below, while making
+			// the stated equation wrong.
+			if seen[term] {
+				t.Errorf("%s states %q twice in one equation", path, term)
+			}
+			seen[term] = true
+			terms = append(terms, term)
 		}
 		found = append(found, terms)
 	}
@@ -262,154 +271,12 @@ func TestINV1_HelperMatchesRegistry(t *testing.T) {
 	}
 }
 
-// inv1BucketSelectors are the Go field and accessor names that make up INV-1's
-// buckets. A `+` expression combining three or more of them is a conservation sum.
-var inv1BucketSelectors = map[string]bool{
-	"CompletedRequests":       true,
-	"StillQueued":             true,
-	"StillRunning":            true,
-	"DroppedUnservable":       true,
-	"TimedOutRequests":        true,
-	"RejectedRequests":        true,
-	"RoutingRejections":       true,
-	"GatewayQueueDepth":       true,
-	"GatewayQueueShed":        true,
-	"GatewayQueueRejected":    true,
-	"GatewayEvicted":          true,
-	"GatewayExpired":          true,
-	"EncodeRoutingRejections": true,
-}
-
 // inlineSumExemptions lists files allowed to hand-roll a conservation sum, with the
 // reason. Every entry must name a file that exists, so an exemption left behind after
-// a rewrite fails rather than rots. Empty: the CompletedRequests requirement in
-// findInlineConservationSums already distinguishes a conservation ledger from the
-// other multi-bucket expressions in the package, so no file needs excusing.
+// a rewrite fails rather than rots. Empty: invariantscan distinguishes a conservation
+// ledger from the other multi-bucket expressions in this package, so no file needs
+// excusing.
 var inlineSumExemptions = map[string]string{}
-
-// bucketAliases maps local variable names to the bucket they were assigned from,
-// for assignments of the form `completed := agg.CompletedRequests` or
-// `gwDepth := cs.GatewayQueueDepth()`. Without this, a sum laundered through locals
-// escapes detection — which is exactly the shape cluster_tier_test.go used, one of
-// the three sites that omitted a bucket.
-func bucketAliases(file *ast.File) map[string]string {
-	aliases := map[string]string{}
-	record := func(lhs, rhs []ast.Expr) {
-		for i, l := range lhs {
-			if i >= len(rhs) {
-				return
-			}
-			id, ok := l.(*ast.Ident)
-			if !ok {
-				continue
-			}
-			if name, ok := bucketNameOf(rhs[i]); ok {
-				aliases[id.Name] = name
-			}
-		}
-	}
-	ast.Inspect(file, func(n ast.Node) bool {
-		switch x := n.(type) {
-		case *ast.AssignStmt:
-			record(x.Lhs, x.Rhs)
-		case *ast.ValueSpec:
-			lhs := make([]ast.Expr, 0, len(x.Names))
-			for _, name := range x.Names {
-				lhs = append(lhs, name)
-			}
-			record(lhs, x.Values)
-		}
-		return true
-	})
-	return aliases
-}
-
-// bucketNameOf reports the INV-1 bucket that e reads, if any: a field selector
-// (m.StillQueued) or an accessor call (cs.GatewayExpired()).
-func bucketNameOf(e ast.Expr) (string, bool) {
-	switch x := e.(type) {
-	case *ast.SelectorExpr:
-		if inv1BucketSelectors[x.Sel.Name] {
-			return x.Sel.Name, true
-		}
-	case *ast.CallExpr:
-		if sel, ok := x.Fun.(*ast.SelectorExpr); ok && inv1BucketSelectors[sel.Sel.Name] {
-			return sel.Sel.Name, true
-		}
-	}
-	return "", false
-}
-
-// countBucketOperands returns the distinct INV-1 buckets appearing as operands of the
-// arithmetic/comparison tree rooted at n, resolving locals through aliases.
-func countBucketOperands(n ast.Expr, aliases map[string]string) map[string]bool {
-	seen := map[string]bool{}
-	var walk func(ast.Expr)
-	walk = func(e ast.Expr) {
-		if name, ok := bucketNameOf(e); ok {
-			seen[name] = true
-			return
-		}
-		switch x := e.(type) {
-		case *ast.BinaryExpr:
-			// Subtraction and the comparison itself count too: moving buckets to the
-			// other side (`a + b != injected - c - d`) is the natural rewrite after
-			// hitting this guard, and it is the same hand-rolled equation. Walking
-			// through == and != means the operand count spans both sides.
-			switch x.Op {
-			case token.ADD, token.SUB, token.EQL, token.NEQ:
-				walk(x.X)
-				walk(x.Y)
-			}
-		case *ast.ParenExpr:
-			walk(x.X)
-		case *ast.Ident:
-			if name, ok := aliases[x.Name]; ok {
-				seen[name] = true
-			}
-		}
-	}
-	walk(n)
-	return seen
-}
-
-// findInlineConservationSums reports every + expression in src that combines
-// threshold or more INV-1 bucket names, as "line: source-ish" strings.
-func findInlineConservationSums(t *testing.T, filename, src string, threshold int) []string {
-	t.Helper()
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, filename, src, 0)
-	if err != nil {
-		t.Fatalf("cannot parse %s: %v", filename, err)
-	}
-	aliases := bucketAliases(file)
-	var hits []string
-	ast.Inspect(file, func(n ast.Node) bool {
-		be, ok := n.(*ast.BinaryExpr)
-		if !ok {
-			return true
-		}
-		switch be.Op {
-		case token.ADD, token.SUB, token.EQL, token.NEQ:
-		default:
-			return true
-		}
-		buckets := countBucketOperands(be, aliases)
-		// CompletedRequests is required, not just a count. Every conservation ledger
-		// has it; expressions that combine several buckets *without* it are a
-		// different equation — INV-5's non-vacuity floors subtract gateway counters,
-		// and progress_hook_test.go reconciles the shed breakdown. Counting those as
-		// conservation sums would make the guard cry wolf, and a guard that cries wolf
-		// gets exemptions bolted on until it means nothing.
-		if len(buckets) >= threshold && buckets["CompletedRequests"] {
-			hits = append(hits, fmt.Sprintf("%s:%d", filename, fset.Position(be.Pos()).Line))
-			// Do not descend: the sub-expressions of a matched sum would match too.
-			return false
-		}
-		return true
-	})
-	return hits
-}
 
 // TestINV1_NoInlineClusterConservationSums forbids new hand-rolled cluster
 // conservation sums. Before issue #1720 there were 29 of them, disagreeing about
@@ -441,8 +308,12 @@ func TestINV1_NoInlineClusterConservationSums(t *testing.T) {
 			t.Fatalf("cannot read %s: %v", name, err)
 		}
 		scanned++
-		for _, hit := range findInlineConservationSums(t, name, string(src), 3) {
-			t.Errorf("%s: inline INV-1 conservation sum — use assertClusterINV1Conservation instead, so a bucket added to the invariant is picked up here automatically", hit)
+		findings, err := invariantscan.FindConservationSums(name, string(src), 3)
+		if err != nil {
+			t.Fatalf("cannot scan %s: %v", name, err)
+		}
+		for _, f := range findings {
+			t.Errorf("%s: inline INV-1 conservation sum — use assertClusterINV1Conservation instead, so a bucket added to the invariant is picked up here automatically", f)
 		}
 	}
 
@@ -455,75 +326,6 @@ func TestINV1_NoInlineClusterConservationSums(t *testing.T) {
 		if _, err := os.Stat(name); err != nil {
 			t.Errorf("exemption for %s (%s) names a file that does not exist — remove the stale entry", name, reason)
 		}
-	}
-}
-
-// TestINV1_InlineSumDetectorFires proves the detector above is not vacuous, by
-// running it over synthetic sources whose shape mirrors the sums it replaced:
-// gofmt-wrapped, accumulated via locals, and reordered.
-func TestINV1_InlineSumDetectorFires(t *testing.T) {
-	cases := []struct {
-		name string
-		src  string
-		want bool
-	}{
-		{
-			name: "wrapped across lines",
-			src: `package p
-func f() {
-	_ = m.CompletedRequests + m.StillQueued +
-		m.StillRunning + m.DroppedUnservable
-}`,
-			want: true,
-		},
-		{
-			name: "accumulated through locals",
-			src: `package p
-func f() {
-	completed := agg.CompletedRequests
-	queued := agg.StillQueued
-	running := agg.StillRunning
-	_ = completed + queued + running + cs.RoutingRejections() + cs.GatewayQueueDepth()
-}`,
-			// This is the shape cluster_tier_test.go used, one of the three sites
-			// that omitted a bucket. Detecting it is why the walker resolves locals
-			// back to the bucket they were assigned from.
-			want: true,
-		},
-		{
-			name: "reordered operands with accessors",
-			src: `package p
-func f() {
-	_ = cs.GatewayExpired() + m.StillRunning + cs.RoutingRejections() + m.CompletedRequests
-}`,
-			want: true,
-		},
-		{
-			name: "buckets moved to the other side of the comparison",
-			src: `package p
-func f() {
-	_ = m.CompletedRequests+m.StillQueued != injected-m.DroppedUnservable-cs.RoutingRejections()
-}`,
-			// The natural rewrite once the += form is rejected, and the same
-			// hand-rolled equation.
-			want: true,
-		},
-		{
-			name: "two buckets is not a conservation sum",
-			src: `package p
-func f() {
-	_ = m.CompletedRequests + m.TimedOutRequests
-}`,
-			want: false,
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			hits := findInlineConservationSums(t, "fixture.go", tc.src, 3)
-			if got := len(hits) > 0; got != tc.want {
-				t.Errorf("detector fired = %v, want %v (hits: %v)", got, tc.want, hits)
-			}
-		})
 	}
 }
 
@@ -645,12 +447,32 @@ func f() {
 	}
 }
 
-// TestNewClusterLedger_ReadsEachBucketOnce pins newClusterLedger's field-to-source
-// mapping. Nothing else can: two buckets that are zero together in every fixture
-// could be swapped, or one read twice and another not at all, and every conservation
-// assertion in the tree would still pass. Checking that each of the twelve sources
-// appears exactly once in the constructor catches that class of typo.
-func TestNewClusterLedger_ReadsEachBucketOnce(t *testing.T) {
+// ledgerFieldSources is the mapping newClusterLedger must implement: every ledger
+// field and the exact metric or accessor it reads. Kept separate from the constructor
+// so TestNewClusterLedger_FieldSources can compare the two — a swap between fields is
+// invisible to any assertion over totals, because two buckets that are zero together
+// in every fixture would still balance.
+var ledgerFieldSources = map[string]string{
+	"completedRequests":       "CompletedRequests",
+	"stillQueued":             "StillQueued",
+	"stillRunning":            "StillRunning",
+	"droppedUnservable":       "DroppedUnservable",
+	"timedOut":                "TimedOutRequests",
+	"routingRejections":       "RoutingRejections",
+	"gatewayQueueDepth":       "GatewayQueueDepth",
+	"gatewayQueueShed":        "GatewayQueueShed",
+	"gatewayQueueRejected":    "GatewayQueueRejected",
+	"gatewayEvicted":          "GatewayEvicted",
+	"gatewayExpired":          "GatewayExpired",
+	"encodeRoutingRejections": "EncodeRoutingRejections",
+}
+
+// TestNewClusterLedger_FieldSources pins each ledger field to the metric it reads.
+// Nothing else can: swap the sources of two buckets that are zero together in every
+// fixture — gateway_evicted and gateway_expired, say — and every conservation
+// assertion in the tree still passes. This compares the constructor's composite
+// literal, key by key, against the table above.
+func TestNewClusterLedger_FieldSources(t *testing.T) {
 	const file = "inv1_conservation_test.go"
 	fset := token.NewFileSet()
 	parsed, err := parser.ParseFile(fset, file, nil, 0)
@@ -658,7 +480,7 @@ func TestNewClusterLedger_ReadsEachBucketOnce(t *testing.T) {
 		t.Fatalf("cannot parse %s: %v", file, err)
 	}
 
-	var body ast.Node
+	var body *ast.BlockStmt
 	ast.Inspect(parsed, func(n ast.Node) bool {
 		fn, ok := n.(*ast.FuncDecl)
 		if ok && fn.Name.Name == "newClusterLedger" {
@@ -671,30 +493,39 @@ func TestNewClusterLedger_ReadsEachBucketOnce(t *testing.T) {
 		t.Fatal("newClusterLedger not found — this test needs updating alongside the rename")
 	}
 
-	counts := map[string]int{}
+	got := map[string]string{}
 	ast.Inspect(body, func(n ast.Node) bool {
-		expr, ok := n.(ast.Expr)
+		kv, ok := n.(*ast.KeyValueExpr)
 		if !ok {
 			return true
 		}
-		if name, ok := bucketNameOf(expr); ok {
-			counts[name]++
-			// Do not descend: an accessor call would otherwise also be counted via
-			// its own selector.
-			return false
+		key, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		switch v := kv.Value.(type) {
+		case *ast.SelectorExpr:
+			got[key.Name] = v.Sel.Name
+		case *ast.CallExpr:
+			if sel, ok := v.Fun.(*ast.SelectorExpr); ok {
+				got[key.Name] = sel.Sel.Name
+			}
 		}
 		return true
 	})
 
-	// The twelve sources, in the same order as clusterLedgerTerms.
-	for i, source := range []string{
-		"CompletedRequests", "StillQueued", "StillRunning", "DroppedUnservable",
-		"TimedOutRequests", "RoutingRejections", "GatewayQueueDepth", "GatewayQueueShed",
-		"GatewayQueueRejected", "GatewayEvicted", "GatewayExpired", "EncodeRoutingRejections",
-	} {
-		if got := counts[source]; got != 1 {
-			t.Errorf("newClusterLedger reads %s %d times, want exactly 1 (bucket %q)", source, got, clusterLedgerTerms[i])
+	for field, want := range ledgerFieldSources {
+		if got[field] != want {
+			t.Errorf("newClusterLedger sets %s from %q, want %q", field, got[field], want)
 		}
+	}
+	for field, source := range got {
+		if _, expected := ledgerFieldSources[field]; !expected {
+			t.Errorf("newClusterLedger sets unexpected field %s from %q — add it to ledgerFieldSources and to clusterLedgerTerms", field, source)
+		}
+	}
+	if len(ledgerFieldSources) != len(clusterLedgerTerms) {
+		t.Errorf("ledgerFieldSources has %d entries but clusterLedgerTerms names %d buckets", len(ledgerFieldSources), len(clusterLedgerTerms))
 	}
 }
 

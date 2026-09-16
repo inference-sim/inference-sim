@@ -870,30 +870,17 @@ func TestSimulator_RequestConservation_InfiniteHorizon_AllRequestsComplete(t *te
 	injectRequests(sim, requests)
 	sim.Run()
 
-	// Five-term equation: injected == completed + queued + running + dropped + timedOut (INV-1)
-	injected := 50 // independent count: we injected exactly 50 requests above
-	completed := sim.Metrics.CompletedRequests
-	queued := sim.WaitQ.Len()
-	running := 0
-	if sim.RunningBatch != nil {
-		running = len(sim.RunningBatch.Requests)
-	}
-	dropped := sim.Metrics.DroppedUnservable
-	timedOut := sim.Metrics.TimedOutRequests
-
-	if completed+queued+running+dropped+timedOut != injected {
-		t.Errorf("request conservation violated: completed(%d) + queued(%d) + running(%d) + dropped(%d) + timedOut(%d) = %d, injected = %d",
-			completed, queued, running, dropped, timedOut, completed+queued+running+dropped+timedOut, injected)
-	}
+	assertMetricsSnapshotMatchesLiveState(t, sim)
+	assertINV1Conservation(t, sim.Metrics, 50, "infinite horizon, 50 requests")
 
 	// With infinite horizon, all should complete
-	if completed != 50 {
+	if completed := sim.Metrics.CompletedRequests; completed != 50 {
 		t.Errorf("infinite horizon: expected all 50 requests to complete, got %d", completed)
 	}
-	if queued != 0 {
+	if queued := sim.Metrics.StillQueued; queued != 0 {
 		t.Errorf("infinite horizon: expected empty queue, got %d queued", queued)
 	}
-	if running != 0 {
+	if running := sim.Metrics.StillRunning; running != 0 {
 		t.Errorf("infinite horizon: expected empty batch, got %d running", running)
 	}
 }
@@ -949,25 +936,13 @@ func TestSimulator_RequestConservation_FiniteHorizon_ThreeTermEquation(t *testin
 
 	sim.Run()
 
-	injected := 15 // independent count: 10 early + 5 late
+	assertMetricsSnapshotMatchesLiveState(t, sim)
+	assertINV1Conservation(t, sim.Metrics, 15, "10 early + 5 late arrivals")
 	completed := sim.Metrics.CompletedRequests
-	queued := sim.WaitQ.Len()
-	running := 0
-	if sim.RunningBatch != nil {
-		running = len(sim.RunningBatch.Requests)
-	}
-	dropped := sim.Metrics.DroppedUnservable
-	timedOut := sim.Metrics.TimedOutRequests
-
-	sum := completed + queued + running + dropped + timedOut
-	if sum != injected {
-		t.Errorf("request conservation violated: completed(%d) + queued(%d) + running(%d) + dropped(%d) + timedOut(%d) = %d, injected = %d",
-			completed, queued, running, dropped, timedOut, sum, injected)
-	}
 
 	// Verify we actually tested the non-trivial case: some but not all completed
-	if completed == injected {
-		t.Fatalf("all %d requests completed — horizon too long, conservation case untested", injected)
+	if completed == 15 {
+		t.Fatal("all 15 requests completed — horizon too long, conservation case untested")
 	}
 	if completed == 0 {
 		t.Fatalf("no requests completed — horizon too short, test setup invalid")
@@ -2814,29 +2789,17 @@ func TestSimulator_Conservation_FiveTermWithTimeout(t *testing.T) {
 
 	sim.Run()
 
-	completed := sim.Metrics.CompletedRequests
-	queued := sim.WaitQ.Len()
-	running := 0
-	if sim.RunningBatch != nil {
-		running = len(sim.RunningBatch.Requests)
-	}
-	dropped := sim.Metrics.DroppedUnservable
-	timedOut := sim.Metrics.TimedOutRequests
-
-	fiveTermSum := completed + queued + running + dropped + timedOut
-	if fiveTermSum != injectedCount {
-		t.Errorf("BC-4 INV-1 5-term conservation violated: completed(%d) + queued(%d) + running(%d) + dropped(%d) + timedOut(%d) = %d, injected = %d",
-			completed, queued, running, dropped, timedOut, fiveTermSum, injectedCount)
-	}
+	assertMetricsSnapshotMatchesLiveState(t, sim)
+	assertINV1Conservation(t, sim.Metrics, injectedCount, "BC-4 mixed arrivals")
 
 	// All three terms must be exercised
-	if timedOut == 0 {
+	if sim.Metrics.TimedOutRequests == 0 {
 		t.Error("expected at least 1 timed-out request")
 	}
-	if completed == 0 {
+	if sim.Metrics.CompletedRequests == 0 {
 		t.Error("expected at least 1 completed request")
 	}
-	if dropped == 0 {
+	if sim.Metrics.DroppedUnservable == 0 {
 		t.Error("expected at least 1 dropped request (input > KV capacity)")
 	}
 }

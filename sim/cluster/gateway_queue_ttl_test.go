@@ -74,9 +74,12 @@ func TestINV1_Conservation_GatewayTTLExpiry(t *testing.T) {
 	if !ok {
 		t.Fatal("r1 did not complete — fixture assumption broken")
 	}
-	if r1Completion <= float64(ttlUs) {
-		t.Fatalf("fixture margin gone: r1 completed at %.0f µs, within the %d µs TTL, so r2 need not expire — lower the TTL",
-			r1Completion, ttlUs)
+	// r2 expires at its own arrival plus the TTL, not at tick ttlUs, so that is the
+	// bound r1 has to outlast.
+	r2Deadline := float64(reqs[1].ArrivalTime + ttlUs)
+	if r1Completion <= r2Deadline {
+		t.Fatalf("fixture margin gone: r1 completed at %.0f µs, before r2's expiry deadline of %.0f µs (arrival %d + TTL %d), so r2 need not expire — lower the TTL",
+			r1Completion, r2Deadline, reqs[1].ArrivalTime, ttlUs)
 	}
 
 	assertClusterINV1Conservation(t, cs, len(reqs), noRejections, "gateway TTL expiry")

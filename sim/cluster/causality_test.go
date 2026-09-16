@@ -33,13 +33,19 @@ func TestINV5_Causality_FullChain(t *testing.T) {
 		name      string
 		configure func(*DeploymentConfig)
 		requests  int
+		// Each leg declares what it must exercise, so a config change that quietly
+		// turns a leg into a duplicate of another one fails rather than passing.
+		requireHeld     bool // a request waited in the queue and was then dispatched
+		requireRejected bool // the bounded queue turned requests away
+		requireExpired  bool // TTL removed requests from the queue
 	}{
 		{
 			name: "concurrency-gated, drains",
 			configure: func(cfg *DeploymentConfig) {
 				cfg.FlowControlMaxConcurrency = 1
 			},
-			requests: 8,
+			requests:    8,
+			requireHeld: true,
 		},
 		{
 			// Measured on this fixture: 20 gateway-queue rejections and 2 requests
@@ -53,16 +59,37 @@ func TestINV5_Causality_FullChain(t *testing.T) {
 				cfg.FlowControlMaxQueueDepth = 3
 				cfg.Horizon = 200_000
 			},
-			requests: 24,
+			requests:        24,
+			requireRejected: true,
+		},
+		{
+			// Adds TTL expiry on top, so the expired subtrahend is exercised too. shed
+			// stays zero in all three legs: shedding needs a displaceable
+			// lower-priority victim, which no integration fixture in this package
+			// reliably produces — it is covered at unit level in
+			// TestGatewayQueue_CriticalityProtection_NonSheddableNeverEvicted. The
+			// subtrahend is kept because a request shed from the queue does have its
+			// enqueue timestamp cleared, so omitting it would be wrong the day such a
+			// fixture exists.
+			name: "saturated with TTL expiry",
+			configure: func(cfg *DeploymentConfig) {
+				cfg.FlowControlMaxConcurrency = 1
+				cfg.FlowControlDispatchOrder = "priority"
+				cfg.FlowControlMaxQueueDepth = 3
+				cfg.FlowControlRequestTTL = 2000
+				cfg.Horizon = 200_000
+			},
+			requests:       24,
+			requireExpired: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			assertINV5FullChain(t, tc.configure, tc.requests)
+			assertINV5FullChain(t, tc.configure, tc.requests, tc.requireHeld, tc.requireRejected, tc.requireExpired)
 		})
 	}
 }
 
-func assertINV5FullChain(t *testing.T, configure func(*DeploymentConfig), numRequests int) {
+func assertINV5FullChain(t *testing.T, configure func(*DeploymentConfig), numRequests int, requireHeld, requireRejected, requireExpired bool) {
 	t.Helper()
 
 	config := newTestDeploymentConfig(1)
@@ -163,17 +190,26 @@ func assertINV5FullChain(t *testing.T, configure func(*DeploymentConfig), numReq
 		t.Error("INV-5 dispatch->schedule was never checked — no request had both a dispatch timestamp and a scheduling delay")
 	}
 
-	// The gateway must actually have held something, or the two middle links reduce
-	// to the trivial pass-through case.
-	held := false
-	for _, req := range requests {
-		if req.GatewayDispatchTime > req.GatewayEnqueueTime && req.GatewayEnqueueTime != 0 {
-			held = true
-			break
+	// Per-leg expectations. Each subtrahend above is only meaningful if some leg
+	// makes it non-zero; asserting that here means a config change cannot quietly
+	// reduce every leg to the same trivial case.
+	if requireHeld {
+		held := false
+		for _, req := range requests {
+			if req.GatewayDispatchTime > req.GatewayEnqueueTime && req.GatewayEnqueueTime != 0 {
+				held = true
+				break
+			}
+		}
+		if !held {
+			t.Error("no request waited in the gateway queue and was then dispatched, so the enqueue->dispatch link is vacuous in this leg")
 		}
 	}
-	if !held {
-		t.Error("no request waited in the gateway queue — with FlowControlMaxConcurrency=1 at least one should have, so the enqueue->dispatch link is vacuous")
+	if requireRejected && rejected == 0 {
+		t.Error("no request was turned away by the bounded queue, so the rejected subtrahend in the floors above is untested")
+	}
+	if requireExpired && expired == 0 {
+		t.Error("no request expired, so the expired subtrahend in the floors above is untested")
 	}
 }
 

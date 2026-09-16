@@ -270,21 +270,8 @@ func TestTimeout_PreemptThenTimeout_SafeNoOp(t *testing.T) {
 
 	// The test succeeds if no panic occurs (BC-15: no double-free).
 	// Additionally verify conservation holds.
-	completed := sim.Metrics.CompletedRequests
-	queued := sim.WaitQ.Len()
-	running := 0
-	if sim.RunningBatch != nil {
-		running = len(sim.RunningBatch.Requests)
-	}
-	dropped := sim.Metrics.DroppedUnservable
-	timedOut := sim.Metrics.TimedOutRequests
-	injected := 2 // we injected exactly 2 requests
-
-	sum := completed + queued + running + dropped + timedOut
-	if sum != injected {
-		t.Errorf("BC-15 conservation: completed(%d) + queued(%d) + running(%d) + dropped(%d) + timedOut(%d) = %d, want %d",
-			completed, queued, running, dropped, timedOut, sum, injected)
-	}
+	assertMetricsSnapshotMatchesLiveState(t, sim)
+	assertINV1Conservation(t, sim.Metrics, 2, "BC-15 no double-free")
 }
 
 // TestTimeout_OrphanedTimeout_DoesNotInflateSimEndedTime verifies that a

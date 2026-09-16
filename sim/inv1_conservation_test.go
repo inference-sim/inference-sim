@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/internal/invariantscan"
 )
 
 // inv1InstanceTerms lists the five terms of INV-1's single-instance specialisation,
@@ -49,6 +51,26 @@ func assertINV1Conservation(t *testing.T, m *Metrics, injected int, label string
 	}
 }
 
+// assertMetricsSnapshotMatchesLiveState checks that Finalize's StillQueued and
+// StillRunning snapshot agrees with the live containers. Several tests used to
+// hand-roll their conservation sum from WaitQ.Len() and len(RunningBatch.Requests)
+// rather than from Metrics, which made them independent of the snapshot. Asserting
+// the two agree keeps that independence while letting the sum itself go through the
+// shared helper.
+func assertMetricsSnapshotMatchesLiveState(t *testing.T, sim *Simulator) {
+	t.Helper()
+	if got, want := sim.Metrics.StillQueued, sim.WaitQ.Len(); got != want {
+		t.Errorf("Metrics.StillQueued = %d but WaitQ holds %d — Finalize's snapshot is stale", got, want)
+	}
+	running := 0
+	if sim.RunningBatch != nil {
+		running = len(sim.RunningBatch.Requests)
+	}
+	if got := sim.Metrics.StillRunning; got != running {
+		t.Errorf("Metrics.StillRunning = %d but RunningBatch holds %d — Finalize's snapshot is stale", got, running)
+	}
+}
+
 // TestINV1_InstanceHelperMatchesRegistry asserts this package's five-term list is
 // the one the registry states as the single-instance specialisation. The cluster
 // package runs the twelve-term half of the same check; between them the two copies
@@ -71,8 +93,16 @@ func TestINV1_InstanceHelperMatchesRegistry(t *testing.T) {
 		}
 		rhs := strings.TrimSuffix(strings.SplitN(expr, "==", 2)[1], "`")
 		terms := make([]string, 0, 12)
+		seen := map[string]bool{}
 		for _, term := range strings.Split(rhs, "+") {
-			terms = append(terms, strings.TrimSpace(term))
+			term = strings.TrimSpace(term)
+			// A duplicated term would survive the set comparison below, while making
+			// the stated equation wrong.
+			if seen[term] {
+				t.Errorf("%s states %q twice in one equation", registryPath, term)
+			}
+			seen[term] = true
+			terms = append(terms, term)
 		}
 		equations = append(equations, terms)
 	}
@@ -108,24 +138,22 @@ func TestINV1_InstanceHelperMatchesRegistry(t *testing.T) {
 }
 
 // TestINV1_NoInlineConservationSums is the sim/ counterpart of the guard in
-// sim/cluster: nothing stopped the next hand-rolled sum from being written here
-// instead. Detection is deliberately simpler than the cluster version — this package
-// has only the five-term form and no accessor calls to resolve — but the effect is the
-// same: adding a bucket to INV-1 must not require finding sums by hand.
+// sim/cluster. Both call the same scanner: a line-based check here would miss any
+// gofmt-wrapped sum, which is the shape the cluster guard exists to catch.
 func TestINV1_NoInlineConservationSums(t *testing.T) {
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("cannot list the package directory: %v", err)
-	}
 	// Files allowed to hand-roll the sum, with the reason. Every entry must name a
 	// file that exists, so a stale exemption fails rather than rots.
 	exempt := map[string]string{
 		// Asserts over MetricsOutput (the JSON serialisation), not *Metrics, so the
-		// helper's signature does not apply. It checks that ToOutput's per-field
-		// mapping is complete, which is a different property from conservation.
+		// helper's signature does not apply. It checks that ToOutput's field mapping is
+		// complete, which is a different property from conservation.
 		"metrics_test.go": "asserts over MetricsOutput fields, not *Metrics",
 	}
-	buckets := []string{"CompletedRequests", "StillQueued", "StillRunning", "DroppedUnservable", "TimedOutRequests"}
+
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("cannot list the package directory: %v", err)
+	}
 	scanned := 0
 	for _, e := range entries {
 		name := e.Name()
@@ -141,20 +169,12 @@ func TestINV1_NoInlineConservationSums(t *testing.T) {
 			t.Fatalf("cannot read %s: %v", name, err)
 		}
 		scanned++
-		for i, line := range strings.Split(string(src), "\n") {
-			if !strings.Contains(line, "CompletedRequests") || !strings.Contains(line, "+") {
-				continue
-			}
-			present := 0
-			for _, bucket := range buckets {
-				if strings.Contains(line, bucket) {
-					present++
-				}
-			}
-			if present >= 3 {
-				t.Errorf("%s:%d: inline INV-1 conservation sum — use assertINV1Conservation instead, so a bucket added to the invariant is picked up here automatically",
-					name, i+1)
-			}
+		findings, err := invariantscan.FindConservationSums(name, string(src), 3)
+		if err != nil {
+			t.Fatalf("cannot scan %s: %v", name, err)
+		}
+		for _, f := range findings {
+			t.Errorf("%s: inline INV-1 conservation sum — use assertINV1Conservation instead, so a bucket added to the invariant is picked up here automatically", f)
 		}
 	}
 	if scanned == 0 {

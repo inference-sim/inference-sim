@@ -1043,7 +1043,8 @@ func meanMapValues(m map[string]float64) float64 {
 // across 10 policy combinations (promoted from H12 hypothesis experiment):
 // GIVEN each policy combination with infinite horizon and ample resources
 // WHEN the cluster simulation completes
-// THEN completed + still_queued + still_running == len(Requests) (map-based conservation)
+// THEN the twelve-term conservation equation holds against an independent count, with
+// no rejections permitted,
 // AND all requests complete (infinite horizon, no resource pressure).
 func TestClusterSimulator_Conservation_PolicyMatrix(t *testing.T) {
 	matrix := []struct {
@@ -1505,7 +1506,8 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 
 		// The full-pipeline clause against the Metrics.Requests map, independent of
 		// the counters the helper reads. Sound here because nothing is dropped; see
-		// the note in TestClusterSimulator_Conservation_PolicyMatrix.
+		// the longer note at the equivalent check in
+		// TestClusterSimulator_OverloadConservation.
 		if agg.DroppedUnservable != 0 {
 			t.Fatalf("fixture now drops %d requests, so len(Requests) is no longer a valid injected count", agg.DroppedUnservable)
 		}
