@@ -5,8 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
+
+	sim "github.com/inference-sim/inference-sim/sim"
 )
 
 // TestResolveLatencyConfig_SignatureCheck is a compile-time guard: if resolveLatencyConfig
@@ -76,7 +78,7 @@ func TestRunCmd_SimConfigFlagsParity(t *testing.T) {
 		"latency-model", "hardware", "tp", "dp", "enable-expert-parallel",
 		"alpha-coeffs", "beta-coeffs",
 		"total-kv-blocks", "block-size-in-tokens", "max-model-len",
-		"gpu-memory-utilization", "model-config-folder", "hardware-config",
+		"gpu-memory-utilization", "catalog", "hardware-config",
 		"comm-serialization-factor", "enforce-eager", // #1694 Part B
 	}
 	for _, name := range latencyFlags {
@@ -156,7 +158,7 @@ func TestBothCommands_SimConfigFlagsHaveIdenticalDefaults(t *testing.T) {
 		"latency-model", "hardware", "tp", "dp", "enable-expert-parallel",
 		"alpha-coeffs", "beta-coeffs",
 		"total-kv-blocks", "block-size-in-tokens", "max-model-len",
-		"gpu-memory-utilization", "model-config-folder", "hardware-config",
+		"gpu-memory-utilization", "catalog", "hardware-config",
 		"comm-serialization-factor", "enforce-eager", // #1694 Part B
 		"admission-policy", "routing-policy", "scheduler", "preemption-policy",
 		"routing-scorers", "lora-scorer-weight", "token-bucket-capacity", "token-bucket-refill-rate",
@@ -186,5 +188,47 @@ func TestBothCommands_SimConfigFlagsHaveIdenticalDefaults(t *testing.T) {
 		assert.Equalf(t, runFlag.DefValue, replayFlag.DefValue,
 			"--%s: default value diverged between run (%q) and replay (%q)",
 			name, runFlag.DefValue, replayFlag.DefValue)
+	}
+}
+
+// TestModelConfigFolderFlag_Retired pins BC-3 of #1731: --model-config-folder is gone.
+// There must be exactly one way to tell BLIS where a model config lives, so the retired
+// flag must not be registered on any command (a lingering registration would silently
+// accept the old spelling and reintroduce the second mechanism), and no non-test source
+// in cmd/ may still name it.
+func TestModelConfigFolderFlag_Retired(t *testing.T) {
+	// GIVEN every command that registers simulation-engine flags
+	for _, c := range []struct {
+		name string
+		cmd  *cobra.Command
+	}{{"run", runCmd}, {"replay", replayCmd}, {"observe", observeCmd}} {
+		// WHEN the retired flag is looked up
+		// THEN it must be absent, while --catalog (its replacement) is present on the
+		// two commands that resolve a model config.
+		assert.Nilf(t, c.cmd.Flags().Lookup("model-config-folder"),
+			"%s must NOT register the retired --model-config-folder (#1731)", c.name)
+	}
+	assert.NotNil(t, runCmd.Flags().Lookup("catalog"), "run must register --catalog")
+	assert.NotNil(t, replayCmd.Flags().Lookup("catalog"), "replay must register --catalog")
+	// observe derives no model architecture, so it takes no catalog (same boundary as
+	// --kv-cache-dtype / --kv-offload-config).
+	assert.Nil(t, observeCmd.Flags().Lookup("catalog"),
+		"observe must not register --catalog (it resolves no model config)")
+
+	// AND no non-test source in cmd/ still names the retired flag or its variable.
+	entries, err := os.ReadDir(".")
+	assert.NoError(t, err)
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		data, readErr := os.ReadFile(name)
+		assert.NoError(t, readErr)
+		content := string(data)
+		assert.NotContainsf(t, content, "model-config-folder",
+			"%s must not mention the retired --model-config-folder (#1731)", name)
+		assert.NotContainsf(t, content, "ModelConfigFolder",
+			"%s must not mention ModelConfigFolder (#1731)", name)
 	}
 }

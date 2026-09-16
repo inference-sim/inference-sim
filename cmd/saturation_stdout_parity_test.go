@@ -30,6 +30,7 @@ func TestSaturationStdout_FinalLabelShape(t *testing.T) {
 			"run", "--model", "qwen/qwen3-14b", "--seed", "42",
 			"--num-requests", "50",
 			"--defaults-filepath", "../defaults.yaml",
+			"--catalog", "../model_configs",
 		}
 		switch v {
 		case "plain":

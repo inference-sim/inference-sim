@@ -8,16 +8,28 @@ Run your first BLIS simulation in 30 seconds.
 export HF_TOKEN=your_token_here
 ```
 
+## Locate the model catalog
+
+Every `blis run` / `blis replay` needs to be told where the **model catalog** is — a
+directory holding one subdirectory per model, each with that model's HuggingFace
+`config.json`. The repository's own `model_configs/` tree is such a catalog. There is
+**no default and no search path**: supply `--catalog <path>` or set `BLIS_CATALOG`
+(the flag wins when both are set), or the run is refused.
+
+```bash
+export BLIS_CATALOG=$PWD/model_configs   # or pass --catalog on every command
+```
+
 ## Single-Instance Simulation
 
 ```bash
-./blis run --model qwen/qwen3-14b
+./blis run --model qwen/qwen3-14b --catalog model_configs
 ```
 
 This runs 100 requests through a single inference instance using the default trained-physics latency model for Qwen3 14B on an H100 GPU with TP=1.
 
 !!! note "First-run HuggingFace fetch"
-    On first use, BLIS auto-fetches the model's `config.json` from HuggingFace (~1 second for public models). Subsequent runs use the cached config in `model_configs/`. For air-gapped environments, pre-populate `model_configs/<model>/config.json` and use `--model-config-folder`.
+    If the catalog has no entry for the model, BLIS auto-fetches its `config.json` from HuggingFace (~1 second for public models) into `<catalog>/<model>/`; later runs use that entry. For air-gapped environments, pre-populate `<catalog>/<model>/config.json` before the run.
 
 ### Reading the Output
 

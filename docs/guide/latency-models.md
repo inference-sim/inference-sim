@@ -35,13 +35,15 @@ Roofline mode computes step time analytically from model architecture (FLOPs, pa
 The simplest way to use roofline mode:
 
 ```bash
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --catalog model_configs \
   --latency-model roofline --hardware H100 --tp 1
 ```
 
-This auto-resolves both required inputs:
+`--catalog` (or the `BLIS_CATALOG` environment variable) is required — it names the
+model catalog root, and there is no default and no search path (#1731). Given it, the
+two required inputs resolve as:
 
-1. **Model config** -- checks `model_configs/` for a cached `config.json`, fetches from HuggingFace on miss
+1. **Model config** -- `<catalog>/<model-short-name>/config.json`, fetched from HuggingFace into that entry on miss
 2. **Hardware config** -- uses the bundled `hardware_config.json`
 
 **Supported hardware:** The bundled `hardware_config.json` includes specs for **H100** (80 GB HBM3, 989.5 TFLOPS BF16, 3.35 TB/s), **H200** (141 GB HBM3e, 989.5 TFLOPS BF16, 4.8 TB/s — same Hopper compute die as H100, more/faster memory), **A100-SXM** (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s), **A100-80** (alias for A100-SXM), and **L40S** (48 GB GDDR6, 362 TFLOPS BF16, 0.864 TB/s). To use a different GPU, add an entry to `hardware_config.json` with the required fields (`TFlopsPeak`, `BwPeakTBs`, `mfuPrefill`, `mfuDecode`, `MemoryGiB`), plus `IntraNodeBwGBps`/`InterNodeBwGBps` if instances on that GPU may span nodes (see [Inter-Node Network Cost](#inter-node-network-cost-trained-physics-only)) and reference it via `--hardware <name>`.
@@ -57,7 +59,7 @@ Set `HF_TOKEN` to access gated models (e.g., [Llama-2](https://huggingface.co/me
 
 ```bash
 export HF_TOKEN=your_token_here
-./blis run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct --catalog model_configs \
   --latency-model roofline --hardware H100 --tp 1
 ```
 
@@ -66,8 +68,10 @@ export HF_TOKEN=your_token_here
 For full control, provide configs explicitly:
 
 ```bash
+# --catalog names the catalog ROOT; the model's config.json lives in
+# ./my-catalog/my-custom-model/config.json
 ./blis run --model my-custom-model \
-  --model-config-folder ./my-model-configs/ \
+  --catalog ./my-catalog/ \
   --hardware-config ./my-hardware-config.json \
   --hardware H100 --tp 4
 ```
@@ -77,7 +81,7 @@ For full control, provide configs explicitly:
 Any model with a HuggingFace `config.json` can use roofline mode:
 
 1. Download `config.json` from HuggingFace
-2. Place it in `model_configs/<model-name>/config.json`
+2. Place it in `<catalog>/<model-name>/config.json` (the bundled `model_configs/` tree is a catalog)
 3. Run with `--latency-model roofline --hardware <GPU> --tp <N>`
 
 Or let BLIS fetch it automatically with `--latency-model roofline`.

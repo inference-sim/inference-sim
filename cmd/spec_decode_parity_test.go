@@ -16,8 +16,8 @@ import (
 // has distinct control flow from the Phase-1 decode branch.
 func buildSpecDecodeParityConfig(t *testing.T, seed int64, k int, acc float64) cluster.DeploymentConfig {
 	t.Helper()
-	mcFolder, hwPath := setupTrainedPhysicsTestFixtures(t)
-	hfConfig, err := latency.ParseHFConfig(filepath.Join(mcFolder, "config.json"))
+	catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+	hfConfig, err := latency.ParseHFConfig(testCatalogConfigPath(catalogDir, "test-model"))
 	if err != nil {
 		t.Fatalf("ParseHFConfig: %v", err)
 	}

@@ -454,7 +454,7 @@ Example:
 		// be loaded from the HF config to calculate per-pool KV block counts. If resolveLatencyConfig
 		// already loaded it (roofline/trained-physics), lr.ModelConfig.NumHeads will be non-zero.
 		if prefillInstances > 0 && lr.ModelConfig.NumHeads == 0 {
-			resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
+			resolved, err := resolveModelConfig(model, defaultsFilePath)
 			if err != nil {
 				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing: %v", err)
 			}
@@ -504,7 +504,7 @@ Example:
 		// compute per-pool KV blocks from model + hardware for analytical backends.
 		if lr.Backend == "roofline" || lr.Backend == "trained-physics" {
 			if prefillInstances > 0 {
-				hfPath := filepath.Join(modelConfigFolder, "config.json")
+				hfPath := filepath.Join(modelConfigDir, "config.json")
 				hfConfig, err := latency.ParseHFConfig(hfPath)
 				if err != nil {
 					logrus.Fatalf("Failed to parse HuggingFace config for per-pool KV calc: %v", err)

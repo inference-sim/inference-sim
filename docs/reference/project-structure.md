@@ -16,7 +16,7 @@ inference-sim/
 │   ├── observe_cmd.go         # `blis observe` command: flags --server-url, --model, --api-format (completions/chat), --unconstrained-output, --rtt-ms, --workload-spec/--rate; prefix string generation (buildPrefixStrings with FNV-seeded vocabulary); dispatch orchestrator with session support
 │   ├── convert.go             # `blis convert` subcommands (servegen, preset, inference-perf)
 │   ├── compose.go             # `blis compose` for merging v2 specs
-│   ├── hfconfig.go            # HuggingFace config resolution chain (--latency-model auto-fetch, caching)
+│   ├── hfconfig.go            # Model catalog location (--catalog / BLIS_CATALOG, no default, no search path — #1731) and the config.json resolution chain inside it (catalog entry, then HuggingFace fetch into that entry)
 │   └── default_config.go      # defaults.yaml loading (includes GetHFRepo for HF repo name mapping)
 ├── sim/                       # Core single-instance simulator
 │   ├── config.go              # Module-scoped sub-config types (KVCacheConfig, BatchConfig, LatencyCoeffs, ModelHardwareConfig, PolicyConfig, WorkloadConfig) — composed into SimConfig via embedding (R16). Parallelism accessors: EffectiveMoEGroupSize (routed-expert COMPUTE group, TP·DP), EffectiveExpertShardGroupSize (routed-expert WEIGHT / dispatch group — widens to the EP group under expert parallelism, #1548), EffectiveEP / EffectiveEPGroupDP (the logical EP-group DP width that survives DP-as-placement, via WithExpertParallelGroupDP)
@@ -96,7 +96,7 @@ inference-sim/
 │   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods
 │   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore (pure data types, no sim/ dependency)
 │   └── summary.go             # TraceSummary, Summarize()
-├── model_configs/             # Auto-fetched HuggingFace config.json files (gitignored)
+├── model_configs/             # A model CATALOG: one dir per model holding its HuggingFace config.json. Pass it via --catalog / BLIS_CATALOG (#1731); a model with no entry is auto-fetched into one (gitignored except */config.json)
 ├── defaults.yaml              # Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
 ├── hardware_config.json       # GPU specifications
 ├── examples/                  # Example configuration files

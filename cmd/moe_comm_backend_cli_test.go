@@ -36,7 +36,7 @@ func moeCommBackendFatalSubprocess(t *testing.T) {
 		return
 	}
 	dir := t.TempDir()
-	mcFolder, hwPath, err := writeMoEConfigFixture(dir)
+	catalogDir, hwPath, err := writeMoEConfigFixture(dir)
 	if err != nil {
 		os.Exit(2)
 	}
@@ -59,7 +59,7 @@ func moeCommBackendFatalSubprocess(t *testing.T) {
 	blockSizeTokens = 16
 	maxModelLen = 0
 	gpuMemoryUtilization = 0.9
-	modelConfigFolder = mcFolder
+	catalogPath = catalogDir
 	hwConfigPath = hwPath
 	defaultsFilePath = "../defaults.yaml"
 
@@ -68,7 +68,7 @@ func moeCommBackendFatalSubprocess(t *testing.T) {
 	args := []string{
 		"--model", "test-model", "--latency-model", scenarioBackend, "--hardware", "H100",
 		"--tp", "1", "--moe-comm-backend", scenarioCommBackend,
-		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--hardware-config", hwPath,
 		"--total-kv-blocks", "1000", "--defaults-filepath", "../defaults.yaml",
 	}
 	if err := testCmd.ParseFlags(args); err != nil {

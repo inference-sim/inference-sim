@@ -62,7 +62,8 @@ var (
 	betaCoeffs                []float64 // List of beta coeffs corresponding to step features
 	alphaCoeffs               []float64 // List of alpha coeffs corresponding to pre, postprocessing delays
 	defaultsFilePath          string    // Path to default constants - trained coefficients, default specs and workloads
-	modelConfigFolder         string    // Path to folder containing config.json and model.json
+	catalogPath               string    // --catalog: model catalog root (one dir per model, each with config.json). No default; BLIS_CATALOG is the fallback (#1731)
+	modelConfigDir            string    // Resolved catalog entry directory containing config.json (side effect of resolveLatencyConfig)
 	hwConfigPath              string    // Path to constants specific to hardware type (GPU)
 	workloadType              string    // Workload type (chatbot, summarization, contentgen, multidoc, distribution)
 	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
@@ -381,7 +382,7 @@ func allZeros(values []float64) bool {
 // latencyResolution holds the resolved components from resolveLatencyConfig.
 // Callers use these values to construct sim.SimConfig sub-configs.
 // Package-level vars (totalKVBlocks, maxModelLen, model, gpu, tensorParallelism,
-// modelConfigFolder, hwConfigPath) are mutated as side effects.
+// modelConfigDir, hwConfigPath) are mutated as side effects.
 type latencyResolution struct {
 	Backend     string            // resolved latency backend name
 	ModelConfig sim.ModelConfig   // HF-derived model architecture config
@@ -760,13 +761,13 @@ func resolveDPPlacement(lr latencyResolution, plan dpPlacementPlan) (dpPlacement
 //   - Validates gpuMemoryUtilization and blockSizeTokens (used in KV auto-calc)
 //   - Applies defaults.yaml for GPU and TP when not set via CLI
 //   - Validates alpha/beta coefficients and auto-detects trained-physics mode when coefficients are provided
-//   - For roofline/trained-physics: resolves model config folder and
+//   - For roofline/trained-physics: resolves the catalog entry directory and
 //     hardware config, loads coefficients from defaults.yaml, auto-calculates
 //     total-kv-blocks and max-model-len from the HF config
 //
 // Side effects (package-level vars mutated):
 //
-//	model, gpu, tensorParallelism, modelConfigFolder, hwConfigPath,
+//	model, gpu, tensorParallelism, modelConfigDir, hwConfigPath,
 //	totalKVBlocks, maxModelLen
 //
 // Returns values that cannot be stored as package-level vars (local coeff copies,
@@ -779,7 +780,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	beta := append([]float64(nil), betaCoeffs...)
 
 	// Normalize model name for consistent lookups (defaults.yaml keys, hf_repo,
-	// bundled model_configs/, coefficient matching all use lowercase).
+	// the catalog entry directory, coefficient matching all use lowercase).
 	model = strings.ToLower(model)
 
 	// Validate --latency-model flag
@@ -876,17 +877,14 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 				"Roofline computes step time analytically. " +
 				"Use --latency-model trained-physics if you want coefficient-based estimation")
 		}
-		if modelConfigFolder != "" {
-			logrus.Infof("--latency-model: explicit --model-config-folder takes precedence over auto-resolution")
-		}
 		if hwConfigPath != "" {
 			logrus.Infof("--latency-model: explicit --hardware-config takes precedence over auto-resolution")
 		}
-		resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
+		resolved, err := resolveModelConfig(model, defaultsFilePath)
 		if err != nil {
 			logrus.Fatalf("%v", err)
 		}
-		modelConfigFolder = resolved
+		modelConfigDir = resolved
 		resolvedHW, err := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
 		if err != nil {
 			logrus.Fatalf("%v", err)
@@ -908,11 +906,11 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 			logrus.Fatalf("--latency-model trained-physics requires %s. No defaults found in defaults.yaml for model=%s. "+
 				"Provide these flags explicitly", strings.Join(missing, " and "), model)
 		}
-		resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
+		resolved, err := resolveModelConfig(model, defaultsFilePath)
 		if err != nil {
 			logrus.Fatalf("%v", err)
 		}
-		modelConfigFolder = resolved
+		modelConfigDir = resolved
 		resolvedHW, err := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
 		if err != nil {
 			logrus.Fatalf("%v", err)
@@ -954,7 +952,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 
 	// Analytical backends: parse HF config, extract model/hardware config, auto-calc KV blocks and max-model-len.
 	if backend == "roofline" || backend == "trained-physics" {
-		hfPath := filepath.Join(modelConfigFolder, "config.json")
+		hfPath := filepath.Join(modelConfigDir, "config.json")
 		hfConfig, err := latency.ParseHFConfig(hfPath)
 		if err != nil {
 			logrus.Fatalf("Failed to parse HuggingFace config: %v", err)
@@ -1518,7 +1516,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&simulationHorizon, "horizon", math.MaxInt64, "Total simulation horizon (in ticks)")
 	cmd.Flags().StringVar(&logLevel, "log", "warn", "Log level for diagnostic messages (trace, debug, info, warn, error, fatal, panic). Simulation results always print to stdout regardless of this setting.")
 	cmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained coefficients, default specs and workloads")
-	cmd.Flags().StringVar(&modelConfigFolder, "model-config-folder", "", "Path to folder containing config.json")
+	cmd.Flags().StringVar(&catalogPath, "catalog", "", "Path to the model catalog root: one directory per model, each holding config.json. No default and no search path — supply this flag or the "+catalogEnvVar+" environment variable (the flag wins when both are set)")
 	cmd.Flags().StringVar(&hwConfigPath, "hardware-config", "", "Path to file containing hardware config")
 
 	// vLLM server configs
@@ -1994,9 +1992,9 @@ var runCmd = &cobra.Command{
 		// PD disaggregation requires ModelConfig for KV transfer duration derivation.
 		// Analytical backends populate ModelConfig from HF config.json.
 		// When PD is enabled and ModelConfig is zero-valued, resolve and load it using the
-		// same resolution as analytical backends (--model-config-folder → local bundled → HuggingFace fetch → error).
+		// same resolution as analytical backends (catalog entry → HuggingFace fetch → error).
 		if prefillInstances > 0 && lr.ModelConfig.NumHeads == 0 {
-			resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
+			resolved, err := resolveModelConfig(model, defaultsFilePath)
 			if err != nil {
 				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing: %v", err)
 			}
@@ -2049,7 +2047,7 @@ var runCmd = &cobra.Command{
 		// Only runs for analytical backends where hardware configs are available.
 		if lr.Backend == "roofline" || lr.Backend == "trained-physics" {
 			if prefillInstances > 0 {
-				hfPath := filepath.Join(modelConfigFolder, "config.json")
+				hfPath := filepath.Join(modelConfigDir, "config.json")
 				hfConfig, err := latency.ParseHFConfig(hfPath)
 				if err != nil {
 					logrus.Fatalf("Failed to parse HuggingFace config for per-pool KV calc: %v", err)

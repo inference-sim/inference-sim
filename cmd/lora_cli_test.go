@@ -201,10 +201,6 @@ func TestAdapterReservedBytesFor(t *testing.T) {
 // reservation 0 vs a non-zero reservation and asserts the block count shrinks.
 func TestResolveLatencyConfig_AppliesAdapterHBMReservation(t *testing.T) {
 	dir := t.TempDir()
-	mcDir := filepath.Join(dir, "config")
-	if err := os.MkdirAll(mcDir, 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
 	// Dense Llama-like fixture: the auto-capacity path needs vocab_size + realistic
 	// dims so the derived block count is comfortably positive on an 80 GiB GPU.
 	configJSON := `{
@@ -219,8 +215,9 @@ func TestResolveLatencyConfig_AppliesAdapterHBMReservation(t *testing.T) {
   "torch_dtype": "float16",
   "max_position_embeddings": 4096
 }`
-	if err := os.WriteFile(filepath.Join(mcDir, "config.json"), []byte(configJSON), 0644); err != nil {
-		t.Fatalf("write config: %v", err)
+	catalogDir, err := writeTestCatalog(dir, configJSON)
+	if err != nil {
+		t.Fatalf("write test catalog: %v", err)
 	}
 	hwPath := filepath.Join(dir, "hw.json")
 	if err := os.WriteFile(hwPath, []byte(`{"H100": {"MemoryGiB": 80.0, "TFlopsPeak": 989.5, "BwPeakTBs": 3.35}}`), 0644); err != nil {
@@ -230,7 +227,7 @@ func TestResolveLatencyConfig_AppliesAdapterHBMReservation(t *testing.T) {
 	// Full isolation: this test mutates several cmd-level package vars, so save and
 	// restore ALL of them to avoid leaking state into other cmd tests.
 	// captureCmdLevelVars covers most (model, backend, gpu, tp, totalKVBlocks,
-	// modelConfigFolder, hwConfigPath, defaultsFilePath, blockSizeTokens,
+	// catalogPath, hwConfigPath, defaultsFilePath, blockSizeTokens,
 	// maxModelLen, ...); save the few it does not, including the new
 	// loraReservedBytesForKV.
 	orig := captureCmdLevelVars()
@@ -255,7 +252,7 @@ func TestResolveLatencyConfig_AppliesAdapterHBMReservation(t *testing.T) {
 		blockSizeTokens = 16
 		maxModelLen = 0
 		gpuMemoryUtilization = 0.9
-		modelConfigFolder = mcDir
+		catalogPath = catalogDir
 		hwConfigPath = hwPath
 		defaultsFilePath = "../defaults.yaml"
 		loraReservedBytesForKV = reserved
@@ -267,7 +264,7 @@ func TestResolveLatencyConfig_AppliesAdapterHBMReservation(t *testing.T) {
 		args := []string{
 			"--model", "test-model", "--latency-model", "trained-physics",
 			"--hardware", "H100", "--tp", "1",
-			"--model-config-folder", mcDir, "--hardware-config", hwPath,
+			"--catalog", catalogDir, "--hardware-config", hwPath,
 			"--defaults-filepath", "../defaults.yaml",
 		}
 		if err := testCmd.ParseFlags(args); err != nil {
@@ -316,10 +313,6 @@ func TestResolveLatencyConfig_AppliesAdapterHBMReservation(t *testing.T) {
 // that accidentally applies the reservation to an explicit block count.
 func TestResolveLatencyConfig_ExplicitTotalKVBlocksBypassesReservation(t *testing.T) {
 	dir := t.TempDir()
-	mcDir := filepath.Join(dir, "config")
-	if err := os.MkdirAll(mcDir, 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
 	configJSON := `{
   "architectures": ["LlamaForCausalLM"],
   "num_attention_heads": 32,
@@ -332,8 +325,9 @@ func TestResolveLatencyConfig_ExplicitTotalKVBlocksBypassesReservation(t *testin
   "torch_dtype": "float16",
   "max_position_embeddings": 4096
 }`
-	if err := os.WriteFile(filepath.Join(mcDir, "config.json"), []byte(configJSON), 0644); err != nil {
-		t.Fatalf("write config: %v", err)
+	catalogDir, err := writeTestCatalog(dir, configJSON)
+	if err != nil {
+		t.Fatalf("write test catalog: %v", err)
 	}
 	hwPath := filepath.Join(dir, "hw.json")
 	if err := os.WriteFile(hwPath, []byte(`{"H100": {"MemoryGiB": 80.0, "TFlopsPeak": 989.5, "BwPeakTBs": 3.35}}`), 0644); err != nil {
@@ -359,7 +353,7 @@ func TestResolveLatencyConfig_ExplicitTotalKVBlocksBypassesReservation(t *testin
 	blockSizeTokens = 16
 	maxModelLen = 0
 	gpuMemoryUtilization = 0.9
-	modelConfigFolder = mcDir
+	catalogPath = catalogDir
 	hwConfigPath = hwPath
 	defaultsFilePath = "../defaults.yaml"
 	loraReservedBytesForKV = 8 << 30 // a reservation IS configured...
@@ -372,7 +366,7 @@ func TestResolveLatencyConfig_ExplicitTotalKVBlocksBypassesReservation(t *testin
 	args := []string{
 		"--model", "test-model", "--latency-model", "trained-physics",
 		"--hardware", "H100", "--tp", "1",
-		"--model-config-folder", mcDir, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--hardware-config", hwPath,
 		"--defaults-filepath", "../defaults.yaml",
 		"--total-kv-blocks", "5000",
 	}

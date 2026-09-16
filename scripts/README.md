@@ -135,7 +135,7 @@ should produce a comparable table with the same column shape.
 
 # Llama-2-7B / TP=1, narrower sweep
 MODEL=meta-llama/Llama-2-7b-hf \
-  MODEL_CONFIG_FOLDER=model_configs/llama-2-7b-hf \
+  CATALOG=model_configs \
   TP=1 RATES="2 4 6 8 10 12 16 20" \
   ./scripts/find-saturation.sh
 
@@ -147,7 +147,7 @@ WORKLOAD=summarization NUM_REQUESTS=2000 RATES="4 6 8 10 12" \
 DETECTORS=composite ./scripts/find-saturation.sh
 
 # No bundled config — let blis fetch from HuggingFace
-MODEL=qwen/qwen3-14b MODEL_CONFIG_FOLDER="" TP=1 \
+MODEL=qwen/qwen3-14b CATALOG=model_configs TP=1 \
   ./scripts/find-saturation.sh
 ```
 
@@ -156,7 +156,7 @@ MODEL=qwen/qwen3-14b MODEL_CONFIG_FOLDER="" TP=1 \
 | Variable | Default | Meaning |
 |---|---|---|
 | `MODEL` | `meta-llama/Llama-3.1-70B-Instruct` | HuggingFace-style model name |
-| `MODEL_CONFIG_FOLDER` | `model_configs/llama-3.1-70b-instruct` | Path to bundled `config.json`; set to `""` to force HF auto-fetch |
+| `CATALOG` | `model_configs` | Model catalog root (one directory per model, each with `config.json`). Passed as `--catalog`; required since #1731. A model with no entry is auto-fetched from HuggingFace into it. |
 | `HARDWARE` | `H100` | GPU type passed to `--hardware` |
 | `TP` | `8` | Tensor parallelism degree |
 | `WORKLOAD` | `chatbot` | Built-in preset (chatbot/summarization/contentgen/multidoc) |
@@ -244,16 +244,16 @@ relevant variables:
 ```bash
 # Example: probe Mixtral-8x7B FP8 on 4×H100 TP=4 with summarization workload
 MODEL=mistralai/Mixtral-8x7B-Instruct-v0.1 \
-  MODEL_CONFIG_FOLDER=model_configs/mixtral-8x7b-instruct \
+  CATALOG=model_configs \
   TP=4 WORKLOAD=summarization \
   RATES="2 4 8 16 24 32 40 48" \
   ./scripts/find-saturation.sh
 ```
 
-If your model isn't in `model_configs/`, either:
-- Drop a `config.json` into `model_configs/<your-model-slug>/` and point
-  `MODEL_CONFIG_FOLDER` at it, or
-- Set `MODEL_CONFIG_FOLDER=""` to let `blis` fetch from HuggingFace at startup.
+If your model isn't in the catalog, either:
+- Drop a `config.json` into `<CATALOG>/<your-model-slug>/`, or
+- Leave the entry absent and let `blis` fetch it from HuggingFace at startup (it is
+  written into `<CATALOG>/<your-model-slug>/`).
 
 ### Dependencies
 

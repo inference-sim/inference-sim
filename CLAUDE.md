@@ -10,12 +10,26 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 
 ## Build and Run Commands
 
+**Every `blis run` / `blis replay` below needs the model catalog located (#1731).** The
+catalog is a directory holding one subdirectory per model, each with that model's
+HuggingFace `config.json`; the repository's `model_configs/` tree is one. Supply it with
+`--catalog <path>` or the `BLIS_CATALOG` environment variable (`--catalog` wins when both
+are set). There is **no default, no search path and no remote fetch of the catalog
+itself** — a run with neither is refused naming both forms (the retired
+`--model-config-folder` and the working-directory `model_configs/` default are gone; point
+`--catalog` at a scratch directory to use your own config). `blis observe` does not take
+it (a black-box dispatcher derives no model architecture). For brevity the examples below
+omit it — export `BLIS_CATALOG` once, or add `--catalog model_configs` to each.
+
 ```bash
 # Build
 go build -o blis main.go
 
+# Locate the catalog once for every command in this section
+export BLIS_CATALOG=$PWD/model_configs
+
 # Run with default model
-./blis run --model qwen/qwen3-14b
+./blis run --model qwen/qwen3-14b --catalog model_configs
 
 # Run with goodput SLO targets (#1413). --slo-ttft / --slo-itl / --slo-e2e accept
 # class=duration[,class=duration...] using Go duration syntax. Precedence:

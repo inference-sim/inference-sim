@@ -17,7 +17,7 @@ import (
 // so run and replay under the same seed must draw identically (BC-D6/INV-13).
 func jitterRampOffloadCfg(t *testing.T, seed int64) cluster.DeploymentConfig {
 	t.Helper()
-	mcFolder, hwPath := setupTrainedPhysicsTestFixtures(t)
+	catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
 
 	defaultsContent := `trained_physics_coefficients:
   alpha_coeffs: [100.0, 1.0, 100.0]
@@ -28,7 +28,7 @@ func jitterRampOffloadCfg(t *testing.T, seed int64) cluster.DeploymentConfig {
 		t.Fatalf("write defaults.yaml: %v", err)
 	}
 
-	hfConfig, err := latency.ParseHFConfig(filepath.Join(mcFolder, "config.json"))
+	hfConfig, err := latency.ParseHFConfig(testCatalogConfigPath(catalogDir, "test-model"))
 	if err != nil {
 		t.Fatalf("ParseHFConfig: %v", err)
 	}

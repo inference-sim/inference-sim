@@ -10,20 +10,126 @@ import (
 	"testing"
 )
 
-func TestResolveModelConfig_ExplicitOverrideTakesPrecedence(t *testing.T) {
-	dir, err := resolveModelConfig("any-model", "/explicit/path", "defaults.yaml")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+// testCatalogDirName is the directory name these tests use for a model-catalog root.
+// It is deliberately NOT "model_configs": since #1731 the catalog is located by
+// --catalog / BLIS_CATALOG, so no directory name is special to BLIS.
+const testCatalogDirName = "catalog"
+
+// tmpCatalogRoot creates and returns tmpDir/<testCatalogDirName>, a catalog root.
+func tmpCatalogRoot(t *testing.T, tmpDir string) string {
+	t.Helper()
+	root := filepath.Join(tmpDir, testCatalogDirName)
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir catalog root: %v", err)
 	}
-	if dir != "/explicit/path" {
-		t.Errorf("expected /explicit/path, got %s", dir)
+	return root
+}
+
+// TestCatalogRootFrom_Precedence pins the catalog-location contract (#1731 AC-1/AC-2):
+// --catalog and BLIS_CATALOG both locate the catalog, --catalog wins when both are
+// set, and with neither the caller is refused by an error naming BOTH forms. There is
+// no working-directory default.
+func TestCatalogRootFrom_Precedence(t *testing.T) {
+	tests := []struct {
+		name    string
+		flag    string
+		env     string
+		want    string
+		wantErr bool
+	}{
+		{name: "flag only", flag: "/from/flag", want: "/from/flag"},
+		{name: "env only", env: "/from/env", want: "/from/env"},
+		{name: "flag wins over env", flag: "/from/flag", env: "/from/env", want: "/from/flag"},
+		{name: "neither is refused", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := catalogRootFrom(tt.flag, tt.env)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("catalogRootFrom(%q, %q) = %q, want an error", tt.flag, tt.env, got)
+				}
+				// The refusal must name both forms so the operator knows either works.
+				msg := err.Error()
+				if !strings.Contains(msg, "--catalog") {
+					t.Errorf("refusal must name --catalog, got: %s", msg)
+				}
+				if !strings.Contains(msg, catalogEnvVar) {
+					t.Errorf("refusal must name %s, got: %s", catalogEnvVar, msg)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("catalogRootFrom(%q, %q) unexpected error: %v", tt.flag, tt.env, err)
+			}
+			if got != tt.want {
+				t.Errorf("catalogRootFrom(%q, %q) = %q, want %q", tt.flag, tt.env, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestResolveCatalogRoot_ReadsFlagAndEnv verifies the production entry point wires the
+// --catalog flag var and the BLIS_CATALOG environment variable into catalogRootFrom,
+// and that a catalog root that is not a readable directory is refused rather than
+// silently used (R1).
+func TestResolveCatalogRoot_ReadsFlagAndEnv(t *testing.T) {
+	orig := catalogPath
+	t.Cleanup(func() { catalogPath = orig })
+
+	tmpDir := t.TempDir()
+	flagDir := filepath.Join(tmpDir, "flag-catalog")
+	envDir := filepath.Join(tmpDir, "env-catalog")
+	for _, d := range []string{flagDir, envDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// env only
+	catalogPath = ""
+	t.Setenv(catalogEnvVar, envDir)
+	got, err := resolveCatalogRoot()
+	if err != nil || got != envDir {
+		t.Fatalf("env only: got (%q, %v), want (%q, nil)", got, err, envDir)
+	}
+
+	// flag beats env
+	catalogPath = flagDir
+	got, err = resolveCatalogRoot()
+	if err != nil || got != flagDir {
+		t.Fatalf("flag over env: got (%q, %v), want (%q, nil)", got, err, flagDir)
+	}
+
+	// neither
+	catalogPath = ""
+	t.Setenv(catalogEnvVar, "")
+	if _, err := resolveCatalogRoot(); err == nil {
+		t.Error("expected refusal when neither --catalog nor BLIS_CATALOG is set")
+	}
+
+	// a file (not a directory) is refused
+	filePath := filepath.Join(tmpDir, "not-a-dir")
+	if err := os.WriteFile(filePath, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	catalogPath = filePath
+	if _, err := resolveCatalogRoot(); err == nil {
+		t.Error("expected error when the catalog root is a file, not a directory")
+	}
+
+	// a missing directory is refused
+	catalogPath = filepath.Join(tmpDir, "no-such-catalog")
+	if _, err := resolveCatalogRoot(); err == nil {
+		t.Error("expected error when the catalog root does not exist")
 	}
 }
 
 func TestResolveModelConfig_LocalHit(t *testing.T) {
-	// Create a temporary model_configs directory with valid JSON config.json
+	// Create a catalog entry with valid JSON config.json
 	tmpDir := t.TempDir()
-	localDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
+	catalogRoot := tmpCatalogRoot(t, tmpDir)
+	localDir := filepath.Join(catalogRoot, "test-model")
 	if err := os.MkdirAll(localDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -33,20 +139,21 @@ func TestResolveModelConfig_LocalHit(t *testing.T) {
 
 	// Use a defaultsFile inside tmpDir so paths resolve relative to it
 	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
-	dir, err := resolveModelConfig("test-org/test-model", "", defaultsFile)
+	dir, err := resolveModelConfigInCatalog("test-org/test-model", catalogRoot, defaultsFile)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := filepath.Join(tmpDir, modelConfigsDir, "test-model")
+	expected := filepath.Join(catalogRoot, "test-model")
 	if dir != expected {
 		t.Errorf("expected %s, got %s", expected, dir)
 	}
 }
 
 func TestResolveModelConfig_CorruptedLocal_FallsThrough(t *testing.T) {
-	// Create a model_configs directory with invalid JSON — should skip and fall through
+	// Create a catalog entry with invalid JSON — should skip and fall through
 	tmpDir := t.TempDir()
-	localDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
+	catalogRoot := tmpCatalogRoot(t, tmpDir)
+	localDir := filepath.Join(catalogRoot, "test-model")
 	if err := os.MkdirAll(localDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +170,7 @@ func TestResolveModelConfig_CorruptedLocal_FallsThrough(t *testing.T) {
 	t.Cleanup(func() { fetchHFConfigFunc = old })
 
 	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
-	_, err := resolveModelConfig("test-org/test-model", "", defaultsFile)
+	_, err := resolveModelConfigInCatalog("test-org/test-model", catalogRoot, defaultsFile)
 	if err == nil {
 		t.Fatal("expected error when local config is corrupted and no fallbacks exist")
 	}
@@ -79,7 +186,8 @@ func TestResolveModelConfig_NonHFConfig_FallsThrough(t *testing.T) {
 	// then fall through to HF fetch (I-1: cache validation parity).
 	// File is preserved — may be a user-provided config with non-standard fields.
 	tmpDir := t.TempDir()
-	localDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
+	catalogRoot := tmpCatalogRoot(t, tmpDir)
+	localDir := filepath.Join(catalogRoot, "test-model")
 	if err := os.MkdirAll(localDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +203,7 @@ func TestResolveModelConfig_NonHFConfig_FallsThrough(t *testing.T) {
 	t.Cleanup(func() { fetchHFConfigFunc = old })
 
 	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
-	_, err := resolveModelConfig("test-org/test-model", "", defaultsFile)
+	_, err := resolveModelConfigInCatalog("test-org/test-model", catalogRoot, defaultsFile)
 	if err == nil {
 		t.Fatal("expected error when local config is valid JSON but not an HF config")
 	}
@@ -106,11 +214,12 @@ func TestResolveModelConfig_NonHFConfig_FallsThrough(t *testing.T) {
 	}
 }
 
-func TestResolveModelConfig_FetchWritesToModelConfigs(t *testing.T) {
-	// Verify that a successful HF fetch writes into model_configs/<short-name>/
+func TestResolveModelConfig_FetchWritesToCatalogEntry(t *testing.T) {
+	// Verify that a successful HF fetch writes into <catalog>/<short-name>/
 	tmpDir := t.TempDir()
+	catalogRoot := tmpCatalogRoot(t, tmpDir)
 	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
-	expectedDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
+	expectedDir := filepath.Join(catalogRoot, "test-model")
 
 	// Mock HF fetch to write a real file
 	old := fetchHFConfigFunc
@@ -128,7 +237,7 @@ func TestResolveModelConfig_FetchWritesToModelConfigs(t *testing.T) {
 	}
 	t.Cleanup(func() { fetchHFConfigFunc = old })
 
-	dir, err := resolveModelConfig("org/test-model", "", defaultsFile)
+	dir, err := resolveModelConfigInCatalog("org/test-model", catalogRoot, defaultsFile)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -148,6 +257,7 @@ func TestResolveModelConfig_FetchWritesToModelConfigs(t *testing.T) {
 
 func TestResolveModelConfig_AllMiss_ReturnsError(t *testing.T) {
 	tmpDir := t.TempDir()
+	catalogRoot := tmpCatalogRoot(t, tmpDir)
 
 	// Mock HF fetch to fail
 	old := fetchHFConfigFunc
@@ -157,7 +267,7 @@ func TestResolveModelConfig_AllMiss_ReturnsError(t *testing.T) {
 	t.Cleanup(func() { fetchHFConfigFunc = old })
 
 	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
-	_, err := resolveModelConfig("nonexistent/model", "", defaultsFile)
+	_, err := resolveModelConfigInCatalog("nonexistent/model", catalogRoot, defaultsFile)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -165,6 +275,7 @@ func TestResolveModelConfig_AllMiss_ReturnsError(t *testing.T) {
 
 func TestResolveModelConfig_AllMiss_IncludesDefaultsError(t *testing.T) {
 	tmpDir := t.TempDir()
+	catalogRoot := tmpCatalogRoot(t, tmpDir)
 
 	// Mock HF fetch to fail
 	old := fetchHFConfigFunc
@@ -175,7 +286,7 @@ func TestResolveModelConfig_AllMiss_IncludesDefaultsError(t *testing.T) {
 
 	// Use a nonexistent defaults file inside tmpDir so the error message includes it
 	defaultsFile := filepath.Join(tmpDir, "nonexistent-defaults.yaml")
-	_, err := resolveModelConfig("nonexistent/model", "", defaultsFile)
+	_, err := resolveModelConfigInCatalog("nonexistent/model", catalogRoot, defaultsFile)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -188,7 +299,8 @@ func TestResolveModelConfig_AllMiss_IncludesDefaultsError(t *testing.T) {
 
 func TestResolveModelConfig_MultimodalConfig(t *testing.T) {
 	tmpDir := t.TempDir()
-	localDir := filepath.Join(tmpDir, modelConfigsDir, "llama4-test")
+	catalogRoot := tmpCatalogRoot(t, tmpDir)
+	localDir := filepath.Join(catalogRoot, "llama4-test")
 	if err := os.MkdirAll(localDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -220,11 +332,11 @@ func TestResolveModelConfig_MultimodalConfig(t *testing.T) {
 	t.Cleanup(func() { fetchHFConfigFunc = old })
 
 	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
-	dir, err := resolveModelConfig("test-org/llama4-test", "", defaultsFile)
+	dir, err := resolveModelConfigInCatalog("test-org/llama4-test", catalogRoot, defaultsFile)
 	if err != nil {
 		t.Fatalf("multimodal config should be recognized: %v", err)
 	}
-	expected := filepath.Join(tmpDir, modelConfigsDir, "llama4-test")
+	expected := filepath.Join(catalogRoot, "llama4-test")
 	if dir != expected {
 		t.Errorf("expected %s, got %s", expected, dir)
 	}
@@ -276,14 +388,14 @@ func TestFetchHFConfig_Success(t *testing.T) {
 	defer server.Close()
 
 	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
+	targetDir := filepath.Join(tmpDir, testCatalogDirName, "test-model")
 
 	dir, err := fetchHFConfigFromURL(server.URL+"/test-org/test-model/resolve/main/config.json", targetDir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify file exists in model_configs/
+	// Verify the file exists in the target directory
 	writtenPath := filepath.Join(dir, hfConfigFile)
 	data, err := os.ReadFile(writtenPath)
 	if err != nil {
@@ -319,7 +431,7 @@ func TestFetchHFConfig_MultimodalConfig(t *testing.T) {
 	defer server.Close()
 
 	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "multimodal-model")
+	targetDir := filepath.Join(tmpDir, testCatalogDirName, "multimodal-model")
 
 	dir, err := fetchHFConfigFromURL(server.URL+"/test/multimodal/resolve/main/config.json", targetDir)
 	if err != nil {
@@ -346,7 +458,7 @@ func TestFetchHFConfig_404(t *testing.T) {
 	defer server.Close()
 
 	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "nonexistent-model")
+	targetDir := filepath.Join(tmpDir, testCatalogDirName, "nonexistent-model")
 
 	_, err := fetchHFConfigFromURL(server.URL+"/nonexistent/model/resolve/main/config.json", targetDir)
 	if err == nil {
@@ -361,7 +473,7 @@ func TestFetchHFConfig_401(t *testing.T) {
 	defer server.Close()
 
 	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "gated-model")
+	targetDir := filepath.Join(tmpDir, testCatalogDirName, "gated-model")
 
 	_, err := fetchHFConfigFromURL(server.URL+"/gated/model/resolve/main/config.json", targetDir)
 	if err == nil {
@@ -379,7 +491,7 @@ func TestFetchHFConfig_HFTokenHeader(t *testing.T) {
 	defer server.Close()
 
 	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
+	targetDir := filepath.Join(tmpDir, testCatalogDirName, "test-model")
 	t.Setenv("HF_TOKEN", "test-token-123")
 
 	_, err := fetchHFConfigFromURL(server.URL+"/test/model/resolve/main/config.json", targetDir)
@@ -401,7 +513,7 @@ func TestFetchHFConfig_NoAuthHeaderWithoutToken(t *testing.T) {
 	defer server.Close()
 
 	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "test-model-noauth")
+	targetDir := filepath.Join(tmpDir, testCatalogDirName, "test-model-noauth")
 	t.Setenv("HF_TOKEN", "")
 
 	_, err := fetchHFConfigFromURL(server.URL+"/test/model/resolve/main/config.json", targetDir)
@@ -421,7 +533,7 @@ func TestFetchHFConfig_InvalidJSON(t *testing.T) {
 	defer server.Close()
 
 	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
+	targetDir := filepath.Join(tmpDir, testCatalogDirName, "test-model")
 
 	_, err := fetchHFConfigFromURL(server.URL+"/test/model/resolve/main/config.json", targetDir)
 	if err == nil {
@@ -429,35 +541,38 @@ func TestFetchHFConfig_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestBundledModelConfigDir(t *testing.T) {
+func TestCatalogModelDir(t *testing.T) {
 	tests := []struct {
 		model    string
-		baseDir  string
+		catalog  string
 		expected string
 		wantErr  bool
 	}{
-		{"meta-llama/llama-3.1-8b-instruct", "", filepath.Join(modelConfigsDir, "llama-3.1-8b-instruct"), false},
-		{"codellama/codellama-34b-instruct-hf", "", filepath.Join(modelConfigsDir, "codellama-34b-instruct-hf"), false},
-		{"simple-model", "", filepath.Join(modelConfigsDir, "simple-model"), false},
-		{"meta-llama/llama-3.1-8b-instruct", "/base", filepath.Join("/base", modelConfigsDir, "llama-3.1-8b-instruct"), false},
-		{"evil/../../../etc/passwd", "", "", true},
-		{"org/../../etc/shadow", "", "", true},
+		{"meta-llama/llama-3.1-8b-instruct", "/cat", filepath.Join("/cat", "llama-3.1-8b-instruct"), false},
+		{"codellama/codellama-34b-instruct-hf", "/cat", filepath.Join("/cat", "codellama-34b-instruct-hf"), false},
+		{"simple-model", "/cat", filepath.Join("/cat", "simple-model"), false},
+		{"meta-llama/llama-3.1-8b-instruct", "relative/cat", filepath.Join("relative/cat", "llama-3.1-8b-instruct"), false},
+		// An empty catalog root must NOT resolve to a working-directory-relative path
+		// (#1731: the retired model_configs/ default). It is an error.
+		{"meta-llama/llama-3.1-8b-instruct", "", "", true},
+		{"evil/../../../etc/passwd", "/cat", "", true},
+		{"org/../../etc/shadow", "/cat", "", true},
 	}
 
 	for _, tt := range tests {
-		got, err := bundledModelConfigDir(tt.model, tt.baseDir)
+		got, err := catalogModelDir(tt.model, tt.catalog)
 		if tt.wantErr {
 			if err == nil {
-				t.Errorf("bundledModelConfigDir(%q, %q) expected error, got nil", tt.model, tt.baseDir)
+				t.Errorf("catalogModelDir(%q, %q) expected error, got %q", tt.model, tt.catalog, got)
 			}
 			continue
 		}
 		if err != nil {
-			t.Errorf("bundledModelConfigDir(%q, %q) unexpected error: %v", tt.model, tt.baseDir, err)
+			t.Errorf("catalogModelDir(%q, %q) unexpected error: %v", tt.model, tt.catalog, err)
 			continue
 		}
 		if got != tt.expected {
-			t.Errorf("bundledModelConfigDir(%q, %q) = %q, want %q", tt.model, tt.baseDir, got, tt.expected)
+			t.Errorf("catalogModelDir(%q, %q) = %q, want %q", tt.model, tt.catalog, got, tt.expected)
 		}
 	}
 }
@@ -553,20 +668,17 @@ func TestGetHFRepo_MalformedYAML(t *testing.T) {
 	}
 }
 
-// TestResolveModelConfig_PrecedenceInvariant verifies the documented resolution
-// order: explicit flag > model_configs/ > HF fetch (into model_configs/).
+// TestResolveModelConfig_PrecedenceInvariant verifies the documented resolution order
+// INSIDE a catalog: <catalog>/<short-name>/config.json > HF fetch into that directory.
+// The retired --model-config-folder branch is gone (#1731), so the catalog entry is the
+// first and only local source.
 func TestResolveModelConfig_PrecedenceInvariant(t *testing.T) {
 	tmpDir := t.TempDir()
+	catalogRoot := tmpCatalogRoot(t, tmpDir)
 	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
 
-	// Set up all resolution sources
-	explicitDir := filepath.Join(tmpDir, "explicit")
-	if err := os.MkdirAll(explicitDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	// Set up local model_configs/ with a valid config
-	localDir := filepath.Join(tmpDir, modelConfigsDir, "precedence-model")
+	// Set up the catalog entry with a valid config
+	localDir := filepath.Join(catalogRoot, "precedence-model")
 	if err := os.MkdirAll(localDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -585,30 +697,21 @@ func TestResolveModelConfig_PrecedenceInvariant(t *testing.T) {
 	}
 	t.Cleanup(func() { fetchHFConfigFunc = old })
 
-	// Precedence 1: Explicit override wins over everything
-	dir, err := resolveModelConfig("test-org/precedence-model", explicitDir, defaultsFile)
+	// Precedence 1: the catalog entry wins over HF fetch
+	expectedLocal := filepath.Join(catalogRoot, "precedence-model")
+	dir, err := resolveModelConfigInCatalog("test-org/precedence-model", catalogRoot, defaultsFile)
 	if err != nil {
-		t.Fatalf("explicit override failed: %v", err)
-	}
-	if dir != explicitDir {
-		t.Errorf("explicit override: expected %s, got %s", explicitDir, dir)
-	}
-
-	// Precedence 2: Local model_configs/ wins over HF fetch
-	expectedLocal := filepath.Join(tmpDir, modelConfigsDir, "precedence-model")
-	dir, err = resolveModelConfig("test-org/precedence-model", "", defaultsFile)
-	if err != nil {
-		t.Fatalf("local hit failed: %v", err)
+		t.Fatalf("catalog hit failed: %v", err)
 	}
 	if dir != expectedLocal {
-		t.Errorf("local precedence: expected %s, got %s", expectedLocal, dir)
+		t.Errorf("catalog precedence: expected %s, got %s", expectedLocal, dir)
 	}
 
-	// Precedence 3: HF fetch when local is missing
+	// Precedence 2: HF fetch when the catalog entry has no config.json
 	if err := os.Remove(filepath.Join(localDir, hfConfigFile)); err != nil {
 		t.Fatal(err)
 	}
-	dir, err = resolveModelConfig("test-org/precedence-model", "", defaultsFile)
+	dir, err = resolveModelConfigInCatalog("test-org/precedence-model", catalogRoot, defaultsFile)
 	if err != nil {
 		t.Fatalf("HF fetch failed: %v", err)
 	}
@@ -618,10 +721,11 @@ func TestResolveModelConfig_PrecedenceInvariant(t *testing.T) {
 }
 
 // TestResolveModelConfig_CompletenessInvariant verifies the resolution chain's
-// completeness law: resolveModelConfig never returns ("", nil). It must always
+// completeness law: resolveModelConfigInCatalog never returns ("", nil). It must always
 // return either a non-empty directory path or a non-nil error (R7: invariant test).
 func TestResolveModelConfig_CompletenessInvariant(t *testing.T) {
 	tmpDir := t.TempDir()
+	catalogRoot := tmpCatalogRoot(t, tmpDir)
 	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
 
 	old := fetchHFConfigFunc
@@ -632,26 +736,26 @@ func TestResolveModelConfig_CompletenessInvariant(t *testing.T) {
 
 	// Table of inputs covering edge cases
 	tests := []struct {
-		name           string
-		model          string
-		explicitFolder string
-		defaultsFile   string
+		name         string
+		model        string
+		catalog      string
+		defaultsFile string
 	}{
-		{"empty model", "", "", defaultsFile},
-		{"org/model no sources", "test-org/test-model", "", defaultsFile},
-		{"simple model no sources", "simple-model", "", defaultsFile},
-		{"explicit override", "any-model", "/explicit/path", defaultsFile},
-		{"nonexistent defaults", "meta-llama/llama-3.1-8b", "", "/no/such/file.yaml"},
+		{"empty model", "", catalogRoot, defaultsFile},
+		{"org/model no sources", "test-org/test-model", catalogRoot, defaultsFile},
+		{"simple model no sources", "simple-model", catalogRoot, defaultsFile},
+		{"empty catalog root", "any-model", "", defaultsFile},
+		{"nonexistent defaults", "meta-llama/llama-3.1-8b", catalogRoot, "/no/such/file.yaml"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dir, err := resolveModelConfig(tt.model, tt.explicitFolder, tt.defaultsFile)
+			dir, err := resolveModelConfigInCatalog(tt.model, tt.catalog, tt.defaultsFile)
 			// Completeness invariant: never ("", nil)
 			if dir == "" && err == nil {
-				t.Errorf("resolveModelConfig(%q, %q, %q) returned (\"\", nil) — "+
+				t.Errorf("resolveModelConfigInCatalog(%q, %q, %q) returned (\"\", nil) — "+
 					"must return either a non-empty path or a non-nil error",
-					tt.model, tt.explicitFolder, tt.defaultsFile)
+					tt.model, tt.catalog, tt.defaultsFile)
 			}
 		})
 	}
@@ -716,7 +820,7 @@ func TestFetchHFConfig_MaxResponseBytes(t *testing.T) {
 	defer server.Close()
 
 	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "oversize-model")
+	targetDir := filepath.Join(tmpDir, testCatalogDirName, "oversize-model")
 
 	_, err := fetchHFConfigFromURL(server.URL+"/test/model/resolve/main/config.json", targetDir)
 	if err == nil {
@@ -740,7 +844,7 @@ func TestFetchHFConfig_ExactlyAtLimit(t *testing.T) {
 	defer server.Close()
 
 	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "normal-model")
+	targetDir := filepath.Join(tmpDir, testCatalogDirName, "normal-model")
 
 	_, err := fetchHFConfigFromURL(server.URL+"/test/model/resolve/main/config.json", targetDir)
 	if err != nil {
@@ -767,7 +871,7 @@ func TestFetchHFConfig_5xx(t *testing.T) {
 			defer server.Close()
 
 			tmpDir := t.TempDir()
-			targetDir := filepath.Join(tmpDir, modelConfigsDir, "error-model")
+			targetDir := filepath.Join(tmpDir, testCatalogDirName, "error-model")
 
 			_, err := fetchHFConfigFromURL(server.URL+"/test/model/resolve/main/config.json", targetDir)
 			if err == nil {
@@ -790,7 +894,7 @@ func TestFetchHFConfig_RedirectToNonHuggingFace(t *testing.T) {
 	defer server.Close()
 
 	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "redirect-model")
+	targetDir := filepath.Join(tmpDir, testCatalogDirName, "redirect-model")
 
 	_, err := fetchHFConfigFromURL(server.URL+"/test/model/resolve/main/config.json", targetDir)
 	if err == nil {
@@ -832,7 +936,7 @@ func TestFetchHFConfig_RedirectStripsAuthHeader(t *testing.T) {
 	defer primary.Close()
 
 	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, modelConfigsDir, "auth-test")
+	targetDir := filepath.Join(tmpDir, testCatalogDirName, "auth-test")
 
 	// The redirect to cdn (non-HF host) will be blocked, which is the expected behavior
 	_, err := fetchHFConfigFromURL(primary.URL+"/test/model/resolve/main/config.json", targetDir)

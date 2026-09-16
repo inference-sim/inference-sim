@@ -31,6 +31,7 @@ func TestSaturationCLI_RunReplayParity(t *testing.T) {
 		common := []string{
 			"--model", "qwen/qwen3-14b",
 			"--defaults-filepath", "../defaults.yaml",
+			"--catalog", "../model_configs",
 			"--detectors", os.Getenv("BLIS_PARITY_DETECTORS"),
 			"--saturation-config", os.Getenv("BLIS_PARITY_CONFIG"),
 			"--saturation-report", os.Getenv("BLIS_PARITY_REPORT"),
