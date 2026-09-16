@@ -1338,10 +1338,13 @@ func TestWorkConserving_StepRestartsWhenWaitQNonEmpty(t *testing.T) {
 // THEN every event the loop actually PROCESSES has a timestamp >= its predecessor's
 // AND the run is non-vacuous: many events processed and the clock advanced past 0.
 //
-// The doc calls INV-3 true "by construction" via min-heap extraction; nothing checked
-// it. This asserts on PROCESSED EVENT TIMESTAMPS rather than on a clock field, which
-// is the formulation INV-3 is stated in and the only one that generalizes to the
-// cluster loop. Scope, stated precisely so nobody over-reads this test: within package
+// The doc calls INV-3 true "by construction" via min-heap extraction.
+// TestSimulator_ClockMonotonicity_NeverDecreases (BC-6, above) already drives the loop
+// and asserts monotonicity — but on the raw sim.Clock FIELD, and without naming INV-3.
+// So the gap this fills is narrower than "untested": no test named INV-3 as its
+// subject, and none used the formulation the invariant is actually stated in. This
+// asserts on PROCESSED EVENT TIMESTAMPS rather than on a clock field, which is that
+// formulation and the only one that generalizes to the cluster loop. Scope, stated precisely so nobody over-reads this test: within package
 // sim, sim.Clock is assigned exactly once during the run (from the heap pop in
 // ProcessNextEvent; the only other write is the Clock: 0 constructor initializer,
 // which cannot make it decrease), so an assertion on sim.Clock would also pass here. The formulation
