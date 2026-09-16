@@ -510,36 +510,49 @@ func min(a, b int) int {
 //
 // Exercised by putting a failing `awk` first on PATH, which is the cheapest faithful stand-in for
 // "the fence scan did not run".
-func TestDeliverSeedRefsFailsLoudlyWhenTheFenceScanCannotRun(t *testing.T) {
+// Every text tool the script depends on must make it FAIL, never answer emptily.
+//
+// Two instances of this class were reported on #1723. A failing `awk` made a valid body report as
+// entirely empty at exit 0. A failing `sed` made a body that DID declare `archon-plan:` report
+// `plan_seen=false` — silently disabling the dist ratchet, which `deliver-verify.yml` then reads as
+// `absent` (a PASS) rather than `unverified` (a BLOCK). `set -e` is deliberately off and a legitimate
+// no-match is also a non-zero exit, so the script proves the tools usable up front instead; this
+// pins that for each of them.
+func TestDeliverSeedRefsFailsLoudlyWhenAToolIsBroken(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash is not on PATH")
 	}
-	dir := t.TempDir()
+	for _, tool := range []string{"sed", "grep", "awk", "tr", "head", "tail"} {
+		t.Run(tool, func(t *testing.T) {
+			dir := t.TempDir()
+			bin := filepath.Join(dir, "bin")
+			if err := os.MkdirAll(bin, 0o700); err != nil {
+				t.Fatalf("creating stub bin: %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(bin, tool), []byte("#!/bin/sh\nexit 127\n"), 0o700); err != nil {
+				t.Fatalf("writing %s stub: %v", tool, err)
+			}
+			// A body that declares BOTH values, so a silent empty answer would lose both the base
+			// and the plan gate.
+			body := filepath.Join(dir, "body.md")
+			content := "## Target branch\n\n`feature/real`\n\narchon-plan: specs/x.plan.json\n"
+			if err := os.WriteFile(body, []byte(content), 0o600); err != nil {
+				t.Fatalf("writing body: %v", err)
+			}
 
-	bin := filepath.Join(dir, "bin")
-	if err := os.MkdirAll(bin, 0o700); err != nil {
-		t.Fatalf("creating stub bin: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(bin, "awk"), []byte("#!/bin/sh\nexit 127\n"), 0o700); err != nil {
-		t.Fatalf("writing failing awk stub: %v", err)
-	}
+			cmd := exec.Command("bash", scriptPath(t, "deliver-seed-refs.sh"), body)
+			cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			out, err := cmd.CombinedOutput()
 
-	body := filepath.Join(dir, "body.md")
-	if err := os.WriteFile(body, []byte("## Target branch\n\n`feature/real`\n"), 0o600); err != nil {
-		t.Fatalf("writing body: %v", err)
-	}
-
-	cmd := exec.Command("bash", scriptPath(t, "deliver-seed-refs.sh"), body)
-	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	out, err := cmd.CombinedOutput()
-
-	if err == nil {
-		t.Fatalf("script exited 0 with a broken fence scan; output was:\n%s\n"+
-			"An empty result at exit 0 is indistinguishable from a body that declares nothing, so the "+
-			"caller seeds the default branch with no plan line and every guard stays silent", out)
-	}
-	if strings.Contains(string(out), "target_branch=") {
-		t.Errorf("script printed its key=value protocol despite the fence scan failing:\n%s\n"+
-			"It must not emit a parseable answer it cannot stand behind", out)
+			if err == nil {
+				t.Fatalf("script exited 0 with a broken %s; output was:\n%s\n"+
+					"An empty answer at exit 0 is indistinguishable from a body that declares nothing, "+
+					"so the caller seeds the default branch and the dist ratchet reads `absent` (a pass) "+
+					"instead of `unverified` (a block)", tool, out)
+			}
+			if strings.Contains(string(out), "target_branch=") {
+				t.Errorf("script printed its key=value protocol despite %s being broken:\n%s", tool, out)
+			}
+		})
 	}
 }

@@ -392,7 +392,6 @@ jobs:
             echo "::warning::#$ISSUE_NUMBER appears to declare an 'archon-plan:' line that could not be extracted; the seeded PR body will omit it. The agent is told to read it from the sub-issue as a fallback."
           fi
 
-          echo "base=$base" >> "$GITHUB_OUTPUT"
 
           # The seed commit is attributed to the bot that makes it, not to the agent that has not
           # run yet; claude-code-action sets its own identity for the agent's own commits.
@@ -424,6 +423,26 @@ jobs:
           else
             echo "No open PR on $BRANCH yet — the agent opens the draft PR as its first action."
           fi
+          # AN EXISTING PR'S BASE WINS over the base just computed from the issue body.
+          #
+          # Both are recomputed on every run, including a resume, so an issue whose `## Target branch`
+          # is edited between attempts would otherwise leave the branch and the open PR on the OLD
+          # base while the prompt and the work check used the NEW one — a diff full of unrelated
+          # commits and a work check measuring against the wrong ancestor, with nothing said. The PR
+          # is the authority once it exists: the branch is already based on it and the agent is
+          # forbidden from retargeting it. Reported on #1723 (F1/G8).
+          if [[ -n "$pr" ]]; then
+            if ! pr_base=$(gh pr view "$pr" --repo "$REPO" --json baseRefName --jq .baseRefName); then
+              echo "::error::could not read the base branch of PR #$pr; refusing to guess which base the delivery is against"
+              exit 1
+            fi
+            if [[ -n "$pr_base" && "$pr_base" != "$base" ]]; then
+              echo "::warning::#$ISSUE_NUMBER names target branch '$base' but open PR #$pr targets '$pr_base'. Keeping '$pr_base' so the branch, the prompt and the work check all agree. Retarget the PR by hand if the change was intended."
+              base="$pr_base"
+            fi
+          fi
+
+          echo "base=$base" >> "$GITHUB_OUTPUT"
           echo "pr=$pr" >> "$GITHUB_OUTPUT"
           # Handed to the prompt so the agent copies it into the PR body verbatim: the dist ratchet
           # reads the plan FROM THE BODY, and a PR to a feature branch links no closing issue.
@@ -623,8 +642,8 @@ jobs:
             // Newest wins if an earlier attempt left an open PR on the same ref.
             core.setOutput('number', String(prs.sort((a, b) => b.number - a.number)[0].number));
 
-      # Since #1722 a PR EXISTS from the start, so "a PR is open" no longer means "work was done"
-      # — it is now the seed's own doing. What distinguishes a delivery from an empty shell is a
+      # Since #1722 the agent opens a PR before it writes anything, so "a PR is open" no longer
+      # means "work was done". What distinguishes a delivery from an empty shell is a
       # file change on the branch, so that is what gates the hand-off and what the reporters below
       # branch on. Without this, an agent that produced nothing (as on #1706, where it ended its
       # turn on a design write-up) would hand a contentless PR to verify, which would spend a

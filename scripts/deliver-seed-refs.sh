@@ -4,9 +4,9 @@
 #
 # Usage: scripts/deliver-seed-refs.sh <body-file>
 #
-# deliver-implement.yml opens the delivery branch and its draft PR BEFORE the agent runs
-# (#1722), which means the workflow — not the agent — has to answer two questions from the
-# issue body alone:
+# deliver-implement.yml pushes the delivery branch BEFORE the agent runs (#1722); the agent then
+# opens the draft PR as its own first action. Either way the WORKFLOW, not the agent, has to answer
+# two questions from the issue body alone before anything is created:
 #
 #   1. Which branch does this PR target? An archon sub-issue targets its feature branch, and
 #      basing the delivery on the default branch instead would put every unrelated commit
@@ -62,6 +62,31 @@ fi
 # CRLF is stripped once, up front: a body edited through the GitHub web UI can carry it, and a
 # trailing \r would otherwise ride along inside the captured ref and make every remote lookup
 # miss.
+# EVERY text tool this script depends on is proved usable up front.
+#
+# This closes a class rather than an instance. `set -e` is deliberately off (a missing section is
+# expected control flow and `grep` exits 1 on no match), so a tool that fails for a REAL reason —
+# missing, broken, OOM-killed, or unwritable temp space — otherwise turns into an empty result at
+# exit 0. Two instances of that were reported on #1723: a failing `awk` reported a valid body as
+# empty, and a failing `sed` reported a body that DID declare `archon-plan:` as `plan_seen=false`,
+# silently disabling the dist ratchet. Guarding each pipeline individually cannot work, because a
+# legitimate no-match is also a non-zero exit; proving the tools work once can.
+for tool in sed grep awk tr head tail; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "$0: $tool is not on PATH; refusing to parse an issue body with a missing tool" >&2
+    exit 2
+  fi
+done
+if ! printf 'x\n' | sed -n 'p' >/dev/null 2>&1 \
+   || ! printf 'x\n' | grep -q 'x' \
+   || ! printf 'x\n' | awk '{ exit 0 }' \
+   || ! printf 'x\n' | tr -d 'x' >/dev/null 2>&1 \
+   || ! printf 'x\n' | head -n1 >/dev/null 2>&1 \
+   || ! printf 'x\n' | tail -n +1 >/dev/null 2>&1; then
+  echo "$0: one of sed/grep/awk/tr/head/tail is present but not usable; refusing to report an empty body as a valid one" >&2
+  exit 2
+fi
+
 BODY=$(tr -d '\r' < "$BODY_FILE")
 
 # The fence state is returned on STDOUT as a first line, not through a temp file or awk's stderr.
@@ -176,16 +201,20 @@ fi
 # The heading is matched case-INSENSITIVELY via bracket classes rather than sed's `I` flag, which is
 # a GNU extension; this script is exercised on macOS (BSD sed) too. It must agree with the
 # case-insensitive `grep -i` computing heading_seen below.
-TARGET_BRANCH=$(printf '%s\n' "$BODY" \
-  | sed -n '/^ \{0,3\}#\{1,6\}[[:space:]]*[Tt][Aa][Rr][Gg][Ee][Tt][[:space:]][Bb][Rr][Aa][Nn][Cc][Hh][[:space:]]*$/,/^ \{0,3\}#\{1,6\}[[:space:]]/p' \
-  | sed '1d' \
+if ! SECTION=$(printf '%s\n' "$BODY" \
+  | sed -n '/^ \{0,3\}#\{1,6\}[[:space:]]*[Tt][Aa][Rr][Gg][Ee][Tt][[:space:]][Bb][Rr][Aa][Nn][Cc][Hh][[:space:]]*$/,/^ \{0,3\}#\{1,6\}[[:space:]]/p'); then
+  echo "$0: sed failed while locating the Target branch section" >&2
+  exit 2
+fi
+# `|| true` from here on covers a legitimate NO MATCH only — grep exits 1 when the section has no
+# backticked ref, which is an answer rather than a failure. The tools themselves were proved above.
+TARGET_BRANCH=$(printf '%s\n' "$SECTION" \
+  | tail -n +2 \
   | grep -m1 '[^[:space:]]' \
   | grep -oE '`[^`]+`' \
   | head -n1 \
   | tr -d '`') || true
 
-# Trailing/leading whitespace inside the backticks would survive `tr -d`, and a ref is never
-# whitespace, so trim rather than carry it into a remote lookup.
 TARGET_BRANCH="${TARGET_BRANCH#"${TARGET_BRANCH%%[![:space:]]*}"}"
 TARGET_BRANCH="${TARGET_BRANCH%"${TARGET_BRANCH##*[![:space:]]}"}"
 
@@ -216,12 +245,12 @@ fi
 # seeded here would not be the plan resolved there. Anchored so a sentence mentioning
 # `archon-plan:` in passing is not a declaration, and requiring `\S` after the colon so a bare
 # `archon-plan:` with no path is not treated as one.
-ARCHON_PLAN=$(printf '%s\n' "$BODY" \
-  | sed -E '/^ {4,}/d' \
+if ! BODY_NO_INDENT=$(printf '%s\n' "$BODY" | sed -E '/^ {4,}/d'); then
+  echo "$0: sed failed while removing indented lines" >&2
+  exit 2
+fi
+ARCHON_PLAN=$(printf '%s\n' "$BODY_NO_INDENT" \
   | grep -m1 -E '^[^A-Za-z0-9]*archon-plan:[[:space:]]*\S') || true
-
-# Only ever a single line, so a body carrying an embedded newline cannot inject a second
-# key=value pair into a caller reading this output line-by-line.
 ARCHON_PLAN=${ARCHON_PLAN%%$'\n'*}
 
 # Deliberately LOOSER than the section pattern above: it answers "did the author try to declare a
@@ -237,7 +266,7 @@ fi
 # `absent` — which PASSES — rather than `unverified`, which blocks. So a silent miss here would
 # silently switch the dist ratchet off, the exact failure deliver-verify.yml warns about.
 PLAN_SEEN=false
-if printf '%s\n' "$BODY" | sed -E '/^ {4,}/d' | grep -qE '^[^A-Za-z0-9]*archon-plan:[[:space:]]*\S'; then
+if printf '%s\n' "$BODY_NO_INDENT" | grep -qE '^[^A-Za-z0-9]*archon-plan:[[:space:]]*\S'; then
   PLAN_SEEN=true
 fi
 

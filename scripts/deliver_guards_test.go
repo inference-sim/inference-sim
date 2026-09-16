@@ -525,3 +525,40 @@ func TestDeliverImplementPromptHasNoStrayYamlComments(t *testing.T) {
 		}
 	}
 }
+
+// An existing PR's base must win over the base recomputed from the issue body.
+//
+// Both are recomputed on every run, including a resume. If a sub-issue's `## Target branch` is edited
+// between attempts, the branch and the open PR stay on the OLD base while the prompt and the work
+// check would use the NEW one — producing a diff full of unrelated commits and a work check measured
+// against the wrong ancestor, silently. Reported on #1723 (F1/G8). The PR is the authority once it
+// exists: the branch is already based on it, and the agent is forbidden from retargeting it.
+func TestDeliverImplementPrefersAnExistingPRsBase(t *testing.T) {
+	path := filepath.Join("..", ".github", "workflows", "deliver-implement.yml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	body := string(raw)
+
+	if !strings.Contains(body, "baseRefName") {
+		t.Fatal("the seed step never reads the existing PR's baseRefName, so a resumed delivery can " +
+			"use a base that disagrees with the branch it is resuming and with the PR it will hand off")
+	}
+	if !strings.Contains(body, `base="$pr_base"`) {
+		t.Error("the seed step reads the PR's base but never adopts it; the recomputed value would " +
+			"still reach the prompt and the work check")
+	}
+
+	// Ordering matters as much as presence: the base output must be written AFTER the PR lookup, or
+	// the override cannot reach `steps.seed.outputs.base`.
+	lookup := strings.Index(body, "pr=$(gh pr list")
+	baseOut := strings.Index(body, `echo "base=$base" >> "$GITHUB_OUTPUT"`)
+	if lookup < 0 || baseOut < 0 {
+		t.Fatalf("could not locate the PR lookup (%d) and the base output (%d)", lookup, baseOut)
+	}
+	if baseOut < lookup {
+		t.Errorf("`base` is written to GITHUB_OUTPUT at offset %d, BEFORE the PR lookup at %d, so an "+
+			"existing PR's base cannot override the value computed from the issue body", baseOut, lookup)
+	}
+}
