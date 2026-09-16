@@ -763,7 +763,12 @@ jobs:
             Read the sub-issue for its contracts (`gh issue view ${{ env.ISSUE_NUMBER }}`)
             and the diff (`gh pr diff ${{ env.PR }}`). Then run the BLIS methodology
             review — use the `blis-pr-review` skill — with archon's output and those contracts
-            as your inputs.
+            as your inputs. Run the methodology WHOLE: the ten code-review perspectives,
+            cross-path parity, contract verification, AND the Q/A phase (the probing questions
+            answered CONFIDENT / FLAW_FOUND / CANNOT_ANSWER with file:line evidence). None of
+            these may be skipped or summarised away — under context pressure the Q/A phase and
+            the findings table are the first things dropped, and a GREEN that dropped them is
+            downgraded to NOT-GREEN below.
 
             For each contract, say whether it holds and how you know. Read the PR's earlier
             comments: treat the previous round's findings as still open unless you can see they
@@ -789,6 +794,17 @@ jobs:
             Post ONE comment on the PR with your verdict. A finding must name a file and what
             specifically is wrong — "consider improving error handling" is not a finding. Number
             them.
+
+            That comment MUST show the methodology ran, in two forms a later step reads back:
+            - the Q/A phase — the probing questions with their CONFIDENT / FLAW_FOUND /
+              CANNOT_ANSWER answers; and
+            - a "Findings Summary" table — each finding as a row (finding, file:line, and
+              FLAW_FOUND where it blocks), even when there are none (an explicit "no findings"
+              row is falsifiable; silence is not).
+            Do NOT self-dismiss a finding inline in prose: a finding you judge non-blocking
+            still belongs in the table as non-blocking, so the correction phase and the
+            dismissal ledger can both see it. A GREEN comment missing the Q/A phase or the
+            findings table is treated as NOT-GREEN — the methodology did not run whole.
 
             The LAST line of that comment must be exactly one of these two, and nothing else:
             `DELIVER-VERDICT: GREEN` or `DELIVER-VERDICT: NOT-GREEN`. The delivery reads only
@@ -837,6 +853,33 @@ jobs:
           marker=$(grep -xE 'DELIVER-VERDICT: (GREEN|NOT-GREEN)' <<< "$lastlines" \
                    | tail -n 1 | sed 's/^DELIVER-VERDICT: //' || true)
           [[ -n "$marker" ]] || marker=MISSING
+
+          # A GREEN marker is not enough: the review must SHOW it ran the methodology. Re-read the
+          # winning comment's BODY (the most recent qualifying Bot comment whose last non-empty
+          # line is this marker) and require the Q/A phase and a findings table via
+          # scripts/deliver-methodology-markers.sh. Missing => the methodology did not run whole =>
+          # downgrade to NOT-GREEN, so an improvised GREEN can never reach the gate as a pass. Only
+          # GREEN is checked: NOT-GREEN / MISSING already cannot reach `ready`, so requiring the
+          # markers there would only send an honestly-failing review through a pointless round.
+          if [[ "$marker" == GREEN ]]; then
+            body=$(gh api "/repos/$REPO/issues/$PR/comments?per_page=100" --paginate \
+              --jq "[ .[]
+                    | select(.created_at > \"$SINCE\")
+                    | select(.user.type == \"Bot\")
+                    | select((.body | split(\"\n\") | map(select(test(\"\\\\S\"))) | (last // \"\") | gsub(\"^\\\\s+|\\\\s+$\"; \"\")) == \"DELIVER-VERDICT: GREEN\")
+                    | .body ] | last // \"\"" 2>/dev/null || true)
+            if [[ -z "$body" ]]; then
+              echo "the GREEN marker's comment body could not be re-read; treating as NOT-GREEN"
+              marker=NOT-GREEN
+            else
+              mk=$(printf '%s' "$body" | scripts/deliver-methodology-markers.sh | sed -n 's/^markers=//p' || true)
+              if [[ "$mk" != present ]]; then
+                echo "the GREEN review is missing its methodology markers (markers='${mk:-unreadable}'); treating as NOT-GREEN"
+                marker=NOT-GREEN
+              fi
+            fi
+          fi
+
           echo "AGENT_VERDICT=$marker"
           echo "value=$marker" >> "$GITHUB_OUTPUT"
 
