@@ -3,6 +3,8 @@ package sim
 import (
 	"bytes"
 	"fmt"
+	"go/scanner"
+	"go/token"
 	"math"
 	"os"
 	"path/filepath"
@@ -1970,11 +1972,15 @@ var oracleReadPatterns = []string{"OutputTokens", "completionProgressIndex"}
 // router_state.go, routing_nohit_lru_scorer.go and routing_precise_prefix_scorer.go,
 // two of which are scorers — the class already covered — so the next scorer added
 // would have escaped silently too (#1720, Finding 3).
+// Not exhaustive over sim/: files whose names do not match a pattern below still
+// have to be added by hand. sim/saturation.go is here because its value gates
+// gateway dispatch, and it is clean today.
 var simControlPlaneGlobs = []string{
 	"routing*.go",
 	"admission*.go",
 	"scheduler*.go",
 	"slo*.go",
+	"saturation*.go",
 	"router_state.go",
 }
 
@@ -2012,10 +2018,45 @@ func resolveSimControlPlaneFiles(t *testing.T) []string {
 	return files
 }
 
-// oracleReadsIn reports which oracle-read patterns appear in src, ignoring the
-// metric aggregate TotalOutputTokens.
+// stripGoComments removes comments from Go source, so a comment that *names* an
+// oracle read is not mistaken for one. This matters: the invariant registry
+// encourages writing "must not read OutputTokens" next to the code that must not, and
+// INV-9's own carve-out for completionProgressIndex is documented in prose inside
+// batch_formation.go. Flagging those would train contributors to describe the rule
+// obliquely, which is worse than not documenting it.
+//
+// Falls back to the raw source if the input does not parse as Go (a synthetic
+// fixture, or a file mid-edit) — over-reporting is the safe direction for this check.
+func stripGoComments(src string) string {
+	var sc scanner.Scanner
+	fset := token.NewFileSet()
+	file := fset.AddFile("", fset.Base(), len(src))
+	failed := false
+	sc.Init(file, []byte(src), func(token.Position, string) { failed = true }, 0)
+
+	var b strings.Builder
+	for {
+		_, tok, lit := sc.Scan()
+		if tok == token.EOF {
+			break
+		}
+		if lit != "" {
+			b.WriteString(lit)
+		} else {
+			b.WriteString(tok.String())
+		}
+		b.WriteByte(' ')
+	}
+	if failed {
+		return src
+	}
+	return b.String()
+}
+
+// oracleReadsIn reports which oracle-read patterns appear in src, ignoring comments
+// and the metric aggregate TotalOutputTokens.
 func oracleReadsIn(src string) []string {
-	cleaned := strings.ReplaceAll(src, "TotalOutputTokens", "")
+	cleaned := strings.ReplaceAll(stripGoComments(src), "TotalOutputTokens", "")
 	var hits []string
 	for _, pattern := range oracleReadPatterns {
 		if strings.Contains(cleaned, pattern) {
@@ -2046,6 +2087,7 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 		"routing_precise_prefix_scorer.go",
 		"routing_prefix_scorer.go",
 		"routing_scorers.go",
+		"saturation.go",
 		"scheduler.go",
 		"slo_priority.go",
 	} {
@@ -2146,6 +2188,13 @@ func TestINV9_OracleReadDetectorFires(t *testing.T) {
 		{
 			name: "clean control-plane code",
 			src:  "package p\nfunc f(r *Request) int64 { return r.MaxOutputLen }\n",
+			want: nil,
+		},
+		{
+			// The registry encourages documenting the rule next to the code it
+			// governs; flagging the documentation would be perverse.
+			name: "a comment naming the rule is not a violation",
+			src:  "package p\n// INV-9: must never read OutputTokens or completionProgressIndex().\nfunc f(r *Request) int64 { return r.MaxOutputLen }\n",
 			want: nil,
 		},
 	}

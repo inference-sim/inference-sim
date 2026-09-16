@@ -81,7 +81,12 @@ func TestINV1_InstanceHelperMatchesRegistry(t *testing.T) {
 			registryPath, len(equations))
 	}
 
-	registry := equations[1] // the five-term single-instance specialisation
+	// Pick the shorter of the two by term count rather than by document order, so
+	// reordering the registry paragraphs cannot silently compare the wrong equation.
+	registry := equations[0]
+	if len(equations[1]) < len(registry) {
+		registry = equations[1]
+	}
 	inHelper := make(map[string]bool, len(inv1InstanceTerms))
 	for _, term := range inv1InstanceTerms {
 		inHelper[term] = true
@@ -98,6 +103,66 @@ func TestINV1_InstanceHelperMatchesRegistry(t *testing.T) {
 	for _, term := range inv1InstanceTerms {
 		if !inRegistry[term] {
 			t.Errorf("assertINV1Conservation sums %q but the registry's single-instance equation does not name it", term)
+		}
+	}
+}
+
+// TestINV1_NoInlineConservationSums is the sim/ counterpart of the guard in
+// sim/cluster: nothing stopped the next hand-rolled sum from being written here
+// instead. Detection is deliberately simpler than the cluster version — this package
+// has only the five-term form and no accessor calls to resolve — but the effect is the
+// same: adding a bucket to INV-1 must not require finding sums by hand.
+func TestINV1_NoInlineConservationSums(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("cannot list the package directory: %v", err)
+	}
+	// Files allowed to hand-roll the sum, with the reason. Every entry must name a
+	// file that exists, so a stale exemption fails rather than rots.
+	exempt := map[string]string{
+		// Asserts over MetricsOutput (the JSON serialisation), not *Metrics, so the
+		// helper's signature does not apply. It checks that ToOutput's per-field
+		// mapping is complete, which is a different property from conservation.
+		"metrics_test.go": "asserts over MetricsOutput fields, not *Metrics",
+	}
+	buckets := []string{"CompletedRequests", "StillQueued", "StillRunning", "DroppedUnservable", "TimedOutRequests"}
+	scanned := 0
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, "_test.go") || name == "inv1_conservation_test.go" {
+			continue
+		}
+		if reason, ok := exempt[name]; ok {
+			t.Logf("skipping %s: %s", name, reason)
+			continue
+		}
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("cannot read %s: %v", name, err)
+		}
+		scanned++
+		for i, line := range strings.Split(string(src), "\n") {
+			if !strings.Contains(line, "CompletedRequests") || !strings.Contains(line, "+") {
+				continue
+			}
+			present := 0
+			for _, bucket := range buckets {
+				if strings.Contains(line, bucket) {
+					present++
+				}
+			}
+			if present >= 3 {
+				t.Errorf("%s:%d: inline INV-1 conservation sum — use assertINV1Conservation instead, so a bucket added to the invariant is picked up here automatically",
+					name, i+1)
+			}
+		}
+	}
+	if scanned == 0 {
+		t.Fatal("scanned no test files — the directory walk is broken, so this test proves nothing")
+	}
+	for name, reason := range exempt {
+		if _, err := os.Stat(name); err != nil {
+			t.Errorf("exemption for %s (%s) names a file that does not exist — remove the stale entry", name, reason)
 		}
 	}
 }

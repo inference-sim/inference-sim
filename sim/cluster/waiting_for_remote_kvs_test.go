@@ -128,7 +128,7 @@ func TestWaitingForRemoteKVs_ReservationFailure_DropsAtTransferStart(t *testing.
 	}
 
 	// INV-1 conservation must still hold.
-	assertClusterINV1Conservation(t, cs, 4, cs.RejectedRequests(), "drop-at-transfer-start")
+	assertClusterINV1Conservation(t, cs, 4, noRejections, "drop-at-transfer-start")
 }
 
 // TestWaitingForRemoteKVs_ConcurrentReservationsDoNotStealBlocks is the

@@ -288,10 +288,16 @@ func TestSaveResults_ConservationFields(t *testing.T) {
 	assert.Equal(t, 1, output.StillRunning)
 	assert.Equal(t, 10, output.InjectedRequests)
 	// MetricsOutput.InjectedRequests is *defined* as the five-term sum
-	// (Metrics.ToOutput), so comparing it against that sum is an arithmetic
-	// identity, not an observation about the simulator. Assert instead that it
-	// matches the count this test actually injected — the same independence rule
-	// assertINV1Conservation documents.
+	// (Metrics.ToOutput), so comparing it against that sum is an arithmetic identity,
+	// not an observation about the simulator. Assert instead against the count this
+	// test actually set up — the same independence rule assertINV1Conservation
+	// documents.
+	//
+	// The four-term form this replaced was not purely tautological: by omitting
+	// TimedOutRequests it also asserted that no request timed out. Keep that as its
+	// own assertion rather than losing it inside a wider sum.
+	assert.Equal(t, 0, output.TimedOutRequests, "fixture injects no timeouts")
+	assert.Equal(t, 0, output.DroppedUnservable, "fixture drops nothing")
 	assert.Equal(t, 10, output.CompletedRequests+output.StillQueued+output.StillRunning+output.DroppedUnservable+output.TimedOutRequests)
 }
 

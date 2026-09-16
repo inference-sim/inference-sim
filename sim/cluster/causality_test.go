@@ -24,17 +24,58 @@ import "testing"
 //     arrival-relative.
 //   - completion: Metrics.RequestCompletionTimes[id], absolute.
 func TestINV5_Causality_FullChain(t *testing.T) {
+	// Two fixtures. The first drains cleanly, so every subtrahend in the
+	// non-vacuity floors below is zero. The second is deliberately saturated with a
+	// bounded queue and a short horizon, so requests are shed and left queued at the
+	// horizon — that is what makes the floors' arithmetic load-bearing rather than
+	// coincidentally equal to len(requests).
+	for _, tc := range []struct {
+		name      string
+		configure func(*DeploymentConfig)
+		requests  int
+	}{
+		{
+			name: "concurrency-gated, drains",
+			configure: func(cfg *DeploymentConfig) {
+				cfg.FlowControlMaxConcurrency = 1
+			},
+			requests: 8,
+		},
+		{
+			// Measured on this fixture: 20 gateway-queue rejections and 2 requests
+			// still queued at the horizon, so both of those subtrahends are non-zero
+			// and the floors below are genuinely arithmetic rather than
+			// coincidentally equal to len(requests).
+			name: "saturated, rejects and leaves requests queued",
+			configure: func(cfg *DeploymentConfig) {
+				cfg.FlowControlMaxConcurrency = 1
+				cfg.FlowControlDispatchOrder = "priority"
+				cfg.FlowControlMaxQueueDepth = 3
+				cfg.Horizon = 200_000
+			},
+			requests: 24,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assertINV5FullChain(t, tc.configure, tc.requests)
+		})
+	}
+}
+
+func assertINV5FullChain(t *testing.T, configure func(*DeploymentConfig), numRequests int) {
+	t.Helper()
+
 	config := newTestDeploymentConfig(1)
 	config.FlowControlEnabled = true
 	config.FlowControlDetector = "concurrency"
 	config.FlowControlDispatchOrder = "fifo"
-	config.FlowControlMaxConcurrency = 1 // force real gateway queueing
+	configure(&config)
 
 	// Arrivals start at a non-zero tick and are staggered. GatewayEnqueueTime is
 	// taken from the clock and is *reset to 0* for rejected and shed requests, so a
 	// request admitted at tick 0 would be indistinguishable from one that never
 	// reached the gateway. Starting at 100 keeps "0" meaning "no gateway timestamp".
-	requests := newTestRequests(8)
+	requests := newTestRequests(numRequests)
 	for i, req := range requests {
 		req.ArrivalTime = int64(i)*100 + 100
 	}
@@ -103,9 +144,12 @@ func TestINV5_Causality_FullChain(t *testing.T) {
 	depth := cs.GatewayQueueDepth()
 	expired := cs.GatewayExpired()
 
-	if want := len(requests) - rejected; enqueueChecked != want {
-		t.Errorf("INV-5 arrival->enqueue was checked for %d requests, want %d — the fixture stopped exercising the gateway, so this link proves nothing",
-			enqueueChecked, want)
+	// A shed victim also has its enqueue timestamp reset to 0 (flow_control_admission.go),
+	// so it is skipped by the loop above and must be subtracted here too — not only
+	// rejected requests.
+	if want := len(requests) - rejected - shed; enqueueChecked != want {
+		t.Errorf("INV-5 arrival->enqueue was checked for %d requests, want %d (rejected=%d shed=%d) — the fixture stopped exercising the gateway, so this link proves nothing",
+			enqueueChecked, want, rejected, shed)
 	}
 	if want := len(requests) - shed - rejected - depth - expired; dispatchChecked != want {
 		t.Errorf("INV-5 enqueue->dispatch was checked for %d requests, want %d (shed=%d rejected=%d stillQueued=%d expired=%d)",

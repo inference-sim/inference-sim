@@ -207,7 +207,7 @@ func TestClusterSimulator_SingleInstance_GoldenInvariants(t *testing.T) {
 			m := cs.AggregatedMetrics()
 
 			// INV-1: Request conservation — compare against tc.NumRequests (independent source).
-			assertClusterINV1Conservation(t, cs, tc.NumRequests, cs.RejectedRequests(), tc.Model+"/"+tc.Workload)
+			assertClusterINV1Conservation(t, cs, tc.NumRequests, noRejections, tc.Model+"/"+tc.Workload)
 
 			// INV-5: Causality — TTFT >= 0 and E2E >= TTFT for all completed requests
 			for reqID, ttft := range m.RequestTTFTs {
@@ -1086,7 +1086,7 @@ func TestClusterSimulator_Conservation_PolicyMatrix(t *testing.T) {
 			mustRun(t, cs)
 
 			agg := cs.AggregatedMetrics()
-			assertClusterINV1Conservation(t, cs, numRequests, cs.RejectedRequests(), "infinite horizon")
+			assertClusterINV1Conservation(t, cs, numRequests, noRejections, "infinite horizon")
 
 			// BC-4: All complete under infinite horizon with ample resources
 			if agg.CompletedRequests != numRequests {
@@ -1225,10 +1225,20 @@ func TestClusterSimulator_OverloadConservation(t *testing.T) {
 
 			agg := cs.AggregatedMetrics()
 
-			// The helper asserts both INV-1 clauses, including the pipeline clause
-			// (numRequests == injected + rejected) that this test used to check
-			// separately in the token-bucket branch.
 			assertClusterINV1Conservation(t, cs, numRequests, cs.RejectedRequests(), tc.admissionPolicy)
+
+			// The full-pipeline clause, against an observation independent of the
+			// counters: the Metrics.Requests map. The helper cannot do this — it
+			// folds the pipeline clause into the same equality, and the map is not a
+			// general baseline because drop, timeout, drain and PD paths delete from
+			// it. It is sound here: no request is dropped in these fixtures.
+			if agg.DroppedUnservable != 0 {
+				t.Fatalf("fixture now drops %d requests, so len(Requests) is no longer a valid injected count", agg.DroppedUnservable)
+			}
+			if injected := len(agg.Requests); injected+cs.RejectedRequests() != numRequests {
+				t.Errorf("INV-1 pipeline: len(Requests)=%d + rejected=%d = %d, want %d generated",
+					injected, cs.RejectedRequests(), injected+cs.RejectedRequests(), numRequests)
+			}
 
 			if tc.admissionPolicy == "always-admit" {
 				if rejected := cs.RejectedRequests(); rejected != 0 {
@@ -1435,7 +1445,7 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 
 		agg := cs.AggregatedMetrics()
 
-		assertClusterINV1Conservation(t, cs, numRequests, cs.RejectedRequests(), "always-admit/ample-kv")
+		assertClusterINV1Conservation(t, cs, numRequests, noRejections, "always-admit/ample-kv")
 
 		// All requests complete under infinite horizon with ample resources
 		if agg.CompletedRequests != numRequests {
@@ -1466,7 +1476,7 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 
 		agg := cs.AggregatedMetrics()
 
-		assertClusterINV1Conservation(t, cs, len(constRequests), cs.RejectedRequests(), "always-admit/constrained-kv")
+		assertClusterINV1Conservation(t, cs, len(constRequests), noRejections, "always-admit/constrained-kv")
 
 		// Verify stress path is actually exercised: preemptions must occur
 		if agg.PreemptionCount == 0 {
@@ -1488,11 +1498,21 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 		cs := NewClusterSimulator(config, NewSliceRequestSource(mkRequests()), nil)
 		mustRun(t, cs)
 
+		agg := cs.AggregatedMetrics()
 		rejected := cs.RejectedRequests()
 
-		// Asserts both clauses: the pipeline clause (numRequests == injected +
-		// rejected) and the twelve-term bucket equation.
 		assertClusterINV1Conservation(t, cs, numRequests, rejected, "token-bucket")
+
+		// The full-pipeline clause against the Metrics.Requests map, independent of
+		// the counters the helper reads. Sound here because nothing is dropped; see
+		// the note in TestClusterSimulator_Conservation_PolicyMatrix.
+		if agg.DroppedUnservable != 0 {
+			t.Fatalf("fixture now drops %d requests, so len(Requests) is no longer a valid injected count", agg.DroppedUnservable)
+		}
+		if injected := len(agg.Requests); injected+rejected != numRequests {
+			t.Errorf("INV-1 pipeline: len(Requests)=%d + rejected=%d = %d, want %d generated",
+				injected, rejected, injected+rejected, numRequests)
+		}
 
 		// Sanity: token-bucket should reject some requests (not all admitted)
 		if rejected == 0 {
@@ -1580,7 +1600,7 @@ func TestClusterSimulator_MaxModelLen_DroppedUnservable(t *testing.T) {
 			agg.DroppedUnservable, expectedDropped, numGuard1a, numGuard1b)
 	}
 
-	assertClusterINV1Conservation(t, cs, totalInjected, cs.RejectedRequests(), "oversized-request guards")
+	assertClusterINV1Conservation(t, cs, totalInjected, noRejections, "oversized-request guards")
 
 	// Post-simulation drain: all requests completed or dropped, nothing in-flight
 	if agg.StillQueued != 0 || agg.StillRunning != 0 {
@@ -2461,7 +2481,7 @@ func TestClusterSimulator_MultiTurnSession_EndToEnd(t *testing.T) {
 	metrics := cs.AggregatedMetrics()
 
 	// BC-5 (INV-1): conservation with dynamic follow-up injection
-	assertClusterINV1Conservation(t, cs, totalInjected, cs.RejectedRequests(), "multi-turn end-to-end")
+	assertClusterINV1Conservation(t, cs, totalInjected, noRejections, "multi-turn end-to-end")
 
 	if metrics.CompletedRequests == 0 {
 		t.Error("BC-5: CompletedRequests = 0, expected > 0 (work must be done)")

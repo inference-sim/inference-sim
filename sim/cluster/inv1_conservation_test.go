@@ -6,7 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
-	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -105,13 +105,26 @@ func newClusterLedger(cs *ClusterSimulator) clusterLedger {
 	}
 }
 
-// assertClusterINV1Conservation asserts both clauses of INV-1 at cluster level:
+// noRejections is the rejected argument for a fixture that must not reject
+// anything. Passing it rather than cs.RejectedRequests() means a spurious rejection
+// breaks the equation instead of being silently subtracted out — which is what the
+// pre-#1720 sums did implicitly by comparing against a bare fixture count.
+const noRejections = 0
+
+// assertClusterINV1Conservation asserts INV-1's canonical twelve-term equation at
+// cluster level:
 //
-//	total    == injected + rejected   (the full-pipeline clause)
-//	injected == <the twelve buckets>  (the canonical equation)
+//	total - rejected == <the twelve buckets>
 //
-// total and rejected are taken separately, rather than a pre-subtracted injected,
-// so the pipeline clause is asserted at every call site instead of assumed there.
+// rejected is taken separately from total rather than pre-subtracted by the caller,
+// so a fixture that must not reject anything can pass noRejections and have a
+// spurious rejection fail the assertion. Note what this is NOT: folding the
+// full-pipeline clause (total == injected + rejected) into the same equality means a
+// failure cannot be attributed to one clause or the other. Where the pipeline clause
+// needs checking against an independent observation of injected — the length of the
+// Metrics.Requests map — the call site does that separately; the map is not a
+// general-purpose baseline because drop, timeout, drain and PD paths all delete from
+// it.
 //
 // total must come from a source independent of the metrics under test — normally
 // len(requests). That identity holds only when (a) the request source is an eager
@@ -122,7 +135,7 @@ func newClusterLedger(cs *ClusterSimulator) clusterLedger {
 //
 // This does not assert INV-1's exclusivity clause ("a request lands in exactly one
 // bucket"): a double-count in one bucket cancels a loss from another, so no
-// aggregate sum can detect it. Tracked separately.
+// aggregate sum can detect it. Tracked in #1745.
 func assertClusterINV1Conservation(t *testing.T, cs *ClusterSimulator, total, rejected int, label string) {
 	t.Helper()
 	l := newClusterLedger(cs)
@@ -204,6 +217,9 @@ func parseINV1RegistryEquations(t *testing.T, path string) [][]string {
 		t.Fatalf("expected exactly 2 `injected_requests == ...` equations in %s (the twelve-term cluster form and the five-term single-instance form), found %d — the registry was restructured, so this test and the helpers need re-checking against it",
 			path, len(found))
 	}
+	// Select by term count rather than document order, so reordering the two
+	// paragraphs in the registry does not silently compare the wrong pair.
+	sort.Slice(found, func(i, j int) bool { return len(found[i]) > len(found[j]) })
 	return found
 }
 
@@ -264,15 +280,12 @@ var inv1BucketSelectors = map[string]bool{
 	"EncodeRoutingRejections": true,
 }
 
-// inlineSumExemptions lists files allowed to combine three or more bucket names
-// inline, with the reason. Every entry must name a file that exists, so an
-// exemption left behind after a rewrite fails rather than rots.
-var inlineSumExemptions = map[string]string{
-	// A different equation: sum(ShedByTier) == the four shedding buckets. Not a
-	// conservation ledger — it reconciles the per-tier shed breakdown against the
-	// counters, and there is no injected/accounted comparison.
-	"progress_hook_test.go": "shed-accounting identity over ProgressSnapshot, not an INV-1 ledger",
-}
+// inlineSumExemptions lists files allowed to hand-roll a conservation sum, with the
+// reason. Every entry must name a file that exists, so an exemption left behind after
+// a rewrite fails rather than rots. Empty: the CompletedRequests requirement in
+// findInlineConservationSums already distinguishes a conservation ledger from the
+// other multi-bucket expressions in the package, so no file needs excusing.
+var inlineSumExemptions = map[string]string{}
 
 // bucketAliases maps local variable names to the bucket they were assigned from,
 // for assignments of the form `completed := agg.CompletedRequests` or
@@ -327,9 +340,9 @@ func bucketNameOf(e ast.Expr) (string, bool) {
 	return "", false
 }
 
-// countBucketOperands returns how many distinct INV-1 buckets appear as operands of
-// the + expression tree rooted at n, resolving locals through aliases.
-func countBucketOperands(n ast.Expr, aliases map[string]string) int {
+// countBucketOperands returns the distinct INV-1 buckets appearing as operands of the
+// arithmetic/comparison tree rooted at n, resolving locals through aliases.
+func countBucketOperands(n ast.Expr, aliases map[string]string) map[string]bool {
 	seen := map[string]bool{}
 	var walk func(ast.Expr)
 	walk = func(e ast.Expr) {
@@ -339,7 +352,12 @@ func countBucketOperands(n ast.Expr, aliases map[string]string) int {
 		}
 		switch x := e.(type) {
 		case *ast.BinaryExpr:
-			if x.Op == token.ADD {
+			// Subtraction and the comparison itself count too: moving buckets to the
+			// other side (`a + b != injected - c - d`) is the natural rewrite after
+			// hitting this guard, and it is the same hand-rolled equation. Walking
+			// through == and != means the operand count spans both sides.
+			switch x.Op {
+			case token.ADD, token.SUB, token.EQL, token.NEQ:
 				walk(x.X)
 				walk(x.Y)
 			}
@@ -352,7 +370,7 @@ func countBucketOperands(n ast.Expr, aliases map[string]string) int {
 		}
 	}
 	walk(n)
-	return len(seen)
+	return seen
 }
 
 // findInlineConservationSums reports every + expression in src that combines
@@ -368,10 +386,22 @@ func findInlineConservationSums(t *testing.T, filename, src string, threshold in
 	var hits []string
 	ast.Inspect(file, func(n ast.Node) bool {
 		be, ok := n.(*ast.BinaryExpr)
-		if !ok || be.Op != token.ADD {
+		if !ok {
 			return true
 		}
-		if countBucketOperands(be, aliases) >= threshold {
+		switch be.Op {
+		case token.ADD, token.SUB, token.EQL, token.NEQ:
+		default:
+			return true
+		}
+		buckets := countBucketOperands(be, aliases)
+		// CompletedRequests is required, not just a count. Every conservation ledger
+		// has it; expressions that combine several buckets *without* it are a
+		// different equation — INV-5's non-vacuity floors subtract gateway counters,
+		// and progress_hook_test.go reconciles the shed breakdown. Counting those as
+		// conservation sums would make the guard cry wolf, and a guard that cries wolf
+		// gets exemptions bolted on until it means nothing.
+		if len(buckets) >= threshold && buckets["CompletedRequests"] {
 			hits = append(hits, fmt.Sprintf("%s:%d", filename, fset.Position(be.Pos()).Line))
 			// Do not descend: the sub-expressions of a matched sum would match too.
 			return false
@@ -469,6 +499,16 @@ func f() {
 			want: true,
 		},
 		{
+			name: "buckets moved to the other side of the comparison",
+			src: `package p
+func f() {
+	_ = m.CompletedRequests+m.StillQueued != injected-m.DroppedUnservable-cs.RoutingRejections()
+}`,
+			// The natural rewrite once the += form is rejected, and the same
+			// hand-rolled equation.
+			want: true,
+		},
+		{
 			name: "two buckets is not a conservation sum",
 			src: `package p
 func f() {
@@ -479,16 +519,23 @@ func f() {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "fixture.go")
-			if err := os.WriteFile(path, []byte(tc.src), 0o600); err != nil {
-				t.Fatalf("cannot write fixture: %v", err)
-			}
-			hits := findInlineConservationSums(t, path, tc.src, 3)
+			hits := findInlineConservationSums(t, "fixture.go", tc.src, 3)
 			if got := len(hits) > 0; got != tc.want {
 				t.Errorf("detector fired = %v, want %v (hits: %v)", got, tc.want, hits)
 			}
 		})
 	}
+}
+
+// isAggregateMetricsCall reports whether e is a call to AggregatedMetrics(), the
+// cluster-level metrics accessor.
+func isAggregateMetricsCall(e ast.Expr) bool {
+	call, ok := e.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	return ok && sel.Sel.Name == "AggregatedMetrics"
 }
 
 // TestINV1_NoInstanceHelperOnClusterMetrics stops the five-term specialisation from
@@ -513,6 +560,27 @@ func TestINV1_NoInstanceHelperOnClusterMetrics(t *testing.T) {
 			t.Fatalf("cannot parse %s: %v", name, err)
 		}
 		scanned++
+		// Locals assigned from AggregatedMetrics(). `m := cs.AggregatedMetrics()`
+		// followed by `assertInstanceINV1Conservation(t, m, ...)` is the idiomatic way
+		// to write this violation, so matching only the inline call would leave the
+		// guard checking the one spelling nobody uses.
+		aggregateLocals := map[string]bool{}
+		ast.Inspect(file, func(n ast.Node) bool {
+			assign, ok := n.(*ast.AssignStmt)
+			if !ok {
+				return true
+			}
+			for i, lhs := range assign.Lhs {
+				id, ok := lhs.(*ast.Ident)
+				if !ok || i >= len(assign.Rhs) {
+					continue
+				}
+				if isAggregateMetricsCall(assign.Rhs[i]) {
+					aggregateLocals[id.Name] = true
+				}
+			}
+			return true
+		})
 		ast.Inspect(file, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
@@ -523,11 +591,11 @@ func TestINV1_NoInstanceHelperOnClusterMetrics(t *testing.T) {
 				return true
 			}
 			for _, arg := range call.Args {
-				inner, ok := arg.(*ast.CallExpr)
-				if !ok {
-					continue
+				clusterAggregate := isAggregateMetricsCall(arg)
+				if ident, ok := arg.(*ast.Ident); ok && aggregateLocals[ident.Name] {
+					clusterAggregate = true
 				}
-				if sel, ok := inner.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "AggregatedMetrics" {
+				if clusterAggregate {
 					t.Errorf("%s:%d: assertInstanceINV1Conservation applied to a cluster aggregate — use assertClusterINV1Conservation, which checks all twelve buckets",
 						name, fset.Position(call.Pos()).Line)
 				}
@@ -537,6 +605,96 @@ func TestINV1_NoInstanceHelperOnClusterMetrics(t *testing.T) {
 	}
 	if scanned == 0 {
 		t.Fatal("scanned no test files — the directory walk is broken, so this test proves nothing")
+	}
+}
+
+// TestINV1_AggregateLocalDetection proves the alias resolution in
+// TestINV1_NoInstanceHelperOnClusterMetrics works, since that guard has nothing to
+// find in a clean tree and would otherwise pass whether or not it functioned.
+func TestINV1_AggregateLocalDetection(t *testing.T) {
+	src := `package p
+func f() {
+	m := cs.AggregatedMetrics()
+	assertInstanceINV1Conservation(t, m, 5, "should be flagged")
+}`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "fixture.go", src, 0)
+	if err != nil {
+		t.Fatalf("cannot parse fixture: %v", err)
+	}
+
+	aggregateLocals := map[string]bool{}
+	ast.Inspect(file, func(n ast.Node) bool {
+		assign, ok := n.(*ast.AssignStmt)
+		if !ok {
+			return true
+		}
+		for i, lhs := range assign.Lhs {
+			id, ok := lhs.(*ast.Ident)
+			if !ok || i >= len(assign.Rhs) {
+				continue
+			}
+			if isAggregateMetricsCall(assign.Rhs[i]) {
+				aggregateLocals[id.Name] = true
+			}
+		}
+		return true
+	})
+	if !aggregateLocals["m"] {
+		t.Error("alias resolution missed `m := cs.AggregatedMetrics()`, so the guard would not flag the idiomatic violation")
+	}
+}
+
+// TestNewClusterLedger_ReadsEachBucketOnce pins newClusterLedger's field-to-source
+// mapping. Nothing else can: two buckets that are zero together in every fixture
+// could be swapped, or one read twice and another not at all, and every conservation
+// assertion in the tree would still pass. Checking that each of the twelve sources
+// appears exactly once in the constructor catches that class of typo.
+func TestNewClusterLedger_ReadsEachBucketOnce(t *testing.T) {
+	const file = "inv1_conservation_test.go"
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, file, nil, 0)
+	if err != nil {
+		t.Fatalf("cannot parse %s: %v", file, err)
+	}
+
+	var body ast.Node
+	ast.Inspect(parsed, func(n ast.Node) bool {
+		fn, ok := n.(*ast.FuncDecl)
+		if ok && fn.Name.Name == "newClusterLedger" {
+			body = fn.Body
+			return false
+		}
+		return true
+	})
+	if body == nil {
+		t.Fatal("newClusterLedger not found — this test needs updating alongside the rename")
+	}
+
+	counts := map[string]int{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		expr, ok := n.(ast.Expr)
+		if !ok {
+			return true
+		}
+		if name, ok := bucketNameOf(expr); ok {
+			counts[name]++
+			// Do not descend: an accessor call would otherwise also be counted via
+			// its own selector.
+			return false
+		}
+		return true
+	})
+
+	// The twelve sources, in the same order as clusterLedgerTerms.
+	for i, source := range []string{
+		"CompletedRequests", "StillQueued", "StillRunning", "DroppedUnservable",
+		"TimedOutRequests", "RoutingRejections", "GatewayQueueDepth", "GatewayQueueShed",
+		"GatewayQueueRejected", "GatewayEvicted", "GatewayExpired", "EncodeRoutingRejections",
+	} {
+		if got := counts[source]; got != 1 {
+			t.Errorf("newClusterLedger reads %s %d times, want exactly 1 (bucket %q)", source, got, clusterLedgerTerms[i])
+		}
 	}
 }
 

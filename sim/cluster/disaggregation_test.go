@@ -247,7 +247,7 @@ func TestDisaggregation_INV1Conservation(t *testing.T) {
 		t.Errorf("INV-1: CompletedRequests = %d, want 5 (possible double-counting of sub-requests)",
 			metrics.CompletedRequests)
 	}
-	assertClusterINV1Conservation(t, cs, 5, cs.RejectedRequests(), "disaggregated mode")
+	assertClusterINV1Conservation(t, cs, 5, noRejections, "disaggregated mode")
 }
 
 func TestDisaggregation_INV1Conservation_BoundedHorizon(t *testing.T) {
@@ -264,7 +264,7 @@ func TestDisaggregation_INV1Conservation_BoundedHorizon(t *testing.T) {
 
 	// All 10 requests should have arrived within the horizon (last arrives at ~900000 μs).
 	// The pdInTransfer correction ensures requests mid-transfer are counted in StillRunning.
-	assertClusterINV1Conservation(t, cs, 10, cs.RejectedRequests(), "bounded horizon")
+	assertClusterINV1Conservation(t, cs, 10, noRejections, "bounded horizon")
 	// Verify pdInTransfer accounting is non-negative (no over-subtraction)
 	pdInTransfer := cs.pdPrefillCompletedCount - cs.pdDecodeCompletedCount - cs.droppedAtDecodeKV - len(cs.pendingDecodeCompletions)
 	if pdInTransfer < 0 {
@@ -285,7 +285,7 @@ func TestDisaggregation_DecodeOnlyBatchKVPressure(t *testing.T) {
 	mustRun(t, cs)
 
 	// Under tight KV pressure, some requests may be dropped — conservation must hold
-	assertClusterINV1Conservation(t, cs, 5, cs.RejectedRequests(), "KV pressure")
+	assertClusterINV1Conservation(t, cs, 5, noRejections, "KV pressure")
 }
 
 func newShortRequests(n int) []*sim.Request {
@@ -326,7 +326,7 @@ func TestDisaggregation_DroppedAtDecodeKV(t *testing.T) {
 	}
 
 	// INV-1 conservation must hold even when decode drops occur
-	assertClusterINV1Conservation(t, cs, 4, cs.RejectedRequests(), "decode KV drops")
+	assertClusterINV1Conservation(t, cs, 4, noRejections, "decode KV drops")
 }
 
 // TestDisaggregation_DroppedParent_NotInLatencyMaps verifies issue #1511 end to end:
@@ -390,7 +390,7 @@ func TestDisaggregation_DroppedParent_NotInLatencyMaps(t *testing.T) {
 	if m.DroppedUnservable == 0 {
 		t.Error("DroppedUnservable = 0, expected the decode-side drops to be counted")
 	}
-	assertClusterINV1Conservation(t, cs, 4, cs.RejectedRequests(), "no-token drop exclusion (#1511)")
+	assertClusterINV1Conservation(t, cs, 4, noRejections, "no-token drop exclusion (#1511)")
 }
 
 // Verifies INV-PD-4 (phase causality) for every parent request: the chain
@@ -515,7 +515,7 @@ func TestDisaggregation_BackwardCompatibility(t *testing.T) {
 	}
 
 	// INV-1: Conservation
-	assertClusterINV1Conservation(t, cs, 10, cs.RejectedRequests(), "non-disaggregated backward compat")
+	assertClusterINV1Conservation(t, cs, 10, noRejections, "non-disaggregated backward compat")
 }
 
 func TestDisaggregation_PerPoolScorerConfigs(t *testing.T) {
@@ -630,7 +630,7 @@ func TestPDDisagg_OneOutputToken_CompletesWith1Token(t *testing.T) {
 
 	metrics := cs.AggregatedMetrics()
 	// INV-1: all requests accounted for.
-	assertClusterINV1Conservation(t, cs, 1, cs.RejectedRequests(), "1-output PD request")
+	assertClusterINV1Conservation(t, cs, 1, noRejections, "1-output PD request")
 	// The request must produce exactly 1 output token — not 0 (hung) or 2+ (phantom decode step).
 	if metrics.TotalOutputTokens != 1 {
 		t.Errorf("TotalOutputTokens = %d, want 1 (off-by-one would produce 2)", metrics.TotalOutputTokens)
@@ -680,7 +680,7 @@ func TestPrefixThreshold_BelowThresholdNotDisaggregated(t *testing.T) {
 			len(cs.parentRequests), threshold)
 	}
 	// INV-1: below-threshold requests route through RoutingDecisionEvent; verify all complete.
-	assertClusterINV1Conservation(t, cs, len(requests), cs.RejectedRequests(), "below-threshold")
+	assertClusterINV1Conservation(t, cs, len(requests), noRejections, "below-threshold")
 }
 
 // TestPrefixThreshold_AboveThresholdDisaggregated verifies BC-PD-21 at the cluster level:
@@ -2055,7 +2055,7 @@ func TestDisaggregation_PD_SessionManager_GeneratesFollowUps(t *testing.T) {
 	}
 
 	// INV-1 conservation
-	assertClusterINV1Conservation(t, cs, 4, cs.RejectedRequests(), "PD SessionManager follow-ups")
+	assertClusterINV1Conservation(t, cs, 4, noRejections, "PD SessionManager follow-ups")
 }
 
 // TestDisaggregation_PD_SessionManager_ContextAccumulation verifies that
@@ -2171,7 +2171,7 @@ func TestDisaggregation_PD_SessionManager_ContextAccumulation(t *testing.T) {
 	}
 
 	// INV-1 conservation
-	assertClusterINV1Conservation(t, cs, 2, cs.RejectedRequests(), "PD SessionManager context accumulation")
+	assertClusterINV1Conservation(t, cs, 2, noRejections, "PD SessionManager context accumulation")
 }
 
 // TestDisaggregation_NonDisaggRoutedToDecodePoolOnly verifies P3 fix: when PDDecider="never"
@@ -2207,7 +2207,7 @@ func TestDisaggregation_NonDisaggRoutedToDecodePoolOnly(t *testing.T) {
 	}
 
 	// INV-1 conservation still holds
-	assertClusterINV1Conservation(t, cs, numRequests, cs.RejectedRequests(), "non-disagg decode-only routing")
+	assertClusterINV1Conservation(t, cs, numRequests, noRejections, "non-disagg decode-only routing")
 }
 
 // TestDisaggregation_DecodeInstancePreSelected verifies P1 fix: the decode instance is

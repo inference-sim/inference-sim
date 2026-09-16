@@ -198,7 +198,7 @@ func TestInstanceLifecycle_RedirectDrainPreservesConservation(t *testing.T) {
 		t.Fatalf("Run() failed: %v", err)
 	}
 
-	assertClusterINV1Conservation(t, cs, numSeeded, cs.RejectedRequests(), "drain redirect")
+	assertClusterINV1Conservation(t, cs, numSeeded, noRejections, "drain redirect")
 
 	m := cs.AggregatedMetrics()
 	if m.CompletedRequests != numSeeded {
