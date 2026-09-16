@@ -63,12 +63,6 @@ fi
 # miss.
 BODY=$(tr -d '\r' < "$BODY_FILE")
 
-# Kept before fence-stripping. The `*_seen` signals below are computed against THIS, deliberately:
-# they answer "did the author try to declare one", which must stay true even when the fence logic
-# (or an unclosed fence) hides the declaration from the extractor. That mismatch is exactly what
-# the caller warns on, so computing them on the stripped body would silence the one signal that
-# catches an extraction failure (#1723).
-RAW_BODY="$BODY"
 FENCE_STATE=$(mktemp)
 
 # FENCED CODE BLOCKS ARE STRIPPED FIRST, and this is not hygiene — it is a correctness fix.
@@ -90,9 +84,14 @@ FENCE_STATE=$(mktemp)
 # Run lengths are counted in a loop rather than with an interval regex (`{3,}`), because interval
 # expressions are not portable to the BSD awk this suite also runs under.
 #
-# NOTE the residual, which is why the two `*_seen` signals below are computed on the UNSTRIPPED
-# body: a genuinely UNCLOSED fence still swallows everything after it, because that is what
-# CommonMark says it means. No parser can fix that — only a warning can surface it.
+# NOTE the residual: a genuinely UNCLOSED fence still swallows everything after it, because that is
+# what CommonMark says it means, and no parser can fix that. It is reported instead — see
+# `unclosed_fence` below, which is why the caller can refuse rather than seed a guess.
+#
+# The two `*_seen` signals are computed on the STRIPPED body, i.e. on what the author actually
+# declared in visible content. Computing them on the raw body conflated "declared" with "quoted an
+# example", and the caller turned that into a hard error refusing legitimate deliveries (#1723
+# review, F2).
 BODY=$(printf '%s\n' "$BODY" | awk '
   function runlen(s, ch,   n) { n = 0; while (substr(s, n + 1, 1) == ch) n++; return n }
   {

@@ -186,11 +186,10 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantPlan2:   "false",
 		},
 		{
-			// Only a fenced section, so nothing is DECLARED — but heading_seen is computed on the
-			// UNSTRIPPED body and so reports true. That is deliberate: heading_seen answers "did the
-			// author write one somewhere", which is what makes the caller warn instead of silently
-			// basing on the default branch. A purely illustrative fence therefore costs one warning,
-			// which is the right trade against a silent wrong base (#1723 review).
+			// Only a fenced section, so nothing is declared AND nothing is seen: both are computed
+			// on the stripped body, so quoting the template is silent rather than warning. An
+			// earlier revision computed them on the raw body, which made an illustrative fence
+			// indistinguishable from a real declaration (#1723 review, F2).
 			name: "a body whose ONLY Target branch section is fenced declares nothing and is not SEEN",
 			body: "Here is the template:\n\n" +
 				"```markdown\n## Target branch\n\n`feature/example`\n```\n",
