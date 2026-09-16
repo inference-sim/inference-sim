@@ -37,7 +37,7 @@ Then leave. Every phase posts a comment, so the whole delivery history is readab
 ```
 /approve-issue-for-pr-delivery
   │
-  ├─ Deliver — Implement    branch + draft PR on deliver/issue-N FIRST, then tests, code
+  ├─ Deliver — Implement    workflow pushes deliver/issue-N; agent opens draft PR, then code
   │      ↓
   ├─ Deliver — Verify       build/test/lint → archon review → methodology review
   │      │                  ready-for-merge → STOP
@@ -68,7 +68,8 @@ for review when it is done. Three things follow from that ordering:
   to say so in the body it opens, so an abandoned delivery is recognisable without reading the run
   log.
 
-Because a PR now exists from the start, an open PR is no longer evidence that anything was built.
+Because the agent opens a PR before it writes anything, an open PR is no longer evidence that
+anything was built.
 The hand-off to verify is gated on the branch actually carrying a file change against its base;
 an agent that produced nothing gets a comment on the sub-issue saying exactly that, instead of
 handing an empty PR to a two-hour review.

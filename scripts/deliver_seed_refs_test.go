@@ -264,6 +264,45 @@ func TestDeliverSeedRefs(t *testing.T) {
 			wantPlan2:   "false",
 		},
 
+		{
+			// #1723 REVIEW, list-item fence. CommonMark measures fence indent RELATIVE to the
+			// containing block, so a fence quoted under a bullet is indented 4+ from the margin and
+			// is still a real fence. The `ind <= 3` rule (added to fix the top-level indented-code
+			// case) therefore stopped stripping it, and the EXAMPLE's ref and plan line leaked out:
+			// `feature/EXAMPLE-IN-LIST` became the delivery's base with no warning.
+			//
+			// The two cases are irreconcilable in a line-oriented fence rule, so the indent
+			// constraint lives on the heading and declaration patterns instead: a heading indented
+			// 4+ is not a heading, and a line indented 4+ is not a declaration.
+			name: "a fence quoted under a list item cannot promote its example to the base",
+			body: "## Target branch\n\n`feature/real`\n\n## Notes\n\n- Template looks like:\n\n" +
+				"    ```\n    ## Target branch\n\n    `feature/EXAMPLE-IN-LIST`\n\n" +
+				"    archon-plan: specs/000-EXAMPLE/x.plan.json\n    ```\n",
+			wantBranch:  "feature/real",
+			wantPlan:    "",
+			wantHeading: "true",
+			wantPlan2:   "false",
+		},
+		{
+			// The same rule, isolated: an indented declaration is not a declaration. Without this a
+			// quoted plan path could be seeded into the PR body and resolved by the dist ratchet.
+			name:        "an indented archon-plan line is not a declaration",
+			body:        "Example:\n\n    archon-plan: specs/000-EXAMPLE/x.plan.json\n",
+			wantBranch:  "",
+			wantPlan:    "",
+			wantHeading: "false",
+			wantPlan2:   "false",
+		},
+		{
+			// And an indented heading is not a heading, so it must not open a section either.
+			name:        "an indented Target branch heading is not a heading",
+			body:        "Example:\n\n    ## Target branch\n\n    `feature/EXAMPLE`\n",
+			wantBranch:  "",
+			wantPlan:    "",
+			wantHeading: "false",
+			wantPlan2:   "false",
+		},
+
 		// --- heading present but unreadable (review finding on #1723) ---
 		{
 			// The strict section pattern requires the heading stand alone on its line, so this
