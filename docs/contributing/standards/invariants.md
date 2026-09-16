@@ -20,40 +20,42 @@ Resolvable does not mean restated in full. Where a design plan is already author
 
 | Group | What it means | If it is violated |
 |---|---|---|
-| **Run-level** | A property of the whole run's accounting or output. Holds for every configuration. | The simulator is wrong, wherever the bug lives. |
+| **Run-level** | A property of the whole run's accounting, output, or forward progress. Applies to any run of a configuration it is defined for, rather than to one subsystem. | The simulator is wrong, wherever the bug lives. |
 | **Subsystem** | Scoped to one subsystem or one optional feature. | That subsystem is wrong; elsewhere the invariant is not applicable. |
 | **Code-boundary** *(cross-cutting)* | A rule about which code may read or do what — not a statement about simulation state. | The code is structurally wrong even if today's output looks right. |
 
-The first two grade an invariant by **scope**. Code-boundary is a different axis — a *kind* of property — so it is deliberately **not** a rung between them: its members are listed together because a contributor needs to find them as a set, and each states its own scope. `INV-L6` is the same kind but is filed under LoRA because it is feature-scoped, and `INV-P2-1`'s "the global `SimConfig` is never mutated" clause is a code-boundary rule inside a subsystem entry. Grouping is a reading aid, not a taxonomy with a single ordering.
+The first two grade by **scope**; code-boundary grades by *kind*, so it sits alongside them rather than between them, and code-boundary rules also appear inside subsystem entries (`INV-L6`, and `INV-P2-1`'s no-global-mutation clause).
 
-Grouping is also **orthogonal to the hypothesis-family mapping** below: the family says which experimental campaign validates an invariant, the group says how far its blast radius reaches.
+Grouping is **orthogonal to the hypothesis-family mapping** below: the family says which experimental campaign validates an invariant, the group says how far its blast radius reaches.
 
 **Hypothesis family mapping:** INV-1 through INV-3, INV-5, INV-6, INV-10 (session causality), and INV-13 (run/replay parity) belong to the **Scheduler invariants (safety/liveness)** family. INV-4 (KV cache conservation), INV-7 (signal freshness), INV-8 (work-conserving property), INV-9 (oracle knowledge boundary), INV-11 (session completeness), and INV-12 (Phase 1 completeness under priority preemption) belong to the **Structural model** family. The PD disaggregation invariants (INV-PD-*) and pool/transfer invariants (INV-P2-*) below are feature-scoped structural invariants for disaggregated serving.
 
 ## Index
+
+Ordered by ID, since the common use is resolving an ID seen in code.
 
 | ID | Group | Subsystem |
 |---|---|---|
 | [INV-1](#inv-1-request-conservation) Request conservation | Run-level | — |
 | [INV-2](#inv-2-request-lifecycle) Request lifecycle | Run-level | — |
 | [INV-3](#inv-3-clock-monotonicity) Clock monotonicity | Run-level | — |
+| [INV-4](#inv-4-kv-cache-conservation) KV cache conservation | Subsystem | KV cache |
 | [INV-5](#inv-5-causality) Causality | Run-level | — |
 | [INV-6](#inv-6-determinism) Determinism | Run-level | — |
-| [INV-8](#inv-8-work-conserving-property) Work-conserving property | Run-level | — |
-| [INV-13](#inv-13-runreplay-parity) Run/replay parity | Run-level | — |
-| [INV-9](#inv-9-oracle-knowledge-boundary) Oracle knowledge boundary | Code-boundary | control plane |
-| [INV-A2](#inv-a2-placement-failure-visibility) Placement failure visibility | Code-boundary | autoscaler / actuator |
-| [INV-4](#inv-4-kv-cache-conservation) KV cache conservation | Subsystem | KV cache |
-| [INV-12](#inv-12-phase-1-completeness-under-priority-preemption) Phase 1 completeness | Subsystem | batch formation |
 | [INV-7](#inv-7-signal-freshness-hierarchy) Signal freshness hierarchy | Subsystem | routing / observability |
-| [INV-A](#inv-a-gpu-conservation) GPU conservation | Subsystem | cluster placement |
-| [INV-W3](#inv-w3-cohort-expansion-purity) Cohort expansion purity | Subsystem | workload generation |
+| [INV-8](#inv-8-work-conserving-property) Work-conserving property | Run-level | — |
+| [INV-9](#inv-9-oracle-knowledge-boundary) Oracle knowledge boundary | Code-boundary | control plane |
 | [INV-10](#inv-10-session-causality) Session causality | Subsystem | sessions |
 | [INV-11](#inv-11-session-completeness) Session completeness | Subsystem | sessions |
+| [INV-12](#inv-12-phase-1-completeness-under-priority-preemption) Phase 1 completeness | Subsystem | batch formation |
+| [INV-13](#inv-13-runreplay-parity) Run/replay parity | Run-level | — |
+| [INV-A](#inv-a-gpu-conservation) GPU conservation | Subsystem | cluster placement |
+| [INV-A2](#inv-a2-placement-failure-visibility) Placement failure visibility | Code-boundary | autoscaler / actuator |
 | [INV-BC-DP1](#inv-bc-dp1-dense-dp1-step-time-byte-identity) Dense DP=1 step-time byte-identity | Subsystem | latency model |
 | [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane — *stated in the LoRA design plan; pointer lines here* | Subsystem | LoRA |
-| [INV-PD-1 … INV-PD-6b](#pd-disaggregation) PD disaggregation | Subsystem | PD |
 | [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
+| [INV-PD-1 … INV-PD-6b](#pd-disaggregation) PD disaggregation | Subsystem | PD |
+| [INV-W3](#inv-w3-cohort-expansion-purity) Cohort expansion purity | Subsystem | workload generation |
 
 ---
 
@@ -83,7 +85,7 @@ These hold for every configuration. A violation is a simulator bug regardless of
 
 - `assertINV1Conservation` (`sim/cluster/disaggregation_test.go`) — a *shared* five-term cluster-level helper with several callers, so it is the highest-leverage one to fix.
 - `clusterConservationHolds` (`cmd/dp_placement_test.go`) — five-term, against cluster aggregate stdout.
-- Inline three- and four-term cluster-level assertions in `sim/cluster/cluster_test.go`, one of which carries a comment describing INV-1 as having eight terms with three cluster-only ones — stale against the twelve/seven above.
+- Inline three- and four-term cluster-level assertions in `sim/cluster/cluster_test.go`.
 
 Replacing these with one shared twelve-term helper is #1720; this registry entry is the statement it should be generated from.
 

@@ -715,7 +715,7 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 ### Standards (what rules apply)
 
 - `docs/contributing/standards/rules.md`: **23 antipattern rules** (R1-R23) — each with evidence, checks, enforcement locations
-- `docs/contributing/standards/invariants.md`: the invariant registry — **13 core invariants** (INV-1 through INV-13) plus INV-A, INV-A2, INV-W3, INV-BC-DP1, the LoRA family (INV-L1–INV-L7, by pointer), PD disaggregation (INV-PD-*) and pool/transfer (INV-P2-*). Grouped into three tiers (run-level / architectural boundaries / subsystem). **Every `INV-*` ID cited in `sim/` or `cmd/` is resolvable from it** (#1721) — with verification strategies
+- `docs/contributing/standards/invariants.md`: the invariant registry — **13 core invariants** (INV-1 through INV-13) plus INV-A, INV-A2, INV-W3, INV-BC-DP1, the LoRA family (INV-L1–INV-L7, by pointer), PD disaggregation (INV-PD-*) and pool/transfer (INV-P2-*). Grouped by scope (run-level, subsystem) plus a cross-cutting code-boundary group. **Every `INV-*` ID cited in `sim/` or `cmd/` is resolvable from it** (#1721) — with verification strategies
 - `docs/contributing/standards/principles.md`: **Engineering principles** — separation of concerns, interface design, BDD/TDD
 - `docs/contributing/standards/agent-trust.md`: **Agent trust boundaries** — three trust tiers (Trusted, Verify-after, Never-trust) for agent operations, with known failure modes
 

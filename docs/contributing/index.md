@@ -39,7 +39,7 @@ See [CONTRIBUTING.md](https://github.com/inference-sim/inference-sim/blob/main/C
 | Document | Covers |
 |----------|--------|
 | [Antipattern Rules (R1-R23)](standards/rules.md) | 23 rules, each tracing to a real bug |
-| [System Invariants](standards/invariants.md) | Properties that must always hold — every `INV-*` ID cited in code, in three tiers |
+| [System Invariants](standards/invariants.md) | Properties that must always hold — every `INV-*` ID cited in code, grouped by scope |
 | [Engineering Principles](standards/principles.md) | Separation of concerns, interface design, BDD/TDD |
 | [Experiment Standards](standards/experiments.md) | Hypothesis families, rigor requirements |
 | [Agent Trust Boundaries](standards/agent-trust.md) | Three trust tiers for agent operations |
