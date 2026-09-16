@@ -1947,9 +1947,15 @@ var oracleReadPatterns = []string{"OutputTokens", "completionProgressIndex"}
 // router_state.go, routing_nohit_lru_scorer.go and routing_precise_prefix_scorer.go,
 // two of which are scorers — the class already covered — so the next scorer added
 // would have escaped silently too (#1720, Finding 3).
-// Not exhaustive over sim/: files whose names do not match a pattern below still
-// have to be added by hand. sim/saturation.go is here because its value gates
-// gateway dispatch, and it is clean today.
+// Not exhaustive over sim/: files whose names do not match a pattern below still have
+// to be added by hand. sim/saturation.go is here because its value gates gateway
+// dispatch, and it is clean today.
+//
+// Deliberately out of scope: sim/ subpackages. sim/workload/ generates requests rather
+// than deciding whether to admit or route them, so it holds no servability decision for
+// INV-9 to constrain — it is the source of the oracle, not a consumer of it. sim/latency/
+// and sim/kv/ are likewise execution-side. Only sim/cluster/ contains control-plane code,
+// and it is scanned by the explicit list further down.
 var simControlPlaneGlobs = []string{
 	"routing*.go",
 	"admission*.go",
@@ -2000,8 +2006,11 @@ func resolveSimControlPlaneFiles(t *testing.T) []string {
 // batch_formation.go. Flagging those would train contributors to describe the rule
 // obliquely, which is worse than not documenting it.
 //
-// Falls back to the raw source if the input does not parse as Go (a synthetic
-// fixture, or a file mid-edit) — over-reporting is the safe direction for this check.
+// go/scanner is a lexer, not a parser, so it accepts a fragment (a single line, a
+// snippet with no package clause) and only reports genuinely malformed tokens — an
+// unterminated string or an illegal character. On any such error this returns the raw
+// source unchanged: over-reporting a violation is the safe direction here, since a
+// missed one is what INV-9 exists to prevent.
 func stripGoComments(src string) string {
 	var sc scanner.Scanner
 	fset := token.NewFileSet()

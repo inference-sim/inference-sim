@@ -210,23 +210,36 @@ func TestFlowControlAdmission_INV1_Conservation(t *testing.T) {
 	})
 
 	// Scenario (c): tiny global capacity to force gateway queue overflow.
-	// All requests have batch SLOClass (sheddable, priority -1) so cross-band shedding can evict.
+	//
+	// This is the only conservation fixture that drives the gateway_queue_rejected
+	// bucket, so it carries an explicit non-vacuity gate below: without it the bucket
+	// is zero and the twelve-term assertion would not notice the term being dropped
+	// from the ledger — which is exactly how gateway_expired stayed missing (#1720).
+	//
+	// Adding that gate showed the scenario had never overflowed. It used the
+	// "utilization" detector with a 0.8 KV threshold against ample KV, so the detector
+	// never reported saturation, every request bypassed the queue, and
+	// GatewayQueueRejected was 0 at any arrival spacing — the name and the comment
+	// described a path the fixture did not reach. Switched to concurrency gating, which
+	// does fill the queue. The utilization detector is still covered by the sibling
+	// scenarios above.
 	t.Run("conservation_with_overflow", func(t *testing.T) {
 		config := newTestDeploymentConfig(2)
 		config.FlowControlEnabled = true
-		config.FlowControlDetector = "utilization"
+		config.FlowControlDetector = "concurrency"
 		config.FlowControlDispatchOrder = "priority"
-		config.FlowControlMaxQueueDepth = 2 // tiny global limit
-		config.FlowControlQueueDepthThreshold = 3
-		config.FlowControlKVCacheUtilThreshold = 0.8
+		config.FlowControlMaxConcurrency = 1 // one in flight: later arrivals must queue
+		config.FlowControlMaxQueueDepth = 2  // tiny global limit: the queue then overflows
 
 		requests := make([]*sim.Request, 10)
 		for i := 0; i < 10; i++ {
 			requests[i] = &sim.Request{
-				ID:           fmt.Sprintf("r%d", i),
-				TenantID:     fmt.Sprintf("tenant-%d", i%2),
-				SLOClass:     "standard", // non-sheddable: overflow means rejection
-				ArrivalTime:  int64(i * 100_000),
+				ID:       fmt.Sprintf("r%d", i),
+				TenantID: fmt.Sprintf("tenant-%d", i%2),
+				SLOClass: "standard", // non-sheddable: overflow means rejection
+				// Closely spaced: at the original 100ms spacing each request completed
+				// before the next arrived, so nothing ever queued.
+				ArrivalTime:  int64(i)*100 + 100,
 				InputTokens:  make([]sim.TokenID, 100),
 				OutputTokens: make([]sim.TokenID, 50),
 				MaxOutputLen: 200,
@@ -235,6 +248,10 @@ func TestFlowControlAdmission_INV1_Conservation(t *testing.T) {
 
 		cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 		mustRun(t, cs)
+
+		if cs.GatewayQueueRejected() == 0 {
+			t.Fatal("no request was rejected from the gateway queue — the fixture no longer overflows, so the gateway_queue_rejected term of the assertion below is vacuous")
+		}
 		assertClusterINV1Conservation(t, cs, len(requests), cs.RejectedRequests(), "flow control admission")
 	})
 }
