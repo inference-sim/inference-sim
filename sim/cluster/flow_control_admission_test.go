@@ -83,33 +83,6 @@ func TestFlowControlAdmission_NilQueue_Panics(t *testing.T) {
 	NewFlowControlAdmission(nil)
 }
 
-// verifyINV1Conservation checks the full INV-1 request conservation invariant.
-func verifyINV1Conservation(t *testing.T, cs *ClusterSimulator, requests []*sim.Request) {
-	t.Helper()
-	m := cs.AggregatedMetrics()
-	numRequests := len(requests)
-	injected := numRequests - cs.RejectedRequests()
-	rejected := cs.RejectedRequests()
-
-	if numRequests != injected+rejected {
-		t.Errorf("INV-1 pipeline: num_requests=%d != injected=%d + rejected=%d",
-			numRequests, injected, rejected)
-	}
-
-	gwDepth := cs.GatewayQueueDepth()
-	gwShed := cs.GatewayQueueShed()
-	gwRejected := cs.GatewayQueueRejected()
-
-	conserved := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable +
-		m.TimedOutRequests + cs.RoutingRejections() + gwDepth + gwShed + gwRejected
-	if injected != conserved {
-		t.Errorf("INV-1 conservation: injected=%d != completed=%d + queued=%d + running=%d + "+
-			"dropped=%d + timedOut=%d + routingRej=%d + gwDepth=%d + gwShed=%d + gwRejected=%d (sum=%d)",
-			injected, m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
-			m.TimedOutRequests, cs.RoutingRejections(), gwDepth, gwShed, gwRejected, conserved)
-	}
-}
-
 func TestFlowControlAdmission_SeqCounterIncrementsMonotonically(t *testing.T) {
 	pm := sim.DefaultSLOPriorityMap()
 	q := NewGatewayQueue("priority", 0, pm)
@@ -202,7 +175,7 @@ func TestFlowControlAdmission_INV1_Conservation(t *testing.T) {
 
 		cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 		mustRun(t, cs)
-		verifyINV1Conservation(t, cs, requests)
+		assertClusterINV1Conservation(t, cs, len(requests), cs.RejectedRequests(), "flow control admission")
 	})
 
 	// Scenario (b): FlowControl + TenantBudgets combined.
@@ -233,7 +206,7 @@ func TestFlowControlAdmission_INV1_Conservation(t *testing.T) {
 
 		cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 		mustRun(t, cs)
-		verifyINV1Conservation(t, cs, requests)
+		assertClusterINV1Conservation(t, cs, len(requests), cs.RejectedRequests(), "flow control admission")
 	})
 
 	// Scenario (c): tiny global capacity to force gateway queue overflow.
@@ -262,6 +235,6 @@ func TestFlowControlAdmission_INV1_Conservation(t *testing.T) {
 
 		cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 		mustRun(t, cs)
-		verifyINV1Conservation(t, cs, requests)
+		assertClusterINV1Conservation(t, cs, len(requests), cs.RejectedRequests(), "flow control admission")
 	})
 }
