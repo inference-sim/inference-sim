@@ -16,7 +16,7 @@ inference-sim/
 │   ├── observe_cmd.go         # `blis observe` command: flags --server-url, --model, --api-format (completions/chat), --unconstrained-output, --rtt-ms, --workload-spec/--rate; prefix string generation (buildPrefixStrings with FNV-seeded vocabulary); dispatch orchestrator with session support
 │   ├── convert.go             # `blis convert` subcommands (servegen, preset, inference-perf)
 │   ├── compose.go             # `blis compose` for merging v2 specs
-│   ├── hfconfig.go            # Catalog lookup of a model's config.json (read-only; refuses an uncatalogued model)
+│   ├── hfconfig.go            # Catalog LOCATION (--catalog / BLIS_CATALOG, no default and no search path — #1731) and read-only lookup of a model's config.json within it (refuses an uncatalogued model)
 │   └── default_config.go      # defaults.yaml loading (includes GetHFRepo for HF repo name mapping)
 ├── sim/                       # Core single-instance simulator
 │   ├── config.go              # Module-scoped sub-config types (KVCacheConfig, BatchConfig, LatencyCoeffs, ModelHardwareConfig, PolicyConfig, WorkloadConfig) — composed into SimConfig via embedding (R16). Parallelism accessors: EffectiveMoEGroupSize (routed-expert COMPUTE group, TP·DP), EffectiveExpertShardGroupSize (routed-expert WEIGHT / dispatch group — widens to the EP group under expert parallelism, #1548), EffectiveEP / EffectiveEPGroupDP (the logical EP-group DP width that survives DP-as-placement, via WithExpertParallelGroupDP)
@@ -96,7 +96,7 @@ inference-sim/
 │   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods
 │   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore (pure data types, no sim/ dependency)
 │   └── summary.go             # TraceSummary, Summarize()
-├── model_configs/             # The model catalog: committed HuggingFace config.json files
+├── model_configs/             # A model catalog (one dir per model, each with its HuggingFace config.json). Located at run time via --catalog / BLIS_CATALOG (#1731); committed files
 ├── defaults.yaml              # Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
 ├── hardware_config.json       # GPU specifications
 ├── examples/                  # Example configuration files
