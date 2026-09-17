@@ -64,6 +64,7 @@ var (
 	defaultsFilePath          string    // Path to default constants - trained coefficients, default specs and workloads
 	catalogPath               string    // --catalog: model catalog root (one directory per model, each with config.json). No default; BLIS_CATALOG is the fallback (#1731)
 	modelConfigDir            string    // Resolved catalog entry directory containing config.json (side effect of resolveLatencyConfig)
+	resolvedCatalogRoot       string    // Catalog ROOT that produced this run's model config (side effect of resolveModelConfig); recorded as results-file provenance (#1732)
 	hwConfigPath              string    // Path to constants specific to hardware type (GPU)
 	workloadType              string    // Workload type (chatbot, summarization, contentgen, multidoc, distribution)
 	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
@@ -2902,7 +2903,11 @@ var runCmd = &cobra.Command{
 			}
 		}
 
-		if err := aggregated.EmitOutput(clusterOutput, metricsPath); err != nil {
+		// Catalog provenance (#1732): file-only, so it is passed as an EmitOutput option
+		// rather than mutated onto clusterOutput above — stdout must stay byte-identical
+		// (INV-6). Same shared helper on the replay path (INV-13).
+		if err := aggregated.EmitOutput(clusterOutput, metricsPath,
+			catalogProvenanceEmitOptions(metricsPath, resolvedCatalogRoot)...); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
