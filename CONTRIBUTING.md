@@ -264,7 +264,7 @@ When adding a new model configuration:
 
 1. Add an entry to the `defaults:` section with `GPU` and `tensor_parallelism`
 2. Add an `hf_repo` field mapping the BLIS model name (lowercase) to the case-sensitive HuggingFace repository path (e.g., `hf_repo: Qwen/Qwen3-14B`). This enables `--latency-model roofline` auto-fetch. Models without real HuggingFace repos (e.g., synthetic benchmarks) may omit `hf_repo` — document why with a YAML comment.
-3. If trained coefficients exist, add a corresponding entry to the `models:` list
+3. Nothing further is needed for latency: the trained-physics coefficients (`trained_physics_coefficients`) are a single global block shared by every model, not a per-model list. Add no other top-level section — `defaults.yaml` is decoded into a fixed struct (`cmd.Config`) with strict field checking (R10), so an unrecognized top-level key is a parse error, not an inert extra.
 
 ### Policy Template (lightest — ~3 files)
 
