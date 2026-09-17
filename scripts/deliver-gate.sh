@@ -8,6 +8,13 @@
 #   AGENT_VERDICT  GREEN | NOT-GREEN | MISSING
 #   DISMISSALS     none | open | unknown   (open = a correction dismissed a finding that the
 #                                           reviewer has not accepted; unknown = unreadable)
+#   MERGE_STATE    mergeable | conflicting | unknown
+#                                          (conflicting = the branch has merge conflicts with
+#                                           main, REST mergeable_state "dirty"; unknown = the
+#                                           mergeability could not be determined. The caller maps
+#                                           GitHub's mergeable_state into this domain — "behind"
+#                                           and every other non-dirty state map to mergeable,
+#                                           since only a true conflict blocks the merge, #1758.)
 #   ROUND          correction rounds already spent (non-negative integer)
 #   MAX_ROUNDS     hard cap on correction rounds (non-negative integer)
 #
@@ -43,7 +50,7 @@ emit() {
   exit 0
 }
 
-for var in CI_STATUS PLAN_GATE AGENT_VERDICT DISMISSALS ROUND MAX_ROUNDS; do
+for var in CI_STATUS PLAN_GATE AGENT_VERDICT DISMISSALS MERGE_STATE ROUND MAX_ROUNDS; do
   [[ -n "${!var:-}" ]] || usage "$var"
 done
 
@@ -71,6 +78,10 @@ esac
 case "$DISMISSALS" in
   none | open | unknown) ;;
   *) emit needs-human "unrecognised DISMISSALS '$DISMISSALS' — expected none, open, or unknown" ;;
+esac
+case "$MERGE_STATE" in
+  mergeable | conflicting | unknown) ;;
+  *) emit needs-human "unrecognised MERGE_STATE '$MERGE_STATE' — the mergeability derivation step needs to map GitHub's mergeable_state to mergeable, conflicting, or unknown" ;;
 esac
 
 # Rows 1 and 2: no usable evidence. Checked before anything else so that a GREEN review can
@@ -117,7 +128,20 @@ else
     # unreadable dismissal state is not evidence that there is nothing to accept.
     GREEN)
       case "$DISMISSALS" in
-        none) emit ready "CI passed, plan signal '$PLAN_GATE', and the review returned GREEN" ;;
+        # Row 5 — the only path to ready, and the one place the merge state can change the
+        # outcome. A conflicting branch cannot be merged (GitHub cannot compute its merge ref),
+        # so `ready-for-merge` on it is a stale label nobody can act on — #1758. It is NOT the
+        # GREEN-vs-blocking disagreement above: the review approved the code, not the
+        # mergeability, so it routes to a correction round (the agent merges main + resolves)
+        # by falling through to the round cap, rather than stopping at needs-human. `unknown`
+        # withholds the terminal verdict loudly rather than trusting an unverified mergeability.
+        none)
+          case "$MERGE_STATE" in
+            mergeable)   emit ready "CI passed, plan signal '$PLAN_GATE', and the review returned GREEN" ;;
+            conflicting) reason="the review returned GREEN but the branch has merge conflicts with main that must be resolved" ;;
+            *)           emit needs-human "every signal is green, but the branch's mergeability against main could not be determined, so it is not safe to mark ready" ;;
+          esac
+          ;;
         open) emit needs-human "every signal is green, but a correction dismissed a finding that the review has not accepted — a human needs to decide whether the dismissal stands" ;;
         *)    emit needs-human "every signal is green, but the dismissal state could not be read, so it is not known whether a dismissed finding is outstanding" ;;
       esac

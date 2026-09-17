@@ -833,3 +833,131 @@ func TestDeliveryHandoffDispatchesUseRetryScript(t *testing.T) {
 		})
 	}
 }
+
+// deliver-verify.yml must derive the branch's mergeability and feed it to the gate BEFORE the
+// gate decides (#1758). Without it a PR that conflicts with main — GitHub cannot compute its
+// merge ref — is invisible to the loop, which can then mark it `ready-for-merge`, a stale label
+// a human cannot act on. The gate itself refuses to mark a conflicting branch ready
+// (scripts/deliver_gate_test.go), but only if the signal reaches it, so this test guards the
+// wiring: a step derives mergeable_state, and the `Decide` step passes MERGE_STATE.
+//
+// Asserted as ORDER (derive before decide) and as an explicit gate ENV wiring, not mere
+// presence: a derivation step placed after the gate, or a MERGE_STATE the gate never receives,
+// would satisfy a `strings.Contains` check while leaving the conflict signal disconnected.
+func TestDeliverVerifyFeedsMergeStateToTheGate(t *testing.T) {
+	path := filepath.Join("..", ".github", "workflows", "deliver-verify.yml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				ID   string            `yaml:"id"`
+				Name string            `yaml:"name"`
+				Run  string            `yaml:"run"`
+				Env  map[string]string `yaml:"env"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(raw, &wf); err != nil {
+		t.Fatalf("parsing %s: %v", path, err)
+	}
+	job, ok := wf.Jobs["verify"]
+	if !ok {
+		t.Fatal("deliver-verify.yml has no `verify` job")
+	}
+
+	idxByID := func(id string) int {
+		for i, s := range job.Steps {
+			if s.ID == id {
+				return i
+			}
+		}
+		return -1
+	}
+
+	gate := idxByID("gate")
+	if gate < 0 {
+		t.Fatal("deliver-verify.yml has no step with `id: gate` calling the decision brain")
+	}
+	merge := idxByID("mergestate")
+	if merge < 0 {
+		t.Fatal("deliver-verify.yml has no step with `id: mergestate`. The verify phase must " +
+			"derive the branch's mergeability and feed it to the gate, or a PR conflicting with " +
+			"main is invisible to the loop and can be marked ready-for-merge (#1758)")
+	}
+	if merge > gate {
+		t.Errorf("the `mergestate` step is at index %d, AFTER the `gate` step at index %d — "+
+			"the merge signal must be derived before the gate decides", merge, gate)
+	}
+
+	// The derivation must actually read GitHub's mergeable_state.
+	if !strings.Contains(job.Steps[merge].Run, "mergeable_state") {
+		t.Error("the `mergestate` step never reads `.mergeable_state`, so it cannot tell a " +
+			"conflicting branch from a mergeable one")
+	}
+
+	// The gate must RECEIVE the derived signal, wired from the mergestate step's output.
+	got := job.Steps[gate].Env["MERGE_STATE"]
+	if got == "" {
+		t.Fatal("the `gate` step's env does not set MERGE_STATE — deliver-gate.sh requires it, so " +
+			"the gate would exit 2 (wiring error) on every round")
+	}
+	if !strings.Contains(got, "steps.mergestate.outputs") {
+		t.Errorf("the `gate` step's MERGE_STATE is %q, not wired from steps.mergestate.outputs; the "+
+			"gate would decide on a value unrelated to the branch's real mergeability", got)
+	}
+}
+
+// deliver-correct.yml's agent must bring the branch up to date with main and resolve conflicts
+// as part of its work (#1758). The gate routes a conflicting branch to this phase; if the prompt
+// never tells the agent to merge main and resolve, the round accomplishes nothing and the branch
+// stays conflicting until the round cap stops it at needs-human. This guards the prompt contract
+// the same way TestDeliverImplementPromptContract guards the implement prompt.
+func TestDeliverCorrectPromptResolvesMergeConflicts(t *testing.T) {
+	path := filepath.Join("..", ".github", "workflows", "deliver-correct.yml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Uses string `yaml:"uses"`
+				With struct {
+					Prompt string `yaml:"prompt"`
+				} `yaml:"with"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(raw, &wf); err != nil {
+		t.Fatalf("parsing %s: %v", path, err)
+	}
+	job, ok := wf.Jobs["correct"]
+	if !ok {
+		t.Fatal("deliver-correct.yml has no `correct` job")
+	}
+	var prompt string
+	for _, s := range job.Steps {
+		if strings.HasPrefix(s.Uses, "anthropics/claude-code-action") {
+			prompt = s.With.Prompt
+			break
+		}
+	}
+	if prompt == "" {
+		t.Fatal("deliver-correct.yml has no anthropics/claude-code-action step with a prompt")
+	}
+
+	required := []struct{ needle, why string }{
+		{"git merge", "the agent must merge to bring the branch up to date with main (#1758)"},
+		{"origin/main", "the merge target must be main, so a conflicting branch is updated against it"},
+		{"conflict", "the prompt must tell the agent to resolve merge conflicts, the whole point of #1758"},
+		{"needs-human", "an unresolvable conflict must stop for a human, never a forced or guessed resolution"},
+	}
+	for _, r := range required {
+		if !strings.Contains(prompt, r.needle) {
+			t.Errorf("the correct prompt is missing %q: %s", r.needle, r.why)
+		}
+	}
+}

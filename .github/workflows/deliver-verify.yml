@@ -874,6 +874,43 @@ jobs:
           echo "ROUND=$round"
           echo "value=$round" >> "$GITHUB_OUTPUT"
 
+      # #1758: a delivery PR that conflicts with main stalls silently. The gate reads CI, the
+      # archon plan and the review verdict — none of which see a git conflict — so it can mark an
+      # unmergeable PR ready-for-merge (GitHub cannot compute the merge ref, so that label is one
+      # a human cannot act on). Derive the mergeability here and feed it to the gate, which refuses
+      # `ready` on a conflicting branch and routes it to a correction round to merge main + resolve.
+      - name: Read the branch mergeability
+        id: mergestate
+        if: steps.paused.outputs.paused == 'false'
+        run: |
+          set -uo pipefail
+          # REST, not `gh pr view --json mergeable`, for the reason the rest of this file uses REST
+          # (see `Validate the target PR`): the field's availability must not depend on the
+          # runner's gh version. GitHub computes mergeability ASYNCHRONOUSLY, so a fresh push can
+          # report a null/`unknown` state for a few seconds — poll a handful of times before giving
+          # up rather than mislabelling a still-computing branch as unknown.
+          state=""
+          for attempt in 1 2 3 4 5; do
+            raw=$(gh api "/repos/$REPO/pulls/$PR" --jq '.mergeable_state // ""' 2>/dev/null || echo "")
+            if [[ -n "$raw" && "$raw" != "unknown" ]]; then
+              state="$raw"
+              break
+            fi
+            echo "mergeable_state is '${raw:-<empty>}' (attempt $attempt); waiting for GitHub to compute it"
+            sleep 3
+          done
+          # Map GitHub's mergeable_state into the gate's domain. Only a true conflict ("dirty")
+          # blocks the merge and must route to correction (#1758); "behind" and every other
+          # non-dirty state are mergeable as far as this loop is concerned. An unresolved/empty
+          # state is `unknown`, on which the gate withholds `ready` rather than trusting it.
+          case "$state" in
+            dirty) merge_state=conflicting ;;
+            "")    merge_state=unknown ;;
+            *)     merge_state=mergeable ;;
+          esac
+          echo "mergeable_state='$state' -> MERGE_STATE=$merge_state"
+          echo "state=$merge_state" >> "$GITHUB_OUTPUT"
+
       - name: Decide
         id: gate
         if: steps.paused.outputs.paused == 'false'
@@ -882,6 +919,7 @@ jobs:
           PLAN_GATE: ${{ steps.plan.outputs.gate }}
           AGENT_VERDICT: ${{ steps.verdict.outputs.value }}
           DISMISSALS: ${{ steps.dismissals_final.outputs.state }}
+          MERGE_STATE: ${{ steps.mergestate.outputs.state }}
           ROUND: ${{ steps.round.outputs.value }}
         # pipefail is essential: without it the pipeline reports tee's status, so the gate
         # exiting 2 on a wiring error would look like a successful step with no decision.
@@ -948,6 +986,7 @@ jobs:
             echo "| archon plan | \`${{ steps.plan.outputs.gate }}\` |"
             echo "| review verdict | \`${{ steps.verdict.outputs.value }}\` |"
             echo "| outstanding dismissals | \`${{ steps.dismissals_final.outputs.state }}\` |"
+            echo "| branch mergeability | \`${{ steps.mergestate.outputs.state }}\` |"
             echo "| correction rounds spent | ${{ steps.round.outputs.value }} of ${MAX_ROUNDS} |"
             echo "| verified commit | \`${{ steps.target.outputs.sha }}\` |"
             echo
