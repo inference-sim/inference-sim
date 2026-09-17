@@ -270,39 +270,13 @@ func TestNS6_MissingDeploymentFlagIsRefusedByName(t *testing.T) {
 // BC-5: byte-identity on the fully-specified path (INV-6)
 // ---------------------------------------------------------------------------
 
-// TestNS6_ByteIdentityAnchor_GoldenModelDeployment anchors #1733's acceptance criterion 4
-// ("stdout is byte-identical when --hardware/--tp match what defaults.yaml would have
-// supplied").
-//
-// The evidence is TestNoOpByteIdentity_AdapterBlindRunMatchesBaseline: its golden was
-// captured BEFORE this change, from a run that omitted both flags and let defaults.yaml
-// supply them, and it still matches now that the run passes them explicitly. That argument
-// only holds if the explicit pair equals the pair defaults.yaml recorded — which is what
-// this test checks, so the equivalence is machine-verified rather than asserted in prose.
-//
-// It reads defaults.yaml through loadDefaultsConfig (the surviving loader) rather than the
-// deleted GetDefaultSpecs, and is the ONLY remaining place the GPU/tensor_parallelism keys
-// are read at all — deliberately from a test, never from a run path.
-func TestNS6_ByteIdentityAnchor_GoldenModelDeployment(t *testing.T) {
-	const (
-		goldenModel = "qwen/qwen3-14b" // the model TestNoOpByteIdentity_... runs
-		wantGPU     = "H100"           // the --hardware that run now passes explicitly
-		wantTP      = 1                // the --tp that run now passes explicitly
-	)
-	cfg := loadDefaultsConfig("../defaults.yaml")
-	entry, ok := cfg.Defaults[goldenModel]
-	if !ok {
-		t.Fatalf("non-vacuity: defaults.yaml has no entry for %s, so the byte-identity "+
-			"anchor cannot be checked", goldenModel)
-	}
-	if entry.GPU != wantGPU || entry.TensorParallelism != wantTP {
-		t.Errorf("the byte-identity golden run must pass the deployment defaults.yaml used to "+
-			"infer: defaults.yaml says GPU=%q tp=%d, the golden run passes --hardware %s --tp %d. "+
-			"Update the flags in TestNoOpByteIdentity_AdapterBlindRunMatchesBaseline (and re-verify "+
-			"the golden) or update this anchor",
-			entry.GPU, entry.TensorParallelism, wantGPU, wantTP)
-	}
-}
+// #1768 removed TestNS6_ByteIdentityAnchor_GoldenModelDeployment, which lived here. It read
+// defaults.yaml's per-model GPU/tensor_parallelism keys to machine-verify that the explicit
+// --hardware H100 --tp 1 passed by TestNoOpByteIdentity_AdapterBlindRunMatchesBaseline equalled
+// what defaults.yaml would have inferred pre-#1733. Those keys are now deleted, so the
+// cross-check has no data left to read. The INV-6 evidence itself is undiminished and lives in
+// that byte-identity test: its golden (specs/007-lora-control-plane/testdata/baseline_noop.json)
+// was captured from a run that supplied NEITHER flag, and it still matches.
 
 // TestNS6_DeploymentFlagsRequiredOnRunAndReplay is the INV-13 half of BC-4: both commands
 // register the flags and both resolve through the same requireDeploymentFlags call inside
