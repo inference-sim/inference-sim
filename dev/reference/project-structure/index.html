@@ -2818,7 +2818,7 @@
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>│   ├── observe_cmd.go         # `blis observe` command: flags --server-url, --model, --api-format (completions/chat), --unconstrained-output, --rtt-ms, --workload-spec/--rate; prefix string generation (buildPrefixStrings with FNV-seeded vocabulary); dispatch orchestrator with session support
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│   ├── convert.go             # `blis convert` subcommands (servegen, preset, inference-perf)
 <a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│   ├── compose.go             # `blis compose` for merging v2 specs
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│   ├── hfconfig.go            # HuggingFace config resolution chain (--latency-model auto-fetch, caching)
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│   ├── hfconfig.go            # Catalog lookup of a model's config.json (read-only; refuses an uncatalogued model)
 <a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>│   └── default_config.go      # defaults.yaml loading (includes GetHFRepo for HF repo name mapping)
 <a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>├── sim/                       # Core single-instance simulator
 <a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>│   ├── config.go              # Module-scoped sub-config types (KVCacheConfig, BatchConfig, LatencyCoeffs, ModelHardwareConfig, PolicyConfig, WorkloadConfig) — composed into SimConfig via embedding (R16). Parallelism accessors: EffectiveMoEGroupSize (routed-expert COMPUTE group, TP·DP), EffectiveExpertShardGroupSize (routed-expert WEIGHT / dispatch group — widens to the EP group under expert parallelism, #1548), EffectiveEP / EffectiveEPGroupDP (the logical EP-group DP width that survives DP-as-placement, via WithExpertParallelGroupDP)
@@ -2898,7 +2898,7 @@
 <a id="__codelineno-0-91" name="__codelineno-0-91" href="#__codelineno-0-91"></a>│   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods
 <a id="__codelineno-0-92" name="__codelineno-0-92" href="#__codelineno-0-92"></a>│   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore (pure data types, no sim/ dependency)
 <a id="__codelineno-0-93" name="__codelineno-0-93" href="#__codelineno-0-93"></a>│   └── summary.go             # TraceSummary, Summarize()
-<a id="__codelineno-0-94" name="__codelineno-0-94" href="#__codelineno-0-94"></a>├── model_configs/             # Auto-fetched HuggingFace config.json files (gitignored)
+<a id="__codelineno-0-94" name="__codelineno-0-94" href="#__codelineno-0-94"></a>├── model_configs/             # The model catalog: committed HuggingFace config.json files
 <a id="__codelineno-0-95" name="__codelineno-0-95" href="#__codelineno-0-95"></a>├── defaults.yaml              # Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
 <a id="__codelineno-0-96" name="__codelineno-0-96" href="#__codelineno-0-96"></a>├── hardware_config.json       # GPU specifications
 <a id="__codelineno-0-97" name="__codelineno-0-97" href="#__codelineno-0-97"></a>├── examples/                  # Example configuration files

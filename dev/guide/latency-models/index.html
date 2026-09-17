@@ -3418,7 +3418,7 @@
 <p>The <code>LatencyModel</code> interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships two backends -- <strong>trained-physics</strong> (default, physics-informed roofline with MoE-aware corrections) and <strong>roofline</strong> (pure analytical) -- and the pluggable architecture supports adding custom backends.</p>
 <p><strong>Migration note:</strong> Three legacy backends have been removed (<code>blackbox</code>, <code>crossmodel</code>, <code>trained-roofline</code>). Use <code>--latency-model trained-physics</code> instead, which supersedes all three with improved accuracy and MoE support.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Trained-physics mode (default) — roofline × architecture-aware basis functions × learned corrections</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># Roofline mode — pure analytical estimation from model architecture (explicit flag)</span>
@@ -3442,7 +3442,7 @@
 </code></pre></div>
 <p>This auto-resolves both required inputs:</p>
 <ol>
-<li><strong>Model config</strong> -- checks <code>model_configs/</code> for a cached <code>config.json</code>, fetches from HuggingFace on miss</li>
+<li><strong>Model config</strong> -- reads the catalog entry at <code>model_configs/&lt;model&gt;/config.json</code>; a model with no entry is refused, naming that path (nothing is fetched)</li>
 <li><strong>Hardware config</strong> -- uses the bundled <code>hardware_config.json</code></li>
 </ol>
 <p><strong>Supported hardware:</strong> The bundled <code>hardware_config.json</code> includes specs for <strong>H100</strong> (80 GB HBM3, 989.5 TFLOPS BF16, 3.35 TB/s), <strong>H200</strong> (141 GB HBM3e, 989.5 TFLOPS BF16, 4.8 TB/s — same Hopper compute die as H100, more/faster memory), <strong>A100-SXM</strong> (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s), <strong>A100-80</strong> (alias for A100-SXM), and <strong>L40S</strong> (48 GB GDDR6, 362 TFLOPS BF16, 0.864 TB/s). To use a different GPU, add an entry to <code>hardware_config.json</code> with the required fields (<code>TFlopsPeak</code>, <code>BwPeakTBs</code>, <code>mfuPrefill</code>, <code>mfuDecode</code>, <code>MemoryGiB</code>), plus <code>IntraNodeBwGBps</code>/<code>InterNodeBwGBps</code> if instances on that GPU may span nodes (see <a href="#inter-node-network-cost-trained-physics-only">Inter-Node Network Cost</a>) and reference it via <code>--hardware &lt;name&gt;</code>.</p>
@@ -3453,10 +3453,9 @@
 <li><a href="https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1">Mixtral-8x7B</a> (MoE)</li>
 <li><a href="https://huggingface.co/codellama/CodeLlama-34b-Instruct-hf">CodeLlama-34B</a></li>
 </ul>
-<p>Set <code>HF_TOKEN</code> to access gated models (e.g., <a href="https://huggingface.co/meta-llama/Llama-2-7b-hf">Llama-2</a>) and avoid rate limits:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">HF_TOKEN</span><span class="o">=</span>your_token_here
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span>
+<p>Each of these has a committed catalog entry. A model that does not is refused — commit its <code>config.json</code> under <code>model_configs/&lt;model&gt;/</code> first (<code>HF_TOKEN</code> is only needed to download a gated model's config by hand; BLIS itself makes no HuggingFace requests).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span>
 </code></pre></div>
 <h3 id="manual-configuration">Manual Configuration<a class="headerlink" href="#manual-configuration" title="Permanent link">&para;</a></h3>
 <p>For full control, provide configs explicitly:</p>
@@ -3469,10 +3468,11 @@
 <p>Any model with a HuggingFace <code>config.json</code> can use roofline mode:</p>
 <ol>
 <li>Download <code>config.json</code> from HuggingFace</li>
-<li>Place it in <code>model_configs/&lt;model-name&gt;/config.json</code></li>
+<li>Place it in <code>model_configs/&lt;model-name&gt;/config.json</code> — this step is required. BLIS does not
+   fetch configs at run time, so a model with no catalog entry is refused rather than
+   downloaded (NS-6). Commit the file to add the model to the catalog for everyone.</li>
 <li>Run with <code>--latency-model roofline --hardware &lt;GPU&gt; --tp &lt;N&gt;</code></li>
 </ol>
-<p>Or let BLIS fetch it automatically with <code>--latency-model roofline</code>.</p>
 <h3 id="tensor-parallelism-and-roofline">Tensor Parallelism and Roofline<a class="headerlink" href="#tensor-parallelism-and-roofline" title="Permanent link">&para;</a></h3>
 <p>The <code>--tp</code> flag divides FLOPs and memory traffic across TP ranks:</p>
 <ul>

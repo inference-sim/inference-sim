@@ -3167,7 +3167,7 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/inference-sim/inference-sim.git
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">cd</span><span class="w"> </span>inference-sim
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>go<span class="w"> </span>build<span class="w"> </span>-o<span class="w"> </span>blis<span class="w"> </span>main.go
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen2.5-7b-instruct<span class="w"> </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--routing-policy<span class="w"> </span>weighted
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen2.5-7b-instruct<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--routing-policy<span class="w"> </span>weighted
 </code></pre></div>
 <p>BLIS prints per-instance metrics followed by a cluster-level summary. Here's the cluster output from the command above:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span>
@@ -3237,7 +3237,7 @@
 </tbody>
 </table>
 <p>At the default rate of 1 req/s across 4 instances, this cluster has plenty of headroom: TTFT p99 is under 22ms and no requests are queued or preempted. What happens when you crank the rate to 500 req/s? That's where it gets interesting. Try it:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen2.5-7b-instruct<span class="w"> </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen2.5-7b-instruct<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">2000</span><span class="w"> </span>--routing-policy<span class="w"> </span>weighted
 </code></pre></div>
 <p>At 500 req/s, the cluster saturates and the numbers tell the story:</p>

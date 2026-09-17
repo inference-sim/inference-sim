@@ -3014,21 +3014,17 @@
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>go<span class="w"> </span>build<span class="w"> </span>-o<span class="w"> </span>blis<span class="w"> </span>main.go
 </code></pre></div>
 <h2 id="environment-setup">Environment Setup<a class="headerlink" href="#environment-setup" title="Permanent link">&para;</a></h2>
-<p>BLIS uses roofline mode by default, which auto-fetches model architecture configs from HuggingFace. Set <code>HF_TOKEN</code> to access gated models (e.g., <a href="https://huggingface.co/meta-llama/Llama-2-7b-hf">Llama-2</a>) and avoid rate limits:</p>
+<p>BLIS reads model architecture configs from the catalog (<code>model_configs/</code>) and makes no HuggingFace requests, so running a simulation needs no token and no network access. Set <code>HF_TOKEN</code> only when downloading a new model's <code>config.json</code> by hand to add a catalog entry, e.g. for a gated model such as <a href="https://huggingface.co/meta-llama/Llama-2-7b-hf">Llama-2</a>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">HF_TOKEN</span><span class="o">=</span>your_token_here
 </code></pre></div>
 <p>Public models (e.g., Qwen3) work without a token. See <a href="https://huggingface.co/docs/hub/en/security-tokens">HuggingFace access tokens</a> to create a token.</p>
 <div class="admonition note">
 <p class="admonition-title">Air-gapped / offline environments</p>
-<p>The default roofline mode requires network access to HuggingFace on first run (configs are cached in <code>model_configs/</code> after that). For environments without internet access:</p>
-<ul>
-<li><strong>Pre-populate</strong> <code>model_configs/&lt;model&gt;/config.json</code> from a machine with internet access and use <code>--model-config-folder</code></li>
-<li>Or use <code>--latency-model roofline</code> with explicit <code>--hardware</code> and <code>--tp</code> flags (bypasses model config requirements)</li>
-</ul>
-<p>For CI pipelines, set <code>HF_TOKEN</code> in your environment secrets to avoid rate limits on gated models.</p>
+<p>Nothing to do — BLIS never reaches the network to run a simulation. Every model's <code>config.json</code> comes from the committed catalog under <code>model_configs/</code>, and a model with no catalog entry is refused rather than fetched.</p>
+<p>To simulate a model that is not yet catalogued, obtain its <code>config.json</code> on a machine with internet access, then either commit it at <code>model_configs/&lt;model&gt;/config.json</code> or point <code>--model-config-folder</code> at a directory containing it.</p>
 </div>
 <h2 id="verify-the-build">Verify the Build<a class="headerlink" href="#verify-the-build" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--num-requests<span class="w"> </span><span class="m">10</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">10</span>
 </code></pre></div>
 <p>You should see JSON output on stdout containing fields like <code>ttft_mean_ms</code>, <code>e2e_mean_ms</code>, and <code>responses_per_sec</code>. This confirms BLIS is working correctly.</p>
 <h2 id="optional-local-documentation">Optional: Local Documentation<a class="headerlink" href="#optional-local-documentation" title="Permanent link">&para;</a></h2>

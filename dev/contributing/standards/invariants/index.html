@@ -2354,6 +2354,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#ns-6-catalog-is-authoritative-and-read-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NS-6: Catalog is Authoritative and Read-Only
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3510,6 +3521,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#ns-6-catalog-is-authoritative-and-read-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NS-6: Catalog is Authoritative and Read-Only
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -4053,6 +4075,11 @@
 <td>Subsystem</td>
 <td>workload generation</td>
 </tr>
+<tr>
+<td><a href="#ns-6-catalog-is-authoritative-and-read-only">NS-6</a> Catalog is authoritative and read-only</td>
+<td>Code-boundary</td>
+<td>CLI / model catalog</td>
+</tr>
 </tbody>
 </table>
 <hr />
@@ -4127,6 +4154,18 @@
 <p><strong>Verification:</strong> enforced by construction at each site rather than by a dedicated test — <code>sim/cluster/autoscaler.go:174</code> (the <code>Actuator</code> interface contract, where the requirement is stated), <code>sim/cluster/autoscaler.go:376</code> (<code>logrus.Errorf</code> when decisions are dropped because no actuator is wired, naming the decision count and the consumed stabilization windows), <code>sim/cluster/direct_actuator.go:33</code> (documented contract: individual failures are always logged), <code>:56</code> (a missing <code>PlacementManager</code> returns an error rather than skipping), and <code>:71</code> (<code>logrus.Errorf</code> per failed <code>PlaceInstance</code>, preserving model id and variant).</p>
 <p><strong>Cited in code:</strong> 5 times, all in the two files above.</p>
 <p><strong>Registry note (#1721):</strong> cited by ID since the autoscaler landed, documented nowhere until #1721.</p>
+<h3 id="ns-6-catalog-is-authoritative-and-read-only">NS-6: Catalog is Authoritative and Read-Only<a class="headerlink" href="#ns-6-catalog-is-authoritative-and-read-only" title="Permanent link">&para;</a></h3>
+<p><strong>Statement:</strong> A model runs <strong>if and only if it is in the catalog</strong>, and no run may change the catalog. Two clauses:</p>
+<ol>
+<li><strong>Read-only, refuse-on-miss.</strong> <code>cmd.resolveModelConfig</code> reads the model's <code>config.json</code> from the catalog (<code>model_configs/&lt;short-name&gt;/</code>, or the directory given by <code>--model-config-folder</code>). A model with no entry — or an entry that is not a HuggingFace config — is <strong>refused, naming the path the entry belongs at</strong>. No <code>blis run</code> / <code>blis replay</code> / <code>blis observe</code> invocation creates or modifies a catalog file, and none makes a HuggingFace request.</li>
+<li><strong>The deployment is chosen, never inferred.</strong> <code>--hardware</code> and <code>--tp</code> are required on both <code>blis run</code> and <code>blis replay</code> (<code>cmd.requireDeploymentFlags</code>); omitting either is refused <strong>naming the missing flag</strong>.</li>
+</ol>
+<p><strong>Why this tier:</strong> like INV-9 and INV-A2 this constrains <em>what the code may do</em> rather than describing simulation state. A run that writes a catalog entry can leave that run's output perfectly correct while making the catalog — the thing every later run and every calibration reads — drift by accident.</p>
+<p><strong>Rationale:</strong> before #1733, an absent <code>config.json</code> triggered a HuggingFace download that was <strong>written into <code>model_configs/</code></strong>, so running an unknown model <em>added a catalog entry as a side effect</em> — the exact mechanism by which a catalog silently accumulates unreviewed, unprovenanced models. Independently, <code>--hardware</code>/<code>--tp</code> were looked up per-model in <code>defaults.yaml</code> behind a <code>logrus.Warnf</code>, so a run could complete and emit metrics for a deployment nobody chose. Both are now refusals (R1: no warn-and-continue).</p>
+<p><strong>Scope and non-scope:</strong> NS-6 binds the <strong>CLI boundary only</strong>. Library callers that construct a <code>sim.ModelConfig</code> or call <code>sim.NewModelHardwareConfig</code> directly are unaffected and need no flags — the many test files that build configs through the Go API are deliberately outside it. <code>blis observe</code> satisfies clause 1 vacuously (it resolves no model config) and takes neither deployment flag (it places no instances).</p>
+<p><strong>Byte-identity (INV-6):</strong> NS-6 changes which inputs are <em>required</em>, not any number. Supplying <code>--hardware</code>/<code>--tp</code> equal to what <code>defaults.yaml</code> would have supplied reproduces the pre-#1733 stdout exactly.</p>
+<p><strong>Verification:</strong> <code>cmd/hfconfig_test.go</code> — <code>TestResolveModelConfig_AbsentFromCatalog_RefusedNamingPath</code> (refusal names the path), <code>..._CreatesNothing</code> (nothing written, catalog directory not created), <code>TestResolveModelConfig_MalformedCatalogEntry_RefusedAndPreserved</code> (refused, entry byte-preserved), <code>TestResolveModelConfig_PrecedenceInvariant</code> (two-step resolution with no third fallback). <code>cmd/ns6_catalog_test.go</code> — <code>TestNS6_NoRuntimeFetch_StaticGuard</code> (removed fetch symbols and any <code>huggingface.co</code> string literal are absent from <code>cmd/</code>'s production sources; the resolver imports no network package and makes no file-creating call), <code>TestNS6_MissingDeploymentFlagIsRefusedByName</code> (subprocess: each omission exits 1 naming only the omitted flag), <code>TestNS6_DeploymentFlagsRequiredOnRunAndReplay</code> (INV-13 parity), <code>TestNS6_ObserveTakesNoDeploymentFlags</code>, <code>TestNS6_ByteIdentityAnchor_GoldenModelDeployment</code> (anchors the INV-6 claim to <code>TestNoOpByteIdentity_AdapterBlindRunMatchesBaseline</code>'s pre-#1733 golden). <code>cmd/docs_examples_test.go</code> — <code>TestDocExamplesPassDeploymentFlags</code> (every documented example passes both flags).</p>
+<p><strong>ID note:</strong> <code>NS-6</code> is numbered by the operator-basis design note reconciling Discussion #1700, not by this registry's <code>INV-*</code> sequence; it is listed here because it is cited in <code>cmd/</code> and the resolution rule above is about <em>resolvability</em>, not about the prefix. Delivered by #1733 (R1 task S6, tracker #1727).</p>
 <hr />
 <h2 id="subsystem-invariants">Subsystem invariants<a class="headerlink" href="#subsystem-invariants" title="Permanent link">&para;</a></h2>
 <p>Scoped to one subsystem or one optional feature. Outside that subsystem they are not applicable.</p>

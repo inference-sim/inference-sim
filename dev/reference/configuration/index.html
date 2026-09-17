@@ -3898,13 +3898,13 @@
 <td><code>--hardware</code></td>
 <td>string</td>
 <td>""</td>
-<td>GPU type. Bundled options: <code>H100</code>, <code>A100-SXM</code>, <code>A100-80</code>. If empty, loaded from <code>defaults.yaml</code>. Add new GPUs to <code>hardware_config.json</code> (include <code>IntraNodeBwGBps</code>/<code>InterNodeBwGBps</code> if instances on that GPU may span nodes — see <a href="#interconnect-calibration">Interconnect Calibration</a>).</td>
+<td><strong>Required</strong> GPU type (<code>run</code> and <code>replay</code>). Bundled options: <code>H100</code>, <code>A100-SXM</code>, <code>A100-80</code>. Never loaded from <code>defaults.yaml</code> — omitting it is refused naming the flag (NS-6, #1733). Add new GPUs to <code>hardware_config.json</code> (include <code>IntraNodeBwGBps</code>/<code>InterNodeBwGBps</code> if instances on that GPU may span nodes — see <a href="#interconnect-calibration">Interconnect Calibration</a>).</td>
 </tr>
 <tr>
 <td><code>--tp</code></td>
 <td>int</td>
 <td>0</td>
-<td>Tensor parallelism degree. If 0, loaded from <code>defaults.yaml</code>.</td>
+<td><strong>Required</strong> tensor parallelism degree, &gt; 0 (<code>run</code> and <code>replay</code>). Never loaded from <code>defaults.yaml</code> — omitting it is refused naming the flag (NS-6, #1733).</td>
 </tr>
 <tr>
 <td><code>--dp</code></td>
@@ -3960,13 +3960,13 @@
 <td><code>--latency-model</code></td>
 <td>string</td>
 <td>"trained-physics"</td>
-<td>Latency model backend: <code>trained-physics</code> (default), <code>roofline</code>. Both backends auto-fetch HuggingFace config.json for KV block auto-calculation (may require network access). Both require <code>config.json</code> for latency estimation and KV sizing. Requires <code>--hardware</code> and <code>--tp</code>. Set <code>HF_TOKEN</code> for gated models.</td>
+<td>Latency model backend: <code>trained-physics</code> (default), <code>roofline</code>. Both read the model's <code>config.json</code> from the catalog (<code>model_configs/&lt;model&gt;/</code>, or <code>--model-config-folder</code>) for latency estimation and KV sizing; an uncatalogued model is refused and nothing is fetched. Both require <code>--hardware</code> and <code>--tp</code>.</td>
 </tr>
 <tr>
 <td><code>--model-config-folder</code></td>
 <td>string</td>
 <td>""</td>
-<td>Path to folder containing HuggingFace <code>config.json</code>. Overrides <code>--latency-model</code> auto-resolution.</td>
+<td>Path to a folder containing the model's HuggingFace <code>config.json</code>. Overrides the catalog lookup at <code>model_configs/&lt;short-name&gt;/</code>. BLIS never fetches or writes a config at run time (NS-6, #1733).</td>
 </tr>
 <tr>
 <td><code>--hardware-config</code></td>
@@ -3980,7 +3980,7 @@
 <h3 id="latency-mode-selection">Latency Mode Selection<a class="headerlink" href="#latency-mode-selection" title="Permanent link">&para;</a></h3>
 <p>The latency model mode is selected based on available configuration:</p>
 <ol>
-<li><strong>Trained-physics mode</strong> (default): Auto-resolves model config from HuggingFace and hardware config from bundled <code>hardware_config.json</code>. Requires <code>--hardware</code> and <code>--tp</code> (loaded from <code>defaults.yaml</code> when available). Uses 13 globally-fitted coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from <code>trained_physics_coefficients</code> in <code>defaults.yaml</code>. Physics-informed basis functions with learned corrections.</li>
+<li><strong>Trained-physics mode</strong> (default): Resolves the model config from the catalog (<code>model_configs/&lt;short-name&gt;/config.json</code>) and the hardware config from the bundled <code>hardware_config.json</code>. Requires <code>--hardware</code> and <code>--tp</code> explicitly (never inferred, NS-6). Uses 13 globally-fitted coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from <code>trained_physics_coefficients</code> in <code>defaults.yaml</code>. Physics-informed basis functions with learned corrections.</li>
 <li><strong>Roofline mode</strong>: If <code>--latency-model roofline</code> is explicitly set with <code>--hardware</code> and <code>--tp</code>. Pure analytical estimation from model architecture and hardware specifications.</li>
 </ol>
 <h2 id="cluster-configuration">Cluster Configuration<a class="headerlink" href="#cluster-configuration" title="Permanent link">&para;</a></h2>
@@ -4743,11 +4743,11 @@
 <h3 id="resolution-process">Resolution Process<a class="headerlink" href="#resolution-process" title="Permanent link">&para;</a></h3>
 <p>When BLIS starts, it resolves latency configuration through a layered process. Explicit CLI flags always take precedence (R18).</p>
 <p><strong>Hardware and TP defaults resolution (all backends):</strong></p>
-<p>Before any backend-specific logic runs, BLIS loads hardware/TP/vLLM-version defaults from <code>defaults.yaml</code> for the specified <code>--model</code> when those flags are not explicitly provided. This ensures analytical backends (roofline, trained-physics) can auto-resolve without requiring explicit <code>--hardware</code> and <code>--tp</code> for models listed in <code>defaults.yaml</code>.</p>
+<p>Before any backend-specific logic runs, BLIS requires the deployment: <code>--hardware</code> and <code>--tp</code> must both be supplied, on <code>blis run</code> and <code>blis replay</code> alike. Omitting either is refused naming the missing flag (NS-6, #1733). BLIS no longer reads per-model <code>GPU</code>/<code>tensor_parallelism</code> values from <code>defaults.yaml</code> — inferring a deployment let a run complete and emit metrics for a configuration nobody chose.</p>
 <p><strong>Backend-specific resolution:</strong></p>
 <ol>
 <li>If <code>--latency-model trained-physics</code> (default) or <code>roofline</code>:</li>
-<li>Auto-resolve model config: check <code>model_configs/</code> for existing <code>config.json</code>, fetch from HuggingFace on miss (set <code>HF_TOKEN</code> for gated models)</li>
+<li>Resolve the model config from the catalog: <code>model_configs/&lt;short-name&gt;/config.json</code>. A model with no entry is refused naming that path — nothing is fetched, and no run writes to the catalog (NS-6)</li>
 <li>Auto-resolve hardware config from bundled <code>hardware_config.json</code></li>
 <li>For roofline: beta coefficients are computed analytically from model architecture and hardware specs</li>
 <li>For trained-physics: load 13 global coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from <code>trained_physics_coefficients</code> in <code>defaults.yaml</code></li>
@@ -4758,7 +4758,7 @@
 <p><strong><code>--total-kv-blocks</code> resolution</strong> (highest priority wins):</p>
 <ol>
 <li><strong>Explicit CLI flag</strong> — if <code>--total-kv-blocks</code> is set, that value is used regardless of backend</li>
-<li><strong>Auto-calculation</strong> (all backends) — when <code>MemoryGiB &gt; 0</code> in the hardware config and <code>config.json</code> is available, <code>CalculateKVBlocks</code> derives the block count from model architecture and GPU memory. BLIS attempts to resolve <code>config.json</code> by checking <code>--model-config-folder</code>, then <code>model_configs/</code> (cached/bundled), then fetching from HuggingFace (set <code>HF_TOKEN</code> for gated models). Failure modes: (a) if <code>MemoryGiB</code> is missing from <code>hardware_config.json</code>, BLIS warns and falls back to the hardcoded default (layer 3); (b) if model architecture params cannot be extracted from <code>config.json</code>, BLIS warns and falls back to the hardcoded default; (c) if the calculation itself fails (e.g., unsupported activation function), BLIS warns and falls back to the hardcoded default. Auto-calculation currently requires SwiGLU-family activations (<code>silu</code>, <code>swiglu</code>, <code>geglu</code>, <code>situ</code> — Kimi-K3's SiTU-GLU, a 3-matrix gated GLU with SwiGLU's weight/FLOP shape); models with other activations (e.g., Falcon's <code>gelu</code>) will fall back to the hardcoded default unless <code>--total-kv-blocks</code> is explicitly set</li>
+<li><strong>Auto-calculation</strong> (all backends) — when <code>MemoryGiB &gt; 0</code> in the hardware config and <code>config.json</code> is available, <code>CalculateKVBlocks</code> derives the block count from model architecture and GPU memory. BLIS resolves <code>config.json</code> by checking <code>--model-config-folder</code>, then the catalog entry <code>model_configs/&lt;short-name&gt;/config.json</code>; there is no third step — an uncatalogued model is refused rather than fetched (NS-6). Failure modes: (a) if <code>MemoryGiB</code> is missing from <code>hardware_config.json</code>, BLIS warns and falls back to the hardcoded default (layer 3); (b) if model architecture params cannot be extracted from <code>config.json</code>, BLIS warns and falls back to the hardcoded default; (c) if the calculation itself fails (e.g., unsupported activation function), BLIS warns and falls back to the hardcoded default. Auto-calculation currently requires SwiGLU-family activations (<code>silu</code>, <code>swiglu</code>, <code>geglu</code>, <code>situ</code> — Kimi-K3's SiTU-GLU, a 3-matrix gated GLU with SwiGLU's weight/FLOP shape); models with other activations (e.g., Falcon's <code>gelu</code>) will fall back to the hardcoded default unless <code>--total-kv-blocks</code> is explicitly set</li>
 <li><strong>Hardcoded default</strong> — 1,000,000 (CLI flag default, used when auto-calculation is unavailable or fails)</li>
 </ol>
 <div class="admonition note">
