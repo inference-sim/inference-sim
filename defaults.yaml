@@ -40,7 +40,7 @@ defaults:
     tensor_parallelism: 4
     hf_repo: nvidia/Llama-3.1-Nemotron-70B-Instruct-HF
   # openai/gpt-oss-* are synthetic benchmark models without real HuggingFace repos.
-  # --roofline requires --model-config-folder for these models.
+  # These models need a catalog entry, supplied via --catalog / BLIS_CATALOG.
   openai/gpt-oss-120b:
     GPU: H100
     tensor_parallelism: 4

@@ -159,8 +159,8 @@ For analytical step time estimation without trained coefficients.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--latency-model` | string | "trained-physics" | Latency model backend: `trained-physics` (default), `roofline`. Both read the model's `config.json` from the catalog (`model_configs/<model>/`, or `--model-config-folder`) for latency estimation and KV sizing; an uncatalogued model is refused and nothing is fetched. Both require `--hardware` and `--tp`. |
-| `--model-config-folder` | string | "" | Path to a folder containing the model's HuggingFace `config.json`. Overrides the catalog lookup at `model_configs/<short-name>/`. BLIS never fetches or writes a config at run time (NS-6, #1733). |
+| `--latency-model` | string | "trained-physics" | Latency model backend: `trained-physics` (default), `roofline`. Both read the model's `config.json` from the catalog located by `--catalog` / `BLIS_CATALOG` for latency estimation and KV sizing; an uncatalogued model is refused and nothing is fetched. Both require `--hardware` and `--tp`. |
+| `--catalog` | string | "" | Path to the **model catalog root**: one directory per model, each holding that model's HuggingFace `config.json`. **No default and no search path** — supply this flag or the `BLIS_CATALOG` environment variable, or the run is refused naming both (#1731). `--catalog` wins when both are set, and the override is announced on stderr. The repository's `model_configs/` tree is a valid catalog. Replaces the retired `--model-config-folder`: point `--catalog` at a scratch directory to use your own config. Registered on `run` and `replay` (not `observe`, which resolves no model config). BLIS never fetches or writes a config at run time (NS-6, #1733). |
 | `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. Overrides `--latency-model` auto-resolution. Also carries the optional per-GPU interconnect calibration (`IntraNodeBwGBps` / `InterNodeBwGBps`) that prices cross-node collective traffic — see [Interconnect calibration](#interconnect-calibration) below. |
 
 See [Roofline Estimation](../concepts/roofline.md) for details on the analytical model.
@@ -578,18 +578,18 @@ Before any backend-specific logic runs, BLIS requires the deployment: `--hardwar
 **Backend-specific resolution:**
 
 1. If `--latency-model trained-physics` (default) or `roofline`:
-   - Resolve the model config from the catalog: `model_configs/<short-name>/config.json`. A model with no entry is refused naming that path — nothing is fetched, and no run writes to the catalog (NS-6)
+   - Resolve the model config inside the catalog located by `--catalog` / `BLIS_CATALOG`: `<catalog>/<short-name>/config.json`. A run that names no catalog is refused naming both forms (#1731); a model with no entry is refused naming that path — nothing is fetched, and no run writes to the catalog (NS-6)
    - Auto-resolve hardware config from bundled `hardware_config.json`
    - For roofline: beta coefficients are computed analytically from model architecture and hardware specs
    - For trained-physics: load 13 global coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from `trained_physics_coefficients` in `defaults.yaml`
-   - `--model-config-folder` and `--hardware-config` override auto-resolution when explicitly set
+   - `--catalog` / `BLIS_CATALOG` locates the model config (required, no default); `--hardware-config` overrides auto-resolution when explicitly set
 2. If `--alpha-coeffs` and `--beta-coeffs` are explicitly provided via CLI:
    - Use them directly, no `defaults.yaml` lookup
 
 **`--total-kv-blocks` resolution** (highest priority wins):
 
 1. **Explicit CLI flag** — if `--total-kv-blocks` is set, that value is used regardless of backend
-2. **Auto-calculation** (all backends) — when `MemoryGiB > 0` in the hardware config and `config.json` is available, `CalculateKVBlocks` derives the block count from model architecture and GPU memory. BLIS resolves `config.json` by checking `--model-config-folder`, then the catalog entry `model_configs/<short-name>/config.json`; there is no third step — an uncatalogued model is refused rather than fetched (NS-6). Failure modes: (a) if `MemoryGiB` is missing from `hardware_config.json`, BLIS warns and falls back to the hardcoded default (layer 3); (b) if model architecture params cannot be extracted from `config.json`, BLIS warns and falls back to the hardcoded default; (c) if the calculation itself fails (e.g., unsupported activation function), BLIS warns and falls back to the hardcoded default. Auto-calculation currently requires SwiGLU-family activations (`silu`, `swiglu`, `geglu`, `situ` — Kimi-K3's SiTU-GLU, a 3-matrix gated GLU with SwiGLU's weight/FLOP shape); models with other activations (e.g., Falcon's `gelu`) will fall back to the hardcoded default unless `--total-kv-blocks` is explicitly set
+2. **Auto-calculation** (all backends) — when `MemoryGiB > 0` in the hardware config and `config.json` is available, `CalculateKVBlocks` derives the block count from model architecture and GPU memory. BLIS resolves `config.json` as the catalog entry `<catalog>/<short-name>/config.json` inside the catalog located by `--catalog` / `BLIS_CATALOG`; there is no second step — an uncatalogued model is refused rather than fetched (NS-6). Failure modes: (a) if `MemoryGiB` is missing from `hardware_config.json`, BLIS warns and falls back to the hardcoded default (layer 3); (b) if model architecture params cannot be extracted from `config.json`, BLIS warns and falls back to the hardcoded default; (c) if the calculation itself fails (e.g., unsupported activation function), BLIS warns and falls back to the hardcoded default. Auto-calculation currently requires SwiGLU-family activations (`silu`, `swiglu`, `geglu`, `situ` — Kimi-K3's SiTU-GLU, a 3-matrix gated GLU with SwiGLU's weight/FLOP shape); models with other activations (e.g., Falcon's `gelu`) will fall back to the hardcoded default unless `--total-kv-blocks` is explicitly set
 3. **Hardcoded default** — 1,000,000 (CLI flag default, used when auto-calculation is unavailable or fails)
 
 !!! note "Per-instance capacity with mixed-GPU node pools (#1522)"
@@ -713,7 +713,7 @@ for the cost model and its known approximations.
 | **KVCacheConfig** | `--total-kv-blocks`, `--block-size-in-tokens`, `--kv-cpu-blocks`, `--kv-offload-threshold`, `--kv-transfer-bandwidth`, `--kv-transfer-base-latency` |
 | **BatchConfig** | `--max-num-seqs`, `--max-num-batched-tokens`, `--long-prefill-token-threshold` |
 | **LatencyCoeffs** | `--alpha-coeffs`, `--beta-coeffs` |
-| **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--latency-model`, `--model-config-folder`, `--hardware-config`, `--max-model-len`. Placement-derived, no flag: the inter-node network topology (#1530) |
+| **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--latency-model`, `--catalog` (or `BLIS_CATALOG`), `--hardware-config`, `--max-model-len`. Placement-derived, no flag: the inter-node network topology (#1530) |
 | **PolicyConfig** | `--scheduler`, `--preemption-policy` |
 | **WorkloadConfig** | `--workload`, `--workload-spec`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
 | **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` | YAML-only (no CLI flag): `node_pools`, `instance_lifecycle`. Programmatic-only, NOT a policy-bundle key despite the example above: `hw_config_by_gpu` (issue #1668) |

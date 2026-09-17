@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -31,18 +30,17 @@ const blockTypeOnlyConfigJSON = `{
   "max_position_embeddings": 4096
 }`
 
-// writeBlockTypeOnlyFixture writes the block-type-array-only config.json into a fresh
-// directory and returns that directory.
+// writeBlockTypeOnlyFixture writes the block-type-array-only config.json as the
+// "nemotron-block-type-only" entry of a fresh test catalog and returns the catalog ROOT
+// (what --catalog takes since #1731; the entry directory is derived from the model's
+// short name).
 func writeBlockTypeOnlyFixture(t *testing.T) string {
 	t.Helper()
-	dir := filepath.Join(t.TempDir(), "config")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
+	catalogDir, err := writeTestCatalog(t.TempDir(), blockTypeOnlyConfigJSON, "nemotron-block-type-only")
+	if err != nil {
+		t.Fatalf("write test catalog: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(blockTypeOnlyConfigJSON), 0644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-	return dir
+	return catalogDir
 }
 
 // TestRunCmd_LayersBlockTypeOnly_Runs is BC-4 / AC-1 + AC-3 at the system level: a
@@ -55,7 +53,7 @@ func TestRunCmd_LayersBlockTypeOnly_Runs(t *testing.T) {
 		rootCmd.SetArgs([]string{
 			"run",
 			"--model", "nvidia/nemotron-block-type-only",
-			"--model-config-folder", os.Getenv("BLIS_BLOCKTYPE_CONFIG_DIR"),
+			"--catalog", os.Getenv("BLIS_BLOCKTYPE_CONFIG_DIR"),
 			"--hardware", "H100",
 			"--hardware-config", "../hardware_config.json",
 			"--latency-model", backend,
@@ -144,7 +142,7 @@ func TestRunCmd_NoLayerCountEvidence_FailsLoudly(t *testing.T) {
 		rootCmd.SetArgs([]string{
 			"run",
 			"--model", "nvidia/nemotron-no-layer-evidence",
-			"--model-config-folder", os.Getenv("BLIS_BLOCKTYPE_CONFIG_DIR"),
+			"--catalog", os.Getenv("BLIS_BLOCKTYPE_CONFIG_DIR"),
 			"--hardware", "H100",
 			"--hardware-config", "../hardware_config.json",
 			"--tp", "1",
@@ -157,10 +155,6 @@ func TestRunCmd_NoLayerCountEvidence_FailsLoudly(t *testing.T) {
 		os.Exit(0)
 	}
 
-	dir := filepath.Join(t.TempDir(), "config")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
 	// layers_block_type present but EMPTY: the key exists, so this also guards against a
 	// fallback that trusts the key's presence rather than its usable length.
 	body := `{
@@ -172,8 +166,9 @@ func TestRunCmd_NoLayerCountEvidence_FailsLoudly(t *testing.T) {
   "vocab_size": 32000,
   "torch_dtype": "float16"
 }`
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(body), 0644); err != nil {
-		t.Fatalf("write config: %v", err)
+	dir, err := writeTestCatalog(t.TempDir(), body, "nemotron-no-layer-evidence")
+	if err != nil {
+		t.Fatalf("write test catalog: %v", err)
 	}
 
 	cmd := exec.Command(os.Args[0], "-test.run=^TestRunCmd_NoLayerCountEvidence_FailsLoudly$")

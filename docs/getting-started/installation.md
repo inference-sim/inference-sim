@@ -26,12 +26,22 @@ Public models (e.g., Qwen3) work without a token. See [HuggingFace access tokens
 !!! note "Air-gapped / offline environments"
     Nothing to do — BLIS never reaches the network to run a simulation. Every model's `config.json` comes from the committed catalog under `model_configs/`, and a model with no catalog entry is refused rather than fetched.
 
-    To simulate a model that is not yet catalogued, obtain its `config.json` on a machine with internet access, then either commit it at `model_configs/<model>/config.json` or point `--model-config-folder` at a directory containing it.
+    To simulate a model that is not yet catalogued, obtain its `config.json` on a machine with internet access, then commit it at `<catalog>/<model>/config.json` — where `<catalog>` is whatever directory you point `--catalog` / `BLIS_CATALOG` at (the bundled `model_configs/` tree is one).
+
+## Locate the Model Catalog
+
+`blis run` and `blis replay` must be told where the model catalog is — there is no default
+and no search path, so a run with neither `--catalog` nor `BLIS_CATALOG` is refused naming
+both forms. The bundled `model_configs/` tree is a valid catalog root:
+
+```bash
+export BLIS_CATALOG=$PWD/model_configs   # or pass --catalog on every command
+```
 
 ## Verify the Build
 
 ```bash
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --num-requests 10
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --num-requests 10 --catalog model_configs
 ```
 
 You should see JSON output on stdout containing fields like `ttft_mean_ms`, `e2e_mean_ms`, and `responses_per_sec`. This confirms BLIS is working correctly.

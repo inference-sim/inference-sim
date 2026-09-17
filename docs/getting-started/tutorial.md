@@ -4,6 +4,12 @@ This tutorial walks through a complete capacity planning exercise: determining h
 
 **Scenario:** You're deploying Qwen3 14B on H100 GPUs with TP=1. Your SLO is TTFT p99 < 500ms. You need to find the minimum number of instances for 200 requests/second.
 
+!!! note "Locate the model catalog first"
+    Every command below needs the model catalog located — `--catalog <path>` or the
+    `BLIS_CATALOG` environment variable, with no default and no search path. Run
+    `export BLIS_CATALOG=$PWD/model_configs` from the repository root once, and the
+    examples work as written. See [Quick Start](quickstart.md).
+
 ## Step 1: Estimate Instance Capacity
 
 Before scaling up, measure the throughput of a single instance under load. Run enough requests at a high arrival rate to saturate the instance — this reveals the maximum throughput with continuous batching:

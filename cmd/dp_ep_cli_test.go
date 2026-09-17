@@ -12,14 +12,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// writeMoEConfigFixture writes a minimal MoE config.json (num_local_experts > 1)
-// and a hardware config into a temp dir, returning the model-config folder and
-// hardware-config file path. Used by the DP/EP CLI validation tests.
-func writeMoEConfigFixture(dir string) (mcFolder, hwPath string, err error) {
-	mcDir := filepath.Join(dir, "config")
-	if err = os.MkdirAll(mcDir, 0755); err != nil {
-		return "", "", err
-	}
+// writeMoEConfigFixture writes a minimal MoE config.json (num_local_experts > 1) as
+// every entry of a test catalog rooted at dir, plus a hardware config, returning the
+// catalog root (for --catalog) and the hardware-config file path. Used by the DP/EP
+// CLI validation tests.
+func writeMoEConfigFixture(dir string) (catalogDir, hwPath string, err error) {
 	configJSON := `{
   "architectures": ["MixtralForCausalLM"],
   "num_attention_heads": 4,
@@ -32,7 +29,7 @@ func writeMoEConfigFixture(dir string) (mcFolder, hwPath string, err error) {
   "torch_dtype": "float16",
   "max_position_embeddings": 4096
 }`
-	if err = os.WriteFile(filepath.Join(mcDir, "config.json"), []byte(configJSON), 0644); err != nil {
+	if catalogDir, err = writeTestCatalog(dir, configJSON); err != nil {
 		return "", "", err
 	}
 	hwPath = filepath.Join(dir, "hw.json")
@@ -40,7 +37,7 @@ func writeMoEConfigFixture(dir string) (mcFolder, hwPath string, err error) {
 	if err = os.WriteFile(hwPath, []byte(hwJSON), 0644); err != nil {
 		return "", "", err
 	}
-	return mcDir, hwPath, nil
+	return catalogDir, hwPath, nil
 }
 
 // dpEPResolve drives resolveLatencyConfig with the given backend/dp/ep against a
@@ -48,12 +45,12 @@ func writeMoEConfigFixture(dir string) (mcFolder, hwPath string, err error) {
 // subprocess. moe selects the MoE fixture; otherwise the dense fixture is used.
 func dpEPResolve(t *testing.T, backend string, dp int, ep, moe bool) {
 	dir := t.TempDir()
-	var mcFolder, hwPath string
+	var catalogDir, hwPath string
 	var err error
 	if moe {
-		mcFolder, hwPath, err = writeMoEConfigFixture(dir)
+		catalogDir, hwPath, err = writeMoEConfigFixture(dir)
 	} else {
-		mcFolder, hwPath = setupTrainedPhysicsTestFixtures(t) // dense fixture
+		catalogDir, hwPath = setupTrainedPhysicsTestFixtures(t) // dense fixture
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "fixture setup failed: %v\n", err)
@@ -71,7 +68,7 @@ func dpEPResolve(t *testing.T, backend string, dp int, ep, moe bool) {
 	blockSizeTokens = 16
 	maxModelLen = 0
 	gpuMemoryUtilization = 0.9
-	modelConfigFolder = mcFolder
+	catalogPath = catalogDir
 	hwConfigPath = hwPath
 	defaultsFilePath = "../defaults.yaml"
 
@@ -83,7 +80,7 @@ func dpEPResolve(t *testing.T, backend string, dp int, ep, moe bool) {
 		"--hardware", "H100",
 		"--tp", "1",
 		"--dp", fmt.Sprintf("%d", dp),
-		"--model-config-folder", mcFolder,
+		"--catalog", catalogDir,
 		"--hardware-config", hwPath,
 		"--total-kv-blocks", "1000",
 		"--defaults-filepath", "../defaults.yaml",
@@ -172,7 +169,7 @@ func TestResolveLatencyConfig_DPEP_DenseDPRejected(t *testing.T) {
 // --dp 1 (default), EP off must NOT fatal — runs in-process and returns.
 func TestResolveLatencyConfig_DPEP_DefaultsAccepted(t *testing.T) {
 	dir := t.TempDir()
-	mcFolder, hwPath, err := writeMoEConfigFixture(dir)
+	catalogDir, hwPath, err := writeMoEConfigFixture(dir)
 	if err != nil {
 		t.Fatalf("fixture: %v", err)
 	}
@@ -187,7 +184,7 @@ func TestResolveLatencyConfig_DPEP_DefaultsAccepted(t *testing.T) {
 	blockSizeTokens = 16
 	maxModelLen = 0
 	gpuMemoryUtilization = 0.9
-	modelConfigFolder = mcFolder
+	catalogPath = catalogDir
 	hwConfigPath = hwPath
 	defaultsFilePath = "../defaults.yaml"
 
@@ -196,7 +193,7 @@ func TestResolveLatencyConfig_DPEP_DefaultsAccepted(t *testing.T) {
 	if err := testCmd.ParseFlags([]string{
 		"--model", "test-model", "--latency-model", "trained-physics",
 		"--hardware", "H100", "--tp", "1",
-		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--hardware-config", hwPath,
 		"--total-kv-blocks", "1000", "--defaults-filepath", "../defaults.yaml",
 	}); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
@@ -317,10 +314,6 @@ func TestResolveLatencyConfig_DPScalesAutoKVCapacity(t *testing.T) {
 	// A complete MoE fixture: the auto-capacity path needs vocab_size (which the
 	// validation-only writeMoEConfigFixture omits) and realistic dims so the derived
 	// block count is comfortably positive on an 80 GiB GPU.
-	mcDir := filepath.Join(dir, "config")
-	if err := os.MkdirAll(mcDir, 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
 	configJSON := `{
   "architectures": ["MixtralForCausalLM"],
   "num_attention_heads": 32,
@@ -335,14 +328,14 @@ func TestResolveLatencyConfig_DPScalesAutoKVCapacity(t *testing.T) {
   "torch_dtype": "float16",
   "max_position_embeddings": 4096
 }`
-	if err := os.WriteFile(filepath.Join(mcDir, "config.json"), []byte(configJSON), 0644); err != nil {
-		t.Fatalf("write config: %v", err)
+	catalogDir, err := writeTestCatalog(dir, configJSON)
+	if err != nil {
+		t.Fatalf("write test catalog: %v", err)
 	}
 	hwPath := filepath.Join(dir, "hw.json")
 	if err := os.WriteFile(hwPath, []byte(`{"H100": {"MemoryGiB": 80.0, "TFlopsPeak": 989.5, "BwPeakTBs": 3.35}}`), 0644); err != nil {
 		t.Fatalf("write hw: %v", err)
 	}
-	mcFolder := mcDir
 
 	resolve := func(dp int) int64 {
 		// Reset the package-level vars resolveLatencyConfig reads.
@@ -357,7 +350,7 @@ func TestResolveLatencyConfig_DPScalesAutoKVCapacity(t *testing.T) {
 		blockSizeTokens = 16
 		maxModelLen = 0
 		gpuMemoryUtilization = 0.9
-		modelConfigFolder = mcFolder
+		catalogPath = catalogDir
 		hwConfigPath = hwPath
 		defaultsFilePath = "../defaults.yaml"
 
@@ -368,7 +361,7 @@ func TestResolveLatencyConfig_DPScalesAutoKVCapacity(t *testing.T) {
 		args := []string{
 			"--model", "test-model", "--latency-model", "trained-physics",
 			"--hardware", "H100", "--tp", "2", "--dp", fmt.Sprintf("%d", dp),
-			"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+			"--catalog", catalogDir, "--hardware-config", hwPath,
 			"--defaults-filepath", "../defaults.yaml",
 		}
 		if err := testCmd.ParseFlags(args); err != nil {

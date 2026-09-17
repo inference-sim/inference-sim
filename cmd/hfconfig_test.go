@@ -9,13 +9,118 @@ import (
 	"testing"
 )
 
-func TestResolveModelConfig_ExplicitOverrideTakesPrecedence(t *testing.T) {
-	dir, err := resolveModelConfig("any-model", "/explicit/path", "defaults.yaml")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+// TestCatalogRootFrom_Precedence is AC-1 and AC-2 of #1731 (R1/S4) as a pure law:
+// --catalog and BLIS_CATALOG both locate the catalog, --catalog wins when both are set,
+// and NEITHER is refused naming both forms. catalogRootFrom takes both inputs as
+// arguments, so the law is table-testable without touching globals or the environment.
+func TestCatalogRootFrom_Precedence(t *testing.T) {
+	tests := []struct {
+		name    string
+		flag    string
+		env     string
+		want    string
+		wantErr bool
+	}{
+		{"flag only", "/from/flag", "", "/from/flag", false},
+		{"env only", "", "/from/env", "/from/env", false},
+		{"both set: flag wins", "/from/flag", "/from/env", "/from/flag", false},
+		{"both set to the same path", "/same", "/same", "/same", false},
+		{"neither set: refused", "", "", "", true},
 	}
-	if dir != "/explicit/path" {
-		t.Errorf("expected /explicit/path, got %s", dir)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := catalogRootFrom(tt.flag, tt.env)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected a refusal, got %q", got)
+				}
+				// AC-2: the refusal must name BOTH forms so the operator knows either works.
+				if !strings.Contains(err.Error(), "--catalog") {
+					t.Errorf("refusal must name --catalog, got: %v", err)
+				}
+				if !strings.Contains(err.Error(), catalogEnvVar) {
+					t.Errorf("refusal must name %s, got: %v", catalogEnvVar, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("catalogRootFrom(%q, %q) = %q, want %q", tt.flag, tt.env, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestResolveCatalogRoot_ReadsFlagAndEnv is AC-1 through the production wrapper, which
+// is the only place the --catalog package var and os.Getenv(BLIS_CATALOG) are read.
+func TestResolveCatalogRoot_ReadsFlagAndEnv(t *testing.T) {
+	origFlag := catalogPath
+	t.Cleanup(func() { catalogPath = origFlag })
+
+	flagDir := t.TempDir()
+	envDir := t.TempDir()
+
+	// Env only.
+	catalogPath = ""
+	t.Setenv(catalogEnvVar, envDir)
+	got, err := resolveCatalogRoot()
+	if err != nil {
+		t.Fatalf("env-only: unexpected error: %v", err)
+	}
+	if got != envDir {
+		t.Errorf("env-only: got %q, want %q", got, envDir)
+	}
+
+	// Flag wins over env.
+	catalogPath = flagDir
+	got, err = resolveCatalogRoot()
+	if err != nil {
+		t.Fatalf("flag+env: unexpected error: %v", err)
+	}
+	if got != flagDir {
+		t.Errorf("flag+env: got %q, want %q (--catalog must win)", got, flagDir)
+	}
+
+	// Neither: refused. There is no working-directory default.
+	catalogPath = ""
+	t.Setenv(catalogEnvVar, "")
+	if got, err = resolveCatalogRoot(); err == nil {
+		t.Errorf("neither --catalog nor %s set must be refused, got %q", catalogEnvVar, got)
+	}
+}
+
+// TestResolveCatalogRoot_RejectsUnusableRoot: a mistyped catalog path is refused as a
+// CATALOG error naming both forms, not deferred into a per-model "not in the catalog"
+// message that would blame the model (R1).
+func TestResolveCatalogRoot_RejectsUnusableRoot(t *testing.T) {
+	origFlag := catalogPath
+	t.Cleanup(func() { catalogPath = origFlag })
+	t.Setenv(catalogEnvVar, "")
+
+	fileNotDir := filepath.Join(t.TempDir(), "catalog-is-a-file")
+	if err := os.WriteFile(fileNotDir, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range []struct{ name, root string }{
+		{"missing directory", filepath.Join(t.TempDir(), "no-such-catalog")},
+		{"not a directory", fileNotDir},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			catalogPath = tt.root
+			got, err := resolveCatalogRoot()
+			if err == nil {
+				t.Fatalf("expected refusal for %s, got %q", tt.name, got)
+			}
+			if !strings.Contains(err.Error(), tt.root) {
+				t.Errorf("refusal must name the offending root %q, got: %v", tt.root, err)
+			}
+			if !strings.Contains(err.Error(), "--catalog") || !strings.Contains(err.Error(), catalogEnvVar) {
+				t.Errorf("refusal must name both --catalog and %s, got: %v", catalogEnvVar, err)
+			}
+		})
 	}
 }
 
@@ -23,7 +128,7 @@ func TestResolveModelConfig_ExplicitOverrideTakesPrecedence(t *testing.T) {
 // its catalog directory.
 func TestResolveModelConfig_CatalogHit(t *testing.T) {
 	tmpDir := t.TempDir()
-	localDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
+	localDir := filepath.Join(tmpDir, "test-model")
 	if err := os.MkdirAll(localDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -31,13 +136,11 @@ func TestResolveModelConfig_CatalogHit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Use a defaultsFile inside tmpDir so paths resolve relative to it
-	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
-	dir, err := resolveModelConfig("test-org/test-model", "", defaultsFile)
+	dir, err := resolveModelConfigInCatalog("test-org/test-model", tmpDir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := filepath.Join(tmpDir, modelConfigsDir, "test-model")
+	expected := filepath.Join(tmpDir, "test-model")
 	if dir != expected {
 		t.Errorf("expected %s, got %s", expected, dir)
 	}
@@ -49,14 +152,12 @@ func TestResolveModelConfig_CatalogHit(t *testing.T) {
 // config.json from HuggingFace and wrote it into the catalog.
 func TestResolveModelConfig_AbsentFromCatalog_RefusedNamingPath(t *testing.T) {
 	tmpDir := t.TempDir()
-	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
-
-	dir, err := resolveModelConfig("test-org/uncatalogued-model", "", defaultsFile)
+	dir, err := resolveModelConfigInCatalog("test-org/uncatalogued-model", tmpDir)
 	if err == nil {
 		t.Fatalf("expected an uncatalogued model to be refused, got dir=%q", dir)
 	}
 
-	wantPath := filepath.Join(tmpDir, modelConfigsDir, "uncatalogued-model", hfConfigFile)
+	wantPath := filepath.Join(tmpDir, "uncatalogued-model", hfConfigFile)
 	if !strings.Contains(err.Error(), wantPath) {
 		t.Errorf("refusal must name the catalog path an entry belongs at (%s), got: %v", wantPath, err)
 	}
@@ -71,11 +172,9 @@ func TestResolveModelConfig_AbsentFromCatalog_RefusedNamingPath(t *testing.T) {
 // form of "no run adds a catalog entry as a side effect".
 func TestResolveModelConfig_AbsentFromCatalog_CreatesNothing(t *testing.T) {
 	tmpDir := t.TempDir()
-	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
-
 	before := listTree(t, tmpDir)
 
-	if _, err := resolveModelConfig("test-org/uncatalogued-model", "", defaultsFile); err == nil {
+	if _, err := resolveModelConfigInCatalog("test-org/uncatalogued-model", tmpDir); err == nil {
 		t.Fatal("expected refusal for an uncatalogued model")
 	}
 
@@ -83,9 +182,9 @@ func TestResolveModelConfig_AbsentFromCatalog_CreatesNothing(t *testing.T) {
 	if len(after) != len(before) {
 		t.Errorf("resolution must not create anything under the catalog root; before=%v after=%v", before, after)
 	}
-	catalogDir := filepath.Join(tmpDir, modelConfigsDir)
-	if _, statErr := os.Stat(catalogDir); statErr == nil {
-		t.Errorf("resolution must not create the catalog directory %s", catalogDir)
+	entryDir := filepath.Join(tmpDir, "uncatalogued-model")
+	if _, statErr := os.Stat(entryDir); statErr == nil {
+		t.Errorf("resolution must not create the catalog entry directory %s", entryDir)
 	}
 }
 
@@ -124,7 +223,7 @@ func TestResolveModelConfig_MalformedCatalogEntry_RefusedAndPreserved(t *testing
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
-			localDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
+			localDir := filepath.Join(tmpDir, "test-model")
 			if err := os.MkdirAll(localDir, 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -133,8 +232,7 @@ func TestResolveModelConfig_MalformedCatalogEntry_RefusedAndPreserved(t *testing
 				t.Fatal(err)
 			}
 
-			defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
-			if _, err := resolveModelConfig("test-org/test-model", "", defaultsFile); err == nil {
+			if _, err := resolveModelConfigInCatalog("test-org/test-model", tmpDir); err == nil {
 				t.Fatal("expected refusal for a malformed catalog entry")
 			} else if !strings.Contains(err.Error(), entryPath) {
 				t.Errorf("refusal must name the offending catalog file (%s), got: %v", entryPath, err)
@@ -154,7 +252,7 @@ func TestResolveModelConfig_MalformedCatalogEntry_RefusedAndPreserved(t *testing
 
 func TestResolveModelConfig_MultimodalConfig(t *testing.T) {
 	tmpDir := t.TempDir()
-	localDir := filepath.Join(tmpDir, modelConfigsDir, "llama4-test")
+	localDir := filepath.Join(tmpDir, "llama4-test")
 	if err := os.MkdirAll(localDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -178,12 +276,11 @@ func TestResolveModelConfig_MultimodalConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
-	dir, err := resolveModelConfig("test-org/llama4-test", "", defaultsFile)
+	dir, err := resolveModelConfigInCatalog("test-org/llama4-test", tmpDir)
 	if err != nil {
 		t.Fatalf("multimodal config should be recognized: %v", err)
 	}
-	expected := filepath.Join(tmpDir, modelConfigsDir, "llama4-test")
+	expected := filepath.Join(tmpDir, "llama4-test")
 	if dir != expected {
 		t.Errorf("expected %s, got %s", expected, dir)
 	}
@@ -223,35 +320,41 @@ func TestResolveHardwareConfig_Missing_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestBundledModelConfigDir(t *testing.T) {
+// TestCatalogModelDir maps a model name onto its catalog entry directory. Since #1731
+// the catalog ROOT is a required input (there is no working-directory default), so an
+// empty root is an error rather than a relative path.
+func TestCatalogModelDir(t *testing.T) {
 	tests := []struct {
 		model    string
-		baseDir  string
+		catalog  string
 		expected string
 		wantErr  bool
 	}{
-		{"meta-llama/llama-3.1-8b-instruct", "", filepath.Join(modelConfigsDir, "llama-3.1-8b-instruct"), false},
-		{"codellama/codellama-34b-instruct-hf", "", filepath.Join(modelConfigsDir, "codellama-34b-instruct-hf"), false},
-		{"simple-model", "", filepath.Join(modelConfigsDir, "simple-model"), false},
-		{"meta-llama/llama-3.1-8b-instruct", "/base", filepath.Join("/base", modelConfigsDir, "llama-3.1-8b-instruct"), false},
-		{"evil/../../../etc/passwd", "", "", true},
-		{"org/../../etc/shadow", "", "", true},
+		{"meta-llama/llama-3.1-8b-instruct", "/base", filepath.Join("/base", "llama-3.1-8b-instruct"), false},
+		{"codellama/codellama-34b-instruct-hf", "/base", filepath.Join("/base", "codellama-34b-instruct-hf"), false},
+		{"simple-model", "/base", filepath.Join("/base", "simple-model"), false},
+		{"meta-llama/llama-3.1-8b-instruct", "relative/catalog", filepath.Join("relative/catalog", "llama-3.1-8b-instruct"), false},
+		// An empty root must NOT silently resolve to a working-directory-relative path:
+		// that is the retired default #1731 removed.
+		{"meta-llama/llama-3.1-8b-instruct", "", "", true},
+		{"evil/../../../etc/passwd", "/base", "", true},
+		{"org/../../etc/shadow", "/base", "", true},
 	}
 
 	for _, tt := range tests {
-		got, err := bundledModelConfigDir(tt.model, tt.baseDir)
+		got, err := catalogModelDir(tt.model, tt.catalog)
 		if tt.wantErr {
 			if err == nil {
-				t.Errorf("bundledModelConfigDir(%q, %q) expected error, got nil", tt.model, tt.baseDir)
+				t.Errorf("catalogModelDir(%q, %q) expected error, got nil", tt.model, tt.catalog)
 			}
 			continue
 		}
 		if err != nil {
-			t.Errorf("bundledModelConfigDir(%q, %q) unexpected error: %v", tt.model, tt.baseDir, err)
+			t.Errorf("catalogModelDir(%q, %q) unexpected error: %v", tt.model, tt.catalog, err)
 			continue
 		}
 		if got != tt.expected {
-			t.Errorf("bundledModelConfigDir(%q, %q) = %q, want %q", tt.model, tt.baseDir, got, tt.expected)
+			t.Errorf("catalogModelDir(%q, %q) = %q, want %q", tt.model, tt.catalog, got, tt.expected)
 		}
 	}
 }
@@ -347,85 +450,81 @@ func TestGetHFRepo_MalformedYAML(t *testing.T) {
 	}
 }
 
-// TestResolveModelConfig_PrecedenceInvariant verifies the documented resolution order,
-// which after #1733 has exactly TWO steps and no fallback: explicit --model-config-folder
-// > the catalog entry. Removing the catalog entry no longer opens a third path — it makes
-// resolution fail (NS-6).
-func TestResolveModelConfig_PrecedenceInvariant(t *testing.T) {
+// TestResolveModelConfig_ResolutionInvariant verifies the documented resolution order,
+// which after #1733 (NS-6) and #1731 (S4) has exactly ONE step and no fallback: the
+// entry <catalog>/<short-name>/config.json inside the catalog located by --catalog /
+// BLIS_CATALOG. Removing the entry does not open a second path — it makes resolution
+// fail. Two DIFFERENT catalogs holding the same model resolve independently, which is
+// what makes "point --catalog at a scratch clone" the replacement for the retired
+// --model-config-folder.
+func TestResolveModelConfig_ResolutionInvariant(t *testing.T) {
 	tmpDir := t.TempDir()
-	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
+	const cfg = `{"num_hidden_layers": 32, "hidden_size": 4096}`
 
-	// Set up both resolution sources
-	explicitDir := filepath.Join(tmpDir, "explicit")
-	if err := os.MkdirAll(explicitDir, 0o755); err != nil {
+	catalogA := filepath.Join(tmpDir, "catalog-a")
+	catalogB := filepath.Join(tmpDir, "catalog-b")
+	for _, root := range []string{catalogA, catalogB} {
+		entry := filepath.Join(root, "precedence-model")
+		if err := os.MkdirAll(entry, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(entry, hfConfigFile), []byte(cfg), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The resolved entry follows the catalog root it was asked for — nothing else.
+	for _, root := range []string{catalogA, catalogB} {
+		dir, err := resolveModelConfigInCatalog("test-org/precedence-model", root)
+		if err != nil {
+			t.Fatalf("catalog %s: resolution failed: %v", root, err)
+		}
+		if want := filepath.Join(root, "precedence-model"); dir != want {
+			t.Errorf("catalog %s: expected %s, got %s", root, want, dir)
+		}
+	}
+
+	// There is no second step: with catalog A's entry removed, A is refused while B
+	// still resolves (no cross-catalog or working-directory fallback).
+	if err := os.Remove(filepath.Join(catalogA, "precedence-model", hfConfigFile)); err != nil {
 		t.Fatal(err)
 	}
-
-	localDir := filepath.Join(tmpDir, modelConfigsDir, "precedence-model")
-	if err := os.MkdirAll(localDir, 0o755); err != nil {
-		t.Fatal(err)
+	if dir, err := resolveModelConfigInCatalog("test-org/precedence-model", catalogA); err == nil {
+		t.Errorf("expected refusal once catalog A's entry is gone, got dir=%q", dir)
 	}
-	if err := os.WriteFile(filepath.Join(localDir, hfConfigFile), []byte(`{"num_hidden_layers": 32, "hidden_size": 4096}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Precedence 1: Explicit override wins over the catalog
-	dir, err := resolveModelConfig("test-org/precedence-model", explicitDir, defaultsFile)
-	if err != nil {
-		t.Fatalf("explicit override failed: %v", err)
-	}
-	if dir != explicitDir {
-		t.Errorf("explicit override: expected %s, got %s", explicitDir, dir)
-	}
-
-	// Precedence 2: the catalog entry, when no explicit folder is given
-	expectedLocal := filepath.Join(tmpDir, modelConfigsDir, "precedence-model")
-	dir, err = resolveModelConfig("test-org/precedence-model", "", defaultsFile)
-	if err != nil {
-		t.Fatalf("catalog hit failed: %v", err)
-	}
-	if dir != expectedLocal {
-		t.Errorf("catalog precedence: expected %s, got %s", expectedLocal, dir)
-	}
-
-	// There is no third step: with the entry removed, resolution is refused.
-	if err := os.Remove(filepath.Join(localDir, hfConfigFile)); err != nil {
-		t.Fatal(err)
-	}
-	if dir, err = resolveModelConfig("test-org/precedence-model", "", defaultsFile); err == nil {
-		t.Errorf("expected refusal once the catalog entry is gone, got dir=%q", dir)
+	if _, err := resolveModelConfigInCatalog("test-org/precedence-model", catalogB); err != nil {
+		t.Errorf("catalog B must be unaffected by catalog A's missing entry: %v", err)
 	}
 }
 
 // TestResolveModelConfig_CompletenessInvariant verifies the resolution chain's
-// completeness law: resolveModelConfig never returns ("", nil). It must always
-// return either a non-empty directory path or a non-nil error (R7: invariant test).
+// completeness law: resolution never returns ("", nil). It must always return either a
+// non-empty directory path or a non-nil error (R7: invariant test).
 func TestResolveModelConfig_CompletenessInvariant(t *testing.T) {
-	tmpDir := t.TempDir()
-	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
+	emptyCatalog := t.TempDir()
 
 	// Table of inputs covering edge cases
 	tests := []struct {
-		name           string
-		model          string
-		explicitFolder string
-		defaultsFile   string
+		name    string
+		model   string
+		catalog string
 	}{
-		{"empty model", "", "", defaultsFile},
-		{"org/model no sources", "test-org/test-model", "", defaultsFile},
-		{"simple model no sources", "simple-model", "", defaultsFile},
-		{"explicit override", "any-model", "/explicit/path", defaultsFile},
-		{"nonexistent defaults", "meta-llama/llama-3.1-8b", "", "/no/such/file.yaml"},
+		{"empty model", "", emptyCatalog},
+		{"org/model, empty catalog", "test-org/test-model", emptyCatalog},
+		{"simple model, empty catalog", "simple-model", emptyCatalog},
+		{"nonexistent catalog root", "meta-llama/llama-3.1-8b", "/no/such/catalog"},
+		{"empty catalog root", "meta-llama/llama-3.1-8b", ""},
+		{"path traversal model name", "evil/../../../etc/passwd", emptyCatalog},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dir, err := resolveModelConfig(tt.model, tt.explicitFolder, tt.defaultsFile)
+			dir, err := resolveModelConfigInCatalog(tt.model, tt.catalog)
 			// Completeness invariant: never ("", nil)
 			if dir == "" && err == nil {
-				t.Errorf("resolveModelConfig(%q, %q, %q) returned (\"\", nil) — "+
+				t.Errorf("resolveModelConfigInCatalog(%q, %q) returned (\"\", nil) — "+
 					"must return either a non-empty path or a non-nil error",
-					tt.model, tt.explicitFolder, tt.defaultsFile)
+					tt.model, tt.catalog)
 			}
 		})
 	}

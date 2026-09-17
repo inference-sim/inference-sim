@@ -141,3 +141,59 @@ func collectDocFiles(t *testing.T) []string {
 	}
 	return files
 }
+
+// docCatalogEntryPoints are the documentation entry points a reader actually starts from.
+// Since #1731 the model catalog must be located explicitly (--catalog / BLIS_CATALOG, no
+// default and no search path), so each of these must tell the reader how — otherwise every
+// example downstream of it aborts as written.
+var docCatalogEntryPoints = []string{
+	"../CLAUDE.md",
+	"../README.md",
+	"../docs/index.md",
+	"../docs/getting-started/quickstart.md",
+	"../docs/getting-started/installation.md",
+	"../docs/getting-started/tutorial.md",
+}
+
+// TestDocExamplesDocumentTheCatalogEnvVar is the #1731 counterpart of
+// TestDocExamplesPassDeploymentFlags, and deliberately a DIFFERENT shape.
+//
+// --hardware/--tp have no environment-variable form, so #1733 had to add them to every one
+// of the ~108 documented examples. --catalog does have one — BLIS_CATALOG exists precisely
+// so the catalog location is stated ONCE rather than repeated in every command. So the
+// documented examples keep omitting the flag, and what has to hold instead is that each
+// entry point a reader starts from names both forms and shows the one-time export. This
+// test pins that instruction, so a future edit cannot silently delete the thing that makes
+// those examples runnable.
+//
+// If a later PR decides to put --catalog on every example instead, delete this test and
+// extend TestDocExamplesPassDeploymentFlags — but the two policies must not both be half
+// applied, which is exactly what an unpinned prose instruction drifts into.
+func TestDocExamplesDocumentTheCatalogEnvVar(t *testing.T) {
+	for _, path := range docCatalogEntryPoints {
+		src, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v (docCatalogEntryPoints is stale)", path, err)
+		}
+		text := string(src)
+		if !strings.Contains(text, catalogEnvVar) {
+			t.Errorf("%s must name the %s environment variable: the catalog has no default and no "+
+				"search path since #1731, so a reader following this page needs to know how to "+
+				"locate it", path, catalogEnvVar)
+		}
+		if !strings.Contains(text, "--catalog") {
+			t.Errorf("%s must name --catalog, the explicit form that overrides %s", path, catalogEnvVar)
+		}
+	}
+
+	// Non-vacuity: the export instruction itself must be present somewhere a reader
+	// following the quick start will run it, not merely mentioned in passing.
+	quickstart, err := os.ReadFile("../docs/getting-started/quickstart.md")
+	if err != nil {
+		t.Fatalf("read quickstart: %v", err)
+	}
+	if !strings.Contains(string(quickstart), "export "+catalogEnvVar+"=") {
+		t.Errorf("docs/getting-started/quickstart.md must show the one-time `export %s=...` the "+
+			"downstream examples rely on", catalogEnvVar)
+	}
+}
