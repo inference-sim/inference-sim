@@ -45,6 +45,7 @@ The JSON output on stdout (and in the `--metrics-path` file when set) contains:
 | `length_capped_requests` | count | Requests force-completed at `MaxModelLen` |
 | `timed_out_requests` | count | Requests that exceeded their deadline |
 | `saturation` | object | Post-hoc saturation detection result (omitted when `--post-hoc-detector none`; see [Saturation Detection](#saturation-detection)) |
+| `catalog` | object | Model-catalog provenance: path, git revision, dirty flag — **`--metrics-path` file only, never stdout** (see [Catalog Provenance](#catalog-provenance)) |
 | `requests` | array | Per-request detail records (omitted when empty; see [Per-Request Fields](#per-request-fields)) |
 
 ### Scheduling Delay
@@ -53,6 +54,38 @@ Scheduling delay isolates the WaitQ wait time from compute time. High scheduling
 
 !!! warning "Per-request units"
     All per-request latency fields (`ttft_ms`, `e2e_ms`, `itl_ms`, `scheduling_delay_ms`) are in **milliseconds** — converted from internal ticks by dividing by 1,000. Aggregate metrics (`scheduling_delay_p99_ms`, etc.) are also in milliseconds. See [Known Unit Gotchas](../reference/configuration.md#known-unit-gotchas) for the full unit reference. Note: hypothesis scripts written before BC-14 may divide `scheduling_delay_ms` by 1,000 unnecessarily — that field is now already in ms.
+
+### Catalog Provenance
+
+The `catalog` field records **which model catalog produced the result** (#1732), so a results
+file is attributable and an *experiment* is distinguishable from a *reproducible run*. It is
+written by both `blis run --metrics-path` and `blis replay --metrics-path`:
+
+```json
+{
+  "catalog": {
+    "path": "/home/me/blis-catalog/catalog/models",
+    "revision": "63a9a5010a3f0c1d9f6b2e4a7c8d5b1e2f3a4b5c",
+    "dirty": false
+  }
+}
+```
+
+- `path` — the catalog root that was located by `--catalog` / `BLIS_CATALOG`.
+- `revision` — the catalog's git commit, or `"unknown"` when the catalog is not a git
+  checkout (a revision is never invented).
+- `dirty` — `true` when the catalog **subtree** has uncommitted or untracked content, i.e.
+  the run used a config the recorded revision does not contain. A catalog inside a larger
+  repository is judged on its own subtree, so an unrelated edit elsewhere in that repository
+  does not mark the run an experiment. `dirty` is always `false` alongside an unknown
+  revision — there is no committed state to differ from.
+
+!!! note "File-only, by design"
+    Provenance appears **only** in the `--metrics-path` file, never on stdout. Catalog git
+    state legitimately differs between two otherwise identical runs, and stdout is the
+    byte-identical channel INV-6 protects. A run without `--metrics-path` never consults git
+    at all — and a results file written by a run whose catalog could not be resolved simply
+    omits the block.
 
 ### Saturation Detection
 
