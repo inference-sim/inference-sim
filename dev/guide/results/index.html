@@ -1214,6 +1214,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#catalog-provenance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Catalog Provenance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#saturation-detection" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3101,6 +3112,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#catalog-provenance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Catalog Provenance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#saturation-detection" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3511,6 +3533,11 @@
 <td>Post-hoc saturation detection result (omitted when <code>--post-hoc-detector none</code>; see <a href="#saturation-detection">Saturation Detection</a>)</td>
 </tr>
 <tr>
+<td><code>catalog</code></td>
+<td>object</td>
+<td>Model-catalog provenance: path, git revision, dirty flag — <strong><code>--metrics-path</code> file only, never stdout</strong> (see <a href="#catalog-provenance">Catalog Provenance</a>)</td>
+</tr>
+<tr>
 <td><code>requests</code></td>
 <td>array</td>
 <td>Per-request detail records (omitted when empty; see <a href="#per-request-fields">Per-Request Fields</a>)</td>
@@ -3523,20 +3550,50 @@
 <p class="admonition-title">Per-request units</p>
 <p>All per-request latency fields (<code>ttft_ms</code>, <code>e2e_ms</code>, <code>itl_ms</code>, <code>scheduling_delay_ms</code>) are in <strong>milliseconds</strong> — converted from internal ticks by dividing by 1,000. Aggregate metrics (<code>scheduling_delay_p99_ms</code>, etc.) are also in milliseconds. See <a href="../../reference/configuration/#known-unit-gotchas">Known Unit Gotchas</a> for the full unit reference. Note: hypothesis scripts written before BC-14 may divide <code>scheduling_delay_ms</code> by 1,000 unnecessarily — that field is now already in ms.</p>
 </div>
+<h3 id="catalog-provenance">Catalog Provenance<a class="headerlink" href="#catalog-provenance" title="Permanent link">&para;</a></h3>
+<p>The <code>catalog</code> field records <strong>which model catalog produced the result</strong> (#1732), so a results
+file is attributable and an <em>experiment</em> is distinguishable from a <em>reproducible run</em>. It is
+written by both <code>blis run --metrics-path</code> and <code>blis replay --metrics-path</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">"catalog"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/home/me/blis-catalog/catalog/models"</span><span class="p">,</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="nt">"revision"</span><span class="p">:</span><span class="w"> </span><span class="s2">"63a9a5010a3f0c1d9f6b2e4a7c8d5b1e2f3a4b5c"</span><span class="p">,</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">"dirty"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="p">}</span>
+</code></pre></div>
+<ul>
+<li><code>path</code> — the catalog root that was located by <code>--catalog</code> / <code>BLIS_CATALOG</code>.</li>
+<li><code>revision</code> — the catalog's git commit, or <code>"unknown"</code> when the catalog is not a git
+  checkout (a revision is never invented).</li>
+<li><code>dirty</code> — <code>true</code> when the catalog <strong>subtree</strong> has uncommitted or untracked content, i.e.
+  the run used a config the recorded revision does not contain. A catalog inside a larger
+  repository is judged on its own subtree, so an unrelated edit elsewhere in that repository
+  does not mark the run an experiment. <code>dirty</code> is always <code>false</code> alongside an unknown
+  revision — there is no committed state to differ from.</li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">File-only, by design</p>
+<p>Provenance appears <strong>only</strong> in the <code>--metrics-path</code> file, never on stdout. Catalog git
+state legitimately differs between two otherwise identical runs, and stdout is the
+byte-identical channel INV-6 protects. A run without <code>--metrics-path</code> never consults git
+at all — and a results file written by a run whose catalog could not be resolved simply
+omits the block.</p>
+</div>
 <h3 id="saturation-detection">Saturation Detection<a class="headerlink" href="#saturation-detection" title="Permanent link">&para;</a></h3>
 <p>The <code>saturation</code> field provides automated classification of simulation runs using post-hoc analysis (#1369). This is enabled via the <code>--post-hoc-detector</code> flag and is distinct from the real-time flow control saturation detector.</p>
 <p><strong>Structure:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">"saturation"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"STABLE"</span><span class="p">,</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="nt">"score"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.35</span><span class="p">,</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">"confidence"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.95</span><span class="p">,</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="nt">"signals"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">      </span><span class="nt">"rate_deficit"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="p">,</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">      </span><span class="nt">"latency_trend"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.12</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">  </span><span class="p">}</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">"saturation"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"STABLE"</span><span class="p">,</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="nt">"score"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.35</span><span class="p">,</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="nt">"confidence"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.95</span><span class="p">,</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="nt">"signals"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">      </span><span class="nt">"rate_deficit"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="p">,</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">      </span><span class="nt">"latency_trend"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.12</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="p">}</span>
 </code></pre></div></p>
 <table>
 <thead>
@@ -3589,11 +3646,11 @@
 </li>
 </ul>
 <p><strong>Usage:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Run with composite detector</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span>--post-hoc-detector<span class="w"> </span>composite
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Run with threshold detector (custom threshold)</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span>--post-hoc-detector<span class="w"> </span>threshold<span class="w"> </span>--saturation-threshold-ms<span class="w"> </span><span class="m">3000</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Run with composite detector</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span>--post-hoc-detector<span class="w"> </span>composite
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Run with threshold detector (custom threshold)</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span>--post-hoc-detector<span class="w"> </span>threshold<span class="w"> </span>--saturation-threshold-ms<span class="w"> </span><span class="m">3000</span>
 </code></pre></div></p>
 <p><strong>Use cases:</strong>
 - Automated capacity planning: classify runs as under-provisioned (OVERLOADED), near-capacity (BACKLOGGED), or healthy (STABLE)
@@ -3796,29 +3853,29 @@
 <p>When multiple SLO classes are present in the workload, BLIS prints per-class TTFT and E2E distributions. This lets you verify that <code>critical</code> requests meet SLOs even when <code>batch</code> traffic is heavy.</p>
 <h2 id="per-model-metrics">Per-Model Metrics<a class="headerlink" href="#per-model-metrics" title="Permanent link">&para;</a></h2>
 <p>When instances serve different models (multi-model deployment), BLIS prints per-model TTFT mean/p99, E2E mean/p99, and throughput (req/s). This appears automatically when requests carry model tags. Output format:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>=== Per-Model Metrics ===
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>  qwen/qwen3-14b:
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    TTFT: p50=1234.56 p99=5678.90 (n=250)
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    E2E:  p50=9876.54 p99=12345.67 (n=250)
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    Throughput: 50.00 req/s, 6400.00 tok/s
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>=== Per-Model Metrics ===
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>  qwen/qwen3-14b:
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    TTFT: p50=1234.56 p99=5678.90 (n=250)
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    E2E:  p50=9876.54 p99=12345.67 (n=250)
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    Throughput: 50.00 req/s, 6400.00 tok/s
 </code></pre></div>
 <p>Per-model metrics appear on stdout only. The <code>--metrics-path</code> JSON file (see <a href="#primary-metrics-json-output">Primary Metrics</a>) contains only the aggregate <code>MetricsOutput</code> fields. The same applies to per-tenant, session, and PD metrics — all are stdout-only sections.</p>
 <h2 id="per-tenant-metrics">Per-Tenant Metrics<a class="headerlink" href="#per-tenant-metrics" title="Permanent link">&para;</a></h2>
 <p>When requests carry <code>tenant_id</code> labels, BLIS prints per-tenant request counts, total output tokens served, and a <a href="https://en.wikipedia.org/wiki/Fairness_measure">Jain Fairness Index</a> over the token distribution. This section appears automatically and is omitted when no requests carry tenant labels (backward-compatible with legacy and untenanted workloads). A workload with a single named tenant shows the section with Jain=1.0 (trivially fair).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>=== Per-Tenant Metrics ===
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>  alice: requests=50, tokens=12500
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>  bob: requests=50, tokens=12480
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>  Jain Fairness Index: 0.9999
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>=== Per-Tenant Metrics ===
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>  alice: requests=50, tokens=12500
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>  bob: requests=50, tokens=12480
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>  Jain Fairness Index: 0.9999
 </code></pre></div>
 <p>Tenants are listed in lexicographic order. The Jain Fairness Index ranges from <code>1/N</code> (maximally unfair — one tenant receives everything) to <code>1.0</code> (perfectly fair — all tenants receive equal tokens). A balanced two-tenant workload produces a value ≥ 0.99.</p>
 <p>To tag requests with tenant labels, set <code>tenant_id</code> in your workload spec cohort:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">cohorts</span><span class="p">:</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">alice-traffic</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="nt">tenant_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">alice</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">...</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bob-traffic</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">    </span><span class="nt">tenant_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bob</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">...</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">cohorts</span><span class="p">:</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">alice-traffic</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="nt">tenant_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">alice</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">...</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bob-traffic</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">    </span><span class="nt">tenant_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bob</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">...</span>
 </code></pre></div>
 <h2 id="session-metrics">Session Metrics<a class="headerlink" href="#session-metrics" title="Permanent link">&para;</a></h2>
 <p>When a workload contains multi-turn sessions (requests with <code>session_id</code>), BLIS prints a <code>=== Session Metrics ===</code> block:</p>
@@ -3903,7 +3960,7 @@
 </div>
 <h2 id="fitness-evaluation">Fitness Evaluation<a class="headerlink" href="#fitness-evaluation" title="Permanent link">&para;</a></h2>
 <p>For automated multi-configuration comparison:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>--fitness-weights<span class="w"> </span><span class="s2">"p99_ttft:3,mean_e2e:1,throughput:2"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>--fitness-weights<span class="w"> </span><span class="s2">"p99_ttft:3,mean_e2e:1,throughput:2"</span>
 </code></pre></div>
 <p>Valid metric keys: <code>throughput</code>, <code>tokens_per_sec</code>, <code>p99_ttft</code>, <code>p50_ttft</code>, <code>mean_ttft</code>, <code>p99_e2e</code>, <code>p50_e2e</code>, <code>mean_e2e</code>.</p>
 <h3 id="how-normalization-works">How Normalization Works<a class="headerlink" href="#how-normalization-works" title="Permanent link">&para;</a></h3>
@@ -3933,8 +3990,8 @@
 </ul>
 <h2 id="per-request-results">Per-Request Results<a class="headerlink" href="#per-request-results" title="Permanent link">&para;</a></h2>
 <p>For detailed analysis, save per-request data:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span>--metrics-path<span class="w"> </span>metrics.json
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span>--metrics-path<span class="w"> </span>metrics.json
 </code></pre></div>
 <p>Each request record includes TTFT, E2E, scheduling delay, and completion status.</p>
 <h2 id="further-reading">Further Reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>
