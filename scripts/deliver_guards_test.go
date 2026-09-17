@@ -562,3 +562,48 @@ func TestDeliverImplementPrefersAnExistingPRsBase(t *testing.T) {
 			"existing PR's base cannot override the value computed from the issue body", baseOut, lookup)
 	}
 }
+
+// Every delivery phase hand-off must use the shared retry script (#1757).
+//
+// A single un-retried `gh workflow run` terminally stalls the delivery loop on a transient API
+// failure — observed live on PR #1736. This test asserts every hand-off calls
+// scripts/dispatch-with-retry.sh with the correct target workflow, preventing a future edit from
+// regressing one back to a bare call.
+func TestDeliveryHandoffDispatchesUseRetryScript(t *testing.T) {
+	handoffs := []struct {
+		file     string
+		stepName string
+		target   string
+	}{
+		{"deliver-verify.yml", "Hand off to correct", "deliver-correct.yml"},
+		{"deliver-correct.yml", "Hand back to verify", "deliver-verify.yml"},
+		{"deliver-implement.yml", "Hand off to verify", "deliver-verify.yml"},
+	}
+
+	for _, h := range handoffs {
+		t.Run(h.file+"/"+h.stepName, func(t *testing.T) {
+			path := filepath.Join("..", ".github", "workflows", h.file)
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("reading %s: %v", path, err)
+			}
+			body := string(raw)
+
+			stepIdx := strings.Index(body, "name: "+h.stepName)
+			if stepIdx < 0 {
+				t.Fatalf("%s has no step named %q", h.file, h.stepName)
+			}
+			section := body[stepIdx:]
+			nextStep := strings.Index(section[1:], "\n      - name:")
+			if nextStep > 0 {
+				section = section[:nextStep+1]
+			}
+
+			if !strings.Contains(section, "scripts/dispatch-with-retry.sh "+h.target) {
+				t.Errorf("%s step %q does not call scripts/dispatch-with-retry.sh %s. "+
+					"A bare gh workflow run terminally stalls the delivery loop (#1757)",
+					h.file, h.stepName, h.target)
+			}
+		})
+	}
+}

@@ -980,12 +980,14 @@ jobs:
           # the applied decision, not the gate's.
           echo "final_decision=$decision" >> "$GITHUB_ENV"
 
+      # Retried with exponential backoff (#1757): a single un-retried dispatch terminally
+      # stalls the delivery loop on a transient API failure — observed live on PR #1736.
       - name: Hand off to correct
         if: steps.paused.outputs.paused == 'false' && env.final_decision == 'correct'
         run: |
-          gh workflow run deliver-correct.yml --repo "$REPO" --ref "${{ github.ref_name }}" \
+          scripts/dispatch-with-retry.sh deliver-correct.yml \
+            --repo "$REPO" --ref "${{ github.ref_name }}" \
             -f pr_number="$PR" -f issue_number="$ISSUE_NUMBER"
-          echo "Dispatched correct for PR #$PR."
 
       # `always() && !success()`, NOT `failure() || cancelled()`. Per the GitHub expression docs
       # `failure()` is true when a previous step FAILS and `cancelled()` when the WORKFLOW is

@@ -684,10 +684,12 @@ jobs:
         if: steps.pr.outputs.number != '' && steps.work.outputs.changed == 'true'
         env:
           PR: ${{ steps.pr.outputs.number }}
+        # Retried with exponential backoff (#1757): same transient-dispatch hardening as
+        # the verify→correct hand-off.
         run: |
-          gh workflow run deliver-verify.yml --repo "$REPO" --ref "${{ github.ref_name }}" \
+          scripts/dispatch-with-retry.sh deliver-verify.yml \
+            --repo "$REPO" --ref "${{ github.ref_name }}" \
             -f pr_number="$PR" -f issue_number="$ISSUE_NUMBER"
-          echo "Dispatched verify for PR #$PR."
 
       # BC-11. `success()` keeps this mutually exclusive with the failure reporter below (which
       # requires `!success()`): this is the phase running to completion having built NOTHING,
