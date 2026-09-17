@@ -361,13 +361,17 @@ func (q *GatewayQueue) findGlobalShedVictim(incomingPriority int, incomingSeqID 
 }
 
 // removeEntryByIndex removes the entry at the given index from the flow and decrements counts.
+// Maintains INV-16 (the two totalLen counters stay in lockstep with the flow contents) and
+// asserts INV-17 (the victim is the flow tail).
 func (q *GatewayQueue) removeEntryByIndex(flow *flowQueue, band *priorityBand, idx int) {
-	// Remove from slice. The shedding victim is always the last element in its flow
-	// (highest seqID from append-only FIFO ordering), so this is a simple truncation
-	// and the head (index 0) used by Dequeue is preserved.
+	// INV-17 (docs/contributing/standards/invariants.md#inv-17): the shedding victim is
+	// always the last element in its flow — findGlobalShedVictim tie-breaks toward the
+	// highest seqID and flows are append-only in seqID order — so this is a simple
+	// truncation and the head (index 0) used by Dequeue is preserved. A change to victim
+	// SELECTION can break the truncation from a distance, which is why it is asserted here.
 	last := len(flow.requests) - 1
 	if idx != last {
-		panic(fmt.Sprintf("removeEntryByIndex: idx=%d != last=%d — shed victim must be flow tail (seqID ordering violated)", idx, last))
+		panic(fmt.Sprintf("removeEntryByIndex: idx=%d != last=%d — INV-17 violation: shed victim must be flow tail (seqID ordering violated)", idx, last))
 	}
 	delete(q.requestIndex, flow.requests[idx].request.ID)
 	flow.requests = flow.requests[:last]
@@ -398,7 +402,7 @@ func (q *GatewayQueue) Dequeue() *sim.Request {
 		req = q.dequeueFIFO()
 	}
 	if req == nil {
-		panic(fmt.Sprintf("GatewayQueue.Dequeue: totalLen=%d but dequeue returned nil — counter desync", q.totalLen))
+		panic(fmt.Sprintf("GatewayQueue.Dequeue: totalLen=%d but dequeue returned nil — INV-16 violation: counter desync", q.totalLen))
 	}
 	return req
 }
@@ -416,7 +420,7 @@ func (q *GatewayQueue) DequeueGated(saturation float64) *sim.Request {
 
 	numBands := len(q.bands)
 	if numBands == 0 {
-		panic(fmt.Sprintf("GatewayQueue.DequeueGated: totalLen=%d but no bands — counter desync", q.totalLen))
+		panic(fmt.Sprintf("GatewayQueue.DequeueGated: totalLen=%d but no bands — INV-16 violation: counter desync", q.totalLen))
 	}
 
 	// Iterate ALL bands by position index (descending priority order).
@@ -450,7 +454,7 @@ func (q *GatewayQueue) DequeueGated(saturation float64) *sim.Request {
 			req = q.dequeueFromBand(band)
 		}
 		if req == nil {
-			panic(fmt.Sprintf("GatewayQueue.DequeueGated: band priority=%d has totalLen=%d but dequeue returned nil — counter desync", band.priority, band.totalLen))
+			panic(fmt.Sprintf("GatewayQueue.DequeueGated: band priority=%d has totalLen=%d but dequeue returned nil — INV-16 violation: counter desync", band.priority, band.totalLen))
 		}
 		return req
 	}

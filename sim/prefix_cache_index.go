@@ -126,9 +126,15 @@ func (c *lruBlockCache) touch(h string) {
 // evictOldest removes the least recently used block hash (the tail). O(1).
 // Panics if tail is nil — callers only invoke this when len(lookup) >= capacity,
 // so a nil tail indicates linked-list corruption.
+//
+// This is INV-18's assertion point (docs/contributing/standards/invariants.md#inv-18):
+// the list and the lookup map describe the same block set, so `tail == nil` iff
+// `len(lookup) == 0` and eviction at capacity can never fail. The two structures are
+// maintained by separate statements, so a mutator that updates one and not the other
+// degrades routing silently (fewer prefix hits) until it finally reaches this panic.
 func (c *lruBlockCache) evictOldest() {
 	if c.tail == nil {
-		panic(fmt.Sprintf("lruBlockCache.evictOldest: tail is nil but len(lookup)=%d (invariant violation)", len(c.lookup)))
+		panic(fmt.Sprintf("lruBlockCache.evictOldest: tail is nil but len(lookup)=%d — INV-18 violation (list/lookup inconsistent)", len(c.lookup)))
 	}
 	delete(c.lookup, c.tail.hash)
 	c.removeNode(c.tail)

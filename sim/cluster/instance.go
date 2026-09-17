@@ -413,6 +413,10 @@ func (i *InstanceSimulator) ConsumeWarmUpRequest() {
 }
 
 // validInstanceTransitions maps valid source → target pairs for instance lifecycle.
+// This table IS INV-14 (see docs/contributing/standards/invariants.md#inv-14): the
+// legal edge set, which is also monotone — every edge advances the instance along
+// Scheduling < Loading < WarmingUp < Active < Draining < Terminated and none regresses.
+// Adding a backward edge here fails TestInstanceStateMachine_NoBackwardTransitions.
 var validInstanceTransitions = map[sim.InstanceState]map[sim.InstanceState]struct{}{
 	sim.InstanceStateScheduling: {sim.InstanceStateLoading: {}, sim.InstanceStateTerminated: {}},
 	sim.InstanceStateLoading:    {sim.InstanceStateWarmingUp: {}, sim.InstanceStateActive: {}, sim.InstanceStateTerminated: {}},
@@ -422,21 +426,27 @@ var validInstanceTransitions = map[sim.InstanceState]map[sim.InstanceState]struc
 	sim.InstanceStateTerminated: {},
 }
 
-// TransitionTo validates and applies an instance state transition.
-// Panics on invalid transition (invariant violation per Principle V).
-// Initializes State on first call when State is empty (backward-compat: lifecycle not tracked).
+// TransitionTo validates and applies an instance state transition. It is the only
+// writer of State outside construction, which is what makes validInstanceTransitions
+// load-bearing rather than advisory.
+//
+// Panics on an invalid transition — INV-14 clause 1 (invariant violation per
+// Principle V). Initializes State on first call when State is empty: INV-14
+// clause 2, the seeding carve-out for runs with lifecycle tracking disabled, so
+// clause 1 constrains an instance's second and later transitions.
 func (i *InstanceSimulator) TransitionTo(state sim.InstanceState) {
 	if i.State == "" {
-		// Lifecycle tracking not enabled — silently accept transition to initialize state.
+		// INV-14 clause 2: lifecycle tracking not enabled — accept this one
+		// transition unvalidated to seed State. Subsequent calls are validated.
 		i.State = state
 		return
 	}
 	targets, ok := validInstanceTransitions[i.State]
 	if !ok {
-		panic(fmt.Sprintf("TransitionTo %s: unknown source state %q", i.id, i.State))
+		panic(fmt.Sprintf("TransitionTo %s: unknown source state %q — INV-14 violation", i.id, i.State))
 	}
 	if _, valid := targets[state]; !valid {
-		panic(fmt.Sprintf("TransitionTo %s: invalid transition %q → %q", i.id, i.State, state))
+		panic(fmt.Sprintf("TransitionTo %s: invalid transition %q → %q — INV-14 violation", i.id, i.State, state))
 	}
 	i.State = state
 }
