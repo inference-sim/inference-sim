@@ -1,0 +1,3503 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A discrete-event simulator for LLM inference serving systems">
+      
+      
+      
+      
+        <link rel="prev" href="../pr-workflow/">
+      
+      
+        <link rel="next" href="../rfc/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
+    
+    
+      
+        <title>Automated Delivery (L1) - BLIS — Blackbox Inference Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#automated-delivery-l1" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            BLIS — Blackbox Inference Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Automated Delivery (L1)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../concepts/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guide/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../methodology/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Methodology
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../blog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Blog
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    BLIS — Blackbox Inference Simulator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: Capacity Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../concepts/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/core-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/roofline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roofline Estimation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../guide/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/routing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Routing Policies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/admission/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admission Control
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/scheduling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduling & Priority
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/latency-models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Latency Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/kv-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/workloads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workload Specifications
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Simulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metrics & Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/observe-replay-calibrate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observe / Replay / Calibrate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/kv-offload-calibration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KV Hit-Rate Calibration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/archon-pr-review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archon PR Review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/skills-and-plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Skills & Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/project-structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Compatibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/workload-spec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workload Spec Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../methodology/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Methodology
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Methodology
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../methodology/strategy-evolution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Strategy Evolution
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../methodology/hypothesis-bundles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Bundles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../extension-recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pr-workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PR Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Automated Delivery (L1)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Automated Delivery (L1)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The command
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-can-be-delivered" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What can be delivered
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-happens" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What happens
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-ends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How it ends
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The gate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#controlling-a-delivery-in-flight" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Controlling a delivery in flight
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-a-delivery-goes-quiet-and-how-to-resume-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When a delivery goes quiet, and how to resume one
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scope
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../rfc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RFC Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../perspectives/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Review Perspectives
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_7_8" id="__nav_7_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archon
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Archon
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../archon/baseline-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Baseline Analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../archon/encode-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Encode Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../archon/pr-review-context/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PR Review Context
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_7_9" id="__nav_7_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Standards
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Standards
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../standards/experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiment Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../standards/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Antipattern Rules (R1-R23)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../standards/invariants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Invariants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../standards/principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engineering Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_7_10" id="__nav_7_10_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Templates
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/design-guidelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/micro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Micro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/archon-issue-examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archon Issue Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../blog/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Blog
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8" id="__nav_8_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Blog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_2" id="__nav_8_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archive
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Archive
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/archive/2026/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    2026
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_3" id="__nav_8_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Categories
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Categories
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/category/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/category/capacity-planning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capacity Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/category/deep-dives/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deep Dives
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/category/what-is-blis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    What is BLIS?
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The command
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-can-be-delivered" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What can be delivered
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-happens" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What happens
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-ends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How it ends
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The gate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#controlling-a-delivery-in-flight" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Controlling a delivery in flight
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-a-delivery-goes-quiet-and-how-to-resume-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When a delivery goes quiet, and how to resume one
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scope
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="automated-delivery-l1">Automated Delivery (L1)<a class="headerlink" href="#automated-delivery-l1" title="Permanent link">&para;</a></h1>
+<p>One comment delivers a sub-issue. Agents implement, verify, correct, and re-verify until the PR is either ready for a human to merge or stopped with a reason. <strong>The loop never merges</strong> — it labels, and a human merges.</p>
+<p>This is the automated counterpart to <a href="../pr-workflow/">PR Workflow</a>, which remains the manual path and the source of the rules the implement phase follows.</p>
+<h2 id="the-command">The command<a class="headerlink" href="#the-command" title="Permanent link">&para;</a></h2>
+<p>Comment on the sub-issue you want delivered:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>/approve-issue-for-pr-delivery
+</code></pre></div>
+<p><strong>No issue number.</strong> The target is the issue you commented on. An argument would be redundant — you are already on the issue — and a hazard: commenting on #100 with <code>#200</code> would deliver something other than what you are reading. A <code>#N</code> that <em>agrees</em> with the current issue is tolerated, since the earlier documented form used one; a disagreeing one is refused with an explanation rather than silently ignored.</p>
+<p>Restricted to repository collaborators, same as <code>/archon-pr-review</code> and <code>@claude</code>.</p>
+<h2 id="what-can-be-delivered">What can be delivered<a class="headerlink" href="#what-can-be-delivered" title="Permanent link">&para;</a></h2>
+<p><strong>Any single deliverable issue.</strong> It does not have to be a sub-issue of a planned feature:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Works</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A <strong>sub-issue</strong> of an archon-planned feature</td>
+<td>yes</td>
+<td>the surface, contracts, allow list, target branch and <code>archon-plan:</code> are all honoured</td>
+</tr>
+<tr>
+<td>A <strong>standalone</strong> issue — bug, enhancement, hardening</td>
+<td>yes</td>
+<td>no plan, no declared surface, targets the default branch. Small issues here legitimately skip the RFC and plan; the issue's own acceptance criteria are the contract</td>
+</tr>
+<tr>
+<td>A <strong>tracking issue</strong></td>
+<td><strong>refused</strong></td>
+<td>see below</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Archon is optional, not required.</strong> With a plan there is a deterministic number that must not move the wrong way (<code>PLAN_GATE=pass</code>); with no plan at all the signal is <code>absent</code>, which delivers exactly as <code>pass</code> does, and the gate is CI plus the review verdict. The honest cost of running plan-less is that the exit condition becomes entirely judgement — no worse than what a human reviewer works from, but proportionally less mechanically checkable.</p>
+<p><strong>A tracking issue is refused, by design.</strong> It is an umbrella over several holes, so delivering it would mean one PR attempting the whole feature — the thing one-hole-per-PR exists to avoid — and it would spend an agent run producing something unreviewable. Two signals detect it, because this repository uses both conventions: the issue has linked native GitHub sub-issues, or its title begins with <code>Tracking</code> / <code>Epic</code>. Either one refuses with a comment pointing you at a specific sub-issue. If an issue really is a single deliverable unit, rename it and unlink its children.</p>
+<p>Then leave. Every phase posts a comment, so the whole delivery history is readable on the PR page without opening a single Actions log.</p>
+<h2 id="what-happens">What happens<a class="headerlink" href="#what-happens" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>/approve-issue-for-pr-delivery
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  │
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>  ├─ Deliver — Implement    workflow pushes deliver/issue-N; agent opens draft PR, then code
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>  │      ↓
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>  ├─ Deliver — Verify       build/test/lint → archon review → methodology review
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>  │      │                  ready-for-merge → STOP
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>  │      │                  needs-human    → STOP
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>  │      ↓ correct
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>  ├─ Deliver — Correct      fixes the named findings, pushes
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>  │      ↓
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>  └─ back to Verify              (at most 3 correction rounds)
+</code></pre></div>
+<p><strong>The implement phase opens its branch and PR before it starts work, not after it finishes.</strong> The
+workflow creates and pushes <code>deliver/issue-N</code> — with an empty seed commit, based on the sub-issue's
+target branch — before the agent starts. The agent's own first action, before it writes any code, is
+to open a <strong>draft</strong> PR on that branch; it then commits and pushes as it goes, and marks the PR ready
+for review when it is done. Three things follow from that ordering:</p>
+<ul>
+<li><strong>An interrupted run leaves recoverable work.</strong> A lost runner executes no step at all, so an
+  agent that pushed only at the end left nothing behind — a delivery once lost a finished
+  implementation that way, because the runner was evicted seconds before its single push. The branch
+  is pushed by the workflow, so this holds regardless of what the agent does.</li>
+<li><strong>An interrupted delivery is visible.</strong> <code>deliver-stall-sweep.yml</code> finds deliveries <em>from the PR
+  side</em>, so a run that died before opening a PR was invisible to the one backstop meant to catch it.
+  Opening the PR first shrinks that window from the whole run to the agent's first action. It does
+  not eliminate it: a runner lost in the first seconds still leaves a pushed branch with no PR, which
+  the sweep cannot see. Teaching the sweep to also consider PR-less delivery branches would close
+  the remainder, and is tracked as #1740.</li>
+<li><strong>A PR still marked draft, saying the work is in progress, was interrupted.</strong> The agent is told
+  to say so in the body it opens, so an abandoned delivery is recognisable without reading the run
+  log.</li>
+</ul>
+<p>Because the agent opens a PR before it writes anything, an open PR is no longer evidence that
+anything was built.
+The hand-off to verify is gated on the branch actually carrying a file change against its base;
+an agent that produced nothing gets a comment on the sub-issue saying exactly that, instead of
+handing an empty PR to a two-hour review.</p>
+<p><code>ci.yml</code> is the authority on build, test and lint <strong>for implement and verify</strong>. Verify dispatches it
+on the delivery branch and reads the resulting check runs; implement deliberately does <em>not</em> re-run
+the full suite or the linter, which duplicated a parity obligation and, on the resource-limited
+self-hosted runner, was itself a cause of lost runs.</p>
+<p><strong>The correct phase has not been brought into line yet.</strong> Its prompt still tells the agent to run
+<code>go build ./...</code>, <code>go test ./...</code> and <code>golangci-lint run ./...</code> "because the verify phase runs
+exactly these three" — the same false premise, on the same self-hosted runner, under a tighter
+60-minute budget. Tracked as #1737; do not read the paragraph above as describing that phase.</p>
+<p>Phases chain with <code>workflow_dispatch</code>, passing the PR and sub-issue numbers as inputs. <strong>No PAT and no GitHub App are needed</strong> — <code>workflow_dispatch</code> and <code>repository_dispatch</code> are the two events that always create workflow runs even when triggered with <code>GITHUB_TOKEN</code>.</p>
+<p><code>workflow_run</code> is deliberately <em>not</em> used, for two documented reasons:</p>
+<ul>
+<li><strong>It caps at three levels.</strong> "You can't use <code>workflow_run</code> to chain together more than three levels of workflows." implement → verify → correct → verify exhausts the budget, so the fourth link never fires and the loop dies after a single correction round — silently, since nothing runs to report it.</li>
+<li><strong>It cannot get a CI verdict anyway.</strong> When a workflow using <code>GITHUB_TOKEN</code> opens or updates a PR, "the resulting <code>pull_request</code> event creates workflow runs in an <strong>approval-required</strong> state". The delivery's own CI runs would sit waiting for a human to click <em>Approve and run</em>, so polling for a conclusion would time out every round.</li>
+</ul>
+<h2 id="how-it-ends">How it ends<a class="headerlink" href="#how-it-ends" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Outcome</th>
+<th>Meaning</th>
+<th>What you do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ready-for-merge</code></td>
+<td>CI green, archon plan not regressed, review returned GREEN</td>
+<td>Read the history, merge</td>
+</tr>
+<tr>
+<td><code>needs-human</code></td>
+<td>Signals disagreed, evidence was missing, or 3 rounds did not close the findings</td>
+<td>Read the last comment — it names the phase and the reason</td>
+</tr>
+</tbody>
+</table>
+<p>There is no third outcome. Every unrecognised or contradictory signal resolves to <code>needs-human</code>; the gate is closed by default.</p>
+<h2 id="the-gate">The gate<a class="headerlink" href="#the-gate" title="Permanent link">&para;</a></h2>
+<p>The decision is not the reviewing agent's to make. <code>deliver-verify.yml</code> collects four machine-readable signals and hands them to <code>scripts/deliver-gate.sh</code>, which is unit-tested (<code>scripts/deliver_gate_test.go</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CI_STATUS</code></td>
+<td>verify dispatches the repository's own <code>ci.yml</code> against the delivery branch and waits for it. Anything other than a <code>success</code> conclusion is <code>failure</code></td>
+</tr>
+<tr>
+<td><code>PLAN_GATE</code></td>
+<td><code>.archon/review.json</code> — <code>planRatchet.ok</code> and <code>planClassify.verdict</code>. <code>absent</code> (the PR never claimed a plan) delivers exactly as a satisfied plan does; <code>unverified</code> (the PR declares an <code>archon-plan:</code> but the check did not run) <strong>blocks</strong></td>
+</tr>
+<tr>
+<td><code>AGENT_VERDICT</code></td>
+<td>the <code>DELIVER-VERDICT: GREEN</code> / <code>NOT-GREEN</code> marker, required to be the last line of a comment posted by the automation itself</td>
+</tr>
+<tr>
+<td><code>DISMISSALS</code></td>
+<td>the <code>deliver:has-dismissals</code> label, <strong>re-read after the review agent has run</strong> so that the reviewer clearing it takes effect in the same round. <code>open</code> withholds <code>ready-for-merge</code>; <code>unknown</code> (the label set could not be read) does too, because an unreadable state is not evidence there is nothing to accept</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Why verify dispatches <code>ci.yml</code> rather than running the checks itself.</strong> <code>main</code> requires seven status contexts (<code>build</code>, <code>lint</code>, and five <code>test (...)</code> groups) before a PR can merge, and those must be present <strong>on the PR's head commit</strong>. Two things make that awkward, and an earlier version of this feature got both wrong by running the commands inline:</p>
+<ul>
+<li>a bot-opened PR has its <code>pull_request</code> runs held in an <strong>approval-required</strong> state, so the loop cannot simply wait for the runs GitHub would normally create;</li>
+<li>a <code>workflow_dispatch</code> run's check runs attach to the <strong>dispatch ref, not the PR head</strong> — so checks executed inside the verify job satisfy <em>none</em> of the required contexts. The loop would label a PR <code>ready-for-merge</code> while GitHub still showed zero checks and refused to merge it.</li>
+</ul>
+<p>Dispatching <code>ci.yml</code> on the delivery branch solves both: <code>workflow_dispatch</code> always starts even under <code>GITHUB_TOKEN</code>, and the run produces <code>ci.yml</code>'s own job names against the branch head — exactly what the ruleset matches. It also removes any obligation to keep package groups, per-group timeouts or the Go version in step with <code>ci.yml</code>, because <code>ci.yml</code> is what runs.</p>
+<p>The delivery still verifies the commit it pinned: the dispatched run's <code>head_sha</code> is compared to it, and a mismatch stops the delivery rather than letting CI vouch for different code.</p>
+<p><strong><code>unverified</code> is the subtle one.</strong> <code>archon-review.sh</code> exits 0 and falls back to a plan-less delta review when plan resolution fails, so an absent <code>planRatchet</code> does <em>not</em> by itself mean "no plan" — it can equally mean "a plan was declared and never checked". Treating those alike would let a PR whose dist ratchet silently did not run reach <code>ready-for-merge</code> on a GREEN review.</p>
+<p>Two properties hold structurally rather than by prompt adherence:</p>
+<ul>
+<li><strong>A GREEN review cannot override red CI or a plan regression.</strong> That combination returns <code>needs-human</code> with the disagreement named — the loop does not get to resolve a contradiction between a judgment and an objective signal.</li>
+<li><strong><code>ready-for-merge</code> is never applied to unverified code.</strong> The PR tree is checked out at a pinned SHA, and that SHA is re-confirmed as the branch head before the label goes on. A push landing during the checks or the review downgrades the outcome to <code>needs-human</code>, because what passed is no longer what a human would merge.</li>
+<li>
+<p><strong>A phase that fails or times out still reports.</strong> Every phase has a reporter guarded on <code>always() &amp;&amp; !success()</code>, exercised on real infrastructure rather than reasoned about, in two halves:</p>
+<ul>
+<li><code>.github/workflows/deliver-guards-selftest.yml</code> cancels a step via a <strong>job</strong> timeout and asserts the reporter is reached, and asserts a <code>deliver:paused</code> exit stays quiet. It is <strong>manual/weekly, not per-PR</strong> — cancelling a job is the condition under test, so it necessarily reports a non-green job and would leave a permanently red check. Run it whenever a guard changes. Last verified result: <a href="https://github.com/inference-sim/inference-sim/actions/runs/34513953327">run 34513953327</a> — <code>victim_outcome=cancelled new_guard=true</code>, <code>reporter=false skip_probe=false</code>.</li>
+<li><code>scripts/deliver_guards_test.go</code> runs on <strong>every</strong> PR and asserts the phases still use the guard that self-test exercises, so a past green result cannot vouch for a file that has since been reverted.</li>
+</ul>
+<p><strong>What the self-test measured, which corrects the reasoning this change was originally made on.</strong> The guard was changed from <code>failure() || cancelled()</code> on the docs-based argument that a cancelled <em>step</em> satisfies neither term. Exercised on real infrastructure, that argument does not hold — for either mechanism that can actually cancel a step:</p>
+<table>
+<thead>
+<tr>
+<th>Mechanism</th>
+<th>Step outcome</th>
+<th><code>always() &amp;&amp; !success()</code></th>
+<th><code>failure() \|\| cancelled()</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>step-level <code>timeout-minutes</code></td>
+<td><code>failure</code></td>
+<td>fires</td>
+<td>fires (via <code>failure()</code>)</td>
+</tr>
+<tr>
+<td>job-level <code>timeout-minutes</code></td>
+<td><code>cancelled</code></td>
+<td>fires</td>
+<td>fires (via <code>cancelled()</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>So <code>always() &amp;&amp; !success()</code> is still the right guard — it is a strict superset and nothing regresses — but the reason is <strong>breadth</strong>, not that the old form was blind to a cancelled step. Note the first row is also a trap: a step-level timeout <em>fails</em> a step rather than cancelling it, so a test built on one looks like it reproduces #1685 without doing so.</p>
+<p>And the silence on #1685 was never a guard problem: the runner was lost, and then no step executes — <code>always()</code> ones included. No <code>if:</code> can report from a job that never runs, which is why the stall sweep exists. That third mechanism cannot be reproduced in CI, so it remains the one untested path.</p>
+<p>Also measured, since it was previously an open question: a <strong>skipped</strong> step does <em>not</em> make <code>success()</code> false. So the explicit <code>paused != 'true'</code> term in each reporter is defence-in-depth rather than the only thing preventing a paused delivery from reporting.
+- <strong>A dismissal cannot become a resolution by omission.</strong> The correct phase reports a <code>DELIVER-DISMISSALS: &lt;n&gt;</code> count as the last line of its comment and a workflow step derives <code>deliver:has-dismissals</code> from it; a missing or unreadable count is treated as outstanding. The label is not applied by the agent, so forgetting to apply it is not a way past the gate.</p>
+</li>
+</ul>
+<p>Archon is optional throughout: with a plan there is a deterministic number that must not move the wrong way, without one the gate is CI plus the review verdict.</p>
+<h2 id="controlling-a-delivery-in-flight">Controlling a delivery in flight<a class="headerlink" href="#controlling-a-delivery-in-flight" title="Permanent link">&para;</a></h2>
+<p><strong>Pause.</strong> Add the <code>deliver:paused</code> label to the PR (or, before a PR exists, to the sub-issue). Every phase checks it as its first step and exits without invoking an agent or moving a label. Remove the label and re-issue the command to resume. You are never racing the loop.</p>
+<p><strong>Dismissals.</strong> If the correct phase dismisses a finding rather than fixing it, it says so in a <code>DELIVER-DISMISSALS: &lt;n&gt;</code> line and a workflow step applies <code>deliver:has-dismissals</code> when that count is above zero — or when the count is missing, since an unreported state is not a report of zero. The gate refuses <code>ready-for-merge</code> while the label is present, so a dismissal cannot quietly become a resolution. Only the review phase removes it, and only when it has explicitly accepted each one; a reviewer that forgets costs a human glance rather than passing a waved-away finding.</p>
+<p><strong>Round count.</strong> The <code>deliver:round-N</code> label is the only record of how many corrections have been spent, and — since <code>workflow_dispatch</code> has no chain-depth cap — the only thing bounding the loop. It is advanced <em>before</em> the correction agent runs, so a crashed or timed-out round still consumes its budget rather than being retried forever. A missing round label is therefore fatal to the correct phase, unlike most label failures, which only warn.</p>
+<p><strong>Two label writes are fatal, and for the same reason: both are the mechanism that bounds or blocks the loop.</strong> Failing to advance <code>deliver:round-N</code> loses the loop's only bound. Failing to apply <code>deliver:has-dismissals</code> when a dismissal was reported loses the gate's only record of it — the next verify would read <code>none</code> and could reach <code>ready-for-merge</code> with a dismissal nobody accepted. In both cases the phase stops and a human picks it up, rather than continuing with the safeguard silently absent.</p>
+<h2 id="when-a-delivery-goes-quiet-and-how-to-resume-one">When a delivery goes quiet, and how to resume one<a class="headerlink" href="#when-a-delivery-goes-quiet-and-how-to-resume-one" title="Permanent link">&para;</a></h2>
+<p><strong>Every phase reports its own failure</strong>, including a step that was cancelled, and applies <code>needs-human</code>.</p>
+<p><strong>A dead runner cannot report itself.</strong> If the runner is lost mid-job, no step executes — not <code>always()</code> ones, not even the action's own post-steps. This has happened twice: the first time the delivery left no branch, no PR, no comment and no label, which is indistinguishable from nobody having run the command; the second time it also lost a finished implementation that had never been pushed. Two <em>different</em> mechanisms close those two holes, and it is worth keeping them apart: <strong>opening the branch and PR up front makes the delivery visible</strong> — to the sweep, and to a human reading the issue — while <strong>pushing the branch and then pushing as you go is what makes the work survive</strong>. Visibility alone would leave an empty PR and still lose everything since the last push, so a phase that pushed only at the end would be findable but no less destroyed. <code>deliver-stall-sweep.yml</code> covers the visibility half: it runs on a schedule and flags any open PR on a <code>deliver/issue-*</code> branch that carries neither terminal label, is not paused, and has had no activity for 180 minutes. Activity means comments, reviews <em>and</em> review comments — the loop reacts to all three, so counting only comments would flag a delivery that was in fact responding to a review.</p>
+<p>180 minutes is not arbitrary: the threshold has to exceed the longest <em>legitimate</em> silence, which is one phase's own budget (implement and verify are both capped at 120 minutes, and each reports at the end), plus slack for a busy runner. <code>scripts/deliver_guards_test.go</code> enforces that relationship, so a phase budget cannot be raised past the window without a failing test.</p>
+<p>The sweep stands down while a delivery phase has <strong>started recently</strong>, because a legitimate verify is silent for long stretches while it waits on CI and then on a review. Recently, not merely "at all": a job that never got a runner sits queued for up to 24 hours, so counting queued runs of any age let an offline runner — the very scenario the sweep is for — keep it silent for a day. A run older than the quiet window is the symptom, not a sign of life.</p>
+<p>The stand-down is repository-wide, so one recent phase run suppresses flagging for every delivery. That is fine while L1 delivers one sub-issue at a time and becomes wrong once deliveries run in parallel; it cannot be narrowed from run state, because a <code>workflow_dispatch</code> run cannot be attributed to a PR at all. For the same reason the sweep cannot say <em>which</em> phase stopped, so it links the run list instead.</p>
+<p><strong>To resume a stopped delivery without repeating the implementation</strong>, dispatch <strong>Deliver — Verify</strong> directly with the PR and issue numbers, from the Actions tab or:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>gh<span class="w"> </span>workflow<span class="w"> </span>run<span class="w"> </span>deliver-verify.yml<span class="w"> </span>-f<span class="w"> </span><span class="nv">pr_number</span><span class="o">=</span>&lt;PR&gt;<span class="w"> </span>-f<span class="w"> </span><span class="nv">issue_number</span><span class="o">=</span>&lt;N&gt;
+</code></pre></div>
+<p>The correction round count lives on the PR's <code>deliver:round-N</code> label, so resuming this way keeps it. Dispatching verify directly remains the right move when the <strong>implementation is already complete</strong> and only the verdict is missing — nothing about the code needed redoing.</p>
+<p><strong>Closing the delivery PR does not stop the branch being reused.</strong> The phase looks for an <em>open</em> PR
+on <code>deliver/issue-N</code>; if you close one, a re-issued command leaves the branch alone and the agent
+opens a fresh PR on it. To stop a delivery, use the <code>deliver:paused</code> label rather than closing its PR.</p>
+<p><strong>Re-issuing <code>/approve-issue-for-pr-delivery</code> resumes the implement phase rather than restarting it.</strong> If <code>deliver/issue-N</code> already exists, the phase checks it out instead of creating it, reuses the open PR instead of opening a second one, and the agent is told to read the commits already there and continue from them. That is the right move when the implementation was left <strong>part-finished</strong> — a runner lost mid-flight. It is not a way to get a second opinion on finished work: the agent continues the existing branch, it does not start over.</p>
+<p><strong>Any human push to a delivery branch re-verifies it</strong>, so a verdict always describes the current head and a terminal label never outlives the commit it was granted to. Both terminal labels are cleared as soon as verification <em>starts</em>, not when it finishes — otherwise a push to a PR already marked <code>ready-for-merge</code> would keep advertising merge-readiness, on an unverified commit, for the whole re-verification.</p>
+<p>An automation push does not double-trigger, and this does not rest on the token rule. A <code>GITHUB_TOKEN</code> push creates no workflow run, but the correct phase does not push from a workflow step — its agent pushes from inside <code>claude-code-action</code>, which performs an OIDC exchange and may hold an App installation token. The push-triggered path therefore refuses a <strong>Bot-sent</strong> push outright, so the property holds whichever credential is in play.</p>
+<p><strong>A new review or review comment on the PR also re-verifies</strong>, so a finding that arrives after the loop has converged is acted on rather than ignored. Because this repository is public and submitting a review needs only read access, the review-triggered path is gated on the same collaborator permission check the <code>/approve-issue-for-pr-delivery</code> command uses — without it, any GitHub user could start an agent run holding this workflow's secrets. An <code>approved</code> review is ignored (it carries no finding to act on); a <code>commented</code> review is not, since that is how most real findings have arrived.</p>
+<h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
+<p>Repository variables, all optional:</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DELIVER_IMPLEMENT_MODEL</code></td>
+<td><code>claude-opus-4-8</code></td>
+<td>model for the implement phase</td>
+</tr>
+<tr>
+<td><code>DELIVER_CORRECT_MODEL</code></td>
+<td><code>claude-opus-4-8</code></td>
+<td>model for the correct phase</td>
+</tr>
+<tr>
+<td><code>DELIVER_VERIFY_MODEL</code></td>
+<td><code>claude-sonnet-4-6</code></td>
+<td>model for the review phase</td>
+</tr>
+<tr>
+<td><code>DELIVER_MAX_ROUNDS</code></td>
+<td><code>3</code></td>
+<td>correction rounds before <code>needs-human</code>, per PR</td>
+</tr>
+</tbody>
+</table>
+<p>The verify model is deliberately <em>not</em> the implement model. Two instances of one model reviewing each other's work is closer to an agent grading its own homework; different models give real separation.</p>
+<h2 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h2>
+<p><strong>"Allow GitHub Actions to create and approve pull requests" is deliberately NOT required, and
+should stay disabled.</strong> This constrains how the loop is allowed to work, so it is worth knowing why.
+GitHub exposes creating and approving pull requests as a <strong>single</strong> toggle
+(<code>can_approve_pull_request_reviews</code>) that grants both to <em>every</em> workflow in the repository — there
+is no way to take only creation. This loop must never approve anything: it labels, and a human
+merges. So no phase creates a pull request from a workflow step, which would use <code>GITHUB_TOKEN</code> and
+need that toggle; the agent opens the PR instead, with the App installation token
+<code>claude-code-action</code> obtains via OIDC, which the setting does not govern.
+<code>scripts/deliver_guards_test.go</code> fails if a workflow step reintroduces PR creation, so this cannot
+regress quietly.</p>
+<p><strong>The labels must exist before the workflows are used.</strong> A workflow applying a label that does not exist fails at the API call, which strands a delivery mid-loop:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'deliver:round-1'</span><span class="w"> </span>--color<span class="w"> </span>ededed<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: correction round 1'</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'deliver:round-2'</span><span class="w"> </span>--color<span class="w"> </span>ededed<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: correction round 2'</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'deliver:round-3'</span><span class="w"> </span>--color<span class="w"> </span>ededed<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: correction round 3'</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'deliver:paused'</span><span class="w">  </span>--color<span class="w"> </span>b60205<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: halted; every phase exits on this'</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'deliver:has-dismissals'</span><span class="w"> </span>--color<span class="w"> </span>fbca04<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: a correction dismissed a finding the review has not accepted'</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'ready-for-merge'</span><span class="w"> </span>--color<span class="w"> </span>0e8a16<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: verified green, awaiting human merge'</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>gh<span class="w"> </span>label<span class="w"> </span>create<span class="w"> </span><span class="s1">'needs-human'</span><span class="w">     </span>--color<span class="w"> </span>d93f0b<span class="w"> </span>--description<span class="w"> </span><span class="s1">'L1 delivery: stopped, a human must look'</span>
+</code></pre></div>
+<p>Raising <code>DELIVER_MAX_ROUNDS</code> above 3 needs matching <code>deliver:round-N</code> labels.</p>
+<h2 id="scope">Scope<a class="headerlink" href="#scope" title="Permanent link">&para;</a></h2>
+<p>L1 delivers <strong>one sub-issue at a time</strong>, and sequencing is yours: approve one, merge it, approve the next. The implement phase reads a <code>Depends on: #M</code> line and refuses when #M's PR is unmerged, so a mis-ordered approval costs a comment rather than a failed hour-long run.</p>
+<p>Not yet automated, each its own follow-up: sequencing sub-issues <code>0..N</code> and opening the final PR (L2), RFC-to-merge (L3), flaky-test re-runs, and the no-progress detector.</p>
+<p><strong>Known limitations.</strong></p>
+<ul>
+<li><strong>The reviewer's <em>acceptance</em> of a dismissal is still prose.</strong> The correct phase's dismissal count is now machine-readable and the gate enforces it (see <em>Dismissals</em> above), so a dismissal can no longer be treated as resolved by silence. What remains prompt-dependent is the other end: the review phase decides when to clear <code>deliver:has-dismissals</code>, and a reviewer that clears it without genuinely accepting each dismissal is not caught. Failing closed means the cost of <em>forgetting</em> is a human glance; the cost of clearing it wrongly is a human reading the comments, which they do before merging anyway.</li>
+<li><strong>The stall sweep's stand-down is repository-wide.</strong> One recently started phase suppresses flagging for every delivery. Correct while L1 delivers one sub-issue at a time; a blocker for parallel deliveries.</li>
+<li><strong>Workflow expressions are not unit-tested.</strong> <code>scripts/deliver-gate.sh</code> and the sweep's selection filter have tests; the trigger guards, step conditions and concurrency keys are covered by <code>actionlint</code> plus a live delivery, because nothing in this repository can evaluate a GitHub Actions expression.</li>
+</ul>
+<h2 id="security">Security<a class="headerlink" href="#security" title="Permanent link">&para;</a></h2>
+<p><strong>The workflow's own steps run trusted code.</strong> The repository root checkout is the default branch, so <code>scripts/</code> and <code>.archon-version</code> always come from <code>main</code> — matching <code>archon.yml</code>. The archon review and <code>deliver-gate.sh</code> are executed from that trusted tree, never from the PR.</p>
+<p><strong>The PR's code never runs on the self-hosted runner.</strong> The verify phase does not check the PR out at all — it dispatches <code>ci.yml</code>, which runs the PR's build and tests on ephemeral <code>ubuntu-latest</code> runners, exactly as it does for any other PR. An earlier version did check the PR out and run its test suite on the self-hosted runner, which meant executing PR code (including <code>deliver_gate_test.go</code>, which shells out to the PR's own <code>.sh</code> files) on persistent infrastructure. Dispatching removes that exposure rather than guarding it.</p>
+<p>The correct phase does still check out and push to the delivery branch, so it requires the target PR to be same-repository, open, and on <code>deliver/issue-&lt;N&gt;</code> — the branch this loop owns.</p>
+<p><strong>Every trigger requires write access.</strong> <code>workflow_dispatch</code> is restricted to users with write access by GitHub, and pushing to a branch in this repository requires it too; a refused dispatch stops before any checkout. The two review triggers do <strong>not</strong> carry that property for free — this repository is public, and submitting a review or a review comment needs only <em>read</em> access, while both events run in the base-repository context with access to secrets. A review-triggered verify is therefore gated on an explicit collaborator permission check (<code>admin</code>/<code>write</code>/<code>maintain</code>), the same one the <code>/approve-issue-for-pr-delivery</code> command uses. Without it, any GitHub user could repeatedly start an agent run holding <code>LITELLM_API_KEY</code>, with <code>pull-requests: write</code> and <code>actions: write</code>, on the single self-hosted runner.</p>
+<p>The check runs in a small <code>ubuntu-latest</code> job, so an unauthorised review never wakes the self-hosted runner at all.</p>
+<p><strong>The delivery target comes from the event, not from comment text.</strong> The issue delivered is <code>github.event.issue.number</code> — where the command was typed. An optional <code>#N</code> is accepted only when it agrees with that issue and refused when it disagrees, so no untrusted string ever selects the target.</p>
+<p><strong>The verdict marker is read only from bot-authored comments, and only as a comment's last line</strong> — otherwise any human could set a delivery's verdict by quoting it. The same applies to the <code>DELIVER-DISMISSALS</code> count.</p>
+<p><strong>PR text is untrusted input to the agents.</strong> This is a public repository, so anyone can comment on an open delivery PR, and both agents read comments. Two consequences are handled explicitly:</p>
+<ul>
+<li>Both prompts state that comment, review and diff text is data to be assessed and never instructions, and name the specific asks that constitute an attack (return GREEN, clear <code>deliver:has-dismissals</code>, report a particular dismissal count, run a command).</li>
+<li>The verify agent has <strong>no <code>Edit</code> or <code>Write</code> tool</strong>. It is told not to change code, and withholding the tools makes that structural rather than a request that injected text could argue it out of.</li>
+</ul>
+<p>This reduces the exposure but does not eliminate it: the correct phase's agent legitimately needs write access and a shell in order to fix findings, so a sufficiently persuasive injected instruction remains a real risk. Treat an agent-authored commit as untrusted until a human has read it — which is why the loop never merges.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../pr-workflow/" class="md-footer__link md-footer__link--prev" aria-label="Previous: PR Workflow">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                PR Workflow
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../rfc/" class="md-footer__link md-footer__link--next" aria-label="Next: RFC Template">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                RFC Template
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.indexes", "navigation.sections", "navigation.expand", "navigation.footer", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../javascripts/mermaid-text-fix.js"></script>
+      
+        <script src="../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>

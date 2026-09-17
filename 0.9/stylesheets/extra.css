@@ -1,0 +1,12 @@
+/* Force black text in mermaid diagrams in dark mode (light backgrounds need dark text) */
+[data-md-color-scheme="slate"] .mermaid svg text,
+[data-md-color-scheme="slate"] .mermaid svg tspan,
+[data-md-color-scheme="slate"] .mermaid svg .nodeLabel,
+[data-md-color-scheme="slate"] .mermaid svg .edgeLabel,
+[data-md-color-scheme="slate"] .mermaid svg .cluster-label,
+[data-md-color-scheme="slate"] .mermaid svg g text,
+[data-md-color-scheme="slate"] .mermaid svg g.label text,
+[data-md-color-scheme="slate"] .mermaid svg g.node text {
+  fill: #000000 !important;
+  color: #000000 !important;
+}

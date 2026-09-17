@@ -1,0 +1,50 @@
+# Phase 2 autoscaling experiment — WVA-realistic parameters, H100 TP=1
+#
+# Timing parameters:
+#   interval_us: 30s — matches production WVA autoscaler tick rate
+#   scale_up_stabilization_window_us: 240s — matches production HPA default
+#   scale_down_stabilization_window_us: 240s — matches production HPA default
+#   hpa_scrape_delay: 0s — SIMPLIFIED (production value: 15s); set in Phase 3
+#   loading_delay: mean=240s (4 min), stddev=30s — observed K8s node-to-serving latency
+#
+# Node pool:
+#   5 H100 nodes pre-provisioned (initial_nodes=5): 1 consumed by --num-instances 1
+#   at startup, 4 free for the autoscaler to grow into. No provisioning delay since
+#   nodes are pre-provisioned; the model loading delay is modeled via instance_lifecycle.
+#
+# Required horizon: 900s per run (--horizon 900000000).
+#   - t=240s: scale-up actuation fires (8 ticks x 30s = stabilization satisfied)
+#   - t~=480s: new instance active (240s mean loading delay)
+#   - t=480-900s: ~420s observation window for 2-replica steady state
+
+node_pools:
+  - name: h100-tp1
+    gpu_type: H100           # must match --hardware H100
+    gpus_per_node: 1         # 1 GPU per instance at TP=1
+    gpu_memory_gib: 80.0     # H100 80 GiB
+    initial_nodes: 5         # 5 nodes pre-provisioned: 1 for startup, 4 for autoscaler
+    min_nodes: 0
+    max_nodes: 5
+    cost_per_hour: 0.0
+    provisioning_delay:
+      mean: 0.0              # nodes are pre-provisioned -- no provisioning delay
+      stddev: 0.0
+
+instance_lifecycle:
+  loading_delay:
+    mean: 240.0              # 4 min mean -- observed K8s node-to-serving latency
+    stddev: 30.0             # +/-30s variance
+  warm_start_initial_instances: true  # startup replicas are pre-deployed; only autoscaler-added replicas load
+
+autoscaler:
+  interval_us: 30000000                        # 30s tick -- WVA production parity
+  scale_up_stabilization_window_us: 240000000  # 240s -- HPA production parity
+  scale_down_stabilization_window_us: 240000000 # 240s -- HPA production parity
+  hpa_scrape_delay:
+    mean: 0.0                # SIMPLIFIED -- production value is 15s; add in Phase 3
+    stddev: 0.0
+  analyzer:
+    kv_cache_threshold: 0.8
+    scale_up_threshold: 0.8
+    scale_down_boundary: 0.4
+    avg_input_tokens: 512.0
