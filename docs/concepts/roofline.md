@@ -1,6 +1,6 @@
 # Roofline Step Time Estimation Logic
 
-This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. Roofline is the default latency model in BLIS — it requires no training and works off-the-shelf for any Huggingface LLM whose `config.json` is saved under `model_configs/` (auto-fetched from HuggingFace on first use).
+This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. Roofline is the default latency model in BLIS — it requires no training and works off-the-shelf for any Huggingface LLM whose `config.json` is committed to the catalog under `model_configs/`.
 
 !!! tip "Trained-Physics: higher accuracy"
     For higher accuracy, use `--latency-model trained-physics` which applies learned correction factors to these roofline basis functions with MoE support. See [Trained-Physics Mode](../guide/latency-models.md#trained-physics-mode).
@@ -68,7 +68,7 @@ The simplest way to run roofline mode is with `--latency-model roofline`, which 
 
 The flag automatically:
 1. Checks `model_configs/` for an existing `config.json` (previously fetched)
-2. Fetches from HuggingFace on miss and writes into `model_configs/` (supports `HF_TOKEN` for gated models)
+2. Refuses the run on miss, naming the catalog path the entry belongs at — no run-time fetch, and no run writes to the catalog (NS-6)
 
 For models not in `defaults.yaml`, add an `hf_repo` entry mapping the BLIS model name to the case-sensitive HuggingFace repo path.
 
@@ -103,3 +103,5 @@ Alternatively, download the `config.json` manually:
 | `MemoryGiB` | GPU memory capacity in GiB. Used by `CalculateKVBlocks` to auto-derive `--total-kv-blocks` when roofline or trained-physics mode is active and the flag is not explicitly set. |
 
 > Note: The Peak TFLOPS and BW for a given GPU family might vary by GPU connectivity (e.g. SXM vs PCIe). We recommend a separate entry for each GPU connectivity type - e.g. A100-SXM, A100-PCIe etc in `hardware_config.json`.
+
+> Note: the file is parsed **strictly** (#1728) — an unrecognized key is a hard error naming the key and the GPU entry, rather than a field that silently reads 0. Spell the keys exactly as above (a case-only variant is also rejected, with the canonical spelling named). You may add `_comment` and `_comment_interconnect` strings to record where a calibration came from; both are ignored by the parser.

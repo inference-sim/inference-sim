@@ -6,7 +6,7 @@ The `LatencyModel` interface determines how BLIS estimates GPU step time for eac
 
 ```bash
 # Trained-physics mode (default) — roofline × architecture-aware basis functions × learned corrections
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --rate 100 --num-requests 500
 
 # Roofline mode — pure analytical estimation from model architecture (explicit flag)
@@ -41,10 +41,10 @@ The simplest way to use roofline mode:
 
 This auto-resolves both required inputs:
 
-1. **Model config** -- checks `model_configs/` for a cached `config.json`, fetches from HuggingFace on miss
+1. **Model config** -- reads the catalog entry at `model_configs/<model>/config.json`; a model with no entry is refused, naming that path (nothing is fetched)
 2. **Hardware config** -- uses the bundled `hardware_config.json`
 
-**Supported hardware:** The bundled `hardware_config.json` includes specs for **H100** (80 GB HBM3, 989.5 TFLOPS BF16, 3.35 TB/s), **H200** (141 GB HBM3e, 989.5 TFLOPS BF16, 4.8 TB/s — same Hopper compute die as H100, more/faster memory), **A100-SXM** (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s), **A100-80** (alias for A100-SXM), and **L40S** (48 GB GDDR6, 362 TFLOPS BF16, 0.864 TB/s). To use a different GPU, add an entry to `hardware_config.json` with the required fields (`TFlopsPeak`, `BwPeakTBs`, `mfuPrefill`, `mfuDecode`, `MemoryGiB`), plus `IntraNodeBwGBps`/`InterNodeBwGBps` if instances on that GPU may span nodes (see [Inter-Node Network Cost](#inter-node-network-cost-trained-physics-only)) and reference it via `--hardware <name>`.
+**Supported hardware:** The bundled `hardware_config.json` includes specs for **H100** (80 GB HBM3, 989.5 TFLOPS BF16, 3.35 TB/s), **H200** (141 GB HBM3e, 989.5 TFLOPS BF16, 4.8 TB/s — same Hopper compute die as H100, more/faster memory), **A100-SXM** (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s), **A100-80** (alias for A100-SXM), and **L40S** (48 GB GDDR6, 362 TFLOPS BF16, 0.864 TB/s). To use a different GPU, add an entry to `hardware_config.json` with the required fields (`TFlopsPeak`, `BwPeakTBs`, `mfuPrefill`, `mfuDecode`, `MemoryGiB`), plus `IntraNodeBwGBps`/`InterNodeBwGBps` if instances on that GPU may span nodes (see [Inter-Node Network Cost](#inter-node-network-cost-trained-physics-only)) and reference it via `--hardware <name>`. The file is parsed strictly (#1728): an unrecognized or non-canonically-cased key is a hard error naming the key and the GPU entry, so a typo cannot silently read as 0 — only `_comment` / `_comment_interconnect` are accepted and ignored.
 
 **Validated models:** Any dense or MoE transformer with a HuggingFace `config.json` works. The following have been validated end-to-end:
 
@@ -53,10 +53,9 @@ This auto-resolves both required inputs:
 - [Mixtral-8x7B](https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1) (MoE)
 - [CodeLlama-34B](https://huggingface.co/codellama/CodeLlama-34b-Instruct-hf)
 
-Set `HF_TOKEN` to access gated models (e.g., [Llama-2](https://huggingface.co/meta-llama/Llama-2-7b-hf)) and avoid rate limits:
+Each of these has a committed catalog entry. A model that does not is refused — commit its `config.json` under `model_configs/<model>/` first (`HF_TOKEN` is only needed to download a gated model's config by hand; BLIS itself makes no HuggingFace requests).
 
 ```bash
-export HF_TOKEN=your_token_here
 ./blis run --model meta-llama/llama-3.1-8b-instruct \
   --latency-model roofline --hardware H100 --tp 1
 ```
@@ -77,10 +76,10 @@ For full control, provide configs explicitly:
 Any model with a HuggingFace `config.json` can use roofline mode:
 
 1. Download `config.json` from HuggingFace
-2. Place it in `model_configs/<model-name>/config.json`
+2. Place it in `model_configs/<model-name>/config.json` — this step is required. BLIS does not
+   fetch configs at run time, so a model with no catalog entry is refused rather than
+   downloaded (NS-6). Commit the file to add the model to the catalog for everyone.
 3. Run with `--latency-model roofline --hardware <GPU> --tp <N>`
-
-Or let BLIS fetch it automatically with `--latency-model roofline`.
 
 ### Tensor Parallelism and Roofline
 

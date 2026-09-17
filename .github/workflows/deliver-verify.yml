@@ -980,6 +980,8 @@ jobs:
           # the applied decision, not the gate's.
           echo "final_decision=$decision" >> "$GITHUB_ENV"
 
+      # Retried with exponential backoff (#1757): a single un-retried dispatch terminally
+      # stalls the delivery loop on a transient API failure — observed live on PR #1736.
       - name: Hand off to correct
         if: steps.paused.outputs.paused == 'false' && env.final_decision == 'correct'
         run: |
@@ -991,7 +993,7 @@ jobs:
           #                                    `issue_comment` ref, which is the default branch. Also
           #                                    a valid ref, but the correction phase then ran MAIN's
           #                                    copy of the workflow, not the delivery branch's.
-          #   - pull_request_review[_comment]: the PR MERGE ref `<pr>/merge`, which `gh workflow run`
+          #   - pull_request_review[_comment]: the PR MERGE ref `<pr>/merge`, which the dispatch
           #                                    rejects with HTTP 422, so a post-convergence review
           #                                    finding never reached correct and dead-ended at
           #                                    needs-human (#1751).
@@ -999,9 +1001,9 @@ jobs:
           # the target PR`, the same value the CI dispatch at L441 uses) — a valid ref on every
           # trigger, and it makes all of them consistent: correction always runs the delivery
           # branch's workflow copy, as the push path already did.
-          gh workflow run deliver-correct.yml --repo "$REPO" --ref "${{ steps.target.outputs.branch }}" \
+          scripts/dispatch-with-retry.sh deliver-correct.yml \
+            --repo "$REPO" --ref "${{ steps.target.outputs.branch }}" \
             -f pr_number="$PR" -f issue_number="$ISSUE_NUMBER"
-          echo "Dispatched correct for PR #$PR."
 
       # `always() && !success()`, NOT `failure() || cancelled()`. Per the GitHub expression docs
       # `failure()` is true when a previous step FAILS and `cancelled()` when the WORKFLOW is

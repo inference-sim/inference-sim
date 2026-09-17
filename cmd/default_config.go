@@ -97,32 +97,18 @@ type TrainedPhysicsDefaults struct {
 	BetaCoeffs  []float64 `yaml:"beta_coeffs"`
 }
 
-// Define the inner structure for default config given model
+// DefaultConfig is one model's entry under the `defaults:` section of defaults.yaml.
+//
+// NS-6 (#1733): GPU and TensorParallelism are NO LONGER READ on any run path. The
+// deployment is an operator input supplied via --hardware/--tp (see
+// requireDeploymentFlags), never inferred per-model. The fields stay declared because
+// KnownFields(true) strict parsing (R10) rejects an undeclared key, so removing them
+// would make every existing defaults.yaml fail to load; they are inert data awaiting the
+// catalog migration that drops them from the file itself.
 type DefaultConfig struct {
 	GPU               string `yaml:"GPU"`
 	TensorParallelism int    `yaml:"tensor_parallelism"`
 	HFRepo            string `yaml:"hf_repo,omitempty"`
-}
-
-func GetDefaultSpecs(LLM string) (GPU string, TensorParallelism int) {
-	data, err := os.ReadFile(defaultsFilePath)
-	if err != nil {
-		logrus.Fatalf("Failed to read defaults file: %v", err)
-	}
-
-	// Parse YAML with strict field checking (R10: typos must cause errors)
-	var cfg Config
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&cfg); err != nil {
-		logrus.Fatalf("Failed to parse defaults YAML: %v", err)
-	}
-
-	if _, modelExists := cfg.Defaults[LLM]; modelExists {
-		return cfg.Defaults[LLM].GPU, cfg.Defaults[LLM].TensorParallelism
-	} else {
-		return "", 0
-	}
 }
 
 // loadDefaultsConfig parses defaults.yaml into a Config struct.

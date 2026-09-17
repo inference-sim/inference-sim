@@ -569,9 +569,10 @@ func TestDeliverImplementPrefersAnExistingPRsBase(t *testing.T) {
 // `github.ref_name` differs by the trigger that started the verify run: `deliver/issue-<N>` on a
 // push, `main` on a workflow_dispatch (implement dispatches verify on its `issue_comment` ref, the
 // default branch), and the PR MERGE ref `<pr>/merge` on `pull_request_review[_comment]`. Only the
-// last is an invalid dispatch ref — `gh workflow run` rejects it with `HTTP 422: No ref found`,
-// which failed the job and sent every post-convergence review finding to `needs-human` on an
-// infrastructure error rather than a verdict (observed on PRs #1742 and #1743).
+// last is an invalid dispatch ref — `gh workflow run` (which dispatch-with-retry.sh forwards to)
+// rejects it with `HTTP 422: No ref found`, which failed the job and sent every post-convergence
+// review finding to `needs-human` on an infrastructure error rather than a verdict (observed on
+// PRs #1742 and #1743).
 //
 // `steps.target.outputs.branch` is the resolved `deliver/issue-<N>` the CI dispatch already uses,
 // validated in `Validate the target PR` and populated on every trigger, so it is a valid dispatch
@@ -610,17 +611,18 @@ func TestDeliverVerifyHandsOffOnTheDeliveryBranchNotTheEventRef(t *testing.T) {
 		return "", false
 	}
 
-	// CONSUMER: the hand-off dispatch.
+	// CONSUMER: the hand-off dispatch. Dispatched via dispatch-with-retry.sh (#1757), which forwards
+	// to `gh workflow run`.
 	run, ok := stepRun("Hand off to correct")
 	if !ok {
 		t.Fatal("deliver-verify.yml has no `Hand off to correct` step")
 	}
-	if !strings.Contains(run, "gh workflow run deliver-correct.yml") {
+	if !strings.Contains(run, "dispatch-with-retry.sh deliver-correct.yml") {
 		t.Fatal("`Hand off to correct` no longer dispatches deliver-correct.yml; this test guards its ref")
 	}
 	if strings.Contains(run, "github.ref_name") {
 		t.Errorf("`Hand off to correct` dispatches with `github.ref_name`. On a review-triggered run "+
-			"that is `<pr>/merge`, which `gh workflow run` rejects with HTTP 422, dead-ending the "+
+			"that is `<pr>/merge`, which the dispatch rejects with HTTP 422, dead-ending the "+
 			"finding at needs-human (#1751). Dispatch on the delivery branch instead. Step run:\n%s", run)
 	}
 	// Anchored to `--ref`, not a bare substring: a step that merely NAMES the expression in prose
@@ -647,9 +649,9 @@ func TestDeliverVerifyHandsOffOnTheDeliveryBranchNotTheEventRef(t *testing.T) {
 }
 
 // The #1751 defect is a CLASS, not one step: any workflow reachable from an event whose GITHUB_REF
-// is the PR merge ref `refs/pull/N/merge` must not `gh workflow run --ref "${{ github.ref_name }}"`,
-// because that dispatch 422s. Those events are pull_request, pull_request_target,
-// pull_request_review and pull_request_review_comment.
+// is the PR merge ref `refs/pull/N/merge` must not dispatch another workflow on
+// `${{ github.ref_name }}`, because that dispatch 422s. Those events are pull_request,
+// pull_request_target, pull_request_review and pull_request_review_comment.
 //
 // GLOBBED, not a fixed list, for the reason TestDeliverImplementDoesNotCreatePRsWithTheWorkflowToken
 // gives: on #1723 a hardcoded list missed the same offending line added to archon.yml. A
@@ -657,6 +659,10 @@ func TestDeliverVerifyHandsOffOnTheDeliveryBranchNotTheEventRef(t *testing.T) {
 // the defect wherever it lands — including a NEW dispatch step in deliver-verify.yml, or a review
 // trigger added to deliver-correct.yml / deliver-implement.yml (whose current dispatches on
 // `github.ref_name` are safe only because their triggers are issue_comment / workflow_dispatch).
+//
+// Matches BOTH dispatch spellings — a bare `gh workflow run` and the `dispatch-with-retry.sh`
+// wrapper (#1757) that forwards to it — so wrapping a dispatch in the retry helper cannot smuggle
+// `github.ref_name` past this guard.
 func TestNoReviewReachableWorkflowDispatchesOnTheEventRef(t *testing.T) {
 	paths, err := filepath.Glob(filepath.Join("..", ".github", "workflows", "*.yml"))
 	if err != nil {
@@ -718,10 +724,12 @@ func TestNoReviewReachableWorkflowDispatchesOnTheEventRef(t *testing.T) {
 			for job, j := range wf.Jobs {
 				for _, s := range j.Steps {
 					code := stripCommentLines(s.Run)
-					if strings.Contains(code, "gh workflow run") && strings.Contains(code, "github.ref_name") {
+					dispatches := strings.Contains(code, "gh workflow run") ||
+						strings.Contains(code, "dispatch-with-retry.sh")
+					if dispatches && strings.Contains(code, "github.ref_name") {
 						t.Errorf("%s job %q step %q is reachable from a pull_request/review event, where "+
-							"`github.ref_name` is the PR merge ref `<pr>/merge`, yet it dispatches "+
-							"`gh workflow run` on `github.ref_name` — that 422s and dead-ends the loop "+
+							"`github.ref_name` is the PR merge ref `<pr>/merge`, yet it dispatches a "+
+							"workflow on `github.ref_name` — that 422s and dead-ends the loop "+
 							"(#1751). Dispatch on the resolved delivery branch instead. Step run:\n%s",
 							phase, job, s.Name, code)
 					}
@@ -756,4 +764,49 @@ func triggerNames(n yaml.Node) []string {
 		return out
 	}
 	return nil
+}
+
+// Every delivery phase hand-off must use the shared retry script (#1757).
+//
+// A single un-retried `gh workflow run` terminally stalls the delivery loop on a transient API
+// failure — observed live on PR #1736. This test asserts every hand-off calls
+// scripts/dispatch-with-retry.sh with the correct target workflow, preventing a future edit from
+// regressing one back to a bare call.
+func TestDeliveryHandoffDispatchesUseRetryScript(t *testing.T) {
+	handoffs := []struct {
+		file     string
+		stepName string
+		target   string
+	}{
+		{"deliver-verify.yml", "Hand off to correct", "deliver-correct.yml"},
+		{"deliver-correct.yml", "Hand back to verify", "deliver-verify.yml"},
+		{"deliver-implement.yml", "Hand off to verify", "deliver-verify.yml"},
+	}
+
+	for _, h := range handoffs {
+		t.Run(h.file+"/"+h.stepName, func(t *testing.T) {
+			path := filepath.Join("..", ".github", "workflows", h.file)
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("reading %s: %v", path, err)
+			}
+			body := string(raw)
+
+			stepIdx := strings.Index(body, "name: "+h.stepName)
+			if stepIdx < 0 {
+				t.Fatalf("%s has no step named %q", h.file, h.stepName)
+			}
+			section := body[stepIdx:]
+			nextStep := strings.Index(section[1:], "\n      - name:")
+			if nextStep > 0 {
+				section = section[:nextStep+1]
+			}
+
+			if !strings.Contains(section, "scripts/dispatch-with-retry.sh "+h.target) {
+				t.Errorf("%s step %q does not call scripts/dispatch-with-retry.sh %s. "+
+					"A bare gh workflow run terminally stalls the delivery loop (#1757)",
+					h.file, h.stepName, h.target)
+			}
+		})
+	}
 }

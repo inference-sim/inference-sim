@@ -4,7 +4,7 @@ This guide covers how to define the traffic patterns BLIS simulates — from sim
 
 ```bash
 # Quick example: workload-spec YAML
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --workload-spec examples/multiturn-chat-demo.yaml
 ```
 
@@ -54,7 +54,7 @@ clients:
 Pair with weighted routing for cache-aware request distribution (the default profile uses `precise-prefix-cache`):
 
 ```bash
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --workload-spec chat.yaml \
   --routing-policy weighted
 ```
@@ -88,7 +88,7 @@ clients:
 Run with weighted routing to maximize cache reuse (the default `precise-prefix-cache` scorer queries actual KV cache state):
 
 ```bash
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --workload-spec rag.yaml \
   --routing-policy weighted
 ```
@@ -198,7 +198,7 @@ Setting `closed_loop: false` switches to **open-loop** scheduling: all round arr
 The simplest way to generate traffic:
 
 ```bash
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --rate 100 --num-requests 500 \
   --prompt-tokens 512 --prompt-tokens-stdev 256 \
   --output-tokens 256 --output-tokens-stdev 128
@@ -543,7 +543,7 @@ BLIS ships with preset workload profiles in `defaults.yaml`. Use them with `blis
 
 ```bash
 # Run simulation with a named preset
-./blis run --model qwen/qwen3-14b --workload chatbot --rate 10
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --workload chatbot --rate 10
 
 # Observe a real server with the same preset (identical token distributions as run)
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \

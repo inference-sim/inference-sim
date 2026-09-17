@@ -15,7 +15,7 @@ go build -o blis main.go
 
 ## Environment Setup
 
-BLIS uses roofline mode by default, which auto-fetches model architecture configs from HuggingFace. Set `HF_TOKEN` to access gated models (e.g., [Llama-2](https://huggingface.co/meta-llama/Llama-2-7b-hf)) and avoid rate limits:
+BLIS reads model architecture configs from the catalog (`model_configs/`) and makes no HuggingFace requests, so running a simulation needs no token and no network access. Set `HF_TOKEN` only when downloading a new model's `config.json` by hand to add a catalog entry, e.g. for a gated model such as [Llama-2](https://huggingface.co/meta-llama/Llama-2-7b-hf):
 
 ```bash
 export HF_TOKEN=your_token_here
@@ -24,17 +24,14 @@ export HF_TOKEN=your_token_here
 Public models (e.g., Qwen3) work without a token. See [HuggingFace access tokens](https://huggingface.co/docs/hub/en/security-tokens) to create a token.
 
 !!! note "Air-gapped / offline environments"
-    The default roofline mode requires network access to HuggingFace on first run (configs are cached in `model_configs/` after that). For environments without internet access:
+    Nothing to do — BLIS never reaches the network to run a simulation. Every model's `config.json` comes from the committed catalog under `model_configs/`, and a model with no catalog entry is refused rather than fetched.
 
-    - **Pre-populate** `model_configs/<model>/config.json` from a machine with internet access and use `--model-config-folder`
-    - Or use `--latency-model roofline` with explicit `--hardware` and `--tp` flags (bypasses model config requirements)
-
-    For CI pipelines, set `HF_TOKEN` in your environment secrets to avoid rate limits on gated models.
+    To simulate a model that is not yet catalogued, obtain its `config.json` on a machine with internet access, then either commit it at `model_configs/<model>/config.json` or point `--model-config-folder` at a directory containing it.
 
 ## Verify the Build
 
 ```bash
-./blis run --model qwen/qwen3-14b --num-requests 10
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --num-requests 10
 ```
 
 You should see JSON output on stdout containing fields like `ttft_mean_ms`, `e2e_mean_ms`, and `responses_per_sec`. This confirms BLIS is working correctly.

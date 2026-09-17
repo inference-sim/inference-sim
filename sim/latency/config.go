@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -239,15 +241,25 @@ func parseHWConfig(HWConfigFilePath string) (map[string]sim.HardwareCalib, error
 		return nil, fmt.Errorf("read hardware config %q: %w", HWConfigFilePath, err)
 	}
 
-	// #1694: reject the pre-#1694 per-COLLECTIVE key. The decoder is permissive
-	// (no DisallowUnknownFields), so a legacy "InterNodeLatencyUs" would parse cleanly
-	// and drop to 0 — silently discarding an operator's calibrated value, with no warning
-	// (the bandwidths alone already satisfy HasInterconnectCalibration, so
-	// warnIfCrossNodeUnpriced stays quiet). That is the R1 "never silent" case this
-	// feature's own diagnostics exist to prevent. The value is NOT a drop-in rename: the
-	// unit changed from µs-per-collective to µs-per-hop, so it must be re-divided by the
-	// hop count, not copied. Fail loudly and tell the operator exactly that.
+	// #1694: reject the pre-#1694 per-COLLECTIVE key. A legacy "InterNodeLatencyUs" is
+	// caught by the generic unknown-key check below too (#1728), but this guard runs
+	// FIRST so the operator gets the migration message instead: the value is NOT a
+	// drop-in rename — the unit changed from µs-per-collective to µs-per-hop, so it must
+	// be re-divided by the hop count. A bare "unknown key" would lose that hint, and
+	// silently dropping the value to 0 would discard a calibrated number with no warning
+	// at all (the bandwidths alone already satisfy HasInterconnectCalibration, so
+	// warnIfCrossNodeUnpriced stays quiet) — the R1 "never silent" case.
 	if err := rejectLegacyInterNodeLatencyKey(data); err != nil {
+		return nil, err
+	}
+
+	// #1728: parse strictly. This was the last permissively-parsed config path in BLIS
+	// (every YAML path uses decoder.KnownFields(true)), which meant an arbitrary
+	// misspelling of a numeric key — IntraNodeBandwidthGBps for IntraNodeBwGBps, MemoryGB
+	// for MemoryGiB — decoded to 0 and produced a plausible-but-wrong result with no
+	// diagnostic. A blocklist (the legacy-key guard above) catches one known key; only an
+	// allowlist catches an arbitrary typo.
+	if err := rejectUnknownHardwareCalibKeys(data); err != nil {
 		return nil, err
 	}
 
@@ -256,6 +268,133 @@ func parseHWConfig(HWConfigFilePath string) (map[string]sim.HardwareCalib, error
 		return nil, fmt.Errorf("parse hardware config JSON: %w", err)
 	}
 	return HardwareList, nil
+}
+
+// hardwareCalibProvenanceKeys are the documentation-only keys a hardware-config GPU
+// entry may carry alongside its numeric fields. The bundled hardware_config.json uses
+// both to record where each calibration came from (Discussion #589 for the MFU values,
+// the datasheet reasoning for the interconnect bandwidths) — provenance that belongs
+// next to the numbers it explains, since a reader checking a value looks at the entry,
+// not at a doc page. They are accepted and ignored: the value decode never reads them.
+// These exact spellings are what a config must use — like the calibration fields, a
+// case-only variant ("_Comment") is rejected with the canonical spelling named.
+var hardwareCalibProvenanceKeys = []string{"_comment", "_comment_interconnect"}
+
+// hardwareCalibKnownKeys maps the ASCII-lowercased form of every JSON key
+// parseHWConfig accepts on a GPU entry to its canonical spelling. It is derived from
+// sim.HardwareCalib's struct tags rather than hand-listed, so a field added to the
+// struct is accepted with no parser change and the accepted set cannot drift from the
+// fields the decoder actually populates (R23 code-path parity).
+//
+// The folded form is kept so a key that differs from a declared field ONLY in letter
+// case can be diagnosed as such (encoding/json would silently accept it — see
+// rejectUnknownHardwareCalibKeys).
+var hardwareCalibKnownKeys = buildHardwareCalibKnownKeys()
+
+func buildHardwareCalibKnownKeys() map[string]string {
+	typ := reflect.TypeOf(sim.HardwareCalib{})
+	keys := make(map[string]string, typ.NumField()+len(hardwareCalibProvenanceKeys))
+	for i := 0; i < typ.NumField(); i++ {
+		f := typ.Field(i)
+		if !f.IsExported() {
+			continue // unexported fields are invisible to encoding/json
+		}
+		name := f.Name
+		if tag, ok := f.Tag.Lookup("json"); ok {
+			tagName := strings.Split(tag, ",")[0]
+			if tagName == "-" {
+				continue // explicitly not part of the JSON surface
+			}
+			if tagName != "" {
+				name = tagName
+			}
+		}
+		keys[strings.ToLower(name)] = name
+	}
+	for _, p := range hardwareCalibProvenanceKeys {
+		keys[strings.ToLower(p)] = p
+	}
+	return keys
+}
+
+// hardwareCalibFieldKeyList returns the canonical calibration-field keys (i.e. excluding
+// the provenance keys, which are listed separately in the diagnostic) in sorted order.
+// Sorted so the message is byte-identical run to run (INV-6).
+func hardwareCalibFieldKeyList() []string {
+	names := make([]string, 0, len(hardwareCalibKnownKeys))
+	for _, canonical := range hardwareCalibKnownKeys {
+		if slices.Contains(hardwareCalibProvenanceKeys, canonical) {
+			continue
+		}
+		names = append(names, canonical)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// rejectUnknownHardwareCalibKeys scans a hardware-config file for keys that are not
+// fields of sim.HardwareCalib (nor one of the ignored provenance keys) and returns a
+// fatal, actionable error listing every one of them with the GPU entry it appears under
+// (#1728).
+//
+// It is the allowlist equivalent of json.DisallowUnknownFields, chosen over the decoder
+// flag for three reasons: the decoder reports only `unknown field "X"` without saying
+// WHICH GPU entry it came from (useless in a file with a dozen entries); it would reject
+// the provenance keys the bundled file depends on; and it inherits encoding/json's
+// case-insensitive field matching, which hides a whole class of near-miss key (below).
+//
+// Two offender classes, both errors, deliberately distinguished:
+//
+//   - UNKNOWN: no declared field matches even case-insensitively. This is the silent-zero
+//     case the fix exists for — the decoder drops the key and the field reads 0.
+//   - CASE MISMATCH: the key matches a declared field when folded but is not spelled
+//     canonically (e.g. IntraNodeBwGbps for IntraNodeBwGBps). encoding/json's fallback
+//     accepts these and reads the value CORRECTLY, so they never produced a wrong number —
+//     but relying on that leaves the file one letter away from a genuine typo, and two
+//     spellings of one field in the same entry resolve last-wins. Requiring the canonical
+//     spelling costs an operator one trivially-actionable error naming the exact key to use.
+//
+// The scan is file-wide rather than scoped to the GPU being run — unlike GetHWConfig's
+// per-GPU ValidateInterconnect call, which checks whether a PRESENT value is usable and so
+// only matters for the entry in use. A misspelled key is different in kind: it is a
+// file-integrity defect that nothing else will ever surface, which is exactly why it needs
+// to fail here. This also matches the sibling rejectLegacyInterNodeLatencyKey guard, which
+// has always been file-wide.
+func rejectUnknownHardwareCalibKeys(data []byte) error {
+	var raw map[string]map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		// Not the expected shape; the main decode in parseHWConfig will produce the real
+		// parse error rather than a confusing "unknown key" one.
+		return nil //nolint:nilerr // defer the diagnostic to the primary json.Unmarshal
+	}
+
+	var offenders []string
+	for gpu, fields := range raw {
+		for key := range fields {
+			canonical, folds := hardwareCalibKnownKeys[strings.ToLower(key)]
+			switch {
+			case folds && canonical == key:
+				continue // canonical spelling of a declared field (or a provenance key)
+			case folds:
+				offenders = append(offenders, fmt.Sprintf(
+					"GPU %q key %q (differs from the declared key %q only in letter case — use the canonical spelling)",
+					gpu, key, canonical))
+			default:
+				offenders = append(offenders, fmt.Sprintf("GPU %q key %q (unknown)", gpu, key))
+			}
+		}
+	}
+	if len(offenders) == 0 {
+		return nil
+	}
+	// Sorted so a multi-offender diagnostic is byte-identical across runs (INV-6) rather
+	// than following Go's randomized map order.
+	sort.Strings(offenders)
+	return fmt.Errorf("hardware config declares unrecognized key(s): %s. Parsing is strict: an "+
+		"unrecognized key is almost always a misspelling, and accepting it would leave the "+
+		"intended field at 0 — a plausible-but-wrong bandwidth, MFU or memory capacity with no "+
+		"diagnostic anywhere. Valid keys are %v, plus the ignored provenance keys %v",
+		strings.Join(offenders, "; "), hardwareCalibFieldKeyList(), hardwareCalibProvenanceKeys)
 }
 
 // rejectLegacyInterNodeLatencyKey scans a hardware-config file for the pre-#1694

@@ -1,10 +1,12 @@
 # Model Compatibility
 
-BLIS supports **any transformer model with a HuggingFace `config.json`** — no per-model setup or calibration required. Both latency backends (roofline and trained-physics) generalize across architectures.
+BLIS **runs many transformer models straight from a HuggingFace `config.json`** on day zero: it reads the architecture out of the config, so onboarding a model needs no BLIS-side code and no per-model coefficient fit: trained-physics applies one global coefficient set that generalizes across architectures, and roofline is purely analytical (no learned coefficients at all).
+
+**Fidelity, however, is architecture-dependent.** The latency models are validated against real vLLM measurements for the [architectures listed below](#validated-architectures); any other model runs, but its numbers are unvalidated. Hardware MFU is a calibration input (see the *MFU Calibration* note below), several modern shapes — MLA, hybrid attention, block-wise FP8, MTP — carry the *Known approximations* documented on this page, and a run still needs the usual CLI configuration for its deployment topology (`--tp`/`--dp`, `--enable-expert-parallel`, KV capacity, `--kv-cache-dtype`). For an unvalidated architecture, treat absolute latencies as an estimate and calibrate against a real server (`blis observe` → `blis replay` → `blis calibrate`) before relying on them.
 
 BLIS has been tested and accuracy validated across a variety of model families and sizes, including both dense transformers and MoE (Mixture-of-Experts) architectures.
 
-The simulator auto-fetches `config.json` from HuggingFace on first use. For gated models, set `HF_TOKEN`. For offline environments, cache configs locally in `model_configs/`.
+The simulator reads each model's `config.json` from the catalog at `model_configs/<model>/`. It never fetches at run time: a model with no catalog entry is refused, naming the path the entry belongs at. Adding a model means committing its `config.json` (set `HF_TOKEN` when downloading a gated model's config by hand).
 
 ## Validated Architectures
 

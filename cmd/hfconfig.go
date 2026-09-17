@@ -3,13 +3,9 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
-	"time"
 
 	"github.com/sirupsen/logrus"
 
@@ -17,79 +13,59 @@ import (
 	"github.com/inference-sim/inference-sim/sim/latency"
 )
 
-// validHFRepoPattern matches valid HuggingFace repo paths (e.g., "meta-llama/Llama-3.1-8B-Instruct").
-// Rejects URL-special characters (?, #, @, spaces) that could alter URL semantics (I14).
-var validHFRepoPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$`)
-
 const (
-	hfBaseURL       = "https://huggingface.co"
 	hfConfigFile    = "config.json"
 	modelConfigsDir = "model_configs"
-	httpTimeout     = 30 * time.Second
-	// maxResponseBytes caps HF config.json reads to 10 MB — real config.json files
-	// are typically <100 KB. This prevents unbounded memory allocation from
-	// malformed or malicious responses.
-	maxResponseBytes = 10 << 20 // 10 MB
 )
 
-// resolveModelConfig finds a HuggingFace config.json for the given model.
-// Resolution order: explicit flag > model_configs/ > HF fetch (into model_configs/).
+// resolveModelConfig finds a HuggingFace config.json for the given model in the catalog.
+// Resolution order: explicit --model-config-folder > the catalog's model_configs/<short-name>/.
 // Returns the path to a directory containing config.json.
 // Paths are resolved relative to defaultsFile's directory (consistent with resolveHardwareConfig).
+//
+// NS-6 (#1733): a model runs if and only if it is in the catalog. This function READS the
+// catalog and never writes to it — a model whose config.json is absent is refused, naming
+// the path the entry belongs at. It used to download config.json from HuggingFace and write
+// it into model_configs/, which made "run an unknown model" silently ADD a catalog entry;
+// that fetch (and every path that could create or modify a catalog file) is gone.
 func resolveModelConfig(model, explicitFolder, defaultsFile string) (string, error) {
 	// 1. Explicit override takes precedence
 	if explicitFolder != "" {
 		return explicitFolder, nil
 	}
 
-	// Derive the local model_configs/<short-name>/ path relative to defaults.yaml location
-	// (consistent with resolveHardwareConfig using filepath.Dir(defaultsFile))
+	// Derive the catalog's model_configs/<short-name>/ path relative to defaults.yaml
+	// location (consistent with resolveHardwareConfig using filepath.Dir(defaultsFile))
 	baseDir := filepath.Dir(defaultsFile)
 	localDir, err := bundledModelConfigDir(model, baseDir)
 	if err != nil {
 		return "", fmt.Errorf("--latency-model: invalid model name %q: %w", model, err)
 	}
 
-	// 2. Check model_configs/ for an existing config.json (bundled or previously fetched)
+	// 2. Read the catalog entry. Absent or non-HuggingFace-shaped is a hard error (R1):
+	// there is no fallback that could supply the config, and inventing one is what NS-6
+	// forbids. The file is never rewritten or deleted — a user-provided config with
+	// non-standard field names is reported, not overwritten.
 	localPath := filepath.Join(localDir, hfConfigFile)
-	if data, err := os.ReadFile(localPath); err == nil {
-		if json.Valid(data) && isHFConfig(data) {
-			logrus.Infof("--latency-model: using config from %s", localDir)
-			return localDir, nil
-		}
-		// Don't delete — the file may be a user-provided config with non-standard
-		// field names. Fall through to HF fetch, which will overwrite if successful.
-		logrus.Warnf("--latency-model: config at %s exists but lacks expected HuggingFace fields (num_hidden_layers, hidden_size, layers_block_type, or the same fields under text_config); trying HuggingFace fetch", localPath)
+	data, readErr := os.ReadFile(localPath)
+	if readErr != nil {
+		return "", fmt.Errorf(
+			"model %q is not in the catalog: no %s at %s (%v).\n"+
+				"  BLIS does not fetch model configs at run time — a model runs only if it is catalogued.\n"+
+				"  Add the entry at %s, or pass --model-config-folder pointing at a directory that contains %s",
+			model, hfConfigFile, localPath, readErr, localPath, hfConfigFile,
+		)
 	}
-
-	// 3. Fetch from HuggingFace and write into model_configs/<short-name>/
-	var defaultsErr error
-	hfRepo, err := GetHFRepo(model, defaultsFile)
-	if err != nil {
-		defaultsErr = err
-		logrus.Warnf("--latency-model: could not read hf_repo from defaults: %v (HuggingFace fetch may fail due to case-sensitivity)", err)
+	if !json.Valid(data) || !isHFConfig(data) {
+		return "", fmt.Errorf(
+			"catalog entry for model %q at %s is not a HuggingFace config.json: it lacks the expected "+
+				"fields (num_hidden_layers, hidden_size, layers_block_type, or the same fields under text_config).\n"+
+				"  Fix that catalog entry, or pass --model-config-folder pointing at a directory that contains a valid %s",
+			model, localPath, hfConfigFile,
+		)
 	}
-	if hfRepo == "" {
-		hfRepo = model
-	}
-
-	fetchedDir, err := fetchHFConfigFunc(hfRepo, localDir)
-	if err == nil {
-		logrus.Infof("--latency-model: fetched config for %s into %s", model, fetchedDir)
-		return fetchedDir, nil
-	}
-	logrus.Warnf("--latency-model: HF fetch failed for %s: %v", model, err)
-
-	errMsg := fmt.Sprintf(
-		"--latency-model: could not find config.json for model %q.\n"+
-			"  Tried: %s, HuggingFace (%s/%s).\n"+
-			"  Provide --model-config-folder explicitly",
-		model, localDir, hfBaseURL, hfRepo,
-	)
-	if defaultsErr != nil {
-		errMsg += fmt.Sprintf("\n  Note: defaults.yaml read failed: %v", defaultsErr)
-	}
-	return "", fmt.Errorf("%s", errMsg)
+	logrus.Infof("--latency-model: using config from %s", localDir)
+	return localDir, nil
 }
 
 // resolveHardwareConfig finds the hardware config JSON file.
@@ -113,126 +89,18 @@ func resolveHardwareConfig(explicitPath, defaultsFile string) (string, error) {
 	)
 }
 
-// fetchHFConfigFunc is the function used to fetch HF configs. Package-level
-// variable allows tests to inject a mock without hitting real HuggingFace.
-// Second parameter is the target directory to write config.json into.
-//
-// WARNING: NOT safe for t.Parallel() — tests that swap this variable must
-// run sequentially within the cmd package. See t.Cleanup() restore pattern.
-var fetchHFConfigFunc = fetchHFConfig
-
-// fetchHFConfig downloads config.json from HuggingFace and writes it to targetDir.
-// Supports HF_TOKEN env var for gated models.
-// Validates hfRepo format to prevent URL injection (I14).
-func fetchHFConfig(hfRepo, targetDir string) (string, error) {
-	if !validHFRepoPattern.MatchString(hfRepo) {
-		return "", fmt.Errorf("invalid HuggingFace repo name %q: must match org/model pattern with alphanumeric, '.', '-', '_' characters", hfRepo)
-	}
-	fetchURL := fmt.Sprintf("%s/%s/resolve/main/%s", hfBaseURL, hfRepo, hfConfigFile)
-	return fetchHFConfigFromURL(fetchURL, targetDir)
-}
-
-// fetchHFConfigFromURL fetches config.json from the given URL and writes it to targetDir.
-// Extracted for testability (allows injecting test server URLs).
-func fetchHFConfigFromURL(url, targetDir string) (string, error) {
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return "", fmt.Errorf("create request: %w", err)
-	}
-
-	// Support gated models via HF_TOKEN
-	if token := os.Getenv("HF_TOKEN"); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	client := &http.Client{
-		Timeout: httpTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 3 {
-				return fmt.Errorf("too many redirects (max 3)")
-			}
-			// I11: Validate redirect targets stay on HuggingFace domains.
-			// HF uses CDN redirects (e.g., cdn-lfs.huggingface.co) which are legitimate.
-			host := req.URL.Hostname()
-			if host != "huggingface.co" && !strings.HasSuffix(host, ".huggingface.co") {
-				return fmt.Errorf("redirect to non-HuggingFace host %q blocked", host)
-			}
-			// Strip Authorization header on subdomain redirects to avoid leaking
-			// HF_TOKEN to CDN or other HuggingFace subdomains (defense-in-depth).
-			if host != "huggingface.co" {
-				req.Header.Del("Authorization")
-			}
-			return nil
-		},
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("fetch %s: %w", url, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch resp.StatusCode {
-	case http.StatusOK:
-		// success, continue
-	case http.StatusNotFound:
-		return "", fmt.Errorf("not found on HuggingFace (HTTP 404). Check --model spelling. URL: %s", url)
-	case http.StatusUnauthorized:
-		return "", fmt.Errorf("authentication required (HTTP 401). Set HF_TOKEN env var. URL: %s", url)
-	default:
-		return "", fmt.Errorf("unexpected HTTP %d from HuggingFace for %s", resp.StatusCode, url)
-	}
-
-	// Limit response body to maxResponseBytes to prevent unbounded memory allocation
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
-	if err != nil {
-		return "", fmt.Errorf("read response body: %w", err)
-	}
-	if int64(len(body)) > maxResponseBytes {
-		return "", fmt.Errorf("response body exceeds %d bytes limit — likely not a config.json", maxResponseBytes)
-	}
-
-	// Validate that the response is valid JSON before writing — prevents writing
-	// HTML error pages or other non-JSON responses
-	if !json.Valid(body) {
-		return "", fmt.Errorf("response from %s is not valid JSON", url)
-	}
-
-	// Semantic validation: verify the JSON contains at least one expected
-	// HuggingFace config field. Catches empty objects {}, HF error responses
-	// like {"error": "..."}, and non-config JSON that passes json.Valid.
-	if !isHFConfig(body) {
-		return "", fmt.Errorf("response from %s is valid JSON but does not contain expected "+
-			"HuggingFace config fields (num_hidden_layers, hidden_size, layers_block_type, or the same fields under text_config). "+
-			"The model may not exist or the response is an error page", url)
-	}
-
-	// Write to target directory
-	if err := os.MkdirAll(targetDir, 0o755); err != nil {
-		return "", fmt.Errorf("create directory %s: %w", targetDir, err)
-	}
-
-	targetPath := filepath.Join(targetDir, hfConfigFile)
-	if err := os.WriteFile(targetPath, body, 0o644); err != nil {
-		return "", fmt.Errorf("write config file %s: %w", targetPath, err)
-	}
-
-	return targetDir, nil
-}
-
 // isHFConfig checks whether JSON bytes represent a HuggingFace transformer
 // config.json. It looks for num_hidden_layers, hidden_size, or a non-empty
 // layers_block_type list at the top level (text-only models) or nested inside
 // text_config (multimodal models such as Llama4ForConditionalGeneration). This
-// prevents caching empty JSON {}, error responses like {"error":"..."}, or unrelated
-// JSON that passes json.Valid.
+// rejects an empty JSON {} or unrelated JSON that passes json.Valid as a catalog entry.
 //
 // layers_block_type is accepted because latency.GetModelConfigFromHF derives the layer
 // count from its length when no num_hidden_layers scalar is declared (#1729 / NS-4). A
-// config the parser can read must not be rejected one layer up as "not a HF config" —
-// that would warn about a perfectly good local config and try a network fetch instead.
-// An empty or non-list value is NOT accepted: the parser cannot count it either, so the
-// two paths agree on exactly what counts as usable evidence.
+// config the parser can read must not be rejected one layer up as "not a HuggingFace
+// config" — that would reject a perfectly good catalogued config. An empty or non-list
+// value is NOT accepted: the parser cannot count it either, so the two paths agree on
+// exactly what counts as usable evidence.
 func isHFConfig(data []byte) bool {
 	var m map[string]interface{}
 	// Defensive: callers currently pre-validate with json.Valid, but retain this guard for future call sites.
@@ -317,7 +185,7 @@ func applyKVCacheDtype(mc *sim.ModelConfig, kvCacheDtype string) {
 	}
 }
 
-// bundledModelConfigDir returns the expected path for bundled model configs.
+// bundledModelConfigDir returns the expected catalog path for a model's config.
 // Model names like "meta-llama/llama-3.1-8b-instruct" map to "<baseDir>/model_configs/llama-3.1-8b-instruct/".
 // When baseDir is empty, returns a relative path (resolved relative to CWD).
 // Returns an error if the model name contains path traversal sequences.
