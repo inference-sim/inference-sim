@@ -998,9 +998,9 @@ jobs:
           #                                    finding never reached correct and dead-ended at
           #                                    needs-human (#1751).
           # `steps.target.outputs.branch` is the resolved `deliver/issue-<N>` (validated in `Validate
-          # the target PR`, the same value the CI dispatch at L441 uses) — a valid ref on every
-          # trigger, and it makes all of them consistent: correction always runs the delivery
-          # branch's workflow copy, as the push path already did.
+          # the target PR`, the same value the `Run the repository CI on the delivery branch` step
+          # dispatches on) — a valid ref on every trigger, and it makes all of them consistent:
+          # correction always runs the delivery branch's workflow copy, as the push path already did.
           scripts/dispatch-with-retry.sh deliver-correct.yml \
             --repo "$REPO" --ref "${{ steps.target.outputs.branch }}" \
             -f pr_number="$PR" -f issue_number="$ISSUE_NUMBER"

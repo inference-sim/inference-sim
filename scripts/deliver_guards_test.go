@@ -640,9 +640,12 @@ func TestDeliverVerifyHandsOffOnTheDeliveryBranchNotTheEventRef(t *testing.T) {
 	if !ok {
 		t.Fatal("deliver-verify.yml has no `Validate the target PR` step to produce steps.target.outputs.branch")
 	}
-	branchOut := regexp.MustCompile(`branch=\$branch`)
+	// `branch=` with SOME non-empty value, not the exact shell var name: the contract is that the
+	// output is written, so a benign rename (`branch=$head_ref`) must not false-alarm, while dropping
+	// the line entirely — the real regression — still trips it.
+	branchOut := regexp.MustCompile(`branch=\S`)
 	if !branchOut.MatchString(prod) || !strings.Contains(prod, "GITHUB_OUTPUT") {
-		t.Errorf("`Validate the target PR` no longer writes `branch=$branch` to $GITHUB_OUTPUT, so "+
+		t.Errorf("`Validate the target PR` no longer writes a `branch=` value to $GITHUB_OUTPUT, so "+
 			"`steps.target.outputs.branch` would be empty and the hand-off's `--ref \"\"` would "+
 			"silently fall back to the default branch. Step run:\n%s", prod)
 	}
@@ -660,9 +663,13 @@ func TestDeliverVerifyHandsOffOnTheDeliveryBranchNotTheEventRef(t *testing.T) {
 // trigger added to deliver-correct.yml / deliver-implement.yml (whose current dispatches on
 // `github.ref_name` are safe only because their triggers are issue_comment / workflow_dispatch).
 //
-// Matches BOTH dispatch spellings — a bare `gh workflow run` and the `dispatch-with-retry.sh`
-// wrapper (#1757) that forwards to it — so wrapping a dispatch in the retry helper cannot smuggle
-// `github.ref_name` past this guard.
+// Matches the dispatch in any of its three spellings — a bare `gh workflow run`, the
+// `dispatch-with-retry.sh` wrapper (#1757) that forwards to it, and a raw REST POST to the
+// workflow-dispatch endpoint (the spelling the sibling PR-creation guard had to add after review) —
+// and looks for `github.ref_name` both in the run script AND in the step's own `env:`, since a ref
+// can be staged as `env: REF: ${{ github.ref_name }}` and passed as `--ref "$REF"`. Job- and
+// workflow-level `env:` indirection is a residual gap: the CONSUMER assertion above locks the actual
+// hand-off regardless of spelling, so this class guard is defence-in-depth for the rest of the family.
 func TestNoReviewReachableWorkflowDispatchesOnTheEventRef(t *testing.T) {
 	paths, err := filepath.Glob(filepath.Join("..", ".github", "workflows", "*.yml"))
 	if err != nil {
@@ -700,8 +707,9 @@ func TestNoReviewReachableWorkflowDispatchesOnTheEventRef(t *testing.T) {
 				On   yaml.Node `yaml:"on"`
 				Jobs map[string]struct {
 					Steps []struct {
-						Name string `yaml:"name"`
-						Run  string `yaml:"run"`
+						Name string               `yaml:"name"`
+						Run  string               `yaml:"run"`
+						Env  map[string]yaml.Node `yaml:"env"`
 					} `yaml:"steps"`
 				} `yaml:"jobs"`
 			}
@@ -724,14 +732,29 @@ func TestNoReviewReachableWorkflowDispatchesOnTheEventRef(t *testing.T) {
 			for job, j := range wf.Jobs {
 				for _, s := range j.Steps {
 					code := stripCommentLines(s.Run)
+					// A dispatch spelled any of three ways: the gh porcelain, the retry wrapper that
+					// forwards to it (#1757), and a raw REST POST to the workflow-dispatch endpoint.
+					restDispatch := strings.Contains(code, "gh api") &&
+						strings.Contains(code, "POST") &&
+						strings.Contains(code, "dispatches")
 					dispatches := strings.Contains(code, "gh workflow run") ||
-						strings.Contains(code, "dispatch-with-retry.sh")
-					if dispatches && strings.Contains(code, "github.ref_name") {
+						strings.Contains(code, "dispatch-with-retry.sh") ||
+						restDispatch
+					if !dispatches {
+						continue
+					}
+					// The ref can reach the dispatch through the run script directly OR staged in the
+					// step's own `env:` (`env: REF: ${{ github.ref_name }}` + `--ref "$REF"`).
+					refText := code
+					for _, v := range s.Env {
+						refText += "\n" + v.Value
+					}
+					if strings.Contains(refText, "github.ref_name") {
 						t.Errorf("%s job %q step %q is reachable from a pull_request/review event, where "+
 							"`github.ref_name` is the PR merge ref `<pr>/merge`, yet it dispatches a "+
-							"workflow on `github.ref_name` — that 422s and dead-ends the loop "+
-							"(#1751). Dispatch on the resolved delivery branch instead. Step run:\n%s",
-							phase, job, s.Name, code)
+							"workflow with `github.ref_name` (in its run or env) — that 422s and "+
+							"dead-ends the loop (#1751). Dispatch on the resolved delivery branch "+
+							"instead. Step:\n%s", phase, job, s.Name, refText)
 					}
 				}
 			}
