@@ -562,3 +562,55 @@ func TestDeliverImplementPrefersAnExistingPRsBase(t *testing.T) {
 			"existing PR's base cannot override the value computed from the issue body", baseOut, lookup)
 	}
 }
+
+// Every delivery phase hand-off dispatch must retry with backoff (#1757).
+//
+// A single un-retried `gh workflow run` terminally stalls the delivery loop on a transient API
+// failure — observed live on PR #1736. This test asserts the retry structure is present at every
+// dispatch site, preventing a future edit from regressing one back to a bare call.
+func TestDeliveryHandoffDispatchesRetry(t *testing.T) {
+	handoffs := []struct {
+		file     string
+		stepName string
+		target   string
+	}{
+		{"deliver-verify.yml", "Hand off to correct", "deliver-correct.yml"},
+		{"deliver-correct.yml", "Hand back to verify", "deliver-verify.yml"},
+		{"deliver-implement.yml", "Hand off to verify", "deliver-verify.yml"},
+	}
+
+	for _, h := range handoffs {
+		t.Run(h.file+"/"+h.stepName, func(t *testing.T) {
+			path := filepath.Join("..", ".github", "workflows", h.file)
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("reading %s: %v", path, err)
+			}
+			body := string(raw)
+
+			stepIdx := strings.Index(body, "name: "+h.stepName)
+			if stepIdx < 0 {
+				t.Fatalf("%s has no step named %q", h.file, h.stepName)
+			}
+			section := body[stepIdx:]
+			nextStep := strings.Index(section[1:], "\n      - name:")
+			if nextStep > 0 {
+				section = section[:nextStep+1]
+			}
+
+			if !strings.Contains(section, "max_attempts=") {
+				t.Errorf("%s step %q has no retry loop (no max_attempts). "+
+					"A single un-retried dispatch terminally stalls the delivery loop (#1757)",
+					h.file, h.stepName)
+			}
+			if !strings.Contains(section, "gh workflow run "+h.target) {
+				t.Errorf("%s step %q does not dispatch %s",
+					h.file, h.stepName, h.target)
+			}
+			if !strings.Contains(section, "exit 1") {
+				t.Errorf("%s step %q has no terminal failure (exit 1) after retry exhaustion",
+					h.file, h.stepName)
+			}
+		})
+	}
+}
