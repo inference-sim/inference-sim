@@ -370,13 +370,19 @@ func TestDeliverGateMergeConflictNeverReady(t *testing.T) {
 		}
 	})
 
-	// An undeterminable merge state withholds the terminal ready verdict rather than trusting
-	// it — loud (needs-human), never a silent ready on an unverified mergeability.
-	t.Run("unknown-withholds-ready", func(t *testing.T) {
+	// An undeterminable merge state withholds the terminal ready verdict — but it must NOT be a
+	// terminal needs-human either. Mergeability that could not be read (a transient API blip on
+	// an otherwise-green PR) is re-checkable, not a reason to stop the delivery for a human. The
+	// gate returns the non-terminal `recheck`, on which verify re-verifies on the next event
+	// rather than announcing the loop stopped (#1758 G1).
+	t.Run("unknown-is-recheck-not-terminal", func(t *testing.T) {
 		out := runGate(t, gateEnv(map[string]string{"MERGE_STATE": "unknown"}))
-		requireDecision(t, out, "needs-human")
+		requireDecision(t, out, "recheck")
 		if out.decision == "ready" {
 			t.Fatal("reached ready with an undeterminable merge state")
+		}
+		if out.decision == "needs-human" {
+			t.Fatal("an undeterminable merge state must not terminally stop the delivery; it is re-checkable")
 		}
 	})
 
@@ -491,10 +497,11 @@ func TestDeliverGateRoundCap(t *testing.T) {
 }
 
 // TestDeliverGateAlwaysDecides is the structural backstop for BC-1: across the entire
-// declared input space the gate must always exit 0 with one of exactly three decisions.
-// A silent fallthrough is the failure this test exists to make impossible.
+// declared input space the gate must always exit 0 with one of exactly four decisions
+// (ready, correct, needs-human, recheck). A silent fallthrough is the failure this test
+// exists to make impossible.
 func TestDeliverGateAlwaysDecides(t *testing.T) {
-	valid := map[string]bool{"ready": true, "correct": true, "needs-human": true}
+	valid := map[string]bool{"ready": true, "correct": true, "needs-human": true, "recheck": true}
 
 	for _, ci := range allCIStatus {
 		for _, plan := range allPlanGate {

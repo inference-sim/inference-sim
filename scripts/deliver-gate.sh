@@ -19,8 +19,14 @@
 #   MAX_ROUNDS     hard cap on correction rounds (non-negative integer)
 #
 # Prints two lines and exits 0:
-#   decision=ready|correct|needs-human
+#   decision=ready|correct|needs-human|recheck
 #   reason=<one line, safe to paste into a PR comment>
+#
+# `recheck` is the one NON-TERMINAL decision: every signal is green but the branch's
+# mergeability could not be read this run (a transient API blip, #1758 G1). It is not `ready`
+# (an unverified mergeability must not merge) and not the terminal `needs-human` (a re-checkable
+# blip must not stop the delivery for a human). The caller re-verifies on the next event and
+# leaves no terminal label; the stall sweep is the bounded backstop if it never resolves.
 #
 # Exit 2 only on a wiring error — an unset input or a non-integer counter.
 #
@@ -139,7 +145,9 @@ else
           case "$MERGE_STATE" in
             mergeable)   emit ready "CI passed, plan signal '$PLAN_GATE', and the review returned GREEN" ;;
             conflicting) reason="the review returned GREEN but the branch has merge conflicts with main that must be resolved" ;;
-            *)           emit needs-human "every signal is green, but the branch's mergeability against main could not be determined, so it is not safe to mark ready" ;;
+            # Non-terminal: an unread mergeability on an otherwise-green PR is a re-checkable blip,
+            # not a reason to stop for a human. `recheck` re-verifies on the next event (#1758 G1).
+            *)           emit recheck "every signal is green, but the branch's mergeability against main could not be determined this run; re-verifying on the next event rather than stopping" ;;
           esac
           ;;
         open) emit needs-human "every signal is green, but a correction dismissed a finding that the review has not accepted — a human needs to decide whether the dismissal stands" ;;

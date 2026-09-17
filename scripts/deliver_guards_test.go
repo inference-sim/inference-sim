@@ -977,3 +977,32 @@ func TestDeliverCorrectPromptResolvesMergeConflicts(t *testing.T) {
 		}
 	}
 }
+
+// The gate returns `recheck` (non-terminal) when every signal is green but the branch's
+// mergeability could not be read (#1758 G1). deliver-verify.yml's `Apply the decision` step
+// MUST handle it explicitly: if it falls through to the `*)` arm it exits 1, the failure
+// reporter fires, and the PR is stamped the terminal `needs-human` — reintroducing exactly the
+// false-positive escalation `recheck` exists to prevent. This guards that the arm stays.
+func TestDeliverVerifyHandlesRecheckNonTerminally(t *testing.T) {
+	path := filepath.Join("..", ".github", "workflows", "deliver-verify.yml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	body := string(raw)
+
+	// A `recheck)` case arm must exist in the decision handling — otherwise recheck is an
+	// unexpected decision and the step errors into a terminal needs-human.
+	if !strings.Contains(body, "recheck)") {
+		t.Error("deliver-verify.yml's `Apply the decision` has no `recheck)` arm; an undeterminable " +
+			"mergeability would hit the `*)` error path and be stamped terminal needs-human (#1758 G1)")
+	}
+	// recheck must NOT map to a terminal label. The only terminal labels are ready-for-merge and
+	// needs-human; recheck applies neither (label=''). Guard that the recheck arm is not wired to
+	// one of them by checking the arm assigns an empty label like `correct` does.
+	recheckArm := regexp.MustCompile(`recheck\)\s+label=(''|"")`)
+	if !recheckArm.MatchString(body) {
+		t.Error("the `recheck)` arm does not set an empty label; recheck must apply no terminal " +
+			"label so the PR stays re-checkable on the next event rather than being stopped")
+	}
+}
