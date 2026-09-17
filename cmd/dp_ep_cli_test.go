@@ -45,12 +45,12 @@ func writeMoEConfigFixture(dir string) (catalogDir, hwPath string, err error) {
 // subprocess. moe selects the MoE fixture; otherwise the dense fixture is used.
 func dpEPResolve(t *testing.T, backend string, dp int, ep, moe bool) {
 	dir := t.TempDir()
-	var mcFolder, hwPath string
+	var catalogDir, hwPath string
 	var err error
 	if moe {
-		mcFolder, hwPath, err = writeMoEConfigFixture(dir)
+		catalogDir, hwPath, err = writeMoEConfigFixture(dir)
 	} else {
-		mcFolder, hwPath = setupTrainedPhysicsTestFixtures(t) // dense fixture
+		catalogDir, hwPath = setupTrainedPhysicsTestFixtures(t) // dense fixture
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "fixture setup failed: %v\n", err)
@@ -68,7 +68,7 @@ func dpEPResolve(t *testing.T, backend string, dp int, ep, moe bool) {
 	blockSizeTokens = 16
 	maxModelLen = 0
 	gpuMemoryUtilization = 0.9
-	catalogPath = mcFolder
+	catalogPath = catalogDir
 	hwConfigPath = hwPath
 	defaultsFilePath = "../defaults.yaml"
 
@@ -80,7 +80,7 @@ func dpEPResolve(t *testing.T, backend string, dp int, ep, moe bool) {
 		"--hardware", "H100",
 		"--tp", "1",
 		"--dp", fmt.Sprintf("%d", dp),
-		"--catalog", mcFolder,
+		"--catalog", catalogDir,
 		"--hardware-config", hwPath,
 		"--total-kv-blocks", "1000",
 		"--defaults-filepath", "../defaults.yaml",
@@ -169,7 +169,7 @@ func TestResolveLatencyConfig_DPEP_DenseDPRejected(t *testing.T) {
 // --dp 1 (default), EP off must NOT fatal — runs in-process and returns.
 func TestResolveLatencyConfig_DPEP_DefaultsAccepted(t *testing.T) {
 	dir := t.TempDir()
-	mcFolder, hwPath, err := writeMoEConfigFixture(dir)
+	catalogDir, hwPath, err := writeMoEConfigFixture(dir)
 	if err != nil {
 		t.Fatalf("fixture: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestResolveLatencyConfig_DPEP_DefaultsAccepted(t *testing.T) {
 	blockSizeTokens = 16
 	maxModelLen = 0
 	gpuMemoryUtilization = 0.9
-	catalogPath = mcFolder
+	catalogPath = catalogDir
 	hwConfigPath = hwPath
 	defaultsFilePath = "../defaults.yaml"
 
@@ -193,7 +193,7 @@ func TestResolveLatencyConfig_DPEP_DefaultsAccepted(t *testing.T) {
 	if err := testCmd.ParseFlags([]string{
 		"--model", "test-model", "--latency-model", "trained-physics",
 		"--hardware", "H100", "--tp", "1",
-		"--catalog", mcFolder, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--hardware-config", hwPath,
 		"--total-kv-blocks", "1000", "--defaults-filepath", "../defaults.yaml",
 	}); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
@@ -328,7 +328,7 @@ func TestResolveLatencyConfig_DPScalesAutoKVCapacity(t *testing.T) {
   "torch_dtype": "float16",
   "max_position_embeddings": 4096
 }`
-	mcFolder, err := writeTestCatalog(dir, configJSON)
+	catalogDir, err := writeTestCatalog(dir, configJSON)
 	if err != nil {
 		t.Fatalf("write test catalog: %v", err)
 	}
@@ -350,7 +350,7 @@ func TestResolveLatencyConfig_DPScalesAutoKVCapacity(t *testing.T) {
 		blockSizeTokens = 16
 		maxModelLen = 0
 		gpuMemoryUtilization = 0.9
-		catalogPath = mcFolder
+		catalogPath = catalogDir
 		hwConfigPath = hwPath
 		defaultsFilePath = "../defaults.yaml"
 
@@ -361,7 +361,7 @@ func TestResolveLatencyConfig_DPScalesAutoKVCapacity(t *testing.T) {
 		args := []string{
 			"--model", "test-model", "--latency-model", "trained-physics",
 			"--hardware", "H100", "--tp", "2", "--dp", fmt.Sprintf("%d", dp),
-			"--catalog", mcFolder, "--hardware-config", hwPath,
+			"--catalog", catalogDir, "--hardware-config", hwPath,
 			"--defaults-filepath", "../defaults.yaml",
 		}
 		if err := testCmd.ParseFlags(args); err != nil {

@@ -164,22 +164,22 @@ func TestNS6_RequireDeploymentFlags_AcceptsFullySpecified(t *testing.T) {
 }
 
 // ns6DeploymentFatalSubprocess drives resolveLatencyConfig in a subprocess with one of
-// --hardware/--tp withheld. Everything else is fully specified (explicit model-config
-// folder and hardware config), so the ONLY reason it can fail is the missing flag.
+// --hardware/--tp withheld. Everything else is fully specified (explicit --catalog and
+// --hardware-config), so the ONLY reason it can fail is the missing flag.
 func ns6DeploymentFatalSubprocess(t *testing.T) {
 	t.Helper()
 	if os.Getenv("BLIS_TEST_SUBPROCESS") != "1" {
 		return
 	}
 	dir := t.TempDir()
-	mcFolder, hwPath, err := writeMoEConfigFixture(dir)
+	catalogDir, hwPath, err := writeMoEConfigFixture(dir)
 	if err != nil {
 		os.Exit(2)
 	}
 
 	args := []string{
 		"--model", "test-model", "--latency-model", "trained-physics",
-		"--catalog", mcFolder, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--hardware-config", hwPath,
 		"--total-kv-blocks", "1000", "--defaults-filepath", "../defaults.yaml",
 	}
 	switch os.Getenv("BLIS_NS6_SCENARIO") {

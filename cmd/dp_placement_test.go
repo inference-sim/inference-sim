@@ -606,7 +606,7 @@ func TestRunCmd_PD_DP1_ByteIdentical(t *testing.T) {
 		t.Fatalf("INV-6 check would be vacuous: PD --dp 1 completed %d requests", completed)
 	}
 	if first != second {
-		t.Errorf("BC-8/INV-6: two PD --dp 1 MoE runs produced different stdout (the per-pool "+
+		t.Errorf("BC-8/INV-6: two PD --dp 1 MoE runs produced different stdout (the per-pool " +
 			"perPoolKVDP threading must be an exact no-op at --dp 1)")
 	}
 }
@@ -939,7 +939,7 @@ func writeCompleteMoEFixture(t *testing.T) (catalogDir, hwPath string) {
 }
 
 func TestDPPlacement_PerRankKV_NoDoubleCount(t *testing.T) {
-	mcDir, hwPath := writeCompleteMoEFixture(t)
+	catalogDir, hwPath := writeCompleteMoEFixture(t)
 
 	resolveAutoKV := func(dp int) int64 {
 		model = "test-model"
@@ -953,7 +953,7 @@ func TestDPPlacement_PerRankKV_NoDoubleCount(t *testing.T) {
 		blockSizeTokens = 16
 		maxModelLen = 0
 		gpuMemoryUtilization = 0.9
-		catalogPath = mcDir
+		catalogPath = catalogDir
 		hwConfigPath = hwPath
 		defaultsFilePath = "../defaults.yaml"
 
@@ -963,7 +963,7 @@ func TestDPPlacement_PerRankKV_NoDoubleCount(t *testing.T) {
 		if err := testCmd.ParseFlags([]string{
 			"--model", "test-model", "--latency-model", "trained-physics",
 			"--hardware", "H100", "--tp", "2", "--dp", strconv.Itoa(dp),
-			"--catalog", mcDir, "--hardware-config", hwPath,
+			"--catalog", catalogDir, "--hardware-config", hwPath,
 			"--defaults-filepath", "../defaults.yaml",
 		}); err != nil {
 			t.Fatalf("dp=%d ParseFlags: %v", dp, err)
@@ -1000,7 +1000,7 @@ func TestDPPlacement_PerRankKV_NoDoubleCount(t *testing.T) {
 // per-instance value (aggregate dp×value). This asserts the gating signal directly:
 // explicit ⇒ KVParamsOK false (no division); auto ⇒ KVParamsOK true (division applies).
 func TestDPPlacement_ExplicitKV_SkipsPerRankDivision(t *testing.T) {
-	mcDir, hwPath := writeCompleteMoEFixture(t)
+	catalogDir, hwPath := writeCompleteMoEFixture(t)
 
 	resolve := func(explicitKV bool) latencyResolution {
 		model = "test-model"
@@ -1014,7 +1014,7 @@ func TestDPPlacement_ExplicitKV_SkipsPerRankDivision(t *testing.T) {
 		blockSizeTokens = 16
 		maxModelLen = 0
 		gpuMemoryUtilization = 0.9
-		catalogPath = mcDir
+		catalogPath = catalogDir
 		hwConfigPath = hwPath
 		defaultsFilePath = "../defaults.yaml"
 
@@ -1023,7 +1023,7 @@ func TestDPPlacement_ExplicitKV_SkipsPerRankDivision(t *testing.T) {
 		args := []string{
 			"--model", "test-model", "--latency-model", "trained-physics",
 			"--hardware", "H100", "--tp", "2", "--dp", "2",
-			"--catalog", mcDir, "--hardware-config", hwPath,
+			"--catalog", catalogDir, "--hardware-config", hwPath,
 			"--defaults-filepath", "../defaults.yaml",
 		}
 		if explicitKV {

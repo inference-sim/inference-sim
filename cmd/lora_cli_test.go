@@ -215,7 +215,7 @@ func TestResolveLatencyConfig_AppliesAdapterHBMReservation(t *testing.T) {
   "torch_dtype": "float16",
   "max_position_embeddings": 4096
 }`
-	mcDir, err := writeTestCatalog(dir, configJSON)
+	catalogDir, err := writeTestCatalog(dir, configJSON)
 	if err != nil {
 		t.Fatalf("write test catalog: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestResolveLatencyConfig_AppliesAdapterHBMReservation(t *testing.T) {
 		blockSizeTokens = 16
 		maxModelLen = 0
 		gpuMemoryUtilization = 0.9
-		catalogPath = mcDir
+		catalogPath = catalogDir
 		hwConfigPath = hwPath
 		defaultsFilePath = "../defaults.yaml"
 		loraReservedBytesForKV = reserved
@@ -264,7 +264,7 @@ func TestResolveLatencyConfig_AppliesAdapterHBMReservation(t *testing.T) {
 		args := []string{
 			"--model", "test-model", "--latency-model", "trained-physics",
 			"--hardware", "H100", "--tp", "1",
-			"--catalog", mcDir, "--hardware-config", hwPath,
+			"--catalog", catalogDir, "--hardware-config", hwPath,
 			"--defaults-filepath", "../defaults.yaml",
 		}
 		if err := testCmd.ParseFlags(args); err != nil {
@@ -325,7 +325,7 @@ func TestResolveLatencyConfig_ExplicitTotalKVBlocksBypassesReservation(t *testin
   "torch_dtype": "float16",
   "max_position_embeddings": 4096
 }`
-	mcDir, err := writeTestCatalog(dir, configJSON)
+	catalogDir, err := writeTestCatalog(dir, configJSON)
 	if err != nil {
 		t.Fatalf("write test catalog: %v", err)
 	}
@@ -353,7 +353,7 @@ func TestResolveLatencyConfig_ExplicitTotalKVBlocksBypassesReservation(t *testin
 	blockSizeTokens = 16
 	maxModelLen = 0
 	gpuMemoryUtilization = 0.9
-	catalogPath = mcDir
+	catalogPath = catalogDir
 	hwConfigPath = hwPath
 	defaultsFilePath = "../defaults.yaml"
 	loraReservedBytesForKV = 8 << 30 // a reservation IS configured...
@@ -366,7 +366,7 @@ func TestResolveLatencyConfig_ExplicitTotalKVBlocksBypassesReservation(t *testin
 	args := []string{
 		"--model", "test-model", "--latency-model", "trained-physics",
 		"--hardware", "H100", "--tp", "1",
-		"--catalog", mcDir, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--hardware-config", hwPath,
 		"--defaults-filepath", "../defaults.yaml",
 		"--total-kv-blocks", "5000",
 	}

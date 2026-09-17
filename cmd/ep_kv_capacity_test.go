@@ -184,11 +184,11 @@ func writeBigMoEFixture(t *testing.T) (catalogDir, hwPath string) {
 // strongest form of this contract: the arithmetic is not merely un-masked, it is USED.
 func TestRunCmd_EPMoE_CapacityFitsAndRuns(t *testing.T) {
 	if os.Getenv("BLIS_RUN_EP_KV") == "1" {
-		mcDir, hwPath := writeBigMoEFixture(t)
+		catalogDir, hwPath := writeBigMoEFixture(t)
 		rootCmd.SetArgs([]string{
 			"run",
 			"--model", "test-moe",
-			"--catalog", mcDir,
+			"--catalog", catalogDir,
 			"--hardware", "H100",
 			"--hardware-config", hwPath,
 			"--latency-model", "trained-physics",
@@ -230,24 +230,24 @@ func TestRunCmd_EPMoE_CapacityFitsAndRuns(t *testing.T) {
 // routed experts are charged to the whole TP·DP group, so strictly more memory is left for
 // KV. This survives a refactor of how the option reaches CalculateKVBlocks.
 func TestResolveLatencyConfig_EPRaisesAutoKVCapacity(t *testing.T) {
-	mcDir, hwPath := writeCompleteMoEFixture(t)
+	catalogDir, hwPath := writeCompleteMoEFixture(t)
 
 	origModel, origBackend, origGPU := model, latencyModelBackend, gpu
 	origTP, origDP, origEP, origComm := tensorParallelism, dataParallelism, enableExpertParallel, moeCommBackend
 	origBlocks, origBlockSize, origMML := totalKVBlocks, blockSizeTokens, maxModelLen
-	origUtil, origMCFolder, origHW, origDefaults := gpuMemoryUtilization, catalogPath, hwConfigPath, defaultsFilePath
+	origUtil, origCatalogDir, origHW, origDefaults := gpuMemoryUtilization, catalogPath, hwConfigPath, defaultsFilePath
 	t.Cleanup(func() {
 		model, latencyModelBackend, gpu = origModel, origBackend, origGPU
 		tensorParallelism, dataParallelism, enableExpertParallel, moeCommBackend = origTP, origDP, origEP, origComm
 		totalKVBlocks, blockSizeTokens, maxModelLen = origBlocks, origBlockSize, origMML
-		gpuMemoryUtilization, catalogPath, hwConfigPath, defaultsFilePath = origUtil, origMCFolder, origHW, origDefaults
+		gpuMemoryUtilization, catalogPath, hwConfigPath, defaultsFilePath = origUtil, origCatalogDir, origHW, origDefaults
 	})
 
 	resolveAutoKV := func(epOn bool) int64 {
 		args := []string{
 			"--model", "test-model", "--latency-model", "trained-physics",
 			"--hardware", "H100", "--tp", "2", "--dp", "2",
-			"--catalog", mcDir, "--hardware-config", hwPath,
+			"--catalog", catalogDir, "--hardware-config", hwPath,
 			"--defaults-filepath", "../defaults.yaml",
 		}
 		if epOn {
@@ -256,7 +256,7 @@ func TestResolveLatencyConfig_EPRaisesAutoKVCapacity(t *testing.T) {
 		model, latencyModelBackend, gpu = "test-model", "trained-physics", "H100"
 		tensorParallelism, dataParallelism, enableExpertParallel, moeCommBackend = 2, 2, epOn, ""
 		totalKVBlocks, blockSizeTokens, maxModelLen = 0, 16, 0
-		gpuMemoryUtilization, catalogPath, hwConfigPath = 0.9, mcDir, hwPath
+		gpuMemoryUtilization, catalogPath, hwConfigPath = 0.9, catalogDir, hwPath
 		defaultsFilePath = "../defaults.yaml"
 
 		testCmd := &cobra.Command{}
