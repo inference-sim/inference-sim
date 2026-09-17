@@ -55,7 +55,7 @@ func TestResolveLatencyConfig_KVCacheDtype_SetsModelConfigField(t *testing.T) {
 		kvCacheDtype = origKV
 	}()
 
-	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
 
 	resolve := func(dtype string) float64 {
 		model = "test-model"
@@ -67,7 +67,7 @@ func TestResolveLatencyConfig_KVCacheDtype_SetsModelConfigField(t *testing.T) {
 		blockSizeTokens = 16
 		maxModelLen = 0
 		gpuMemoryUtilization = 0.9
-		modelConfigFolder = mcFolder
+		catalogPath = catalogDir
 		hwConfigPath = hwPath
 		defaultsFilePath = defaultsPath
 
@@ -76,7 +76,7 @@ func TestResolveLatencyConfig_KVCacheDtype_SetsModelConfigField(t *testing.T) {
 		if err := testCmd.ParseFlags([]string{
 			"--model", "test-model", "--latency-model", "trained-physics",
 			"--hardware", "H100", "--tp", "1",
-			"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+			"--catalog", catalogDir, "--hardware-config", hwPath,
 			"--total-kv-blocks", "1000", "--defaults-filepath", defaultsPath,
 			"--kv-cache-dtype", dtype,
 		}); err != nil {
@@ -119,7 +119,7 @@ func TestResolveLatencyConfig_KVCacheDtype_GarbageRejected(t *testing.T) {
 // subprocess. Mirrors dpEPResolve — everything but the dtype is valid, so the only
 // fatal path exercised is the --kv-cache-dtype guard.
 func kvDtypeResolve(t *testing.T, dtype string) {
-	mcFolder, hwPath := setupTrainedPhysicsTestFixtures(t) // dense fixture
+	catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t) // dense fixture
 
 	model = "test-model"
 	latencyModelBackend = "trained-physics"
@@ -130,7 +130,7 @@ func kvDtypeResolve(t *testing.T, dtype string) {
 	blockSizeTokens = 16
 	maxModelLen = 0
 	gpuMemoryUtilization = 0.9
-	modelConfigFolder = mcFolder
+	catalogPath = catalogDir
 	hwConfigPath = hwPath
 	defaultsFilePath = "../defaults.yaml"
 	kvCacheDtype = dtype
@@ -140,7 +140,7 @@ func kvDtypeResolve(t *testing.T, dtype string) {
 	if err := testCmd.ParseFlags([]string{
 		"--model", "test-model", "--latency-model", "trained-physics",
 		"--hardware", "H100", "--tp", "1",
-		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--hardware-config", hwPath,
 		"--total-kv-blocks", "1000", "--defaults-filepath", "../defaults.yaml",
 		"--kv-cache-dtype", dtype,
 	}); err != nil {
@@ -165,7 +165,7 @@ func TestINV13_RunReplayParity_FP8KV(t *testing.T) {
 	const fixedSeed int64 = 99
 	requests := makeSharedPrefixRequests(4) // shared helper from offload_parity_test.go
 
-	mcFolder, hwPath := setupTrainedPhysicsTestFixtures(t)
+	catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
 	dir := t.TempDir()
 
 	defaultsContent := `trained_physics_coefficients:
@@ -177,7 +177,7 @@ func TestINV13_RunReplayParity_FP8KV(t *testing.T) {
 		t.Fatalf("write defaults.yaml: %v", err)
 	}
 
-	hfConfig, err := latency.ParseHFConfig(filepath.Join(mcFolder, "config.json"))
+	hfConfig, err := latency.ParseHFConfig(testCatalogConfigPath(catalogDir, "test-model"))
 	if err != nil {
 		t.Fatalf("ParseHFConfig: %v", err)
 	}

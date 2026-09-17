@@ -65,7 +65,7 @@ func assertOffloadRunReplayParity(t *testing.T, offloadPromptOnly bool, outputLe
 	const fixedSeed int64 = 99
 	requests := makeSharedPrefixRequests(outputLen)
 
-	mcFolder, hwPath := setupTrainedPhysicsTestFixtures(t)
+	catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
 	dir := t.TempDir()
 
 	defaultsContent := `trained_physics_coefficients:
@@ -77,7 +77,7 @@ func assertOffloadRunReplayParity(t *testing.T, offloadPromptOnly bool, outputLe
 		t.Fatalf("write defaults.yaml: %v", err)
 	}
 
-	hfConfig, err := latency.ParseHFConfig(filepath.Join(mcFolder, "config.json"))
+	hfConfig, err := latency.ParseHFConfig(testCatalogConfigPath(catalogDir, "test-model"))
 	if err != nil {
 		t.Fatalf("ParseHFConfig: %v", err)
 	}

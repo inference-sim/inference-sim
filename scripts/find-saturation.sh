@@ -19,7 +19,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 MODEL="${MODEL:-meta-llama/Llama-3.1-70B-Instruct}"
-MODEL_CONFIG_FOLDER="${MODEL_CONFIG_FOLDER:-model_configs/llama-3.1-70b-instruct}"
+# Model catalog root: one directory per model, each with its config.json (#1731).
+# Required by blis run — there is no default and no search path.
+CATALOG="${CATALOG:-model_configs}"
 HARDWARE="${HARDWARE:-H100}"
 TP="${TP:-8}"
 WORKLOAD="${WORKLOAD:-chatbot}"
@@ -33,10 +35,10 @@ DETECTORS="${DETECTORS:-all}"
 RATES="${RATES:-0.5 1 2 4 6 8 10 12 14 16 20 30 40 50 60 80 100}"
 SEED="${SEED:-42}"
 
-# Pass --model-config-folder only if non-empty (MODEL_CONFIG_FOLDER="" falls back to
-# resolving the catalog entry by model name, model_configs/<short-name>/config.json).
-CFG_ARGS=()
-[[ -n "$MODEL_CONFIG_FOLDER" ]] && CFG_ARGS=(--model-config-folder "$MODEL_CONFIG_FOLDER")
+# --catalog is always passed: blis refuses a run with neither --catalog nor BLIS_CATALOG.
+# The model's config.json is read from "$CATALOG/<model-short-name>/config.json"; a model
+# with no entry there is refused, never fetched (NS-6).
+CFG_ARGS=(--catalog "$CATALOG")
 
 OUT_DIR="${OUT_DIR:-results/saturation-$(date +%Y%m%d-%H%M%S)-$$}"
 mkdir -p "$OUT_DIR"

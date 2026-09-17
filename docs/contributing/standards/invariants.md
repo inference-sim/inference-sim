@@ -206,7 +206,7 @@ These constrain **which code may read or do what**. They are not statements abou
 
 **Statement:** A model runs **if and only if it is in the catalog**, and no run may change the catalog. Two clauses:
 
-1. **Read-only, refuse-on-miss.** `cmd.resolveModelConfig` reads the model's `config.json` from the catalog (`model_configs/<short-name>/`, or the directory given by `--model-config-folder`). A model with no entry — or an entry that is not a HuggingFace config — is **refused, naming the path the entry belongs at**. No `blis run` / `blis replay` / `blis observe` invocation creates or modifies a catalog file, and none makes a HuggingFace request.
+1. **Read-only, refuse-on-miss.** `cmd.resolveModelConfig` reads the model's `config.json` from the catalog located by `--catalog` / `BLIS_CATALOG` (`<catalog>/<short-name>/config.json`; #1731 — there is no default, no search path, and a run naming no catalog is refused naming both forms). A model with no entry — or an entry that is not a HuggingFace config — is **refused, naming the path the entry belongs at**. No `blis run` / `blis replay` / `blis observe` invocation creates or modifies a catalog file, and none makes a HuggingFace request.
 2. **The deployment is chosen, never inferred.** `--hardware` and `--tp` are required on both `blis run` and `blis replay` (`cmd.requireDeploymentFlags`); omitting either is refused **naming the missing flag**.
 
 **Why this tier:** like INV-9 and INV-A2 this constrains *what the code may do* rather than describing simulation state. A run that writes a catalog entry can leave that run's output perfectly correct while making the catalog — the thing every later run and every calibration reads — drift by accident.

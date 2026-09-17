@@ -46,7 +46,7 @@ cd inference-sim
 go build -o blis main.go
 ```
 
-**Note:** BLIS runs a model only if it is in the catalog — a `config.json` under `model_configs/<model>/` (or a directory you point `--model-config-folder` at). Nothing is fetched or written at run time: a model that is not catalogued is refused, naming the path its entry belongs at. Add new models by committing their `config.json` (see CONTRIBUTING.md). Both roofline and trained-physics run fully offline.
+**Note:** BLIS must be told where the model catalog is — `--catalog <path>` or the `BLIS_CATALOG` environment variable, with **no default and no search path** (the flag wins when both are set). The bundled `model_configs/` tree is a valid catalog: run `export BLIS_CATALOG=$PWD/model_configs` once and the examples work as written. BLIS then runs a model only if it is in that catalog — a `config.json` at `<catalog>/<model>/config.json`. Nothing is fetched or written at run time: a model that is not catalogued is refused, naming the path its entry belongs at. Add new models by committing their `config.json` under `model_configs/` (see CONTRIBUTING.md). Both roofline and trained-physics run fully offline.
 
 **Environment setup (optional):**
 

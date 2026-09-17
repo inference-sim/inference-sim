@@ -250,7 +250,7 @@ Replay also accepts all shared simulation config flags (`--latency-model`, `--to
 
     # Run N=2 DP replicas and export the workload...
     ./blis run --model deepseek-ai/deepseek-v2-lite \
-      --model-config-folder model_configs/deepseek-v2-lite \
+      --catalog model_configs \
       --hardware H100 --hardware-config hardware_config.json --tp 1 \
       --dp 2 --num-instances 1 \
       --rate 10 --num-requests 40 --total-kv-blocks 20000 --seed 42 \
@@ -260,7 +260,7 @@ Replay also accepts all shared simulation config flags (`--latency-model`, `--to
     # --dp, --num-instances, --total-kv-blocks, --seed and --horizon.
     ./blis replay --trace-header traces/dp2.yaml --trace-data traces/dp2.csv \
       --model deepseek-ai/deepseek-v2-lite \
-      --model-config-folder model_configs/deepseek-v2-lite \
+      --catalog model_configs \
       --hardware H100 --hardware-config hardware_config.json --tp 1 \
       --dp 2 --num-instances 1 \
       --total-kv-blocks 20000 --seed 42 --horizon 9223372036854775807   # unlimited

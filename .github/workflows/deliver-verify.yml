@@ -1020,6 +1020,55 @@ jobs:
           echo "ROUND=$round"
           echo "value=$round" >> "$GITHUB_OUTPUT"
 
+      # #1758: a delivery PR that conflicts with main stalls silently. The gate reads CI, the
+      # archon plan and the review verdict — none of which see a git conflict — so it can mark an
+      # unmergeable PR ready-for-merge (GitHub cannot compute the merge ref, so that label is one
+      # a human cannot act on). Derive the mergeability here and feed it to the gate, which refuses
+      # `ready` on a conflicting branch and routes it to a correction round to merge main + resolve.
+      - name: Read the branch mergeability
+        id: mergestate
+        if: steps.paused.outputs.paused == 'false'
+        run: |
+          set -uo pipefail
+          # REST, not `gh pr view --json mergeable`, for the reason the rest of this file uses REST
+          # (see `Validate the target PR`): the field's availability must not depend on the runner's
+          # gh version. GitHub computes mergeability ASYNCHRONOUSLY, so poll until it resolves. The
+          # loop READS on every attempt including the last (the sleep is skipped after the final
+          # read — a five-read/12s window left the last sleep wasted, #1758 G1), and the window is
+          # deliberately generous: a spurious `unknown` here escalates an otherwise-green PR to
+          # needs-human, so err toward waiting. By this point the head has already sat through CI and
+          # the review, so mergeability is normally long since computed; the poll only bridges an
+          # unusually slow compute or genuine API trouble.
+          state=""
+          attempts=8
+          for attempt in $(seq 1 "$attempts"); do
+            if raw=$(gh api "/repos/$REPO/pulls/$PR" --jq '.mergeable_state // ""' 2>"$RUNNER_TEMP/mergeapi.err"); then
+              if [[ -n "$raw" && "$raw" != "unknown" ]]; then
+                state="$raw"
+                break
+              fi
+              echo "mergeable_state is '${raw:-<empty>}' (attempt $attempt/$attempts); GitHub may still be computing it"
+            else
+              # Not silently swallowed (R1): the API error is surfaced as a warning so an outage is
+              # distinguishable from GitHub's legitimate still-computing `unknown`. It still fails
+              # closed — an unresolved read stays `state=""` → `unknown`, on which the gate withholds
+              # `ready` — but the operator can now see WHY.
+              raw=""
+              echo "::warning::could not read mergeable_state for #$PR (attempt $attempt/$attempts): $(tr '\n' ' ' < "$RUNNER_TEMP/mergeapi.err")"
+            fi
+            if (( attempt < attempts )); then sleep 3; fi
+          done
+          # Map GitHub's mergeable_state into the gate's domain via the tested script (a mapping typo
+          # here would mark a conflicting branch mergeable and reach ready — the #1758 bug — so it is
+          # a script with its own cross-product test, scripts/map_merge_state_test.go, exactly like
+          # deliver-gate.sh). Only "dirty" is conflicting; the known non-conflict states are
+          # mergeable (a behind branch still merges, and the correction phase merges main every round
+          # regardless); an unresolved/empty read — or an unrecognised future state — is `unknown`,
+          # on which the gate withholds `ready` rather than trusting an unverified mergeability.
+          merge_state=$(scripts/map-merge-state.sh "$state")
+          echo "mergeable_state='$state' -> MERGE_STATE=$merge_state"
+          echo "state=$merge_state" >> "$GITHUB_OUTPUT"
+
       - name: Decide
         id: gate
         if: steps.paused.outputs.paused == 'false'
@@ -1029,6 +1078,7 @@ jobs:
           AGENT_VERDICT: ${{ steps.verdict.outputs.value }}
           QA_VERDICT: ${{ steps.qa_verdict.outputs.value }}
           DISMISSALS: ${{ steps.dismissals_final.outputs.state }}
+          MERGE_STATE: ${{ steps.mergestate.outputs.state }}
           ROUND: ${{ steps.round.outputs.value }}
         # pipefail is essential: without it the pipeline reports tee's status, so the gate
         # exiting 2 on a wiring error would look like a successful step with no decision.
@@ -1082,6 +1132,11 @@ jobs:
             ready)       label=ready-for-merge; headline='Ready for merge' ;;
             needs-human) label=needs-human;     headline='Stopped — a human is needed' ;;
             correct)     label='';              headline='Correction round starting' ;;
+            # Non-terminal (#1758 G1): every signal is green but the branch's mergeability could
+            # not be read this run. Apply NO terminal label and do NOT announce a stop — the PR
+            # stays in the stall sweep's in-flight set and re-verifies on the next event. Only if
+            # it never resolves does the sweep escalate it (the bounded backstop).
+            recheck)     label='';              headline='Mergeability undetermined — will re-verify' ;;
             *) echo "::error::unexpected decision '$decision'"; exit 1 ;;
           esac
           {
@@ -1096,6 +1151,7 @@ jobs:
             echo "| review verdict | \`${{ steps.verdict.outputs.value }}\` |"
             echo "| qa-review verdict | \`${{ steps.qa_verdict.outputs.value }}\` |"
             echo "| outstanding dismissals | \`${{ steps.dismissals_final.outputs.state }}\` |"
+            echo "| branch mergeability | \`${{ steps.mergestate.outputs.state }}\` |"
             echo "| correction rounds spent | ${{ steps.round.outputs.value }} of ${MAX_ROUNDS} |"
             echo "| verified commit | \`${{ steps.target.outputs.sha }}\` |"
             echo
@@ -1103,6 +1159,7 @@ jobs:
               ready)       echo "Nothing further is automated. A human reviews the history above and merges." ;;
               needs-human) echo "The delivery loop has stopped and will not resume on its own." ;;
               correct)     echo "The correct phase will address the findings above and hand back for re-verification." ;;
+              recheck)     echo "GitHub had not computed this branch's mergeability by the end of this run. The delivery is NOT stopped: it will re-verify on the next push or review, and the stall sweep will escalate it only if the mergeability stays unreadable." ;;
             esac
             echo
             echo "_[Verify run](${RUN_URL})_"

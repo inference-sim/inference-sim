@@ -19,6 +19,9 @@ var (
 	allQAVerdict = []string{"PASS", "BLOCK", "MISSING"}
 	// `open` means a correction dismissed a finding that the reviewer has not accepted.
 	allDismissals = []string{"none", "open", "unknown"}
+	// The branch's mergeability against main. `conflicting` (REST mergeable_state "dirty")
+	// must never be marked ready; `unknown` means the state could not be read.
+	allMergeState = []string{"mergeable", "conflicting", "unknown"}
 
 	// blockingPlanGate are the plan signals that must stop a delivery.
 	// `unverified` blocks like a regression: the PR claimed a plan and the check did not run,
@@ -47,6 +50,7 @@ func gateEnv(overrides map[string]string) map[string]string {
 		"AGENT_VERDICT": "GREEN",
 		"QA_VERDICT":    "PASS",
 		"DISMISSALS":    "none",
+		"MERGE_STATE":   "mergeable",
 		"ROUND":         "0",
 		"MAX_ROUNDS":    "3",
 	}
@@ -119,10 +123,10 @@ func requireDecision(t *testing.T, out gateOutcome, want string) {
 // TestDeliverGateWiringErrorsAreLoud covers BC-1's first half: an unset or malformed input
 // is a workflow wiring bug and must fail visibly rather than produce a verdict.
 func TestDeliverGateWiringErrorsAreLoud(t *testing.T) {
-	// QA_VERDICT is guarded exactly like the other six: fail-closed is the whole contract of a
-	// blocking review signal, so a workflow that forgets to wire it must exit 2 rather than
-	// silently decide without it.
-	required := []string{"CI_STATUS", "PLAN_GATE", "AGENT_VERDICT", "QA_VERDICT", "DISMISSALS", "ROUND", "MAX_ROUNDS"}
+	// QA_VERDICT and MERGE_STATE are guarded exactly like the other six: fail-closed is the whole
+	// contract of a blocking review signal (and of the mergeability signal), so a workflow that
+	// forgets to wire either must exit 2 rather than silently decide without it.
+	required := []string{"CI_STATUS", "PLAN_GATE", "AGENT_VERDICT", "QA_VERDICT", "DISMISSALS", "MERGE_STATE", "ROUND", "MAX_ROUNDS"}
 
 	for _, name := range required {
 		t.Run("unset/"+name, func(t *testing.T) {
@@ -200,6 +204,13 @@ func TestDeliverGateUnrecognisedValuesFailClosed(t *testing.T) {
 		{"qa-verdict-typo", "QA_VERDICT", "BLOCKED"},
 		{"qa-verdict-status-leak", "QA_VERDICT", "FLAW_FOUND"},
 		{"qa-verdict-green", "QA_VERDICT", "GREEN"},
+		// The gate's merge domain is the mapped value, not GitHub's raw mergeable_state.
+		// The derivation step maps "dirty"→conflicting and "behind"→mergeable; a raw GitHub
+		// value reaching the gate means that mapping was skipped, so it must stop rather than
+		// fall through the merge branch with no decision.
+		{"merge-state-raw-dirty", "MERGE_STATE", "dirty"},
+		{"merge-state-raw-behind", "MERGE_STATE", "behind"},
+		{"merge-state-bogus", "MERGE_STATE", "sideways"},
 	}
 
 	for _, tc := range cases {
@@ -449,6 +460,111 @@ func TestDeliverGateUnacceptedDismissalBlocksReady(t *testing.T) {
 	})
 }
 
+// TestDeliverGateMergeConflictNeverReady covers #1758. A branch that conflicts with main
+// must never be marked ready — GitHub cannot compute its merge ref, so a `ready-for-merge`
+// on it is a stale label a human cannot act on. A conflict is not a review disagreement
+// (the reviewer approved the code, not the mergeability), so it routes to the correction
+// agent to merge main + resolve, subject to the ordinary round cap.
+func TestDeliverGateMergeConflictNeverReady(t *testing.T) {
+	// The would-be-ready inputs: every quality signal green. Only the merge state blocks.
+	t.Run("green-but-conflicting-corrects", func(t *testing.T) {
+		out := runGate(t, gateEnv(map[string]string{"MERGE_STATE": "conflicting", "ROUND": "0"}))
+		requireDecision(t, out, "correct")
+		if out.decision == "ready" {
+			t.Fatal("reached ready on a conflicting branch")
+		}
+	})
+
+	// A conflict is not the GREEN-vs-blocking disagreement: it must correct, not stop, even
+	// though the review is GREEN. This is what distinguishes it from a failing objective signal.
+	t.Run("green-conflict-is-not-a-disagreement", func(t *testing.T) {
+		out := runGate(t, gateEnv(map[string]string{
+			"AGENT_VERDICT": "GREEN", "MERGE_STATE": "conflicting", "ROUND": "0",
+		}))
+		requireDecision(t, out, "correct")
+	})
+
+	// But a real failing signal (CI) with a GREEN review still wins as a disagreement: a
+	// human is needed regardless of the branch being dirty too.
+	t.Run("ci-failure-disagreement-wins-over-conflict", func(t *testing.T) {
+		out := runGate(t, gateEnv(map[string]string{
+			"CI_STATUS": "failure", "AGENT_VERDICT": "GREEN", "MERGE_STATE": "conflicting",
+		}))
+		requireDecision(t, out, "needs-human")
+	})
+
+	// An honest NOT-GREEN on a conflicting branch still corrects (the agent merges main AND
+	// fixes findings in the same round).
+	t.Run("not-green-conflict-corrects", func(t *testing.T) {
+		out := runGate(t, gateEnv(map[string]string{
+			"AGENT_VERDICT": "NOT-GREEN", "MERGE_STATE": "conflicting", "ROUND": "0",
+		}))
+		requireDecision(t, out, "correct")
+	})
+
+	// The round cap bounds conflict resolution exactly as it bounds any other correction: a
+	// branch that cannot be auto-resolved within the cap stops loudly at needs-human.
+	t.Run("conflict-at-cap-stops", func(t *testing.T) {
+		out := runGate(t, gateEnv(map[string]string{
+			"MERGE_STATE": "conflicting", "ROUND": "3", "MAX_ROUNDS": "3",
+		}))
+		requireDecision(t, out, "needs-human")
+		if !strings.Contains(out.reason, "3") {
+			t.Errorf("reason should name the cap: %s", out.reason)
+		}
+	})
+
+	// An undeterminable merge state withholds the terminal ready verdict — but it must NOT be a
+	// terminal needs-human either. Mergeability that could not be read (a transient API blip on
+	// an otherwise-green PR) is re-checkable, not a reason to stop the delivery for a human. The
+	// gate returns the non-terminal `recheck`, on which verify re-verifies on the next event
+	// rather than announcing the loop stopped (#1758 G1).
+	t.Run("unknown-is-recheck-not-terminal", func(t *testing.T) {
+		out := runGate(t, gateEnv(map[string]string{"MERGE_STATE": "unknown"}))
+		requireDecision(t, out, "recheck")
+		if out.decision == "ready" {
+			t.Fatal("reached ready with an undeterminable merge state")
+		}
+		if out.decision == "needs-human" {
+			t.Fatal("an undeterminable merge state must not terminally stop the delivery; it is re-checkable")
+		}
+	})
+
+	// Regression guard: a mergeable branch with all signals green still reaches ready — the
+	// new input cannot silently gate deliveries that are genuinely mergeable.
+	t.Run("mergeable-still-ready", func(t *testing.T) {
+		requireDecision(t, runGate(t, gateEnv(map[string]string{"MERGE_STATE": "mergeable"})), "ready")
+	})
+
+	// Precedence: the conflict path is nested UNDER `DISMISSALS=none`, so an outstanding
+	// dismissal is decided before the merge state is even read — a human is needed to accept
+	// the dismissal regardless of the branch being dirty too. It must NOT be quietly downgraded
+	// to a correction round by the conflict.
+	t.Run("open-dismissal-beats-conflict", func(t *testing.T) {
+		out := runGate(t, gateEnv(map[string]string{"DISMISSALS": "open", "MERGE_STATE": "conflicting"}))
+		requireDecision(t, out, "needs-human")
+	})
+
+	// Precedence: a plan-blocking signal collects into `blocking`, and a GREEN review against a
+	// blocking signal is the disagreement guardrail — needs-human — reached before the merge
+	// branch. A conflict does not turn that disagreement into a correction round.
+	t.Run("plan-regression-disagreement-beats-conflict", func(t *testing.T) {
+		out := runGate(t, gateEnv(map[string]string{
+			"PLAN_GATE": "regression", "AGENT_VERDICT": "GREEN", "MERGE_STATE": "conflicting",
+		}))
+		requireDecision(t, out, "needs-human")
+	})
+
+	// But an HONEST NOT-GREEN on a conflicting branch with a plan regression still corrects
+	// (rounds permitting): the agent merges main AND addresses the findings in one round.
+	t.Run("plan-regression-not-green-conflict-corrects", func(t *testing.T) {
+		out := runGate(t, gateEnv(map[string]string{
+			"PLAN_GATE": "regression", "AGENT_VERDICT": "NOT-GREEN", "MERGE_STATE": "conflicting", "ROUND": "0",
+		}))
+		requireDecision(t, out, "correct")
+	})
+}
+
 // TestDeliverGateReady covers BC-6: ready requires all three signals to agree, and the
 // planless case delivers exactly like a satisfied plan.
 func TestDeliverGateReady(t *testing.T) {
@@ -525,32 +641,33 @@ func TestDeliverGateRoundCap(t *testing.T) {
 }
 
 // TestDeliverGateAlwaysDecides is the structural backstop for BC-1: across the entire
-// declared input space the gate must always exit 0 with one of exactly three decisions.
-// A silent fallthrough is the failure this test exists to make impossible.
+// declared input space the gate must always exit 0 with one of exactly four decisions
+// (ready, correct, needs-human, recheck). A silent fallthrough is the failure this test
+// exists to make impossible.
 func TestDeliverGateAlwaysDecides(t *testing.T) {
-	valid := map[string]bool{"ready": true, "correct": true, "needs-human": true}
+	valid := map[string]bool{"ready": true, "correct": true, "needs-human": true, "recheck": true}
 
 	for _, ci := range allCIStatus {
 		for _, plan := range allPlanGate {
 			for _, verdict := range allVerdicts {
 				for _, qa := range allQAVerdict {
 					for _, dis := range allDismissals {
-						for _, round := range []string{"0", "3"} {
-							out := runGate(t, gateEnv(map[string]string{
-								"CI_STATUS": ci, "PLAN_GATE": plan, "AGENT_VERDICT": verdict,
-								"QA_VERDICT": qa, "DISMISSALS": dis, "ROUND": round,
-							}))
-							if out.exitCode != 0 {
-								t.Errorf("%s/%s/%s/%s/%s round %s: exit %d, want 0",
-									ci, plan, verdict, qa, dis, round, out.exitCode)
-							}
-							if !valid[out.decision] {
-								t.Errorf("%s/%s/%s/%s/%s round %s: decision = %q, want ready/correct/needs-human",
-									ci, plan, verdict, qa, dis, round, out.decision)
-							}
-							if strings.TrimSpace(out.reason) == "" {
-								t.Errorf("%s/%s/%s/%s/%s round %s: empty reason; every decision must explain itself",
-									ci, plan, verdict, qa, dis, round)
+						for _, merge := range allMergeState {
+							for _, round := range []string{"0", "3"} {
+								out := runGate(t, gateEnv(map[string]string{
+									"CI_STATUS": ci, "PLAN_GATE": plan, "AGENT_VERDICT": verdict,
+									"QA_VERDICT": qa, "DISMISSALS": dis, "MERGE_STATE": merge, "ROUND": round,
+								}))
+								where := ci + "/" + plan + "/" + verdict + "/qa=" + qa + "/dis=" + dis + "/merge=" + merge + " round " + round
+								if out.exitCode != 0 {
+									t.Errorf("%s: exit %d, want 0", where, out.exitCode)
+								}
+								if !valid[out.decision] {
+									t.Errorf("%s: decision = %q, want ready/correct/needs-human/recheck", where, out.decision)
+								}
+								if strings.TrimSpace(out.reason) == "" {
+									t.Errorf("%s: empty reason; every decision must explain itself", where)
+								}
 							}
 						}
 					}

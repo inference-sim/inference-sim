@@ -1009,7 +1009,7 @@ func TestAutoCalcKVBlocks_SuppressedByExplicitFlag(t *testing.T) {
 func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	outFile := filepath.Join(t.TempDir(), "metrics.json")
 
-	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
 
 	// Save and restore all package-level flag vars mutated by runCmd.Run.
 	// Base list copied from TestReplayCmd_EndToEnd_TrainedPhysicsMode;
@@ -1059,7 +1059,7 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	origRequestTimeout := requestTimeoutSecs
 	origTraceOut := traceOutput
 	origLogLevel := logLevel
-	origModelConfigFolder := modelConfigFolder
+	origCatalogPath := catalogPath
 	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
@@ -1108,7 +1108,7 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 		requestTimeoutSecs = origRequestTimeout
 		traceOutput = origTraceOut
 		logLevel = origLogLevel
-		modelConfigFolder = origModelConfigFolder
+		catalogPath = origCatalogPath
 		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
@@ -1139,7 +1139,7 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 		"--model", "qwen/qwen3-14b",
 		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--model-config-folder", mcFolder,
+		"--catalog", catalogDir,
 		"--hardware-config", hwPath,
 		"--hardware", "H100",
 		"--tp", "1",
@@ -1180,7 +1180,7 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 	tmpDir := t.TempDir()
 	tracePrefix := filepath.Join(tmpDir, "trace")
 
-	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
 
 	// Save and restore the package-level flag vars runCmd.Run mutates.
 	// Same list as TestRunCmd_MetricsPath_WritesMetricsOutput, with
@@ -1229,7 +1229,7 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 	origRequestTimeout := requestTimeoutSecs
 	origTraceOut := traceOutput
 	origLogLevel := logLevel
-	origModelConfigFolder := modelConfigFolder
+	origCatalogPath := catalogPath
 	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
@@ -1278,7 +1278,7 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 		requestTimeoutSecs = origRequestTimeout
 		traceOutput = origTraceOut
 		logLevel = origLogLevel
-		modelConfigFolder = origModelConfigFolder
+		catalogPath = origCatalogPath
 		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
@@ -1310,7 +1310,7 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 		"--model", "qwen/qwen3-14b",
 		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--model-config-folder", mcFolder,
+		"--catalog", catalogDir,
 		"--hardware-config", hwPath,
 		"--hardware", "H100",
 		"--tp", "1",
@@ -1387,7 +1387,7 @@ func runRunCmdAndCaptureTraces(t *testing.T, seedVal int64, numReq int, lazyFlag
 	t.Helper()
 	tmpDir := t.TempDir()
 	tracePrefix := filepath.Join(tmpDir, "trace")
-	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
 
 	// Save and restore package-level flag vars touched by runCmd.Run.
 	orig := captureCmdLevelVars()
@@ -1420,7 +1420,7 @@ func runRunCmdAndCaptureTraces(t *testing.T, seedVal int64, numReq int, lazyFlag
 		"--model", "qwen/qwen3-14b",
 		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--model-config-folder", mcFolder,
+		"--catalog", catalogDir,
 		"--hardware-config", hwPath,
 		"--hardware", "H100",
 		"--tp", "1",
@@ -1455,20 +1455,20 @@ func runRunCmdAndCaptureTraces(t *testing.T, seedVal int64, numReq int, lazyFlag
 // dance in TestRunCmd_TraceOutput_RecordCountMatchesRequests but as a
 // helper to keep the lazy-generation tests short.
 type origCmdLevelVars struct {
-	metrics, model, backend, results, policyConfig, traceOut, logLvl, mcFolder, hwCfg, gpuVal string
-	defaultsFile                                                                              string
-	beta, alpha                                                                               []float64
-	totalKV, blockSize, maxRunning, maxSched, simHorizon, snapRefresh, kvCPU, baseLatency     int64
-	threshold, maxModelLen                                                                    int64
-	offload, bandwidth                                                                        float64
-	instances, tp, counterfactualK, numReqs, concurrencyV, thinkTime, prefix                  int
-	rateV                                                                                     float64
-	seedV                                                                                     int64
-	traceLvl, workloadT, admission, routing, sched, workloadSpec                              string
-	promptMean, promptStdev, promptMin, promptMax                                             int
-	outputMean, outputStdev, outputMin, outputMax                                             int
-	requestTimeout                                                                            int
-	lazy                                                                                      bool
+	metrics, model, backend, results, policyConfig, traceOut, logLvl, catalogDir, hwCfg, gpuVal string
+	defaultsFile                                                                                string
+	beta, alpha                                                                                 []float64
+	totalKV, blockSize, maxRunning, maxSched, simHorizon, snapRefresh, kvCPU, baseLatency       int64
+	threshold, maxModelLen                                                                      int64
+	offload, bandwidth                                                                          float64
+	instances, tp, counterfactualK, numReqs, concurrencyV, thinkTime, prefix                    int
+	rateV                                                                                       float64
+	seedV                                                                                       int64
+	traceLvl, workloadT, admission, routing, sched, workloadSpec                                string
+	promptMean, promptStdev, promptMin, promptMax                                               int
+	outputMean, outputStdev, outputMin, outputMax                                               int
+	requestTimeout                                                                              int
+	lazy                                                                                        bool
 }
 
 func captureCmdLevelVars() origCmdLevelVars {
@@ -1489,7 +1489,7 @@ func captureCmdLevelVars() origCmdLevelVars {
 		outputMean: outputTokensMean, outputStdev: outputTokensStdev,
 		outputMin: outputTokensMin, outputMax: outputTokensMax,
 		workloadSpec: workloadSpecPath, requestTimeout: requestTimeoutSecs,
-		traceOut: traceOutput, logLvl: logLevel, mcFolder: modelConfigFolder,
+		traceOut: traceOutput, logLvl: logLevel, catalogDir: catalogPath,
 		hwCfg: hwConfigPath, gpuVal: gpu, tp: tensorParallelism,
 		lazy: lazyGeneration, defaultsFile: defaultsFilePath,
 	}
@@ -1540,7 +1540,7 @@ func (o origCmdLevelVars) restore() {
 	requestTimeoutSecs = o.requestTimeout
 	traceOutput = o.traceOut
 	logLevel = o.logLvl
-	modelConfigFolder = o.mcFolder
+	catalogPath = o.catalogDir
 	hwConfigPath = o.hwCfg
 	gpu = o.gpuVal
 	tensorParallelism = o.tp
@@ -1613,7 +1613,7 @@ func TestRunCmd_LazyGeneration_SameSeed_Deterministic(t *testing.T) {
 func TestRunCmd_LazyGeneration_Concurrency_Streams(t *testing.T) {
 	tmpDir := t.TempDir()
 	tracePrefix := filepath.Join(tmpDir, "trace")
-	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
 
 	// Write a minimal concurrency-mode workload spec.
 	specPath := filepath.Join(tmpDir, "concurrency.yaml")
@@ -1657,7 +1657,7 @@ clients:
 		"--model", "qwen/qwen3-14b",
 		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--model-config-folder", mcFolder,
+		"--catalog", catalogDir,
 		"--hardware-config", hwPath,
 		"--hardware", "H100",
 		"--tp", "1",

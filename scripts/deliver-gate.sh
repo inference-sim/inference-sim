@@ -11,12 +11,25 @@
 #                                           implementer and AGENT_VERDICT's reviewer)
 #   DISMISSALS     none | open | unknown   (open = a correction dismissed a finding that the
 #                                           reviewer has not accepted; unknown = unreadable)
+#   MERGE_STATE    mergeable | conflicting | unknown
+#                                          (conflicting = the branch has merge conflicts with
+#                                           main, REST mergeable_state "dirty"; unknown = the
+#                                           mergeability could not be determined. The caller maps
+#                                           GitHub's mergeable_state into this domain — "behind"
+#                                           and every other non-dirty state map to mergeable,
+#                                           since only a true conflict blocks the merge, #1758.)
 #   ROUND          correction rounds already spent (non-negative integer)
 #   MAX_ROUNDS     hard cap on correction rounds (non-negative integer)
 #
 # Prints two lines and exits 0:
-#   decision=ready|correct|needs-human
+#   decision=ready|correct|needs-human|recheck
 #   reason=<one line, safe to paste into a PR comment>
+#
+# `recheck` is the one NON-TERMINAL decision: every signal is green but the branch's
+# mergeability could not be read this run (a transient API blip, #1758 G1). It is not `ready`
+# (an unverified mergeability must not merge) and not the terminal `needs-human` (a re-checkable
+# blip must not stop the delivery for a human). The caller re-verifies on the next event and
+# leaves no terminal label; the stall sweep is the bounded backstop if it never resolves.
 #
 # Exit 2 only on a wiring error — an unset input or a non-integer counter.
 #
@@ -46,7 +59,7 @@ emit() {
   exit 0
 }
 
-for var in CI_STATUS PLAN_GATE AGENT_VERDICT QA_VERDICT DISMISSALS ROUND MAX_ROUNDS; do
+for var in CI_STATUS PLAN_GATE AGENT_VERDICT QA_VERDICT DISMISSALS MERGE_STATE ROUND MAX_ROUNDS; do
   [[ -n "${!var:-}" ]] || usage "$var"
 done
 
@@ -78,6 +91,10 @@ esac
 case "$DISMISSALS" in
   none | open | unknown) ;;
   *) emit needs-human "unrecognised DISMISSALS '$DISMISSALS' — expected none, open, or unknown" ;;
+esac
+case "$MERGE_STATE" in
+  mergeable | conflicting | unknown) ;;
+  *) emit needs-human "unrecognised MERGE_STATE '$MERGE_STATE' — the mergeability derivation step needs to map GitHub's mergeable_state to mergeable, conflicting, or unknown" ;;
 esac
 
 # Rows 1 and 2: no usable evidence. Checked before anything else so that a GREEN review can
@@ -139,8 +156,10 @@ elif [[ -n "$findings" ]]; then
   reason="$findings"
 else
   # Row 5 — the only path to ready. Reached only with CI success, a plan signal of pass or
-  # absent, an explicit GREEN from the review, a PASS from qa-review, and no dismissal the
-  # reviewer has left unaccepted.
+  # absent, an explicit GREEN from the review, a PASS from qa-review, no dismissal the reviewer
+  # has left unaccepted, AND a branch that is actually mergeable. (AGENT_VERDICT is necessarily
+  # GREEN and QA_VERDICT necessarily PASS here — a NOT-GREEN or BLOCK went into `findings` above,
+  # and MISSING/unknown emitted earlier — so the only axes left are dismissals and mergeability.)
   #
   # Dismissals are checked here rather than alongside CI and the plan signal on purpose: an
   # outstanding dismissal should withhold the TERMINAL verdict, not divert an honest set of
@@ -148,7 +167,22 @@ else
   # treated as outstanding — an unreadable dismissal state is not evidence that there is
   # nothing to accept.
   case "$DISMISSALS" in
-    none) emit ready "CI passed, plan signal '$PLAN_GATE', the review returned GREEN, and qa-review returned PASS" ;;
+    none)
+      # The one place the merge state changes the outcome. A conflicting branch cannot be merged
+      # (GitHub cannot compute its merge ref), so `ready-for-merge` on it is a stale label nobody
+      # can act on — #1758. It is NOT the clean-reviews-vs-blocking disagreement above: the
+      # reviews approved the code, not the mergeability, so it routes to a correction round (the
+      # agent merges main + resolves) by falling through to the round cap, rather than stopping at
+      # needs-human. `unknown` withholds the terminal verdict loudly rather than trusting an
+      # unverified mergeability.
+      case "$MERGE_STATE" in
+        mergeable)   emit ready "CI passed, plan signal '$PLAN_GATE', the review returned GREEN, and qa-review returned PASS" ;;
+        conflicting) reason="the reviews are clean (review GREEN, qa-review PASS) but the branch has merge conflicts with main that must be resolved" ;;
+        # Non-terminal: an unread mergeability on an otherwise-green PR is a re-checkable blip,
+        # not a reason to stop for a human. `recheck` re-verifies on the next event (#1758 G1).
+        *)           emit recheck "every signal is green, but the branch's mergeability against main could not be determined this run; re-verifying on the next event rather than stopping" ;;
+      esac
+      ;;
     open) emit needs-human "every signal is green, but a correction dismissed a finding that the review has not accepted — a human needs to decide whether the dismissal stands" ;;
     *)    emit needs-human "every signal is green, but the dismissal state could not be read, so it is not known whether a dismissed finding is outstanding" ;;
   esac
@@ -158,7 +192,7 @@ fi
 # declared domains, so an unset `reason` here means a domain gained a value nothing routes.
 # Better a named stop than a correction round with an empty explanation.
 [[ -n "${reason:-}" ]] \
-  || emit needs-human "AGENT_VERDICT '$AGENT_VERDICT' and QA_VERDICT '$QA_VERDICT' reached the decision chain unhandled"
+  || emit needs-human "AGENT_VERDICT '$AGENT_VERDICT', QA_VERDICT '$QA_VERDICT', and MERGE_STATE '$MERGE_STATE' reached the decision chain unhandled"
 
 # Row 7 — the cap applies only to a correction. A delivery that is genuinely ready stays
 # ready at any round; the cap bounds correction attempts, not the delivery.
