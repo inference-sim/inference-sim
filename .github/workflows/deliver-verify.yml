@@ -3,10 +3,10 @@ name: Deliver — Verify
 # Phase 2 of the L1 delivery loop (#1654). Determines a verdict and applies exactly one of:
 # ready-for-merge, needs-human, or a hand-off to Deliver — Correct.
 #
-# This workflow decides nothing itself. It gathers three machine-readable signals and hands
+# This workflow decides nothing itself. It gathers five machine-readable signals and hands
 # them to scripts/deliver-gate.sh, which is unit-tested. Keeping the decision in one tested
-# place is what makes "a GREEN review cannot override red CI" structural rather than something
-# to re-audit on every edit here.
+# place is what makes "clean reviews (GREEN + PASS) cannot override red CI" structural rather
+# than something to re-audit on every edit here.
 #
 # WHERE THE CI SIGNAL COMES FROM: this phase dispatches the repository's own ci.yml against the
 # delivery branch and waits for it. Two constraints force that, and an earlier version of this

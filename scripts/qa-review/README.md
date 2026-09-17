@@ -21,14 +21,12 @@ the LiteLLM proxy over its OpenAI-compatible `/chat/completions` surface.
 > input, and `deliver-verify.yml` runs the questioner + answerer against an
 > ephemeral read-only PR-head worktree with `--no-exec`.
 >
-> **The workflow half of #1715 is pending as
-> [`deliver-verify-qa-wiring.patch`](deliver-verify-qa-wiring.patch)** — the
-> delivering GitHub App token has no `workflows` permission, so it could not be
-> pushed. Apply it with `git apply` from a workflows-scoped credential, then
-> delete the patch. Until it is applied the gate REQUIRES a signal nothing
-> produces, so the two halves must merge together; `scripts/deliver_qa_verdict_test.go`
-> holds the contract over whichever of the two currently carries the wiring.
-> The adjudicate-only re-verify is still #1716. See epic #1717.
+> Both halves are now live in this PR: the gate change and the `deliver-verify.yml`
+> wiring — the `Run qa-review` and `Read the QA verdict marker` steps that produce and
+> read `QA_VERDICT`. Because the delivery agent's GitHub App token has no `workflows`
+> permission, the workflow half was applied by a `workflows`-scoped push rather than by
+> the agent; `scripts/deliver_qa_verdict_test.go` holds the contract over the live
+> workflow. The adjudicate-only re-verify is still #1716. See epic #1717.
 
 ## The pieces
 
