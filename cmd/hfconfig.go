@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -146,11 +145,19 @@ func resolveModelConfigInCatalog(model, catalog string) (string, error) {
 // bytes. candidates come from catalogModelDirs in resolution order (canonical
 // clone-root layout first, transition fallback second).
 //
-// Only ABSENCE advances to the next candidate. A candidate whose config.json exists but
-// cannot be read (permissions, a directory in its place) IS the entry: it is reported
-// naming that path rather than silently bypassed by the transition fallback, so a broken
-// entry can never resolve to a different model's config (R1, NS-6). A malformed but
-// readable entry is judged by the caller, for the same reason.
+// Only ABSENCE advances to the next candidate: presence is decided by a stat, and a
+// config.json that IS there but cannot be read is reported naming that path rather than
+// silently bypassed by the transition fallback — a broken entry must never resolve to a
+// different model's config (R1, NS-6). A malformed but readable entry is judged by the
+// caller, for the same reason.
+//
+// Presence is a stat rather than a read-error class on purpose. A flat catalog is a
+// directory of entries, so its canonical candidate <catalog>/models/<name>/config.json
+// can fail to open for reasons that all mean "no entry in this layout" but surface as
+// different errnos — ENOENT for a missing directory, ENOTDIR if the root happens to hold
+// an unrelated FILE named models. Classifying by errno would turn that second case into a
+// hard error for a catalog that resolves perfectly well, so anything that is not a
+// statable file is simply not an entry here.
 //
 // Absent from every layout is a refusal that names every path looked at, plus the
 // canonical path an entry belongs at — the operator-actionable half of NS-6, which is
@@ -165,17 +172,18 @@ func readCatalogEntry(model string, candidates []string) (entryDir, entryPath st
 	for _, dir := range candidates {
 		path := filepath.Join(dir, hfConfigFile)
 		lookedAt = append(lookedAt, "    "+path)
-		content, readErr := os.ReadFile(path)
-		if readErr == nil {
-			return dir, path, content, nil
+		if info, statErr := os.Stat(path); statErr != nil || info.IsDir() {
+			continue // no entry in this layout
 		}
-		if !errors.Is(readErr, os.ErrNotExist) {
+		content, readErr := os.ReadFile(path)
+		if readErr != nil {
 			return "", "", nil, fmt.Errorf(
-				"catalog entry for model %q at %s is not readable: %w.\n"+
+				"catalog entry for model %q at %s exists but is not readable: %w.\n"+
 					"  Fix that catalog entry, or point --catalog / %s at a catalog that has a readable %s",
 				model, path, readErr, catalogEnvVar, hfConfigFile,
 			)
 		}
+		return dir, path, content, nil
 	}
 
 	canonical := filepath.Join(candidates[0], hfConfigFile)

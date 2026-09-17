@@ -243,6 +243,54 @@ func TestResolveModelConfig_MalformedCloneRootEntry_NotBypassedByFlatFallback(t 
 	}
 }
 
+// TestResolveModelConfig_UnreadableCloneRootEntry_NotBypassedByFlatFallback is the same
+// boundary as the malformed case for a config.json that is PRESENT but cannot be opened
+// (mode 000): resolution reports it naming that path instead of quietly using the flat
+// entry. Presence is what distinguishes the two dispositions — not the errno.
+func TestResolveModelConfig_UnreadableCloneRootEntry_NotBypassedByFlatFallback(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: mode 000 does not make a file unreadable")
+	}
+	root := t.TempDir()
+	nested := filepath.Join(root, "models", "test-model")
+	nestedPath := writeCatalogEntry(t, nested, minimalHFConfig)
+	if err := os.Chmod(nestedPath, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	writeCatalogEntry(t, filepath.Join(root, "test-model"), minimalHFConfig)
+
+	dir, err := resolveModelConfigInCatalog("test-org/test-model", root)
+	if err == nil {
+		t.Fatalf("an unreadable clone-root entry must be refused, not bypassed; got dir=%q", dir)
+	}
+	if !strings.Contains(err.Error(), nestedPath) {
+		t.Errorf("refusal must name the unreadable entry (%s), got: %v", nestedPath, err)
+	}
+}
+
+// TestResolveModelConfig_FlatCatalogHoldingAFileNamedModels keeps the models/ candidate
+// from breaking a working flat catalog for an unrelated reason: a flat root that happens
+// to contain a regular FILE named "models" makes the canonical candidate path traverse a
+// non-directory. That means "no entry in this layout", not "broken entry", so resolution
+// must fall through to the flat entry rather than hard-error on the errno.
+func TestResolveModelConfig_FlatCatalogHoldingAFileNamedModels(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, catalogModelsSubdir), []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	entryDir := filepath.Join(root, "test-model")
+	writeCatalogEntry(t, entryDir, minimalHFConfig)
+
+	dir, err := resolveModelConfigInCatalog("test-org/test-model", root)
+	if err != nil {
+		t.Fatalf("a flat catalog must keep resolving even with an unrelated file named %q: %v",
+			catalogModelsSubdir, err)
+	}
+	if dir != entryDir {
+		t.Errorf("resolved %q, want the flat entry %q", dir, entryDir)
+	}
+}
+
 // TestResolveModelConfig_AbsentFromBothLayouts_NamesEveryPathLookedAt: when neither
 // layout holds the model, the refusal must name every path resolution looked at (so the
 // operator can see BOTH were tried) and the canonical path an entry belongs at.
