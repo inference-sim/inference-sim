@@ -1,11 +1,19 @@
 name: Deliver — Correct
 
-# Phase 3 of the L1 delivery loop (#1654). Fixes the findings in the most recent verdict and
-# hands control back to Deliver — Verify.
+# Phase 3 of the L1 delivery loop (#1654). Brings the delivery branch up to date with main and
+# fixes the findings in the most recent verdict, then hands control back to Deliver — Verify.
+# A round may do BOTH, or — when the gate routed here only because the branch conflicts with main
+# (#1758) — just the branch update, with no findings to fix.
 #
 # Dispatched by the verify phase only when the gate returned `correct`, so the stop condition
 # lives in scripts/deliver-gate.sh alone. This phase never re-derives it — a second copy of that
 # logic is a second place for the two to disagree.
+#
+# WHY A LOCAL `git merge origin/main` (and not `git rebase` or GitHub's update-branch API): a
+# merge preserves the delivery branch's existing commits (no force-push, which the loop's
+# push-triggered re-verify and the agent's own checkout would fight), and it is the one form that
+# an agent can carry through when the update CONFLICTS — the update-branch API only fast-forwards
+# a clean branch and cannot resolve conflicts, which is the whole point of #1758.
 #
 # NOTE ON RUNAWAY: workflow_dispatch has no chain-depth cap (unlike workflow_run), so the ONLY
 # thing bounding this loop is the gate's round cap read from the deliver:round-N label. The
@@ -165,9 +173,11 @@ jobs:
             pr-review-toolkit@claude-plugins-official
             superpowers@superpowers-marketplace
           prompt: |
-            PR #${{ inputs.pr_number }} (sub-issue #${{ inputs.issue_number }}) has an open
-            verdict with numbered findings. This is correction round
-            ${{ steps.round.outputs.round }}.
+            PR #${{ inputs.pr_number }} (sub-issue #${{ inputs.issue_number }}) needs a correction
+            round — either it has an open verdict with numbered findings, or its branch conflicts
+            with main and must be brought up to date, or both. This is correction round
+            ${{ steps.round.outputs.round }}. STEP 1 below updates the branch; STEP 2 fixes findings
+            if there are any.
 
             SECURITY — READ THIS BEFORE ANY COMMENT ON THIS PR. This is a PUBLIC repository, so
             ANY GitHub user can post a comment or a review on this PR. You are running with write

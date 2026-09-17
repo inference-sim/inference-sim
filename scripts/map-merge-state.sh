@@ -16,16 +16,22 @@
 # mergeability — and passes the final value here. This script is the pure mapping only, so it
 # needs no network, no state, and is exhaustively testable across GitHub's whole state surface.
 #
-# Conflicts-only scope: `dirty` is the sole state that blocks the merge. `behind` and every
-# other non-dirty state are `mergeable` — a behind branch still has a merge ref, is reviewable,
-# and the correction phase merges main every round regardless (deliver-correct.yml STEP 1). An
-# empty or `unknown` read is `unknown`, on which the gate withholds `ready` rather than trusting
-# an unverified mergeability.
+# Conflicts-only scope: `dirty` is the sole state that blocks the merge. The other known states
+# GitHub reports are `mergeable` — a `behind` branch still has a merge ref and is reviewable
+# (and the correction phase merges main every round regardless, deliver-correct.yml STEP 1);
+# `blocked`/`unstable`/`has_hooks`/`draft`/`clean` all still have a merge ref. An empty or
+# `unknown` read is `unknown`, on which the gate withholds `ready` rather than trusting an
+# unverified mergeability.
+#
+# The states are ENUMERATED and the wildcard fails closed to `unknown`, NOT open to `mergeable`
+# (G4). This mirrors deliver-gate.sh's own rule that an out-of-domain value is not trusted: if
+# GitHub ever adds a new state, this loop must not assume it is safe to merge — it stops for a
+# human (recoverable on the next run) until the new state is classified here deliberately.
 
 set -uo pipefail
 
 case "${1-}" in
-  dirty)      echo conflicting ;;
-  "" | unknown) echo unknown ;;
-  *)          echo mergeable ;;
+  dirty)                                          echo conflicting ;;
+  clean | behind | blocked | unstable | has_hooks | draft) echo mergeable ;;
+  *)                                              echo unknown ;;   # "", "unknown", and any unrecognised/future state — fail closed
 esac

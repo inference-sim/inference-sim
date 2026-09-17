@@ -33,10 +33,10 @@ func runMapMergeState(t *testing.T, raw string) (string, int) {
 }
 
 // TestMapMergeState pins the full GitHub mergeable_state surface to the gate domain. Only a
-// true conflict ("dirty") is `conflicting`; only an unresolved read ("" / "unknown") is
-// `unknown`; everything else — including "behind" — is `mergeable`. A typo in the case arms
-// (e.g. `dirty)` → `dirtry)`) would map a conflicting branch to `mergeable` and reach `ready`,
-// which is exactly what this test exists to catch.
+// true conflict ("dirty") is `conflicting`; the enumerated non-conflict states are `mergeable`;
+// an unresolved read ("" / "unknown") is `unknown`. A typo in the case arms (e.g. `dirty)` →
+// `dirtry)`) would map a conflicting branch to `unknown` (no longer to `mergeable`, since the
+// wildcard now fails closed) — still caught here because it would not be `conflicting`.
 func TestMapMergeState(t *testing.T) {
 	cases := []struct {
 		raw, want string
@@ -73,15 +73,17 @@ func TestMapMergeState(t *testing.T) {
 	}
 }
 
-// A future GitHub state this loop has not seen must map to `mergeable` deliberately (the
-// conflicts-only scope: only "dirty" blocks), never crash or emit an out-of-domain value —
-// so the gate keeps deciding and only a real conflict ever routes to correction.
-func TestMapMergeStateUnknownFutureValueIsMergeable(t *testing.T) {
+// A future GitHub state this loop has not seen must FAIL CLOSED to `unknown` (G4), not be
+// assumed `mergeable`. This mirrors deliver-gate.sh's rule that an out-of-domain value is not
+// trusted: a new GitHub state with different semantics must stop for a human (recoverable on
+// the next run) until it is classified in the mapper deliberately, never silently treated as
+// safe to merge. It must still be an in-domain value and exit 0, so the gate keeps deciding.
+func TestMapMergeStateUnknownFutureValueFailsClosed(t *testing.T) {
 	got, code := runMapMergeState(t, "some_future_state")
 	if code != 0 {
 		t.Errorf("exit code = %d, want 0", code)
 	}
-	if got != "mergeable" {
-		t.Errorf("map of an unseen state = %q, want mergeable", got)
+	if got != "unknown" {
+		t.Errorf("map of an unseen state = %q, want unknown (fail closed)", got)
 	}
 }

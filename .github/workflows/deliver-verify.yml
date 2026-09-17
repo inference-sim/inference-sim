@@ -885,27 +885,40 @@ jobs:
         run: |
           set -uo pipefail
           # REST, not `gh pr view --json mergeable`, for the reason the rest of this file uses REST
-          # (see `Validate the target PR`): the field's availability must not depend on the
-          # runner's gh version. GitHub computes mergeability ASYNCHRONOUSLY, so a fresh push can
-          # report a null/`unknown` state for a few seconds — poll a handful of times before giving
-          # up rather than mislabelling a still-computing branch as unknown.
+          # (see `Validate the target PR`): the field's availability must not depend on the runner's
+          # gh version. GitHub computes mergeability ASYNCHRONOUSLY, so poll until it resolves. The
+          # loop READS on every attempt including the last (the sleep is skipped after the final
+          # read — a five-read/12s window left the last sleep wasted, #1758 G1), and the window is
+          # deliberately generous: a spurious `unknown` here escalates an otherwise-green PR to
+          # needs-human, so err toward waiting. By this point the head has already sat through CI and
+          # the review, so mergeability is normally long since computed; the poll only bridges an
+          # unusually slow compute or genuine API trouble.
           state=""
-          for attempt in 1 2 3 4 5; do
-            raw=$(gh api "/repos/$REPO/pulls/$PR" --jq '.mergeable_state // ""' 2>/dev/null || echo "")
-            if [[ -n "$raw" && "$raw" != "unknown" ]]; then
-              state="$raw"
-              break
+          attempts=8
+          for attempt in $(seq 1 "$attempts"); do
+            if raw=$(gh api "/repos/$REPO/pulls/$PR" --jq '.mergeable_state // ""' 2>"$RUNNER_TEMP/mergeapi.err"); then
+              if [[ -n "$raw" && "$raw" != "unknown" ]]; then
+                state="$raw"
+                break
+              fi
+              echo "mergeable_state is '${raw:-<empty>}' (attempt $attempt/$attempts); GitHub may still be computing it"
+            else
+              # Not silently swallowed (R1): the API error is surfaced as a warning so an outage is
+              # distinguishable from GitHub's legitimate still-computing `unknown`. It still fails
+              # closed — an unresolved read stays `state=""` → `unknown`, on which the gate withholds
+              # `ready` — but the operator can now see WHY.
+              raw=""
+              echo "::warning::could not read mergeable_state for #$PR (attempt $attempt/$attempts): $(tr '\n' ' ' < "$RUNNER_TEMP/mergeapi.err")"
             fi
-            echo "mergeable_state is '${raw:-<empty>}' (attempt $attempt); waiting for GitHub to compute it"
-            sleep 3
+            if (( attempt < attempts )); then sleep 3; fi
           done
-          # Map GitHub's mergeable_state into the gate's domain via the tested script (a mapping
-          # typo here would mark a conflicting branch mergeable and reach ready — the #1758 bug —
-          # so it is a script with its own cross-product test, scripts/map_merge_state_test.go,
-          # exactly like deliver-gate.sh). Only "dirty" is conflicting; "behind" and every other
-          # non-dirty state are mergeable (a behind branch still merges, and the correction phase
-          # merges main every round regardless); an unresolved/empty read is `unknown`, on which
-          # the gate withholds `ready` rather than trusting an unverified mergeability.
+          # Map GitHub's mergeable_state into the gate's domain via the tested script (a mapping typo
+          # here would mark a conflicting branch mergeable and reach ready — the #1758 bug — so it is
+          # a script with its own cross-product test, scripts/map_merge_state_test.go, exactly like
+          # deliver-gate.sh). Only "dirty" is conflicting; the known non-conflict states are
+          # mergeable (a behind branch still merges, and the correction phase merges main every round
+          # regardless); an unresolved/empty read — or an unrecognised future state — is `unknown`,
+          # on which the gate withholds `ready` rather than trusting an unverified mergeability.
           merge_state=$(scripts/map-merge-state.sh "$state")
           echo "mergeable_state='$state' -> MERGE_STATE=$merge_state"
           echo "state=$merge_state" >> "$GITHUB_OUTPUT"
