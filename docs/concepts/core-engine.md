@@ -2,7 +2,7 @@
 
 This page describes BLIS's single-instance discrete event simulation engine. For multi-instance cluster orchestration, see [Cluster Architecture](architecture.md).
 
-> **Canonical sources:** System invariants (INV-1 through INV-13, plus INV-A, INV-A2, INV-W3, INV-BC-DP1, the LoRA family INV-L1-INV-L7, PD disaggregation INV-PD-* and pool/transfer INV-P2-*) are defined in [`docs/contributing/standards/invariants.md`](../contributing/standards/invariants.md). If invariant descriptions here diverge, `invariants.md` is authoritative.
+> **Canonical sources:** System invariants (INV-1 through INV-19, plus INV-A, INV-A2, INV-W3, INV-BC-DP1, the LoRA family INV-L1-INV-L7, PD disaggregation INV-PD-* and pool/transfer INV-P2-*) are defined in [`docs/contributing/standards/invariants.md`](../contributing/standards/invariants.md). If invariant descriptions here diverge, `invariants.md` is authoritative.
 
 ## Overview
 

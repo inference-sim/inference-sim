@@ -14,7 +14,7 @@ BLIS development uses Claude Code skills for review workflows. Skills are checke
 
 | Skill | Location | Purpose |
 |-------|----------|---------|
-| `blis-pr-review` | `.claude/skills/blis-pr-review/` | PR review: correctness, invariants (the full registry, not just INV-1–INV-13), rules (R1–R23), cross-path parity, preemption safety, Q/A probing phase |
+| `blis-pr-review` | `.claude/skills/blis-pr-review/` | PR review: correctness, invariants (the full registry, not just INV-1–INV-19), rules (R1–R23), cross-path parity, preemption safety, Q/A probing phase |
 | `issue-review` | `.claude/skills/issue-review/` | Issue validation: VALID / NEEDS WORK / SUPERSEDED / DUPLICATE verdict |
 
 Project skills require no installation — they are checked into the repository and automatically available.
