@@ -238,7 +238,7 @@ func runWithCommSerialFlag(t *testing.T, specYAML string, seedVal, horizon int64
 	testCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "")
 	args := []string{
 		"--model", "qwen/qwen3-14b", "--latency-model", "trained-physics",
-		"--defaults-filepath", defaultsPath, "--model-config-folder", mcFolder,
+		"--defaults-filepath", defaultsPath, "--catalog", mcFolder,
 		"--hardware-config", hwPath, "--hardware", "H100", "--tp", "1",
 		"--total-kv-blocks", "1000", "--seed", strconv.FormatInt(seedVal, 10),
 		"--workload-spec", specPath, "--horizon", strconv.FormatInt(horizon, 10),

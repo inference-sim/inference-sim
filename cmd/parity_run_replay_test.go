@@ -323,7 +323,7 @@ func runSpecAndCaptureTrace(t *testing.T, specYAML string, seedVal, horizon int6
 		"--model", "qwen/qwen3-14b",
 		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--model-config-folder", mcFolder,
+		"--catalog", mcFolder,
 		"--hardware-config", hwPath,
 		"--hardware", "H100",
 		"--tp", "1",
@@ -435,7 +435,7 @@ func runSpecAndCaptureStdout(t *testing.T, specYAML string, seedVal, horizon int
 		"--model", "qwen/qwen3-14b",
 		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--model-config-folder", mcFolder,
+		"--catalog", mcFolder,
 		"--hardware-config", hwPath,
 		"--hardware", "H100",
 		"--tp", "1",
@@ -557,7 +557,7 @@ func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []work
 	counterfactualK = 0
 	traceHeaderPath = traceHeaderFile
 	traceDataPath = traceDataFile
-	modelConfigFolder = mcFolder
+	catalogPath = mcFolder
 	hwConfigPath = hwPath
 	gpu = "H100"
 	tensorParallelism = 1
@@ -577,7 +577,7 @@ func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []work
 	if err := testCmd.ParseFlags([]string{
 		"--model", "qwen/qwen3-14b", "--latency-model", "trained-physics",
 		"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
-		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--catalog", mcFolder, "--hardware-config", hwPath,
 		"--trace-header", traceHeaderFile, "--trace-data", traceDataFile,
 		"--results-path", resultsFile,
 		"--num-instances", "1",
@@ -634,7 +634,7 @@ func runSpecToTraceFiles(t *testing.T, specYAML string, seedVal, horizon int64, 
 		"--model", "qwen/qwen3-14b",
 		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--model-config-folder", mcFolder,
+		"--catalog", mcFolder,
 		"--hardware-config", hwPath,
 		"--hardware", "H100",
 		"--tp", "1",
@@ -755,7 +755,7 @@ func runSpecAndCaptureStdoutSpecFlag(t *testing.T, specYAML string, seedVal, hor
 	testCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "")
 	args := []string{
 		"--model", "qwen/qwen3-14b", "--latency-model", "trained-physics",
-		"--defaults-filepath", defaultsPath, "--model-config-folder", mcFolder,
+		"--defaults-filepath", defaultsPath, "--catalog", mcFolder,
 		"--hardware-config", hwPath, "--hardware", "H100", "--tp", "1",
 		"--total-kv-blocks", "1000", "--seed", strconv.FormatInt(seedVal, 10),
 		"--workload-spec", specPath, "--horizon", strconv.FormatInt(horizon, 10),

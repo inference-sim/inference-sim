@@ -77,7 +77,7 @@ func assertOffloadRunReplayParity(t *testing.T, offloadPromptOnly bool, outputLe
 		t.Fatalf("write defaults.yaml: %v", err)
 	}
 
-	hfConfig, err := latency.ParseHFConfig(filepath.Join(mcFolder, "config.json"))
+	hfConfig, err := latency.ParseHFConfig(testCatalogConfigPath(mcFolder, "test-model"))
 	if err != nil {
 		t.Fatalf("ParseHFConfig: %v", err)
 	}

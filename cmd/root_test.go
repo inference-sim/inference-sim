@@ -1059,7 +1059,7 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	origRequestTimeout := requestTimeoutSecs
 	origTraceOut := traceOutput
 	origLogLevel := logLevel
-	origModelConfigFolder := modelConfigFolder
+	origModelConfigFolder := catalogPath
 	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
@@ -1108,7 +1108,7 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 		requestTimeoutSecs = origRequestTimeout
 		traceOutput = origTraceOut
 		logLevel = origLogLevel
-		modelConfigFolder = origModelConfigFolder
+		catalogPath = origModelConfigFolder
 		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
@@ -1139,7 +1139,7 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 		"--model", "qwen/qwen3-14b",
 		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--model-config-folder", mcFolder,
+		"--catalog", mcFolder,
 		"--hardware-config", hwPath,
 		"--hardware", "H100",
 		"--tp", "1",
@@ -1229,7 +1229,7 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 	origRequestTimeout := requestTimeoutSecs
 	origTraceOut := traceOutput
 	origLogLevel := logLevel
-	origModelConfigFolder := modelConfigFolder
+	origModelConfigFolder := catalogPath
 	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
@@ -1278,7 +1278,7 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 		requestTimeoutSecs = origRequestTimeout
 		traceOutput = origTraceOut
 		logLevel = origLogLevel
-		modelConfigFolder = origModelConfigFolder
+		catalogPath = origModelConfigFolder
 		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
@@ -1310,7 +1310,7 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 		"--model", "qwen/qwen3-14b",
 		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--model-config-folder", mcFolder,
+		"--catalog", mcFolder,
 		"--hardware-config", hwPath,
 		"--hardware", "H100",
 		"--tp", "1",
@@ -1420,7 +1420,7 @@ func runRunCmdAndCaptureTraces(t *testing.T, seedVal int64, numReq int, lazyFlag
 		"--model", "qwen/qwen3-14b",
 		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--model-config-folder", mcFolder,
+		"--catalog", mcFolder,
 		"--hardware-config", hwPath,
 		"--hardware", "H100",
 		"--tp", "1",
@@ -1489,7 +1489,7 @@ func captureCmdLevelVars() origCmdLevelVars {
 		outputMean: outputTokensMean, outputStdev: outputTokensStdev,
 		outputMin: outputTokensMin, outputMax: outputTokensMax,
 		workloadSpec: workloadSpecPath, requestTimeout: requestTimeoutSecs,
-		traceOut: traceOutput, logLvl: logLevel, mcFolder: modelConfigFolder,
+		traceOut: traceOutput, logLvl: logLevel, mcFolder: catalogPath,
 		hwCfg: hwConfigPath, gpuVal: gpu, tp: tensorParallelism,
 		lazy: lazyGeneration, defaultsFile: defaultsFilePath,
 	}
@@ -1540,7 +1540,7 @@ func (o origCmdLevelVars) restore() {
 	requestTimeoutSecs = o.requestTimeout
 	traceOutput = o.traceOut
 	logLevel = o.logLvl
-	modelConfigFolder = o.mcFolder
+	catalogPath = o.mcFolder
 	hwConfigPath = o.hwCfg
 	gpu = o.gpuVal
 	tensorParallelism = o.tp
@@ -1657,7 +1657,7 @@ clients:
 		"--model", "qwen/qwen3-14b",
 		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--model-config-folder", mcFolder,
+		"--catalog", mcFolder,
 		"--hardware-config", hwPath,
 		"--hardware", "H100",
 		"--tp", "1",

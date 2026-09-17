@@ -63,7 +63,7 @@ func runReplayInSubprocess(t *testing.T, extraHeaderLine string) {
 	if err := testCmd.ParseFlags([]string{
 		"--model", "test-model", "--latency-model", "trained-physics",
 		"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
-		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--catalog", mcFolder, "--hardware-config", hwPath,
 		"--trace-header", headerPath, "--trace-data", dataPath,
 		"--defaults-filepath", "../defaults.yaml",
 	}); err != nil {

@@ -138,7 +138,7 @@ func TestNS6_NoRuntimeFetch_StaticGuard(t *testing.T) {
 // no --hardware/--tp. Were someone to give it registerSimConfigFlags, it would inherit
 // the required-flag rule silently; this test says that has to be a deliberate decision.
 func TestNS6_ObserveTakesNoDeploymentFlags(t *testing.T) {
-	for _, flag := range []string{"hardware", "tp", "model-config-folder"} {
+	for _, flag := range []string{"hardware", "tp", "catalog"} {
 		if f := observeCmd.Flags().Lookup(flag); f != nil {
 			t.Errorf("`blis observe` must not declare --%s: it resolves no model config and "+
 				"places no instances, so a deployment flag there would be inert", flag)
@@ -179,7 +179,7 @@ func ns6DeploymentFatalSubprocess(t *testing.T) {
 
 	args := []string{
 		"--model", "test-model", "--latency-model", "trained-physics",
-		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--catalog", mcFolder, "--hardware-config", hwPath,
 		"--total-kv-blocks", "1000", "--defaults-filepath", "../defaults.yaml",
 	}
 	switch os.Getenv("BLIS_NS6_SCENARIO") {

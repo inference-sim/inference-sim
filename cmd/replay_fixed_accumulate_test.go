@@ -98,7 +98,7 @@ func runFixedAccumulateReplayWithOutput(t *testing.T, headerPath, dataPath strin
 	counterfactualK = 0
 	traceHeaderPath = headerPath
 	traceDataPath = dataPath
-	modelConfigFolder = mcFolder
+	catalogPath = mcFolder
 	hwConfigPath = hwPath
 	gpu = "H100"
 	tensorParallelism = 1
@@ -116,7 +116,7 @@ func runFixedAccumulateReplayWithOutput(t *testing.T, headerPath, dataPath strin
 		"--model", "test-model", "--latency-model", "trained-physics",
 		"--total-kv-blocks", "100000", "--hardware", "H100", "--tp", "1",
 		"--max-model-len", "1000000",
-		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--catalog", mcFolder, "--hardware-config", hwPath,
 		"--trace-header", headerPath, "--trace-data", dataPath,
 		"--defaults-filepath", "../defaults.yaml",
 		"--session-mode", "fixed-accumulate",
@@ -239,7 +239,7 @@ func TestReplayFixedAccumulate_RejectsConcurrentSessions(t *testing.T) {
 		traceLevel = "none"
 		traceHeaderPath = headerPath
 		traceDataPath = dataPath
-		modelConfigFolder = mcFolder
+		catalogPath = mcFolder
 		hwConfigPath = hwPath
 		gpu = "H100"
 		tensorParallelism = 1
@@ -257,7 +257,7 @@ func TestReplayFixedAccumulate_RejectsConcurrentSessions(t *testing.T) {
 			"--model", "test-model", "--latency-model", "trained-physics",
 			"--total-kv-blocks", "100000", "--hardware", "H100", "--tp", "1",
 			"--max-model-len", "1000000",
-			"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+			"--catalog", mcFolder, "--hardware-config", hwPath,
 			"--trace-header", headerPath, "--trace-data", dataPath,
 			"--defaults-filepath", "../defaults.yaml",
 			"--session-mode", "fixed-accumulate", "--concurrent-sessions", "4",
@@ -315,7 +315,7 @@ func TestReplayFixedAccumulate_RejectsNonAccumulateTrace(t *testing.T) {
 		traceLevel = "none"
 		traceHeaderPath = headerPath
 		traceDataPath = dataPath
-		modelConfigFolder = mcFolder
+		catalogPath = mcFolder
 		hwConfigPath = hwPath
 		gpu = "H100"
 		tensorParallelism = 1
@@ -331,7 +331,7 @@ func TestReplayFixedAccumulate_RejectsNonAccumulateTrace(t *testing.T) {
 		if err := testCmd.ParseFlags([]string{
 			"--model", "test-model", "--latency-model", "trained-physics",
 			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
-			"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+			"--catalog", mcFolder, "--hardware-config", hwPath,
 			"--trace-header", headerPath, "--trace-data", dataPath,
 			"--defaults-filepath", "../defaults.yaml",
 			"--session-mode", "fixed-accumulate",
@@ -385,7 +385,7 @@ func TestReplayFixedAccumulate_RejectsThinkTime(t *testing.T) {
 		traceLevel = "none"
 		traceHeaderPath = headerPath
 		traceDataPath = dataPath
-		modelConfigFolder = mcFolder
+		catalogPath = mcFolder
 		hwConfigPath = hwPath
 		gpu = "H100"
 		tensorParallelism = 1
@@ -404,7 +404,7 @@ func TestReplayFixedAccumulate_RejectsThinkTime(t *testing.T) {
 			"--model", "test-model", "--latency-model", "trained-physics",
 			"--total-kv-blocks", "100000", "--hardware", "H100", "--tp", "1",
 			"--max-model-len", "1000000",
-			"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+			"--catalog", mcFolder, "--hardware-config", hwPath,
 			"--trace-header", headerPath, "--trace-data", dataPath,
 			"--defaults-filepath", "../defaults.yaml",
 			"--session-mode", "fixed-accumulate", "--think-time-ms", "500",

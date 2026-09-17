@@ -81,7 +81,7 @@ var dpParityHorizon = strconv.FormatInt(math.MaxInt64, 10)
 func dpMoEFixtureArgs() []string {
 	return []string{
 		"--model", "deepseek-ai/deepseek-v2-lite",
-		"--model-config-folder", "../model_configs/deepseek-v2-lite",
+		"--catalog", "../model_configs",
 		"--hardware", "H100",
 		"--hardware-config", "../hardware_config.json",
 		"--tp", "1",
@@ -564,10 +564,6 @@ const dpForeignTraceEnv = "BLIS_DP_FOREIGN_DIR"
 //     `blis run --trace-output` file.
 func writeMixtralForeignFixture(t *testing.T, dir string) {
 	t.Helper()
-	mcDir := filepath.Join(dir, "config")
-	if err := os.MkdirAll(mcDir, 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
 	// num_local_experts > 1 ⇒ IsMoE. --total-kv-blocks is passed explicitly by the leg,
 	// so the auto-capacity path (which would need vocab_size etc.) is not exercised here.
 	moeConfig := `{
@@ -582,8 +578,9 @@ func writeMixtralForeignFixture(t *testing.T, dir string) {
   "torch_dtype": "float16",
   "max_position_embeddings": 4096
 }`
-	if err := os.WriteFile(filepath.Join(mcDir, "config.json"), []byte(moeConfig), 0644); err != nil {
-		t.Fatalf("write config.json: %v", err)
+	// The catalog root is dir itself; "mistralai/mixtral-8x7b" resolves to dir/mixtral-8x7b.
+	if _, err := writeTestCatalog(dir, moeConfig, "mixtral-8x7b"); err != nil {
+		t.Fatalf("write test catalog: %v", err)
 	}
 	hw := `{"H100": {"MemoryGiB": 80.0, "TFlopsPeak": 989.5, "BwPeakTBs": 3.35}}`
 	if err := os.WriteFile(filepath.Join(dir, "hw.json"), []byte(hw), 0644); err != nil {
@@ -615,7 +612,7 @@ func TestReplayCmd_MoEDPPlacement_ForeignTrace_Mixtral(t *testing.T) {
 		rootCmd.SetArgs([]string{
 			"replay",
 			"--model", "mistralai/mixtral-8x7b",
-			"--model-config-folder", filepath.Join(dir, "config"),
+			"--catalog", dir,
 			"--hardware", "H100",
 			"--hardware-config", filepath.Join(dir, "hw.json"),
 			"--trace-header", filepath.Join(dir, "trace.yaml"),

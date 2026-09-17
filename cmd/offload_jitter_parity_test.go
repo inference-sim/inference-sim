@@ -28,7 +28,7 @@ func jitterRampOffloadCfg(t *testing.T, seed int64) cluster.DeploymentConfig {
 		t.Fatalf("write defaults.yaml: %v", err)
 	}
 
-	hfConfig, err := latency.ParseHFConfig(filepath.Join(mcFolder, "config.json"))
+	hfConfig, err := latency.ParseHFConfig(testCatalogConfigPath(mcFolder, "test-model"))
 	if err != nil {
 		t.Fatalf("ParseHFConfig: %v", err)
 	}

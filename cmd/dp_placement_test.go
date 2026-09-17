@@ -347,7 +347,7 @@ func dpRunArgs(numInstances, dp int) []string {
 	return []string{
 		"run",
 		"--model", "deepseek-ai/deepseek-v2-lite",
-		"--model-config-folder", "../model_configs/deepseek-v2-lite",
+		"--catalog", "../model_configs",
 		"--hardware", "H100",
 		"--hardware-config", "../hardware_config.json",
 		"--tp", "1",
@@ -503,7 +503,7 @@ func dpRunBaseArgs() []string {
 	return []string{
 		"run",
 		"--model", "deepseek-ai/deepseek-v2-lite",
-		"--model-config-folder", "../model_configs/deepseek-v2-lite",
+		"--catalog", "../model_configs",
 		"--hardware", "H100",
 		"--hardware-config", "../hardware_config.json",
 		"--tp", "1",
@@ -908,14 +908,11 @@ func TestRunCmd_MoEDPPlacement_NodePools_NxM(t *testing.T) {
 // applies the shared resolver's per-rank division and checks the two laws directly.
 // writeCompleteMoEFixture writes a complete MoE config.json (with vocab_size and
 // realistic dims so the KV auto-capacity path yields a positive block count on an
-// 80 GiB GPU) plus a hardware config, returning their paths.
-func writeCompleteMoEFixture(t *testing.T) (mcDir, hwPath string) {
+// 80 GiB GPU) as every entry of a test catalog, plus a hardware config, returning the
+// catalog root (for --catalog) and the hardware-config path.
+func writeCompleteMoEFixture(t *testing.T) (catalogDir, hwPath string) {
 	t.Helper()
 	dir := t.TempDir()
-	mcDir = filepath.Join(dir, "config")
-	if err := os.MkdirAll(mcDir, 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
 	configJSON := `{
   "architectures": ["MixtralForCausalLM"],
   "num_attention_heads": 32,
@@ -930,14 +927,15 @@ func writeCompleteMoEFixture(t *testing.T) (mcDir, hwPath string) {
   "torch_dtype": "float16",
   "max_position_embeddings": 4096
 }`
-	if err := os.WriteFile(filepath.Join(mcDir, "config.json"), []byte(configJSON), 0644); err != nil {
-		t.Fatalf("write config: %v", err)
+	catalogDir, err := writeTestCatalog(dir, configJSON)
+	if err != nil {
+		t.Fatalf("write test catalog: %v", err)
 	}
 	hwPath = filepath.Join(dir, "hw.json")
 	if err := os.WriteFile(hwPath, []byte(`{"H100": {"MemoryGiB": 80.0, "TFlopsPeak": 989.5, "BwPeakTBs": 3.35}}`), 0644); err != nil {
 		t.Fatalf("write hw: %v", err)
 	}
-	return mcDir, hwPath
+	return catalogDir, hwPath
 }
 
 func TestDPPlacement_PerRankKV_NoDoubleCount(t *testing.T) {
@@ -955,7 +953,7 @@ func TestDPPlacement_PerRankKV_NoDoubleCount(t *testing.T) {
 		blockSizeTokens = 16
 		maxModelLen = 0
 		gpuMemoryUtilization = 0.9
-		modelConfigFolder = mcDir
+		catalogPath = mcDir
 		hwConfigPath = hwPath
 		defaultsFilePath = "../defaults.yaml"
 
@@ -965,7 +963,7 @@ func TestDPPlacement_PerRankKV_NoDoubleCount(t *testing.T) {
 		if err := testCmd.ParseFlags([]string{
 			"--model", "test-model", "--latency-model", "trained-physics",
 			"--hardware", "H100", "--tp", "2", "--dp", strconv.Itoa(dp),
-			"--model-config-folder", mcDir, "--hardware-config", hwPath,
+			"--catalog", mcDir, "--hardware-config", hwPath,
 			"--defaults-filepath", "../defaults.yaml",
 		}); err != nil {
 			t.Fatalf("dp=%d ParseFlags: %v", dp, err)
@@ -1016,7 +1014,7 @@ func TestDPPlacement_ExplicitKV_SkipsPerRankDivision(t *testing.T) {
 		blockSizeTokens = 16
 		maxModelLen = 0
 		gpuMemoryUtilization = 0.9
-		modelConfigFolder = mcDir
+		catalogPath = mcDir
 		hwConfigPath = hwPath
 		defaultsFilePath = "../defaults.yaml"
 
@@ -1025,7 +1023,7 @@ func TestDPPlacement_ExplicitKV_SkipsPerRankDivision(t *testing.T) {
 		args := []string{
 			"--model", "test-model", "--latency-model", "trained-physics",
 			"--hardware", "H100", "--tp", "2", "--dp", "2",
-			"--model-config-folder", mcDir, "--hardware-config", hwPath,
+			"--catalog", mcDir, "--hardware-config", hwPath,
 			"--defaults-filepath", "../defaults.yaml",
 		}
 		if explicitKV {

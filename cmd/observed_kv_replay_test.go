@@ -109,7 +109,7 @@ func TestINV13_RunReplayParity_CacheHitRate(t *testing.T) {
 	mcFolder, hwPath := setupTrainedPhysicsTestFixtures(t)
 	dir := t.TempDir()
 
-	hfConfig, err := latency.ParseHFConfig(filepath.Join(mcFolder, "config.json"))
+	hfConfig, err := latency.ParseHFConfig(testCatalogConfigPath(mcFolder, "test-model"))
 	if err != nil {
 		t.Fatalf("ParseHFConfig: %v", err)
 	}
