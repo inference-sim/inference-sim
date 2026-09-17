@@ -68,7 +68,7 @@ Run BLIS for `qwen/qwen3-14b` with default configs. `--hardware` and `--tp` are 
 ./blis run --model qwen/qwen3-14b --hardware H100 --tp 1
 ```
 
-**Hardware/TP defaults:** Omitting `--hardware` and `--tp` flags will default to H100 and TP=1 with warnings. Specify explicitly for other configurations.
+**No inferred deployment:** BLIS never guesses `--hardware`/`--tp`. A run missing either is refused, naming the missing flag — pass both explicitly on every command.
 
 You should see JSON output on stdout with key fields:
 

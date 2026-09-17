@@ -63,7 +63,7 @@ Known limitations:
     still_queued/still_running in the aggregate metrics output.
 
 Example:
-  blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b`,
+  blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b --hardware H100 --tp 1`,
 	Run: func(cmd *cobra.Command, args []string) {
 		level, err := logrus.ParseLevel(logLevel)
 		if err != nil {
