@@ -59,7 +59,7 @@ func resolveModelConfig(model, explicitFolder, defaultsFile string) (string, err
 	if !json.Valid(data) || !isHFConfig(data) {
 		return "", fmt.Errorf(
 			"catalog entry for model %q at %s is not a HuggingFace config.json: it lacks the expected "+
-				"fields (num_hidden_layers, hidden_size, or text_config.num_hidden_layers, text_config.hidden_size).\n"+
+				"fields (num_hidden_layers, hidden_size, layers_block_type, or the same fields under text_config).\n"+
 				"  Fix that catalog entry, or pass --model-config-folder pointing at a directory that contains a valid %s",
 			model, localPath, hfConfigFile,
 		)
@@ -90,10 +90,17 @@ func resolveHardwareConfig(explicitPath, defaultsFile string) (string, error) {
 }
 
 // isHFConfig checks whether JSON bytes represent a HuggingFace transformer
-// config.json. It looks for num_hidden_layers or hidden_size at the top level
-// (text-only models) or nested inside text_config (multimodal models such as
-// Llama4ForConditionalGeneration). This rejects an empty JSON {} or unrelated
-// JSON that passes json.Valid as a catalog entry.
+// config.json. It looks for num_hidden_layers, hidden_size, or a non-empty
+// layers_block_type list at the top level (text-only models) or nested inside
+// text_config (multimodal models such as Llama4ForConditionalGeneration). This
+// rejects an empty JSON {} or unrelated JSON that passes json.Valid as a catalog entry.
+//
+// layers_block_type is accepted because latency.GetModelConfigFromHF derives the layer
+// count from its length when no num_hidden_layers scalar is declared (#1729 / NS-4). A
+// config the parser can read must not be rejected one layer up as "not a HuggingFace
+// config" — that would reject a perfectly good catalogued config. An empty or non-list
+// value is NOT accepted: the parser cannot count it either, so the two paths agree on
+// exactly what counts as usable evidence.
 func isHFConfig(data []byte) bool {
 	var m map[string]interface{}
 	// Defensive: callers currently pre-validate with json.Valid, but retain this guard for future call sites.
@@ -101,18 +108,25 @@ func isHFConfig(data []byte) bool {
 		return false
 	}
 
+	hasLayerCountEvidence := func(cfg map[string]interface{}) bool {
+		if _, ok := cfg["num_hidden_layers"]; ok {
+			return true
+		}
+		if _, ok := cfg["hidden_size"]; ok {
+			return true
+		}
+		blocks, ok := cfg[latency.LayersBlockTypeField].([]interface{})
+		return ok && len(blocks) > 0
+	}
+
 	// Top-level fields cover text-only transformer configs.
-	_, hasLayers := m["num_hidden_layers"]
-	_, hasHidden := m["hidden_size"]
-	if hasLayers || hasHidden {
+	if hasLayerCountEvidence(m) {
 		return true
 	}
 
 	// Fall back to text_config.* for multimodal models (Llama4ForConditionalGeneration, etc.)
 	if textCfg, ok := m["text_config"].(map[string]interface{}); ok {
-		_, hasLayers = textCfg["num_hidden_layers"]
-		_, hasHidden = textCfg["hidden_size"]
-		return hasLayers || hasHidden
+		return hasLayerCountEvidence(textCfg)
 	}
 
 	return false

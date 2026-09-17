@@ -459,6 +459,16 @@ func TestIsHFConfig(t *testing.T) {
 		{"zero-value num_hidden_layers in text_config", `{"text_config": {"num_hidden_layers": 0}}`, true},
 		{"zero-value hidden_size in text_config", `{"text_config": {"hidden_size": 0}}`, true},
 		{"mixed top-level and text_config fields", `{"num_hidden_layers": 48, "text_config": {"hidden_size": 5120}}`, true},
+		// #1729 (NS-4): a config whose only layer-count evidence is the block-type array
+		// is one the parser can now read, so the presence detector must accept it too —
+		// otherwise the located config would be judged unusable and a fetch attempted.
+		{"block-type array only at top level", `{"layers_block_type": ["attention", "mamba"]}`, true},
+		{"block-type array only in text_config", `{"text_config": {"layers_block_type": ["attention", "mamba"]}}`, true},
+		{"block-type array alongside other fields", `{"layers_block_type": ["attention"], "vocab_size": 32000}`, true},
+		// Still rejected: the key names a value the parser cannot count.
+		{"block-type array empty", `{"layers_block_type": []}`, false},
+		{"block-type array wrong type", `{"layers_block_type": 52}`, false},
+		{"vision_config block-type array only", `{"vision_config": {"layers_block_type": ["attention"]}}`, false},
 	}
 
 	for _, tt := range tests {
