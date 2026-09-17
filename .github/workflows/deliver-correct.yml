@@ -323,12 +323,26 @@ jobs:
           # Never REMOVED here. Only the review phase clears it, and only on explicit acceptance;
           # a round that dismisses nothing must not wipe an earlier round's unaccepted dismissal.
 
+      # Retried with exponential backoff (#1757): same transient-dispatch hardening as
+      # the verify→correct hand-off.
       - name: Hand back to verify
         if: steps.paused.outputs.paused == 'false'
         run: |
-          gh workflow run deliver-verify.yml --repo "$REPO" --ref "${{ github.ref_name }}" \
-            -f pr_number="$PR" -f issue_number="$ISSUE_NUMBER"
-          echo "Dispatched verify for PR #$PR."
+          max_attempts=3
+          for (( attempt = 1; attempt <= max_attempts; attempt++ )); do
+            if gh workflow run deliver-verify.yml --repo "$REPO" --ref "${{ github.ref_name }}" \
+                 -f pr_number="$PR" -f issue_number="$ISSUE_NUMBER"; then
+              echo "Dispatched verify for PR #$PR (attempt $attempt)."
+              exit 0
+            fi
+            if (( attempt < max_attempts )); then
+              delay=$(( 5 * (1 << (attempt - 1)) ))
+              echo "::warning::dispatch attempt $attempt failed; retrying in ${delay}s"
+              sleep "$delay"
+            fi
+          done
+          echo "::error::all $max_attempts dispatch attempts failed for PR #$PR"
+          exit 1
 
       # `always() && !success()`, NOT `failure() || cancelled()`. Per the GitHub expression docs
       # `failure()` is true when a previous step FAILS and `cancelled()` when the WORKFLOW is
