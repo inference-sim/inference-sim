@@ -3969,8 +3969,8 @@ Dequeue requests from the wait queue:
 </tbody>
 </table>
 <h3 id="conservation-invariant-inv-1">Conservation Invariant (INV-1)<a class="headerlink" href="#conservation-invariant-inv-1" title="Permanent link">&para;</a></h3>
-<p>At simulation end: <code>injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out</code></p>
-<p>Cluster runs add gateway-queue, routing-rejection, and encode-pool buckets to the right-hand side — see canonical <a href="../../contributing/standards/invariants/">INV-1</a> for the full multi-instance accounting formula.</p>
+<p>At simulation end, for a <strong>single-instance</strong> run: <code>injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out</code></p>
+<p>That five-term form is the single-instance specialisation, not the general rule. The canonical form is a twelve-term cluster equation: a cluster run adds seven buckets for routing rejections, the gateway queue (depth, shed, rejected), in-flight eviction, TTL expiry, and encode-pool routing. Asserting the five-term form against cluster output is incomplete — see canonical <a href="../../contributing/standards/invariants/">INV-1</a> for the full equation and the shared helpers that implement it.</p>
 <p>This is the fundamental accounting invariant that ensures no requests are silently lost.</p>
 <h2 id="determinism">Determinism<a class="headerlink" href="#determinism" title="Permanent link">&para;</a></h2>
 <p>BLIS guarantees deterministic output: the same seed produces byte-identical stdout across runs (INV-6).</p>
