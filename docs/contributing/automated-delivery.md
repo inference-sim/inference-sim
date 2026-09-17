@@ -37,7 +37,7 @@ Then leave. Every phase posts a comment, so the whole delivery history is readab
 ```
 /approve-issue-for-pr-delivery
   │
-  ├─ Deliver — Implement    branch deliver/issue-N, tests, PR, self-review
+  ├─ Deliver — Implement    workflow pushes deliver/issue-N; agent opens draft PR, then code
   │      ↓
   ├─ Deliver — Verify       build/test/lint → archon review → methodology review
   │      │                  ready-for-merge → STOP
@@ -47,6 +47,42 @@ Then leave. Every phase posts a comment, so the whole delivery history is readab
   │      ↓
   └─ back to Verify              (at most 3 correction rounds)
 ```
+
+**The implement phase opens its branch and PR before it starts work, not after it finishes.** The
+workflow creates and pushes `deliver/issue-N` — with an empty seed commit, based on the sub-issue's
+target branch — before the agent starts. The agent's own first action, before it writes any code, is
+to open a **draft** PR on that branch; it then commits and pushes as it goes, and marks the PR ready
+for review when it is done. Three things follow from that ordering:
+
+- **An interrupted run leaves recoverable work.** A lost runner executes no step at all, so an
+  agent that pushed only at the end left nothing behind — a delivery once lost a finished
+  implementation that way, because the runner was evicted seconds before its single push. The branch
+  is pushed by the workflow, so this holds regardless of what the agent does.
+- **An interrupted delivery is visible.** `deliver-stall-sweep.yml` finds deliveries *from the PR
+  side*, so a run that died before opening a PR was invisible to the one backstop meant to catch it.
+  Opening the PR first shrinks that window from the whole run to the agent's first action. It does
+  not eliminate it: a runner lost in the first seconds still leaves a pushed branch with no PR, which
+  the sweep cannot see. Teaching the sweep to also consider PR-less delivery branches would close
+  the remainder, and is tracked as #1740.
+- **A PR still marked draft, saying the work is in progress, was interrupted.** The agent is told
+  to say so in the body it opens, so an abandoned delivery is recognisable without reading the run
+  log.
+
+Because the agent opens a PR before it writes anything, an open PR is no longer evidence that
+anything was built.
+The hand-off to verify is gated on the branch actually carrying a file change against its base;
+an agent that produced nothing gets a comment on the sub-issue saying exactly that, instead of
+handing an empty PR to a two-hour review.
+
+`ci.yml` is the authority on build, test and lint **for implement and verify**. Verify dispatches it
+on the delivery branch and reads the resulting check runs; implement deliberately does *not* re-run
+the full suite or the linter, which duplicated a parity obligation and, on the resource-limited
+self-hosted runner, was itself a cause of lost runs.
+
+**The correct phase has not been brought into line yet.** Its prompt still tells the agent to run
+`go build ./...`, `go test ./...` and `golangci-lint run ./...` "because the verify phase runs
+exactly these three" — the same false premise, on the same self-hosted runner, under a tighter
+60-minute budget. Tracked as #1737; do not read the paragraph above as describing that phase.
 
 Phases chain with `workflow_dispatch`, passing the PR and sub-issue numbers as inputs. **No PAT and no GitHub App are needed** — `workflow_dispatch` and `repository_dispatch` are the two events that always create workflow runs even when triggered with `GITHUB_TOKEN`.
 
@@ -125,9 +161,9 @@ Archon is optional throughout: with a plan there is a deterministic number that 
 
 **Every phase reports its own failure**, including a step that was cancelled, and applies `needs-human`.
 
-**A dead runner cannot report itself.** If the runner is lost mid-job, no step executes — not `always()` ones, not even the action's own post-steps. That happened once during development and the delivery left no branch, no PR, no comment and no label, which is indistinguishable from nobody having run the command. `deliver-stall-sweep.yml` exists for exactly that: it runs on a schedule and flags any open PR on a `deliver/issue-*` branch that carries neither terminal label, is not paused, and has had no activity for 180 minutes. Activity means comments, reviews *and* review comments — the loop reacts to all three, so counting only comments would flag a delivery that was in fact responding to a review.
+**A dead runner cannot report itself.** If the runner is lost mid-job, no step executes — not `always()` ones, not even the action's own post-steps. This has happened twice: the first time the delivery left no branch, no PR, no comment and no label, which is indistinguishable from nobody having run the command; the second time it also lost a finished implementation that had never been pushed. Two *different* mechanisms close those two holes, and it is worth keeping them apart: **opening the branch and PR up front makes the delivery visible** — to the sweep, and to a human reading the issue — while **pushing the branch and then pushing as you go is what makes the work survive**. Visibility alone would leave an empty PR and still lose everything since the last push, so a phase that pushed only at the end would be findable but no less destroyed. `deliver-stall-sweep.yml` covers the visibility half: it runs on a schedule and flags any open PR on a `deliver/issue-*` branch that carries neither terminal label, is not paused, and has had no activity for 180 minutes. Activity means comments, reviews *and* review comments — the loop reacts to all three, so counting only comments would flag a delivery that was in fact responding to a review.
 
-180 minutes is not arbitrary: the threshold has to exceed the longest *legitimate* silence, which is one phase's own budget (verify is capped at 120 minutes and comments at the end), plus slack for a busy runner.
+180 minutes is not arbitrary: the threshold has to exceed the longest *legitimate* silence, which is one phase's own budget (implement and verify are both capped at 120 minutes, and each reports at the end), plus slack for a busy runner. `scripts/deliver_guards_test.go` enforces that relationship, so a phase budget cannot be raised past the window without a failing test.
 
 The sweep stands down while a delivery phase has **started recently**, because a legitimate verify is silent for long stretches while it waits on CI and then on a review. Recently, not merely "at all": a job that never got a runner sits queued for up to 24 hours, so counting queued runs of any age let an offline runner — the very scenario the sweep is for — keep it silent for a day. A run older than the quiet window is the symptom, not a sign of life.
 
@@ -139,7 +175,13 @@ The stand-down is repository-wide, so one recent phase run suppresses flagging f
 gh workflow run deliver-verify.yml -f pr_number=<PR> -f issue_number=<N>
 ```
 
-The correction round count lives on the PR's `deliver:round-N` label, so resuming this way keeps it. Re-issuing `/approve-issue-for-pr-delivery` instead restarts the *implement* phase against the existing branch, which is rarely what you want after an infrastructure failure — nothing about the code needed redoing.
+The correction round count lives on the PR's `deliver:round-N` label, so resuming this way keeps it. Dispatching verify directly remains the right move when the **implementation is already complete** and only the verdict is missing — nothing about the code needed redoing.
+
+**Closing the delivery PR does not stop the branch being reused.** The phase looks for an *open* PR
+on `deliver/issue-N`; if you close one, a re-issued command leaves the branch alone and the agent
+opens a fresh PR on it. To stop a delivery, use the `deliver:paused` label rather than closing its PR.
+
+**Re-issuing `/approve-issue-for-pr-delivery` resumes the implement phase rather than restarting it.** If `deliver/issue-N` already exists, the phase checks it out instead of creating it, reuses the open PR instead of opening a second one, and the agent is told to read the commits already there and continue from them. That is the right move when the implementation was left **part-finished** — a runner lost mid-flight. It is not a way to get a second opinion on finished work: the agent continues the existing branch, it does not start over.
 
 **Any human push to a delivery branch re-verifies it**, so a verdict always describes the current head and a terminal label never outlives the commit it was granted to. Both terminal labels are cleared as soon as verification *starts*, not when it finishes — otherwise a push to a PR already marked `ready-for-merge` would keep advertising merge-readiness, on an unverified commit, for the whole re-verification.
 
@@ -161,6 +203,17 @@ Repository variables, all optional:
 The verify model is deliberately *not* the implement model. Two instances of one model reviewing each other's work is closer to an agent grading its own homework; different models give real separation.
 
 ## Setup
+
+**"Allow GitHub Actions to create and approve pull requests" is deliberately NOT required, and
+should stay disabled.** This constrains how the loop is allowed to work, so it is worth knowing why.
+GitHub exposes creating and approving pull requests as a **single** toggle
+(`can_approve_pull_request_reviews`) that grants both to *every* workflow in the repository — there
+is no way to take only creation. This loop must never approve anything: it labels, and a human
+merges. So no phase creates a pull request from a workflow step, which would use `GITHUB_TOKEN` and
+need that toggle; the agent opens the PR instead, with the App installation token
+`claude-code-action` obtains via OIDC, which the setting does not govern.
+`scripts/deliver_guards_test.go` fails if a workflow step reintroduces PR creation, so this cannot
+regress quietly.
 
 **The labels must exist before the workflows are used.** A workflow applying a label that does not exist fails at the API call, which strands a delivery mid-loop:
 
