@@ -116,8 +116,15 @@ func liveStepCode(t *testing.T, workflow string) map[string]string {
 		var b strings.Builder
 		b.WriteString(s.If)
 		b.WriteString("\n")
+		// Env keys sorted, not iterated in map order: the assembled text reaches a failure
+		// message, and a diagnostic that reorders itself between runs is the small version of
+		// exactly what R2/INV-6 are about.
+		env := map[string]string{}
 		for k, v := range s.Env {
-			b.WriteString(k + ": " + v.Value + "\n")
+			env[k] = v.Value
+		}
+		for _, k := range sortedKeys(env) {
+			b.WriteString(k + ": " + env[k] + "\n")
 		}
 		b.WriteString(stripCommentLines(s.Run))
 		out[s.Name] = b.String()
