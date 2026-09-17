@@ -128,7 +128,13 @@ def tool_grep(worktree, pattern, path=None):
     proc = subprocess.run(
         ["grep", "-rnE", "--", pattern, target], capture_output=True, text=True, cwd=root
     )
-    return proc.stdout or proc.stderr
+    # 0 = matches, 1 = no-match (no output), >=2 = error. Distinguish no-match
+    # from failure so the model can tell "found nothing" from "search broke".
+    if proc.returncode == 0:
+        return proc.stdout
+    if proc.returncode == 1:
+        return "(no matches)"
+    return proc.stderr or "grep failed (exit %d)" % proc.returncode
 
 
 def tool_list_dir(worktree, path="."):
@@ -295,6 +301,8 @@ def run_tool(impl, worktree, name, arguments):
     try:
         return fn(worktree, **arguments)
     except Exception as exc:
+        # Also log to stderr so a tool failing every call is visible to CI.
+        sys.stderr.write("qa-review adjudicator: tool error (%s): %s\n" % (name, exc))
         return "tool error (%s): %s" % (name, exc)
 
 
@@ -356,6 +364,10 @@ def adjudicate_loop(base_url, api_key, model, worktree, items, responses, no_exe
             try:
                 arguments = json.loads(call["function"].get("arguments") or "{}")
             except json.JSONDecodeError:
+                sys.stderr.write(
+                    "qa-review adjudicator: tool %r had unparseable arguments: %r\n"
+                    % (name, call["function"].get("arguments"))
+                )
                 arguments = {}
             result = run_tool(impl, worktree, name, arguments)
             messages.append(

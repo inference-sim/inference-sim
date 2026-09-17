@@ -178,17 +178,18 @@ def main(argv=None):
     generated = parse_generated(content)
 
     questions = list(FIXED_QUESTIONS)
-    for i, item in enumerate(generated.get("questions", []), start=1):
+    n = 0
+    for item in generated.get("questions", []):
+        text = item.get("question", "").strip()
+        if not text:
+            # Skip empty generated questions: emitting one would waste an
+            # answerer turn and could produce a spurious BLOCK.
+            continue
+        n += 1
         topic = item.get("topic", "")
         if topic not in TOPICS:
-            topic = TOPICS[(i - 1) % len(TOPICS)]
-        questions.append(
-            {
-                "id": "G%d" % i,
-                "topic": topic,
-                "question": item.get("question", "").strip(),
-            }
-        )
+            topic = TOPICS[(n - 1) % len(TOPICS)]
+        questions.append({"id": "G%d" % n, "topic": topic, "question": text})
 
     json.dump({"model": args.model, "questions": questions}, sys.stdout)
     sys.stdout.write("\n")

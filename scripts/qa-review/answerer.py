@@ -94,7 +94,14 @@ def tool_grep(worktree, pattern, path=None):
         text=True,
         cwd=root,
     )
-    return proc.stdout or proc.stderr
+    # grep exits 0 with matches, 1 for no-match (no output), >=2 on error. Map
+    # no-match to an explicit marker so the model cannot confuse "found nothing"
+    # with "the search failed".
+    if proc.returncode == 0:
+        return proc.stdout
+    if proc.returncode == 1:
+        return "(no matches)"
+    return proc.stderr or "grep failed (exit %d)" % proc.returncode
 
 
 def tool_list_dir(worktree, path="."):
@@ -227,6 +234,9 @@ def run_tool(impl, worktree, name, arguments):
     try:
         return fn(worktree, **arguments)
     except Exception as exc:  # surface the error to the model, do not crash
+        # Also log to stderr: returning the error only to the model leaves an
+        # operator (or CI) blind to a tool that is failing every call.
+        sys.stderr.write("qa-review answerer: tool error (%s): %s\n" % (name, exc))
         return "tool error (%s): %s" % (name, exc)
 
 
@@ -286,6 +296,13 @@ def answer_loop(base_url, api_key, model, worktree, questions, no_exec):
             try:
                 arguments = json.loads(call["function"].get("arguments") or "{}")
             except json.JSONDecodeError:
+                # Keep the loop alive on malformed model output, but do not let
+                # it pass silently — an operator must be able to see the model
+                # emitted unparseable tool arguments.
+                sys.stderr.write(
+                    "qa-review answerer: tool %r had unparseable arguments: %r\n"
+                    % (name, call["function"].get("arguments"))
+                )
                 arguments = {}
             result = run_tool(impl, worktree, name, arguments)
             messages.append(

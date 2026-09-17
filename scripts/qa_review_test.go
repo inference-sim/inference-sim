@@ -549,3 +549,101 @@ json.dump({"on_impl": on_impl, "on_schema": on_schema,
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Hardening from the mtoslalibu review (PR #1736 comment): input validation,
+// worktree-sandbox coverage, and repair_json escape breadth.
+// ---------------------------------------------------------------------------
+
+// TestRenderRequiresInputs pins that render_report.py rejects a missing
+// --questions/--answers with a clear argparse error naming the flag, instead of
+// falling through to open("") and raising a confusing FileNotFoundError.
+func TestRenderRequiresInputs(t *testing.T) {
+	requirePython3(t)
+
+	_, stderr, code := runPython(t, "",
+		qaScript(t, "render_report.py"), "--pr", "42",
+	)
+	if code != 2 {
+		t.Fatalf("missing inputs should exit 2 (argparse), got %d\nstderr=%s", code, stderr)
+	}
+	if !strings.Contains(stderr, "--questions") {
+		t.Errorf("error should name the missing --questions flag, got: %s", stderr)
+	}
+	if strings.Contains(stderr, "Traceback") || strings.Contains(stderr, "FileNotFoundError") {
+		t.Errorf("missing inputs raised a raw traceback instead of a clean error:\n%s", stderr)
+	}
+}
+
+// TestSafePathSandbox pins the answerer/adjudicator worktree sandbox: an in-tree
+// path resolves under the root, while traversal and absolute paths are rejected.
+// _safe_path is the boundary keeping the model's read-only tools inside the
+// worktree, so it must be covered.
+func TestSafePathSandbox(t *testing.T) {
+	requirePython3(t)
+
+	root := t.TempDir()
+	prog := `
+import os, sys, importlib
+m = importlib.import_module(sys.argv[1])
+root = sys.argv[2]
+rp = os.path.realpath(root)
+# In-tree paths resolve under the (real) root.
+p = m._safe_path(root, "sub/dir/file.go")
+assert p == os.path.join(rp, "sub/dir/file.go"), (p, rp)
+# Traversal and absolute paths are rejected with ValueError.
+for bad in ["../../etc/passwd", "/etc/passwd", "a/../../.."]:
+    try:
+        m._safe_path(root, bad)
+    except ValueError:
+        continue
+    print("LEAK:%s -> %s" % (bad, m._safe_path(root, bad)))
+    sys.exit(1)
+print("OK")
+`
+	for _, mod := range []string{"answerer", "adjudicator"} {
+		t.Run(mod, func(t *testing.T) {
+			stdout, stderr, code := runPython(t, "", "-c", prog, mod, root)
+			if code != 0 {
+				t.Fatalf("%s _safe_path probe exit=%d stderr=%s stdout=%s", mod, code, stderr, stdout)
+			}
+			if strings.TrimSpace(stdout) != "OK" {
+				t.Errorf("%s _safe_path sandbox breach: %s", mod, stdout)
+			}
+		})
+	}
+}
+
+// TestRepairJSONEscapes broadens repair_json coverage beyond the \s/\\ pair:
+// valid escapes (\n, \t, \uXXXX) must be left byte-unchanged (and still parse),
+// and an adjacent valid-then-invalid pair (\\ then \s) must repair and parse —
+// the exact patterns the docstring says cross-vendor models emit.
+func TestRepairJSONEscapes(t *testing.T) {
+	requirePython3(t)
+
+	prog := `
+import json, questioner
+# Valid escapes are not mutated and still parse.
+valid = r'{"q":"a\nb\tcé"}'
+assert questioner.repair_json(valid) == valid, "valid escapes were mutated"
+json.loads(questioner.repair_json(valid))
+print("V1:UNCHANGED")
+# Adjacent valid \\ + invalid \s repairs to a parseable string.
+adj = r'{"q":"p\\q \s r"}'
+print("V2:" + json.loads(questioner.repair_json(adj))["q"])
+`
+	stdout, stderr, code := runPython(t, "", "-c", prog)
+	if code != 0 {
+		t.Fatalf("repair_json escapes probe exit=%d stderr=%s", code, stderr)
+	}
+	lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 output lines, got %d: %q", len(lines), stdout)
+	}
+	if lines[0] != "V1:UNCHANGED" {
+		t.Errorf("valid escapes (\\n \\t \\uXXXX) were altered by repair_json: %q", lines[0])
+	}
+	if lines[1] != `V2:p\q \s r` {
+		t.Errorf("adjacent \\\\+\\s repair wrong: got %q, want %q", lines[1], `V2:p\q \s r`)
+	}
+}

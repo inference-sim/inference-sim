@@ -152,6 +152,13 @@ def main(argv=None):
     parser.add_argument("--repo", default=os.environ.get("QA_REPO", "inference-sim/inference-sim"))
     parser.add_argument("--banner", default="", help="override the default banner")
     args = parser.parse_args(argv)
+    # Validate inputs up front. Without this, omitting --questions/--answers
+    # falls through to open("") and raises a confusing
+    # "FileNotFoundError: [Errno 2] ... ''" instead of naming the missing flag.
+    if not args.questions and not args.questions_inline:
+        parser.error("provide --questions or --questions-inline")
+    if not args.answers and not args.answers_inline:
+        parser.error("provide --answers or --answers-inline")
 
     qdoc = _load(args.questions_inline, args.questions)
     questions = qdoc["questions"] if isinstance(qdoc, dict) else qdoc
