@@ -385,6 +385,34 @@ func TestDeliverGateMergeConflictNeverReady(t *testing.T) {
 	t.Run("mergeable-still-ready", func(t *testing.T) {
 		requireDecision(t, runGate(t, gateEnv(map[string]string{"MERGE_STATE": "mergeable"})), "ready")
 	})
+
+	// Precedence: the conflict path is nested UNDER `DISMISSALS=none`, so an outstanding
+	// dismissal is decided before the merge state is even read — a human is needed to accept
+	// the dismissal regardless of the branch being dirty too. It must NOT be quietly downgraded
+	// to a correction round by the conflict.
+	t.Run("open-dismissal-beats-conflict", func(t *testing.T) {
+		out := runGate(t, gateEnv(map[string]string{"DISMISSALS": "open", "MERGE_STATE": "conflicting"}))
+		requireDecision(t, out, "needs-human")
+	})
+
+	// Precedence: a plan-blocking signal collects into `blocking`, and a GREEN review against a
+	// blocking signal is the disagreement guardrail — needs-human — reached before the merge
+	// branch. A conflict does not turn that disagreement into a correction round.
+	t.Run("plan-regression-disagreement-beats-conflict", func(t *testing.T) {
+		out := runGate(t, gateEnv(map[string]string{
+			"PLAN_GATE": "regression", "AGENT_VERDICT": "GREEN", "MERGE_STATE": "conflicting",
+		}))
+		requireDecision(t, out, "needs-human")
+	})
+
+	// But an HONEST NOT-GREEN on a conflicting branch with a plan regression still corrects
+	// (rounds permitting): the agent merges main AND addresses the findings in one round.
+	t.Run("plan-regression-not-green-conflict-corrects", func(t *testing.T) {
+		out := runGate(t, gateEnv(map[string]string{
+			"PLAN_GATE": "regression", "AGENT_VERDICT": "NOT-GREEN", "MERGE_STATE": "conflicting", "ROUND": "0",
+		}))
+		requireDecision(t, out, "correct")
+	})
 }
 
 // TestDeliverGateReady covers BC-6: ready requires all three signals to agree, and the

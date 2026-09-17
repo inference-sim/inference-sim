@@ -899,15 +899,14 @@ jobs:
             echo "mergeable_state is '${raw:-<empty>}' (attempt $attempt); waiting for GitHub to compute it"
             sleep 3
           done
-          # Map GitHub's mergeable_state into the gate's domain. Only a true conflict ("dirty")
-          # blocks the merge and must route to correction (#1758); "behind" and every other
-          # non-dirty state are mergeable as far as this loop is concerned. An unresolved/empty
-          # state is `unknown`, on which the gate withholds `ready` rather than trusting it.
-          case "$state" in
-            dirty) merge_state=conflicting ;;
-            "")    merge_state=unknown ;;
-            *)     merge_state=mergeable ;;
-          esac
+          # Map GitHub's mergeable_state into the gate's domain via the tested script (a mapping
+          # typo here would mark a conflicting branch mergeable and reach ready — the #1758 bug —
+          # so it is a script with its own cross-product test, scripts/map_merge_state_test.go,
+          # exactly like deliver-gate.sh). Only "dirty" is conflicting; "behind" and every other
+          # non-dirty state are mergeable (a behind branch still merges, and the correction phase
+          # merges main every round regardless); an unresolved/empty read is `unknown`, on which
+          # the gate withholds `ready` rather than trusting an unverified mergeability.
+          merge_state=$(scripts/map-merge-state.sh "$state")
           echo "mergeable_state='$state' -> MERGE_STATE=$merge_state"
           echo "state=$merge_state" >> "$GITHUB_OUTPUT"
 

@@ -855,6 +855,7 @@ func TestDeliverVerifyFeedsMergeStateToTheGate(t *testing.T) {
 			Steps []struct {
 				ID   string            `yaml:"id"`
 				Name string            `yaml:"name"`
+				If   string            `yaml:"if"`
 				Run  string            `yaml:"run"`
 				Env  map[string]string `yaml:"env"`
 			} `yaml:"steps"`
@@ -892,10 +893,25 @@ func TestDeliverVerifyFeedsMergeStateToTheGate(t *testing.T) {
 			"the merge signal must be derived before the gate decides", merge, gate)
 	}
 
-	// The derivation must actually read GitHub's mergeable_state.
+	// The derivation must actually read GitHub's mergeable_state, and map it via the tested
+	// script — not an inline `case` whose typo (dirty)→dirtry)) would silently mark a
+	// conflicting branch mergeable with every test still green.
 	if !strings.Contains(job.Steps[merge].Run, "mergeable_state") {
 		t.Error("the `mergestate` step never reads `.mergeable_state`, so it cannot tell a " +
 			"conflicting branch from a mergeable one")
+	}
+	if !strings.Contains(job.Steps[merge].Run, "map-merge-state.sh") {
+		t.Error("the `mergestate` step does not map through scripts/map-merge-state.sh — the " +
+			"mergeable_state→MERGE_STATE mapping must go through the tested script so a mapping " +
+			"typo cannot silently mark a conflicting branch mergeable (#1758)")
+	}
+
+	// The derivation and the gate must share the same run condition. If the gate ran while the
+	// derivation was skipped, MERGE_STATE would reach the gate empty (exit 2). They co-fire
+	// today on `paused == false`; this pins that they stay in lockstep.
+	if mg, gg := job.Steps[merge].If, job.Steps[gate].If; mg != gg {
+		t.Errorf("the `mergestate` step's if (%q) differs from the `gate` step's if (%q); if they "+
+			"diverge the gate could run without a derived MERGE_STATE", mg, gg)
 	}
 
 	// The gate must RECEIVE the derived signal, wired from the mergestate step's output.
