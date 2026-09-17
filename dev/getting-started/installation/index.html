@@ -648,6 +648,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#locate-the-model-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Locate the Model Catalog
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#verify-the-build" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2939,6 +2950,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#locate-the-model-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Locate the Model Catalog
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#verify-the-build" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3021,22 +3043,28 @@
 <div class="admonition note">
 <p class="admonition-title">Air-gapped / offline environments</p>
 <p>Nothing to do — BLIS never reaches the network to run a simulation. Every model's <code>config.json</code> comes from the committed catalog under <code>model_configs/</code>, and a model with no catalog entry is refused rather than fetched.</p>
-<p>To simulate a model that is not yet catalogued, obtain its <code>config.json</code> on a machine with internet access, then either commit it at <code>model_configs/&lt;model&gt;/config.json</code> or point <code>--model-config-folder</code> at a directory containing it.</p>
+<p>To simulate a model that is not yet catalogued, obtain its <code>config.json</code> on a machine with internet access, then commit it at <code>&lt;catalog&gt;/&lt;model&gt;/config.json</code> — where <code>&lt;catalog&gt;</code> is whatever directory you point <code>--catalog</code> / <code>BLIS_CATALOG</code> at (the bundled <code>model_configs/</code> tree is one).</p>
 </div>
+<h2 id="locate-the-model-catalog">Locate the Model Catalog<a class="headerlink" href="#locate-the-model-catalog" title="Permanent link">&para;</a></h2>
+<p><code>blis run</code> and <code>blis replay</code> must be told where the model catalog is — there is no default
+and no search path, so a run with neither <code>--catalog</code> nor <code>BLIS_CATALOG</code> is refused naming
+both forms. The bundled <code>model_configs/</code> tree is a valid catalog root:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">BLIS_CATALOG</span><span class="o">=</span><span class="nv">$PWD</span>/model_configs<span class="w">   </span><span class="c1"># or pass --catalog on every command</span>
+</code></pre></div>
 <h2 id="verify-the-build">Verify the Build<a class="headerlink" href="#verify-the-build" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">10</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">10</span><span class="w"> </span>--catalog<span class="w"> </span>model_configs
 </code></pre></div>
 <p>You should see JSON output on stdout containing fields like <code>ttft_mean_ms</code>, <code>e2e_mean_ms</code>, and <code>responses_per_sec</code>. This confirms BLIS is working correctly.</p>
 <h2 id="optional-local-documentation">Optional: Local Documentation<a class="headerlink" href="#optional-local-documentation" title="Permanent link">&para;</a></h2>
 <p>To preview the documentation site locally:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>pip<span class="w"> </span>install<span class="w"> </span>mkdocs-material<span class="o">==</span><span class="m">9</span>.7.3
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>mkdocs<span class="w"> </span>serve
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>pip<span class="w"> </span>install<span class="w"> </span>mkdocs-material<span class="o">==</span><span class="m">9</span>.7.3
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>mkdocs<span class="w"> </span>serve
 </code></pre></div>
 <p>Then open <a href="http://localhost:8000">http://localhost:8000</a>.</p>
 <h2 id="optional-linter">Optional: Linter<a class="headerlink" href="#optional-linter" title="Permanent link">&para;</a></h2>
 <p>For contributors, install the linter used in CI:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>go<span class="w"> </span>install<span class="w"> </span>github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>golangci-lint<span class="w"> </span>run<span class="w"> </span>./...
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>go<span class="w"> </span>install<span class="w"> </span>github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>golangci-lint<span class="w"> </span>run<span class="w"> </span>./...
 </code></pre></div>
 <h2 id="whats-next">What's Next<a class="headerlink" href="#whats-next" title="Permanent link">&para;</a></h2>
 <ul>

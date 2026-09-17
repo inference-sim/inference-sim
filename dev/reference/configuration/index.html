@@ -3960,13 +3960,13 @@
 <td><code>--latency-model</code></td>
 <td>string</td>
 <td>"trained-physics"</td>
-<td>Latency model backend: <code>trained-physics</code> (default), <code>roofline</code>. Both read the model's <code>config.json</code> from the catalog (<code>model_configs/&lt;model&gt;/</code>, or <code>--model-config-folder</code>) for latency estimation and KV sizing; an uncatalogued model is refused and nothing is fetched. Both require <code>--hardware</code> and <code>--tp</code>.</td>
+<td>Latency model backend: <code>trained-physics</code> (default), <code>roofline</code>. Both read the model's <code>config.json</code> from the catalog located by <code>--catalog</code> / <code>BLIS_CATALOG</code> for latency estimation and KV sizing; an uncatalogued model is refused and nothing is fetched. Both require <code>--hardware</code> and <code>--tp</code>.</td>
 </tr>
 <tr>
-<td><code>--model-config-folder</code></td>
+<td><code>--catalog</code></td>
 <td>string</td>
 <td>""</td>
-<td>Path to a folder containing the model's HuggingFace <code>config.json</code>. Overrides the catalog lookup at <code>model_configs/&lt;short-name&gt;/</code>. BLIS never fetches or writes a config at run time (NS-6, #1733).</td>
+<td>Path to the <strong>model catalog root</strong>: one directory per model, each holding that model's HuggingFace <code>config.json</code>. <strong>No default and no search path</strong> — supply this flag or the <code>BLIS_CATALOG</code> environment variable, or the run is refused naming both (#1731). <code>--catalog</code> wins when both are set, and the override is announced on stderr. The repository's <code>model_configs/</code> tree is a valid catalog. Replaces the retired <code>--model-config-folder</code>: point <code>--catalog</code> at a scratch directory to use your own config. Registered on <code>run</code> and <code>replay</code> (not <code>observe</code>, which resolves no model config). BLIS never fetches or writes a config at run time (NS-6, #1733).</td>
 </tr>
 <tr>
 <td><code>--hardware-config</code></td>
@@ -4747,18 +4747,18 @@
 <p><strong>Backend-specific resolution:</strong></p>
 <ol>
 <li>If <code>--latency-model trained-physics</code> (default) or <code>roofline</code>:</li>
-<li>Resolve the model config from the catalog: <code>model_configs/&lt;short-name&gt;/config.json</code>. A model with no entry is refused naming that path — nothing is fetched, and no run writes to the catalog (NS-6)</li>
+<li>Resolve the model config inside the catalog located by <code>--catalog</code> / <code>BLIS_CATALOG</code>: <code>&lt;catalog&gt;/&lt;short-name&gt;/config.json</code>. A run that names no catalog is refused naming both forms (#1731); a model with no entry is refused naming that path — nothing is fetched, and no run writes to the catalog (NS-6)</li>
 <li>Auto-resolve hardware config from bundled <code>hardware_config.json</code></li>
 <li>For roofline: beta coefficients are computed analytically from model architecture and hardware specs</li>
 <li>For trained-physics: load 13 global coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from <code>trained_physics_coefficients</code> in <code>defaults.yaml</code></li>
-<li><code>--model-config-folder</code> and <code>--hardware-config</code> override auto-resolution when explicitly set</li>
+<li><code>--catalog</code> / <code>BLIS_CATALOG</code> locates the model config (required, no default); <code>--hardware-config</code> overrides auto-resolution when explicitly set</li>
 <li>If <code>--alpha-coeffs</code> and <code>--beta-coeffs</code> are explicitly provided via CLI:</li>
 <li>Use them directly, no <code>defaults.yaml</code> lookup</li>
 </ol>
 <p><strong><code>--total-kv-blocks</code> resolution</strong> (highest priority wins):</p>
 <ol>
 <li><strong>Explicit CLI flag</strong> — if <code>--total-kv-blocks</code> is set, that value is used regardless of backend</li>
-<li><strong>Auto-calculation</strong> (all backends) — when <code>MemoryGiB &gt; 0</code> in the hardware config and <code>config.json</code> is available, <code>CalculateKVBlocks</code> derives the block count from model architecture and GPU memory. BLIS resolves <code>config.json</code> by checking <code>--model-config-folder</code>, then the catalog entry <code>model_configs/&lt;short-name&gt;/config.json</code>; there is no third step — an uncatalogued model is refused rather than fetched (NS-6). Failure modes: (a) if <code>MemoryGiB</code> is missing from <code>hardware_config.json</code>, BLIS warns and falls back to the hardcoded default (layer 3); (b) if model architecture params cannot be extracted from <code>config.json</code>, BLIS warns and falls back to the hardcoded default; (c) if the calculation itself fails (e.g., unsupported activation function), BLIS warns and falls back to the hardcoded default. Auto-calculation currently requires SwiGLU-family activations (<code>silu</code>, <code>swiglu</code>, <code>geglu</code>, <code>situ</code> — Kimi-K3's SiTU-GLU, a 3-matrix gated GLU with SwiGLU's weight/FLOP shape); models with other activations (e.g., Falcon's <code>gelu</code>) will fall back to the hardcoded default unless <code>--total-kv-blocks</code> is explicitly set</li>
+<li><strong>Auto-calculation</strong> (all backends) — when <code>MemoryGiB &gt; 0</code> in the hardware config and <code>config.json</code> is available, <code>CalculateKVBlocks</code> derives the block count from model architecture and GPU memory. BLIS resolves <code>config.json</code> as the catalog entry <code>&lt;catalog&gt;/&lt;short-name&gt;/config.json</code> inside the catalog located by <code>--catalog</code> / <code>BLIS_CATALOG</code>; there is no second step — an uncatalogued model is refused rather than fetched (NS-6). Failure modes: (a) if <code>MemoryGiB</code> is missing from <code>hardware_config.json</code>, BLIS warns and falls back to the hardcoded default (layer 3); (b) if model architecture params cannot be extracted from <code>config.json</code>, BLIS warns and falls back to the hardcoded default; (c) if the calculation itself fails (e.g., unsupported activation function), BLIS warns and falls back to the hardcoded default. Auto-calculation currently requires SwiGLU-family activations (<code>silu</code>, <code>swiglu</code>, <code>geglu</code>, <code>situ</code> — Kimi-K3's SiTU-GLU, a 3-matrix gated GLU with SwiGLU's weight/FLOP shape); models with other activations (e.g., Falcon's <code>gelu</code>) will fall back to the hardcoded default unless <code>--total-kv-blocks</code> is explicitly set</li>
 <li><strong>Hardcoded default</strong> — 1,000,000 (CLI flag default, used when auto-calculation is unavailable or fails)</li>
 </ol>
 <div class="admonition note">
@@ -4905,7 +4905,7 @@ for the cost model and its known approximations.</p>
 </tr>
 <tr>
 <td><strong>ModelHardwareConfig</strong></td>
-<td><code>--model</code>, <code>--hardware</code>, <code>--tp</code>, <code>--latency-model</code>, <code>--model-config-folder</code>, <code>--hardware-config</code>, <code>--max-model-len</code>. Placement-derived, no flag: the inter-node network topology (#1530)</td>
+<td><code>--model</code>, <code>--hardware</code>, <code>--tp</code>, <code>--latency-model</code>, <code>--catalog</code> (or <code>BLIS_CATALOG</code>), <code>--hardware-config</code>, <code>--max-model-len</code>. Placement-derived, no flag: the inter-node network topology (#1530)</td>
 </tr>
 <tr>
 <td><strong>PolicyConfig</strong></td>

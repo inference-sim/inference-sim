@@ -643,6 +643,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#locate-the-model-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Locate the model catalog
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#single-instance-simulation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2890,6 +2901,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#locate-the-model-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Locate the model catalog
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#single-instance-simulation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2973,13 +2995,22 @@
 <h1 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h1>
 <p>Run your first BLIS simulation in 30 seconds.</p>
 <p>No credentials or network access are needed: BLIS reads each model's architecture from the committed catalog under <code>model_configs/</code> and makes no HuggingFace requests. (<code>HF_TOKEN</code> matters only if you are downloading a new — possibly gated — model's <code>config.json</code> by hand to add a catalog entry.)</p>
+<h2 id="locate-the-model-catalog">Locate the model catalog<a class="headerlink" href="#locate-the-model-catalog" title="Permanent link">&para;</a></h2>
+<p>Every <code>blis run</code> / <code>blis replay</code> must be told where the <strong>model catalog</strong> is — a directory
+holding one subdirectory per model, each with that model's HuggingFace <code>config.json</code>. The
+repository's own <code>model_configs/</code> tree is such a catalog. There is <strong>no default and no
+search path</strong>: supply <code>--catalog &lt;path&gt;</code> or set <code>BLIS_CATALOG</code> (the flag wins when both are
+set), or the run is refused naming both forms.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">BLIS_CATALOG</span><span class="o">=</span><span class="nv">$PWD</span>/model_configs<span class="w">   </span><span class="c1"># or pass --catalog on every command</span>
+</code></pre></div>
+<p>The examples below (and elsewhere in these docs) assume you have exported it.</p>
 <h2 id="single-instance-simulation">Single-Instance Simulation<a class="headerlink" href="#single-instance-simulation" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span>
 </code></pre></div>
 <p>This runs 100 requests through a single inference instance using the default trained-physics latency model for Qwen3 14B on an H100 GPU with TP=1.</p>
 <div class="admonition note">
 <p class="admonition-title">A model runs only if it is catalogued</p>
-<p>BLIS reads the model's <code>config.json</code> from the catalog at <code>model_configs/&lt;model&gt;/</code> and never fetches or writes it at run time. A model with no catalog entry is refused, naming the path its entry belongs at — so runs are offline and reproducible, and running an unknown model can never quietly add a catalog entry. To use a model that is not yet catalogued, commit its <code>config.json</code> under <code>model_configs/&lt;model&gt;/</code> or point <code>--model-config-folder</code> at a directory containing one.</p>
+<p>BLIS reads the model's <code>config.json</code> from the catalog located by <code>--catalog</code> / <code>BLIS_CATALOG</code> (above) and never fetches or writes it at run time. A model with no catalog entry is refused, naming the path its entry belongs at — so runs are offline and reproducible, and running an unknown model can never quietly add a catalog entry. To use a model that is not yet catalogued, commit its <code>config.json</code> at <code>&lt;catalog&gt;/&lt;model&gt;/config.json</code>, or point <code>--catalog</code> at a scratch directory that has it.</p>
 </div>
 <div class="admonition note">
 <p class="admonition-title"><code>--hardware</code> and <code>--tp</code> are required</p>
@@ -3066,11 +3097,11 @@
 </table>
 <h2 id="cluster-mode">Cluster Mode<a class="headerlink" href="#cluster-mode" title="Permanent link">&para;</a></h2>
 <p>Scale to 4 instances with routing:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
 <p>This simulates a 4-instance cluster receiving 100 requests/second. The <code>weighted</code> routing policy uses the default scorer profile (<code>precise-prefix-cache:2, queue-depth:1, kv-utilization:1</code>) to distribute requests across instances.</p>
 <div class="admonition note">
@@ -3078,24 +3109,24 @@
 <p>In cluster mode, BLIS prints one JSON block per instance plus a cluster-level summary (5 blocks total for 4 instances). The cluster summary has <code>"instance_id": "cluster"</code>. If piping to <code>jq</code>, use <code>--slurp</code> to handle multiple JSON objects: <code>./blis run ... 2&gt;/dev/null | jq --slurp '.[] | select(.instance_id == "cluster")'</code> to extract the cluster summary.</p>
 </div>
 <h2 id="try-different-configurations">Try Different Configurations<a class="headerlink" href="#try-different-configurations" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Higher traffic rate</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">2000</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># With decision tracing (see where each request was routed)</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span>--trace-level<span class="w"> </span>decisions<span class="w"> </span>--summarize-trace
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="c1"># With trained-physics mode (recommended for new models)</span>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span>--latency-model<span class="w"> </span>trained-physics<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>
-<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="c1"># With pure roofline mode (analytical, no learned corrections)</span>
-<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">  </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Higher traffic rate</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">2000</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="c1"># With decision tracing (see where each request was routed)</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">  </span>--trace-level<span class="w"> </span>decisions<span class="w"> </span>--summarize-trace
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="c1"># With trained-physics mode (recommended for new models)</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">  </span>--latency-model<span class="w"> </span>trained-physics<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="c1"># With pure roofline mode (analytical, no learned corrections)</span>
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="w">  </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
 <h2 id="whats-next">What's Next<a class="headerlink" href="#whats-next" title="Permanent link">&para;</a></h2>
 <ul>

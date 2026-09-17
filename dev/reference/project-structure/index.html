@@ -2818,7 +2818,7 @@
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>│   ├── observe_cmd.go         # `blis observe` command: flags --server-url, --model, --api-format (completions/chat), --unconstrained-output, --rtt-ms, --workload-spec/--rate; prefix string generation (buildPrefixStrings with FNV-seeded vocabulary); dispatch orchestrator with session support
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│   ├── convert.go             # `blis convert` subcommands (servegen, preset, inference-perf)
 <a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│   ├── compose.go             # `blis compose` for merging v2 specs
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│   ├── hfconfig.go            # Catalog lookup of a model's config.json (read-only; refuses an uncatalogued model)
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│   ├── hfconfig.go            # Catalog LOCATION (--catalog / BLIS_CATALOG, no default and no search path — #1731) and read-only lookup of a model's config.json within it (refuses an uncatalogued model)
 <a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>│   └── default_config.go      # defaults.yaml loading (includes GetHFRepo for HF repo name mapping)
 <a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>├── internal/                  # Repo-root internal packages (test tooling; not importable outside this module)
 <a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>│   └── invariantscan/         # AST scan for hand-rolled INV-1 conservation sums (#1720) — used by the guard tests in sim/, sim/cluster/. Root-level rather than sim/internal so cmd/ can import it too.
@@ -2900,7 +2900,7 @@
 <a id="__codelineno-0-93" name="__codelineno-0-93" href="#__codelineno-0-93"></a>│   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods
 <a id="__codelineno-0-94" name="__codelineno-0-94" href="#__codelineno-0-94"></a>│   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore (pure data types, no sim/ dependency)
 <a id="__codelineno-0-95" name="__codelineno-0-95" href="#__codelineno-0-95"></a>│   └── summary.go             # TraceSummary, Summarize()
-<a id="__codelineno-0-96" name="__codelineno-0-96" href="#__codelineno-0-96"></a>├── model_configs/             # The model catalog: committed HuggingFace config.json files
+<a id="__codelineno-0-96" name="__codelineno-0-96" href="#__codelineno-0-96"></a>├── model_configs/             # A model catalog (one dir per model, each with its HuggingFace config.json). Located at run time via --catalog / BLIS_CATALOG (#1731); committed files
 <a id="__codelineno-0-97" name="__codelineno-0-97" href="#__codelineno-0-97"></a>├── defaults.yaml              # Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
 <a id="__codelineno-0-98" name="__codelineno-0-98" href="#__codelineno-0-98"></a>├── hardware_config.json       # GPU specifications
 <a id="__codelineno-0-99" name="__codelineno-0-99" href="#__codelineno-0-99"></a>├── examples/                  # Example configuration files

@@ -3049,6 +3049,13 @@
 <h1 id="tutorial-capacity-planning">Tutorial: Capacity Planning<a class="headerlink" href="#tutorial-capacity-planning" title="Permanent link">&para;</a></h1>
 <p>This tutorial walks through a complete capacity planning exercise: determining how many inference instances you need to serve a target request rate while meeting latency SLOs.</p>
 <p><strong>Scenario:</strong> You're deploying Qwen3 14B on H100 GPUs with TP=1. Your SLO is TTFT p99 &lt; 500ms. You need to find the minimum number of instances for 200 requests/second.</p>
+<div class="admonition note">
+<p class="admonition-title">Locate the model catalog first</p>
+<p>Every command below needs the model catalog located — <code>--catalog &lt;path&gt;</code> or the
+<code>BLIS_CATALOG</code> environment variable, with no default and no search path. Run
+<code>export BLIS_CATALOG=$PWD/model_configs</code> from the repository root once, and the
+examples work as written. See <a href="../quickstart/">Quick Start</a>.</p>
+</div>
 <h2 id="step-1-estimate-instance-capacity">Step 1: Estimate Instance Capacity<a class="headerlink" href="#step-1-estimate-instance-capacity" title="Permanent link">&para;</a></h2>
 <p>Before scaling up, measure the throughput of a single instance under load. Run enough requests at a high arrival rate to saturate the instance — this reveals the maximum throughput with continuous batching:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
