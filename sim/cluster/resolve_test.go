@@ -928,13 +928,7 @@ func TestINV_P2_1_RequestConservation(t *testing.T) {
 		t.Fatalf("Run() failed: %v", err)
 	}
 
-	m := cs.AggregatedMetrics()
-	injected := len(requests)
-	conserved := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests
-	if conserved != injected {
-		t.Errorf("INV-1 violated: injected=%d, completed=%d+queued=%d+running=%d+dropped=%d+timedout=%d = %d",
-			injected, m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable, m.TimedOutRequests, conserved)
-	}
+	assertClusterINV1Conservation(t, cs, len(requests), noRejections, "heterogeneous node pools")
 }
 
 // TestResolvePoolConfig_MoECommBackend_PerRole is #1548 AC-5: the MoE all-to-all backend

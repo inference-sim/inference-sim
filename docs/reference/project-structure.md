@@ -18,6 +18,8 @@ inference-sim/
 │   ├── compose.go             # `blis compose` for merging v2 specs
 │   ├── hfconfig.go            # Catalog lookup of a model's config.json (read-only; refuses an uncatalogued model)
 │   └── default_config.go      # defaults.yaml loading (includes GetHFRepo for HF repo name mapping)
+├── internal/                  # Repo-root internal packages (test tooling; not importable outside this module)
+│   └── invariantscan/         # AST scan for hand-rolled INV-1 conservation sums (#1720) — used by the guard tests in sim/, sim/cluster/. Root-level rather than sim/internal so cmd/ can import it too.
 ├── sim/                       # Core single-instance simulator
 │   ├── config.go              # Module-scoped sub-config types (KVCacheConfig, BatchConfig, LatencyCoeffs, ModelHardwareConfig, PolicyConfig, WorkloadConfig) — composed into SimConfig via embedding (R16). Parallelism accessors: EffectiveMoEGroupSize (routed-expert COMPUTE group, TP·DP), EffectiveExpertShardGroupSize (routed-expert WEIGHT / dispatch group — widens to the EP group under expert parallelism, #1548), EffectiveEP / EffectiveEPGroupDP (the logical EP-group DP width that survives DP-as-placement, via WithExpertParallelGroupDP)
 │   ├── doc.go                 # Package reading guide: start with request.go, event.go, simulator.go

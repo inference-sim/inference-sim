@@ -198,16 +198,11 @@ func TestInstanceLifecycle_RedirectDrainPreservesConservation(t *testing.T) {
 		t.Fatalf("Run() failed: %v", err)
 	}
 
-	// INV-1: injected = completed + queued + running + dropped + timed_out
+	assertClusterINV1Conservation(t, cs, numSeeded, noRejections, "drain redirect")
+
 	m := cs.AggregatedMetrics()
-	injected := numSeeded
-	total := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests
-	if total != injected {
-		t.Errorf("INV-1 violated: injected=%d total=%d (completed=%d queued=%d running=%d dropped=%d timedOut=%d)",
-			injected, total, m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable, m.TimedOutRequests)
-	}
-	if m.CompletedRequests != injected {
-		t.Errorf("expected all %d redirected requests to complete, got %d", injected, m.CompletedRequests)
+	if m.CompletedRequests != numSeeded {
+		t.Errorf("expected all %d redirected requests to complete, got %d", numSeeded, m.CompletedRequests)
 	}
 
 	// Issue #1440: REDIRECT re-injections must not fire the arrival hook.
