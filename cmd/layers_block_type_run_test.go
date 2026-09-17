@@ -32,17 +32,19 @@ const blockTypeOnlyConfigJSON = `{
 }`
 
 // writeBlockTypeOnlyFixture writes the block-type-array-only config.json into a fresh
-// directory and returns that directory.
+// catalog root at <root>/nemotron-block-type-only/config.json and returns the catalog
+// root (the model "nvidia/nemotron-block-type-only" resolves to that entry under --catalog).
 func writeBlockTypeOnlyFixture(t *testing.T) string {
 	t.Helper()
-	dir := filepath.Join(t.TempDir(), "config")
+	root := t.TempDir()
+	dir := filepath.Join(root, "nemotron-block-type-only")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(blockTypeOnlyConfigJSON), 0644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	return dir
+	return root
 }
 
 // TestRunCmd_LayersBlockTypeOnly_Runs is BC-4 / AC-1 + AC-3 at the system level: a
@@ -55,7 +57,7 @@ func TestRunCmd_LayersBlockTypeOnly_Runs(t *testing.T) {
 		rootCmd.SetArgs([]string{
 			"run",
 			"--model", "nvidia/nemotron-block-type-only",
-			"--model-config-folder", os.Getenv("BLIS_BLOCKTYPE_CONFIG_DIR"),
+			"--catalog", os.Getenv("BLIS_BLOCKTYPE_CONFIG_DIR"),
 			"--hardware", "H100",
 			"--hardware-config", "../hardware_config.json",
 			"--latency-model", backend,
@@ -141,7 +143,7 @@ func TestRunCmd_NoLayerCountEvidence_FailsLoudly(t *testing.T) {
 		rootCmd.SetArgs([]string{
 			"run",
 			"--model", "nvidia/nemotron-no-layer-evidence",
-			"--model-config-folder", os.Getenv("BLIS_BLOCKTYPE_CONFIG_DIR"),
+			"--catalog", os.Getenv("BLIS_BLOCKTYPE_CONFIG_DIR"),
 			"--hardware", "H100",
 			"--hardware-config", "../hardware_config.json",
 			"--tp", "1",
@@ -154,7 +156,8 @@ func TestRunCmd_NoLayerCountEvidence_FailsLoudly(t *testing.T) {
 		os.Exit(0)
 	}
 
-	dir := filepath.Join(t.TempDir(), "config")
+	root := t.TempDir()
+	dir := filepath.Join(root, "nemotron-no-layer-evidence")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -174,7 +177,7 @@ func TestRunCmd_NoLayerCountEvidence_FailsLoudly(t *testing.T) {
 	}
 
 	cmd := exec.Command(os.Args[0], "-test.run=^TestRunCmd_NoLayerCountEvidence_FailsLoudly$")
-	cmd.Env = append(os.Environ(), "BLIS_BLOCKTYPE_NOEVIDENCE=1", "BLIS_BLOCKTYPE_CONFIG_DIR="+dir)
+	cmd.Env = append(os.Environ(), "BLIS_BLOCKTYPE_NOEVIDENCE=1", "BLIS_BLOCKTYPE_CONFIG_DIR="+root)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("AC-4: a config with no usable layer-count evidence must fail loudly, got exit 0; output:\n%s", out)
