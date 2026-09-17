@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -366,6 +367,112 @@ print(agg)
 			}
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Tool-loop exhaustion — a finite turn budget must degrade, never crash.
+// ---------------------------------------------------------------------------
+
+// exhaustionProbe stubs post_chat_completion so every turn asks for a tool call
+// and the loop runs its budget out. The stub is the ONLY model-dependent piece,
+// so the exhaustion path itself is exercised model-free. It prints the number of
+// turns taken, then the parsed (id, status-or-verdict) pairs — parsing with the
+// module's own parse_answers/parse_verdicts, which is where the pre-fix code
+// crashed on the raw tool result the loop used to return.
+const exhaustionProbe = `
+import json, sys, importlib
+mod = importlib.import_module(sys.argv[1])
+final = sys.argv[2]           # assistant content to emit each turn ("" => none)
+turns = {"n": 0}
+def fake_post(base_url, api_key, model, messages, tools):
+    turns["n"] += 1
+    return {"choices": [{"message": {
+        "role": "assistant",
+        "content": final or None,
+        "tool_calls": [{"id": "call%d" % turns["n"], "function": {
+            "name": "read_file",
+            "arguments": json.dumps({"path": sys.argv[1] + ".py"}),
+        }}],
+    }}]}
+mod.post_chat_completion = fake_post
+if sys.argv[1] == "answerer":
+    content = mod.answer_loop("http://x", "k", "m", ".", [{"id": "F1"}, {"id": "G1"}], True)
+    got = [[a["id"], a["status"]] for a in mod.parse_answers(content)]
+else:
+    items = [{"id": "F2", "was": "FLAW_FOUND", "text": "t"}, {"id": "G5", "was": "CANNOT_ANSWER", "text": "t"}]
+    content = mod.adjudicate_loop("http://x", "k", "m", ".", items, "responses", True)
+    verdicts = mod.parse_verdicts(content)
+    got = [[v["id"], v["verdict"]] for v in verdicts]
+    got.append(["AGGREGATE", mod.render(items, verdicts, "42", "m")[1]])
+json.dump({"turns": turns["n"], "got": got}, sys.stdout)
+`
+
+// TestToolLoopExhaustionDegrades pins the contract that exhausting MAX_TOOL_TURNS
+// yields a parseable, BLOCKING result rather than a crash. Exhaustion is a normal
+// outcome of a finite turn budget, so the loop must not hand its parser the last
+// raw tool result (file contents), which is not JSON. The answerer degrades every
+// question to CANNOT_ANSWER and the adjudicator every prior finding to STILL_OPEN
+// — both blocking, so a run that ran out of turns can never silently PASS.
+func TestToolLoopExhaustionDegrades(t *testing.T) {
+	requirePython3(t)
+
+	type probe struct {
+		Turns int        `json:"turns"`
+		Got   [][]string `json:"got"`
+	}
+	run := func(t *testing.T, mod, final string) probe {
+		t.Helper()
+		stdout, stderr, code := runPython(t, "", "-c", exhaustionProbe, mod, final)
+		if code != 0 {
+			t.Fatalf("%s exhaustion probe exit=%d stderr=%s", mod, code, stderr)
+		}
+		var got probe
+		if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+			t.Fatalf("%s probe output not JSON: %v (%s)", mod, err, stdout)
+		}
+		// Exhaustion must be reported, never silent (R1).
+		if !strings.Contains(stderr, "tool budget") {
+			t.Errorf("%s: exhaustion was not reported on stderr: %q", mod, stderr)
+		}
+		return got
+	}
+
+	t.Run("answerer-degrades-to-cannot-answer", func(t *testing.T) {
+		got := run(t, "answerer", "")
+		if got.Turns != 24 {
+			t.Errorf("answer_loop took %d turns, want the full MAX_TOOL_TURNS budget of 24", got.Turns)
+		}
+		want := [][]string{{"F1", "CANNOT_ANSWER"}, {"G1", "CANNOT_ANSWER"}}
+		if !reflect.DeepEqual(got.Got, want) {
+			t.Errorf("exhausted answers = %v, want %v (every question CANNOT_ANSWER)", got.Got, want)
+		}
+	})
+
+	t.Run("answerer-honors-a-final-answer-array", func(t *testing.T) {
+		// A model that emits its final array alongside a tool call must not have
+		// that answer thrown away for the CANNOT_ANSWER default.
+		final := `[{"id":"F1","status":"CONFIDENT","answer":"yes"},{"id":"G1","status":"FLAW_FOUND","answer":"no"}]`
+		got := run(t, "answerer", final)
+		want := [][]string{{"F1", "CONFIDENT"}, {"G1", "FLAW_FOUND"}}
+		if !reflect.DeepEqual(got.Got, want) {
+			t.Errorf("exhausted answers = %v, want the assistant's own array %v", got.Got, want)
+		}
+	})
+
+	t.Run("adjudicator-degrades-to-still-open", func(t *testing.T) {
+		got := run(t, "adjudicator", "")
+		if got.Turns != 24 {
+			t.Errorf("adjudicate_loop took %d turns, want the full MAX_TOOL_TURNS budget of 24", got.Turns)
+		}
+		want := [][]string{
+			{"F2", "STILL_OPEN"},
+			{"G5", "STILL_OPEN"},
+			{"AGGREGATE", "BLOCK"},
+		}
+		if !reflect.DeepEqual(got.Got, want) {
+			t.Errorf("exhausted verdicts = %v, want %v (skeptical default, aggregate BLOCK)", got.Got, want)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------

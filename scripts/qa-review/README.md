@@ -51,6 +51,13 @@ PR-head code and returns, per question, a `status ∈ {CONFIDENT, CANNOT_ANSWER,
 FLAW_FOUND}` with an `answer`, `evidence` (file:line or a repro), and an
 optional non-blocking `note`.
 
+The tool loop has a finite budget (`MAX_TOOL_TURNS = 24`). Exhausting it is a
+normal outcome, not an error, so the loop **degrades instead of crashing**: it
+honors a final answer array the assistant already produced, and otherwise
+reports every question `CANNOT_ANSWER`. That status is blocking, so a run that
+ran out of turns can never silently `PASS`. Exhaustion is always logged to
+stderr.
+
 ### render_report.py
 
 Verdict is **`BLOCK` iff any answer status ∈ {FLAW_FOUND, CANNOT_ANSWER}**, else
@@ -77,6 +84,10 @@ author to pin the interpretation rather than guessing. The aggregate verdict is
 `BLOCK` iff **any finding is `STILL_OPEN` or left un-adjudicated**, and is
 emitted on **stderr** as `[adjudication verdict: PASS|BLOCK]` (not a PR marker —
 #1716 derives the gate marker).
+
+Its tool loop degrades on exhaustion the same way the answerer's does, to
+`STILL_OPEN` for every prior finding — so running out of turns blocks rather
+than clearing a finding it never actually adjudicated.
 
 ## The `--no-exec` seam
 
@@ -123,5 +134,7 @@ mirroring how `scripts/deliver_gate_test.go` shells out to `bash`, so every
 qa-review test runs under `go test ./scripts/...` with no new test framework.
 It covers only the **model-free** surface: `render_report.py`'s verdict rule and
 output shape, `questioner.repair_json()`, `adjudicator.parse_items_to_fix()` and
-its block rule, and the `--no-exec` `tools_for()` seam for both agents. The
-model-calling paths need the live proxy and are not unit-tested here.
+its block rule, the `--no-exec` `tools_for()` seam for both agents, and both
+agents' tool-loop exhaustion degradation (the one `post_chat_completion` stub is
+the only model-dependent piece). The model-calling paths need the live proxy and
+are not unit-tested here.

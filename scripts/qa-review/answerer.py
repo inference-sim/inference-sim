@@ -230,6 +230,40 @@ def run_tool(impl, worktree, name, arguments):
         return "tool error (%s): %s" % (name, exc)
 
 
+def last_assistant_content(messages):
+    """Content of the most recent assistant message ("" when there is none).
+
+    The loop appends a tool RESULT after every assistant turn, so the trailing
+    message on exhaustion is normally raw tool output (file contents), never a
+    final answer. Only an assistant message can carry one.
+    """
+    for msg in reversed(messages):
+        if msg.get("role") == "assistant":
+            return msg.get("content") or ""
+    return ""
+
+
+def exhausted_answers(questions):
+    """CANNOT_ANSWER for every question — the degraded result on exhaustion.
+
+    CANNOT_ANSWER is the contract's "could not gather enough evidence" status
+    and is BLOCKING, so a run that ran out of turns can never silently PASS.
+    """
+    reason = (
+        "the answerer exhausted its %d-turn tool budget before returning a "
+        "final answer" % MAX_TOOL_TURNS
+    )
+    return [
+        {
+            "id": q.get("id", "") if isinstance(q, dict) else str(q),
+            "status": "CANNOT_ANSWER",
+            "answer": reason,
+            "evidence": "",
+        }
+        for q in questions
+    ]
+
+
 def answer_loop(base_url, api_key, model, worktree, questions, no_exec):
     impl, schema = tools_for(no_exec)
     messages = [
@@ -261,7 +295,21 @@ def answer_loop(base_url, api_key, model, worktree, questions, no_exec):
                     "content": str(result)[:12000],
                 }
             )
-    return messages[-1].get("content", "") if messages else ""
+    # Tool budget exhausted. Exhaustion is a normal outcome of a finite budget,
+    # not an error, so the loop must still hand back something parse_answers()
+    # accepts — returning the trailing message would hand json.loads a raw tool
+    # result and crash. Honor a final answer array the assistant already
+    # produced alongside its tool calls; otherwise degrade to CANNOT_ANSWER.
+    sys.stderr.write(
+        "qa-review answerer: tool budget (%d turns) exhausted\n" % MAX_TOOL_TURNS
+    )
+    try:
+        answers = parse_answers(last_assistant_content(messages))
+    except (ValueError, IndexError):
+        answers = None
+    if not isinstance(answers, list) or not answers:
+        answers = exhausted_answers(questions)
+    return json.dumps(answers)
 
 
 def parse_answers(content):

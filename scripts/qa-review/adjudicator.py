@@ -298,6 +298,40 @@ def run_tool(impl, worktree, name, arguments):
         return "tool error (%s): %s" % (name, exc)
 
 
+def last_assistant_content(messages):
+    """Content of the most recent assistant message ("" when there is none).
+
+    The loop appends a tool RESULT after every assistant turn, so the trailing
+    message on exhaustion is normally raw tool output (file contents), never a
+    final verdict array. Only an assistant message can carry one.
+    """
+    for msg in reversed(messages):
+        if msg.get("role") == "assistant":
+            return msg.get("content") or ""
+    return ""
+
+
+def exhausted_verdicts(items):
+    """STILL_OPEN for every prior finding — the degraded result on exhaustion.
+
+    STILL_OPEN is the documented skeptical default, so running out of turns
+    blocks rather than clearing a finding it never actually adjudicated.
+    """
+    rationale = (
+        "the adjudicator exhausted its %d-turn tool budget before returning a "
+        "verdict; STILL_OPEN is the skeptical default" % MAX_TOOL_TURNS
+    )
+    return [
+        {
+            "id": item.get("id", ""),
+            "was": item.get("was", ""),
+            "verdict": "STILL_OPEN",
+            "rationale": rationale,
+        }
+        for item in items
+    ]
+
+
 def adjudicate_loop(base_url, api_key, model, worktree, items, responses, no_exec):
     impl, schema = tools_for(no_exec)
     messages = [
@@ -327,7 +361,21 @@ def adjudicate_loop(base_url, api_key, model, worktree, items, responses, no_exe
             messages.append(
                 {"role": "tool", "tool_call_id": call.get("id", ""), "content": str(result)[:12000]}
             )
-    return messages[-1].get("content", "") if messages else ""
+    # Tool budget exhausted. Exhaustion is a normal outcome of a finite budget,
+    # not an error, so the loop must still hand back something parse_verdicts()
+    # accepts — returning the trailing message would hand json.loads a raw tool
+    # result and crash. Honor a final verdict array the assistant already
+    # produced alongside its tool calls; otherwise degrade to STILL_OPEN.
+    sys.stderr.write(
+        "qa-review adjudicator: tool budget (%d turns) exhausted\n" % MAX_TOOL_TURNS
+    )
+    try:
+        verdicts = parse_verdicts(last_assistant_content(messages))
+    except (ValueError, IndexError):
+        verdicts = None
+    if not isinstance(verdicts, list) or not verdicts:
+        verdicts = exhausted_verdicts(items)
+    return json.dumps(verdicts)
 
 
 def parse_verdicts(content):
