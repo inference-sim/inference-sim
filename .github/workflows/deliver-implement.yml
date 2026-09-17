@@ -687,21 +687,9 @@ jobs:
         # Retried with exponential backoff (#1757): same transient-dispatch hardening as
         # the verify→correct hand-off.
         run: |
-          max_attempts=3
-          for (( attempt = 1; attempt <= max_attempts; attempt++ )); do
-            if gh workflow run deliver-verify.yml --repo "$REPO" --ref "${{ github.ref_name }}" \
-                 -f pr_number="$PR" -f issue_number="$ISSUE_NUMBER"; then
-              echo "Dispatched verify for PR #$PR (attempt $attempt)."
-              exit 0
-            fi
-            if (( attempt < max_attempts )); then
-              delay=$(( 5 * (1 << (attempt - 1)) ))
-              echo "::warning::dispatch attempt $attempt failed; retrying in ${delay}s"
-              sleep "$delay"
-            fi
-          done
-          echo "::error::all $max_attempts dispatch attempts failed for PR #$PR"
-          exit 1
+          scripts/dispatch-with-retry.sh deliver-verify.yml \
+            --repo "$REPO" --ref "${{ github.ref_name }}" \
+            -f pr_number="$PR" -f issue_number="$ISSUE_NUMBER"
 
       # BC-11. `success()` keeps this mutually exclusive with the failure reporter below (which
       # requires `!success()`): this is the phase running to completion having built NOTHING,

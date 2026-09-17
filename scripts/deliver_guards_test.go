@@ -563,12 +563,13 @@ func TestDeliverImplementPrefersAnExistingPRsBase(t *testing.T) {
 	}
 }
 
-// Every delivery phase hand-off dispatch must retry with backoff (#1757).
+// Every delivery phase hand-off must use the shared retry script (#1757).
 //
 // A single un-retried `gh workflow run` terminally stalls the delivery loop on a transient API
-// failure — observed live on PR #1736. This test asserts the retry structure is present at every
-// dispatch site, preventing a future edit from regressing one back to a bare call.
-func TestDeliveryHandoffDispatchesRetry(t *testing.T) {
+// failure — observed live on PR #1736. This test asserts every hand-off calls
+// scripts/dispatch-with-retry.sh with the correct target workflow, preventing a future edit from
+// regressing one back to a bare call.
+func TestDeliveryHandoffDispatchesUseRetryScript(t *testing.T) {
 	handoffs := []struct {
 		file     string
 		stepName string
@@ -598,18 +599,10 @@ func TestDeliveryHandoffDispatchesRetry(t *testing.T) {
 				section = section[:nextStep+1]
 			}
 
-			if !strings.Contains(section, "max_attempts=") {
-				t.Errorf("%s step %q has no retry loop (no max_attempts). "+
-					"A single un-retried dispatch terminally stalls the delivery loop (#1757)",
-					h.file, h.stepName)
-			}
-			if !strings.Contains(section, "gh workflow run "+h.target) {
-				t.Errorf("%s step %q does not dispatch %s",
+			if !strings.Contains(section, "scripts/dispatch-with-retry.sh "+h.target) {
+				t.Errorf("%s step %q does not call scripts/dispatch-with-retry.sh %s. "+
+					"A bare gh workflow run terminally stalls the delivery loop (#1757)",
 					h.file, h.stepName, h.target)
-			}
-			if !strings.Contains(section, "exit 1") {
-				t.Errorf("%s step %q has no terminal failure (exit 1) after retry exhaustion",
-					h.file, h.stepName)
 			}
 		})
 	}
