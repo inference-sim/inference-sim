@@ -562,3 +562,64 @@ func TestDeliverImplementPrefersAnExistingPRsBase(t *testing.T) {
 			"existing PR's base cannot override the value computed from the issue body", baseOut, lookup)
 	}
 }
+
+// deliver-verify.yml's `Hand off to correct` must dispatch deliver-correct.yml on the delivery
+// BRANCH, not on `github.ref_name` (#1751).
+//
+// verify runs on four triggers. On workflow_dispatch and push, `github.ref_name` is the delivery
+// branch `deliver/issue-<N>` — a valid workflow_dispatch ref, which is why implement- and
+// push-driven correction rounds hand off fine. On `pull_request_review` and
+// `pull_request_review_comment`, `github.ref_name` is the PR MERGE ref `<pr>/merge`, which
+// `gh workflow run` rejects with `HTTP 422: No ref found`. That failed the job and sent every
+// post-convergence review finding to `needs-human` on an infrastructure error rather than a
+// verdict — observed on PRs #1742 and #1743.
+//
+// `steps.target.outputs.branch` is the same resolved `deliver/issue-<N>` the CI dispatch already
+// uses, validated in `Validate the target PR` and populated on every trigger, so it is a valid
+// dispatch ref regardless of event.
+func TestDeliverVerifyHandsOffOnTheDeliveryBranchNotTheEventRef(t *testing.T) {
+	path := filepath.Join("..", ".github", "workflows", "deliver-verify.yml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Name string `yaml:"name"`
+				Run  string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(raw, &wf); err != nil {
+		t.Fatalf("parsing %s: %v", path, err)
+	}
+	job, ok := wf.Jobs["verify"]
+	if !ok {
+		t.Fatal("deliver-verify.yml has no `verify` job")
+	}
+	handoff := -1
+	for i, s := range job.Steps {
+		if s.Name == "Hand off to correct" {
+			handoff = i
+			break
+		}
+	}
+	if handoff < 0 {
+		t.Fatal("deliver-verify.yml has no `Hand off to correct` step")
+	}
+	run := stripCommentLines(job.Steps[handoff].Run)
+	if !strings.Contains(run, "gh workflow run deliver-correct.yml") {
+		t.Fatal("`Hand off to correct` no longer dispatches deliver-correct.yml; this test guards its ref")
+	}
+	if strings.Contains(run, "github.ref_name") {
+		t.Errorf("`Hand off to correct` dispatches with `github.ref_name`. On a review-triggered run "+
+			"that is `<pr>/merge`, which `gh workflow run` rejects with HTTP 422, dead-ending the "+
+			"finding at needs-human (#1751). Dispatch on the delivery branch instead. Step run:\n%s", run)
+	}
+	if !strings.Contains(run, "steps.target.outputs.branch") {
+		t.Errorf("`Hand off to correct` does not dispatch on `steps.target.outputs.branch` — the "+
+			"resolved deliver/issue-<N> the CI dispatch already uses and the only ref valid on every "+
+			"trigger. Step run:\n%s", run)
+	}
+}
