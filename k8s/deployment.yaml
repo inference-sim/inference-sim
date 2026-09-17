@@ -32,7 +32,7 @@ metadata:
   labels:
     app: github-runner
 spec:
-  replicas: 3
+  replicas: 6
   selector:
     matchLabels:
       app: github-runner
