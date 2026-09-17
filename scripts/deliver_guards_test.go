@@ -566,17 +566,20 @@ func TestDeliverImplementPrefersAnExistingPRsBase(t *testing.T) {
 // deliver-verify.yml's `Hand off to correct` must dispatch deliver-correct.yml on the delivery
 // BRANCH, not on `github.ref_name` (#1751).
 //
-// verify runs on four triggers. On workflow_dispatch and push, `github.ref_name` is the delivery
-// branch `deliver/issue-<N>` — a valid workflow_dispatch ref, which is why implement- and
-// push-driven correction rounds hand off fine. On `pull_request_review` and
-// `pull_request_review_comment`, `github.ref_name` is the PR MERGE ref `<pr>/merge`, which
-// `gh workflow run` rejects with `HTTP 422: No ref found`. That failed the job and sent every
-// post-convergence review finding to `needs-human` on an infrastructure error rather than a
-// verdict — observed on PRs #1742 and #1743.
+// `github.ref_name` differs by the trigger that started the verify run: `deliver/issue-<N>` on a
+// push, `main` on a workflow_dispatch (implement dispatches verify on its `issue_comment` ref, the
+// default branch), and the PR MERGE ref `<pr>/merge` on `pull_request_review[_comment]`. Only the
+// last is an invalid dispatch ref — `gh workflow run` rejects it with `HTTP 422: No ref found`,
+// which failed the job and sent every post-convergence review finding to `needs-human` on an
+// infrastructure error rather than a verdict (observed on PRs #1742 and #1743).
 //
-// `steps.target.outputs.branch` is the same resolved `deliver/issue-<N>` the CI dispatch already
-// uses, validated in `Validate the target PR` and populated on every trigger, so it is a valid
-// dispatch ref regardless of event.
+// `steps.target.outputs.branch` is the resolved `deliver/issue-<N>` the CI dispatch already uses,
+// validated in `Validate the target PR` and populated on every trigger, so it is a valid dispatch
+// ref regardless of event. This test guards both ends of that dependency: the CONSUMER (the
+// hand-off dispatches `--ref` on the branch expression, not `github.ref_name`) and the PRODUCER
+// (`Validate the target PR` still writes `branch=` to `$GITHUB_OUTPUT` — drop that and the output
+// is empty, `--ref ""` silently falls back to the default branch, and the consumer test alone would
+// still pass).
 func TestDeliverVerifyHandsOffOnTheDeliveryBranchNotTheEventRef(t *testing.T) {
 	path := filepath.Join("..", ".github", "workflows", "deliver-verify.yml")
 	raw, err := os.ReadFile(path)
@@ -598,17 +601,20 @@ func TestDeliverVerifyHandsOffOnTheDeliveryBranchNotTheEventRef(t *testing.T) {
 	if !ok {
 		t.Fatal("deliver-verify.yml has no `verify` job")
 	}
-	handoff := -1
-	for i, s := range job.Steps {
-		if s.Name == "Hand off to correct" {
-			handoff = i
-			break
+	stepRun := func(name string) (string, bool) {
+		for _, s := range job.Steps {
+			if s.Name == name {
+				return stripCommentLines(s.Run), true
+			}
 		}
+		return "", false
 	}
-	if handoff < 0 {
+
+	// CONSUMER: the hand-off dispatch.
+	run, ok := stepRun("Hand off to correct")
+	if !ok {
 		t.Fatal("deliver-verify.yml has no `Hand off to correct` step")
 	}
-	run := stripCommentLines(job.Steps[handoff].Run)
 	if !strings.Contains(run, "gh workflow run deliver-correct.yml") {
 		t.Fatal("`Hand off to correct` no longer dispatches deliver-correct.yml; this test guards its ref")
 	}
@@ -617,9 +623,137 @@ func TestDeliverVerifyHandsOffOnTheDeliveryBranchNotTheEventRef(t *testing.T) {
 			"that is `<pr>/merge`, which `gh workflow run` rejects with HTTP 422, dead-ending the "+
 			"finding at needs-human (#1751). Dispatch on the delivery branch instead. Step run:\n%s", run)
 	}
-	if !strings.Contains(run, "steps.target.outputs.branch") {
-		t.Errorf("`Hand off to correct` does not dispatch on `steps.target.outputs.branch` — the "+
-			"resolved deliver/issue-<N> the CI dispatch already uses and the only ref valid on every "+
-			"trigger. Step run:\n%s", run)
+	// Anchored to `--ref`, not a bare substring: a step that merely NAMES the expression in prose
+	// while passing `--ref "$SOMETHING_ELSE"` would satisfy a `Contains` check without dispatching
+	// on the branch.
+	handoffRef := regexp.MustCompile(`--ref\s+"\$\{\{\s*steps\.target\.outputs\.branch\s*\}\}"`)
+	if !handoffRef.MatchString(run) {
+		t.Errorf("`Hand off to correct` does not pass `--ref \"${{ steps.target.outputs.branch }}\"` — "+
+			"the resolved deliver/issue-<N> the CI dispatch already uses and the only ref valid on "+
+			"every trigger. Step run:\n%s", run)
 	}
+
+	// PRODUCER: `Validate the target PR` must keep writing the branch output the consumer reads.
+	prod, ok := stepRun("Validate the target PR")
+	if !ok {
+		t.Fatal("deliver-verify.yml has no `Validate the target PR` step to produce steps.target.outputs.branch")
+	}
+	branchOut := regexp.MustCompile(`branch=\$branch`)
+	if !branchOut.MatchString(prod) || !strings.Contains(prod, "GITHUB_OUTPUT") {
+		t.Errorf("`Validate the target PR` no longer writes `branch=$branch` to $GITHUB_OUTPUT, so "+
+			"`steps.target.outputs.branch` would be empty and the hand-off's `--ref \"\"` would "+
+			"silently fall back to the default branch. Step run:\n%s", prod)
+	}
+}
+
+// The #1751 defect is a CLASS, not one step: any workflow reachable from an event whose GITHUB_REF
+// is the PR merge ref `refs/pull/N/merge` must not `gh workflow run --ref "${{ github.ref_name }}"`,
+// because that dispatch 422s. Those events are pull_request, pull_request_target,
+// pull_request_review and pull_request_review_comment.
+//
+// GLOBBED, not a fixed list, for the reason TestDeliverImplementDoesNotCreatePRsWithTheWorkflowToken
+// gives: on #1723 a hardcoded list missed the same offending line added to archon.yml. A
+// self-modifying delivery loop can add a review trigger to any deliver-*.yml, so the guard must find
+// the defect wherever it lands — including a NEW dispatch step in deliver-verify.yml, or a review
+// trigger added to deliver-correct.yml / deliver-implement.yml (whose current dispatches on
+// `github.ref_name` are safe only because their triggers are issue_comment / workflow_dispatch).
+func TestNoReviewReachableWorkflowDispatchesOnTheEventRef(t *testing.T) {
+	paths, err := filepath.Glob(filepath.Join("..", ".github", "workflows", "*.yml"))
+	if err != nil {
+		t.Fatalf("globbing workflows: %v", err)
+	}
+	yamlPaths, err := filepath.Glob(filepath.Join("..", ".github", "workflows", "*.yaml"))
+	if err != nil {
+		t.Fatalf("globbing workflows: %v", err)
+	}
+	paths = append(paths, yamlPaths...)
+	if len(paths) < 5 {
+		t.Fatalf("found only %d workflow files; the glob is not matching the workflow directory", len(paths))
+	}
+
+	reviewReachable := map[string]bool{
+		"pull_request":                true,
+		"pull_request_target":         true,
+		"pull_request_review":         true,
+		"pull_request_review_comment": true,
+	}
+
+	// Sanity: at least one workflow must be detected as review-reachable (deliver-verify.yml is).
+	// Without this, a parsing regression that left every `on:` block unread would silently turn this
+	// guard into a no-op that passes on the very defect it exists to catch.
+	sawReachable := false
+
+	for _, path := range paths {
+		phase := filepath.Base(path)
+		t.Run(phase, func(t *testing.T) {
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("reading %s: %v", path, err)
+			}
+			var wf struct {
+				On   yaml.Node `yaml:"on"`
+				Jobs map[string]struct {
+					Steps []struct {
+						Name string `yaml:"name"`
+						Run  string `yaml:"run"`
+					} `yaml:"steps"`
+				} `yaml:"jobs"`
+			}
+			if err := yaml.Unmarshal(raw, &wf); err != nil {
+				t.Fatalf("parsing %s: %v", path, err)
+			}
+
+			reachable := false
+			for _, trig := range triggerNames(wf.On) {
+				if reviewReachable[trig] {
+					reachable = true
+					break
+				}
+			}
+			if !reachable {
+				return
+			}
+			sawReachable = true
+
+			for job, j := range wf.Jobs {
+				for _, s := range j.Steps {
+					code := stripCommentLines(s.Run)
+					if strings.Contains(code, "gh workflow run") && strings.Contains(code, "github.ref_name") {
+						t.Errorf("%s job %q step %q is reachable from a pull_request/review event, where "+
+							"`github.ref_name` is the PR merge ref `<pr>/merge`, yet it dispatches "+
+							"`gh workflow run` on `github.ref_name` — that 422s and dead-ends the loop "+
+							"(#1751). Dispatch on the resolved delivery branch instead. Step run:\n%s",
+							phase, job, s.Name, code)
+					}
+				}
+			}
+		})
+	}
+
+	if !sawReachable {
+		t.Fatal("no workflow was detected as reachable from a pull_request/review event; the `on:` " +
+			"block is not being parsed, so this guard would silently pass on the #1751 defect")
+	}
+}
+
+// triggerNames returns the event names in a workflow's `on:` block, which YAML allows as a scalar
+// (`on: push`), a sequence (`on: [push, pull_request]`) or a mapping (`on:\n  push:\n  ...`).
+func triggerNames(n yaml.Node) []string {
+	switch n.Kind {
+	case yaml.ScalarNode:
+		return []string{n.Value}
+	case yaml.SequenceNode:
+		var out []string
+		for _, c := range n.Content {
+			out = append(out, c.Value)
+		}
+		return out
+	case yaml.MappingNode:
+		var out []string
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			out = append(out, n.Content[i].Value)
+		}
+		return out
+	}
+	return nil
 }

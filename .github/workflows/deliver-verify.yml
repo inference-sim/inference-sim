@@ -983,12 +983,22 @@ jobs:
       - name: Hand off to correct
         if: steps.paused.outputs.paused == 'false' && env.final_decision == 'correct'
         run: |
-          # Dispatch on the resolved delivery branch, NOT `github.ref_name`. On workflow_dispatch and
-          # push, `github.ref_name` is `deliver/issue-<N>` and works — but on the two review triggers
-          # it is the PR MERGE ref `<pr>/merge`, which `gh workflow run` rejects with HTTP 422, so a
-          # post-convergence review finding could never reach correct and dead-ended at needs-human
-          # (#1751). `steps.target.outputs.branch` is the same `deliver/issue-<N>` the CI dispatch
-          # uses, validated in `Validate the target PR`, and a valid dispatch ref on every trigger.
+          # Dispatch on the resolved delivery branch, NOT `github.ref_name`, whose value differs by
+          # the trigger that started this verify run:
+          #   - push (deliver/issue-N):        `deliver/issue-<N>` — a valid ref; this is why round
+          #                                    >=2 hand-offs have always worked.
+          #   - workflow_dispatch:             `main` — implement dispatches verify on its
+          #                                    `issue_comment` ref, which is the default branch. Also
+          #                                    a valid ref, but the correction phase then ran MAIN's
+          #                                    copy of the workflow, not the delivery branch's.
+          #   - pull_request_review[_comment]: the PR MERGE ref `<pr>/merge`, which `gh workflow run`
+          #                                    rejects with HTTP 422, so a post-convergence review
+          #                                    finding never reached correct and dead-ended at
+          #                                    needs-human (#1751).
+          # `steps.target.outputs.branch` is the resolved `deliver/issue-<N>` (validated in `Validate
+          # the target PR`, the same value the CI dispatch at L441 uses) — a valid ref on every
+          # trigger, and it makes all of them consistent: correction always runs the delivery
+          # branch's workflow copy, as the push path already did.
           gh workflow run deliver-correct.yml --repo "$REPO" --ref "${{ steps.target.outputs.branch }}" \
             -f pr_number="$PR" -f issue_number="$ISSUE_NUMBER"
           echo "Dispatched correct for PR #$PR."
