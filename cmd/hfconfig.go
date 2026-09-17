@@ -81,7 +81,7 @@ func resolveCatalogRoot() (string, error) {
 // that fetch (and every path that could create or modify a catalog file) is gone.
 //
 // S4 (#1731): the catalog's LOCATION is now an explicit input (--catalog / BLIS_CATALOG)
-// rather than a working-directory-relative default, and the retired --model-config-folder
+// rather than a working-directory-relative default, and the retired per-model folder flag
 // is subsumed by it — pointing --catalog at a scratch directory covers the same
 // "use my own config" need, so there is exactly one way to supply a model config.
 func resolveModelConfig(model string) (string, error) {
