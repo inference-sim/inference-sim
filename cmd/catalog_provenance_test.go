@@ -263,3 +263,85 @@ func TestCatalogProvenanceEmitOptions_FileOnly(t *testing.T) {
 		t.Errorf("results file must record the catalog path %q:\n%s", catalogRoot, data)
 	}
 }
+
+// TestCatalogProvenance_EveryFileEmitSitePassesProvenance is the R23 drift guard for
+// INV-13: every production EmitOutput call in cmd/ must route through
+// catalogProvenanceEmitOptions, so a new emit site cannot silently produce a results file
+// with no provenance while its sibling command records one. (The per-instance
+// stdout-only path goes through SaveResults, which writes no file and is not an
+// EmitOutput site.)
+func TestCatalogProvenance_EveryFileEmitSitePassesProvenance(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("glob cmd/*.go: %v", err)
+	}
+	sites := 0
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		src, readErr := os.ReadFile(file)
+		if readErr != nil {
+			t.Fatalf("read %s: %v", file, readErr)
+		}
+		for _, call := range emitOutputCallArgs(string(src)) {
+			sites++
+			if !strings.Contains(call.args, "catalogProvenanceEmitOptions") {
+				t.Errorf("%s:%d: EmitOutput call must pass catalogProvenanceEmitOptions(...) "+
+					"so its results file records catalog provenance (#1732, INV-13):\n\t%s",
+					file, call.line, strings.Join(strings.Fields(call.args), " "))
+			}
+		}
+	}
+	// Non-vacuity: the two known emit sites (run + replay) must be found, otherwise the
+	// scan is looking at nothing and would pass after a rename.
+	if sites < 2 {
+		t.Fatalf("non-vacuity: expected at least the `blis run` and `blis replay` EmitOutput "+
+			"sites, found %d", sites)
+	}
+}
+
+// emitOutputCall is one `.EmitOutput(...)` call found in a source file: its 1-based line
+// number and the full argument text, which may span several lines.
+type emitOutputCall struct {
+	line int
+	args string
+}
+
+// emitOutputCallArgs extracts every `.EmitOutput(...)` call's argument text from Go source
+// by matching parentheses, so a call broken across lines is examined as one unit (a
+// line-wise grep would miss an option passed on a continuation line).
+func emitOutputCallArgs(src string) []emitOutputCall {
+	const marker = ".EmitOutput("
+	var calls []emitOutputCall
+	for offset := 0; ; {
+		idx := strings.Index(src[offset:], marker)
+		if idx < 0 {
+			return calls
+		}
+		open := offset + idx + len(marker) - 1 // index of '('
+		depth, end := 0, -1
+		for i := open; i < len(src); i++ {
+			switch src[i] {
+			case '(':
+				depth++
+			case ')':
+				depth--
+				if depth == 0 {
+					end = i
+				}
+			}
+			if end >= 0 {
+				break
+			}
+		}
+		if end < 0 {
+			return calls // unbalanced source; nothing more to extract
+		}
+		calls = append(calls, emitOutputCall{
+			line: strings.Count(src[:open], "\n") + 1,
+			args: src[open+1 : end],
+		})
+		offset = end
+	}
+}
