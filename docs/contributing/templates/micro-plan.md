@@ -105,7 +105,7 @@ Before marking plan complete, verify:
 - [ ] R7: invariant tests alongside golden tests
 - [ ] R8: no exported mutable maps
 - [ ] R9: pointer types for YAML zero-value ambiguity
-- [ ] R10: strict YAML parsing
+- [ ] R10: strict config parsing (YAML and JSON)
 - [ ] R19: division zero guards
 - [ ] INV-1: request conservation holds
 - [ ] INV-6: determinism preserved
