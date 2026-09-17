@@ -1189,6 +1189,13 @@ jobs:
       # stalls the delivery loop on a transient API failure — observed live on PR #1736.
       - name: Hand off to correct
         if: steps.paused.outputs.paused == 'false' && env.final_decision == 'correct'
+        env:
+          # The gate's combined reason (objective blockers + review findings), handed to Correct so
+          # its agent can act on an OBJECTIVE failure (CI / plan) too, not just the review findings
+          # in the DELIVER-VERDICT / QA-VERDICT comments (#1715 G2). Automation-produced (fixed
+          # vocabulary, never comment text), so it is trusted; passed via env to keep the value out
+          # of the command line below.
+          GATE_REASON: ${{ steps.gate.outputs.reason }}
         run: |
           # Dispatch on the resolved delivery branch, NOT `github.ref_name`, whose value differs by
           # the trigger that started this verify run:
@@ -1208,7 +1215,8 @@ jobs:
           # correction always runs the delivery branch's workflow copy, as the push path already did.
           scripts/dispatch-with-retry.sh deliver-correct.yml \
             --repo "$REPO" --ref "${{ steps.target.outputs.branch }}" \
-            -f pr_number="$PR" -f issue_number="$ISSUE_NUMBER"
+            -f pr_number="$PR" -f issue_number="$ISSUE_NUMBER" \
+            -f gate_reason="$GATE_REASON"
 
       # `always() && !success()`, NOT `failure() || cancelled()`. Per the GitHub expression docs
       # `failure()` is true when a previous step FAILS and `cancelled()` when the WORKFLOW is
