@@ -35,7 +35,11 @@ const (
 func catalogRootFrom(flagValue, envValue string) (string, error) {
 	if flagValue != "" {
 		if envValue != "" && envValue != flagValue {
-			logrus.Infof("--catalog %q takes precedence over %s=%q", flagValue, catalogEnvVar, envValue)
+			// Warnf, not Infof: both commands default --log to warn, so an Infof precedence
+			// notice would be silent under normal invocation. This choice overrides an
+			// explicit BLIS_CATALOG, so the announcement must be visible in the run's
+			// history at the default log level (qa-review G3, #1731).
+			logrus.Warnf("--catalog %q takes precedence over %s=%q", flagValue, catalogEnvVar, envValue)
 		}
 		return flagValue, nil
 	}
