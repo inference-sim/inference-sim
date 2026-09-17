@@ -115,7 +115,7 @@ func resolveModelConfigInCatalog(model, catalog, defaultsFile string) (string, e
 		}
 		// Don't delete — the file may be a user-provided config with non-standard
 		// field names. Fall through to HF fetch, which will overwrite if successful.
-		logrus.Warnf("--latency-model: config at %s exists but lacks expected HuggingFace fields (num_hidden_layers, hidden_size, or text_config.num_hidden_layers, text_config.hidden_size); trying HuggingFace fetch", entryPath)
+		logrus.Warnf("--latency-model: config at %s exists but lacks expected HuggingFace fields (num_hidden_layers, hidden_size, layers_block_type, or the same fields under text_config); trying HuggingFace fetch", entryPath)
 	}
 
 	// 2. Fetch from HuggingFace and write into <catalog>/<short-name>/
@@ -259,7 +259,7 @@ func fetchHFConfigFromURL(url, targetDir string) (string, error) {
 	// like {"error": "..."}, and non-config JSON that passes json.Valid.
 	if !isHFConfig(body) {
 		return "", fmt.Errorf("response from %s is valid JSON but does not contain expected "+
-			"HuggingFace config fields (num_hidden_layers, hidden_size, or text_config.num_hidden_layers, text_config.hidden_size). "+
+			"HuggingFace config fields (num_hidden_layers, hidden_size, layers_block_type, or the same fields under text_config). "+
 			"The model may not exist or the response is an error page", url)
 	}
 
@@ -277,10 +277,18 @@ func fetchHFConfigFromURL(url, targetDir string) (string, error) {
 }
 
 // isHFConfig checks whether JSON bytes represent a HuggingFace transformer
-// config.json. It looks for num_hidden_layers or hidden_size at the top level
-// (text-only models) or nested inside text_config (multimodal models such as
-// Llama4ForConditionalGeneration). This prevents caching empty JSON {},
-// error responses like {"error":"..."}, or unrelated JSON that passes json.Valid.
+// config.json. It looks for num_hidden_layers, hidden_size, or a non-empty
+// layers_block_type list at the top level (text-only models) or nested inside
+// text_config (multimodal models such as Llama4ForConditionalGeneration). This
+// prevents caching empty JSON {}, error responses like {"error":"..."}, or unrelated
+// JSON that passes json.Valid.
+//
+// layers_block_type is accepted because latency.GetModelConfigFromHF derives the layer
+// count from its length when no num_hidden_layers scalar is declared (#1729 / NS-4). A
+// config the parser can read must not be rejected one layer up as "not a HF config" —
+// that would warn about a perfectly good local config and try a network fetch instead.
+// An empty or non-list value is NOT accepted: the parser cannot count it either, so the
+// two paths agree on exactly what counts as usable evidence.
 func isHFConfig(data []byte) bool {
 	var m map[string]interface{}
 	// Defensive: callers currently pre-validate with json.Valid, but retain this guard for future call sites.
@@ -288,18 +296,25 @@ func isHFConfig(data []byte) bool {
 		return false
 	}
 
+	hasLayerCountEvidence := func(cfg map[string]interface{}) bool {
+		if _, ok := cfg["num_hidden_layers"]; ok {
+			return true
+		}
+		if _, ok := cfg["hidden_size"]; ok {
+			return true
+		}
+		blocks, ok := cfg[latency.LayersBlockTypeField].([]interface{})
+		return ok && len(blocks) > 0
+	}
+
 	// Top-level fields cover text-only transformer configs.
-	_, hasLayers := m["num_hidden_layers"]
-	_, hasHidden := m["hidden_size"]
-	if hasLayers || hasHidden {
+	if hasLayerCountEvidence(m) {
 		return true
 	}
 
 	// Fall back to text_config.* for multimodal models (Llama4ForConditionalGeneration, etc.)
 	if textCfg, ok := m["text_config"].(map[string]interface{}); ok {
-		_, hasLayers = textCfg["num_hidden_layers"]
-		_, hasHidden = textCfg["hidden_size"]
-		return hasLayers || hasHidden
+		return hasLayerCountEvidence(textCfg)
 	}
 
 	return false
