@@ -2299,10 +2299,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#r10-strict-yaml-parsing" class="md-nav__link">
+  <a href="#r10-strict-config-parsing" class="md-nav__link">
     <span class="md-ellipsis">
       
-        R10: Strict YAML parsing
+        R10: Strict config parsing
       
     </span>
   </a>
@@ -3313,10 +3313,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#r10-strict-yaml-parsing" class="md-nav__link">
+  <a href="#r10-strict-config-parsing" class="md-nav__link">
     <span class="md-ellipsis">
       
-        R10: Strict YAML parsing
+        R10: Strict config parsing
       
     </span>
   </a>
@@ -3656,10 +3656,10 @@
 <p><strong>Check:</strong> For every new YAML config field where zero is meaningful, use a pointer type.</p>
 <p><strong>Enforced:</strong> Micro-plan Phase 8.</p>
 <hr />
-<h3 id="r10-strict-yaml-parsing">R10: Strict YAML parsing<a class="headerlink" href="#r10-strict-yaml-parsing" title="Permanent link">&para;</a></h3>
-<p>Use <code>yaml.KnownFields(true)</code> or equivalent strict parsing for all YAML config loading. Typos in field names must cause parse errors, not silent acceptance of malformed config.</p>
-<p><strong>Evidence:</strong> YAML typos in field names were silently accepted, producing default behavior instead of the user's intended configuration.</p>
-<p><strong>Check:</strong> Every <code>yaml.Unmarshal</code> or decoder usage must enable strict/known-fields mode.</p>
+<h3 id="r10-strict-config-parsing">R10: Strict config parsing<a class="headerlink" href="#r10-strict-config-parsing" title="Permanent link">&para;</a></h3>
+<p>Use <code>yaml.KnownFields(true)</code> or equivalent strict parsing for all config loading — YAML <em>and</em> JSON. Typos in field names must cause parse errors, not silent acceptance of malformed config.</p>
+<p><strong>Evidence:</strong> YAML typos in field names were silently accepted, producing default behavior instead of the user's intended configuration. The same gap existed in JSON: <code>hardware_config.json</code> was decoded permissively until #1728, so a misspelled numeric key read as 0 — a plausible-but-wrong bandwidth, MFU or memory capacity with no diagnostic.</p>
+<p><strong>Check:</strong> Every <code>yaml.Unmarshal</code> / <code>json.Unmarshal</code> or decoder usage on a config path must enable strict/known-fields mode (or an equivalent allowlist check — <code>sim/latency.rejectUnknownHardwareCalibKeys</code> names the offending key <em>and</em> the GPU entry, which <code>DisallowUnknownFields</code> cannot). Deliberately exempt: parsers for <strong>external payloads</strong> BLIS does not own (HuggingFace <code>config.json</code>, OpenTelemetry and Weka trace records) — those must tolerate unknown fields by contract.</p>
 <p><strong>Enforced:</strong> Micro-plan Phase 8.</p>
 <hr />
 <h3 id="r11-guard-division-in-runtime-computation">R11: Guard division in runtime computation<a class="headerlink" href="#r11-guard-division-in-runtime-computation" title="Permanent link">&para;</a></h3>
@@ -3759,7 +3759,7 @@
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R7:</strong> Invariant tests alongside any golden tests</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R8:</strong> No exported mutable maps</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R9:</strong> <code>*float64</code> for YAML fields where zero is valid</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R10:</strong> YAML strict parsing (<code>KnownFields(true)</code>)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R10:</strong> Strict config parsing, YAML and JSON (<code>KnownFields(true)</code> / no unknown keys)</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R11:</strong> Division by runtime-derived denominators guarded</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R12:</strong> Golden dataset regenerated if output changed</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R13:</strong> New interfaces work for 2+ implementations</li>
