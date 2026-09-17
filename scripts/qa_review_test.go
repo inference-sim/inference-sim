@@ -183,6 +183,34 @@ func TestRenderOutputShape(t *testing.T) {
 	if strings.Contains(out, "QA-VERDICT") {
 		t.Errorf("render_report.py must not emit a QA-VERDICT marker:\n%s", out)
 	}
+
+	// Exact-output assertion: render_report.py is fully deterministic for these
+	// fixed fixture inputs, so the COMPLETE report must match byte-for-byte. This
+	// rejects extra, duplicated, reordered, or trailing content that the substring
+	// checks above cannot catch — the "exact output shape" AC #1714 requires. A
+	// doubled table, a duplicated section, or a stray trailing line all fail here.
+	want := strings.Join([]string{
+		"> 🤖 **qa-review** — experimental two-agent AI-review demo (cross-vendor: questioner `gcp/gemini-3.6-flash` + isolated answerer `azure/gpt-5.6-sol`, RFC #1603). Posted for evaluation — **not an official merge gate**.",
+		"",
+		"## qa-review — PR #42: ⛔ BLOCK",
+		"_My PR · 2 questions · questioner `gcp/gemini-3.6-flash` · answerer `azure/gpt-5.6-sol`_",
+		"",
+		"| ID | Topic | Result | Question | Answer |",
+		"|----|-------|--------|----------|--------|",
+		"| F1 | fixed | ✅ CONFIDENT | Implements the issue? | Fully implemented. |",
+		"| G1 | tests | ❌ FLAW_FOUND | Covered by tests? | A test is missing. |",
+		"",
+		"### Items to fix",
+		"- **G1 · FLAW_FOUND** — A test is missing.",
+		"  _y_test.go:9_",
+		"",
+		"### Important to consider",
+		"- **F1** — a minor doc nit",
+		"  _x.go:1_",
+	}, "\n") + "\n"
+	if out != want {
+		t.Errorf("rendered report is not byte-identical to the expected shape\n--- got ---\n%q\n--- want ---\n%q", out, want)
+	}
 }
 
 // ---------------------------------------------------------------------------
