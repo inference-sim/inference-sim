@@ -93,6 +93,11 @@ func resolveModelConfig(model string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Record the catalog root that produced this run's model config, so the results
+	// file can attribute the result to it (#1732, R1/S5). A side effect in the same
+	// spirit as modelConfigDir: the root is not otherwise recoverable at the emit site,
+	// and re-resolving there would re-emit the precedence announcement.
+	resolvedCatalogRoot = catalog
 	return resolveModelConfigInCatalog(model, catalog)
 }
 

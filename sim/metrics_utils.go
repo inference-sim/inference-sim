@@ -110,7 +110,40 @@ type MetricsOutput struct {
 	// adapter-blind run adds no stdout fields (INV-6, SC-001). encoding/json emits
 	// map string keys in sorted order, giving deterministic output (R2).
 	Adapters map[string]AdapterMetrics `json:"adapters,omitempty"`
+
+	// Catalog records WHICH model catalog produced this result (#1732, R1/S5).
+	// Populated ONLY into the --metrics-path file, via EmitOutput's
+	// WithCatalogProvenance option — never onto stdout, exactly like CacheHitRate
+	// above (#1583). Catalog git state legitimately varies between two otherwise
+	// identical runs, so it must not enter the byte-identical stdout channel INV-6
+	// protects. A nil pointer (the default, and every non-file emit) is dropped by
+	// omitempty, so a results file written without the option is byte-identical to
+	// a pre-feature build.
+	Catalog *CatalogProvenance `json:"catalog,omitempty"`
 }
+
+// CatalogProvenance attributes a results file to the model catalog that produced it
+// (#1732, R1/S5). Once the catalog is a versioned directory (#1731 + blis-catalog), a
+// result must be attributable, and an EXPERIMENT (uncommitted edits to a config.json)
+// must be distinguishable from a REPRODUCIBLE run — which is what Dirty answers.
+//
+// Revision is the catalog's git commit, or UnknownCatalogRevision when the catalog is
+// not a git checkout (or git could not be consulted): a non-git catalog degrades to
+// "path recorded, revision unknown", never to a plausible-but-wrong revision. Dirty is
+// meaningful only alongside a known revision — it is false whenever Revision is
+// UnknownCatalogRevision, since there is no committed state to differ from.
+type CatalogProvenance struct {
+	Path     string `json:"path"`
+	Revision string `json:"revision"`
+	Dirty    bool   `json:"dirty"`
+}
+
+// UnknownCatalogRevision is the CatalogProvenance.Revision value recorded when the
+// catalog's git revision could not be determined — an absent directory, a directory
+// outside any git checkout, a repository with no commits, or no usable git binary. It
+// is a recorded sentinel rather than an empty string so a reader can distinguish
+// "asked, and the answer is unknown" from "never populated".
+const UnknownCatalogRevision = "unknown"
 
 // AdapterMetrics is the per-adapter aggregate section
 // (specs/007-lora-control-plane/contracts/metrics.md). TTFT

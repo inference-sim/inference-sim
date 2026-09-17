@@ -895,7 +895,13 @@ Example:
 		// simulator's hit-rate. Empty path → stdout only, byte-identical to before
 		// (BC-8). run and replay --metrics-path of the same trace produce identical
 		// cache_hit_rate (INV-13).
-		if err := aggregated.EmitOutput(clusterOutput, replayMetricsPath); err != nil {
+		// Catalog provenance (#1732): the same file-only block `blis run` records, via
+		// the same shared helper, so a replay's results file is attributable to the
+		// catalog that supplied its model config too (INV-13). Passed as an EmitOutput
+		// option rather than mutated onto clusterOutput, so stdout stays byte-identical
+		// (INV-6).
+		if err := aggregated.EmitOutput(clusterOutput, replayMetricsPath,
+			catalogProvenanceEmitOptions(replayMetricsPath, resolvedCatalogRoot)...); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
