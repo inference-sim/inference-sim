@@ -6,6 +6,9 @@
 #   CI_STATUS      success | failure | unknown
 #   PLAN_GATE      pass | regression | conflicts | unverified | absent
 #   AGENT_VERDICT  GREEN | NOT-GREEN | MISSING
+#   QA_VERDICT     PASS | BLOCK | MISSING  (the cross-vendor qa-review pass, #1715 — a second
+#                                           reviewer from a different model family than the
+#                                           implementer and AGENT_VERDICT's reviewer)
 #   DISMISSALS     none | open | unknown   (open = a correction dismissed a finding that the
 #                                           reviewer has not accepted; unknown = unreadable)
 #   ROUND          correction rounds already spent (non-negative integer)
@@ -43,7 +46,7 @@ emit() {
   exit 0
 }
 
-for var in CI_STATUS PLAN_GATE AGENT_VERDICT DISMISSALS ROUND MAX_ROUNDS; do
+for var in CI_STATUS PLAN_GATE AGENT_VERDICT QA_VERDICT DISMISSALS ROUND MAX_ROUNDS; do
   [[ -n "${!var:-}" ]] || usage "$var"
 done
 
@@ -68,17 +71,25 @@ case "$AGENT_VERDICT" in
   GREEN | NOT-GREEN | MISSING) ;;
   *) emit needs-human "unrecognised AGENT_VERDICT '$AGENT_VERDICT' — expected GREEN, NOT-GREEN, or MISSING" ;;
 esac
+case "$QA_VERDICT" in
+  PASS | BLOCK | MISSING) ;;
+  *) emit needs-human "unrecognised QA_VERDICT '$QA_VERDICT' — expected PASS, BLOCK, or MISSING" ;;
+esac
 case "$DISMISSALS" in
   none | open | unknown) ;;
   *) emit needs-human "unrecognised DISMISSALS '$DISMISSALS' — expected none, open, or unknown" ;;
 esac
 
 # Rows 1 and 2: no usable evidence. Checked before anything else so that a GREEN review can
-# never stand in for a signal that was never read.
+# never stand in for a signal that was never read. Both reviews are treated alike here: a
+# qa-review that never produced a marker is missing evidence, not a pass — a qa-review run
+# that crashed, timed out or lost its model would otherwise wave the delivery through.
 [[ "$CI_STATUS" != unknown ]] \
   || emit needs-human "CI status could not be determined for this head commit, so no verdict can be trusted"
 [[ "$AGENT_VERDICT" != MISSING ]] \
   || emit needs-human "the verify phase posted no DELIVER-VERDICT marker, so its verdict could not be read"
+[[ "$QA_VERDICT" != MISSING ]] \
+  || emit needs-human "the verify phase posted no QA-VERDICT marker, so the qa-review verdict could not be read"
 
 # Collect every objective signal that blocks a merge. Both are reported when both apply —
 # a human reading the PR should not have to re-run the gate to discover the second reason.
@@ -97,35 +108,57 @@ case "$PLAN_GATE" in
   unverified) add_blocking "the PR declares an archon-plan but the plan check did not run, so the dist ratchet is unverified" ;;
 esac
 
+# Collect every REVIEW that is asking for a correction. Two reviewers, one signal each,
+# reported together for the same reason both objective blockers are: a human reading the PR
+# comment should see every reason the delivery did not pass, not just the first.
+#
+# Both markers are already known non-MISSING here, so an empty `findings` means both reviews
+# came back clean — which is what makes the ready row and the disagreement row below exhaustive.
+findings=""
+add_finding() { findings="${findings:+$findings; }$1"; }
+
+[[ "$AGENT_VERDICT" != NOT-GREEN ]] || add_finding "the review returned NOT-GREEN with open findings"
+[[ "$QA_VERDICT" != BLOCK ]] || add_finding "the cross-vendor qa-review returned BLOCK with open findings"
+
 # The decision itself. `reason` is only set on paths that fall through to the round cap;
 # every terminal path emits directly.
 if [[ -n "$blocking" ]]; then
-  # Row 3 — the guardrail. A review claiming GREEN against a failing objective signal is a
-  # disagreement, and resolving it is a human's call: correcting would ask the agent to fix
-  # findings it just said do not exist, and readying would trust it over the evidence.
-  [[ "$AGENT_VERDICT" != GREEN ]] \
-    || emit needs-human "the review returned GREEN but $blocking — a human needs to resolve this disagreement"
-  reason="$blocking"
+  # Row 3 — the guardrail, generalised over both reviewers (#1715). A review claiming the code
+  # is fine against a failing objective signal is a disagreement, and resolving it is a human's
+  # call: correcting would ask the agent to fix findings both reviewers said do not exist, and
+  # readying would trust them over the evidence.
+  #
+  # The test is now "is NEITHER reviewer asking for a correction", not "did the Anthropic
+  # reviewer say GREEN". With two reviewers the original test would send an objective failure
+  # that qa-review DID find fault with to a human, when there are named findings a correction
+  # round can act on — and acting on them is the whole reason the loop has correction rounds.
+  [[ -n "$findings" ]] \
+    || emit needs-human "both reviews came back clean (review GREEN, qa-review PASS) but $blocking — a human needs to resolve this disagreement"
+  reason="$blocking, and $findings"
+elif [[ -n "$findings" ]]; then
+  reason="$findings"
 else
-  case "$AGENT_VERDICT" in
-    # Row 5 — the only path to ready. Reached only with CI success, a plan signal of pass or
-    # absent, an explicit GREEN, and no dismissal the reviewer has left unaccepted.
-    #
-    # Checked here rather than alongside CI and the plan signal on purpose: an outstanding
-    # dismissal should withhold the TERMINAL verdict, not divert an honest NOT-GREEN away from
-    # the correction round that would resolve it. `unknown` is treated as outstanding — an
-    # unreadable dismissal state is not evidence that there is nothing to accept.
-    GREEN)
-      case "$DISMISSALS" in
-        none) emit ready "CI passed, plan signal '$PLAN_GATE', and the review returned GREEN" ;;
-        open) emit needs-human "every signal is green, but a correction dismissed a finding that the review has not accepted — a human needs to decide whether the dismissal stands" ;;
-        *)    emit needs-human "every signal is green, but the dismissal state could not be read, so it is not known whether a dismissed finding is outstanding" ;;
-      esac
-      ;;
-    NOT-GREEN) reason="the review returned NOT-GREEN with open findings" ;;
-    *) emit needs-human "AGENT_VERDICT '$AGENT_VERDICT' reached the decision chain unhandled" ;;
+  # Row 5 — the only path to ready. Reached only with CI success, a plan signal of pass or
+  # absent, an explicit GREEN from the review, a PASS from qa-review, and no dismissal the
+  # reviewer has left unaccepted.
+  #
+  # Dismissals are checked here rather than alongside CI and the plan signal on purpose: an
+  # outstanding dismissal should withhold the TERMINAL verdict, not divert an honest set of
+  # review findings away from the correction round that would resolve them. `unknown` is
+  # treated as outstanding — an unreadable dismissal state is not evidence that there is
+  # nothing to accept.
+  case "$DISMISSALS" in
+    none) emit ready "CI passed, plan signal '$PLAN_GATE', the review returned GREEN, and qa-review returned PASS" ;;
+    open) emit needs-human "every signal is green, but a correction dismissed a finding that the review has not accepted — a human needs to decide whether the dismissal stands" ;;
+    *)    emit needs-human "every signal is green, but the dismissal state could not be read, so it is not known whether a dismissed finding is outstanding" ;;
   esac
 fi
+
+# Defence in depth for "the gate always decides": the branches above are exhaustive over the
+# declared domains, so an unset `reason` here means a domain gained a value nothing routes.
+# Better a named stop than a correction round with an empty explanation.
+[[ -n "${reason:-}" ]] \
+  || emit needs-human "AGENT_VERDICT '$AGENT_VERDICT' and QA_VERDICT '$QA_VERDICT' reached the decision chain unhandled"
 
 # Row 7 — the cap applies only to a correction. A delivery that is genuinely ready stays
 # ready at any round; the cap bounds correction attempts, not the delivery.
