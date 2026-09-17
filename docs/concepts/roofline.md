@@ -70,7 +70,9 @@ The flag automatically:
 1. Checks `model_configs/` for an existing `config.json` (previously fetched)
 2. Refuses the run on miss, naming the catalog path the entry belongs at — no run-time fetch, and no run writes to the catalog (NS-6)
 
-For models not in `defaults.yaml`, add an `hf_repo` entry mapping the BLIS model name to the case-sensitive HuggingFace repo path.
+A model runs if and only if it has a catalog entry. To add one, commit its `config.json` at
+`<catalog>/<short-name>/config.json` — `defaults.yaml` has no part in this (its per-model
+`hf_repo` mapping was removed in #1768, along with the run-time fetch it fed, #1733).
 
 ### Manual: explicit config paths
 
