@@ -34,7 +34,8 @@ Public models (e.g., Qwen3) work without a token. See [HuggingFace access tokens
 ## Verify the Build
 
 ```bash
-./blis run --model qwen/qwen3-14b --num-requests 10
+# --catalog (or BLIS_CATALOG) is required — the bundled model_configs/ tree is a valid catalog root
+./blis run --model qwen/qwen3-14b --num-requests 10 --catalog model_configs
 ```
 
 You should see JSON output on stdout containing fields like `ttft_mean_ms`, `e2e_mean_ms`, and `responses_per_sec`. This confirms BLIS is working correctly.
