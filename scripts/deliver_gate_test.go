@@ -517,7 +517,7 @@ func TestDeliverGateAlwaysDecides(t *testing.T) {
 								t.Errorf("%s/%s/%s/%s/%s round %s: exit %d, want 0", ci, plan, verdict, dis, merge, round, out.exitCode)
 							}
 							if !valid[out.decision] {
-								t.Errorf("%s/%s/%s/%s/%s round %s: decision = %q, want ready/correct/needs-human",
+								t.Errorf("%s/%s/%s/%s/%s round %s: decision = %q, want ready/correct/needs-human/recheck",
 									ci, plan, verdict, dis, merge, round, out.decision)
 							}
 						}
