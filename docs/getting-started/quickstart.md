@@ -2,22 +2,21 @@
 
 Run your first BLIS simulation in 30 seconds.
 
-**Optional:** Set `HF_TOKEN` to access gated models (e.g., [Llama-2](https://huggingface.co/meta-llama/Llama-2-7b-hf)) and avoid HuggingFace rate limits:
-
-```bash
-export HF_TOKEN=your_token_here
-```
+No credentials or network access are needed: BLIS reads each model's architecture from the committed catalog under `model_configs/` and makes no HuggingFace requests. (`HF_TOKEN` matters only if you are downloading a new — possibly gated — model's `config.json` by hand to add a catalog entry.)
 
 ## Single-Instance Simulation
 
 ```bash
-./blis run --model qwen/qwen3-14b
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1
 ```
 
 This runs 100 requests through a single inference instance using the default trained-physics latency model for Qwen3 14B on an H100 GPU with TP=1.
 
-!!! note "First-run HuggingFace fetch"
-    On first use, BLIS auto-fetches the model's `config.json` from HuggingFace (~1 second for public models). Subsequent runs use the cached config in `model_configs/`. For air-gapped environments, pre-populate `model_configs/<model>/config.json` and use `--model-config-folder`.
+!!! note "A model runs only if it is catalogued"
+    BLIS reads the model's `config.json` from the catalog at `model_configs/<model>/` and never fetches or writes it at run time. A model with no catalog entry is refused, naming the path its entry belongs at — so runs are offline and reproducible, and running an unknown model can never quietly add a catalog entry. To use a model that is not yet catalogued, commit its `config.json` under `model_configs/<model>/` or point `--model-config-folder` at a directory containing one.
+
+!!! note "`--hardware` and `--tp` are required"
+    BLIS does not infer the deployment. Omitting either flag is refused by name rather than filled in from a per-model default, so every reported number belongs to a deployment you chose.
 
 ### Reading the Output
 
@@ -55,7 +54,7 @@ Scale to 4 instances with routing:
 
 ```bash
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 \
   --routing-policy weighted \
   --rate 100 --num-requests 500
@@ -70,11 +69,11 @@ This simulates a 4-instance cluster receiving 100 requests/second. The `weighted
 
 ```bash
 # Higher traffic rate
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --rate 500 --num-requests 2000
 
 # With decision tracing (see where each request was routed)
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --rate 100 --num-requests 500 \
   --trace-level decisions --summarize-trace
 

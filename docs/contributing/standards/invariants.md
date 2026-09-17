@@ -56,6 +56,7 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
 | [INV-PD-1 … INV-PD-6b](#pd-disaggregation) PD disaggregation | Subsystem | PD |
 | [INV-W3](#inv-w3-cohort-expansion-purity) Cohort expansion purity | Subsystem | workload generation |
+| [NS-6](#ns-6-catalog-is-authoritative-and-read-only) Catalog is authoritative and read-only | Code-boundary | CLI / model catalog |
 
 ---
 
@@ -190,6 +191,25 @@ These constrain **which code may read or do what**. They are not statements abou
 **Cited in code:** 5 times, all in the two files above.
 
 **Registry note (#1721):** cited by ID since the autoscaler landed, documented nowhere until #1721.
+
+### NS-6: Catalog is Authoritative and Read-Only
+
+**Statement:** A model runs **if and only if it is in the catalog**, and no run may change the catalog. Two clauses:
+
+1. **Read-only, refuse-on-miss.** `cmd.resolveModelConfig` reads the model's `config.json` from the catalog (`model_configs/<short-name>/`, or the directory given by `--model-config-folder`). A model with no entry — or an entry that is not a HuggingFace config — is **refused, naming the path the entry belongs at**. No `blis run` / `blis replay` / `blis observe` invocation creates or modifies a catalog file, and none makes a HuggingFace request.
+2. **The deployment is chosen, never inferred.** `--hardware` and `--tp` are required on both `blis run` and `blis replay` (`cmd.requireDeploymentFlags`); omitting either is refused **naming the missing flag**.
+
+**Why this tier:** like INV-9 and INV-A2 this constrains *what the code may do* rather than describing simulation state. A run that writes a catalog entry can leave that run's output perfectly correct while making the catalog — the thing every later run and every calibration reads — drift by accident.
+
+**Rationale:** before #1733, an absent `config.json` triggered a HuggingFace download that was **written into `model_configs/`**, so running an unknown model *added a catalog entry as a side effect* — the exact mechanism by which a catalog silently accumulates unreviewed, unprovenanced models. Independently, `--hardware`/`--tp` were looked up per-model in `defaults.yaml` behind a `logrus.Warnf`, so a run could complete and emit metrics for a deployment nobody chose. Both are now refusals (R1: no warn-and-continue).
+
+**Scope and non-scope:** NS-6 binds the **CLI boundary only**. Library callers that construct a `sim.ModelConfig` or call `sim.NewModelHardwareConfig` directly are unaffected and need no flags — the many test files that build configs through the Go API are deliberately outside it. `blis observe` satisfies clause 1 vacuously (it resolves no model config) and takes neither deployment flag (it places no instances).
+
+**Byte-identity (INV-6):** NS-6 changes which inputs are *required*, not any number. Supplying `--hardware`/`--tp` equal to what `defaults.yaml` would have supplied reproduces the pre-#1733 stdout exactly.
+
+**Verification:** `cmd/hfconfig_test.go` — `TestResolveModelConfig_AbsentFromCatalog_RefusedNamingPath` (refusal names the path), `..._CreatesNothing` (nothing written, catalog directory not created), `TestResolveModelConfig_MalformedCatalogEntry_RefusedAndPreserved` (refused, entry byte-preserved), `TestResolveModelConfig_PrecedenceInvariant` (two-step resolution with no third fallback). `cmd/ns6_catalog_test.go` — `TestNS6_NoRuntimeFetch_StaticGuard` (removed fetch symbols and any `huggingface.co` string literal are absent from `cmd/`'s production sources; the resolver imports no network package and makes no file-creating call), `TestNS6_MissingDeploymentFlagIsRefusedByName` (subprocess: each omission exits 1 naming only the omitted flag), `TestNS6_DeploymentFlagsRequiredOnRunAndReplay` (INV-13 parity), `TestNS6_ObserveTakesNoDeploymentFlags`, `TestNS6_ByteIdentityAnchor_GoldenModelDeployment` (anchors the INV-6 claim to `TestNoOpByteIdentity_AdapterBlindRunMatchesBaseline`'s pre-#1733 golden). `cmd/docs_examples_test.go` — `TestDocExamplesPassDeploymentFlags` (every documented example passes both flags).
+
+**ID note:** `NS-6` is numbered by the operator-basis design note reconciling Discussion #1700, not by this registry's `INV-*` sequence; it is listed here because it is cited in `cmd/` and the resolution rule above is about *resolvability*, not about the prefix. Delivered by #1733 (R1 task S6, tracker #1727).
 
 ---
 

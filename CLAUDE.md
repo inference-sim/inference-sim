@@ -14,13 +14,24 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 # Build
 go build -o blis main.go
 
+# NS-6 (#1733) — two rules every `blis run`/`blis replay` example below obeys:
+#  1. A model runs IFF it is in the catalog. The model's config.json is read from
+#     model_configs/<short-name>/ (or --model-config-folder); an uncatalogued model is
+#     REFUSED naming the path its entry belongs at. No run-time HuggingFace fetch, and no
+#     run/replay/observe creates or modifies a catalog file. Add a model by committing its
+#     config.json.
+#  2. --hardware and --tp are REQUIRED, on both `blis run` and `blis replay`. They are no
+#     longer looked up per-model in defaults.yaml (which warned and continued on a
+#     deployment nobody chose); omitting either is refused naming the missing flag.
+#     `blis observe` takes neither — it resolves no model config and places no instances.
+
 # Run with default model
-./blis run --model qwen/qwen3-14b
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1
 
 # Run with goodput SLO targets (#1413). --slo-ttft / --slo-itl / --slo-e2e accept
 # class=duration[,class=duration...] using Go duration syntax. Precedence:
 # CLI > trace header > workload spec. Distinct from --slo-targets (dispatch ordering).
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --slo-ttft "critical=100ms,standard=500ms" \
   --slo-itl  "critical=50ms,standard=150ms" \
   --slo-e2e  "critical=5s,standard=30s"
@@ -36,7 +47,7 @@ go build -o blis main.go
 #   user-supplied, not predicted. Same flags on `blis replay` (INV-13, model-level so no
 #   trace change). Note: under spec-decode the raw ITL percentiles are per-verification-
 #   step; use TPOT for per-token latency (SLO-ITL attainment reads TPOT, unaffected).
-./blis run --model zai-org/GLM-5.2 \
+./blis run --model zai-org/GLM-5.2-FP8 --hardware H100 --tp 16 \
   --num-speculative-tokens 5 --speculative-acceptance-rate 0.7 --speculative-method mtp
 
 # Run with an eager/no-overlap cross-node serialization factor (#1694, trained-physics +
@@ -50,10 +61,10 @@ go build -o blis main.go
 # --enforce-eager: declares the no-overlap regime; REQUIRES an explicit
 #   --comm-serialization-factor > 1 (BLIS ships no fitted eager magnitude). Re-supply S
 #   identically on `blis replay` (model-level input, not round-tripped through the header, INV-13).
-./blis run --model zai-org/GLM-5.2 --enforce-eager --comm-serialization-factor 30
+./blis run --model zai-org/GLM-5.2-FP8 --hardware H100 --tp 16 --enforce-eager --comm-serialization-factor 30
 
 # Run and export workload as TraceV2 (prefix auto-appends .yaml/.csv)
-./blis run --model qwen/qwen3-14b --trace-output traces/run1
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --trace-output traces/run1
 
 # Run with a multi-tier KV-offload config (#1587). One strict-YAML flag captures vLLM's
 # offload config surface (kv_offload: block — cpu_bytes_to_use, block_size/blocks_per_chunk,
@@ -64,26 +75,26 @@ go build -o blis main.go
 # recorded in the trace header and round-trips through replay (INV-13); on replay the header is
 # authoritative (a config it cannot reproduce is a hard error). As of #1590 the config DRIVES the
 # N-tier chain mechanism (below) — mutually exclusive with the legacy --kv-cpu-blocks.
-./blis run --model qwen/qwen3-14b --kv-offload-config offload.yaml --trace-output traces/run1
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --kv-offload-config offload.yaml --trace-output traces/run1
 
 # Replay a captured TraceV2 file through the DES (fixed timing from trace)
-./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b
+./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b --hardware H100 --tp 1
 
 # Replay with goodput SLO targets (#1413). When the trace header carries
 # goodput_slo_targets the CLI flags are not required (header is the fallback).
-./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
+./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --slo-ttft "critical=100ms" --slo-e2e "critical=5s"
 
 # Replay and re-export trace with simulation-computed timing (mode: replayed)
-./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
+./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --trace-output out
 
 # Replay with closed-loop session mode (follow-ups arrive at completion + think time)
-./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
+./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --session-mode closed-loop
 
 # Replay closed-loop with explicit think-time override (500ms between rounds)
-./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
+./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --session-mode closed-loop --think-time-ms 500
 
 # Observe real server latency and record timing into TraceV2
@@ -165,7 +176,7 @@ go build -o blis main.go
 # deployment (observe traces are exempt from the "cannot add offload on replay" rule;
 # sim-generated traces stay header-authoritative). Replaying a tiered observation with
 # no offload config is a hard error (never a silent GPU-only value).
-./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
+./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --kv-offload-config offload.yaml \
   --results-path results.json --metrics-path simagg.json
 ./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json \
@@ -227,7 +238,7 @@ go build -o blis main.go
 # schedules; note a single huge window materializes one full batch, so it yields
 # no memory win over eager); prefix-group sharing; multi-client / cohort workloads.
 # Behavior with the flag off is unchanged.
-./blis run --model qwen/qwen3-14b --lazy-generation
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --lazy-generation
 
 # Observe with lazy request generation (alpha, #1443). Same flag, default, and
 # semantics as `blis run` — streams requests from the generator into the observe
@@ -290,12 +301,12 @@ go build -o blis main.go
 #
 # Replay a corpus (from either converter) closed-loop — reconstructs each session's growing prompt.
 ./blis replay --trace-header corpus.yaml --trace-data corpus.csv \
-  --model qwen/qwen3-14b --session-mode closed-loop --max-model-len 1000000
+  --model qwen/qwen3-14b --hardware H100 --tp 1 --session-mode closed-loop --max-model-len 1000000
 # Or replay a fixed pool of N concurrent closed-loop sessions (#1486, PR-C); --total-sessions
 # duplicates the corpus with cache-busting to fill the target (--concurrent-sessions auto-promotes
 # to closed-loop). Same huge-ISL caveat — raise --max-model-len and scale --total-kv-blocks.
 ./blis replay --trace-header corpus.yaml --trace-data corpus.csv \
-  --model qwen/qwen3-14b --concurrent-sessions 8 --total-sessions 200 --max-model-len 1000000
+  --model qwen/qwen3-14b --hardware H100 --tp 1 --concurrent-sessions 8 --total-sessions 200 --max-model-len 1000000
 # FAITHFUL replay of a high-concurrency agentic run (#1692): --session-mode fixed-accumulate
 # injects each round at its RECORDED arrival time (open-loop, like fixed) WHILE reconstructing
 # the growing accumulate-delta input (like closed-loop). Closed-loop regenerates arrivals as
@@ -327,34 +338,34 @@ go build -o blis main.go
   --trace-header observed.yaml --trace-data observed.csv
 
 # Run with gateway queue flow control (utilization-based saturation gating)
-./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --flow-control --saturation-detector utilization \
   --queue-depth-threshold 5 --kv-cache-util-threshold 0.8
 
 # Run with concurrency-based flow control and priority dispatch ordering
-./blis run --model qwen/qwen3-14b --flow-control --saturation-detector concurrency \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --flow-control --saturation-detector concurrency \
   --max-concurrency 64 --dispatch-order priority --max-gateway-queue-depth 1000
 
 # Run with flow control and request TTL (expire queued requests after 5 seconds)
-./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --flow-control --saturation-detector utilization \
   --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 --request-ttl 5000000
 
 # Run with SLO-deadline dispatch ordering (tightest SLO target dispatches first)
-./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --flow-control --saturation-detector utilization \
   --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 \
   --dispatch-order slo-deadline --slo-targets "critical=100000,standard=500000"
 
 # Run with flow control and opt-in queue shedding (BLIS-extra, not in llm-d)
-./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --flow-control --saturation-detector utilization \
   --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 \
   --max-gateway-queue-depth 1000 --queue-shedding
 
 # Run with custom dispatch tick interval (default 1000µs = 1ms, llm-d parity)
-./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --flow-control --saturation-detector utilization \
   --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 \
   --dispatch-tick-interval 5000
 
 # Run with opt-in in-flight eviction of sheddable requests (BLIS-extra, not in llm-d)
-./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --flow-control --saturation-detector utilization \
   --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 --in-flight-eviction
 
 # Run with a single saturation detector (#1516). --detectors takes one of
@@ -362,12 +373,12 @@ go build -o blis main.go
 # {"final":{...},"trace":[...]} JSON file (per-detector final label + one record
 # per event). stdout regains a per-detector "saturation" final-label map (#1517),
 # derived uniformly from the trace by the last-window plurality reducer.
-./blis run --model qwen/qwen3-14b --detectors composite --saturation-report sat.json
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --detectors composite --saturation-report sat.json
 
 # Tune the final-label trailing window (#1517). --saturation-final-window takes a
 # Go duration for the last-window plurality vote (default: backlog_drift.window_size_sec
 # if configured, else 30s). Same value for every detector; requires --detectors.
-./blis run --model qwen/qwen3-14b --detectors all --saturation-final-window 10s
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --detectors all --saturation-final-window 10s
 
 # Run the detector BANK over ONE deterministic replay (#1519). --detectors "all"
 # runs the full roster; a comma-list runs exactly the named subset. The bank fans
@@ -377,8 +388,8 @@ go build -o blis main.go
 # filters WHICH detectors run, never HOW they see traffic — INV-6). A single
 # <name> still uses #1516's single-detector streaming path for byte-identical
 # continuity. Unknown name (single or in a list) → hard error listing valid names.
-./blis run --model qwen/qwen3-14b --detectors all --saturation-report sat.json
-./blis run --model qwen/qwen3-14b --detectors composite,threshold --saturation-report sat.json
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --detectors all --saturation-report sat.json
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --detectors composite,threshold --saturation-report sat.json
 
 # Tune a detector via a strict-YAML config file (#1516, #1614). EVERY detector now
 # has a false-alarm calibration knob: composite: {sensitivity},
@@ -394,7 +405,7 @@ backlog_drift:
   min_windows: 5
   slope_k: 3.0          # BACKLOGGED/OVERLOADED boundary multiplier (#1614)
 YAML
-./blis run --model qwen/qwen3-14b --detectors backlog-drift \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --detectors backlog-drift \
   --saturation-config sat-config.yaml --saturation-report sat.json
 
 # Run the peak-rate detector (#1614): R_t = Peak_t/t, the backlog high-water mark
@@ -410,12 +421,12 @@ peak_rate:
   consecutive_k: 3         # successive breaches before firing
   overload_multiple: 3.0   # OVERLOADED above this multiple of threshold (>= 1)
 YAML
-./blis run --model qwen/qwen3-14b --detectors peak-rate \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --detectors peak-rate \
   --saturation-config pk.yaml --saturation-report sat.json
 
 # Replay writes the same {"final":{...},"trace":[...]} format and emits the same
 # stdout saturation map (run→replay byte-identical, INV-13)
-./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
+./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --detectors composite --saturation-report sat.json
 
 # Observe writes the same format over REAL-server latencies (same pipeline,
@@ -508,6 +519,7 @@ Full details (verification strategies, evidence): see [`docs/contributing/standa
 - **INV-A2 Placement failure visibility**: A failed `PlaceInstance` must be logged, never silently dropped (autoscaler and actuator paths). An error-handling boundary (specializes R1), not a property of simulation state. See `docs/contributing/standards/invariants.md`.
 - **INV-W3 Cohort expansion purity**: Cohort expansion is pure — same `(cohorts, seed)` ⇒ identical output. A component-level restatement of INV-6; covered end-to-end by INV-6's byte-identity tests. See `docs/contributing/standards/invariants.md`.
 - **INV-L1–INV-L7 (LoRA control plane)**: stated in full in `docs/plans/2026-07-15-lora-control-plane-design.md` §9 (authoritative); `docs/contributing/standards/invariants.md` carries pointer lines so an `INV-L*` citation in code resolves. INV-L2 (per-instance capacity bound) is anchored at the load-start slot reservation in `Simulator.maybeStartAdapterLoad`.
+- **NS-6 Catalog is authoritative and read-only** (#1733, a code-boundary rule at the CLI): a model runs **iff it is in the catalog**, and no run changes the catalog. (1) `cmd.resolveModelConfig` READS `model_configs/<short-name>/config.json` (or `--model-config-folder`) and refuses an absent/non-HF entry **naming the path it belongs at** — no run-time HuggingFace fetch, no `run`/`replay`/`observe` creates or modifies a catalog file. (2) `--hardware`/`--tp` are REQUIRED on both `run` and `replay` (`cmd.requireDeploymentFlags`), refused **naming the missing flag** instead of inferred per-model from `defaults.yaml`. Binds the CLI only — Go-API callers constructing a config directly are unaffected. INV-6-preserving: supplying the flags `defaults.yaml` would have supplied reproduces the pre-#1733 stdout exactly. See `docs/contributing/standards/invariants.md`.
 
 ### Engineering Principles
 
@@ -553,7 +565,9 @@ Faithful closed-loop `--trace-output` re-export (#1630, option (a) of #1621): `b
 
 KV cache hit-rate calibration (#1583, epic #1585 S6): `blis observe --scrape-kv-metrics` scrapes the server's Prometheus `/metrics` KV-offload tiering counters (`vllm:kv_offload_tiering_block_hits`/`_block_queries`; released fallback `vllm:gpu_prefix_cache_*`, tagged distinctly) over the measured window and records the observed hit-rate in a new trace-header block (`observed_kv_metrics`, with `--vllm-commit` pinning the unreleased vLLM PR #48798). `blis replay --metrics-path` writes the sim aggregate `cache_hit_rate` (a `*float64` on `MetricsOutput`, populated file-only in `EmitOutput` so stdout stays byte-identical — INV-6). `blis calibrate --sim-metrics` then compares TTFT, E2E, **and** KV hit-rate (`hit_rate` report block, default ≤5 pp band; TTFT MAPE ≤0.15 verdict). On replay a tiered observation with no reproducible `kv_offload` config is a hard error (BC-10, INV-13, never silent GPU-only degradation); the observed block round-trips verbatim on re-export. The sim exposes one aggregate hit-rate (no per-tier), so the automated comparison is overall-hit-rate; per-tier read/write time is recorded for a documented manual bandwidth cross-check. Pure Prometheus-text parser + hit-rate derivation in `sim/workload/prom_hitrate.go` (no new go.mod dep). Empirical cluster tolerance-pass is an operator step (needs an unreleased-vLLM GPU cluster); see `docs/guide/kv-offload-calibration.md`.
 
-Recent work: MkDocs documentation site (#450), roofline auto-fetch flag (#435), metrics substrate fixes (#458), cross-cutting documentation audit (#460).
+**Catalog hygiene / NS-6 (#1733, R1 task S6 of tracker #1727)**: the two run-time behaviours that let the catalog drift and the deployment go unchosen are gone. **(1) No run-time HuggingFace fetch.** `cmd.resolveModelConfig` is now a two-step read — explicit `--model-config-folder` > the catalog entry `model_configs/<short-name>/config.json` — with **no third fallback**: an absent entry is a hard error naming the path it belongs at, and an entry that is not a HuggingFace config is refused *without being overwritten or deleted* (it may be an operator's hand-written entry with a fixable typo). The whole fetch family (`fetchHFConfig`, `fetchHFConfigFromURL`, the `fetchHFConfigFunc` test seam, `validHFRepoPattern`, the HTTP/redirect/size-limit machinery and the `os.MkdirAll`+`os.WriteFile` that wrote into `model_configs/`) is **deleted, not gated** — `TestNS6_NoRuntimeFetch_StaticGuard` fails if any of those symbols or a `huggingface.co` string literal reappears in `cmd/`'s production sources, or if `cmd/hfconfig.go` acquires a network import or a file-creating call. `GetHFRepo` survives as a provenance accessor for the `hf_repo` key (no production caller); `GetDefaultSpecs` is **deleted** — it existed only to infer the deployment. `blis observe` was already clean (it resolves no model config). **(2) `--hardware`/`--tp` are required.** The "early defaults resolution" block that looked them up per-model in `defaults.yaml` behind a `logrus.Warnf` and continued is replaced by `cmd.requireDeploymentFlags`, called **once, before any backend branch**, so it also subsumes the two per-backend `missing` checks (roofline / trained-physics) and cannot be skipped by a backend selection; the refusal names only the flag actually omitted. Because `run` and `replay` share `resolveLatencyConfig`, both refuse identically (INV-13). `DefaultConfig.GPU`/`TensorParallelism` stay *declared* (strict `KnownFields(true)` parsing would reject the now-unread keys, R10) but are read nowhere on a run path — the sole remaining reader is `TestNS6_ByteIdentityAnchor_GoldenModelDeployment`, which pins that the explicit `--hardware H100 --tp 1` the byte-identity golden run now passes equals what `defaults.yaml` would have supplied. That golden (`specs/007-lora-control-plane/testdata/baseline_noop.json`, captured pre-#1733 from a run with **neither** flag) still matching is the INV-6 evidence: R1 changed which inputs are *required*, not any number. **Behavior changes on the record:** an uncatalogued model no longer runs (previously it fetched, ran, and left a new catalog entry behind); a run missing `--hardware` or `--tp` no longer runs (previously it warned and continued). The `zai-org/GLM-5.2` doc examples depended on the fetch and now name the committed catalog entry `zai-org/GLM-5.2-FP8`. All ~108 `blis run`/`blis replay` examples across `CLAUDE.md`, `README.md`, the mkdocs site, and `examples/` YAML headers pass both flags, enforced by `TestDocExamplesPassDeploymentFlags` (`docs/plans/` and `specs/` are excluded as historical records). Cross-repo prerequisites C3/C4 (every intended model catalogued) are human-coordinated in `blis-catalog`; S4 (#1731, `--catalog`/`BLIS_CATALOG`) will rename the flag the refusal message names.
+
+Recent work: MkDocs documentation site (#450), roofline auto-fetch flag (#435 — the auto-fetch it added was removed by #1733, above), metrics substrate fixes (#458), cross-cutting documentation audit (#460).
 
 ### Extension Recipes
 

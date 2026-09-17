@@ -15,14 +15,14 @@
 #
 #   # Default profile — precise-prefix-cache dominant (sessions cluster on instances)
 #   ./blis run \
-#     --model meta-llama/llama-3.1-8b-instruct \
+#     --model meta-llama/llama-3.1-8b-instruct --hardware H100 --tp 1 \
 #     --num-instances 4 --routing-policy weighted \
 #     --workload-spec examples/multiturn-chat-demo.yaml \
 #     --trace-level decisions --summarize-trace
 #
 #   # Load-only (rounds scatter across instances — no cache reuse)
 #   ./blis run \
-#     --model meta-llama/llama-3.1-8b-instruct \
+#     --model meta-llama/llama-3.1-8b-instruct --hardware H100 --tp 1 \
 #     --num-instances 4 --routing-policy weighted \
 #     --routing-scorers "queue-depth:1" \
 #     --workload-spec examples/multiturn-chat-demo.yaml \

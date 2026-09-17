@@ -24,14 +24,14 @@
 #
 #   # Default profile (llm-d parity: precise-prefix-cache dominant)
 #   ./blis run \
-#     --model meta-llama/llama-3.1-8b-instruct \
+#     --model meta-llama/llama-3.1-8b-instruct --hardware H100 --tp 1 \
 #     --num-instances 4 --routing-policy weighted \
 #     --workload-spec examples/servegen-language.yaml \
 #     --trace-level decisions --summarize-trace
 #
 #   # Prefix-affinity dominant (maximize cache reuse)
 #   ./blis run \
-#     --model meta-llama/llama-3.1-8b-instruct \
+#     --model meta-llama/llama-3.1-8b-instruct --hardware H100 --tp 1 \
 #     --num-instances 4 --routing-policy weighted \
 #     --routing-scorers "prefix-affinity:5,queue-depth:1" \
 #     --workload-spec examples/servegen-language.yaml \
@@ -39,7 +39,7 @@
 #
 #   # Load-balance only (no prefix awareness, equivalent to least-loaded)
 #   ./blis run \
-#     --model meta-llama/llama-3.1-8b-instruct \
+#     --model meta-llama/llama-3.1-8b-instruct --hardware H100 --tp 1 \
 #     --num-instances 4 --routing-policy weighted \
 #     --routing-scorers "load-balance:1" \
 #     --workload-spec examples/servegen-language.yaml \

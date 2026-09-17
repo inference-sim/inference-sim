@@ -4,7 +4,7 @@ This guide covers running multi-instance BLIS simulations — the full pipeline 
 
 ```bash
 # Quick example: 4-instance cluster with tracing
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --rate 100 --num-requests 500 \
   --trace-level decisions --summarize-trace
 ```
@@ -39,11 +39,11 @@ The `--tp` flag sets the tensor parallelism degree for all instances. TP affects
 
 ```bash
 # TP=2: 2 GPUs per instance
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 \
   --num-instances 4 --tp 2 --rate 100 --num-requests 500
 
 # TP=4: 4 GPUs per instance (lower latency, fewer KV blocks per GPU)
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 \
   --num-instances 2 --tp 4 --rate 100 --num-requests 500
 ```
 
@@ -101,7 +101,7 @@ These add simulated delays to the admission and routing pipeline, modeling gRPC 
 Log every routing decision for offline analysis:
 
 ```bash
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --rate 100 --num-requests 500 \
   --trace-level decisions --summarize-trace --counterfactual-k 3
 ```

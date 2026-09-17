@@ -4,7 +4,7 @@ This guide covers how to read BLIS output — from the primary JSON metrics to a
 
 ```bash
 # Quick example: run with all diagnostic output enabled
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --rate 200 --num-requests 1000 \
   --trace-level decisions --summarize-trace \
   --fitness-weights "p99_ttft:3,mean_e2e:1,throughput:2"
@@ -96,10 +96,10 @@ The `saturation` field provides automated classification of simulation runs usin
 **Usage:**
 ```bash
 # Run with composite detector
-./blis run --model qwen/qwen3-14b --post-hoc-detector composite
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --post-hoc-detector composite
 
 # Run with threshold detector (custom threshold)
-./blis run --model qwen/qwen3-14b --post-hoc-detector threshold --saturation-threshold-ms 3000
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --post-hoc-detector threshold --saturation-threshold-ms 3000
 ```
 
 **Use cases:**
@@ -289,7 +289,7 @@ BLIS models non-GPU overhead (tokenization, API serialization) as `alpha` coeffi
 For detailed analysis, save per-request data:
 
 ```bash
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --rate 100 --num-requests 500 --metrics-path metrics.json
 ```
 

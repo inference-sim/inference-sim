@@ -144,8 +144,8 @@ Maps to `ModelHardwareConfig`.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--model` | string | (required) | LLM model name (e.g., `qwen/qwen3-14b`). |
-| `--hardware` | string | "" | GPU type. Bundled options: `H100`, `A100-SXM`, `A100-80`. If empty, loaded from `defaults.yaml`. Add new GPUs to `hardware_config.json` (include `IntraNodeBwGBps`/`InterNodeBwGBps` if instances on that GPU may span nodes — see [Interconnect Calibration](#interconnect-calibration)). |
-| `--tp` | int | 0 | Tensor parallelism degree. If 0, loaded from `defaults.yaml`. |
+| `--hardware` | string | "" | **Required** GPU type (`run` and `replay`). Bundled options: `H100`, `A100-SXM`, `A100-80`. Never loaded from `defaults.yaml` — omitting it is refused naming the flag (NS-6, #1733). Add new GPUs to `hardware_config.json` (include `IntraNodeBwGBps`/`InterNodeBwGBps` if instances on that GPU may span nodes — see [Interconnect Calibration](#interconnect-calibration)). |
+| `--tp` | int | 0 | **Required** tensor parallelism degree, > 0 (`run` and `replay`). Never loaded from `defaults.yaml` — omitting it is refused naming the flag (NS-6, #1733). |
 | `--dp` | int | 1 | Data parallelism degree (MoE models only; `--latency-model trained-physics` only). `--dp N` spawns N real single-node engine replicas per `--num-instances`, each sized per-rank (`DP=1`) — on both `blis run` (#1531) and `blis replay` (#1556); re-supply it identically on replay — the TraceV2 header has no `data_parallel` field at all, and replay reads no parallelism field back from it, so omitting `--dp` on the replay leg silently compares an N-replica run against a 1-replica replay. Supported with `--enable-expert-parallel` since #1548 (the EP group is those same replicas' GPUs; re-supply both flags on replay). Supported with PD disaggregation (each pool spawns N per-rank replicas) and node pools (N×M replicas reserve N×M×TP GPUs, each sized per-rank) since #1553. Rejected with the model autoscaler (#1553: dp-group co-scaling is undefined). |
 | `--enable-expert-parallel` | bool | false | Enable expert parallelism for MoE models (mirrors vLLM `--enable-expert-parallel`; `--latency-model trained-physics` only). Since #1548 it affects **step time** (routed-expert weights shard across the `TP·DP` EP group; the MoE FFN dispatch/combines instead of all-reducing) as well as KV-capacity sizing (#1656), and is supported alongside `--dp > 1`. Reserves no GPUs beyond those `--dp` placement already takes. |
 | `--moe-comm-backend` | string | "" | MoE all-to-all comm backend for the dispatch/combine cost (mirrors vLLM `VLLM_ALL2ALL_BACKEND`): `naive`, `allgather_reducescatter` (default), `pplx`, `deepep_high_throughput`, `deepep_low_latency`, `mori`, `flashinfer_all2allv`. Charged when `--dp > 1` **or** `--enable-expert-parallel` (#1548); inert otherwise. The two DeepEP modes share one placeholder cost until #1568 calibrates them. |
@@ -159,8 +159,8 @@ For analytical step time estimation without trained coefficients.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--latency-model` | string | "trained-physics" | Latency model backend: `trained-physics` (default), `roofline`. Both backends auto-fetch HuggingFace config.json for KV block auto-calculation (may require network access). Both require `config.json` for latency estimation and KV sizing. Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. |
-| `--model-config-folder` | string | "" | Path to folder containing HuggingFace `config.json`. Overrides `--latency-model` auto-resolution. |
+| `--latency-model` | string | "trained-physics" | Latency model backend: `trained-physics` (default), `roofline`. Both read the model's `config.json` from the catalog (`model_configs/<model>/`, or `--model-config-folder`) for latency estimation and KV sizing; an uncatalogued model is refused and nothing is fetched. Both require `--hardware` and `--tp`. |
+| `--model-config-folder` | string | "" | Path to a folder containing the model's HuggingFace `config.json`. Overrides the catalog lookup at `model_configs/<short-name>/`. BLIS never fetches or writes a config at run time (NS-6, #1733). |
 | `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. Overrides `--latency-model` auto-resolution. Also carries the optional per-GPU interconnect calibration (`IntraNodeBwGBps` / `InterNodeBwGBps`) that prices cross-node collective traffic — see [Interconnect calibration](#interconnect-calibration) below. |
 
 See [Roofline Estimation](../concepts/roofline.md) for details on the analytical model.
@@ -169,7 +169,7 @@ See [Roofline Estimation](../concepts/roofline.md) for details on the analytical
 
 The latency model mode is selected based on available configuration:
 
-1. **Trained-physics mode** (default): Auto-resolves model config from HuggingFace and hardware config from bundled `hardware_config.json`. Requires `--hardware` and `--tp` (loaded from `defaults.yaml` when available). Uses 13 globally-fitted coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from `trained_physics_coefficients` in `defaults.yaml`. Physics-informed basis functions with learned corrections.
+1. **Trained-physics mode** (default): Resolves the model config from the catalog (`model_configs/<short-name>/config.json`) and the hardware config from the bundled `hardware_config.json`. Requires `--hardware` and `--tp` explicitly (never inferred, NS-6). Uses 13 globally-fitted coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from `trained_physics_coefficients` in `defaults.yaml`. Physics-informed basis functions with learned corrections.
 2. **Roofline mode**: If `--latency-model roofline` is explicitly set with `--hardware` and `--tp`. Pure analytical estimation from model architecture and hardware specifications.
 
 ## Cluster Configuration
@@ -573,12 +573,12 @@ When BLIS starts, it resolves latency configuration through a layered process. E
 
 **Hardware and TP defaults resolution (all backends):**
 
-Before any backend-specific logic runs, BLIS loads hardware/TP/vLLM-version defaults from `defaults.yaml` for the specified `--model` when those flags are not explicitly provided. This ensures analytical backends (roofline, trained-physics) can auto-resolve without requiring explicit `--hardware` and `--tp` for models listed in `defaults.yaml`.
+Before any backend-specific logic runs, BLIS requires the deployment: `--hardware` and `--tp` must both be supplied, on `blis run` and `blis replay` alike. Omitting either is refused naming the missing flag (NS-6, #1733). BLIS no longer reads per-model `GPU`/`tensor_parallelism` values from `defaults.yaml` — inferring a deployment let a run complete and emit metrics for a configuration nobody chose.
 
 **Backend-specific resolution:**
 
 1. If `--latency-model trained-physics` (default) or `roofline`:
-   - Auto-resolve model config: check `model_configs/` for existing `config.json`, fetch from HuggingFace on miss (set `HF_TOKEN` for gated models)
+   - Resolve the model config from the catalog: `model_configs/<short-name>/config.json`. A model with no entry is refused naming that path — nothing is fetched, and no run writes to the catalog (NS-6)
    - Auto-resolve hardware config from bundled `hardware_config.json`
    - For roofline: beta coefficients are computed analytically from model architecture and hardware specs
    - For trained-physics: load 13 global coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from `trained_physics_coefficients` in `defaults.yaml`
@@ -589,7 +589,7 @@ Before any backend-specific logic runs, BLIS loads hardware/TP/vLLM-version defa
 **`--total-kv-blocks` resolution** (highest priority wins):
 
 1. **Explicit CLI flag** — if `--total-kv-blocks` is set, that value is used regardless of backend
-2. **Auto-calculation** (all backends) — when `MemoryGiB > 0` in the hardware config and `config.json` is available, `CalculateKVBlocks` derives the block count from model architecture and GPU memory. BLIS attempts to resolve `config.json` by checking `--model-config-folder`, then `model_configs/` (cached/bundled), then fetching from HuggingFace (set `HF_TOKEN` for gated models). Failure modes: (a) if `MemoryGiB` is missing from `hardware_config.json`, BLIS warns and falls back to the hardcoded default (layer 3); (b) if model architecture params cannot be extracted from `config.json`, BLIS warns and falls back to the hardcoded default; (c) if the calculation itself fails (e.g., unsupported activation function), BLIS warns and falls back to the hardcoded default. Auto-calculation currently requires SwiGLU-family activations (`silu`, `swiglu`, `geglu`, `situ` — Kimi-K3's SiTU-GLU, a 3-matrix gated GLU with SwiGLU's weight/FLOP shape); models with other activations (e.g., Falcon's `gelu`) will fall back to the hardcoded default unless `--total-kv-blocks` is explicitly set
+2. **Auto-calculation** (all backends) — when `MemoryGiB > 0` in the hardware config and `config.json` is available, `CalculateKVBlocks` derives the block count from model architecture and GPU memory. BLIS resolves `config.json` by checking `--model-config-folder`, then the catalog entry `model_configs/<short-name>/config.json`; there is no third step — an uncatalogued model is refused rather than fetched (NS-6). Failure modes: (a) if `MemoryGiB` is missing from `hardware_config.json`, BLIS warns and falls back to the hardcoded default (layer 3); (b) if model architecture params cannot be extracted from `config.json`, BLIS warns and falls back to the hardcoded default; (c) if the calculation itself fails (e.g., unsupported activation function), BLIS warns and falls back to the hardcoded default. Auto-calculation currently requires SwiGLU-family activations (`silu`, `swiglu`, `geglu`, `situ` — Kimi-K3's SiTU-GLU, a 3-matrix gated GLU with SwiGLU's weight/FLOP shape); models with other activations (e.g., Falcon's `gelu`) will fall back to the hardcoded default unless `--total-kv-blocks` is explicitly set
 3. **Hardcoded default** — 1,000,000 (CLI flag default, used when auto-calculation is unavailable or fails)
 
 !!! note "Per-instance capacity with mixed-GPU node pools (#1522)"
