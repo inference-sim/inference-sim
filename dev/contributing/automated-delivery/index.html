@@ -3108,6 +3108,13 @@
 </code></pre></div>
 <p><strong>No issue number.</strong> The target is the issue you commented on. An argument would be redundant — you are already on the issue — and a hazard: commenting on #100 with <code>#200</code> would deliver something other than what you are reading. A <code>#N</code> that <em>agrees</em> with the current issue is tolerated, since the earlier documented form used one; a disagreeing one is refused with an explanation rather than silently ignored.</p>
 <p>Restricted to repository collaborators, same as <code>/archon-pr-review</code> and <code>@claude</code>.</p>
+<p><strong>Your delivery is recorded as yours.</strong> Every delivery PR is authored by <code>app/claude</code>, so with several in flight nothing on the PR itself said who started it. The implement phase now puts your login there: you are added as an <strong>assignee</strong>, and a <code>Delivery approved by @you</code> line is appended to the body. The assignee makes your deliveries findable (<code>is:pr assignee:@me</code>, or the Assigned tab) and subscribes you to the thread, so verdicts, correction rounds and a <code>needs-human</code> stop reach you without polling; the body line is the durable record, and survives someone clearing assignees. Four properties are deliberate:</p>
+<ul>
+<li><strong>The login comes from the event's actor</strong> — the same one the permission check above validated — and never from the text you typed, so a comment cannot name someone else as the approver.</li>
+<li><strong>A workflow step records it, not the agent.</strong> The agent opening the PR is the one action in this phase that is not workflow-guaranteed, and provenance that goes missing exactly when a delivery went wrong is provenance nobody can rely on.</li>
+<li><strong>It runs on <code>always()</code></strong>, so an agent that errored or was cancelled still says who to tell. The uncovered case is the documented one: a runner that dies executes no step at all. Re-issuing the command records it, and doing so twice does not duplicate the line.</li>
+<li><strong>A delivery resumed by someone else adds them alongside you</strong> rather than replacing you. Both people started a delivery on that branch, and both should hear about it.</li>
+</ul>
 <h2 id="what-can-be-delivered">What can be delivered<a class="headerlink" href="#what-can-be-delivered" title="Permanent link">&para;</a></h2>
 <p><strong>Any single deliverable issue.</strong> It does not have to be a sub-issue of a planned feature:</p>
 <table>
