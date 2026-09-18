@@ -198,9 +198,19 @@ which is what keeps the docs route live whether or not this hunk is applied.
   or re-stating it, against an unbounded cost the other way.
 - **Permission is resolved per author, per delivery**, so revoking access retroactively unweights
   that author's past comments. Correct, and worth knowing.
-- **The trust lookup fails closed.** A transient API error reads as "no write access", so a flaky
-  API under-trusts rather than over-trusts. The stderr line naming each unweighted author is how a
-  reader notices.
+- **The trust lookup fails closed, and distinguishes "no access" from "could not ask".** A `404` is a
+  definitive answer — GitHub saying the login is not a collaborator, which is also what a non-user
+  login such as `github-actions` returns — while a 403/5xx/network failure means the caller could not
+  ask. That split is load-bearing rather than tidy: `GET
+  /repos/{owner}/{repo}/collaborators/{login}/permission` **requires push access**, so a contributor
+  with read-only access gets a failure for *every* author, and treating those as "nobody has write
+  access" would report "no design refinements" on every issue — this failure, one level down. A
+  thread where **no** author's permission resolved therefore degrades with the marker; a thread where
+  some resolved proceeds, with each unresolved author named on stderr.
+- **Partial resolution proceeds.** If some authors resolve and some do not, the unresolved ones are
+  dropped and the run continues rather than degrading. Degrading on any single failure would make one
+  deleted account or one renamed login block a delivery, which is worse than dropping a comment that
+  is probably not a refinement.
 - **`isMinimized` comes from `gh issue view --json comments`.** If that field ever stops being
   populated the filter's minimized term goes quiet, and a retracted comment would be honoured.
 

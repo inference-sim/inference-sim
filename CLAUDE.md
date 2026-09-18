@@ -768,7 +768,8 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 
 ### Process (how to do each activity)
 
-- `docs/contributing/pr-workflow.md`: End-to-end PR workflow (worktree → plan → review → implement → audit → commit)
+- `docs/contributing/pr-workflow.md`: End-to-end PR workflow (worktree → plan → review → implement → audit → commit). **Step 1.5 defines the source document as the issue body PLUS the design refinements in its comment thread** — a body is written once and the design is then refined in comments, so a plan made from the body alone builds an out-of-date spec faithfully (#1782). `scripts/deliver-issue-refinements.sh <issue>` prints the comments that carry authority: a comment counts iff its author holds `admin`/`write`/`maintain` (`authorAssociation` is NOT the signal — this repository's maintainer reports `CONTRIBUTOR`), a refinement overrides the body on any point it addresses, later refinements win, and the target branch / `archon-plan:` / `Depends on:` stay body-only
+- `docs/contributing/issue-comment-authority.md`: Decision record for that rule — the rejected alternative and the measurements behind it
 - `docs/contributing/rfc.md`: RFC template for large features (tracking issue with holes/surfaces/contracts)
 - `docs/contributing/templates/rfc-to-plan.md`: Claude prompt for encoding RFC into .archon plan + creating sub-issues
 
