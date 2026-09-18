@@ -2,6 +2,7 @@ package latency_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,8 +17,12 @@ import (
 
 // TestBlockTypeLayerCount covers the #1729 (NS-4) block-type-array reader directly,
 // including the robustness cases the end-to-end parse tests do not reach: an absent
-// key, an empty list, and a non-list value all yield 0 so the caller keeps the
-// existing loud NumLayers failure (AC-4) rather than a silent 0.
+// key, an empty list, and a non-list value all yield 0, so the caller keeps the loud
+// layer-count failure rather than a silent 0. Since #1777 that failure is
+// GetModelConfigFromHF's parse-boundary refusal naming both keys (asserted by
+// TestGetModelConfig_NoLayerEvidenceIsRefusedNamingBothKeys), with the per-backend
+// "NumLayers must be > 0" validators retained as defense in depth (the original AC-4
+// claim, now asserted by TestBothBackendsRejectZeroLayerModelConfig).
 //
 // Only the list LENGTH is read, so element types are irrelevant — a config may spell
 // its blocks as strings ("attention"/"mamba"), numbers, or a mixture.
@@ -62,7 +67,9 @@ func TestBlockTypeLayerCount(t *testing.T) {
 // num_hidden_layers scalar wins whenever it is present and non-zero (so every
 // currently-catalogued model is byte-identical, INV-6); the block-type array is a
 // pure fallback consulted only when the scalar has no answer; and with neither, the
-// resolver returns 0 so the backend validators still fail loudly.
+// resolver returns 0 — which since #1777 GetModelConfigFromHF refuses at the parse
+// boundary rather than passing to the per-backend validators (both retain their own
+// NumLayers > 0 check as defense in depth).
 func TestResolveNumLayers(t *testing.T) {
 	cases := []struct {
 		name string
@@ -483,6 +490,79 @@ func TestGetModelConfig_NoLayerEvidenceIsRefusedNamingBothKeys(t *testing.T) {
 				t.Errorf("derivation warning must not fire when nothing was derived; log: %q", log.String())
 			}
 		})
+	}
+}
+
+// TestGetModelConfigFromHF_JSONNumberScalarIsDiagnosedAsADecoderViolation covers the one
+// way the refusal above can be reached WITHOUT a defective config: HFConfig.Raw is
+// exported and GetModelConfigFromHF takes an already-built *HFConfig, so a caller decoding
+// with json.Decoder.UseNumber() supplies json.Number where every reader expects float64.
+// The scalar then does not answer and the parse refuses — correctly, since accepting it in
+// GetInt alone would half-decode the config (see the HFConfig.Raw contract).
+//
+// What must NOT happen is the refusal calling a genuine JSON number "not a number": that
+// reads as a defect in the config file and sends the caller editing a value that is already
+// right, when the fix is one line away in their decoder. So the diagnostic has to name the
+// decoder — the same "say what is actually wrong with which key" standard the config-side
+// clauses are held to.
+func TestGetModelConfigFromHF_JSONNumberScalarIsDiagnosedAsADecoderViolation(t *testing.T) {
+	// Built the way a caller reaching for UseNumber would, rather than by hand-writing
+	// json.Number literals, so the test exercises the actual route into this state.
+	dec := json.NewDecoder(strings.NewReader(
+		`{"num_hidden_layers": 52, ` + shapeFieldsForLayerEvidence + `}`))
+	dec.UseNumber()
+	var raw map[string]any
+	if err := dec.Decode(&raw); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := raw["num_hidden_layers"].(json.Number); !ok {
+		t.Fatalf("precondition: UseNumber must yield json.Number, got %T", raw["num_hidden_layers"])
+	}
+
+	hf := &latency.HFConfig{Raw: raw}
+	if got := hf.ResolveNumLayers(); got != 0 {
+		t.Fatalf("precondition: a json.Number scalar does not answer, want 0, got %d", got)
+	}
+
+	_, err := latency.GetModelConfigFromHF(hf)
+	if err == nil {
+		t.Fatal("a Raw map violating the float64 contract must be refused, not silently parsed")
+	}
+	// The clause must name the offending key, the type it holds, and the decoder setting
+	// that produced it — everything needed to fix this without reading BLIS's source.
+	for _, want := range []string{`"num_hidden_layers"`, "json.Number", "UseNumber"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("diagnostic must mention %q\ngot: %v", want, err)
+		}
+	}
+	// The regression this pins: reporting a JSON number as "not a number".
+	if strings.Contains(err.Error(), "not a number") {
+		t.Errorf("a json.Number is a JSON number; the diagnostic must not call it "+
+			"\"not a number\" and send the caller editing a correct config value\ngot: %v", err)
+	}
+}
+
+// TestJSONValueKind_NamesAJSONNumberANumber is the companion unit claim: jsonValueKind
+// reports json.Number as "a number", so the OTHER key's clause — where a number genuinely
+// is the wrong type — reads "holds a number, not a list" rather than leaking the Go type
+// name at an operator. Asserted through the layers_block_type clause because jsonValueKind
+// is unexported; that clause is its only other caller.
+func TestJSONValueKind_NamesAJSONNumberANumber(t *testing.T) {
+	dec := json.NewDecoder(strings.NewReader(
+		`{"layers_block_type": 52, ` + shapeFieldsForLayerEvidence + `}`))
+	dec.UseNumber()
+	var raw map[string]any
+	if err := dec.Decode(&raw); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	_, err := latency.GetModelConfigFromHF(&latency.HFConfig{Raw: raw})
+	if err == nil {
+		t.Fatal("a scalar-less config whose block-type key is a number must be refused")
+	}
+	want := `"layers_block_type" holds a number, not a list`
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("diagnostic must contain %s\ngot: %v", want, err)
 	}
 }
 

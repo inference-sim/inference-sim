@@ -21,6 +21,20 @@ const bitsPerByte = 8.0
 // HFConfig represents a flexible JSON object with dynamic fields.
 type HFConfig struct {
 	// Raw holds the entire JSON as a dynamic map.
+	//
+	// PRECONDITION on the values: exactly what json.Unmarshal produces when decoding
+	// into `any` — JSON numbers as float64, objects as map[string]any, arrays as []any.
+	// ParseHFConfig is the production producer and uses exactly that path; a caller
+	// constructing an HFConfig by hand (or feeding GetModelConfigFromHF directly) must
+	// match it.
+	//
+	// json.Decoder.UseNumber() is NOT supported: it decodes numbers as json.Number, and
+	// EVERY reader here asserts a concrete type — GetInt/GetBool/GetString, the getInt
+	// closure in GetModelConfigFromHF, and parseQuantizationConfig. Teaching one reader
+	// json.Number would half-decode a config (a layer count that resolves beside a
+	// hidden_size silently read as 0), which is strictly worse than refusing, so the
+	// contract is stated here and layerCountEvidence names the violation explicitly
+	// rather than reporting the value as a non-number (#1777).
 	Raw map[string]any
 }
 
@@ -191,11 +205,12 @@ const numHiddenLayersField = "num_hidden_layers"
 // there in the config.
 //
 // Returns 0 when the key is absent, holds an empty list, or holds a non-list value, so
-// the caller keeps the existing layer-count resolution (the scalar, and ultimately the
-// loud validator failure) rather than a silent 0. Only the LENGTH is read — element
-// types are irrelevant, mirroring LinearAttnFullLayerCount. Counting is deliberately
-// all this does: per-type tallies / layer groups are a later release (R4a), so a
-// derived count is a total layer count and nothing more.
+// the caller keeps the existing layer-count resolution (the scalar, and ultimately
+// GetModelConfigFromHF's loud parse-boundary refusal — see layerCountEvidence) rather
+// than a silent 0. Only the LENGTH is read — element types are irrelevant, mirroring
+// LinearAttnFullLayerCount. Counting is deliberately all this does: per-type tallies /
+// layer groups are a later release (R4a), so a derived count is a total layer count and
+// nothing more.
 func (c *HFConfig) BlockTypeLayerCount() int {
 	blocks, ok := c.Raw[LayersBlockTypeField].([]any)
 	if !ok {
@@ -206,8 +221,10 @@ func (c *HFConfig) BlockTypeLayerCount() int {
 
 // ResolveNumLayers returns the model's total transformer-layer count: the
 // num_hidden_layers scalar when it is present and non-zero, else the length of the
-// block-type list (#1729 / NS-4). Returns 0 when neither source has an answer, so the
-// per-backend validators still fail loudly (never a silent 0).
+// block-type list (#1729 / NS-4). Returns 0 when neither source has an answer — never a
+// silent 0: GetModelConfigFromHF refuses that at the parse boundary, naming both keys
+// consulted (#1777), and the per-backend validators keep their own NumLayers > 0 check as
+// defense in depth for a ModelConfig built by any other route.
 //
 // The scalar wins whenever it answers, which makes the array a pure fallback: every
 // config that declares num_hidden_layers — i.e. every currently-catalogued model —
@@ -241,14 +258,21 @@ func (c *HFConfig) numLayersScalar() (int, bool) {
 
 // jsonValueKind names the JSON type of a decoded config value in operator-facing terms,
 // so a "wrong type" diagnostic can say WHAT the key holds instead of only that it was
-// unusable. json.Unmarshal into `any` produces exactly these Go types.
+// unusable. json.Unmarshal into `any` — the HFConfig.Raw contract — produces exactly
+// these Go types.
+//
+// json.Number is named "a number" because that is what it IS to the operator reading
+// their config: the value is a perfectly good JSON number, decoded by a Decoder the Raw
+// contract does not admit. So a caller that violates that contract must never be told
+// "num_hidden_layers holds a json.Number, not a number" — layerCountEvidence intercepts
+// that case ahead of its generic wrong-type clause and names the real problem (#1777).
 func jsonValueKind(v any) string {
 	switch v.(type) {
 	case nil:
 		return "null"
 	case bool:
 		return "a boolean"
-	case float64:
+	case float64, json.Number:
 		return "a number"
 	case string:
 		return "a string"
@@ -273,6 +297,10 @@ func jsonValueKind(v any) string {
 // that visibly states its layer count while being told the count is missing. Naming both
 // keys, and saying what is wrong with each, is the difference between a one-edit fix and
 // a source dive.
+//
+// Same standard applies when the caller — not the config — is at fault: a Raw map built
+// with json.Decoder.UseNumber() holds json.Number, which no reader here accepts, and that
+// gets its own clause naming the decoder rather than blaming the config's number (#1777).
 func (c *HFConfig) layerCountEvidence() []string {
 	clauses := make([]string, 0, 2)
 
@@ -284,7 +312,18 @@ func (c *HFConfig) layerCountEvidence() []string {
 	case !present:
 		clauses = append(clauses, fmt.Sprintf("%q is absent", numHiddenLayersField))
 	default:
-		if _, isNumber := v.(float64); !isNumber {
+		if _, isJSONNumber := v.(json.Number); isJSONNumber {
+			// Reachable only by violating the HFConfig.Raw contract, since Raw is exported
+			// and GetModelConfigFromHF takes an already-built *HFConfig: a caller decoding
+			// with json.Decoder.UseNumber() gets json.Number, which GetInt does not accept.
+			// Intercepted BEFORE the generic clause below, which would otherwise report a
+			// genuine JSON number as "not a number" — a self-contradiction that sends the
+			// caller looking at their config file when the defect is in their decoder.
+			clauses = append(clauses, fmt.Sprintf(
+				"%q was decoded as a json.Number, which BLIS's config readers do not accept "+
+					"(decode into `any` WITHOUT json.Decoder.UseNumber, as ParseHFConfig does — "+
+					"see the HFConfig.Raw contract)", numHiddenLayersField))
+		} else if _, isNumber := v.(float64); !isNumber {
 			clauses = append(clauses, fmt.Sprintf(
 				"%q holds %s, not a number", numHiddenLayersField, jsonValueKind(v)))
 		} else {
