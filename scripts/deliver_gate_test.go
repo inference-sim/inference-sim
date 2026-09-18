@@ -14,6 +14,9 @@ var (
 	allCIStatus = []string{"success", "failure", "unknown"}
 	allPlanGate = []string{"pass", "absent", "regression", "conflicts", "unverified"}
 	allVerdicts = []string{"GREEN", "NOT-GREEN", "MISSING"}
+	// The cross-vendor qa-review signal (#1715). A second reviewer from a different model
+	// family than the implementer and the AGENT_VERDICT reviewer, gated in parallel with them.
+	allQAVerdict = []string{"PASS", "BLOCK", "MISSING"}
 	// `open` means a correction dismissed a finding that the reviewer has not accepted.
 	allDismissals = []string{"none", "open", "unknown"}
 	// The branch's mergeability against main. `conflicting` (REST mergeable_state "dirty")
@@ -45,6 +48,7 @@ func gateEnv(overrides map[string]string) map[string]string {
 		"CI_STATUS":     "success",
 		"PLAN_GATE":     "pass",
 		"AGENT_VERDICT": "GREEN",
+		"QA_VERDICT":    "PASS",
 		"DISMISSALS":    "none",
 		"MERGE_STATE":   "mergeable",
 		"ROUND":         "0",
@@ -119,7 +123,10 @@ func requireDecision(t *testing.T, out gateOutcome, want string) {
 // TestDeliverGateWiringErrorsAreLoud covers BC-1's first half: an unset or malformed input
 // is a workflow wiring bug and must fail visibly rather than produce a verdict.
 func TestDeliverGateWiringErrorsAreLoud(t *testing.T) {
-	required := []string{"CI_STATUS", "PLAN_GATE", "AGENT_VERDICT", "DISMISSALS", "MERGE_STATE", "ROUND", "MAX_ROUNDS"}
+	// QA_VERDICT and MERGE_STATE are guarded exactly like the other six: fail-closed is the whole
+	// contract of a blocking review signal (and of the mergeability signal), so a workflow that
+	// forgets to wire either must exit 2 rather than silently decide without it.
+	required := []string{"CI_STATUS", "PLAN_GATE", "AGENT_VERDICT", "QA_VERDICT", "DISMISSALS", "MERGE_STATE", "ROUND", "MAX_ROUNDS"}
 
 	for _, name := range required {
 		t.Run("unset/"+name, func(t *testing.T) {
@@ -191,6 +198,12 @@ func TestDeliverGateUnrecognisedValuesFailClosed(t *testing.T) {
 		{"verdict-prose", "AGENT_VERDICT", "looks good to me"},
 		{"dismissals-bogus", "DISMISSALS", "maybe"},
 		{"dismissals-numeric", "DISMISSALS", "2"},
+		// The qa-review marker is derived from the answerer's JSON in the workflow, so a
+		// derivation that leaks a status name or the render_report emoji must not fall through.
+		{"qa-verdict-lowercase", "QA_VERDICT", "pass"},
+		{"qa-verdict-typo", "QA_VERDICT", "BLOCKED"},
+		{"qa-verdict-status-leak", "QA_VERDICT", "FLAW_FOUND"},
+		{"qa-verdict-green", "QA_VERDICT", "GREEN"},
 		// The gate's merge domain is the mapped value, not GitHub's raw mergeable_state.
 		// The derivation step maps "dirty"→conflicting and "behind"→mergeable; a raw GitHub
 		// value reaching the gate means that mapping was skipped, so it must stop rather than
@@ -241,6 +254,26 @@ func TestDeliverGateClosedByDefault(t *testing.T) {
 			}
 		}
 	})
+
+	// A qa-review that produced no marker is MISSING EVIDENCE, exactly like an unread
+	// DELIVER-VERDICT. This is the case that matters most for a review pass that can crash,
+	// exhaust its tool budget or lose its model: the gate must never read "no marker" as a pass.
+	t.Run("qa-verdict-missing", func(t *testing.T) {
+		for _, ci := range allCIStatus {
+			for _, plan := range allPlanGate {
+				for _, verdict := range allVerdicts {
+					out := runGate(t, gateEnv(map[string]string{
+						"CI_STATUS": ci, "PLAN_GATE": plan, "AGENT_VERDICT": verdict,
+						"QA_VERDICT": "MISSING",
+					}))
+					if out.decision != "needs-human" {
+						t.Errorf("CI_STATUS=%s PLAN_GATE=%s AGENT_VERDICT=%s QA_VERDICT=MISSING: decision = %q, want needs-human",
+							ci, plan, verdict, out.decision)
+					}
+				}
+			}
+		}
+	})
 }
 
 // TestDeliverGateDisagreementGoesToAHuman covers BC-4, the guardrail this gate exists for.
@@ -266,11 +299,16 @@ func TestDeliverGateDisagreementGoesToAHuman(t *testing.T) {
 
 	// The rule is round-independent: it is not a thing that becomes acceptable early in a
 	// delivery, nor a thing the round cap should relabel.
+	//
+	// QA_VERDICT is stated rather than inherited from the default: since #1715 the rule is
+	// "NEITHER reviewer is asking for a correction", so the premise of a disagreement is that
+	// both came back clean.
 	for _, round := range []string{"0", "1", "3", "9"} {
 		for _, c := range combos {
 			t.Run(c.name+"/round-"+round, func(t *testing.T) {
 				env := gateEnv(c.env)
 				env["AGENT_VERDICT"] = "GREEN"
+				env["QA_VERDICT"] = "PASS"
 				env["ROUND"] = round
 				out := runGate(t, env)
 				requireDecision(t, out, "needs-human")
@@ -280,6 +318,112 @@ func TestDeliverGateDisagreementGoesToAHuman(t *testing.T) {
 			})
 		}
 	}
+
+	// The generalisation (#1715, AC-2). An objective blocker only reaches a human when NEITHER
+	// reviewer named something to fix. If EITHER did, there are findings a correction round can
+	// act on, and routing that to a human instead would waste the loop's whole reason for
+	// having correction rounds.
+	t.Run("either-review-non-green-corrects-instead", func(t *testing.T) {
+		for _, review := range []struct{ agent, qa string }{
+			{"NOT-GREEN", "PASS"},
+			{"GREEN", "BLOCK"},
+			{"NOT-GREEN", "BLOCK"},
+		} {
+			for _, c := range combos {
+				name := c.name + "/" + review.agent + "+" + review.qa
+				t.Run(name, func(t *testing.T) {
+					env := gateEnv(c.env)
+					env["AGENT_VERDICT"] = review.agent
+					env["QA_VERDICT"] = review.qa
+					env["ROUND"] = "0"
+					out := runGate(t, env)
+					requireDecision(t, out, "correct")
+					// The reason has to carry the objective blocker too, or the correction agent
+					// is told about the findings and not about the failure it must also fix.
+					if !strings.Contains(out.reason, "CI is failing") &&
+						!strings.Contains(out.reason, "archon plan") &&
+						!strings.Contains(out.reason, "dist ratchet") {
+						t.Errorf("reason does not name the objective blocker: %s", out.reason)
+					}
+				})
+			}
+		}
+	})
+}
+
+// TestDeliverGateQAVerdictBlocks covers #1715's AC-1: qa-review is a blocking signal in its own
+// right. A BLOCK routes to a correction round exactly like an Anthropic-side NOT-GREEN, is
+// subject to the same round cap, and — the load-bearing half — makes `ready` unreachable.
+func TestDeliverGateQAVerdictBlocks(t *testing.T) {
+	// A clean objective picture and a GREEN Anthropic review: qa-review alone must divert the
+	// delivery. If this passed `ready`, the whole cross-vendor gate would be advisory.
+	t.Run("block-alone-corrects", func(t *testing.T) {
+		for _, plan := range cleanPlanGate {
+			out := runGate(t, gateEnv(map[string]string{
+				"CI_STATUS": "success", "PLAN_GATE": plan,
+				"AGENT_VERDICT": "GREEN", "QA_VERDICT": "BLOCK", "ROUND": "0",
+			}))
+			requireDecision(t, out, "correct")
+			if !strings.Contains(out.reason, "qa-review") {
+				t.Errorf("plan %s: reason does not name qa-review as the blocker: %s", plan, out.reason)
+			}
+		}
+	})
+
+	// The cap bounds correction attempts whatever produced them, so a qa-BLOCK that will not
+	// converge must stop rather than loop.
+	t.Run("block-at-cap-stops", func(t *testing.T) {
+		for _, round := range []string{"3", "4", "99"} {
+			out := runGate(t, gateEnv(map[string]string{
+				"AGENT_VERDICT": "GREEN", "QA_VERDICT": "BLOCK",
+				"ROUND": round, "MAX_ROUNDS": "3",
+			}))
+			requireDecision(t, out, "needs-human")
+			if !strings.Contains(out.reason, "3") {
+				t.Errorf("round %s: reason should name the cap: %s", round, out.reason)
+			}
+		}
+	})
+
+	// `ready` is unreachable without PASS, across every other input that could otherwise carry
+	// it there. This is the assertion that would fail if a future edit dropped QA_VERDICT from
+	// the ready conjunction.
+	t.Run("ready-requires-pass", func(t *testing.T) {
+		for _, qa := range allQAVerdict {
+			for _, plan := range cleanPlanGate {
+				for _, round := range []string{"0", "3"} {
+					out := runGate(t, gateEnv(map[string]string{
+						"CI_STATUS": "success", "PLAN_GATE": plan,
+						"AGENT_VERDICT": "GREEN", "DISMISSALS": "none",
+						"QA_VERDICT": qa, "ROUND": round,
+					}))
+					if qa == "PASS" {
+						requireDecision(t, out, "ready")
+						continue
+					}
+					if out.decision == "ready" {
+						t.Errorf("QA_VERDICT=%s plan=%s round=%s reached ready; only PASS may",
+							qa, plan, round)
+					}
+				}
+			}
+		}
+	})
+
+	// Both reviews non-green is ONE correction round naming both, not a stop: the correction
+	// agent reads both review comments.
+	t.Run("both-non-green-is-one-correction", func(t *testing.T) {
+		out := runGate(t, gateEnv(map[string]string{
+			"AGENT_VERDICT": "NOT-GREEN", "QA_VERDICT": "BLOCK", "ROUND": "0",
+		}))
+		requireDecision(t, out, "correct")
+		for _, needle := range []string{"NOT-GREEN", "qa-review"} {
+			if !strings.Contains(out.reason, needle) {
+				t.Errorf("reason does not name %q, so the correction agent is not told which "+
+					"reviews blocked: %s", needle, out.reason)
+			}
+		}
+	})
 }
 
 // TestDeliverGateUnacceptedDismissalBlocksReady covers BC-12. A correction may dismiss a
@@ -506,19 +650,24 @@ func TestDeliverGateAlwaysDecides(t *testing.T) {
 	for _, ci := range allCIStatus {
 		for _, plan := range allPlanGate {
 			for _, verdict := range allVerdicts {
-				for _, dis := range allDismissals {
-					for _, merge := range allMergeState {
-						for _, round := range []string{"0", "3"} {
-							out := runGate(t, gateEnv(map[string]string{
-								"CI_STATUS": ci, "PLAN_GATE": plan, "AGENT_VERDICT": verdict,
-								"DISMISSALS": dis, "MERGE_STATE": merge, "ROUND": round,
-							}))
-							if out.exitCode != 0 {
-								t.Errorf("%s/%s/%s/%s/%s round %s: exit %d, want 0", ci, plan, verdict, dis, merge, round, out.exitCode)
-							}
-							if !valid[out.decision] {
-								t.Errorf("%s/%s/%s/%s/%s round %s: decision = %q, want ready/correct/needs-human/recheck",
-									ci, plan, verdict, dis, merge, round, out.decision)
+				for _, qa := range allQAVerdict {
+					for _, dis := range allDismissals {
+						for _, merge := range allMergeState {
+							for _, round := range []string{"0", "3"} {
+								out := runGate(t, gateEnv(map[string]string{
+									"CI_STATUS": ci, "PLAN_GATE": plan, "AGENT_VERDICT": verdict,
+									"QA_VERDICT": qa, "DISMISSALS": dis, "MERGE_STATE": merge, "ROUND": round,
+								}))
+								where := ci + "/" + plan + "/" + verdict + "/qa=" + qa + "/dis=" + dis + "/merge=" + merge + " round " + round
+								if out.exitCode != 0 {
+									t.Errorf("%s: exit %d, want 0", where, out.exitCode)
+								}
+								if !valid[out.decision] {
+									t.Errorf("%s: decision = %q, want ready/correct/needs-human/recheck", where, out.decision)
+								}
+								if strings.TrimSpace(out.reason) == "" {
+									t.Errorf("%s: empty reason; every decision must explain itself", where)
+								}
 							}
 						}
 					}

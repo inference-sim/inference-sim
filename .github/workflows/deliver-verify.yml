@@ -3,10 +3,10 @@ name: Deliver — Verify
 # Phase 2 of the L1 delivery loop (#1654). Determines a verdict and applies exactly one of:
 # ready-for-merge, needs-human, or a hand-off to Deliver — Correct.
 #
-# This workflow decides nothing itself. It gathers three machine-readable signals and hands
+# This workflow decides nothing itself. It gathers five machine-readable signals and hands
 # them to scripts/deliver-gate.sh, which is unit-tested. Keeping the decision in one tested
-# place is what makes "a GREEN review cannot override red CI" structural rather than something
-# to re-audit on every edit here.
+# place is what makes "clean reviews (GREEN + PASS) cannot override red CI" structural rather
+# than something to re-audit on every edit here.
 #
 # WHERE THE CI SIGNAL COMES FROM: this phase dispatches the repository's own ci.yml against the
 # delivery branch and waits for it. Two constraints force that, and an earlier version of this
@@ -21,11 +21,14 @@ name: Deliver — Verify
 # It also removes any obligation to keep package groups, per-group timeouts or the Go version in
 # step with ci.yml, since ci.yml is what runs.
 #
-# SECURITY: the only checkout here is the DEFAULT BRANCH, so scripts/ and .archon-version always
-# come from trusted code. The PR's tree is never checked out and the PR's code never executes on
-# the self-hosted runner — ci.yml runs it on ephemeral hosted runners instead. The input PR is
-# still required to be same-repo, open and on the branch this loop owns, so a misdirected
-# dispatch cannot aim the phase at someone else's PR.
+# SECURITY: the only checkout into the WORKSPACE is the DEFAULT BRANCH, so scripts/ and
+# .archon-version always come from trusted code. The PR's code never EXECUTES on the self-hosted
+# runner — ci.yml runs it on ephemeral hosted runners instead. Since #1715 the qa-review answerer
+# must READ the PR head, so it is checked out into an ephemeral `--detach` worktree under
+# $RUNNER_TEMP and the agents run with `--no-exec`, which drops their `go` build/test tool: the PR's
+# files are READ, never compiled or run, and the LiteLLM secrets in this job's env stay out of reach
+# of PR-authored code. The input PR is still required to be same-repo, open and on the branch this
+# loop owns, so a misdirected dispatch cannot aim the phase at someone else's PR.
 
 permissions:
   contents: read
@@ -402,9 +405,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      # No PR checkout. The repository's own CI compiles and tests the delivery branch, so this
-      # job never needs the PR's tree — which also means the PR's code no longer runs on the
-      # self-hosted runner at all. Go is still installed, but only to build archon.
+      # No PR checkout INTO THE WORKSPACE, and no execution of PR code anywhere in this job. The
+      # repository's own CI compiles and tests the delivery branch, so nothing here needs to build
+      # it. Narrowed by #1715 rather than dropped, because the invariant still holds in its
+      # narrowed form: the PR head is fetched into the object store below and, for qa-review only,
+      # checked out into an EPHEMERAL read-only `--detach` worktree under $RUNNER_TEMP whose files
+      # are READ but never COMPILED or EXECUTED — the answerer runs with `--no-exec`, which drops
+      # its `go` build/test tool from both the implementation map and the advertised schema, and
+      # the worktree is removed in an always-run cleanup. Go is still installed here, but only to
+      # build archon.
       - uses: actions/setup-go@v5
         if: steps.paused.outputs.paused == 'false'
         with:
@@ -840,6 +849,153 @@ jobs:
           echo "AGENT_VERDICT=$marker"
           echo "value=$marker" >> "$GITHUB_OUTPUT"
 
+      # The cross-vendor second opinion (#1715, RFC #1603). A questioner and an isolated answerer
+      # from a DIFFERENT model family than the Opus implementer and the Sonnet reviewer above —
+      # decorrelation is the whole point, and it is why this runs AFTER that reviewer rather than
+      # before: posting qa-review's findings first would put them in front of the Anthropic
+      # reviewer, which reads PR comments, and correlate the two reviews this gate compares.
+      #
+      # SECURITY — this is the one step that needs the PR's FILES. It materialises them into an
+      # ephemeral `--detach` worktree under $RUNNER_TEMP (from the already-fetched head object, so
+      # no second network fetch) and runs the answerer with `--no-exec`, which drops the `go`
+      # build/test tool from both the implementation map and the advertised schema. So the tool loop
+      # has only `read_file`/`grep`/`list_dir`, sandboxed to that worktree: PR files are READ, never
+      # compiled or executed, and the LiteLLM secrets in this step's env are never in reach of
+      # PR-authored code. The worktree is removed by the always-run cleanup step below.
+      #
+      # FAILING SOFT IS DELIBERATE, and it is not a fail-open. Every early exit here leaves NO
+      # QA-VERDICT marker, which the reader turns into `MISSING` and the gate turns into
+      # needs-human. A model outage therefore stops the delivery for a human instead of failing the
+      # whole job — but it can never be mistaken for a PASS, because a PASS only exists as a marker
+      # this step wrote from a parsed answer set.
+      - name: Run qa-review
+        id: qa
+        if: steps.paused.outputs.paused == 'false'
+        env:
+          OPENAI_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.LITELLM_API_KEY }}
+          QA_QUESTIONER_MODEL: ${{ vars.QA_QUESTIONER_MODEL || 'gcp/gemini-3.6-flash' }}
+          QA_ANSWERER_MODEL: ${{ vars.QA_ANSWERER_MODEL || 'azure/gpt-5.6-sol' }}
+          QA_REPO: ${{ github.repository }}
+          # The exact commit `Validate the target PR` recorded and CI verified, not FETCH_HEAD:
+          # archon-review.sh runs git in between, and a bare FETCH_HEAD would silently follow
+          # whatever fetched last. The object is present because of the fetch step above.
+          HEAD_SHA: ${{ steps.target.outputs.sha }}
+          WORKTREE: ${{ runner.temp }}/qa-head
+        run: |
+          set -uo pipefail
+          skip() { echo "::warning::$1 — no QA-VERDICT marker will be posted, so the gate reads MISSING and stops for a human"; exit 0; }
+
+          git worktree add --detach "$WORKTREE" "$HEAD_SHA" \
+            || skip "could not materialise the PR head at $HEAD_SHA into a read-only worktree"
+
+          # Title, body and diff are the questioner's only inputs; it never sees the worktree.
+          title=$(jq -r '.title // ""' "$RUNNER_TEMP/pr.json")
+          jq -r '.body // ""' "$RUNNER_TEMP/pr.json" > "$RUNNER_TEMP/qa-body.txt"
+          gh pr diff "$PR" --repo "$REPO" > "$RUNNER_TEMP/qa-diff.txt" \
+            || skip "could not read the diff for #$PR"
+
+          python3 scripts/qa-review/questioner.py \
+            --title "$title" \
+            --body-file "$RUNNER_TEMP/qa-body.txt" \
+            --diff-file "$RUNNER_TEMP/qa-diff.txt" \
+            > "$RUNNER_TEMP/qa-questions.json" \
+            || skip "the qa-review questioner failed"
+
+          python3 scripts/qa-review/answerer.py \
+            --worktree "$WORKTREE" --no-exec \
+            --questions-file "$RUNNER_TEMP/qa-questions.json" \
+            > "$RUNNER_TEMP/qa-answers.json" \
+            || skip "the qa-review answerer failed"
+
+          # Derived from the ANSWERER JSON, using render_report.py's own rule (BLOCK iff any answer
+          # status is FLAW_FOUND or CANNOT_ANSWER), NOT by grepping the report's header emoji: the
+          # renderer is vendored verbatim from the prototype and states that the verdict is a header
+          # emoji rather than a machine marker, so a rendering change must not be able to move the
+          # gate. An empty or non-array answer set is NOT a PASS — nothing was actually reviewed —
+          # so it takes the same MISSING path as a crash.
+          n=$(jq -r 'if type == "array" then length else 0 end' "$RUNNER_TEMP/qa-answers.json" 2>/dev/null || echo 0)
+          [[ "$n" =~ ^[0-9]+$ && "$n" -gt 0 ]] \
+            || skip "the qa-review answerer produced no answers, so there is no verdict to derive"
+          # Every answer must carry a RECOGNIZED status. The any()/else derivation below would score
+          # PASS for a statusless element (a missing/renamed status makes `.status == "FLAW_FOUND"`
+          # false, so it falls to else), so a parseable-but-statusless answer set — schema drift or a
+          # partial model reply — would silently read as PASS. answerer.py validates status only on
+          # its exhaustion fallback, not the happy path, so this is reachable. Treat any absent or
+          # unrecognized status as no trustworthy verdict: skip -> MISSING -> needs-human, the same
+          # fail-closed path as an empty set. A degraded answerer must never read as a pass.
+          jq -e 'all(.[]; .status == "CONFIDENT" or .status == "CANNOT_ANSWER" or .status == "FLAW_FOUND")' \
+            "$RUNNER_TEMP/qa-answers.json" >/dev/null 2>&1 \
+            || skip "the qa-review answer set has an element with a missing or unrecognized status, so no verdict can be trusted"
+          verdict=$(jq -r 'if any(.[]; .status == "FLAW_FOUND" or .status == "CANNOT_ANSWER") then "BLOCK" else "PASS" end' \
+                      "$RUNNER_TEMP/qa-answers.json") \
+            || skip "could not derive the qa-review verdict from the answer set"
+          [[ "$verdict" == PASS || "$verdict" == BLOCK ]] \
+            || skip "derived an unusable qa-review verdict '$verdict'"
+
+          # --qmodel is deliberately not passed: the renderer reads the model out of the questions
+          # document, which is what the questioner actually used, so the banner cannot drift.
+          python3 scripts/qa-review/render_report.py \
+            --questions "$RUNNER_TEMP/qa-questions.json" \
+            --answers "$RUNNER_TEMP/qa-answers.json" \
+            --pr "$PR" --title "$title" --amodel "$QA_ANSWERER_MODEL" \
+            --out "$RUNNER_TEMP/qa-report.md" \
+            || skip "the qa-review renderer failed"
+
+          # The marker must be the LAST non-empty line, which is the contract the reader enforces.
+          { echo; echo "QA-VERDICT: $verdict"; } >> "$RUNNER_TEMP/qa-report.md"
+          echo "QA verdict: $verdict ($n answers)"
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/qa-report.md" \
+            || skip "could not post the qa-review report to #$PR"
+
+      # ALWAYS, so a failed or cancelled qa-review cannot leave PR-head files behind on the
+      # self-hosted runner, whose workspace persists between deliveries. `rm -rf` is the fallback
+      # rather than the primary: `git worktree remove` also drops the administrative entry, and
+      # `prune` cleans up after the fallback. Nothing here may fail the job — the cleanup must not
+      # be the thing that turns a completed verification into a failed one.
+      - name: Remove the qa-review worktree
+        if: always()
+        env:
+          WORKTREE: ${{ runner.temp }}/qa-head
+        run: |
+          git worktree remove --force "$WORKTREE" >/dev/null 2>&1 || rm -rf "$WORKTREE"
+          git worktree prune >/dev/null 2>&1 || true
+          if [[ -e "$WORKTREE" ]]; then
+            echo "::warning::could not remove the qa-review worktree at $WORKTREE"
+          fi
+          exit 0
+
+      # Mirrors `Read the verdict marker` above exactly, and for the same two reasons: without the
+      # `.user.type == "Bot"` filter any user could set this signal by quoting the marker in a
+      # comment, and without the last-non-empty-line rule a comment that merely MENTIONS it —
+      # including a report that quotes this very contract — would count. Absent ⇒ MISSING, which
+      # the gate turns into needs-human.
+      - name: Read the QA verdict marker
+        id: qa_verdict
+        if: steps.paused.outputs.paused == 'false'
+        env:
+          SINCE: ${{ steps.since.outputs.at }}
+        run: |
+          set -uo pipefail
+          # Same reasoning as the verdict reader: an empty SINCE would match every comment on the
+          # PR, so `tail -n 1` could return a PREVIOUS round's qa-review verdict as this round's.
+          [[ -n "$SINCE" ]] \
+            || { echo "::error::the review-start marker is empty; refusing to read a qa-review verdict that may belong to an earlier round"; exit 1; }
+          lastlines=$(gh api "/repos/$REPO/issues/$PR/comments?per_page=100" --paginate \
+            --jq ".[]
+                  | select(.created_at > \"$SINCE\")
+                  | select(.user.type == \"Bot\")
+                  | .body
+                  | split(\"\n\")
+                  | map(select(test(\"\\\\S\")))
+                  | (last // \"\")
+                  | gsub(\"^\\\\s+|\\\\s+$\"; \"\")" 2>/dev/null || true)
+          marker=$(grep -xE 'QA-VERDICT: (PASS|BLOCK)' <<< "$lastlines" \
+                   | tail -n 1 | sed 's/^QA-VERDICT: //' || true)
+          [[ -n "$marker" ]] || marker=MISSING
+          echo "QA_VERDICT=$marker"
+          echo "value=$marker" >> "$GITHUB_OUTPUT"
+
       # RE-READ, after the review agent has run. The earlier `dismissals` read happens BEFORE the
       # agent so the prompt can tell it the incoming state — but the gate must not use that value.
       # The review phase is instructed to DELETE `deliver:has-dismissals` once it has explicitly
@@ -930,6 +1086,7 @@ jobs:
           CI_STATUS: ${{ steps.ci.outputs.status }}
           PLAN_GATE: ${{ steps.plan.outputs.gate }}
           AGENT_VERDICT: ${{ steps.verdict.outputs.value }}
+          QA_VERDICT: ${{ steps.qa_verdict.outputs.value }}
           DISMISSALS: ${{ steps.dismissals_final.outputs.state }}
           MERGE_STATE: ${{ steps.mergestate.outputs.state }}
           ROUND: ${{ steps.round.outputs.value }}
@@ -1002,6 +1159,7 @@ jobs:
             echo "| build / test / lint | \`${{ steps.ci.outputs.status }}\`${{ steps.ci.outputs.failing && format(' (failing: {0})', steps.ci.outputs.failing) || '' }} |"
             echo "| archon plan | \`${{ steps.plan.outputs.gate }}\` |"
             echo "| review verdict | \`${{ steps.verdict.outputs.value }}\` |"
+            echo "| qa-review verdict | \`${{ steps.qa_verdict.outputs.value }}\` |"
             echo "| outstanding dismissals | \`${{ steps.dismissals_final.outputs.state }}\` |"
             echo "| branch mergeability | \`${{ steps.mergestate.outputs.state }}\` |"
             echo "| correction rounds spent | ${{ steps.round.outputs.value }} of ${MAX_ROUNDS} |"
@@ -1041,6 +1199,13 @@ jobs:
       # stalls the delivery loop on a transient API failure — observed live on PR #1736.
       - name: Hand off to correct
         if: steps.paused.outputs.paused == 'false' && env.final_decision == 'correct'
+        env:
+          # The gate's combined reason (objective blockers + review findings), handed to Correct so
+          # its agent can act on an OBJECTIVE failure (CI / plan) too, not just the review findings
+          # in the DELIVER-VERDICT / QA-VERDICT comments (#1715 G2). Automation-produced (fixed
+          # vocabulary, never comment text), so it is trusted; passed via env to keep the value out
+          # of the command line below.
+          GATE_REASON: ${{ steps.gate.outputs.reason }}
         run: |
           # Dispatch on the resolved delivery branch, NOT `github.ref_name`, whose value differs by
           # the trigger that started this verify run:
@@ -1060,7 +1225,8 @@ jobs:
           # correction always runs the delivery branch's workflow copy, as the push path already did.
           scripts/dispatch-with-retry.sh deliver-correct.yml \
             --repo "$REPO" --ref "${{ steps.target.outputs.branch }}" \
-            -f pr_number="$PR" -f issue_number="$ISSUE_NUMBER"
+            -f pr_number="$PR" -f issue_number="$ISSUE_NUMBER" \
+            -f gate_reason="$GATE_REASON"
 
       # `always() && !success()`, NOT `failure() || cancelled()`. Per the GitHub expression docs
       # `failure()` is true when a previous step FAILS and `cancelled()` when the WORKFLOW is
@@ -1095,6 +1261,7 @@ jobs:
             echo "| build / test / lint | \`${{ steps.ci.outputs.status || 'not reached' }}\` |"
             echo "| archon plan | \`${{ steps.plan.outputs.gate || 'not reached' }}\` |"
             echo "| review verdict | \`${{ steps.verdict.outputs.value || 'not reached' }}\` |"
+            echo "| qa-review verdict | \`${{ steps.qa_verdict.outputs.value || 'not reached' }}\` |"
             echo
             echo "The loop will not resume on its own. See the [run](${RUN_URL}) for the failing"
             echo "step, then re-issue \`/approve-issue-for-pr-delivery\` once fixed."
