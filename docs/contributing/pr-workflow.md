@@ -1,6 +1,6 @@
 # PR Development Workflow
 
-**Status:** Active (v4.3 — updated 2026-08-28)
+**Status:** Active (v4.4 — updated 2026-09-18)
 
 This document describes the complete workflow for implementing a PR from any source: an RFC sub-issue, GitHub issues, a design document, or a feature request. The same steps apply whether you use Claude Code or standard git tools.
 

@@ -21,10 +21,10 @@ import (
 // ignores a correction someone deliberately wrote down; selecting too much lets a stranger's comment
 // steer a delivery that runs on a self-hosted runner with credentials in its environment.
 //
-// So the law is exercised here rather than reasoned about. Everything below drives the committed
-// filter through the script's own `--render` seam, which makes no network call — the live half
-// (resolving each author's repository permission) is a GitHub API response and there is nothing in
-// this repository that can evaluate one.
+// So the law is exercised here rather than reasoned about. The offline half drives the committed
+// filter through the script's own `--render` seam, which makes no network call. The live half
+// (resolving each author's repository permission) is exercised separately, further down, against a
+// `gh` stub placed on PATH — see "The live path" below.
 
 // refine renders a `{"comments":[…]}` payload through the real script and returns its stdout.
 func refine(t *testing.T, payload string) string {
@@ -772,5 +772,30 @@ func TestRefinementsLive_PartialResolutionKeepsTheResolvedAuthorAndDoesNotDegrad
 	if !strings.Contains(stderr, "unreachable") {
 		t.Errorf("the dropped author was not named on stderr, so a missed refinement is "+
 			"invisible.\nstderr:\n%s", stderr)
+	}
+}
+
+// A 429 (rate limit) is "could not ask", NOT the 404 that means "definitively not a collaborator".
+// The two share an exit-1 path out of `gh`, and the only thing that keeps them apart is the 404 grep
+// in resolve_permission — so a regression that broadened that match would silently turn a rate-limit
+// into "no write access" and hand back the no-refinements message. Pinned as its own case because a
+// 429 is the failure a busy self-hosted runner is most likely to actually hit.
+func TestRefinementsLive_A429IsCouldNotAskNotDefinitive(t *testing.T) {
+	path := stubGh(t, oneHumanComment,
+		`    echo "gh: HTTP 429: API rate limit exceeded" >&2; exit 1`)
+	stdout, stderr, code := runLive(t, path)
+
+	if !strings.HasPrefix(stdout, "REFINEMENT-READ-FAILED") {
+		t.Errorf("a rate-limited lookup was reported as an answer. A 429 means the caller could not "+
+			"ask, so the sole author is unresolved and the thread must degrade, not report "+
+			"no-refinements.\nstdout:\n%s\nstderr:\n%s", stdout, stderr)
+	}
+	if code != 3 {
+		t.Errorf("exit %d, want 3 (degraded): a 429 must fail closed like any other could-not-ask "+
+			"failure, never be mistaken for a definitive 404.", code)
+	}
+	if strings.Contains(stdout, "body is the whole specification") {
+		t.Errorf("a rate-limited thread reported the no-refinements message, conflating 429 with "+
+			"404.\nstdout:\n%s", stdout)
 	}
 }

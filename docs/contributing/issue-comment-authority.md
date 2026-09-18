@@ -237,12 +237,16 @@ which is what keeps the docs route live whether or not this hunk is applied.
     deviation log as a `CORRECTION` — which is exactly what a verifier reads before the issue body.
     And no verdict merges anything: a human sees the PR either way.
 
-    Closing it mechanically means giving verify the same read, and that is the hunk below. It is not
-    applied here for the same reason the implement hunk is not: `GITHUB_TOKEN` cannot push
-    `.github/workflows/**`.
+    Closing it mechanically means giving verify the same read. That change is now **applied** to
+    `.github/workflows/deliver-verify.yml`: verify runs `deliver-issue-refinements.sh` and weighs the
+    contracts as body + refinements before judging any divergence. It was originally deferred because
+    `GITHUB_TOKEN` cannot push `.github/workflows/**`, so the automated correction could not make the
+    edit; it was applied in a human-run correction round instead. The implement-phase hunk remains
+    prose-routed (Step 1.5) for the same token reason — see the F1 note above.
 
-    Insert into the `prompt:` block of `.github/workflows/deliver-verify.yml`, immediately after the
-    `Read the sub-issue for its contracts` paragraph:
+    The applied hunk, for the record, sits in the `prompt:` block of
+    `.github/workflows/deliver-verify.yml`, immediately after the `Read the sub-issue for its
+    contracts` paragraph:
 
     ```yaml
                 The issue BODY may not be the whole contract. Design gets refined in the issue's
