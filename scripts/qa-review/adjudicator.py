@@ -95,6 +95,11 @@ Do not wrap it in markdown fences."""
 #   - **F2 · FLAW_FOUND** — <text>
 _ITEM_RE = re.compile(r"^\s*-\s+\*\*(?P<id>[A-Za-z]\d+)\s*·\s*(?P<was>[A-Z_]+)\*\*\s*—\s*(?P<text>.*)$")
 
+# render_report.py emits this exact bullet when a report has no blocking findings;
+# it is the ONLY non-finding line that legitimately fills the Items-to-fix section
+# (a genuine PASS report). Matched tolerant of whitespace/rendering.
+_NO_FINDINGS_RE = re.compile(r"^\s*-\s+_None\b.*no blocking findings", re.IGNORECASE)
+
 
 def parse_items_to_fix(comment_body):
     """Extract (id, was, text) findings from a rendered qa-review comment's
@@ -607,7 +612,12 @@ def is_report_comment(body):
             # Any next section heading closes the Items-to-fix section; only the
             # Items-to-fix heading (re)opens it.
             in_items = lowered.startswith(_ITEMS_HEADING)
-        elif in_items and line.startswith("- "):
+        elif in_items and (_ITEM_RE.match(line) or _NO_FINDINGS_RE.match(line)):
+            # Agree with parse_items_to_fix: only a real finding bullet (_ITEM_RE) or
+            # render_report's "no blocking findings" sentinel counts as content. A bare
+            # "- ..." line parses to ZERO findings, so accepting it here would let a
+            # malformed-bullet report shell supersede a real report and clear as a
+            # vacuous aggregate PASS (#1716 G2).
             items_has_content = True
     return has_heading and items_has_content
 

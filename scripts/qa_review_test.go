@@ -797,6 +797,20 @@ const emptyItemsReportShape = "## qa-review — PR #1736: ⛔ BLOCK\n" +
 	"### Important to consider\n" +
 	"- _None._\n"
 
+// #1716 G2 (round 3): a report SHAPE whose Items-to-fix holds only a MALFORMED
+// bullet — a "- ..." line that is NOT a finding bullet (_ITEM_RE) and NOT the
+// "none" sentinel. It parses to zero findings, so accepting it would clear the qa
+// dimension as a vacuous PASS. is_report_comment's content check now uses the
+// finding regex / sentinel (matching parse_items_to_fix), so a bare "- " line is
+// not content and this shape cannot supersede a real report.
+const malformedBulletReportShape = "## qa-review — PR #1736: ⛔ BLOCK\n" +
+	"\n" +
+	"### Items to fix\n" +
+	"- just some prose that is not a finding bullet\n" +
+	"\n" +
+	"### Important to consider\n" +
+	"- _None._\n"
+
 // comment builds one entry of gh's `pr view --json comments` shape.
 func comment(author, body string) map[string]any {
 	return map[string]any{"author": map[string]any{"login": author}, "body": body}
@@ -977,6 +991,19 @@ func TestAdjudicatorSelectsTheGenuineReportComment(t *testing.T) {
 			comments: []map[string]any{
 				comment(poster, genuineReport),
 				comment(poster, emptyItemsReportShape),
+			},
+			wantIDs: []string{"F1", "G3"},
+		},
+		{
+			// #1716 G2 (round 3): a report shape whose Items-to-fix holds only a MALFORMED
+			// bullet (not a finding bullet, not the sentinel) parses to zero findings and
+			// must not supersede a real report — is_report_comment's content check must
+			// agree with parse_items_to_fix (finding regex / sentinel), so a bare "- " line
+			// is not content. Fails if the check accepts any "- " prefix.
+			name: "malformed-bullet-report-shape-does-not-supersede",
+			comments: []map[string]any{
+				comment(poster, genuineReport),
+				comment(poster, malformedBulletReportShape),
 			},
 			wantIDs: []string{"F1", "G3"},
 		},
