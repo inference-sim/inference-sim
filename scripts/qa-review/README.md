@@ -26,7 +26,18 @@ the LiteLLM proxy over its OpenAI-compatible `/chat/completions` surface.
 > read `QA_VERDICT`. Because the delivery agent's GitHub App token has no `workflows`
 > permission, the workflow half was applied by a `workflows`-scoped push rather than by
 > the agent; `scripts/deliver_qa_verdict_test.go` holds the contract over the live
-> workflow. The adjudicate-only re-verify is still #1716. See epic #1717.
+> workflow.
+>
+> #1716 completes the epic (#1717) by making the re-verify **adjudicate-only**: round 0
+> keeps the full questioner+answerer pass, every later round runs only `adjudicator.py`
+> over the findings that pass already raised. Its Python half (report-comment selection,
+> below) is live; its workflow half is again blocked on the `workflows` permission and
+> travels as **`deliver-verify-adjudicate-wiring.patch`** in this directory — apply it
+> with a `workflows`-scoped credential (`git apply scripts/qa-review/deliver-verify-adjudicate-wiring.patch`)
+> and delete the file. `scripts/deliver_qa_adjudicate_test.go` asserts the contract over
+> the live workflow once applied, and over the patch applied to the committed workflow
+> until then (so a stale patch fails the build). Until it is applied a re-verify simply
+> keeps running the full pass — more expensive, never unsafe.
 
 ## The pieces
 
@@ -82,7 +93,8 @@ job, not this tooling's.
 
 ### adjudicator.py
 
-Reads the most recent qa-review comment's **Items to fix** (`parse_items_to_fix`)
+Reads the most recent qa-review **report** comment's **Items to fix**
+(`select_report_comment` + `parse_items_to_fix`)
 and every later comment (the author's responses), then per prior blocking
 finding verifies with read-only worktree tools + `gh_issue` + `pr_diff` and
 returns `RESOLVED` / `WAIVED_JUSTIFICATION` / `WAIVED_DEFERRED` / `STILL_OPEN`.
@@ -96,6 +108,24 @@ emitted on **stderr** as `[adjudication verdict: PASS|BLOCK]` (not a PR marker �
 Its tool loop degrades on exhaustion the same way the answerer's does, to
 `STILL_OPEN` for every prior finding — so running out of turns blocks rather
 than clearing a finding it never actually adjudicated.
+
+**Which comment supplies the prior findings (#1716).** Selection is structural,
+not a substring search: a comment qualifies only if it *is* a rendered report —
+an **unquoted, unfenced** `## qa-review — PR #` heading **and** an
+`### Items to fix` section (fenced code blocks and `>` blockquotes are ignored,
+because that is how a comment quotes a report it is discussing) — and, when
+`--report-author` / `QA_REPORT_AUTHOR` is set, only if that login posted it. The
+author restriction is strict: on a public repository, anything looser lets a
+commenter supply a report-shaped comment with an empty Items-to-fix section and
+clear every outstanding finding.
+
+Finding **no** report comment is **not** a `PASS`: `fetch_comments` returns
+`None` (distinct from `[]`, a real report with nothing blocking) and the tool
+exits **3** with no verdict line at all, so no consumer can derive a marker from
+a review that was never found. The pre-#1716 rule keyed off the last comment
+*containing* the banner, so a self-review quoting it hijacked the selection and —
+having no Items-to-fix section of its own — produced zero findings and a vacuous
+`PASS` (observed on PR #1736).
 
 ## The `--no-exec` seam
 
@@ -132,6 +162,7 @@ author's responses.
 | `QA_QUESTIONER_MODEL` | questioner model | `gcp/gemini-3.6-flash` |
 | `QA_ANSWERER_MODEL` | answerer model | `azure/gpt-5.6-sol` |
 | `QA_ADJUDICATOR_MODEL` | adjudicator model | `azure/gpt-5.6-sol` |
+| `QA_REPORT_AUTHOR` | adjudicator: only adjudicate a prior report posted by this comment author login | empty (any author) |
 | `QA_REPO` | `owner/repo` for `gh` calls | `inference-sim/inference-sim` |
 | `QA_REPO_DIR` | local clone the worktree is cut from | — |
 
@@ -142,7 +173,9 @@ mirroring how `scripts/deliver_gate_test.go` shells out to `bash`, so every
 qa-review test runs under `go test ./scripts/...` with no new test framework.
 It covers only the **model-free** surface: `render_report.py`'s verdict rule and
 output shape, `questioner.repair_json()`, `adjudicator.parse_items_to_fix()` and
-its block rule, the `--no-exec` `tools_for()` seam for both agents, and both
+its block rule, `adjudicator.fetch_comments()`'s report-comment selection
+(including the quoting shapes that used to hijack it, and the fail-closed
+refusal when no report exists), the `--no-exec` `tools_for()` seam for both agents, and both
 agents' tool-loop exhaustion degradation (the one `post_chat_completion` stub is
 the only model-dependent piece). The model-calling paths need the live proxy and
 are not unit-tested here.

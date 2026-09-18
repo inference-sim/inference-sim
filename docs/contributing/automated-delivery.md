@@ -114,6 +114,10 @@ The decision is not the reviewing agent's to make. `deliver-verify.yml` collects
 
 Both review signals are required for `ready-for-merge`, and either one alone can send a round to correction. They are kept as **parallel signals rather than one combined verdict** so it is always visible which review blocked, and so each can be tested in isolation.
 
+**`QA_VERDICT` is produced differently on round 0 and on a re-verify (#1716).** Round 0 runs the full cross-vendor probe (questioner → answerer → report). Every correction round after it is **adjudicate-only**: `adjudicator.py` re-checks the findings that probe already raised against the author's later comments and the corrected head, and `BLOCK`s if any of them is `STILL_OPEN` *or was never adjudicated*. Both branches leave the same last-line `QA-VERDICT:` marker on one bot-authored comment, so the gate reads them identically.
+
+The tradeoff is deliberate: a re-verify does **not** re-probe the whole diff, so a *new* problem introduced by a correction is not caught by the qa-review dimension on that round. It is caught by the three signals that *are* re-derived from scratch on the new head — CI re-runs, the archon plan ratchet re-evaluates distance (an increase is a `regression`), and the methodology review re-reviews the whole diff. Re-probing a small correction every round costs a full questioner+answerer pass for coverage those three already provide, whereas the cross-vendor probe's distinctive value is on the *original* diff. What the adjudication adds is what none of the three can do: judging whether the findings already raised were actually resolved, and whether the author's defence of a dismissal holds.
+
 **Why verify dispatches `ci.yml` rather than running the checks itself.** `main` requires seven status contexts (`build`, `lint`, and five `test (...)` groups) before a PR can merge, and those must be present **on the PR's head commit**. Two things make that awkward, and an earlier version of this feature got both wrong by running the commands inline:
 
 - a bot-opened PR has its `pull_request` runs held in an **approval-required** state, so the loop cannot simply wait for the runs GitHub would normally create;
@@ -204,6 +208,7 @@ Repository variables, all optional:
 | `DELIVER_MAX_ROUNDS` | `3` | correction rounds before `needs-human`, per PR |
 | `QA_QUESTIONER_MODEL` | `gcp/gemini-3.6-flash` | questioner model for the cross-vendor qa-review pass |
 | `QA_ANSWERER_MODEL` | `azure/gpt-5.6-sol` | answerer model for the cross-vendor qa-review pass |
+| `QA_ADJUDICATOR_MODEL` | `azure/gpt-5.6-sol` | adjudicator model for the adjudicate-only re-verify |
 
 The verify model is deliberately *not* the implement model. Two instances of one model reviewing each other's work is closer to an agent grading its own homework; different models give real separation. The qa-review defaults go further and leave the vendor entirely: a decorrelated second opinion is the point (RFC #1603), so a failure mode shared by every Claude model is exactly what it exists to catch.
 
@@ -262,7 +267,7 @@ The check runs in a small `ubuntu-latest` job, so an unauthorised review never w
 
 **The verdict marker is read only from bot-authored comments, and only as a comment's last line** — otherwise any human could set a delivery's verdict by quoting it. The same applies to the `QA-VERDICT` marker and the `DELIVER-DISMISSALS` count.
 
-**qa-review reads the PR's files but never executes them.** The verify job runs on the self-hosted runner with the LiteLLM secrets in its environment, so the load-bearing invariant is that PR-authored code never runs there. The qa-review answerer does need the PR-head *source*, so the head is checked out into an ephemeral `--detach` worktree under `$RUNNER_TEMP`, removed in an always-run cleanup, and the answerer runs with `--no-exec` — which drops its `go` build/test tool from both the implementation map and the advertised tool schema, leaving only `read_file`/`grep`/`list_dir` sandboxed to that worktree. The files are read; nothing in them is compiled or run.
+**qa-review reads the PR's files but never executes them.** The verify job runs on the self-hosted runner with the LiteLLM secrets in its environment, so the load-bearing invariant is that PR-authored code never runs there. The qa-review answerer does need the PR-head *source*, so the head is checked out into an ephemeral `--detach` worktree under `$RUNNER_TEMP`, removed in an always-run cleanup, and the answerer runs with `--no-exec` — which drops its `go` build/test tool from both the implementation map and the advertised tool schema, leaving only `read_file`/`grep`/`list_dir` sandboxed to that worktree. The files are read; nothing in them is compiled or run. The adjudicate-only re-verify (#1716) reads the head the same way: the same ephemeral worktree, the same always-run cleanup, the same `--no-exec`.
 
 **PR text is untrusted input to the agents.** This is a public repository, so anyone can comment on an open delivery PR, and both agents read comments. Two consequences are handled explicitly:
 
