@@ -96,7 +96,7 @@ Phases chain with `workflow_dispatch`, passing the PR and sub-issue numbers as i
 | Outcome | Meaning | What you do |
 |---|---|---|
 | `ready-for-merge` | CI green, archon plan not regressed, both reviews clean (methodology review GREEN and cross-vendor qa-review PASS) | Read the history, merge |
-| `needs-human` | Signals disagreed, evidence was missing, or 3 rounds did not close the findings | Read the last comment — it names the phase and the reason |
+| `needs-human` | Signals disagreed, evidence was missing, 3 rounds did not close the findings, or the branch conflicts with `main` and the correction could not resolve it | Read the last comment — it names the phase and the reason, and for a conflict it names the conflicting files |
 
 There is no third outcome. Every unrecognised or contradictory signal resolves to `needs-human`; the gate is closed by default.
 
@@ -111,6 +111,7 @@ The decision is not the reviewing agent's to make. `deliver-verify.yml` collects
 | `AGENT_VERDICT` | the `DELIVER-VERDICT: GREEN` / `NOT-GREEN` marker, required to be the last line of a comment posted by the automation itself |
 | `QA_VERDICT` | the `QA-VERDICT: PASS` / `BLOCK` marker from the **cross-vendor qa-review pass** (#1715, RFC #1603) — a questioner and an isolated answerer from a different model family than the implementer and the reviewer above. Same author-trust and last-line rules as `AGENT_VERDICT`. `BLOCK` routes to a correction round; `MISSING` (no marker) **blocks**, so a qa-review that crashed or lost its model can never be read as a pass |
 | `DISMISSALS` | the `deliver:has-dismissals` label, **re-read after the review agent has run** so that the reviewer clearing it takes effect in the same round. `open` withholds `ready-for-merge`; `unknown` (the label set could not be read) does too, because an unreadable state is not evidence there is nothing to accept |
+| `MERGE_STATE` | GitHub's `mergeable_state`, mapped through `scripts/map-merge-state.sh`. `conflicting` (REST `dirty`) can never reach `ready-for-merge` — GitHub cannot compute a merge ref, so that label is one nobody can act on; `unknown` returns the non-terminal `recheck` rather than stopping for a human over an API blip |
 
 Both review signals are required for `ready-for-merge`, and either one alone can send a round to correction. They are kept as **parallel signals rather than one combined verdict** so it is always visible which review blocked, and so each can be tested in isolation.
 
@@ -147,6 +148,14 @@ Two properties hold structurally rather than by prompt adherence:
 
     Also measured, since it was previously an open question: a **skipped** step does *not* make `success()` false. So the explicit `paused != 'true'` term in each reporter is defence-in-depth rather than the only thing preventing a paused delivery from reporting.
 - **A dismissal cannot become a resolution by omission.** The correct phase reports a `DELIVER-DISMISSALS: <n>` count as the last line of its comment and a workflow step derives `deliver:has-dismissals` from it; a missing or unreadable count is treated as outstanding. The label is not applied by the agent, so forgetting to apply it is not a way past the gate.
+- **A branch that conflicts with main is resolved, or the conflict is named.** `main` advancing under an open delivery PR makes it `dirty`, and a `dirty` branch has no merge ref — so nothing can be verified against `main` and neither review's verdict means anything. Three mechanisms, none of which depends on an agent choosing to act (#1781, after #1758/#1763):
+
+    - **Ordinary drift is merged deterministically.** A workflow step at the start of every correction round runs `scripts/deliver-update-branch.sh`: it merges `origin/main` and pushes when the merge is clean, and only a **real content conflict** is handed to the agent, which is the one participant that can weigh the PR's intent against main's. Previously the whole update was a prompt instruction; on PR #1778 the round completed `success` having made no commit and posted no comment, and a human had to merge by hand.
+    - **A round that did not resolve it says which files.** After the agent, `scripts/deliver-conflict-check.sh` asks git directly — against the freshly-fetched **remote** refs, since the agent pushes from inside the action — and when the branch still conflicts the phase posts a comment naming the conflicting paths, applies `needs-human`, and withholds the hand-back. Guarded on `always()`, so an agent that crashed or timed out is exactly when it reports. It escalates only on positive evidence: an undeterminable check hands back and lets the gate read GitHub's own `mergeable_state`.
+    !!! warning "Wiring pending"
+        The three scripts and the gate change are on `main`; the **workflow steps that call them** ship as `.github/deliver-conflict-wiring.patch`, because the delivery runner's token cannot write under `.github/workflows/`. Until someone runs `git apply .github/deliver-conflict-wiring.patch` (and deletes it), only the gate half of this section is live: a conflicting branch's reason names the conflict, but the deterministic merge and the post-round conflict report are not yet invoked. The patch's header says what it changes.
+
+    - **The gate always names the conflict, and it outranks a missing marker.** Verify skips both agent reviews on a branch it already knows conflicts (their verdicts could not be consumed, and each costs tens of minutes), so their markers read `MISSING` — and the gate treats a conflict as outranking that, routing the round to correction while rounds remain and to a conflict-naming `needs-human` at the cap. Before this, the missing-marker row fired first and the PR stopped with the reason "the verify phase posted no DELIVER-VERDICT marker": the symptom, with the conflict unmentioned. The conflicting paths reach the reason via `CONFLICT_FILES`, so `needs-human` satisfies #1758's "naming the conflict" rather than leaving a human to find it.
 
 Archon is optional throughout: with a plan there is a deterministic number that must not move the wrong way, without one the gate is CI plus the review verdict.
 

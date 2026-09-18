@@ -52,7 +52,10 @@ CI_STATUS=success PLAN_GATE=pass AGENT_VERDICT=GREEN ROUND=0 MAX_ROUNDS=3 \
 | `CI_STATUS` | `success` \| `failure` \| `unknown` | verify runs `go build`, `go test` and `golangci-lint` against the PR tree; anything but all three passing is `failure`, and an unread signal is `unknown` |
 | `PLAN_GATE` | `pass` \| `regression` \| `conflicts` \| `unverified` \| `absent` | from `.archon/review.json`; `absent` (no plan claimed) delivers exactly as `pass`, while `unverified` (a plan declared but never checked) blocks — `archon-review.sh` exits 0 after falling back to a plan-less review, so the two must not be conflated |
 | `AGENT_VERDICT` | `GREEN` \| `NOT-GREEN` \| `MISSING` | the review comment's `DELIVER-VERDICT:` marker |
+| `QA_VERDICT` | `PASS` \| `BLOCK` \| `MISSING` | the cross-vendor qa-review comment's `QA-VERDICT:` marker (#1715). `MISSING` blocks — a crashed qa-review is missing evidence, never a pass |
 | `DISMISSALS` | `none` \| `open` \| `unknown` | from the `deliver:has-dismissals` label. `open` withholds `ready` — a correction dismissed a finding the review has not accepted; `unknown` (unreadable) is treated the same way |
+| `MERGE_STATE` | `mergeable` \| `conflicting` \| `unknown` | GitHub's `mergeable_state` mapped through `map-merge-state.sh` (#1758). `conflicting` can never be `ready`; `unknown` returns the non-terminal `recheck` |
+| `CONFLICT_FILES` | *(optional)* paths | whitespace- or comma-separated paths that conflict with main, from `conflicting-files.sh` (#1781). Named in the reason so a stop satisfies #1758's "needs-human **naming the conflict**". Read only when `MERGE_STATE` is `conflicting`; absent is fine |
 | `ROUND` | integer | correction rounds already spent, read from the `deliver:round-N` label |
 | `MAX_ROUNDS` | integer | cap before stopping for a human |
 
@@ -64,6 +67,52 @@ two and an unmapped one must not fall through with no decision at all.
 
 `ready` requires the checks passing, a non-regressing (or absent) plan signal, **and** an explicit GREEN. A GREEN that contradicts an objective signal returns `needs-human` naming the
 disagreement — never `ready`, at any round.
+
+A **conflicting** branch is named on every decision row, not just the one row that mentions it
+(#1781). The clause is composed once and prepended at the script's single exit point, and a
+conflict **outranks an unreadable review marker**: a branch with no merge ref cannot produce a
+verdict, so the round routes to `correct` while rounds remain and, at the cap, to a `needs-human`
+that names the conflict — rather than to "the verify phase posted no DELIVER-VERDICT marker", which
+is what dead-ended PR #1778.
+
+## conflicting-files.sh — which paths conflict with main
+
+Names the paths that conflict when one committish is merged into another, so a stopped delivery can
+say WHAT conflicts. Trial-merges in a throwaway worktree, so the caller's index, working tree and
+HEAD are untouched; reads conflicted paths from the index (`git ls-files -u`), so delete/modify and
+add/add conflicts are named too. Works on git 2.34 (the runners), where `merge-tree --write-tree` is
+unavailable. Tested by `scripts/conflicting_files_test.go`.
+
+```bash
+scripts/conflicting-files.sh origin/main "$HEAD_SHA"
+# CLAUDE.md
+```
+
+Exit 0 = determined (**no output means the merge is clean**); exit 3 = could not determine, so a
+caller must not read the absence of output as "clean". Best-effort by contract: it is a diagnostic,
+never the authority on whether a branch conflicts, and it never fails its caller.
+
+## deliver-update-branch.sh — bring a delivery branch up to date with main
+
+Fetches `origin/main`, merges it, and pushes when the merge is clean; on conflict it aborts and
+names the conflicting paths for the correction agent to resolve. Prints
+`state=merged|current|conflicting|unknown` plus `files=`, teed into `GITHUB_OUTPUT` by
+`.github/workflows/deliver-correct.yml`. Tested by `scripts/deliver_branch_update_test.go` against
+real repositories with a real remote.
+
+It is a script because on PR #1778 this was a **prompt instruction** to the correction agent, the
+round completed `success` with no commit and no comment, and a human had to merge `main` by hand
+(#1781). Ordinary drift is the majority of rounds and needs no judgment, so it must not depend on
+anything an agent chooses to do; only a real content conflict reaches the agent.
+
+## deliver-conflict-check.sh — did the correction round resolve the conflict?
+
+Fetches both ends into their remote-tracking refs — the agent pushes from inside
+claude-code-action, so the workflow's own checkout has not seen the branch tip — and reports
+`state=clean|conflicting|unknown` plus `files=`. On `conflicting` the caller posts a comment naming
+those files, applies `needs-human`, and withholds the hand-back. It escalates **only on positive
+evidence**: `unknown` hands the decision to the phase that reads GitHub's `mergeable_state`, so a
+transient fetch failure cannot stop a healthy delivery. Same test file as above.
 
 ## deliver-stall-candidates.jq — which deliveries a stall sweep may flag
 

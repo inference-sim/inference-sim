@@ -1,0 +1,603 @@
+# PENDING WORKFLOW WIRING for #1781 — apply and delete this file.
+#
+#     git apply .github/deliver-conflict-wiring.patch
+#     git rm .github/deliver-conflict-wiring.patch
+#     go test ./scripts/ -count=1
+#
+# WHY IT IS A PATCH AND NOT APPLIED. The whole of #1781's logic is landed and tested in scripts/
+# (deliver-update-branch.sh, deliver-conflict-check.sh, conflicting-files.sh, deliver-gate.sh).
+# What remains is the WIRING: the workflow steps that call those scripts, plus the guard test that
+# pins the wiring. The L1 delivery runner's GitHub App token has no `workflows` permission, so any
+# change under .github/workflows/ is refused — by `git push` and by the Contents API alike:
+#
+#     refusing to allow a GitHub App to create or update workflow
+#     `.github/workflows/deliver-correct.yml` without `workflows` permission
+#
+# (DEFAULT_WORKFLOW_TOKEN is refused identically.) So this half needs a human, or any token that
+# carries `workflows: write`.
+#
+# WHAT IT CHANGES
+#   deliver-correct.yml  + `update` step (before the agent): calls deliver-update-branch.sh, so
+#                          ordinary drift is merged and pushed deterministically instead of being
+#                          left to a prompt instruction the agent may quietly not follow (#1778).
+#                        + `conflictcheck` step (after the agent, always()): calls
+#                          deliver-conflict-check.sh; when the branch still conflicts it posts a
+#                          comment NAMING the conflicting files, applies needs-human, and the
+#                          hand-back is withheld.
+#                        ~ STEP 1 of the agent prompt now states what the workflow already did.
+#   deliver-verify.yml   + `mergehint` step: skips both agent reviews on a branch with no merge ref
+#                          (their verdicts could not be consumed, and each costs tens of minutes).
+#                        ~ `mergestate` computes the conflicting paths and passes them to the gate
+#                          as CONFLICT_FILES; a round that skipped its reviews is decided as
+#                          conflicting so it is never gated on markers it could not produce.
+#   scripts/deliver_conflict_guards_test.go
+#                        + guards for all of the above, asserted as step ORDER and explicit env /
+#                          `if:` wiring rather than mere presence.
+#
+# NOT COMPILED HERE: the delivery runner has no Go toolchain, so the guard test's Go has not been
+# built. Run `go test ./scripts/ -count=1` after applying. The patch itself was verified to apply
+# cleanly with `git apply --check`.
+#
+# Everything below this line is a plain `git diff`; the `#` lines above are ignored by git apply.
+diff --git a/.github/workflows/deliver-correct.yml b/.github/workflows/deliver-correct.yml
+index 4fcbff2a..03d7686f 100644
+--- a/.github/workflows/deliver-correct.yml
++++ b/.github/workflows/deliver-correct.yml
+@@ -136,6 +136,31 @@ jobs:
+         with:
+           fetch-depth: 0
+ 
++      # #1781 — THE BRANCH UPDATE IS A WORKFLOW STEP, not a delegated instruction.
++      #
++      # STEP 1 of the prompt below has always asked the agent to `git merge origin/main`. On PR
++      # #1778 the round completed `success` having made no commit and posted no comment: whether the
++      # merge was never attempted, was attempted and abandoned, or its push was refused, the outcome
++      # was a success with no progress and no diagnostic — the silent-stall class #1758 set out to
++      # remove, one layer deeper. An instruction an agent may quietly not follow is not a mechanism.
++      #
++      # So ordinary drift (the clean-merge case, which is most rounds) is now handled deterministically
++      # and cannot no-op. Only a REAL content conflict reaches the agent, which is the one case that
++      # genuinely needs judgment about intent — and `Did the conflict actually get resolved?` below
++      # checks afterwards whether it did, so even that case cannot end silently.
++      #
++      # The logic lives in scripts/deliver-update-branch.sh, not here, for the reason this repository
++      # already applies to deliver-gate.sh and map-merge-state.sh: it is git surgery on a delivery
++      # branch, so it needs tests (scripts/deliver_branch_update_test.go drives it against real
++      # repositories with a real remote). Its `state=`/`files=` output is teed straight into
++      # GITHUB_OUTPUT, the same idiom the `Decide` step uses in the verify phase.
++      - name: Bring the branch up to date with main
++        id: update
++        if: steps.paused.outputs.paused == 'false'
++        run: |
++          set -o pipefail
++          scripts/deliver-update-branch.sh "deliver/issue-${ISSUE_NUMBER}" | tee -a "$GITHUB_OUTPUT"
++
+       # Recorded BEFORE the agent runs, so the dismissal count is only read from comments newer
+       # than this and a previous round's count can never be mistaken for this round's. Same
+       # pattern as the verify phase's review-start marker.
+@@ -203,10 +228,21 @@ jobs:
+             gh pr checkout ${{ inputs.pr_number }}
+             ```
+ 
+-            STEP 1 — bring the branch up to date with main. This round may have been triggered
+-            because the branch conflicts with main (#1758): GitHub cannot merge it, so it is stuck
+-            until the conflict is resolved. Even when the round was triggered for findings, merging
+-            main first stops drift from accumulating into a harder conflict later. Run:
++            STEP 1 — bring the branch up to date with main. A WORKFLOW STEP has already attempted
++            this before you started, and its result was:
++
++                branch update: `${{ steps.update.outputs.state }}`
++                conflicting files: `${{ steps.update.outputs.files }}`
++
++            - `merged` or `current` — the branch is already up to date with main and pushed. There
++              is NOTHING to do in this step; say so in your comment and go to STEP 2.
++            - `conflicting` — main and this branch changed the same things. The workflow aborted its
++              merge and left your tree clean, so YOU must do the merge and resolve it. This is the
++              one part of STEP 1 that needs judgment, which is why it is yours.
++            - `unknown` — the workflow could not complete the update (it could not reach
++              `origin/main`, or its push lost a race). Do the whole update yourself.
++
++            Unless the state is `merged` or `current`, run:
+ 
+             ```bash
+             git fetch origin main
+@@ -216,10 +252,15 @@ jobs:
+             If the merge is clean (including "Already up to date"), keep the merge commit. If it
+             reports conflicts, resolve them using the INTENT of this PR — sub-issue
+             #${{ inputs.issue_number }} and the PR's own changes — never by blindly discarding
+-            either side; then `git add` the resolved files and commit. If a conflict genuinely
+-            cannot be resolved without guessing at intent, do NOT force a resolution: run
+-            `git merge --abort`, name the conflicting files and why in your comment, and STOP so a
+-            human takes it (this phase then reports the PR `needs-human`).
++            either side; then `git add` the resolved files and commit. Then PUSH: an unpushed
++            resolution is not a resolution, and a workflow step after you re-checks the branch
++            against main and stops the delivery if it is still conflicting.
++
++            If a conflict genuinely cannot be resolved without guessing at intent, do NOT force a
++            resolution: run `git merge --abort`, name the conflicting files and why in your comment,
++            and STOP so a human takes it (this phase then reports the PR `needs-human` naming those
++            files — it no longer depends on your comment to do so, but say it anyway, because your
++            reason for stopping is the part no workflow step can reconstruct).
+ 
+             STEP 2 — fix the findings, IF there are any. Your work list is the findings the
+             automation raised this round, in up to two comments (`gh pr view ${{ inputs.pr_number }}
+@@ -372,10 +413,91 @@ jobs:
+           # Never REMOVED here. Only the review phase clears it, and only on explicit acceptance;
+           # a round that dismisses nothing must not wipe an earlier round's unaccepted dismissal.
+ 
++      # #1781, the other half of the deterministic update: DID THE CONFLICT ACTUALLY GET RESOLVED?
++      #
++      # #1758's acceptance criterion is that a conflicting delivery PR is either (a) auto-updated
++      # and re-verified, or (b) explicitly flagged `needs-human` NAMING THE CONFLICT. On PR #1778
++      # neither happened: the correction round no-op'd, posted nothing, handed back, and the next
++      # verify stopped for a human citing a missing review marker. The conflict was never named by
++      # anything, and a human had to go and find it.
++      #
++      # This step is what makes (b) hold without depending on the agent having done anything at all.
++      # It asks git directly — against the REMOTE state, since the agent pushes from inside the
++      # action and this checkout may be behind — and when the branch still conflicts it posts the
++      # naming comment itself, applies `needs-human`, and (via the hand-back's `if:`) withholds the
++      # re-verification that would otherwise spend a further ~2 hours reaching the same conclusion.
++      #
++      # `always()`, for the same reason the dismissal recorder uses it: the agent step is where a
++      # timeout or a crash lands, and an unresolved conflict must be reported precisely then. Still
++      # gated on `owned` and on a non-paused delivery, so a refused dispatch writes nothing.
++      #
++      # It never FAILS the job. A `needs-human` comment plus label is a complete, actionable outcome;
++      # failing as well would additionally fire the failure reporter below and post a second,
++      # vaguer comment about the phase having errored.
++      - name: Did the conflict actually get resolved?
++        id: conflictcheck
++        if: always() && steps.target.outputs.owned == 'true' && steps.paused.outputs.paused == 'false'
++        env:
++          BRANCH: deliver/issue-${{ inputs.issue_number }}
++          UPDATE_STATE: ${{ steps.update.outputs.state }}
++          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
++        run: |
++          set -uo pipefail
++          # The git half is scripts/deliver-conflict-check.sh (tested in
++          # scripts/deliver_branch_update_test.go): it fetches both ends fresh into their
++          # remote-tracking refs — the agent pushes from inside the action, so THIS checkout has not
++          # seen the branch tip — and prints state=clean|conflicting|unknown plus the paths. It only
++          # reports `conflicting` on positive evidence, so "could not tell" hands back rather than
++          # stopping a healthy delivery. The GitHub writes stay here, where the phase's credentials
++          # and PR context are.
++          scripts/deliver-conflict-check.sh "deliver/issue-${ISSUE_NUMBER}" \
++            | tee -a "$GITHUB_OUTPUT" > "$RUNNER_TEMP/conflictcheck.txt"
++          state=$(sed -n 's/^state=//p' "$RUNNER_TEMP/conflictcheck.txt")
++          files=$(sed -n 's/^files=//p' "$RUNNER_TEMP/conflictcheck.txt")
++          # No state at all means the script itself did not run (missing, or a usage error). Warn
++          # rather than escalate: `conflicting` is the only value that stops the delivery, and it
++          # must never be inferred from a check that produced nothing.
++          if [[ -z "$state" ]]; then
++            echo "::warning::deliver-conflict-check.sh produced no state; handing back to verify, which reads GitHub's own mergeable_state"
++            exit 0
++          fi
++          [[ "$state" == conflicting ]] || exit 0
++
++          echo "::error::#$PR still conflicts with main after correction round ${{ steps.round.outputs.round }}"
++          {
++            echo "## Stopped — a human is needed: the branch still conflicts with main"
++            echo
++            echo "Correction round ${{ steps.round.outputs.round }} did not resolve the conflict"
++            echo "between this branch and \`main\`, so GitHub still cannot compute a merge ref and"
++            echo "nothing downstream can verify the branch against main. The delivery has stopped"
++            echo "and will not resume on its own."
++            echo
++            echo "**Conflicting files:**"
++            echo
++            tr ',' '\n' <<< "$files" | sed '/^$/d; s/^/- `/; s/$/`/'
++            echo
++            echo "The branch update was \`${UPDATE_STATE:-not reached}\` when this round started."
++            echo
++            echo "To unstick it: \`git fetch origin\`, \`git merge origin/main\` on"
++            echo "\`$BRANCH\`, resolve the files above, push, and the push re-verifies the delivery."
++            echo
++            echo "_[Correction run](${RUN_URL})_"
++          } > "$RUNNER_TEMP/conflict.md"
++          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/conflict.md" || true
++          gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
++          gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null \
++            || echo "::warning::could not apply the needs-human label; the comment above is the record"
++
+       # Retried with exponential backoff (#1757): same transient-dispatch hardening as
+       # the verify→correct hand-off.
++      #
++      # NOT handed back when the branch still conflicts (#1781): that round has already stopped the
++      # delivery at a `needs-human` naming the conflicting files, and re-verifying a branch with no
++      # merge ref would spend a full CI dispatch to arrive at the same answer with a vaguer reason.
++      # `unknown` DOES hand back — verify reads GitHub's own `mergeable_state`, which is the
++      # authority this local check only approximates.
+       - name: Hand back to verify
+-        if: steps.paused.outputs.paused == 'false'
++        if: steps.paused.outputs.paused == 'false' && steps.conflictcheck.outputs.state != 'conflicting'
+         run: |
+           scripts/dispatch-with-retry.sh deliver-verify.yml \
+             --repo "$REPO" --ref "${{ github.ref_name }}" \
+diff --git a/.github/workflows/deliver-verify.yml b/.github/workflows/deliver-verify.yml
+index ee3c795b..0b389ae6 100644
+--- a/.github/workflows/deliver-verify.yml
++++ b/.github/workflows/deliver-verify.yml
+@@ -698,6 +698,37 @@ jobs:
+           echo "DISMISSALS=$state"
+           echo "state=$state" >> "$GITHUB_OUTPUT"
+ 
++      # #1781 — a HINT, not the authority: does this branch already conflict with main?
++      #
++      # A `dirty` branch has no merge ref, so nothing below can be verified against main and
++      # neither review's verdict can be used for anything. On PR #1778 both agent reviews ran
++      # anyway, produced no usable marker, and the round ended at a needs-human that named the
++      # missing marker rather than the conflict. Reading the state HERE lets the two agent steps be
++      # skipped, which turns that MISSING into the EXPECTED reading (deliver-gate.sh's C2 routes it
++      # to a conflict-named decision) instead of an anomaly, and stops a ~40-minute review being
++      # spent on a verdict nothing may consume.
++      #
++      # ONE read, no poll, and it FAILS OPEN: anything other than a confident `conflicting` runs the
++      # reviews, which is the safe default. This is why it is a hint and not a second authority —
++      # the gate's MERGE_STATE is still derived by the authoritative `mergestate` step below, AFTER
++      # the reviews, so main advancing mid-review cannot leave a now-dirty branch looking mergeable
++      # (the #1758 property). The head has already sat through the full CI dispatch by this point,
++      # so GitHub has normally long since computed mergeability; when it has not, we simply review.
++      - name: Does the branch already conflict with main?
++        id: mergehint
++        if: steps.paused.outputs.paused == 'false'
++        run: |
++          set -uo pipefail
++          raw=$(gh api "/repos/$REPO/pulls/$PR" --jq '.mergeable_state // ""' 2>/dev/null || echo "")
++          # Mapped through the same tested script as the authoritative read (R23): two spellings of
++          # this mapping is how a conflicting branch gets called mergeable.
++          hint=$(scripts/map-merge-state.sh "$raw")
++          echo "mergeable_state='$raw' -> hint=$hint"
++          if [[ "$hint" == conflicting ]]; then
++            echo "::warning::#$PR conflicts with main, so both agent reviews are skipped this round: a branch with no merge ref cannot produce a verdict the gate may act on. The gate will route this round on the conflict itself."
++          fi
++          echo "state=$hint" >> "$GITHUB_OUTPUT"
++
+       # Recorded BEFORE the agent runs. The marker is only read from comments newer than this,
+       # so the previous round's verdict can never be mistaken for this round's.
+       - name: Mark the review start
+@@ -705,8 +736,10 @@ jobs:
+         if: steps.paused.outputs.paused == 'false'
+         run: echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+ 
++      # Skipped on a branch that already conflicts with main (#1781) — see `mergehint` above. The
++      # marker reader below still runs and reports MISSING, which is what the gate consumes.
+       - name: Review the PR
+-        if: steps.paused.outputs.paused == 'false'
++        if: steps.paused.outputs.paused == 'false' && steps.mergehint.outputs.state != 'conflicting'
+         uses: anthropics/claude-code-action@v1
+         env:
+           ANTHROPIC_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
+@@ -868,9 +901,14 @@ jobs:
+       # needs-human. A model outage therefore stops the delivery for a human instead of failing the
+       # whole job — but it can never be mistaken for a PASS, because a PASS only exists as a marker
+       # this step wrote from a parsed answer set.
++      #
++      # Skipped on a branch that already conflicts with main (#1781), for the same reason as the
++      # reviewer above: no merge ref, so no verdict the gate may consume. That leaves no QA-VERDICT
++      # marker, which the reader turns into MISSING — the same fail-closed path a model outage
++      # takes, and the gate's C2 row turns it into a conflict-named decision rather than a stop.
+       - name: Run qa-review
+         id: qa
+-        if: steps.paused.outputs.paused == 'false'
++        if: steps.paused.outputs.paused == 'false' && steps.mergehint.outputs.state != 'conflicting'
+         env:
+           OPENAI_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
+           OPENAI_API_KEY: ${{ secrets.LITELLM_API_KEY }}
+@@ -1038,6 +1076,13 @@ jobs:
+       - name: Read the branch mergeability
+         id: mergestate
+         if: steps.paused.outputs.paused == 'false'
++        env:
++          # The pre-review hint (#1781): whether this round skipped its agent reviews.
++          HINT: ${{ steps.mergehint.outputs.state }}
++          # The exact commit `Validate the target PR` recorded and CI verified, not FETCH_HEAD:
++          # archon-review.sh and the qa-review worktree run git in between. The object is present
++          # because of the `Fetch the PR head into the trusted tree` step above.
++          HEAD_SHA: ${{ steps.target.outputs.sha }}
+         run: |
+           set -uo pipefail
+           # REST, not `gh pr view --json mergeable`, for the reason the rest of this file uses REST
+@@ -1077,8 +1122,40 @@ jobs:
+           # on which the gate withholds `ready` rather than trusting an unverified mergeability.
+           merge_state=$(scripts/map-merge-state.sh "$state")
+           echo "mergeable_state='$state' -> MERGE_STATE=$merge_state"
++
++          # #1781 — the reviews were SKIPPED this round because the pre-review hint said the branch
++          # conflicts, so this round has no review markers to gate on. If GitHub now reports the
++          # branch mergeable (main was merged in mid-run, say), feeding `mergeable` to the gate would
++          # pair "no findings to act on" with "nothing wrong", and the missing markers would stop the
++          # delivery for a human with the very reason #1781 removes. So a round that skipped its
++          # reviews is decided as conflicting: strictly more conservative (it can only withhold
++          # `ready`, never grant it), and it re-verifies from a clean start next round.
++          if [[ "$HINT" == conflicting && "$merge_state" != conflicting ]]; then
++            echo "::warning::the pre-review hint was 'conflicting' (so both reviews were skipped) but mergeable_state now maps to '$merge_state'; deciding this round as conflicting, since a round with no review markers must not be gated on their absence"
++            merge_state=conflicting
++          fi
+           echo "state=$merge_state" >> "$GITHUB_OUTPUT"
+ 
++          # Best-effort naming of the conflicting paths, so the comment a human reads says WHAT
++          # conflicts — #1758's acceptance criterion (b), which PR #1778 did not satisfy. Degrades
++          # to an empty list with a warning and never fails the phase: the authority on WHETHER the
++          # branch conflicts is `mergeable_state` above, and a delivery must not stop because the
++          # loop could not pretty-print a path list (R1 — it says so rather than pretending).
++          files=""
++          if [[ "$merge_state" == conflicting ]]; then
++            git fetch --no-tags --quiet origin main || echo "::warning::could not fetch origin/main; the conflicting paths will not be named"
++            if files=$(scripts/conflicting-files.sh origin/main "$HEAD_SHA"); then
++              # Comma-joined: the gate accepts either separator, and a single line keeps the value
++              # usable as a step output and as the correct phase's gate_reason input.
++              files=$(tr '\n' ',' <<< "$files" | sed 's/,$//')
++              echo "conflicting paths: $files"
++            else
++              files=""
++              echo "::warning::could not determine which paths conflict with main; the reason will name the conflict but not the files"
++            fi
++          fi
++          echo "files=$files" >> "$GITHUB_OUTPUT"
++
+       - name: Decide
+         id: gate
+         if: steps.paused.outputs.paused == 'false'
+@@ -1089,6 +1166,10 @@ jobs:
+           QA_VERDICT: ${{ steps.qa_verdict.outputs.value }}
+           DISMISSALS: ${{ steps.dismissals_final.outputs.state }}
+           MERGE_STATE: ${{ steps.mergestate.outputs.state }}
++          # Optional (#1781): names the conflicting paths in the reason, so a stop satisfies
++          # #1758(b) ("naming the conflict") rather than leaving a human to find it. Empty when the
++          # branch is mergeable or the list could not be computed — the gate handles both.
++          CONFLICT_FILES: ${{ steps.mergestate.outputs.files }}
+           ROUND: ${{ steps.round.outputs.value }}
+         # pipefail is essential: without it the pipeline reports tee's status, so the gate
+         # exiting 2 on a wiring error would look like a successful step with no decision.
+@@ -1158,8 +1239,8 @@ jobs:
+             echo "|---|---|"
+             echo "| build / test / lint | \`${{ steps.ci.outputs.status }}\`${{ steps.ci.outputs.failing && format(' (failing: {0})', steps.ci.outputs.failing) || '' }} |"
+             echo "| archon plan | \`${{ steps.plan.outputs.gate }}\` |"
+-            echo "| review verdict | \`${{ steps.verdict.outputs.value }}\` |"
+-            echo "| qa-review verdict | \`${{ steps.qa_verdict.outputs.value }}\` |"
++            echo "| review verdict | \`${{ steps.verdict.outputs.value }}\`${{ steps.mergehint.outputs.state == 'conflicting' && ' (skipped: the branch conflicts with main)' || '' }} |"
++            echo "| qa-review verdict | \`${{ steps.qa_verdict.outputs.value }}\`${{ steps.mergehint.outputs.state == 'conflicting' && ' (skipped: the branch conflicts with main)' || '' }} |"
+             echo "| outstanding dismissals | \`${{ steps.dismissals_final.outputs.state }}\` |"
+             echo "| branch mergeability | \`${{ steps.mergestate.outputs.state }}\` |"
+             echo "| correction rounds spent | ${{ steps.round.outputs.value }} of ${MAX_ROUNDS} |"
+diff --git a/scripts/deliver_conflict_guards_test.go b/scripts/deliver_conflict_guards_test.go
+new file mode 100644
+index 00000000..860b8bfe
+--- /dev/null
++++ b/scripts/deliver_conflict_guards_test.go
+@@ -0,0 +1,234 @@
++package scripts_test
++
++import (
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++
++	"gopkg.in/yaml.v3"
++)
++
++// The workflow-wiring half of #1781. The two scripts it guards are behaviourally tested in
++// scripts/deliver_branch_update_test.go; these tests assert the phases actually CALL them, in the
++// right order, and act on their result — because a tested script nothing invokes is exactly the
++// shape of the bug being fixed (the branch update was "specified" in a prompt and never happened).
++
++// conflictStep is the subset of a delivery-workflow step these tests assert on.
++type conflictStep struct {
++	ID   string            `yaml:"id"`
++	Name string            `yaml:"name"`
++	If   string            `yaml:"if"`
++	Run  string            `yaml:"run"`
++	Uses string            `yaml:"uses"`
++	Env  map[string]string `yaml:"env"`
++}
++
++func loadConflictSteps(t *testing.T, workflow, job string) []conflictStep {
++	t.Helper()
++	path := filepath.Join("..", ".github", "workflows", workflow)
++	raw, err := os.ReadFile(path)
++	if err != nil {
++		t.Fatalf("reading %s: %v", path, err)
++	}
++	var wf struct {
++		Jobs map[string]struct {
++			Steps []conflictStep `yaml:"steps"`
++		} `yaml:"jobs"`
++	}
++	if err := yaml.Unmarshal(raw, &wf); err != nil {
++		t.Fatalf("parsing %s: %v", path, err)
++	}
++	j, ok := wf.Jobs[job]
++	if !ok {
++		t.Fatalf("%s has no `%s` job", workflow, job)
++	}
++	if len(j.Steps) == 0 {
++		t.Fatalf("%s's `%s` job has no steps", workflow, job)
++	}
++	return j.Steps
++}
++
++func indexOfConflictStep(steps []conflictStep, match func(conflictStep) bool) int {
++	for i, s := range steps {
++		if match(s) {
++			return i
++		}
++	}
++	return -1
++}
++
++// The branch update must be a WORKFLOW STEP that runs BEFORE the agent, and it must go through the
++// tested script (#1781).
++//
++// This is the #1778 regression in one assertion. There the update existed only as prose in the
++// agent prompt; the round completed `success` with no commit, no push and no comment. Asserted as
++// step ORDER, because an update placed after the agent would satisfy a `strings.Contains` check
++// while leaving the agent to start from a stale branch — which is the failure mode.
++func TestDeliverCorrectUpdatesTheBranchBeforeTheAgentRuns(t *testing.T) {
++	steps := loadConflictSteps(t, "deliver-correct.yml", "correct")
++
++	update := indexOfConflictStep(steps, func(s conflictStep) bool { return s.ID == "update" })
++	if update < 0 {
++		t.Fatal("deliver-correct.yml has no step with `id: update`. The branch update must be a " +
++			"workflow step, not only a prompt instruction: on PR #1778 the agent's `git merge " +
++			"origin/main` never happened and the round completed success with no progress (#1781)")
++	}
++	agent := indexOfConflictStep(steps, func(s conflictStep) bool {
++		return strings.HasPrefix(s.Uses, "anthropics/claude-code-action")
++	})
++	if agent < 0 {
++		t.Fatal("deliver-correct.yml has no anthropics/claude-code-action step")
++	}
++	if update > agent {
++		t.Errorf("the `update` step is at index %d, AFTER the agent at index %d — the branch must be "+
++			"brought up to date before the agent starts, or it corrects against a stale branch",
++			update, agent)
++	}
++	if !strings.Contains(steps[update].Run, "deliver-update-branch.sh") {
++		t.Error("the `update` step does not call scripts/deliver-update-branch.sh. The merge/push/abort " +
++			"logic must go through the tested script (scripts/deliver_branch_update_test.go) rather " +
++			"than being reimplemented inline, where it cannot be exercised")
++	}
++	// Its `state=`/`files=` output must reach GITHUB_OUTPUT, or the prompt and the hand-back cannot
++	// read what happened.
++	if !strings.Contains(steps[update].Run, "GITHUB_OUTPUT") {
++		t.Error("the `update` step does not tee its state into GITHUB_OUTPUT, so nothing downstream " +
++			"can tell whether the branch was merged, is current, or conflicts")
++	}
++}
++
++// After the agent, the phase must re-check whether the conflict was actually resolved, report it,
++// and withhold the hand-back — #1758(b), which PR #1778 did not satisfy.
++func TestDeliverCorrectVerifiesTheConflictWasResolved(t *testing.T) {
++	steps := loadConflictSteps(t, "deliver-correct.yml", "correct")
++
++	check := indexOfConflictStep(steps, func(s conflictStep) bool { return s.ID == "conflictcheck" })
++	if check < 0 {
++		t.Fatal("deliver-correct.yml has no step with `id: conflictcheck`. Without it a correction " +
++			"round that failed to resolve the conflict hands back and the next verify stops for a " +
++			"human citing a missing review marker, never naming the conflict (#1781)")
++	}
++	agent := indexOfConflictStep(steps, func(s conflictStep) bool {
++		return strings.HasPrefix(s.Uses, "anthropics/claude-code-action")
++	})
++	if check < agent {
++		t.Errorf("the `conflictcheck` step is at index %d, BEFORE the agent at index %d — it must "+
++			"establish the state the agent left behind", check, agent)
++	}
++
++	// `always()`: the agent step is where a timeout or crash lands, and an unresolved conflict must
++	// be reported precisely then. An `if:` with no status function carries an implicit `success()`,
++	// which would skip exactly the case this exists for.
++	if !strings.Contains(steps[check].If, "always()") {
++		t.Errorf("the `conflictcheck` step's if is %q; it must be guarded on always(), or a crashed "+
++			"or timed-out agent skips the report and the round ends silently", steps[check].If)
++	}
++	if !strings.Contains(steps[check].Run, "deliver-conflict-check.sh") {
++		t.Error("the `conflictcheck` step does not call scripts/deliver-conflict-check.sh")
++	}
++	// It must NAME the files and stop for a human — the two halves of #1758(b).
++	if !strings.Contains(steps[check].Run, "needs-human") {
++		t.Error("the `conflictcheck` step does not apply needs-human; a branch that still conflicts " +
++			"cannot be verified to a real verdict, so the delivery must stop rather than loop")
++	}
++	if !strings.Contains(steps[check].Run, "Conflicting files") {
++		t.Error("the `conflictcheck` step's comment does not name the conflicting files. #1758's " +
++			"acceptance criterion is a needs-human that NAMES the conflict; on #1778 a human had " +
++			"to go and find it")
++	}
++
++	// And the hand-back must be withheld on `conflicting`, or the delivery re-verifies a branch with
++	// no merge ref and arrives at the same answer with a vaguer reason.
++	handback := indexOfConflictStep(steps, func(s conflictStep) bool { return s.Name == "Hand back to verify" })
++	if handback < 0 {
++		t.Fatal("deliver-correct.yml has no `Hand back to verify` step")
++	}
++	if !strings.Contains(steps[handback].If, "conflictcheck") {
++		t.Errorf("the hand-back's if is %q; it must be gated on the conflictcheck result, or a round "+
++			"that already stopped the delivery at needs-human still triggers a full re-verification",
++			steps[handback].If)
++	}
++}
++
++// Verify must decide whether to run the agent reviews BEFORE running them, and must not gate on
++// markers those skipped reviews could never produce (#1781, C3/C4).
++func TestDeliverVerifySkipsTheReviewsOnAConflictingBranch(t *testing.T) {
++	steps := loadConflictSteps(t, "deliver-verify.yml", "verify")
++
++	hint := indexOfConflictStep(steps, func(s conflictStep) bool { return s.ID == "mergehint" })
++	if hint < 0 {
++		t.Fatal("deliver-verify.yml has no step with `id: mergehint`. A branch with no merge ref " +
++			"cannot produce a verdict the gate may act on, so both agent reviews must be skipped " +
++			"on one — and that decision has to be made before they run (#1781)")
++	}
++
++	for _, want := range []struct{ id, why string }{
++		{"qa", "the cross-vendor qa-review"},
++	} {
++		i := indexOfConflictStep(steps, func(s conflictStep) bool { return s.ID == want.id })
++		if i < 0 {
++			t.Fatalf("deliver-verify.yml has no step with `id: %s` (%s)", want.id, want.why)
++		}
++		if i < hint {
++			t.Errorf("%s runs at index %d, BEFORE the mergehint step at %d — the skip decision must precede it", want.id, i, hint)
++		}
++		if !strings.Contains(steps[i].If, "mergehint") {
++			t.Errorf("%s's if is %q; it must be skipped when the branch already conflicts", want.id, steps[i].If)
++		}
++	}
++
++	// The Anthropic reviewer has no step id, so it is matched by name.
++	review := indexOfConflictStep(steps, func(s conflictStep) bool { return s.Name == "Review the PR" })
++	if review < 0 {
++		t.Fatal("deliver-verify.yml has no `Review the PR` step")
++	}
++	if review < hint {
++		t.Errorf("`Review the PR` runs at index %d, before the mergehint step at %d", review, hint)
++	}
++	if !strings.Contains(steps[review].If, "mergehint") {
++		t.Errorf("`Review the PR`'s if is %q; it must be skipped when the branch already conflicts", steps[review].If)
++	}
++
++	// The marker READERS must stay unconditional: they turn an absent marker into MISSING, which is
++	// what the gate's #1781 row consumes. Skipping them would leave the gate's AGENT_VERDICT empty
++	// and it would exit 2 (a wiring error) on every conflicting branch.
++	for _, id := range []string{"verdict", "qa_verdict"} {
++		i := indexOfConflictStep(steps, func(s conflictStep) bool { return s.ID == id })
++		if i < 0 {
++			t.Fatalf("deliver-verify.yml has no step with `id: %s`", id)
++		}
++		if strings.Contains(steps[i].If, "mergehint") {
++			t.Errorf("the `%s` marker reader is gated on mergehint (%q); it must always run, or the "+
++				"gate receives an empty verdict and exits 2 rather than reading MISSING", id, steps[i].If)
++		}
++	}
++}
++
++// The conflicting paths must reach the gate, or its reason names the conflict but not the files —
++// half of #1758(b).
++func TestDeliverVerifyFeedsConflictFilesToTheGate(t *testing.T) {
++	steps := loadConflictSteps(t, "deliver-verify.yml", "verify")
++
++	merge := indexOfConflictStep(steps, func(s conflictStep) bool { return s.ID == "mergestate" })
++	if merge < 0 {
++		t.Fatal("deliver-verify.yml has no step with `id: mergestate`")
++	}
++	if !strings.Contains(steps[merge].Run, "conflicting-files.sh") {
++		t.Error("the `mergestate` step does not call scripts/conflicting-files.sh, so the conflicting " +
++			"paths are never computed and a needs-human cannot name them (#1781)")
++	}
++
++	gate := indexOfConflictStep(steps, func(s conflictStep) bool { return s.ID == "gate" })
++	if gate < 0 {
++		t.Fatal("deliver-verify.yml has no step with `id: gate`")
++	}
++	got := steps[gate].Env["CONFLICT_FILES"]
++	if got == "" {
++		t.Fatal("the `gate` step's env does not set CONFLICT_FILES, so the conflicting paths never " +
++			"reach the reason a human reads")
++	}
++	if !strings.Contains(got, "steps.mergestate.outputs") {
++		t.Errorf("the `gate` step's CONFLICT_FILES is %q, not wired from steps.mergestate.outputs", got)
++	}
++}
