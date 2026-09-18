@@ -796,8 +796,13 @@ func requireDeploymentFlags(resolvedGPU string, resolvedTP int) {
 //
 // Side effects (package-level vars mutated):
 //
-//	model, gpu, tensorParallelism, modelConfigDir, hwConfigPath,
-//	totalKVBlocks, maxModelLen
+//	model, gpu, tensorParallelism, modelConfigDir, resolvedCatalogRoot,
+//	hwConfigPath, totalKVBlocks, maxModelLen
+//
+// resolvedCatalogRoot is set transitively, by the resolveModelConfig call on each
+// analytical-backend branch (#1732); the emit sites read it back as results-file
+// catalog provenance rather than re-resolving --catalog / BLIS_CATALOG, which would
+// re-announce the precedence override on stderr.
 //
 // Returns values that cannot be stored as package-level vars (local coeff copies,
 // resolved modelConfig/hwConfig structs, backend string).
