@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // The selection law for issue-comment design refinements (#1782).
@@ -378,5 +380,143 @@ func TestRefinements_DegenerateShapes(t *testing.T) {
 				t.Errorf("%s did not report the no-refinements case explicitly.\ngot:\n%s", name, got)
 			}
 		})
+	}
+}
+
+// ── The route by which the rule reaches the delivery agent ─────────────────────────────────────
+//
+// #1782's stated target was the implement phase's agent prompt in
+// `.github/workflows/deliver-implement.yml`. THE DELIVERY LOOP CANNOT PUSH THAT FILE: `GITHUB_TOKEN`
+// has no `workflows` permission — there is no such permission to request in a `permissions:` block —
+// so any push touching `.github/workflows/*` is rejected with "refusing to allow a GitHub App to
+// create or update workflow … without `workflows` permission". Measured while delivering #1782, with
+// both available tokens; the same commit without the workflow hunk pushes.
+//
+// So the rule lives in `docs/contributing/pr-workflow.md`, which the prompt ALREADY tells the agent
+// to follow, and which human contributors read too. The two tests below pin the two halves of that
+// route: the prompt must keep pointing at the document, and the document must keep carrying the rule.
+// Either one alone is worthless — a rule nobody is sent to, or a pointer to a document that no longer
+// states it.
+
+func readRepoFile(t *testing.T, parts ...string) string {
+	t.Helper()
+	path := filepath.Join(append([]string{".."}, parts...)...)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	return string(raw)
+}
+
+// The prompt must keep pointing the agent at pr-workflow.md, because that is the whole delivery
+// mechanism for a rule the loop cannot write into the prompt itself.
+func TestImplementPromptStillRoutesTheAgentToPrWorkflow(t *testing.T) {
+	wf := readRepoFile(t, ".github", "workflows", "deliver-implement.yml")
+
+	if !strings.Contains(wf, "@docs/contributing/pr-workflow.md") {
+		t.Error("deliver-implement.yml no longer points the agent at " +
+			"@docs/contributing/pr-workflow.md. That reference is how the issue-comment authority " +
+			"rule (#1782) reaches the implement agent at all: GITHUB_TOKEN has no `workflows` " +
+			"permission, so the rule cannot be written into this prompt by a delivery. Without the " +
+			"pointer the agent is back to reading the issue body alone")
+	}
+}
+
+// The document must keep carrying the rule the prompt sends the agent to read. Asserted clause by
+// clause rather than as one phrase: each of these is a decision that cost something to make, and a
+// reword that quietly drops one leaves the pointer above vouching for a document that no longer says
+// it.
+func TestPrWorkflowCarriesTheCommentAuthorityRule(t *testing.T) {
+	doc := readRepoFile(t, "docs", "contributing", "pr-workflow.md")
+
+	for _, c := range []struct{ needle, why string }{
+		{
+			needle: "scripts/deliver-issue-refinements.sh",
+			why: "Step 1.5 must name the script that prints the refinements; a rule with no way to " +
+				"get the data is an instruction to guess",
+		},
+		{
+			needle: "admin` / `write` / `maintain",
+			why: "the trust boundary must be stated. This repository is public, so without it every " +
+				"GitHub user can steer a delivery running on a self-hosted runner with credentials",
+		},
+		{
+			needle: "authorAssociation",
+			why: "the document must record that authorAssociation is NOT the trust signal. This " +
+				"repository's maintainer reports CONTRIBUTOR, so an author-association filter would " +
+				"drop exactly the comments the rule exists to read — a mistake that looks correct",
+		},
+		{
+			needle: "REFINEMENT-READ-FAILED",
+			why: "a failed read must be distinguishable from an issue with no refinements, which is " +
+				"the silent failure #1782 is about",
+		},
+		{
+			needle: "later one wins",
+			why: "the ordering half of the rule. Without it, two conflicting refinements have no " +
+				"defined winner and the outcome depends on the API's response order",
+		},
+		{
+			needle: "body-only",
+			why: "the target branch, `archon-plan:` and `Depends on:` must stay body-only. The " +
+				"workflow acts on them before planning starts, and a base branch taken from comment " +
+				"text is fed to `git ls-remote` and `gh pr create --base`",
+		},
+		{
+			needle: "data, never instructions",
+			why: "refinement text is data. Filtering by write access makes it a design channel, not " +
+				"a command channel, and the document is where that is said",
+		},
+	} {
+		if !strings.Contains(doc, c.needle) {
+			t.Errorf("pr-workflow.md no longer states %q: %s", c.needle, c.why)
+		}
+	}
+}
+
+// The three STRUCTURED declarations stay body-only, enforced where it matters: the seeding step.
+//
+// This is the half of #1782 that must NOT change. The seed step resolves the target branch and the
+// `archon-plan:` line before the agent exists, and feeds the branch to `git ls-remote` and
+// `gh pr create --base` — so reading it from comment text would hand an attacker-influenceable ref
+// to both. Asserted on the step's own script rather than on prose, because prose does not stop an
+// edit.
+func TestSeedStepReadsTheIssueBodyAndNotItsComments(t *testing.T) {
+	wf := readRepoFile(t, ".github", "workflows", "deliver-implement.yml")
+
+	var parsed struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				ID  string `yaml:"id"`
+				Run string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal([]byte(wf), &parsed); err != nil {
+		t.Fatalf("parsing deliver-implement.yml: %v", err)
+	}
+
+	var seed string
+	for _, s := range parsed.Jobs["deliver"].Steps {
+		if s.ID == "seed" {
+			seed = s.Run
+		}
+	}
+	if strings.TrimSpace(seed) == "" {
+		t.Fatal("deliver-implement.yml has no `seed` step with a script; the body-only guarantee " +
+			"below has nothing to hold")
+	}
+
+	if !strings.Contains(seed, "--json body") {
+		t.Error("the seed step no longer reads the issue BODY. The target branch and `archon-plan:` " +
+			"line are declarations, and they must come from the body")
+	}
+	for _, forbidden := range []string{"--comments", "--json comments", "json body,comments"} {
+		if strings.Contains(seed, forbidden) {
+			t.Errorf("the seed step reads issue comments (%q). The target branch it resolves is fed "+
+				"to `git ls-remote` and `gh pr create --base`, so taking it from comment text — which "+
+				"any GitHub user can write on a public repository — is a script-injection surface. "+
+				"#1782 requires these structured reads to stay body-only", forbidden)
+		}
 	}
 }
