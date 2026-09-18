@@ -191,8 +191,12 @@ func readCatalogEntry(model string, candidates []string) (entryDir, entryPath st
 				model, path, statErr, catalogEnvVar, hfConfigFile,
 			)
 		}
+		// A directory sitting where config.json should be is "no entry in this
+		// layout", not a broken entry — deliberately grouped with the ENOENT/ENOTDIR
+		// absence cases above (it is not a plausible catalogued config, so the
+		// stale-flat-shadowing hazard the errno classification guards does not apply).
 		if info.IsDir() {
-			continue // a directory, not a config.json file — no entry in this layout
+			continue
 		}
 		content, readErr := os.ReadFile(path)
 		if readErr != nil {
