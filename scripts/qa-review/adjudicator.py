@@ -505,34 +505,53 @@ _REPORT_HEADING = "## qa-review — pr #"
 _ITEMS_HEADING = "### items to fix"
 
 
+def _leading_cols(raw):
+    """Leading indentation of `raw` in columns, tabs expanded to a stop of 4
+    (CommonMark). Distinguishes a >=4-column indented code block from ordinary
+    text without counting a tab as a single column."""
+    cols = 0
+    for ch in raw:
+        if ch == " ":
+            cols += 1
+        elif ch == "\t":
+            cols += 4 - (cols % 4)
+        else:
+            break
+    return cols
+
+
 def significant_lines(body):
     """Yield `body`'s lines, stripped, with HTML comments, fenced code blocks,
-    and blockquotes dropped.
+    blockquotes, and indented code blocks dropped.
 
     Those are how a comment QUOTES or HIDES a report it is discussing rather
-    than being one — an example report pasted inside ``` fences, quoted with
-    `> `, or concealed inside an `<!-- ... -->` HTML comment that renders
-    invisibly to a human yet still carries the structural landmarks (#1716 G1).
-    Dropping all three is what stops a discussion of the findings — or a
-    deliberately hidden report shape — from being mistaken for the report that
-    raised them. A genuine report contains none of them (render_report.py emits
-    no fences or HTML comments, and only its optional banner is a blockquote),
-    so nothing a report needs is lost.
+    than being one — an example report pasted inside ``` fences, indented four
+    columns as a code block, quoted with `> `, or concealed inside an
+    `<!-- ... -->` HTML comment that renders invisibly to a human yet still
+    carries the structural landmarks (#1716 G1/G6). Dropping all of them is what
+    stops a discussion of the findings — or a deliberately hidden report shape —
+    from being mistaken for the report that raised them. A genuine report
+    contains none of them (render_report.py emits its landmarks unfenced,
+    unindented and unquoted, and only its optional banner is a blockquote), so
+    nothing a report needs is lost.
 
-    HTML comments are removed FIRST and span-wise: multi-line, and an unclosed
-    `<!--` through end-of-body (which also hides everything after it in a
-    rendered view). Removal can only DELETE landmarks, never synthesise one, so
-    it cannot be turned into a way to fake a report."""
-    body = re.sub(r"<!--.*?(?:-->|$)", "", body, flags=re.DOTALL)
+    HTML comments are removed span-wise (multi-line, and an unclosed `<!--`
+    through end-of-body), and each span is replaced by the newlines it spanned,
+    so the fragments on either side of a line break can never be fused into a
+    synthetic landmark line (#1716 G1). Removal can therefore only DELETE
+    landmarks or leave blank lines behind — never synthesise one."""
+    body = re.sub(
+        r"<!--.*?(?:-->|$)", lambda m: "\n" * m.group(0).count("\n"), body, flags=re.DOTALL
+    )
     fence_char = ""  # "" when not in a fence; otherwise the fence char "`" or "~"
     fence_len = 0
     for raw in body.splitlines():
-        # A fence marker is a run of >=3 of the same char (` or ~) with at most 3
-        # spaces of indentation (CommonMark; 4+ spaces is indented code, not a fence).
-        stripped = raw.lstrip(" ")
-        indent = len(raw) - len(stripped)
+        cols = _leading_cols(raw)
+        stripped = raw.lstrip(" \t")
+        # A fence marker is a run of >=3 of the same char (` or ~) at <=3 columns
+        # of indentation (CommonMark; 4+ columns is indented code, not a fence).
         marker_char, marker_len = "", 0
-        if indent <= 3 and stripped[:1] in ("`", "~"):
+        if cols <= 3 and stripped[:1] in ("`", "~"):
             ch = stripped[0]
             run = len(stripped) - len(stripped.lstrip(ch))
             if run >= 3:
@@ -552,6 +571,12 @@ def significant_lines(body):
             # Opening a new fence (an info string after the run is allowed).
             fence_char, fence_len = marker_char, marker_len
             continue
+        # A line indented >=4 columns is a CommonMark indented code block, not a
+        # structural landmark — drop it so an indented copy of the headings cannot
+        # pose as a genuine report (#1716 G6). render_report.py's landmarks sit at
+        # column 0.
+        if cols >= 4:
+            continue
         line = raw.strip()
         if line.startswith(">"):
             continue
@@ -560,16 +585,31 @@ def significant_lines(body):
 
 def is_report_comment(body):
     """True when `body` IS a rendered qa-review report rather than a comment
-    that quotes or discusses one."""
+    that quotes or discusses one.
+
+    Requires the verdict header, the Items-to-fix heading, AND a non-degenerate
+    Items-to-fix section — at least one line under it that is a finding bullet
+    (`- **ID · STATUS**`) or render_report.py's explicit "no blocking findings"
+    sentinel. A report SHAPE whose Items-to-fix section is empty parses to zero
+    findings, which the adjudicator would otherwise clear as a vacuous aggregate
+    PASS; requiring content keeps a genuine PASS report (which carries the
+    sentinel) selectable while rejecting an empty shell that a newer comment
+    could use to supersede a real report's findings (#1716 G2)."""
     has_heading = False
-    has_items = False
+    in_items = False
+    items_has_content = False
     for line in significant_lines(body):
         lowered = line.lower()
         if lowered.startswith(_REPORT_HEADING):
             has_heading = True
-        elif lowered.startswith(_ITEMS_HEADING):
-            has_items = True
-    return has_heading and has_items
+            in_items = False
+        elif lowered.startswith("### "):
+            # Any next section heading closes the Items-to-fix section; only the
+            # Items-to-fix heading (re)opens it.
+            in_items = lowered.startswith(_ITEMS_HEADING)
+        elif in_items and line.startswith("- "):
+            items_has_content = True
+    return has_heading and items_has_content
 
 
 def select_report_comment(comments, report_author=""):

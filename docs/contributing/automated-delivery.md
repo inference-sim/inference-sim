@@ -102,7 +102,7 @@ There is no third outcome. Every unrecognised or contradictory signal resolves t
 
 ## The gate
 
-The decision is not the reviewing agent's to make. `deliver-verify.yml` collects five machine-readable signals and hands them to `scripts/deliver-gate.sh`, which is unit-tested (`scripts/deliver_gate_test.go`):
+The decision is not the reviewing agent's to make. `deliver-verify.yml` collects six machine-readable signals and hands them to `scripts/deliver-gate.sh`, which is unit-tested (`scripts/deliver_gate_test.go`):
 
 | Signal | Source |
 |---|---|
@@ -111,6 +111,7 @@ The decision is not the reviewing agent's to make. `deliver-verify.yml` collects
 | `AGENT_VERDICT` | the `DELIVER-VERDICT: GREEN` / `NOT-GREEN` marker, required to be the last line of a comment posted by the automation itself |
 | `QA_VERDICT` | the `QA-VERDICT: PASS` / `BLOCK` marker from the **cross-vendor qa-review pass** (#1715, RFC #1603) — a questioner and an isolated answerer from a different model family than the implementer and the reviewer above. Same author-trust and last-line rules as `AGENT_VERDICT`. `BLOCK` routes to a correction round; `MISSING` (no marker) **blocks**, so a qa-review that crashed or lost its model can never be read as a pass |
 | `DISMISSALS` | the `deliver:has-dismissals` label, **re-read after the review agent has run** so that the reviewer clearing it takes effect in the same round. `open` withholds `ready-for-merge`; `unknown` (the label set could not be read) does too, because an unreadable state is not evidence there is nothing to accept |
+| `MERGE_STATE` | whether the branch can merge into `main` (#1758) — GitHub's REST `mergeable_state` mapped to `mergeable` / `conflicting` (a true conflict) / `unknown`. `conflicting` routes to a correction round (the agent merges `main` and resolves the conflict) rather than to a human; `unknown` (mergeability not yet computed) triggers a re-check on the next event rather than a terminal verdict |
 
 Both review signals are required for `ready-for-merge`, and either one alone can send a round to correction. They are kept as **parallel signals rather than one combined verdict** so it is always visible which review blocked, and so each can be tested in isolation.
 

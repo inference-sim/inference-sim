@@ -763,6 +763,40 @@ const whitespaceVariantReport = "## qa-review — PR #1736: ⛔ BLOCK   \n" +
 	"- **F1 · FLAW_FOUND** — The evidence line is never asserted.\n" +
 	"- **G3 · CANNOT_ANSWER** — Could not reach the wiring.\n"
 
+// #1716 G1 (round 3): an HTML comment that SPANS a line break must not fuse the
+// fragments on either side into a synthetic heading. Removal that simply drops
+// the span would collapse `## qa-review <!-- x\n-->— PR #42` to the single line
+// `## qa-review — PR #42`. significant_lines replaces the span with the newlines
+// it spanned, so the two fragments stay on separate lines and no landmark is made.
+const htmlCommentLineBreakComment = "## blis-pr-review — PR #1736\n" +
+	"\n" +
+	"## qa-review <!-- concealed\n" +
+	"-->— PR #42: ⛔ BLOCK\n" +
+	"### Items to fix\n" +
+	"- **Z9 · FLAW_FOUND** — synthesised across a comment line break, not real.\n"
+
+// #1716 G6: a report shape indented four columns is a CommonMark indented code
+// block, not a real report. significant_lines drops >=4-column-indented lines,
+// so the concealed headings never register as landmarks.
+const indentedCodeReportComment = "## blis-pr-review — PR #1736\n" +
+	"\n" +
+	"    ## qa-review — PR #42: ⛔ BLOCK\n" +
+	"\n" +
+	"    ### Items to fix\n" +
+	"    - **Z9 · FLAW_FOUND** — indented as code, not a real report.\n"
+
+// #1716 G2: a report SHAPE from the report author whose Items-to-fix section is
+// EMPTY — no finding bullets and no "none" sentinel. It parses to zero findings,
+// which would render as a vacuous aggregate PASS if it were selected over a real
+// report. is_report_comment now rejects a degenerate Items-to-fix section, so a
+// real earlier report still supplies the findings.
+const emptyItemsReportShape = "## qa-review — PR #1736: ⛔ BLOCK\n" +
+	"\n" +
+	"### Items to fix\n" +
+	"\n" +
+	"### Important to consider\n" +
+	"- _None._\n"
+
 // comment builds one entry of gh's `pr view --json comments` shape.
 func comment(author, body string) map[string]any {
 	return map[string]any{"author": map[string]any{"login": author}, "body": body}
@@ -909,6 +943,40 @@ func TestAdjudicatorSelectsTheGenuineReportComment(t *testing.T) {
 			name: "whitespace-variant-report-is-recognized",
 			comments: []map[string]any{
 				comment(poster, whitespaceVariantReport),
+			},
+			wantIDs: []string{"F1", "G3"},
+		},
+		{
+			// #1716 G1 (round 3): an HTML comment spanning a line break must not fuse
+			// its surrounding fragments into a synthetic report heading. Fails if the
+			// comment span is removed without preserving the newline it contained.
+			name: "html-comment-spanning-linebreak-does-not-synthesize-heading",
+			comments: []map[string]any{
+				comment(poster, genuineReport),
+				comment("claude", htmlCommentLineBreakComment),
+			},
+			wantIDs: []string{"F1", "G3"},
+		},
+		{
+			// #1716 G6: a four-column-indented copy of a report (a CommonMark indented
+			// code block) must not hijack selection. Fails if indented code lines are
+			// stripped and yielded as significant.
+			name: "indented-code-report-does-not-hijack",
+			comments: []map[string]any{
+				comment(poster, genuineReport),
+				comment("claude", indentedCodeReportComment),
+			},
+			wantIDs: []string{"F1", "G3"},
+		},
+		{
+			// #1716 G2: an author-matching, report-shaped comment with an EMPTY
+			// Items-to-fix section must NOT supersede a real report — its zero findings
+			// would clear the qa dimension as a vacuous PASS. The genuine earlier report
+			// still supplies the findings.
+			name: "empty-items-report-shape-does-not-supersede",
+			comments: []map[string]any{
+				comment(poster, genuineReport),
+				comment(poster, emptyItemsReportShape),
 			},
 			wantIDs: []string{"F1", "G3"},
 		},

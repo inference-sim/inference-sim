@@ -3,8 +3,9 @@ name: Deliver — Verify
 # Phase 2 of the L1 delivery loop (#1654). Determines a verdict and applies exactly one of:
 # ready-for-merge, needs-human, or a hand-off to Deliver — Correct.
 #
-# This workflow decides nothing itself. It gathers five machine-readable signals and hands
-# them to scripts/deliver-gate.sh, which is unit-tested. Keeping the decision in one tested
+# This workflow decides nothing itself. It gathers six machine-readable signals (CI_STATUS,
+# PLAN_GATE, AGENT_VERDICT, QA_VERDICT, DISMISSALS, MERGE_STATE) and hands them to
+# scripts/deliver-gate.sh, which is unit-tested. Keeping the decision in one tested
 # place is what makes "clean reviews (GREEN + PASS) cannot override red CI" structural rather
 # than something to re-audit on every edit here.
 #
