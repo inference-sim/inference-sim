@@ -128,11 +128,12 @@ command -v gh >/dev/null 2>&1 || degrade "gh is not on PATH"
 # 60/120-minute timeout. The permission lookup below is the likeliest culprit, but `gh issue view`
 # carries the same risk, so the deadline wraps all of them here rather than at one call site.
 # `timeout` (coreutils — present on the Linux CI and self-hosted runners that actually run
-# deliveries) or `gtimeout` (macOS with coreutils) enforces it; on a bare dev machine with neither,
-# the call runs unbounded, which is acceptable there because a human is at the keyboard to interrupt
-# it. A deadline expiry exits non-zero, so resolve_permission and the `gh issue view` check treat it
-# exactly like any other "could not ask" failure — fail-closed, never mistaken for a definitive
-# answer. GH_DEADLINE_SECONDS is overridable so the tests can force a short deadline.
+# deliveries) or `gtimeout` (macOS with coreutils) enforces it where present; where neither is
+# installed the portable `run_bounded` watchdog below enforces the same deadline, so NO execution
+# path runs `gh` unbounded. A deadline expiry exits non-zero, so resolve_permission and the
+# `gh issue view` check treat it exactly like any other "could not ask" failure — fail-closed, never
+# mistaken for a definitive answer. GH_DEADLINE_SECONDS is overridable so the tests can force a
+# short deadline.
 GH_DEADLINE_SECONDS="${GH_DEADLINE_SECONDS:-30}"
 _GH_BIN="$(command -v gh)"
 if command -v timeout >/dev/null 2>&1; then
@@ -142,11 +143,30 @@ elif command -v gtimeout >/dev/null 2>&1; then
 else
   _GH_TIMEOUT=""
 fi
+
+# Portable fallback deadline, used when neither `timeout` nor `gtimeout` is installed, so there is NO
+# execution path on which a stalled `gh` call runs unbounded — not even on a host without coreutils.
+# A watchdog subshell kills the call after the deadline. Its stdout/stderr go to /dev/null so it can
+# never hold the command-substitution pipe open: were it to, `out=$(gh …)` would block on the
+# watchdog's own sleep instead of returning when the call does, defeating the bound.
+run_bounded() {
+  local secs="$1"; shift
+  "$@" &
+  local pid=$!
+  ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+  local watcher=$!
+  wait "$pid" 2>/dev/null
+  local rc=$?
+  kill -TERM "$watcher" 2>/dev/null
+  wait "$watcher" 2>/dev/null
+  return "$rc"
+}
+
 gh() {
   if [[ -n "$_GH_TIMEOUT" ]]; then
     "$_GH_TIMEOUT" "$GH_DEADLINE_SECONDS" "$_GH_BIN" "$@"
   else
-    "$_GH_BIN" "$@"
+    run_bounded "$GH_DEADLINE_SECONDS" "$_GH_BIN" "$@"
   fi
 }
 

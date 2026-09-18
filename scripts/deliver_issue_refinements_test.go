@@ -811,18 +811,14 @@ func TestRefinementsLive_A429IsCouldNotAskNotDefinitive(t *testing.T) {
 }
 
 // A permission lookup that HANGS must not hang the delivery. The script wraps every `gh` call in a
-// deadline (`timeout`/`gtimeout`); when the lookup stalls, the wrapper kills it, the kill is a
-// non-zero exit — "could not ask" — the sole author is unresolved, and the thread degrades. Without
-// the bound a single stalled GitHub request would pin the whole job until its 60/120-minute timeout.
-// Skipped where `timeout(1)` is absent (a bare dev machine), since there is nothing to enforce the
-// deadline there; the Linux CI and self-hosted runners that actually run deliveries have it.
+// deadline — `timeout`/`gtimeout` where installed, else a portable pure-bash watchdog — so the bound
+// holds on EVERY host, not just those with coreutils. When the lookup stalls the wrapper kills it,
+// the kill is a non-zero exit ("could not ask"), the sole author is unresolved, and the thread
+// degrades. Without the bound a single stalled GitHub request would pin the whole job until its
+// 60/120-minute timeout. No skip: because the bound is unconditional, this runs everywhere.
 func TestRefinementsLive_AHangingLookupIsBoundedAndDegrades(t *testing.T) {
-	if _, err := exec.LookPath("timeout"); err != nil {
-		t.Skip("timeout(1) is not on PATH; the deadline cannot be enforced here")
-	}
-
-	// `exec sleep` so the process the wrapper's `timeout` manages IS the sleep — killed cleanly at
-	// the deadline rather than left for the stub shell to reap.
+	// `exec sleep` so the process the deadline manages IS the sleep — killed cleanly at the deadline
+	// rather than left for the stub shell to reap.
 	path := stubGh(t, oneHumanComment, `    exec sleep 30`)
 
 	start := time.Now()
