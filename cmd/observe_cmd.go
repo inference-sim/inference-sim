@@ -137,8 +137,11 @@ func init() {
 
 	// Workload input
 	observeCmd.Flags().StringVar(&observeWorkloadSpec, "workload-spec", "", "Path to WorkloadSpec YAML (alternative to --rate)")
-	observeCmd.Flags().StringVar(&observeWorkload, "workload", "", "Workload preset name (chatbot, summarization, contentgen, multidoc); requires --rate")
-	observeCmd.Flags().StringVar(&observeDefaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to defaults.yaml (for preset workload definitions)")
+	observeCmd.Flags().StringVar(&observeWorkload, "workload", "", "Workload preset name (chatbot, summarization, contentgen, multidoc), read from <catalog>/"+catalogWorkloadsSubdir+"/<name>"+presetFileExt+"; requires --rate")
+	// #1769: preset definitions come from the catalog, so observe takes the catalog locator.
+	// It replaces --defaults-filepath, whose only consumer here was the retired defaults.yaml
+	// `workloads:` block — observe reads nothing else from defaults.yaml.
+	registerCatalogFlag(observeCmd)
 	observeCmd.Flags().Float64Var(&observeRate, "rate", 0, "Requests per second for distribution synthesis")
 	observeCmd.Flags().BoolVar(&observeLazyGeneration, "lazy-generation", false,
 		"Alpha (#1441): stream requests from the workload generator instead of pre-generating "+
@@ -241,34 +244,25 @@ func validateITLStreamingFlags(recordITL, noStreaming bool) string {
 	return ""
 }
 
-// buildPresetSpec loads the named preset from defaults.yaml and synthesizes a WorkloadSpec.
-// Returns (nil, errMsg) if the preset is not defined or defaults.yaml cannot be accessed; (spec, "") on success.
-// Extracted from runObserve for unit testability (R14). File read or YAML parse errors
-// are CLI-fatal inside loadDefaultsConfig — consistent with all other defaults.yaml reads.
-func buildPresetSpec(preset, defaultsPath string, rate float64, numRequests int) (*workload.WorkloadSpec, string) {
-	if _, err := os.Stat(defaultsPath); err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Sprintf("--workload requires a defaults.yaml with preset definitions; "+
-				"file not found at %q — use --defaults-filepath to specify its location", defaultsPath)
-		}
-		return nil, fmt.Sprintf("--workload requires a defaults.yaml with preset definitions; "+
-			"cannot access %q: %v", defaultsPath, err)
+// buildPresetSpec loads the named preset from the catalog rooted at catalog and synthesizes
+// a WorkloadSpec. Returns (nil, errMsg) when the catalog does not define the preset or the
+// definition cannot be read; (spec, "") on success.
+//
+// The catalog root is a parameter rather than resolved here, so the preset wiring stays
+// unit-testable against a temporary catalog (R14); runObserve resolves it once via the
+// shared resolveCatalogRoot.
+//
+// #1769: presets are read from <catalog>/workloads/<name>.yaml through the same
+// readCatalogPresetWorkload as `blis run --workload` and `blis convert preset`, so the three
+// commands cannot resolve one preset name to different token distributions. The retired
+// source was the bundled defaults.yaml `workloads:` block.
+func buildPresetSpec(preset, catalog string, rate float64, numRequests int) (*workload.WorkloadSpec, string) {
+	wl, err := readCatalogPresetWorkload(preset, catalog)
+	if err != nil {
+		return nil, fmt.Sprintf("--workload %q could not be resolved: %v\n"+
+			"  (or supply the workload directly with --workload-spec)", preset, err)
 	}
-	wl := loadPresetWorkload(defaultsPath, preset)
-	if wl == nil {
-		return nil, fmt.Sprintf("Undefined workload %q. Use one among (chatbot, summarization, contentgen, multidoc) or --workload-spec", preset)
-	}
-	spec := workload.SynthesizeFromPreset(preset, workload.PresetConfig{
-		PrefixTokens:      wl.PrefixTokens,
-		PromptTokensMean:  wl.PromptTokensMean,
-		PromptTokensStdev: wl.PromptTokensStdev,
-		PromptTokensMin:   wl.PromptTokensMin,
-		PromptTokensMax:   wl.PromptTokensMax,
-		OutputTokensMean:  wl.OutputTokensMean,
-		OutputTokensStdev: wl.OutputTokensStdev,
-		OutputTokensMin:   wl.OutputTokensMin,
-		OutputTokensMax:   wl.OutputTokensMax,
-	}, rate, numRequests)
+	spec := workload.SynthesizeFromPreset(preset, wl.toPresetConfig(), rate, numRequests)
 	return spec, ""
 }
 
@@ -425,7 +419,14 @@ func runObserve(cmd *cobra.Command, _ []string) {
 			// also guarded by validateObserveWorkloadFlags above, which requires rateChanged to be true).
 			// Use separate errMsg var + = (not :=) to avoid shadowing the outer spec variable.
 			var errMsg string
-			spec, errMsg = buildPresetSpec(observeWorkload, observeDefaultsFilePath, observeRate, observeNumRequests)
+			// #1769: the preset lives in the catalog, so observe locates the catalog exactly
+			// as run/replay do (--catalog / BLIS_CATALOG). It still resolves no model config
+			// — this is the only thing observe reads from the catalog.
+			catalog, catalogErr := resolveCatalogRoot()
+			if catalogErr != nil {
+				logrus.Fatalf("--workload %q needs the catalog that defines it: %v", observeWorkload, catalogErr)
+			}
+			spec, errMsg = buildPresetSpec(observeWorkload, catalog, observeRate, observeNumRequests)
 			if errMsg != "" {
 				logrus.Fatalf("%s", errMsg)
 			}

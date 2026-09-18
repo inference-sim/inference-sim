@@ -1,50 +1,19 @@
-# BLIS defaults.yaml — workload presets and shipped coefficient/device constants.
+# BLIS defaults.yaml — shipped coefficient and device constants.
 #
 # There is no per-model `defaults:` block any more (#1768). The deployment is a required
 # operator input supplied via --hardware/--tp on `blis run` and `blis replay` (NS-6, #1733),
 # never inferred per-model, and the model config is read from the catalog located by
 # --catalog / BLIS_CATALOG (#1731). A `defaults:` key left in a hand-maintained copy of this
 # file is now rejected by strict parsing (R10) — delete the block and pass the flags.
-workloads:
-  chatbot:
-    prefix_tokens: 0
-    prompt_tokens: 256
-    prompt_tokens_stdev: 100
-    prompt_tokens_min: 2
-    prompt_tokens_max: 800
-    output_tokens: 256
-    output_tokens_stdev: 100
-    output_tokens_min: 1
-    output_tokens_max: 1024
-  contentgen:
-    prefix_tokens: 0
-    prompt_tokens: 1024
-    prompt_tokens_stdev: 150
-    prompt_tokens_min: 10
-    prompt_tokens_max: 2048
-    output_tokens: 1024
-    output_tokens_stdev: 200
-    output_tokens_min: 10
-    output_tokens_max: 2048
-  summarization:
-    prefix_tokens: 0
-    prompt_tokens: 4096
-    prompt_tokens_stdev: 500
-    prompt_tokens_min: 100
-    prompt_tokens_max: 8192
-    output_tokens: 512
-    output_tokens_stdev: 150
-    output_tokens_min: 10
-    output_tokens_max: 2048
-  multidoc:
-    prompt_tokens: 10240
-    prompt_tokens_stdev: 1200
-    prompt_tokens_min: 500
-    prompt_tokens_max: 20480
-    output_tokens: 1536
-    output_tokens_stdev: 300
-    output_tokens_min: 50
-    output_tokens_max: 4096
+#
+# There is no `workloads:` block any more (#1769). The named workload presets (chatbot,
+# summarization, contentgen, multidoc) live in the catalog, at
+# <catalog>/workloads/<name>.yaml — one copy, read by `blis run --workload`,
+# `blis convert preset --name` and `blis observe --workload` alike. They used to be
+# duplicated here as well, with nothing keeping the two copies in sync. A `workloads:` key
+# left in a hand-maintained copy of this file is now rejected by strict parsing (R10) —
+# delete the block and point --catalog / BLIS_CATALOG at a catalog that defines the preset.
+
 # Trained from iter29: sequential golden section search, β₆ +57%, loss 34.57%.
 trained_physics_coefficients:
   # Alpha coefficients: API/framework overheads (µs)

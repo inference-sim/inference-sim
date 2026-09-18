@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/latency"
@@ -84,6 +85,19 @@ func resolveCatalogRoot() (string, error) {
 			root, catalogEnvVar)
 	}
 	return root, nil
+}
+
+// registerCatalogFlag declares --catalog on the given command. It is the ONE declaration of
+// the flag (R23): every command that locates the catalog registers it from here, so the four
+// commands cannot drift into different help text — or, worse, different defaults — for the
+// input that decides which catalog a run reads.
+//
+// Registered by `run` and `replay` (via registerSimConfigFlags, for the model config) and by
+// `observe` and `convert preset` (for the workload presets, #1769). The flag var is
+// package-level, like every other cobra binding in cmd/, so sharing it across commands is
+// safe: one command runs per process.
+func registerCatalogFlag(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&catalogPath, "catalog", "", "Path to the catalog CLONE ROOT (#1774). A model's HuggingFace config.json is read from <catalog>/"+catalogModelsSubdir+"/<short-name>/config.json, with a transition fallback to the flat <catalog>/<short-name>/config.json (the bundled model_configs/ tree; removed by #1771); a named workload preset is read from <catalog>/"+catalogWorkloadsSubdir+"/<name>"+presetFileExt+" (#1769). Path semantics: a RELATIVE value is resolved against the current working directory, an ABSOLUTE value is used as given. No default and no search path — supply this flag or the "+catalogEnvVar+" environment variable (the flag wins when both are set), or the run is refused naming both. BLIS never fetches or writes a config at run time: an uncatalogued model is refused naming the path its entry belongs at (NS-6, #1733)")
 }
 
 // resolveModelConfig finds a HuggingFace config.json for the given model inside the
