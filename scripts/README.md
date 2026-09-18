@@ -55,11 +55,12 @@ CI_STATUS=success PLAN_GATE=pass AGENT_VERDICT=GREEN ROUND=0 MAX_ROUNDS=3 \
 | `QA_VERDICT` | `PASS` \| `BLOCK` \| `MISSING` | the cross-vendor qa-review comment's `QA-VERDICT:` marker (#1715). `MISSING` blocks — a crashed qa-review is missing evidence, never a pass |
 | `DISMISSALS` | `none` \| `open` \| `unknown` | from the `deliver:has-dismissals` label. `open` withholds `ready` — a correction dismissed a finding the review has not accepted; `unknown` (unreadable) is treated the same way |
 | `MERGE_STATE` | `mergeable` \| `conflicting` \| `unknown` | GitHub's `mergeable_state` mapped through `map-merge-state.sh` (#1758). `conflicting` can never be `ready`; `unknown` returns the non-terminal `recheck` |
-| `CONFLICT_FILES` | *(optional)* paths | whitespace- or comma-separated paths that conflict with main, from `conflicting-files.sh` (#1781). Named in the reason so a stop satisfies #1758's "needs-human **naming the conflict**". Read only when `MERGE_STATE` is `conflicting`; absent is fine |
+| `REVIEWS_SKIPPED` | `true` \| `false` | whether verify skipped both agent reviews this round on a `conflicting` pre-review hint (#1781 G1). When `true` and the branch turns out **not** conflicting, the gate returns the non-terminal `recheck` (re-verify) instead of deciding a round whose reviews never ran — so a stale hint can never dead-end at the round cap |
+| `CONFLICT_FILES` | *(optional)* paths | **newline-delimited** paths that conflict with main, from `conflicting-files.sh` (#1781). Newline is the only delimiter, because a git path may legally contain spaces or commas (#1781 G4). Named in the reason so a stop satisfies #1758's "needs-human **naming the conflict**". Read only when `MERGE_STATE` is `conflicting`; absent is fine |
 | `ROUND` | integer | correction rounds already spent, read from the `deliver:round-N` label |
 | `MAX_ROUNDS` | integer | cap before stopping for a human |
 
-Prints `decision=ready|correct|needs-human` and a one-line `reason`, exiting 0. Exit 2 only on a
+Prints `decision=ready|correct|needs-human|recheck` and a one-line `reason`, exiting 0. Exit 2 only on a
 wiring error — an unset input or a non-integer counter — so a misconfigured workflow fails
 loudly instead of receiving a verdict. A value outside a declared domain is different: it takes
 a catch-all and returns `needs-human`, because GitHub has eight check conclusions rather than

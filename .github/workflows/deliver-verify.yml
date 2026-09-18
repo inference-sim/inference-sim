@@ -1090,9 +1090,10 @@ jobs:
           # gh version. GitHub computes mergeability ASYNCHRONOUSLY, so poll until it resolves. The
           # loop READS on every attempt including the last (the sleep is skipped after the final
           # read — a five-read/12s window left the last sleep wasted, #1758 G1), and the window is
-          # deliberately generous: a spurious `unknown` here escalates an otherwise-green PR to
-          # needs-human, so err toward waiting. By this point the head has already sat through CI and
-          # the review, so mergeability is normally long since computed; the poll only bridges an
+          # deliberately generous: a spurious `unknown` here withholds `ready` and returns the gate's
+          # non-terminal `recheck` (re-verify on the next event), so err toward waiting rather than
+          # spend a round on a still-computing state. By this point the head has already sat through
+          # CI and the review, so mergeability is normally long since computed; the poll only bridges an
           # unusually slow compute or genuine API trouble.
           state=""
           attempts=8
@@ -1123,18 +1124,19 @@ jobs:
           merge_state=$(scripts/map-merge-state.sh "$state")
           echo "mergeable_state='$state' -> MERGE_STATE=$merge_state"
 
-          # #1781 — the reviews were SKIPPED this round because the pre-review hint said the branch
-          # conflicts, so this round has no review markers to gate on. If GitHub now reports the
-          # branch mergeable (main was merged in mid-run, say), feeding `mergeable` to the gate would
-          # pair "no findings to act on" with "nothing wrong", and the missing markers would stop the
-          # delivery for a human with the very reason #1781 removes. So a round that skipped its
-          # reviews is decided as conflicting: strictly more conservative (it can only withhold
-          # `ready`, never grant it), and it re-verifies from a clean start next round.
-          if [[ "$HINT" == conflicting && "$merge_state" != conflicting ]]; then
-            echo "::warning::the pre-review hint was 'conflicting' (so both reviews were skipped) but mergeable_state now maps to '$merge_state'; deciding this round as conflicting, since a round with no review markers must not be gated on their absence"
-            merge_state=conflicting
-          fi
+          # #1781 G1 — pass the HONEST mergeability plus a REVIEWS_SKIPPED flag, and let the gate
+          # decide. An earlier version FORCED merge_state=conflicting whenever the pre-review hint
+          # was conflicting but mergeability now read otherwise, reasoning that a round with no
+          # review markers must not look mergeable. That was unsafe at the boundary: a forced
+          # conflict falls through to the round cap and, at ROUND==MAX_ROUNDS, becomes a TERMINAL
+          # needs-human naming a conflict that no longer exists (the branch was merged clean
+          # mid-run). The gate now treats "reviews skipped + branch not conflicting" as the
+          # non-terminal `recheck` — re-verify from a clean start, consuming no round — so a stale
+          # hint can never dead-end the delivery. The signal is simply whether reviews were skipped.
+          reviews_skipped=false
+          [[ "$HINT" == conflicting ]] && reviews_skipped=true
           echo "state=$merge_state" >> "$GITHUB_OUTPUT"
+          echo "reviews_skipped=$reviews_skipped" >> "$GITHUB_OUTPUT"
 
           # Best-effort naming of the conflicting paths, so the comment a human reads says WHAT
           # conflicts — #1758's acceptance criterion (b), which PR #1778 did not satisfy. Degrades
@@ -1144,17 +1146,23 @@ jobs:
           files=""
           if [[ "$merge_state" == conflicting ]]; then
             git fetch --no-tags --quiet origin main || echo "::warning::could not fetch origin/main; the conflicting paths will not be named"
-            if files=$(scripts/conflicting-files.sh origin/main "$HEAD_SHA"); then
-              # Comma-joined: the gate accepts either separator, and a single line keeps the value
-              # usable as a step output and as the correct phase's gate_reason input.
-              files=$(tr '\n' ',' <<< "$files" | sed 's/,$//')
-              echo "conflicting paths: $files"
-            else
+            if ! files=$(scripts/conflicting-files.sh origin/main "$HEAD_SHA"); then
               files=""
               echo "::warning::could not determine which paths conflict with main; the reason will name the conflict but not the files"
+            else
+              echo "conflicting paths:"; printf '%s\n' "$files"
             fi
           fi
-          echo "files=$files" >> "$GITHUB_OUTPUT"
+          # NEWLINE-delimited via the multiline step-output form (#1781 G4): a git path may contain
+          # spaces or commas, so a comma- or space-joined single line could not be split back
+          # losslessly. conflicting-files.sh already emits one path per line; the gate reads this
+          # env value newline-delimited. A random delimiter that no path can equal closes the
+          # value. `printf '%s'` (no trailing newline) so an empty list yields an empty value.
+          {
+            printf 'files<<__BLIS_CONFLICT_FILES_EOF__\n'
+            printf '%s' "$files"
+            printf '\n__BLIS_CONFLICT_FILES_EOF__\n'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Decide
         id: gate
@@ -1166,9 +1174,14 @@ jobs:
           QA_VERDICT: ${{ steps.qa_verdict.outputs.value }}
           DISMISSALS: ${{ steps.dismissals_final.outputs.state }}
           MERGE_STATE: ${{ steps.mergestate.outputs.state }}
+          # #1781 G1: true when this round skipped its agent reviews on a conflict hint, so the gate
+          # can re-check (not stop) if the branch turns out non-conflicting. Empty string is not a
+          # valid domain value, so default to false if the step did not run.
+          REVIEWS_SKIPPED: ${{ steps.mergestate.outputs.reviews_skipped || 'false' }}
           # Optional (#1781): names the conflicting paths in the reason, so a stop satisfies
           # #1758(b) ("naming the conflict") rather than leaving a human to find it. Empty when the
           # branch is mergeable or the list could not be computed — the gate handles both.
+          # NEWLINE-delimited (#1781 G4): a git path may contain spaces or commas.
           CONFLICT_FILES: ${{ steps.mergestate.outputs.files }}
           ROUND: ${{ steps.round.outputs.value }}
         # pipefail is essential: without it the pipeline reports tee's status, so the gate

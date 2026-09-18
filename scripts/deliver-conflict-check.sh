@@ -44,8 +44,12 @@ fi
 
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
+# `files` is emitted NEWLINE-delimited via GITHUB_OUTPUT's multiline form (#1781 G4): a git path
+# may contain spaces or commas, so a comma-joined single line could not be split back losslessly
+# for the PR comment. `state` stays single-line. The heredoc delimiter is a string no path equals.
 emit() {
-  printf 'state=%s\nfiles=%s\n' "$1" "${2-}"
+  printf 'state=%s\n' "$1"
+  printf 'files<<__BLIS_FILES_EOF__\n%s\n__BLIS_FILES_EOF__\n' "${2-}"
   exit 0
 }
 
@@ -69,8 +73,9 @@ if [[ -z "$files" ]]; then
   emit clean
 fi
 
-# One line, comma-joined: the value is consumed as a workflow step output and pasted into a PR
-# comment, and an embedded newline would corrupt both.
-files=$(tr '\n' ',' <<< "$files" | sed 's/,$//')
-echo "origin/$branch still conflicts with main in: $files" >&2
+# Left NEWLINE-delimited (conflicting-files.sh already emits one path per line) and handed to
+# emit, which transports it through GITHUB_OUTPUT's multiline form so a path with a space or comma
+# survives intact (#1781 G4).
+echo "origin/$branch still conflicts with main in:" >&2
+printf '%s\n' "$files" >&2
 emit conflicting "$files"

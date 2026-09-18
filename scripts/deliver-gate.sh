@@ -18,15 +18,23 @@
 #                                           GitHub's mergeable_state into this domain — "behind"
 #                                           and every other non-dirty state map to mergeable,
 #                                           since only a true conflict blocks the merge, #1758.)
+#   REVIEWS_SKIPPED true | false            (true = verify skipped both agent reviews this round
+#                                           because its pre-review hint said the branch conflicts,
+#                                           #1781 G1, so AGENT_VERDICT/QA_VERDICT are MISSING by
+#                                           construction. Lets the gate tell "markers missing
+#                                           because reviews were skipped" from "markers missing
+#                                           because a review crashed" — the former re-checks when
+#                                           the branch turns out non-conflicting, the latter stops.)
 #   ROUND          correction rounds already spent (non-negative integer)
 #   MAX_ROUNDS     hard cap on correction rounds (non-negative integer)
 #
 # Optional:
-#   CONFLICT_FILES the paths that conflict with main, whitespace- or comma-separated, for the
-#                  reason string only (#1781). Read ONLY when MERGE_STATE is conflicting, and
+#   CONFLICT_FILES the paths that conflict with main, NEWLINE-delimited (one path per line), for
+#                  the reason string only (#1781). Read ONLY when MERGE_STATE is conflicting, and
 #                  absent by default: a caller that cannot compute the list still gets a reason
 #                  that names the conflict, just not the files. Supplied by
-#                  scripts/conflicting-files.sh, which is best-effort by design.
+#                  scripts/conflicting-files.sh, which is best-effort by design. Newline is the
+#                  only delimiter because a git path may contain spaces or commas (#1781 G4).
 #
 # Prints two lines and exits 0:
 #   decision=ready|correct|needs-human|recheck
@@ -63,10 +71,21 @@ usage() {
 # every decision says the same thing and a future row cannot invent a variant spelling.
 conflict_clause() {
   local clause="the branch has merge conflicts with main that must be resolved"
-  # Whitespace/comma-separated in, comma-space separated out, so a multi-line list from
-  # scripts/conflicting-files.sh reads as one line in a PR comment.
-  local files
-  files=$(tr ',' ' ' <<< "${CONFLICT_FILES:-}" | tr -s '[:space:]' '\n' | sed '/^$/d' | paste -sd, - | sed 's/,/, /g')
+  # CONFLICT_FILES is NEWLINE-delimited (one path per line, straight from
+  # scripts/conflicting-files.sh). Split on newline ONLY and join with ", " for the one-line
+  # reason. A git path may legally contain spaces and commas (git forbids only NUL), so splitting
+  # on those — as an earlier version did (`tr ',' ' ' | tr -s '[:space:]'`) — mangled real
+  # filenames: "docs/My File.md" became two entries and "a,b.md" became "a, b.md" (#1781 G4). The
+  # per-line read below preserves each path verbatim; a pathological newline-in-path arrives
+  # git-quoted from conflicting-files.sh, so it is still one line here.
+  local files="" p
+  while IFS= read -r p || [[ -n "$p" ]]; do
+    # Skip a blank OR whitespace-only line (the degraded/empty input case) but keep a real path
+    # verbatim, INTERNAL spaces and all: strip whitespace only to TEST for emptiness, never to
+    # rewrite the path itself.
+    [[ -n "${p//[[:space:]]/}" ]] || continue
+    files="${files:+$files, }$p"
+  done <<< "${CONFLICT_FILES:-}"
   [[ -z "$files" ]] || clause="$clause (conflicting files: $files)"
   printf '%s' "$clause"
 }
@@ -93,7 +112,7 @@ emit() {
   exit 0
 }
 
-for var in CI_STATUS PLAN_GATE AGENT_VERDICT QA_VERDICT DISMISSALS MERGE_STATE ROUND MAX_ROUNDS; do
+for var in CI_STATUS PLAN_GATE AGENT_VERDICT QA_VERDICT DISMISSALS MERGE_STATE REVIEWS_SKIPPED ROUND MAX_ROUNDS; do
   [[ -n "${!var:-}" ]] || usage "$var"
 done
 
@@ -130,8 +149,26 @@ case "$MERGE_STATE" in
   mergeable | conflicting | unknown) ;;
   *) emit needs-human "unrecognised MERGE_STATE '$MERGE_STATE' — the mergeability derivation step needs to map GitHub's mergeable_state to mergeable, conflicting, or unknown" ;;
 esac
+case "$REVIEWS_SKIPPED" in
+  true | false) ;;
+  *) emit needs-human "unrecognised REVIEWS_SKIPPED '$REVIEWS_SKIPPED' — expected true or false" ;;
+esac
 # From here on MERGE_STATE is in-domain, so every reason may name a conflict (#1781).
 decorate_conflict=true
+
+# #1781 G1 — a round that SKIPPED its reviews on a stale conflict hint must never reach a TERMINAL
+# outcome. Verify skips both agent reviews when its pre-review hint says the branch conflicts
+# (deliver-verify.yml), so their markers come back MISSING. If the branch is NOT actually
+# conflicting by the time mergeability is authoritatively read (main was merged in mid-run, or the
+# hint was stale), there is nothing to correct AND no trustworthy markers — so the only safe move
+# is to re-verify from a clean start. `recheck` is the non-terminal decision: it consumes no
+# correction round and never stops for a human, so a stale hint can no longer dead-end the delivery
+# at the round cap as a "false conflict" (the prior behaviour forced MERGE_STATE=conflicting in the
+# workflow, which became a terminal needs-human at ROUND==MAX_ROUNDS naming a conflict that did not
+# exist). A genuinely conflicting branch (MERGE_STATE==conflicting) is NOT caught here — it falls
+# through to the conflict-over-missing path below, which is correct and eventually names the files.
+[[ "$REVIEWS_SKIPPED" != true || "$MERGE_STATE" == conflicting ]] \
+  || emit recheck "the reviews were skipped this round on a stale 'conflicting' hint, but the branch is not conflicting now (mergeability '$MERGE_STATE'); re-verifying from a clean start rather than deciding a round whose reviews never ran"
 
 # Rows 1 and 2: no usable evidence. Checked before anything else so that a GREEN review can
 # never stand in for a signal that was never read. Both reviews are treated alike here: a

@@ -50,13 +50,31 @@ git_as_bot() {
       -c commit.gpgsign=false "$@"
 }
 
+# `files` is emitted NEWLINE-delimited via GITHUB_OUTPUT's multiline form, not a single
+# `files=<comma-joined>` line: a git path may legally contain spaces AND commas (git forbids only
+# NUL), so no single-character join is lossless (#1781 G4). The heredoc delimiter is a string no
+# path can equal. `state` stays a single line. A caller teeing this into $GITHUB_OUTPUT gets the
+# newline list back as one step output; the tests parse the same two forms.
 emit() {
-  printf 'state=%s\nfiles=%s\n' "$1" "${2-}"
+  printf 'state=%s\n' "$1"
+  printf 'files<<__BLIS_FILES_EOF__\n%s\n__BLIS_FILES_EOF__\n' "${2-}"
   exit 0
 }
 
 if ! git fetch --no-tags --quiet origin main; then
   echo "::warning::could not fetch origin/main; leaving the branch update to the agent" >&2
+  emit unknown
+fi
+
+# G6 — refuse to touch a DIRTY worktree. The push-race path below runs `git reset --hard`, which
+# would destroy uncommitted TRACKED changes; a merge against a dirty index can also fail
+# confusingly. In the delivery workflow the checkout is always clean, but this script must be safe
+# to invoke anywhere, so a dirty tracked worktree is reported as `unknown` (hand the update back to
+# the agent, and to verify's own mergeable_state) rather than risking data loss. Untracked files
+# are left alone deliberately — neither the merge nor the reset touches them, and a fresh checkout
+# routinely carries build scratch that is not this script's to police.
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "::warning::the worktree has uncommitted tracked changes; refusing to merge or reset and leaving the update to the agent" >&2
   emit unknown
 fi
 
@@ -87,8 +105,9 @@ fi
 #
 # `git ls-files -u` prints "<mode> <object> <stage>\t<path>", so the path is the second
 # TAB-separated field. Read from the INDEX rather than from a name-only diff, so add/add and
-# delete/modify conflicts are named too.
-files=$(git ls-files -u | cut -f2 | sort -u | tr '\n' ',' | sed 's/,$//')
+# delete/modify conflicts are named too. Kept NEWLINE-delimited (no comma-join) so a path
+# containing a space or comma survives intact through emit's multiline output (#1781 G4).
+files=$(git ls-files -u | cut -f2 | sort -u)
 git merge --abort >/dev/null 2>&1 || true
 
 # A failed merge that recorded no conflicted path is not a conflict we can describe (a refusal to

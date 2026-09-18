@@ -23,6 +23,8 @@ var (
 	// The branch's mergeability against main. `conflicting` (REST mergeable_state "dirty")
 	// must never be marked ready; `unknown` means the state could not be read.
 	allMergeState = []string{"mergeable", "conflicting", "unknown"}
+	// Whether verify skipped both agent reviews this round on a conflicting hint (#1781 G1).
+	allReviewsSkipped = []string{"false", "true"}
 
 	// blockingPlanGate are the plan signals that must stop a delivery.
 	// `unverified` blocks like a regression: the PR claimed a plan and the check did not run,
@@ -46,14 +48,15 @@ type gateOutcome struct {
 // did not mean to set.
 func gateEnv(overrides map[string]string) map[string]string {
 	env := map[string]string{
-		"CI_STATUS":     "success",
-		"PLAN_GATE":     "pass",
-		"AGENT_VERDICT": "GREEN",
-		"QA_VERDICT":    "PASS",
-		"DISMISSALS":    "none",
-		"MERGE_STATE":   "mergeable",
-		"ROUND":         "0",
-		"MAX_ROUNDS":    "3",
+		"CI_STATUS":       "success",
+		"PLAN_GATE":       "pass",
+		"AGENT_VERDICT":   "GREEN",
+		"QA_VERDICT":      "PASS",
+		"DISMISSALS":      "none",
+		"MERGE_STATE":     "mergeable",
+		"REVIEWS_SKIPPED": "false",
+		"ROUND":           "0",
+		"MAX_ROUNDS":      "3",
 	}
 	for k, v := range overrides {
 		env[k] = v
@@ -127,7 +130,7 @@ func TestDeliverGateWiringErrorsAreLoud(t *testing.T) {
 	// QA_VERDICT and MERGE_STATE are guarded exactly like the other six: fail-closed is the whole
 	// contract of a blocking review signal (and of the mergeability signal), so a workflow that
 	// forgets to wire either must exit 2 rather than silently decide without it.
-	required := []string{"CI_STATUS", "PLAN_GATE", "AGENT_VERDICT", "QA_VERDICT", "DISMISSALS", "MERGE_STATE", "ROUND", "MAX_ROUNDS"}
+	required := []string{"CI_STATUS", "PLAN_GATE", "AGENT_VERDICT", "QA_VERDICT", "DISMISSALS", "MERGE_STATE", "REVIEWS_SKIPPED", "ROUND", "MAX_ROUNDS"}
 
 	for _, name := range required {
 		t.Run("unset/"+name, func(t *testing.T) {
@@ -678,6 +681,57 @@ func TestDeliverGateAlwaysDecides(t *testing.T) {
 	}
 }
 
+// TestDeliverGateReviewsSkippedIsNonTerminalWhenNotConflicting covers #1781 G1. When verify
+// skipped both agent reviews on a stale `conflicting` hint (so the markers are MISSING) but the
+// branch is NOT actually conflicting by the time mergeability is read, the gate must return the
+// NON-TERMINAL `recheck` — never a terminal needs-human, and never a forced conflict that could
+// dead-end at the round cap. The prior workflow forced MERGE_STATE=conflicting in exactly this
+// case, which became a terminal `needs-human` naming a conflict that no longer existed at
+// ROUND==MAX_ROUNDS. Asserted at both round 0 and the cap, and across the dismissal/marker axes,
+// because none of them may turn a skipped-review non-conflicting round terminal.
+func TestDeliverGateReviewsSkippedIsNonTerminalWhenNotConflicting(t *testing.T) {
+	for _, merge := range []string{"mergeable", "unknown"} {
+		for _, dis := range allDismissals {
+			for _, round := range []string{"0", "3"} {
+				// Markers are MISSING by construction when reviews were skipped; assert the gate
+				// does not read them as a stop.
+				out := runGate(t, gateEnv(map[string]string{
+					"MERGE_STATE": merge, "REVIEWS_SKIPPED": "true",
+					"AGENT_VERDICT": "MISSING", "QA_VERDICT": "MISSING",
+					"DISMISSALS": dis, "ROUND": round, "MAX_ROUNDS": "3",
+				}))
+				where := "merge=" + merge + "/dis=" + dis + " round " + round
+				if out.exitCode != 0 {
+					t.Fatalf("%s: exit %d, want 0", where, out.exitCode)
+				}
+				if out.decision != "recheck" {
+					t.Errorf("%s: decision = %q, want recheck — a skipped-review round on a non-conflicting branch must re-verify, not decide terminally", where, out.decision)
+				}
+			}
+		}
+	}
+}
+
+// TestDeliverGateReviewsSkippedStillNamesARealConflict is the companion: when reviews were skipped
+// AND the branch really is conflicting, the round is NOT diverted to recheck — it takes the
+// conflict path (correct while rounds remain, a conflict-naming needs-human at the cap), so a
+// genuine conflict is still resolved or named (#1758(a)/(b)).
+func TestDeliverGateReviewsSkippedStillNamesARealConflict(t *testing.T) {
+	for _, round := range []string{"0", "3"} {
+		out := runGate(t, gateEnv(map[string]string{
+			"MERGE_STATE": "conflicting", "REVIEWS_SKIPPED": "true",
+			"AGENT_VERDICT": "MISSING", "QA_VERDICT": "MISSING",
+			"ROUND": round, "MAX_ROUNDS": "3", "CONFLICT_FILES": "CLAUDE.md",
+		}))
+		if out.exitCode != 0 || out.decision == "recheck" || out.decision == "ready" {
+			t.Fatalf("round %s: exit %d decision %q, want a non-recheck non-ready decision", round, out.exitCode, out.decision)
+		}
+		if !strings.Contains(out.reason, conflictClause) || !strings.Contains(out.reason, "CLAUDE.md") {
+			t.Errorf("round %s: reason must name the conflict and the file: %q", round, out.reason)
+		}
+	}
+}
+
 // conflictClause is the phrase every decision on a conflicting branch must carry (#1781). Matched
 // as a substring rather than the whole reason so the clause can be composed with whatever else
 // that row had to say, which is exactly the property under test.
@@ -769,14 +823,22 @@ func TestDeliverGateConflictNamesTheFiles(t *testing.T) {
 		}
 	})
 
-	// Comma-separated is accepted too, so a caller that already joined the list is not silently
-	// rendered as one nonsense path.
-	t.Run("comma-separated", func(t *testing.T) {
+	// #1781 G4 — a git path may legally contain spaces AND commas (git forbids only NUL), so the
+	// reason must reproduce each path VERBATIM and split only on the newline that separates
+	// entries. An earlier version split on commas and all whitespace and mangled real filenames:
+	// "docs/My File.md" became two entries and "a,b.go" became "a, b.go".
+	t.Run("filename-safe-spaces-and-commas", func(t *testing.T) {
 		out := runGate(t, gateEnv(map[string]string{
-			"MERGE_STATE": "conflicting", "CONFLICT_FILES": "a.md,b.md",
+			"MERGE_STATE":    "conflicting",
+			"CONFLICT_FILES": "docs/My File.md\nsrc/a,b.go",
 		}))
-		if !strings.Contains(out.reason, "a.md") || !strings.Contains(out.reason, "b.md") {
-			t.Errorf("reason does not name both comma-separated paths: %q", out.reason)
+		for _, want := range []string{"docs/My File.md", "src/a,b.go"} {
+			if !strings.Contains(out.reason, want) {
+				t.Errorf("reason does not reproduce %q verbatim (path split on a space or comma?): %q", want, out.reason)
+			}
+		}
+		if strings.Contains(out.reason, "\n") {
+			t.Errorf("reason contains a newline: %q", out.reason)
 		}
 	})
 

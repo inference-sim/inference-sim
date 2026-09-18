@@ -453,7 +453,10 @@ jobs:
           scripts/deliver-conflict-check.sh "deliver/issue-${ISSUE_NUMBER}" \
             | tee -a "$GITHUB_OUTPUT" > "$RUNNER_TEMP/conflictcheck.txt"
           state=$(sed -n 's/^state=//p' "$RUNNER_TEMP/conflictcheck.txt")
-          files=$(sed -n 's/^files=//p' "$RUNNER_TEMP/conflictcheck.txt")
+          # `files` is emitted NEWLINE-delimited in GITHUB_OUTPUT's multiline heredoc form (#1781
+          # G4 — a git path may contain a space or comma). Extract the block between the delimiters
+          # rather than sed-ing a single `files=` line, so a multi-path list arrives intact.
+          files=$(awk '/^files<<__BLIS_FILES_EOF__$/{f=1;next} $0=="__BLIS_FILES_EOF__"{f=0;next} f' "$RUNNER_TEMP/conflictcheck.txt")
           # No state at all means the script itself did not run (missing, or a usage error). Warn
           # rather than escalate: `conflicting` is the only value that stops the delivery, and it
           # must never be inferred from a check that produced nothing.
@@ -474,7 +477,7 @@ jobs:
             echo
             echo "**Conflicting files:**"
             echo
-            tr ',' '\n' <<< "$files" | sed '/^$/d; s/^/- `/; s/$/`/'
+            printf '%s\n' "$files" | sed '/^$/d; s/^/- `/; s/$/`/'
             echo
             echo "The branch update was \`${UPDATE_STATE:-not reached}\` when this round started."
             echo

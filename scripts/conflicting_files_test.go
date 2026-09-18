@@ -218,3 +218,45 @@ func TestConflictingFilesUnrelatedHistoriesIsUndetermined(t *testing.T) {
 		t.Errorf("printed %v, want nothing", lines)
 	}
 }
+
+// #1781 G5 — SHALLOW history: both branch tips resolve, but their common ancestor (the merge base)
+// was not fetched, so a trial merge cannot be computed. This must be `undetermined` (exit 3), never
+// a false "clean": the caller then falls back to GitHub's authoritative mergeable_state. The
+// delivery workflows fetch full history (`fetch-depth: 0`), so this state should not arise in
+// production — but the script must degrade safely if it ever does, and this pins that it does.
+func TestConflictingFilesShallowMissingMergeBaseIsUndetermined(t *testing.T) {
+	requireGit(t)
+	root := t.TempDir()
+	remote := filepath.Join(root, "remote.git")
+	gitCmd(t, root, "init", "-q", "--bare", remote)
+
+	seed := filepath.Join(root, "seed")
+	gitCmd(t, root, "clone", "-q", remote, seed)
+	// C0, the common ancestor — deliberately NOT a branch tip, so a depth-1 clone omits it.
+	commitFileAt(t, seed, "shared.md", "line one\nline two\nline three\n")
+	gitCmd(t, seed, "branch", "-M", "base")
+	gitCmd(t, seed, "checkout", "-q", "-b", "feature")
+	commitFileAt(t, seed, "shared.md", "line one — feature\nline two\nline three\n")
+	gitCmd(t, seed, "checkout", "-q", "base")
+	commitFileAt(t, seed, "shared.md", "line one — base\nline two\nline three\n")
+	gitCmd(t, seed, "push", "-q", "origin", "base", "feature")
+	// Give the bare remote a default HEAD so the shallow clone below has one to check out.
+	gitCmd(t, remote, "symbolic-ref", "HEAD", "refs/heads/base")
+
+	// Depth-1 of every branch: fetches only the two tips (base, feature), never their ancestor C0.
+	// `file://` is REQUIRED — git ignores --depth for a bare local PATH clone (it hardlinks the
+	// full object store), so a plain path would silently produce a full clone and defeat the test.
+	shallow := filepath.Join(root, "shallow")
+	gitCmd(t, root, "clone", "-q", "--depth", "1", "--no-single-branch", "file://"+remote, shallow)
+	// The clone checked out `base` (the remote's default HEAD) at its shallow tip; add `feature`
+	// at its shallow tip. Both tips are present; their common ancestor C0 is not.
+	gitCmd(t, shallow, "branch", "feature", "origin/feature")
+
+	lines, stderr, code := runConflictingFiles(t, shallow, "base", "feature")
+	if code != 3 {
+		t.Fatalf("exit %d, want 3 (undetermined) when the merge base is missing from a shallow clone; stderr: %s", code, stderr)
+	}
+	if len(lines) != 0 {
+		t.Errorf("printed %v, want nothing — an undetermined result names no files", lines)
+	}
+}

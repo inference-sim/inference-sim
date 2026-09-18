@@ -231,4 +231,19 @@ func TestDeliverVerifyFeedsConflictFilesToTheGate(t *testing.T) {
 	if !strings.Contains(got, "steps.mergestate.outputs") {
 		t.Errorf("the `gate` step's CONFLICT_FILES is %q, not wired from steps.mergestate.outputs", got)
 	}
+
+	// #1781 G1: the gate needs REVIEWS_SKIPPED to tell "markers missing because reviews were
+	// skipped on a conflict hint" (→ recheck if the branch is not conflicting) from "markers
+	// missing because a review crashed" (→ needs-human). If verify stops feeding it, the gate
+	// fails closed (exit 2) rather than mis-deciding — but that stops every delivery, so pin the
+	// wiring here where the drift is visible.
+	skipped := steps[gate].Env["REVIEWS_SKIPPED"]
+	if skipped == "" {
+		t.Fatal("the `gate` step's env does not set REVIEWS_SKIPPED, so a round that skipped its " +
+			"reviews on a stale conflict hint cannot be told from a crashed review, and a stale hint " +
+			"could dead-end the delivery at the round cap (#1781 G1)")
+	}
+	if !strings.Contains(skipped, "steps.mergestate.outputs") {
+		t.Errorf("the `gate` step's REVIEWS_SKIPPED is %q, not wired from steps.mergestate.outputs", skipped)
+	}
 }

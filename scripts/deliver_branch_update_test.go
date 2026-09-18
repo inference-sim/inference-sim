@@ -83,12 +83,29 @@ func runStateScript(t *testing.T, dir, script string, args ...string) (state, fi
 		t.Fatalf("running %s %v: %v", script, args, err)
 	}
 
-	for _, line := range strings.Split(out.String(), "\n") {
+	// The scripts emit `state=` as a single line and `files` in GITHUB_OUTPUT's multiline heredoc
+	// form (`files<<DELIM` … `DELIM`, #1781 G4), so a conflicting path may contain a space or
+	// comma without a lossy join. Parse both: single-line `files=` is still accepted for
+	// robustness, and the heredoc block is collected verbatim between its delimiters.
+	lines := strings.Split(out.String(), "\n")
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
 		switch {
 		case strings.HasPrefix(line, "state="):
 			state = strings.TrimPrefix(line, "state=")
 		case strings.HasPrefix(line, "files="):
 			files = strings.TrimPrefix(line, "files=")
+		case strings.HasPrefix(line, "files<<"):
+			delim := strings.TrimPrefix(line, "files<<")
+			var collected []string
+			for j := i + 1; j < len(lines); j++ {
+				if lines[j] == delim {
+					i = j
+					break
+				}
+				collected = append(collected, lines[j])
+			}
+			files = strings.Join(collected, "\n")
 		}
 	}
 	t.Logf("%s %v -> state=%q files=%q (exit %d)\n%s", script, args, state, files, code, errb.String())
@@ -191,6 +208,76 @@ func TestUpdateBranchReportsAConflictAndLeavesTheTreeClean(t *testing.T) {
 	}
 }
 
+// G6 — a DIRTY tracked worktree is refused, not merged or reset. The push-race path runs
+// `git reset --hard`, which would DESTROY uncommitted work, and a merge against a dirty index can
+// fail confusingly. The delivery checkout is always clean, but the script must be safe to invoke
+// anywhere, so it reports `unknown` and leaves the working tree exactly as it found it — proven
+// here by dirtying a tracked file over a drift that WOULD otherwise merge cleanly.
+func TestUpdateBranchRefusesADirtyWorktreeAndPreservesTheEdit(t *testing.T) {
+	work, branch := deliveryRepos(t)
+	advanceMain(t, work, branch, "unrelated.md", "main moved on\n") // a merge here would be clean
+	tipBefore := remoteTip(t, work, branch)
+
+	dirty := "line one — the PR's change\nUNCOMMITTED WORK IN PROGRESS\n"
+	writeInRepo(t, work, "CLAUDE.md", []byte(dirty))
+
+	state, _, code := runStateScript(t, work, "deliver-update-branch.sh", branch)
+	if code != 0 {
+		t.Fatalf("exit %d, want 0 — a dirty tree is a state, not a phase failure", code)
+	}
+	if state != "unknown" {
+		t.Fatalf("state = %q, want unknown — a dirty tree must not be merged or reset", state)
+	}
+	got, err := os.ReadFile(filepath.Join(work, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("reading CLAUDE.md: %v", err)
+	}
+	if string(got) != dirty {
+		t.Errorf("the uncommitted edit was destroyed (reset --hard on a dirty tree):\n got %q\nwant %q", string(got), dirty)
+	}
+	if now := remoteTip(t, work, branch); now != tipBefore {
+		t.Errorf("the remote tip moved to %s; a refused update must push nothing", now)
+	}
+}
+
+// #1781 G4 — a conflicting path that contains a SPACE and a COMMA is named verbatim, never split.
+// git forbids only NUL in a path, so the newline-delimited transport must carry spaces and commas
+// through untouched (an earlier comma-join + whitespace-split mangled them).
+func TestUpdateBranchNamesAConflictingPathWithSpaceAndComma(t *testing.T) {
+	requireGit(t)
+	root := t.TempDir()
+	remote := filepath.Join(root, "remote.git")
+	gitCmd(t, root, "init", "-q", "--bare", remote)
+	work := filepath.Join(root, "work")
+	gitCmd(t, root, "clone", "-q", remote, work)
+
+	const path = "docs/a file, notes.md" // a space AND a comma, both legal in a git path
+	writeInRepo(t, work, path, []byte("base line\n"))
+	commitAll(t, work, "seed")
+	gitCmd(t, work, "branch", "-M", "main")
+	gitCmd(t, work, "push", "-q", "origin", "main")
+
+	branch := "deliver/issue-1"
+	gitCmd(t, work, "checkout", "-q", "-b", branch)
+	writeInRepo(t, work, path, []byte("the PR's change\n"))
+	commitAll(t, work, "branch change")
+	gitCmd(t, work, "push", "-q", "-u", "origin", branch)
+
+	gitCmd(t, work, "checkout", "-q", "main")
+	writeInRepo(t, work, path, []byte("main's change\n"))
+	commitAll(t, work, "main change")
+	gitCmd(t, work, "push", "-q", "origin", "main")
+	gitCmd(t, work, "checkout", "-q", branch)
+
+	state, files, code := runStateScript(t, work, "deliver-update-branch.sh", branch)
+	if code != 0 || state != "conflicting" {
+		t.Fatalf("exit %d state %q, want 0 conflicting", code, state)
+	}
+	if files != path {
+		t.Errorf("files = %q, want %q reproduced verbatim — a path with a space or comma must survive the transport (#1781 G4)", files, path)
+	}
+}
+
 // An unreachable origin is `unknown` — never `current` (which would claim the branch is up to
 // date) and never `conflicting` (which would stop the delivery for a human over an outage).
 func TestUpdateBranchUnreachableOriginIsUnknown(t *testing.T) {
@@ -270,9 +357,10 @@ func TestConflictCheckNamesAnUnresolvedConflict(t *testing.T) {
 	}
 }
 
-// Two conflicting paths are joined onto ONE line. The value is a workflow step output and is pasted
-// into a PR comment, so an embedded newline would corrupt both.
-func TestConflictCheckJoinsMultiplePathsOntoOneLine(t *testing.T) {
+// Two conflicting paths are emitted NEWLINE-delimited, one per line (#1781 G4). Newline is the one
+// delimiter that survives a git path containing a space or comma, so the transport is one path per
+// line rather than a comma- or space-joined single line that could not be split back losslessly.
+func TestConflictCheckEmitsMultiplePathsOnePerLine(t *testing.T) {
 	work, branch := deliveryRepos(t)
 
 	// Both sides touch two files.
@@ -294,13 +382,9 @@ func TestConflictCheckJoinsMultiplePathsOntoOneLine(t *testing.T) {
 	if state != "conflicting" {
 		t.Fatalf("state = %q, want conflicting", state)
 	}
-	if strings.Contains(files, "\n") {
-		t.Errorf("files contains a newline: %q", files)
-	}
-	for _, want := range []string{"CLAUDE.md", "second.md"} {
-		if !strings.Contains(files, want) {
-			t.Errorf("files = %q, does not name %q", files, want)
-		}
+	// Sorted, one path per line — the exact newline-delimited value conflicting-files.sh produces.
+	if want := "CLAUDE.md\nsecond.md"; files != want {
+		t.Errorf("files = %q, want %q (newline-delimited, sorted)", files, want)
 	}
 }
 
