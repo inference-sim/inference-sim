@@ -515,13 +515,36 @@ def significant_lines(body):
     being mistaken for the report that raised them. A genuine report contains
     neither (render_report.py emits no fences, and only its optional banner is
     a blockquote), so nothing a report needs is lost."""
-    fenced = False
+    fence_char = ""  # "" when not in a fence; otherwise the fence char "`" or "~"
+    fence_len = 0
     for raw in body.splitlines():
-        line = raw.strip()
-        if line.startswith("```") or line.startswith("~~~"):
-            fenced = not fenced
+        # A fence marker is a run of >=3 of the same char (` or ~) with at most 3
+        # spaces of indentation (CommonMark; 4+ spaces is indented code, not a fence).
+        stripped = raw.lstrip(" ")
+        indent = len(raw) - len(stripped)
+        marker_char, marker_len = "", 0
+        if indent <= 3 and stripped[:1] in ("`", "~"):
+            ch = stripped[0]
+            run = len(stripped) - len(stripped.lstrip(ch))
+            if run >= 3:
+                marker_char, marker_len = ch, run
+        if fence_char:
+            # Inside a fence: only a genuine CLOSING fence ends it — the SAME char, a
+            # run at least as long as the opener, and nothing but whitespace after it.
+            # A shorter run, a different char, or a trailing info string does NOT close
+            # the fence, so ``` cannot close ````, and ~~~ cannot close ``` (the #1716
+            # G1 bug: a mismatched marker toggled the block off early and exposed a
+            # quoted report heading as if it were a real one).
+            if (marker_char == fence_char and marker_len >= fence_len
+                    and stripped[marker_len:].strip() == ""):
+                fence_char, fence_len = "", 0
             continue
-        if fenced or line.startswith(">"):
+        if marker_char:
+            # Opening a new fence (an info string after the run is allowed).
+            fence_char, fence_len = marker_char, marker_len
+            continue
+        line = raw.strip()
+        if line.startswith(">"):
             continue
         yield line
 

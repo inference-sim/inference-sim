@@ -30,14 +30,11 @@ the LiteLLM proxy over its OpenAI-compatible `/chat/completions` surface.
 >
 > #1716 completes the epic (#1717) by making the re-verify **adjudicate-only**: round 0
 > keeps the full questioner+answerer pass, every later round runs only `adjudicator.py`
-> over the findings that pass already raised. Its Python half (report-comment selection,
-> below) is live; its workflow half is again blocked on the `workflows` permission and
-> travels as **`deliver-verify-adjudicate-wiring.patch`** in this directory — apply it
-> with a `workflows`-scoped credential (`git apply scripts/qa-review/deliver-verify-adjudicate-wiring.patch`)
-> and delete the file. `scripts/deliver_qa_adjudicate_test.go` asserts the contract over
-> the live workflow once applied, and over the patch applied to the committed workflow
-> until then (so a stale patch fails the build). Until it is applied a re-verify simply
-> keeps running the full pass — more expensive, never unsafe.
+> over the findings that pass already raised. Both halves are live — the report-comment
+> selection (below) and the workflow wiring (the `Run qa-review adjudication` step gated on
+> the round counter). As with the #1715 half, the workflow change was applied by a
+> `workflows`-scoped push (the delivery agent's token lacks the permission);
+> `scripts/deliver_qa_adjudicate_test.go` holds the contract over the live workflow.
 
 ## The pieces
 
@@ -149,9 +146,11 @@ never compiled or executed there.
 4. `render_report.py --questions … --answers … --pr N [--post-to-pr]`.
 5. Clean up the throwaway worktree.
 
-For a re-verify round (`--adjudicate` mode): skip the questioner/answerer and
+For a re-verify round (#1716, adjudicate-only): skip the questioner/answerer and
 run `adjudicator.py --worktree <wt> --pr N` against the prior findings + the
-author's responses.
+author's responses. (There is no `--adjudicate` flag; running `adjudicator.py`
+instead of the questioner/answerer IS the adjudicate-only mode — the workflow
+selects it by the round counter.)
 
 ## Environment surface
 

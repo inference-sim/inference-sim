@@ -672,6 +672,25 @@ const genuineReport = "> 🤖 **qa-review** — experimental two-agent AI-review
 	"### Important to consider\n" +
 	"- _None._\n"
 
+// A self-review that pastes an example report inside a FOUR-backtick fence whose body
+// contains an interior THREE-backtick line (#1716 G1). A naive fence toggle lets the
+// shorter ``` close the ```` fence early and expose the pasted heading + Items-to-fix as
+// if they were a real report — an anti-hijack bypass. Proper fence matching (a closer must
+// be the same char and at least as long) keeps it fenced, so it must not hijack selection.
+const mismatchedFenceQuoteComment = "## BLIS PR Self-Review — PR #1736 (round 4)\n" +
+	"\n" +
+	"A rendered report, quoted with a nested fence:\n" +
+	"\n" +
+	"````markdown\n" +
+	"```\n" +
+	"## qa-review — PR #42: ⛔ BLOCK\n" +
+	"\n" +
+	"### Items to fix\n" +
+	"- **Z9 · FLAW_FOUND** — an example finding inside a nested fence, not real.\n" +
+	"````\n" +
+	"\n" +
+	"All findings addressed.\n"
+
 // A self-review that PASTES an example report inside a fence — the real shape
 // observed on PR #1736, where the fenced example carried both the banner and an
 // Items-to-fix section of its own.
@@ -778,6 +797,18 @@ func TestAdjudicatorSelectsTheGenuineReportComment(t *testing.T) {
 			comments: []map[string]any{
 				comment(poster, genuineReport),
 				comment("claude", fencedQuoteComment),
+			},
+			wantIDs:    []string{"F1", "G3"},
+			wantInResp: "All findings addressed.",
+		},
+		{
+			// #1716 G1: a nested/mismatched fence must not let a quoted example report hijack
+			// selection. Fails under the old naive toggle (the interior ``` closed the ````
+			// fence early and exposed the pasted heading + Items-to-fix).
+			name: "mismatched-fence-example-does-not-hijack",
+			comments: []map[string]any{
+				comment(poster, genuineReport),
+				comment("claude", mismatchedFenceQuoteComment),
 			},
 			wantIDs:    []string{"F1", "G3"},
 			wantInResp: "All findings addressed.",

@@ -5,19 +5,12 @@ package scripts_test
 // adjudicator.py over the findings that probe already raised.
 //
 // The change is entirely in .github/workflows/deliver-verify.yml, which the delivering credential
-// cannot push: a GitHub App installation token without the `workflows` permission is refused by
-// both `git push` and the contents API. So — exactly as #1715 did — the workflow half travels as an
-// appliable patch, and the tests below assert over whichever of the two currently carries it. They
-// do that by APPLYING the patch to the committed workflow and asserting over the result, so what is
-// under test is the workflow as it will be, context lines and all, rather than a bag of added lines.
-//
-// Unlike #1715's pending state, a pending state here is harmless rather than loop-breaking: the gate
-// already accepts QA_VERDICT and round 0 already produces it, so until the patch is applied a
-// re-verify simply keeps running the full pass. Nothing below fails merely for being pending.
+// (a GitHub App installation token without the `workflows` permission) cannot push. As with #1715,
+// the workflow half was therefore applied by a workflows-scoped push rather than by the delivery
+// agent; the tests below assert the contract over the live workflow.
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -25,73 +18,31 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const adjudicateWiringPatch = "scripts/qa-review/deliver-verify-adjudicate-wiring.patch"
-
 const (
 	roundStep        = "Read the round counter"
 	qaAdjudicateStep = "Run qa-review adjudication"
 )
 
-func adjudicatePatchPath(t *testing.T) string {
+// adjudicateWorkflow returns the text of the live deliver-verify.yml, which carries the #1716
+// adjudicate-only wiring (applied via a workflows-scoped push, since the delivering token lacks
+// the `workflows` permission). A live workflow without the adjudication step means #1716 was
+// reverted.
+func adjudicateWorkflow(t *testing.T) string {
 	t.Helper()
-	abs, err := filepath.Abs(filepath.Join("qa-review", "deliver-verify-adjudicate-wiring.patch"))
-	if err != nil {
-		t.Fatalf("resolving %s: %v", adjudicateWiringPatch, err)
+	workflow := readFileOrFail(t, verifyWorkflowPath())
+	if !strings.Contains(workflow, "name: "+qaAdjudicateStep) {
+		t.Fatalf("deliver-verify.yml carries no %q step, so #1716's adjudicate-only wiring has been "+
+			"reverted", qaAdjudicateStep)
 	}
-	return abs
-}
-
-// adjudicateWorkflow returns the text of deliver-verify.yml WITH the #1716 wiring in it: the file
-// itself once the patch has been applied to the repository, or the patched result computed here
-// while it is still pending. Also reports which of the two it is.
-func adjudicateWorkflow(t *testing.T) (workflow string, live bool) {
-	t.Helper()
-
-	committed := readFileOrFail(t, verifyWorkflowPath())
-	if strings.Contains(committed, "name: "+qaAdjudicateStep) {
-		return committed, true
-	}
-
-	requireGit(t)
-	patch := adjudicatePatchPath(t)
-	if _, err := os.Stat(patch); err != nil {
-		t.Fatalf("deliver-verify.yml carries no adjudicate-only wiring and %s is missing (%v). One of "+
-			"the two must hold it, or #1716 has been reverted", adjudicateWiringPatch, err)
-	}
-
-	dir := t.TempDir()
-	target := filepath.Join(dir, ".github", "workflows", "deliver-verify.yml")
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		t.Fatalf("preparing the patch sandbox: %v", err)
-	}
-	if err := os.WriteFile(target, []byte(committed), 0o644); err != nil {
-		t.Fatalf("seeding the patch sandbox: %v", err)
-	}
-	// `git apply` wants a work tree; an empty repository in the sandbox is enough and keeps the
-	// real one untouched.
-	for _, args := range [][]string{{"init", "-q"}, {"apply", "--verbose", patch}} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v in the patch sandbox: %v\n%s\n\n%s does not apply to the committed "+
-				"deliver-verify.yml. It is the only carrier of #1716's workflow half, so a stale patch "+
-				"means the re-verify keeps running the full pass — regenerate it against the current "+
-				"workflow", args, err, out, adjudicateWiringPatch)
-		}
-	}
-	return readFileOrFail(t, target), false
+	return workflow
 }
 
 // adjudicateWiring returns the per-step executable text of the #1716 wiring, plus the whole
-// workflow text (comments included — one assertion is about a comment) and the live/pending state.
-func adjudicateWiring(t *testing.T) (steps map[string]string, workflow string, live bool) {
+// workflow text (comments included — one assertion is about a comment).
+func adjudicateWiring(t *testing.T) (steps map[string]string, workflow string) {
 	t.Helper()
-	workflow, live = adjudicateWorkflow(t)
-	if !live {
-		t.Logf("asserting against %s applied to the committed workflow — the wiring is not merged yet",
-			adjudicateWiringPatch)
-	}
-	return liveStepCode(t, workflow), workflow, live
+	workflow = adjudicateWorkflow(t)
+	return liveStepCode(t, workflow), workflow
 }
 
 // stepOrder lists the verify job's step names in file order, so a test can assert that one step
@@ -137,7 +88,7 @@ func qaStepIndex(t *testing.T, order []string, name string) int {
 // `gh pr view` leaves behind) silently skips the qa dimension altogether — which reads as MISSING
 // and stops the loop, but for a reason no log line explains.
 func TestQARoundGateIsExclusiveAndExhaustive(t *testing.T) {
-	steps, workflow, _ := adjudicateWiring(t)
+	steps, workflow := adjudicateWiring(t)
 
 	// AC-5: the counter must be read BEFORE the step that branches on it. A step cannot read the
 	// output of one that runs later — the expression would evaluate to the empty string.
@@ -213,7 +164,7 @@ func TestQARoundGateIsExclusiveAndExhaustive(t *testing.T) {
 // runs on a SELF-HOSTED runner with the LiteLLM secrets in its environment; the adjudicator reads
 // the PR head, so it must read it the same way the answerer does — and nothing more.
 func TestQAAdjudicationPreservesTheNoExecutionInvariant(t *testing.T) {
-	steps, _, _ := adjudicateWiring(t)
+	steps, _ := adjudicateWiring(t)
 	adj := requireStep(t, steps, qaAdjudicateStep)
 
 	for _, r := range []struct{ needle, why string }{
@@ -250,7 +201,7 @@ func TestQAAdjudicationPreservesTheNoExecutionInvariant(t *testing.T) {
 // marker by the same render-to-file → append → post-once route as round 0, so the ONE existing
 // reader serves both branches and the gate needs no knowledge of which ran.
 func TestQAAdjudicationMarkerReachesTheGateLikeRoundZero(t *testing.T) {
-	steps, workflow, _ := adjudicateWiring(t)
+	steps, workflow := adjudicateWiring(t)
 	adj := requireStep(t, steps, qaAdjudicateStep)
 
 	for _, r := range []struct{ needle, why string }{
@@ -298,29 +249,13 @@ func TestQAAdjudicationMarkerReachesTheGateLikeRoundZero(t *testing.T) {
 		t.Errorf("the workflow reads the QA-VERDICT marker in %d places, want exactly 1: both round "+
 			"types must feed the gate through the same %q step", n, qaReadStep)
 	}
-
-	// AC-4 also says the gate is unchanged. The patch is the only carrier of this change's
-	// workflow half, so it must touch nothing else.
-	if _, err := os.Stat(adjudicatePatchPath(t)); err == nil {
-		patch := readFileOrFail(t, adjudicatePatchPath(t))
-		for _, line := range strings.Split(patch, "\n") {
-			if !strings.HasPrefix(line, "+++ b/") {
-				continue
-			}
-			if got := strings.TrimPrefix(line, "+++ b/"); got != ".github/workflows/deliver-verify.yml" {
-				t.Errorf("%s also patches %q; #1716 changes the workflow only — the gate already "+
-					"handles QA_VERDICT, and a gate edit hidden in an unappliable patch would be "+
-					"invisible to every gate test", adjudicateWiringPatch, got)
-			}
-		}
-	}
 }
 
 // TestQAAdjudicationEnvIsWired covers the rest of AC-6: the adjudicator needs the same
 // OpenAI-compatible surface as the answerer, and its model must follow the repository's
 // `vars.* || default` convention.
 func TestQAAdjudicationEnvIsWired(t *testing.T) {
-	steps, _, _ := adjudicateWiring(t)
+	steps, _ := adjudicateWiring(t)
 	adj := requireStep(t, steps, qaAdjudicateStep)
 
 	for _, r := range []struct{ needle, why string }{
@@ -348,7 +283,7 @@ func TestQAAdjudicationEnvIsWired(t *testing.T) {
 // than by qa-review — is the pivotal decision of this change. It has to be readable at the gate
 // that implements it, not only in an issue.
 func TestReVerifyTradeoffIsDocumentedAtTheRoundGate(t *testing.T) {
-	_, workflow, _ := adjudicateWiring(t)
+	_, workflow := adjudicateWiring(t)
 
 	start := strings.Index(workflow, "# ROUND GATE")
 	if start < 0 {
@@ -378,7 +313,7 @@ func TestReVerifyTradeoffIsDocumentedAtTheRoundGate(t *testing.T) {
 // earlier is behaviour-preserving only because nothing between the two positions writes a round
 // label; if a step ever does, the gate and the Decide step would disagree about the round.
 func TestRoundCounterRelocationCannotChangeWhatItReads(t *testing.T) {
-	_, workflow, _ := adjudicateWiring(t)
+	_, workflow := adjudicateWiring(t)
 
 	// The counter is the max of the `deliver:round-N` labels, and only the CORRECT phase applies
 	// one. A write from this workflow — before or after the read — would make the position matter.
