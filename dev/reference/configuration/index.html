@@ -3748,7 +3748,7 @@
 <td><code>--metrics-path</code></td>
 <td>string</td>
 <td>""</td>
-<td>File path to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats). blis run only — blis replay uses <code>--results-path</code> instead. Empty = no file output.</td>
+<td>File path to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats, plus the <code>cache_hit_rate</code> and <code>catalog</code> provenance fields when those apply). Accepted on <strong>both</strong> <code>blis run</code> and <code>blis replay</code> (#1583 added it to replay so <code>blis calibrate --sim-metrics</code> can read a replayed hit-rate). Distinct from replay's <code>--results-path</code>, which writes the <strong>per-request</strong> <code>[]SimResult</code> array and is replay-only. Empty = no file output.</td>
 </tr>
 </tbody>
 </table>
@@ -3874,7 +3874,9 @@
 </tr>
 </tbody>
 </table>
-<p>When <code>--alpha-coeffs</code> and <code>--beta-coeffs</code> are not explicitly provided on the CLI, BLIS automatically loads pre-trained coefficients from <code>defaults.yaml</code> based on the model, GPU, and TP configuration. Explicitly passing <code>--alpha-coeffs 0,0,0</code> preserves zero coefficients (they are not overridden by defaults).</p>
+<p>When <code>--latency-model trained-physics</code> (the default) is in force and <code>--alpha-coeffs</code>/<code>--beta-coeffs</code> are not explicitly provided on the CLI, BLIS loads the coefficients from the single <code>trained_physics_coefficients</code> block in <code>defaults.yaml</code> (<code>alpha_coeffs</code> + <code>beta_coeffs</code>). That block is <strong>global — one set for every model, GPU and TP degree</strong>; there is no per-model, per-GPU or per-TP keyed lookup, and none has ever existed. Generalizing across architectures without a per-deployment fit is the point of the trained-physics backend: the roofline basis functions carry the architecture and hardware dependence, and the coefficients only correct them.</p>
+<p>The two flags must be supplied <strong>together or not at all</strong> (supplying one without the other is refused), so either both values come from the file or both come from the CLI. Explicitly passing <code>--alpha-coeffs 0,0,0</code> preserves zero coefficients — they are not overridden by the file, because the file is consulted only for a flag the user did not set.</p>
+<p><code>--latency-model roofline</code> reads no coefficients at all: it computes step time analytically, and passing either flag alongside an explicit <code>--latency-model roofline</code> is a hard error.</p>
 <h3 id="model-and-hardware-selection">Model and Hardware Selection<a class="headerlink" href="#model-and-hardware-selection" title="Permanent link">&para;</a></h3>
 <p>Maps to <code>ModelHardwareConfig</code>.</p>
 <table>
@@ -4726,23 +4728,44 @@ the only model-config source.</p>
 <code>field defaults not found in type cmd.Config</code>. Delete the block and pass <code>--hardware</code>/<code>--tp</code>
 on the command line. Nothing is lost — no run path read those values.</p>
 </div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Section 1: Workload presets</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nt">workloads</span><span class="p">:</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nt">chatbot</span><span class="p">:</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="nt">prompt_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">    </span><span class="nt">prompt_tokens_stdev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">    </span><span class="nt">output_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">    </span><span class="nt">output_tokens_stdev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
-<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">    </span><span class="c1"># ... min/max bounds</span>
-<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>
-<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="c1"># Section 2: Trained coefficients (keyed by model+GPU+TP)</span>
-<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="nt">models</span><span class="p">:</span>
-<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">qwen/qwen3-14b</span>
-<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="w">    </span><span class="nt">GPU</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">H100</span>
-<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="w">    </span><span class="nt">tensor_parallelism</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="w">    </span><span class="nt">alpha_coeffs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">8888.09</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.18</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.0</span><span class="p p-Indicator">]</span>
-<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="w">    </span><span class="nt">beta_coeffs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">13578.19</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">39.44</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">27.32</span><span class="p p-Indicator">]</span>
+<p>These are the top-level keys the file may carry, and strict parsing accepts no others
+(<code>KnownFields(true)</code>, R10 — the authoritative list is <code>cmd.Config</code> in <code>cmd/default_config.go</code>;
+the bundled <code>defaults.yaml</code> is the worked example):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0.1</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1"># Workload presets, keyed by the name --workload takes (chatbot, summarization, ...)</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="nt">workloads</span><span class="p">:</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">  </span><span class="nt">chatbot</span><span class="p">:</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">    </span><span class="nt">prompt_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">    </span><span class="nt">prompt_tokens_stdev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">    </span><span class="nt">output_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">    </span><span class="nt">output_tokens_stdev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">    </span><span class="c1"># ... min/max bounds</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="c1"># Trained-physics coefficients — ONE GLOBAL SET, not keyed by model, GPU or TP.</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="c1"># Consulted only by --latency-model trained-physics, and only for a flag the user did not pass.</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="nt">trained_physics_coefficients</span><span class="p">:</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="w">  </span><span class="nt">alpha_coeffs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">15563.199579</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">777.3455</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">45.907545</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># α₀-α₂: API/framework overheads (µs)</span>
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="w">  </span><span class="nt">beta_coeffs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">0.152128</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.36252915</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">...</span><span class="p p-Indicator">]</span><span class="w">      </span><span class="c1"># β₁-β₁₀ + optional β_EP</span>
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="c1"># LoRA control-plane cost terms (#1464). Inert unless a run declares adapters.</span>
+<a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a><span class="nt">lora</span><span class="p">:</span>
+<a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a><span class="w">  </span><span class="nt">load_base_latency_us</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1500.0</span>
+<a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a><span class="w">  </span><span class="c1"># ... bandwidth, per-rank footprint, per-rank step-overhead tiers</span>
+<a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a>
+<a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a><span class="c1"># KV-offload device classes referenced by a --kv-offload-config tier's device_class</span>
+<a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a><span class="c1"># (#1587/#1581). Inert unless such a config names one.</span>
+<a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a><span class="nt">kv_offload_devices</span><span class="p">:</span>
+<a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a><span class="w">  </span><span class="nt">nvme_gen4</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">read_bandwidth</span><span class="p">:</span><span class="w"> </span><span class="nv">7.0e3</span><span class="p p-Indicator">,</span><span class="nt"> write_bandwidth</span><span class="p">:</span><span class="w"> </span><span class="nv">5.0e3</span><span class="p p-Indicator">,</span><span class="nt"> base_latency</span><span class="p">:</span><span class="w"> </span><span class="nv">80.0</span><span class="p p-Indicator">}</span>
 </code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">There is no <code>models:</code> section, and there never was a keyed coefficient table</p>
+<p>Earlier revisions of this page showed a <code>models:</code> list mapping a model+GPU+TP triple to its own
+<code>alpha_coeffs</code>/<code>beta_coeffs</code>. No such section exists — <code>cmd.Config</code> declares no <code>Models</code> field, so
+strict parsing would reject one outright. Coefficients live in the single global
+<code>trained_physics_coefficients</code> block above. The removed <code>defaults:</code> block (#1768) was a different
+thing again: per-model <code>GPU</code>/<code>tensor_parallelism</code>/<code>hf_repo</code>, never coefficients.</p>
+</div>
 <h3 id="resolution-process">Resolution Process<a class="headerlink" href="#resolution-process" title="Permanent link">&para;</a></h3>
 <p>When BLIS starts, it resolves latency configuration through a layered process. Explicit CLI flags always take precedence (R18).</p>
 <p><strong>Hardware and TP defaults resolution (all backends):</strong></p>
@@ -4761,7 +4784,7 @@ on the command line. Nothing is lost — no run path read those values.</p>
 <p><strong><code>--total-kv-blocks</code> resolution</strong> (highest priority wins):</p>
 <ol>
 <li><strong>Explicit CLI flag</strong> — if <code>--total-kv-blocks</code> is set, that value is used regardless of backend</li>
-<li><strong>Auto-calculation</strong> (all backends) — when <code>MemoryGiB &gt; 0</code> in the hardware config and <code>config.json</code> is available, <code>CalculateKVBlocks</code> derives the block count from model architecture and GPU memory. BLIS resolves <code>config.json</code> as the catalog entry <code>&lt;catalog&gt;/models/&lt;short-name&gt;/config.json</code> (transition fallback: the flat <code>&lt;catalog&gt;/&lt;short-name&gt;/config.json</code>, #1774) inside the catalog located by <code>--catalog</code> / <code>BLIS_CATALOG</code>; there is no step outside that catalog root — an uncatalogued model is refused rather than fetched (NS-6). Failure modes: (a) if <code>MemoryGiB</code> is missing from <code>hardware_config.json</code>, BLIS warns and falls back to the hardcoded default (layer 3); (b) if model architecture params cannot be extracted from <code>config.json</code>, BLIS warns and falls back to the hardcoded default; (c) if the calculation itself fails (e.g., unsupported activation function), BLIS warns and falls back to the hardcoded default. Auto-calculation currently requires SwiGLU-family activations (<code>silu</code>, <code>swiglu</code>, <code>geglu</code>, <code>situ</code> — Kimi-K3's SiTU-GLU, a 3-matrix gated GLU with SwiGLU's weight/FLOP shape); models with other activations (e.g., Falcon's <code>gelu</code>) will fall back to the hardcoded default unless <code>--total-kv-blocks</code> is explicitly set</li>
+<li><strong>Auto-calculation</strong> (all backends) — when <code>MemoryGiB &gt; 0</code> in the hardware config and <code>config.json</code> is available, <code>CalculateKVBlocks</code> derives the block count from model architecture and GPU memory. BLIS resolves <code>config.json</code> as the catalog entry <code>&lt;catalog&gt;/models/&lt;short-name&gt;/config.json</code> (transition fallback: the flat <code>&lt;catalog&gt;/&lt;short-name&gt;/config.json</code>, #1774) inside the catalog located by <code>--catalog</code> / <code>BLIS_CATALOG</code>; there is no step outside that catalog root — an uncatalogued model is refused rather than fetched (NS-6). Failure modes: (a) if <code>MemoryGiB</code> is missing from <code>hardware_config.json</code>, BLIS warns and falls back to the hardcoded default (layer 3); (b) if model architecture params cannot be extracted from <code>config.json</code>, BLIS warns and falls back to the hardcoded default; (c) if the calculation itself fails (e.g., an unsupported activation function), <code>CalculateKVBlocks</code> returns an error and BLIS <strong>aborts with a fatal error</strong> (<code>logrus.Fatalf</code>) rather than falling back. Auto-calculation currently requires SwiGLU-family activations (<code>silu</code>, <code>swiglu</code>, <code>geglu</code>, <code>situ</code> — Kimi-K3's SiTU-GLU, a 3-matrix gated GLU with SwiGLU's weight/FLOP shape); a model with another activation (e.g., Falcon's <code>gelu</code>) therefore aborts the run during auto-calculation unless <code>--total-kv-blocks</code> is set explicitly (which skips auto-calculation)</li>
 <li><strong>Hardcoded default</strong> — 1,000,000 (CLI flag default, used when auto-calculation is unavailable or fails)</li>
 </ol>
 <div class="admonition note">
@@ -4924,7 +4947,7 @@ for the cost model and its known approximations.</p>
 </tr>
 <tr>
 <td><strong>Top-level</strong></td>
-<td><code>--seed</code>, <code>--horizon</code>, <code>--log</code>, <code>--metrics-path</code> (run only), <code>--trace-output</code>, <code>--policy-config</code>, <code>--fitness-weights</code>, <code>--summarize-trace</code></td>
+<td><code>--seed</code>, <code>--horizon</code>, <code>--log</code>, <code>--metrics-path</code> (<code>run</code> and <code>replay</code>), <code>--trace-output</code>, <code>--policy-config</code>, <code>--fitness-weights</code>, <code>--summarize-trace</code></td>
 </tr>
 </tbody>
 </table>
@@ -5170,10 +5193,14 @@ for the cost model and its known approximations.</p>
 <td><code>--results-path</code></td>
 <td>string</td>
 <td>""</td>
-<td>File to write <code>[]SimResult</code> JSON (fields: <code>request_id</code>, <code>ttft_us</code>, <code>e2e_us</code>, <code>input_tokens</code>, <code>output_tokens</code>) for <code>blis calibrate</code> consumption.</td>
+<td>File to write <code>[]SimResult</code> JSON (fields: <code>request_id</code>, <code>ttft_us</code>, <code>e2e_us</code>, <code>input_tokens</code>, <code>output_tokens</code>) for <code>blis calibrate</code> consumption. Replay-only — <code>blis run</code> does not register it.</td>
 </tr>
 </tbody>
 </table>
+<p><code>blis replay</code> also accepts <code>--metrics-path</code> (the aggregate <code>MetricsOutput</code> JSON, documented under
+<a href="#simulation-control">Simulation Control</a>); it is not replay-specific, so it is not repeated in the
+table above. The two are complementary rather than alternatives: <code>--results-path</code> writes per-request
+rows, <code>--metrics-path</code> writes the run aggregate that <code>blis calibrate --sim-metrics</code> reads.</p>
 <hr />
 <h2 id="blis-calibrate">blis calibrate<a class="headerlink" href="#blis-calibrate" title="Permanent link">&para;</a></h2>
 <p>Compares real observed latencies (from <code>blis observe</code>) against simulator predictions (from <code>blis replay</code>) and produces a calibration report with per-metric MAPE, Pearson R, and quality grades.</p>
