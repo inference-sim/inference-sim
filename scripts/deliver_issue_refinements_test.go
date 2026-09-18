@@ -286,7 +286,7 @@ func TestRefinements_OrderedOldestFirstRegardlessOfInputOrder(t *testing.T) {
 		if iFirst < 0 || iSecond < 0 || iThird < 0 {
 			t.Fatalf("a refinement went missing.\ngot:\n%s", got)
 		}
-		if !(iFirst < iSecond && iSecond < iThird) {
+		if iFirst >= iSecond || iSecond >= iThird {
 			t.Errorf("refinements are not ordered oldest-first, so \"the later one wins\" has no "+
 				"fixed meaning.\ngot:\n%s", got)
 		}
@@ -719,5 +719,58 @@ func TestRefinementsLive_AllBotThreadNeitherQueriesNorDegrades(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "body is the whole specification") {
 		t.Errorf("expected the explicit no-refinements message.\nstdout:\n%s", stdout)
+	}
+}
+
+// PARTIAL resolution is its own outcome, and it is the one the other live tests leave uncovered: they
+// each use a single human author, so every lookup in them succeeds together or fails together. The
+// two behaviours that only a MIXED thread can pin are (a) `writeAccess` is decided per author rather
+// than for the thread as a whole, and (b) one unresolvable author does not degrade the run.
+//
+// Both directions of getting this wrong are live. Degrading here would let one deleted account or one
+// renamed login block a delivery, so a real refinement from a resolvable maintainer would be lost to
+// an unrelated author's broken lookup. Flipping the other way — letting the resolvable author's
+// `write` decide the thread — would surface an unverified author's comment as spec, which is the trust
+// boundary the whole script exists to draw.
+func TestRefinementsLive_PartialResolutionKeepsTheResolvedAuthorAndDoesNotDegrade(t *testing.T) {
+	const twoHumanComments = `{"comments":[` +
+		`{"id":"a","author":{"login":"maintainer"},"authorAssociation":"CONTRIBUTOR",` +
+		`"body":"RESOLVABLE: fold the credit in before the clamp.",` +
+		`"createdAt":"2026-09-18T11:00:00Z","url":"https://example.invalid/a","isMinimized":false},` +
+		`{"id":"b","author":{"login":"unreachable"},"authorAssociation":"CONTRIBUTOR",` +
+		`"body":"UNRESOLVED: extend the commit past endIndex.",` +
+		`"createdAt":"2026-09-18T12:00:00Z","url":"https://example.invalid/b","isMinimized":false}` +
+		`]}`
+
+	// Branches on the request path, so each author gets its own outcome from one stub. A 500 is a
+	// "could not ask" failure, deliberately not the 404 that means "definitively not a collaborator".
+	path := stubGh(t, twoHumanComments, `    case "${2:-}" in
+      *"/maintainer/"*) echo "write"; exit 0 ;;
+      *"/unreachable/"*) echo "gh: HTTP 500: Internal Server Error" >&2; exit 1 ;;
+    esac
+    echo "stub gh: permission queried for an unexpected login: $*" >&2; exit 1`)
+	stdout, stderr, code := runLive(t, path)
+
+	if code != 0 {
+		t.Errorf("exit %d, want 0: one author's permission resolved, so the thread WAS weighed. "+
+			"Degrading here lets a single deleted or renamed login block a delivery and lose a real "+
+			"refinement.\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+	if strings.Contains(stdout, "REFINEMENT-READ-FAILED") {
+		t.Errorf("a partially-resolved thread was reported as unreadable.\nstdout:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "RESOLVABLE") {
+		t.Errorf("the resolvable write-access author's refinement was dropped along with the "+
+			"unresolvable one, so write access is being decided for the thread rather than per "+
+			"author.\nstdout:\n%s\nstderr:\n%s", stdout, stderr)
+	}
+	if strings.Contains(stdout, "UNRESOLVED") {
+		t.Errorf("an author whose permission could not be established was surfaced as a refinement. "+
+			"Unresolved must fail closed — over-trusting hands the spec to an unverified "+
+			"author.\nstdout:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "unreachable") {
+		t.Errorf("the dropped author was not named on stderr, so a missed refinement is "+
+			"invisible.\nstderr:\n%s", stderr)
 	}
 }

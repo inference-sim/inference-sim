@@ -41,11 +41,21 @@
 #
 # ── Failure is loud, never silent (R1) ───────────────────────────────────────────────────────
 #
-# On any failure this prints a digest whose FIRST LINE is `REFINEMENT-READ-FAILED`, explains what
-# went wrong, and exits 3. The one outcome that must never occur is empty output, which reads
-# exactly like "this issue has no refinements" — the failure mode the whole script exists to end.
+# When the thread could not be WEIGHED AT ALL this prints a digest whose FIRST LINE is
+# `REFINEMENT-READ-FAILED`, explains what went wrong, and exits 3. The one outcome that must never
+# occur is empty output, which reads exactly like "this issue has no refinements" — the failure mode
+# the whole script exists to end. That covers a missing/broken jq or filter, an unreadable payload, a
+# failed `gh issue view`, a failed author extraction, and the case where there was at least one
+# author to weigh and NOT ONE of their permissions could be established.
 #
-# Exit codes: 0 = read (with or without refinements), 2 = usage, 3 = degraded (marker printed).
+# PARTIAL permission resolution deliberately does NOT degrade. If some authors resolve and some do
+# not, the unresolved ones are dropped — each named on stderr — and the run continues at exit 0.
+# Degrading on any single lookup failure would let one deleted account or one renamed login block a
+# delivery, which is worse than dropping a comment that is probably not a refinement. The reasoning
+# is recorded under Consequences in docs/contributing/issue-comment-authority.md.
+#
+# Exit codes: 0 = read (with or without refinements, and possibly with some authors dropped),
+# 2 = usage, 3 = degraded (marker printed).
 #
 # `set -e` is off deliberately, matching the sibling scripts: a legitimate "no match" is a non-zero
 # exit from grep/jq and is expected control flow here.

@@ -130,7 +130,10 @@ comments that matter.
 2. A **refinement overrides the body** on any point it addresses. It was written later, by someone
    with write access, on the very issue being delivered — a deliberate correction, not a footnote.
    Record which refinement you followed and what it changed, in the plan's deviation log as a
-   `CORRECTION`.
+   `CORRECTION`, **and in the PR body**. That record is load-bearing, not bookkeeping: a reviewer —
+   and the delivery loop's own verify phase — reads the issue *body* for the contracts, so a change
+   that correctly followed a refinement reads as a divergence to anyone who cannot see which
+   refinement authorised it.
 3. Where **two refinements conflict, the later one wins**. The digest is ordered oldest to newest,
    so the last word on a point is furthest down.
 4. Three declarations are **body-only**, and no comment changes them: the **target branch**, the
