@@ -46,18 +46,9 @@ func TestDefaultsBlockRemoved_BundledFileStillParses(t *testing.T) {
 	if cfg.Version == "" {
 		t.Error("version must survive the defaults: trim")
 	}
-	// Every workload preset named by --workload must still resolve.
-	for _, name := range []string{"chatbot", "contentgen", "summarization", "multidoc"} {
-		w, ok := cfg.Workloads[name]
-		if !ok {
-			t.Errorf("workload preset %q must survive the defaults: trim", name)
-			continue
-		}
-		if w.PromptTokensMean <= 0 || w.OutputTokensMean <= 0 {
-			t.Errorf("workload preset %q parsed empty (prompt=%d output=%d)",
-				name, w.PromptTokensMean, w.OutputTokensMean)
-		}
-	}
+	// The `workloads:` block that used to be checked here is gone too (#1769) — the presets
+	// live in the catalog now, and TestCatalogPresets_BundledCatalogMatchesRetiredDefaults
+	// owns their values.
 	if cfg.TrainedPhysicsDefaults == nil {
 		t.Fatal("trained_physics_coefficients must survive the defaults: trim — it is the " +
 			"default latency backend's coefficient source")
@@ -88,14 +79,13 @@ func TestDefaultsBlockRemoved_BundledFileStillParses(t *testing.T) {
 // loadDefaultsConfig reports a parse error via logrus.Fatalf, so this runs in a subprocess.
 func TestDefaultsBlockRemoved_StaleBlockIsRefused(t *testing.T) {
 	if os.Getenv("BLIS_STALE_DEFAULTS_SUBPROCESS") == "1" {
-		// The block is the ONLY difference from a file that loads: `workloads` and `version`
-		// are both still declared, so a failure here can only be the `defaults` key.
+		// The block is the ONLY difference from a file that loads (`version` is still
+		// declared), so a failure here can only be the `defaults` key.
 		content := `defaults:
   test-org/test-model:
     GPU: H100
     tensor_parallelism: 2
     hf_repo: TestOrg/Test-Model
-workloads: {}
 version: "0.0.1"
 `
 		path := filepath.Join(t.TempDir(), "defaults.yaml")
@@ -129,7 +119,7 @@ version: "0.0.1"
 // is attributable to that key and not to anything else about the fixture.
 func TestDefaultsBlockRemoved_SameFileWithoutBlockLoads(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "defaults.yaml")
-	content := "workloads: {}\nversion: \"0.0.1\"\n"
+	content := "version: \"0.0.1\"\n"
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
