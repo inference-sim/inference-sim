@@ -3248,14 +3248,14 @@ exactly these three" — the same false premise, on the same self-hosted runner,
 </tr>
 <tr>
 <td><code>needs-human</code></td>
-<td>Signals disagreed, evidence was missing, or 3 rounds did not close the findings</td>
-<td>Read the last comment — it names the phase and the reason</td>
+<td>Signals disagreed, evidence was missing, 3 rounds did not close the findings, or the branch conflicts with <code>main</code> and the correction could not resolve it</td>
+<td>Read the last comment — it names the phase and the reason, and for a conflict it names the conflicting files</td>
 </tr>
 </tbody>
 </table>
 <p>There is no third outcome. Every unrecognised or contradictory signal resolves to <code>needs-human</code>; the gate is closed by default.</p>
 <h2 id="the-gate">The gate<a class="headerlink" href="#the-gate" title="Permanent link">&para;</a></h2>
-<p>The decision is not the reviewing agent's to make. <code>deliver-verify.yml</code> collects six machine-readable signals and hands them to <code>scripts/deliver-gate.sh</code>, which is unit-tested (<code>scripts/deliver_gate_test.go</code>):</p>
+<p>The decision is not the reviewing agent's to make. <code>deliver-verify.yml</code> collects seven machine-readable signals and hands them to <code>scripts/deliver-gate.sh</code>, which is unit-tested (<code>scripts/deliver_gate_test.go</code>):</p>
 <table>
 <thead>
 <tr>
@@ -3286,7 +3286,11 @@ exactly these three" — the same false premise, on the same self-hosted runner,
 </tr>
 <tr>
 <td><code>MERGE_STATE</code></td>
-<td>whether the branch can merge into <code>main</code> (#1758) — GitHub's REST <code>mergeable_state</code> mapped to <code>mergeable</code> / <code>conflicting</code> (a true conflict) / <code>unknown</code>. <code>conflicting</code> routes to a correction round (the agent merges <code>main</code> and resolves the conflict) rather than to a human; <code>unknown</code> (mergeability not yet computed) triggers a re-check on the next event rather than a terminal verdict</td>
+<td>whether the branch can merge into <code>main</code> (#1758) — GitHub's REST <code>mergeable_state</code>, mapped through <code>scripts/map-merge-state.sh</code> to <code>mergeable</code> / <code>conflicting</code> (REST <code>dirty</code>, a true conflict) / <code>unknown</code>. <code>conflicting</code> can never reach <code>ready-for-merge</code> (GitHub cannot compute a merge ref, so that label is one nobody can act on); it routes to a correction round (the agent merges <code>main</code> and resolves) or, at the round cap, a <code>needs-human</code> that <strong>names</strong> the conflict (#1781). <code>unknown</code> returns the non-terminal <code>recheck</code> rather than stopping for a human over an API blip</td>
+</tr>
+<tr>
+<td><code>REVIEWS_SKIPPED</code></td>
+<td><code>true</code> when verify skipped both agent reviews this round because the branch already conflicted with <code>main</code> (#1781 G1). Lets the gate return the non-terminal <code>recheck</code> — never a terminal verdict — if that branch turns out non-conflicting by the time mergeability is authoritatively read, so a stale conflict hint can never dead-end the delivery at the round cap</td>
 </tr>
 </tbody>
 </table>
@@ -3339,7 +3343,17 @@ exactly these three" — the same false premise, on the same self-hosted runner,
 <p>So <code>always() &amp;&amp; !success()</code> is still the right guard — it is a strict superset and nothing regresses — but the reason is <strong>breadth</strong>, not that the old form was blind to a cancelled step. Note the first row is also a trap: a step-level timeout <em>fails</em> a step rather than cancelling it, so a test built on one looks like it reproduces #1685 without doing so.</p>
 <p>And the silence on #1685 was never a guard problem: the runner was lost, and then no step executes — <code>always()</code> ones included. No <code>if:</code> can report from a job that never runs, which is why the stall sweep exists. That third mechanism cannot be reproduced in CI, so it remains the one untested path.</p>
 <p>Also measured, since it was previously an open question: a <strong>skipped</strong> step does <em>not</em> make <code>success()</code> false. So the explicit <code>paused != 'true'</code> term in each reporter is defence-in-depth rather than the only thing preventing a paused delivery from reporting.
-- <strong>A dismissal cannot become a resolution by omission.</strong> The correct phase reports a <code>DELIVER-DISMISSALS: &lt;n&gt;</code> count as the last line of its comment and a workflow step derives <code>deliver:has-dismissals</code> from it; a missing or unreadable count is treated as outstanding. The label is not applied by the agent, so forgetting to apply it is not a way past the gate.</p>
+- <strong>A dismissal cannot become a resolution by omission.</strong> The correct phase reports a <code>DELIVER-DISMISSALS: &lt;n&gt;</code> count as the last line of its comment and a workflow step derives <code>deliver:has-dismissals</code> from it; a missing or unreadable count is treated as outstanding. The label is not applied by the agent, so forgetting to apply it is not a way past the gate.
+- <strong>A branch that conflicts with main is resolved, or the conflict is named.</strong> <code>main</code> advancing under an open delivery PR makes it <code>dirty</code>, and a <code>dirty</code> branch has no merge ref — so nothing can be verified against <code>main</code> and neither review's verdict means anything. Three mechanisms, none of which depends on an agent choosing to act (#1781, after #1758/#1763):</p>
+<ul>
+<li><strong>Ordinary drift is merged deterministically.</strong> A workflow step at the start of every correction round runs <code>scripts/deliver-update-branch.sh</code>: it merges <code>origin/main</code> and pushes when the merge is clean, and only a <strong>real content conflict</strong> is handed to the agent, which is the one participant that can weigh the PR's intent against main's. Previously the whole update was a prompt instruction; on PR #1778 the round completed <code>success</code> having made no commit and posted no comment, and a human had to merge by hand.</li>
+<li>
+<p><strong>A round that did not resolve it says which files.</strong> After the agent, <code>scripts/deliver-conflict-check.sh</code> asks git directly — against the freshly-fetched <strong>remote</strong> refs, since the agent pushes from inside the action — and when the branch still conflicts the phase posts a comment naming the conflicting paths, applies <code>needs-human</code>, and withholds the hand-back. Guarded on <code>always()</code>, so an agent that crashed or timed out is exactly when it reports. It escalates only on positive evidence: an undeterminable check hands back and lets the gate read GitHub's own <code>mergeable_state</code>.</p>
+</li>
+<li>
+<p><strong>The gate always names the conflict, and it outranks a missing marker.</strong> Verify skips both agent reviews on a branch it already knows conflicts (their verdicts could not be consumed, and each costs tens of minutes), so their markers read <code>MISSING</code> — and the gate treats a conflict as outranking that, routing the round to correction while rounds remain and to a conflict-naming <code>needs-human</code> at the cap. Before this, the missing-marker row fired first and the PR stopped with the reason "the verify phase posted no DELIVER-VERDICT marker": the symptom, with the conflict unmentioned. The conflicting paths reach the reason via <code>CONFLICT_FILES</code>, so <code>needs-human</code> satisfies #1758's "naming the conflict" rather than leaving a human to find it.</p>
+</li>
+</ul>
 </li>
 </ul>
 <p>Archon is optional throughout: with a plan there is a deterministic number that must not move the wrong way, without one the gate is CI plus the review verdict.</p>
