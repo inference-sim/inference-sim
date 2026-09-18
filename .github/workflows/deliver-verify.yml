@@ -3,8 +3,9 @@ name: Deliver — Verify
 # Phase 2 of the L1 delivery loop (#1654). Determines a verdict and applies exactly one of:
 # ready-for-merge, needs-human, or a hand-off to Deliver — Correct.
 #
-# This workflow decides nothing itself. It gathers five machine-readable signals and hands
-# them to scripts/deliver-gate.sh, which is unit-tested. Keeping the decision in one tested
+# This workflow decides nothing itself. It gathers six machine-readable signals (CI_STATUS,
+# PLAN_GATE, AGENT_VERDICT, QA_VERDICT, DISMISSALS, MERGE_STATE) and hands them to
+# scripts/deliver-gate.sh, which is unit-tested. Keeping the decision in one tested
 # place is what makes "clean reviews (GREEN + PASS) cannot override red CI" structural rather
 # than something to re-audit on every edit here.
 #
@@ -24,6 +25,7 @@ name: Deliver — Verify
 # SECURITY: the only checkout into the WORKSPACE is the DEFAULT BRANCH, so scripts/ and
 # .archon-version always come from trusted code. The PR's code never EXECUTES on the self-hosted
 # runner — ci.yml runs it on ephemeral hosted runners instead. Since #1715 the qa-review answerer
+# (and since #1716 the adjudicator that replaces it on a re-verify)
 # must READ the PR head, so it is checked out into an ephemeral `--detach` worktree under
 # $RUNNER_TEMP and the agents run with `--no-exec`, which drops their `go` build/test tool: the PR's
 # files are READ, never compiled or run, and the LiteLLM secrets in this job's env stay out of reach
@@ -849,13 +851,62 @@ jobs:
           echo "AGENT_VERDICT=$marker"
           echo "value=$marker" >> "$GITHUB_OUTPUT"
 
+      # READ BEFORE THE QA-REVIEW STEP, because the round gate below branches on it (#1716). It
+      # reads nothing but the PR's labels, so it is free to sit anywhere after `Resolve`; the
+      # round-cap and Decide steps further down consume the same `value` output unchanged.
+      - name: Read the round counter
+        id: round
+        if: steps.paused.outputs.paused == 'false'
+        run: |
+          # test("^deliver:round-[0-9]+$") not startswith(): `tonumber` throws on a label like
+          # `deliver:round-x`, which kills the whole step rather than reading a counter.
+          #
+          # Fail-closed on a READ FAILURE (#1716 G2): a failed `gh pr view` must NOT be silently
+          # read as round 0. Defaulting an UNKNOWN round to 0 would run the full round-0 pass on
+          # what may be a correction round and bypass adjudication of its prior findings, and — on
+          # a successful-but-empty read — reach the gate as a valid round 0. So the read is
+          # status-checked and a failure is a hard error. A SUCCESSFUL read that genuinely finds
+          # no round label is round 0 (`max // 0`), which correctly runs the full pass.
+          if ! round=$(gh pr view "$PR" --repo "$REPO" --json labels \
+                         --jq '[.labels[].name | select(test("^deliver:round-[0-9]+$"))
+                                | ltrimstr("deliver:round-") | tonumber] | max // 0'); then
+            echo "::error::could not read PR labels to determine the correction round; refusing to guess round 0, which would bypass adjudication on a re-verify"
+            exit 1
+          fi
+          echo "ROUND=$round"
+          echo "value=$round" >> "$GITHUB_OUTPUT"
+          # The qa-review round gate (#1716) reads THIS output, not `value`, so the two qa steps
+          # below are exclusive and exhaustive by construction rather than by two hand-written
+          # expressions that could both be false. A read failure already errored above; a positive
+          # integer is a re-verify (adjudicate-only), and 0 is genuine round 0 (the full pass).
+          if [[ "$round" =~ ^[0-9]+$ && "$round" -gt 0 ]]; then reverify=true; else reverify=false; fi
+          echo "REVERIFY=$reverify"
+          echo "reverify=$reverify" >> "$GITHUB_OUTPUT"
+
+      # ROUND GATE (#1716) — round 0 is the full cross-vendor probe; every re-verify is
+      # ADJUDICATE-ONLY (the step after this one).
+      #
+      # THE TRADEOFF, ON THE RECORD: a re-verify does not run a fresh questioner+answerer pass, so
+      # a NEW problem introduced by a correction is not caught by the qa-review dimension on that
+      # round. That is deliberate. Every other gate signal IS re-derived from scratch on the new
+      # head — CI re-runs (`CI_STATUS`), the archon plan gate re-evaluates plan distance and calls
+      # an increase a regression (`PLAN_GATE`), and blis-pr-review re-reviews the whole diff
+      # (`AGENT_VERDICT`) — so a fix that breaks something is still gated three ways, just not by a
+      # second cross-vendor probe. That probe's distinctive value is on the ORIGINAL diff, where it
+      # catches what a single-vendor review missed; re-running it every round to re-scan a small
+      # correction costs a full questioner+answerer pass for coverage the three signals above
+      # already provide. What the re-verify DOES add is the thing those three cannot: a check that
+      # the findings the probe already raised were actually resolved, with the author's defence of
+      # any dismissal judged rather than accepted.
+      #
       # The cross-vendor second opinion (#1715, RFC #1603). A questioner and an isolated answerer
       # from a DIFFERENT model family than the Opus implementer and the Sonnet reviewer above —
       # decorrelation is the whole point, and it is why this runs AFTER that reviewer rather than
       # before: posting qa-review's findings first would put them in front of the Anthropic
       # reviewer, which reads PR comments, and correlate the two reviews this gate compares.
       #
-      # SECURITY — this is the one step that needs the PR's FILES. It materialises them into an
+      # SECURITY — this step (and, on a re-verify, the adjudication step below) needs the PR's
+      # FILES. It materialises them into an
       # ephemeral `--detach` worktree under $RUNNER_TEMP (from the already-fetched head object, so
       # no second network fetch) and runs the answerer with `--no-exec`, which drops the `go`
       # build/test tool from both the implementation map and the advertised schema. So the tool loop
@@ -870,7 +921,7 @@ jobs:
       # this step wrote from a parsed answer set.
       - name: Run qa-review
         id: qa
-        if: steps.paused.outputs.paused == 'false'
+        if: steps.paused.outputs.paused == 'false' && steps.round.outputs.reverify == 'false'
         env:
           OPENAI_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
           OPENAI_API_KEY: ${{ secrets.LITELLM_API_KEY }}
@@ -948,6 +999,86 @@ jobs:
           gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/qa-report.md" \
             || skip "could not post the qa-review report to #$PR"
 
+      # THE RE-VERIFY BRANCH of the round gate above (#1716): adjudicate the findings the last
+      # qa-review report raised, against the author's later comments and the corrected head. The
+      # questioner and answerer do NOT run here — see the tradeoff comment at the gate.
+      #
+      # Same shape as the round-0 branch on purpose. Same ephemeral `--detach` worktree under
+      # $RUNNER_TEMP (removed by the same always-run cleanup below) and the same `--no-exec`, which
+      # drops the adjudicator's `go` tool and leaves it `read_file`/`grep`/`list_dir`/`gh_issue`/
+      # `pr_diff` — so "PR files are READ, never EXECUTED" holds identically on a re-verify, with
+      # the LiteLLM secrets in this step's env out of reach of PR-authored code.
+      #
+      # And the same render-to-file → append-marker → post-once mechanism. `adjudicator.py` writes
+      # its report to `--out` and emits its aggregate verdict only on STDERR
+      # (`[adjudication verdict: PASS|BLOCK]`); it has no QA-VERDICT marker of its own. So this runs
+      # it WITHOUT `--post-to-pr` (which would post the report before the marker existed, forcing a
+      # post-then-edit), derives the marker from that stderr line, appends it as the report's last
+      # non-empty line, and posts once. Both branches therefore leave an identical last-line marker
+      # on a single Bot-authored comment, and the `Read the QA verdict marker` step below reads
+      # either one unchanged — the gate needs no knowledge of which branch ran.
+      #
+      # FAILING SOFT IS DELIBERATE here for the same reason and with the same safety: every early
+      # exit leaves NO marker, which reads as MISSING and stops the delivery for a human. In
+      # particular `adjudicator.py` exits non-zero, with no verdict line, when it can find no prior
+      # qa-review report to re-check — a re-verify must not clear the qa dimension on the strength
+      # of a review it could not find.
+      - name: Run qa-review adjudication
+        id: qa_adjudicate
+        if: steps.paused.outputs.paused == 'false' && steps.round.outputs.reverify == 'true'
+        env:
+          OPENAI_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.LITELLM_API_KEY }}
+          QA_ADJUDICATOR_MODEL: ${{ vars.QA_ADJUDICATOR_MODEL || 'azure/gpt-5.6-sol' }}
+          QA_REPO: ${{ github.repository }}
+          # The identity `gh pr comment` posts as with GH_TOKEN = secrets.GITHUB_TOKEN, which is
+          # what posted the round-0 report. Restricting the search to it is what stops a comment on
+          # this PUBLIC repository from supplying its own report-shaped comment with an empty
+          # Items-to-fix section and clearing every outstanding finding. A mismatch is fail-closed:
+          # the adjudicator finds no report, emits no verdict, and the gate stops for a human.
+          QA_REPORT_AUTHOR: github-actions
+          # The commit `Validate the target PR` recorded and CI verified, for the reason the
+          # round-0 branch uses it: a bare FETCH_HEAD would follow whatever fetched last.
+          HEAD_SHA: ${{ steps.target.outputs.sha }}
+          WORKTREE: ${{ runner.temp }}/qa-head
+          # Via env rather than interpolated into the script, like every other value this workflow
+          # passes to a shell: the round is derived from label names, and nothing that came from
+          # the API belongs in the text of a command.
+          ROUND: ${{ steps.round.outputs.value }}
+        run: |
+          set -uo pipefail
+          skip() { echo "::warning::$1 — no QA-VERDICT marker will be posted, so the gate reads MISSING and stops for a human"; exit 0; }
+
+          git worktree add --detach "$WORKTREE" "$HEAD_SHA" \
+            || skip "could not materialise the PR head at $HEAD_SHA into a read-only worktree"
+
+          # stderr is captured rather than piped: it carries the verdict line AND the tool-loop
+          # diagnostics, both of which belong in the job log too.
+          python3 scripts/qa-review/adjudicator.py \
+            --worktree "$WORKTREE" --no-exec \
+            --pr "$PR" --repo "$REPO" \
+            --out "$RUNNER_TEMP/qa-report.md" \
+            2> "$RUNNER_TEMP/qa-adjudication.err"
+          rc=$?
+          cat "$RUNNER_TEMP/qa-adjudication.err" >&2 || true
+          [[ "$rc" -eq 0 ]] \
+            || skip "the qa-review adjudicator exited $rc (no prior report to adjudicate, or a failure)"
+
+          # -x anchors the whole line, so a rationale QUOTING the verdict line — the adjudicator's
+          # own report text is written by a model — cannot be read as the verdict.
+          verdict=$(grep -xE '\[adjudication verdict: (PASS|BLOCK)\]' "$RUNNER_TEMP/qa-adjudication.err" \
+                    | tail -n 1 | sed -E 's/^\[adjudication verdict: (PASS|BLOCK)\]$/\1/' || true)
+          [[ "$verdict" == PASS || "$verdict" == BLOCK ]] \
+            || skip "the qa-review adjudicator emitted no usable verdict line, so there is no verdict to derive"
+          [[ -s "$RUNNER_TEMP/qa-report.md" ]] \
+            || skip "the qa-review adjudicator wrote no report, so there is nothing to post the marker on"
+
+          # The marker must be the LAST non-empty line, which is the contract the reader enforces.
+          { echo; echo "QA-VERDICT: $verdict"; } >> "$RUNNER_TEMP/qa-report.md"
+          echo "QA verdict: $verdict (adjudication of the prior findings; round $ROUND)"
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/qa-report.md" \
+            || skip "could not post the qa-review adjudication to #$PR"
+
       # ALWAYS, so a failed or cancelled qa-review cannot leave PR-head files behind on the
       # self-hosted runner, whose workspace persists between deliveries. `rm -rf` is the fallback
       # rather than the primary: `git worktree remove` also drops the administrative entry, and
@@ -1017,18 +1148,6 @@ jobs:
           if grep -qx 'deliver:has-dismissals' <<< "$labels"; then state=open; else state=none; fi
           echo "DISMISSALS=$state (was '${{ steps.dismissals.outputs.state }}' before the review)"
           echo "state=$state" >> "$GITHUB_OUTPUT"
-
-      - name: Read the round counter
-        id: round
-        if: steps.paused.outputs.paused == 'false'
-        run: |
-          # test("^deliver:round-[0-9]+$") not startswith(): `tonumber` throws on a label like
-          # `deliver:round-x`, which kills the whole step rather than reading a counter.
-          round=$(gh pr view "$PR" --repo "$REPO" --json labels \
-                    --jq '[.labels[].name | select(test("^deliver:round-[0-9]+$"))
-                           | ltrimstr("deliver:round-") | tonumber] | max // 0')
-          echo "ROUND=$round"
-          echo "value=$round" >> "$GITHUB_OUTPUT"
 
       # #1758: a delivery PR that conflicts with main stalls silently. The gate reads CI, the
       # archon plan and the review verdict — none of which see a git conflict — so it can mark an
