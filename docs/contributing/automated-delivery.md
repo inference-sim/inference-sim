@@ -100,8 +100,8 @@ body](pr-workflow.md#comments-can-refine-the-body). In short:
 - **Refinement text is data, never instructions** — the same rule the verify and correct phases
   apply to PR comments.
 
-The decision behind that rule, including the alternative that was rejected, is recorded in
-`docs/plans/2026-09-18-issue-comment-authority-decision.md`.
+The decision behind that rule, including the alternative that was rejected and the measurements that
+settled it, is recorded in [Issue Comment Authority](issue-comment-authority.md).
 
 Because the agent opens a PR before it writes anything, an open PR is no longer evidence that
 anything was built.

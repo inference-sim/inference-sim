@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -517,6 +518,35 @@ func TestSeedStepReadsTheIssueBodyAndNotItsComments(t *testing.T) {
 				"to `git ls-remote` and `gh pr create --base`, so taking it from comment text — which "+
 				"any GitHub user can write on a public repository — is a script-injection surface. "+
 				"#1782 requires these structured reads to stay body-only", forbidden)
+		}
+	}
+}
+
+// The decision record must be a PUBLISHED, tracked document, because automated-delivery.md links to
+// it as the reasoning behind a rule it only summarises.
+//
+// This guards a trap that was walked into while writing it: `docs/plans/` is in `.gitignore`, so a
+// decision record placed there is invisible to everyone but its author and the link is dead — with
+// nothing failing to say so. Asserted as "the link target resolves" rather than "the file exists at
+// a hardcoded path", so moving the document is fine as long as the reference moves with it.
+func TestCommentAuthorityDecisionRecordIsLinkedAndPresent(t *testing.T) {
+	const linkedFrom = "docs/contributing/automated-delivery.md"
+	doc := readRepoFile(t, "docs", "contributing", "automated-delivery.md")
+
+	links := regexp.MustCompile(`\]\(([A-Za-z0-9._/-]*issue-comment-authority[A-Za-z0-9._/-]*\.md)\)`).
+		FindAllStringSubmatch(doc, -1)
+	if len(links) == 0 {
+		t.Fatalf("%s no longer links to the comment-authority decision record. The rule it "+
+			"summarises has a rejected alternative and two measurements behind it, and that "+
+			"reasoning is the thing a future reader needs before changing the rule", linkedFrom)
+	}
+
+	for _, m := range links {
+		target := filepath.Join("..", "docs", "contributing", m[1])
+		if _, err := os.Stat(target); err != nil {
+			t.Errorf("%s links to %q, which does not resolve (%v). `docs/plans/` is gitignored, so "+
+				"a decision record placed there is invisible to everyone but its author and this "+
+				"link is dead with nothing reporting it", linkedFrom, m[1], err)
 		}
 	}
 }
