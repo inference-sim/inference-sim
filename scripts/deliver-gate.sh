@@ -18,8 +18,23 @@
 #                                           GitHub's mergeable_state into this domain — "behind"
 #                                           and every other non-dirty state map to mergeable,
 #                                           since only a true conflict blocks the merge, #1758.)
+#   REVIEWS_SKIPPED true | false            (true = verify skipped both agent reviews this round
+#                                           because its pre-review hint said the branch conflicts,
+#                                           #1781 G1, so AGENT_VERDICT/QA_VERDICT are MISSING by
+#                                           construction. Lets the gate tell "markers missing
+#                                           because reviews were skipped" from "markers missing
+#                                           because a review crashed" — the former re-checks when
+#                                           the branch turns out non-conflicting, the latter stops.)
 #   ROUND          correction rounds already spent (non-negative integer)
 #   MAX_ROUNDS     hard cap on correction rounds (non-negative integer)
+#
+# Optional:
+#   CONFLICT_FILES the paths that conflict with main, NEWLINE-delimited (one path per line), for
+#                  the reason string only (#1781). Read ONLY when MERGE_STATE is conflicting, and
+#                  absent by default: a caller that cannot compute the list still gets a reason
+#                  that names the conflict, just not the files. Supplied by
+#                  scripts/conflicting-files.sh, which is best-effort by design. Newline is the
+#                  only delimiter because a git path may contain spaces or commas (#1781 G4).
 #
 # Prints two lines and exits 0:
 #   decision=ready|correct|needs-human|recheck
@@ -51,15 +66,53 @@ usage() {
   exit 2
 }
 
+# conflict_clause — the ONE phrasing of "this branch conflicts with main", naming the files when
+# the caller could compute them (#1781). One function rather than a literal at each emit site, so
+# every decision says the same thing and a future row cannot invent a variant spelling.
+conflict_clause() {
+  local clause="the branch has merge conflicts with main that must be resolved"
+  # CONFLICT_FILES is NEWLINE-delimited (one path per line, straight from
+  # scripts/conflicting-files.sh). Split on newline ONLY and join with ", " for the one-line
+  # reason. A git path may legally contain spaces and commas (git forbids only NUL), so splitting
+  # on those — as an earlier version did (`tr ',' ' ' | tr -s '[:space:]'`) — mangled real
+  # filenames: "docs/My File.md" became two entries and "a,b.md" became "a, b.md" (#1781 G4). The
+  # per-line read below preserves each path verbatim; a pathological newline-in-path arrives
+  # git-quoted from conflicting-files.sh, so it is still one line here.
+  local files="" p
+  while IFS= read -r p || [[ -n "$p" ]]; do
+    # Skip a blank OR whitespace-only line (the degraded/empty input case) but keep a real path
+    # verbatim, INTERNAL spaces and all: strip whitespace only to TEST for emptiness, never to
+    # rewrite the path itself.
+    [[ -n "${p//[[:space:]]/}" ]] || continue
+    files="${files:+$files, }$p"
+  done <<< "${CONFLICT_FILES:-}"
+  [[ -z "$files" ]] || clause="$clause (conflicting files: $files)"
+  printf '%s' "$clause"
+}
+
+# decorate_conflict is false until MERGE_STATE has been validated, because the domain checks
+# themselves emit and must not append a clause derived from a value they just rejected.
+decorate_conflict=false
+
 # emit <decision> <reason> — the single exit point for a computed decision. Every branch
 # below ends here, which is what makes "the gate always decides" structural rather than a
 # property to be re-checked on every edit.
+#
+# It is also where the conflict clause is PREPENDED (#1781). Doing it here rather than at each
+# call site is what makes "a conflicting branch's reason always names the conflict" structural:
+# the observed dead-end on PR #1778 was a row that fired first (no DELIVER-VERDICT marker) and
+# reported its own condition while the conflict — the actual cause, and the only actionable thing
+# — went unmentioned. It leads rather than trails because it is the thing a human must act on.
 emit() {
-  printf 'decision=%s\nreason=%s\n' "$1" "$2"
+  local reason="$2"
+  if [[ "$decorate_conflict" == true && "$MERGE_STATE" == conflicting ]]; then
+    reason="$(conflict_clause), and $reason"
+  fi
+  printf 'decision=%s\nreason=%s\n' "$1" "$reason"
   exit 0
 }
 
-for var in CI_STATUS PLAN_GATE AGENT_VERDICT QA_VERDICT DISMISSALS MERGE_STATE ROUND MAX_ROUNDS; do
+for var in CI_STATUS PLAN_GATE AGENT_VERDICT QA_VERDICT DISMISSALS MERGE_STATE REVIEWS_SKIPPED ROUND MAX_ROUNDS; do
   [[ -n "${!var:-}" ]] || usage "$var"
 done
 
@@ -96,6 +149,26 @@ case "$MERGE_STATE" in
   mergeable | conflicting | unknown) ;;
   *) emit needs-human "unrecognised MERGE_STATE '$MERGE_STATE' — the mergeability derivation step needs to map GitHub's mergeable_state to mergeable, conflicting, or unknown" ;;
 esac
+case "$REVIEWS_SKIPPED" in
+  true | false) ;;
+  *) emit needs-human "unrecognised REVIEWS_SKIPPED '$REVIEWS_SKIPPED' — expected true or false" ;;
+esac
+# From here on MERGE_STATE is in-domain, so every reason may name a conflict (#1781).
+decorate_conflict=true
+
+# #1781 G1 — a round that SKIPPED its reviews on a stale conflict hint must never reach a TERMINAL
+# outcome. Verify skips both agent reviews when its pre-review hint says the branch conflicts
+# (deliver-verify.yml), so their markers come back MISSING. If the branch is NOT actually
+# conflicting by the time mergeability is authoritatively read (main was merged in mid-run, or the
+# hint was stale), there is nothing to correct AND no trustworthy markers — so the only safe move
+# is to re-verify from a clean start. `recheck` is the non-terminal decision: it consumes no
+# correction round and never stops for a human, so a stale hint can no longer dead-end the delivery
+# at the round cap as a "false conflict" (the prior behaviour forced MERGE_STATE=conflicting in the
+# workflow, which became a terminal needs-human at ROUND==MAX_ROUNDS naming a conflict that did not
+# exist). A genuinely conflicting branch (MERGE_STATE==conflicting) is NOT caught here — it falls
+# through to the conflict-over-missing path below, which is correct and eventually names the files.
+[[ "$REVIEWS_SKIPPED" != true || "$MERGE_STATE" == conflicting ]] \
+  || emit recheck "the reviews were skipped this round on a stale 'conflicting' hint, but the branch is not conflicting now (mergeability '$MERGE_STATE'); re-verifying from a clean start rather than deciding a round whose reviews never ran"
 
 # Rows 1 and 2: no usable evidence. Checked before anything else so that a GREEN review can
 # never stand in for a signal that was never read. Both reviews are treated alike here: a
@@ -103,10 +176,33 @@ esac
 # that crashed, timed out or lost its model would otherwise wave the delivery through.
 [[ "$CI_STATUS" != unknown ]] \
   || emit needs-human "CI status could not be determined for this head commit, so no verdict can be trusted"
-[[ "$AGENT_VERDICT" != MISSING ]] \
-  || emit needs-human "the verify phase posted no DELIVER-VERDICT marker, so its verdict could not be read"
-[[ "$QA_VERDICT" != MISSING ]] \
-  || emit needs-human "the verify phase posted no QA-VERDICT marker, so the qa-review verdict could not be read"
+
+# #1781 — a CONFLICT OUTRANKS AN UNREADABLE REVIEW MARKER, and this ordering is the whole fix.
+#
+# A `dirty` branch has no merge ref, so nothing was verified against main and the review markers
+# are not evidence of anything: verify now deliberately SKIPS both agent reviews on such a branch
+# (deliver-verify.yml), which makes MISSING the expected reading rather than an anomaly. Before
+# this, the missing-marker rows below fired first and PR #1778 stopped for a human with the reason
+# "the verify phase posted no DELIVER-VERDICT marker" — reporting the symptom, hiding the cause,
+# and leaving the conflict unnamed. That is the silent-stall class #1758 set out to remove.
+#
+# The conflict is also the one thing a correction round can act on, so this routes to `correct`
+# (#1758(a): resolve and re-verify) by falling through to the round cap, which turns an
+# unresolvable conflict into a `needs-human` that NAMES it (#1758(b)). It can never reach `ready`:
+# `ready` is emitted only from MERGE_STATE=mergeable.
+conflict_over_missing=false
+if [[ "$MERGE_STATE" == conflicting ]] \
+   && { [[ "$AGENT_VERDICT" == MISSING ]] || [[ "$QA_VERDICT" == MISSING ]]; }; then
+  conflict_over_missing=true
+  reason="the review verdicts could not be read (review '$AGENT_VERDICT', qa-review '$QA_VERDICT'), which is expected on a branch with no merge ref"
+fi
+
+if [[ "$conflict_over_missing" != true ]]; then
+  [[ "$AGENT_VERDICT" != MISSING ]] \
+    || emit needs-human "the verify phase posted no DELIVER-VERDICT marker, so its verdict could not be read"
+  [[ "$QA_VERDICT" != MISSING ]] \
+    || emit needs-human "the verify phase posted no QA-VERDICT marker, so the qa-review verdict could not be read"
+fi
 
 # Collect every objective signal that blocks a merge. Both are reported when both apply —
 # a human reading the PR should not have to re-run the gate to discover the second reason.
@@ -129,8 +225,11 @@ esac
 # reported together for the same reason both objective blockers are: a human reading the PR
 # comment should see every reason the delivery did not pass, not just the first.
 #
-# Both markers are already known non-MISSING here, so an empty `findings` means both reviews
-# came back clean — which is what makes the ready row and the disagreement row below exhaustive.
+# Both markers are non-MISSING on every path that CONSULTS `findings`, so an empty `findings`
+# means both reviews came back clean — which is what makes the ready row and the disagreement row
+# below exhaustive. (A MISSING marker does reach this point in the #1781 conflict case, where the
+# markers are known untrustworthy; that case takes the FIRST branch of the decision chain below and
+# never reads `findings` or `blocking`, so the property the two rows rely on still holds.)
 findings=""
 add_finding() { findings="${findings:+$findings; }$1"; }
 
@@ -139,7 +238,13 @@ add_finding() { findings="${findings:+$findings; }$1"; }
 
 # The decision itself. `reason` is only set on paths that fall through to the round cap;
 # every terminal path emits directly.
-if [[ -n "$blocking" ]]; then
+if [[ "$conflict_over_missing" == true ]]; then
+  # #1781: `reason` was set above and the conflict clause is prepended by `emit`. Deliberately
+  # FIRST in this chain — the review-derived rows below are computed from markers this branch has
+  # already established are not trustworthy, so letting them speak would restate the symptom.
+  # Falls through to the round cap, exactly like any other correctable round.
+  :
+elif [[ -n "$blocking" ]]; then
   # Row 3 — the guardrail, generalised over both reviewers (#1715). A review claiming the code
   # is fine against a failing objective signal is a disagreement, and resolving it is a human's
   # call: correcting would ask the agent to fix findings both reviewers said do not exist, and
@@ -177,7 +282,10 @@ else
       # unverified mergeability.
       case "$MERGE_STATE" in
         mergeable)   emit ready "CI passed, plan signal '$PLAN_GATE', the review returned GREEN, and qa-review returned PASS" ;;
-        conflicting) reason="the reviews are clean (review GREEN, qa-review PASS) but the branch has merge conflicts with main that must be resolved" ;;
+        # The conflict itself is phrased once, by `emit`'s prepended clause (#1781) — so this reason
+        # states only what the reviews said, and a change to the wording (or to the file list)
+        # cannot leave two spellings of the same fact in one comment.
+        conflicting) reason="the reviews are clean (review GREEN, qa-review PASS)" ;;
         # Non-terminal: an unread mergeability on an otherwise-green PR is a re-checkable blip,
         # not a reason to stop for a human. `recheck` re-verifies on the next event (#1758 G1).
         *)           emit recheck "every signal is green, but the branch's mergeability against main could not be determined this run; re-verifying on the next event rather than stopping" ;;
