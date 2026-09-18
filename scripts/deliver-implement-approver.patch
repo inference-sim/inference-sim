@@ -31,8 +31,8 @@ Refs #1790
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 ---
- .github/workflows/deliver-implement.yml | 109 +++++++++++++++++++++++-
- 1 file changed, 108 insertions(+), 1 deletion(-)
+ .github/workflows/deliver-implement.yml | 110 ++++++++++++++++++++++++-
+ 1 file changed, 109 insertions(+), 1 deletion(-)
 
 diff --git a/.github/workflows/deliver-implement.yml b/.github/workflows/deliver-implement.yml
 index adfdc6f4..af79d519 100644
@@ -74,7 +74,7 @@ index adfdc6f4..af79d519 100644
        # Overridable without editing this file via the DELIVER_IMPLEMENT_MODEL repository
        # variable. The default is verified present on the LiteLLM proxy this runner uses.
        DELIVER_MODEL: ${{ vars.DELIVER_IMPLEMENT_MODEL || 'claude-opus-4-8' }}
-@@ -642,6 +655,100 @@ jobs:
+@@ -642,6 +655,101 @@ jobs:
              // Newest wins if an earlier attempt left an open PR on the same ref.
              core.setOutput('number', String(prs.sort((a, b) => b.number - a.number)[0].number));
  
@@ -150,7 +150,8 @@ index adfdc6f4..af79d519 100644
 +            // with its contract-by-contract write-up — so it is not overwritten by that rewrite,
 +            // and the @-mention subscribes the approver even if someone later unassigns them.
 +            //
-+            // Idempotent on the login, so a resumed delivery does not stack duplicate lines, and a
++            // Idempotent on the WHOLE line, so a resumed delivery does not stack duplicate lines and
++            // a login that is a prefix of another (@ann vs @annette) is not mistaken for it — a
 +            // second approver still gets their own line.
 +            const line = `Delivery approved by @${approver} via \`/approve-issue-for-pr-delivery\` ` +
 +              `on #${process.env.ISSUE_NUMBER}.`;
@@ -159,7 +160,7 @@ index adfdc6f4..af79d519 100644
 +                owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber
 +              });
 +              const body = pr.body || '';
-+              if (body.includes(`Delivery approved by @${approver}`)) {
++              if (body.includes(line)) {
 +                core.info(`PR #${prNumber} already records @${approver} — leaving the body alone.`);
 +                return;
 +              }

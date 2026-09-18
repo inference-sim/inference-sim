@@ -87,14 +87,23 @@ func implementWorkflowWithApproverWiring(t *testing.T) (workflow string, live bo
 // applyUnifiedDiff applies the single-file unified diff embedded in patch to orig and returns the
 // post-image.
 //
-// Deliberately hand-rolled rather than shelling out to `git apply`: this runs in the `test
-// (scripts)` CI group, and a test that depends on an external binary to make an assertion is a test
-// that can pass because the binary was missing.
+// Deliberately hand-rolled rather than shelling out to `git apply`. The point of this test is the
+// staleness check, and reconstructing the post-image in memory is what lets the assertions below
+// parse it as YAML and check step ORDER — neither of which added-line matching against the patch
+// can do. It also lets the parser REFUSE a patch that touches any file other than the workflow
+// (below), where `git apply` would just apply it. (`git` is in fact available in this CI group; the
+// reason is the two properties above, not its absence.)
 //
 // Parsing starts at `diff --git`, never at the top of the file: `git format-patch` puts the commit
 // MESSAGE first, and this change's own message contains bullet lines beginning with `-` that would
 // otherwise be read as removals.
+//
+// Both inputs are normalized to LF first. A `git format-patch` diff carries LF line endings; if the
+// checked-out workflow has CRLF (a Windows checkout, or `core.autocrlf`), otherwise-identical
+// context lines would compare unequal and a good patch would be reported as stale.
 func applyUnifiedDiff(orig, patch string) (string, error) {
+	orig = strings.ReplaceAll(orig, "\r\n", "\n")
+	patch = strings.ReplaceAll(patch, "\r\n", "\n")
 	lines := strings.Split(patch, "\n")
 
 	start := -1
@@ -496,5 +505,176 @@ func TestApproverWiringStatusMatchesReality(t *testing.T) {
 	if !docSaysPending {
 		t.Errorf("the wiring is pending in %s but %s does not say so. Someone reading the docs "+
 			"would expect an approver on their delivery PR and not get one", approverPatch, docPath)
+	}
+}
+
+// applyUnifiedDiff and parseHunkHeader are the load-bearing parts of the guard above: the whole
+// staleness contract rests on the parser applying a good patch and rejecting a bad one. If it
+// silently mis-applied a hunk, a drifted patch could still reconstruct into something that contains
+// the recorder step and the guard would pass on a patch that no longer lands. The tests above only
+// ever feed it the one real patch, so these exercise the parser directly against the edge cases that
+// one patch does not — additions at EOF, blank-line context, multiple hunks, omitted counts, line
+// endings, and each way a patch is supposed to be refused.
+
+// workflowDiff wraps hunk text in the single-file `diff --git` header applyUnifiedDiff requires, so a
+// test case only has to spell out the hunks.
+func workflowDiff(hunks string) string {
+	const p = ".github/workflows/deliver-implement.yml"
+	return "diff --git a/" + p + " b/" + p + "\n" +
+		"--- a/" + p + "\n" +
+		"+++ b/" + p + "\n" + hunks
+}
+
+func TestApplyUnifiedDiff(t *testing.T) {
+	tests := []struct {
+		name  string
+		orig  string
+		patch string
+		want  string // expected post-image; consulted only when errIs is ""
+		errIs string // substring the error must contain; "" means expect success
+	}{
+		{
+			name:  "inserts a line mid-file",
+			orig:  "a\nb\nc",
+			patch: workflowDiff("@@ -1,2 +1,3 @@\n a\n+X\n b\n"),
+			want:  "a\nX\nb\nc",
+		},
+		{
+			name:  "appends at end of file with an omitted old count",
+			orig:  "a\nb",
+			patch: workflowDiff("@@ -2 +2,2 @@\n b\n+c\n"),
+			want:  "a\nb\nc",
+		},
+		{
+			name:  "removes a line",
+			orig:  "a\nb\nc",
+			patch: workflowDiff("@@ -1,3 +1,2 @@\n a\n-b\n c\n"),
+			want:  "a\nc",
+		},
+		{
+			name:  "blank line as context (leading space lost in transport)",
+			orig:  "a\n\nb",
+			patch: workflowDiff("@@ -1,3 +1,4 @@\n a\n\n+X\n b\n"),
+			want:  "a\n\nX\nb",
+		},
+		{
+			name:  "two hunks apply in order",
+			orig:  "a\nb\nc\nd\ne\nf",
+			patch: workflowDiff("@@ -1,2 +1,3 @@\n a\n+X\n b\n@@ -5,2 +6,3 @@\n e\n+Y\n f\n"),
+			want:  "a\nX\nb\nc\nd\ne\nY\nf",
+		},
+		{
+			name:  "CRLF original with an LF patch still applies",
+			orig:  "a\r\nb\r\nc",
+			patch: workflowDiff("@@ -1,2 +1,3 @@\n a\n+X\n b\n"),
+			want:  "a\nX\nb\nc",
+		},
+		{
+			name:  "a drifted context line is reported as stale",
+			orig:  "a\nDRIFTED\nc",
+			patch: workflowDiff("@@ -1,2 +1,3 @@\n a\n+X\n b\n"),
+			errIs: "context mismatch",
+		},
+		{
+			name:  "text with no diff header is refused",
+			orig:  "a",
+			patch: "@@ -1 +1,2 @@\n a\n+X\n",
+			errIs: "not a git patch",
+		},
+		{
+			name: "a second file diff is refused",
+			orig: "a\nb",
+			patch: workflowDiff("@@ -1,1 +1,2 @@\n a\n+X\n") +
+				"diff --git a/other.txt b/other.txt\n--- a/other.txt\n+++ b/other.txt\n@@ -1 +1,2 @@\n z\n+Q\n",
+			errIs: "more than one file diff",
+		},
+		{
+			name:  "a patch for another file is refused",
+			orig:  "a",
+			patch: "diff --git a/other.yml b/other.yml\n--- a/other.yml\n+++ b/other.yml\n@@ -1 +1,2 @@\n a\n+X\n",
+			errIs: "not deliver-implement.yml",
+		},
+		{
+			name:  "reversed hunks are refused",
+			orig:  "a\nb\nc\nd",
+			patch: workflowDiff("@@ -3,1 +3,2 @@\n c\n+Y\n@@ -1,1 +1,2 @@\n a\n+X\n"),
+			errIs: "overlaps or reverses",
+		},
+		{
+			name:  "a hunk starting past the end of the file is refused",
+			orig:  "a",
+			patch: workflowDiff("@@ -5,1 +5,2 @@\n x\n+Y\n"),
+			errIs: "starts past the end of the file",
+		},
+		{
+			name:  "a hunk consuming past the end of the file is refused",
+			orig:  "a",
+			patch: workflowDiff("@@ -1,3 +1,4 @@\n a\n b\n c\n+X\n"),
+			errIs: "reaches past the end of the file",
+		},
+		{
+			name:  "an unrecognized body line is refused",
+			orig:  "a\nb",
+			patch: workflowDiff("@@ -1,2 +1,3 @@\n a\n?bad\n b\n"),
+			errIs: "unexpected line in hunk",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := applyUnifiedDiff(tt.orig, tt.patch)
+			if tt.errIs != "" {
+				if err == nil {
+					t.Fatalf("expected an error containing %q, got none (result %q)", tt.errIs, got)
+				}
+				if !strings.Contains(err.Error(), tt.errIs) {
+					t.Fatalf("error %q does not contain %q", err, tt.errIs)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("post-image mismatch:\n got %q\nwant %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseHunkHeader(t *testing.T) {
+	tests := []struct {
+		name      string
+		line      string
+		wantStart int
+		wantCount int
+		errIs     string
+	}{
+		{name: "start and count", line: "@@ -642,6 +655,101 @@ jobs:", wantStart: 642, wantCount: 6},
+		{name: "omitted count defaults to one", line: "@@ -5 +5,2 @@", wantStart: 5, wantCount: 1},
+		{name: "too few fields", line: "@@ garbage", errIs: "malformed hunk header"},
+		{name: "old side not prefixed with a dash", line: "@@ +1 -1 @@", errIs: "malformed hunk header"},
+		{name: "non-numeric count", line: "@@ -1,x +1 @@", errIs: "malformed hunk header"},
+		{name: "non-numeric start", line: "@@ -y +1 @@", errIs: "malformed hunk header"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			start, count, err := parseHunkHeader(tt.line)
+			if tt.errIs != "" {
+				if err == nil {
+					t.Fatalf("expected an error containing %q, got none (start %d count %d)", tt.errIs, start, count)
+				}
+				if !strings.Contains(err.Error(), tt.errIs) {
+					t.Fatalf("error %q does not contain %q", err, tt.errIs)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if start != tt.wantStart || count != tt.wantCount {
+				t.Fatalf("parseHunkHeader(%q) = (%d, %d), want (%d, %d)",
+					tt.line, start, count, tt.wantStart, tt.wantCount)
+			}
+		})
 	}
 }
