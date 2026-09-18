@@ -262,18 +262,11 @@ func TestGetModelConfig_DerivationWarning(t *testing.T) {
 			wantNumLays: -4,
 			wantWarn:    false,
 		},
-		{
-			// Neither source answers: nothing was derived, so there is nothing to warn
-			// ABOUT — the loud validator failure is the whole message (BC-3).
-			name: "no_evidence_stays_quiet",
-			body: `{
-				"layers_block_type": [],
-				"hidden_size": 4096, "num_attention_heads": 32, "num_key_value_heads": 8,
-				"intermediate_size": 14336, "vocab_size": 32000, "torch_dtype": "bfloat16"
-			}`,
-			wantNumLays: 0,
-			wantWarn:    false,
-		},
+		// The "neither source answers" case is NOT in this table: since #1777 the parse
+		// REFUSES rather than returning a zero-layer ModelConfig, so there is no
+		// NumLayers to assert here. Its companion claim — that nothing was derived, so
+		// no derivation warning fires — is asserted on the error path by
+		// TestGetModelConfig_NoLayerEvidenceIsRefusedNamingBothKeys.
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -361,33 +354,191 @@ func TestBothBackendsAcceptDerivedLayerCount(t *testing.T) {
 	}
 }
 
-// TestBothBackendsRejectNoLayerEvidence is BC-3 / AC-4: a config with NEITHER
-// num_hidden_layers NOR a usable layers_block_type still fails loudly in both
-// backends — the fallback must not convert a missing layer count into a silent 0.
-func TestBothBackendsRejectNoLayerEvidence(t *testing.T) {
-	body := `{
-		"layers_block_type": [],
-		"hidden_size": 4096,
-		"num_attention_heads": 32,
-		"num_key_value_heads": 8,
-		"intermediate_size": 14336,
-		"vocab_size": 32000,
-		"torch_dtype": "bfloat16"
-	}`
+// shapeFieldsForLayerEvidence is the rest of a minimally-valid HF config: everything a
+// parse needs EXCEPT layer-count evidence, so a case below is isolating that evidence.
+const shapeFieldsForLayerEvidence = `"hidden_size": 4096, "num_attention_heads": 32, ` +
+	`"num_key_value_heads": 8, "intermediate_size": 14336, "vocab_size": 32000, "torch_dtype": "bfloat16"`
+
+// TestGetModelConfig_NoLayerEvidenceIsRefusedNamingBothKeys is #1777 item 1: a config
+// that supplies NO usable layer count is refused AT THE PARSE BOUNDARY, and the
+// diagnostic names both keys the resolver consults — num_hidden_layers and
+// layers_block_type — plus what is wrong with each.
+//
+// It replaces the deferral to the per-backend "ModelConfig.NumLayers must be > 0", which
+// names a Go struct field rather than either config key. The malformed-type rows are the
+// reason the message has to name both keys explicitly: a layers_block_type holding a bare
+// string or a number is INDISTINGUISHABLE from an absent one by the time a backend
+// validator runs, so an operator could be looking at a config that visibly states its
+// layer count while being told the count could not be determined.
+func TestGetModelConfig_NoLayerEvidenceIsRefusedNamingBothKeys(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		// wantClauses are substrings the diagnostic must contain — the per-key verdicts.
+		wantClauses []string
+	}{
+		{
+			name: "both_keys_absent",
+			body: `{` + shapeFieldsForLayerEvidence + `}`,
+			wantClauses: []string{
+				`"num_hidden_layers" is absent`,
+				`"layers_block_type" is absent`,
+			},
+		},
+		{
+			name: "scalar_absent_list_empty",
+			body: `{"layers_block_type": [], ` + shapeFieldsForLayerEvidence + `}`,
+			wantClauses: []string{
+				`"num_hidden_layers" is absent`,
+				`"layers_block_type" holds an empty list`,
+			},
+		},
+		{
+			name: "scalar_zero_list_empty",
+			body: `{"num_hidden_layers": 0, "layers_block_type": [], ` + shapeFieldsForLayerEvidence + `}`,
+			wantClauses: []string{
+				`"num_hidden_layers" is 0`,
+				`"layers_block_type" holds an empty list`,
+			},
+		},
+		{
+			// The malformed-type case the issue calls out: the key is present and even
+			// carries the block names, but as a string rather than a list. Only a list's
+			// LENGTH is read, so this contributes nothing — and the operator has to be
+			// told that, not told the key is missing.
+			name: "list_is_a_string",
+			body: `{"layers_block_type": "attention", ` + shapeFieldsForLayerEvidence + `}`,
+			wantClauses: []string{
+				`"num_hidden_layers" is absent`,
+				`"layers_block_type" holds a string, not a list`,
+			},
+		},
+		{
+			name: "list_is_a_number",
+			body: `{"layers_block_type": 52, ` + shapeFieldsForLayerEvidence + `}`,
+			wantClauses: []string{
+				`"num_hidden_layers" is absent`,
+				`"layers_block_type" holds a number, not a list`,
+			},
+		},
+		{
+			name: "list_is_an_object",
+			body: `{"layers_block_type": {"0": "attention"}, ` + shapeFieldsForLayerEvidence + `}`,
+			wantClauses: []string{
+				`"num_hidden_layers" is absent`,
+				`"layers_block_type" holds an object, not a list`,
+			},
+		},
+		{
+			// A scalar of the wrong type does not answer either (GetInt only accepts a
+			// JSON number), and must be diagnosed as a type problem rather than as absent.
+			name: "scalar_is_a_string",
+			body: `{"num_hidden_layers": "52", ` + shapeFieldsForLayerEvidence + `}`,
+			wantClauses: []string{
+				`"num_hidden_layers" holds a string, not a number`,
+				`"layers_block_type" is absent`,
+			},
+		},
+		{
+			name: "scalar_is_null",
+			body: `{"num_hidden_layers": null, "layers_block_type": [], ` + shapeFieldsForLayerEvidence + `}`,
+			wantClauses: []string{
+				`"num_hidden_layers" holds null, not a number`,
+				`"layers_block_type" holds an empty list`,
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var log bytes.Buffer
+			prev := logrus.StandardLogger().Out
+			logrus.SetOutput(&log)
+			t.Cleanup(func() { logrus.SetOutput(prev) })
+
+			path := filepath.Join(t.TempDir(), "config.json")
+			if err := os.WriteFile(path, []byte(tc.body), 0644); err != nil {
+				t.Fatalf("write config: %v", err)
+			}
+			mc, err := latency.GetModelConfig(path)
+			if err == nil {
+				t.Fatalf("a config with no usable layer count must be refused, got NumLayers=%d", mc.NumLayers)
+			}
+			for _, want := range tc.wantClauses {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("diagnostic must contain %s\ngot: %v", want, err)
+				}
+			}
+			// Both keys named regardless of which one failed how, so the operator learns
+			// there are two ways to supply the count.
+			for _, key := range []string{"num_hidden_layers", latency.LayersBlockTypeField} {
+				if !strings.Contains(err.Error(), key) {
+					t.Errorf("diagnostic must name %q (an operator has two ways to fix this)\ngot: %v", key, err)
+				}
+			}
+			// Nothing was derived, so the derivation warning must NOT fire: the refusal is
+			// the whole message, and a warning about a count that does not exist would be
+			// noise contradicting it.
+			if strings.Contains(log.String(), "derived NumLayers=") {
+				t.Errorf("derivation warning must not fire when nothing was derived; log: %q", log.String())
+			}
+		})
+	}
+}
+
+// TestGetModelConfig_NegativeScalarStillDefersToTheBackendValidators is the scope
+// boundary of the refusal above: a NEGATIVE num_hidden_layers ANSWERS the layer-count
+// question with bad input rather than leaving it unanswered, so the parse passes the
+// value through (ResolveNumLayers' documented decision) and the backends report the
+// actual value. "Cannot determine the layer count" would be plainly untrue there — the
+// config determined it, at -4.
+func TestGetModelConfig_NegativeScalarStillDefersToTheBackendValidators(t *testing.T) {
+	body := `{"num_hidden_layers": -4, ` + shapeFieldsForLayerEvidence + `}`
 	mc := parseConfigJSON(t, body)
-	if mc.NumLayers != 0 {
-		t.Fatalf("precondition: NumLayers = %d, want 0 (no usable evidence)", mc.NumLayers)
+	if mc.NumLayers != -4 {
+		t.Fatalf("NumLayers = %d, want -4 (a negative scalar is passed through, not refused at parse)", mc.NumLayers)
 	}
 
 	err := latency.ValidateRooflineConfig(*mc, blockTypeHW())
 	if err == nil || !strings.Contains(err.Error(), "NumLayers must be > 0") {
-		t.Errorf("roofline backend must still reject a missing layer count, got err=%v", err)
+		t.Errorf("roofline backend must reject a negative layer count, got err=%v", err)
 	}
-
 	hw := sim.NewModelHardwareConfig(*mc, blockTypeHW(), "nvidia/nemotron-style", "H100",
 		1, 1, false, "", sim.LatencyBackendTrainedPhysics, 0)
-	_, err = latency.NewTrainedPhysicsModel(blockTypeCoeffs(), hw)
+	if _, err := latency.NewTrainedPhysicsModel(blockTypeCoeffs(), hw); err == nil ||
+		!strings.Contains(err.Error(), "NumLayers must be > 0") {
+		t.Errorf("trained-physics backend must reject a negative layer count, got err=%v", err)
+	}
+}
+
+// TestBothBackendsRejectZeroLayerModelConfig is the surviving half of the original
+// BC-3 / AC-4 contract: both backends keep their own zero-layer check as defense in
+// depth. The parse boundary is now the loud one (above), but a ModelConfig can reach a
+// backend by other routes — the Go API, a test, a future config source — so neither
+// validator may be relaxed on the strength of the parse-time refusal.
+//
+// Asserted against a DIRECTLY-CONSTRUCTED ModelConfig rather than a parsed one, because
+// the parser can no longer produce a zero-layer config: routing this through GetModelConfig
+// is exactly what would make the check untestable the day the parse guard changed.
+func TestBothBackendsRejectZeroLayerModelConfig(t *testing.T) {
+	mc := sim.ModelConfig{
+		NumLayers:     0,
+		HiddenDim:     4096,
+		NumHeads:      32,
+		NumKVHeads:    8,
+		VocabSize:     32000,
+		BytesPerParam: 2,
+	}
+
+	err := latency.ValidateRooflineConfig(mc, blockTypeHW())
 	if err == nil || !strings.Contains(err.Error(), "NumLayers must be > 0") {
-		t.Errorf("trained-physics backend must still reject a missing layer count, got err=%v", err)
+		t.Errorf("roofline backend must still reject a zero layer count, got err=%v", err)
+	}
+
+	hw := sim.NewModelHardwareConfig(mc, blockTypeHW(), "nvidia/nemotron-style", "H100",
+		1, 1, false, "", sim.LatencyBackendTrainedPhysics, 0)
+	if _, err := latency.NewTrainedPhysicsModel(blockTypeCoeffs(), hw); err == nil ||
+		!strings.Contains(err.Error(), "NumLayers must be > 0") {
+		t.Errorf("trained-physics backend must still reject a zero layer count, got err=%v", err)
 	}
 }

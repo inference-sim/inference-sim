@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim/latency"
 )
 
 // blockTypeOnlyConfigJSON is a Nemotron-3-Ultra-550B-shaped config (scaled down to keep
@@ -137,6 +139,12 @@ func assertCompletedRequests(t *testing.T, stdout string) {
 // config with NEITHER num_hidden_layers NOR a usable layers_block_type must still abort
 // loudly, naming the layer count — the fallback must never turn missing evidence into a
 // silent 0 that runs with nonsense physics.
+//
+// Since #1777 the abort happens at model-config load and the diagnostic names the two
+// CONFIG KEYS the resolver consults, rather than deferring to a per-backend
+// "ModelConfig.NumLayers must be > 0" that names a Go struct field the operator's config
+// does not contain. The loudness contract is unchanged (non-zero exit); what this asserts
+// is that the operator reaches the file they have to edit.
 func TestRunCmd_NoLayerCountEvidence_FailsLoudly(t *testing.T) {
 	if os.Getenv("BLIS_BLOCKTYPE_NOEVIDENCE") == "1" {
 		rootCmd.SetArgs([]string{
@@ -177,7 +185,12 @@ func TestRunCmd_NoLayerCountEvidence_FailsLoudly(t *testing.T) {
 	if err == nil {
 		t.Fatalf("AC-4: a config with no usable layer-count evidence must fail loudly, got exit 0; output:\n%s", out)
 	}
-	if !strings.Contains(string(out), "NumLayers must be > 0") {
-		t.Errorf("AC-4: the failure must name the missing layer count; output:\n%s", out)
+	for _, want := range []string{"num_hidden_layers", latency.LayersBlockTypeField} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("AC-4: the failure must name the config key %q the operator can set; output:\n%s", want, out)
+		}
+	}
+	if !strings.Contains(string(out), "layer") {
+		t.Errorf("AC-4: the failure must say the LAYER COUNT is what could not be determined; output:\n%s", out)
 	}
 }
