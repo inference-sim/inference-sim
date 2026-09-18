@@ -66,23 +66,42 @@ func catalogRootFrom(flagValue, envValue string) (string, error) {
 }
 
 // resolveCatalogRoot resolves the catalog root from the --catalog flag and the
-// BLIS_CATALOG environment variable, then verifies it is a readable directory. An
-// unreadable or non-directory catalog is refused naming both forms (R1) rather than
+// BLIS_CATALOG environment variable, then verifies that it EXISTS AND IS A DIRECTORY. A
+// missing, unstatable or non-directory catalog is refused naming both forms (R1) rather than
 // deferred into a per-model "not in the catalog" message that would blame the model for
 // a mistyped catalog path.
+//
+// The check is deliberately existence + directory-ness and NOT an accessibility probe
+// (#1776, which asked for one or the other and got this one). BLIS never LISTS the catalog
+// — it opens one config.json per model at a path it derives — so a root with search-only
+// permission (mode --x) is perfectly usable, and probing for read permission here would
+// refuse a catalog that works. There is no portable probe for "can traverse but not list",
+// so the honest thing is to state what is checked. The residual case (a root that exists,
+// is a directory, but cannot be traversed) therefore still surfaces one layer down, where
+// readCatalogEntry reports the real errno naming the entry path it could not stat — an
+// accurate diagnostic since #1778, not a "model is not catalogued" mislabel.
+//
+// Three dispositions rather than one (#1776), because "%q is not readable: no such file or
+// directory" described a mistyped path as a permission problem:
+//   - absent      → the path does not exist (the overwhelmingly common typo)
+//   - unstatable  → the real error (EACCES on a parent, EIO, a symlink loop)
+//   - not a dir   → a file where the catalog root should be
 func resolveCatalogRoot() (string, error) {
 	root, err := catalogRootFrom(catalogPath, os.Getenv(catalogEnvVar))
 	if err != nil {
 		return "", err
 	}
 	info, statErr := os.Stat(root)
-	if statErr != nil {
-		return "", fmt.Errorf("model catalog %q is not readable: %w (set --catalog or %s to the catalog root)",
+	switch {
+	case statErr != nil && os.IsNotExist(statErr):
+		return "", fmt.Errorf("model catalog %q does not exist (set --catalog or %s to the catalog root; "+
+			"a relative path is resolved against the current working directory)", root, catalogEnvVar)
+	case statErr != nil:
+		return "", fmt.Errorf("model catalog %q cannot be inspected: %w (set --catalog or %s to the catalog root)",
 			root, statErr, catalogEnvVar)
-	}
-	if !info.IsDir() {
-		return "", fmt.Errorf("model catalog %q is not a directory (set --catalog or %s to the catalog root)",
-			root, catalogEnvVar)
+	case !info.IsDir():
+		return "", fmt.Errorf("model catalog %q is not a directory (set --catalog or %s to the catalog root; "+
+			"it names the catalog CLONE ROOT, not a config.json)", root, catalogEnvVar)
 	}
 	return root, nil
 }
@@ -167,6 +186,11 @@ func resolveModelConfigInCatalog(model, catalog string) (string, error) {
 // different model's config (R1, NS-6). A malformed but readable entry is judged by the
 // caller, for the same reason.
 //
+// The read applies the SAME absence rule as the stat (#1776): a stat that succeeded followed
+// by a read reporting ENOENT/ENOTDIR means the entry went away in between, which is absence
+// and advances — not a permission problem to report as one. Every other read failure
+// (EACCES, EIO) is reported naming the path.
+//
 // "Absence" is specifically ENOENT (nothing at the path) or ENOTDIR (a non-directory
 // sits on the path). A flat catalog is a directory of entries, so a root that holds an
 // unrelated FILE named `models` makes the canonical candidate
@@ -214,8 +238,16 @@ func readCatalogEntry(model string, candidates []string) (entryDir, entryPath st
 		}
 		content, readErr := os.ReadFile(path)
 		if readErr != nil {
+			// The stat above said the file was there, so a read that reports ABSENCE means
+			// it went away in between (or a racing writer replaced the entry). That is
+			// genuine absence, not a broken entry, so it advances to the next candidate on
+			// the same rule the stat uses — reporting it as "exists but is not readable"
+			// would describe a vanished file as a permission problem (#1776).
+			if os.IsNotExist(readErr) || errors.Is(readErr, syscall.ENOTDIR) {
+				continue
+			}
 			return "", "", nil, fmt.Errorf(
-				"catalog entry for model %q at %s exists but is not readable: %w.\n"+
+				"catalog entry for model %q at %s exists but cannot be read: %w.\n"+
 					"  Fix that catalog entry, or point --catalog / %s at a catalog that has a readable %s",
 				model, path, readErr, catalogEnvVar, hfConfigFile,
 			)
