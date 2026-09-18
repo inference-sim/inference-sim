@@ -151,7 +151,9 @@ type ClusterSimulator struct {
 	//   - Fires at most once per (logical) request.
 	//   - Called from ClusterArrivalEvent.Execute on the cluster's single
 	//     Run() goroutine (no concurrency). Firing at execute time — not
-	//     push time — is what makes the hook clock-monotonic per INV-3.
+	//     push time — is what makes the hook's stream non-decreasing in
+	//     arrival time (INV-15; the clock invariant it used to cite is INV-3,
+	//     which is about the clock the loop advances, not this input stream).
 	//   - Must be cheap (recording-only). Heavy work belongs in Run finalization.
 	//   - Receives the *sim.Request pointer the cluster will inject. The hook
 	//     must not mutate the request — it is shared with the cluster pipeline.
@@ -718,8 +720,9 @@ func (cs *ClusterSimulator) pushArrival(req *sim.Request, timeUs int64) {
 // fireArrivalHook is called from ClusterArrivalEvent.Execute on the single
 // path that all fresh arrivals (initial workload and closed-loop follow-ups)
 // traverse at their effective arrival time. Firing here — rather than at
-// pushArrival — gives the hook a clock-monotonic stream (INV-3), so trace
-// records emerge already in arrival order without a downstream sort.
+// pushArrival — gives the hook a stream that is non-decreasing in arrival
+// time (INV-15), so trace records emerge already in arrival order without a
+// downstream sort.
 // REDIRECT re-injections are skipped: req.Redirected=true marks requests
 // the drain policy is rerouting internally. Whether or not a prior
 // ClusterArrivalEvent fired for this request, emitting a trace record
@@ -737,7 +740,11 @@ func (cs *ClusterSimulator) fireArrivalHook(req *sim.Request, timeUs int64) {
 		return
 	}
 	if timeUs < cs.lastArrivalHookTime {
-		panic(fmt.Sprintf("ClusterSimulator: arrival hook received out-of-order request %q (timeUs=%d < last=%d) — INV-3/INV-6 violation: arrivals must be non-decreasing in ArrivalTime",
+		// INV-15, not INV-3 or INV-6 (the IDs this guard cited before #1772):
+		// this is a precondition on the arrival stream the cluster is GIVEN, so
+		// the repair is in the arrival source, not in the clock or in output
+		// ordering. See docs/contributing/standards/invariants.md#inv-15.
+		panic(fmt.Sprintf("ClusterSimulator: arrival hook received out-of-order request %q (timeUs=%d < last=%d) — INV-15 violation: arrivals must be non-decreasing in ArrivalTime",
 			req.ID, timeUs, cs.lastArrivalHookTime))
 	}
 	cs.lastArrivalHookTime = timeUs

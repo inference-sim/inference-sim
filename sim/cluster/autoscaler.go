@@ -283,8 +283,18 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 
 	filtered := make([]ScaleDecision, 0, len(decisions))
 	for _, d := range decisions {
+		// INV-19 (docs/contributing/standards/invariants.md#inv-19): every emitted
+		// ScaleDecision carries a non-zero Delta. Warn-and-skip is deliberate, not an
+		// oversight: a zero delta is inert (skipping it actuates nothing and leaves
+		// cluster state exactly as a correct engine would have), unlike the negative
+		// activeTransfers count in pd_events.go, where the accounting has already
+		// diverged and the run is failed. Note the skip happens BEFORE the
+		// stabilization gate and before the modelsWithScaleUp/Down sets above, so a
+		// model whose only decision this tick was a zero delta counts as having lost
+		// its signal and has its timer reset — correct (a zero delta carries no
+		// direction) but not obvious from the `continue`.
 		if d.Delta == 0 {
-			logrus.Warnf("[autoscaler] engine emitted ScaleDecision with Delta=0 for model %q — contract violation, skipping", d.ModelID)
+			logrus.Warnf("[autoscaler] engine emitted ScaleDecision with Delta=0 for model %q — INV-19 violation (engine contract), skipping", d.ModelID)
 			continue
 		}
 		if d.Delta > 0 {

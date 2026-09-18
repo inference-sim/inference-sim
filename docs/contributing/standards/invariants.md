@@ -26,9 +26,13 @@ Resolvable does not mean restated in full. Where a design plan is already author
 
 The first two grade by **scope**; code-boundary grades by *kind*, so it sits alongside them rather than between them, and code-boundary rules also appear inside subsystem entries (`INV-L6`, and `INV-P2-1`'s no-global-mutation clause).
 
+**Section order within a group is by ID, with one deliberate exception:** an invariant that *mirrors* another is sited beside the one it mirrors, because the contrast is the point (`INV-14` sits after `INV-2`, and `INV-15` after `INV-3`). The Index below is the authoritative by-ID lookup; do not read section order as a numbering claim.
+
 Grouping is **orthogonal to the hypothesis-family mapping** below: the family says which experimental campaign validates an invariant, the group says how far its blast radius reaches.
 
-**Hypothesis family mapping:** INV-1 through INV-3, INV-5, INV-6, INV-10 (session causality), and INV-13 (run/replay parity) belong to the **Scheduler invariants (safety/liveness)** family. INV-4 (KV cache conservation), INV-7 (signal freshness), INV-8 (work-conserving property), INV-9 (oracle knowledge boundary), INV-11 (session completeness), and INV-12 (Phase 1 completeness under priority preemption) belong to the **Structural model** family. The PD disaggregation invariants (INV-PD-*) and pool/transfer invariants (INV-P2-*) below are feature-scoped structural invariants for disaggregated serving.
+**Hypothesis family mapping:** INV-1 through INV-3, INV-5, INV-6, INV-10 (session causality), and INV-13 (run/replay parity) belong to the **Scheduler invariants (safety/liveness)** family. INV-4 (KV cache conservation), INV-7 (signal freshness), INV-8 (work-conserving property), INV-9 (oracle knowledge boundary), INV-11 (session completeness), and INV-12 (Phase 1 completeness under priority preemption) belong to the **Structural model** family. The PD disaggregation invariants (INV-PD-*) and pool/transfer invariants (INV-P2-*) below are feature-scoped structural invariants for disaggregated serving. The six **enforcement-anchored** invariants promoted by #1772 (INV-14 … INV-19) belong to no family: each is anchored by a runtime assertion in production code rather than by an experimental campaign, which is what made them discoverable at all (see the note below).
+
+**Enforcement-anchored entries (#1772).** INV-14 … INV-19 were promoted by reading every runtime assertion whose message says an internal state is impossible — a `panic`, or in INV-19's case a `logrus.Warnf` — and declaring the property it protects. Each was *already* written down in executable form before it had an ID; none is inferred from a structural pattern. Two consequences for a reader. First, each entry names an **Enforced** site as well as a **Verification** test, and the enforced site is the primary anchor: a reviewer editing that function is the audience. Second, the method has a floor but no ceiling — a property upheld without being checked is invisible to it, so the absence of an entry for a subsystem is not evidence that the subsystem has no invariants. Config-struct `Validate()` methods are deliberately excluded: they guard *user input*, not system state, and R3 already covers them.
 
 ## Index
 
@@ -49,6 +53,12 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-11](#inv-11-session-completeness) Session completeness | Subsystem | sessions |
 | [INV-12](#inv-12-phase-1-completeness-under-priority-preemption) Phase 1 completeness | Subsystem | batch formation |
 | [INV-13](#inv-13-runreplay-parity) Run/replay parity | Run-level | — |
+| [INV-14](#inv-14-instance-lifecycle-transitions) Instance lifecycle transitions | Run-level | — |
+| [INV-15](#inv-15-arrival-ordering-into-the-cluster) Arrival ordering into the cluster | Run-level | — |
+| [INV-16](#inv-16-gateway-queue-counter-consistency) Gateway queue counter consistency | Subsystem | gateway queue |
+| [INV-17](#inv-17-shed-victim-is-the-flow-tail) Shed victim is the flow tail | Subsystem | gateway queue |
+| [INV-18](#inv-18-prefix-cache-lru-structural-consistency) Prefix-cache LRU structural consistency | Subsystem | routing / observability |
+| [INV-19](#inv-19-scale-decisions-carry-a-non-zero-delta) Scale decisions carry a non-zero delta | Subsystem | autoscaling |
 | [INV-A](#inv-a-gpu-conservation) GPU conservation | Subsystem | cluster placement |
 | [INV-A2](#inv-a2-placement-failure-visibility) Placement failure visibility | Code-boundary | autoscaler / actuator |
 | [INV-BC-DP1](#inv-bc-dp1-dense-dp1-step-time-byte-identity) Dense DP=1 step-time byte-identity | Subsystem | latency model |
@@ -106,6 +116,21 @@ Two guard tests keep that arrangement honest. `TestINV1_HelperMatchesRegistry` d
 
 **Known weakness (#1721):** this is the thinnest entry in the registry — it names no test, and the three states above are fewer than the request states the code actually distinguishes. Correcting the statement was raised separately and is deliberately out of scope here; it is recorded so a reader does not mistake brevity for a tight specification.
 
+**Contrast with INV-14 (#1772):** the *instance* lifecycle is the same class of invariant with the opposite protection profile — it has a legal-transition table, a single mutation choke point that panics, and an edge-table test, while INV-2 has a registry entry and no enforcement (request state is written directly at many sites). The two entries are sited adjacently for exactly that reason.
+
+### INV-14: Instance Lifecycle Transitions
+
+**Statement:** an instance's `State` changes only along an edge of `validInstanceTransitions`. Any other transition is a programming error and panics. Two clauses:
+
+1. **Legal edges.** `Scheduling → {Loading, Terminated}`, `Loading → {WarmingUp, Active, Terminated}`, `WarmingUp → {Active, Draining, Terminated}`, `Active → {Draining, Terminated}`, `Draining → {Terminated}`, `Terminated → {}`. The edge set is **monotone**: every legal edge advances the instance along `Scheduling < Loading < WarmingUp < Active < Draining < Terminated` and none regresses, so a terminated instance never becomes active again and a draining one never reloads.
+2. **The seeding carve-out.** When `State == ""` — lifecycle tracking is not enabled for the run — the *first* `TransitionTo` call is accepted **unvalidated** and seeds `State`; every subsequent call on that instance is validated normally. This is a documented backward-compatibility path, not an oversight, and it is stated here rather than left for a reader to discover: it means clause 1 constrains an instance's second and later transitions, and a test that asserts an illegal edge panics must set `State` first or it will observe the seeding path instead.
+
+**Why run-level:** an instance that regresses to `Active` after `Terminated` corrupts routing, placement accounting and the run's forward progress, not one subsystem's internals — the blast radius is the whole run's output.
+
+**Enforced:** `sim/cluster/instance.go` — the table at `:416`, and `TransitionTo` at `:434` with two panics: an unrecognised source state (`:436`) and an illegal edge (`:439`). `TransitionTo` is the **only** writer of `State` outside construction, which is what makes the table load-bearing rather than advisory.
+
+**Verification:** `sim/cluster/instance_lifecycle_test.go` — `TestInstanceStateMachine_ValidTransitions` (legal/illegal edge table asserting a panic on exactly the illegal edges) and `TestInstanceStateMachine_NoBackwardTransitions` (the monotonicity law, checked over the whole table rather than over sampled edges, so a newly added backward edge fails without the table's test cases being extended). `TestINV14_SeedingCarveOutAcceptsAnyFirstTransition` covers clause 2, which the edge table cannot reach — it assigns `State` before every call, so it never exercises the empty-state path.
+
 ### INV-3: Clock Monotonicity
 
 **Statement:** Simulation clock never decreases. Every **processed** event's timestamp >= the previous processed event's timestamp — except when restoring an optimistic advance after a lazily-cancelled event, where no event was processed.
@@ -113,6 +138,26 @@ Two guard tests keep that arrangement honest. `TestINV1_HelperMatchesRegistry` d
 **Verification:** Clock is advanced in the event loop only via min-heap extraction, which guarantees non-decreasing order. `sim/simulator_test.go` — `TestINV3_ClockNeverDecreases` drives the loop one event at a time and asserts the processed-timestamp sequence is non-decreasing (with a non-vacuity gate, and at least one orphaned timeout present so the single-instance lazy-cancellation skip is exercised). The *cluster* `prevClusterClock` restore described below is **not** covered by any test.
 
 **The carve-out, and why it is not a violation:** `sim/cluster/cluster.go` advances the cluster clock to an instance's next event time *before* the event is known to be real, then restores the previous value when `ProcessNextEvent()` turns out to have skipped a lazily-cancelled `TimeoutEvent` (`prevClusterClock`). A no-op orphaned timeout must not advance the cluster clock, so the advance is undone. Nothing was processed across that pair of assignments, which is why the statement is scoped to *processed* events. One further case: the horizon guard between the advance and the restore reads the optimistically advanced clock and can `break` out of the loop, leaving the advance in place unrestored — benign, because the cluster's reported `SimEndedTime` comes from per-instance `Finalize` as `min(Clock, Horizon)`, progress snapshots clamp, and `ClusterSimulator.Clock()` has no production caller. This also means a test asserting on the raw `c.clock` field would fail here and look like a real bug — assert on processed event timestamps instead.
+
+**Not to be confused with INV-15 (#1772):** INV-3 constrains the clock the simulator *advances*; INV-15 constrains the arrival stream the simulator is *given*. They are adjacent because the arrival-hook guard used to cite INV-3, and the two have different repair procedures — see below.
+
+### INV-15: Arrival Ordering into the Cluster
+
+**Statement:** the fresh-arrival stream delivered to `ClusterSimulator`'s arrival hook is non-decreasing in effective arrival time. For consecutive hook firings, `timeUs(n+1) >= timeUs(n)`. Clearing the hook (`SetArrivalHook(nil)`) resets the floor to zero, so a subsequently installed hook starts from a clean baseline rather than inheriting the previous stream's high-water mark.
+
+**Why it is its own entry, and not INV-3 or INV-6.** Before #1772 the guard attributed itself to "INV-3/INV-6 violation". It is neither. INV-3 is a property the event loop *establishes* — the min-heap makes processed timestamps non-decreasing whether or not anything asserts it. INV-6 is a property of stdout. This is a **precondition on an input**: whatever feeds the hook (the workload generator, closed-loop session follow-up scheduling, the `blis run` trace writer) must supply ordered arrivals, and nothing inside the cluster can make that true. The distinction is operational, not taxonomic — it is the difference between the two repairs a violation admits:
+
+| If it were INV-3 | It is INV-15 |
+|---|---|
+| Fix the clock or the event ordering | Fix the arrival source |
+
+**What it buys.** The hook exists so `blis run --trace-output` can capture TraceV2 records at the arrival boundary (#1440) instead of sorting a post-run request list. Ordered-by-construction is the whole reason that replacement is sound: records emerge already in arrival order, so the exported trace needs no downstream sort, and INV-13 (replay reads the same trace the run produced) rests on it. A violation would silently produce an out-of-order trace, which is why it is a panic rather than a warning.
+
+**Scope:** fresh arrivals only. `REDIRECT` re-injections (`req.Redirected`) do not fire the hook at all and are outside the statement — the drain policy reroutes them internally and a trace record for them would be spurious or duplicated. Beyond-horizon follow-ups likewise never reach the hook, because their `ClusterArrivalEvent` never executes.
+
+**Enforced:** `sim/cluster/cluster.go:740` — `fireArrivalHook` panics when `timeUs < lastArrivalHookTime`, naming the request and both timestamps.
+
+**Verification:** `sim/cluster/arrival_hook_test.go` — `TestArrivalHook_PanicsOnNonMonotonicArrival` (the guard fires), `TestSetArrivalHook_NilClearResetsMonotonicityFloor` (the floor-reset clause), and `TestArrivalHook_FiresOncePerInitialRequest` / `TestArrivalHook_FiresForSessionFollowUps` (the ordinary streams satisfy it, so the guard is not vacuously true).
 
 ### INV-5: Causality
 
@@ -253,6 +298,32 @@ Scoped to one subsystem or one optional feature. Outside that subsystem they are
 
 **Hypothesis family:** Structural model (same as INV-4, INV-7, INV-8, INV-9).
 
+### Gateway queue
+
+#### INV-16: Gateway Queue Counter Consistency
+
+**Statement:** `GatewayQueue.totalLen` always equals the number of entries actually held across all priority bands and flows, and each `priorityBand.totalLen` equals the number held across that band's flows. The consequence the code asserts on: **a dequeue that finds the counter positive must return an entry.** A positive counter with nothing to hand back is a desync, not an empty queue.
+
+**Relationship to INV-4:** the same lockstep-counter shape one subsystem over. INV-4's entry already documents this pattern for KV blocks (*"`FreeBlockCnt` maintained in lockstep by `appendToFreeList`/`removeFromFreeList`"*); here the paired mutators are `Enqueue` / `removeEntryByIndex` / the `dequeueFrom*` family, and the equality is over a two-level structure (queue → band → flow) rather than one free list, so there are two counters to keep in step rather than one.
+
+**Why it is worth declaring.** The failure mode is not a wrong number, it is a **stuck queue**: a `totalLen` that over-counts makes `Dequeue` believe there is work forever, and a `totalLen` that under-counts makes it return `nil` while requests sit in a flow. Neither is visible in any metric — the first surfaces as a panic in whatever test happens to drain a queue, the second as requests silently stranded until the horizon (where they land in `gateway_queue_depth` and keep INV-1 balanced, so conservation does *not* catch it).
+
+**Enforced:** three panics in `sim/cluster/gateway_queue.go`, all of the form "counter positive, dequeue returned nothing" — `Dequeue` at `:401`, `DequeueGated`'s no-bands case at `:419`, and `DequeueGated`'s per-band case at `:453`. Three sites for one property is deliberate: the two dequeue entry points and the per-band inner loop each have their own route to a desync, and the band-level panic names the band so the report localises to one counter.
+
+**Verification:** `sim/cluster/gateway_queue_invariant_test.go` — `TestINV16_CounterConsistency_AcrossMutations` walks the bands and flows after every mutation in a mixed enqueue / dequeue / shed / TTL-removal sequence and compares the walked count against both `totalLen` levels and `requestIndex`, so a counter that drifts fails on the equality rather than waiting for a dequeue to trip the panic. `TestINV16_PositiveCounterAlwaysDequeues` drains a multi-band, multi-flow queue to empty through both `Dequeue` and `DequeueGated`, asserting every call with a positive counter yields a request.
+
+#### INV-17: Shed Victim Is the Flow Tail
+
+**Statement:** within a flow, the entry chosen for shedding is always the **tail** — the highest `seqID`. Flows are append-only in `seqID` order, so removing the shed victim is a truncation: it never disturbs index 0, which is the head `Dequeue` and the fairness policies read.
+
+**Why it is worth declaring.** This is the guard against the index-drift bug class INV-12 covers on the batch-formation side, and the two entries are worth reading together: there, removing an element at `i < reqIndex` shifted the survivors left and silently skipped one; here, removing a non-tail element would shift the survivors left and silently reorder the flow's FIFO — changing which request dispatches next without any counter or metric moving. `removeEntryByIndex` is written as a truncation (`flow.requests[:last]`) precisely because it may assume tail-ness, so the assumption has to be asserted rather than commented.
+
+**Where the property comes from:** `findGlobalShedVictim` tie-breaks toward the **highest** `seqID` within the lowest-priority flow, and `seqID` increases monotonically with append order. So tail-ness is a consequence of the victim-selection rule, not an independent constraint — which is exactly why it can be broken from a distance: a change to victim selection (a new fairness or criticality rule that prefers an older entry) breaks a truncation two functions away.
+
+**Enforced:** `sim/cluster/gateway_queue.go:370` — `removeEntryByIndex` panics when `idx != len(flow.requests)-1`, naming both indices.
+
+**Verification:** `sim/cluster/gateway_queue_invariant_test.go` — `TestINV17_ShedVictimIsFlowTail` fills one flow, sheds under capacity pressure, and asserts the surviving entries are the original prefix with the head unchanged (a truncation, not a reorder); `TestINV17_NonTailRemovalPanics` asserts the guard fires on a non-tail index, so the panic is not dead code.
+
 ### Routing and observability
 
 #### INV-7: Signal Freshness Hierarchy
@@ -281,6 +352,32 @@ Scoped to one subsystem or one optional feature. Outside that subsystem they are
 **Verification:** H3 hypothesis experiment, H29 snapshot-staleness experiment (see [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive/hypotheses)). **No Go test anchors this invariant, deliberately:** the freshness hierarchy is a property of the observability configuration across the whole snapshot pipeline, and asserting it in-process would pin the current snapshot plumbing rather than the tiering law. It is named in 8 production files; adding a Go test for it is issue #1718's out-of-scope item 3, awaiting a decision on what the assertion should be.
 
 **Evidence:** Issues #282, #283. At rate=5000, kv-utilization-only routing produces 200x worse distribution uniformity than queue-depth. Issue #463: unified Prometheus staleness model.
+
+#### INV-18: Prefix-Cache LRU Structural Consistency
+
+**Statement:** in every `lruBlockCache` (one per instance, inside `PrefixCacheIndex`), the intrusive doubly-linked list and the `lookup` map describe the same set of blocks. The load-bearing corollary the code asserts on: **`tail == nil` if and only if `len(lookup) == 0`.** So a cache the map reports as non-empty always has a tail to evict, and eviction at capacity can never fail.
+
+**Why it is worth declaring.** The two structures are maintained by separate statements — `touch` writes `lookup[h]` and calls `pushHead`, `evictOldest` calls `delete(lookup, ...)` and `removeNode` — so a new mutator that updates one and not the other compiles, passes, and leaves the cache subtly wrong. The failure is **silent until it isn't**: a list that has lost nodes still answers `MatchLength` queries, just with fewer hits, so the prefix-affinity and `precise-prefix-cache` scorers quietly route on a degraded index and the only symptom is worse cache locality — a performance result a reader would attribute to the workload. It becomes loud only when `len(lookup) >= capacity` finally drives an eviction into a nil tail.
+
+**Scope:** the *router-side approximate* index, which is deliberately an approximation of real per-instance KV state (the router does not query instances). INV-18 is about the index's internal self-consistency, not about its agreement with the instance's actual cache — that divergence is by design and is what `--cache-signal-delay` (INV-7) governs.
+
+**Enforced:** `sim/prefix_cache_index.go:131` — `evictOldest` panics on a nil tail, and its message already said *"(invariant violation)"* before the invariant had an ID. The two nil-node guards in `pushHead` (`:139`) and `removeNode` (`:155`) are the same family.
+
+**Verification:** `sim/prefix_cache_index_invariant_test.go` — `TestINV18_ListAndLookupStayConsistent` walks the list forward and backward after each of a long sequence of `RecordBlocks` calls that crosses capacity repeatedly, asserting the walked node set equals the `lookup` key set, the head/tail terminals are correct in both directions, and the `tail == nil ⟺ len(lookup) == 0` biconditional holds at every step (including the empty cache, the one-entry cache, and the at-capacity cache). The biconditional is checked in **both** directions: a nil tail with a non-empty map is the panic case, while a non-nil tail with an empty map is the mirror leak — an orphaned node the map can no longer reach, which degrades routing without ever reaching the panic. `TestINV18_EvictOldestPanicsOnInconsistentState` asserts the guard itself fires on a hand-built inconsistent cache, so the entry's "eviction at capacity can never fail" clause does not rest on dead code.
+
+### Autoscaling
+
+#### INV-19: Scale Decisions Carry a Non-Zero Delta
+
+**Statement:** every `ScaleDecision` an `Engine.Optimize` implementation emits has `Delta != 0`. A zero delta is an engine bug, and the pipeline's response is **warn and skip the decision** — the tick continues and the run does not fail.
+
+**Why the warn-only choice is the invariant's point.** The property itself is small; what is worth writing down is the policy. BLIS applies both policies to corrupted internal state and only one of them was documented: `activeTransfers` going negative in `pd_events.go` deliberately **fails the run** (INV-P2-2), while a zero-delta decision is logged and dropped. Both are "an internal producer emitted something impossible". The reason to differ is that a zero delta is *inert* — skipping it actuates nothing and leaves cluster state exactly as a correct engine would have — whereas a negative transfer count means the accounting has already diverged and every later number is suspect. Recording that reasoning is what stops the next reviewer from "fixing" the asymmetry in either direction.
+
+**Consequences of the skip, which are what a reader needs.** The decision is dropped *before* the stabilization-window gate, so it neither starts nor advances a window. It is also excluded from the `modelsWithScaleUp` / `modelsWithScaleDown` sets built just above, so a model whose only decision this tick was a zero delta counts as having **lost** its signal and has its timers reset. A buggy engine emitting zero deltas therefore does not merely fail to scale — it can hold a model permanently outside its stabilization window. That is still the right behaviour (a zero delta carries no direction, so it cannot legitimately sustain either timer), but it is not obvious from the `continue`.
+
+**Enforced:** `sim/cluster/autoscaler.go:287` — `logrus.Warnf` naming the model, then `continue`. Warn-only by design (R1 is satisfied: the failure is observable, not silent).
+
+**Verification:** `sim/cluster/autoscaler_invariant_test.go` — `TestINV19_ZeroDeltaDecisionSkippedNotFatal` drives the pipeline with an engine that emits a zero-delta decision and asserts the actuator is never called and the tick completes; `TestINV19_ZeroDeltaDoesNotSustainStabilizationTimer` asserts a zero delta interleaved into a scale-up stream resets the window rather than advancing it, pinning the timer consequence above.
 
 ### Cluster infrastructure and placement
 
