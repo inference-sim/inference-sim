@@ -324,24 +324,29 @@ func TestLoadCatalogStorageDevices_UnusableTableIsRefused(t *testing.T) {
 	cases := []struct {
 		name string
 		root func(t *testing.T) string
+		// wantFrag distinguishes the failure CLASS, so a "no classes" file is not reported
+		// as a malformed document (and vice versa) — the message is the operator's only
+		// instruction about what to fix.
+		wantFrag string
 	}{
-		{"no devices namespace", func(t *testing.T) string { return t.TempDir() }},
-		{"empty file", func(t *testing.T) string { return writeCatalogStorageDevices(t, "") }},
-		{"no classes", func(t *testing.T) string { return writeCatalogStorageDevices(t, "{}\n") }},
+		{"no devices namespace", func(t *testing.T) string { return t.TempDir() }, "is not readable"},
+		{"empty file", func(t *testing.T) string { return writeCatalogStorageDevices(t, "") }, "defines no device classes"},
+		{"comments only", func(t *testing.T) string { return writeCatalogStorageDevices(t, "# no classes here\n") }, "defines no device classes"},
+		{"no classes", func(t *testing.T) string { return writeCatalogStorageDevices(t, "{}\n") }, "defines no device classes"},
 		{"malformed yaml", func(t *testing.T) string {
 			return writeCatalogStorageDevices(t, "nvme_gen4: {read_bandwidth: [unclosed\n")
-		}},
+		}, "is malformed"},
 		{"unknown physics key", func(t *testing.T) string {
 			// R10: a misspelled key must be refused, never decoded to zero bandwidth.
 			return writeCatalogStorageDevices(t, "nvme_gen4: {read_bandwidth: 7.0e3, write_bandwith: 5.0e3, base_latency: 80.0}\n")
-		}},
+		}, "write_bandwith"},
 		{"table is a directory", func(t *testing.T) string {
 			root := t.TempDir()
 			if err := os.MkdirAll(filepath.Join(root, catalogDevicesSubdir, catalogStorageDevicesFile), 0o755); err != nil {
 				t.Fatal(err)
 			}
 			return root
-		}},
+		}, "is not readable"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -355,6 +360,9 @@ func TestLoadCatalogStorageDevices_UnusableTableIsRefused(t *testing.T) {
 			}
 			if want := catalogStorageDevicesPath(root); !strings.Contains(err.Error(), want) {
 				t.Errorf("refusal must name the path %q, got: %v", want, err)
+			}
+			if !strings.Contains(err.Error(), tc.wantFrag) {
+				t.Errorf("refusal must identify the failure class (%q), got: %v", tc.wantFrag, err)
 			}
 		})
 	}

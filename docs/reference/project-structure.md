@@ -18,7 +18,8 @@ inference-sim/
 │   ├── compose.go             # `blis compose` for merging v2 specs
 │   ├── hfconfig.go            # Catalog LOCATION (--catalog / BLIS_CATALOG, no default and no search path — #1731) and read-only lookup of a model's config.json within it (refuses an uncatalogued model)
 │   ├── catalog_provenance.go  # Catalog provenance for the results file (#1732): captures the resolved catalog path, its git revision (`rev-parse HEAD`) and a dirty flag (`status --porcelain` scoped to the catalog subtree), degrading to revision "unknown" for a non-git or absent catalog. catalogProvenanceEmitOptions is the single shared helper both `blis run` and `blis replay` pass to sim.EmitOutput (file-only, INV-6/INV-13)
-│   └── default_config.go      # defaults.yaml loading: workload presets, trained-physics coefficients, LoRA and KV-offload device constants. Carries NO per-model deployment policy — the `defaults:` block (GPU/tensor_parallelism/hf_repo) and GetHFRepo were removed in #1768, dead since NS-6 (#1733)
+│   ├── catalog_devices.go     # Catalog device namespace reader (#1770): the KV-offload storage-device physics table at `<catalog>/devices/storage.yaml` (a sibling of `models/`), which `--kv-offload-config`'s per-tier `device_class` resolves against. Read LAZILY (only when a tier names a class) and strictly (R10); an absent/malformed/empty table is refused naming the path
+│   └── default_config.go      # defaults.yaml loading: workload presets, trained-physics coefficients, LoRA cost coefficients. Carries NO per-model deployment policy — the `defaults:` block (GPU/tensor_parallelism/hf_repo) and GetHFRepo were removed in #1768, dead since NS-6 (#1733) — and NO KV-offload device table: `kv_offload_devices:` moved to the catalog in #1770
 ├── internal/                  # Repo-root internal packages (test tooling; not importable outside this module)
 │   └── invariantscan/         # AST scan for hand-rolled INV-1 conservation sums (#1720) — used by the guard tests in sim/, sim/cluster/. Root-level rather than sim/internal so cmd/ can import it too.
 ├── sim/                       # Core single-instance simulator
@@ -99,7 +100,7 @@ inference-sim/
 │   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods
 │   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore (pure data types, no sim/ dependency)
 │   └── summary.go             # TraceSummary, Summarize()
-├── model_configs/             # A model catalog (one dir per model, each with its HuggingFace config.json). Located at run time via --catalog / BLIS_CATALOG (#1731); committed files
+├── model_configs/             # A model catalog: `<name>/config.json` per model (flat transition layout, #1774) plus the `devices/storage.yaml` KV-offload device table (#1770). Located at run time via --catalog / BLIS_CATALOG (#1731); committed files. Removed by #1771
 ├── defaults.yaml              # Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
 ├── hardware_config.json       # GPU specifications
 ├── examples/                  # Example configuration files

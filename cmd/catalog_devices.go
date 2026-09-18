@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -87,6 +89,13 @@ func parseCatalogStorageDevices(data []byte) (map[string]kvOffloadDevice, error)
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&devices); err != nil {
+		// A file with no YAML document at all (empty, or comments only) decodes as io.EOF.
+		// That is not a malformed document — it is a table with no classes, which the
+		// caller reports with the actionable "defines no device classes" message rather
+		// than a bare "EOF".
+		if errors.Is(err, io.EOF) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return devices, nil
