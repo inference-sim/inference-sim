@@ -506,15 +506,24 @@ _ITEMS_HEADING = "### items to fix"
 
 
 def significant_lines(body):
-    """Yield `body`'s lines, stripped, with fenced code blocks and blockquotes
-    dropped.
+    """Yield `body`'s lines, stripped, with HTML comments, fenced code blocks,
+    and blockquotes dropped.
 
-    Those two are how a comment QUOTES a report it is discussing rather than
-    being one — an example report pasted inside ``` fences, or a banner quoted
-    with `> `. Dropping them is what stops a discussion of the findings from
-    being mistaken for the report that raised them. A genuine report contains
-    neither (render_report.py emits no fences, and only its optional banner is
-    a blockquote), so nothing a report needs is lost."""
+    Those are how a comment QUOTES or HIDES a report it is discussing rather
+    than being one — an example report pasted inside ``` fences, quoted with
+    `> `, or concealed inside an `<!-- ... -->` HTML comment that renders
+    invisibly to a human yet still carries the structural landmarks (#1716 G1).
+    Dropping all three is what stops a discussion of the findings — or a
+    deliberately hidden report shape — from being mistaken for the report that
+    raised them. A genuine report contains none of them (render_report.py emits
+    no fences or HTML comments, and only its optional banner is a blockquote),
+    so nothing a report needs is lost.
+
+    HTML comments are removed FIRST and span-wise: multi-line, and an unclosed
+    `<!--` through end-of-body (which also hides everything after it in a
+    rendered view). Removal can only DELETE landmarks, never synthesise one, so
+    it cannot be turned into a way to fake a report."""
+    body = re.sub(r"<!--.*?(?:-->|$)", "", body, flags=re.DOTALL)
     fence_char = ""  # "" when not in a fence; otherwise the fence char "`" or "~"
     fence_len = 0
     for raw in body.splitlines():
