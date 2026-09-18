@@ -78,6 +78,37 @@ the rule needs tests (`scripts/deliver_stall_candidates_test.go`). Excluding `de
 the case most easily missed — a paused delivery goes quiet by design, so it crosses any quiet
 threshold every time, and sweeping it would overrule the human who paused it.
 
+## deliver-issue-refinements.sh — the design refinements in an issue's comment thread
+
+Prints the comments on an issue that carry authority over its **body**, oldest first, and says so
+explicitly when there are none. Read before planning any PR — see
+[docs/contributing/pr-workflow.md](../docs/contributing/pr-workflow.md#comments-can-refine-the-body)
+Step 1.5 for the rule and
+[docs/contributing/issue-comment-authority.md](../docs/contributing/issue-comment-authority.md) for
+the decision behind it.
+
+```bash
+scripts/deliver-issue-refinements.sh 1782            # read the thread from GitHub
+scripts/deliver-issue-refinements.sh --render p.json # render a prepared payload, no network
+```
+
+An issue body is written once; the design is then refined in comments and nobody rewrites the body.
+So a plan made from the body alone builds an out-of-date spec faithfully — #1706's body proposes a
+shape its own thread later replaced, and the replacement is what was built.
+
+**A comment counts iff its author holds `admin`/`write`/`maintain`** on this repository, the same
+boundary `/approve-issue-for-pr-delivery` uses; bot, minimized, empty and slash-command-only comments
+are dropped. `authorAssociation` is deliberately not the signal — this repository's maintainer
+reports `CONTRIBUTOR`. The selection law is the sibling `deliver-issue-refinements.jq`, kept as a
+separate file for the same reason `deliver-stall-candidates.jq` is: it is the part with tests
+(`scripts/deliver_issue_refinements_test.go`), and both failure directions are expensive — selecting
+too little ignores a correction someone wrote down, selecting too much lets a stranger's comment
+steer an agent run holding credentials.
+
+Exit 0 when the thread was read (with or without refinements), 2 on a usage error, and **3 when the
+read failed** — in which case the digest's first line is `REFINEMENT-READ-FAILED` rather than empty,
+because empty output reads exactly like "this issue has no refinements".
+
 ## archon-plan-resolve.sh — find and extract a declared archon plan
 
 Finds the first `archon-plan: <path>` line in the declaration text and extracts that file
