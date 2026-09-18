@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -421,6 +424,55 @@ func TestResolveKVOffloadDevices_NoDeviceClassReadsNoCatalog(t *testing.T) {
 	withClass.SecondaryTiers[0].DeviceClass = strp("nvme_gen4")
 	if _, err := resolveKVOffloadDevices(&withClass); err == nil {
 		t.Error("non-vacuity: a device_class with no catalog located must be refused")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// BC-3 (static half): nothing in cmd/ can read the old table again
+// ---------------------------------------------------------------------------
+
+// TestKVOffloadDevicesBlockRemoved_StaticGuard asserts the cutover is structural rather
+// than merely unused: no production source in cmd/ names the deleted symbols. A behavioral
+// test can only show that today's inputs do not read the defaults.yaml table; this shows
+// there is nothing left to read it with. Mirrors #1768's guard for the `defaults:` block.
+func TestKVOffloadDevicesBlockRemoved_StaticGuard(t *testing.T) {
+	bannedIdents := map[string]string{
+		"KVOffloadDeviceDefaults": "the defaults.yaml device type was replaced by the catalog reader's kvOffloadDevice (#1770)",
+		"KVOffloadDevices":        "Config.KVOffloadDevices was removed by #1770 — the table lives in the catalog",
+	}
+	if len(bannedIdents) == 0 {
+		t.Fatal("non-vacuity: the guard has nothing to check")
+	}
+
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("glob cmd/*.go: %v", err)
+	}
+	scanned := 0
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		scanned++
+		fset := token.NewFileSet()
+		parsed, err := parser.ParseFile(fset, file, nil, parser.ParseComments)
+		if err != nil {
+			t.Fatalf("parse %s: %v", file, err)
+		}
+		ast.Inspect(parsed, func(n ast.Node) bool {
+			id, ok := n.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			if why, banned := bannedIdents[id.Name]; banned {
+				t.Errorf("%s:%d: %s must not appear in cmd/'s production sources — %s",
+					file, fset.Position(id.Pos()).Line, id.Name, why)
+			}
+			return true
+		})
+	}
+	if scanned == 0 {
+		t.Fatal("non-vacuity: no production sources were scanned")
 	}
 }
 
