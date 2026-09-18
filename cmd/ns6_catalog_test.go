@@ -134,11 +134,17 @@ func TestNS6_NoRuntimeFetch_StaticGuard(t *testing.T) {
 
 // TestNS6_ObserveTakesNoDeploymentFlags pins the boundary that makes BC-3 hold for
 // `blis observe` by construction: observe is a black-box dispatcher against a real
-// server, so it resolves no model config (nothing to fetch, nothing to write) and takes
-// no --hardware/--tp. Were someone to give it registerSimConfigFlags, it would inherit
-// the required-flag rule silently; this test says that has to be a deliberate decision.
+// server, so it places no instances and takes no --hardware/--tp. Were someone to give it
+// registerSimConfigFlags, it would inherit the required-flag rule silently; this test says
+// that has to be a deliberate decision.
+//
+// #1769 narrowed this: observe DOES now declare --catalog, because the named workload
+// presets moved into the catalog and observe resolves one for --workload. It still resolves
+// no MODEL config, which is what the deployment flags are about, so the two halves of the
+// old claim have come apart — --hardware/--tp stay banned here, and
+// TestCatalogPresets_CatalogFlagOnEveryConsumer owns the positive --catalog claim.
 func TestNS6_ObserveTakesNoDeploymentFlags(t *testing.T) {
-	for _, flag := range []string{"hardware", "tp", "catalog"} {
+	for _, flag := range []string{"hardware", "tp"} {
 		if f := observeCmd.Flags().Lookup(flag); f != nil {
 			t.Errorf("`blis observe` must not declare --%s: it resolves no model config and "+
 				"places no instances, so a deployment flag there would be inert", flag)
