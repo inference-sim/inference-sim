@@ -3622,9 +3622,8 @@
 </ol>
 <p><strong>Hardware and TP</strong> (<code>--hardware</code>, <code>--tp</code>):</p>
 <ol>
-<li>Explicit CLI flags</li>
-<li><code>defaults.yaml</code> <code>defaults[]</code> entry — matched by <code>--model</code></li>
-<li>Error — roofline/trained-physics require these values</li>
+<li>Explicit CLI flags — the only source. Both are <strong>required</strong> on <code>blis run</code> and <code>blis replay</code></li>
+<li>Error — omitting either is refused naming the missing flag. There is no per-model fallback: the <code>defaults:</code> block that once supplied them is gone (NS-6, #1733; block removed in #1768)</li>
 </ol>
 <p><strong>KV cache blocks</strong> (<code>--total-kv-blocks</code>): See the detailed <a href="#resolution-process">Resolution Process</a> below — three layers: CLI flag, auto-calculation, or 1M default.</p>
 <p><strong>Workload parameters</strong> (<code>--rate</code>, <code>--num-requests</code>, <code>--prompt-tokens</code>, etc.):</p>
@@ -4715,35 +4714,39 @@
 </table>
 <p>When configured, BLIS computes a single fitness score from aggregated metrics. Latency metrics are normalized via <code>1/(1 + value/1000)</code> where <code>value</code> is in ticks (microseconds) and 1000 = 1ms reference (lower is better); throughput metrics via <code>value/(value + reference)</code> where <code>referenceRPS = 100.0</code> and <code>referenceTPS = 10000.0</code> (higher is better). Useful for automated policy comparison across multiple simulation runs.</p>
 <h2 id="defaultsyaml">defaults.yaml<a class="headerlink" href="#defaultsyaml" title="Permanent link">&para;</a></h2>
-<p>The <code>defaults.yaml</code> file serves as a model registry and workload preset store:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Section 1: Hardware/TP mappings (keyed by model ID)</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nt">defaults</span><span class="p">:</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nt">qwen/qwen3-14b</span><span class="p">:</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="nt">GPU</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">H100</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">    </span><span class="nt">tensor_parallelism</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">    </span><span class="nt">hf_repo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Qwen/Qwen3-14B</span>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>
-<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="c1"># Section 2: Workload presets</span>
-<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="nt">workloads</span><span class="p">:</span>
-<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">  </span><span class="nt">chatbot</span><span class="p">:</span>
-<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="w">    </span><span class="nt">prompt_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
-<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="w">    </span><span class="nt">prompt_tokens_stdev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
-<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="w">    </span><span class="nt">output_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
-<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="w">    </span><span class="nt">output_tokens_stdev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
-<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="w">    </span><span class="c1"># ... min/max bounds</span>
-<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>
-<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="c1"># Section 3: Trained coefficients (keyed by model+GPU+TP)</span>
-<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="nt">models</span><span class="p">:</span>
-<a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">qwen/qwen3-14b</span>
-<a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a><span class="w">    </span><span class="nt">GPU</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">H100</span>
-<a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a><span class="w">    </span><span class="nt">tensor_parallelism</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-<a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a><span class="w">    </span><span class="nt">alpha_coeffs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">8888.09</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.18</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.0</span><span class="p p-Indicator">]</span>
-<a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a><span class="w">    </span><span class="nt">beta_coeffs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">13578.19</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">39.44</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">27.32</span><span class="p p-Indicator">]</span>
+<p>The <code>defaults.yaml</code> file is a workload preset store and a home for shipped constants. It carries
+no per-model deployment policy: the <code>defaults:</code> block that once mapped a model to a
+<code>GPU</code>/<code>tensor_parallelism</code>/<code>hf_repo</code> triple was removed in #1768, having been unreachable on
+every run path since NS-6 (#1733) made <code>--hardware</code>/<code>--tp</code> required and #1731 made the catalog
+the only model-config source.</p>
+<div class="admonition warning">
+<p class="admonition-title">Custom <code>defaults.yaml</code> files must remove the <code>defaults:</code> block (migration note)</p>
+<p>Strict parsing (<code>KnownFields(true)</code>) rejects an undeclared key, so a hand-maintained
+<code>defaults.yaml</code> that still carries a <code>defaults:</code> block now fails to load with
+<code>field defaults not found in type cmd.Config</code>. Delete the block and pass <code>--hardware</code>/<code>--tp</code>
+on the command line. Nothing is lost — no run path read those values.</p>
+</div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Section 1: Workload presets</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nt">workloads</span><span class="p">:</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nt">chatbot</span><span class="p">:</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="nt">prompt_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">    </span><span class="nt">prompt_tokens_stdev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">    </span><span class="nt">output_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">    </span><span class="nt">output_tokens_stdev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">    </span><span class="c1"># ... min/max bounds</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="c1"># Section 2: Trained coefficients (keyed by model+GPU+TP)</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="nt">models</span><span class="p">:</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">qwen/qwen3-14b</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="w">    </span><span class="nt">GPU</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">H100</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="w">    </span><span class="nt">tensor_parallelism</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="w">    </span><span class="nt">alpha_coeffs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">8888.09</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.18</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.0</span><span class="p p-Indicator">]</span>
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="w">    </span><span class="nt">beta_coeffs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">13578.19</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">39.44</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">27.32</span><span class="p p-Indicator">]</span>
 </code></pre></div>
 <h3 id="resolution-process">Resolution Process<a class="headerlink" href="#resolution-process" title="Permanent link">&para;</a></h3>
 <p>When BLIS starts, it resolves latency configuration through a layered process. Explicit CLI flags always take precedence (R18).</p>
 <p><strong>Hardware and TP defaults resolution (all backends):</strong></p>
-<p>Before any backend-specific logic runs, BLIS requires the deployment: <code>--hardware</code> and <code>--tp</code> must both be supplied, on <code>blis run</code> and <code>blis replay</code> alike. Omitting either is refused naming the missing flag (NS-6, #1733). BLIS no longer reads per-model <code>GPU</code>/<code>tensor_parallelism</code> values from <code>defaults.yaml</code> — inferring a deployment let a run complete and emit metrics for a configuration nobody chose.</p>
+<p>Before any backend-specific logic runs, BLIS requires the deployment: <code>--hardware</code> and <code>--tp</code> must both be supplied, on <code>blis run</code> and <code>blis replay</code> alike. Omitting either is refused naming the missing flag (NS-6, #1733). BLIS reads no per-model <code>GPU</code>/<code>tensor_parallelism</code> values from <code>defaults.yaml</code> — inferring a deployment let a run complete and emit metrics for a configuration nobody chose — and as of #1768 the file declares no such keys at all.</p>
 <p><strong>Backend-specific resolution:</strong></p>
 <ol>
 <li>If <code>--latency-model trained-physics</code> (default) or <code>roofline</code>:</li>
