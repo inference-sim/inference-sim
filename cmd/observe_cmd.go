@@ -59,7 +59,6 @@ var (
 	observeThinkTimeMs         int
 	observeThinkTimeDist       string
 	observeWorkload            string
-	observeDefaultsFilePath    string
 	observeRecordITL           bool
 	observeITLOutput           string
 	observeTimeout             int

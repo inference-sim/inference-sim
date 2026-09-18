@@ -2188,7 +2188,6 @@ func setObserveGlobalsForSubprocess(serverURL, header, data string) {
 	observeThinkTimeMs = 0
 	observeThinkTimeDist = ""
 	observeUnconstrainedOutput = false
-	observeDefaultsFilePath = "../defaults.yaml"
 	// Shared saturation/goodput globals (#1516: --detectors / --saturation-config / --saturation-report).
 	detectorName = ""
 	saturationConfigPath = ""
