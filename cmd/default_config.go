@@ -8,19 +8,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Workload describes a preset workload configuration in defaults.yaml.
-type Workload struct {
-	PrefixTokens      int `yaml:"prefix_tokens"`
-	PromptTokensMean  int `yaml:"prompt_tokens"`
-	PromptTokensStdev int `yaml:"prompt_tokens_stdev"`
-	PromptTokensMin   int `yaml:"prompt_tokens_min"`
-	PromptTokensMax   int `yaml:"prompt_tokens_max"`
-	OutputTokensMean  int `yaml:"output_tokens"`
-	OutputTokensStdev int `yaml:"output_tokens_stdev"`
-	OutputTokensMin   int `yaml:"output_tokens_min"`
-	OutputTokensMax   int `yaml:"output_tokens_max"`
-}
-
 // Config represents the full defaults.yaml structure.
 // All top-level sections must be listed to satisfy KnownFields(true) strict parsing (R10).
 //
@@ -32,9 +19,14 @@ type Workload struct {
 // field is legal and zero-valued — a `defaults:` block surviving in a hand-maintained copy of
 // the file is now refused at load rather than silently ignored. Do not re-add the field to
 // accept such a file: per-model deployment policy has no consumer to be silent about.
+//
+// #1769: there is likewise NO `workloads:` section. The named presets (chatbot,
+// summarization, contentgen, multidoc) existed here AND in the catalog's workloads/ namespace
+// with nothing keeping the two copies in sync; the catalog is now the single source of truth
+// (see cmd/catalog_workloads.go), and by the same one-way KnownFields(true) rule a surviving
+// `workloads:` block is refused at load rather than parsed and ignored.
 type Config struct {
 	Version                string                  `yaml:"version"`
-	Workloads              map[string]Workload     `yaml:"workloads"`
 	TrainedPhysicsDefaults *TrainedPhysicsDefaults `yaml:"trained_physics_coefficients,omitempty"`
 	LoRADefaults           *LoRADefaults           `yaml:"lora,omitempty"`
 	// KVOffloadDevices maps a device_class name to its bandwidth/latency physics for
