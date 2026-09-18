@@ -532,11 +532,11 @@ json.dump({"on_impl": on_impl, "on_schema": on_schema,
 			if has(got.OffImpl, "go") || has(got.OffSchema, "go") {
 				t.Errorf("%s: --no-exec did not drop go: impl=%v schema=%v", mod, got.OffImpl, got.OffSchema)
 			}
-			// Every read-only tool survives the drop.
-			readonly := []string{"read_file", "grep", "list_dir"}
-			if mod == "adjudicator" {
-				readonly = append(readonly, "gh_issue", "pr_diff")
-			}
+			// Every read-only tool survives the drop. Since #1792 the answerer carries the
+			// same read-only gh_issue/pr_diff tools as the adjudicator (so round 0 can verify
+			// issue-completeness for F1), so both agents keep the identical read-only set —
+			// only the code-executing `go` tool is dropped under --no-exec.
+			readonly := []string{"read_file", "grep", "list_dir", "gh_issue", "pr_diff"}
 			for _, tool := range readonly {
 				if !has(got.OffImpl, tool) || !has(got.OffSchema, tool) {
 					t.Errorf("%s: --no-exec dropped read-only tool %q: impl=%v schema=%v", mod, tool, got.OffImpl, got.OffSchema)
@@ -545,6 +545,151 @@ json.dump({"on_impl": on_impl, "on_schema": on_schema,
 			// The ONLY difference between the two sets is `go`.
 			if len(got.OnImpl) != len(got.OffImpl)+1 || len(got.OnSchema) != len(got.OffSchema)+1 {
 				t.Errorf("%s: --no-exec changed more than just go: on_impl=%v off_impl=%v", mod, got.OnImpl, got.OffImpl)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// #1792 — the round-0 answerer gains the adjudicator's read-only gh_issue/pr_diff
+// tools and is told the PR + closing-issue NUMBERS, so the fixed policy question
+// F1 ("does this fully implement the issue?") is answerable in round 0 instead of
+// a blocking CANNOT_ANSWER that made the loop's own qa-review unable to PASS. The
+// tool INVENTORY (gh_issue/pr_diff kept under --no-exec) is pinned by TestNoExecSeam
+// above; here we pin that the numbers are SURFACED to the model.
+// ---------------------------------------------------------------------------
+
+// answererNumbersProbe drives answerer.py two ways, both model-free:
+//
+//	mode "helper" — calls answerer_user_message() directly: with no numbers the
+//	preamble is omitted (byte-identical to the pre-#1792 questions-only prompt), and
+//	with numbers present the preamble names #<pr>/#<issue> and the exact
+//	pr_diff(number=…)/gh_issue(number=…) calls, and precedes the questions.
+//
+//	mode "main" — monkeypatches post_chat_completion, then invokes main() with real
+//	--pr/--issue values and captures the assembled user turn to CAP_FILE. This pins
+//	that the flags are ACCEPTED by argparse and that the numbers actually reach the
+//	prompt — the regression #1792 is about (dropping the --issue wiring would leave
+//	"helper" green but break "main").
+const answererNumbersProbe = `
+import json, os, sys, importlib
+mod = importlib.import_module("answerer")
+mode = sys.argv[1]
+if mode == "helper":
+    bare = mod.answerer_user_message([{"id": "F1"}], "", "")
+    assert "Context for the fixed policy questions" not in bare, bare
+    assert "pr_diff(number=" not in bare and "gh_issue(number=" not in bare, bare
+    assert "Answer these questions" in bare, bare
+    full = mod.answerer_user_message([{"id": "F1"}], "1794", "1792")
+    i_ctx = full.find("Context for the fixed policy questions")
+    i_q = full.find("Answer these questions")
+    assert 0 <= i_ctx < i_q, (i_ctx, i_q)
+    for needle in ["#1794", "#1792", "pr_diff(number=1794)", "gh_issue(number=1792)"]:
+        assert needle in full, (needle, full)
+    print("OK")
+else:
+    cap = sys.argv[2]
+    os.environ["OPENAI_BASE_URL"] = "http://x"
+    os.environ["OPENAI_API_KEY"] = "k"
+    def fake_post(base_url, api_key, model, messages, tools):
+        with open(cap, "w", encoding="utf-8") as fh:
+            fh.write(messages[1]["content"])   # the assembled user turn
+        return {"choices": [{"message": {"role": "assistant",
+            "content": json.dumps([{"id": "F1", "status": "CONFIDENT",
+                                    "answer": "ok", "evidence": ""}]),
+            "tool_calls": []}}]}
+    mod.post_chat_completion = fake_post
+    rc = mod.main([
+        "--worktree", ".",
+        "--questions", json.dumps([{"id": "F1", "topic": "fixed", "question": "impl?"}]),
+        "--pr", "1794",
+        "--issue", "1792",
+    ])
+    sys.exit(rc)
+`
+
+func TestAnswererSurfacesIssueAndPRNumbers(t *testing.T) {
+	requirePython3(t)
+
+	t.Run("helper-preamble-structure", func(t *testing.T) {
+		stdout, stderr, code := runPython(t, "", "-c", answererNumbersProbe, "helper")
+		if code != 0 {
+			t.Fatalf("answerer_user_message probe exit=%d stderr=%s", code, stderr)
+		}
+		if !strings.Contains(stdout, "OK") {
+			t.Fatalf("helper probe did not confirm preamble structure: stdout=%q stderr=%q", stdout, stderr)
+		}
+	})
+
+	t.Run("main-surfaces-the-numbers-into-the-prompt", func(t *testing.T) {
+		cap := filepath.Join(t.TempDir(), "user-turn.txt")
+		stdout, stderr, code := runPython(t, "", "-c", answererNumbersProbe, "main", cap)
+		if code != 0 {
+			t.Fatalf("answerer main() probe exit=%d stdout=%s stderr=%s", code, stdout, stderr)
+		}
+		body, err := os.ReadFile(cap)
+		if err != nil {
+			t.Fatalf("reading captured user turn: %v", err)
+		}
+		user := string(body)
+		for _, needle := range []string{
+			"#1794", "pr_diff(number=1794)", // --pr reached the prompt
+			"#1792", "gh_issue(number=1792)", // --issue reached the prompt
+		} {
+			if !strings.Contains(user, needle) {
+				t.Errorf("main() did not surface %q into the answerer's user turn:\n%s", needle, user)
+			}
+		}
+	})
+}
+
+// ghToolsProbe monkeypatches subprocess.run and exercises tool_gh_issue/tool_pr_diff,
+// capturing the argv and forcing a non-zero exit — no network, no model.
+const ghToolsProbe = `
+import sys, importlib
+mod = importlib.import_module(sys.argv[1])
+calls = []
+class FakeProc:
+    def __init__(self, rc, out, err):
+        self.returncode, self.stdout, self.stderr = rc, out, err
+def ok_run(argv, **kw):
+    calls.append(argv)
+    return FakeProc(0, "ISSUE_OK", "")
+mod.subprocess.run = ok_run
+ok = mod.tool_gh_issue(".", "1792")
+argv = calls[-1]
+# The issue is fetched via --json/-q, NOT the default --comments view, which in this
+# repo hits the deprecated Projects-classic GraphQL and fails (#1792 F1/G8).
+assert "--json" in argv, argv
+assert "--comments" not in argv, argv
+assert "ISSUE_OK" in ok, ok
+# A non-zero gh exit is surfaced as a labelled failure, never returned as if it were data.
+def fail_run(argv, **kw):
+    return FakeProc(1, "", "GraphQL: Projects (classic) is being deprecated")
+mod.subprocess.run = fail_run
+issue_res = mod.tool_gh_issue(".", "1792")
+diff_res = mod.tool_pr_diff(".", "1794")
+assert issue_res.startswith("gh_issue failed"), issue_res
+assert diff_res.startswith("pr_diff failed"), diff_res
+print("OK")
+`
+
+// TestGhToolsAvoidDeprecatedViewAndSignalFailure pins #1792's F1/G8 fix for BOTH agents (the
+// gh tools are kept identical across answerer.py and adjudicator.py): gh_issue must fetch via
+// --json/-q rather than the default --comments view — which in this repo exits non-zero on the
+// deprecated Projects-classic GraphQL and would defeat round-0 issue-completeness — and a
+// non-zero gh exit must be surfaced as an explicit failure marker, so the model treats it as
+// missing evidence instead of mistaking an error string for the acceptance criteria or the diff.
+func TestGhToolsAvoidDeprecatedViewAndSignalFailure(t *testing.T) {
+	requirePython3(t)
+	for _, mod := range []string{"answerer", "adjudicator"} {
+		t.Run(mod, func(t *testing.T) {
+			stdout, stderr, code := runPython(t, "", "-c", ghToolsProbe, mod)
+			if code != 0 {
+				t.Fatalf("gh-tools probe exit=%d stdout=%s stderr=%s", code, stdout, stderr)
+			}
+			if !strings.Contains(stdout, "OK") {
+				t.Fatalf("%s gh-tools probe did not confirm: stdout=%q stderr=%q", mod, stdout, stderr)
 			}
 		})
 	}

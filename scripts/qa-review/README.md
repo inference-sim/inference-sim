@@ -35,6 +35,15 @@ the LiteLLM proxy over its OpenAI-compatible `/chat/completions` surface.
 > the round counter). As with the #1715 half, the workflow change was applied by a
 > `workflows`-scoped push (the delivery agent's token lacks the permission);
 > `scripts/deliver_qa_adjudicate_test.go` holds the contract over the live workflow.
+>
+> #1792 closes the round-0 completeness gap that the epic surfaced: the answerer had none of the
+> tools needed to see the closing issue or the diff, so fixed policy question F1 ("does this fully
+> implement the issue?") was always a blocking `CANNOT_ANSWER` and the loop's qa-review could
+> never `PASS` from round 0. The answerer now carries the **same read-only `gh_issue`/`pr_diff`
+> tools the adjudicator already has** (kept under `--no-exec`), and `deliver-verify.yml`'s
+> `Run qa-review` step hands it the PR and closing-issue **numbers** so those tools have something
+> to query. `scripts/qa_review_test.go` pins the tool inventory (`TestNoExecSeam`) and that the
+> numbers reach the prompt; `scripts/deliver_qa_verdict_test.go` pins the workflow wiring.
 
 ## The pieces
 
@@ -66,6 +75,22 @@ sandboxed to `--worktree`**: `read_file`, `grep`, `list_dir`, and — unless
 PR-head code and returns, per question, a `status ∈ {CONFIDENT, CANNOT_ANSWER,
 FLAW_FOUND}` with an `answer`, `evidence` (file:line or a repro), and an
 optional non-blocking `note`.
+
+**Issue-completeness tools (`gh_issue` / `pr_diff`, #1792).** The worktree tools
+can read the PR-head code but cannot see *the issue the PR is meant to satisfy*
+or *what actually changed*, so the fixed policy question F1 ("does this PR fully
+implement the issue it closes?") was unanswerable from the worktree alone — it
+fell to `CANNOT_ANSWER`, which is blocking, so the delivery loop's own qa-review
+could never reach `PASS` from round 0. The answerer now carries the **same
+read-only `gh_issue`/`pr_diff` tools the adjudicator already has** — `gh_issue`
+reads the closing issue's acceptance criteria + comments, `pr_diff` reads the
+base→head diff. They are ported verbatim from `adjudicator.py`, and because they
+are read-only `gh` network calls (not PR-code execution) they stay under
+`--no-exec`, which continues to drop only the code-executing `go` tool. The
+answerer is told the PR number and the closing-issue number (`--pr` / `--issue`)
+so it knows which to query; the system prompt directs it to consult them for
+F1/F2/F3 but **not** to answer from the diff alone when the surrounding code
+decides the answer — verify against the real code. `QA_REPO` targets the calls.
 
 The tool loop has a finite budget (`MAX_TOOL_TURNS = 24`). Exhausting it is a
 normal outcome, not an error, so the loop **degrades instead of crashing**: it
@@ -128,9 +153,10 @@ having no Items-to-fix section of its own — produced zero findings and a vacuo
 
 `answerer.py` and `adjudicator.py` accept an **off-by-default `--no-exec`** flag
 that drops the code-executing `go` tool from **both** the implementation map and
-the advertised tool schema, leaving `read_file`/`grep`/`list_dir` (and the
-adjudicator's read-only `gh_issue`/`pr_diff`) intact. It is a pure
-`tools_for(no_exec) -> (impl, schema)` selector.
+the advertised tool schema, leaving `read_file`/`grep`/`list_dir` and the
+read-only `gh_issue`/`pr_diff` tools intact — **both agents** now carry the gh
+tools (the answerer since #1792). It is a pure `tools_for(no_exec) -> (impl,
+schema)` selector.
 
 **Flag absent ⇒ the `go` tool is present ⇒ verbatim prototype behavior.** The
 seam exists so #1715/#1716 can run the answerer/adjudicator on the self-hosted
@@ -142,7 +168,9 @@ never compiled or executed there.
 1. Resolve the PR → materialize the PR head into a throwaway **read-only**
    worktree.
 2. `questioner.py` → questions JSON.
-3. `answerer.py --worktree <wt>` (optionally `--no-exec`) → answers JSON.
+3. `answerer.py --worktree <wt> --pr N --issue M` (optionally `--no-exec`),
+   passing the PR + closing-issue numbers so its `gh_issue`/`pr_diff` tools can
+   verify issue-completeness for F1 (#1792) → answers JSON.
 4. `render_report.py --questions … --answers … --pr N [--post-to-pr]`.
 5. Clean up the throwaway worktree.
 
@@ -174,7 +202,10 @@ It covers only the **model-free** surface: `render_report.py`'s verdict rule and
 output shape, `questioner.repair_json()`, `adjudicator.parse_items_to_fix()` and
 its block rule, `adjudicator.fetch_comments()`'s report-comment selection
 (including the quoting shapes that used to hijack it, and the fail-closed
-refusal when no report exists), the `--no-exec` `tools_for()` seam for both agents, and both
-agents' tool-loop exhaustion degradation (the one `post_chat_completion` stub is
-the only model-dependent piece). The model-calling paths need the live proxy and
-are not unit-tested here.
+refusal when no report exists), the `--no-exec` `tools_for()` seam for both agents
+(now asserting the answerer carries the same read-only `gh_issue`/`pr_diff` set,
+#1792), the answerer surfacing the `--pr`/`--issue` numbers into its prompt (#1792 —
+`answerer_user_message` preamble structure plus a `main()` path that passes the
+flags), and both agents' tool-loop exhaustion degradation (the one
+`post_chat_completion` stub is the only model-dependent piece). The model-calling
+paths need the live proxy and are not unit-tested here.

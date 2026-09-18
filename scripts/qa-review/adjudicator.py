@@ -178,26 +178,49 @@ def tool_go(worktree, subcommand):
     return (proc.stdout + proc.stderr)[-8000:]
 
 
+# gh_issue/pr_diff are read-only gh NETWORK calls, not PR-code execution, so they stay
+# under --no-exec. They are kept IDENTICAL to answerer.py's copies (#1792 gave the answerer
+# the same tools); each vendored qa-review script stays self-contained rather than sharing a
+# module, so the two are kept in sync by hand — if you edit one, edit both.
+#
+# gh_issue uses `--json ... -q`, NOT the default `--comments` view: the pretty view fetches
+# Projects-classic data (repository.issue.projectCards), which this repo's GitHub has
+# DEPRECATED, so `gh issue view --comments` exits non-zero with only a deprecation notice and
+# never returns the acceptance criteria. A non-zero gh exit is surfaced as an explicit failure
+# marker so the model treats it as missing evidence, never mistakes an error string for data.
+_GH_ISSUE_JQ = (
+    r'"#\(.number) \(.title)\n\n\(.body)\n\n--- comments ---\n"'
+    r' + ([.comments[] | "@\(.author.login): \(.body)"] | join("\n\n"))'
+)
+
+
 def tool_gh_issue(worktree, number):
-    """Read-only: fetch a GitHub issue body/comments (the acceptance criteria)."""
+    """Read-only: fetch a GitHub issue's acceptance criteria + comments."""
     repo = os.environ.get("QA_REPO", "inference-sim/inference-sim")
     proc = subprocess.run(
-        ["gh", "issue", "view", str(number), "--repo", repo, "--comments"],
+        [
+            "gh", "issue", "view", str(number), "--repo", repo,
+            "--json", "number,title,body,comments", "-q", _GH_ISSUE_JQ,
+        ],
         capture_output=True,
         text=True,
     )
-    return (proc.stdout + proc.stderr)[:12000]
+    if proc.returncode != 0:
+        return "gh_issue failed (exit %d): %s" % (proc.returncode, proc.stderr.strip()[:2000])
+    return proc.stdout[:12000]
 
 
 def tool_pr_diff(worktree, number):
-    """Read-only: fetch the PR diff."""
+    """Read-only: fetch the PR base→head diff."""
     repo = os.environ.get("QA_REPO", "inference-sim/inference-sim")
     proc = subprocess.run(
         ["gh", "pr", "diff", str(number), "--repo", repo],
         capture_output=True,
         text=True,
     )
-    return (proc.stdout + proc.stderr)[:16000]
+    if proc.returncode != 0:
+        return "pr_diff failed (exit %d): %s" % (proc.returncode, proc.stderr.strip()[:2000])
+    return proc.stdout[:16000]
 
 
 TOOLS_IMPL = {

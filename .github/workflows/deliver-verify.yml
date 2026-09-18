@@ -910,9 +910,11 @@ jobs:
       # ephemeral `--detach` worktree under $RUNNER_TEMP (from the already-fetched head object, so
       # no second network fetch) and runs the answerer with `--no-exec`, which drops the `go`
       # build/test tool from both the implementation map and the advertised schema. So the tool loop
-      # has only `read_file`/`grep`/`list_dir`, sandboxed to that worktree: PR files are READ, never
-      # compiled or executed, and the LiteLLM secrets in this step's env are never in reach of
-      # PR-authored code. The worktree is removed by the always-run cleanup step below.
+      # keeps only the read-only `read_file`/`grep`/`list_dir` (sandboxed to that worktree) plus the
+      # read-only `gh_issue`/`pr_diff` tools (added #1792 so round 0 can verify issue-completeness —
+      # read-only `gh` calls, not code execution): PR files are READ, never compiled or executed, and
+      # the LiteLLM secrets in this step's env are never in reach of PR-authored code. The worktree is
+      # removed by the always-run cleanup step below.
       #
       # FAILING SOFT IS DELIBERATE, and it is not a fail-open. Every early exit here leaves NO
       # QA-VERDICT marker, which the reader turns into `MISSING` and the gate turns into
@@ -953,9 +955,15 @@ jobs:
             > "$RUNNER_TEMP/qa-questions.json" \
             || skip "the qa-review questioner failed"
 
+          # The answerer is handed the PR and closing-issue NUMBERS (not files): its read-only
+          # gh_issue/pr_diff tools — the same ones the adjudicator uses, kept under --no-exec —
+          # fetch the issue's acceptance criteria and the diff on demand, so fixed question F1
+          # ("does this fully implement the issue?") is answerable in round 0 instead of a
+          # blocking CANNOT_ANSWER (#1792). QA_REPO (set in this step's env) targets the gh calls.
           python3 scripts/qa-review/answerer.py \
             --worktree "$WORKTREE" --no-exec \
             --questions-file "$RUNNER_TEMP/qa-questions.json" \
+            --pr "$PR" --issue "$ISSUE_NUMBER" \
             > "$RUNNER_TEMP/qa-answers.json" \
             || skip "the qa-review answerer failed"
 
