@@ -23,8 +23,6 @@ var (
 	// The branch's mergeability against main. `conflicting` (REST mergeable_state "dirty")
 	// must never be marked ready; `unknown` means the state could not be read.
 	allMergeState = []string{"mergeable", "conflicting", "unknown"}
-	// Whether verify skipped both agent reviews this round on a conflicting hint (#1781 G1).
-	allReviewsSkipped = []string{"false", "true"}
 
 	// blockingPlanGate are the plan signals that must stop a delivery.
 	// `unverified` blocks like a regression: the PR claimed a plan and the check did not run,
