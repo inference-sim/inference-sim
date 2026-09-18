@@ -94,7 +94,7 @@ Top-level settings that control the simulation run.
 | `--seed` | int64 | 42 | Random seed for deterministic simulation. Same seed produces byte-identical stdout. |
 | `--horizon` | int64 | MaxInt64 | Simulation time limit in ticks (microseconds). Simulation stops when clock exceeds horizon or all requests complete. |
 | `--log` | string | "warn" | Log verbosity: trace, debug, info, warn, error, fatal, panic. Logs go to stderr. |
-| `--metrics-path` | string | "" | File path to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats, plus `cache_hit_rate` and the `catalog` provenance block). Accepted on **both** `blis run` and `blis replay` (#1583 added it to replay so `blis calibrate --sim-metrics` can read a replayed hit-rate). Distinct from replay's `--results-path`, which writes the **per-request** `[]SimResult` array and is replay-only. Empty = no file output. |
+| `--metrics-path` | string | "" | File path to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats, plus the `cache_hit_rate` and `catalog` provenance fields when those apply). Accepted on **both** `blis run` and `blis replay` (#1583 added it to replay so `blis calibrate --sim-metrics` can read a replayed hit-rate). Distinct from replay's `--results-path`, which writes the **per-request** `[]SimResult` array and is replay-only. Empty = no file output. |
 
 ## KV Cache Configuration
 
@@ -554,7 +554,7 @@ the only model-config source.
     `field defaults not found in type cmd.Config`. Delete the block and pass `--hardware`/`--tp`
     on the command line. Nothing is lost — no run path read those values.
 
-The file has exactly five top-level keys, and strict parsing accepts no others
+These are the top-level keys the file may carry, and strict parsing accepts no others
 (`KnownFields(true)`, R10 — the authoritative list is `cmd.Config` in `cmd/default_config.go`;
 the bundled `defaults.yaml` is the worked example):
 
@@ -590,9 +590,9 @@ kv_offload_devices:
 !!! warning "There is no `models:` section, and there never was a keyed coefficient table"
     Earlier revisions of this page showed a `models:` list mapping a model+GPU+TP triple to its own
     `alpha_coeffs`/`beta_coeffs`. No such section exists — `cmd.Config` declares no `Models` field, so
-    strict parsing would reject one outright. Coefficients are global (Section 2 above). The removed
-    `defaults:` block (#1768) was a different thing again: per-model `GPU`/`tensor_parallelism`/`hf_repo`,
-    never coefficients.
+    strict parsing would reject one outright. Coefficients live in the single global
+    `trained_physics_coefficients` block above. The removed `defaults:` block (#1768) was a different
+    thing again: per-model `GPU`/`tensor_parallelism`/`hf_repo`, never coefficients.
 
 ### Resolution Process
 
