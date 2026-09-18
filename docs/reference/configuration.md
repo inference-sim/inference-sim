@@ -27,9 +27,8 @@ The general precedence (CLI → YAML → hardcoded) applies everywhere, but each
 
 **Hardware and TP** (`--hardware`, `--tp`):
 
-1. Explicit CLI flags
-2. `defaults.yaml` `defaults[]` entry — matched by `--model`
-3. Error — roofline/trained-physics require these values
+1. Explicit CLI flags — the only source. Both are **required** on `blis run` and `blis replay`
+2. Error — omitting either is refused naming the missing flag. There is no per-model fallback: the `defaults:` block that once supplied them is gone (NS-6, #1733; block removed in #1768)
 
 **KV cache blocks** (`--total-kv-blocks`): See the detailed [Resolution Process](#resolution-process) below — three layers: CLI flag, auto-calculation, or 1M default.
 
@@ -539,17 +538,20 @@ When configured, BLIS computes a single fitness score from aggregated metrics. L
 
 ## defaults.yaml
 
-The `defaults.yaml` file serves as a model registry and workload preset store:
+The `defaults.yaml` file is a workload preset store and a home for shipped constants. It carries
+no per-model deployment policy: the `defaults:` block that once mapped a model to a
+`GPU`/`tensor_parallelism`/`hf_repo` triple was removed in #1768, having been unreachable on
+every run path since NS-6 (#1733) made `--hardware`/`--tp` required and #1731 made the catalog
+the only model-config source.
+
+!!! warning "Custom `defaults.yaml` files must remove the `defaults:` block (migration note)"
+    Strict parsing (`KnownFields(true)`) rejects an undeclared key, so a hand-maintained
+    `defaults.yaml` that still carries a `defaults:` block now fails to load with
+    `field defaults not found in type cmd.Config`. Delete the block and pass `--hardware`/`--tp`
+    on the command line. Nothing is lost — no run path read those values.
 
 ```yaml
-# Section 1: Hardware/TP mappings (keyed by model ID)
-defaults:
-  qwen/qwen3-14b:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: Qwen/Qwen3-14B
-
-# Section 2: Workload presets
+# Section 1: Workload presets
 workloads:
   chatbot:
     prompt_tokens: 256
@@ -558,7 +560,7 @@ workloads:
     output_tokens_stdev: 100
     # ... min/max bounds
 
-# Section 3: Trained coefficients (keyed by model+GPU+TP)
+# Section 2: Trained coefficients (keyed by model+GPU+TP)
 models:
   - id: qwen/qwen3-14b
     GPU: H100
@@ -573,7 +575,7 @@ When BLIS starts, it resolves latency configuration through a layered process. E
 
 **Hardware and TP defaults resolution (all backends):**
 
-Before any backend-specific logic runs, BLIS requires the deployment: `--hardware` and `--tp` must both be supplied, on `blis run` and `blis replay` alike. Omitting either is refused naming the missing flag (NS-6, #1733). BLIS no longer reads per-model `GPU`/`tensor_parallelism` values from `defaults.yaml` — inferring a deployment let a run complete and emit metrics for a configuration nobody chose.
+Before any backend-specific logic runs, BLIS requires the deployment: `--hardware` and `--tp` must both be supplied, on `blis run` and `blis replay` alike. Omitting either is refused naming the missing flag (NS-6, #1733). BLIS reads no per-model `GPU`/`tensor_parallelism` values from `defaults.yaml` — inferring a deployment let a run complete and emit metrics for a configuration nobody chose — and as of #1768 the file declares no such keys at all.
 
 **Backend-specific resolution:**
 

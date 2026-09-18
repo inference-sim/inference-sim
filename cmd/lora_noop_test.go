@@ -16,11 +16,18 @@ import (
 // (./blis run --model qwen/qwen3-14b --seed 42). Path is relative to the cmd/ test cwd.
 //
 // #1733 (NS-6) gave this golden a SECOND load-bearing role. It was captured when
-// --hardware/--tp were absent and inferred per-model from defaults.yaml; the run below now
-// passes them explicitly as --hardware H100 --tp 1, the exact pair defaults.yaml recorded
-// for qwen/qwen3-14b (pinned by TestNS6_ByteIdentityAnchor_GoldenModelDeployment). That it
-// still matches is the INV-6 evidence for #1733's acceptance criterion 4: making an input
-// REQUIRED changed no number.
+// --hardware/--tp were absent and inferred per-model from defaults.yaml's per-model
+// GPU/tensor_parallelism keys; the run below now passes them explicitly as
+// --hardware H100 --tp 1 — the pair those keys recorded for qwen/qwen3-14b. That it still
+// matches is the INV-6 evidence for #1733's acceptance criterion 4: making an input REQUIRED
+// changed no number.
+//
+// #1768 then deleted those keys (the whole defaults: block was dead once the deployment became
+// a required operator input), together with the anchor test that machine-verified the
+// equality. So the explicit pair above is now a HISTORICAL fact about how the golden was
+// captured, no longer cross-checkable against defaults.yaml; see the tombstone comment in
+// cmd/ns6_catalog_test.go. The INV-6 evidence is undiminished — it is this test matching a
+// golden captured from a run that supplied neither flag.
 const baselineNoopGolden = "../specs/007-lora-control-plane/testdata/baseline_noop.json"
 
 // noopFloatTolerance is the relative tolerance applied when comparing numeric

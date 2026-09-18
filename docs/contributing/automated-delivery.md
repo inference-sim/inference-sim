@@ -95,21 +95,24 @@ Phases chain with `workflow_dispatch`, passing the PR and sub-issue numbers as i
 
 | Outcome | Meaning | What you do |
 |---|---|---|
-| `ready-for-merge` | CI green, archon plan not regressed, review returned GREEN | Read the history, merge |
+| `ready-for-merge` | CI green, archon plan not regressed, both reviews clean (methodology review GREEN and cross-vendor qa-review PASS) | Read the history, merge |
 | `needs-human` | Signals disagreed, evidence was missing, or 3 rounds did not close the findings | Read the last comment — it names the phase and the reason |
 
 There is no third outcome. Every unrecognised or contradictory signal resolves to `needs-human`; the gate is closed by default.
 
 ## The gate
 
-The decision is not the reviewing agent's to make. `deliver-verify.yml` collects four machine-readable signals and hands them to `scripts/deliver-gate.sh`, which is unit-tested (`scripts/deliver_gate_test.go`):
+The decision is not the reviewing agent's to make. `deliver-verify.yml` collects five machine-readable signals and hands them to `scripts/deliver-gate.sh`, which is unit-tested (`scripts/deliver_gate_test.go`):
 
 | Signal | Source |
 |---|---|
 | `CI_STATUS` | verify dispatches the repository's own `ci.yml` against the delivery branch and waits for it. Anything other than a `success` conclusion is `failure` |
 | `PLAN_GATE` | `.archon/review.json` — `planRatchet.ok` and `planClassify.verdict`. `absent` (the PR never claimed a plan) delivers exactly as a satisfied plan does; `unverified` (the PR declares an `archon-plan:` but the check did not run) **blocks** |
 | `AGENT_VERDICT` | the `DELIVER-VERDICT: GREEN` / `NOT-GREEN` marker, required to be the last line of a comment posted by the automation itself |
+| `QA_VERDICT` | the `QA-VERDICT: PASS` / `BLOCK` marker from the **cross-vendor qa-review pass** (#1715, RFC #1603) — a questioner and an isolated answerer from a different model family than the implementer and the reviewer above. Same author-trust and last-line rules as `AGENT_VERDICT`. `BLOCK` routes to a correction round; `MISSING` (no marker) **blocks**, so a qa-review that crashed or lost its model can never be read as a pass |
 | `DISMISSALS` | the `deliver:has-dismissals` label, **re-read after the review agent has run** so that the reviewer clearing it takes effect in the same round. `open` withholds `ready-for-merge`; `unknown` (the label set could not be read) does too, because an unreadable state is not evidence there is nothing to accept |
+
+Both review signals are required for `ready-for-merge`, and either one alone can send a round to correction. They are kept as **parallel signals rather than one combined verdict** so it is always visible which review blocked, and so each can be tested in isolation.
 
 **Why verify dispatches `ci.yml` rather than running the checks itself.** `main` requires seven status contexts (`build`, `lint`, and five `test (...)` groups) before a PR can merge, and those must be present **on the PR's head commit**. Two things make that awkward, and an earlier version of this feature got both wrong by running the commands inline:
 
@@ -124,7 +127,7 @@ The delivery still verifies the commit it pinned: the dispatched run's `head_sha
 
 Two properties hold structurally rather than by prompt adherence:
 
-- **A GREEN review cannot override red CI or a plan regression.** That combination returns `needs-human` with the disagreement named — the loop does not get to resolve a contradiction between a judgment and an objective signal.
+- **A clean review cannot override red CI or a plan regression.** When an objective signal blocks and **neither** review asked for a correction, the gate returns `needs-human` with the disagreement named — the loop does not get to resolve a contradiction between a judgment and an objective signal. If **either** review did name findings, the round goes to correction instead: there is something concrete to act on, and the reason line names both the objective blocker and the review(s) that blocked.
 - **`ready-for-merge` is never applied to unverified code.** The PR tree is checked out at a pinned SHA, and that SHA is re-confirmed as the branch head before the label goes on. A push landing during the checks or the review downgrades the outcome to `needs-human`, because what passed is no longer what a human would merge.
 - **A phase that fails or times out still reports.** Every phase has a reporter guarded on `always() && !success()`, exercised on real infrastructure rather than reasoned about, in two halves:
 
@@ -199,8 +202,10 @@ Repository variables, all optional:
 | `DELIVER_CORRECT_MODEL` | `claude-opus-4-8` | model for the correct phase |
 | `DELIVER_VERIFY_MODEL` | `claude-sonnet-4-6` | model for the review phase |
 | `DELIVER_MAX_ROUNDS` | `3` | correction rounds before `needs-human`, per PR |
+| `QA_QUESTIONER_MODEL` | `gcp/gemini-3.6-flash` | questioner model for the cross-vendor qa-review pass |
+| `QA_ANSWERER_MODEL` | `azure/gpt-5.6-sol` | answerer model for the cross-vendor qa-review pass |
 
-The verify model is deliberately *not* the implement model. Two instances of one model reviewing each other's work is closer to an agent grading its own homework; different models give real separation.
+The verify model is deliberately *not* the implement model. Two instances of one model reviewing each other's work is closer to an agent grading its own homework; different models give real separation. The qa-review defaults go further and leave the vendor entirely: a decorrelated second opinion is the point (RFC #1603), so a failure mode shared by every Claude model is exactly what it exists to catch.
 
 ## Setup
 
@@ -245,7 +250,7 @@ Not yet automated, each its own follow-up: sequencing sub-issues `0..N` and open
 
 **The workflow's own steps run trusted code.** The repository root checkout is the default branch, so `scripts/` and `.archon-version` always come from `main` — matching `archon.yml`. The archon review and `deliver-gate.sh` are executed from that trusted tree, never from the PR.
 
-**The PR's code never runs on the self-hosted runner.** The verify phase does not check the PR out at all — it dispatches `ci.yml`, which runs the PR's build and tests on ephemeral `ubuntu-latest` runners, exactly as it does for any other PR. An earlier version did check the PR out and run its test suite on the self-hosted runner, which meant executing PR code (including `deliver_gate_test.go`, which shells out to the PR's own `.sh` files) on persistent infrastructure. Dispatching removes that exposure rather than guarding it.
+**The PR's code never runs on the self-hosted runner.** The verify phase never checks the PR out into its workspace or runs its build and tests there — it dispatches `ci.yml`, which runs the PR's build and tests on ephemeral `ubuntu-latest` runners, exactly as it does for any other PR. (The one place the PR head is materialised on the runner is the ephemeral, read-only `--detach` worktree that qa-review *reads* but never executes — see "qa-review reads the PR's files but never executes them" below.) An earlier version did check the PR out and run its test suite on the self-hosted runner, which meant executing PR code (including `deliver_gate_test.go`, which shells out to the PR's own `.sh` files) on persistent infrastructure. Dispatching removes that exposure rather than guarding it.
 
 The correct phase does still check out and push to the delivery branch, so it requires the target PR to be same-repository, open, and on `deliver/issue-<N>` — the branch this loop owns.
 
@@ -255,7 +260,9 @@ The check runs in a small `ubuntu-latest` job, so an unauthorised review never w
 
 **The delivery target comes from the event, not from comment text.** The issue delivered is `github.event.issue.number` — where the command was typed. An optional `#N` is accepted only when it agrees with that issue and refused when it disagrees, so no untrusted string ever selects the target.
 
-**The verdict marker is read only from bot-authored comments, and only as a comment's last line** — otherwise any human could set a delivery's verdict by quoting it. The same applies to the `DELIVER-DISMISSALS` count.
+**The verdict marker is read only from bot-authored comments, and only as a comment's last line** — otherwise any human could set a delivery's verdict by quoting it. The same applies to the `QA-VERDICT` marker and the `DELIVER-DISMISSALS` count.
+
+**qa-review reads the PR's files but never executes them.** The verify job runs on the self-hosted runner with the LiteLLM secrets in its environment, so the load-bearing invariant is that PR-authored code never runs there. The qa-review answerer does need the PR-head *source*, so the head is checked out into an ephemeral `--detach` worktree under `$RUNNER_TEMP`, removed in an always-run cleanup, and the answerer runs with `--no-exec` — which drops its `go` build/test tool from both the implementation map and the advertised tool schema, leaving only `read_file`/`grep`/`list_dir` sandboxed to that worktree. The files are read; nothing in them is compiled or run.
 
 **PR text is untrusted input to the agents.** This is a public repository, so anyone can comment on an open delivery PR, and both agents read comments. Two consequences are handled explicitly:
 

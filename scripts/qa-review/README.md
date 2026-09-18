@@ -15,10 +15,18 @@ These scripts are **stdlib-only Python 3** (`urllib`, `json`, `re`, `argparse`,
 `subprocess`) — no third-party dependency, no `requirements.txt`. They talk to
 the LiteLLM proxy over its OpenAI-compatible `/chat/completions` surface.
 
-> **This PR (#1714) only vendors the tooling and tests its deterministic
-> surface.** Nothing here is wired into CI yet; the scripts are inert until the
-> gate wiring lands (#1715) and the adjudicate-only re-verify (#1716). See epic
-> #1717.
+> **Status.** #1714 vendored the tooling and tested its deterministic surface.
+> #1715 made the verdict a **blocking gate signal**: `scripts/deliver-gate.sh`
+> now requires `QA_VERDICT ∈ {PASS, BLOCK, MISSING}` as a seventh fail-closed
+> input, and `deliver-verify.yml` runs the questioner + answerer against an
+> ephemeral read-only PR-head worktree with `--no-exec`.
+>
+> Both halves are now live in this PR: the gate change and the `deliver-verify.yml`
+> wiring — the `Run qa-review` and `Read the QA verdict marker` steps that produce and
+> read `QA_VERDICT`. Because the delivery agent's GitHub App token has no `workflows`
+> permission, the workflow half was applied by a `workflows`-scoped push rather than by
+> the agent; `scripts/deliver_qa_verdict_test.go` holds the contract over the live
+> workflow. The adjudicate-only re-verify is still #1716. See epic #1717.
 
 ## The pieces
 
