@@ -49,8 +49,8 @@ func runConflictingFiles(t *testing.T, dir, base, head string) (lines []string, 
 	return lines, errb.String(), code
 }
 
-// diverge builds two branches from one seed that both touch `shared` — the shape of the real
-// #1778 conflict, where main and the delivery branch both edited CLAUDE.md. Returns the repo.
+// divergedRepo builds two branches from one seed that both touch `shared.md` — the shape of the
+// real #1778 conflict, where main and the delivery branch both edited CLAUDE.md. Returns the repo.
 //
 // `base` is left as a branch named `base`, standing in for origin/main; the returned HEAD is on
 // branch `feature`.

@@ -188,8 +188,11 @@ esac
 # reported together for the same reason both objective blockers are: a human reading the PR
 # comment should see every reason the delivery did not pass, not just the first.
 #
-# Both markers are already known non-MISSING here, so an empty `findings` means both reviews
-# came back clean — which is what makes the ready row and the disagreement row below exhaustive.
+# Both markers are non-MISSING on every path that CONSULTS `findings`, so an empty `findings`
+# means both reviews came back clean — which is what makes the ready row and the disagreement row
+# below exhaustive. (A MISSING marker does reach this point in the #1781 conflict case, where the
+# markers are known untrustworthy; that case takes the FIRST branch of the decision chain below and
+# never reads `findings` or `blocking`, so the property the two rows rely on still holds.)
 findings=""
 add_finding() { findings="${findings:+$findings; }$1"; }
 
