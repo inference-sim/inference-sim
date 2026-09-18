@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -675,4 +676,237 @@ func TestDeliverGateAlwaysDecides(t *testing.T) {
 			}
 		}
 	}
+}
+
+// conflictClause is the phrase every decision on a conflicting branch must carry (#1781). Matched
+// as a substring rather than the whole reason so the clause can be composed with whatever else
+// that row had to say, which is exactly the property under test.
+const conflictClause = "merge conflicts with main"
+
+// TestDeliverGateConflictIsAlwaysNamed covers C1 of #1781 across the WHOLE declared input space:
+// whenever the branch conflicts with main, the reason a human reads names the conflict — on every
+// decision row, not just the one row that used to mention it.
+//
+// This is the regression that dead-ended PR #1778. The branch was `dirty`, the review marker was
+// unreadable, the missing-marker row fired first, and the delivery stopped for a human with the
+// reason "the verify phase posted no DELIVER-VERDICT marker" — the symptom. #1758's acceptance
+// criterion is that such a PR is "explicitly flagged needs-human NAMING THE CONFLICT", so the
+// naming is the contract, and it has to hold whichever row happens to decide.
+//
+// Asserted as a cross-product rather than on the handful of rows that exist today: a new row added
+// later inherits the requirement instead of quietly reintroducing an unnamed conflict.
+func TestDeliverGateConflictIsAlwaysNamed(t *testing.T) {
+	for _, ci := range allCIStatus {
+		for _, plan := range allPlanGate {
+			for _, verdict := range allVerdicts {
+				for _, qa := range allQAVerdict {
+					for _, dis := range allDismissals {
+						for _, round := range []string{"0", "3"} {
+							out := runGate(t, gateEnv(map[string]string{
+								"CI_STATUS": ci, "PLAN_GATE": plan, "AGENT_VERDICT": verdict,
+								"QA_VERDICT": qa, "DISMISSALS": dis, "MERGE_STATE": "conflicting",
+								"ROUND": round,
+							}))
+							where := ci + "/" + plan + "/" + verdict + "/qa=" + qa + "/dis=" + dis + " round " + round
+							if !strings.Contains(out.reason, conflictClause) {
+								t.Errorf("%s: decision %q reason does not name the conflict: %q",
+									where, out.decision, out.reason)
+							}
+							// And it can never be ready — the pre-existing #1758 guarantee, re-asserted
+							// here because C1's decoration must not have widened the ready path.
+							if out.decision == "ready" {
+								t.Errorf("%s: reached ready on a conflicting branch", where)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// The clause must appear ONLY when the branch actually conflicts. A reason that mentions a
+// conflict on a mergeable branch would send a human looking for one that does not exist, and on
+// `unknown` it would misreport a transient API blip as a real conflict.
+func TestDeliverGateConflictClauseAbsentWhenNotConflicting(t *testing.T) {
+	for _, merge := range []string{"mergeable", "unknown"} {
+		for _, verdict := range allVerdicts {
+			out := runGate(t, gateEnv(map[string]string{
+				"MERGE_STATE": merge, "AGENT_VERDICT": verdict,
+				// Supplied deliberately: a stale file list must not leak into a non-conflicting reason.
+				"CONFLICT_FILES": "CLAUDE.md",
+			}))
+			if strings.Contains(out.reason, conflictClause) {
+				t.Errorf("merge=%s verdict=%s: reason claims a conflict on a non-conflicting branch: %q",
+					merge, verdict, out.reason)
+			}
+			if strings.Contains(out.reason, "CLAUDE.md") {
+				t.Errorf("merge=%s verdict=%s: CONFLICT_FILES leaked into a non-conflicting reason: %q",
+					merge, verdict, out.reason)
+			}
+		}
+	}
+}
+
+// CONFLICT_FILES names the conflicting paths in the reason (#1781, C4/C6). This is the half of
+// #1758(b) that PR #1778 was missing entirely: a human was told to take over without being told
+// what conflicted.
+func TestDeliverGateConflictNamesTheFiles(t *testing.T) {
+	// Newline-separated, as scripts/conflicting-files.sh prints it.
+	t.Run("newline-separated", func(t *testing.T) {
+		out := runGate(t, gateEnv(map[string]string{
+			"MERGE_STATE": "conflicting", "CONFLICT_FILES": "CLAUDE.md\ndocs/guide/a.md",
+		}))
+		for _, want := range []string{"CLAUDE.md", "docs/guide/a.md"} {
+			if !strings.Contains(out.reason, want) {
+				t.Errorf("reason does not name %q: %q", want, out.reason)
+			}
+		}
+		// One line, always: the reason is pasted into a PR comment and into the correct phase's
+		// gate_reason input, so an embedded newline would truncate or corrupt both.
+		if strings.Contains(out.reason, "\n") {
+			t.Errorf("reason contains a newline: %q", out.reason)
+		}
+	})
+
+	// Comma-separated is accepted too, so a caller that already joined the list is not silently
+	// rendered as one nonsense path.
+	t.Run("comma-separated", func(t *testing.T) {
+		out := runGate(t, gateEnv(map[string]string{
+			"MERGE_STATE": "conflicting", "CONFLICT_FILES": "a.md,b.md",
+		}))
+		if !strings.Contains(out.reason, "a.md") || !strings.Contains(out.reason, "b.md") {
+			t.Errorf("reason does not name both comma-separated paths: %q", out.reason)
+		}
+	})
+
+	// Absent or blank is the degraded case: scripts/conflicting-files.sh is best-effort, so the
+	// conflict must still be NAMED even when the paths could not be computed. A gate that required
+	// the list would turn a diagnostic failure into an unexplained stop.
+	for i, files := range []string{"", "   ", "\n"} {
+		t.Run("blank-"+strconv.Itoa(i)+"-still-names-the-conflict", func(t *testing.T) {
+			out := runGate(t, gateEnv(map[string]string{
+				"MERGE_STATE": "conflicting", "CONFLICT_FILES": files,
+			}))
+			if !strings.Contains(out.reason, conflictClause) {
+				t.Errorf("reason does not name the conflict: %q", out.reason)
+			}
+			if strings.Contains(out.reason, "conflicting files:") {
+				t.Errorf("reason advertises an empty file list: %q", out.reason)
+			}
+		})
+	}
+
+	// CONFLICT_FILES is OPTIONAL: unset must not be a wiring error, or every existing caller
+	// (and every other test in this file) would exit 2.
+	t.Run("unset-is-not-a-wiring-error", func(t *testing.T) {
+		env := gateEnv(map[string]string{"MERGE_STATE": "conflicting"})
+		delete(env, "CONFLICT_FILES")
+		out := runGate(t, env)
+		if out.exitCode != 0 {
+			t.Errorf("exit %d with CONFLICT_FILES unset, want 0 — the input is optional", out.exitCode)
+		}
+		if !strings.Contains(out.reason, conflictClause) {
+			t.Errorf("reason does not name the conflict: %q", out.reason)
+		}
+	})
+}
+
+// TestDeliverGateConflictOutranksAMissingMarker covers C2 of #1781 — the ordering that is the
+// actual fix for PR #1778's dead-end.
+//
+// A `dirty` branch has no merge ref, so verify now skips both agent reviews on one
+// (deliver-verify.yml) and MISSING is the EXPECTED reading rather than an anomaly. The conflict is
+// also the only thing a correction round can act on, so it must route to `correct` while rounds
+// remain (#1758(a)) and, at the cap, to a `needs-human` that names the conflict (#1758(b)) —
+// never to the bare "posted no DELIVER-VERDICT marker" stop.
+func TestDeliverGateConflictOutranksAMissingMarker(t *testing.T) {
+	// Every way a marker can be missing, alone or together.
+	missing := []struct {
+		name, agent, qa string
+	}{
+		{"review-missing", "MISSING", "PASS"},
+		{"qa-missing", "GREEN", "MISSING"},
+		{"both-missing", "MISSING", "MISSING"},
+		// A NOT-GREEN/BLOCK alongside a missing sibling marker is still missing evidence.
+		{"review-missing-qa-block", "MISSING", "BLOCK"},
+		{"qa-missing-review-not-green", "NOT-GREEN", "MISSING"},
+	}
+
+	for _, m := range missing {
+		t.Run(m.name+"/rounds-remain-corrects", func(t *testing.T) {
+			out := runGate(t, gateEnv(map[string]string{
+				"MERGE_STATE": "conflicting", "AGENT_VERDICT": m.agent, "QA_VERDICT": m.qa,
+				"ROUND": "0", "CONFLICT_FILES": "CLAUDE.md",
+			}))
+			requireDecision(t, out, "correct")
+			if !strings.Contains(out.reason, conflictClause) {
+				t.Errorf("reason does not name the conflict: %q", out.reason)
+			}
+			if !strings.Contains(out.reason, "CLAUDE.md") {
+				t.Errorf("reason does not name the conflicting file: %q", out.reason)
+			}
+			// The observed #1778 message must NOT be the reason a human is given.
+			if strings.Contains(out.reason, "posted no DELIVER-VERDICT marker") ||
+				strings.Contains(out.reason, "posted no QA-VERDICT marker") {
+				t.Errorf("reason reports the missing marker instead of the conflict: %q", out.reason)
+			}
+		})
+
+		t.Run(m.name+"/at-cap-stops-naming-the-conflict", func(t *testing.T) {
+			out := runGate(t, gateEnv(map[string]string{
+				"MERGE_STATE": "conflicting", "AGENT_VERDICT": m.agent, "QA_VERDICT": m.qa,
+				"ROUND": "3", "MAX_ROUNDS": "3", "CONFLICT_FILES": "CLAUDE.md",
+			}))
+			requireDecision(t, out, "needs-human")
+			if !strings.Contains(out.reason, conflictClause) {
+				t.Errorf("#1758(b) requires the stop to name the conflict; reason: %q", out.reason)
+			}
+			if !strings.Contains(out.reason, "CLAUDE.md") {
+				t.Errorf("the stop does not name the conflicting file, so a human must go and find it: %q", out.reason)
+			}
+		})
+	}
+
+	// The unchanged half: on a MERGEABLE branch a missing marker is still real missing evidence and
+	// still stops for a human with its own reason. C2 must not have turned an unreadable review
+	// into a correction round in general — only on a branch whose markers cannot mean anything.
+	t.Run("mergeable-missing-review-still-stops", func(t *testing.T) {
+		out := runGate(t, gateEnv(map[string]string{"AGENT_VERDICT": "MISSING"}))
+		requireDecision(t, out, "needs-human")
+		if !strings.Contains(out.reason, "DELIVER-VERDICT") {
+			t.Errorf("reason should name the missing marker on a mergeable branch: %q", out.reason)
+		}
+	})
+	t.Run("mergeable-missing-qa-still-stops", func(t *testing.T) {
+		out := runGate(t, gateEnv(map[string]string{"QA_VERDICT": "MISSING"}))
+		requireDecision(t, out, "needs-human")
+		if !strings.Contains(out.reason, "QA-VERDICT") {
+			t.Errorf("reason should name the missing marker on a mergeable branch: %q", out.reason)
+		}
+	})
+	// `unknown` mergeability with a missing marker is NOT the conflict case: nothing is known to
+	// conflict, so the missing evidence governs and the delivery stops rather than correcting.
+	t.Run("unknown-mergeability-missing-review-still-stops", func(t *testing.T) {
+		out := runGate(t, gateEnv(map[string]string{
+			"MERGE_STATE": "unknown", "AGENT_VERDICT": "MISSING",
+		}))
+		requireDecision(t, out, "needs-human")
+	})
+
+	// An unreadable CI status still outranks everything, conflict included: without CI nothing can
+	// be trusted, and a correction round has no failing signal to work from. The conflict is still
+	// NAMED, which is the C1 guarantee.
+	t.Run("ci-unknown-outranks-the-conflict", func(t *testing.T) {
+		out := runGate(t, gateEnv(map[string]string{
+			"CI_STATUS": "unknown", "MERGE_STATE": "conflicting", "AGENT_VERDICT": "MISSING",
+		}))
+		requireDecision(t, out, "needs-human")
+		if !strings.Contains(out.reason, conflictClause) {
+			t.Errorf("reason does not name the conflict: %q", out.reason)
+		}
+		if !strings.Contains(out.reason, "CI status could not be determined") {
+			t.Errorf("reason does not name the unreadable CI status: %q", out.reason)
+		}
+	})
 }
