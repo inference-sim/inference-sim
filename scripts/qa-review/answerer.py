@@ -4,13 +4,24 @@
 Runs an OpenAI-compatible function-calling loop with read-only tools sandboxed
 to ``--worktree``. The answerer investigates the actual PR-head code to answer
 each probing question, and runs on a DIFFERENT model family than the questioner
-(RFC #1603).
+(RFC #1603). To judge the fixed policy questions (does this PR fully implement
+the issue it closes? etc.) it also has the read-only ``gh_issue`` (the closing
+issue's acceptance criteria) and ``pr_diff`` (the base→head diff) tools — the
+same ones the adjudicator uses — so completeness is verifiable in round 0
+(#1792), while behavior is still checked against the ACTUAL code.
 
-Tools (all confined to the worktree):
-  read_file(path[, start, end])   read a file (optionally a line range)
-  grep(pattern[, path])           ripgrep-style search
-  list_dir(path)                  list a directory
+Tools:
+  read_file(path[, start, end])   read a worktree file (optionally a line range)
+  grep(pattern[, path])           ripgrep-style search of the worktree
+  list_dir(path)                  list a worktree directory
   go(subcommand)                  run ``go build``/``go test`` (dropped by --no-exec)
+  gh_issue(number)                read a GitHub issue + comments (acceptance criteria)
+  pr_diff(number)                 read the PR base→head diff
+
+read_file/grep/list_dir/go are confined to ``--worktree``; gh_issue/pr_diff are
+read-only ``gh`` network calls against ``QA_REPO`` (mirroring the adjudicator).
+The PR number and the closing issue number are given to the model (``--pr`` /
+``--issue``) so it knows which to query.
 
 Per-question contract: status in {CONFIDENT, CANNOT_ANSWER, FLAW_FOUND} plus
 answer, evidence (file:line / repro), and an optional non-blocking note.
@@ -19,6 +30,7 @@ Env:
   OPENAI_BASE_URL      LiteLLM proxy base URL (required)
   OPENAI_API_KEY       proxy key; falls back to LITELLM_KEY
   QA_ANSWERER_MODEL    default azure/gpt-5.6-sol
+  QA_REPO              owner/repo for gh_issue/pr_diff (default inference-sim/inference-sim)
 
 stdout: [{id,status,answer,evidence,note}]
 """
@@ -38,7 +50,12 @@ STATUSES = ("CONFIDENT", "CANNOT_ANSWER", "FLAW_FOUND")
 SYSTEM_PROMPT = """You are an isolated, skeptical answerer in a two-agent \
 cross-vendor PR review for a discrete-event LLM-inference simulator (BLIS). A \
 different model generated the questions; you must answer them by investigating \
-the ACTUAL code at the PR head, using only the read-only tools provided. Never \
+the ACTUAL code at the PR head, using the read-only tools provided. To judge the \
+fixed policy questions (whether the PR fully implements the issue it closes, \
+documentation currency, stale comments) you also have the read-only gh_issue tool \
+(the closing issue's acceptance criteria + comments) and pr_diff tool (the \
+base→head diff): consult them for F1/F2/F3, but do NOT answer from the diff alone \
+when the surrounding code decides the answer — verify against the real code. Never \
 trust the PR description over the code.
 
 For each question:
@@ -129,14 +146,67 @@ def tool_go(worktree, subcommand):
     return (proc.stdout + proc.stderr)[-8000:]
 
 
+# gh_issue/pr_diff let the round-0 answerer verify issue-completeness (F1) that the
+# worktree code alone cannot decide (#1792). They are read-only gh NETWORK calls, not
+# PR-code execution, so they stay under --no-exec (only the code-executing `go` tool is
+# dropped). They are DUPLICATED verbatim in adjudicator.py rather than hoisted into a
+# shared module: each vendored qa-review script stays self-contained (matching the
+# prototype's per-script layout), so the two are kept identical by hand — if you edit one,
+# edit both. A shared read-only-gh helper is a possible follow-up.
+#
+# gh_issue uses `--json ... -q`, NOT the default `--comments` view: the pretty view
+# fetches Projects-classic data (repository.issue.projectCards), which this repo's GitHub
+# has DEPRECATED, so `gh issue view --comments` exits non-zero with only a deprecation
+# notice and never returns the acceptance criteria — the exact failure that would defeat
+# the round-0 completeness check. A non-zero gh exit is surfaced as an explicit failure
+# marker so the model treats it as missing evidence (leading to CANNOT_ANSWER), never
+# mistakes an error string for the issue body or the diff.
+_GH_ISSUE_JQ = (
+    r'"#\(.number) \(.title)\n\n\(.body)\n\n--- comments ---\n"'
+    r' + ([.comments[] | "@\(.author.login): \(.body)"] | join("\n\n"))'
+)
+
+
+def tool_gh_issue(worktree, number):
+    """Read-only: fetch a GitHub issue's acceptance criteria + comments (#1792)."""
+    repo = os.environ.get("QA_REPO", "inference-sim/inference-sim")
+    proc = subprocess.run(
+        [
+            "gh", "issue", "view", str(number), "--repo", repo,
+            "--json", "number,title,body,comments", "-q", _GH_ISSUE_JQ,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        return "gh_issue failed (exit %d): %s" % (proc.returncode, proc.stderr.strip()[:2000])
+    return proc.stdout[:12000]
+
+
+def tool_pr_diff(worktree, number):
+    """Read-only: fetch the PR base→head diff (#1792)."""
+    repo = os.environ.get("QA_REPO", "inference-sim/inference-sim")
+    proc = subprocess.run(
+        ["gh", "pr", "diff", str(number), "--repo", repo],
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        return "pr_diff failed (exit %d): %s" % (proc.returncode, proc.stderr.strip()[:2000])
+    return proc.stdout[:16000]
+
+
 # TOOLS_IMPL maps a tool name to its implementation. TOOLS_SCHEMA is the
 # OpenAI-compatible function schema advertised to the model. The `go` tool is
-# registered in BOTH.
+# registered in BOTH; the read-only gh_issue/pr_diff tools mirror the adjudicator
+# (#1792) and, unlike `go`, are KEPT under --no-exec.
 TOOLS_IMPL = {
     "read_file": tool_read_file,
     "grep": tool_grep,
     "list_dir": tool_list_dir,
     "go": tool_go,
+    "gh_issue": tool_gh_issue,
+    "pr_diff": tool_pr_diff,
 }
 
 TOOLS_SCHEMA = [
@@ -195,17 +265,44 @@ TOOLS_SCHEMA = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "gh_issue",
+            "description": "Read a GitHub issue (acceptance criteria) with comments.",
+            "parameters": {
+                "type": "object",
+                "properties": {"number": {"type": "string"}},
+                "required": ["number"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "pr_diff",
+            "description": "Read the PR diff.",
+            "parameters": {
+                "type": "object",
+                "properties": {"number": {"type": "string"}},
+                "required": ["number"],
+            },
+        },
+    },
 ]
 
 
 def tools_for(no_exec):
     """Return (impl, schema) for the answerer, dropping the code-executing
-    `go` tool when no_exec is True.
+    `go` tool when no_exec is True while KEEPING the read-only
+    read_file/grep/list_dir and gh_issue/pr_diff tools intact.
 
     Flag absent (no_exec False) => the `go` tool is present in both the
     implementation map and the advertised schema => verbatim prototype
     behavior. This selector is the seam #1715 uses to honor the self-hosted
-    runner's no-execution invariant (issue #1714 carve-out 2).
+    runner's no-execution invariant (issue #1714 carve-out 2): gh_issue/pr_diff
+    are read-only network calls, not PR-code execution, so they survive the drop
+    (#1792), exactly as they do in the adjudicator.
     """
     if no_exec:
         impl = {k: v for k, v in TOOLS_IMPL.items() if k != "go"}
@@ -274,15 +371,43 @@ def exhausted_answers(questions):
     ]
 
 
-def answer_loop(base_url, api_key, model, worktree, questions, no_exec):
+def answerer_user_message(questions, pr="", issue=""):
+    """Assemble the answerer's user turn: a short preamble naming the PR and the
+    closing issue so the model knows which numbers to pass to the pr_diff /
+    gh_issue tools when judging the fixed policy questions, then the questions.
+
+    Both numbers are optional. With neither known the preamble is omitted and the
+    turn is byte-identical to the pre-#1792 questions-only prompt (the tools are
+    still advertised, so a caller can surface the numbers another way)."""
+    hints = []
+    if pr:
+        hints.append(
+            "the PR under review is #%s (use pr_diff(number=%s) to read the diff)" % (pr, pr)
+        )
+    if issue:
+        hints.append(
+            "the issue it closes is #%s (use gh_issue(number=%s) for its acceptance criteria)"
+            % (issue, issue)
+        )
+    parts = []
+    if hints:
+        parts.append(
+            "Context for the fixed policy questions (F1/F2/F3): "
+            + "; ".join(hints)
+            + ". Always verify behavior against the actual code with read_file/grep/list_dir."
+        )
+    parts.append(
+        "Answer these questions by investigating the code:\n"
+        + json.dumps(questions, indent=2)
+    )
+    return "\n\n".join(parts)
+
+
+def answer_loop(base_url, api_key, model, worktree, questions, no_exec, pr="", issue=""):
     impl, schema = tools_for(no_exec)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": "Answer these questions by investigating the code:\n"
-            + json.dumps(questions, indent=2),
-        },
+        {"role": "user", "content": answerer_user_message(questions, pr, issue)},
     ]
     for _ in range(MAX_TOOL_TURNS):
         resp = post_chat_completion(base_url, api_key, model, messages, schema)
@@ -344,6 +469,10 @@ def main(argv=None):
     parser.add_argument("--worktree", required=True, help="read-only PR-head worktree")
     parser.add_argument("--questions", default="", help="questions JSON (inline)")
     parser.add_argument("--questions-file", default="", help="questions JSON (file)")
+    parser.add_argument("--pr", default="", help="PR number (surfaced for the pr_diff tool)")
+    parser.add_argument(
+        "--issue", default="", help="closing issue number (surfaced for the gh_issue tool)"
+    )
     parser.add_argument(
         "--model",
         default=os.environ.get("QA_ANSWERER_MODEL", DEFAULT_MODEL),
@@ -376,7 +505,14 @@ def main(argv=None):
     questions = parsed["questions"] if isinstance(parsed, dict) else parsed
 
     content = answer_loop(
-        base_url, api_key, args.model, args.worktree, questions, args.no_exec
+        base_url,
+        api_key,
+        args.model,
+        args.worktree,
+        questions,
+        args.no_exec,
+        pr=args.pr,
+        issue=args.issue,
     )
     answers = parse_answers(content)
 
