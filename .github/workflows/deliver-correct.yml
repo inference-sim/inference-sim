@@ -136,6 +136,31 @@ jobs:
         with:
           fetch-depth: 0
 
+      # #1781 — THE BRANCH UPDATE IS A WORKFLOW STEP, not a delegated instruction.
+      #
+      # STEP 1 of the prompt below has always asked the agent to `git merge origin/main`. On PR
+      # #1778 the round completed `success` having made no commit and posted no comment: whether the
+      # merge was never attempted, was attempted and abandoned, or its push was refused, the outcome
+      # was a success with no progress and no diagnostic — the silent-stall class #1758 set out to
+      # remove, one layer deeper. An instruction an agent may quietly not follow is not a mechanism.
+      #
+      # So ordinary drift (the clean-merge case, which is most rounds) is now handled deterministically
+      # and cannot no-op. Only a REAL content conflict reaches the agent, which is the one case that
+      # genuinely needs judgment about intent — and `Did the conflict actually get resolved?` below
+      # checks afterwards whether it did, so even that case cannot end silently.
+      #
+      # The logic lives in scripts/deliver-update-branch.sh, not here, for the reason this repository
+      # already applies to deliver-gate.sh and map-merge-state.sh: it is git surgery on a delivery
+      # branch, so it needs tests (scripts/deliver_branch_update_test.go drives it against real
+      # repositories with a real remote). Its `state=`/`files=` output is teed straight into
+      # GITHUB_OUTPUT, the same idiom the `Decide` step uses in the verify phase.
+      - name: Bring the branch up to date with main
+        id: update
+        if: steps.paused.outputs.paused == 'false'
+        run: |
+          set -o pipefail
+          scripts/deliver-update-branch.sh "deliver/issue-${ISSUE_NUMBER}" | tee -a "$GITHUB_OUTPUT"
+
       # Recorded BEFORE the agent runs, so the dismissal count is only read from comments newer
       # than this and a previous round's count can never be mistaken for this round's. Same
       # pattern as the verify phase's review-start marker.
@@ -203,10 +228,21 @@ jobs:
             gh pr checkout ${{ inputs.pr_number }}
             ```
 
-            STEP 1 — bring the branch up to date with main. This round may have been triggered
-            because the branch conflicts with main (#1758): GitHub cannot merge it, so it is stuck
-            until the conflict is resolved. Even when the round was triggered for findings, merging
-            main first stops drift from accumulating into a harder conflict later. Run:
+            STEP 1 — bring the branch up to date with main. A WORKFLOW STEP has already attempted
+            this before you started, and its result was:
+
+                branch update: `${{ steps.update.outputs.state }}`
+                conflicting files: `${{ steps.update.outputs.files }}`
+
+            - `merged` or `current` — the branch is already up to date with main and pushed. There
+              is NOTHING to do in this step; say so in your comment and go to STEP 2.
+            - `conflicting` — main and this branch changed the same things. The workflow aborted its
+              merge and left your tree clean, so YOU must do the merge and resolve it. This is the
+              one part of STEP 1 that needs judgment, which is why it is yours.
+            - `unknown` — the workflow could not complete the update (it could not reach
+              `origin/main`, or its push lost a race). Do the whole update yourself.
+
+            Unless the state is `merged` or `current`, run:
 
             ```bash
             git fetch origin main
@@ -216,10 +252,15 @@ jobs:
             If the merge is clean (including "Already up to date"), keep the merge commit. If it
             reports conflicts, resolve them using the INTENT of this PR — sub-issue
             #${{ inputs.issue_number }} and the PR's own changes — never by blindly discarding
-            either side; then `git add` the resolved files and commit. If a conflict genuinely
-            cannot be resolved without guessing at intent, do NOT force a resolution: run
-            `git merge --abort`, name the conflicting files and why in your comment, and STOP so a
-            human takes it (this phase then reports the PR `needs-human`).
+            either side; then `git add` the resolved files and commit. Then PUSH: an unpushed
+            resolution is not a resolution, and a workflow step after you re-checks the branch
+            against main and stops the delivery if it is still conflicting.
+
+            If a conflict genuinely cannot be resolved without guessing at intent, do NOT force a
+            resolution: run `git merge --abort`, name the conflicting files and why in your comment,
+            and STOP so a human takes it (this phase then reports the PR `needs-human` naming those
+            files — it no longer depends on your comment to do so, but say it anyway, because your
+            reason for stopping is the part no workflow step can reconstruct).
 
             STEP 2 — fix the findings, IF there are any. Your work list is the findings the
             automation raised this round, in up to two comments (`gh pr view ${{ inputs.pr_number }}
@@ -372,10 +413,91 @@ jobs:
           # Never REMOVED here. Only the review phase clears it, and only on explicit acceptance;
           # a round that dismisses nothing must not wipe an earlier round's unaccepted dismissal.
 
+      # #1781, the other half of the deterministic update: DID THE CONFLICT ACTUALLY GET RESOLVED?
+      #
+      # #1758's acceptance criterion is that a conflicting delivery PR is either (a) auto-updated
+      # and re-verified, or (b) explicitly flagged `needs-human` NAMING THE CONFLICT. On PR #1778
+      # neither happened: the correction round no-op'd, posted nothing, handed back, and the next
+      # verify stopped for a human citing a missing review marker. The conflict was never named by
+      # anything, and a human had to go and find it.
+      #
+      # This step is what makes (b) hold without depending on the agent having done anything at all.
+      # It asks git directly — against the REMOTE state, since the agent pushes from inside the
+      # action and this checkout may be behind — and when the branch still conflicts it posts the
+      # naming comment itself, applies `needs-human`, and (via the hand-back's `if:`) withholds the
+      # re-verification that would otherwise spend a further ~2 hours reaching the same conclusion.
+      #
+      # `always()`, for the same reason the dismissal recorder uses it: the agent step is where a
+      # timeout or a crash lands, and an unresolved conflict must be reported precisely then. Still
+      # gated on `owned` and on a non-paused delivery, so a refused dispatch writes nothing.
+      #
+      # It never FAILS the job. A `needs-human` comment plus label is a complete, actionable outcome;
+      # failing as well would additionally fire the failure reporter below and post a second,
+      # vaguer comment about the phase having errored.
+      - name: Did the conflict actually get resolved?
+        id: conflictcheck
+        if: always() && steps.target.outputs.owned == 'true' && steps.paused.outputs.paused == 'false'
+        env:
+          BRANCH: deliver/issue-${{ inputs.issue_number }}
+          UPDATE_STATE: ${{ steps.update.outputs.state }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          # The git half is scripts/deliver-conflict-check.sh (tested in
+          # scripts/deliver_branch_update_test.go): it fetches both ends fresh into their
+          # remote-tracking refs — the agent pushes from inside the action, so THIS checkout has not
+          # seen the branch tip — and prints state=clean|conflicting|unknown plus the paths. It only
+          # reports `conflicting` on positive evidence, so "could not tell" hands back rather than
+          # stopping a healthy delivery. The GitHub writes stay here, where the phase's credentials
+          # and PR context are.
+          scripts/deliver-conflict-check.sh "deliver/issue-${ISSUE_NUMBER}" \
+            | tee -a "$GITHUB_OUTPUT" > "$RUNNER_TEMP/conflictcheck.txt"
+          state=$(sed -n 's/^state=//p' "$RUNNER_TEMP/conflictcheck.txt")
+          files=$(sed -n 's/^files=//p' "$RUNNER_TEMP/conflictcheck.txt")
+          # No state at all means the script itself did not run (missing, or a usage error). Warn
+          # rather than escalate: `conflicting` is the only value that stops the delivery, and it
+          # must never be inferred from a check that produced nothing.
+          if [[ -z "$state" ]]; then
+            echo "::warning::deliver-conflict-check.sh produced no state; handing back to verify, which reads GitHub's own mergeable_state"
+            exit 0
+          fi
+          [[ "$state" == conflicting ]] || exit 0
+
+          echo "::error::#$PR still conflicts with main after correction round ${{ steps.round.outputs.round }}"
+          {
+            echo "## Stopped — a human is needed: the branch still conflicts with main"
+            echo
+            echo "Correction round ${{ steps.round.outputs.round }} did not resolve the conflict"
+            echo "between this branch and \`main\`, so GitHub still cannot compute a merge ref and"
+            echo "nothing downstream can verify the branch against main. The delivery has stopped"
+            echo "and will not resume on its own."
+            echo
+            echo "**Conflicting files:**"
+            echo
+            tr ',' '\n' <<< "$files" | sed '/^$/d; s/^/- `/; s/$/`/'
+            echo
+            echo "The branch update was \`${UPDATE_STATE:-not reached}\` when this round started."
+            echo
+            echo "To unstick it: \`git fetch origin\`, \`git merge origin/main\` on"
+            echo "\`$BRANCH\`, resolve the files above, push, and the push re-verifies the delivery."
+            echo
+            echo "_[Correction run](${RUN_URL})_"
+          } > "$RUNNER_TEMP/conflict.md"
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/conflict.md" || true
+          gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
+          gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null \
+            || echo "::warning::could not apply the needs-human label; the comment above is the record"
+
       # Retried with exponential backoff (#1757): same transient-dispatch hardening as
       # the verify→correct hand-off.
+      #
+      # NOT handed back when the branch still conflicts (#1781): that round has already stopped the
+      # delivery at a `needs-human` naming the conflicting files, and re-verifying a branch with no
+      # merge ref would spend a full CI dispatch to arrive at the same answer with a vaguer reason.
+      # `unknown` DOES hand back — verify reads GitHub's own `mergeable_state`, which is the
+      # authority this local check only approximates.
       - name: Hand back to verify
-        if: steps.paused.outputs.paused == 'false'
+        if: steps.paused.outputs.paused == 'false' && steps.conflictcheck.outputs.state != 'conflicting'
         run: |
           scripts/dispatch-with-retry.sh deliver-verify.yml \
             --repo "$REPO" --ref "${{ github.ref_name }}" \

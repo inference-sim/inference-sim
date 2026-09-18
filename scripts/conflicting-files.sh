@@ -70,9 +70,22 @@ git worktree add --detach "$wt" "$head" >/dev/null 2>&1 \
   || undetermined "cannot materialise '$head' into a temporary worktree"
 
 # --no-commit --no-ff: we want the merge ATTEMPTED and its result left in the index, never
-# recorded. No committer identity is configured in this worktree and none is needed, which is
-# also why --no-commit matters beyond tidiness.
-if git -C "$wt" merge --no-commit --no-ff "$base" >/dev/null 2>&1; then
+# recorded.
+#
+# The `-c user.*` identity is REQUIRED even though nothing is committed here. git verifies the
+# committer identity at the START of a `--no-ff` merge, before touching the index — so on a runner
+# with no identity configured (HOME carries no ~/.gitconfig, and this worktree has no local
+# user.*), a bare `git merge` aborts with "Committer identity unknown" (exit 128) and records NO
+# conflict, which this script would then misread as "the merge failed for some other reason" and
+# report `undetermined`. macOS git auto-detects an identity so it slips through locally; Linux git
+# on the runners does not, so every conflicting branch came back undetermined. Supplied per-command
+# (never written to config) for the same reason deliver-update-branch.sh's git_as_bot does it: the
+# self-hosted workspace is shared across deliveries, so a config write would outlive this round.
+if git -C "$wt" \
+     -c user.name='github-actions[bot]' \
+     -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+     -c commit.gpgsign=false \
+     merge --no-commit --no-ff "$base" >/dev/null 2>&1; then
   # Clean merge: determined, and the list is empty.
   git -C "$wt" merge --abort >/dev/null 2>&1 || true
   exit 0

@@ -1,0 +1,9 @@
+digraph witness {
+  rankdir=LR;
+  label="witness delta  d77764f520568b6c67616ca178b214fe288be7fd → pr-1567"; labelloc=t; fontsize=10;
+  node [shape=box, style="rounded,filled", fillcolor="#eef3fb", fontname="Helvetica"];
+  p0 [label="sim/saturation"];
+  p1 [label="sim/workload"];
+  p0 -> p1 [label="call REMOVED", color="#cf222e", fontcolor="#cf222e", penwidth=2, style=dashed, fontsize=9];
+  p0 -> p1 [label="import REMOVED", color="#cf222e", fontcolor="#cf222e", penwidth=2, style=dashed, fontsize=9];
+}
