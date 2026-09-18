@@ -130,11 +130,14 @@ command -v gh >/dev/null 2>&1 || degrade "gh is not on PATH"
 # `timeout` (coreutils — present on the Linux CI and self-hosted runners that actually run
 # deliveries) or `gtimeout` (macOS with coreutils) enforces it where present; where neither is
 # installed the portable `run_bounded` watchdog below enforces the same deadline, so NO execution
-# path runs `gh` unbounded. A deadline expiry exits non-zero, so resolve_permission and the
+# path runs `gh` unbounded. The deadline first sends SIGTERM and then, after a short grace, escalates
+# to SIGKILL — which cannot be caught — so even a call that ignores or blocks SIGTERM is bounded at
+# deadline + grace, never indefinitely. Any of these exits non-zero, so resolve_permission and the
 # `gh issue view` check treat it exactly like any other "could not ask" failure — fail-closed, never
-# mistaken for a definitive answer. GH_DEADLINE_SECONDS is overridable so the tests can force a
-# short deadline.
+# mistaken for a definitive answer. GH_DEADLINE_SECONDS / GH_KILL_GRACE_SECONDS are overridable so
+# the tests can force short values.
 GH_DEADLINE_SECONDS="${GH_DEADLINE_SECONDS:-30}"
+GH_KILL_GRACE_SECONDS="${GH_KILL_GRACE_SECONDS:-5}"
 _GH_BIN="$(command -v gh)"
 if command -v timeout >/dev/null 2>&1; then
   _GH_TIMEOUT="timeout"
@@ -146,25 +149,31 @@ fi
 
 # Portable fallback deadline, used when neither `timeout` nor `gtimeout` is installed, so there is NO
 # execution path on which a stalled `gh` call runs unbounded — not even on a host without coreutils.
-# A watchdog subshell kills the call after the deadline. Its stdout/stderr go to /dev/null so it can
-# never hold the command-substitution pipe open: were it to, `out=$(gh …)` would block on the
-# watchdog's own sleep instead of returning when the call does, defeating the bound.
+# A watchdog subshell kills the call after the deadline, escalating SIGTERM to SIGKILL after the
+# grace so a TERM-resistant call cannot evade it. Its stdout/stderr go to /dev/null so it can never
+# hold the command-substitution pipe open: were it to, `out=$(gh …)` would block on the watchdog's
+# own sleep instead of returning when the call does, defeating the bound.
 run_bounded() {
   local secs="$1"; shift
   "$@" &
   local pid=$!
-  ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+  (
+    sleep "$secs"
+    kill -TERM "$pid" 2>/dev/null
+    sleep "$GH_KILL_GRACE_SECONDS"
+    kill -KILL "$pid" 2>/dev/null
+  ) >/dev/null 2>&1 &
   local watcher=$!
   wait "$pid" 2>/dev/null
   local rc=$?
-  kill -TERM "$watcher" 2>/dev/null
+  kill -KILL "$watcher" 2>/dev/null
   wait "$watcher" 2>/dev/null
   return "$rc"
 }
 
 gh() {
   if [[ -n "$_GH_TIMEOUT" ]]; then
-    "$_GH_TIMEOUT" "$GH_DEADLINE_SECONDS" "$_GH_BIN" "$@"
+    "$_GH_TIMEOUT" --kill-after="$GH_KILL_GRACE_SECONDS" "$GH_DEADLINE_SECONDS" "$_GH_BIN" "$@"
   else
     run_bounded "$GH_DEADLINE_SECONDS" "$_GH_BIN" "$@"
   fi
