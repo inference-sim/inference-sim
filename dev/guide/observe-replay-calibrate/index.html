@@ -3201,7 +3201,7 @@
 <tr>
 <td><strong>Named preset</strong></td>
 <td><code>--workload &lt;name&gt; --rate &lt;N&gt;</code></td>
-<td>Standard workload from <code>defaults.yaml</code>; identical token distributions to <code>blis run --workload &lt;name&gt;</code></td>
+<td>Standard workload from the catalog (<code>&lt;catalog&gt;/workloads/&lt;name&gt;.yaml</code>, #1769); identical token distributions to <code>blis run --workload &lt;name&gt;</code>, which reads the same file</td>
 </tr>
 <tr>
 <td><strong>Workload spec</strong></td>
@@ -3400,10 +3400,10 @@
 <td>Measured network round-trip time in milliseconds</td>
 </tr>
 <tr>
-<td><code>--defaults-filepath</code></td>
+<td><code>--catalog</code></td>
 <td><code>string</code></td>
-<td><code>"defaults.yaml"</code></td>
-<td>Path to <code>defaults.yaml</code> containing preset definitions (preset mode only)</td>
+<td><code>""</code></td>
+<td>Catalog clone root holding <code>workloads/&lt;name&gt;.yaml</code> (preset mode only). No default; <code>BLIS_CATALOG</code> is the fallback, and the flag wins when both are set (#1769 replaced <code>--defaults-filepath</code> here)</td>
 </tr>
 <tr>
 <td><code>--record-itl</code></td>

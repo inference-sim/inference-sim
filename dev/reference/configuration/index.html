@@ -3630,7 +3630,7 @@
 <ol>
 <li><code>--workload-spec</code> YAML file — when set, all token distribution and arrival parameters come from the YAML; CLI distribution flags are ignored</li>
 <li>CLI distribution flags — when <code>--workload distribution</code> (default) and no <code>--workload-spec</code></li>
-<li>Named preset from <code>defaults.yaml</code> — when <code>--workload &lt;name&gt;</code> (e.g., <code>chatbot</code>)</li>
+<li>Named preset from the catalog (<code>&lt;catalog&gt;/workloads/&lt;name&gt;.yaml</code>, #1769) — when <code>--workload &lt;name&gt;</code> (e.g., <code>chatbot</code>)</li>
 <li>Hardcoded CLI flag defaults — (e.g., <code>--prompt-tokens 512</code>, <code>--output-tokens 512</code>)</li>
 </ol>
 <div class="admonition note">
@@ -3967,7 +3967,7 @@
 <td><code>--catalog</code></td>
 <td>string</td>
 <td>""</td>
-<td>Path to the <strong>model catalog clone root</strong> (#1774). A model's HuggingFace <code>config.json</code> is read from <code>&lt;catalog&gt;/models/&lt;short-name&gt;/config.json</code> — the layout the authoritative <a href="https://github.com/inference-sim/blis-catalog"><code>blis-catalog</code></a> repository uses, with <code>workloads/</code>, <code>devices/</code>, <code>hardware/</code> and <code>networks/</code> as sibling namespaces under the same root. A <strong>transition fallback</strong> also accepts the flat <code>&lt;catalog&gt;/&lt;short-name&gt;/config.json</code> (the repository's bundled <code>model_configs/</code> tree), so <code>export BLIS_CATALOG=$PWD/model_configs</code> keeps working; #1771 removes the bundled tree and the fallback together. <strong>Path semantics:</strong> a <strong>relative</strong> value is resolved against the process working directory, an <strong>absolute</strong> value is used as given; neither is rewritten. <strong>No default and no search path</strong> — supply this flag or the <code>BLIS_CATALOG</code> environment variable, or the run is refused naming both (#1731). <code>--catalog</code> wins when both are set, and the override is announced on stderr. Replaces the retired <code>--model-config-folder</code>: point <code>--catalog</code> at a scratch directory to use your own config. Registered on <code>run</code> and <code>replay</code> (not <code>observe</code>, which resolves no model config). BLIS never fetches or writes a config at run time (NS-6, #1733).</td>
+<td>Path to the <strong>model catalog clone root</strong> (#1774). A model's HuggingFace <code>config.json</code> is read from <code>&lt;catalog&gt;/models/&lt;short-name&gt;/config.json</code> — the layout the authoritative <a href="https://github.com/inference-sim/blis-catalog"><code>blis-catalog</code></a> repository uses, with <code>workloads/</code>, <code>devices/</code>, <code>hardware/</code> and <code>networks/</code> as sibling namespaces under the same root. A <strong>transition fallback</strong> also accepts the flat <code>&lt;catalog&gt;/&lt;short-name&gt;/config.json</code> (the repository's bundled <code>model_configs/</code> tree), so <code>export BLIS_CATALOG=$PWD/model_configs</code> keeps working; #1771 removes the bundled tree and the fallback together. <strong>Path semantics:</strong> a <strong>relative</strong> value is resolved against the process working directory, an <strong>absolute</strong> value is used as given; neither is rewritten. <strong>No default and no search path</strong> — supply this flag or the <code>BLIS_CATALOG</code> environment variable, or the run is refused naming both (#1731). <code>--catalog</code> wins when both are set, and the override is announced on stderr. Replaces the retired <code>--model-config-folder</code>: point <code>--catalog</code> at a scratch directory to use your own config. Registered on <code>run</code>, <code>replay</code>, <code>observe</code> and <code>convert preset</code> — the last two for the workload presets in the <code>workloads/</code> namespace (#1769), not for a model config, which only <code>run</code>/<code>replay</code> resolve. BLIS never fetches or writes a config at run time (NS-6, #1733).</td>
 </tr>
 <tr>
 <td><code>--hardware-config</code></td>
@@ -4399,7 +4399,7 @@
 <tr>
 <td><strong>Preset</strong></td>
 <td><code>--workload &lt;name&gt;</code></td>
-<td>Named preset from <code>defaults.yaml</code>: <code>chatbot</code>, <code>contentgen</code>, <code>summarization</code>, <code>multidoc</code>.</td>
+<td>Named preset read from the catalog (<code>&lt;catalog&gt;/workloads/&lt;name&gt;.yaml</code>, #1769): <code>chatbot</code>, <code>contentgen</code>, <code>summarization</code>, <code>multidoc</code>. Needs <code>--catalog</code> / <code>BLIS_CATALOG</code>, which <code>blis run</code> already requires for the model.</td>
 </tr>
 </tbody>
 </table>
@@ -4553,7 +4553,7 @@
 <td><code>--defaults-filepath</code></td>
 <td>string</td>
 <td>"defaults.yaml"</td>
-<td>Path to <code>defaults.yaml</code>.</td>
+<td>Path to <code>defaults.yaml</code> (shipped constants; workload presets come from the catalog since #1769).</td>
 </tr>
 <tr>
 <td><code>--trace-output</code></td>
@@ -4716,11 +4716,14 @@
 </table>
 <p>When configured, BLIS computes a single fitness score from aggregated metrics. Latency metrics are normalized via <code>1/(1 + value/1000)</code> where <code>value</code> is in ticks (microseconds) and 1000 = 1ms reference (lower is better); throughput metrics via <code>value/(value + reference)</code> where <code>referenceRPS = 100.0</code> and <code>referenceTPS = 10000.0</code> (higher is better). Useful for automated policy comparison across multiple simulation runs.</p>
 <h2 id="defaultsyaml">defaults.yaml<a class="headerlink" href="#defaultsyaml" title="Permanent link">&para;</a></h2>
-<p>The <code>defaults.yaml</code> file is a workload preset store and a home for shipped constants. It carries
-no per-model deployment policy: the <code>defaults:</code> block that once mapped a model to a
+<p>The <code>defaults.yaml</code> file is a home for shipped constants — trained coefficients, LoRA cost
+terms and KV-offload device physics. It carries neither per-model deployment policy nor
+workload presets: the <code>defaults:</code> block that once mapped a model to a
 <code>GPU</code>/<code>tensor_parallelism</code>/<code>hf_repo</code> triple was removed in #1768, having been unreachable on
 every run path since NS-6 (#1733) made <code>--hardware</code>/<code>--tp</code> required and #1731 made the catalog
-the only model-config source.</p>
+the only model-config source; the <code>workloads:</code> block was removed in #1769, because the named
+presets also existed in the catalog (<code>&lt;catalog&gt;/workloads/&lt;name&gt;.yaml</code>) with nothing keeping
+the two copies in sync. The catalog copy is now the only one.</p>
 <div class="admonition warning">
 <p class="admonition-title">Custom <code>defaults.yaml</code> files must remove the <code>defaults:</code> block (migration note)</p>
 <p>Strict parsing (<code>KnownFields(true)</code>) rejects an undeclared key, so a hand-maintained
@@ -4728,35 +4731,35 @@ the only model-config source.</p>
 <code>field defaults not found in type cmd.Config</code>. Delete the block and pass <code>--hardware</code>/<code>--tp</code>
 on the command line. Nothing is lost — no run path read those values.</p>
 </div>
+<div class="admonition warning">
+<p class="admonition-title">Custom <code>defaults.yaml</code> files must remove the <code>workloads:</code> block (migration note)</p>
+<p>By the same strict-parsing rule, a hand-maintained <code>defaults.yaml</code> that still carries a
+<code>workloads:</code> block now fails to load with
+<code>field workloads not found in type cmd.Config</code> (#1769). Move the preset to
+<code>&lt;catalog&gt;/workloads/&lt;name&gt;.yaml</code> — the same keys, one preset per file — and locate the
+catalog with <code>--catalog</code> or <code>BLIS_CATALOG</code>. <code>blis run --workload</code>,
+<code>blis convert preset --name</code> and <code>blis observe --workload</code> all read it from there.</p>
+</div>
 <p>These are the top-level keys the file may carry, and strict parsing accepts no others
 (<code>KnownFields(true)</code>, R10 — the authoritative list is <code>cmd.Config</code> in <code>cmd/default_config.go</code>;
 the bundled <code>defaults.yaml</code> is the worked example):</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0.1</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1"># Workload presets, keyed by the name --workload takes (chatbot, summarization, ...)</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="nt">workloads</span><span class="p">:</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">  </span><span class="nt">chatbot</span><span class="p">:</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">    </span><span class="nt">prompt_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">    </span><span class="nt">prompt_tokens_stdev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
-<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">    </span><span class="nt">output_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
-<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">    </span><span class="nt">output_tokens_stdev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
-<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">    </span><span class="c1"># ... min/max bounds</span>
-<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>
-<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="c1"># Trained-physics coefficients — ONE GLOBAL SET, not keyed by model, GPU or TP.</span>
-<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="c1"># Consulted only by --latency-model trained-physics, and only for a flag the user did not pass.</span>
-<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="nt">trained_physics_coefficients</span><span class="p">:</span>
-<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="w">  </span><span class="nt">alpha_coeffs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">15563.199579</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">777.3455</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">45.907545</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># α₀-α₂: API/framework overheads (µs)</span>
-<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="w">  </span><span class="nt">beta_coeffs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">0.152128</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.36252915</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">...</span><span class="p p-Indicator">]</span><span class="w">      </span><span class="c1"># β₁-β₁₀ + optional β_EP</span>
-<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>
-<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="c1"># LoRA control-plane cost terms (#1464). Inert unless a run declares adapters.</span>
-<a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a><span class="nt">lora</span><span class="p">:</span>
-<a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a><span class="w">  </span><span class="nt">load_base_latency_us</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1500.0</span>
-<a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a><span class="w">  </span><span class="c1"># ... bandwidth, per-rank footprint, per-rank step-overhead tiers</span>
-<a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a>
-<a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a><span class="c1"># KV-offload device classes referenced by a --kv-offload-config tier's device_class</span>
-<a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a><span class="c1"># (#1587/#1581). Inert unless such a config names one.</span>
-<a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a><span class="nt">kv_offload_devices</span><span class="p">:</span>
-<a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a><span class="w">  </span><span class="nt">nvme_gen4</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">read_bandwidth</span><span class="p">:</span><span class="w"> </span><span class="nv">7.0e3</span><span class="p p-Indicator">,</span><span class="nt"> write_bandwidth</span><span class="p">:</span><span class="w"> </span><span class="nv">5.0e3</span><span class="p p-Indicator">,</span><span class="nt"> base_latency</span><span class="p">:</span><span class="w"> </span><span class="nv">80.0</span><span class="p p-Indicator">}</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1"># Trained-physics coefficients — ONE GLOBAL SET, not keyed by model, GPU or TP.</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># Consulted only by --latency-model trained-physics, and only for a flag the user did not pass.</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="nt">trained_physics_coefficients</span><span class="p">:</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">  </span><span class="nt">alpha_coeffs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">15563.199579</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">777.3455</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">45.907545</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># α₀-α₂: API/framework overheads (µs)</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">  </span><span class="nt">beta_coeffs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">0.152128</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.36252915</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">...</span><span class="p p-Indicator">]</span><span class="w">      </span><span class="c1"># β₁-β₁₀ + optional β_EP</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="c1"># LoRA control-plane cost terms (#1464). Inert unless a run declares adapters.</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="nt">lora</span><span class="p">:</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="w">  </span><span class="nt">load_base_latency_us</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1500.0</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="w">  </span><span class="c1"># ... bandwidth, per-rank footprint, per-rank step-overhead tiers</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="c1"># KV-offload device classes referenced by a --kv-offload-config tier's device_class</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="c1"># (#1587/#1581). Inert unless such a config names one.</span>
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="nt">kv_offload_devices</span><span class="p">:</span>
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="w">  </span><span class="nt">nvme_gen4</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">read_bandwidth</span><span class="p">:</span><span class="w"> </span><span class="nv">7.0e3</span><span class="p p-Indicator">,</span><span class="nt"> write_bandwidth</span><span class="p">:</span><span class="w"> </span><span class="nv">5.0e3</span><span class="p p-Indicator">,</span><span class="nt"> base_latency</span><span class="p">:</span><span class="w"> </span><span class="nv">80.0</span><span class="p p-Indicator">}</span>
 </code></pre></div>
 <div class="admonition warning">
 <p class="admonition-title">There is no <code>models:</code> section, and there never was a keyed coefficient table</p>
@@ -4939,7 +4942,7 @@ for the cost model and its known approximations.</p>
 </tr>
 <tr>
 <td><strong>WorkloadConfig</strong></td>
-<td><code>--workload</code>, <code>--workload-spec</code>, <code>--defaults-filepath</code>, <code>--rate</code>, <code>--num-requests</code>, <code>--prompt-tokens*</code>, <code>--output-tokens*</code>, <code>--prefix-tokens</code></td>
+<td><code>--workload</code> (preset read from <code>&lt;catalog&gt;/workloads/&lt;name&gt;.yaml</code>, #1769), <code>--workload-spec</code>, <code>--rate</code>, <code>--num-requests</code>, <code>--prompt-tokens*</code>, <code>--output-tokens*</code>, <code>--prefix-tokens</code></td>
 </tr>
 <tr>
 <td><strong>DeploymentConfig</strong></td>
@@ -5262,7 +5265,9 @@ rows, <code>--metrics-path</code> writes the run aggregate that <code>blis calib
 <h2 id="blis-convert">blis convert<a class="headerlink" href="#blis-convert" title="Permanent link">&para;</a></h2>
 <p>Converts external workload formats into BLIS WorkloadSpec v2 YAML. Three subcommands are available.</p>
 <h3 id="blis-convert-preset"><code>blis convert preset</code><a class="headerlink" href="#blis-convert-preset" title="Permanent link">&para;</a></h3>
-<p>Generates a WorkloadSpec from a named preset in <code>defaults.yaml</code>.</p>
+<p>Generates a WorkloadSpec from a named preset in the catalog
+(<code>&lt;catalog&gt;/workloads/&lt;name&gt;.yaml</code>, #1769 — the same definition <code>blis run --workload</code> and
+<code>blis observe --workload</code> read).</p>
 <table>
 <thead>
 <tr>
@@ -5292,10 +5297,10 @@ rows, <code>--metrics-path</code> writes the run aggregate that <code>blis calib
 <td>Number of requests.</td>
 </tr>
 <tr>
-<td><code>--defaults-filepath</code></td>
+<td><code>--catalog</code></td>
 <td>string</td>
-<td>"defaults.yaml"</td>
-<td>Path to <code>defaults.yaml</code>.</td>
+<td>""</td>
+<td>Catalog clone root holding <code>workloads/&lt;name&gt;.yaml</code>. No default; <code>BLIS_CATALOG</code> is the fallback (the flag wins when both are set).</td>
 </tr>
 </tbody>
 </table>
