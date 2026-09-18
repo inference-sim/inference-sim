@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"fmt"
 	"os"
 
 	"github.com/sirupsen/logrus"
@@ -24,17 +23,25 @@ type Workload struct {
 
 // Config represents the full defaults.yaml structure.
 // All top-level sections must be listed to satisfy KnownFields(true) strict parsing (R10).
+//
+// #1768: there is deliberately NO `defaults:` section. It held per-model GPU /
+// tensor_parallelism / hf_repo, which NS-6 (#1733) made unreachable on every run path — the
+// deployment is a required operator input (--hardware/--tp, see requireDeploymentFlags) and
+// the model config comes from the catalog (--catalog / BLIS_CATALOG, #1731). Because
+// KnownFields(true) is one-way — an undeclared YAML key is a hard error, an unsupplied Go
+// field is legal and zero-valued — a `defaults:` block surviving in a hand-maintained copy of
+// the file is now refused at load rather than silently ignored. Do not re-add the field to
+// accept such a file: per-model deployment policy has no consumer to be silent about.
 type Config struct {
-	Defaults               map[string]DefaultConfig `yaml:"defaults"`
-	Version                string                   `yaml:"version"`
-	Workloads              map[string]Workload      `yaml:"workloads"`
-	TrainedPhysicsDefaults *TrainedPhysicsDefaults  `yaml:"trained_physics_coefficients,omitempty"`
-	LoRADefaults           *LoRADefaults            `yaml:"lora,omitempty"`
+	Version                string                  `yaml:"version"`
+	Workloads              map[string]Workload     `yaml:"workloads"`
+	TrainedPhysicsDefaults *TrainedPhysicsDefaults `yaml:"trained_physics_coefficients,omitempty"`
+	LoRADefaults           *LoRADefaults           `yaml:"lora,omitempty"`
 	// KVOffloadDevices maps a device_class name to its bandwidth/latency physics for
 	// the KV-offload config surface (H5, #1587). Shipped constants (operator input),
 	// never fitted (BC-G4). Inert: only consulted when --kv-offload-config names a
 	// device_class. A struct-field map (decode target, read-only after load) — not an
-	// exported package var (R8-compatible, like Defaults/Workloads above).
+	// exported package var (R8-compatible, like Workloads above).
 	KVOffloadDevices map[string]KVOffloadDeviceDefaults `yaml:"kv_offload_devices,omitempty"`
 }
 
@@ -97,20 +104,6 @@ type TrainedPhysicsDefaults struct {
 	BetaCoeffs  []float64 `yaml:"beta_coeffs"`
 }
 
-// DefaultConfig is one model's entry under the `defaults:` section of defaults.yaml.
-//
-// NS-6 (#1733): GPU and TensorParallelism are NO LONGER READ on any run path. The
-// deployment is an operator input supplied via --hardware/--tp (see
-// requireDeploymentFlags), never inferred per-model. The fields stay declared because
-// KnownFields(true) strict parsing (R10) rejects an undeclared key, so removing them
-// would make every existing defaults.yaml fail to load; they are inert data awaiting the
-// catalog migration that drops them from the file itself.
-type DefaultConfig struct {
-	GPU               string `yaml:"GPU"`
-	TensorParallelism int    `yaml:"tensor_parallelism"`
-	HFRepo            string `yaml:"hf_repo,omitempty"`
-}
-
 // loadDefaultsConfig parses defaults.yaml into a Config struct.
 // Uses strict field checking (R10).
 func loadDefaultsConfig(path string) Config {
@@ -125,25 +118,4 @@ func loadDefaultsConfig(path string) Config {
 		logrus.Fatalf("Failed to parse defaults YAML: %v", err)
 	}
 	return cfg
-}
-
-// GetHFRepo returns the HuggingFace repository path for the given model from defaults.yaml.
-// Returns ("", nil) if the model exists but has no hf_repo mapping.
-// Returns ("", error) if the defaults file cannot be read or parsed (R1: no silent data loss).
-func GetHFRepo(modelName string, defaultsFile string) (string, error) {
-	data, err := os.ReadFile(defaultsFile)
-	if err != nil {
-		return "", fmt.Errorf("read defaults file %s: %w", defaultsFile, err)
-	}
-	var cfg Config
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&cfg); err != nil {
-		return "", fmt.Errorf("parse defaults YAML: %w", err)
-	}
-
-	if dc, ok := cfg.Defaults[modelName]; ok {
-		return dc.HFRepo, nil
-	}
-	return "", nil
 }

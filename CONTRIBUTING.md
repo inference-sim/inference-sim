@@ -264,11 +264,22 @@ A model runs **if and only if it is in the catalog** (NS-6, #1733), and the cata
 
 1. **Commit the model's HuggingFace `config.json` at `model_configs/<short-name>/config.json`** (`<short-name>` is the part of the model id after the `/`, lowercased). Without it, `blis run` refuses the model. `model_configs/` is the repository's own catalog — run it with `--catalog model_configs` (or `export BLIS_CATALOG=$PWD/model_configs`).
 
-Then, in `defaults.yaml`:
+**That is the whole procedure — `defaults.yaml` needs no edit at all.** As of #1768 it holds no
+per-model entry of any kind: the `defaults:` block (`GPU` / `tensor_parallelism` / `hf_repo`) is
+deleted, having been unreachable on every run path since the deployment became a required
+`--hardware`/`--tp` input. Two consequences for a contributor:
 
-1. Add an entry to the `defaults:` section. Its `GPU` and `tensor_parallelism` fields are **no longer read on any run path** — `--hardware`/`--tp` must be supplied on the command line — so treat them as inert metadata pending the catalog migration that drops them.
-2. Add an `hf_repo` field mapping the BLIS model name (lowercase) to the case-sensitive HuggingFace repository path (e.g., `hf_repo: Qwen/Qwen3-14B`). This records where the committed `config.json` came from — BLIS does not fetch it at run time. Models without real HuggingFace repos (e.g., synthetic benchmarks) may omit `hf_repo` — document why with a YAML comment.
-3. Nothing further is needed for latency: the trained-physics coefficients (`trained_physics_coefficients`) are a single global block shared by every model, not a per-model list. Add no other top-level section — `defaults.yaml` is decoded into a fixed struct (`cmd.Config`) with strict field checking (R10), so an unrecognized top-level key is a parse error, not an inert extra.
+1. **Do not add a `defaults:` block back.** `defaults.yaml` is decoded into a fixed struct
+   (`cmd.Config`) with strict field checking (R10), so an unrecognized top-level key is a parse
+   error rather than an inert extra — a file carrying `defaults:` fails to load with
+   `field defaults not found in type cmd.Config`.
+2. **Provenance goes in the commit, not the YAML.** The retired `hf_repo` field recorded where a
+   committed `config.json` came from; say that in the commit message or PR instead (the
+   `blis-catalog` repository records it per model in `models/<name>/model.yaml`).
+
+Nothing further is needed for latency either: the trained-physics coefficients
+(`trained_physics_coefficients`) are a single global block shared by every model, not a per-model
+list.
 
 ### Policy Template (lightest — ~3 files)
 
