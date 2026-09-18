@@ -266,6 +266,43 @@ func TestQAWiringPreservesTheNoExecutionInvariant(t *testing.T) {
 	}
 }
 
+// TestQAAnswererCanVerifyIssueCompletion pins #1792: the round-0 answerer must be able to verify
+// issue-completeness for fixed question F1 ("does this PR fully implement the issue it closes?").
+// It gains the adjudicator's read-only gh_issue/pr_diff tools (the tool-inventory half is pinned
+// model-free in qa_review_test.go's TestNoExecSeam), and this test pins the WIRING half: the
+// `Run qa-review` step must hand the answerer the PR and closing-issue NUMBERS so those tools have
+// something to query, and QA_REPO must be in scope so they target the right repository. Without
+// this, F1 could only ever be a blocking CANNOT_ANSWER, so the loop's own qa-review could never
+// reach QA_VERDICT=PASS from round 0.
+//
+// The number flags sit in the executable `run` and QA_REPO in the step `env`, both of which
+// liveStepCode collects, so they survive stripCommentLines.
+func TestQAAnswererCanVerifyIssueCompletion(t *testing.T) {
+	run := requireStep(t, qaWiring(t), qaRunStep)
+	for _, r := range []struct{ needle, why string }{
+		{
+			needle: "--issue",
+			why: "the answerer must be handed the closing issue number so its read-only gh_issue tool " +
+				"can fetch the acceptance criteria and answer F1 on the merits instead of a blocking " +
+				"CANNOT_ANSWER (#1792)",
+		},
+		{
+			needle: "--pr",
+			why: "the answerer must be handed the PR number so its read-only pr_diff tool can read what " +
+				"actually changed when judging the fixed policy questions (#1792)",
+		},
+		{
+			needle: "QA_REPO",
+			why: "the step must put QA_REPO in scope so the answerer's gh_issue/pr_diff calls target the " +
+				"right repository (they default to inference-sim/inference-sim otherwise) (#1792)",
+		},
+	} {
+		if !strings.Contains(run, r.needle) {
+			t.Errorf("the %q step does not contain %q: %s", qaRunStep, r.needle, r.why)
+		}
+	}
+}
+
 // TestQAVerdictMarkerContract covers #1715's AC-4 and AC-6: the marker must be as hard to spoof
 // and as hard to fake-pass as the DELIVER-VERDICT marker it sits beside.
 //
