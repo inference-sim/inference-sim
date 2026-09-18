@@ -488,36 +488,45 @@ jobs:
             echo
             echo "_[Correction run](${RUN_URL})_"
           } > "$RUNNER_TEMP/conflict.md"
-          # This is the TERMINAL conflict stop, so its writes must NOT be silently swallowed
-          # (#1781 F1/G5, R1). Previously the comment used `|| true` and the label failure only
-          # warned, so a rate-limited or briefly-unavailable API could leave a conflicting PR with
-          # no naming comment, no `needs-human`, and (because state stays `conflicting`) no hand-back
-          # either — the job would succeed having done nothing, the exact silent stall this PR
-          # removes. Now a write failure FAILS the step, which fires `Report a failed correction`
-          # below (always() && !success()): it re-applies `needs-human` and posts a comment, so the
-          # delivery still ends visibly for a human rather than succeeding into silence. Removing the
-          # stale `ready-for-merge` stays best-effort (a 404 when it was never applied is normal).
-          commented=true
+          # This is the TERMINAL conflict stop; its whole point is to leave a human a comment that
+          # NAMES the conflicting files (#1758(b)). The two writes are attempted and their success
+          # is tracked — NOT silently swallowed (#1781 F1/G5, R1).
+          #
+          # The hand-back decision then depends on whether that diagnostic was actually published:
+          #  - published (comment posted AND needs-human applied) → WITHHOLD the hand-back: the
+          #    conflict is named and the branch is stopped, and re-verifying a branch with no merge
+          #    ref would spend a full CI dispatch to reach the same answer.
+          #  - NOT published (a rate-limited or briefly-down API) → do NOT dead-end. Withholding the
+          #    hand-back here is exactly what let a conflicting PR stop with no naming comment, no
+          #    label, and no re-verification — the silent stall this PR removes. Instead HAND BACK to
+          #    verify: its gate names the conflict in the decision comment (from CONFLICT_FILES) and
+          #    applies needs-human, so the diagnostic still reaches a human. Bounded by the round
+          #    cap, and a transient outage resolves on a later round.
+          published=true
           gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/conflict.md" \
-            || { echo "::error::could not post the conflict-naming comment on #$PR"; commented=false; }
+            || { echo "::error::could not post the conflict-naming comment on #$PR"; published=false; }
           gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
-          if ! gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null; then
-            echo "::error::could not apply needs-human to #$PR after an unresolved conflict; failing so the failure reporter re-applies it and the delivery stops visibly rather than silently"
-            exit 1
+          gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null \
+            || { echo "::error::could not apply needs-human to #$PR"; published=false; }
+          if [[ "$published" == true ]]; then
+            echo "handback=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::could not fully publish the conflict stop on #$PR; handing back to verify so it names the conflict rather than dead-ending"
+            echo "handback=true" >> "$GITHUB_OUTPUT"
           fi
-          [[ "$commented" == true ]] \
-            || { echo "::error::needs-human is applied but the conflict-naming comment could not be posted; failing so the failure reporter leaves a narrative rather than an unexplained stop"; exit 1; }
 
       # Retried with exponential backoff (#1757): same transient-dispatch hardening as
       # the verify→correct hand-off.
       #
-      # NOT handed back when the branch still conflicts (#1781): that round has already stopped the
-      # delivery at a `needs-human` naming the conflicting files, and re-verifying a branch with no
-      # merge ref would spend a full CI dispatch to arrive at the same answer with a vaguer reason.
-      # `unknown` DOES hand back — verify reads GitHub's own `mergeable_state`, which is the
-      # authority this local check only approximates.
+      # NOT handed back when the branch still conflicts AND its conflict was published (#1781): that
+      # round has already stopped the delivery at a `needs-human` naming the files, and re-verifying
+      # a branch with no merge ref would spend a full CI dispatch for the same answer. But a
+      # conflict the previous step COULD NOT publish (`handback=true`, an API outage) DOES hand back,
+      # so verify names it instead of the delivery dead-ending (#1781 F1). `unknown`/absent state
+      # hands back too — verify reads GitHub's own `mergeable_state`, the authority this only
+      # approximates.
       - name: Hand back to verify
-        if: steps.paused.outputs.paused == 'false' && steps.conflictcheck.outputs.state != 'conflicting'
+        if: steps.paused.outputs.paused == 'false' && (steps.conflictcheck.outputs.state != 'conflicting' || steps.conflictcheck.outputs.handback == 'true')
         run: |
           scripts/dispatch-with-retry.sh deliver-verify.yml \
             --repo "$REPO" --ref "${{ github.ref_name }}" \
