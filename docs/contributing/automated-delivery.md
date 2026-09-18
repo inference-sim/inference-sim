@@ -16,6 +16,15 @@ Comment on the sub-issue you want delivered:
 
 Restricted to repository collaborators, same as `/archon-pr-review` and `@claude`.
 
+**Your delivery is recorded as yours.** Every delivery PR is authored by `app/claude`, so with several in flight nothing on the PR itself said who started it. The implement phase now puts your login there: you are added as an **assignee**, and a `Delivery approved by @you` line is appended to the body. The assignee makes your deliveries findable (`is:pr assignee:@me`, or the Assigned tab) and subscribes you to the thread, so verdicts, correction rounds and a `needs-human` stop reach you without polling; the body line is the durable record, and survives someone clearing assignees. Four properties are deliberate:
+
+- **The login comes from the event's actor** — the same one the permission check above validated — and never from the text you typed, so a comment cannot name someone else as the approver.
+- **A workflow step records it, not the agent.** The agent opening the PR is the one action in this phase that is not workflow-guaranteed, and provenance that goes missing exactly when a delivery went wrong is provenance nobody can rely on.
+- **It runs on `always()`**, so an agent that errored or was cancelled still says who to tell. The uncovered case is the documented one: a runner that dies executes no step at all. Re-issuing the command records it, and doing so twice does not duplicate the line.
+- **A delivery resumed by someone else adds them alongside you** rather than replacing you. Both people started a delivery on that branch, and both should hear about it.
+
+**Wiring status:** the workflow half of this lives in `scripts/deliver-implement-approver.patch` until someone with a `workflows`-scoped credential applies it and deletes the patch — a GitHub App installation token without the `workflows` permission cannot push a change under `.github/workflows/`, and the delivering credential is one. `scripts/deliver_approver_test.go` holds the contract over whichever of the two currently carries it, and fails if the patch stops applying. Same situation, and the same convention, as #1715's qa-review wiring.
+
 ## What can be delivered
 
 **Any single deliverable issue.** It does not have to be a sub-issue of a planned feature:

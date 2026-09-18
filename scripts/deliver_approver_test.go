@@ -459,19 +459,42 @@ func TestDeliverImplementApproverRecordingIsDeterministicAndNonFatal(t *testing.
 	}
 }
 
-// The patch and the workflow must never both carry the wiring.
+// The patch, and the doc note describing it as pending, must both disappear when the edit lands —
+// and both must be present while it has not.
 //
-// A leftover patch file after the edit has landed is a trap: it reads as pending work that is
-// already done, and it would make the staleness check above unreachable. #1715's application commit
-// deleted its patch in the same commit for the same reason.
-func TestApproverPatchIsRemovedOnceApplied(t *testing.T) {
-	current := readFileOrFail(t, implementWorkflowPath())
-	if !strings.Contains(current, "name: "+recordStep) {
+// A leftover patch after the edit is a trap in two ways: it reads as pending work that is already
+// done, and it would make the staleness check above unreachable. A leftover doc note is worse,
+// because it tells a reader the feature is not wired when it is. #1715 shipped exactly that stale
+// status and needed a follow-up commit to remove it; this test is the reason this one cannot.
+func TestApproverWiringStatusMatchesReality(t *testing.T) {
+	const docPath = "docs/contributing/automated-delivery.md"
+	doc := readFileOrFail(t, filepath.Join("..", "docs", "contributing", "automated-delivery.md"))
+	// Matched on the patch FILENAME rather than on prose: the paragraph can be reworded freely, but
+	// naming a patch file that no longer exists is the specific staleness this catches.
+	docSaysPending := strings.Contains(doc, "deliver-implement-approver.patch")
+	_, patchErr := os.Stat(approverPatchPath())
+	patchExists := patchErr == nil
+	live := strings.Contains(readFileOrFail(t, implementWorkflowPath()), "name: "+recordStep)
+
+	if live {
+		if patchExists {
+			t.Errorf("deliver-implement.yml carries the %q step AND %s still exists. Delete the "+
+				"patch in the commit that applies it — a leftover patch describes work that is "+
+				"already done", recordStep, approverPatch)
+		}
+		if docSaysPending {
+			t.Errorf("deliver-implement.yml carries the %q step but %s still describes the wiring "+
+				"as pending in a patch. Remove that paragraph in the same commit: a doc saying a "+
+				"live feature is unwired is worse than no doc", recordStep, docPath)
+		}
 		return
 	}
-	if _, err := os.Stat(approverPatchPath()); err == nil {
-		t.Errorf("deliver-implement.yml carries the %q step AND %s still exists. Delete the patch "+
-			"in the commit that applies it — a leftover patch describes work that is already done",
-			recordStep, approverPatch)
+
+	if !patchExists {
+		t.Errorf("the wiring is neither live nor in %s (%v)", approverPatch, patchErr)
+	}
+	if !docSaysPending {
+		t.Errorf("the wiring is pending in %s but %s does not say so. Someone reading the docs "+
+			"would expect an approver on their delivery PR and not get one", approverPatch, docPath)
 	}
 }
