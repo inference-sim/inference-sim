@@ -11,7 +11,7 @@ import (
 )
 
 // #1715 has two halves that MUST land together: scripts/deliver-gate.sh gains QA_VERDICT as a
-// seventh required, fail-closed signal, and .github/workflows/deliver-verify.yml starts producing
+// required, fail-closed signal, and .github/workflows/deliver-verify.yml starts producing
 // it. Merging the gate half alone bricks every delivery in the repository — the Decide step would
 // exit 2 on a wiring error, the reporter would apply `needs-human`, and no PR could ever reach a
 // verdict again.
@@ -211,9 +211,18 @@ func TestDeliverVerifySuppliesEveryGateRequiredVar(t *testing.T) {
 			"delete the test, it is what keeps the gate and the workflow in step")
 	}
 	required := strings.Fields(m[1])
-	if len(required) < 7 {
-		t.Fatalf("deliver-gate.sh declares only %d required variables (%v); QA_VERDICT was added as "+
-			"the seventh by #1715, so a shorter list means the gate half was reverted", len(required), required)
+	// The gate half of #1715 is present iff QA_VERDICT is one of the required, fail-closed signals.
+	// Check for it by name rather than by count: #1763 later added MERGE_STATE (eight signals in
+	// total), and a count threshold would go stale every time the signal set grows.
+	hasQA := false
+	for _, v := range required {
+		if v == "QA_VERDICT" {
+			hasQA = true
+		}
+	}
+	if !hasQA {
+		t.Fatalf("deliver-gate.sh's required variables (%v) do not include QA_VERDICT; the gate half "+
+			"of #1715 has been reverted", required)
 	}
 
 	// The Decide step's env is the whole surface the gate reads. MAX_ROUNDS is deliberately

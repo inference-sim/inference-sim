@@ -917,6 +917,16 @@ jobs:
           n=$(jq -r 'if type == "array" then length else 0 end' "$RUNNER_TEMP/qa-answers.json" 2>/dev/null || echo 0)
           [[ "$n" =~ ^[0-9]+$ && "$n" -gt 0 ]] \
             || skip "the qa-review answerer produced no answers, so there is no verdict to derive"
+          # Every answer must carry a RECOGNIZED status. The any()/else derivation below would score
+          # PASS for a statusless element (a missing/renamed status makes `.status == "FLAW_FOUND"`
+          # false, so it falls to else), so a parseable-but-statusless answer set — schema drift or a
+          # partial model reply — would silently read as PASS. answerer.py validates status only on
+          # its exhaustion fallback, not the happy path, so this is reachable. Treat any absent or
+          # unrecognized status as no trustworthy verdict: skip -> MISSING -> needs-human, the same
+          # fail-closed path as an empty set. A degraded answerer must never read as a pass.
+          jq -e 'all(.[]; .status == "CONFIDENT" or .status == "CANNOT_ANSWER" or .status == "FLAW_FOUND")' \
+            "$RUNNER_TEMP/qa-answers.json" >/dev/null 2>&1 \
+            || skip "the qa-review answer set has an element with a missing or unrecognized status, so no verdict can be trusted"
           verdict=$(jq -r 'if any(.[]; .status == "FLAW_FOUND" or .status == "CANNOT_ANSWER") then "BLOCK" else "PASS" end' \
                       "$RUNNER_TEMP/qa-answers.json") \
             || skip "could not derive the qa-review verdict from the answer set"
