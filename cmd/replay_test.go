@@ -1,0 +1,3558 @@
+package cmd
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"math"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/spf13/cobra"
+
+	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/cluster"
+	"github.com/inference-sim/inference-sim/sim/latency"
+	"github.com/inference-sim/inference-sim/sim/workload"
+)
+
+// testCatalogModels are the model short names the cmd CLI tests run against. Since
+// #1731 a model config is located by CATALOG ROOT (--catalog / BLIS_CATALOG) and the
+// entry directory is derived from the model's short name, so a shared fixture must
+// write one entry per name a consumer might pass to --model.
+var testCatalogModels = []string{"test-model", "test-moe", "qwen3-14b"}
+
+// writeTestCatalog writes configJSON as the config.json of one catalog entry per name
+// in testCatalogModels (plus any extraModels short names a caller needs), under the
+// catalog root dir, and returns dir. Every entry holds the same architecture, so which
+// name a test passes to --model does not change the resolved ModelConfig.
+func writeTestCatalog(dir, configJSON string, extraModels ...string) (string, error) {
+	for _, name := range append(append([]string{}, testCatalogModels...), extraModels...) {
+		entryDir := filepath.Join(dir, name)
+		if err := os.MkdirAll(entryDir, 0o755); err != nil {
+			return "", fmt.Errorf("mkdir catalog entry %s: %w", entryDir, err)
+		}
+		if err := os.WriteFile(filepath.Join(entryDir, "config.json"), []byte(configJSON), 0o644); err != nil {
+			return "", fmt.Errorf("write %s/config.json: %w", entryDir, err)
+		}
+	}
+	return dir, nil
+}
+
+// testCatalogConfigPath returns the config.json path of the named entry inside a
+// catalog written by writeTestCatalog. Tests that parse the fixture directly (rather
+// than letting the CLI resolve it via --catalog) use this to address the same entry
+// the resolver would pick for that model name.
+func testCatalogConfigPath(catalogDir, model string) string {
+	return filepath.Join(catalogDir, model, "config.json")
+}
+
+// setupTrainedPhysicsTestFixtures creates a temp model catalog and hardware config
+// file for integration tests that need a working latency backend.
+// Returns the catalog root (for --catalog) and the hardware config file path.
+func setupTrainedPhysicsTestFixtures(t *testing.T) (catalogDir, hwPath string) {
+	t.Helper()
+	dir := t.TempDir()
+
+	// Minimal HF config.json (Llama-like, 2-layer for fast simulation)
+	configJSON := `{
+  "architectures": ["LlamaForCausalLM"],
+  "num_attention_heads": 4,
+  "num_hidden_layers": 2,
+  "hidden_size": 64,
+  "intermediate_size": 128,
+  "num_key_value_heads": 4,
+  "torch_dtype": "float16",
+  "max_position_embeddings": 4096
+}`
+	catalogDir, err := writeTestCatalog(dir, configJSON)
+	if err != nil {
+		t.Fatalf("write test catalog: %v", err)
+	}
+
+	// Minimal hardware config
+	hwFile := filepath.Join(dir, "hw.json")
+	hwJSON := `{
+  "H100": {
+    "MemoryGiB": 80.0,
+    "TFlopsPeak": 1.0,
+    "BwPeakTBs": 0.001
+  }
+}`
+	if err := os.WriteFile(hwFile, []byte(hwJSON), 0644); err != nil {
+		t.Fatalf("write hw config: %v", err)
+	}
+
+	return catalogDir, hwFile
+}
+
+// setupTrainedPhysicsTestFixturesWithDefaults extends setupTrainedPhysicsTestFixtures
+// by also creating a defaults.yaml with trained_physics_coefficients.
+// Returns the catalog root, hardware config path, and defaults file path.
+func setupTrainedPhysicsTestFixturesWithDefaults(t *testing.T) (catalogDir, hwPath, defaultsPath string) {
+	t.Helper()
+	catalogDir, hwPath = setupTrainedPhysicsTestFixtures(t)
+
+	// Create minimal defaults.yaml with trained_physics_coefficients
+	defaultsPath = filepath.Join(filepath.Dir(hwPath), "defaults.yaml")
+	defaultsYAML := `trained_physics_coefficients:
+  alpha_coeffs: [100.0, 1.0, 100.0]
+  beta_coeffs: [0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+`
+	if err := os.WriteFile(defaultsPath, []byte(defaultsYAML), 0644); err != nil {
+		t.Fatalf("write defaults.yaml: %v", err)
+	}
+
+	return catalogDir, hwPath, defaultsPath
+}
+
+// TestReplayCmd_SimConfigFlags_Registered verifies BC-4:
+// all sim config flags registered on replayCmd.
+func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
+	flags := []string{
+		// registerSimConfigFlags: general
+		"seed", "horizon", "log", "defaults-filepath",
+		"catalog", "hardware-config",
+
+		// registerSimConfigFlags: vLLM server configs
+		"total-kv-blocks", "max-num-seqs", "max-num-batched-tokens",
+		// Deprecated aliases (issue #1570).
+		"max-num-running-reqs", "max-num-scheduled-tokens",
+		"beta-coeffs", "alpha-coeffs", "block-size-in-tokens",
+		"long-prefill-token-threshold",
+
+		// registerSimConfigFlags: BLIS model configs
+		"model", "hardware", "tp",
+		"latency-model", "max-model-len",
+
+		// registerSimConfigFlags: cluster config
+		"num-instances",
+
+		// registerSimConfigFlags: online routing pipeline
+		"admission-policy", "admission-latency", "routing-latency",
+		"token-bucket-capacity", "token-bucket-refill-rate",
+
+		// registerSimConfigFlags: routing policy
+		"routing-policy", "routing-scorers",
+
+		// registerSimConfigFlags: priority, scheduler, and preemption
+		"scheduler", "preemption-policy",
+
+		// registerSimConfigFlags: policy bundle
+		"policy-config",
+
+		// registerSimConfigFlags: fitness evaluation
+		"fitness-weights",
+
+		// registerSimConfigFlags: decision trace
+		"trace-level", "counterfactual-k", "summarize-trace",
+
+		// registerSimConfigFlags: tiered KV cache
+		"kv-cpu-blocks", "kv-offload-threshold",
+		"kv-transfer-bandwidth", "kv-transfer-base-latency",
+		"snapshot-refresh-interval",
+
+		// registerSimConfigFlags: cache signal delay
+		"cache-signal-delay",
+
+		// registerSimConfigFlags: flow control
+		"flow-control", "saturation-detector", "dispatch-order",
+		"max-gateway-queue-depth", "queue-depth-threshold",
+		"kv-cache-util-threshold", "max-concurrency",
+		"per-band-capacity", "usage-limit-threshold",
+		"queue-shedding", "dispatch-tick-interval",
+		"in-flight-eviction",
+
+		// replay-specific: results
+		"results-path",
+
+		// replay-specific flags
+		"trace-header", "trace-data",
+	}
+	for _, name := range flags {
+		f := replayCmd.Flags().Lookup(name)
+		if f == nil {
+			t.Errorf("replayCmd missing flag --%s", name)
+		}
+	}
+}
+
+func TestSimResult_JSONRoundTrip(t *testing.T) {
+	// GIVEN a workload.SimResult with known values
+	// workload.SimResult is in sim/workload/calibrate.go — JSON tags added by Task 2.
+	sr := workload.SimResult{
+		RequestID:    42,
+		TTFT:         12345.0,
+		E2E:          98765.0,
+		InputTokens:  256,
+		OutputTokens: 128,
+	}
+
+	// WHEN marshaled to JSON and back
+	data, err := json.Marshal(sr)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+	var got workload.SimResult
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+
+	// THEN all fields round-trip correctly (BC-2)
+	if got.RequestID != 42 {
+		t.Errorf("RequestID: got %d, want 42", got.RequestID)
+	}
+	if got.TTFT != 12345.0 {
+		t.Errorf("TTFT: got %f, want 12345.0", got.TTFT)
+	}
+	if got.E2E != 98765.0 {
+		t.Errorf("E2E: got %f, want 98765.0", got.E2E)
+	}
+	if got.InputTokens != 256 {
+		t.Errorf("InputTokens: got %d, want 256", got.InputTokens)
+	}
+	if got.OutputTokens != 128 {
+		t.Errorf("OutputTokens: got %d, want 128", got.OutputTokens)
+	}
+
+	// THEN JSON keys match the calibrate contract
+	if !strings.Contains(string(data), `"request_id":42`) {
+		t.Errorf("JSON must contain integer request_id, got: %s", data)
+	}
+	if !strings.Contains(string(data), `"ttft_us"`) {
+		t.Errorf("JSON must contain ttft_us key, got: %s", data)
+	}
+	if !strings.Contains(string(data), `"e2e_us"`) {
+		t.Errorf("JSON must contain e2e_us key, got: %s", data)
+	}
+}
+
+func TestExtractSimResults_SortsAndConverts(t *testing.T) {
+	// GIVEN a Metrics struct with 3 completed requests
+	m := sim.NewMetrics()
+	// Populate as simulator does (RequestTTFTs in ticks = microseconds)
+	m.RequestTTFTs["request_2"] = 2000.0
+	m.RequestTTFTs["request_0"] = 1000.0
+	m.RequestTTFTs["request_1"] = 1500.0
+	m.RequestE2Es["request_2"] = 20000.0
+	m.RequestE2Es["request_0"] = 10000.0
+	m.RequestE2Es["request_1"] = 15000.0
+	m.Requests["request_0"] = sim.RequestMetrics{NumPrefillTokens: 100, NumDecodeTokens: 50}
+	m.Requests["request_1"] = sim.RequestMetrics{NumPrefillTokens: 200, NumDecodeTokens: 60}
+	m.Requests["request_2"] = sim.RequestMetrics{NumPrefillTokens: 300, NumDecodeTokens: 70}
+
+	// WHEN extractSimResults is called
+	results := extractSimResults(m) // returns []workload.SimResult
+
+	// THEN 3 results are returned in ascending request_id order (BC-5: determinism, R2)
+	if len(results) != 3 {
+		t.Fatalf("want 3 results, got %d", len(results))
+	}
+	if results[0].RequestID != 0 || results[1].RequestID != 1 || results[2].RequestID != 2 {
+		t.Errorf("results not sorted by request_id: %v", results)
+	}
+
+	// THEN TTFT and E2E are in microseconds (BC-2, BC-6)
+	if results[0].TTFT != 1000.0 {
+		t.Errorf("results[0].TTFT: got %f, want 1000.0 (microseconds)", results[0].TTFT)
+	}
+	if results[0].E2E != 10000.0 {
+		t.Errorf("results[0].E2E: got %f, want 10000.0 (microseconds)", results[0].E2E)
+	}
+	if results[0].InputTokens != 100 || results[0].OutputTokens != 50 {
+		t.Errorf("token counts wrong for results[0]: %+v", results[0])
+	}
+}
+
+func TestExtractSimResults_SkipsNonNumericIDs(t *testing.T) {
+	// GIVEN metrics with a non-numeric ID (session follow-up)
+	m := sim.NewMetrics()
+	m.RequestTTFTs["request_0"] = 1000.0
+	m.RequestTTFTs["session_follow_abc"] = 2000.0
+	m.RequestE2Es["request_0"] = 5000.0
+	m.RequestE2Es["session_follow_abc"] = 8000.0
+	m.Requests["request_0"] = sim.RequestMetrics{NumPrefillTokens: 100, NumDecodeTokens: 50}
+	m.Requests["session_follow_abc"] = sim.RequestMetrics{NumPrefillTokens: 200, NumDecodeTokens: 60}
+
+	// WHEN extractSimResults is called
+	results := extractSimResults(m)
+
+	// THEN only the numeric-ID request is included (BC-7)
+	if len(results) != 1 {
+		t.Fatalf("want 1 result (non-numeric ID skipped), got %d", len(results))
+	}
+	if results[0].RequestID != 0 {
+		t.Errorf("wrong RequestID: got %d, want 0", results[0].RequestID)
+	}
+}
+
+func TestExtractSimResults_ExcludesPartialTTFT(t *testing.T) {
+	// GIVEN a request with TTFT but no E2E (timed out during decode)
+	m := sim.NewMetrics()
+	m.RequestTTFTs["request_0"] = 1000.0
+	// No entry in RequestE2Es for request_0
+	m.Requests["request_0"] = sim.RequestMetrics{NumPrefillTokens: 100, NumDecodeTokens: 0}
+
+	// WHEN extractSimResults is called
+	results := extractSimResults(m)
+
+	// THEN the incomplete request is excluded (no E2E = timeout after prefill)
+	if len(results) != 0 {
+		t.Errorf("want 0 results (no E2E = incomplete), got %d", len(results))
+	}
+}
+
+func TestExtractSimResults_EmptyMetrics_ReturnsEmptySlice(t *testing.T) {
+	// GIVEN empty metrics (all requests timed out before prefill)
+	m := sim.NewMetrics()
+
+	// WHEN extractSimResults is called
+	results := extractSimResults(m)
+
+	// THEN an initialized empty slice is returned (not nil)
+	// A nil slice marshals to JSON "null"; an empty slice marshals to "[]"
+	if results == nil {
+		t.Error("want initialized empty slice (not nil) so JSON marshal produces [] not null")
+	}
+	data, err := json.Marshal(results)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+	if string(data) != "[]" {
+		t.Errorf("want JSON [], got %s", data)
+	}
+}
+
+func TestExtractSimResults_MixedRequests_OnlyCompletedIncluded(t *testing.T) {
+	// GIVEN metrics with completed, timed-out, and non-numeric IDs mixed
+	m := sim.NewMetrics()
+	// Completed request
+	m.RequestTTFTs["request_1"] = 1500.0
+	m.RequestE2Es["request_1"] = 15000.0
+	m.Requests["request_1"] = sim.RequestMetrics{NumPrefillTokens: 200, NumDecodeTokens: 60}
+	// Timed out after prefill (TTFT but no E2E)
+	m.RequestTTFTs["request_2"] = 2000.0
+	m.Requests["request_2"] = sim.RequestMetrics{NumPrefillTokens: 300, NumDecodeTokens: 0}
+	// Session follow-up (non-numeric ID)
+	m.RequestTTFTs["session_followup_abc"] = 3000.0
+	m.RequestE2Es["session_followup_abc"] = 30000.0
+	m.Requests["session_followup_abc"] = sim.RequestMetrics{NumPrefillTokens: 100, NumDecodeTokens: 50}
+
+	// WHEN extractSimResults is called
+	results := extractSimResults(m)
+
+	// THEN only the fully-completed numeric-ID request is included
+	if len(results) != 1 {
+		t.Fatalf("want 1 result (only completed numeric request), got %d: %v", len(results), results)
+	}
+	if results[0].RequestID != 1 {
+		t.Errorf("want RequestID=1, got %d", results[0].RequestID)
+	}
+}
+
+func TestExtractSimResults_DeterminismInvariant(t *testing.T) {
+	// GIVEN the same metrics populated in two different key-insertion orders
+	makeMetrics := func() *sim.Metrics {
+		m := sim.NewMetrics()
+		for _, id := range []string{"request_2", "request_0", "request_1"} {
+			m.RequestTTFTs[id] = float64(len(id)) * 1000
+			m.RequestE2Es[id] = float64(len(id)) * 5000
+			m.Requests[id] = sim.RequestMetrics{NumPrefillTokens: 100, NumDecodeTokens: 50}
+		}
+		return m
+	}
+
+	// WHEN extractSimResults is called twice
+	r1 := extractSimResults(makeMetrics())
+	r2 := extractSimResults(makeMetrics())
+
+	// THEN the output is identical (INV-6: determinism)
+	if len(r1) != len(r2) {
+		t.Fatalf("different lengths: %d vs %d", len(r1), len(r2))
+	}
+	for i := range r1 {
+		if r1[i].RequestID != r2[i].RequestID {
+			t.Errorf("index %d: RequestID %d vs %d — output is non-deterministic", i, r1[i].RequestID, r2[i].RequestID)
+		}
+	}
+	// Verify order is ascending (the invariant being tested)
+	for i := 1; i < len(r1); i++ {
+		if r1[i].RequestID <= r1[i-1].RequestID {
+			t.Errorf("results not sorted: index %d (%d) <= index %d (%d)", i, r1[i].RequestID, i-1, r1[i-1].RequestID)
+		}
+	}
+}
+
+func TestReplayCmd_LatencyModelDefault_IsTrainedPhysics(t *testing.T) {
+	// GIVEN the replay command with its registered flags
+	flag := replayCmd.Flags().Lookup("latency-model")
+
+	// WHEN we check the default value
+	// THEN it MUST be "trained-physics" (BC-1: CLI default switched)
+	// This test ensures run/replay parity for the latency model default.
+	// Both commands share registerSimConfigFlags, but explicit per-command
+	// assertions match the project's flag testing pattern.
+	if flag == nil {
+		t.Fatal("replayCmd missing --latency-model flag")
+	}
+	if flag.DefValue != "trained-physics" {
+		t.Errorf("default latency model must be 'trained-physics', got %q (#1383)", flag.DefValue)
+	}
+}
+
+// TestReplayCmd_TraceOutputFlag_Registered verifies BC-6:
+// --trace-output is registered with empty default (flag is optional).
+func TestReplayCmd_TraceOutputFlag_Registered(t *testing.T) {
+	f := replayCmd.Flags().Lookup("trace-output")
+	if f == nil {
+		t.Fatal("replayCmd missing --trace-output flag")
+	}
+	if f.DefValue != "" {
+		t.Errorf("--trace-output default must be empty (optional flag), got %q", f.DefValue)
+	}
+}
+
+// TestReplayCmd_LazyGenerationFlag_AcceptedAsNoOp pins BC-9 of #1441:
+// --lazy-generation is registered on replay for CLI symmetry with
+// `blis run` but has no effect (replay reads requests from a captured
+// trace and never invokes the workload generator).
+func TestReplayCmd_LazyGenerationFlag_AcceptedAsNoOp(t *testing.T) {
+	f := replayCmd.Flags().Lookup("lazy-generation")
+	if f == nil {
+		t.Fatal("replayCmd missing --lazy-generation flag (BC-9, #1441)")
+	}
+	if f.DefValue != "false" {
+		t.Errorf("--lazy-generation default = %q, want %q", f.DefValue, "false")
+	}
+	// Flag value must parse without error.
+	if err := replayCmd.Flags().Set("lazy-generation", "true"); err != nil {
+		t.Errorf("flag parse failed: %v", err)
+	}
+	// Reset for other tests.
+	_ = replayCmd.Flags().Set("lazy-generation", "false")
+}
+
+func TestReplayCmd_TraceHeaderFlag_Registered(t *testing.T) {
+	// GIVEN the replay command
+	// WHEN checking for --trace-header flag
+	f := replayCmd.Flags().Lookup("trace-header")
+	// THEN it must exist with empty default (BC-6: missing = fail fast)
+	if f == nil {
+		t.Error("replayCmd missing --trace-header flag")
+	}
+	if f != nil && f.DefValue != "" {
+		t.Errorf("--trace-header default must be empty (required), got %q", f.DefValue)
+	}
+}
+
+func TestReplayCmd_TraceDataFlag_Registered(t *testing.T) {
+	f := replayCmd.Flags().Lookup("trace-data")
+	if f == nil {
+		t.Error("replayCmd missing --trace-data flag")
+	}
+	if f != nil && f.DefValue != "" {
+		t.Errorf("--trace-data default must be empty (required), got %q", f.DefValue)
+	}
+}
+
+func TestComputeReplayHorizon_TwiceMaxArrival(t *testing.T) {
+	// BC-3: horizon = max(arrivals) * 2
+	requests := []*sim.Request{
+		{ArrivalTime: 1000},
+		{ArrivalTime: 5000},
+		{ArrivalTime: 3000},
+	}
+	horizon := computeReplayHorizon(requests)
+	if horizon != 10000 {
+		t.Errorf("want horizon 10000 (5000*2), got %d", horizon)
+	}
+}
+
+func TestComputeReplayHorizon_EmptyRequests_ReturnsMaxInt64(t *testing.T) {
+	// Edge case: no requests → MaxInt64 fallback
+	horizon := computeReplayHorizon([]*sim.Request{})
+	if horizon != math.MaxInt64 {
+		t.Errorf("want math.MaxInt64 for empty requests, got %d", horizon)
+	}
+}
+
+func TestComputeReplayHorizon_AllArrivalsAtZero_ReturnsFixedBuffer(t *testing.T) {
+	// Edge case: all requests at t=0 (common for synthetic traces)
+	// Must NOT return math.MaxInt64 (would hang simulation)
+	requests := []*sim.Request{{ArrivalTime: 0}, {ArrivalTime: 0}}
+	horizon := computeReplayHorizon(requests)
+	if horizon <= 0 || horizon == math.MaxInt64 {
+		t.Errorf("want a finite positive buffer for all-zero arrivals, got %d", horizon)
+	}
+}
+
+func TestComputeReplayHorizon_LargeArrival_NoOverflow(t *testing.T) {
+	// Overflow guard: maxArrival > MaxInt64/2 must not wrap to negative
+	requests := []*sim.Request{{ArrivalTime: math.MaxInt64/2 + 1}}
+	horizon := computeReplayHorizon(requests)
+	if horizon <= 0 {
+		t.Errorf("want positive horizon for large arrival (no overflow), got %d", horizon)
+	}
+	if horizon != math.MaxInt64 {
+		t.Errorf("want MaxInt64 as overflow fallback, got %d", horizon)
+	}
+}
+
+// TestReplayCmd_TraceOutput_FilesCreated verifies BC-1 and BC-2:
+// --trace-output creates <prefix>.yaml with mode:"replayed" and <prefix>.csv.
+func TestReplayCmd_TraceOutput_FilesCreated(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	outputPrefix := filepath.Join(dir, "out")
+
+	// Write header YAML
+	headerContent := `trace_version: 2
+time_unit: microseconds
+mode: generated
+warm_up_requests: 0
+`
+	if err := os.WriteFile(headerPath, []byte(headerContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write data CSV: 2 requests
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n" +
+		"1,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,100000,100000,0,0,0,ok,,\n"
+	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+
+	// Save and restore all package-level flag vars (same pattern as EndToEnd test)
+	origModel := model
+	origBackend := latencyModelBackend
+	origBeta := betaCoeffs
+	origAlpha := alphaCoeffs
+	origTotalKV := totalKVBlocks
+	origBlockSize := blockSizeTokens
+	origMaxRunning := maxNumSeqs
+	origMaxSched := maxNumBatchedTokens
+	origInstances := numInstances
+	origSeed := seed
+	origResults := resultsPath
+	origThreshold := longPrefillTokenThreshold
+	origKVCPU := kvCPUBlocks
+	origOffload := kvOffloadThreshold
+	origBandwidth := kvTransferBandwidth
+	origBaseLatency := kvTransferBaseLatency
+	origSnapRefresh := snapshotRefreshInterval
+	origAdmission := admissionPolicy
+	origRouting := routingPolicy
+	origScheduler := scheduler
+	origPolicyConfig := policyConfigPath
+	origMaxModelLen := maxModelLen
+	origTraceLevel := traceLevel
+	origCounterfactualK := counterfactualK
+	origTraceHeader := traceHeaderPath
+	origTraceData := traceDataPath
+	origSimHorizon := simulationHorizon
+	origTraceOutput := replayTraceOutput
+	origCacheSignalDelay := cacheSignalDelay
+	origFlowControlEnabled := flowControlEnabled
+	origFlowControlDetector := flowControlDetector
+	origFlowControlDispatchOrder := flowControlDispatchOrder
+	origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
+	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
+	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
+	origFlowControlMaxConcurrency := flowControlMaxConcurrency
+	origCatalogPath := catalogPath
+	origHwConfigPath := hwConfigPath
+	origGPU := gpu
+	origTP := tensorParallelism
+	origDefaultsFilePath := defaultsFilePath
+	origSessionMode := replaySessionMode
+	origThinkTimeMs := replayThinkTimeMs
+	origThinkTimeDist := replayThinkTimeDist
+	defer func() {
+		model = origModel
+		latencyModelBackend = origBackend
+		betaCoeffs = origBeta
+		alphaCoeffs = origAlpha
+		totalKVBlocks = origTotalKV
+		blockSizeTokens = origBlockSize
+		maxNumSeqs = origMaxRunning
+		maxNumBatchedTokens = origMaxSched
+		numInstances = origInstances
+		seed = origSeed
+		resultsPath = origResults
+		longPrefillTokenThreshold = origThreshold
+		kvCPUBlocks = origKVCPU
+		kvOffloadThreshold = origOffload
+		kvTransferBandwidth = origBandwidth
+		kvTransferBaseLatency = origBaseLatency
+		snapshotRefreshInterval = origSnapRefresh
+		admissionPolicy = origAdmission
+		routingPolicy = origRouting
+		scheduler = origScheduler
+		policyConfigPath = origPolicyConfig
+		maxModelLen = origMaxModelLen
+		traceLevel = origTraceLevel
+		counterfactualK = origCounterfactualK
+		traceHeaderPath = origTraceHeader
+		traceDataPath = origTraceData
+		simulationHorizon = origSimHorizon
+		replayTraceOutput = origTraceOutput
+		cacheSignalDelay = origCacheSignalDelay
+		flowControlEnabled = origFlowControlEnabled
+		flowControlDetector = origFlowControlDetector
+		flowControlDispatchOrder = origFlowControlDispatchOrder
+		flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
+		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
+		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
+		flowControlMaxConcurrency = origFlowControlMaxConcurrency
+		catalogPath = origCatalogPath
+		hwConfigPath = origHwConfigPath
+		gpu = origGPU
+		tensorParallelism = origTP
+		defaultsFilePath = origDefaultsFilePath
+		replaySessionMode = origSessionMode
+		replayThinkTimeMs = origThinkTimeMs
+		replayThinkTimeDist = origThinkTimeDist
+	}()
+
+	// Set package-level vars
+	model = "test-model"
+	latencyModelBackend = "trained-physics"
+	// Note: betaCoeffs and alphaCoeffs NOT set → auto-loads from defaults.yaml trained_physics_coefficients
+	totalKVBlocks = 1000
+	blockSizeTokens = 16
+	maxNumSeqs = 64
+	maxNumBatchedTokens = 2048
+	numInstances = 1
+	seed = 42
+	resultsPath = ""
+	longPrefillTokenThreshold = 0
+	kvCPUBlocks = 0
+	kvOffloadThreshold = 0.9
+	kvTransferBandwidth = 100.0
+	kvTransferBaseLatency = 0
+	snapshotRefreshInterval = 0
+	admissionPolicy = "always-admit"
+	routingPolicy = "round-robin"
+	scheduler = "fcfs"
+	policyConfigPath = ""
+	maxModelLen = 0
+	traceLevel = "none"
+	counterfactualK = 0
+	traceHeaderPath = headerPath
+	traceDataPath = dataPath
+	simulationHorizon = math.MaxInt64
+	replayTraceOutput = outputPrefix
+	catalogPath = catalogDir
+	hwConfigPath = hwPath
+	gpu = "H100"
+	tensorParallelism = 1
+	defaultsFilePath = "../defaults.yaml" // Load trained-physics coefficients (relative to cmd/ test dir)
+
+	testCmd := &cobra.Command{}
+	registerSimConfigFlags(testCmd)
+	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+	testCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "")
+	if err := testCmd.ParseFlags([]string{
+		"--model", "test-model",
+		"--latency-model", "trained-physics",
+		// Note: --beta-coeffs and --alpha-coeffs omitted → auto-loads from defaults.yaml
+		"--total-kv-blocks", "1000",
+		"--hardware", "H100",
+		"--tp", "1",
+		"--catalog", catalogDir,
+		"--hardware-config", hwPath,
+		"--trace-header", headerPath,
+		"--trace-data", dataPath,
+		"--trace-output", outputPrefix,
+		"--defaults-filepath", "../defaults.yaml",
+	}); err != nil {
+		t.Fatalf("ParseFlags failed: %v", err)
+	}
+
+	// Run replay
+	replayCmd.Run(testCmd, nil)
+
+	// BC-1: both output files must exist
+	yamlPath := outputPrefix + ".yaml"
+	csvPath := outputPrefix + ".csv"
+	if _, err := os.Stat(yamlPath); err != nil {
+		t.Fatalf("BC-1: output YAML not created: %v", err)
+	}
+	if _, err := os.Stat(csvPath); err != nil {
+		t.Fatalf("BC-1: output CSV not created: %v", err)
+	}
+
+	// BC-1: files must round-trip through LoadTraceV2
+	loaded, err := workload.LoadTraceV2(yamlPath, csvPath)
+	if err != nil {
+		t.Fatalf("BC-1: LoadTraceV2 failed on output files: %v", err)
+	}
+
+	// BC-2: header mode must be "replayed"
+	if loaded.Header.Mode != "replayed" {
+		t.Errorf("BC-2: header.Mode = %q, want \"replayed\"", loaded.Header.Mode)
+	}
+
+	// BC-1: record count matches input
+	if len(loaded.Records) != 2 {
+		t.Errorf("BC-1: want 2 records, got %d", len(loaded.Records))
+	}
+
+	// BC-3: for all requests, send_time_us = arrival_time_us (universal)
+	for i, rec := range loaded.Records {
+		if rec.SendTimeUs != rec.ArrivalTimeUs {
+			t.Errorf("BC-3: record[%d] send_time_us=%d != arrival_time_us=%d", i, rec.SendTimeUs, rec.ArrivalTimeUs)
+		}
+	}
+
+	// BC-3: completed requests have simulation-computed timing (non-zero chunk times)
+	for i, rec := range loaded.Records {
+		if rec.Status == "ok" {
+			if rec.FirstChunkTimeUs <= 0 {
+				t.Errorf("BC-3: record[%d] status=ok but first_chunk_time_us=%d (want >0)", i, rec.FirstChunkTimeUs)
+			}
+			if rec.LastChunkTimeUs < rec.FirstChunkTimeUs {
+				t.Errorf("BC-3: record[%d] last_chunk_time_us=%d < first_chunk_time_us=%d", i, rec.LastChunkTimeUs, rec.FirstChunkTimeUs)
+			}
+		}
+	}
+}
+
+func TestReplayCmd_EndToEnd_TrainedPhysicsMode(t *testing.T) {
+	// NOTE: This test mutates package-level flag vars shared with runCmd.
+	// Do NOT use t.Parallel() — concurrent execution would create data races.
+
+	// GIVEN a minimal TraceV2 header + data in a temp directory
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	resultsFilePath := filepath.Join(dir, "results.json")
+
+	// Write header YAML
+	header := `trace_version: 2
+time_unit: microseconds
+mode: generated
+warm_up_requests: 0
+`
+	if err := os.WriteFile(headerPath, []byte(header), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write data CSV: 3 requests with arrival times spread over 200ms
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n" +
+		"1,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,100000,100000,0,0,0,ok,,\n" +
+		"2,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,200000,200000,0,0,0,ok,,\n"
+	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	catalogDir, hwCfgPath := setupTrainedPhysicsTestFixtures(t)
+
+	// Save and restore package-level flag vars (this test mutates them)
+	origModel := model
+	origBackend := latencyModelBackend
+	origBeta := betaCoeffs
+	origAlpha := alphaCoeffs
+	origTotalKV := totalKVBlocks
+	origBlockSize := blockSizeTokens
+	origMaxRunning := maxNumSeqs
+	origMaxSched := maxNumBatchedTokens
+	origInstances := numInstances
+	origSeed := seed
+	origResults := resultsPath
+	origThreshold := longPrefillTokenThreshold
+	origKVCPU := kvCPUBlocks
+	origOffload := kvOffloadThreshold
+	origBandwidth := kvTransferBandwidth
+	origBaseLatency := kvTransferBaseLatency
+	origSnapRefresh := snapshotRefreshInterval
+	origAdmission := admissionPolicy
+	origRouting := routingPolicy
+	origScheduler := scheduler
+	origPolicyConfig := policyConfigPath
+	origMaxModelLen := maxModelLen
+	origTraceLevel := traceLevel
+	origCounterfactualK := counterfactualK
+	origTraceHeader := traceHeaderPath
+	origTraceData := traceDataPath
+	origSimHorizon := simulationHorizon
+	origTraceOutput := replayTraceOutput
+	origCacheSignalDelay := cacheSignalDelay
+	origFlowControlEnabled := flowControlEnabled
+	origFlowControlDetector := flowControlDetector
+	origFlowControlDispatchOrder := flowControlDispatchOrder
+	origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
+	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
+	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
+	origFlowControlMaxConcurrency := flowControlMaxConcurrency
+	origCatalogPath := catalogPath
+	origHwConfigPath := hwConfigPath
+	origGPU := gpu
+	origTP := tensorParallelism
+	origDefaultsFilePath := defaultsFilePath
+	origSessionMode := replaySessionMode
+	origThinkTimeMs := replayThinkTimeMs
+	origThinkTimeDist := replayThinkTimeDist
+	defer func() {
+		model = origModel
+		latencyModelBackend = origBackend
+		betaCoeffs = origBeta
+		alphaCoeffs = origAlpha
+		totalKVBlocks = origTotalKV
+		blockSizeTokens = origBlockSize
+		maxNumSeqs = origMaxRunning
+		maxNumBatchedTokens = origMaxSched
+		numInstances = origInstances
+		seed = origSeed
+		resultsPath = origResults
+		longPrefillTokenThreshold = origThreshold
+		kvCPUBlocks = origKVCPU
+		kvOffloadThreshold = origOffload
+		kvTransferBandwidth = origBandwidth
+		kvTransferBaseLatency = origBaseLatency
+		snapshotRefreshInterval = origSnapRefresh
+		admissionPolicy = origAdmission
+		routingPolicy = origRouting
+		scheduler = origScheduler
+		policyConfigPath = origPolicyConfig
+		maxModelLen = origMaxModelLen
+		traceLevel = origTraceLevel
+		counterfactualK = origCounterfactualK
+		traceHeaderPath = origTraceHeader
+		traceDataPath = origTraceData
+		simulationHorizon = origSimHorizon
+		replayTraceOutput = origTraceOutput
+		cacheSignalDelay = origCacheSignalDelay
+		flowControlEnabled = origFlowControlEnabled
+		flowControlDetector = origFlowControlDetector
+		flowControlDispatchOrder = origFlowControlDispatchOrder
+		flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
+		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
+		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
+		flowControlMaxConcurrency = origFlowControlMaxConcurrency
+		catalogPath = origCatalogPath
+		hwConfigPath = origHwConfigPath
+		gpu = origGPU
+		tensorParallelism = origTP
+		defaultsFilePath = origDefaultsFilePath
+		replaySessionMode = origSessionMode
+		replayThinkTimeMs = origThinkTimeMs
+		replayThinkTimeDist = origThinkTimeDist
+	}()
+
+	// Library-level BC-1 verification: trace loads correctly and requests are correct
+	trace, err := workload.LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatalf("LoadTraceV2 failed: %v", err)
+	}
+	if len(trace.Records) != 3 {
+		t.Errorf("want 3 records, got %d", len(trace.Records))
+	}
+
+	reqs, err := workload.LoadTraceV2Requests(trace, 42)
+	if err != nil {
+		t.Fatalf("LoadTraceV2Requests failed: %v", err)
+	}
+	if len(reqs) != 3 {
+		t.Fatalf("want 3 requests, got %d (BC-1)", len(reqs))
+	}
+
+	// Verify token counts preserved (BC-1)
+	for _, req := range reqs {
+		if len(req.InputTokens) != 10 {
+			t.Errorf("want 10 input tokens, got %d", len(req.InputTokens))
+		}
+		if len(req.OutputTokens) != 5 {
+			t.Errorf("want 5 output tokens, got %d", len(req.OutputTokens))
+		}
+	}
+
+	// Verify horizon computation (BC-3): max arrival = 200000, horizon = 400000
+	horizon := computeReplayHorizon(reqs)
+	if horizon != 400000 {
+		t.Errorf("want horizon 400000 (200000*2), got %d (BC-3)", horizon)
+	}
+
+	// Full simulation via replayCmd.Run (BC-2: verifies SimResult JSON output)
+	model = "test-model"
+	latencyModelBackend = "trained-physics"
+	// Note: betaCoeffs and alphaCoeffs NOT set → auto-loads from defaults.yaml
+	totalKVBlocks = 1000
+	blockSizeTokens = 16
+	maxNumSeqs = 64
+	maxNumBatchedTokens = 2048
+	numInstances = 1
+	seed = 42
+	resultsPath = resultsFilePath
+	longPrefillTokenThreshold = 0
+	kvCPUBlocks = 0
+	kvOffloadThreshold = 0.9
+	kvTransferBandwidth = 100.0
+	kvTransferBaseLatency = 0
+	snapshotRefreshInterval = 0
+	admissionPolicy = "always-admit"
+	routingPolicy = "round-robin"
+	scheduler = "fcfs"
+	policyConfigPath = ""
+	maxModelLen = 0
+	traceLevel = "none"
+	counterfactualK = 0
+	traceHeaderPath = headerPath
+	traceDataPath = dataPath
+	simulationHorizon = math.MaxInt64
+	catalogPath = catalogDir
+	hwConfigPath = hwCfgPath
+	gpu = "H100"
+	tensorParallelism = 1
+
+	// Create a cobra command with Changed() tracking for the flags the Run closure checks.
+	// This is required so cmd.Flags().Changed("latency-model") etc. return correct values.
+	testCmd := &cobra.Command{}
+	registerSimConfigFlags(testCmd)
+	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+	if err := testCmd.ParseFlags([]string{
+		"--model", "test-model",
+		"--latency-model", "trained-physics",
+		// Note: --beta-coeffs and --alpha-coeffs omitted → auto-loads from defaults.yaml
+		"--total-kv-blocks", "1000",
+		"--hardware", "H100",
+		"--tp", "1",
+		"--catalog", catalogDir,
+		"--hardware-config", hwCfgPath,
+		"--trace-header", headerPath,
+		"--trace-data", dataPath,
+		"--defaults-filepath", "../defaults.yaml",
+	}); err != nil {
+		t.Fatalf("ParseFlags failed: %v", err)
+	}
+
+	// Run the replay command
+	replayCmd.Run(testCmd, nil)
+
+	// Verify SimResult file was written (BC-2)
+	data, err := os.ReadFile(resultsFilePath)
+	if err != nil {
+		t.Fatalf("results file not written: %v", err)
+	}
+	var simResults []workload.SimResult
+	if err := json.Unmarshal(data, &simResults); err != nil {
+		t.Fatalf("failed to parse SimResult JSON: %v\ncontent: %s", err, data)
+	}
+
+	// All 3 requests should have completed (BC-1: fidelity)
+	if len(simResults) != 3 {
+		t.Errorf("want 3 SimResult entries (one per trace record), got %d", len(simResults))
+	}
+
+	// Verify integer request IDs 0, 1, 2 in sorted order (BC-2)
+	for i, sr := range simResults {
+		if sr.RequestID != i {
+			t.Errorf("simResults[%d].RequestID = %d, want %d", i, sr.RequestID, i)
+		}
+		if sr.TTFT <= 0 {
+			t.Errorf("simResults[%d].TTFT must be > 0, got %f", i, sr.TTFT)
+		}
+		if sr.E2E <= 0 {
+			t.Errorf("simResults[%d].E2E must be > 0, got %f", i, sr.E2E)
+		}
+		if sr.InputTokens != 10 {
+			t.Errorf("simResults[%d].InputTokens = %d, want 10", i, sr.InputTokens)
+		}
+		if sr.OutputTokens != 5 {
+			t.Errorf("simResults[%d].OutputTokens = %d, want 5", i, sr.OutputTokens)
+		}
+	}
+
+	// TTFT must be in microseconds (not ms) and positive.
+	// With trained-physics (β₅=100 µs/layer, L=2), TTFT ≈ 200+ µs.
+	if len(simResults) > 0 && simResults[0].TTFT <= 0 {
+		t.Errorf("TTFT %f must be positive (microseconds)", simResults[0].TTFT)
+	}
+}
+
+// TestReplayCmd_TraceOutput_NoOp verifies BC-4:
+// omitting --trace-output produces no .yaml/.csv files.
+func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+
+	headerContent := "trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"
+	if err := os.WriteFile(headerPath, []byte(headerContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"
+	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	catalogDir3, hwPath3 := setupTrainedPhysicsTestFixtures(t)
+
+	// Save/restore package-level vars
+	origModel := model
+	origBackend := latencyModelBackend
+	origBeta := betaCoeffs
+	origAlpha := alphaCoeffs
+	origTotalKV := totalKVBlocks
+	origBlockSize := blockSizeTokens
+	origMaxRunning := maxNumSeqs
+	origMaxSched := maxNumBatchedTokens
+	origInstances := numInstances
+	origSeed := seed
+	origResults := resultsPath
+	origThreshold := longPrefillTokenThreshold
+	origKVCPU := kvCPUBlocks
+	origOffload := kvOffloadThreshold
+	origBandwidth := kvTransferBandwidth
+	origBaseLatency := kvTransferBaseLatency
+	origSnapRefresh := snapshotRefreshInterval
+	origAdmission := admissionPolicy
+	origRouting := routingPolicy
+	origScheduler := scheduler
+	origPolicyConfig := policyConfigPath
+	origMaxModelLen := maxModelLen
+	origTraceLevel := traceLevel
+	origCounterfactualK := counterfactualK
+	origTraceHeader := traceHeaderPath
+	origTraceData := traceDataPath
+	origSimHorizon := simulationHorizon
+	origTraceOutput := replayTraceOutput
+	origCacheSignalDelay := cacheSignalDelay
+	origFlowControlEnabled := flowControlEnabled
+	origFlowControlDetector := flowControlDetector
+	origFlowControlDispatchOrder := flowControlDispatchOrder
+	origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
+	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
+	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
+	origFlowControlMaxConcurrency := flowControlMaxConcurrency
+	origCatalogPath := catalogPath
+	origHwConfigPath := hwConfigPath
+	origGPU := gpu
+	origTP := tensorParallelism
+	origDefaultsFilePath := defaultsFilePath
+	origSessionMode := replaySessionMode
+	origThinkTimeMs := replayThinkTimeMs
+	origThinkTimeDist := replayThinkTimeDist
+	defer func() {
+		model = origModel
+		latencyModelBackend = origBackend
+		betaCoeffs = origBeta
+		alphaCoeffs = origAlpha
+		totalKVBlocks = origTotalKV
+		blockSizeTokens = origBlockSize
+		maxNumSeqs = origMaxRunning
+		maxNumBatchedTokens = origMaxSched
+		numInstances = origInstances
+		seed = origSeed
+		resultsPath = origResults
+		longPrefillTokenThreshold = origThreshold
+		kvCPUBlocks = origKVCPU
+		kvOffloadThreshold = origOffload
+		kvTransferBandwidth = origBandwidth
+		kvTransferBaseLatency = origBaseLatency
+		snapshotRefreshInterval = origSnapRefresh
+		admissionPolicy = origAdmission
+		routingPolicy = origRouting
+		scheduler = origScheduler
+		policyConfigPath = origPolicyConfig
+		maxModelLen = origMaxModelLen
+		traceLevel = origTraceLevel
+		counterfactualK = origCounterfactualK
+		traceHeaderPath = origTraceHeader
+		traceDataPath = origTraceData
+		simulationHorizon = origSimHorizon
+		replayTraceOutput = origTraceOutput
+		cacheSignalDelay = origCacheSignalDelay
+		flowControlEnabled = origFlowControlEnabled
+		flowControlDetector = origFlowControlDetector
+		flowControlDispatchOrder = origFlowControlDispatchOrder
+		flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
+		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
+		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
+		flowControlMaxConcurrency = origFlowControlMaxConcurrency
+		catalogPath = origCatalogPath
+		hwConfigPath = origHwConfigPath
+		gpu = origGPU
+		tensorParallelism = origTP
+		defaultsFilePath = origDefaultsFilePath
+		replaySessionMode = origSessionMode
+		replayThinkTimeMs = origThinkTimeMs
+		replayThinkTimeDist = origThinkTimeDist
+	}()
+
+	model = "test-model"
+	latencyModelBackend = "trained-physics"
+	// Note: betaCoeffs and alphaCoeffs NOT set → auto-loads from defaults.yaml
+	totalKVBlocks = 1000
+	blockSizeTokens = 16
+	maxNumSeqs = 64
+	maxNumBatchedTokens = 2048
+	numInstances = 1
+	seed = 42
+	resultsPath = ""
+	longPrefillTokenThreshold = 0
+	kvCPUBlocks = 0
+	kvOffloadThreshold = 0.9
+	kvTransferBandwidth = 100.0
+	kvTransferBaseLatency = 0
+	snapshotRefreshInterval = 0
+	admissionPolicy = "always-admit"
+	routingPolicy = "round-robin"
+	scheduler = "fcfs"
+	policyConfigPath = ""
+	maxModelLen = 0
+	traceLevel = "none"
+	counterfactualK = 0
+	traceHeaderPath = headerPath
+	traceDataPath = dataPath
+	simulationHorizon = math.MaxInt64
+	replayTraceOutput = "" // BC-4: no --trace-output flag set
+	catalogPath = catalogDir3
+	hwConfigPath = hwPath3
+	gpu = "H100"
+	tensorParallelism = 1
+	defaultsFilePath = "../defaults.yaml" // Load trained-physics coefficients (relative to cmd/ test dir)
+
+	testCmd := &cobra.Command{}
+	registerSimConfigFlags(testCmd)
+	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+	if err := testCmd.ParseFlags([]string{
+		"--model", "test-model", "--latency-model", "trained-physics",
+		// Note: --beta-coeffs and --alpha-coeffs omitted → auto-loads from defaults.yaml
+		"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+		"--catalog", catalogDir3, "--hardware-config", hwPath3,
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--defaults-filepath", "../defaults.yaml",
+	}); err != nil {
+		t.Fatalf("ParseFlags failed: %v", err)
+	}
+
+	replayCmd.Run(testCmd, nil)
+
+	// BC-4: no output files written — check a prefix that was NOT requested
+	prefix := filepath.Join(dir, "out")
+	if _, err := os.Stat(prefix + ".yaml"); !os.IsNotExist(err) {
+		t.Error("BC-4: unexpected .yaml file written when --trace-output was absent")
+	}
+	if _, err := os.Stat(prefix + ".csv"); !os.IsNotExist(err) {
+		t.Error("BC-4: unexpected .csv file written when --trace-output was absent")
+	}
+}
+
+// TestReplayCmd_TraceOutput_Determinism verifies BC-5 (INV-6):
+// same seed + same trace produces byte-identical output files.
+func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+
+	headerContent := "trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"
+	if err := os.WriteFile(headerPath, []byte(headerContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n" +
+		"1,c1,t1,standard,s1,0,,0,false,20,8,20,0,0,0,0.0,,0,0,100000,100000,0,0,0,ok,,\n"
+	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	catalogDir4, hwPath4 := setupTrainedPhysicsTestFixtures(t)
+
+	// runOnce runs the replay and returns the content of the output files
+	runOnce := func(prefix string) (yamlBytes, csvBytes []byte) {
+		t.Helper()
+
+		origModel := model
+		origBackend := latencyModelBackend
+		origBeta := betaCoeffs
+		origAlpha := alphaCoeffs
+		origTotalKV := totalKVBlocks
+		origBlockSize := blockSizeTokens
+		origMaxRunning := maxNumSeqs
+		origMaxSched := maxNumBatchedTokens
+		origInstances := numInstances
+		origSeed := seed
+		origResults := resultsPath
+		origThreshold := longPrefillTokenThreshold
+		origKVCPU := kvCPUBlocks
+		origOffload := kvOffloadThreshold
+		origBandwidth := kvTransferBandwidth
+		origBaseLatency := kvTransferBaseLatency
+		origSnapRefresh := snapshotRefreshInterval
+		origAdmission := admissionPolicy
+		origRouting := routingPolicy
+		origScheduler := scheduler
+		origPolicyConfig := policyConfigPath
+		origMaxModelLen := maxModelLen
+		origTraceLevel := traceLevel
+		origCounterfactualK := counterfactualK
+		origTraceHeader := traceHeaderPath
+		origTraceData := traceDataPath
+		origSimHorizon := simulationHorizon
+		origTraceOutput := replayTraceOutput
+		origCacheSignalDelay := cacheSignalDelay
+		origFlowControlEnabled := flowControlEnabled
+		origFlowControlDetector := flowControlDetector
+		origFlowControlDispatchOrder := flowControlDispatchOrder
+		origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
+		origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
+		origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
+		origFlowControlMaxConcurrency := flowControlMaxConcurrency
+		origCatalogPath := catalogPath
+		origHwConfigPath := hwConfigPath
+		origGPU := gpu
+		origTP := tensorParallelism
+		origSessionMode := replaySessionMode
+		origThinkTimeMs := replayThinkTimeMs
+		origThinkTimeDist := replayThinkTimeDist
+		origDefaultsFilePathInner := defaultsFilePath
+		defer func() {
+			model = origModel
+			latencyModelBackend = origBackend
+			betaCoeffs = origBeta
+			alphaCoeffs = origAlpha
+			totalKVBlocks = origTotalKV
+			blockSizeTokens = origBlockSize
+			maxNumSeqs = origMaxRunning
+			maxNumBatchedTokens = origMaxSched
+			numInstances = origInstances
+			seed = origSeed
+			resultsPath = origResults
+			longPrefillTokenThreshold = origThreshold
+			kvCPUBlocks = origKVCPU
+			kvOffloadThreshold = origOffload
+			kvTransferBandwidth = origBandwidth
+			kvTransferBaseLatency = origBaseLatency
+			snapshotRefreshInterval = origSnapRefresh
+			admissionPolicy = origAdmission
+			routingPolicy = origRouting
+			scheduler = origScheduler
+			policyConfigPath = origPolicyConfig
+			maxModelLen = origMaxModelLen
+			traceLevel = origTraceLevel
+			counterfactualK = origCounterfactualK
+			traceHeaderPath = origTraceHeader
+			traceDataPath = origTraceData
+			simulationHorizon = origSimHorizon
+			replayTraceOutput = origTraceOutput
+			cacheSignalDelay = origCacheSignalDelay
+			flowControlEnabled = origFlowControlEnabled
+			flowControlDetector = origFlowControlDetector
+			flowControlDispatchOrder = origFlowControlDispatchOrder
+			flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
+			flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
+			flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
+			flowControlMaxConcurrency = origFlowControlMaxConcurrency
+			catalogPath = origCatalogPath
+			hwConfigPath = origHwConfigPath
+			gpu = origGPU
+			tensorParallelism = origTP
+			replaySessionMode = origSessionMode
+			replayThinkTimeMs = origThinkTimeMs
+			replayThinkTimeDist = origThinkTimeDist
+			defaultsFilePath = origDefaultsFilePathInner
+		}()
+
+		model = "test-model"
+		latencyModelBackend = "trained-physics"
+		// Note: betaCoeffs and alphaCoeffs NOT set → auto-loads from defaults.yaml
+		totalKVBlocks = 1000
+		blockSizeTokens = 16
+		maxNumSeqs = 64
+		maxNumBatchedTokens = 2048
+		numInstances = 1
+		seed = 42
+		resultsPath = ""
+		longPrefillTokenThreshold = 0
+		kvCPUBlocks = 0
+		kvOffloadThreshold = 0.9
+		kvTransferBandwidth = 100.0
+		kvTransferBaseLatency = 0
+		snapshotRefreshInterval = 0
+		admissionPolicy = "always-admit"
+		routingPolicy = "round-robin"
+		scheduler = "fcfs"
+		policyConfigPath = ""
+		maxModelLen = 0
+		traceLevel = "none"
+		counterfactualK = 0
+		traceHeaderPath = headerPath
+		traceDataPath = dataPath
+		simulationHorizon = math.MaxInt64
+		replayTraceOutput = prefix
+		catalogPath = catalogDir4
+		hwConfigPath = hwPath4
+		gpu = "H100"
+		tensorParallelism = 1
+		defaultsFilePath = "../defaults.yaml" // Load trained-physics coefficients (relative to cmd/ test dir)
+
+		testCmd := &cobra.Command{}
+		registerSimConfigFlags(testCmd)
+		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+		testCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "")
+		if err := testCmd.ParseFlags([]string{
+			"--model", "test-model", "--latency-model", "trained-physics",
+			// Note: --beta-coeffs and --alpha-coeffs omitted → auto-loads from defaults.yaml
+			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+			"--catalog", catalogDir4, "--hardware-config", hwPath4,
+			"--trace-header", headerPath,
+			"--trace-data", dataPath, "--trace-output", prefix,
+			"--defaults-filepath", "../defaults.yaml",
+		}); err != nil {
+			t.Fatalf("ParseFlags failed: %v", err)
+		}
+		replayCmd.Run(testCmd, nil)
+
+		y, err := os.ReadFile(prefix + ".yaml")
+		if err != nil {
+			t.Fatalf("output YAML not found: %v", err)
+		}
+		c, err := os.ReadFile(prefix + ".csv")
+		if err != nil {
+			t.Fatalf("output CSV not found: %v", err)
+		}
+		return y, c
+	}
+
+	prefix1 := filepath.Join(dir, "run1")
+	prefix2 := filepath.Join(dir, "run2")
+
+	yaml1, csv1 := runOnce(prefix1)
+	yaml2, csv2 := runOnce(prefix2)
+
+	// BC-5 / INV-6: byte-identical output
+	if string(yaml1) != string(yaml2) {
+		t.Error("BC-5: YAML output is non-deterministic across runs with same seed")
+	}
+	if string(csv1) != string(csv2) {
+		t.Error("BC-5: CSV output is non-deterministic across runs with same seed")
+	}
+}
+
+// TestReplayCmd_AnomalyBlock_TimedOutRequests verifies BC-1:
+// when replay produces TimedOutRequests > 0, the anomaly block includes "Timed Out Requests: N".
+func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
+	// GIVEN a trace with deadline_us=1 — request deadline expires at t=1µs, before any execution step
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+
+	headerContent := "trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"
+	if err := os.WriteFile(headerPath, []byte(headerContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,1,0,0,0,0,0,0,ok,,\n"
+	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+
+	// Save and restore package-level vars (same pattern as TestReplayCmd_EndToEnd_TrainedPhysicsMode)
+	origModel := model
+	origBackend := latencyModelBackend
+	origBeta := betaCoeffs
+	origAlpha := alphaCoeffs
+	origTotalKV := totalKVBlocks
+	origBlockSize := blockSizeTokens
+	origMaxRunning := maxNumSeqs
+	origMaxSched := maxNumBatchedTokens
+	origInstances := numInstances
+	origSeed := seed
+	origResults := resultsPath
+	origThreshold := longPrefillTokenThreshold
+	origKVCPU := kvCPUBlocks
+	origOffload := kvOffloadThreshold
+	origBandwidth := kvTransferBandwidth
+	origBaseLatency := kvTransferBaseLatency
+	origSnapRefresh := snapshotRefreshInterval
+	origAdmission := admissionPolicy
+	origRouting := routingPolicy
+	origScheduler := scheduler
+	origPolicyConfig := policyConfigPath
+	origMaxModelLen := maxModelLen
+	origTraceLevel := traceLevel
+	origCounterfactualK := counterfactualK
+	origTraceHeader := traceHeaderPath
+	origTraceData := traceDataPath
+	origSimHorizon := simulationHorizon
+	origTraceOutput := replayTraceOutput
+	origCacheSignalDelay := cacheSignalDelay
+	origFlowControlEnabled := flowControlEnabled
+	origFlowControlDetector := flowControlDetector
+	origFlowControlDispatchOrder := flowControlDispatchOrder
+	origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
+	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
+	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
+	origFlowControlMaxConcurrency := flowControlMaxConcurrency
+	origCatalogPath := catalogPath
+	origHwConfigPath := hwConfigPath
+	origGPU := gpu
+	origTP := tensorParallelism
+	origDefaultsFilePath := defaultsFilePath
+	origSessionMode := replaySessionMode
+	origThinkTimeMs := replayThinkTimeMs
+	origThinkTimeDist := replayThinkTimeDist
+	defer func() {
+		model = origModel
+		latencyModelBackend = origBackend
+		betaCoeffs = origBeta
+		alphaCoeffs = origAlpha
+		totalKVBlocks = origTotalKV
+		blockSizeTokens = origBlockSize
+		maxNumSeqs = origMaxRunning
+		maxNumBatchedTokens = origMaxSched
+		numInstances = origInstances
+		seed = origSeed
+		resultsPath = origResults
+		longPrefillTokenThreshold = origThreshold
+		kvCPUBlocks = origKVCPU
+		kvOffloadThreshold = origOffload
+		kvTransferBandwidth = origBandwidth
+		kvTransferBaseLatency = origBaseLatency
+		snapshotRefreshInterval = origSnapRefresh
+		admissionPolicy = origAdmission
+		routingPolicy = origRouting
+		scheduler = origScheduler
+		policyConfigPath = origPolicyConfig
+		maxModelLen = origMaxModelLen
+		traceLevel = origTraceLevel
+		counterfactualK = origCounterfactualK
+		traceHeaderPath = origTraceHeader
+		traceDataPath = origTraceData
+		simulationHorizon = origSimHorizon
+		replayTraceOutput = origTraceOutput
+		cacheSignalDelay = origCacheSignalDelay
+		flowControlEnabled = origFlowControlEnabled
+		flowControlDetector = origFlowControlDetector
+		flowControlDispatchOrder = origFlowControlDispatchOrder
+		flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
+		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
+		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
+		flowControlMaxConcurrency = origFlowControlMaxConcurrency
+		catalogPath = origCatalogPath
+		hwConfigPath = origHwConfigPath
+		gpu = origGPU
+		tensorParallelism = origTP
+		defaultsFilePath = origDefaultsFilePath
+		replaySessionMode = origSessionMode
+		replayThinkTimeMs = origThinkTimeMs
+		replayThinkTimeDist = origThinkTimeDist
+	}()
+
+	model = "test-model"
+	latencyModelBackend = "trained-physics"
+	totalKVBlocks = 1000
+	blockSizeTokens = 16
+	maxNumSeqs = 64
+	maxNumBatchedTokens = 2048
+	numInstances = 1
+	seed = 42
+	resultsPath = ""
+	longPrefillTokenThreshold = 0
+	kvCPUBlocks = 0
+	kvOffloadThreshold = 0.9
+	kvTransferBandwidth = 100.0
+	kvTransferBaseLatency = 0
+	snapshotRefreshInterval = 0
+	admissionPolicy = "always-admit"
+	routingPolicy = "round-robin"
+	scheduler = "fcfs"
+	policyConfigPath = ""
+	maxModelLen = 0
+	traceLevel = "none"
+	counterfactualK = 0
+	traceHeaderPath = headerPath
+	traceDataPath = dataPath
+	simulationHorizon = math.MaxInt64
+	replayTraceOutput = ""
+	catalogPath = catalogDir
+	hwConfigPath = hwPath
+	gpu = "H100"
+	tensorParallelism = 1
+	defaultsFilePath = "../defaults.yaml"
+	cacheSignalDelay = 0
+	flowControlEnabled = false
+	flowControlDetector = "utilization"
+	flowControlDispatchOrder = "fifo"
+	flowControlMaxQueueDepth = 0
+	flowControlQueueDepthThreshold = 5.0
+	flowControlKVCacheUtilThreshold = 0.8
+	flowControlMaxConcurrency = 0
+
+	testCmd := &cobra.Command{}
+	registerSimConfigFlags(testCmd)
+	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+	if err := testCmd.ParseFlags([]string{
+		"--model", "test-model",
+		"--latency-model", "trained-physics",
+		"--total-kv-blocks", "1000",
+		"--hardware", "H100",
+		"--tp", "1",
+		"--catalog", catalogDir,
+		"--hardware-config", hwPath,
+		"--trace-header", headerPath,
+		"--trace-data", dataPath,
+		"--defaults-filepath", "../defaults.yaml",
+	}); err != nil {
+		t.Fatalf("ParseFlags failed: %v", err)
+	}
+
+	// Capture stdout (same pattern as root_test.go)
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	replayCmd.Run(testCmd, nil)
+	_ = w.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	out := buf.String()
+
+	// THEN: anomaly block fires and "Timed Out Requests: 1" appears (BC-1)
+	if !strings.Contains(out, "=== Anomaly Counters ===") {
+		t.Errorf("BC-1: expected anomaly block header in output:\n%s", out)
+	}
+	if !strings.Contains(out, "Timed Out Requests: 1") {
+		t.Errorf("BC-1: expected 'Timed Out Requests: 1' in anomaly block, got:\n%s", out)
+	}
+}
+
+// TestReplayCmd_AutoscalerBundleFatal verifies BC-2:
+// policy bundle with autoscaler config causes fatal exit in replay.
+func TestReplayCmd_AutoscalerBundleFatal(t *testing.T) {
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		// Running as subprocess: set up and trigger the fatal path.
+		dir := t.TempDir()
+		bundleYAML := "autoscaler:\n  interval_us: 500000\n"
+		bundlePath := filepath.Join(dir, "bundle.yaml")
+		if err := os.WriteFile(bundlePath, []byte(bundleYAML), 0644); err != nil {
+			os.Exit(2)
+		}
+		headerPath := filepath.Join(dir, "trace.yaml")
+		dataPath := filepath.Join(dir, "trace.csv")
+		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
+		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
+
+		catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+		model = "test-model"
+		latencyModelBackend = "trained-physics"
+		totalKVBlocks = 1000
+		blockSizeTokens = 16
+		maxNumSeqs = 64
+		maxNumBatchedTokens = 2048
+		numInstances = 1
+		seed = 42
+		longPrefillTokenThreshold = 0
+		kvCPUBlocks = 0
+		kvOffloadThreshold = 0.9
+		kvTransferBandwidth = 100.0
+		kvTransferBaseLatency = 0
+		snapshotRefreshInterval = 0
+		admissionPolicy = "always-admit"
+		routingPolicy = "round-robin"
+		scheduler = "fcfs"
+		policyConfigPath = bundlePath
+		maxModelLen = 0
+		traceLevel = "none"
+		counterfactualK = 0
+		traceHeaderPath = headerPath
+		traceDataPath = dataPath
+		catalogPath = catalogDir
+		hwConfigPath = hwPath
+		gpu = "H100"
+		tensorParallelism = 1
+		defaultsFilePath = "../defaults.yaml"
+		replaySessionMode = "fixed"
+		resultsPath = ""
+		replayTraceOutput = ""
+
+		testCmd := &cobra.Command{}
+		registerSimConfigFlags(testCmd)
+		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+		if err := testCmd.ParseFlags([]string{
+			"--model", "test-model", "--latency-model", "trained-physics",
+			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+			"--catalog", catalogDir, "--hardware-config", hwPath,
+			"--trace-header", headerPath, "--trace-data", dataPath,
+			"--policy-config", bundlePath, "--defaults-filepath", "../defaults.yaml",
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)
+			os.Exit(2) // distinct from logrus.Fatalf exit code (1)
+		}
+		replayCmd.Run(testCmd, nil) // must Fatalf before here
+		os.Exit(0)                  // reached only if no fatal = parent test failure
+	}
+
+	// Parent: re-run this test as subprocess and expect exit code 1 (logrus.Fatalf) (BC-2).
+	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_AutoscalerBundleFatal", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("BC-2: expected non-zero exit when autoscaler bundle is present, got exit 0")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("BC-2: unexpected error type: %v", err)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("BC-2: expected exit code 1 (logrus.Fatalf), got %d; output:\n%s", exitErr.ExitCode(), out)
+	}
+	if !strings.Contains(string(out), "autoscaler") {
+		t.Errorf("BC-2: fatal message should mention 'autoscaler', got:\n%s", out)
+	}
+}
+
+// TestReplayCmd_NodePoolsBundleFatal verifies BC-4:
+// policy bundle with node_pools causes fatal exit in replay.
+func TestReplayCmd_NodePoolsBundleFatal(t *testing.T) {
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		dir := t.TempDir()
+		bundleYAML := "node_pools:\n  - name: pool-a\n    gpu_type: H100\n    gpus_per_node: 8\n    gpu_memory_gib: 80\n    initial_nodes: 1\n    min_nodes: 1\n    max_nodes: 4\n    cost_per_hour: 32.0\n"
+		bundlePath := filepath.Join(dir, "bundle.yaml")
+		if err := os.WriteFile(bundlePath, []byte(bundleYAML), 0644); err != nil {
+			os.Exit(2)
+		}
+		headerPath := filepath.Join(dir, "trace.yaml")
+		dataPath := filepath.Join(dir, "trace.csv")
+		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
+		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
+
+		catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+		model = "test-model"
+		latencyModelBackend = "trained-physics"
+		totalKVBlocks = 1000
+		blockSizeTokens = 16
+		maxNumSeqs = 64
+		maxNumBatchedTokens = 2048
+		numInstances = 1
+		seed = 42
+		longPrefillTokenThreshold = 0
+		kvCPUBlocks = 0
+		kvOffloadThreshold = 0.9
+		kvTransferBandwidth = 100.0
+		kvTransferBaseLatency = 0
+		snapshotRefreshInterval = 0
+		admissionPolicy = "always-admit"
+		routingPolicy = "round-robin"
+		scheduler = "fcfs"
+		policyConfigPath = bundlePath
+		maxModelLen = 0
+		traceLevel = "none"
+		counterfactualK = 0
+		traceHeaderPath = headerPath
+		traceDataPath = dataPath
+		catalogPath = catalogDir
+		hwConfigPath = hwPath
+		gpu = "H100"
+		tensorParallelism = 1
+		defaultsFilePath = "../defaults.yaml"
+		replaySessionMode = "fixed"
+		resultsPath = ""
+		replayTraceOutput = ""
+
+		testCmd := &cobra.Command{}
+		registerSimConfigFlags(testCmd)
+		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+		if err := testCmd.ParseFlags([]string{
+			"--model", "test-model", "--latency-model", "trained-physics",
+			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+			"--catalog", catalogDir, "--hardware-config", hwPath,
+			"--trace-header", headerPath, "--trace-data", dataPath,
+			"--policy-config", bundlePath, "--defaults-filepath", "../defaults.yaml",
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)
+			os.Exit(2) // distinct from logrus.Fatalf exit code (1)
+		}
+		replayCmd.Run(testCmd, nil) // must Fatalf before here
+		os.Exit(0)
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_NodePoolsBundleFatal", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("BC-4: expected non-zero exit when node_pools bundle is present, got exit 0")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("BC-4: unexpected error type: %v", err)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("BC-4: expected exit code 1 (logrus.Fatalf), got %d; output:\n%s", exitErr.ExitCode(), out)
+	}
+	if !strings.Contains(string(out), "node_pools") {
+		t.Errorf("BC-4: fatal message should mention 'node_pools', got:\n%s", out)
+	}
+}
+
+// TestReplayCmd_PD_BasicSmoke verifies BC-1 (pre-parity smoke):
+// replay with PD flags set does not panic and completes simulation.
+// Requires Track A (Task 3) wiring to exercise the disaggregated path.
+func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	if err := os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n" +
+		"1,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,100000,100000,0,0,0,ok,,\n"
+	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+
+	// Save/restore PD-related package-level vars.
+	origPrefillInstances := prefillInstances
+	origDecodeInstances := decodeInstances
+	origSharedInstances := prefillDecodeInstances
+	origPDDecider := pdDecider
+	origPDTransferBandwidth := pdTransferBandwidth
+	origPDTransferBaseLatency := pdTransferBaseLatency
+	origPDTransferContention := pdTransferContention
+	origPDPrefixThreshold := pdPrefixThreshold
+	origPrefillScorers := prefillRoutingScorers
+	origDecodeScorers := decodeRoutingScorers
+	defer func() {
+		prefillInstances = origPrefillInstances
+		decodeInstances = origDecodeInstances
+		prefillDecodeInstances = origSharedInstances
+		pdDecider = origPDDecider
+		pdTransferBandwidth = origPDTransferBandwidth
+		pdTransferBaseLatency = origPDTransferBaseLatency
+		pdTransferContention = origPDTransferContention
+		pdPrefixThreshold = origPDPrefixThreshold
+		prefillRoutingScorers = origPrefillScorers
+		decodeRoutingScorers = origDecodeScorers
+	}()
+
+	// Save/restore standard vars.
+	origModel := model
+	origBackend := latencyModelBackend
+	origBeta := betaCoeffs
+	origAlpha := alphaCoeffs
+	origTotalKV := totalKVBlocks
+	origBlockSize := blockSizeTokens
+	origMaxRunning := maxNumSeqs
+	origMaxSched := maxNumBatchedTokens
+	origInstances := numInstances
+	origSeed := seed
+	origResults := resultsPath
+	origThreshold := longPrefillTokenThreshold
+	origKVCPU := kvCPUBlocks
+	origOffload := kvOffloadThreshold
+	origBandwidth := kvTransferBandwidth
+	origBaseLatency := kvTransferBaseLatency
+	origSnapRefresh := snapshotRefreshInterval
+	origAdmission := admissionPolicy
+	origRouting := routingPolicy
+	origScheduler := scheduler
+	origPolicyConfig := policyConfigPath
+	origMaxModelLen := maxModelLen
+	origTraceLevel := traceLevel
+	origCounterfactualK := counterfactualK
+	origTraceHeader := traceHeaderPath
+	origTraceData := traceDataPath
+	origSimHorizon := simulationHorizon
+	origTraceOutput := replayTraceOutput
+	origCacheSignalDelay := cacheSignalDelay
+	origFlowControlEnabled := flowControlEnabled
+	origFlowControlDetector := flowControlDetector
+	origFlowControlDispatchOrder := flowControlDispatchOrder
+	origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
+	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
+	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
+	origFlowControlMaxConcurrency := flowControlMaxConcurrency
+	origCatalogPath := catalogPath
+	origHwConfigPath := hwConfigPath
+	origGPU := gpu
+	origTP := tensorParallelism
+	origDefaultsFilePath := defaultsFilePath
+	origSessionMode := replaySessionMode
+	origThinkTimeMs := replayThinkTimeMs
+	origThinkTimeDist := replayThinkTimeDist
+	defer func() {
+		model = origModel
+		latencyModelBackend = origBackend
+		betaCoeffs = origBeta
+		alphaCoeffs = origAlpha
+		totalKVBlocks = origTotalKV
+		blockSizeTokens = origBlockSize
+		maxNumSeqs = origMaxRunning
+		maxNumBatchedTokens = origMaxSched
+		numInstances = origInstances
+		seed = origSeed
+		resultsPath = origResults
+		longPrefillTokenThreshold = origThreshold
+		kvCPUBlocks = origKVCPU
+		kvOffloadThreshold = origOffload
+		kvTransferBandwidth = origBandwidth
+		kvTransferBaseLatency = origBaseLatency
+		snapshotRefreshInterval = origSnapRefresh
+		admissionPolicy = origAdmission
+		routingPolicy = origRouting
+		scheduler = origScheduler
+		policyConfigPath = origPolicyConfig
+		maxModelLen = origMaxModelLen
+		traceLevel = origTraceLevel
+		counterfactualK = origCounterfactualK
+		traceHeaderPath = origTraceHeader
+		traceDataPath = origTraceData
+		simulationHorizon = origSimHorizon
+		replayTraceOutput = origTraceOutput
+		cacheSignalDelay = origCacheSignalDelay
+		flowControlEnabled = origFlowControlEnabled
+		flowControlDetector = origFlowControlDetector
+		flowControlDispatchOrder = origFlowControlDispatchOrder
+		flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
+		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
+		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
+		flowControlMaxConcurrency = origFlowControlMaxConcurrency
+		catalogPath = origCatalogPath
+		hwConfigPath = origHwConfigPath
+		gpu = origGPU
+		tensorParallelism = origTP
+		defaultsFilePath = origDefaultsFilePath
+		replaySessionMode = origSessionMode
+		replayThinkTimeMs = origThinkTimeMs
+		replayThinkTimeDist = origThinkTimeDist
+	}()
+
+	// WHEN: replay with PD config: 1 prefill + 1 decode out of 2 total instances.
+	model = "test-model"
+	latencyModelBackend = "trained-physics"
+	totalKVBlocks = 1000
+	blockSizeTokens = 16
+	maxNumSeqs = 64
+	maxNumBatchedTokens = 2048
+	numInstances = 2
+	seed = 42
+	resultsPath = ""
+	longPrefillTokenThreshold = 0
+	kvCPUBlocks = 0
+	kvOffloadThreshold = 0.9
+	kvTransferBandwidth = 100.0
+	kvTransferBaseLatency = 0
+	snapshotRefreshInterval = 0
+	admissionPolicy = "always-admit"
+	routingPolicy = "round-robin"
+	scheduler = "fcfs"
+	policyConfigPath = ""
+	maxModelLen = 0
+	traceLevel = "none"
+	counterfactualK = 0
+	traceHeaderPath = headerPath
+	traceDataPath = dataPath
+	simulationHorizon = math.MaxInt64
+	replayTraceOutput = ""
+	catalogPath = catalogDir
+	hwConfigPath = hwPath
+	gpu = "H100"
+	tensorParallelism = 1
+	defaultsFilePath = "../defaults.yaml"
+	replaySessionMode = "fixed"
+	replayThinkTimeMs = 0
+	replayThinkTimeDist = ""
+	cacheSignalDelay = 0
+	flowControlEnabled = false
+	flowControlDetector = "utilization"
+	flowControlDispatchOrder = "fifo"
+	flowControlMaxQueueDepth = 0
+	flowControlQueueDepthThreshold = 5.0
+	flowControlKVCacheUtilThreshold = 0.8
+	flowControlMaxConcurrency = 0
+
+	// PD config: 1 prefill + 1 decode.
+	prefillInstances = 1
+	decodeInstances = 1
+	prefillDecodeInstances = 0
+	pdDecider = "always"
+	pdTransferBandwidth = 25.0
+	pdTransferBaseLatency = 0.05
+	pdTransferContention = false
+	pdPrefixThreshold = 0
+	prefillRoutingScorers = ""
+	decodeRoutingScorers = ""
+
+	testCmd := &cobra.Command{}
+	registerSimConfigFlags(testCmd)
+	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+	if err := testCmd.ParseFlags([]string{
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--num-instances", "2",
+		"--prefill-instances", "1", "--decode-instances", "1",
+		"--pd-decider", "always", "--pd-transfer-bandwidth", "25.0",
+		"--defaults-filepath", "../defaults.yaml",
+	}); err != nil {
+		t.Fatalf("ParseFlags failed: %v", err)
+	}
+
+	// THEN: simulation completes without panic (BC-1 smoke test).
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("BC-1: replay with PD config panicked: %v", r)
+		}
+	}()
+	replayCmd.Run(testCmd, nil)
+}
+
+// TestINV13_RunReplayParity_PD verifies INV-13 for PD disaggregation:
+// running the same requests through a PD cluster directly vs. through
+// trace-export-then-replay produces identical per-request TTFT and E2E.
+func TestINV13_RunReplayParity_PD(t *testing.T) {
+	const fixedSeed int64 = 99
+	requests := makeMinimalPDRequests(t)
+
+	catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+	dir := t.TempDir()
+
+	// Write defaults.yaml with trained-physics coefficients.
+	defaultsContent := `trained_physics_coefficients:
+  alpha_coeffs: [100.0, 1.0, 100.0]
+  beta_coeffs: [0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+`
+	defaultsPath := filepath.Join(filepath.Dir(hwPath), "defaults.yaml")
+	if err := os.WriteFile(defaultsPath, []byte(defaultsContent), 0644); err != nil {
+		t.Fatalf("write defaults.yaml: %v", err)
+	}
+
+	// Build SimConfig from model config files.
+	hfPath := testCatalogConfigPath(catalogDir, "test-model")
+	hfConfig, err := latency.ParseHFConfig(hfPath)
+	if err != nil {
+		t.Fatalf("ParseHFConfig: %v", err)
+	}
+	mc, err := latency.GetModelConfigFromHF(hfConfig)
+	if err != nil {
+		t.Fatalf("GetModelConfigFromHF: %v", err)
+	}
+	hwCfg, err := latency.GetHWConfig(hwPath, "H100")
+	if err != nil {
+		t.Fatalf("GetHWConfig: %v", err)
+	}
+
+	betaCfg := []float64{0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0}
+	alphaCfg := []float64{100.0, 1.0, 100.0}
+
+	// INV-13 SYNC POINT: cfg must match the DeploymentConfig built by replayCmd.Run
+	// for the same flags. Keep in sync with cmd/replay.go (see cmd/root.go:1500).
+	cfg := cluster.DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             10_000_000,
+			Seed:                fixedSeed,
+			KVCacheConfig:       sim.NewKVCacheConfig(1000, 16, 0, 0.9, 100.0, 0),
+			BatchConfig:         sim.NewBatchConfig(64, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs(betaCfg, alphaCfg),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(*mc, hwCfg, "test-model", "H100", 1, 1, false, "", "trained-physics", 4096),
+			PolicyConfig:        sim.NewPolicyConfig("fcfs", ""),
+		},
+		NumInstances:            2,
+		AdmissionPolicy:         "always-admit",
+		RoutingPolicy:           "round-robin",
+		PrefillInstances:        1,
+		DecodeInstances:         1,
+		PDDecider:               "always",
+		PDTransferBandwidthGBps: 25.0,
+		PDTransferBaseLatencyMs: 0.05,
+	}
+
+	// WHEN: direct run.
+	cs1 := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(requests), nil)
+	if err := cs1.Run(); err != nil {
+		t.Fatalf("direct run failed: %v", err)
+	}
+	runTTFTs := cs1.AggregatedMetrics().RequestTTFTs
+	runE2Es := cs1.AggregatedMetrics().RequestE2Es
+
+	if len(runTTFTs) == 0 {
+		t.Fatal("INV-13: direct run produced no completed requests — cannot verify parity")
+	}
+
+	// WHEN: export to trace → reload → replay with same config.
+	traceRecords := workload.RequestsToTraceRecords(requests)
+	traceHdr := &workload.TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated"}
+	traceHeaderFile := filepath.Join(dir, "trace.yaml")
+	traceDataFile := filepath.Join(dir, "trace.csv")
+	if err := workload.ExportTraceV2(traceHdr, traceRecords, traceHeaderFile, traceDataFile); err != nil {
+		t.Fatalf("ExportTraceV2: %v", err)
+	}
+	traceData, err := workload.LoadTraceV2(traceHeaderFile, traceDataFile)
+	if err != nil {
+		t.Fatalf("LoadTraceV2: %v", err)
+	}
+	replayReqs, err := workload.LoadTraceV2Requests(traceData, fixedSeed)
+	if err != nil {
+		t.Fatalf("LoadTraceV2Requests: %v", err)
+	}
+
+	cs2 := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(replayReqs), nil)
+	if err := cs2.Run(); err != nil {
+		t.Fatalf("replay run failed: %v", err)
+	}
+	replayTTFTs := cs2.AggregatedMetrics().RequestTTFTs
+	replayE2Es := cs2.AggregatedMetrics().RequestE2Es
+
+	// THEN: per-request metrics must be identical (INV-13, BC-1).
+	if len(runTTFTs) != len(replayTTFTs) {
+		t.Errorf("INV-13: TTFT map size mismatch: run=%d replay=%d", len(runTTFTs), len(replayTTFTs))
+	}
+	for id, ttft := range runTTFTs {
+		if got, ok := replayTTFTs[id]; !ok {
+			t.Errorf("INV-13: request %s present in run but missing from replay TTFTs", id)
+		} else if got != ttft {
+			t.Errorf("INV-13: request %s TTFT mismatch: run=%f replay=%f", id, ttft, got)
+		}
+	}
+	for id, e2e := range runE2Es {
+		if got, ok := replayE2Es[id]; !ok {
+			t.Errorf("INV-13: request %s present in run but missing from replay E2Es", id)
+		} else if got != e2e {
+			t.Errorf("INV-13: request %s E2E mismatch: run=%f replay=%f", id, e2e, got)
+		}
+	}
+}
+
+// makeMinimalPDRequests creates a small set of deterministic requests for PD parity testing.
+func makeMinimalPDRequests(t *testing.T) []*sim.Request {
+	t.Helper()
+	reqs := make([]*sim.Request, 3)
+	for i := range reqs {
+		inputToks := make([]sim.TokenID, 10)
+		for j := range inputToks {
+			inputToks[j] = sim.TokenID(100 + i*10 + j)
+		}
+		outputToks := make([]sim.TokenID, 5)
+		for j := range outputToks {
+			outputToks[j] = sim.TokenID(200 + j)
+		}
+		reqs[i] = &sim.Request{
+			ID:           fmt.Sprintf("request_%d", i),
+			ArrivalTime:  int64(i) * 100_000,
+			InputTokens:  inputToks,
+			OutputTokens: outputToks,
+			MaxOutputLen: 100,
+		}
+	}
+	return reqs
+}
+
+// TestINV13_RunReplayParity_PD_CLI verifies INV-13 end-to-end through replayCmd.Run:
+// export trace from a PD cluster, replay via the CLI path, and confirm per-request
+// TTFT/E2E match the direct library run. This catches bugs in the replayCmd CLI
+// wiring that TestINV13_RunReplayParity_PD (library-level) would miss.
+func TestINV13_RunReplayParity_PD_CLI(t *testing.T) {
+	const fixedSeed int64 = 99
+	requests := makeMinimalPDRequests(t)
+
+	catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+	dir := t.TempDir()
+
+	defaultsContent := `trained_physics_coefficients:
+  alpha_coeffs: [100.0, 1.0, 100.0]
+  beta_coeffs: [0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+`
+	defaultsPath := filepath.Join(filepath.Dir(hwPath), "defaults.yaml")
+	if err := os.WriteFile(defaultsPath, []byte(defaultsContent), 0644); err != nil {
+		t.Fatalf("write defaults.yaml: %v", err)
+	}
+
+	hfPath := testCatalogConfigPath(catalogDir, "test-model")
+	hfConfig, err := latency.ParseHFConfig(hfPath)
+	if err != nil {
+		t.Fatalf("ParseHFConfig: %v", err)
+	}
+	mc, err := latency.GetModelConfigFromHF(hfConfig)
+	if err != nil {
+		t.Fatalf("GetModelConfigFromHF: %v", err)
+	}
+	hwCfg, err := latency.GetHWConfig(hwPath, "H100")
+	if err != nil {
+		t.Fatalf("GetHWConfig: %v", err)
+	}
+
+	betaCfg := []float64{0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0}
+	alphaCfg := []float64{100.0, 1.0, 100.0}
+
+	// WHEN: direct library run (reference values).
+	cfg := cluster.DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             10_000_000,
+			Seed:                fixedSeed,
+			KVCacheConfig:       sim.NewKVCacheConfig(1000, 16, 0, 0.9, 100.0, 0),
+			BatchConfig:         sim.NewBatchConfig(64, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs(betaCfg, alphaCfg),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(*mc, hwCfg, "test-model", "H100", 1, 1, false, "", "trained-physics", 4096),
+			PolicyConfig:        sim.NewPolicyConfig("fcfs", ""),
+		},
+		NumInstances:            2,
+		AdmissionPolicy:         "always-admit",
+		RoutingPolicy:           "round-robin",
+		PrefillInstances:        1,
+		DecodeInstances:         1,
+		PDDecider:               "always",
+		PDTransferBandwidthGBps: 25.0,
+		PDTransferBaseLatencyMs: 0.05,
+	}
+	cs1 := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(requests), nil)
+	if err := cs1.Run(); err != nil {
+		t.Fatalf("direct run failed: %v", err)
+	}
+	wantTTFTs := cs1.AggregatedMetrics().RequestTTFTs
+	wantE2Es := cs1.AggregatedMetrics().RequestE2Es
+	if len(wantTTFTs) == 0 {
+		t.Fatal("INV-13 CLI: direct run produced no completed requests")
+	}
+
+	// WHEN: export trace → replay through replayCmd.Run → read SimResult JSON.
+	traceRecords := workload.RequestsToTraceRecords(requests)
+	traceHdr := &workload.TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated"}
+	traceHeaderFile := filepath.Join(dir, "trace.yaml")
+	traceDataFile := filepath.Join(dir, "trace.csv")
+	if err := workload.ExportTraceV2(traceHdr, traceRecords, traceHeaderFile, traceDataFile); err != nil {
+		t.Fatalf("ExportTraceV2: %v", err)
+	}
+
+	resultsFile := filepath.Join(dir, "results.json")
+
+	// Save/restore all package-level vars including PD vars.
+	origPrefillInstances := prefillInstances
+	origDecodeInstances := decodeInstances
+	origSharedInstances := prefillDecodeInstances
+	origPDDecider := pdDecider
+	origPDTransferBandwidth := pdTransferBandwidth
+	origPDTransferBaseLatency := pdTransferBaseLatency
+	origPDTransferContention := pdTransferContention
+	origPDPrefixThreshold := pdPrefixThreshold
+	origPrefillScorers := prefillRoutingScorers
+	origDecodeScorers := decodeRoutingScorers
+	defer func() {
+		prefillInstances = origPrefillInstances
+		decodeInstances = origDecodeInstances
+		prefillDecodeInstances = origSharedInstances
+		pdDecider = origPDDecider
+		pdTransferBandwidth = origPDTransferBandwidth
+		pdTransferBaseLatency = origPDTransferBaseLatency
+		pdTransferContention = origPDTransferContention
+		pdPrefixThreshold = origPDPrefixThreshold
+		prefillRoutingScorers = origPrefillScorers
+		decodeRoutingScorers = origDecodeScorers
+	}()
+	origModel := model
+	origBackend := latencyModelBackend
+	origBeta := betaCoeffs
+	origAlpha := alphaCoeffs
+	origTotalKV := totalKVBlocks
+	origBlockSize := blockSizeTokens
+	origMaxRunning := maxNumSeqs
+	origMaxSched := maxNumBatchedTokens
+	origInstances := numInstances
+	origSeedV := seed
+	origResults := resultsPath
+	origThreshold := longPrefillTokenThreshold
+	origKVCPU := kvCPUBlocks
+	origOffload := kvOffloadThreshold
+	origBandwidth := kvTransferBandwidth
+	origBaseLatency := kvTransferBaseLatency
+	origSnapRefresh := snapshotRefreshInterval
+	origAdmission := admissionPolicy
+	origRouting := routingPolicy
+	origScheduler := scheduler
+	origPolicyConfig := policyConfigPath
+	origMaxModelLen := maxModelLen
+	origTraceLevel := traceLevel
+	origCounterfactualK := counterfactualK
+	origTraceHeader := traceHeaderPath
+	origTraceData := traceDataPath
+	origSimHorizon := simulationHorizon
+	origTraceOutput := replayTraceOutput
+	origCacheSignalDelay := cacheSignalDelay
+	origFlowControlEnabled := flowControlEnabled
+	origFlowControlDetector := flowControlDetector
+	origFlowControlDispatchOrder := flowControlDispatchOrder
+	origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
+	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
+	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
+	origFlowControlMaxConcurrency := flowControlMaxConcurrency
+	origCatalogPath := catalogPath
+	origHwConfigPath := hwConfigPath
+	origGPU := gpu
+	origTP := tensorParallelism
+	origDefaultsFilePath := defaultsFilePath
+	origSessionMode := replaySessionMode
+	origThinkTimeMs := replayThinkTimeMs
+	origThinkTimeDist := replayThinkTimeDist
+	defer func() {
+		model = origModel
+		latencyModelBackend = origBackend
+		betaCoeffs = origBeta
+		alphaCoeffs = origAlpha
+		totalKVBlocks = origTotalKV
+		blockSizeTokens = origBlockSize
+		maxNumSeqs = origMaxRunning
+		maxNumBatchedTokens = origMaxSched
+		numInstances = origInstances
+		seed = origSeedV
+		resultsPath = origResults
+		longPrefillTokenThreshold = origThreshold
+		kvCPUBlocks = origKVCPU
+		kvOffloadThreshold = origOffload
+		kvTransferBandwidth = origBandwidth
+		kvTransferBaseLatency = origBaseLatency
+		snapshotRefreshInterval = origSnapRefresh
+		admissionPolicy = origAdmission
+		routingPolicy = origRouting
+		scheduler = origScheduler
+		policyConfigPath = origPolicyConfig
+		maxModelLen = origMaxModelLen
+		traceLevel = origTraceLevel
+		counterfactualK = origCounterfactualK
+		traceHeaderPath = origTraceHeader
+		traceDataPath = origTraceData
+		simulationHorizon = origSimHorizon
+		replayTraceOutput = origTraceOutput
+		cacheSignalDelay = origCacheSignalDelay
+		flowControlEnabled = origFlowControlEnabled
+		flowControlDetector = origFlowControlDetector
+		flowControlDispatchOrder = origFlowControlDispatchOrder
+		flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
+		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
+		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
+		flowControlMaxConcurrency = origFlowControlMaxConcurrency
+		catalogPath = origCatalogPath
+		hwConfigPath = origHwConfigPath
+		gpu = origGPU
+		tensorParallelism = origTP
+		defaultsFilePath = origDefaultsFilePath
+		replaySessionMode = origSessionMode
+		replayThinkTimeMs = origThinkTimeMs
+		replayThinkTimeDist = origThinkTimeDist
+	}()
+
+	model = "test-model"
+	latencyModelBackend = "trained-physics"
+	totalKVBlocks = 1000
+	blockSizeTokens = 16
+	maxNumSeqs = 64
+	maxNumBatchedTokens = 2048
+	numInstances = 2
+	seed = fixedSeed
+	resultsPath = resultsFile
+	longPrefillTokenThreshold = 0
+	kvCPUBlocks = 0
+	kvOffloadThreshold = 0.9
+	kvTransferBandwidth = 100.0
+	kvTransferBaseLatency = 0
+	snapshotRefreshInterval = 0
+	admissionPolicy = "always-admit"
+	routingPolicy = "round-robin"
+	scheduler = "fcfs"
+	policyConfigPath = ""
+	maxModelLen = 0
+	traceLevel = "none"
+	counterfactualK = 0
+	traceHeaderPath = traceHeaderFile
+	traceDataPath = traceDataFile
+	simulationHorizon = 10_000_000
+	replayTraceOutput = ""
+	catalogPath = catalogDir
+	hwConfigPath = hwPath
+	gpu = "H100"
+	tensorParallelism = 1
+	defaultsFilePath = defaultsPath
+	replaySessionMode = "fixed"
+	replayThinkTimeMs = 0
+	replayThinkTimeDist = ""
+	cacheSignalDelay = 0
+	flowControlEnabled = false
+	prefillInstances = 1
+	decodeInstances = 1
+	prefillDecodeInstances = 0
+	pdDecider = "always"
+	pdTransferBandwidth = 25.0
+	pdTransferBaseLatency = 0.05
+	pdTransferContention = false
+	pdPrefixThreshold = 0
+	prefillRoutingScorers = ""
+	decodeRoutingScorers = ""
+
+	testCmd := &cobra.Command{}
+	registerSimConfigFlags(testCmd)
+	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+	testCmd.Flags().StringVar(&resultsPath, "results-path", "", "")
+	if err := testCmd.ParseFlags([]string{
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--trace-header", traceHeaderFile, "--trace-data", traceDataFile,
+		"--results-path", resultsFile,
+		"--num-instances", "2",
+		"--prefill-instances", "1", "--decode-instances", "1",
+		"--pd-decider", "always", "--pd-transfer-bandwidth", "25.0",
+		"--pd-transfer-base-latency", "0.05",
+		"--horizon", "10000000",
+		"--defaults-filepath", defaultsPath,
+	}); err != nil {
+		t.Fatalf("ParseFlags failed: %v", err)
+	}
+	replayCmd.Run(testCmd, nil)
+
+	// Read per-request SimResult JSON written by replayCmd.Run.
+	data, err := os.ReadFile(resultsFile)
+	if err != nil {
+		t.Fatalf("results file not written: %v", err)
+	}
+	var simResults []workload.SimResult
+	if err := json.Unmarshal(data, &simResults); err != nil {
+		t.Fatalf("parse SimResult JSON: %v", err)
+	}
+
+	// THEN: per-request TTFT and E2E must match the direct library run (INV-13).
+	for _, sr := range simResults {
+		reqID := fmt.Sprintf("request_%d", sr.RequestID)
+		wantTTFT, ok := wantTTFTs[reqID]
+		if !ok {
+			t.Errorf("INV-13 CLI: request %s missing from library run TTFTs", reqID)
+			continue
+		}
+		if sr.TTFT != wantTTFT {
+			t.Errorf("INV-13 CLI: request %s TTFT: CLI=%f library=%f", reqID, sr.TTFT, wantTTFT)
+		}
+		wantE2E, ok := wantE2Es[reqID]
+		if !ok {
+			t.Errorf("INV-13 CLI: request %s missing from library run E2Es", reqID)
+			continue
+		}
+		if sr.E2E != wantE2E {
+			t.Errorf("INV-13 CLI: request %s E2E: CLI=%f library=%f", reqID, sr.E2E, wantE2E)
+		}
+	}
+	if len(simResults) != len(wantTTFTs) {
+		t.Errorf("INV-13 CLI: completed request count mismatch: CLI=%d library=%d", len(simResults), len(wantTTFTs))
+	}
+}
+
+// TestReplayCmd_AutoscalerFlagFatal verifies BC-3:
+// passing --model-autoscaler-interval-us directly to blis replay causes fatal exit.
+func TestReplayCmd_AutoscalerFlagFatal(t *testing.T) {
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		dir := t.TempDir()
+		headerPath := filepath.Join(dir, "trace.yaml")
+		dataPath := filepath.Join(dir, "trace.csv")
+		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
+		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
+
+		catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+		model = "test-model"
+		latencyModelBackend = "trained-physics"
+		totalKVBlocks = 1000
+		blockSizeTokens = 16
+		maxNumSeqs = 64
+		maxNumBatchedTokens = 2048
+		numInstances = 1
+		seed = 42
+		longPrefillTokenThreshold = 0
+		kvCPUBlocks = 0
+		kvOffloadThreshold = 0.9
+		kvTransferBandwidth = 100.0
+		kvTransferBaseLatency = 0
+		snapshotRefreshInterval = 0
+		admissionPolicy = "always-admit"
+		routingPolicy = "round-robin"
+		scheduler = "fcfs"
+		policyConfigPath = ""
+		maxModelLen = 0
+		traceLevel = "none"
+		counterfactualK = 0
+		traceHeaderPath = headerPath
+		traceDataPath = dataPath
+		catalogPath = catalogDir
+		hwConfigPath = hwPath
+		gpu = "H100"
+		tensorParallelism = 1
+		defaultsFilePath = "../defaults.yaml"
+		replaySessionMode = "fixed"
+		resultsPath = ""
+		replayTraceOutput = ""
+
+		testCmd := &cobra.Command{}
+		registerSimConfigFlags(testCmd)
+		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+		if err := testCmd.ParseFlags([]string{
+			"--model", "test-model", "--latency-model", "trained-physics",
+			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+			"--catalog", catalogDir, "--hardware-config", hwPath,
+			"--trace-header", headerPath, "--trace-data", dataPath,
+			"--model-autoscaler-interval-us", "500000",
+			"--defaults-filepath", "../defaults.yaml",
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)
+			os.Exit(2)
+		}
+		replayCmd.Run(testCmd, nil) // must Fatalf before here
+		os.Exit(0)
+	}
+
+	// Parent: expect exit code 1 from --model-autoscaler-interval-us (BC-3).
+	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_AutoscalerFlagFatal", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("BC-3: expected non-zero exit when --model-autoscaler-interval-us is set, got exit 0")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("BC-3: unexpected error type: %v", err)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("BC-3: expected exit code 1 (logrus.Fatalf), got %d; output:\n%s", exitErr.ExitCode(), out)
+	}
+	if !strings.Contains(string(out), "model-autoscaler-interval-us") {
+		t.Errorf("BC-3: fatal message should mention 'model-autoscaler-interval-us', got:\n%s", out)
+	}
+}
+
+// TestReplayCmd_PDTopologyFatal verifies BC-5:
+// an invalid PD pool topology causes a fatal exit in replay.
+func TestReplayCmd_PDTopologyFatal(t *testing.T) {
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		dir := t.TempDir()
+		headerPath := filepath.Join(dir, "trace.yaml")
+		dataPath := filepath.Join(dir, "trace.csv")
+		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
+		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
+
+		catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+		model = "test-model"
+		latencyModelBackend = "trained-physics"
+		totalKVBlocks = 1000
+		blockSizeTokens = 16
+		maxNumSeqs = 64
+		maxNumBatchedTokens = 2048
+		numInstances = 2 // 4 prefill + 0 decode > 2 total: invalid topology
+		seed = 42
+		longPrefillTokenThreshold = 0
+		kvCPUBlocks = 0
+		kvOffloadThreshold = 0.9
+		kvTransferBandwidth = 25.0
+		kvTransferBaseLatency = 0
+		snapshotRefreshInterval = 0
+		admissionPolicy = "always-admit"
+		routingPolicy = "round-robin"
+		scheduler = "fcfs"
+		policyConfigPath = ""
+		maxModelLen = 0
+		traceLevel = "none"
+		counterfactualK = 0
+		traceHeaderPath = headerPath
+		traceDataPath = dataPath
+		catalogPath = catalogDir
+		hwConfigPath = hwPath
+		gpu = "H100"
+		tensorParallelism = 1
+		defaultsFilePath = "../defaults.yaml"
+		replaySessionMode = "fixed"
+		resultsPath = ""
+		replayTraceOutput = ""
+		prefillInstances = 4
+		decodeInstances = 0
+		prefillDecodeInstances = 0
+		pdDecider = "always"
+		pdTransferBandwidth = 25.0
+		pdTransferBaseLatency = 0.05
+
+		testCmd := &cobra.Command{}
+		registerSimConfigFlags(testCmd)
+		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+		if err := testCmd.ParseFlags([]string{
+			"--model", "test-model", "--latency-model", "trained-physics",
+			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+			"--catalog", catalogDir, "--hardware-config", hwPath,
+			"--trace-header", headerPath, "--trace-data", dataPath,
+			"--num-instances", "2",
+			"--prefill-instances", "4", "--decode-instances", "0",
+			"--pd-decider", "always", "--pd-transfer-bandwidth", "25.0",
+			"--defaults-filepath", "../defaults.yaml",
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)
+			os.Exit(2)
+		}
+		replayCmd.Run(testCmd, nil) // must Fatalf before here
+		os.Exit(0)
+	}
+
+	// Parent: expect exit code 1 from ValidatePoolTopology (BC-5).
+	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_PDTopologyFatal", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("BC-5: expected non-zero exit when PD topology is invalid (4 prefill > 2 total), got exit 0")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("BC-5: unexpected error type: %v", err)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("BC-5: expected exit code 1 (logrus.Fatalf), got %d; output:\n%s", exitErr.ExitCode(), out)
+	}
+	if !strings.Contains(string(out), "topology") {
+		t.Errorf("BC-5: fatal message should mention 'topology', got:\n%s", out)
+	}
+}
+
+func TestExtractSimResults_PropagatesSLOClassModelITL(t *testing.T) {
+	// GIVEN a Metrics struct with one completed request that has SLOClass, Model, and ITL set
+	m := sim.NewMetrics()
+	m.RequestTTFTs["request_0"] = 1000.0
+	m.RequestE2Es["request_0"] = 5000.0
+	m.RequestITLs["request_0"] = 5000.0 // 5000 ticks = 5ms = 5000µs (same unit as TTFT/E2E)
+	m.Requests["request_0"] = sim.RequestMetrics{
+		NumPrefillTokens: 100,
+		NumDecodeTokens:  50,
+		SLOClass:         "standard",
+		Model:            "qwen3-14b",
+		// ITL field NOT set here — production code reads m.RequestITLs[reqID], not rm.ITL
+	}
+
+	// WHEN extractSimResults is called
+	results := extractSimResults(m)
+
+	// THEN SLOClass, Model, and ITLMeanUs are populated correctly (BC-1)
+	if len(results) != 1 {
+		t.Fatalf("want 1 result, got %d", len(results))
+	}
+	r := results[0]
+	if r.SLOClass != "standard" {
+		t.Errorf("SLOClass: got %q, want %q", r.SLOClass, "standard")
+	}
+	if r.Model != "qwen3-14b" {
+		t.Errorf("Model: got %q, want %q", r.Model, "qwen3-14b")
+	}
+	// ITLMeanUs sourced from m.RequestITLs (ticks = µs), not rm.ITL (ms)
+	if r.ITLMeanUs != 5000.0 {
+		t.Errorf("ITLMeanUs: got %f, want 5000.0 (from m.RequestITLs, ticks=µs)", r.ITLMeanUs)
+	}
+}
+
+func TestSimResult_NewFields_JSONOmitWhenEmpty(t *testing.T) {
+	// BC-2: omitempty means empty SLOClass/Model and zero ITLMeanUs are omitted from JSON
+	sr := workload.SimResult{
+		RequestID:    1,
+		TTFT:         100.0,
+		E2E:          200.0,
+		InputTokens:  10,
+		OutputTokens: 5,
+		// SLOClass, Model, ITLMeanUs intentionally zero/empty
+	}
+	data, err := json.Marshal(sr)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	s := string(data)
+	if strings.Contains(s, "slo_class") {
+		t.Errorf("omitempty: slo_class should be absent, got: %s", s)
+	}
+	if strings.Contains(s, `"model"`) {
+		t.Errorf("omitempty: model should be absent, got: %s", s)
+	}
+	if strings.Contains(s, "itl_mean_us") {
+		t.Errorf("omitempty: itl_mean_us should be absent, got: %s", s)
+	}
+
+	// GIVEN non-empty fields: all three must round-trip correctly (BC-1)
+	sr2 := workload.SimResult{
+		RequestID:    2,
+		TTFT:         100.0,
+		E2E:          200.0,
+		InputTokens:  10,
+		OutputTokens: 5,
+		SLOClass:     "standard",
+		Model:        "qwen3-14b",
+		ITLMeanUs:    5000.0,
+	}
+	data2, err := json.Marshal(sr2)
+	if err != nil {
+		t.Fatalf("json.Marshal (non-empty): %v", err)
+	}
+	var got workload.SimResult
+	if err := json.Unmarshal(data2, &got); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if got.SLOClass != "standard" {
+		t.Errorf("SLOClass round-trip: got %q, want %q", got.SLOClass, "standard")
+	}
+	if got.Model != "qwen3-14b" {
+		t.Errorf("Model round-trip: got %q, want %q", got.Model, "qwen3-14b")
+	}
+	if got.ITLMeanUs != 5000.0 {
+		t.Errorf("ITLMeanUs round-trip: got %f, want 5000.0", got.ITLMeanUs)
+	}
+}
+
+// TestReplayCmd_SessionPoolFlags verifies BC (Task 4, Step 1): --concurrent-sessions
+// and --total-sessions are registered on replayCmd with default value 0 (disabled).
+func TestReplayCmd_SessionPoolFlags(t *testing.T) {
+	poolFlag := replayCmd.Flags().Lookup("concurrent-sessions")
+	if poolFlag == nil {
+		t.Fatal("flag --concurrent-sessions not registered")
+	}
+	if poolFlag.DefValue != "0" {
+		t.Errorf("--concurrent-sessions default = %q, want \"0\"", poolFlag.DefValue)
+	}
+	numFlag := replayCmd.Flags().Lookup("total-sessions")
+	if numFlag == nil {
+		t.Fatal("flag --total-sessions not registered")
+	}
+	if numFlag.DefValue != "0" {
+		t.Errorf("--total-sessions default = %q, want \"0\"", numFlag.DefValue)
+	}
+}
+
+// runReplayCaptureStdout runs replayCmd with the given flags and returns
+// everything written to os.Stdout during the run. Replay's deterministic
+// metrics go to os.Stdout, not cmd.OutOrStdout() — this reuses the os.Pipe
+// swap pattern already established in this file (see the capture block
+// around TestReplayCmd_AnomalyCounters, ~line 1490): swap os.Stdout for a
+// pipe writer, run, restore, drain the reader.
+//
+// Before building the command this resets every package-level global that
+// replayCmd.Run reads but that registerSimConfigFlags does NOT rebind on a
+// fresh flag registration (results/report file paths, goodput SLO strings,
+// and policy-bundle-derived maps/thresholds that only ever get set from a
+// --policy-config bundle elsewhere in this file's other tests). Without this,
+// state left behind by an earlier test in this package — which mutates these
+// same package-level vars directly — could leak into this run. The reset is
+// restored via t.Cleanup so this helper does not itself become a polluter
+// for tests that run after it.
+//
+// registerSimConfigFlags(testCmd) on a fresh *cobra.Command DOES reset its
+// own bound globals (model, hardware, tp, latency-model, num-instances,
+// admission/routing policy, scheduler, PD/encode/flow-control fields, etc.)
+// to their registration-time defaults as a side effect of pflag's *Var
+// constructors — so those do not need manual resetting here.
+func runReplayCaptureStdout(t *testing.T, args []string) string {
+	t.Helper()
+
+	origResultsPath := resultsPath
+	origTraceOutput := replayTraceOutput
+	origSaturationReport := saturationReport
+	origDetectorName := detectorName
+	origSaturationConfig := saturationConfigPath
+	origSaturationFinalWindow := saturationFinalWindow
+	origGoodputTTFT := goodputSLOTTFT
+	origGoodputITL := goodputSLOITL
+	origGoodputE2E := goodputSLOE2E
+	origTenantBudgets := tenantBudgets
+	origSLOPriorityOverrides := sloPriorityOverrides
+	origSLOTargetsMap := sloTargetsMap
+	origTierShedThreshold := tierShedThreshold
+	origTierShedMinPriority := tierShedMinPriority
+	origSessionMode := replaySessionMode
+	origThinkTimeMs := replayThinkTimeMs
+	origThinkTimeDist := replayThinkTimeDist
+	origConcurrentSessions := replayConcurrentSessions
+	origTotalSessions := replayTotalSessions
+	origShuffleCorpus := replayShuffleCorpus
+	t.Cleanup(func() {
+		resultsPath = origResultsPath
+		replayTraceOutput = origTraceOutput
+		saturationReport = origSaturationReport
+		detectorName = origDetectorName
+		saturationConfigPath = origSaturationConfig
+		saturationFinalWindow = origSaturationFinalWindow
+		goodputSLOTTFT = origGoodputTTFT
+		goodputSLOITL = origGoodputITL
+		goodputSLOE2E = origGoodputE2E
+		tenantBudgets = origTenantBudgets
+		sloPriorityOverrides = origSLOPriorityOverrides
+		sloTargetsMap = origSLOTargetsMap
+		tierShedThreshold = origTierShedThreshold
+		tierShedMinPriority = origTierShedMinPriority
+		replaySessionMode = origSessionMode
+		replayThinkTimeMs = origThinkTimeMs
+		replayThinkTimeDist = origThinkTimeDist
+		replayConcurrentSessions = origConcurrentSessions
+		replayTotalSessions = origTotalSessions
+		replayShuffleCorpus = origShuffleCorpus
+	})
+
+	resultsPath = ""
+	replayTraceOutput = ""
+	saturationReport = ""
+	detectorName = ""
+	saturationConfigPath = ""
+	saturationFinalWindow = ""
+	goodputSLOTTFT, goodputSLOITL, goodputSLOE2E = "", "", ""
+	tenantBudgets = nil
+	sloPriorityOverrides = nil
+	sloTargetsMap = nil
+	tierShedThreshold, tierShedMinPriority = 0, 0
+	replaySessionMode = "fixed"
+	replayThinkTimeMs = 0
+	replayThinkTimeDist = ""
+	replayConcurrentSessions, replayTotalSessions = 0, 0
+	replayShuffleCorpus = false
+
+	testCmd := &cobra.Command{}
+	registerSimConfigFlags(testCmd)
+	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+	testCmd.Flags().StringVar(&resultsPath, "results-path", "", "")
+	testCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "")
+	testCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", "")
+	testCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "")
+	testCmd.Flags().IntVar(&replayConcurrentSessions, "concurrent-sessions", 0, "")
+	testCmd.Flags().IntVar(&replayTotalSessions, "total-sessions", 0, "")
+	if err := testCmd.ParseFlags(args); err != nil {
+		t.Fatalf("ParseFlags failed: %v", err)
+	}
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	replayCmd.Run(testCmd, nil)
+	_ = w.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	return buf.String()
+}
+
+// extractMetricsJSON extracts the first top-level JSON object from replay's
+// stdout (the "=== Simulation Metrics ===" block emitted by Metrics.EmitOutput),
+// ignoring any human-readable text that follows (anomaly counters, per-SLO
+// metrics, session metrics, etc.). Uses brace balancing rather than a fixed
+// end marker since the amount of trailing text varies by run.
+func extractMetricsJSON(t *testing.T, out string) string {
+	t.Helper()
+	start := strings.Index(out, "{")
+	if start < 0 {
+		t.Fatalf("no JSON object found in stdout:\n%s", out)
+	}
+	depth := 0
+	for i := start; i < len(out); i++ {
+		switch out[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return out[start : i+1]
+			}
+		}
+	}
+	t.Fatalf("unbalanced JSON object in stdout:\n%s", out)
+	return ""
+}
+
+// TestReplayCmd_SessionPool_Deterministic verifies INV-6 (Task 4, Step 8):
+// two identical --concurrent-sessions/--total-sessions replay runs against the
+// same trace and seed produce byte-identical stdout.
+func TestReplayCmd_SessionPool_Deterministic(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "h.yaml")
+	dataPath := filepath.Join(dir, "d.csv")
+	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s0", RoundIndex: 1, InputTokens: 40, OutputTokens: 20, ArrivalTimeUs: 8_000_000, Status: "ok"},
+		{RequestID: 2, SessionID: "s1", RoundIndex: 0, InputTokens: 120, OutputTokens: 15, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 3, SessionID: "s1", RoundIndex: 1, InputTokens: 50, OutputTokens: 25, ArrivalTimeUs: 9_000_000, Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	args := []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000",
+		"--concurrent-sessions", "2", "--total-sessions", "4",
+	}
+	a := runReplayCaptureStdout(t, args)
+	b := runReplayCaptureStdout(t, args)
+	if a != b {
+		t.Errorf("stdout not deterministic across identical --concurrent-sessions runs (INV-6)")
+	}
+}
+
+// TestReplayCmd_SessionPool_SelfDrainsAllWaves proves the pool drains all
+// `--total-sessions` with --horizon UNSET — i.e. the self-drain horizon
+// override (Task 4, Step 5) is not truncated to the first wave by the 600s
+// auto-fallback (computeHorizonFromMaxArrival returns 600s when every
+// injected arrival is at t=0, which every OTel-derived corpus is). Uses a
+// 2-session corpus of single-round sessions and --total-sessions 8 (4 waves
+// at --concurrent-sessions 2): total sessions == total rounds == total
+// completed requests, so completed_requests in the metrics JSON must be 8.
+func TestReplayCmd_SessionPool_SelfDrainsAllWaves(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "h.yaml")
+	dataPath := filepath.Join(dir, "d.csv")
+	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
+	// 2 single-round sessions; round-0 arrivals at 0 (auto-horizon would be 600s).
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s1", RoundIndex: 0, InputTokens: 120, OutputTokens: 15, ArrivalTimeUs: 0, Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	// --horizon unset → self-draining. 4 waves of 2 sessions each = 8 total.
+	out := runReplayCaptureStdout(t, []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000",
+		"--concurrent-sessions", "2", "--total-sessions", "8",
+	})
+
+	var m map[string]any
+	if err := json.Unmarshal([]byte(extractMetricsJSON(t, out)), &m); err != nil {
+		t.Fatalf("parse metrics JSON: %v\nstdout:\n%s", err, out)
+	}
+	got, ok := m["completed_requests"].(float64)
+	if !ok {
+		t.Fatalf("completed_requests missing or not a number in metrics JSON: %v", m)
+	}
+	if int(got) != 8 {
+		t.Errorf("completed_requests = %d, want 8 (pool truncated — self-drain horizon override missing)", int(got))
+	}
+}
+
+// TestReplayCmd_SessionPool_SelfDrainOverridesBlueprintHorizon targets the
+// FIRST self-drain override site specifically (Task 4, Step 5's
+// replayHorizonPrelim edit, which becomes each SessionBlueprint's bp.Horizon).
+// It complements TestReplayCmd_SessionPool_SelfDrainsAllWaves (which exercises
+// the wiring end-to-end but never actually approaches a 600s wall-clock, so it
+// cannot by itself distinguish "override applied" from "override no-op").
+//
+// One 2-round session, round-0 arriving at t=0 (so the un-overridden auto
+// horizon — computeHorizonFromMaxArrival(0) — is exactly 600s, matching every
+// OTel-derived corpus where every round-0 arrival is 0). --think-time-ms
+// forces the round-1 -> round-2 think-time gap to 700s, past that 600s
+// auto-horizon. Per session.go's BC-19 guard (arrivalTime > bp.Horizon), round
+// 2 is silently dropped (session state -> horizon_interrupted) unless
+// bp.Horizon was overridden to math.MaxInt64 — so completed_requests is 1
+// (blueprint-horizon override missing) vs 2 (override applied).
+func TestReplayCmd_SessionPool_SelfDrainOverridesBlueprintHorizon(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "h.yaml")
+	dataPath := filepath.Join(dir, "d.csv")
+	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 50, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s0", RoundIndex: 1, InputTokens: 20, OutputTokens: 5, ArrivalTimeUs: 700_000_000, Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	out := runReplayCaptureStdout(t, []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000",
+		"--session-mode", "closed-loop", "--think-time-ms", "700000",
+		"--concurrent-sessions", "1", "--total-sessions", "1",
+	})
+
+	var m map[string]any
+	if err := json.Unmarshal([]byte(extractMetricsJSON(t, out)), &m); err != nil {
+		t.Fatalf("parse metrics JSON: %v\nstdout:\n%s", err, out)
+	}
+	got, ok := m["completed_requests"].(float64)
+	if !ok {
+		t.Fatalf("completed_requests missing or not a number in metrics JSON: %v", m)
+	}
+	if int(got) != 2 {
+		t.Errorf("completed_requests = %d, want 2 (round 2 dropped — BC-19 guard fired against the 600s auto-horizon; blueprint-horizon self-drain override missing)", int(got))
+	}
+}
+
+// TestReplayCmd_SessionPool_AutoPromotePermitsThinkTime is a regression test for
+// the auto-promote ordering fix: --concurrent-sessions' help text promises it
+// "implies closed-loop session semantics", so pairing it with --think-time-ms
+// but WITHOUT an explicit --session-mode closed-loop must succeed rather than
+// fatal on "--think-time-ms requires --session-mode closed-loop".
+//
+// Before the fix, the think-time-requires-closed-loop check ran before the
+// --concurrent-sessions auto-promote assignment, so this exact flag
+// combination would call logrus.Fatalf (os.Exit) — which would kill the test
+// binary outright rather than fail a single test. This test therefore only
+// asserts the POSITIVE post-fix behavior (the run completes and produces the
+// expected session-pool output); running it against the pre-fix ordering is
+// not something a Go test can safely observe, since os.Exit during
+// replayCmd.Run would abort the whole `go test` process before any assertion
+// runs. The ordering itself is covered structurally by inspecting
+// cmd/replay.go: the auto-promote block precedes both think-time checks.
+//
+// One single-round session, --concurrent-sessions 1 --total-sessions 1, so a
+// successful run completes exactly 1 request.
+func TestReplayCmd_SessionPool_AutoPromotePermitsThinkTime(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "h.yaml")
+	dataPath := filepath.Join(dir, "d.csv")
+	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 50, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	// Deliberately omit --session-mode: --concurrent-sessions must auto-promote
+	// to closed-loop BEFORE --think-time-ms's "requires closed-loop" check runs.
+	out := runReplayCaptureStdout(t, []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000",
+		"--concurrent-sessions", "1", "--total-sessions", "1",
+		"--think-time-ms", "500",
+	})
+
+	var m map[string]any
+	if err := json.Unmarshal([]byte(extractMetricsJSON(t, out)), &m); err != nil {
+		t.Fatalf("parse metrics JSON: %v\nstdout:\n%s", err, out)
+	}
+	got, ok := m["completed_requests"].(float64)
+	if !ok {
+		t.Fatalf("completed_requests missing or not a number in metrics JSON: %v", m)
+	}
+	if int(got) != 1 {
+		t.Errorf("completed_requests = %d, want 1 (auto-promote to closed-loop should have let the single-round session complete)", int(got))
+	}
+}
+
+// TestReplayCmd_AccumulateHeaderRequiresClosedLoop is a regression test for the
+// accumulate-header guard: `blis convert otel` writes
+// session_context_growth=accumulate and encodes per-round input_tokens as
+// DELTAS, which only reconstruct correctly via the closed-loop
+// accumulate-buffer path (LoadTraceV2SessionBlueprints). Fixed-mode replay
+// (the default — LoadTraceV2Requests) reads input_tokens as absolute
+// per-round counts and never consults SessionContextGrowth, so it would
+// silently misinterpret the deltas and produce wrong-but-plausible metrics.
+// The guard in cmd/replay.go Fatalfs instead.
+//
+// The negative case (fixed mode, no --concurrent-sessions) must Fatalf, which
+// os.Exit's — so, following the same pattern as TestReplayCmd_AutoscalerBundleFatal
+// and TestReplayCmd_NodePoolsBundleFatal, it is exercised in a subprocess re-run
+// of this same test (BLIS_TEST_SUBPROCESS=1) and asserted via exit code +
+// stderr content. The positive case (--concurrent-sessions auto-promotes to
+// closed-loop before the guard runs) is asserted in-process: if the guard
+// mis-fired here, logrus.Fatalf would os.Exit and kill the whole test binary,
+// so this test function returning at all is itself part of the proof.
+func TestReplayCmd_AccumulateHeaderRequiresClosedLoop(t *testing.T) {
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		// Running as subprocess: set up an accumulate-header trace with
+		// delta-encoded per-round input_tokens, and replay it in (default)
+		// fixed mode. Must Fatalf before completing.
+		dir := t.TempDir()
+		headerPath := filepath.Join(dir, "trace.yaml")
+		dataPath := filepath.Join(dir, "trace.csv")
+		header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+		records := []workload.TraceRecord{
+			{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 10, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
+			{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 4, OutputTokens: 5, ArrivalTimeUs: 100_000, Status: "ok"},
+		}
+		if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			os.Exit(2)
+		}
+
+		catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+		model = "test-model"
+		latencyModelBackend = "trained-physics"
+		totalKVBlocks = 1000
+		blockSizeTokens = 16
+		maxNumSeqs = 64
+		maxNumBatchedTokens = 2048
+		numInstances = 1
+		seed = 42
+		longPrefillTokenThreshold = 0
+		kvCPUBlocks = 0
+		kvOffloadThreshold = 0.9
+		kvTransferBandwidth = 100.0
+		kvTransferBaseLatency = 0
+		snapshotRefreshInterval = 0
+		admissionPolicy = "always-admit"
+		routingPolicy = "round-robin"
+		scheduler = "fcfs"
+		policyConfigPath = ""
+		maxModelLen = 0
+		traceLevel = "none"
+		counterfactualK = 0
+		traceHeaderPath = headerPath
+		traceDataPath = dataPath
+		catalogPath = catalogDir
+		hwConfigPath = hwPath
+		gpu = "H100"
+		tensorParallelism = 1
+		defaultsFilePath = defaultsPath
+		replaySessionMode = "fixed"
+		replayConcurrentSessions = 0
+		replayTotalSessions = 0
+		replayThinkTimeMs = 0
+		replayThinkTimeDist = ""
+		resultsPath = ""
+		replayTraceOutput = ""
+
+		testCmd := &cobra.Command{}
+		registerSimConfigFlags(testCmd)
+		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+		if err := testCmd.ParseFlags([]string{
+			"--model", "test-model", "--latency-model", "trained-physics",
+			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+			"--catalog", catalogDir, "--hardware-config", hwPath,
+			"--trace-header", headerPath, "--trace-data", dataPath,
+			"--defaults-filepath", defaultsPath,
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)
+			os.Exit(2) // distinct from logrus.Fatalf exit code (1)
+		}
+		replayCmd.Run(testCmd, nil) // must Fatalf before here
+		os.Exit(0)                  // reached only if no fatal = parent test failure
+	}
+
+	// Parent: re-run this test as subprocess and expect exit code 1 (logrus.Fatalf).
+	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_AccumulateHeaderRequiresClosedLoop", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("expected non-zero exit when replaying an accumulate-header trace in fixed mode, got exit 0")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("unexpected error type: %v", err)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("expected exit code 1 (logrus.Fatalf), got %d; output:\n%s", exitErr.ExitCode(), out)
+	}
+	if !strings.Contains(string(out), "session_context_growth=accumulate") {
+		t.Errorf("fatal message should mention 'session_context_growth=accumulate', got:\n%s", out)
+	}
+
+	// Positive control: the SAME accumulate-header trace shape, replayed with
+	// --concurrent-sessions 1 (which auto-promotes --session-mode to
+	// closed-loop before the guard runs), must NOT trip the guard.
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	// Single-round session (matches TestReplayCmd_SessionPool_AutoPromotePermitsThinkTime's
+	// shape): completed_requests == 1 is an unambiguous "the guard let this run
+	// proceed to completion" signal, independent of round-index/think-time bookkeeping.
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 10, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	out2 := runReplayCaptureStdout(t, []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000",
+		"--concurrent-sessions", "1", "--total-sessions", "1",
+	})
+	var m2 map[string]any
+	if err := json.Unmarshal([]byte(extractMetricsJSON(t, out2)), &m2); err != nil {
+		t.Fatalf("positive control: parse metrics JSON: %v\nstdout:\n%s", err, out2)
+	}
+	got2, ok := m2["completed_requests"].(float64)
+	if !ok {
+		t.Fatalf("positive control: completed_requests missing or not a number in metrics JSON: %v", m2)
+	}
+	if int(got2) != 1 {
+		t.Errorf("positive control: completed_requests = %d, want 1 (guard must not fire once auto-promoted to closed-loop)", int(got2))
+	}
+}
+
+// TestReplayCmd_PoolRejectsNonSessionRecords is a regression test for the
+// pool-mode non-session guard (F5): pooled replay (--concurrent-sessions) builds
+// the pool from a 1:1 (session blueprint ↔ round-0 request) corpus, so a trace
+// that MIXES session records with non-session (single-shot, empty session_id)
+// records cannot be pooled. LoadTraceV2SessionBlueprints returns one round-0
+// request per session PLUS one per non-session record, so the counts diverge.
+// The guard in cmd/replay.go must Fatalf with an actionable operator message
+// (naming the non-session count) rather than deferring to BuildSessionPool's
+// internal "count mismatch" wording.
+//
+// The Fatalf os.Exit's, so — like TestReplayCmd_AccumulateHeaderRequiresClosedLoop
+// — the negative case runs in a subprocess re-run (BLIS_TEST_SUBPROCESS=1) and is
+// asserted via exit code + stderr content.
+func TestReplayCmd_PoolRejectsNonSessionRecords(t *testing.T) {
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		// Subprocess: a corpus with one session record AND one non-session record,
+		// replayed with --concurrent-sessions. Must Fatalf before completing.
+		dir := t.TempDir()
+		headerPath := filepath.Join(dir, "trace.yaml")
+		dataPath := filepath.Join(dir, "trace.csv")
+		header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+		records := []workload.TraceRecord{
+			{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 10, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
+			{RequestID: 1, SessionID: "", RoundIndex: 0, InputTokens: 8, OutputTokens: 4, ArrivalTimeUs: 0, Status: "ok"},
+		}
+		if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			os.Exit(2)
+		}
+
+		catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+		model = "test-model"
+		latencyModelBackend = "trained-physics"
+		totalKVBlocks = 1000
+		blockSizeTokens = 16
+		maxNumSeqs = 64
+		maxNumBatchedTokens = 2048
+		numInstances = 1
+		seed = 42
+		longPrefillTokenThreshold = 0
+		kvCPUBlocks = 0
+		kvOffloadThreshold = 0.9
+		kvTransferBandwidth = 100.0
+		kvTransferBaseLatency = 0
+		snapshotRefreshInterval = 0
+		admissionPolicy = "always-admit"
+		routingPolicy = "round-robin"
+		scheduler = "fcfs"
+		policyConfigPath = ""
+		maxModelLen = 0
+		traceLevel = "none"
+		counterfactualK = 0
+		traceHeaderPath = headerPath
+		traceDataPath = dataPath
+		catalogPath = catalogDir
+		hwConfigPath = hwPath
+		gpu = "H100"
+		tensorParallelism = 1
+		defaultsFilePath = defaultsPath
+		replaySessionMode = "closed-loop"
+		replayConcurrentSessions = 1
+		replayTotalSessions = 0
+		replayThinkTimeMs = 0
+		replayThinkTimeDist = ""
+		resultsPath = ""
+		replayTraceOutput = ""
+
+		testCmd := &cobra.Command{}
+		registerSimConfigFlags(testCmd)
+		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+		// --concurrent-sessions is read via the replayConcurrentSessions package var
+		// (set above), not a registerSimConfigFlags flag, so it is NOT in the parsed
+		// args — mirroring TestReplayCmd_AccumulateHeaderRequiresClosedLoop's setup.
+		if err := testCmd.ParseFlags([]string{
+			"--model", "test-model", "--latency-model", "trained-physics",
+			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+			"--catalog", catalogDir, "--hardware-config", hwPath,
+			"--trace-header", headerPath, "--trace-data", dataPath,
+			"--defaults-filepath", defaultsPath,
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)
+			os.Exit(2) // distinct from logrus.Fatalf exit code (1)
+		}
+		replayCmd.Run(testCmd, nil) // must Fatalf before here
+		os.Exit(0)                  // reached only if no fatal = parent test failure
+	}
+
+	// Parent: re-run this test as subprocess and expect exit code 1 (logrus.Fatalf).
+	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_PoolRejectsNonSessionRecords", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("expected non-zero exit when pooling a corpus with non-session records, got exit 0")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("unexpected error type: %v", err)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("expected exit code 1 (logrus.Fatalf), got %d; output:\n%s", exitErr.ExitCode(), out)
+	}
+	// The message must be the actionable operator guard, not BuildSessionPool's
+	// internal "count mismatch" wording.
+	if !strings.Contains(string(out), "no session_id") {
+		t.Errorf("fatal message should name the non-session records ('no session_id'), got:\n%s", out)
+	}
+	if strings.Contains(string(out), "count mismatch") {
+		t.Errorf("guard should pre-empt BuildSessionPool's internal 'count mismatch' error, but it surfaced:\n%s", out)
+	}
+}
+
+// TestReplayCmd_ClosedLoopAccumulate_FaithfulReExport verifies faithful closed-loop
+// --trace-output re-export (issue #1630, replacing the #1621/#1623 fail-fast guard).
+// An accumulate corpus replayed --session-mode closed-loop --trace-output captures
+// EVERY round (round-0 + generated follow-ups, not just round 0), re-derives per-round
+// input-token DELTAS + input_tokens_reset compaction markers, sets
+// session_context_growth on the re-export header, and preserves per-round think — so
+// re-replaying the export reproduces the original run's metrics byte-for-byte
+// (INV-13 round-trip). Runs entirely in-process (the success path takes no Fatalf).
+func TestReplayCmd_ClosedLoopAccumulate_FaithfulReExport(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
+	// Accumulate corpus: one 3-round session with a compaction round and a recorded
+	// think column. Encoded deltas (100, 30, 0); round 2 compacts (input_tokens_reset=40).
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 100, OutputTokens: 20, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 30, OutputTokens: 15, ArrivalTimeUs: 5_000_000, ThinkTimeUs: i64p(1_000_000), Status: "ok"},
+		{RequestID: 2, SessionID: "s1", RoundIndex: 2, InputTokens: 0, InputTokensReset: i64p(40), OutputTokens: 10, ArrivalTimeUs: 12_000_000, ThinkTimeUs: i64p(2_000_000), Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export corpus: %v", err)
+	}
+
+	commonArgs := []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000",
+		"--max-model-len", "100000", // large: no length cap, so the round-trip is exact
+		"--session-mode", "closed-loop",
+	}
+
+	// (1) Replay the ORIGINAL corpus closed-loop; capture aggregate metrics.
+	metrics1 := extractMetricsJSON(t, runReplayCaptureStdout(t, commonArgs))
+
+	// (2) Replay the original corpus closed-loop WITH --trace-output => faithful re-export.
+	outPrefix := filepath.Join(dir, "reexport")
+	_ = runReplayCaptureStdout(t, append(append([]string{}, commonArgs...), "--trace-output", outPrefix))
+
+	// (3) Assert the re-export structure: accumulate header, ALL 3 rounds, deltas + reset + think.
+	rx, err := workload.LoadTraceV2(outPrefix+".yaml", outPrefix+".csv")
+	if err != nil {
+		t.Fatalf("load re-export: %v", err)
+	}
+	if rx.Header.SessionContextGrowth != "accumulate" {
+		t.Errorf("re-export session_context_growth = %q, want accumulate", rx.Header.SessionContextGrowth)
+	}
+	if len(rx.Records) != 3 {
+		t.Fatalf("re-export has %d records, want 3 (every round captured, not just round 0)", len(rx.Records))
+	}
+	byRound := map[int]workload.TraceRecord{}
+	for _, r := range rx.Records {
+		byRound[r.RoundIndex] = r
+	}
+	if byRound[0].InputTokens != 100 || byRound[1].InputTokens != 30 || byRound[2].InputTokens != 0 {
+		t.Errorf("re-export per-round deltas = (%d,%d,%d), want (100,30,0)", byRound[0].InputTokens, byRound[1].InputTokens, byRound[2].InputTokens)
+	}
+	if byRound[2].InputTokensReset == nil || *byRound[2].InputTokensReset != 40 {
+		t.Errorf("re-export round-2 input_tokens_reset = %v, want &40", byRound[2].InputTokensReset)
+	}
+	if byRound[0].ThinkTimeUs != nil {
+		t.Errorf("re-export round-0 think = %v, want nil", *byRound[0].ThinkTimeUs)
+	}
+	if byRound[1].ThinkTimeUs == nil || byRound[2].ThinkTimeUs == nil {
+		t.Errorf("re-export follow-up rounds must carry recorded think; got r1=%v r2=%v", byRound[1].ThinkTimeUs, byRound[2].ThinkTimeUs)
+	}
+
+	// (4) Replay the RE-EXPORT closed-loop; capture aggregate metrics.
+	outArgs := []string{
+		"--trace-header", outPrefix + ".yaml", "--trace-data", outPrefix + ".csv",
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000",
+		"--max-model-len", "100000",
+		"--session-mode", "closed-loop",
+	}
+	metrics2 := extractMetricsJSON(t, runReplayCaptureStdout(t, outArgs))
+
+	// (5) INV-13 round-trip: replaying the re-export reproduces the original run's
+	// aggregate metrics exactly (plain closed-loop => per-request identity => identical JSON).
+	if metrics1 != metrics2 {
+		t.Errorf("re-export replay metrics differ from original replay (round-trip not faithful):\noriginal:\n%s\nreexport:\n%s", metrics1, metrics2)
+	}
+}
+
+// TestReplayCmd_Pool_FaithfulReExport verifies faithful pool-mode --trace-output
+// re-export (issue #1630, replacing the #1623 pool guard). A pooled replay
+// (--concurrent-sessions) re-exports a COMPLETE session corpus — every session
+// (originals + clones) with every round, not just the initial wave — as a closed-loop
+// corpus. Replaying that corpus reproduces the pool run's aggregate conservation
+// metrics. Per-request bit-identity is NOT asserted for pool (data-dependent admission
+// timing / a different inject mechanism than plain-closed-loop; see BC-4).
+func TestReplayCmd_Pool_FaithfulReExport(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
+	// Accumulate corpus: 3 sessions x 2 rounds (with think). --total-sessions 3 == corpus
+	// size, so no cache-busting clones are added (keeps the round-trip clean to reason about).
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 80, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s0", RoundIndex: 1, InputTokens: 20, OutputTokens: 8, ArrivalTimeUs: 3_000_000, ThinkTimeUs: i64p(1_000_000), Status: "ok"},
+		{RequestID: 2, SessionID: "s1", RoundIndex: 0, InputTokens: 90, OutputTokens: 12, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 3, SessionID: "s1", RoundIndex: 1, InputTokens: 25, OutputTokens: 9, ArrivalTimeUs: 3_500_000, ThinkTimeUs: i64p(1_000_000), Status: "ok"},
+		{RequestID: 4, SessionID: "s2", RoundIndex: 0, InputTokens: 70, OutputTokens: 11, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 5, SessionID: "s2", RoundIndex: 1, InputTokens: 22, OutputTokens: 7, ArrivalTimeUs: 4_000_000, ThinkTimeUs: i64p(1_000_000), Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export corpus: %v", err)
+	}
+
+	const bigHorizon = "100000000000"
+	poolArgs := []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000", "--max-model-len", "100000",
+		"--concurrent-sessions", "2", "--total-sessions", "3", "--horizon", bigHorizon,
+	}
+
+	// (1) Pool replay of the original corpus; capture aggregate metrics.
+	poolMetrics := extractMetricsJSON(t, runReplayCaptureStdout(t, poolArgs))
+
+	// (2) Pool replay WITH --trace-output => faithful re-export of ALL sessions.
+	outPrefix := filepath.Join(dir, "reexport")
+	_ = runReplayCaptureStdout(t, append(append([]string{}, poolArgs...), "--trace-output", outPrefix))
+
+	// (3) Assert the re-export captured all 3 sessions (6 rounds), not just the initial wave.
+	rx, err := workload.LoadTraceV2(outPrefix+".yaml", outPrefix+".csv")
+	if err != nil {
+		t.Fatalf("load re-export: %v", err)
+	}
+	if rx.Header.SessionContextGrowth != "accumulate" {
+		t.Errorf("re-export session_context_growth = %q, want accumulate", rx.Header.SessionContextGrowth)
+	}
+	if len(rx.Records) != 6 {
+		t.Fatalf("re-export has %d records, want 6 (all 3 sessions x 2 rounds captured, not the initial 2-session wave)", len(rx.Records))
+	}
+	sessions := map[string]int{}
+	for _, r := range rx.Records {
+		sessions[r.SessionID]++
+	}
+	if len(sessions) != 3 {
+		t.Errorf("re-export has %d distinct sessions, want 3 (all pooled sessions captured)", len(sessions))
+	}
+
+	// (4) Replay the re-export as a plain closed-loop corpus; capture aggregate metrics.
+	outArgs := []string{
+		"--trace-header", outPrefix + ".yaml", "--trace-data", outPrefix + ".csv",
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000", "--max-model-len", "100000",
+		"--session-mode", "closed-loop", "--horizon", bigHorizon,
+	}
+	reexportMetrics := extractMetricsJSON(t, runReplayCaptureStdout(t, outArgs))
+
+	// (5) Aggregate conservation reproduces (completeness of the re-export, BC-4).
+	var mPool, mRe map[string]any
+	if err := json.Unmarshal([]byte(poolMetrics), &mPool); err != nil {
+		t.Fatalf("parse pool metrics: %v", err)
+	}
+	if err := json.Unmarshal([]byte(reexportMetrics), &mRe); err != nil {
+		t.Fatalf("parse re-export metrics: %v", err)
+	}
+	for _, k := range []string{"completed_requests", "injected_requests", "total_input_tokens", "total_output_tokens"} {
+		if mPool[k] != mRe[k] {
+			t.Errorf("pool round-trip: %s = %v (pool) vs %v (re-export replay), want equal", k, mPool[k], mRe[k])
+		}
+	}
+	// Sanity: all 6 requests actually completed in the pool run (so the conservation
+	// comparison above is meaningful, not both-zero).
+	if got, _ := mPool["completed_requests"].(float64); int(got) != 6 {
+		t.Errorf("pool run completed_requests = %v, want 6 (all sessions/rounds ran)", mPool["completed_requests"])
+	}
+}
+
+// TestReplayCmd_ClosedLoopNonAccumulate_FaithfulReExport is the non-accumulate (BC-3)
+// integration analogue of the accumulate round-trip test: a multi-round session corpus
+// with NO session_context_growth, replayed closed-loop --trace-output, captures every
+// follow-up round with ABSOLUTE per-round input_tokens + the captured think column and no
+// growth header; re-replaying it closed-loop reproduces the original run byte-for-byte.
+// This closes the residual non-accumulate follow-up-drop the issue names.
+func TestReplayCmd_ClosedLoopNonAccumulate_FaithfulReExport(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
+	// Non-accumulate corpus (no SessionContextGrowth): one 3-round session with independent
+	// absolute per-round inputs and a recorded think column.
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 60, OutputTokens: 12, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 45, OutputTokens: 10, ArrivalTimeUs: 4_000_000, ThinkTimeUs: i64p(1_500_000), Status: "ok"},
+		{RequestID: 2, SessionID: "s1", RoundIndex: 2, InputTokens: 70, OutputTokens: 8, ArrivalTimeUs: 9_000_000, ThinkTimeUs: i64p(2_000_000), Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export corpus: %v", err)
+	}
+
+	commonArgs := []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000", "--max-model-len", "100000",
+		"--session-mode", "closed-loop",
+	}
+
+	metrics1 := extractMetricsJSON(t, runReplayCaptureStdout(t, commonArgs))
+
+	outPrefix := filepath.Join(dir, "reexport")
+	_ = runReplayCaptureStdout(t, append(append([]string{}, commonArgs...), "--trace-output", outPrefix))
+
+	rx, err := workload.LoadTraceV2(outPrefix+".yaml", outPrefix+".csv")
+	if err != nil {
+		t.Fatalf("load re-export: %v", err)
+	}
+	if rx.Header.SessionContextGrowth != "" {
+		t.Errorf("non-accumulate re-export must NOT set session_context_growth, got %q", rx.Header.SessionContextGrowth)
+	}
+	if len(rx.Records) != 3 {
+		t.Fatalf("re-export has %d records, want 3 (every round captured)", len(rx.Records))
+	}
+	byRound := map[int]workload.TraceRecord{}
+	for _, r := range rx.Records {
+		byRound[r.RoundIndex] = r
+	}
+	// Absolute per-round input preserved; no reset markers; think on follow-ups.
+	if byRound[0].InputTokens != 60 || byRound[1].InputTokens != 45 || byRound[2].InputTokens != 70 {
+		t.Errorf("re-export per-round input = (%d,%d,%d), want absolute (60,45,70)", byRound[0].InputTokens, byRound[1].InputTokens, byRound[2].InputTokens)
+	}
+	if byRound[2].InputTokensReset != nil {
+		t.Errorf("non-accumulate re-export must not carry input_tokens_reset, got %v", *byRound[2].InputTokensReset)
+	}
+	if byRound[1].ThinkTimeUs == nil || byRound[2].ThinkTimeUs == nil {
+		t.Errorf("follow-up rounds must carry recorded think; got r1=%v r2=%v", byRound[1].ThinkTimeUs, byRound[2].ThinkTimeUs)
+	}
+
+	outArgs := []string{
+		"--trace-header", outPrefix + ".yaml", "--trace-data", outPrefix + ".csv",
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000", "--max-model-len", "100000",
+		"--session-mode", "closed-loop",
+	}
+	metrics2 := extractMetricsJSON(t, runReplayCaptureStdout(t, outArgs))
+
+	if metrics1 != metrics2 {
+		t.Errorf("non-accumulate re-export replay metrics differ from original (round-trip not faithful):\noriginal:\n%s\nreexport:\n%s", metrics1, metrics2)
+	}
+}
+
+// TestReplayCmd_Pool_ClonesCapturedInReExport exercises the pool clone path (#1630
+// Issue B): with --total-sessions > corpus size the driver adds cache-busting clone
+// sessions, and the re-export must capture them (all sessions + every round), not just
+// the originals. (Per BC-4 the re-export's cache/latency aggregates are not guaranteed to
+// reproduce for non-accumulate clones sharing a prefix_group — this test asserts capture
+// completeness, the property the removed guard protected.)
+func TestReplayCmd_Pool_ClonesCapturedInReExport(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
+	// Accumulate corpus, 2 sessions x 2 rounds; --total-sessions 4 => 2 clones (s0_dup1, s1_dup2).
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 80, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, SessionID: "s0", RoundIndex: 1, InputTokens: 20, OutputTokens: 8, ArrivalTimeUs: 3_000_000, ThinkTimeUs: i64p(1_000_000), Status: "ok"},
+		{RequestID: 2, SessionID: "s1", RoundIndex: 0, InputTokens: 90, OutputTokens: 12, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 3, SessionID: "s1", RoundIndex: 1, InputTokens: 25, OutputTokens: 9, ArrivalTimeUs: 3_500_000, ThinkTimeUs: i64p(1_000_000), Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export corpus: %v", err)
+	}
+
+	outPrefix := filepath.Join(dir, "reexport")
+	_ = runReplayCaptureStdout(t, []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--hardware", "H100", "--tp", "1",
+		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--defaults-filepath", defaultsPath,
+		"--total-kv-blocks", "1000", "--max-model-len", "100000",
+		"--concurrent-sessions", "1", "--total-sessions", "4", "--horizon", "100000000000",
+		"--trace-output", outPrefix,
+	})
+
+	rx, err := workload.LoadTraceV2(outPrefix+".yaml", outPrefix+".csv")
+	if err != nil {
+		t.Fatalf("load re-export: %v", err)
+	}
+	sessions := map[string]int{}
+	clones := 0
+	for _, r := range rx.Records {
+		sessions[r.SessionID]++
+		if strings.Contains(r.SessionID, "_dup") {
+			clones++
+		}
+	}
+	if len(sessions) != 4 {
+		t.Errorf("re-export has %d distinct sessions, want 4 (2 originals + 2 clones)", len(sessions))
+	}
+	if len(rx.Records) != 8 {
+		t.Errorf("re-export has %d records, want 8 (4 sessions x 2 rounds)", len(rx.Records))
+	}
+	if clones == 0 {
+		t.Errorf("re-export captured no clone (_dup) sessions; the clone path must be captured, not dropped")
+	}
+}

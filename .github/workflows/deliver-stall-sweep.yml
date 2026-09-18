@@ -1,0 +1,251 @@
+name: Deliver — Stall Sweep
+
+# The backstop for a delivery that goes quiet without any phase reporting (#1684 item 2).
+#
+# The per-phase reporters cover a step failing or being cancelled. They cannot cover the
+# runner dying: when a self-hosted runner receives a shutdown signal, NO step executes —
+# not `always()` ones, not even the action's own post-steps. That was observed live on
+# #1685, where a delivery left no branch, no PR, no comment and no label, and was therefore
+# indistinguishable from an issue nobody had run the command on. Only an observer outside
+# the job can see that.
+#
+# A delivery is identified from the PR side, deliberately not from a phase label. The selection
+# rule lives in scripts/deliver-stall-candidates.jq, where it is unit-tested.
+# The obvious alternative does not work and is worth recording so nobody retries it: a
+# workflow_dispatch run reports `head_branch` as the DISPATCH ref (`main`) and does not
+# expose its inputs, so a verify or correct run cannot be attributed to a PR from run
+# metadata at all.
+
+permissions:
+  contents: read
+  pull-requests: write
+  # Required to list workflow runs for the stand-down check. Declaring ANY `permissions:` block
+  # sets every unlisted scope to `none`, so omitting this left the sweep's central query depending
+  # on the runs of a public repo being readable without it. That happens to be true today (they are
+  # readable unauthenticated) but it is not a property to rest a safety backstop on — a private
+  # fork of this repo would silently lose stall detection entirely.
+  actions: read
+
+on:
+  schedule:
+    # Every 30 minutes at an off-round minute, so a crossing of the quiet threshold is caught
+    # within about half an hour of it happening without every repo in the world hitting the API
+    # on :00.
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: deliver-stall-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Must exceed the longest LEGITIMATE silence, which is one phase's own budget: verify is
+      # capped at 120 minutes and posts its decision comment at the end. 180 gives that an hour
+      # of slack, including the wait for a busy runner. The threshold doing this work is what
+      # lets the stand-down below be bounded rather than absolute — see there.
+      QUIET_MINUTES: '180'
+
+    steps:
+      # The selection filter is a committed, tested file rather than inline jq.
+      - uses: actions/checkout@v5
+
+      - name: Compute the quiet cutoff
+        id: cutoff
+        run: |
+          set -uo pipefail
+          # GNU date on the runner; the BSD form is the local-development fallback.
+          at=$(date -u -d "-${QUIET_MINUTES} minutes" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+               || date -u -v-"${QUIET_MINUTES}"M +%Y-%m-%dT%H:%M:%SZ)
+          # Checked, not assumed, because the two consumers fail in OPPOSITE directions and one of
+          # them is dangerous:
+          #   - the runs API silently returns `total_count: 0` for an unparseable `created` filter,
+          #     and 0 reads as "no phase is running" — so a bad cutoff removes the stand-down and
+          #     the sweep can flag healthy deliveries;
+          #   - in the quiet comparison an empty cutoff makes `[[ "$last" > "" ]]` true for every
+          #     PR, so nothing is ever flagged and the sweep becomes a silent no-op.
+          # Neither is acceptable, so a cutoff that is not an exact ISO-8601 UTC instant is fatal.
+          [[ "$at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] \
+            || { echo "::error::computed cutoff '$at' is not an ISO-8601 UTC timestamp"; exit 1; }
+          echo "at=$at" >> "$GITHUB_OUTPUT"
+          echo "cutoff: $at"
+
+      # A legitimate verify can be silent for a long stretch — it waits on the repository CI and
+      # then on an agent review — so the sweep stands down while a phase is genuinely in flight.
+      #
+      # THE STAND-DOWN IS BOUNDED BY THE QUIET WINDOW, and that bound is the whole point. Counting
+      # every `queued` run regardless of age disabled the sweep in exactly the scenario it was
+      # built for: these phases run on `[self-hosted]`, so if the runner is offline when a phase is
+      # dispatched the job never starts and is never reconciled — it sits `queued`, and GitHub
+      # holds a queued job for up to 24 hours ("Job queue time: 24 hours", Actions limits). A dead
+      # runner therefore kept `queued != 0` true and the sweep silent for a day.
+      #
+      # A run that has been queued or running for longer than the quiet window is not evidence of a
+      # live delivery — it IS the symptom. So only recent runs stand the sweep down. Both budgets
+      # (verify 120 minutes, correct 60) sit inside the window, so no healthy phase is ever older
+      # than it while still alive.
+      #
+      # KNOWN LIMITATION, stated rather than implied: this count is repository-wide, so one recent
+      # phase run suppresses flagging for every delivery. That is tolerable while L1 delivers one
+      # sub-issue at a time, and becomes wrong once epics run deliveries in parallel — at which
+      # point "some phase started recently" is the normal state. It cannot be made per-delivery
+      # from run state, because a workflow_dispatch run cannot be attributed to a PR at all (see
+      # the header). Closing it needs a per-phase heartbeat comment, which would make the PR's own
+      # comment clock sufficient and remove this step entirely; that is a follow-up, not this PR.
+      - name: Stand down if a delivery phase started recently
+        id: active
+        env:
+          CUTOFF: ${{ steps.cutoff.outputs.at }}
+        run: |
+          set -uo pipefail
+          # Re-checked at the consumer: the cutoff step validates the value, but writing it to
+          # GITHUB_OUTPUT is itself unchecked and this script has no `-e`, so an empty CUTOFF could
+          # still arrive here — where it silently disables the stand-down (see that step).
+          [[ -n "$CUTOFF" ]] || { echo "::error::the quiet cutoff did not reach this step"; exit 1; }
+          active=0
+          unreadable=0
+          # `pending` and `waiting` as well as `queued`: all three phases now share one concurrency
+          # group, and a run held behind that group is NOT reported as `queued`. Without them a
+          # legitimately waiting phase would not stand the sweep down, leaving a healthy delivery one
+          # activity-clock miss from needs-human. The runs API returns total_count 0 rather than an
+          # error for a status it does not recognise, so listing an extra value cannot misfire.
+          for wf in deliver-implement.yml deliver-verify.yml deliver-correct.yml; do
+            for st in in_progress queued pending waiting; do
+              if ! n=$(gh api -X GET "/repos/$REPO/actions/workflows/$wf/runs" \
+                         -f "status=$st" -f per_page=1 -f "created=>$CUTOFF" \
+                         --jq '.total_count'); then
+                echo "::warning::could not read $wf $st runs; assuming a phase may be active and standing down"
+                active=1; unreadable=1; break 2
+              fi
+              if [[ "$n" != "0" ]]; then
+                echo "$wf has a $st run newer than $CUTOFF"
+                active=1; break 2
+              fi
+            done
+          done
+          echo "active=$active" >> "$GITHUB_OUTPUT"
+          [[ "$active" == "0" ]] && echo "no recent phase run — sweeping" || echo "standing down"
+          # Standing down because a phase IS running is success. Standing down because the run list
+          # could not be READ is a detector that did not run, and reporting that as a green scheduled
+          # job means stall detection can be off indefinitely with nothing but a buried warning to
+          # show it. Flagging is still withheld — we have no evidence to flag on — but the run goes
+          # red so a persistent failure is visible rather than silently absorbed every 30 minutes.
+          if [[ "$unreadable" == "1" ]]; then
+            echo "::error::stall detection did not run: the workflow run list was unreadable"
+            exit 1
+          fi
+
+      - name: Flag deliveries that have gone quiet
+        if: steps.active.outputs.active == '0'
+        env:
+          CUTOFF: ${{ steps.cutoff.outputs.at }}
+        run: |
+          set -uo pipefail
+          # See the stand-down step: an empty cutoff here makes every PR compare as recent, which
+          # turns the sweep into a silent no-op that still reports success every 30 minutes.
+          [[ -n "$CUTOFF" ]] || { echo "::error::the quiet cutoff did not reach this step"; exit 1; }
+          # isCrossRepository so the filter can exclude FORK PRs: a fork branch named
+          # `deliver/issue-N` is not a delivery of ours, and commenting "Delivery stalled" plus
+          # needs-human on a contributor's fork PR would be both wrong and confusing.
+          if ! prs=$(gh pr list --repo "$REPO" --state open --limit 100 \
+                       --json number,headRefName,labels,createdAt,isCrossRepository); then
+            echo "::error::could not list pull requests"; exit 1
+          fi
+
+          # Status checked: a broken filter exits non-zero and prints nothing, which is
+          # indistinguishable from "no deliveries in flight" and would disable stall detection
+          # entirely while the sweep kept reporting success every 30 minutes.
+          if ! candidates=$(jq -r -f scripts/deliver-stall-candidates.jq <<< "$prs"); then
+            echo "::error::deliver-stall-candidates.jq failed; refusing to report a clean sweep"
+            exit 1
+          fi
+          if [[ -z "$candidates" ]]; then echo "no deliveries in flight"; exit 0; fi
+
+          while IFS=$'\t' read -r pr created; do
+            [[ -n "$pr" ]] || continue
+
+            # The quiet clock spans every kind of activity the loop produces or reacts to. Issue
+            # comments alone were not enough: item 6 makes a review and a review comment
+            # first-class triggers, so a PR whose most recent activity was a review comment would
+            # have been flagged as stalled while the loop was in fact responding to it.
+            #
+            # Each endpoint is read with its status checked. A silent failure here would move a
+            # PR's apparent last activity backwards, which flags a healthy delivery.
+            activity="$RUNNER_TEMP/activity-$pr.json"
+            : > "$activity"
+            readable=true
+            for ep in "issues/$pr/comments" "pulls/$pr/comments" "pulls/$pr/reviews"; do
+              if ! gh api "/repos/$REPO/$ep?per_page=100" --paginate >> "$activity"; then
+                readable=false; break
+              fi
+            done
+            if [[ "$readable" != "true" ]]; then
+              echo "::warning::could not read activity on #$pr; skipping rather than guessing"
+              continue
+            fi
+
+            # `jq -s` over the concatenated pages, NOT `gh --paginate --jq`. With `--jq` the
+            # filter is applied once PER PAGE, so an aggregate like `max` yields one value per
+            # page and the command substitution captures several newline-separated timestamps;
+            # the comparison below then reads the FIRST (oldest) one and can flag a PR whose
+            # newest activity is recent. Verified: 29 comments at per_page=10 returns 3 maxima,
+            # oldest first. `--slurp` would also fix it but was added in gh 2.53 and the runner's
+            # gh is not pinned (2.32.1 has been observed), so this stays version-independent.
+            #
+            # Reviews carry `submitted_at` where comments carry `created_at`; a PENDING review has
+            # neither and is dropped.
+            #
+            # jq's status is checked, not just its output. On a parse error jq exits non-zero and
+            # prints nothing, and an empty result is indistinguishable from "this PR has no
+            # activity" — which falls back to the creation date below and flags the PR. So an
+            # unchecked jq here would turn a parse error into `needs-human` on a healthy delivery.
+            if ! last=$(jq -rs '[.[][] | (.created_at // .submitted_at)]
+                                | map(select(. != null)) | max // empty' "$activity"); then
+              echo "::warning::could not parse the activity on #$pr; skipping rather than guessing"
+              continue
+            fi
+            # A delivery that never got as far as commenting falls back to the PR's own creation
+            # time — exactly the case in question. Reached only when the read AND the parse
+            # succeeded and genuinely found nothing.
+            [[ -n "$last" ]] || last="$created"
+
+            # Lexicographic compare is valid: both sides are UTC ISO-8601 to the second.
+            if [[ "$last" > "$CUTOFF" ]]; then
+              echo "#$pr last activity $last — within the window, leaving alone"
+              continue
+            fi
+
+            echo "#$pr last activity $last — older than $CUTOFF, flagging"
+            runs="${{ github.server_url }}/${{ github.repository }}/actions"
+            {
+              echo "## Delivery stalled — no activity for ${QUIET_MINUTES} minutes"
+              echo
+              echo "No delivery phase has started recently and nothing has been posted here"
+              echo "since \`$last\`."
+              echo
+              echo "The two causes worth checking first, in order:"
+              echo
+              echo "1. **The runner was lost mid-job.** No step inside the job can execute then,"
+              echo "   not even its failure reporter, so the phase dies silently."
+              echo "2. **The self-hosted runner is offline**, and a phase never started at all."
+              echo "   A job can sit queued for up to 24 hours before GitHub cancels it."
+              echo
+              echo "This sweep cannot say which phase stopped: a \`workflow_dispatch\` run records"
+              echo "the dispatch ref rather than the PR, so runs cannot be attributed to a PR."
+              echo "The [workflow run list]($runs) shows it immediately."
+              echo
+              echo "The delivery will not resume on its own. Re-issue"
+              echo "\`/approve-issue-for-pr-delivery\` on the sub-issue, or dispatch"
+              echo "**Deliver — Verify** directly with this PR and issue number to resume at"
+              echo "verification without repeating the implementation."
+            } > "$RUNNER_TEMP/stall-$pr.md"
+            gh pr comment "$pr" --repo "$REPO" --body-file "$RUNNER_TEMP/stall-$pr.md" \
+              || echo "::warning::could not comment on #$pr"
+            gh api -X POST "/repos/$REPO/issues/$pr/labels" -f 'labels[]=needs-human' >/dev/null \
+              || echo "::warning::could not label #$pr"
+          done <<< "$candidates"

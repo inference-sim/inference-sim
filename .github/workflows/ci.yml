@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main, 'feature/**']
+  # On-demand, so the L1 delivery loop (#1654) can run the REAL required checks against a
+  # delivery branch. A bot-opened PR has its pull_request runs held for human approval, so the
+  # loop cannot rely on them; a workflow_dispatch run always starts and produces check runs with
+  # the same names on the same commit, which is what the branch ruleset requires. Inert
+  # otherwise — it only adds a manual "Run workflow" button.
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Build
+        run: go build -v ./...
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "cluster (heavy)"
+            packages: "./sim/cluster"
+            timeout: "15m"
+          - name: "core packages"
+            packages: "./sim ./sim/kv ./sim/trace"
+            timeout: "10m"
+          - name: "kv transfer"
+            packages: "./sim/kvtransfer"
+            timeout: "10m"
+          - name: "latency models"
+            packages: "./sim/latency"
+            timeout: "10m"
+          - name: "workload & cmd"
+            packages: "./sim/workload ./cmd"
+            timeout: "10m"
+          - name: "root & internals"
+            packages: ". ./sim/internal/..."
+            timeout: "5m"
+          # The CI shell scripts are driven by a test-only package. The matrix lists
+          # packages explicitly rather than ./..., so this entry is what makes them run.
+          - name: "scripts"
+            packages: "./scripts"
+            timeout: "5m"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Test ${{ matrix.name }}
+        run: go test -v -timeout ${{ matrix.timeout }} ${{ matrix.packages }}
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.9.0

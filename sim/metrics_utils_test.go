@@ -1,0 +1,208 @@
+package sim
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+// TestNewRequestMetrics_PropagatesAllFields is intentionally a construction-site guard test
+// (CLAUDE.md antipattern #4). It verifies the canonical constructor propagates all fields,
+// preventing silent field-zero bugs when new fields are added to RequestMetrics.
+func TestNewRequestMetrics_PropagatesAllFields(t *testing.T) {
+	// GIVEN a request with all metadata fields populated
+	req := &Request{
+		ID:               "test_req_1",
+		ArrivalTime:      2000000, // 2 seconds in ticks
+		InputTokens:      make([]TokenID, 128),
+		OutputTokens:     make([]TokenID, 64),
+		SLOClass:         "critical",
+		TenantID:         "tenant_alpha",
+		AssignedInstance: "instance_3",
+		Model:            "llama-3.1-8b",
+		SessionID:        "session_xyz", // #1058
+		RoundIndex:       3,             // #1058
+	}
+	arrivedAt := float64(req.ArrivalTime) / 1e6
+
+	// WHEN NewRequestMetrics is called
+	rm := NewRequestMetrics(req, arrivedAt)
+
+	// THEN all fields MUST be propagated
+	if rm.ID != "test_req_1" {
+		t.Errorf("ID: got %q, want %q", rm.ID, "test_req_1")
+	}
+	if rm.ArrivedAt != 2.0 {
+		t.Errorf("ArrivedAt: got %f, want 2.0", rm.ArrivedAt)
+	}
+	if rm.NumPrefillTokens != 128 {
+		t.Errorf("NumPrefillTokens: got %d, want 128", rm.NumPrefillTokens)
+	}
+	if rm.NumDecodeTokens != 64 {
+		t.Errorf("NumDecodeTokens: got %d, want 64", rm.NumDecodeTokens)
+	}
+	if rm.SLOClass != "critical" {
+		t.Errorf("SLOClass: got %q, want %q", rm.SLOClass, "critical")
+	}
+	if rm.TenantID != "tenant_alpha" {
+		t.Errorf("TenantID: got %q, want %q", rm.TenantID, "tenant_alpha")
+	}
+	if rm.HandledBy != "instance_3" {
+		t.Errorf("HandledBy: got %q, want %q", rm.HandledBy, "instance_3")
+	}
+	if rm.Model != "llama-3.1-8b" {
+		t.Errorf("Model: got %q, want %q", rm.Model, "llama-3.1-8b")
+	}
+	if rm.SessionID != "session_xyz" {
+		t.Errorf("SessionID: got %q, want %q", rm.SessionID, "session_xyz")
+	}
+	if rm.RoundIndex != 3 {
+		t.Errorf("RoundIndex: got %d, want 3", rm.RoundIndex)
+	}
+}
+
+func TestNewRequestMetrics_ZeroValueFields_AreEmptyStrings(t *testing.T) {
+	// GIVEN a request with empty metadata (typical CSV trace)
+	req := &Request{
+		ID:           "csv_req_1",
+		ArrivalTime:  1000000,
+		InputTokens:  make([]TokenID, 10),
+		OutputTokens: make([]TokenID, 5),
+	}
+
+	// WHEN NewRequestMetrics is called
+	rm := NewRequestMetrics(req, float64(req.ArrivalTime)/1e6)
+
+	// THEN metadata fields MUST be empty strings (will be omitted in JSON via omitempty)
+	if rm.SLOClass != "" {
+		t.Errorf("SLOClass: got %q, want empty", rm.SLOClass)
+	}
+	if rm.TenantID != "" {
+		t.Errorf("TenantID: got %q, want empty", rm.TenantID)
+	}
+	if rm.HandledBy != "" {
+		t.Errorf("HandledBy: got %q, want empty", rm.HandledBy)
+	}
+	if rm.Model != "" {
+		t.Errorf("Model: got %q, want empty", rm.Model)
+	}
+}
+
+func TestNewRequestMetrics_GatewayQueueDelay(t *testing.T) {
+	req := &Request{
+		ID:                  "r1",
+		InputTokens:         make([]TokenID, 10),
+		GatewayEnqueueTime:  1000, // enqueued at 1ms
+		GatewayDispatchTime: 5000, // dispatched at 5ms
+	}
+	rm := NewRequestMetrics(req, 0.0)
+	// GatewayQueueDelay = (5000 - 1000) / 1000.0 = 4.0 ms
+	if rm.GatewayQueueDelay != 4.0 {
+		t.Errorf("GatewayQueueDelay = %f, want 4.0", rm.GatewayQueueDelay)
+	}
+}
+
+func TestNewRequestMetrics_GatewayQueueDelay_ZeroWhenNotQueued(t *testing.T) {
+	req := &Request{ID: "r1", InputTokens: make([]TokenID, 10)}
+	rm := NewRequestMetrics(req, 0.0)
+	if rm.GatewayQueueDelay != 0.0 {
+		t.Errorf("GatewayQueueDelay = %f, want 0.0 when not queued", rm.GatewayQueueDelay)
+	}
+}
+
+func TestNewRequestMetrics_SessionFields(t *testing.T) {
+	// GIVEN a session request with non-empty SessionID and RoundIndex=2
+	req := &Request{
+		ID:               "req-1",
+		SessionID:        "sess-abc",
+		RoundIndex:       2,
+		InputTokens:  []TokenID{1, 2, 3},
+		OutputTokens: []TokenID{4, 5},
+		SLOClass:         "standard",
+		TenantID:         "tenant-x",
+		AssignedInstance: "inst-0",
+		Model:            "model-a",
+	}
+	rm := NewRequestMetrics(req, 1000.0)
+	if rm.SessionID != "sess-abc" {
+		t.Errorf("SessionID: got %q, want %q", rm.SessionID, "sess-abc")
+	}
+	if rm.RoundIndex != 2 {
+		t.Errorf("RoundIndex: got %d, want 2", rm.RoundIndex)
+	}
+
+	// GIVEN a non-session request
+	req2 := &Request{ID: "req-2", InputTokens:  []TokenID{1}, OutputTokens: []TokenID{2}}
+	rm2 := NewRequestMetrics(req2, 500.0)
+	if rm2.SessionID != "" {
+		t.Errorf("non-session SessionID: got %q, want empty", rm2.SessionID)
+	}
+	if rm2.RoundIndex != 0 {
+		t.Errorf("non-session RoundIndex: got %d, want 0", rm2.RoundIndex)
+	}
+}
+
+// TestCalculatePercentile_EmptyInput_ReturnsZero verifies BC-6, BC-8.
+func TestCalculatePercentile_EmptyInput_ReturnsZero(t *testing.T) {
+	// GIVEN empty float64 slice
+	// WHEN CalculatePercentile is called
+	result := CalculatePercentile([]float64{}, 99)
+	// THEN it returns 0 (not panic)
+	if result != 0.0 {
+		t.Errorf("expected 0.0 for empty input, got %f", result)
+	}
+
+	// Also verify with int64 (generic constraint covers both)
+	resultInt := CalculatePercentile([]int64{}, 50)
+	if resultInt != 0.0 {
+		t.Errorf("expected 0.0 for empty int64 input, got %f", resultInt)
+	}
+}
+
+// TestCalculatePercentile_SingleElement_ReturnsScaled verifies BC-7.
+func TestCalculatePercentile_SingleElement_ReturnsScaled(t *testing.T) {
+	// GIVEN a single-element slice
+	// WHEN CalculatePercentile is called
+	result := CalculatePercentile([]float64{1000.0}, 99)
+	// THEN it returns the element divided by 1000 (ms conversion)
+	if result != 1.0 {
+		t.Errorf("expected 1.0 for single element 1000.0, got %f", result)
+	}
+}
+
+// TestMetricsOutput_GoodputFields_OmittedWhenZero verifies BC-10: zero-valued
+// goodput fields are absent from the JSON to avoid breaking existing consumers.
+func TestMetricsOutput_GoodputFields_OmittedWhenZero(t *testing.T) {
+	m := MetricsOutput{InstanceID: "i0"}
+	out, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, f := range []string{"goodput_rps", "slo_attainment", "per_class"} {
+		if strings.Contains(s, f) {
+			t.Errorf("zero-value MetricsOutput emitted %q in JSON: %s", f, s)
+		}
+	}
+}
+
+// TestMetricsOutput_GoodputFields_PresentWhenSet verifies the schema slot accepts
+// goodput-shaped values: float scalars and a heterogeneous PerClass payload.
+func TestMetricsOutput_GoodputFields_PresentWhenSet(t *testing.T) {
+	m := MetricsOutput{
+		InstanceID:    "i0",
+		GoodputRPS:    42.1,
+		SLOAttainment: 0.88,
+		PerClass:      map[string]any{"critical": map[string]float64{"goodput_rps": 18.3}},
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, want := range []string{`"goodput_rps":42.1`, `"slo_attainment":0.88`, `"per_class"`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("MetricsOutput JSON missing %q: %s", want, s)
+		}
+	}
+}

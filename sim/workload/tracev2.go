@@ -1,0 +1,967 @@
+package workload
+
+import (
+	"bytes"
+	"encoding/csv"
+	"fmt"
+	"io"
+	"math"
+	"os"
+	"strconv"
+	"strings"
+
+	"github.com/inference-sim/inference-sim/sim"
+	"gopkg.in/yaml.v3"
+)
+
+// TraceHeader captures metadata for trace v2 files.
+type TraceHeader struct {
+	Version        int    `yaml:"trace_version"`
+	TimeUnit       string `yaml:"time_unit"`
+	CreatedAt      string `yaml:"created_at,omitempty"`
+	Mode           string `yaml:"mode"` // "real" (blis observe), "generated" (blis run), or "replayed" (blis replay)
+	WarmUpRequests int    `yaml:"warm_up_requests"`
+	WorkloadSeed   *int64 `yaml:"workload_seed,omitempty"`
+	// WorkloadSpec records workload provenance:
+	//   - a file path when --workload-spec is used (e.g. "workload.yaml")
+	//   - "preset:<name>" when --workload is used (e.g. "preset:chatbot")
+	//   - empty (omitted) when distribution synthesis or concurrency mode is used
+	WorkloadSpec string `yaml:"workload_spec,omitempty"`
+
+	// SessionContextGrowth controls per-round input assembly in closed-loop
+	// replay. "accumulate" makes each session reuse a single growing token
+	// buffer so round N+1's input is byte-identical to round N's plus new
+	// tokens (strict prefix reuse for KV-cache modeling; see design §5).
+	// Empty (default) = each round's input is generated independently
+	// (pre-existing behavior). Set by `blis convert otel`.
+	SessionContextGrowth string `yaml:"session_context_growth,omitempty"`
+
+	Server  *TraceServerConfig  `yaml:"server,omitempty"`
+	Network *TraceNetworkConfig `yaml:"network,omitempty"`
+	// GoodputSLOTargets: per-SLO-class TTFT/ITL/E2E thresholds for goodput
+	// measurement (issue #1409, BC-8). Persisted in trace headers so observe →
+	// replay → calibrate carry the same SLO definition. Schema bump to trace
+	// version 3; old binaries reading new traces will hard-fail under
+	// KnownFields(true) — intentional, signaled by Version (BC-N3).
+	GoodputSLOTargets map[string]SLODimTargets `yaml:"goodput_slo_targets,omitempty"`
+
+	// KVOffload records the RESOLVED KV-cache offload configuration (H5, #1587) so it
+	// round-trips run→replay (BC-G6, INV-13). Absent (nil, omitempty) when no
+	// --kv-offload-config was supplied — so a run without offload writes a
+	// byte-identical header to a pre-feature build (BC-G5). The resolved bandwidth /
+	// latency numbers are recorded (not device_class), so replay reproduces the exact
+	// physics regardless of the replay host's defaults.yaml; replay uses them
+	// authoritatively and logrus.Fatalf's on any config it cannot reconstruct.
+	KVOffload *TraceKVOffloadConfig `yaml:"kv_offload,omitempty"`
+
+	// ObservedKVMetrics records the REAL server's KV-cache hit-rate scraped from its
+	// Prometheus /metrics endpoint during `blis observe --scrape-kv-metrics` (#1583).
+	// It is a resolved-observation block (engine-level counters, not per-request), so
+	// it lives in the header rather than a per-record column. Absent (nil, omitempty)
+	// unless --scrape-kv-metrics was set and a recognized counter family was found —
+	// so a default observe writes a byte-identical header (BC-8). It is real-side
+	// ground truth: replay preserves it verbatim on re-export (BC-4) and never
+	// regenerates it. `blis calibrate` compares it against the simulator's own
+	// aggregate cache_hit_rate.
+	ObservedKVMetrics *TraceObservedKVMetrics `yaml:"observed_kv_metrics,omitempty"`
+
+	// MaxNodesSpanned records the largest number of physical nodes any single model
+	// instance occupied during the source run (#1530). Written by `blis run` only when
+	// node-pool placement actually spread an instance's tensor-parallel group across a
+	// node boundary; absent (0, omitempty) otherwise, so a run without multi-node
+	// placement writes a byte-identical header to a pre-feature build (INV-6).
+	//
+	// READ BY REPLAY, BUT ONLY AS A REFUSAL SIGNAL — never to reconstruct anything.
+	// This is the distinction to keep in mind before building on this field. #1530 offered
+	// two designs for run/replay parity: round-trip the cross-node signal so replay
+	// reproduces the run's step times, or keep a loud rejection. This is the SECOND one,
+	// extended to cover the trace path. Cross-node collective traffic is charged to step
+	// time, and node pools are `blis run`-only, so a trace from a multi-node run replayed
+	// without them would silently reproduce the workload at single-node speed — faster
+	// than the run it came from. `blis replay` therefore treats a value above 1 as a hard
+	// error (INV-13: a feature replay cannot reproduce must fail loudly, never degrade
+	// silently). It does NOT use the value to rebuild a fleet, and a future change that
+	// wanted replay to reproduce cross-node timing would need the topology per instance,
+	// not this single fleet-wide maximum.
+	//
+	// Normalization note: `omitempty` drops only 0, so a span of exactly 1 WOULD be
+	// serialized. The writer normalizes 1 to 0 (see cmd.crossNodeSpanForTrace) so that a
+	// single-node node-pool run does not start emitting a new header key; the coupling is
+	// pinned by TestTraceHeader_MaxNodesSpanned_OneIsNotOmittedBySerialization.
+	MaxNodesSpanned int `yaml:"max_nodes_spanned,omitempty"`
+}
+
+// TraceObservedKVMetrics is the real-side KV-cache hit-rate observed from a vLLM
+// server's Prometheus /metrics endpoint over the measured observation window (#1583).
+// It is a workload-package struct — decoupled from any sim type — so the on-disk trace
+// format is stable, mirroring the TraceKVOffloadConfig / TraceServerConfig precedent.
+// Read strictly (KnownFields) via LoadTraceV2, so an unknown sub-key is a hard error.
+type TraceObservedKVMetrics struct {
+	// Source names which counter family produced HitRate:
+	//   "tiered"                    — vllm:kv_offload_tiering_block_hits/_block_queries
+	//                                 (the multi-tier offload family; requires an
+	//                                 unreleased vLLM, PR #48798).
+	//   "gpu-prefix-cache-fallback" — vllm:gpu_prefix_cache_* (released vLLM, GPU-only).
+	//                                 A distinct, weaker signal — never conflated with a
+	//                                 tiered number.
+	Source string `yaml:"source"`
+	// HitRate is a fraction in [0,1]: BlockHits/BlockQueries over the measured window.
+	HitRate float64 `yaml:"hit_rate"`
+	// BlockHits and BlockQueries are the cumulative-counter DELTAS over the measured
+	// window (end − start), summed across all per-tier label series of the family.
+	BlockHits    int64 `yaml:"block_hits"`
+	BlockQueries int64 `yaml:"block_queries"`
+	// ReadTimeTotal and WriteTimeTotal are the per-tier read/write time deltas summed
+	// across the family (vLLM native seconds), recorded for the documented manual
+	// bandwidth cross-check. Informational — not part of the automated comparison.
+	ReadTimeTotal  float64 `yaml:"read_time_total,omitempty"`
+	WriteTimeTotal float64 `yaml:"write_time_total,omitempty"`
+	// VLLMCommit is the pinned vLLM commit the cluster ran (operator-supplied via
+	// --vllm-commit), recorded so the dependency on an unreleased vLLM is explicit.
+	VLLMCommit string `yaml:"vllm_commit,omitempty"`
+}
+
+// TraceKVOffloadConfig is the trace-header serialization of a resolved
+// sim.KVOffloadConfig (H5, #1587). It is a workload-package struct — decoupled from
+// sim.KVOffloadConfig so the on-disk trace format is stable independent of the
+// internal config type — mirroring the TraceServerConfig / TraceNetworkConfig
+// precedent. cmd/ owns the sim↔header conversion. Read strictly (KnownFields) via
+// LoadTraceV2, so an unknown offload sub-key is a hard error (BC-N3 version guard).
+type TraceKVOffloadConfig struct {
+	CPUBytesToUse          int64                `yaml:"cpu_bytes_to_use"`
+	PerBlockBytes          int64                `yaml:"per_block_bytes"`
+	BlockSize              int64                `yaml:"block_size"`
+	BlocksPerChunk         int64                `yaml:"blocks_per_chunk"`
+	TokensPerHash          int64                `yaml:"tokens_per_hash"`
+	EvictionPolicy         string               `yaml:"eviction_policy"`
+	OffloadPromptOnly      bool                 `yaml:"offload_prompt_only"`
+	SelfDescribingKVEvents bool                 `yaml:"self_describing_kv_events"`
+	Tiers                  []TraceKVOffloadTier `yaml:"secondary_tiers,omitempty"`
+}
+
+// TraceKVOffloadTier is the trace-header serialization of one resolved
+// sim.KVOffloadTier. Bandwidths/latency are the RESOLVED numbers (bytes/µs, µs);
+// device_class is an informational echo only.
+type TraceKVOffloadTier struct {
+	Type           string  `yaml:"type"`
+	RootDir        string  `yaml:"root_dir"`
+	NReadThreads   int64   `yaml:"n_read_threads"`
+	NWriteThreads  int64   `yaml:"n_write_threads"`
+	Locality       string  `yaml:"locality,omitempty"`
+	EnableKVEvents bool    `yaml:"enable_kv_events"`
+	DirectIO       bool    `yaml:"direct_io"`
+	DeviceClass    string  `yaml:"device_class,omitempty"`
+	ReadBandwidth  float64 `yaml:"read_bandwidth"`
+	WriteBandwidth float64 `yaml:"write_bandwidth"`
+	BaseLatency    float64 `yaml:"base_latency"`
+	// #1581 device model (resolved for the selected regime). Always present so the
+	// round-trip is lossless (BC-G6); Qsat=1/f₁=1.0/σ=0 encode "ramp/jitter off".
+	SaturationQueueDepth   int64   `yaml:"saturation_queue_depth"`
+	SingleTransferFraction float64 `yaml:"single_transfer_fraction"`
+	LatencyJitterStddev    float64 `yaml:"latency_jitter_stddev"`
+}
+
+// TraceServerConfig captures server configuration in trace header.
+type TraceServerConfig struct {
+	Type                 string  `yaml:"type,omitempty"`
+	Model                string  `yaml:"model,omitempty"`
+	TensorParallel       int     `yaml:"tensor_parallel,omitempty"`
+	MaxNumSeqs           int     `yaml:"max_num_seqs,omitempty"`
+	BlockSize            int     `yaml:"block_size,omitempty"`
+	GPUMemoryUtilization float64 `yaml:"gpu_memory_utilization,omitempty"`
+	MaxModelLen          int64   `yaml:"max_model_len,omitempty"`
+}
+
+// TraceNetworkConfig captures network configuration in trace header.
+type TraceNetworkConfig struct {
+	MeasuredRTTMs float64 `yaml:"measured_rtt_ms,omitempty"`
+}
+
+// TraceRecord represents one row in a trace v2 CSV.
+type TraceRecord struct {
+	RequestID         int
+	ClientID          string
+	TenantID          string
+	SLOClass          string
+	VLLMPriority      int // vLLM priority value (0=highest urgency, higher=lower urgency); 0 when not set
+	SessionID         string
+	RoundIndex        int
+	PrefixGroup       string
+	PrefixLength      int
+	Streaming         bool
+	InputTokens       int
+	OutputTokens      int
+	TextTokens        int
+	ImageTokens       int
+	AudioTokens       int
+	VideoTokens       int
+	ReasonRatio       float64
+	Model             string // model name (e.g., "meta-llama/Llama-3.1-8B-Instruct"); empty = default model
+	DeadlineUs        int64  // absolute deadline timestamp in microseconds (same time origin as ArrivalTimeUs); 0 = no timeout
+	SLOTargetUs       int64  // per-request SLO TTFT target in microseconds; 0 = no target
+	ServerInputTokens int    // server-reported prompt_tokens; 0 = not recorded (e.g., generated traces)
+	ArrivalTimeUs     int64
+	SendTimeUs        int64
+	FirstChunkTimeUs  int64
+	LastChunkTimeUs   int64
+	NumChunks         int
+	Status            string // "ok", "error", "timeout"
+	ErrorMessage      string
+	FinishReason      string // server-reported finish_reason ("stop", "length", "abort", etc.); empty = not recorded
+	XRequestID        string // client-generated UUID sent as x-request-id header (real-mode only); empty = not recorded
+	Adapter           string // LoRA adapter id serving this request (registry key; #1464); empty = base-model-only
+	// ThinkTimeUs is the recorded per-round client think time in µs (gap from the
+	// previous request's end), set by agentic-trace converters (#1478) and preferred
+	// over arrival-gap derivation in closed-loop replay. It is a PRESENCE signal
+	// (#1608): nil = not recorded (CSV cell empty; replay falls back to arrival gaps),
+	// non-nil = recorded — INCLUDING a recorded &0 (CSV cell "0"), which a genuinely-
+	// zero recorded think (e.g. Weka's overlap-clamped rounds) uses so it is no longer
+	// conflated with "absent". A negative recorded value is a load error (INV-3).
+	ThinkTimeUs *int64
+	// InputTokensReset is a context-compaction marker (#1609): the recorded ABSOLUTE
+	// input for a non-monotone round (in_N < in_{N-1} + out_{N-1}, where the delta law
+	// clamps to 0). Set only by the shared agentic-trace encoder, only on such rounds.
+	// nil (not recorded / monotone round) is the common case and writes no CSV cell, so
+	// a trace without any compaction round is byte-identical to a pre-#1609 trace (INV-6).
+	// In accumulate closed-loop replay the buffer re-seeds to this absolute at the
+	// boundary (see EncodeSessionToTraceRecords / SessionManager.OnComplete). *int64
+	// presence (nil = absent) mirrors the think_time_us non-lossy encoding (#1608/#1612).
+	InputTokensReset *int64
+}
+
+// TraceV2 combines header and records for a complete trace.
+type TraceV2 struct {
+	Header  TraceHeader
+	Records []TraceRecord
+}
+
+// CSV column headers for trace v2 format.
+var traceV2Columns = []string{
+	"request_id", "client_id", "tenant_id", "slo_class", "session_id", "round_index",
+	"prefix_group", "prefix_length", "streaming", "input_tokens", "output_tokens",
+	"text_tokens", "image_tokens", "audio_tokens", "video_tokens", "reason_ratio",
+	"model", "deadline_us", "server_input_tokens",
+	"arrival_time_us", "send_time_us", "first_chunk_time_us", "last_chunk_time_us",
+	"num_chunks", "status", "error_message", "finish_reason",
+}
+
+// ExportTraceV2 writes trace header (YAML) and data (CSV) to separate files.
+// Timestamps use integer formatting (%d) to preserve microsecond precision.
+func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataPath string) error {
+	// Write header YAML
+	headerData, err := yaml.Marshal(header)
+	if err != nil {
+		return fmt.Errorf("marshaling trace header: %w", err)
+	}
+	if err := os.WriteFile(headerPath, headerData, 0644); err != nil {
+		return fmt.Errorf("writing trace header: %w", err)
+	}
+
+	// Write data CSV
+	file, err := os.Create(dataPath)
+	if err != nil {
+		return fmt.Errorf("creating trace data file: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Conditionally include slo_target_us column: present iff any record has non-zero SLO target.
+	includeSLOTarget := false
+	for _, r := range records {
+		if r.SLOTargetUs > 0 {
+			includeSLOTarget = true
+			break
+		}
+	}
+
+	// Conditionally include x_request_id column: present iff any record has a non-empty
+	// UUID AND the trace is from a real run. Mode-gated to ensure replay re-exports never
+	// emit UUIDs (which would no longer correspond to real EPP routing decisions).
+	// Issue #1428.
+	includeXRequestID := false
+	if header.Mode == "real" {
+		for _, r := range records {
+			if r.XRequestID != "" {
+				includeXRequestID = true
+				break
+			}
+		}
+	}
+
+	// Conditionally include adapter column (#1464): present iff any record carries
+	// a non-empty LoRA adapter id. Trailing position (like x_request_id) keeps the
+	// positional parser's index math untouched. Omitted for adapter-blind traces so
+	// the no-op default adds no columns (INV-6).
+	includeAdapter := false
+	for _, r := range records {
+		if r.Adapter != "" {
+			includeAdapter = true
+			break
+		}
+	}
+
+	// Conditionally include think_time_us column (#1478): present iff any record carries
+	// a RECORDED (non-nil) think time — including a recorded &0 (#1608). Trailing position
+	// (like x_request_id / adapter) keeps the positional parser's index math untouched.
+	// Omitted when no record recorded think, so traces that never set it (e.g. observe,
+	// generated, convert otel) add no column (INV-6 byte-identity).
+	includeThinkTime := false
+	for _, r := range records {
+		if r.ThinkTimeUs != nil {
+			includeThinkTime = true
+			break
+		}
+	}
+
+	// Conditionally include input_tokens_reset column (#1609): present iff any record
+	// carries a compaction reset marker (non-nil). Trailing position (like adapter /
+	// think_time_us) keeps the positional parser's index math untouched. Omitted for
+	// traces with no compaction round, so run/observe/monotone traces add no column
+	// (INV-6 byte-identity).
+	includeInputTokensReset := false
+	for _, r := range records {
+		if r.InputTokensReset != nil {
+			includeInputTokensReset = true
+			break
+		}
+	}
+
+	// Conditionally include vllm_priority column: present iff priority was actually computed.
+	// Include when either:
+	// 1. Any record has non-zero priority (batch, standard, sheddable, background from observe)
+	// 2. Any record has SLOClass in "real" mode (covers critical=0 from observe)
+	// This prevents misleading empty columns in simulation traces (Mode != "real") where
+	// priority was never sent to a server, even if SLOClass is set for admission control.
+	includeVLLMPriority := false
+	for _, r := range records {
+		if r.VLLMPriority != 0 || (r.SLOClass != "" && header.Mode == "real") {
+			includeVLLMPriority = true
+			break
+		}
+	}
+
+	// Build column header list
+	columns := make([]string, 0, len(traceV2Columns)+3)
+	for i, col := range traceV2Columns {
+		columns = append(columns, col)
+		// Insert vllm_priority immediately after slo_class (index 3)
+		if i == 3 && includeVLLMPriority {
+			columns = append(columns, "vllm_priority")
+		}
+		// Insert slo_target_us immediately after deadline_us (matched by name)
+		if col == "deadline_us" && includeSLOTarget {
+			columns = append(columns, "slo_target_us")
+		}
+	}
+	// Append x_request_id at end (issue #1428): trailing position avoids shifting
+	// indices in the positional parser.
+	if includeXRequestID {
+		columns = append(columns, "x_request_id")
+	}
+	// Append adapter at end (#1464): also trailing; parsed by header-position lookup.
+	if includeAdapter {
+		columns = append(columns, "adapter")
+	}
+	// Append think_time_us at end (#1478): also trailing; parsed by header-position lookup.
+	if includeThinkTime {
+		columns = append(columns, "think_time_us")
+	}
+	// Append input_tokens_reset at end (#1609): also trailing; parsed by header-position lookup.
+	if includeInputTokensReset {
+		columns = append(columns, "input_tokens_reset")
+	}
+
+	// Write header row
+	if err := writer.Write(columns); err != nil {
+		return fmt.Errorf("writing CSV header: %w", err)
+	}
+
+	// Write data rows (integer formatting for timestamps)
+	for _, r := range records {
+		row := []string{
+			strconv.Itoa(r.RequestID),
+			r.ClientID,
+			r.TenantID,
+			r.SLOClass,
+		}
+		// Conditionally append vllm_priority after slo_class
+		if includeVLLMPriority {
+			row = append(row, strconv.Itoa(r.VLLMPriority))
+		}
+		// Continue with remaining fields
+		row = append(row,
+			r.SessionID,
+			strconv.Itoa(r.RoundIndex),
+			r.PrefixGroup,
+			strconv.Itoa(r.PrefixLength),
+			strconv.FormatBool(r.Streaming),
+			strconv.Itoa(r.InputTokens),
+			strconv.Itoa(r.OutputTokens),
+			strconv.Itoa(r.TextTokens),
+			strconv.Itoa(r.ImageTokens),
+			strconv.Itoa(r.AudioTokens),
+			strconv.Itoa(r.VideoTokens),
+			strconv.FormatFloat(r.ReasonRatio, 'f', -1, 64),
+			r.Model,
+			strconv.FormatInt(r.DeadlineUs, 10),
+		)
+		if includeSLOTarget {
+			row = append(row, strconv.FormatInt(r.SLOTargetUs, 10))
+		}
+		row = append(row,
+			strconv.Itoa(r.ServerInputTokens),
+			strconv.FormatInt(r.ArrivalTimeUs, 10),    // integer format
+			strconv.FormatInt(r.SendTimeUs, 10),       // integer format
+			strconv.FormatInt(r.FirstChunkTimeUs, 10), // integer format
+			strconv.FormatInt(r.LastChunkTimeUs, 10),  // integer format
+			strconv.Itoa(r.NumChunks),
+			r.Status,
+			r.ErrorMessage,
+			r.FinishReason,
+		)
+		// Append x_request_id at end (issue #1428).
+		if includeXRequestID {
+			row = append(row, r.XRequestID)
+		}
+		// Append adapter at end (#1464).
+		if includeAdapter {
+			row = append(row, r.Adapter)
+		}
+		// Append think_time_us at end (#1478). A nil (not-recorded) think writes an
+		// empty cell so it is distinguishable from a recorded &0 on reload (#1608).
+		if includeThinkTime {
+			if r.ThinkTimeUs != nil {
+				row = append(row, strconv.FormatInt(*r.ThinkTimeUs, 10))
+			} else {
+				row = append(row, "")
+			}
+		}
+		// Append input_tokens_reset at end (#1609): empty cell for nil (no compaction
+		// this round), integer for a recorded absolute reset target.
+		if includeInputTokensReset {
+			if r.InputTokensReset != nil {
+				row = append(row, strconv.FormatInt(*r.InputTokensReset, 10))
+			} else {
+				row = append(row, "")
+			}
+		}
+		if err := writer.Write(row); err != nil {
+			return fmt.Errorf("writing CSV row %d: %w", r.RequestID, err)
+		}
+	}
+	return nil
+}
+
+// LoadTraceV2 reads a trace v2 header (YAML) and data (CSV).
+func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
+	// Load header
+	headerData, err := os.ReadFile(headerPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading trace header: %w", err)
+	}
+	var header TraceHeader
+	decoder := yaml.NewDecoder(bytes.NewReader(headerData))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&header); err != nil {
+		return nil, fmt.Errorf("parsing trace header: %w", err)
+	}
+
+	// Load data CSV
+	file, err := os.Open(dataPath)
+	if err != nil {
+		return nil, fmt.Errorf("opening trace data: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+
+	reader := csv.NewReader(file)
+	reader.FieldsPerRecord = -1 // allow extra columns (future extensions)
+
+	// Read header row to detect optional columns
+	headerRow, err := reader.Read()
+	if err != nil {
+		return nil, fmt.Errorf("reading CSV header: %w", err)
+	}
+
+	// Detect optional columns from header
+	hasVLLMPriority := false
+	hasSLOTarget := false
+	xRequestIDIdx := -1       // header-position lookup; -1 = absent (issue #1428)
+	adapterIdx := -1          // header-position lookup; -1 = absent (#1464)
+	thinkTimeUsIdx := -1      // header-position lookup; -1 = absent (#1478)
+	inputTokensResetIdx := -1 // header-position lookup; -1 = absent (#1609)
+	for i, col := range headerRow {
+		switch col {
+		case "vllm_priority":
+			hasVLLMPriority = true
+		case "slo_target_us":
+			hasSLOTarget = true
+		case "x_request_id":
+			xRequestIDIdx = i
+		case "adapter":
+			adapterIdx = i
+		case "think_time_us":
+			thinkTimeUsIdx = i
+		case "input_tokens_reset":
+			inputTokensResetIdx = i
+		}
+	}
+
+	var records []TraceRecord
+	for {
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("reading CSV row: %w", err)
+		}
+		minCols := len(traceV2Columns)
+		if hasVLLMPriority {
+			minCols++
+		}
+		if hasSLOTarget {
+			minCols++
+		}
+		if xRequestIDIdx >= 0 {
+			minCols++
+		}
+		if adapterIdx >= 0 {
+			minCols++
+		}
+		if thinkTimeUsIdx >= 0 {
+			minCols++
+		}
+		if inputTokensResetIdx >= 0 {
+			minCols++
+		}
+		if len(row) < minCols {
+			return nil, fmt.Errorf("CSV row has %d columns, expected at least %d", len(row), minCols)
+		}
+
+		r, err := parseTraceRecord(row, hasVLLMPriority, hasSLOTarget, xRequestIDIdx, adapterIdx, thinkTimeUsIdx, inputTokensResetIdx)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, *r)
+	}
+
+	return &TraceV2{Header: header, Records: records}, nil
+}
+
+// parseTraceRecord parses a CSV row. Handles optional columns vllm_priority
+// (after slo_class), slo_target_us (after deadline_us), and the trailing
+// columns x_request_id, adapter, think_time_us, and input_tokens_reset.
+// xRequestIDIdx, adapterIdx, thinkTimeUsIdx, and inputTokensResetIdx are absolute
+// column indices in the row, or -1 if the respective column is absent.
+func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequestIDIdx, adapterIdx, thinkTimeUsIdx, inputTokensResetIdx int) (*TraceRecord, error) {
+	// Column offset: optional columns shift subsequent indices.
+	// vllm_priority appears after slo_class (index 3) → shifts everything after by +1.
+	// slo_target_us appears after deadline_us → shifts everything after by +1.
+	offset := 0
+	if hasVLLMPriority {
+		offset = 1
+	}
+
+	requestID, err := strconv.Atoi(row[0])
+	if err != nil {
+		return nil, fmt.Errorf("parsing request_id %q: %w", row[0], err)
+	}
+
+	// Parse vllm_priority if present (index 4, immediately after slo_class at index 3)
+	vllmPriority := 0
+	if hasVLLMPriority {
+		vllmPriority, err = strconv.Atoi(row[4])
+		if err != nil {
+			return nil, fmt.Errorf("parsing vllm_priority %q: %w", row[4], err)
+		}
+		if vllmPriority < 0 {
+			return nil, fmt.Errorf("parsing vllm_priority: negative value %d not allowed", vllmPriority)
+		}
+	}
+
+	roundIndex, err := strconv.Atoi(row[5+offset])
+	if err != nil {
+		return nil, fmt.Errorf("parsing round_index %q: %w", row[5+offset], err)
+	}
+	// Column 7+offset: prefix_length
+	prefixLength, err := strconv.Atoi(row[7+offset])
+	if err != nil {
+		return nil, fmt.Errorf("parsing prefix_length %q: %w", row[7+offset], err)
+	}
+	if prefixLength < 0 {
+		return nil, fmt.Errorf("parsing prefix_length: negative value %d not allowed", prefixLength)
+	}
+	// Column 8+offset: streaming
+	streaming, err := strconv.ParseBool(row[8+offset])
+	if err != nil {
+		return nil, fmt.Errorf("parsing streaming %q: %w", row[8+offset], err)
+	}
+	// Column 9+offset: input_tokens
+	inputTokens, err := strconv.Atoi(row[9+offset])
+	if err != nil {
+		return nil, fmt.Errorf("parsing input_tokens %q: %w", row[9+offset], err)
+	}
+	// Negative token counts cause make([]int, negative) panics in LoadTraceV2Requests.
+	if inputTokens < 0 {
+		return nil, fmt.Errorf("parsing input_tokens: negative value %d not allowed", inputTokens)
+	}
+	outputTokens, err := strconv.Atoi(row[10+offset])
+	if err != nil {
+		return nil, fmt.Errorf("parsing output_tokens %q: %w", row[10+offset], err)
+	}
+	if outputTokens < 0 {
+		return nil, fmt.Errorf("parsing output_tokens: negative value %d not allowed", outputTokens)
+	}
+	textTokens, err := strconv.Atoi(row[11+offset])
+	if err != nil {
+		return nil, fmt.Errorf("parsing text_tokens %q: %w", row[11+offset], err)
+	}
+	if textTokens < 0 {
+		return nil, fmt.Errorf("parsing text_tokens: negative value %d not allowed", textTokens)
+	}
+	imageTokens, err := strconv.Atoi(row[12+offset])
+	if err != nil {
+		return nil, fmt.Errorf("parsing image_tokens %q: %w", row[12+offset], err)
+	}
+	if imageTokens < 0 {
+		return nil, fmt.Errorf("parsing image_tokens: negative value %d not allowed", imageTokens)
+	}
+	audioTokens, err := strconv.Atoi(row[13+offset])
+	if err != nil {
+		return nil, fmt.Errorf("parsing audio_tokens %q: %w", row[13+offset], err)
+	}
+	if audioTokens < 0 {
+		return nil, fmt.Errorf("parsing audio_tokens: negative value %d not allowed", audioTokens)
+	}
+	videoTokens, err := strconv.Atoi(row[14+offset])
+	if err != nil {
+		return nil, fmt.Errorf("parsing video_tokens %q: %w", row[14+offset], err)
+	}
+	if videoTokens < 0 {
+		return nil, fmt.Errorf("parsing video_tokens: negative value %d not allowed", videoTokens)
+	}
+	reasonRatio, err := strconv.ParseFloat(row[15+offset], 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing reason_ratio %q: %w", row[15+offset], err)
+	}
+	if math.IsNaN(reasonRatio) || math.IsInf(reasonRatio, 0) || reasonRatio < 0 || reasonRatio > 1.0 {
+		return nil, fmt.Errorf("parsing reason_ratio %q: must be in range [0.0, 1.0], got %g", row[15+offset], reasonRatio)
+	}
+	deadlineUs, err := strconv.ParseInt(row[17+offset], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing deadline_us %q: %w", row[17+offset], err)
+	}
+	if deadlineUs < 0 {
+		return nil, fmt.Errorf("parsing deadline_us: negative value %d not allowed (use 0 for no timeout)", deadlineUs)
+	}
+	// Parse optional slo_target_us (appears after deadline_us when present)
+	var sloTargetUs int64
+	if hasSLOTarget {
+		sloTargetUs, err = strconv.ParseInt(row[18+offset], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("parsing slo_target_us %q: %w", row[18+offset], err)
+		}
+		if sloTargetUs < 0 {
+			return nil, fmt.Errorf("parsing slo_target_us: negative value %d not allowed (use 0 for no target)", sloTargetUs)
+		}
+		offset++
+	}
+	serverInputTokens, err := strconv.Atoi(row[18+offset])
+	if err != nil {
+		return nil, fmt.Errorf("parsing server_input_tokens %q: %w", row[18+offset], err)
+	}
+	if serverInputTokens < 0 {
+		return nil, fmt.Errorf("parsing server_input_tokens: negative value %d not allowed", serverInputTokens)
+	}
+	arrivalTimeUs, err := strconv.ParseInt(row[19+offset], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing arrival_time_us %q: %w", row[19+offset], err)
+	}
+	// arrival_time_us is the injection-origin anchor (#1606): replay re-bases
+	// injection so the earliest injected request lands at min(arrival_time_us).
+	// A negative value would yield a negative DES injection tick (INV-3 clock
+	// monotonicity). Reject loudly, matching the other time/count fields (R1).
+	// (send_time_us is intentionally NOT checked: injectionTime falls back to
+	// arrival_time_us when send_time_us <= 0, so a negative send is tolerated.)
+	if arrivalTimeUs < 0 {
+		return nil, fmt.Errorf("parsing arrival_time_us: negative value %d not allowed", arrivalTimeUs)
+	}
+	sendTimeUs, err := strconv.ParseInt(row[20+offset], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing send_time_us %q: %w", row[20+offset], err)
+	}
+	firstChunkTimeUs, err := strconv.ParseInt(row[21+offset], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing first_chunk_time_us %q: %w", row[21+offset], err)
+	}
+	lastChunkTimeUs, err := strconv.ParseInt(row[22+offset], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing last_chunk_time_us %q: %w", row[22+offset], err)
+	}
+	numChunks, err := strconv.Atoi(row[23+offset])
+	if err != nil {
+		return nil, fmt.Errorf("parsing num_chunks %q: %w", row[23+offset], err)
+	}
+	if numChunks < 0 {
+		return nil, fmt.Errorf("parsing num_chunks: negative value %d not allowed", numChunks)
+	}
+	// Cross-field invariant: deadline must not precede arrival (would cause immediate
+	// timeout at enqueue before any processing). Zero deadline means "no timeout";
+	// zero arrival means "time origin" — both are exempt from this check.
+	if deadlineUs > 0 && arrivalTimeUs > 0 && deadlineUs < arrivalTimeUs {
+		return nil, fmt.Errorf("parsing deadline_us: value %d precedes arrival_time_us %d (corrupt trace?)", deadlineUs, arrivalTimeUs)
+	}
+	finishReason := strings.TrimSpace(row[26+offset])
+
+	// Optional x_request_id at trailing column (issue #1428): looked up by
+	// absolute header position so the index math above is unaffected.
+	var xRequestID string
+	if xRequestIDIdx >= 0 && xRequestIDIdx < len(row) {
+		xRequestID = strings.TrimSpace(row[xRequestIDIdx])
+	}
+
+	// Optional adapter at trailing column (#1464): looked up by absolute header
+	// position so the positional index math above is unaffected.
+	var adapter string
+	if adapterIdx >= 0 && adapterIdx < len(row) {
+		adapter = strings.TrimSpace(row[adapterIdx])
+	}
+
+	// Optional think_time_us at trailing column (#1478): looked up by absolute header
+	// position so the positional index math above is unaffected. An EMPTY cell means
+	// "not recorded" and yields a nil pointer (#1608), distinct from a recorded "0";
+	// negative values are rejected — recorded think time cannot be negative (INV-3).
+	var thinkTimeUs *int64
+	if thinkTimeUsIdx >= 0 && thinkTimeUsIdx < len(row) {
+		if v := strings.TrimSpace(row[thinkTimeUsIdx]); v != "" {
+			parsed, perr := strconv.ParseInt(v, 10, 64)
+			if perr != nil {
+				return nil, fmt.Errorf("parsing think_time_us %q: %w", v, perr)
+			}
+			if parsed < 0 {
+				return nil, fmt.Errorf("parsing think_time_us: negative value %d not allowed", parsed)
+			}
+			thinkTimeUs = &parsed
+		}
+	}
+
+	// Optional input_tokens_reset at trailing column (#1609): looked up by absolute
+	// header position. An empty cell means "no compaction this round" → nil (the common
+	// case); a value is the recorded absolute input the accumulate buffer re-seeds to.
+	// Negative values are rejected — an input length cannot be negative.
+	var inputTokensReset *int64
+	if inputTokensResetIdx >= 0 && inputTokensResetIdx < len(row) {
+		if v := strings.TrimSpace(row[inputTokensResetIdx]); v != "" {
+			parsed, perr := strconv.ParseInt(v, 10, 64)
+			if perr != nil {
+				return nil, fmt.Errorf("parsing input_tokens_reset %q: %w", v, perr)
+			}
+			if parsed < 0 {
+				return nil, fmt.Errorf("parsing input_tokens_reset: negative value %d not allowed", parsed)
+			}
+			inputTokensReset = &parsed
+		}
+	}
+
+	return &TraceRecord{
+		RequestID:         requestID,
+		ClientID:          row[1],
+		TenantID:          row[2],
+		SLOClass:          row[3],
+		VLLMPriority:      vllmPriority,
+		SessionID:         row[4+offset],
+		RoundIndex:        roundIndex,
+		PrefixGroup:       row[6+offset],
+		PrefixLength:      prefixLength,
+		Streaming:         streaming,
+		InputTokens:       inputTokens,
+		OutputTokens:      outputTokens,
+		TextTokens:        textTokens,
+		ImageTokens:       imageTokens,
+		AudioTokens:       audioTokens,
+		VideoTokens:       videoTokens,
+		ReasonRatio:       reasonRatio,
+		Model:             row[16+offset],
+		DeadlineUs:        deadlineUs,
+		SLOTargetUs:       sloTargetUs,
+		ServerInputTokens: serverInputTokens,
+		ArrivalTimeUs:     arrivalTimeUs,
+		SendTimeUs:        sendTimeUs,
+		FirstChunkTimeUs:  firstChunkTimeUs,
+		LastChunkTimeUs:   lastChunkTimeUs,
+		NumChunks:         numChunks,
+		Status:            row[24+offset],
+		ErrorMessage:      strings.TrimSpace(row[25+offset]),
+		FinishReason:      finishReason,
+		XRequestID:        xRequestID,
+		Adapter:           adapter,
+		ThinkTimeUs:       thinkTimeUs,
+		InputTokensReset:  inputTokensReset,
+	}, nil
+}
+
+// RequestsToTraceRecords converts simulation requests to trace v2 records.
+// Uses array index as RequestID (request IDs may be non-numeric for session follow-ups).
+// OutputTokens records the pre-determined count (len(req.OutputTokens)) for all requests,
+// preserving workload input for replay fidelity across A/B policy comparisons.
+// LastChunkTimeUs is computed as ArrivalTime + FirstTokenTime + sum(ITL), which
+// represents the client-observable last-token delivery time. This deliberately
+// excludes PostDecodeFixedOverhead (server-side processing after final token)
+// and therefore differs from the E2E value stored in Metrics.RequestE2Es.
+// PrefixGroup and PrefixLength are preserved; InputTokens records the suffix-only
+// count (total - PrefixLength) so that LoadTraceV2Requests can reconstruct the
+// full input by prepending a shared prefix of the correct length.
+func RequestsToTraceRecords(requests []*sim.Request) []TraceRecord {
+	records := make([]TraceRecord, 0, len(requests))
+	for i, req := range requests {
+		status := "incomplete"
+		switch req.State {
+		case sim.StateCompleted:
+			status = "ok"
+		case sim.StateTimedOut:
+			status = "timeout"
+		}
+
+		// Absolute timing (ticks = microseconds)
+		// Both chunk timestamps guarded by TTFTSet to avoid producing
+		// LastChunkTimeUs = ArrivalTime for prefill-timeout requests.
+		// For StateRunning requests with TTFTSet=true, LastChunkTimeUs
+		// represents the last token generated so far (partial execution),
+		// not the final token. Status "incomplete" distinguishes these.
+		var firstChunkUs, lastChunkUs int64
+		if req.TTFTSet {
+			firstChunkUs = req.ArrivalTime + req.FirstTokenTime
+			e2e := req.FirstTokenTime
+			for _, itl := range req.ITL {
+				e2e += itl
+			}
+			lastChunkUs = req.ArrivalTime + e2e
+		}
+
+		prefixLen := req.PrefixLength
+		inputTokens := int(req.InputLen()) - prefixLen
+		if inputTokens < 0 {
+			// Safety: PrefixLength exceeds InputTokens (should not happen with well-formed data).
+			// Treat as no prefix. Detectable in output: PrefixLength=0 with non-empty PrefixGroup.
+			// R6: no logrus in sim/ — caller is responsible for detecting this via the record.
+			inputTokens = int(req.InputLen())
+			prefixLen = 0
+		}
+
+		records = append(records, TraceRecord{
+			RequestID:        i,
+			ClientID:         req.ClientID,
+			TenantID:         req.TenantID,
+			SLOClass:         req.SLOClass,
+			SessionID:        req.SessionID,
+			RoundIndex:       req.RoundIndex,
+			PrefixGroup:      req.PrefixGroup,
+			PrefixLength:     prefixLen,
+			Streaming:        req.Streaming,
+			InputTokens:      inputTokens,           // suffix-only: total - PrefixLength
+			OutputTokens:     len(req.OutputTokens), // pre-determined count for replay fidelity
+			TextTokens:       req.TextTokenCount,
+			ImageTokens:      req.ImageTokenCount,
+			AudioTokens:      req.AudioTokenCount,
+			VideoTokens:      req.VideoTokenCount,
+			ReasonRatio:      req.ReasonRatio,
+			Model:            req.Model,
+			DeadlineUs:       req.Deadline,
+			SLOTargetUs:      req.SLOTargetUs,
+			ArrivalTimeUs:    req.ArrivalTime,
+			SendTimeUs:       req.ArrivalTime, // no real network send in simulation
+			FirstChunkTimeUs: firstChunkUs,
+			LastChunkTimeUs:  lastChunkUs,
+			NumChunks:        0, // not tracked in simulation
+			Status:           status,
+			Adapter:          req.Adapter, // LoRA adapter id (#1464); "" = base-model-only
+		})
+	}
+	return records
+}
+
+// TraceRecordsToRequests converts TraceRecords to sim.Request objects for saturation analysis.
+// Maps observed timing data to Request fields as follows:
+//   - ArrivalTime: ArrivalTimeUs from trace
+//   - FirstTokenTime: FirstChunkTimeUs - ArrivalTimeUs (TTFT)
+//   - ITL: approximated as single value (LastChunkTimeUs - FirstChunkTimeUs) / (OutputTokens - 1)
+//   - TTFTSet: true if FirstChunkTimeUs > 0 (request reached first token)
+//   - State: derived from Status field ("ok" → Completed, "timeout" → TimedOut, "error" → TimedOut)
+//
+// Note: This is a lossy conversion — trace records don't store per-token ITL, so we use
+// a uniform approximation. For exact ITL data, use --record-itl during observe.
+// Returns empty slice if input is nil or empty.
+func TraceRecordsToRequests(records []TraceRecord) []*sim.Request {
+	if len(records) == 0 {
+		return []*sim.Request{}
+	}
+
+	requests := make([]*sim.Request, 0, len(records))
+	for _, rec := range records {
+		req := &sim.Request{
+			ArrivalTime:  rec.ArrivalTimeUs,
+			OutputTokens: []sim.TokenID{sim.TokenID(rec.OutputTokens)},
+		}
+
+		// TTFTSet and FirstTokenTime
+		if rec.FirstChunkTimeUs > 0 {
+			req.TTFTSet = true
+			req.FirstTokenTime = rec.FirstChunkTimeUs - rec.ArrivalTimeUs
+		}
+
+		// State mapping
+		switch rec.Status {
+		case "ok":
+			req.State = sim.StateCompleted
+		case "timeout", "error":
+			req.State = sim.StateTimedOut
+		default:
+			req.State = sim.StateRunning // Unknown status, treat as running
+		}
+
+		// ITL approximation: distribute total decode time uniformly across output tokens
+		if rec.OutputTokens > 1 && rec.LastChunkTimeUs > rec.FirstChunkTimeUs {
+			totalDecodeUs := rec.LastChunkTimeUs - rec.FirstChunkTimeUs
+			numITL := rec.OutputTokens - 1 // N tokens = N-1 inter-token intervals
+			avgITL := totalDecodeUs / int64(numITL)
+			req.ITL = make([]int64, numITL)
+			for i := range req.ITL {
+				req.ITL[i] = avgITL
+			}
+		} else if rec.OutputTokens == 1 && req.TTFTSet {
+			// Single-token response: no ITL
+			req.ITL = []int64{}
+		}
+
+		requests = append(requests, req)
+	}
+
+	return requests
+}
+
+// TraceRecordsToRequestMetrics converts trace records to RequestMetrics for saturation detectors.
+// Only includes completed requests (Status == "ok") with valid E2E latency (> 0).
+// This matches the filtering logic in printObserveMetrics (observe_cmd.go:610).
+// CRITICAL UNITS: ArrivedAt is in SECONDS (not milliseconds), E2E is in milliseconds.
+// This matches the canonical constructor in sim/simulator.go:261 which sets ArrivedAt as float64(req.ArrivalTime)/1e6.
+func TraceRecordsToRequestMetrics(records []TraceRecord) []sim.RequestMetrics {
+	metrics := make([]sim.RequestMetrics, 0, len(records))
+	for _, rec := range records {
+		if rec.Status != "ok" {
+			continue // Only include completed requests
+		}
+		// Compute E2E and filter invalid latencies (clock skew, malformed records)
+		e2eMs := float64(rec.LastChunkTimeUs-rec.SendTimeUs) / 1000.0
+		if e2eMs <= 0 {
+			continue // Skip records with non-positive E2E (matches printObserveMetrics filter)
+		}
+		metrics = append(metrics, sim.RequestMetrics{
+			ID:        fmt.Sprintf("request_%d", rec.RequestID), // matches sim's request_%d ids (extractor parity, #1516)
+			ArrivedAt: float64(rec.ArrivalTimeUs) / 1e6,         // µs → seconds (CRITICAL: not ms!)
+			E2E:       e2eMs,                                    // µs → ms
+		})
+	}
+	return metrics
+}

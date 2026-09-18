@@ -1,0 +1,51 @@
+# BLIS Inference-Perf Workload Format Example
+#
+# This file demonstrates BLIS's native support for inference-perf style
+# workload specifications. Instead of manually writing 45 client definitions,
+# use the compact inference_perf block.
+#
+# ============================================================================
+# INFERENCE-PERF TO BLIS TRANSLATION
+# ============================================================================
+#
+# inference-perf:                       BLIS equivalent:
+#   load.stages[].rate     -->          stages[].rate (req/s)
+#   load.stages[].duration -->          stages[].duration (seconds)
+#   data.shared_prefix.num_unique_system_prompts  --> N prefix groups
+#   data.shared_prefix.num_users_per_system_prompt --> M clients per group
+#   data.shared_prefix.system_prompt_len --> prefix_length on each client
+#   data.shared_prefix.question_len     --> constant input distribution
+#   data.shared_prefix.output_len       --> constant output distribution
+#   data.shared_prefix.enable_multi_turn_chat --> reasoning.multi_turn (SingleSession mode, see #514)
+#
+# ============================================================================
+# TRY IT
+# ============================================================================
+#
+#   ./blis run \
+#     --model meta-llama/llama-3.1-8b-instruct --hardware H100 --tp 1 \
+#     --num-instances 4 --routing-policy weighted \
+#     --workload-spec examples/inference-perf-shared-prefix.yaml
+#
+# Multi-stage: generates 90 clients (2 stages x 9 prompts x 5 users).
+# Each stage's clients are active only during that stage's time window
+# and emit at that stage's rate. aggregate_rate is always computed as
+# the sum of stage rates (8 + 20 = 28).
+
+version: "1"
+seed: 42
+
+inference_perf:
+  stages:
+    - rate: 8.0        # Ramp-up: 8 req/s for 10 minutes
+      duration: 600
+    - rate: 20.0       # Burst: 20 req/s for 10 minutes
+      duration: 600
+
+  shared_prefix:
+    num_unique_system_prompts: 9
+    num_users_per_system_prompt: 5
+    system_prompt_len: 100     # 100-token shared prefix per group
+    question_len: 447          # Fixed input length (constant distribution)
+    output_len: 248            # Fixed output length
+    enable_multi_turn_chat: false  # When true: maps to reasoning multi-turn with SingleSession mode (see #514)

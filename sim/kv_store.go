@@ -1,0 +1,121 @@
+package sim
+
+// KVStore abstracts KV cache operations for the simulator.
+// kv.KVCacheState (single-tier GPU) and kv.TieredKVCache (GPU+CPU) both implement this.
+type KVStore interface {
+	AllocateKVBlocks(req *Request, startIndex, endIndex int64, cachedBlocks []int64) bool
+	GetCachedBlocks(tokens []TokenID) []int64
+	ReleaseKVBlocks(req *Request)
+	BlockSize() int64
+	UsedBlocks() int64
+	TotalCapacity() int64
+	CacheHitRate() float64
+	PendingTransferLatency() int64        // Pure query: returns accumulated transfer latency without clearing.
+	ConsumePendingTransferLatency() int64 // Read and clear: returns accumulated transfer latency and resets to zero.
+	KVThrashingRate() float64
+	SetClock(clock int64)         // Synchronize clock for time-dependent operations. No-op for single-tier.
+	MirrorToCPU(batch []*Request) // Copy newly-completed full blocks to CPU tier. No-op for single-tier.
+}
+
+// DeferrableKVStore is the optional capability a KVStore implements when it can
+// defer a new prefill admission that needs KV blocks resident only on a secondary
+// (disk/object-store) offload tier, and re-poll it at each scheduler step instead
+// of blocking on the disk or recomputing immediately (H3 kv_deferral, #1591). Only
+// kv.OffloadCache implements it; the single-tier and legacy-tiered stores do not,
+// so batch formation type-asserts and the whole mechanism is inert (byte-identical,
+// INV-6) when offload is off.
+//
+// The step-quantized re-poll is realized entirely through the existing step loop —
+// there is NO new sim.Event. A deferred request stays in the WaitQ (so INV-1
+// still_queued counts it and INV-8 keeps a StepEvent scheduled) and is re-examined
+// each step until its secondary→CPU promotion lands, then admitted; a bounded fetch
+// attempt guarantees it never defers forever (BC-T3).
+type DeferrableKVStore interface {
+	// PollDeferred advances every tracked deferred request's state machine by one
+	// scheduler round (using completions applied by the preceding SetClock) and
+	// returns the ids of requests that are STILL deferred this step. Called once per
+	// step at the top of batch formation. Cost is O(deferred), not O(waitq).
+	PollDeferred(now int64) []string
+	// IsDeferred reports whether the request is currently set aside for a
+	// secondary-tier fetch (map membership). Batch formation calls it after a failed
+	// admission to tell a fresh deferral (skip, keep in WaitQ) apart from GPU
+	// pressure (break).
+	IsDeferred(id string) bool
+	// ClearDeferred forgets a request that left the WaitQ by a non-admit path
+	// (timeout, gateway eviction, drain-redirect) so its deferral state and any
+	// in-flight promotion bookkeeping do not leak. Idempotent; a no-op for an
+	// untracked id.
+	ClearDeferred(id string)
+}
+
+// ReloadReportingKVStore is the optional capability a KVStore implements when a
+// same-step CPU->GPU reload can enlarge a new request's GPU-cached prefix beyond what
+// GetCachedBlocks (GPU-only) reports. Both offload stores implement it — kv.OffloadCache
+// (the #1590 chain, `--kv-offload-config`) and kv.TieredKVCache (the legacy `--kv-cpu-blocks`
+// store). The single-tier kv.KVCacheState (no offload) does NOT: it never reloads, so batch
+// formation's type-assert fails, the credit fold-in is dead code, and its output is
+// byte-identical (INV-6). Whether the assertion SUCCEEDS is a property of the store type,
+// not of any runtime flag — a request served by a non-reloading store is unaffected.
+//
+// Without this, batch formation would size prefill work from the pre-reload GPU prefix
+// (GetCachedBlocks), so a genuine offload cache hit is charged as a full recompute — the
+// reported cache_hit_rate moves but no timing metric does (issue #1699). Batch formation
+// folds the reloadable boundary into the computed baseline BEFORE the chunk/budget clamp
+// (vLLM's num_computed_tokens = local + external, sized before the chunk cap), so the whole
+// reloaded prefix is credited even under chunked prefill, not just the single committed
+// chunk (issue #1706).
+type ReloadReportingKVStore interface {
+	// ReloadablePrefixEnd reports the token boundary to which a same-step CPU->GPU reload
+	// WOULD extend this request's GPU-cached prefix, given the GPU-cached startIndex,
+	// WITHOUT committing or mutating any tier — the analogue of vLLM's
+	// get_num_new_matched_tokens (a pre-allocation query on the waiting-queue path). It
+	// is a PURE query (no one-shot consumption): the actual reload + commit still happens
+	// inside AllocateKVBlocks. ok=true iff the reloadable prefix extends beyond startIndex.
+	//
+	// Only the CPU-resident (same-step reloadable) prefix is counted. A secondary-tier-only
+	// run is NOT counted here — it stays on the H3 step-boundary deferral path
+	// (DeferrableKVStore), which re-examines it over steps until it becomes CPU-resident.
+	// Reported for NEW prefill admissions only (a running continuation bills incrementally
+	// against ProgressIndex; a PD decode sub-request is admitted via the decode branch),
+	// returning (startIndex, false) otherwise.
+	ReloadablePrefixEnd(req *Request, startIndex int64) (reloadableEnd int64, ok bool)
+}
+
+// NewKVCacheStateFunc is a factory function for creating single-tier KVStore implementations.
+// Set by sim/kv package's init() via registration. This breaks the import cycle between
+// sim/ (which defines KVStore) and sim/kv/ (which implements it).
+//
+// Production callers should import sim/kv and use its constructors directly
+// (see cluster.NewInstanceSimulator for the pattern).
+// Test code in package sim uses this to avoid importing sim/kv (which would create a cycle).
+// Test files in package sim_test use kv_import_test.go (blank import) to trigger registration.
+var NewKVCacheStateFunc func(totalBlocks, blockSizeTokens int64) KVStore
+
+// MustNewKVCacheState calls NewKVCacheStateFunc with a nil guard. Panics with an
+// actionable message if the factory has not been registered (missing sim/kv import).
+func MustNewKVCacheState(totalBlocks, blockSizeTokens int64) KVStore {
+	if NewKVCacheStateFunc == nil {
+		panic("NewKVCacheStateFunc not registered: import sim/kv to register it " +
+			"(add: import _ \"github.com/inference-sim/inference-sim/sim/kv\")")
+	}
+	return NewKVCacheStateFunc(totalBlocks, blockSizeTokens)
+}
+
+// NewKVStoreFromConfig constructs the appropriate KVStore (single-tier or tiered) based on config.
+// Registered by sim/kv package's init(). Used by test code in package sim that cannot
+// import sim/kv directly (import cycle). Production code uses kv.NewKVStore() directly.
+// seed derives the offload device model's jitter RNG partition (#1581) and is ignored
+// for every non-jitter run.
+var NewKVStoreFromConfig func(cfg KVCacheConfig, seed int64) KVStore
+
+// MustNewKVStoreFromConfig calls NewKVStoreFromConfig with a nil guard. Panics with an
+// actionable message if the factory has not been registered (missing sim/kv import).
+// It defaults the run seed to 0: this indirection exists only for package-sim tests,
+// which do not exercise the offload latency jitter that seed would feed (#1581).
+func MustNewKVStoreFromConfig(cfg KVCacheConfig) KVStore {
+	if NewKVStoreFromConfig == nil {
+		panic("NewKVStoreFromConfig not registered: import sim/kv to register it " +
+			"(add: import _ \"github.com/inference-sim/inference-sim/sim/kv\")")
+	}
+	return NewKVStoreFromConfig(cfg, 0)
+}

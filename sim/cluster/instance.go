@@ -1,0 +1,550 @@
+// Package cluster provides multi-replica cluster simulation capabilities.
+//
+// This package wraps the single-instance simulator (sim.Simulator) to enable
+// multi-replica coordination via ClusterSimulator.
+package cluster
+
+import (
+	"fmt"
+	"sort"
+
+	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/kv"
+	"github.com/inference-sim/inference-sim/sim/latency"
+)
+
+// InstanceID uniquely identifies a simulator instance within a cluster.
+// Uses distinct type (not alias) to prevent accidental string mixing.
+type InstanceID string
+
+// InstanceSimulator wraps a Simulator for use in multi-replica clusters.
+// Provides an interception point for cluster-level coordination.
+//
+// Thread-safety: NOT thread-safe. All methods must be called from the same goroutine.
+type InstanceSimulator struct {
+	id     InstanceID
+	sim    *sim.Simulator
+	hasRun bool
+
+	// Phase 1A: lifecycle and placement fields.
+	// All zero-value safe (backward-compatible with no-node-pool mode).
+	Model            string            // target model identifier (empty = default/single-model)
+	State            sim.InstanceState // lifecycle state; empty = untracked (backward-compat)
+	warmUpRemaining  int               // requests remaining in warm-up phase; 0 = no warm-up
+	warmUpRequestIDs []string          // IDs of requests served during warm-up (for TTFT factor)
+	nodeID           string            // primary node this instance is placed on (empty = unplaced). For a multi-node TP instance (#1529) this is only the lowest-index node; the full node set is PlacementManager.distinctNodesForGPUs(allocatedGPUIDs).
+	allocatedGPUIDs  []string          // GPU IDs allocated to this instance (spans >1 node for multi-node TP)
+	gpu              string            // GPU type used for this instance (set from pool gpu_type, or config.GPU)
+
+	// Phase 1C: hardware variant fields (set at placement time in cluster.go).
+	// Used by buildRouterState() to populate RoutingSnapshot for the autoscaler Collector.
+	// GPUType is available via inst.GPU(); TPDegree and CostPerHour are autoscaler-specific.
+	TPDegree    int     // tensor-parallel degree; 0 = unplaced/unknown
+	CostPerHour float64 // $/hr from NodePool.CostPerHour; 0 = unplaced/free tier
+
+	// maxNumSeqs stores cfg.BatchConfig.MaxNumSeqs at construction time.
+	// Exposed via MaxBatchSize() for the autoscaler pipeline.
+	maxNumSeqs int64
+}
+
+// NewInstanceSimulator creates an InstanceSimulator from a SimConfig struct.
+//
+// Thread-safety: NOT thread-safe. Must be called from single goroutine.
+// Failure modes: Panics if internal Simulator creation fails (matches existing behavior).
+func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
+	// Create KV store (single-tier or tiered based on config)
+	kvStore := kv.NewKVStore(cfg.KVCacheConfig, cfg.Seed)
+	// Build the LoRA adapter-cost accessor (nil when the subsystem is inert) and
+	// supply it to the latency model at construction so the per-step compute
+	// overhead applies to both backends (#1467, R23). BuildAdapterCost is pure and
+	// stateless; sim.NewSimulator (called below) builds its own instance for the
+	// cold-load gate from the same config — two behaviorally identical accessors,
+	// no shared state. A nil accessor leaves StepTime byte-identical to pre-feature (INV-6).
+	adapterCost, err := sim.BuildAdapterCost(cfg)
+	if err != nil {
+		panic(fmt.Sprintf("NewInstanceSimulator(%s): adapter cost model: %v", id, err))
+	}
+	latencyModel, err := latency.NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig,
+		latency.WithAdapterCost(adapterCost),
+		latency.WithSpeculativeDecode(cfg.K))
+	if err != nil {
+		panic(fmt.Sprintf("NewInstanceSimulator(%s): NewLatencyModel: %v", id, err))
+	}
+	s, err := sim.NewSimulator(cfg, kvStore, latencyModel)
+	if err != nil {
+		panic(fmt.Sprintf("NewInstanceSimulator(%s): %v", id, err))
+	}
+	return &InstanceSimulator{
+		id:         id,
+		sim:        s,
+		gpu:        cfg.GPU,
+		maxNumSeqs: cfg.MaxNumSeqs,
+	}
+}
+
+// GPU returns the GPU type this instance was constructed with.
+// When NodePools are configured, this reflects the pool's gpu_type (authoritative).
+// When NodePools are absent, this reflects config.GPU (the CLI flag).
+func (i *InstanceSimulator) GPU() string { return i.gpu }
+
+// Run executes the simulation to completion.
+// Delegates directly to wrapped Simulator.Run().
+//
+// Postconditions:
+//   - Metrics() returns populated metrics
+//   - Clock() returns final simulation time
+//
+// Panics if called more than once (run-once semantics).
+func (i *InstanceSimulator) Run() {
+	if i.hasRun {
+		panic("InstanceSimulator.Run() called more than once")
+	}
+	i.hasRun = true
+	i.sim.Run()
+}
+
+// ID returns the instance identifier.
+func (i *InstanceSimulator) ID() InstanceID {
+	return i.id
+}
+
+// Clock returns the current simulation clock (in ticks).
+func (i *InstanceSimulator) Clock() int64 {
+	return i.sim.CurrentClock()
+}
+
+// Metrics returns the simulation metrics.
+// Returns pointer to wrapped Simulator's Metrics (not a copy).
+func (i *InstanceSimulator) Metrics() *sim.Metrics {
+	return i.sim.Metrics
+}
+
+// Horizon returns the simulation horizon (in ticks).
+func (i *InstanceSimulator) Horizon() int64 {
+	return i.sim.SimHorizon()
+}
+
+// PostDecodeFixedOverhead returns the fixed per-request post-decode overhead (µs)
+// from the instance's underlying latency model. Used by detectDecodeCompletions
+// to stamp parent.CompletionTime with the correct client-visible completion time.
+// Returns 0 for roofline; non-zero for trained-physics (BC-2, #846).
+func (i *InstanceSimulator) PostDecodeFixedOverhead() int64 {
+	return i.sim.PostDecodeFixedOverhead()
+}
+
+// InjectRequest delegates to sim.InjectArrival. Panics if called after Run().
+func (i *InstanceSimulator) InjectRequest(req *sim.Request) {
+	if i.hasRun {
+		panic("InstanceSimulator.InjectRequest() called after Run()")
+	}
+	i.sim.InjectArrival(req)
+}
+
+// HasPendingEvents returns true if the instance has pending events.
+func (i *InstanceSimulator) HasPendingEvents() bool { return i.sim.HasPendingEvents() }
+
+// PeekNextEventTime returns the timestamp of the earliest pending event.
+// Caller MUST check HasPendingEvents() first; panics on empty queue.
+func (i *InstanceSimulator) PeekNextEventTime() int64 { return i.sim.PeekNextEventTime() }
+
+// ProcessNextEvent pops and executes the earliest event, returning it.
+// Caller MUST check HasPendingEvents() first; panics on empty queue.
+func (i *InstanceSimulator) ProcessNextEvent() sim.Event { return i.sim.ProcessNextEvent() }
+
+// Finalize sets SimEndedTime, captures KV metrics, and logs completion.
+func (i *InstanceSimulator) Finalize() {
+	i.sim.Finalize()
+	// Capture KV metrics at finalization for CollectRawMetrics
+	i.sim.Metrics.CacheHitRate = i.sim.KVCache.CacheHitRate()
+	i.sim.Metrics.KVThrashingRate = i.sim.KVCache.KVThrashingRate()
+}
+
+// QueueDepth returns the number of requests in the wait queue.
+func (i *InstanceSimulator) QueueDepth() int {
+	return i.sim.QueueDepth()
+}
+
+// BatchSize returns the number of requests in the running batch, or 0 if nil.
+func (i *InstanceSimulator) BatchSize() int {
+	return i.sim.BatchSize()
+}
+
+// ResidentAdapterIDs returns the ids of LoRA adapters currently resident on this
+// instance, or nil when the LoRA subsystem is inert. Read by the snapshot provider
+// to populate RoutingSnapshot.ResidentAdapters for the lora-affinity scorer (#1469).
+func (i *InstanceSimulator) ResidentAdapterIDs() []string {
+	if i.sim == nil {
+		return nil
+	}
+	return i.sim.ResidentAdapterIDs()
+}
+
+// KVUtilization returns the fraction of KV cache blocks in use.
+// Returns 0 when TotalCapacity is 0 to avoid division by zero (R11 defensive guard).
+func (i *InstanceSimulator) KVUtilization() float64 {
+	total := i.sim.KVCache.TotalCapacity()
+	if total <= 0 {
+		return 0
+	}
+	return float64(i.sim.KVCache.UsedBlocks()) / float64(total)
+}
+
+// FreeKVBlocks returns the number of free KV cache blocks.
+func (i *InstanceSimulator) FreeKVBlocks() int64 {
+	return i.sim.KVCache.TotalCapacity() - i.sim.KVCache.UsedBlocks()
+}
+
+// CacheHitRate returns the cumulative cache hit rate.
+func (i *InstanceSimulator) CacheHitRate() float64 {
+	return i.sim.KVCache.CacheHitRate()
+}
+
+// TotalKvCapacityTokens returns total KV cache capacity in tokens.
+// Returns 0 if i.sim or i.sim.KVCache is nil (construction defect), or if
+// TotalCapacity() * BlockSize() is zero (misconfigured KV store).
+// Loading instances have correct non-zero capacity from construction —
+// NewInstanceSimulator always initializes the KV store before any lifecycle transition.
+func (i *InstanceSimulator) TotalKvCapacityTokens() int64 {
+	if i.sim == nil || i.sim.KVCache == nil {
+		return 0
+	}
+	return i.sim.KVCache.TotalCapacity() * i.sim.KVCache.BlockSize()
+}
+
+// KvTokensInUse returns current KV cache occupancy in tokens.
+// Returns 0 when the KV cache is not yet initialized.
+func (i *InstanceSimulator) KvTokensInUse() int64 {
+	if i.sim == nil || i.sim.KVCache == nil {
+		return 0
+	}
+	return i.sim.KVCache.UsedBlocks() * i.sim.KVCache.BlockSize()
+}
+
+// TotalKVBlocks returns the total number of KV cache blocks for this instance.
+func (i *InstanceSimulator) TotalKVBlocks() int64 {
+	if i.sim == nil || i.sim.KVCache == nil {
+		return 0
+	}
+	return i.sim.KVCache.TotalCapacity()
+}
+
+// PreemptionCount returns the cumulative number of preemption events on this instance.
+func (i *InstanceSimulator) PreemptionCount() int64 {
+	return i.sim.Metrics.PreemptionCount
+}
+
+// InstanceLatencyStats holds cumulative averages of per-instance latency and throughput from completed requests.
+// Units: TTFT and ITL are in microseconds (ticks = µs in the simulator clock).
+// DispatchRate is in req/s; AvgInTokens and AvgOutTokens are per-request averages.
+// All fields are zero when no requests have completed.
+type InstanceLatencyStats struct {
+	TTFT         float64 // µs
+	ITL          float64 // µs
+	DispatchRate float64 // req/s
+	AvgInTokens  float64
+	AvgOutTokens float64
+}
+
+// LatencyStats returns aggregate latency and throughput statistics from completed requests.
+// All fields are 0 when no requests have completed.
+// TTFT and ITL are in microseconds; DispatchRate is in req/s.
+func (i *InstanceSimulator) LatencyStats() InstanceLatencyStats {
+	if i.sim == nil {
+		return InstanceLatencyStats{}
+	}
+	m := i.sim.Metrics
+	if m == nil || m.CompletedRequests == 0 {
+		return InstanceLatencyStats{}
+	}
+	n := float64(m.CompletedRequests)
+
+	// DispatchRate: when simulation has ended, use SimEndedTime as the denominator
+	// (exact throughput, matches ResponsesPerSec in metrics.go:SaveResults).
+	// Mid-simulation fallback: span between first and last completion time (growing window —
+	// rate decreases over time even at steady throughput). Final fallback: current clock.
+	// INV-6 note: min/max reduction is order-independent (unlike float sums), so this map
+	// range is exempt from the R2 sort requirement.
+	var minCT, maxCT float64
+	first := true
+	for _, ct := range m.RequestCompletionTimes {
+		if first || ct < minCT {
+			minCT = ct
+		}
+		if first || ct > maxCT {
+			maxCT = ct
+		}
+		first = false
+	}
+	var dispatchRate float64
+	if m.SimEndedTime > 0 {
+		dispatchRate = n / (float64(m.SimEndedTime) / 1e6)
+	} else if span := maxCT - minCT; span > 0 {
+		dispatchRate = n / (span / 1e6)
+	} else if clockUs := i.Clock(); clockUs > 0 {
+		dispatchRate = n / (float64(clockUs) / 1e6)
+	}
+
+	// Compute ITL from RequestITLs (per-request average ITL in µs).
+	// Sort keys before accumulating to satisfy INV-6 determinism (R2).
+	// ITLSum is never populated by the simulator; RequestITLs is the authoritative source.
+	reqIDs := make([]string, 0, len(m.RequestITLs))
+	for id := range m.RequestITLs {
+		reqIDs = append(reqIDs, id)
+	}
+	sort.Strings(reqIDs)
+	var itlSum float64
+	for _, id := range reqIDs {
+		itlSum += m.RequestITLs[id]
+	}
+
+	return InstanceLatencyStats{
+		TTFT:         float64(m.TTFTSum) / n,
+		ITL:          itlSum / n,
+		DispatchRate: dispatchRate,
+		AvgInTokens:  float64(m.TotalInputTokens) / n,
+		AvgOutTokens: float64(m.TotalOutputTokens) / n,
+	}
+}
+
+// MaxBatchSize returns the simulator's configured maximum number of concurrent requests
+// (BatchConfig.MaxNumSeqs). Returns 0 when the instance has no underlying simulator.
+func (i *InstanceSimulator) MaxBatchSize() int {
+	if i.sim == nil {
+		return 0
+	}
+	return int(i.maxNumSeqs)
+}
+
+// GetCachedBlockCount returns the number of consecutive cached prefix blocks
+// matching the given token sequence. Used by precise prefix cache scoring.
+func (i *InstanceSimulator) GetCachedBlockCount(tokens []sim.TokenID) int {
+	if i.sim == nil {
+		return 0
+	}
+	return len(i.sim.KVCache.GetCachedBlocks(tokens))
+}
+
+// cacheSnapshotCapable is satisfied by KVStore implementations that can produce
+// a frozen snapshot query function. Both KVCacheState and TieredKVCache implement this.
+// Used for stale cache signal simulation (issue #919).
+type cacheSnapshotCapable interface {
+	SnapshotCachedBlocksFn() func([]sim.TokenID) int
+}
+
+// SnapshotCacheQueryFn returns a function that queries a frozen copy of this
+// instance's KV cache hash map. The returned function is safe to call after
+// the live cache state has changed — it always returns results as of snapshot time.
+// Returns a zero-returning function if the simulator is nil or the KV cache
+// does not support snapshotting.
+func (i *InstanceSimulator) SnapshotCacheQueryFn() func([]sim.TokenID) int {
+	if i.sim == nil {
+		return func([]sim.TokenID) int { return 0 }
+	}
+	if cs, ok := i.sim.KVCache.(cacheSnapshotCapable); ok {
+		return cs.SnapshotCachedBlocksFn()
+	}
+	// Fallback: live query (for KVStore implementations without snapshot support).
+	// Callers (CachedSnapshotProvider) are responsible for warning about stale-cache
+	// semantics not being honored — this function is intentionally side-effect-free.
+	return func(tokens []sim.TokenID) int {
+		return i.GetCachedBlockCount(tokens)
+	}
+}
+
+// InjectRequestOnline injects a request during the event loop (online routing mode).
+// Unlike InjectRequest, this does NOT check hasRun, allowing injection during simulation.
+func (i *InstanceSimulator) InjectRequestOnline(req *sim.Request, eventTime int64) {
+	i.sim.InjectArrivalAt(req, eventTime)
+}
+
+// IsRoutable returns true if this instance should appear in routing snapshots.
+// Active and WarmingUp instances are routable.
+// When State is empty (no lifecycle tracking), all instances are treated as routable
+// for backward compatibility with pre-Phase-1A cluster tests.
+func (i *InstanceSimulator) IsRoutable() bool {
+	switch i.State {
+	case sim.InstanceStateActive, sim.InstanceStateWarmingUp:
+		return true
+	case "": // untracked — backward-compat
+		return true
+	default:
+		return false
+	}
+}
+
+// HasSim returns true if the instance has an underlying simulator (false in test-only scenarios).
+func (i *InstanceSimulator) HasSim() bool {
+	return i.sim != nil
+}
+
+// IsWarmingUp returns true if the warm-up TTFT penalty should be applied.
+func (i *InstanceSimulator) IsWarmingUp() bool {
+	return i.State == sim.InstanceStateWarmingUp && i.warmUpRemaining > 0
+}
+
+// RecordWarmUpRequest marks a request ID as having been served during warm-up.
+// Called at routing time when the instance IsWarmingUp(). The TTFT for these
+// requests will be multiplied by WarmUpTTFTFactor in aggregateMetrics().
+func (i *InstanceSimulator) RecordWarmUpRequest(reqID string) {
+	i.warmUpRequestIDs = append(i.warmUpRequestIDs, reqID)
+}
+
+// WarmUpRequestIDs returns the IDs of requests that were routed during warm-up.
+func (i *InstanceSimulator) WarmUpRequestIDs() []string {
+	return i.warmUpRequestIDs
+}
+
+// clearWarmUpRequestIDs frees the warm-up request ID slice after the TTFT factor
+// has been applied in aggregateMetrics(), preventing unbounded memory growth.
+func (i *InstanceSimulator) clearWarmUpRequestIDs() {
+	i.warmUpRequestIDs = nil
+}
+
+// ConsumeWarmUpRequest decrements the warm-up counter.
+// When it reaches zero, automatically transitions WarmingUp → Active.
+func (i *InstanceSimulator) ConsumeWarmUpRequest() {
+	if i.warmUpRemaining <= 0 {
+		return
+	}
+	i.warmUpRemaining--
+	if i.warmUpRemaining == 0 && i.State == sim.InstanceStateWarmingUp {
+		i.TransitionTo(sim.InstanceStateActive)
+	}
+}
+
+// validInstanceTransitions maps valid source → target pairs for instance lifecycle.
+// This table IS INV-14 (see docs/contributing/standards/invariants.md#inv-14): the
+// legal edge set, which is also monotone — every edge advances the instance along
+// Scheduling < Loading < WarmingUp < Active < Draining < Terminated and none regresses.
+// Adding a backward edge here fails TestInstanceStateMachine_NoBackwardTransitions.
+var validInstanceTransitions = map[sim.InstanceState]map[sim.InstanceState]struct{}{
+	sim.InstanceStateScheduling: {sim.InstanceStateLoading: {}, sim.InstanceStateTerminated: {}},
+	sim.InstanceStateLoading:    {sim.InstanceStateWarmingUp: {}, sim.InstanceStateActive: {}, sim.InstanceStateTerminated: {}},
+	sim.InstanceStateWarmingUp:  {sim.InstanceStateActive: {}, sim.InstanceStateDraining: {}, sim.InstanceStateTerminated: {}},
+	sim.InstanceStateActive:     {sim.InstanceStateDraining: {}, sim.InstanceStateTerminated: {}},
+	sim.InstanceStateDraining:   {sim.InstanceStateTerminated: {}},
+	sim.InstanceStateTerminated: {},
+}
+
+// TransitionTo validates and applies an instance state transition. It is the only
+// writer of State outside construction, which is what makes validInstanceTransitions
+// load-bearing rather than advisory.
+//
+// Panics on an invalid transition — INV-14 clause 1 (invariant violation per
+// Principle V). Initializes State on first call when State is empty: INV-14
+// clause 2, the seeding carve-out for runs with lifecycle tracking disabled, so
+// clause 1 constrains an instance's second and later transitions.
+func (i *InstanceSimulator) TransitionTo(state sim.InstanceState) {
+	if i.State == "" {
+		// INV-14 clause 2: lifecycle tracking not enabled — accept this one
+		// transition unvalidated to seed State. Subsequent calls are validated.
+		i.State = state
+		return
+	}
+	targets, ok := validInstanceTransitions[i.State]
+	if !ok {
+		panic(fmt.Sprintf("TransitionTo %s: unknown source state %q — INV-14 violation", i.id, i.State))
+	}
+	if _, valid := targets[state]; !valid {
+		panic(fmt.Sprintf("TransitionTo %s: invalid transition %q → %q — INV-14 violation", i.id, i.State, state))
+	}
+	i.State = state
+}
+
+// ReserveTransferredKV reserves KV cache blocks on this instance for a decode
+// sub-request whose KV transfer is in flight (issue #1343, vLLM
+// WAITING_FOR_REMOTE_KVS parity). Blocks are allocated immediately so they
+// reduce available capacity for other requests during the transfer window.
+// ProgressIndex is advanced past the input so batch formation treats the
+// request as decode-ready once the transfer completes and the state is
+// promoted to StateQueued. Returns false if insufficient KV capacity on this
+// instance.
+//
+// Caller is responsible for calling ReleaseReservedKV (or the equivalent
+// KVCache.ReleaseKVBlocks) if the reservation must be undone — e.g., when
+// the decode instance becomes non-routable between KVTransferStartedEvent
+// and KVTransferCompletedEvent.
+func (i *InstanceSimulator) ReserveTransferredKV(req *sim.Request) bool {
+	inputLen := req.InputLen()
+	if inputLen == 0 {
+		req.ProgressIndex = 0
+		return true
+	}
+	ok := i.sim.KVCache.AllocateKVBlocks(req, 0, inputLen, nil)
+	if ok {
+		req.ProgressIndex = inputLen
+	}
+	return ok
+}
+
+// ReleaseReservedKV frees KV blocks previously reserved via ReserveTransferredKV.
+// Used when a reservation must be undone (e.g., decode instance transitioned
+// to a non-routable state mid-transfer). Safe to call when the request holds
+// no blocks.
+func (i *InstanceSimulator) ReleaseReservedKV(req *sim.Request) {
+	i.sim.KVCache.ReleaseKVBlocks(req)
+}
+
+// InjectDecodeOnline injects a decode sub-request with pre-allocated KV.
+// Bypasses the normal ArrivalEvent → QueuedEvent → EnqueueRequest chain to avoid
+// the oversized-request guard (KV already allocated) and TotalInputTokens double-counting.
+// Registers request in metrics and directly enqueues into wait queue.
+// clusterTime is the cluster clock at the time of injection (from KVTransferCompletedEvent).
+func (i *InstanceSimulator) InjectDecodeOnline(req *sim.Request, clusterTime int64) {
+	i.sim.Metrics.Requests[req.ID] = sim.NewRequestMetrics(req, float64(req.ArrivalTime)/1e6)
+	i.sim.EnqueueDecodeSubRequest(req, clusterTime)
+}
+
+// DrainWaitQueue extracts all pending (queued but not yet scheduled) requests
+// from the instance's wait queue and returns them.
+// Used by DrainRedirect to re-inject requests elsewhere.
+func (i *InstanceSimulator) DrainWaitQueue() []*sim.Request {
+	return i.sim.DrainWaitQueue()
+}
+
+// EvictRequest removes a request from this instance due to gateway-level eviction.
+// Searches WaitQ first, then RunningBatch. Frees KV blocks if allocated.
+// Sets req.State to StateCompleted to prevent dangling TimeoutEvents from double-counting.
+// Returns true if found and removed, false otherwise (idempotent for already-completed).
+//
+// INV-2 (request lifecycle): this is the one semantically anomalous StateCompleted
+// write in the codebase — a TOMBSTONE, not a completion. The request produced no
+// output and is counted as gatewayEvicted (sim/cluster/cluster_event.go), never via
+// the sole CompletedRequests++ in sim/simulator.go. So INV-2's `-> completed` edge
+// does not describe this line; reading StateCompleted as "completed" here would
+// double-count an evicted request.
+func (i *InstanceSimulator) EvictRequest(req *sim.Request) bool {
+	if i.sim.WaitQ.Remove(req) {
+		i.sim.ClearDeferredKV(req.ID) // H3 (#1591): a gateway-evicted queued request may be mid-deferral
+		i.sim.KVCache.ReleaseKVBlocks(req)
+		// Release the LoRA adapter pin (#1466): a queued request is not pinned, so
+		// this is a no-op here, but calling it keeps eviction symmetric with the
+		// running-batch branch below and robust if pinning semantics change.
+		i.sim.ReleaseAdapterPin(req)
+		req.State = sim.StateCompleted
+		return true
+	}
+	if i.sim.RunningBatch != nil {
+		for idx, r := range i.sim.RunningBatch.Requests {
+			if r.ID == req.ID {
+				i.sim.RunningBatch.Requests = append(
+					i.sim.RunningBatch.Requests[:idx],
+					i.sim.RunningBatch.Requests[idx+1:]...,
+				)
+				i.sim.KVCache.ReleaseKVBlocks(req)
+				// Release the LoRA adapter pin (#1466): a running request WAS pinned
+				// on batch entry, and this gateway eviction is a terminal path outside
+				// completion/timeout, so it must free the slot or the pin leaks and
+				// eventually stalls all cold loads on this instance (INV-L5).
+				i.sim.ReleaseAdapterPin(req)
+				req.State = sim.StateCompleted
+				if len(i.sim.RunningBatch.Requests) == 0 {
+					i.sim.RunningBatch = nil
+					i.sim.ScheduleStepIfIdle(i.sim.CurrentClock())
+				}
+				return true
+			}
+		}
+	}
+	return false
+}

@@ -1,0 +1,2475 @@
+package cluster
+
+import (
+	"fmt"
+	"math"
+	"math/rand"
+	"testing"
+
+	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/workload"
+)
+
+func TestParentRequest_NewParentRequest(t *testing.T) {
+	req := &sim.Request{
+		ID:          "req_0",
+		InputTokens: make([]sim.TokenID, 100),
+		ArrivalTime: 1000,
+	}
+	parent := NewParentRequest(req, 16) // blockSizeTokens=16
+
+	if parent.ID != "req_0" {
+		t.Errorf("parent ID = %q, want %q", parent.ID, "req_0")
+	}
+	if parent.PrefillSubReqID != "req_0_prefill" {
+		t.Errorf("prefill sub-req ID = %q, want %q", parent.PrefillSubReqID, "req_0_prefill")
+	}
+	if parent.DecodeSubReqID != "req_0_decode" {
+		t.Errorf("decode sub-req ID = %q, want %q", parent.DecodeSubReqID, "req_0_decode")
+	}
+	// ceil(100/16) = 7
+	if parent.NumKVBlocks != 7 {
+		t.Errorf("NumKVBlocks = %d, want %d", parent.NumKVBlocks, 7)
+	}
+	if parent.ArrivalTime != 1000 {
+		t.Errorf("ArrivalTime = %d, want 1000", parent.ArrivalTime)
+	}
+}
+
+func TestParentRequest_ZeroInputTokens(t *testing.T) {
+	req := &sim.Request{
+		ID:          "req_empty",
+		InputTokens: nil,
+	}
+	parent := NewParentRequest(req, 16)
+	if parent.NumKVBlocks != 0 {
+		t.Errorf("NumKVBlocks = %d, want 0 for empty input", parent.NumKVBlocks)
+	}
+}
+
+// --- Integration and invariant tests ---
+
+// newTestDisaggDeploymentConfigWithOverhead creates a 4-instance (2 prefill, 2 decode)
+// disaggregated DeploymentConfig using trained-physics with the given post-decode
+// overhead (µs). alpha[1] = overhead, so PostDecodeFixedOverhead() == overhead.
+// Used to test that detectDecodeCompletions stamps parent.CompletionTime correctly
+// when overhead > 0 (issue #846).
+func newTestDisaggDeploymentConfigWithOverhead(overhead float64) DeploymentConfig {
+	// Minimal trained-physics model: 2-layer, 4-head, 64-dim with positive HW numbers.
+	// beta[5] = 100 µs/layer gives finite step times; remaining betas zero.
+	// NumKVHeads=0 triggers MHA fallback (uses NumHeads), divisible by TP=1.
+	modelCfg := sim.ModelConfig{
+		NumLayers:       2,
+		NumHeads:        4,
+		HiddenDim:       64,
+		IntermediateDim: 128,
+		BytesPerParam:   2.0,
+	}
+	hwCfg := sim.HardwareCalib{TFlopsPeak: 1.0, BwPeakTBs: 0.001}
+	betas := []float64{0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0} // β₅ = 100 µs/layer
+	alphas := []float64{0.0, overhead, 0.0}                 // α₁ = overhead (PostDecodeFixedOverhead)
+	return DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs(betas, alphas),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(modelCfg, hwCfg, "test-model", "H100", 1, 1, false, "", "trained-physics", 0),
+		},
+		NumInstances:            4,
+		PrefillInstances:        2,
+		DecodeInstances:         2,
+		PDDecider:               "always",
+		RoutingPolicy:           "round-robin",
+		PDTransferBandwidthGBps: 25.0,
+		PDTransferBaseLatencyMs: 0.05,
+	}
+}
+
+func newTestDisaggDeploymentConfig(numInstances, prefill, decode int) DeploymentConfig {
+	// ModelConfig produces 512 KV bytes/token/GPU at TP=1:
+	// 2 layers × 2 (K+V) × 16 headDim × 4 numKVHeads × 2.0 BytesPerParam = 512
+	//
+	// Uses trained-physics backend (not roofline) so that step times are
+	// controlled by beta coefficients rather than FLOPs/bandwidth calculations.
+	// β₅ = 100 µs/layer gives predictable step durations for metric-projection
+	// and causality tests. Matches newTestDisaggDeploymentConfigWithOverhead pattern.
+	modelCfg := sim.ModelConfig{
+		NumLayers:       2,
+		NumHeads:        4,
+		HiddenDim:       64,
+		IntermediateDim: 128,
+		BytesPerParam:   2.0,
+	}
+	hwCfg := sim.HardwareCalib{TFlopsPeak: 1.0, BwPeakTBs: 0.001}
+	// 7 betas: β₅ = 100 µs/layer gives finite step times; 3 alphas for queueing/overhead.
+	betas := []float64{0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0}
+	alphas := []float64{100, 1, 100}
+	return DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs(betas, alphas),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(modelCfg, hwCfg, "test-model", "H100", 1, 1, false, "", "trained-physics", 0),
+		},
+		NumInstances:            numInstances,
+		PrefillInstances:        prefill,
+		DecodeInstances:         decode,
+		PDDecider:               "always",
+		RoutingPolicy:           "round-robin",
+		PDTransferBandwidthGBps: 25.0,
+		PDTransferBaseLatencyMs: 0.05,
+	}
+}
+
+func TestNewClusterSimulator_PDEnabled_InvalidModelConfig_Panics(t *testing.T) {
+	cfg := newTestDisaggDeploymentConfig(2, 1, 1)
+	// Replace the valid ModelConfig with a zero-value one to trigger the PD guard.
+	// PD mode requires valid ModelConfig for KV transfer size calculation.
+	cfg.ModelHardwareConfig = sim.NewModelHardwareConfig(sim.ModelConfig{}, testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0)
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for PD with zero ModelConfig, got none")
+		}
+	}()
+	NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+}
+
+// Verifies INV-PD-2 (pool exclusivity): a prefill sub-request routes only to a
+// prefill-role instance.
+func TestDisaggregation_PrefillRoutedToPrefillPool(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(3)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	// BC-PD-7: Prefill sub-requests must be routed to prefill instances
+	if len(cs.parentRequests) != 3 {
+		t.Fatalf("parentRequests count = %d, want 3", len(cs.parentRequests))
+	}
+	for _, parent := range cs.parentRequests {
+		role, ok := cs.poolMembership[string(parent.PrefillInstanceID)]
+		if !ok {
+			t.Errorf("prefill instance %q not in pool membership", parent.PrefillInstanceID)
+		}
+		if role != PoolRolePrefill {
+			t.Errorf("prefill sub-request for %s routed to %s (role=%v), want PoolRolePrefill",
+				parent.ID, parent.PrefillInstanceID, role)
+		}
+	}
+}
+
+// Verifies INV-PD-2 (pool exclusivity): a decode sub-request routes only to a
+// decode-role instance.
+func TestDisaggregation_DecodeRoutedToDecodePool(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(3)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	// BC-PD-7: Decode sub-requests must be routed to decode instances
+	for _, parent := range cs.parentRequests {
+		if parent.DecodeInstanceID == "" {
+			t.Errorf("decode instance not assigned for parent %s", parent.ID)
+			continue
+		}
+		role, ok := cs.poolMembership[string(parent.DecodeInstanceID)]
+		if !ok {
+			t.Errorf("decode instance %q not in pool membership", parent.DecodeInstanceID)
+		}
+		if role != PoolRoleDecode {
+			t.Errorf("decode sub-request for %s routed to %s (role=%v), want PoolRoleDecode",
+				parent.ID, parent.DecodeInstanceID, role)
+		}
+	}
+}
+
+// Verifies INV-PD-1 (KV completeness): a decode sub-request is never enqueued before
+// its KV transfer completes.
+func TestDisaggregation_RequestCompletesFullPath(t *testing.T) {
+	// BC-PD-5: Request completes through full disaggregated path
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(3)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	metrics := cs.AggregatedMetrics()
+	if metrics.TotalOutputTokens == 0 {
+		t.Error("TotalOutputTokens = 0, decode sub-requests did not generate output")
+	}
+
+	// BC-PD-9: Phase causality for each parent
+	for _, parent := range cs.parentRequests {
+		if parent.TransferCompleteTime == 0 {
+			t.Errorf("parent %s: TransferCompleteTime not set", parent.ID)
+		}
+		if parent.DecodeEnqueueTime < parent.TransferCompleteTime {
+			t.Errorf("parent %s: DecodeEnqueueTime (%d) < TransferCompleteTime (%d) — violates INV-PD-1",
+				parent.ID, parent.DecodeEnqueueTime, parent.TransferCompleteTime)
+		}
+	}
+}
+
+func TestDisaggregation_TransferConservation(t *testing.T) {
+	// BC-PD-8 / INV-PD-3: initiated_transfers == completed_transfers
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	if cs.transfersInitiated != cs.transfersCompleted {
+		t.Errorf("transfer conservation violated: initiated=%d, completed=%d",
+			cs.transfersInitiated, cs.transfersCompleted)
+	}
+	if cs.transfersInitiated != len(requests) {
+		t.Errorf("transfersInitiated = %d, want %d", cs.transfersInitiated, len(requests))
+	}
+}
+
+func TestDisaggregation_INV1Conservation(t *testing.T) {
+	// INV-1: CompletedRequests + StillQueued + StillRunning + DroppedUnservable + TimedOutRequests == N
+	// in disaggregated mode (must not double-count prefill + decode sub-requests)
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	metrics := cs.AggregatedMetrics()
+	if metrics.CompletedRequests != 5 {
+		t.Errorf("INV-1: CompletedRequests = %d, want 5 (possible double-counting of sub-requests)",
+			metrics.CompletedRequests)
+	}
+	assertClusterINV1Conservation(t, cs, 5, noRejections, "disaggregated mode")
+}
+
+func TestDisaggregation_INV1Conservation_BoundedHorizon(t *testing.T) {
+	// INV-1 at bounded horizon: requests with completed prefills but in-flight KV
+	// transfers must be accounted for (counted in StillRunning, not lost).
+	// Use a horizon long enough for all requests to arrive and enter PD pipeline,
+	// but verify that pdInFlight accounting prevents conservation gaps.
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.Horizon = 5000000 // 5 seconds — all requests arrive, most but maybe not all complete
+	requests := newTestRequests(10)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	// All 10 requests should have arrived within the horizon (last arrives at ~900000 μs).
+	// The pdInTransfer correction ensures requests mid-transfer are counted in StillRunning.
+	assertClusterINV1Conservation(t, cs, 10, noRejections, "bounded horizon")
+	// Verify pdInTransfer accounting is non-negative (no over-subtraction)
+	pdInTransfer := cs.pdPrefillCompletedCount - cs.pdDecodeCompletedCount - cs.droppedAtDecodeKV - len(cs.pendingDecodeCompletions)
+	if pdInTransfer < 0 {
+		t.Errorf("pdInTransfer = %d, must be >= 0 (prefillCompleted=%d, decodeCompleted=%d, droppedAtDecodeKV=%d, pendingDecode=%d)",
+			pdInTransfer, cs.pdPrefillCompletedCount, cs.pdDecodeCompletedCount, cs.droppedAtDecodeKV, len(cs.pendingDecodeCompletions))
+	}
+}
+
+func TestDisaggregation_DecodeOnlyBatchKVPressure(t *testing.T) {
+	// Verify that the decode-only batch path handles KV pressure correctly:
+	// when KV cache is nearly full, the decode-only path breaks (does not crash)
+	// and the request stays in the wait queue.
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.KVCacheConfig = sim.NewKVCacheConfig(50, 16, 0, 0, 0, 0) // small KV cache
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	// Under tight KV pressure, some requests may be dropped — conservation must hold
+	assertClusterINV1Conservation(t, cs, 5, noRejections, "KV pressure")
+}
+
+func newShortRequests(n int) []*sim.Request {
+	// Create requests with short input (20 tokens = 2 blocks at blockSize=16) and
+	// moderate output (10 tokens) to ensure decode phases overlap on the single
+	// decode instance when transfers from parallel prefill instances land concurrently.
+	// With trained-physics β₅=100 µs/layer, L=2: ~200 µs/step, 10 output tokens
+	// need ~2000 µs of decode. Requests arrive 100 µs apart so that prefills
+	// complete and transfers land while earlier decodes are still running.
+	requests := make([]*sim.Request, n)
+	for i := 0; i < n; i++ {
+		requests[i] = &sim.Request{
+			ID:           fmt.Sprintf("request_%d", i),
+			InputTokens:  make([]sim.TokenID, 20), // 2 blocks at blockSize=16
+			OutputTokens: make([]sim.TokenID, 10),
+			State:        sim.StateQueued,
+			ArrivalTime:  int64(i * 100), // 100μs apart
+		}
+	}
+	return requests
+}
+
+func TestDisaggregation_DroppedAtDecodeKV(t *testing.T) {
+	// Verify that droppedAtDecodeKV is triggered and counted in DroppedUnservable
+	// when decode instances have insufficient KV capacity for transferred input.
+	// Strategy: 1 decode instance with only 3 blocks (48 tokens). Each request needs
+	// 2 blocks (20 tokens). First request fills 2/3 blocks, second request tries to
+	// allocate 2 more but only 1 free → ReserveTransferredKV fails.
+	config := newTestDisaggDeploymentConfig(3, 2, 1)               // 2 prefill, 1 decode
+	config.KVCacheConfig = sim.NewKVCacheConfig(3, 16, 0, 0, 0, 0) // 3 blocks = 48 tokens
+
+	requests := newShortRequests(4)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	if cs.droppedAtDecodeKV == 0 {
+		t.Error("droppedAtDecodeKV = 0, expected > 0 with 1 decode instance and tight KV")
+	}
+
+	// INV-1 conservation must hold even when decode drops occur
+	assertClusterINV1Conservation(t, cs, 4, noRejections, "decode KV drops")
+}
+
+// TestDisaggregation_DroppedParent_NotInLatencyMaps verifies issue #1511 end to end:
+// a PD parent that reaches a terminal CompletionTime but emits NO token (decode-side
+// drop or decode-timeout-while-queued) must not appear in the reported latency
+// distributions (RequestTTFTs / RequestE2Es). It is represented only by the drop/
+// timeout counters. A served parent keeps its entries (BC-2). This is the integration
+// counterpart to TestPDParentMetrics_NoTokenExcludedFromLatency, driven through the
+// finalization path shared by blis run and blis replay (INV-13).
+func TestDisaggregation_DroppedParent_NotInLatencyMaps(t *testing.T) {
+	// Tight decode KV forces decode-side drops (same setup as
+	// TestDisaggregation_DroppedAtDecodeKV / the reservation-failure test).
+	config := newTestDisaggDeploymentConfig(3, 2, 1)
+	config.KVCacheConfig = sim.NewKVCacheConfig(3, 16, 0, 0, 0, 0)
+
+	requests := newShortRequests(4)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	if cs.droppedAtDecodeKV == 0 {
+		t.Fatal("droppedAtDecodeKV = 0, expected > 0 under tight decode KV")
+	}
+	m := cs.AggregatedMetrics()
+
+	var noTokenTerminal, servedTerminal int
+	for _, p := range cs.ParentRequests() {
+		if p.CompletionTime <= 0 || p.DecodeInstanceID == "" {
+			continue // not terminal (e.g. horizon-interrupted) — out of #1511 scope
+		}
+		servedFirstToken := p.DecodeSubReq != nil && len(p.DecodeSubReq.ITL) > 0
+		if servedFirstToken {
+			servedTerminal++
+			// BC-2: a served parent keeps its E2E entry (guards against over-exclusion).
+			if _, ok := m.RequestE2Es[p.ID]; !ok {
+				t.Errorf("served parent %s: missing E2E entry (fix over-excluded)", p.ID)
+			}
+			continue
+		}
+		// No-token terminal parent (#1511): absent from the latency distributions.
+		noTokenTerminal++
+		if _, ok := m.RequestTTFTs[p.ID]; ok {
+			t.Errorf("no-token parent %s present in RequestTTFTs (phantom TTFT, #1511)", p.ID)
+		}
+		if _, ok := m.RequestE2Es[p.ID]; ok {
+			t.Errorf("no-token parent %s present in RequestE2Es (phantom E2E, #1511)", p.ID)
+		}
+	}
+
+	// Guard against a vacuous pass: the tight-KV workload must actually produce a
+	// no-token terminal parent for the exclusion assertion to mean anything.
+	if noTokenTerminal == 0 {
+		t.Fatal("no no-token terminal parent found; drop scenario did not exercise the #1511 path")
+	}
+	// Symmetric guard: at least one served terminal parent must exist, else the BC-2
+	// over-exclusion check above (served parents keep their E2E) silently tests nothing.
+	if servedTerminal == 0 {
+		t.Fatal("no served terminal parent found; BC-2 over-exclusion check was untested")
+	}
+
+	// The dropped requests remain accounted for (not silently lost) and INV-1 holds.
+	if m.DroppedUnservable == 0 {
+		t.Error("DroppedUnservable = 0, expected the decode-side drops to be counted")
+	}
+	assertClusterINV1Conservation(t, cs, 4, noRejections, "no-token drop exclusion (#1511)")
+}
+
+// Verifies INV-PD-4 (phase causality) for every parent request: the chain
+// arrival -> prefill_enqueue -> prefill_complete -> transfer_start ->
+// transfer_complete -> decode_enqueue is non-decreasing. INV-PD-4's statement ends
+// with `<= completion`, which this test deliberately does NOT cover — see the note
+// on the chain below for why.
+func TestDisaggregation_PhaseCausality(t *testing.T) {
+	// BC-PD-9 / INV-PD-4: Full causal chain for every disaggregated request
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(10)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	for _, parent := range cs.parentRequests {
+		chain := []struct {
+			name  string
+			value int64
+		}{
+			{"ArrivalTime", parent.ArrivalTime},
+			{"PrefillEnqueueTime", parent.PrefillEnqueueTime},
+			{"PrefillCompleteTime", parent.PrefillCompleteTime},
+			{"TransferStartTime", parent.TransferStartTime},
+			{"TransferCompleteTime", parent.TransferCompleteTime},
+			{"DecodeEnqueueTime", parent.DecodeEnqueueTime},
+		}
+		// Note: CompletionTime is not included in the chain because it is set by
+		// detectDecodeCompletions using c.clock at detection time, which may differ
+		// from the actual decode completion instant. A dedicated CompletionTime test
+		// would need to use instance-level RequestCompletionTimes directly.
+
+		for i := 1; i < len(chain); i++ {
+			if chain[i].value < chain[i-1].value {
+				t.Errorf("parent %s: causality violated: %s (%d) < %s (%d)",
+					parent.ID, chain[i].name, chain[i].value, chain[i-1].name, chain[i-1].value)
+			}
+		}
+	}
+}
+
+// Verifies INV-PD-5 (pool stability): pool membership is fixed at construction and
+// is unchanged after Run().
+func TestDisaggregation_PoolStability(t *testing.T) {
+	// INV-PD-5: Pool membership unchanged after initialization
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	membershipBefore := cs.PoolMembership()
+
+	mustRun(t, cs)
+
+	membershipAfter := cs.PoolMembership()
+	if len(membershipBefore) != len(membershipAfter) {
+		t.Fatalf("pool membership size changed: before=%d, after=%d",
+			len(membershipBefore), len(membershipAfter))
+	}
+	for id, roleBefore := range membershipBefore {
+		roleAfter, ok := membershipAfter[id]
+		if !ok {
+			t.Errorf("instance %s missing from pool membership after simulation", id)
+		}
+		if roleBefore != roleAfter {
+			t.Errorf("instance %s: role changed from %v to %v", id, roleBefore, roleAfter)
+		}
+	}
+}
+
+func TestDisaggregation_Determinism(t *testing.T) {
+	// BC-PD-12 / INV-6: Same seed produces identical results
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+
+	run := func() *sim.Metrics {
+		requests := newTestRequests(10)
+		cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+		mustRun(t, cs)
+		return cs.AggregatedMetrics()
+	}
+
+	m1 := run()
+	m2 := run()
+
+	if m1.CompletedRequests != m2.CompletedRequests {
+		t.Errorf("non-deterministic CompletedRequests: %d vs %d", m1.CompletedRequests, m2.CompletedRequests)
+	}
+	if m1.TotalOutputTokens != m2.TotalOutputTokens {
+		t.Errorf("non-deterministic TotalOutputTokens: %d vs %d", m1.TotalOutputTokens, m2.TotalOutputTokens)
+	}
+	if m1.SimEndedTime != m2.SimEndedTime {
+		t.Errorf("non-deterministic SimEndedTime: %d vs %d", m1.SimEndedTime, m2.SimEndedTime)
+	}
+}
+
+func TestDisaggregation_BackwardCompatibility(t *testing.T) {
+	// BC-PD-13: When pools not configured, behavior is identical
+	config := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 1, 1, false, "", "roofline", 0),
+		},
+		NumInstances:  4,
+		RoutingPolicy: "round-robin",
+	}
+
+	requests := newTestRequests(10)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	// No parent requests when pools not configured
+	if len(cs.parentRequests) > 0 {
+		t.Errorf("parentRequests should be empty when pools not configured, got %d", len(cs.parentRequests))
+	}
+
+	metrics := cs.AggregatedMetrics()
+	if metrics.CompletedRequests == 0 {
+		t.Error("no requests completed in non-disaggregated mode")
+	}
+
+	// INV-1: Conservation
+	assertClusterINV1Conservation(t, cs, 10, noRejections, "non-disaggregated backward compat")
+}
+
+func TestDisaggregation_PerPoolScorerConfigs(t *testing.T) {
+	// BC-PD-15: per-pool scorer configs produce separate routing policy instances
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.RoutingPolicy = "weighted"
+	config.PrefillScorerConfigs = []sim.ScorerConfig{{Name: "queue-depth", Weight: 1.0}}
+	config.DecodeScorerConfigs = []sim.ScorerConfig{{Name: "kv-utilization", Weight: 1.0}}
+
+	requests := newTestRequests(3)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+
+	if cs.prefillRoutingPolicy == nil {
+		t.Error("prefillRoutingPolicy is nil when PrefillScorerConfigs specified")
+	}
+	if cs.decodeRoutingPolicy == nil {
+		t.Error("decodeRoutingPolicy is nil when DecodeScorerConfigs specified")
+	}
+
+	mustRun(t, cs)
+
+	if cs.AggregatedMetrics().TotalOutputTokens == 0 {
+		t.Error("no output tokens generated with per-pool scorer configs")
+	}
+}
+
+func TestReserveTransferredKV_Success(t *testing.T) {
+	cfg := sim.SimConfig{
+		Horizon:             1000000,
+		Seed:                42,
+		KVCacheConfig:       sim.NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+	}
+	inst := NewInstanceSimulator("decode_0", cfg)
+
+	req := &sim.Request{
+		ID:          "decode_sub_0",
+		InputTokens: make([]sim.TokenID, 100),
+		State:       sim.StateWaitingForRemoteKVs,
+	}
+
+	ok := inst.ReserveTransferredKV(req)
+	if !ok {
+		t.Fatal("ReserveTransferredKV returned false, want true")
+	}
+	if req.ProgressIndex != 100 {
+		t.Errorf("ProgressIndex = %d, want 100", req.ProgressIndex)
+	}
+	if inst.sim.KVCache.UsedBlocks() == 0 {
+		t.Error("UsedBlocks = 0 after ReserveTransferredKV, want > 0")
+	}
+}
+
+func TestReserveTransferredKV_InsufficientCapacity(t *testing.T) {
+	cfg := sim.SimConfig{
+		Horizon:             1000000,
+		Seed:                42,
+		KVCacheConfig:       sim.NewKVCacheConfig(2, 16, 0, 0, 0, 0), // Only 2 blocks
+		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+	}
+	inst := NewInstanceSimulator("decode_0", cfg)
+
+	req := &sim.Request{
+		ID:          "decode_sub_0",
+		InputTokens: make([]sim.TokenID, 100), // Needs 7 blocks but only 2 available
+		State:       sim.StateWaitingForRemoteKVs,
+	}
+
+	ok := inst.ReserveTransferredKV(req)
+	if ok {
+		t.Error("ReserveTransferredKV returned true with insufficient capacity, want false")
+	}
+}
+
+// TestPDDisagg_OneOutputToken_CompletesWith1Token is a regression test for two edge-case
+// bugs discovered during PD disaggregation development:
+//
+//  1. processCompletions used == instead of >= for the completion check. In PD
+//     mode, a 1-output-token decode sub-request enters with ProgressIndex ==
+//     inputLen; after one decode step ProgressIndex becomes inputLen+1, which
+//     missed the == threshold, triggered a second decode step, and called
+//     AllocateKVBlocks with an out-of-bounds index, producing a phantom token.
+//     Fixed by changing == to >= and adding a ProgressIndex < inputLen+outputLen
+//     bounds guard on the AllocateKVBlocks call.
+//
+//  2. FormBatch Phase 2 used a ProgressIndex >= inputLen heuristic to detect PD
+//     decode sub-requests. A zero-input non-PD request satisfied this vacuously
+//     (0 >= 0) and incorrectly took the decode-only fast-path. Fixed by
+//     replacing the heuristic with an explicit IsDecodeSubRequest flag set only
+//     by KVTransferCompletedEvent.
+func TestPDDisagg_OneOutputToken_CompletesWith1Token(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+
+	requests := []*sim.Request{
+		{
+			ID:           "req-1output",
+			ArrivalTime:  0,
+			InputTokens:  make([]sim.TokenID, 20),
+			OutputTokens: []sim.TokenID{42}, // exactly 1 output token
+			State:        sim.StateQueued,
+		},
+	}
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	if err := cs.Run(); err != nil {
+		t.Fatalf("ClusterSimulator.Run: %v", err)
+	}
+
+	metrics := cs.AggregatedMetrics()
+	// INV-1: all requests accounted for.
+	assertClusterINV1Conservation(t, cs, 1, noRejections, "1-output PD request")
+	// The request must produce exactly 1 output token — not 0 (hung) or 2+ (phantom decode step).
+	if metrics.TotalOutputTokens != 1 {
+		t.Errorf("TotalOutputTokens = %d, want 1 (off-by-one would produce 2)", metrics.TotalOutputTokens)
+	}
+}
+
+// --- PrefixThresholdDecider cluster integration tests ---
+
+// newTestPrefixThresholdConfig returns a DeploymentConfig with PDDecider = "prefix-threshold"
+// and the specified threshold, reusing the standard 4-instance (2 prefill, 2 decode) topology.
+func newTestPrefixThresholdConfig(threshold int) DeploymentConfig {
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	cfg.PDDecider = "prefix-threshold"
+	cfg.PDPrefixThreshold = threshold
+	return cfg
+}
+
+// TestPrefixThreshold_BelowThresholdNotDisaggregated verifies BC-PD-21 at the cluster level:
+// requests with non-cached token counts well below the threshold must not be disaggregated
+// (absent from parentRequests). Tests the full NewClusterSimulator → PrefixThresholdDecider
+// constructor path and the executeDisaggregatedRouting bifurcation.
+func TestPrefixThreshold_BelowThresholdNotDisaggregated(t *testing.T) {
+	const threshold = 200
+	config := newTestPrefixThresholdConfig(threshold)
+
+	// Requests with 20 unique tokens: nonCached = 20, 20 <= 200 → should NOT disaggregate.
+	requests := make([]*sim.Request, 3)
+	for i := range requests {
+		tokens := make([]sim.TokenID, 20)
+		for j := range tokens {
+			tokens[j] = sim.TokenID(j + i*1000 + 1) // unique across requests, no prefix cache hit
+		}
+		requests[i] = &sim.Request{
+			ID:           fmt.Sprintf("short_%d", i),
+			InputTokens:  tokens,
+			OutputTokens: make([]sim.TokenID, 5),
+			State:        sim.StateQueued,
+			ArrivalTime:  int64(i * 100000),
+		}
+	}
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	if len(cs.parentRequests) != 0 {
+		t.Errorf("parentRequests = %d, want 0: short requests (20 tokens <= %d threshold) should not be disaggregated",
+			len(cs.parentRequests), threshold)
+	}
+	// INV-1: below-threshold requests route through RoutingDecisionEvent; verify all complete.
+	assertClusterINV1Conservation(t, cs, len(requests), noRejections, "below-threshold")
+}
+
+// TestPrefixThreshold_AboveThresholdDisaggregated verifies BC-PD-21 at the cluster level:
+// requests with non-cached token counts above the threshold must be disaggregated
+// (present in parentRequests).
+func TestPrefixThreshold_AboveThresholdDisaggregated(t *testing.T) {
+	const threshold = 200
+	config := newTestPrefixThresholdConfig(threshold)
+
+	// Requests with 400 unique tokens: nonCached = 400, 400 > 200 → must disaggregate.
+	requests := make([]*sim.Request, 3)
+	for i := range requests {
+		tokens := make([]sim.TokenID, 400)
+		for j := range tokens {
+			tokens[j] = sim.TokenID(j + i*10000 + 1) // unique across requests, no prefix cache hit
+		}
+		requests[i] = &sim.Request{
+			ID:           fmt.Sprintf("long_%d", i),
+			InputTokens:  tokens,
+			OutputTokens: make([]sim.TokenID, 5),
+			State:        sim.StateQueued,
+			ArrivalTime:  int64(i * 500000),
+		}
+	}
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	if len(cs.parentRequests) != 3 {
+		t.Errorf("parentRequests = %d, want 3: long requests (400 tokens > %d threshold) should all be disaggregated",
+			len(cs.parentRequests), threshold)
+	}
+}
+
+// TestPrefixThreshold_PerPodCacheQuery verifies BC-1 at the cluster level
+// for GAP-3: req1 (disaggregated) populates the decode pod's real KV cache as
+// part of the disaggregated pipeline (prefill → KV transfer → decode lands on
+// the selected pod); req2 (non-disaggregated) verifies that
+// PrefixThresholdDecider consults the pre-selected decode pod's per-pod
+// cacheQueryFn in executeDisaggregatedRouting, reducing the non-cached token
+// count below the threshold.
+//
+// Routing setup: the shared test config defaults to round-robin, which would
+// make req2's landing pod a function of routing-call count parity — fragile
+// and not representative. This test overrides RoutingPolicy to "weighted"
+// with precise-prefix-cache:2 + queue-depth:1 so req2 is routed to the warm
+// pod by the same prefix-affinity mechanism BLIS uses in production
+// (precise-prefix-cache scorer queries cacheQueryFn and prefers warm pods).
+// That is the exact mechanism PrefixThresholdDecider then re-queries via
+// state.SelectedInstance — making the per-pod cache hit the real cause of
+// the decision, not a round-robin coincidence.
+func TestPrefixThreshold_PerPodCacheQuery(t *testing.T) {
+	const threshold = 300
+	const blockSize = 16
+	config := newTestPrefixThresholdConfig(threshold)
+	// Use prefix-affinity-dominant routing so req2 is routed to req1's decode pod
+	// by design (not round-robin coincidence). Mirrors the pattern in
+	// prefix_routing_test.go.
+	config.RoutingPolicy = "weighted"
+	config.RoutingScorerConfigs = []sim.ScorerConfig{
+		{Name: "precise-prefix-cache", Weight: 2.0},
+		{Name: "queue-depth", Weight: 1.0},
+	}
+
+	// req1: 400 tokens (25 complete blocks), no prior cache.
+	// nonCached = 400 > 300 → disaggregated; as req1 flows through the PD
+	// pipeline its KV cache blocks land on the selected decode pod.
+	prefix := make([]sim.TokenID, 400)
+	for i := range prefix {
+		prefix[i] = sim.TokenID(i + 1)
+	}
+	req1 := &sim.Request{
+		ID:           "req-warm",
+		InputTokens:  append([]sim.TokenID{}, prefix...),
+		OutputTokens: make([]sim.TokenID, 5),
+		State:        sim.StateQueued,
+		ArrivalTime:  0,
+	}
+
+	// req2: same 400-token prefix + 50 new tokens = 450 total.
+	// After req1 populates the decode-pod cache: nonCached = 450 - 25*16 = 450 - 400 = 50 <= 300 → NOT disaggregated.
+	// req2 arrives 2s after req1, well after req1's prefill + KV transfer + decode have populated
+	// the decode pod's KV cache. The `precise-prefix-cache` scorer configured above then routes
+	// req2 to the warm pod, so the PrefixThresholdDecider's cacheQueryFn lookup hits.
+	extended := make([]sim.TokenID, len(prefix)+50)
+	copy(extended, prefix)
+	for i := len(prefix); i < len(extended); i++ {
+		extended[i] = sim.TokenID(10000 + i)
+	}
+	req2 := &sim.Request{
+		ID:           "req-follow",
+		InputTokens:  extended,
+		OutputTokens: make([]sim.TokenID, 5),
+		State:        sim.StateQueued,
+		ArrivalTime:  2000000, // req1's PrefillRoutingEvent fires at t=0+routingLatency=0; req2 arrives at t=2,000,000;
+		// ordering is guaranteed by event timestamps alone (t=0 < t=2,000,000), not the gap magnitude
+	}
+	_ = blockSize // documents the block arithmetic above
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource([]*sim.Request{req1, req2}), nil)
+	mustRun(t, cs)
+
+	// req1 must be disaggregated (400 non-cached tokens > 300 threshold).
+	var req1Disaggregated bool
+	for _, pr := range cs.parentRequests {
+		if pr.ID == "req-warm" {
+			req1Disaggregated = true
+		}
+	}
+	if !req1Disaggregated {
+		t.Error("req-warm (400 uncached tokens > 300 threshold) must be disaggregated; " +
+			"check PrefixThresholdDecider constructor wiring in NewClusterSimulator")
+	}
+
+	// req2 must NOT be disaggregated: the prefix is cached on the decode pod after
+	// req1's disaggregated pipeline completed — the `precise-prefix-cache` scorer
+	// configured in this test routes req2 to the warm pod, and
+	// PrefixThresholdDecider's cacheQueryFn lookup sees the 25 cached blocks.
+	// Non-cached count: 450 - 400 = 50 <= 300 threshold → not disaggregated.
+	for _, pr := range cs.parentRequests {
+		if pr.ID == "req-follow" {
+			t.Error("req-follow (50 non-cached tokens <= 300 threshold after cache warming) must NOT be disaggregated; " +
+				"check per-pod cacheQueryFn wiring via state.SelectedInstance (sim/cluster/cluster.go)")
+		}
+	}
+}
+
+// --- Metric projection tests (INV-PD-6, Issue #821) ---
+
+// hasSubRequestSuffix returns true if key ends with "_prefill" or "_decode".
+func hasSubRequestSuffix(key string) bool {
+	return (len(key) >= 8 && key[len(key)-8:] == "_prefill") ||
+		(len(key) >= 7 && key[len(key)-7:] == "_decode")
+}
+
+// TestDisaggregation_MetricProjection_NoOp verifies that projectPDMetrics is a
+// no-op when disaggregation is not active (parentRequests is empty).
+// GIVEN a non-disaggregated cluster (all instances in the default pool)
+// WHEN  Run() completes
+// THEN  per-request maps contain the original request keys, unmodified by projection.
+func TestDisaggregation_MetricProjection_NoOp(t *testing.T) {
+	config := newTestDeploymentConfig(2) // standard cluster, no PD roles
+	requests := newTestRequests(3)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	if len(cs.parentRequests) != 0 {
+		t.Fatalf("expected no parentRequests in non-disaggregated cluster, got %d", len(cs.parentRequests))
+	}
+
+	m := cs.AggregatedMetrics()
+	// All injected request IDs should appear in RequestE2Es (no suffix mangling).
+	for _, req := range requests {
+		if _, ok := m.RequestE2Es[req.ID]; !ok {
+			// Some requests may not complete (e.g., horizon), but no key should have a suffix.
+			continue
+		}
+		if hasSubRequestSuffix(req.ID) {
+			t.Errorf("non-disaggregated cluster: original request key %q has a sub-request suffix", req.ID)
+		}
+	}
+	// None of the map keys should carry a sub-request suffix.
+	for mapName, keys := range map[string][]string{
+		"RequestE2Es":             mapKeys(m.RequestE2Es),
+		"RequestTTFTs":            mapKeys(m.RequestTTFTs),
+		"RequestITLs":             mapKeys(m.RequestITLs),
+		"RequestCompletionTimes":  mapKeys(m.RequestCompletionTimes),
+		"RequestSchedulingDelays": mapKeysInt64(m.RequestSchedulingDelays),
+		"Requests":                mapKeysRM(m.Requests),
+	} {
+		for _, key := range keys {
+			if hasSubRequestSuffix(key) {
+				t.Errorf("non-disaggregated cluster: %s contains sub-request key %q", mapName, key)
+			}
+		}
+	}
+}
+
+// TestDisaggregation_MetricProjection_NoSubRequestKeys verifies INV-PD-6:
+// after Run(), per-request metric maps contain only parent-level IDs.
+// GIVEN a PD disaggregation simulation with N requests
+// WHEN  all requests complete through the full disaggregated path
+// THEN  no per-request map entry has a "_prefill" or "_decode" suffix.
+func TestDisaggregation_MetricProjection_NoSubRequestKeys(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	maps := map[string][]string{
+		"RequestE2Es":             mapKeys(m.RequestE2Es),
+		"RequestTTFTs":            mapKeys(m.RequestTTFTs),
+		"RequestITLs":             mapKeys(m.RequestITLs),
+		"RequestCompletionTimes":  mapKeys(m.RequestCompletionTimes),
+		"RequestSchedulingDelays": mapKeysInt64(m.RequestSchedulingDelays),
+		"Requests":                mapKeysRM(m.Requests),
+	}
+
+	for mapName, keys := range maps {
+		for _, key := range keys {
+			if hasSubRequestSuffix(key) {
+				t.Errorf("INV-PD-6 violated: %s contains sub-request key %q", mapName, key)
+			}
+		}
+	}
+}
+
+// TestDisaggregation_MetricProjection_E2ECount verifies that the E2E
+// distribution has exactly N entries (not 2N sub-request entries).
+func TestDisaggregation_MetricProjection_E2ECount(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	if m.CompletedRequests != 5 {
+		t.Fatalf("CompletedRequests = %d, want 5", m.CompletedRequests)
+	}
+	if len(m.RequestE2Es) != m.CompletedRequests {
+		t.Errorf("len(RequestE2Es) = %d, want %d (CompletedRequests)", len(m.RequestE2Es), m.CompletedRequests)
+	}
+}
+
+// TestDisaggregation_MetricProjection_E2ECorrectness verifies the projected
+// parent E2E against INDEPENDENT laws rather than the production formula.
+//
+// The pre-#1513 version asserted E2E == parent.CompletionTime − ArrivalTime,
+// which was both the bug (parent.CompletionTime omits the decode step advance,
+// under-counting E2E below TTFT for short outputs) and a tautology (it re-derived
+// the reported value from the same source). This version asserts:
+//   - E2E ≥ TTFT (INV-5 causality); and
+//   - E2E == decodeSchedulingDelay + decodeOwnE2E, reconstructed from the decode
+//     sub-request's per-instance metrics (a different mechanism than the
+//     aggregated parent E2E), so the assertion is not circular.
+func TestDisaggregation_MetricProjection_E2ECorrectness(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	reconstructed := 0
+	for _, parent := range cs.parentRequests {
+		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
+			continue // skip incomplete/dropped
+		}
+		pid := parent.ID
+		e2e, ok := m.RequestE2Es[pid]
+		if !ok {
+			t.Errorf("parent %s: missing RequestE2Es entry", pid)
+			continue
+		}
+
+		// Independent reconstruction from decode sub-request per-instance metrics.
+		decodeOwnE2E, decodeDelay, hasDecode := pdDecodeOwnE2E(cs, parent.DecodeSubReqID)
+		if hasDecode {
+			want := float64(decodeDelay) + decodeOwnE2E
+			if math.Abs(e2e-want) > 1e-9 {
+				t.Errorf("parent %s: E2E = %.0f, want %.0f (decodeSchedulingDelay %d + decodeOwnE2E %.0f)",
+					pid, e2e, want, decodeDelay, decodeOwnE2E)
+			}
+			reconstructed++
+		}
+
+		// INV-5: E2E must not fall below TTFT.
+		ttft, hasTTFT := m.RequestTTFTs[pid]
+		if hasTTFT && e2e < ttft {
+			t.Errorf("parent %s: E2E (%.0f) < TTFT (%.0f), INV-5 causality violated",
+				pid, e2e, ttft)
+		}
+	}
+	// Guard against a vacuous pass: if the decode sub-request E2E were never recorded
+	// (e.g. a data-flow bug), the reconstruction assertion would silently skip for
+	// every parent. This workload's parents all complete via a normal decode path, so
+	// at least one must have been reconstructed.
+	if reconstructed == 0 {
+		t.Fatal("no parent E2E was reconstructed from decode sub-request metrics — data flow drifted or projection changed")
+	}
+}
+
+// TestDisaggregation_TTFT_IncludesTransferAndDecode verifies BC-1/BC-3/BC-4 (issue #1510):
+// In PD disaggregation, user-visible TTFT is the arrival → first-token-emitted-by-decode
+// span, composed as decodeSchedulingDelay + firstDecodeStep and containing exactly ONE
+// OutputTokenProcessingTime (OTPT). This replaces the pre-#1510 formula
+// (prefillTTFT + transferDuration + firstDecodeStep), which double-counted OTPT and
+// omitted the decode-queue wait.
+//
+// Test independence: the assertions never recompute the production formula (the pre-#1510
+// test did, making it a tautology). Instead they use two orthogonal guards —
+//
+//	(1) a residual reconstructed from ParentRequest phase timestamps
+//	    (DecodeEnqueueTime − ArrivalTime), recorded by a different mechanism than the
+//	    RequestSchedulingDelays map the fix reads; and
+//	(2) a differential comparison against the old buggy formula.
+func TestDisaggregation_TTFT_IncludesTransferAndDecode(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	// OTPT (α₂) is the per-output-token processing overhead; the old formula carried a
+	// second, phantom copy. Require it positive so the low-load "reported < old"
+	// differential below is non-trivially caused by removing that phantom OTPT.
+	if otpt := config.AlphaCoeffs[2]; otpt <= 0 {
+		t.Fatalf("test precondition: OTPT (α₂) must be positive to distinguish the two-OTPT bug, got %.1f", otpt)
+	}
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+
+	// Collect prefill-only TTFTs from per-instance metrics (before projection) so the
+	// differential guard can reconstruct the OLD buggy formula independently.
+	prefillTTFTs := make(map[string]float64)
+	for _, inst := range cs.PerInstanceMetricsByID() {
+		for id, ttft := range inst.RequestTTFTs {
+			prefillTTFTs[id] = ttft
+		}
+	}
+
+	verified := 0
+	for _, parent := range cs.ParentRequests() {
+		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
+			continue
+		}
+		pid := parent.ID
+
+		ttft, hasTTFT := m.RequestTTFTs[pid]
+		if !hasTTFT {
+			t.Errorf("parent %s: missing RequestTTFTs entry", pid)
+			continue
+		}
+		if parent.DecodeSubReq == nil || len(parent.DecodeSubReq.ITL) == 0 {
+			t.Errorf("parent %s: DecodeSubReq nil or empty ITL", pid)
+			continue
+		}
+		firstDecodeStep := float64(parent.DecodeSubReq.ITL[0])
+
+		// --- Guard 1: timestamp-decomposition residual (causality bound) ---
+		// The reported TTFT should decompose as:
+		//   (DecodeEnqueueTime − ArrivalTime)  [prefill queue + prefill step + transfer]
+		//   + decode_queue_wait                [schedule − enqueue: the previously-MISSING term]
+		//   + firstDecodeStep                  [carries exactly ONE OTPT]
+		// So residual := reported − (DecodeEnqueueTime − ArrivalTime) − firstDecodeStep
+		// equals the decode-queue wait, which must be >= 0 (causality: decode cannot be
+		// scheduled before it is enqueued). DecodeEnqueueTime/ArrivalTime are ParentRequest
+		// phase timestamps recorded independently of the RequestSchedulingDelays map the fix
+		// reads. NOTE: this is a one-sided CAUSALITY bound, not by itself a proof of the
+		// exact composition — at low load the OLD (buggy) formula also yields a non-negative
+		// residual (= one OTPT). The regression protection comes from Guard 2 below (the
+		// differential vs the old formula); the two together pin the reported value.
+		enqueueToArrival := float64(parent.DecodeEnqueueTime - parent.ArrivalTime)
+		if enqueueToArrival <= 0 {
+			t.Errorf("BC-1 precondition: parent %s: DecodeEnqueueTime−ArrivalTime=%.0f, expected positive (prefill+transfer span)",
+				pid, enqueueToArrival)
+		}
+		residual := ttft - enqueueToArrival - firstDecodeStep
+		if residual < -1e-9 {
+			t.Errorf("BC-1: parent %s: residual decode-queue wait = %.1f < 0 (reported TTFT=%.1f, enqueue−arrival=%.0f, firstDecodeStep=%.0f) — causality violated",
+				pid, residual, ttft, enqueueToArrival, firstDecodeStep)
+		}
+
+		// --- Guard 2: differential vs the OLD buggy formula (regression guard) ---
+		// old = prefillTTFT + transferDuration + firstDecodeStep. The old formula mixed a
+		// prefill-INSTANCE-local prefillTTFT (which includes a second, phantom OTPT) with
+		// cluster-clock transfer/decode terms. The fix uses a single cluster-clock span
+		// (decodeDelay) + one instance-local step, so it is not a simple ±OTPT shift of the
+		// old value — the two live in different clock domains. What holds robustly is the
+		// DIRECTION the issue states: at low load (decode_queue_wait ≈ 0) the old formula
+		// OVER-states TTFT, so reported < old. This light workload (~100µs inter-arrival,
+		// short decodes) keeps the decode pool idle between requests, so every parent has
+		// ~zero queue wait and reported < old. This deterministically catches any regression
+		// to the old formula (which would make reported == old). The exact-composition proof
+		// is Guard 1's residual; this is the anti-regression companion.
+		origPrefillTTFT, hasPrefill := prefillTTFTs[parent.PrefillSubReqID]
+		if !hasPrefill {
+			t.Errorf("parent %s: no prefill TTFT for %s in per-instance metrics", pid, parent.PrefillSubReqID)
+			continue
+		}
+		transferDuration := float64(parent.TransferCompleteTime - parent.TransferStartTime)
+		oldFormula := origPrefillTTFT + transferDuration + firstDecodeStep
+		if ttft >= oldFormula {
+			t.Errorf("defect-1: parent %s: reported TTFT (%.1f) >= old-formula value (%.1f); at low load the fix must drop the phantom OTPT so reported < old",
+				pid, ttft, oldFormula)
+		}
+
+		// BC-4: TTFT <= E2E (causality). Missing E2E for a completed parent is itself a violation.
+		e2e, hasE2E := m.RequestE2Es[pid]
+		if !hasE2E {
+			t.Errorf("BC-4: parent %s: E2E missing from RequestE2Es for completed parent", pid)
+		} else if ttft > e2e {
+			t.Errorf("BC-4: parent %s: TTFT (%.1f) > E2E (%.1f), causality violated",
+				pid, ttft, e2e)
+		}
+		if ttft <= 0 {
+			t.Errorf("BC-4: parent %s: TTFT (%.1f) must be positive", pid, ttft)
+		}
+
+		verified++
+	}
+	if verified == 0 {
+		t.Fatal("no completed PD parents found to verify")
+	}
+
+	// BC-3: the aggregate TTFTSum must stay consistent with the per-request RequestTTFTs
+	// after projection — the full-pipeline law that reported mean TTFT (TTFTSum/n, as
+	// surfaced in MetricsOutput) equals the mean of the projected per-request values.
+	// Tolerance is 1.0 (1 µs) rather than 1e-9 because TTFTSum is int64 (truncated per
+	// accumulation) while manualSum accumulates float64 values; rounding is expected.
+	var manualSum float64
+	for _, k := range sortedKeys(m.RequestTTFTs) {
+		manualSum += m.RequestTTFTs[k]
+	}
+	if math.Abs(float64(m.TTFTSum)-manualSum) > 1.0 {
+		t.Errorf("BC-3: TTFTSum (%d) != sum(RequestTTFTs) (%.1f)", m.TTFTSum, manualSum)
+	}
+	// Mean law, stated explicitly: sum/n must match TTFTSum/n within the same rounding.
+	if n := len(m.RequestTTFTs); n > 0 {
+		wantMean := manualSum / float64(n)
+		gotMean := float64(m.TTFTSum) / float64(n)
+		if math.Abs(gotMean-wantMean) > 1.0 {
+			t.Errorf("BC-3: mean TTFT from TTFTSum (%.3f) != mean(RequestTTFTs) (%.3f)", gotMean, wantMean)
+		}
+	}
+}
+
+// TestDisaggregation_TTFT_IncludesDecodeQueueWait verifies BC-2 (issue #1510, defect 2):
+// under load, the decode sub-request waits in the decode instance's queue before its
+// first step, and that wait MUST appear in the reported TTFT. The pre-#1510 formula
+// (prefillTTFT + transferDuration + firstDecodeStep) omitted it entirely, so reported
+// TTFT was smaller than reality exactly under load.
+//
+// The scenario is pinned to deterministically produce a positive decode-queue wait:
+// a single decode instance with maxNumSeqs=1 (serialized decode) fed by several
+// short requests whose decodes overlap. It never relies on t.Skip.
+func TestDisaggregation_TTFT_IncludesDecodeQueueWait(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(3, 2, 1) // 2 prefill, 1 decode
+	// maxNumSeqs=1: the single decode instance runs one sub-request at a time, so
+	// sub-requests transferred while an earlier decode is still running must queue.
+	config.BatchConfig = sim.NewBatchConfig(1, 2048, 0)
+	otpt := float64(config.AlphaCoeffs[2]) // OTPT (α₂); the differential threshold below
+	requests := newShortRequests(6)        // ~2000µs decode each, arriving 100µs apart → overlap
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+
+	prefillTTFTs := make(map[string]float64)
+	for _, inst := range cs.PerInstanceMetricsByID() {
+		for id, ttft := range inst.RequestTTFTs {
+			prefillTTFTs[id] = ttft
+		}
+	}
+
+	withQueueWait := 0
+	for _, parent := range cs.ParentRequests() {
+		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
+			continue
+		}
+		pid := parent.ID
+		ttft, hasTTFT := m.RequestTTFTs[pid]
+		if !hasTTFT || parent.DecodeSubReq == nil || len(parent.DecodeSubReq.ITL) == 0 {
+			continue
+		}
+		firstDecodeStep := float64(parent.DecodeSubReq.ITL[0])
+
+		// Residual = reported − (DecodeEnqueueTime − ArrivalTime) − firstDecodeStep
+		//          = decode_queue_wait (schedule − enqueue). Recorded via ParentRequest
+		// phase timestamps, orthogonal to the RequestSchedulingDelays map the fix reads.
+		enqueueToArrival := float64(parent.DecodeEnqueueTime - parent.ArrivalTime)
+		queueWait := ttft - enqueueToArrival - firstDecodeStep
+
+		// Filter to parents whose decode-queue wait exceeds one OTPT. This threshold is
+		// aligned with the differential assertion below: old − reported = OTPT − queueWait,
+		// so reported > old holds iff queueWait > OTPT. In the serialized scenario
+		// (~2000µs decode steps ≫ OTPT=100µs) the very first queued parent already clears
+		// this, so the filter does not weaken coverage — it just makes the two assertions
+		// mutually consistent and robust to coefficient tweaks.
+		if queueWait <= otpt {
+			continue // not queued, or queued less than one OTPT; look for a clearly-loaded parent
+		}
+		withQueueWait++
+
+		// Direct proof defect 2 is fixed: the decode-queue wait is inside reported TTFT
+		// (residual > 0, in fact > OTPT here).
+		if queueWait <= 0 {
+			t.Errorf("BC-2: parent %s: decode-queue wait residual = %.1f, want >0", pid, queueWait)
+		}
+
+		// Differential vs old formula: old − reported = OTPT − decode_queue_wait. With the
+		// wait > OTPT, reported > old: the fix INCREASED TTFT under load, adding the
+		// previously-missing wait (and the equality old − reported == OTPT − queueWait is
+		// checked exactly below, tying both defects together).
+		origPrefillTTFT, hasPrefill := prefillTTFTs[parent.PrefillSubReqID]
+		if !hasPrefill {
+			t.Errorf("parent %s: no prefill TTFT for %s in per-instance metrics", pid, parent.PrefillSubReqID)
+			continue
+		}
+		transferDuration := float64(parent.TransferCompleteTime - parent.TransferStartTime)
+		oldFormula := origPrefillTTFT + transferDuration + firstDecodeStep
+		if ttft <= oldFormula {
+			t.Errorf("BC-2: parent %s: reported TTFT (%.1f) <= old-formula value (%.1f); the decode-queue wait (%.1f) must make it larger under load",
+				pid, ttft, oldFormula, queueWait)
+		}
+
+		// Causality still holds under load.
+		if e2e, hasE2E := m.RequestE2Es[pid]; hasE2E && ttft > e2e {
+			t.Errorf("BC-2: parent %s: TTFT (%.1f) > E2E (%.1f), causality violated", pid, ttft, e2e)
+		}
+	}
+
+	if withQueueWait == 0 {
+		t.Fatal("BC-2: no parent exhibited a decode-queue wait exceeding one OTPT; the loaded " +
+			"scenario (1 decode instance, maxNumSeqs=1, 6 short overlapping requests) is " +
+			"engineered to force queueing ≫ OTPT — its absence is a test-premise failure, not a pass")
+	}
+}
+
+// TestDisaggregation_TTFT_NoSilentDrops verifies R1: all completed PD parents
+// have a TTFT entry after projection, regardless of which branch fired.
+func TestDisaggregation_TTFT_NoSilentDrops(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(3)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	for _, parent := range cs.ParentRequests() {
+		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
+			continue
+		}
+		if _, ok := m.RequestTTFTs[parent.ID]; !ok {
+			t.Errorf("parent %s: missing TTFT entry after projection (R1: no silent data loss)", parent.ID)
+		}
+	}
+}
+
+// TestDisaggregation_TTFT_ProjectionBranches unit-tests the three outcome branches of
+// the TTFT block in projectPDMetrics (issue #1510). It drives projectPDMetrics directly
+// on stub ParentRequests so each branch's trigger is isolated:
+//   - PRIMARY: prefill TTFT present, decode scheduling delay present, non-empty decode ITL
+//     ⇒ TTFT = decodeDelay + ITL[0], and TTFTSum tracks the delta vs the prefill baseline.
+//   - FALLBACK (prefill-only): prefill TTFT present but decode data unavailable
+//     (missing decode scheduling delay, nil DecodeSubReq, or empty ITL) ⇒ TTFT = prefillTTFT.
+//   - BRANCH C (no entry): completed parent with no prefill TTFT key ⇒ no TTFT entry.
+//
+// Post-#1510 the primary-branch guard is hasPrefillTTFT && hasDecodeDelay &&
+// DecodeSubReq!=nil && len(ITL)>0 — it no longer inspects TransferStartTime/
+// TransferCompleteTime (the formula uses the decode scheduling delay, not transfer
+// timestamps). The fallback cases below therefore trigger on the decode-side inputs.
+func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
+	const prefillTTFT = 2500.0
+	origReq := &sim.Request{ID: "orig", ArrivalTime: 0}
+
+	tests := []struct {
+		name           string
+		parent         *ParentRequest
+		skipPrefill    bool    // omit prefill TTFT key → Branch C
+		setDecodeDelay bool    // set RequestSchedulingDelays[dec]
+		decodeDelay    int64   // value for the decode scheduling delay
+		wantEntry      bool    // whether a parent-keyed TTFT entry is expected
+		wantTTFT       float64 // expected projected TTFT (when wantEntry)
+		// wantSum is the expected TTFTSum after projection (pre-projection baseline is 0
+		// in these stubs). It is stated explicitly per case rather than derived: the
+		// primary branch applies +（newTTFT − prefillTTFT); a served-token fallback (incl.
+		// the negative-TTFT guard) leaves TTFTSum untouched; and a no-token terminal parent
+		// rolls the deleted prefill TTFT out, applying −prefillTTFT (issue #1511).
+		wantSum int64
+	}{
+		{
+			// PRIMARY: full decode data present ⇒ TTFT = decodeDelay + ITL[0].
+			name: "primary: decode delay + ITL[0]",
+			parent: &ParentRequest{
+				ID: "p0", PrefillSubReqID: "p0_prefill", DecodeSubReqID: "p0_decode",
+				OriginalRequest: origReq,
+				ArrivalTime:     0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				TransferStartTime: 100, TransferCompleteTime: 200,
+				DecodeSubReq: &sim.Request{ITL: []int64{300}},
+			},
+			setDecodeDelay: true, decodeDelay: 4000,
+			wantEntry: true, wantTTFT: 4000 + 300, // = 4300
+			wantSum: 4300 - 2500, // primary branch: newTTFT − prefillTTFT = 1800
+		},
+		{
+			// FALLBACK: decode scheduling delay never recorded ⇒ prefill-only.
+			// (Pre-#1510 this case was labeled "TransferCompleteTime=0"; that field is
+			// no longer consulted — the true trigger is the missing decode delay.)
+			name: "fallback: missing decode scheduling delay",
+			parent: &ParentRequest{
+				ID: "p1", PrefillSubReqID: "p1_prefill", DecodeSubReqID: "p1_decode",
+				OriginalRequest: origReq,
+				ArrivalTime:     0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				TransferStartTime: 100, TransferCompleteTime: 200,
+				DecodeSubReq: &sim.Request{ITL: []int64{100}},
+			},
+			setDecodeDelay: false,
+			wantEntry:      true, wantTTFT: prefillTTFT,
+		},
+		{
+			// NO-TOKEN: empty decode ITL (timeout-while-queued shape) ⇒ NO entry (#1511).
+			// The decode sub-request is non-nil but never ran a step, so it emitted no
+			// token. The deleted prefill TTFT is rolled out of TTFTSum (wantSum is the
+			// −prefillTTFT rollback delta off this stub's 0 baseline).
+			name: "no-token: empty DecodeSubReq.ITL ⇒ no entry",
+			parent: &ParentRequest{
+				ID: "p2", PrefillSubReqID: "p2_prefill", DecodeSubReqID: "p2_decode",
+				OriginalRequest: origReq,
+				ArrivalTime:     0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				TransferStartTime: 100, TransferCompleteTime: 200,
+				DecodeSubReq: &sim.Request{ITL: nil},
+			},
+			setDecodeDelay: true, decodeDelay: 4000,
+			wantEntry: false, wantSum: -int64(prefillTTFT),
+		},
+		{
+			// NO-TOKEN: nil DecodeSubReq (decode-side drop) ⇒ NO entry (#1511). The deleted
+			// prefill TTFT is rolled out of TTFTSum (−prefillTTFT off this stub's 0 baseline).
+			name: "no-token: nil DecodeSubReq ⇒ no entry",
+			parent: &ParentRequest{
+				ID: "p3", PrefillSubReqID: "p3_prefill", DecodeSubReqID: "p3_decode",
+				OriginalRequest: origReq,
+				ArrivalTime:     0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				TransferStartTime: 100, TransferCompleteTime: 200,
+				DecodeSubReq: nil,
+			},
+			setDecodeDelay: true, decodeDelay: 4000,
+			wantEntry: false, wantSum: -int64(prefillTTFT),
+		},
+		{
+			// BRANCH C: no prefill TTFT key ⇒ no entry (even with full decode data).
+			name: "branch C: no prefill TTFT key",
+			parent: &ParentRequest{
+				ID: "p4", PrefillSubReqID: "p4_prefill", DecodeSubReqID: "p4_decode",
+				OriginalRequest: origReq,
+				ArrivalTime:     0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				TransferStartTime: 100, TransferCompleteTime: 200,
+				DecodeSubReq: &sim.Request{ITL: []int64{100}},
+			},
+			skipPrefill:    true,
+			setDecodeDelay: true, decodeDelay: 4000,
+			wantEntry: false,
+		},
+		{
+			// NEGATIVE-TTFT DEFENSIVE GUARD: a negative decodeDelay (only reachable via a
+			// hypothetical shared-clock regression) makes newTTFT < 0. The guard must fall
+			// back to prefillTTFT with TTFTSum untouched (delta 0), never emit a negative
+			// headline metric. This exercises the otherwise-unreachable defensive branch.
+			name: "negative guard: negative decodeDelay ⇒ prefill fallback",
+			parent: &ParentRequest{
+				ID: "p5", PrefillSubReqID: "p5_prefill", DecodeSubReqID: "p5_decode",
+				OriginalRequest: origReq,
+				ArrivalTime:     0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				TransferStartTime: 100, TransferCompleteTime: 200,
+				DecodeSubReq: &sim.Request{ITL: []int64{100}},
+			},
+			setDecodeDelay: true, decodeDelay: -5000, // newTTFT = -5000 + 100 = -4900 < 0
+			wantEntry: true, wantTTFT: prefillTTFT,
+			wantSum: 0, // negative guard falls back to prefillTTFT WITHOUT the delta: TTFTSum stays 0
+		},
+		{
+			// TIMED-OUT WITH PARTIAL ITL: a decode sub-request that emitted a first token
+			// and then timed out mid-generation still carries a scheduling delay and a
+			// non-empty ITL, so it takes the PRIMARY branch and reports a real TTFT. This is
+			// intentional and correct — the user did receive that first token, so its
+			// arrival→first-token span is a genuine measurement. Pinned here so the behavior
+			// (which the guard makes implicit) cannot silently regress. Modeled with a
+			// State=StateTimedOut decode sub-request; projectPDMetrics does not inspect State,
+			// exactly as intended.
+			name: "timed-out with partial ITL ⇒ primary branch (real TTFT)",
+			parent: &ParentRequest{
+				ID: "p6", PrefillSubReqID: "p6_prefill", DecodeSubReqID: "p6_decode",
+				OriginalRequest: origReq,
+				ArrivalTime:     0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				TransferStartTime: 100, TransferCompleteTime: 200,
+				DecodeSubReq: &sim.Request{State: sim.StateTimedOut, ITL: []int64{300}},
+			},
+			setDecodeDelay: true, decodeDelay: 4000,
+			wantEntry: true, wantTTFT: 4000 + 300, // = 4300, same as a normal primary parent
+			wantSum: 4300 - 2500, // primary branch delta = 1800
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := sim.NewMetrics()
+			if !tc.skipPrefill {
+				m.RequestTTFTs[tc.parent.PrefillSubReqID] = prefillTTFT
+			}
+			m.RequestTTFTs[tc.parent.DecodeSubReqID] = 999.0 // must be deleted (INV-PD-6)
+			if tc.setDecodeDelay {
+				m.RequestSchedulingDelays[tc.parent.DecodeSubReqID] = tc.decodeDelay
+			}
+
+			cs := &ClusterSimulator{
+				aggregatedMetrics: m,
+				parentRequests:    map[string]*ParentRequest{tc.parent.ID: tc.parent},
+			}
+			cs.projectPDMetrics()
+
+			got, ok := m.RequestTTFTs[tc.parent.ID]
+			if tc.wantEntry {
+				if !ok {
+					t.Fatalf("parent %s: TTFT entry missing after projection (R1)", tc.parent.ID)
+				}
+				if math.Abs(got-tc.wantTTFT) > 1e-9 {
+					t.Errorf("parent %s: TTFT = %.1f, want %.1f", tc.parent.ID, got, tc.wantTTFT)
+				}
+				// TTFTSum after projection: pre-projection baseline is 0 in these stubs.
+				// wantSum is stated explicitly per case (delta applied only when the primary
+				// branch takes the newTTFT path; every fallback — incl. the negative-TTFT
+				// guard — leaves TTFTSum at 0), so it models production exactly rather than
+				// re-deriving it from the input presence.
+				if m.TTFTSum != tc.wantSum {
+					t.Errorf("parent %s: TTFTSum = %d, want %d", tc.parent.ID, m.TTFTSum, tc.wantSum)
+				}
+			} else {
+				if ok {
+					t.Errorf("parent %s: unexpected TTFT entry (no entry expected: no prefill key, or no-token terminal parent #1511)", tc.parent.ID)
+				}
+				if m.TTFTSum != tc.wantSum {
+					t.Errorf("parent %s: TTFTSum = %d, want %d", tc.parent.ID, m.TTFTSum, tc.wantSum)
+				}
+			}
+
+			// Sub-request keys must be deleted (INV-PD-6).
+			if _, exists := m.RequestTTFTs[tc.parent.PrefillSubReqID]; exists {
+				t.Errorf("INV-PD-6: prefill sub-request key %s still present", tc.parent.PrefillSubReqID)
+			}
+			if _, exists := m.RequestTTFTs[tc.parent.DecodeSubReqID]; exists {
+				t.Errorf("INV-PD-6: decode sub-request key %s still present", tc.parent.DecodeSubReqID)
+			}
+		})
+	}
+}
+
+// TestDisaggregation_MetricProjection_SchedulingDelay verifies that the
+// scheduling delay is the prefill sub-request delay (not inflated by decode pipeline).
+func TestDisaggregation_MetricProjection_SchedulingDelay(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	for _, parent := range cs.parentRequests {
+		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
+			continue
+		}
+		pid := parent.ID
+		delay, ok := m.RequestSchedulingDelays[pid]
+		if !ok {
+			t.Errorf("parent %s: missing RequestSchedulingDelays entry", pid)
+			continue
+		}
+		// Scheduling delay must be less than E2E (it's just the queuing portion).
+		e2e := m.RequestE2Es[pid]
+		if float64(delay) >= e2e {
+			t.Errorf("parent %s: scheduling delay (%d) >= E2E (%.0f), delay should be queuing time only",
+				pid, delay, e2e)
+		}
+	}
+}
+
+// TestDisaggregation_MetricProjection_CompletionTimes verifies that the projected
+// completion-time METRIC is consistent with the projected E2E, satisfying the
+// non-PD identity completion_metric == ArrivalTime + E2E.
+//
+// The pre-#1513 version asserted RequestCompletionTimes[pid] ==
+// parent.CompletionTime, which under-counted for the same reason as the E2E bug
+// (parent.CompletionTime is stamped on the cluster clock at the completion-
+// detection tick and omits the decode step advance). The metric is now derived
+// from the fixed E2E; the lifecycle field parent.CompletionTime is unchanged and
+// is intentionally NOT the reference here.
+func TestDisaggregation_MetricProjection_CompletionTimes(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	for _, parent := range cs.parentRequests {
+		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
+			continue
+		}
+		pid := parent.ID
+		ct, ok := m.RequestCompletionTimes[pid]
+		if !ok {
+			t.Errorf("parent %s: missing RequestCompletionTimes entry", pid)
+			continue
+		}
+		e2e := m.RequestE2Es[pid]
+		expected := float64(parent.ArrivalTime) + e2e
+		if math.Abs(ct-expected) > 1e-9 {
+			t.Errorf("parent %s: RequestCompletionTimes = %.0f, want %.0f (ArrivalTime %d + E2E %.0f)",
+				pid, ct, expected, parent.ArrivalTime, e2e)
+		}
+	}
+}
+
+// TestDisaggregation_MetricProjection_RequestsMap verifies that the Requests
+// map contains parent IDs (not sub-request IDs) after projection.
+func TestDisaggregation_MetricProjection_RequestsMap(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	for _, parent := range cs.parentRequests {
+		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
+			continue
+		}
+		pid := parent.ID
+		rm, ok := m.Requests[pid]
+		if !ok {
+			t.Errorf("parent %s: missing Requests entry", pid)
+			continue
+		}
+		if rm.ID != pid {
+			t.Errorf("parent %s: Requests[%s].ID = %q, want %q", pid, pid, rm.ID, pid)
+		}
+		wantHandledBy := string(parent.DecodeInstanceID)
+		if rm.HandledBy != wantHandledBy {
+			t.Errorf("parent %s: Requests[%s].HandledBy = %q, want decode instance %q",
+				pid, pid, rm.HandledBy, wantHandledBy)
+		}
+	}
+}
+
+// TestDisaggregation_MetricProjection_DroppedParent_NoSubRequestKeys verifies
+// INV-PD-6 for the dropped-parent path: when decode KV allocation fails,
+// no sub-request key must remain in any per-request metric map.
+// GIVEN a cluster with tight decode KV causing some parents to be dropped
+// WHEN  Run() completes
+// THEN  no map entry has a "_prefill" or "_decode" suffix (dropped or completed).
+func TestDisaggregation_MetricProjection_DroppedParent_NoSubRequestKeys(t *testing.T) {
+	// 1 decode instance with 3 blocks (48 tokens); each short request needs 2 blocks.
+	// First request fills 2/3, second request tries 2 more with only 1 free → dropped.
+	config := newTestDisaggDeploymentConfig(3, 2, 1)
+	config.KVCacheConfig = sim.NewKVCacheConfig(3, 16, 0, 0, 0, 0)
+
+	requests := newShortRequests(4)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	if cs.droppedAtDecodeKV == 0 {
+		t.Skip("no decode drops in this scenario; test precondition not met")
+	}
+
+	m := cs.AggregatedMetrics()
+	maps := map[string][]string{
+		"RequestE2Es":             mapKeys(m.RequestE2Es),
+		"RequestTTFTs":            mapKeys(m.RequestTTFTs),
+		"RequestITLs":             mapKeys(m.RequestITLs),
+		"RequestCompletionTimes":  mapKeys(m.RequestCompletionTimes),
+		"RequestSchedulingDelays": mapKeysInt64(m.RequestSchedulingDelays),
+		"Requests":                mapKeysRM(m.Requests),
+	}
+	for mapName, keys := range maps {
+		for _, key := range keys {
+			if hasSubRequestSuffix(key) {
+				t.Errorf("INV-PD-6 violated: %s contains sub-request key %q (dropped parent not cleaned up)",
+					mapName, key)
+			}
+		}
+	}
+}
+
+// TestDisaggregation_MetricProjection_ITL verifies that after projection,
+// ITL entries are keyed by parent ID and carry a positive value (from the
+// decode sub-request, not zero noise from the prefill sub-request).
+// GIVEN a PD disaggregation simulation with multi-token output requests
+// WHEN  Run() completes
+// THEN  no sub-request ITL keys remain, and any present parent ITL is > 0.
+func TestDisaggregation_MetricProjection_ITL(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(10)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	completedCount := 0
+	for _, parent := range cs.parentRequests {
+		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
+			continue
+		}
+		completedCount++
+		pid := parent.ID
+
+		// Sub-request ITL keys must be absent after projection.
+		if _, ok := m.RequestITLs[parent.PrefillSubReqID]; ok {
+			t.Errorf("parent %s: prefill sub-req key %q in RequestITLs after projection",
+				pid, parent.PrefillSubReqID)
+		}
+		if _, ok := m.RequestITLs[parent.DecodeSubReqID]; ok {
+			t.Errorf("parent %s: decode sub-req key %q in RequestITLs after projection",
+				pid, parent.DecodeSubReqID)
+		}
+
+		// When ITL is present for the parent, it must be positive (decode generates real ITL;
+		// prefill ITL is zero noise that projectPDMetrics discards).
+		if itl, ok := m.RequestITLs[pid]; ok && itl <= 0 {
+			t.Errorf("parent %s: ITL = %.4f, expected > 0 (from decode sub-request)", pid, itl)
+		}
+	}
+	if completedCount == 0 {
+		t.Fatal("no completed parents: test inconclusive")
+	}
+}
+
+// helper: extract keys from map[string]float64.
+func mapKeys(m map[string]float64) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// helper: extract keys from map[string]int64.
+func mapKeysInt64(m map[string]int64) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// helper: extract keys from map[string]RequestMetrics.
+func mapKeysRM(m map[string]sim.RequestMetrics) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// Verifies INV-PD-6b (CompletionTime includes PostDecodeFixedOverhead), via the
+// client-visible E2E metric rather than the lifecycle field.
+//
+// BC-3b: PostDecodeFixedOverhead flows into the client-visible E2E metric.
+// Law: for matching completed parents across two runs (zero vs non-zero overhead),
+// E2E_with_overhead - E2E_without_overhead == wantOverhead exactly.
+// After issue #1513 the parent E2E is reconstructed as decodeSchedulingDelay +
+// decodeOwnE2E; the overhead flows through decodeOwnE2E (recordRequestCompletion
+// adds PostDecodeFixedOverhead) while decodeSchedulingDelay is independent of it,
+// so the differential still isolates the overhead exactly. The direct assertion
+// on the lifecycle field `parent.CompletionTime = c.clock + PostDecodeFixedOverhead()`
+// lives in TestDisaggregation_CompletionTime_LifecycleField_IncludesOverhead.
+func TestDisaggregation_CompletionTime_IncludesNonZeroOverhead(t *testing.T) {
+	const wantOverheadUs = int64(1000) // 1ms overhead, chosen to be clearly distinguishable
+
+	requests := newTestRequests(3)
+	// Run 1: overhead = 0 (baseline)
+	cs0 := NewClusterSimulator(newTestDisaggDeploymentConfigWithOverhead(0), NewSliceRequestSource(requests), nil)
+	mustRun(t, cs0)
+	m0 := cs0.AggregatedMetrics()
+
+	// Run 2: overhead = wantOverheadUs
+	cs1 := NewClusterSimulator(newTestDisaggDeploymentConfigWithOverhead(float64(wantOverheadUs)), NewSliceRequestSource(requests), nil)
+	mustRun(t, cs1)
+	m1 := cs1.AggregatedMetrics()
+
+	// Both runs must complete at least one parent for the test to be meaningful.
+	completed := 0
+	for _, parent := range cs0.parentRequests {
+		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
+			continue // dropped or horizon-interrupted
+		}
+		e2e0, ok0 := m0.RequestE2Es[parent.ID]
+		e2e1, ok1 := m1.RequestE2Es[parent.ID]
+		if !ok0 || !ok1 {
+			t.Errorf("parent %s: missing E2E in one or both runs (ok0=%v ok1=%v)", parent.ID, ok0, ok1)
+			continue
+		}
+		// Law: E2E with overhead = E2E without overhead + wantOverheadUs (exactly, int64 arithmetic)
+		gotDiff := e2e1 - e2e0
+		if gotDiff != float64(wantOverheadUs) {
+			t.Errorf("parent %s: E2E diff = %.0f µs, want %d µs (overhead not stamped into CompletionTime)",
+				parent.ID, gotDiff, wantOverheadUs)
+		}
+		completed++
+	}
+	if completed == 0 {
+		t.Fatal("no completed parents in baseline run — test is vacuously passing, check config")
+	}
+}
+
+// INV-PD-6b lifecycle field: parent.CompletionTime == cluster-clock-at-decode-completion
+// + PostDecodeFixedOverhead. This pins the lifecycle field DIRECTLY (not via the E2E
+// metric), so it survives even though the #1513 E2E fix stopped deriving E2E from
+// parent.CompletionTime. Revert `parent.CompletionTime = c.clock + overhead` to bare
+// `c.clock` in detectDecodeCompletions and this test fails; the E2E-metric differential
+// test above would not (overhead flows through decodeOwnE2E there).
+//
+// Law: for matching completed parents across two runs (zero vs non-zero overhead),
+// CompletionTime_with_overhead − CompletionTime_without_overhead == wantOverhead exactly.
+func TestDisaggregation_CompletionTime_LifecycleField_IncludesOverhead(t *testing.T) {
+	const wantOverheadUs = int64(1000) // 1ms, clearly distinguishable
+
+	requests := newTestRequests(3)
+	cs0 := NewClusterSimulator(newTestDisaggDeploymentConfigWithOverhead(0), NewSliceRequestSource(requests), nil)
+	mustRun(t, cs0)
+	cs1 := NewClusterSimulator(newTestDisaggDeploymentConfigWithOverhead(float64(wantOverheadUs)), NewSliceRequestSource(requests), nil)
+	mustRun(t, cs1)
+
+	// Index run-1 parents by ID for matching.
+	byID1 := make(map[string]*ParentRequest)
+	for _, p := range cs1.parentRequests {
+		byID1[p.ID] = p
+	}
+
+	completed := 0
+	for _, p0 := range cs0.parentRequests {
+		if p0.CompletionTime == 0 || p0.DecodeInstanceID == "" {
+			continue // dropped or horizon-interrupted
+		}
+		p1, ok := byID1[p0.ID]
+		if !ok || p1.CompletionTime == 0 {
+			t.Errorf("parent %s: missing matching completed parent in overhead run", p0.ID)
+			continue
+		}
+		// Law: the lifecycle field carries exactly the configured overhead delta.
+		gotDiff := p1.CompletionTime - p0.CompletionTime
+		if gotDiff != wantOverheadUs {
+			t.Errorf("parent %s: CompletionTime diff = %d µs, want %d µs (overhead not stamped into lifecycle field)",
+				p0.ID, gotDiff, wantOverheadUs)
+		}
+		completed++
+	}
+	if completed == 0 {
+		t.Fatal("no completed parents in baseline run — test is vacuously passing, check config")
+	}
+}
+
+// BC-3: parent.CompletionTime is >= all prior phase timestamps.
+// Law: CompletionTime >= DecodeEnqueueTime >= TransferCompleteTime (phase causality).
+// For roofline (overhead=0): CompletionTime == cluster clock at decode completion tick.
+func TestDisaggregation_CompletionTime_GeqAllPriorPhaseTimestamps(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(3)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	for _, parent := range cs.parentRequests {
+		if parent.CompletionTime == 0 {
+			continue // incomplete (horizon-interrupted)
+		}
+		if parent.CompletionTime < parent.DecodeEnqueueTime {
+			t.Errorf("parent %s: CompletionTime (%d) < DecodeEnqueueTime (%d) — causality violated",
+				parent.ID, parent.CompletionTime, parent.DecodeEnqueueTime)
+		}
+		if parent.CompletionTime < parent.TransferCompleteTime {
+			t.Errorf("parent %s: CompletionTime (%d) < TransferCompleteTime (%d) — causality violated",
+				parent.ID, parent.CompletionTime, parent.TransferCompleteTime)
+		}
+	}
+}
+
+// BC-4 regression: the projected parent E2E reconstructs the arrival→completion
+// span (decodeSchedulingDelay + decodeOwnE2E) and satisfies E2E >= TTFT (INV-5).
+//
+// Pre-#1513 this asserted E2E == parent.CompletionTime − ArrivalTime; that formula
+// under-counted the decode step advance (the #1513 bug). The reconstruction below
+// reads the decode sub-request's per-instance metrics — an independent mechanism
+// from the aggregated parent E2E — so it is not circular.
+func TestDisaggregation_E2E_IncludesOverhead_ZeroOverheadRegression(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(3)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	for _, parent := range cs.parentRequests {
+		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
+			continue // dropped or incomplete
+		}
+		e2e, ok := m.RequestE2Es[parent.ID]
+		if !ok {
+			t.Errorf("parent %s: no RequestE2Es entry after projectPDMetrics", parent.ID)
+			continue
+		}
+		// Reconstruct from decode sub-request per-instance metrics.
+		decodeOwnE2E, decodeDelay, hasDecode := pdDecodeOwnE2E(cs, parent.DecodeSubReqID)
+		if hasDecode {
+			wantE2E := float64(decodeDelay) + decodeOwnE2E
+			if e2e != wantE2E {
+				t.Errorf("parent %s: RequestE2Es = %.0f, want %.0f (decodeSchedulingDelay %d + decodeOwnE2E %.0f)",
+					parent.ID, e2e, wantE2E, decodeDelay, decodeOwnE2E)
+			}
+		}
+		// Law: E2E >= TTFT (first token precedes full decode completion)
+		ttft, hasTTFT := m.RequestTTFTs[parent.ID]
+		if hasTTFT && e2e < ttft {
+			t.Errorf("parent %s: E2E (%.0f) < TTFT (%.0f) — causality violated", parent.ID, e2e, ttft)
+		}
+	}
+}
+
+// --- Session follow-up tests (issue #884) ---
+
+// sessionCallbackCapture records every invocation of the onRequestDone callback.
+// No mutex needed: the DES is single-threaded (see session.go).
+type sessionCallbackCapture struct {
+	calls []sessionCallbackCall
+}
+
+type sessionCallbackCall struct {
+	req  *sim.Request
+	tick int64
+}
+
+// newTestRequestsWithSession creates n test requests with SessionID and MaxOutputLen set.
+func newTestRequestsWithSession(n int, sessionID string) []*sim.Request {
+	reqs := newTestRequests(n)
+	for _, r := range reqs {
+		r.SessionID = sessionID
+		r.MaxOutputLen = len(r.OutputTokens)
+	}
+	return reqs
+}
+
+// TestDisaggregation_SessionFollowUp_CallsOnRequestDone verifies that
+// detectDecodeCompletions triggers the session callback with the original
+// request (which carries SessionID), not the decode sub-request.
+//
+// GIVEN: a PD cluster (2P + 2D) with onRequestDone callback
+// AND: requests have SessionID set
+// WHEN: simulation runs to completion
+// THEN: callback is invoked with a request where SessionID is preserved,
+//
+//	State == StateCompleted, and ProgressIndex == len(Input) + len(Output)
+func TestDisaggregation_SessionFollowUp_CallsOnRequestDone(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	reqs := newTestRequestsWithSession(3, "sess_0")
+
+	var capture sessionCallbackCapture
+	callback := func(req *sim.Request, tick int64) []*sim.Request {
+		capture.calls = append(capture.calls, sessionCallbackCall{req: req, tick: tick})
+		return nil // no follow-ups — just capture
+	}
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(reqs), callback)
+	mustRun(t, cs)
+
+	// Filter calls with non-empty SessionID (sub-request callbacks have empty SessionID)
+	var sessionCalls []sessionCallbackCall
+	for _, c := range capture.calls {
+		if c.req.SessionID != "" {
+			sessionCalls = append(sessionCalls, c)
+		}
+	}
+
+	if len(sessionCalls) != 3 {
+		t.Fatalf("expected 3 session callback calls (one per request), got %d", len(sessionCalls))
+	}
+
+	for i, sc := range sessionCalls {
+		if sc.req.SessionID != "sess_0" {
+			t.Errorf("call %d: SessionID = %q, want %q", i, sc.req.SessionID, "sess_0")
+		}
+		if sc.req.State != sim.StateCompleted {
+			t.Errorf("call %d: State = %q, want %q", i, sc.req.State, sim.StateCompleted)
+		}
+		// ProgressIndex comes from the decode sub-request's actual final position
+		// (len(Input) + len(Output) - 1), matching non-PD behavior.
+		wantProgress := int64(len(sc.req.InputTokens) + len(sc.req.OutputTokens) - 1)
+		if sc.req.ProgressIndex != wantProgress {
+			t.Errorf("call %d: ProgressIndex = %d, want %d (len(Input)=%d + len(Output)=%d - 1)",
+				i, sc.req.ProgressIndex, wantProgress, len(sc.req.InputTokens), len(sc.req.OutputTokens))
+		}
+		if sc.tick < sc.req.ArrivalTime {
+			t.Errorf("call %d: tick (%d) < ArrivalTime (%d) — violates causality",
+				i, sc.tick, sc.req.ArrivalTime)
+		}
+	}
+}
+
+// TestDisaggregation_SessionFollowUp_InjectsFollowUp verifies that follow-up
+// requests returned by the session callback are injected into the cluster
+// pipeline and complete through the PD disaggregation path.
+//
+// GIVEN: PD cluster with onRequestDone that returns 1 follow-up per call (single extra round)
+// AND: 2 initial requests with SessionID
+// WHEN: simulation runs
+// THEN: follow-up requests complete through PD pipeline (more parentRequests than initial)
+func TestDisaggregation_SessionFollowUp_InjectsFollowUp(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	reqs := newTestRequestsWithSession(2, "sess_inject")
+
+	followUpCount := 0
+	callback := func(req *sim.Request, tick int64) []*sim.Request {
+		if req.SessionID == "" {
+			return nil // sub-request callback, ignore
+		}
+		// Generate exactly one follow-up per original request (cap at 2 total follow-ups)
+		if followUpCount >= 2 {
+			return nil
+		}
+		followUpCount++
+		return []*sim.Request{{
+			ID:           fmt.Sprintf("followup_%d", followUpCount),
+			ArrivalTime:  tick + 1000, // 1ms think time
+			InputTokens:  make([]sim.TokenID, 50),
+			OutputTokens: make([]sim.TokenID, 20),
+			MaxOutputLen: 20,
+			State:        sim.StateQueued,
+			SessionID:    req.SessionID,
+			RoundIndex:   1,
+		}}
+	}
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(reqs), callback)
+	mustRun(t, cs)
+
+	// Follow-ups should have been disaggregated too — more parentRequests than initial
+	parents := cs.ParentRequests()
+	if len(parents) <= 2 {
+		t.Errorf("ParentRequests() = %d, want > 2 (follow-ups should have been disaggregated)",
+			len(parents))
+	}
+
+	// All parent requests should have CompletionTime > 0
+	for _, parent := range parents {
+		if parent.CompletionTime == 0 {
+			t.Errorf("parent %s: CompletionTime = 0, follow-up may not have completed", parent.ID)
+		}
+	}
+
+	metrics := cs.AggregatedMetrics()
+	if metrics.CompletedRequests < 4 {
+		t.Errorf("CompletedRequests = %d, want >= 4 (2 initial + 2 follow-ups)", metrics.CompletedRequests)
+	}
+}
+
+// TestDisaggregation_AggregateMode_Unaffected verifies that aggregate (non-PD)
+// clusters still trigger session callbacks correctly — regression guard.
+//
+// GIVEN: non-PD cluster with onRequestDone callback
+// AND: requests with SessionID
+// WHEN: simulation runs
+// THEN: callback fires for each completed request with SessionID preserved
+func TestDisaggregation_AggregateMode_Unaffected(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 0, 0) // no PD
+	config.PDDecider = ""                            // disable decider
+	reqs := newTestRequestsWithSession(3, "sess_agg")
+
+	var capture sessionCallbackCapture
+	callback := func(req *sim.Request, tick int64) []*sim.Request {
+		capture.calls = append(capture.calls, sessionCallbackCall{req: req, tick: tick})
+		return nil
+	}
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(reqs), callback)
+	mustRun(t, cs)
+
+	// In aggregate mode, ALL completed requests should trigger callback with SessionID
+	var sessionCalls []sessionCallbackCall
+	for _, c := range capture.calls {
+		if c.req.SessionID == "sess_agg" {
+			sessionCalls = append(sessionCalls, c)
+		}
+	}
+
+	if len(sessionCalls) != 3 {
+		t.Fatalf("aggregate mode: expected 3 session callback calls, got %d", len(sessionCalls))
+	}
+	for i, sc := range sessionCalls {
+		if sc.req.State != sim.StateCompleted {
+			t.Errorf("aggregate call %d: State = %q, want %q", i, sc.req.State, sim.StateCompleted)
+		}
+	}
+}
+
+// TestDisaggregation_PD_SessionManager_GeneratesFollowUps exercises the real
+// SessionManager (not a mock callback) through the PD pipeline. This verifies
+// that State and ProgressIndex are correctly threaded through OnComplete, and
+// that follow-up requests complete through the full disaggregation path.
+//
+// GIVEN: PD cluster (2P + 2D) with real SessionManager (MaxRounds=2)
+// AND: 2 initial session requests
+// WHEN: simulation runs to completion
+// THEN: SessionManager generates follow-ups that complete through PD,
+//
+//	and total completed requests == 4 (2 rounds x 2 sessions)
+func TestDisaggregation_PD_SessionManager_GeneratesFollowUps(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+
+	rng := rand.New(rand.NewSource(99))
+	inputSampler, err := workload.NewLengthSampler(workload.DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 50},
+	})
+	if err != nil {
+		t.Fatalf("NewLengthSampler (input): %v", err)
+	}
+	outputSampler, err := workload.NewLengthSampler(workload.DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 20},
+	})
+	if err != nil {
+		t.Fatalf("NewLengthSampler (output): %v", err)
+	}
+
+	blueprints := []workload.SessionBlueprint{
+		{
+			SessionID:     "pd_sess_0",
+			MaxRounds:     2,
+			ThinkTimeUs:   1000,
+			Horizon:       math.MaxInt64,
+			InputSampler:  inputSampler,
+			OutputSampler: outputSampler,
+			RNG:           rand.New(rand.NewSource(rng.Int63())),
+		},
+		{
+			SessionID:     "pd_sess_1",
+			MaxRounds:     2,
+			ThinkTimeUs:   1000,
+			Horizon:       math.MaxInt64,
+			InputSampler:  inputSampler,
+			OutputSampler: outputSampler,
+			RNG:           rand.New(rand.NewSource(rng.Int63())),
+		},
+	}
+
+	sm := workload.NewSessionManager(blueprints)
+	callback := sm.OnComplete
+
+	// Initial round-0 requests (one per session)
+	reqs := make([]*sim.Request, 2)
+	for i := 0; i < 2; i++ {
+		reqs[i] = &sim.Request{
+			ID:           fmt.Sprintf("pd_sess_%d_r0", i),
+			ArrivalTime:  int64(i * 1000),
+			InputTokens:  make([]sim.TokenID, 50),
+			OutputTokens: make([]sim.TokenID, 20),
+			MaxOutputLen: 20,
+			State:        sim.StateQueued,
+			SessionID:    fmt.Sprintf("pd_sess_%d", i),
+			RoundIndex:   0,
+		}
+	}
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(reqs), callback)
+	mustRun(t, cs)
+
+	metrics := cs.AggregatedMetrics()
+	// 2 sessions x 2 rounds = 4 completed requests
+	if metrics.CompletedRequests != 4 {
+		t.Errorf("CompletedRequests = %d, want 4 (2 sessions x 2 rounds)", metrics.CompletedRequests)
+	}
+
+	// All parent requests should have completed through the PD pipeline
+	parents := cs.ParentRequests()
+	if len(parents) != 4 {
+		t.Errorf("ParentRequests() = %d, want 4", len(parents))
+	}
+	for _, parent := range parents {
+		if parent.CompletionTime == 0 {
+			t.Errorf("parent %s: CompletionTime = 0", parent.ID)
+		}
+	}
+
+	// INV-1 conservation
+	assertClusterINV1Conservation(t, cs, 4, noRejections, "PD SessionManager follow-ups")
+}
+
+// TestDisaggregation_PD_SessionManager_ContextAccumulation verifies that
+// ProgressIndex flows correctly through the session manager's context
+// accumulation logic (BC-8) when using the PD pipeline.
+//
+// GIVEN: PD cluster (2P + 2D) with real SessionManager (MaxRounds=2, ContextGrowth="accumulate")
+// AND: 1 initial session request with input=50, output=20
+// WHEN: simulation runs to completion
+// THEN: round-1 follow-up has InputTokens longer than round-0 (context accumulated),
+//
+//	and total completed requests == 2 (1 session x 2 rounds)
+func TestDisaggregation_PD_SessionManager_ContextAccumulation(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+
+	rng := rand.New(rand.NewSource(77))
+	inputSampler, err := workload.NewLengthSampler(workload.DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 50},
+	})
+	if err != nil {
+		t.Fatalf("NewLengthSampler (input): %v", err)
+	}
+	outputSampler, err := workload.NewLengthSampler(workload.DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 20},
+	})
+	if err != nil {
+		t.Fatalf("NewLengthSampler (output): %v", err)
+	}
+
+	blueprints := []workload.SessionBlueprint{
+		{
+			SessionID:     "acc_sess_0",
+			MaxRounds:     2,
+			ThinkTimeUs:   1000,
+			Horizon:       math.MaxInt64,
+			ContextGrowth: "accumulate",
+			InputSampler:  inputSampler,
+			OutputSampler: outputSampler,
+			RNG:           rand.New(rand.NewSource(rng.Int63())),
+		},
+	}
+
+	sm := workload.NewSessionManager(blueprints)
+	callback := sm.OnComplete
+
+	// Round-0 request: 50 input tokens, 20 output tokens
+	round0InputLen := 50
+	round0OutputLen := 20
+	reqs := []*sim.Request{
+		{
+			ID:           "acc_sess_0_r0",
+			ArrivalTime:  0,
+			InputTokens:  make([]sim.TokenID, round0InputLen),
+			OutputTokens: make([]sim.TokenID, round0OutputLen),
+			MaxOutputLen: round0OutputLen,
+			State:        sim.StateQueued,
+			SessionID:    "acc_sess_0",
+			RoundIndex:   0,
+		},
+	}
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(reqs), callback)
+	mustRun(t, cs)
+
+	metrics := cs.AggregatedMetrics()
+	// 1 session x 2 rounds = 2 completed requests
+	if metrics.CompletedRequests != 2 {
+		t.Errorf("CompletedRequests = %d, want 2 (1 session x 2 rounds)", metrics.CompletedRequests)
+	}
+
+	// Find the round-1 follow-up among parent requests
+	parents := cs.ParentRequests()
+	if len(parents) != 2 {
+		t.Fatalf("ParentRequests() = %d, want 2", len(parents))
+	}
+
+	var round1Parent *ParentRequest
+	for _, p := range parents {
+		if p.OriginalRequest.RoundIndex == 1 {
+			round1Parent = p
+			break
+		}
+	}
+	if round1Parent == nil {
+		t.Fatal("no round-1 parent request found")
+	}
+
+	// Context accumulation: round-1 input should include accumulated context from round-0.
+	// Round 0: input=50, actual output = PI - len(Input) = (50+20-1) - 50 = 19 tokens
+	// Accumulated context: 50 (round-0 input) + 19 (round-0 actual output) = 69
+	// Round 1 new input: 50 (from constant sampler)
+	// Round 1 total input: 69 (context) + 50 (new) = 119
+	round1InputLen := len(round1Parent.OriginalRequest.InputTokens)
+	if round1InputLen <= round0InputLen {
+		t.Errorf("round-1 InputTokens length = %d, want > %d (context should have accumulated)",
+			round1InputLen, round0InputLen)
+	}
+
+	// Verify the exact accumulated length: context(69) + new_input(50) = 119
+	wantRound1InputLen := (round0InputLen + (round0OutputLen - 1)) + 50 // context + new_input
+	if round1InputLen != wantRound1InputLen {
+		t.Errorf("round-1 InputTokens length = %d, want %d (context=%d + new_input=50)",
+			round1InputLen, wantRound1InputLen, round0InputLen+(round0OutputLen-1))
+	}
+
+	// All parents should have completed
+	for _, p := range parents {
+		if p.CompletionTime == 0 {
+			t.Errorf("parent %s: CompletionTime = 0", p.ID)
+		}
+	}
+
+	// INV-1 conservation
+	assertClusterINV1Conservation(t, cs, 2, noRejections, "PD SessionManager context accumulation")
+}
+
+// TestDisaggregation_NonDisaggRoutedToDecodePoolOnly verifies P3 fix: when PDDecider="never"
+// (no disaggregation), all requests must be routed exclusively to decode pool instances.
+// Before the fix, the non-disaggregated path scheduled a full-cluster RoutingDecisionEvent
+// which called buildRouterState() including ALL instances (prefill + decode). Post-#1261,
+// executeDisaggregatedRouting routes directly to the decode pool.
+func TestDisaggregation_NonDisaggRoutedToDecodePoolOnly(t *testing.T) {
+	// GIVEN: pool topology configured but disaggregation never triggered
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.PDDecider = "never"
+	const numRequests = 8
+	requests := newTestRequests(numRequests)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+
+	// WHEN: simulation runs
+	mustRun(t, cs)
+
+	// THEN: every routed request is assigned to a decode-pool instance
+	for _, req := range requests {
+		if req.AssignedInstance == "" {
+			continue // not yet routed (e.g., still queued at horizon) — skip
+		}
+		role, ok := cs.poolMembership[req.AssignedInstance]
+		if !ok {
+			t.Errorf("req %s assigned to instance %q which has no pool membership", req.ID, req.AssignedInstance)
+			continue
+		}
+		if role != PoolRoleDecode {
+			t.Errorf("req %s assigned to instance %q (role=%v), want PoolRoleDecode — non-disaggregated requests must not land on prefill pods",
+				req.ID, req.AssignedInstance, role)
+		}
+	}
+
+	// INV-1 conservation still holds
+	assertClusterINV1Conservation(t, cs, numRequests, noRejections, "non-disagg decode-only routing")
+}
+
+// TestDisaggregation_DecodeInstancePreSelected verifies P1 fix: the decode instance is
+// selected during executeDisaggregatedRouting (before prefill routing), not after KV transfer.
+// Before the fix, DecodeInstanceID was set by DecodeRoutingEvent after KV transfer completed.
+func TestDisaggregation_DecodeInstancePreSelected(t *testing.T) {
+	// GIVEN: always-disaggregate pool topology
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	const numRequests = 5
+	requests := newTestRequests(numRequests)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+
+	// WHEN: simulation runs
+	mustRun(t, cs)
+
+	// THEN: every parent request has a non-empty DecodeInstanceID in the decode pool,
+	// and the instance is actually in the decode pool (not prefill).
+	parents := cs.ParentRequests()
+	if len(parents) == 0 {
+		t.Fatal("expected disaggregated parent requests, got none")
+	}
+	for _, parent := range parents {
+		if parent.DecodeInstanceID == "" {
+			t.Errorf("parent %s: DecodeInstanceID is empty — decode instance was not pre-selected", parent.ID)
+			continue
+		}
+		role, ok := cs.poolMembership[string(parent.DecodeInstanceID)]
+		if !ok {
+			t.Errorf("parent %s: DecodeInstanceID %q not in pool membership", parent.ID, parent.DecodeInstanceID)
+			continue
+		}
+		if role != PoolRoleDecode {
+			t.Errorf("parent %s: DecodeInstanceID %q has role=%v, want PoolRoleDecode",
+				parent.ID, parent.DecodeInstanceID, role)
+		}
+	}
+}
+
+// TestDisaggregation_NoDecodeRoutingEvent verifies P2 fix: no DecodeRoutingRecord is emitted
+// in the trace because the second routing decision (DecodeRoutingEvent) is eliminated.
+// The decode pod is pre-selected at executeDisaggregatedRouting time; KVTransferCompletedEvent
+// injects directly to the pre-selected pod.
+func TestDisaggregation_NoDecodeRoutingEvent(t *testing.T) {
+	// GIVEN: always-disaggregate with trace enabled
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.TraceLevel = "decisions"
+	const numRequests = 4
+	requests := newTestRequests(numRequests)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+
+	// WHEN: simulation runs
+	mustRun(t, cs)
+
+	// THEN: no DecodeRoutingRecord emitted (no second routing decision)
+	tr := cs.Trace()
+	if tr == nil {
+		t.Fatal("expected non-nil trace with trace-level decisions")
+	}
+	if len(tr.DecodeRoutings) != 0 {
+		t.Errorf("expected 0 DecodeRoutingRecords (decode pod pre-selected, no second routing), got %d",
+			len(tr.DecodeRoutings))
+	}
+	// Disaggregation, prefill routing, and KV transfers still recorded
+	if len(tr.Disaggregations) != numRequests {
+		t.Errorf("expected %d disaggregation records, got %d", numRequests, len(tr.Disaggregations))
+	}
+	if len(tr.PrefillRoutings) != numRequests {
+		t.Errorf("expected %d prefill routing records, got %d", numRequests, len(tr.PrefillRoutings))
+	}
+	if len(tr.KVTransfers) != numRequests {
+		t.Errorf("expected %d KV transfer records, got %d", numRequests, len(tr.KVTransfers))
+	}
+}
+
+// TestPDRouting_InjectionTimingPreserved verifies BC-2 for the unified routing
+// entry point (#1261): effective injection wall-time is unchanged after collapsing
+// the poolsConfigured() fork. For a disaggregated request, PrefillEnqueueTime —
+// the timestamp at which PrefillRoutingEvent fires and writes the parent record —
+// must equal ArrivalTime + AdmissionLatency + RoutingLatency, the same value the
+// old DisaggregationDecisionEvent produced (it fired at admission_time and
+// re-added routingLatency when scheduling PrefillRoutingEvent).
+//
+// A future refactor that accidentally dropped routingLatency from the
+// RoutingDecisionEvent schedule expression would silently pass the weaker
+// causality test (PrefillEnqueueTime >= ArrivalTime); this test asserts the
+// exact offset.
+func TestPDRouting_InjectionTimingPreserved(t *testing.T) {
+	const admissionLatency int64 = 50_000 // 50ms
+	const routingLatency int64 = 100_000  // 100ms
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.AdmissionLatency = admissionLatency
+	config.RoutingLatency = routingLatency
+
+	const numRequests = 3
+	requests := newTestRequests(numRequests)
+	// Pin arrivals to known values so we can compute the expected enqueue offset.
+	for i, r := range requests {
+		r.ArrivalTime = int64(i) * 200_000 // 200ms apart
+	}
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	parents := cs.ParentRequests()
+	if len(parents) != numRequests {
+		t.Fatalf("expected %d disaggregated parents, got %d", numRequests, len(parents))
+	}
+
+	// Build a lookup: parent ID -> ArrivalTime. ParentRequest.ID equals the
+	// original request ID; newTestRequests assigns sequential IDs.
+	arrivalByID := make(map[string]int64, numRequests)
+	for _, r := range requests {
+		arrivalByID[r.ID] = r.ArrivalTime
+	}
+
+	for _, parent := range parents {
+		arrival, ok := arrivalByID[parent.ID]
+		if !ok {
+			t.Errorf("parent %s: no matching request in input set", parent.ID)
+			continue
+		}
+		want := arrival + admissionLatency + routingLatency
+		if parent.PrefillEnqueueTime != want {
+			t.Errorf("parent %s: PrefillEnqueueTime=%d, want %d (ArrivalTime=%d + AdmissionLatency=%d + RoutingLatency=%d)",
+				parent.ID, parent.PrefillEnqueueTime, want,
+				arrival, admissionLatency, routingLatency)
+		}
+	}
+}
+
+// recordingDecider captures every (req, state) pair passed into Decide and
+// delegates the actual decision to an inner decider. Used to pin BC-3 at the
+// cluster level: the RouterState passed to Decide must contain snapshots for
+// every routable decode-pool instance.
+type recordingDecider struct {
+	inner sim.DisaggregationDecider
+	calls []recordedCall
+}
+
+type recordedCall struct {
+	reqID       string
+	snapshotIDs []string
+	stateNil    bool
+	clock       int64
+}
+
+func (r *recordingDecider) Decide(req *sim.Request, state *sim.RouterState) sim.DisaggregationDecision {
+	c := recordedCall{reqID: req.ID, stateNil: state == nil}
+	if state != nil {
+		c.clock = state.Clock
+		c.snapshotIDs = make([]string, len(state.Snapshots))
+		for i, s := range state.Snapshots {
+			c.snapshotIDs[i] = s.ID
+		}
+	}
+	r.calls = append(r.calls, c)
+	return r.inner.Decide(req, state)
+}
+
+// TestDisaggregation_DeciderReceivesDecodePoolState verifies BC-3 at the cluster
+// level: the RouterState passed to DisaggregationDecider.Decide contains
+// snapshots for every decode-pool instance (non-nil, non-empty, IDs match the
+// decode pool).
+func TestDisaggregation_DeciderReceivesDecodePoolState(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2) // 2 prefill + 2 decode
+	const numRequests = 3
+	requests := newTestRequests(numRequests)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	rec := &recordingDecider{inner: &sim.AlwaysDisaggregate{}}
+	cs.disaggregationDecider = rec
+
+	mustRun(t, cs)
+
+	// Build the expected decode-pool ID set from pool membership.
+	wantDecodeIDs := make(map[string]bool)
+	for id, role := range cs.poolMembership {
+		if role.Has(PoolRoleDecode) {
+			wantDecodeIDs[id] = true
+		}
+	}
+	if len(wantDecodeIDs) == 0 {
+		t.Fatal("test precondition: no decode-pool instances in cluster")
+	}
+
+	if len(rec.calls) != numRequests {
+		t.Fatalf("recorded %d Decide calls, want %d (one per request)", len(rec.calls), numRequests)
+	}
+	for i, c := range rec.calls {
+		if c.stateNil {
+			t.Errorf("call %d (req %s): state was nil, want non-nil (empty-pool case is rejected before Decide)", i, c.reqID)
+			continue
+		}
+		if len(c.snapshotIDs) != len(wantDecodeIDs) {
+			t.Errorf("call %d (req %s): state.Snapshots has %d entries, want %d (decode-pool size)",
+				i, c.reqID, len(c.snapshotIDs), len(wantDecodeIDs))
+		}
+		for _, id := range c.snapshotIDs {
+			if !wantDecodeIDs[id] {
+				t.Errorf("call %d (req %s): state.Snapshots contains %q which is not in the decode pool",
+					i, c.reqID, id)
+			}
+		}
+	}
+}
+
+// overrideDecider always returns Disaggregate=false plus a DecodePodOverride,
+// rerouting the decode target to the configured instance. Used to verify the
+// call-site retargeting logic in executeDisaggregatedRouting.
+type overrideDecider struct {
+	override string
+}
+
+func (o *overrideDecider) Decide(_ *sim.Request, _ *sim.RouterState) sim.DisaggregationDecision {
+	return sim.DisaggregationDecision{Disaggregate: false, DecodePodOverride: o.override}
+}
+
+// TestDisaggregation_DecodePodOverrideReroutes verifies the call site applies
+// DisaggregationDecision.DecodePodOverride: when the decider returns a non-empty
+// override (within the decode pool), every request lands on that instance,
+// regardless of what the decode routing policy would have selected.
+func TestDisaggregation_DecodePodOverrideReroutes(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	const numRequests = 5
+	requests := newTestRequests(numRequests)
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+
+	// Pick a specific decode-pool instance as the override target. Use the
+	// lexicographically-last decode ID so the override differs from the
+	// round-robin default (which starts at the first decode instance).
+	var targetID string
+	for id, role := range cs.poolMembership {
+		if role.Has(PoolRoleDecode) {
+			if id > targetID {
+				targetID = id
+			}
+		}
+	}
+	if targetID == "" {
+		t.Fatal("test precondition: no decode-pool instance found for override")
+	}
+	cs.disaggregationDecider = &overrideDecider{override: targetID}
+
+	mustRun(t, cs)
+
+	// With Disaggregate=false and DecodePodOverride set, every routed request
+	// must have AssignedInstance == targetID — the override replaces the
+	// round-robin pick.
+	overrideCount := 0
+	for _, req := range requests {
+		if req.AssignedInstance == "" {
+			continue // not routed (e.g., still queued at horizon)
+		}
+		if req.AssignedInstance != targetID {
+			t.Errorf("req %s: AssignedInstance = %q, want %q (DecodePodOverride must retarget)",
+				req.ID, req.AssignedInstance, targetID)
+			continue
+		}
+		overrideCount++
+	}
+	if overrideCount == 0 {
+		t.Fatal("no requests landed on override target — override logic did not fire")
+	}
+}

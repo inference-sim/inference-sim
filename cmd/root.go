@@ -1,0 +1,3414 @@
+package cmd
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"math"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
+
+	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/cluster"
+	"github.com/inference-sim/inference-sim/sim/latency"
+	_ "github.com/inference-sim/inference-sim/sim/lora" // registers sim.NewAdapterRegistryFunc via init()
+	"github.com/inference-sim/inference-sim/sim/trace"
+	"github.com/inference-sim/inference-sim/sim/workload"
+)
+
+// distDefaults are the shared default values for distribution synthesis flags.
+// Both runCmd and observeCmd use these constants so the two commands produce
+// identical workload shapes when called with no explicit distribution flags.
+// Changing a value here affects both commands simultaneously.
+//
+// Flags covered:
+//
+//	--prompt-tokens, --prompt-tokens-stdev, --prompt-tokens-min, --prompt-tokens-max
+//	--output-tokens, --output-tokens-stdev, --output-tokens-min, --output-tokens-max
+//
+// NOT covered: --prefix-tokens (default 0 means "no shared prefix", a feature toggle,
+// not a distribution shape parameter).
+//
+// --num-requests is intentionally NOT shared: run defaults to 100 (safe for quick sims),
+// observe defaults to 0 (requires explicit bound — see observe_cmd.go).
+const (
+	defaultPromptMean  = 512
+	defaultPromptStdev = 256
+	defaultPromptMin   = 2
+	defaultPromptMax   = 7000
+	defaultOutputMean  = 512
+	defaultOutputStdev = 256
+	defaultOutputMin   = 2
+	defaultOutputMax   = 7000
+)
+
+var (
+	// CLI flags for vllm server configs
+	seed                      int64     // Seed for random token generation
+	simulationHorizon         int64     // Total simulation time (in ticks)
+	logLevel                  string    // Log verbosity level
+	totalKVBlocks             int64     // Total number of KV blocks available on GPU
+	maxNumSeqs                int64     // Maximum number of requests in the Running batch (vLLM: --max-num-seqs)
+	maxNumBatchedTokens       int64     // Maximum total number of tokens across requests in the Running batch (vLLM: --max-num-batched-tokens)
+	blockSizeTokens           int64     // Number of tokens per KV block
+	betaCoeffs                []float64 // List of beta coeffs corresponding to step features
+	alphaCoeffs               []float64 // List of alpha coeffs corresponding to pre, postprocessing delays
+	defaultsFilePath          string    // Path to default constants - trained coefficients, default specs and workloads
+	catalogPath               string    // --catalog: model catalog root (one directory per model, each with config.json). No default; BLIS_CATALOG is the fallback (#1731)
+	modelConfigDir            string    // Resolved catalog entry directory containing config.json (side effect of resolveLatencyConfig)
+	resolvedCatalogRoot       string    // Catalog ROOT that produced this run's model config (side effect of resolveModelConfig); recorded as results-file provenance (#1732)
+	hwConfigPath              string    // Path to constants specific to hardware type (GPU)
+	workloadType              string    // Workload type (chatbot, summarization, contentgen, multidoc, distribution)
+	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
+	rate                      float64   // Requests arrival per second
+	numRequests               int       // Number of requests
+	concurrency               int       // Number of concurrent virtual users (closed-loop)
+	thinkTimeMs               int       // Think time between response and next request (ms)
+	prefixTokens              int       // Prefix Token Count
+	promptTokensMean          int       // Average Prompt Token Count
+	promptTokensStdev         int       // Stdev Prompt Token Count
+	promptTokensMin           int       // Min Prompt Token Count
+	promptTokensMax           int       // Max Prompt Token Count
+	outputTokensMean          int       // Average Output Token Count
+	outputTokensStdev         int       // Stdev Output Token Count
+	outputTokensMin           int       // Min Output Token Count
+	outputTokensMax           int       // Max Output Token Count
+	latencyModelBackend       string    // CLI --latency-model flag: selects latency model backend (Cobra-bound, NEVER mutated inside Run)
+	maxModelLen               int64     // CLI --max-model-len: max total sequence length (input + output); 0 = unlimited
+	// CLI flags for model, GPU, TP
+	model                string // LLM name
+	kvCacheDtype         string // CLI --kv-cache-dtype: KV-cache storage precision (auto|fp8|fp8_e4m3|fp8_e5m2|bf16|fp16|fp32); "auto" follows compute dtype (vLLM CacheConfig.cache_dtype parity, #1565)
+	gpu                  string // GPU type
+	tensorParallelism    int    // TP value
+	dataParallelism      int    // DP value (MoE only; trained-physics backend only)
+	enableExpertParallel bool   // EP mode (MoE only; trained-physics backend only)
+	moeCommBackend       string // MoE all-to-all comm backend (MoE only; trained-physics backend only)
+
+	// cluster config
+	numInstances int // Number of instances in the cluster
+
+	// online routing pipeline config
+	admissionPolicy       string             // Admission policy name
+	admissionLatency      int64              // Admission latency in microseconds
+	routingLatency        int64              // Routing latency in microseconds
+	tokenBucketCapacity   float64            // Token bucket capacity
+	tokenBucketRefillRate float64            // Token bucket refill rate (tokens/second)
+	tierShedThreshold     int                // Tier-shed overload threshold (0 = any load)
+	tierShedMinPriority   int                // Tier-shed minimum admitted priority under overload
+	tenantBudgets         map[string]float64 // Per-tenant fraction of total capacity (nil = no enforcement)
+	sloPriorityOverrides  map[string]int     // SLO class → priority overrides (nil = GAIE defaults)
+	sloTargetsMap         map[string]int64   // SLO class → TTFT target µs for slo-deadline ordering (nil = disabled)
+	gaieQDThreshold       float64            // GAIE-legacy queue depth threshold per instance (default 5)
+	gaieKVThreshold       float64            // GAIE-legacy KV cache utilization threshold (default 0.8)
+
+	// routing policy config (PR 6, evolved in PR17)
+	routingPolicy    string  // Routing policy name
+	routingScorers   string  // Comma-separated name:weight pairs for weighted routing
+	loraScorerWeight float64 // Weight of the lora-affinity scorer; 0 (default) ⇒ off (#1469)
+
+	// Scheduler and preemption config
+	scheduler        string // Scheduler name
+	preemptionPolicy string // Preemption victim selection policy
+
+	// Policy bundle config
+	policyConfigPath string // Path to YAML policy configuration file
+
+	// LoRA control-plane config (#1464). All optional; absence => subsystem inert (INV-6).
+	loraConfigPath            string  // Path to YAML file with a top-level lora: block (adapter registry + capacity + coefficients)
+	loraAdapterCapacity       int     // --lora-adapter-capacity (applied only when Changed; 0 is meaningful => adapters forbidden)
+	loraLoadBaseLatencyUs     float64 // --lora-load-base-latency-us
+	loraLoadBandwidthBytesUs  float64 // --lora-load-bandwidth-bytes-us
+	loraFootprintBytesPerRank float64 // --lora-footprint-bytes-per-rank
+
+	// Speculative decoding / MTP (#1528). All default-off; num-speculative-tokens=0
+	// => feature inert, output byte-identical (INV-6). --speculative-acceptance-rate
+	// is required (Changed-gated) when --num-speculative-tokens > 0 to prevent the
+	// α=0 "pure slowdown" footgun.
+	numSpeculativeTokens  int     // --num-speculative-tokens (K)
+	speculativeAcceptance float64 // --speculative-acceptance-rate (α ∈ [0,1])
+	speculativeMethod     string  // --speculative-method (informational label)
+
+	// Cross-node collective serialization S (#1694, Part B). A deployment-regime
+	// multiplier on the cross-node latency term: 1.0 (default) = graphs-on/overlap
+	// (inert, byte-identical INV-6); >1 = enforce-eager/no-overlap. --enforce-eager is a
+	// provenance+guard bool that REQUIRES an explicit --comm-serialization-factor > 1
+	// (BLIS ships no fitted eager magnitude, #1694 guardrail). Re-supplied on both run
+	// and replay, not round-tripped through the trace header (INV-13).
+	commSerializationFactor float64 // --comm-serialization-factor (S ≥ 1)
+	enforceEager            bool    // --enforce-eager (regime flag; requires S > 1)
+
+	// loraReservedBytesForKV carries the resolved static LoRA HBM reservation
+	// (bytes) into KV auto-capacity, mirroring how totalKVBlocks is threaded as a
+	// package var. Set once per command RunE from the single resolveLoRAConfig call
+	// (BEFORE resolveLatencyConfig, which reads it at the main auto-calc); 0 when the
+	// subsystem is inert, keeping KV capacity byte-identical to today (INV-6/PR5).
+	loraReservedBytesForKV int64
+
+	// Fitness evaluation config (PR9)
+	fitnessWeights string // Fitness weights string "key:val,key:val"
+
+	// Decision trace config (PR13)
+	traceLevel      string // Trace verbosity level
+	counterfactualK int    // Number of counterfactual candidates
+	summarizeTrace  bool   // Print trace summary after simulation
+
+	// Workload spec config (PR10)
+	workloadSpecPath string // Path to YAML workload specification file
+	lazyGeneration   bool   // --lazy-generation: stream requests from generator (alpha, #1441)
+
+	// Tiered KV cache config (PR12)
+	kvCPUBlocks             int64
+	kvOffloadThreshold      float64
+	kvTransferBandwidth     float64
+	kvTransferBaseLatency   int64
+	snapshotRefreshInterval int64
+	cacheSignalDelay        int64
+	gpuMemoryUtilization    float64
+
+	// PD disaggregation config
+	prefillInstances       int     // Number of instances dedicated to prefill
+	decodeInstances        int     // Number of instances dedicated to decode
+	prefillDecodeInstances int     // Number of shared-role instances (both prefill and decode), issue #1276
+	pdDecider              string  // Disaggregation decider name
+	pdTransferBandwidth    float64 // Inter-instance KV transfer bandwidth in GB/s
+	pdTransferBaseLatency  float64 // Inter-instance KV transfer base latency in ms
+	pdTransferContention   bool    // Enable fair-share bandwidth contention model
+	pdPrefixThreshold      int     // Non-cached token threshold for prefix-threshold decider
+	prefillRoutingScorers  string  // Scorer weights for prefill pool routing
+	decodeRoutingScorers   string  // Scorer weights for decode pool routing
+
+	// E/P/D disaggregation config (GAP-4, issue #1264)
+	encodeInstances int    // Number of instances dedicated to encoding multimodal input (0 = disabled)
+	encodeDecider   string // Encode decider name: "never" (default), "always", "multimodal"
+
+	// Autoscaler config (Phase 1C)
+	modelAutoscalerIntervalUs float64 // tick interval in μs; 0 = disabled
+
+	// Flow control config (issue #882, GIE parity)
+	flowControlEnabled              bool
+	flowControlDetector             string
+	flowControlDispatchOrder        string
+	flowControlSLOTargets           string
+	flowControlMaxQueueDepth        int
+	flowControlQueueDepthThreshold  float64
+	flowControlKVCacheUtilThreshold float64
+	flowControlMaxConcurrency       int
+	flowControlPerBandCapacity      int
+	flowControlUsageLimitThreshold  float64
+	flowControlFairnessPolicy       string
+	flowControlRequestTTL           int64
+	flowControlQueueShedding        bool
+	flowControlDispatchTickInterval int64
+	flowControlInFlightEviction     bool
+
+	// Per-pool hardware override config
+	prefillTP           int
+	decodeTP            int
+	prefillHardware     string
+	decodeHardware      string
+	prefillLatencyModel string
+	decodeLatencyModel  string
+	prefillMaxModelLen  int64
+	decodeMaxModelLen   int64
+	// Per-ROLE MoE all-to-all backend (#1548). vLLM's VLLM_ALL2ALL_BACKEND is a
+	// per-process env var, so prefill and decode engines can (and in the GLM recipe do)
+	// run different modes: high-throughput on prefill, low-latency on decode.
+	prefillMoECommBackend string
+	decodeMoECommBackend  string
+
+	// per-request timeout override for blis run (seconds; negative = disabled, 0 is rejected)
+	requestTimeoutSecs int
+
+	// Goodput SLO targets (issue #1413). Each is "class=duration[,class=duration...]" using
+	// Go duration syntax. Distinct from --slo-targets (dispatch ordering, µs); these gate
+	// goodput emission. Precedence: CLI > trace header > workload spec.
+	goodputSLOTTFT string
+	goodputSLOITL  string
+	goodputSLOE2E  string
+
+	// output file paths
+	metricsPath string // File to write MetricsOutput JSON for blis run (--metrics-path)
+	resultsPath string // File to write []SimResult JSON for blis replay (--results-path)
+	// saturationReport (--saturation-report): per-event verdict trace file (#1516).
+	// Declared in saturation.go alongside --detectors / --saturation-config.
+
+	// trace export
+	traceOutput string // File prefix for TraceV2 export (<prefix>.yaml + <prefix>.csv)
+)
+
+// applyRopeScaling applies rope_scaling factor to maxPosEmb if applicable.
+// Returns the (possibly scaled) value and whether scaling was applied.
+// modelType is the HuggingFace model_type string (empty if not present).
+// ropeScaling is the raw rope_scaling value from config.json (nil if not present).
+//
+// Blacklist approach matching vLLM's _get_and_verify_max_len:
+// Types "su", "longrope", "llama3" are excluded (these encode full context in max_position_embeddings).
+// All other types (linear, dynamic, yarn, default, mrope, etc.) apply the factor.
+// "mrope" is intentionally NOT excluded: vLLM normalizes mrope → "default" via patch_rope_scaling_dict
+// and then applies the factor. BLIS reads raw JSON where mrope falls through the blacklist — same result.
+// For "yarn", original_max_position_embeddings is used as base when present.
+// gemma3 model_type skips rope_scaling entirely (max_position_embeddings is pre-scaled).
+// Uses substring match to handle both "gemma3" (top-level) and "gemma3_text" (after text_config pivot).
+func applyRopeScaling(maxPosEmb int, modelType string, ropeScaling any) (scaled int, applied bool) {
+	// R3: degenerate base guard
+	if maxPosEmb <= 0 {
+		return maxPosEmb, false
+	}
+
+	// gemma3 model_type: skip rope_scaling entirely (BC-3).
+	// Note: ParseHFConfig's text_config pivot overwrites model_type from "gemma3" to
+	// "gemma3_text" for multimodal models. Use strings.Contains to match both variants,
+	// aligning with vLLM's substring check ("gemma3" not in hf_config.model_type).
+	if strings.Contains(modelType, "gemma3") {
+		return maxPosEmb, false
+	}
+
+	// No rope_scaling present
+	if ropeScaling == nil {
+		return maxPosEmb, false
+	}
+
+	// rope_scaling must be a JSON object (map[string]any)
+	ropeMap, ok := ropeScaling.(map[string]any)
+	if !ok {
+		return maxPosEmb, false
+	}
+
+	// Read type (some configs use "rope_type" instead of "type")
+	ropeType, _ := ropeMap["type"].(string)
+	if ropeType == "" {
+		ropeType, _ = ropeMap["rope_type"].(string)
+	}
+
+	// Blacklist: these types already embed scaled context in max_position_embeddings
+	if ropeType == "su" || ropeType == "longrope" || ropeType == "llama3" {
+		return maxPosEmb, false
+	}
+
+	// Extract factor
+	factor, ok := ropeMap["factor"].(float64)
+	if !ok || factor <= 1.0 {
+		return maxPosEmb, false
+	}
+
+	// NaN/Inf defense-in-depth (standard JSON can't produce these, but non-standard sources might)
+	if math.IsNaN(factor) || math.IsInf(factor, 0) {
+		return maxPosEmb, false
+	}
+
+	// For yarn, use original_max_position_embeddings as base if available (BC-4)
+	base := maxPosEmb
+	if ropeType == "yarn" {
+		if orig, ok := ropeMap["original_max_position_embeddings"].(float64); ok && orig > 0 {
+			// Overflow guard on original_max_position_embeddings
+			if orig >= float64(math.MaxInt) {
+				return maxPosEmb, false
+			}
+			base = int(orig)
+		}
+	}
+
+	// Compute scaled value with overflow guard
+	product := float64(base) * factor
+	if product >= float64(math.MaxInt) || product < 0 {
+		return maxPosEmb, false
+	}
+
+	return int(product), true
+}
+
+// rootCmd is the base command for the CLI
+var rootCmd = &cobra.Command{
+	Use:   "blis",
+	Short: "BLIS — Blackbox Inference Simulator for LLM serving systems",
+}
+
+// validateDistributionParams checks token distribution bounds common to both the
+// concurrency and distribution synthesis paths (R3). Returns a non-empty error
+// string if any parameter violates a bound, empty string if all are valid.
+// A stdev of 0 is always valid — it produces a constant (deterministic) distribution.
+// Extracted for unit testability (R14).
+func validateDistributionParams(promptMin, promptMax, outputMin, outputMax, promptStdev, outputStdev, promptMean, outputMean int) string {
+	if promptMin < 1 {
+		return fmt.Sprintf("--prompt-tokens-min must be >= 1, got %d", promptMin)
+	}
+	if promptMax < 1 {
+		return fmt.Sprintf("--prompt-tokens-max must be >= 1, got %d", promptMax)
+	}
+	if outputMin < 1 {
+		return fmt.Sprintf("--output-tokens-min must be >= 1, got %d", outputMin)
+	}
+	if outputMax < 1 {
+		return fmt.Sprintf("--output-tokens-max must be >= 1, got %d", outputMax)
+	}
+	if promptStdev < 0 {
+		return fmt.Sprintf("--prompt-tokens-stdev must be >= 0, got %d", promptStdev)
+	}
+	if outputStdev < 0 {
+		return fmt.Sprintf("--output-tokens-stdev must be >= 0, got %d", outputStdev)
+	}
+	if promptMin > promptMax {
+		return fmt.Sprintf("--prompt-tokens-min (%d) must be <= --prompt-tokens-max (%d)", promptMin, promptMax)
+	}
+	if outputMin > outputMax {
+		return fmt.Sprintf("--output-tokens-min (%d) must be <= --output-tokens-max (%d)", outputMin, outputMax)
+	}
+	if promptMean > promptMax || promptMean < promptMin || promptStdev > promptMax || (promptStdev != 0 && promptStdev < promptMin) {
+		return "prompt-tokens and prompt-tokens-stdev should be in range [prompt-tokens-min, prompt-tokens-max]"
+	}
+	if outputMean > outputMax || outputMean < outputMin || outputStdev > outputMax || (outputStdev != 0 && outputStdev < outputMin) {
+		return "output-tokens and output-tokens-stdev should be in range [output-tokens-min, output-tokens-max]"
+	}
+	return ""
+}
+
+// allZeros reports whether all values in the coefficients slice are 0 (default).
+func allZeros(values []float64) bool {
+	for _, v := range values {
+		if v != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// latencyResolution holds the resolved components from resolveLatencyConfig.
+// Callers use these values to construct sim.SimConfig sub-configs.
+// Package-level vars (totalKVBlocks, maxModelLen, model, gpu, tensorParallelism,
+// modelConfigDir, hwConfigPath) are mutated as side effects.
+type latencyResolution struct {
+	Backend     string            // resolved latency backend name
+	ModelConfig sim.ModelConfig   // HF-derived model architecture config
+	HWConfig    sim.HardwareCalib // hardware calibration config
+	AlphaCoeffs []float64         // resolved alpha coefficients (local copy, not package-level)
+	BetaCoeffs  []float64         // resolved beta coefficients (local copy, not package-level)
+
+	// KVParams / KVParamsOK carry the HF-derived KV capacity params so the cluster
+	// can recompute per-instance KV-block capacity for node-pool placement (#1522).
+	// KVParamsOK is true only when an analytical backend parsed the HF config AND
+	// extraction succeeded AND --total-kv-blocks was not explicitly set (auto-calc path).
+	KVParams   latency.KVCapacityParams
+	KVParamsOK bool
+}
+
+// dpPlacementPlan describes how an MoE `--dp N` deployment expands into real
+// single-node engine replicas (#1531, DP-as-real-placement). The zero-expansion
+// case (Active=false, Replicas=1, PerRankDP=dp) covers the default (`--dp 1`),
+// dense models (dp>1 rejected earlier in resolveLatencyConfig), and any config
+// planDPPlacement declines to expand.
+type dpPlacementPlan struct {
+	Active    bool // true ⇒ expand into Replicas engine replicas, each configured DP=1
+	Replicas  int  // engine replicas per logical --num-instances (dp when Active, else 1)
+	PerRankDP int  // DP to configure on each replica's latency+KV model (1 when Active, else dp)
+
+	// EPGroupDP is the LOGICAL data-parallel width of the expert-parallel group to carry
+	// into each replica's latency model (#1548), or 0 when there is none to carry (expert
+	// parallelism off, or no placement expansion). It is NOT a second copy of Replicas:
+	// PerRankDP deliberately erases the replica's DP for token-work purposes, and this is
+	// the one quantity that must survive that erasure — the EP group spans the replicas.
+	EPGroupDP int
+}
+
+// EPGroupOptions returns the ModelHardwareOptions carrying this plan's logical
+// expert-parallel group width, or nil when the plan carries none (#1548). Keeping the
+// decision on the plan — rather than re-deriving it at each NewModelHardwareConfig call
+// site — means `blis run` and `blis replay` cannot disagree about it (R23, INV-13), and
+// makes it unit-testable with the rest of the plan.
+//
+// nil (not a zero-valued option) when there is nothing to carry, so a config built without
+// expert parallelism is constructed exactly as it was before #1548 (INV-6).
+func (p dpPlacementPlan) EPGroupOptions() []sim.ModelHardwareOption {
+	if p.EPGroupDP <= 1 {
+		return nil
+	}
+	return []sim.ModelHardwareOption{sim.WithExpertParallelGroupDP(p.EPGroupDP)}
+}
+
+// modelHardwareOptions assembles the full ModelHardwareOption list for a NewModelHardwareConfig
+// call, in ONE place so `blis run` and `blis replay` cannot diverge on it (R23, INV-13) — the
+// same reason EPGroupOptions exists. Every latency-model input that rides an option
+// (the #1548 EP-group width, the #1694 cross-node serialization factor S) is composed here;
+// a new one is added once, not at both call sites. Reads the CLI (S resolution + its guards)
+// and the resolved placement plan.
+func modelHardwareOptions(cmd *cobra.Command, dpPlan dpPlacementPlan) []sim.ModelHardwareOption {
+	return append(dpPlan.EPGroupOptions(), sim.WithCommSerializationFactor(resolveCommSerializationFactor(cmd)))
+}
+
+// dpPlacementInstanceWarnThreshold: warn (not fatal) when DP-as-placement expands
+// to more than this many engine replicas, so an accidental large --dp (a typo) is
+// surfaced before the run consumes a large amount of memory/time.
+const dpPlacementInstanceWarnThreshold = 512
+
+// epSizeForKVCapacity returns the expert-parallel group size to charge routed-expert
+// weights against in a KV-capacity auto-calculation (#1656), for a pool/instance whose
+// tensor-parallel degree is tp.
+//
+// It reads the LOGICAL, user-requested topology (--dp / --enable-expert-parallel) rather
+// than any per-replica config: DP-as-placement (#1531) reconfigures each engine replica
+// to DP=1, so a config-derived group size would collapse to tp and the sharding would
+// silently vanish for exactly the TP×DP deployments that need it. Every CLI auto-calc
+// site funnels through here so one formula serves all of them (R23).
+//
+// Note the capacity effect only appears when the EP group exceeds tp — i.e. with DP>1,
+// which #1548 made reachable end-to-end on both commands (it lifted planDPPlacement's
+// EP-on rejection). So this is live rather than latent, and it now agrees with the
+// step-time expert-shard group (ModelHardwareConfig.EffectiveExpertShardGroupSize), which
+// is fed the same logical width. It also still stops the weight
+// over-count from masking its diagnostics.
+//
+// Ordering note (#1556): resolveDPPlacement mutates numInstances / totalKVBlocks /
+// maxModelLen but NEVER dataParallelism — the per-replica DP=1 travels as the returned
+// dpPlan.PerRankDP, straight into NewModelHardwareConfig. So this function reads the
+// logical CLI --dp whatever the call order, which is exactly what it needs; a future
+// change that wrote the per-rank DP back into the flag var would silently collapse the EP
+// group to tp and undo #1656 — and, since #1548, the step-time expert-shard group with it
+// (dpPlacementPlan.EPGroupDP is likewise read from the logical --dp).
+//
+// Two of resolveLatencyConfig's own EP rejections (roofline + EP, dense + EP) also fire
+// AFTER the auto-calc that calls this, so an EP group can be resolved for a config that is
+// about to be rejected. That is safe because a group produced HERE can never fail the
+// capacity model's validation: it is either 1 (EP off, or a dense model — EffectiveEPSize's
+// isMoE gate) or exactly tp·dp, and the accepted domain is {0,1} ∪ [tp, tp·dp] with a
+// wider-than-expert-count group CLAMPED rather than rejected. So no EP diagnostic can
+// pre-empt the CLI's own; a dense model yields 1, and a roofline MoE's reduced capacity is
+// simply discarded by the Fatalf. The same reasoning the dense-dp>1 gate documents in
+// sim/latency/kv_capacity.go applies — the gate is load-bearing, not merely redundant.
+//
+// Per-pool EP is not expressible, exactly as per-pool DP is not (#1420): --dp and
+// --enable-expert-parallel apply uniformly, so each PD pool's group is poolTP·dp.
+func epSizeForKVCapacity(isMoE bool, tp int) int {
+	return sim.EffectiveEPSize(isMoE, tp, dataParallelism, enableExpertParallel)
+}
+
+// formatEPForLog renders a resolved expert-parallel group size for a log line: "off" for
+// the EP-off value (1), so an operator does not read it as a real one-GPU group.
+func formatEPForLog(ep int) string {
+	if ep <= 1 {
+		return "off"
+	}
+	return strconv.Itoa(ep)
+}
+
+// planDPPlacement decides DP-as-real-placement expansion (for both `blis run`
+// and `blis replay` — see resolveDPPlacement) and rejects placement combinations
+// #1531 does not yet model. It is pure (no package state) so the decision is
+// unit-testable independently of the command wiring that applies it. On error it
+// returns the zero plan (Active=false, Replicas=0); callers MUST `logrus.Fatalf`
+// on error and not use the plan.
+//
+// DP-as-placement applies to an MoE model with dp>1 and no autoscaler; each replica is
+// then a standalone TP engine sized per-rank (DP=1). vLLM data parallelism is N independent
+// EngineCores with an internal load balancer distributing requests disjointly — the BLIS
+// equivalent is N real instances behind the existing cluster router. The lumped
+// single-instance DP model divided token work by dp precisely because it held every
+// request; once the router splits requests across N instances each replica must be DP=1 or
+// the /dp factor double-counts.
+//
+// PD disaggregation and node pools are SUPPORTED alongside it (#1553, lifting #1531's
+// rejections). Neither changes the plan the way the autoscaler would: the PD extension is
+// the same per-replica transformation applied to EACH pool (a topology P+D+S+E ≤ total
+// becomes P·N+D·N+S·N+E·N ≤ total·N, which preserves the topology inequality), and node
+// pools place the N×M replicas through the existing tested per-instance placement path.
+// So the plan is identical to the plain (non-PD, non-node-pool) active plan; the per-pool
+// count expansion is carried out by applyDPPlacement, not decided here.
+//
+// Expert parallelism is ALSO allowed alongside it (#1548, lifting #1531's rejection). It
+// reserves no extra GPUs — the expert-parallel group IS the N×TP GPUs this placement
+// already takes — so the plan is unchanged by it; what EP changes is how experts map onto
+// that group, which resolveDPPlacement carries into each replica's latency model as the
+// logical EP-group DP width. epOn is therefore not a rejection reason, and is kept
+// as a parameter only so the caller's decision and its diagnostics read from one place.
+//
+// Guarded combination that still fails fast (never silently mis-modeled):
+//   - Autoscaler (#1553 DECISION): the semantics of dynamically scaling a dp-expanded
+//     population are undefined (add one rank? one whole DP group of N?), and
+//     DirectActuator.scaleUp places a single-role instance with no DP-group awareness.
+//     Supporting it would ship an untested, ambiguous path — exactly what #1531 guarded
+//     against. Rejected with a clear message stating the decision.
+//
+// Dense dp>1 is rejected earlier (resolveLatencyConfig, cmd/root.go), so here it
+// is simply a no-op.
+func planDPPlacement(isMoE bool, dp int, epOn, pdActive, autoscalerActive, nodePoolsActive bool) (dpPlacementPlan, error) {
+	if !isMoE || dp <= 1 {
+		// No expansion ⇒ nothing erases the config's own DP ⇒ no EP width to carry.
+		return dpPlacementPlan{Active: false, Replicas: 1, PerRankDP: dp}, nil
+	}
+	if autoscalerActive {
+		return dpPlacementPlan{}, fmt.Errorf("--dp > 1 (MoE) is not supported with the model autoscaler (#1553 " +
+			"decision): DP-as-placement spawns a fixed set of dp engine replicas, and the semantics of " +
+			"dynamically scaling that population (add one rank, or one whole DP group of dp?) are undefined — " +
+			"the autoscaler places single-role instances with no DP-group awareness. " +
+			"Use --dp 1 with the autoscaler, or disable the autoscaler")
+	}
+	// pdActive / nodePoolsActive are no longer rejection reasons (#1553). They are kept as
+	// parameters so resolveDPPlacement's diagnostics and the per-pool KV path can read the
+	// same decision, and so a future combination-specific guard has one home.
+	_ = pdActive
+	_ = nodePoolsActive
+	// epGroupDP is the ONLY effect expert parallelism has on the plan: it reserves no extra
+	// GPUs, so Replicas/PerRankDP are identical either way.
+	epGroupDP := 0
+	if epOn {
+		epGroupDP = dp
+	}
+	return dpPlacementPlan{Active: true, Replicas: dp, PerRankDP: 1, EPGroupDP: epGroupDP}, nil
+}
+
+// dpPlacementDeployment carries the deployment quantities DP-as-real-placement
+// adjusts. It is both the input (pre-expansion) and the output (post-expansion) of
+// applyDPPlacement.
+//
+// The four PD pool counts (#1553) are expanded by the same Replicas factor as
+// NumInstances: a PD topology of P prefill + D decode + S shared + E encode instances
+// (with P+D+S+E ≤ total) becomes P·N + D·N + S·N + E·N replicas of total·N. Scaling
+// every term by the same N preserves ValidatePoolTopology's inequality
+// (P·N+D·N+S·N+E·N ≤ total·N), so a topology that passed at --dp 1 still passes after
+// expansion. They are zero for a non-PD run, so the multiply is a strict no-op there.
+type dpPlacementDeployment struct {
+	NumInstances  int   // engine replicas (logical --num-instances on the way in)
+	TotalKVBlocks int64 // KV blocks per instance (the dp-multiplied aggregate on the way in when autoScaledKV)
+	MaxModelLen   int64 // --max-model-len (0 = unset/unlimited)
+
+	// PD pool counts (#1553), each scaled by Replicas when the plan is active. Zero for
+	// a non-PD deployment.
+	PrefillInstances int
+	DecodeInstances  int
+	SharedInstances  int
+	EncodeInstances  int
+}
+
+// applyDPPlacement applies a DP-as-placement plan to the deployment quantities: it
+// expands the instance count, divides the KV budget to one rank, and re-caps
+// --max-model-len to that per-rank budget. It is pure (no package state) so the
+// production arithmetic — the exact defect BC-2 guards against, no dp² double-count —
+// is directly unit-testable rather than re-implemented in a test. On error the
+// deployment is returned UNCHANGED.
+//
+// autoScaledKV must be true iff the incoming TotalKVBlocks is the successful global
+// auto-calc value, which kv_capacity.go Step 6 already multiplied by dp for MoE —
+// then it is divided back to one rank (exact: (perRank×dp)/dp). An explicit
+// --total-kv-blocks (autoScaledKV=false) is per-instance already, so each replica
+// keeps it (aggregate dp×value) and no max-model-len re-cap is needed (no aggregate
+// was ever used as the cap). A non-Active plan is the identity.
+func applyDPPlacement(plan dpPlacementPlan, dp int, dep dpPlacementDeployment, autoScaledKV bool, blockSizeTokens int64) (dpPlacementDeployment, error) {
+	if !plan.Active {
+		return dep, nil
+	}
+	out := dep
+	out.NumInstances = dep.NumInstances * plan.Replicas
+	// Scale each PD pool count by the same replica factor (#1553). The topology
+	// inequality P+D+S+E ≤ total is preserved because every term (and total) scales by
+	// the same N; the pool counts are 0 for a non-PD run, so this is a no-op there.
+	out.PrefillInstances = dep.PrefillInstances * plan.Replicas
+	out.DecodeInstances = dep.DecodeInstances * plan.Replicas
+	out.SharedInstances = dep.SharedInstances * plan.Replicas
+	out.EncodeInstances = dep.EncodeInstances * plan.Replicas
+	if autoScaledKV {
+		out.TotalKVBlocks = dep.TotalKVBlocks / int64(dp)
+	}
+	// The per-rank division floors, so a --dp larger than the auto-derived block count
+	// would leave a 0-block replica — which NewSimulator panics on, and whose derived
+	// kvFeasibleMax of 0 would silently mean "unlimited" in the re-cap below (the
+	// inverse of a cap). Report it as a clean CLI error instead (R1). The guarantee
+	// that the auto path cannot produce this lives in another package
+	// (sim/latency/kv_capacity.go rejects a non-positive total before multiplying by
+	// dp), so this is defense in depth. Unreachable on the explicit
+	// --total-kv-blocks path, which is validated > 0 upstream and is not divided.
+	if out.TotalKVBlocks <= 0 {
+		return dep, fmt.Errorf("--dp %d exceeds the auto-derived KV capacity: dividing it across %d engine "+
+			"replicas leaves %d KV blocks each. Lower --dp, raise --gpu-memory-utilization, use a larger GPU "+
+			"(--hardware), or set --total-kv-blocks explicitly (it is per replica)",
+			dp, plan.Replicas, out.TotalKVBlocks)
+	}
+	// The resolveLatencyConfig max-model-len KV-feasibility cap used the pre-division
+	// aggregate total; each replica now holds only the per-rank budget, so re-cap
+	// max-model-len to the per-rank KV-feasible maximum (mirrors kv_autocalc.go for
+	// node pools). Without this, per-replica NewSimulator would panic ("KV cache too
+	// small for MaxModelLen") on a reachable config — a Go stack trace where the CLI
+	// boundary requires a clean fatal/cap.
+	if autoScaledKV && out.MaxModelLen > 0 && blockSizeTokens > 0 {
+		kvFeasibleMax := out.TotalKVBlocks * blockSizeTokens
+		if out.MaxModelLen > kvFeasibleMax {
+			logrus.Warnf("--max-model-len %d exceeds per-rank KV capacity (%d blocks × %d tokens) under "+
+				"DP-as-placement; capping to %d tokens", out.MaxModelLen, out.TotalKVBlocks, blockSizeTokens, kvFeasibleMax)
+			out.MaxModelLen = kvFeasibleMax
+		}
+	}
+	return out, nil
+}
+
+// resolveDPPlacement plans DP-as-real-placement (#1531) and applies it to the cmd/
+// deployment vars, emitting the operator diagnostics. It is the ONE code path both
+// `blis run` and `blis replay` traverse (R23), so INV-13 parity for MoE --dp>1 is
+// structural (#1556 lifted the former run-only guard in cmd/replay.go).
+//
+// Like resolveLatencyConfig and resolvePolicies, it READS AND WRITES the package-level
+// flag vars itself rather than taking them as arguments — deliberately, so there is no
+// per-command wiring for a future edit to get right in only one of the two command
+// bodies. The pure decision (planDPPlacement) and the pure arithmetic
+// (applyDPPlacement) stay separately unit-testable.
+//
+// Reads: dataParallelism, enableExpertParallel, moeCommBackend, tensorParallelism,
+// numInstances, totalKVBlocks, maxModelLen, and the prefill/decode/prefillDecode/encode
+// instance counts (as pre-expansion pool inputs).
+//
+// Side effects (package-level vars mutated, only when the plan is active and every
+// guard passes): numInstances, totalKVBlocks, maxModelLen, and the four PD pool counts
+// (prefillInstances, decodeInstances, prefillDecodeInstances, encodeInstances) — each
+// scaled by Replicas so a PD topology spawns its N per-rank replicas per pool (#1553).
+//
+// The plan is decided by the caller (planDPPlacement) and passed in — deliberately, so
+// the ONE decision can be made early enough for the per-pool KV auto-calc to size each
+// pool per-rank (BC-3, #1553), while its application (instance/KV/pool-count expansion)
+// stays here at the single write site. planDPPlacement is pure, so deciding early and
+// applying later is safe.
+//
+// On error NOTHING is mutated and the caller MUST `logrus.Fatalf` — the CLI boundary
+// owns termination; this function only reports. A non-Active plan (dense model, or
+// --dp 1) mutates nothing, which is what makes the feature a byte-identical no-op
+// (INV-6).
+func resolveDPPlacement(lr latencyResolution, plan dpPlacementPlan) (dpPlacementPlan, error) {
+	if !plan.Active {
+		return plan, nil
+	}
+	logicalInstances := numInstances
+	// autoScaledKV iff the global auto-calc succeeded (kv_capacity.go Step 6 then
+	// multiplied the total by dp for MoE) — exactly the resolveLatencyConfig auto gate.
+	autoScaledKV := lr.KVParamsOK && lr.HWConfig.MemoryGiB > 0
+	dep, err := applyDPPlacement(plan, dataParallelism, dpPlacementDeployment{
+		NumInstances:     numInstances,
+		TotalKVBlocks:    totalKVBlocks,
+		MaxModelLen:      maxModelLen,
+		PrefillInstances: prefillInstances,
+		DecodeInstances:  decodeInstances,
+		SharedInstances:  prefillDecodeInstances,
+		EncodeInstances:  encodeInstances,
+	}, autoScaledKV, blockSizeTokens)
+	if err != nil {
+		return dpPlacementPlan{}, err
+	}
+	// The scaled PD topology still satisfies P·N+D·N+S·N+E·N ≤ total·N by construction
+	// (the pre-scale topology passed ValidatePoolTopology at the CLI boundary and every
+	// term scales by the same N). Re-validate as defense in depth (#1553, BC-2): a future
+	// change to the scaling arithmetic that broke the invariant must fail loudly here
+	// rather than mis-place instances (R1).
+	if dep.PrefillInstances > 0 || dep.DecodeInstances > 0 || dep.SharedInstances > 0 || dep.EncodeInstances > 0 {
+		if verr := cluster.ValidatePoolTopology(dep.PrefillInstances, dep.DecodeInstances,
+			dep.SharedInstances, dep.EncodeInstances, dep.NumInstances); verr != nil {
+			return dpPlacementPlan{}, fmt.Errorf("DP-as-placement expanded the PD pool topology past the "+
+				"cluster invariant (this should be impossible — every term scales by the same --dp): %w", verr)
+		}
+	}
+	numInstances, totalKVBlocks, maxModelLen = dep.NumInstances, dep.TotalKVBlocks, dep.MaxModelLen
+	prefillInstances, decodeInstances = dep.PrefillInstances, dep.DecodeInstances
+	prefillDecodeInstances, encodeInstances = dep.SharedInstances, dep.EncodeInstances
+	logrus.Infof("[cluster] DP-as-placement: --dp %d (MoE) → %d single-node engine replicas per logical instance "+
+		"(%d logical × %d = %d instances), each per-rank (DP=1, %d KV blocks/replica)",
+		dataParallelism, plan.Replicas, logicalInstances, plan.Replicas, numInstances, totalKVBlocks)
+	if numInstances > dpPlacementInstanceWarnThreshold {
+		logrus.Warnf("[cluster] DP-as-placement is spawning %d engine replicas (--num-instances %d × --dp %d); "+
+			"if --dp was a typo this will consume a large amount of memory and time", numInstances, logicalInstances, dataParallelism)
+	}
+	if enableExpertParallel {
+		// EP-ON placement (#1548). The expert-parallel group is the whole N×TP GPU set this
+		// placement already reserves; each replica's own DP is 1, so its latency model can
+		// only learn the group's real width from the LOGICAL --dp. Without this the group
+		// would collapse to TP and the EP sharding would silently no-op — the same trap
+		// #1656 documents on the KV-capacity side.
+		logrus.Infof("[cluster] EP-as-placement: --enable-expert-parallel over the TP·DP=%d×%d=%d GPU "+
+			"expert-parallel group (no additional GPUs reserved); routed experts are sharded across the "+
+			"group and the MoE FFN uses dispatch/combine all-to-all instead of a TP all-reduce",
+			tensorParallelism, dataParallelism, tensorParallelism*dataParallelism)
+		// Honesty boundary: the group spans plan.Replicas SEPARATELY placed replicas. BLIS
+		// prices cross-node collective traffic from real placement WITHIN one instance's TP
+		// group (#1530), but the expert-parallel group here is formed ACROSS N independently
+		// placed engine replicas — a boundary the per-instance placement topology does not
+		// cross. Node pools alongside --dp>1 are supported for GPU reservation since #1553,
+		// but that does not add inter-replica fabric pricing, so the inter-replica leg of the
+		// all-to-all is still charged at the on-node rate.
+		logrus.Warnf("[cluster] the %d-GPU expert-parallel group spans %d independently-placed engine "+
+			"replicas, whose inter-replica fabric cost is NOT priced: cross-node collective pricing is "+
+			"placement-derived within a TP group (#1530) but the EP group is formed across separately-placed "+
+			"replicas, so the all-to-all is charged at the on-node rate and step time is optimistic for a "+
+			"multi-node expert-parallel deployment", tensorParallelism*dataParallelism, plan.Replicas)
+	} else if moeCommBackend != "" {
+		// --moe-comm-backend selects the dispatch/combine cost. With EP off, each replica
+		// runs at DP=1, so that term is inert (the MoE FFN all-reduces over the TP group
+		// instead — correct EP-off physics). The resolveLatencyConfig no-op warning does not
+		// fire here (it gates on the CLI dataParallelism, which is >1), so warn explicitly to
+		// avoid a user believing the backend choice affects this run.
+		logrus.Warnf("--moe-comm-backend=%s is inert under DP-as-placement without expert parallelism: "+
+			"each of the %d DP replicas runs at DP=1, so the MoE FFN all-reduces over the TP group (no "+
+			"dispatch/combine). Add --enable-expert-parallel to select the all-to-all it prices.",
+			moeCommBackend, plan.Replicas)
+	}
+	return plan, nil
+}
+
+// deploymentFlagValues carries the resolved deployment inputs together with whether the
+// operator actually SUPPLIED each flag. The two are independent: --tp's unset sentinel is
+// 0, which is also a value an operator can type, so the resolved number alone cannot tell
+// "omitted" from "explicitly wrong" (#1776).
+//
+// The supplied bits come from cobra's Flags().Changed at the single call site, carried in
+// explicitly rather than read from the command, so the refusal rule below stays a pure
+// function of its inputs (table-testable without building a cobra command).
+type deploymentFlagValues struct {
+	GPU         string
+	GPUSupplied bool
+	TP          int
+	TPSupplied  bool
+}
+
+// deploymentFlagRefusal returns the message refusing a deployment BLIS will not run, or ""
+// when both inputs are acceptable. Pure — no logging and no process exit — so every branch
+// is table-testable; requireDeploymentFlags is the Fatalf wrapper.
+//
+// Two dispositions per flag, because they need different fixes (#1776): an OMITTED flag has
+// to be added, whereas a flag supplied with an unusable value (`--tp 0`, `--tp -1`,
+// `--hardware ""`) has to be corrected. Reporting the latter as "missing" sends the
+// operator looking for a flag that is right there on their command line. When one flag is
+// omitted and the other is invalid, both clauses are emitted.
+func deploymentFlagRefusal(f deploymentFlagValues) string {
+	var missing, invalid []string
+	switch {
+	case f.GPU != "": // acceptable; the hardware key itself is validated by the config loader
+	case f.GPUSupplied:
+		invalid = append(invalid, `--hardware "" (the GPU type must be non-empty, e.g. --hardware H100)`)
+	default:
+		missing = append(missing, "--hardware (GPU type, e.g. --hardware H100)")
+	}
+	switch {
+	case f.TP > 0: // acceptable
+	case f.TPSupplied:
+		invalid = append(invalid, fmt.Sprintf("--tp %d (tensor parallelism must be > 0, e.g. --tp 1)", f.TP))
+	default:
+		missing = append(missing, "--tp (tensor parallelism, e.g. --tp 1)")
+	}
+	if len(missing) == 0 && len(invalid) == 0 {
+		return ""
+	}
+
+	var clauses []string
+	if len(missing) > 0 {
+		clauses = append(clauses, "missing required flag(s): "+strings.Join(missing, " and "))
+	}
+	if len(invalid) > 0 {
+		clauses = append(clauses, "invalid deployment flag value(s): "+strings.Join(invalid, " and "))
+	}
+	return strings.Join(clauses, "; ") + ". BLIS does not infer the deployment — " +
+		"the GPU type and tensor-parallel degree must be chosen explicitly, on both `blis run` and `blis replay`"
+}
+
+// requireDeploymentFlags refuses a run whose deployment was not chosen by the operator,
+// naming the flag(s) that are missing — or, since #1776, the flag(s) supplied with an
+// unusable value (NS-6, #1733).
+//
+// --hardware and --tp are REQUIRED inputs: every latency backend needs both, and the GPU
+// type plus the tensor-parallel degree together decide the KV budget, the step time, and
+// the placement footprint. BLIS previously looked them up per-model in defaults.yaml and
+// emitted a `logrus.Warnf` before continuing, so a run could complete — and emit metrics —
+// on a deployment the operator never chose, which is the failure mode R1 forbids.
+//
+// A CLI-boundary guard: the refusal rule itself is the pure deploymentFlagRefusal, and this
+// wrapper terminates via logrus.Fatalf per the cmd/-layer error-handling boundary. Which
+// runs are refused is UNCHANGED by #1776 (the accept condition is still a non-empty GPU and
+// a positive TP) — only the wording of the refusal differs, so INV-6 byte-identity on every
+// valid input is untouched.
+func requireDeploymentFlags(f deploymentFlagValues) {
+	if msg := deploymentFlagRefusal(f); msg != "" {
+		logrus.Fatalf("%s", msg)
+	}
+}
+
+// resolveLatencyConfig resolves the latency backend configuration from CLI flags and
+// defaults.yaml. It is called by both runCmd and replayCmd to ensure a single code path
+// (R23: code path parity). This eliminates the R23 comment-sync markers in replay.go.
+//
+// What it does:
+//   - Normalizes model name to lowercase
+//   - Validates gpuMemoryUtilization and blockSizeTokens (used in KV auto-calc)
+//   - Requires --hardware and --tp (NS-6: the deployment is never inferred from defaults.yaml)
+//   - Validates alpha/beta coefficients and auto-detects trained-physics mode when coefficients are provided
+//   - For roofline/trained-physics: resolves the catalog entry directory and
+//     hardware config, loads coefficients from defaults.yaml, auto-calculates
+//     total-kv-blocks and max-model-len from the HF config
+//
+// Side effects (package-level vars mutated):
+//
+//	model, gpu, tensorParallelism, modelConfigDir, resolvedCatalogRoot,
+//	hwConfigPath, totalKVBlocks, maxModelLen
+//
+// resolvedCatalogRoot is set transitively, by the resolveModelConfig call on each
+// analytical-backend branch (#1732); the emit sites read it back as results-file
+// catalog provenance rather than re-resolving --catalog / BLIS_CATALOG, which would
+// re-announce the precedence override on stderr.
+//
+// Returns values that cannot be stored as package-level vars (local coeff copies,
+// resolved modelConfig/hwConfig structs, backend string).
+func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
+	// Work with local copies of coefficient slices. The package-level alphaCoeffs/betaCoeffs
+	// hold Cobra-registered CLI defaults; mutating them directly would corrupt Cobra's
+	// default-value tracking and break subsequent cmd.Flags().Changed() checks.
+	alpha := append([]float64(nil), alphaCoeffs...)
+	beta := append([]float64(nil), betaCoeffs...)
+
+	// Normalize model name for consistent lookups (defaults.yaml keys, hf_repo,
+	// the catalog entry directory, coefficient matching all use lowercase).
+	model = strings.ToLower(model)
+
+	// Validate --latency-model flag
+	if !sim.IsValidLatencyBackend(latencyModelBackend) {
+		logrus.Fatalf("unknown --latency-model %q; valid options: %s",
+			latencyModelBackend, strings.Join(sim.ValidLatencyBackendNames(), ", "))
+	}
+	backend := latencyModelBackend
+
+	// Alpha and beta coefficients must be provided together or not at all.
+	alphaChanged := cmd.Flags().Changed("alpha-coeffs")
+	betaChanged := cmd.Flags().Changed("beta-coeffs")
+	if alphaChanged != betaChanged {
+		if alphaChanged {
+			logrus.Fatalf("--alpha-coeffs requires --beta-coeffs. Both coefficient sets are needed for coefficient-based estimation")
+		}
+		logrus.Fatalf("--beta-coeffs requires --alpha-coeffs. Both coefficient sets are needed for coefficient-based estimation")
+	}
+	for i, c := range alpha {
+		if math.IsNaN(c) || math.IsInf(c, 0) || c < 0 {
+			logrus.Fatalf("--alpha-coeffs[%d] must be a finite non-negative number, got %v", i, c)
+		}
+	}
+	for i, c := range beta {
+		if math.IsNaN(c) || math.IsInf(c, 0) || c < 0 {
+			logrus.Fatalf("--beta-coeffs[%d] must be a finite non-negative number, got %v", i, c)
+		}
+	}
+	if !cmd.Flags().Changed("latency-model") && alphaChanged && betaChanged {
+		backend = "trained-physics"
+		logrus.Infof("--alpha-coeffs and --beta-coeffs provided; using trained-physics mode")
+	}
+
+	// Validate flags consumed inside this function before any KV auto-calc.
+	// gpuMemoryUtilization and blockSizeTokens are used in CalculateKVBlocks;
+	// validate here so errors are caught before computation rather than silently
+	// producing wrong results.
+	if gpuMemoryUtilization <= 0 || gpuMemoryUtilization > 1.0 || math.IsNaN(gpuMemoryUtilization) || math.IsInf(gpuMemoryUtilization, 0) {
+		logrus.Fatalf("--gpu-memory-utilization must be a finite value in (0, 1.0], got %f", gpuMemoryUtilization)
+	}
+	if blockSizeTokens <= 0 {
+		logrus.Fatalf("--block-size-in-tokens must be > 0, got %d", blockSizeTokens)
+	}
+	// Fail fast on an unrecognized --kv-cache-dtype (#1565) before any KV auto-calc,
+	// regardless of backend. "auto" (the default) is a no-op (INV-6). The mapping to
+	// bytes is applied to the ModelConfig on the analytical path below.
+	if _, ok := latency.KVCacheDtypeToBytes(kvCacheDtype); !ok {
+		logrus.Fatalf("--kv-cache-dtype %q is not recognized; valid values: auto, fp8, fp8_e4m3, fp8_e5m2, fp8_inc, bf16, bfloat16, fp16, fp32", kvCacheDtype)
+	}
+
+	var modelConfig sim.ModelConfig
+	var hwConfig sim.HardwareCalib
+	// KV capacity params extracted from the HF config (analytical backends only).
+	// Retained on latencyResolution so the cluster can recompute per-instance KV
+	// capacity for node-pool placement (#1522). kvParamsOK is false when extraction
+	// failed or the backend is non-analytical (no HF config parsed).
+	var kvParams latency.KVCapacityParams
+	var kvParamsOK bool
+
+	// NS-6 (#1733): the deployment is an operator input, never inferred. BLIS used to look
+	// --hardware/--tp up per-model in defaults.yaml and warn-and-continue, so a run could
+	// complete on a deployment nobody chose. Both are now REQUIRED, refused by name (R1).
+	// Checked before any backend branch so run and replay — which share this function —
+	// refuse identically (INV-13), and so no backend can silently skip the requirement.
+	//
+	// Flags().Changed distinguishes an OMITTED flag from one explicitly supplied with an
+	// unusable value (#1776); --tp's unset sentinel is 0, which an operator can also type.
+	// It is safe on a command that never registered the flag (pflag returns false for an
+	// unknown name), which reads as "omitted" — the pre-#1776 disposition.
+	requireDeploymentFlags(deploymentFlagValues{
+		GPU:         gpu,
+		GPUSupplied: cmd.Flags().Changed("hardware"),
+		TP:          tensorParallelism,
+		TPSupplied:  cmd.Flags().Changed("tp"),
+	})
+
+	// --latency-model roofline
+	if backend == "roofline" {
+		// alphaChanged == betaChanged is guaranteed by the "both or neither" check above,
+		// so checking betaChanged alone is sufficient to confirm both were provided.
+		if cmd.Flags().Changed("latency-model") && betaChanged {
+			logrus.Fatalf("--alpha-coeffs/--beta-coeffs cannot be used with --latency-model roofline. " +
+				"Roofline computes step time analytically. " +
+				"Use --latency-model trained-physics if you want coefficient-based estimation")
+		}
+		if hwConfigPath != "" {
+			logrus.Infof("--latency-model: explicit --hardware-config takes precedence over auto-resolution")
+		}
+		resolved, err := resolveModelConfig(model)
+		if err != nil {
+			logrus.Fatalf("%v", err)
+		}
+		modelConfigDir = resolved
+		resolvedHW, err := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
+		if err != nil {
+			logrus.Fatalf("%v", err)
+		}
+		hwConfigPath = resolvedHW
+	}
+
+	// --latency-model trained-physics: physics-informed roofline with architecture-aware MoE overhead.
+	// Uses trained_physics_coefficients from defaults.yaml (10-beta, 3-alpha).
+	if backend == "trained-physics" {
+		resolved, err := resolveModelConfig(model)
+		if err != nil {
+			logrus.Fatalf("%v", err)
+		}
+		modelConfigDir = resolved
+		resolvedHW, err := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
+		if err != nil {
+			logrus.Fatalf("%v", err)
+		}
+		hwConfigPath = resolvedHW
+		if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
+			data, readErr := os.ReadFile(defaultsFilePath)
+			if readErr != nil {
+				logrus.Warnf("--latency-model trained-physics: failed to read %s: %v", defaultsFilePath, readErr)
+			} else {
+				var cfg Config
+				decoder := yaml.NewDecoder(bytes.NewReader(data))
+				decoder.KnownFields(true) // R10: strict YAML parsing
+				if yamlErr := decoder.Decode(&cfg); yamlErr != nil {
+					logrus.Fatalf("--latency-model trained-physics: failed to parse %s: %v", defaultsFilePath, yamlErr)
+				}
+				if cfg.TrainedPhysicsDefaults != nil {
+					if !cmd.Flags().Changed("beta-coeffs") {
+						beta = cfg.TrainedPhysicsDefaults.BetaCoeffs
+						logrus.Infof("--latency-model: loaded trained-physics beta coefficients from defaults.yaml")
+					}
+					if !cmd.Flags().Changed("alpha-coeffs") {
+						alpha = cfg.TrainedPhysicsDefaults.AlphaCoeffs
+						logrus.Infof("--latency-model: loaded trained-physics alpha coefficients from defaults.yaml")
+					}
+				}
+			}
+		}
+		// Validate trained-physics coefficients: at least 7 beta required (8th+ optional).
+		if !cmd.Flags().Changed("beta-coeffs") && (len(beta) < 7 || allZeros(beta)) {
+			logrus.Fatalf("--latency-model trained-physics: no trained_physics_coefficients found in %s and no --beta-coeffs provided. "+
+				"Add trained_physics_coefficients to defaults.yaml or provide --beta-coeffs explicitly", defaultsFilePath)
+		}
+		if allZeros(alpha) && !cmd.Flags().Changed("alpha-coeffs") {
+			logrus.Warnf("--latency-model trained-physics: no trained-physics alpha coefficients found; " +
+				"QueueingTime, PostDecodeFixedOverhead, and OutputTokenProcessingTime will use zero alpha (may underestimate TTFT/E2E)")
+		}
+	}
+
+	// Analytical backends: parse HF config, extract model/hardware config, auto-calc KV blocks and max-model-len.
+	if backend == "roofline" || backend == "trained-physics" {
+		hfPath := filepath.Join(modelConfigDir, "config.json")
+		hfConfig, err := latency.ParseHFConfig(hfPath)
+		if err != nil {
+			logrus.Fatalf("Failed to parse HuggingFace config: %v", err)
+		}
+		mc, err := latency.GetModelConfigFromHF(hfConfig)
+		if err != nil {
+			logrus.Fatalf("Failed to load model config: %v", err)
+		}
+		modelConfig = *mc
+		hc, err := latency.GetHWConfig(hwConfigPath, gpu)
+		if err != nil {
+			logrus.Fatalf("Failed to load hardware config: %v", err)
+		}
+		hwConfig = hc
+
+		applyWeightPrecisionFallback(&modelConfig, model, hfConfig.Raw)
+		applyKVCacheDtype(&modelConfig, kvCacheDtype)
+
+		if backend == "roofline" && modelConfig.IsMoE() {
+			logrus.Infof("--latency-model: MoE model detected (%d experts, top_%d). "+
+				"Roofline models per-expert FLOPs and active weights; dispatch overhead is not modeled",
+				modelConfig.NumLocalExperts, modelConfig.NumExpertsPerTok)
+		}
+
+		// MLA models (#1527): KV capacity now uses the compressed-latent footprint,
+		// but the step-time (trained-physics/roofline) decode bandwidth term still
+		// sizes KV reads as the standard 2 × num_kv_heads × head_dim per token/layer
+		// — much larger than the MLA latent (kv_lora_rank + qk_rope_head_dim), so
+		// step time is PESSIMISTIC for MLA. Surface this so a user planning capacity
+		// vs latency for an MLA model is not misled by an order-of-magnitude-off
+		// step time (correct KV block counts, pessimistic step time). See
+		// docs/reference/models.md "known approximations".
+		if modelConfig.IsMLA() {
+			logrus.Warnf("--latency-model: MLA model detected (kv_lora_rank=%d). KV capacity uses the "+
+				"compressed-latent footprint (kv_lora_rank+qk_rope_head_dim), but step-time estimation "+
+				"still uses the standard 2×num_kv_heads×head_dim KV-read term — step time is PESSIMISTIC "+
+				"for MLA (KV block counts are correct). See docs/reference/models.md known approximations",
+				modelConfig.KVLoraRank)
+		}
+
+		// Hybrid-attention models (#1635/#1636): KV capacity is sized over the
+		// full-attention (KV-bearing) layers only (#1635), and step time now splits the
+		// per-layer attention cost by type — full-attention vs KDA linear attention
+		// (#1636) — so step time is NO LONGER pessimistic for the linear-attention (KDA)
+		// layers. Only weight-memory still charges all layers as full-attention weights
+		// (#1638), which remains PESSIMISTIC for the KDA layers.
+		if modelConfig.KVBearingLayers > 0 && modelConfig.KVBearingLayers < modelConfig.NumLayers {
+			logrus.Warnf("--latency-model: hybrid-attention model detected (%d of %d layers bear KV). "+
+				"KV capacity is sized over the full-attention layers only, and step-time estimation splits "+
+				"the per-layer attention cost by type (full-attention vs KDA linear attention). Only "+
+				"weight-memory still charges all %d layers as full-attention weights — PESSIMISTIC for the "+
+				"linear-attention layers. See docs/reference/models.md known approximations",
+				modelConfig.KVBearingLayers, modelConfig.NumLayers, modelConfig.NumLayers)
+		}
+
+		// KV capacity auto-calculation. Precedence: (1) --total-kv-blocks CLI flag,
+		// (2) auto-calculate from model architecture + GPU memory, (3) default value.
+		if !cmd.Flags().Changed("total-kv-blocks") {
+			var kvParamsErr error
+			kvParams, kvParamsErr = latency.ExtractKVCapacityParams(hfConfig)
+			kvParamsOK = kvParamsErr == nil
+			if kvParamsErr != nil {
+				logrus.Warnf("--latency-model: could not extract KV capacity params: %v. "+
+					"Using total-kv-blocks=%d. Set --total-kv-blocks explicitly to override", kvParamsErr, totalKVBlocks)
+				logAdapterHBMReservationNotApplied()
+			} else if hwConfig.MemoryGiB <= 0 {
+				logrus.Warnf("--latency-model: GPU memory capacity not available in hardware config; "+
+					"using current total-kv-blocks=%d. Add MemoryGiB to hardware_config.json or pass --total-kv-blocks explicitly", totalKVBlocks)
+				logAdapterHBMReservationNotApplied()
+			} else {
+				if kvParams.HiddenAct == "" {
+					logrus.Infof("--latency-model: hidden_act not set in config.json; assuming SwiGLU (3-matrix MLP) for weight estimation")
+				}
+				// One resolved group size for both the calculation and the log line, so the
+				// number reported is provably the number charged.
+				epSize := epSizeForKVCapacity(modelConfig.IsMoE(), tensorParallelism)
+				autoBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, hwConfig, tensorParallelism, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParams,
+					latency.WithAdapterReservedBytes(loraReservedBytesForKV),
+					latency.WithExpertParallelSize(epSize))
+				if calcErr != nil {
+					logrus.Fatalf("--latency-model: KV capacity auto-calculation failed: %v", calcErr)
+				}
+				totalKVBlocks = autoBlocks
+				logrus.Infof("--gpu-memory-utilization: %.2f used for KV block auto-calculation", gpuMemoryUtilization)
+				logrus.Infof("--latency-model: auto-calculated total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d, EP=%s, block_size=%d, MoE=%v)",
+					totalKVBlocks, hwConfig.MemoryGiB, tensorParallelism, dataParallelism,
+					formatEPForLog(epSize), blockSizeTokens, kvParams.IsMoE)
+				logAdapterHBMReservation("--latency-model")
+			}
+		} else if loraReservedBytesForKV > 0 {
+			// Explicit --total-kv-blocks bypasses the global auto-calc, so the static
+			// LoRA HBM reservation is NOT subtracted from that global count (it applies
+			// only on an auto-calc path). Surface this so a user who configured adapters
+			// is not surprised that usable KV did not shrink (matches the --lora-config
+			// flag help). Note: any per-pool auto-calc (--prefill-tp/--decode-tp etc.)
+			// still applies the reservation to its own pool block count.
+			logrus.Warnf("--total-kv-blocks set explicitly (%d blocks); the static LoRA adapter HBM reservation (%.2f GiB) is NOT applied to that explicit global block count (per-pool auto-calc, if any, still applies it) — omit --total-kv-blocks to let auto-calc subtract it",
+				totalKVBlocks, float64(loraReservedBytesForKV)/float64(1<<30))
+		}
+
+		// Auto-derive --max-model-len from HF config's max_position_embeddings.
+		// Skipped when --max-model-len is explicitly set (R18: CLI flags take precedence).
+		if !cmd.Flags().Changed("max-model-len") {
+			maxPosEmb := hfConfig.MustGetInt("max_position_embeddings", 0)
+			if maxPosEmb > 0 {
+				maxModelLen = int64(maxPosEmb)
+				modelType, _ := hfConfig.Raw["model_type"].(string)
+				scaled, applied := applyRopeScaling(maxPosEmb, modelType, hfConfig.Raw["rope_scaling"])
+				if applied {
+					ropeType := ""
+					factor := 0.0
+					if ropeMap, ok := hfConfig.Raw["rope_scaling"].(map[string]any); ok {
+						ropeType, _ = ropeMap["type"].(string)
+						if ropeType == "" {
+							ropeType, _ = ropeMap["rope_type"].(string)
+						}
+						factor, _ = ropeMap["factor"].(float64)
+					}
+					logrus.Infof("--latency-model: applying %s rope_scaling factor %.1f: %d → %d", ropeType, factor, maxPosEmb, scaled)
+					maxModelLen = int64(scaled)
+				} else if strings.Contains(modelType, "gemma3") {
+					logrus.Infof("--latency-model: skipping rope_scaling for gemma3 (max_position_embeddings is pre-scaled)")
+				} else if ropeScaling, ok := hfConfig.Raw["rope_scaling"]; ok && ropeScaling != nil {
+					if ropeMap, ok := ropeScaling.(map[string]any); ok {
+						if _, hasKey := ropeMap["factor"]; hasKey {
+							logrus.Warnf("--latency-model: rope_scaling.factor present but not applied (excluded type, invalid value, or overflow); using max_position_embeddings as-is")
+						}
+					} else {
+						logrus.Warnf("--latency-model: rope_scaling present but not a JSON object (type %T); ignoring", ropeScaling)
+					}
+				}
+				logrus.Infof("--latency-model: auto-derived max-model-len=%d from max_position_embeddings", maxModelLen)
+			}
+		}
+
+		// Cap maxModelLen at KV-feasible maximum (matches vLLM's _maybe_limit_model_len).
+		if maxModelLen > 0 && blockSizeTokens > 0 {
+			blocksNeeded := maxModelLen / blockSizeTokens
+			if maxModelLen%blockSizeTokens != 0 {
+				blocksNeeded++
+			}
+			if blocksNeeded > totalKVBlocks {
+				kvFeasibleMax := totalKVBlocks * blockSizeTokens
+				logrus.Warnf("--latency-model: max-model-len %d exceeds KV capacity (%d blocks × %d tokens); capping to %d tokens",
+					maxModelLen, totalKVBlocks, blockSizeTokens, kvFeasibleMax)
+				maxModelLen = kvFeasibleMax
+			}
+		}
+	}
+
+	if maxModelLen < 0 {
+		logrus.Fatalf("--max-model-len must be >= 0, got %d", maxModelLen)
+	}
+
+	// DP/EP validation (single shared path for run and replay → INV-13 parity).
+	// Mirrors the construction-time panics in sim.NewModelHardwareConfig but emits
+	// clean CLI errors. modelConfig.NumLocalExperts is populated for the analytical
+	// backends above; it is 0 (dense-equivalent) when no model config was resolved.
+	if dataParallelism < 1 {
+		logrus.Fatalf("--dp must be >= 1, got %d", dataParallelism)
+	}
+	if (dataParallelism > 1 || enableExpertParallel) && backend != "trained-physics" {
+		// INV BC-ROOFLINE: roofline does not model DP/EP step-time effects, so
+		// accepting these flags there would imply unsupported latency semantics.
+		//
+		// This gate reads the GLOBAL backend only. A per-pool override
+		// (--prefill-latency-model / --decode-latency-model roofline) can put a pool on
+		// roofline while the global backend is trained-physics, which slips past THIS check
+		// and would give that pool DP/EP-blind step time with --dp > 1 in force. That
+		// per-pool hole is CLOSED separately by validatePerPoolLatencyBackends (#1548),
+		// called from the PD override block in both runCmd and replayCmd — now a live path
+		// since #1553 made PD + --dp > 1 supported (BC-7).
+		logrus.Fatalf("--dp > 1 and --enable-expert-parallel require --latency-model trained-physics "+
+			"(got --dp=%d, --enable-expert-parallel=%t, --latency-model %s). The roofline backend is "+
+			"DP/EP-blind for step time.",
+			dataParallelism, enableExpertParallel, backend)
+	}
+	if dataParallelism > 1 && !modelConfig.IsMoE() {
+		// Dense DP is the router-replica mechanism, not a latency divisor. vLLM
+		// online serving allows --data-parallel-size > 1 on dense models by
+		// spinning up N independent engines with an internal LB — the BLIS
+		// equivalent is N instances via --num-instances.
+		logrus.Fatalf("--dp > 1 is only supported for MoE models (got --dp=%d for a dense model). "+
+			"In vLLM online serving, --data-parallel-size on a dense model creates N independent engines; "+
+			"the BLIS equivalent is --num-instances (router replicas), not --dp.",
+			dataParallelism)
+	}
+	if enableExpertParallel && !modelConfig.IsMoE() {
+		// vLLM fatally rejects --enable-expert-parallel on dense models
+		// (config/model.py:_verify_with_expert_parallelism raises ValueError,
+		// killing the process before serving). Match that signal so BLIS doesn't
+		// simulate a deployment that cannot exist in production.
+		logrus.Fatalf("--enable-expert-parallel requires a MoE model (got dense model %q with no experts); "+
+			"vLLM fatally rejects this configuration.", model)
+	}
+	// --moe-comm-backend selects the MoE dispatch/combine cost model (trained-physics only;
+	// charged at DP>1 OR with --enable-expert-parallel since #1548). Validate the name and
+	// reject non-default values on other backends so the flag never silently no-ops. Empty
+	// string defers to the model factory's default.
+	if moeCommBackend != "" {
+		if !latency.IsValidMoECommBackend(moeCommBackend) {
+			logrus.Fatalf("--moe-comm-backend %q is not a recognized vLLM MoE all-to-all backend (valid: %s).",
+				moeCommBackend, strings.Join(latency.ValidMoECommBackends, ", "))
+		}
+		if backend != "trained-physics" {
+			logrus.Fatalf("--moe-comm-backend requires --latency-model trained-physics "+
+				"(got --moe-comm-backend=%s, --latency-model=%s). The roofline backend does not model "+
+				"MoE communication.", moeCommBackend, backend)
+		}
+		// The flag is harmless but inert unless the MoE dispatch/combine term is actually
+		// charged. Since #1548 that is isMoE && (DP>1 || EP-on) — expert parallelism owns
+		// whole experts per rank, so tokens are routed to their owner even at DP=1. Warn
+		// (not fatal) on the no-op cases so a user does not believe a backend choice is
+		// affecting a run where it cannot.
+		if !modelConfig.IsMoE() {
+			logrus.Warnf("--moe-comm-backend=%s has no effect on a dense model; "+
+				"MoE dispatch/combine comm is only charged for MoE models.", moeCommBackend)
+		} else if dataParallelism <= 1 && !enableExpertParallel {
+			logrus.Warnf("--moe-comm-backend=%s has no effect at --dp=%d without "+
+				"--enable-expert-parallel; MoE dispatch/combine comm is only charged when expert "+
+				"parallelism is on or DP > 1 (otherwise the MoE FFN all-reduces over the TP group "+
+				"instead).", moeCommBackend, dataParallelism)
+		}
+	}
+
+	return latencyResolution{
+		Backend:     backend,
+		ModelConfig: modelConfig,
+		HWConfig:    hwConfig,
+		AlphaCoeffs: alpha,
+		BetaCoeffs:  beta,
+		KVParams:    kvParams,
+		KVParamsOK:  kvParamsOK,
+	}
+}
+
+// composeLoRAScorer appends the lora-affinity scorer at the given weight to the
+// effective weighted-routing profile (#1469). When base is empty (no explicit
+// --routing-scorers or bundle), it materializes the default profile first so the
+// LoRA scorer composes alongside the standard dimensions rather than replacing
+// them. Returns an error for a non-finite/non-positive weight or when base already
+// declares lora-affinity (double-specification via both --routing-scorers and
+// --lora-scorer-weight). The returned slice never aliases base's backing array.
+func composeLoRAScorer(base []sim.ScorerConfig, weight float64) ([]sim.ScorerConfig, error) {
+	if weight <= 0 || math.IsNaN(weight) || math.IsInf(weight, 0) {
+		return nil, fmt.Errorf("weight must be a finite positive number, got %v", weight)
+	}
+	if len(base) == 0 {
+		base = sim.DefaultScorerConfigs()
+	}
+	for _, sc := range base {
+		if sc.Name == "lora-affinity" {
+			return nil, fmt.Errorf("lora-affinity already present in the scorer profile; set its weight via --routing-scorers OR --lora-scorer-weight, not both")
+		}
+	}
+	composed := make([]sim.ScorerConfig, 0, len(base)+1)
+	composed = append(composed, base...)
+	composed = append(composed, sim.ScorerConfig{Name: "lora-affinity", Weight: weight})
+	return composed, nil
+}
+
+// resolvePolicies resolves admission/routing/priority/scheduler policy configuration
+// from CLI flags and an optional policy bundle YAML file. It is called by both runCmd
+// and replayCmd to ensure a single validation code path (R23: code path parity).
+//
+// Precondition: resolveLatencyConfig must be called first. gpuMemoryUtilization and
+// blockSizeTokens are validated there (before KV auto-calc); resolvePolicies does not
+// re-validate them. Calling resolvePolicies without a prior resolveLatencyConfig call
+// would bypass those validations.
+//
+// Side effects: may write admissionPolicy, routingPolicy, scheduler,
+// tokenBucketCapacity, tokenBucketRefillRate, tierShedThreshold, tierShedMinPriority,
+// tenantBudgets package-level vars (from policy bundle).
+//
+// Returns the parsed scorer configs for weighted routing (caller uses these in
+// DeploymentConfig.RoutingScorerConfigs) and the loaded policy bundle (nil if none).
+// Per-pool scorer configs (PD disaggregation) are NOT handled here — they remain inline
+// in runCmd.
+func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle) {
+	var bundleScorerConfigs []sim.ScorerConfig
+	var loadedBundle *sim.PolicyBundle
+
+	// Load policy bundle if specified (R18: CLI flags override YAML values)
+	if policyConfigPath != "" {
+		bundle, err := sim.LoadPolicyBundle(policyConfigPath)
+		if err != nil {
+			logrus.Fatalf("Failed to load policy config: %v", err)
+		}
+		if err := bundle.Validate(); err != nil {
+			logrus.Fatalf("Invalid policy config: %v", err)
+		}
+		loadedBundle = bundle
+		// Apply bundle values as defaults; CLI flags override via Changed().
+		if bundle.Admission.Policy != "" && !cmd.Flags().Changed("admission-policy") {
+			admissionPolicy = bundle.Admission.Policy
+		}
+		if bundle.Admission.TokenBucketCapacity != nil && !cmd.Flags().Changed("token-bucket-capacity") {
+			tokenBucketCapacity = *bundle.Admission.TokenBucketCapacity
+		}
+		if bundle.Admission.TokenBucketRefillRate != nil && !cmd.Flags().Changed("token-bucket-refill-rate") {
+			tokenBucketRefillRate = *bundle.Admission.TokenBucketRefillRate
+		}
+		if bundle.Admission.TierShedThreshold != nil {
+			tierShedThreshold = *bundle.Admission.TierShedThreshold
+		}
+		if bundle.Admission.TierShedMinPriority != nil {
+			tierShedMinPriority = *bundle.Admission.TierShedMinPriority
+		} else if bundle.Admission.Policy == "tier-shed" && bundle.Admission.TierShedMinPriority == nil {
+			tierShedMinPriority = 3 // default: protect Critical (4) and Standard (3)
+		}
+		if bundle.TenantBudgets != nil {
+			tenantBudgets = bundle.TenantBudgets
+		}
+		if bundle.Admission.SLOPriorities != nil {
+			sloPriorityOverrides = bundle.Admission.SLOPriorities
+			// Validate at CLI boundary (R3) before reaching library-level panic in NewSLOPriorityMap.
+			for k, v := range sloPriorityOverrides {
+				if v < -100 || v > 100 {
+					logrus.Fatalf("slo_priorities override for %q: value %d out of range [-100, 100]", k, v)
+				}
+			}
+		}
+		if bundle.Admission.SLOTargets != nil && sloTargetsMap == nil {
+			sloTargetsMap = bundle.Admission.SLOTargets
+		}
+		if bundle.Admission.GAIEQDThreshold != nil {
+			gaieQDThreshold = *bundle.Admission.GAIEQDThreshold
+		}
+		if bundle.Admission.GAIEKVThreshold != nil {
+			gaieKVThreshold = *bundle.Admission.GAIEKVThreshold
+		}
+		if bundle.Routing.Policy != "" && !cmd.Flags().Changed("routing-policy") {
+			routingPolicy = bundle.Routing.Policy
+		}
+		bundleScorerConfigs = bundle.Routing.Scorers
+		if bundle.Priority.Policy != "" && bundle.Priority.Policy != "constant" {
+			logrus.Warnf("bundle priority.policy=%q has no effect: --priority-policy was removed in PR #1216. "+
+				"Request priority is now static (set at enqueue via SLOPriorityMap.InvertForVLLM). "+
+				"Use SLOClass in your workload spec for tier-based priority.", bundle.Priority.Policy)
+		}
+		if bundle.Scheduler != "" && !cmd.Flags().Changed("scheduler") {
+			scheduler = bundle.Scheduler
+		}
+		if bundle.Preemption.Policy != "" && !cmd.Flags().Changed("preemption-policy") {
+			preemptionPolicy = bundle.Preemption.Policy
+		}
+	}
+
+	// Apply defaults for GAIE-legacy thresholds (not set via CLI flags, only via bundle).
+	if gaieQDThreshold == 0 {
+		gaieQDThreshold = 5
+	}
+	if gaieKVThreshold == 0 {
+		gaieKVThreshold = 0.8
+	}
+
+	// Policy name validation (R3: validate at CLI boundary before passing to library)
+	if admissionPolicy == "token-bucket" {
+		if tokenBucketCapacity <= 0 || math.IsNaN(tokenBucketCapacity) || math.IsInf(tokenBucketCapacity, 0) {
+			logrus.Fatalf("--token-bucket-capacity must be a finite value > 0, got %v", tokenBucketCapacity)
+		}
+		if tokenBucketRefillRate <= 0 || math.IsNaN(tokenBucketRefillRate) || math.IsInf(tokenBucketRefillRate, 0) {
+			logrus.Fatalf("--token-bucket-refill-rate must be a finite value > 0, got %v", tokenBucketRefillRate)
+		}
+	}
+	if admissionPolicy == "gaie-legacy" {
+		if gaieQDThreshold <= 0 || math.IsNaN(gaieQDThreshold) || math.IsInf(gaieQDThreshold, 0) {
+			logrus.Fatalf("gaie_qd_threshold must be > 0, got %v", gaieQDThreshold)
+		}
+		if gaieKVThreshold <= 0 || gaieKVThreshold > 1.0 || math.IsNaN(gaieKVThreshold) || math.IsInf(gaieKVThreshold, 0) {
+			logrus.Fatalf("gaie_kv_threshold must be in (0, 1.0], got %v", gaieKVThreshold)
+		}
+	}
+	if !sim.IsValidAdmissionPolicy(admissionPolicy) {
+		logrus.Fatalf("Unknown admission policy %q. Valid: %s", admissionPolicy, strings.Join(sim.ValidAdmissionPolicyNames(), ", "))
+	}
+	if !sim.IsValidRoutingPolicy(routingPolicy) {
+		logrus.Fatalf("Unknown routing policy %q. Valid: %s", routingPolicy, strings.Join(sim.ValidRoutingPolicyNames(), ", "))
+	}
+	if !sim.IsValidScheduler(scheduler) {
+		logrus.Fatalf("Unknown scheduler %q. Valid: %s", scheduler, strings.Join(sim.ValidSchedulerNames(), ", "))
+	}
+	if !sim.IsValidPreemptionPolicy(preemptionPolicy) {
+		logrus.Fatalf("Unknown preemption policy %q. Valid: %s", preemptionPolicy, strings.Join(sim.ValidPreemptionPolicyNames(), ", "))
+	}
+	if !trace.IsValidTraceLevel(traceLevel) {
+		logrus.Fatalf("Unknown trace level %q. Valid: none, decisions", traceLevel)
+	}
+	if counterfactualK < 0 {
+		logrus.Fatalf("--counterfactual-k must be >= 0, got %d", counterfactualK)
+	}
+	if traceLevel == "none" && counterfactualK > 0 {
+		logrus.Warnf("--counterfactual-k=%d has no effect without --trace-level decisions", counterfactualK)
+	}
+	if traceLevel == "none" && summarizeTrace {
+		logrus.Warnf("--summarize-trace has no effect without --trace-level decisions")
+	}
+	if traceLevel != "none" && !summarizeTrace {
+		logrus.Infof("Decision tracing enabled (trace-level=%s). Use --summarize-trace to print summary.", traceLevel)
+	}
+	if kvCPUBlocks < 0 {
+		logrus.Fatalf("--kv-cpu-blocks must be >= 0, got %d", kvCPUBlocks)
+	}
+	if kvOffloadThreshold < 0 || kvOffloadThreshold > 1 || math.IsNaN(kvOffloadThreshold) || math.IsInf(kvOffloadThreshold, 0) {
+		logrus.Fatalf("--kv-offload-threshold must be a finite value in [0, 1], got %f", kvOffloadThreshold)
+	}
+	// Note: gpuMemoryUtilization and blockSizeTokens are validated in resolveLatencyConfig
+	// (before KV auto-calc). Not repeated here to avoid double-validation.
+	if kvCPUBlocks > 0 && (kvTransferBandwidth <= 0 || math.IsNaN(kvTransferBandwidth) || math.IsInf(kvTransferBandwidth, 0)) {
+		logrus.Fatalf("--kv-transfer-bandwidth must be a finite value > 0 when --kv-cpu-blocks > 0, got %f", kvTransferBandwidth)
+	}
+	if kvTransferBaseLatency < 0 {
+		logrus.Fatalf("--kv-transfer-base-latency must be >= 0, got %d", kvTransferBaseLatency)
+	}
+	if snapshotRefreshInterval < 0 {
+		logrus.Fatalf("--snapshot-refresh-interval must be >= 0, got %d", snapshotRefreshInterval)
+	}
+	if cacheSignalDelay < 0 {
+		logrus.Fatalf("--cache-signal-delay must be >= 0, got %d", cacheSignalDelay)
+	}
+	if admissionLatency < 0 {
+		logrus.Fatalf("--admission-latency must be >= 0, got %d", admissionLatency)
+	}
+	if routingLatency < 0 {
+		logrus.Fatalf("--routing-latency must be >= 0, got %d", routingLatency)
+	}
+	// Flow control validation (R3: validate at CLI boundary before passing to library)
+	if flowControlEnabled {
+		if !sim.IsValidSaturationDetector(flowControlDetector) {
+			logrus.Fatalf("Unknown saturation detector %q. Valid: %s", flowControlDetector, strings.Join(sim.ValidSaturationDetectorNames(), ", "))
+		}
+		if flowControlDispatchOrder != "fifo" && flowControlDispatchOrder != "priority" && flowControlDispatchOrder != "slo-deadline" {
+			logrus.Fatalf("--dispatch-order must be 'fifo', 'priority', or 'slo-deadline', got %q", flowControlDispatchOrder)
+		}
+		if flowControlMaxQueueDepth < 0 {
+			logrus.Fatalf("--max-gateway-queue-depth must be >= 0, got %d", flowControlMaxQueueDepth)
+		}
+		if flowControlPerBandCapacity < 0 {
+			logrus.Fatalf("--per-band-capacity must be >= 0, got %d", flowControlPerBandCapacity)
+		}
+		if flowControlUsageLimitThreshold <= 0 || flowControlUsageLimitThreshold > 1.0 {
+			logrus.Fatalf("--usage-limit-threshold must be in (0, 1.0], got %v", flowControlUsageLimitThreshold)
+		}
+		if flowControlFairnessPolicy != "global-strict" && flowControlFairnessPolicy != "round-robin" {
+			logrus.Fatalf("--fairness-policy must be 'global-strict' or 'round-robin', got %q", flowControlFairnessPolicy)
+		}
+		if flowControlUsageLimitThreshold < 1.0 && flowControlDispatchOrder == "fifo" {
+			logrus.Warnf("--usage-limit-threshold < 1.0 with --dispatch-order fifo: HoL blocking uses priority-order iteration, FIFO semantics will not apply to gating decisions")
+		}
+		// Parse --slo-targets into map (e.g. "critical=100000,standard=500000")
+		if flowControlSLOTargets != "" {
+			sloTargetsMap = make(map[string]int64)
+			for _, pair := range strings.Split(flowControlSLOTargets, ",") {
+				parts := strings.SplitN(strings.TrimSpace(pair), "=", 2)
+				if len(parts) != 2 {
+					logrus.Fatalf("--slo-targets: invalid format %q (expected key=value)", pair)
+				}
+				key := strings.TrimSpace(parts[0])
+				if key == "" {
+					logrus.Fatalf("--slo-targets: empty key in pair %q (expected key=value)", pair)
+				}
+				v, parseErr := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
+				if parseErr != nil || v <= 0 {
+					logrus.Fatalf("--slo-targets: value for %q must be a positive integer (µs), got %s", key, strings.TrimSpace(parts[1]))
+				}
+				sloTargetsMap[key] = v
+			}
+		}
+		if sloTargetsMap != nil && flowControlDispatchOrder != "slo-deadline" {
+			logrus.Warnf("--slo-targets has no effect without --dispatch-order slo-deadline")
+		}
+		// Validate only parameters consumed by the selected detector
+		switch flowControlDetector {
+		case "utilization":
+			if flowControlQueueDepthThreshold <= 0 || math.IsNaN(flowControlQueueDepthThreshold) || math.IsInf(flowControlQueueDepthThreshold, 0) {
+				logrus.Fatalf("--queue-depth-threshold must be a finite value > 0, got %v", flowControlQueueDepthThreshold)
+			}
+			if flowControlKVCacheUtilThreshold <= 0 || math.IsNaN(flowControlKVCacheUtilThreshold) || math.IsInf(flowControlKVCacheUtilThreshold, 0) {
+				logrus.Fatalf("--kv-cache-util-threshold must be a finite value > 0, got %v", flowControlKVCacheUtilThreshold)
+			}
+		case "concurrency":
+			if flowControlMaxConcurrency <= 0 {
+				logrus.Fatalf("--max-concurrency must be > 0, got %d", flowControlMaxConcurrency)
+			}
+		case "", "never":
+			logrus.Warnf("--flow-control enabled but --saturation-detector is %q (pass-through); specify 'utilization' or 'concurrency' for actual gating", flowControlDetector)
+		}
+	}
+	if flowControlRequestTTL < 0 {
+		logrus.Fatalf("--request-ttl must be >= 0, got %d", flowControlRequestTTL)
+	}
+	if flowControlRequestTTL > 0 && !flowControlEnabled {
+		logrus.Warnf("--request-ttl %d has no effect without --flow-control", flowControlRequestTTL)
+	}
+	if flowControlDispatchTickInterval < 0 {
+		logrus.Fatalf("--dispatch-tick-interval must be >= 0, got %d", flowControlDispatchTickInterval)
+	}
+	if flowControlQueueShedding && !flowControlEnabled {
+		logrus.Warnf("--queue-shedding has no effect without --flow-control")
+	}
+	if flowControlInFlightEviction && !flowControlEnabled {
+		logrus.Warnf("--in-flight-eviction has no effect without --flow-control")
+	}
+
+	logrus.Infof("Policy config: admission=%s, routing=%s, scheduler=%s, preemption=%s",
+		admissionPolicy, routingPolicy, scheduler, preemptionPolicy)
+
+	// Parse scorer configuration for weighted routing
+	var parsedScorerConfigs []sim.ScorerConfig
+	if routingPolicy == "weighted" {
+		if routingScorers != "" {
+			var err error
+			parsedScorerConfigs, err = sim.ParseScorerConfigs(routingScorers)
+			if err != nil {
+				logrus.Fatalf("Invalid --routing-scorers: %v", err)
+			}
+		} else if len(bundleScorerConfigs) > 0 {
+			parsedScorerConfigs = bundleScorerConfigs
+		}
+		// Compose the lora-affinity scorer (#1469). Left unset the flag is inert, so
+		// routing is byte-identical to today (INV-6). When set (to a positive weight;
+		// an explicit non-positive value is rejected by composeLoRAScorer), append it
+		// to the effective profile — materializing the default base when no explicit
+		// --routing-scorers/bundle profile was given — so the LoRA scorer participates
+		// alongside the existing dimensions.
+		if cmd.Flags().Changed("lora-scorer-weight") {
+			composed, err := composeLoRAScorer(parsedScorerConfigs, loraScorerWeight)
+			if err != nil {
+				logrus.Fatalf("Invalid --lora-scorer-weight: %v", err)
+			}
+			parsedScorerConfigs = composed
+		}
+		activeScorerConfigs := parsedScorerConfigs
+		if len(activeScorerConfigs) == 0 {
+			activeScorerConfigs = sim.DefaultScorerConfigs()
+		}
+		scorerStrs := make([]string, len(activeScorerConfigs))
+		for i, sc := range activeScorerConfigs {
+			scorerStrs[i] = fmt.Sprintf("%s:%.1f", sc.Name, sc.Weight)
+		}
+		logrus.Infof("Weighted routing scorers: %s", strings.Join(scorerStrs, ", "))
+	}
+	if routingPolicy != "weighted" && routingScorers != "" {
+		logrus.Warnf("--routing-scorers has no effect when routing policy is %q (only applies to 'weighted')", routingPolicy)
+	}
+	if routingPolicy != "weighted" && cmd.Flags().Changed("lora-scorer-weight") {
+		logrus.Warnf("--lora-scorer-weight has no effect when routing policy is %q (only applies to 'weighted')", routingPolicy)
+	}
+	if admissionPolicy == "token-bucket" {
+		logrus.Infof("Token bucket: capacity=%.0f, refill-rate=%.0f", tokenBucketCapacity, tokenBucketRefillRate)
+	}
+
+	return parsedScorerConfigs, loadedBundle
+}
+
+// registerSimConfigFlags registers all simulation-engine configuration flags
+// on the given command. Called by both runCmd and replayCmd to avoid
+// duplicating ~50 flag registrations.
+func registerSimConfigFlags(cmd *cobra.Command) {
+	cmd.Flags().Int64Var(&seed, "seed", 42, "Seed for random request generation")
+	cmd.Flags().Int64Var(&simulationHorizon, "horizon", math.MaxInt64, "Total simulation horizon (in ticks)")
+	cmd.Flags().StringVar(&logLevel, "log", "warn", "Log level for diagnostic messages (trace, debug, info, warn, error, fatal, panic). Simulation results always print to stdout regardless of this setting.")
+	cmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained coefficients and device constants")
+	registerCatalogFlag(cmd)
+	cmd.Flags().StringVar(&hwConfigPath, "hardware-config", "", "Path to file containing hardware config")
+
+	// vLLM server configs
+	cmd.Flags().Int64Var(&totalKVBlocks, "total-kv-blocks", 1000000, "Total number of KV cache blocks")
+	cmd.Flags().Int64Var(&maxNumSeqs, "max-num-seqs", 256, "Maximum number of requests running together (vLLM parity)")
+	cmd.Flags().Int64Var(&maxNumBatchedTokens, "max-num-batched-tokens", 2048, "Maximum total number of new tokens across running requests (vLLM parity)")
+	// Deprecated aliases bound to the same vars for backward compatibility (issue #1570).
+	// pflag emits the deprecation warning to stderr, so stdout stays byte-identical (INV-6).
+	cmd.Flags().Int64Var(&maxNumSeqs, "max-num-running-reqs", 256, "Deprecated: use --max-num-seqs")
+	cmd.Flags().Int64Var(&maxNumBatchedTokens, "max-num-scheduled-tokens", 2048, "Deprecated: use --max-num-batched-tokens")
+	if err := cmd.Flags().MarkDeprecated("max-num-running-reqs", "use --max-num-seqs"); err != nil {
+		logrus.Fatalf("failed to mark --max-num-running-reqs deprecated: %v", err)
+	}
+	if err := cmd.Flags().MarkDeprecated("max-num-scheduled-tokens", "use --max-num-batched-tokens"); err != nil {
+		logrus.Fatalf("failed to mark --max-num-scheduled-tokens deprecated: %v", err)
+	}
+	cmd.Flags().Float64SliceVar(&betaCoeffs, "beta-coeffs", []float64{0.0, 0.0, 0.0}, "Comma-separated list of beta coefficients")
+	cmd.Flags().Float64SliceVar(&alphaCoeffs, "alpha-coeffs", []float64{0.0, 0.0, 0.0}, "Comma-separated alpha coefficients (alpha0,alpha1) for processing delays")
+	cmd.Flags().Int64Var(&blockSizeTokens, "block-size-in-tokens", 16, "Number of tokens contained in a KV cache block")
+	cmd.Flags().Int64Var(&longPrefillTokenThreshold, "long-prefill-token-threshold", 0, "Max length of prefill beyond which chunked prefill is triggered")
+
+	// BLIS model configs
+	cmd.Flags().StringVar(&model, "model", "", "LLM name")
+	cmd.Flags().StringVar(&gpu, "hardware", "", "GPU type, e.g. H100 (REQUIRED on run and replay). Must name a key in the hardware config. Never inferred from defaults.yaml — a run missing it is refused naming the flag (NS-6, #1733)")
+	cmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism degree, e.g. 1 (REQUIRED on run and replay; must be > 0). Never inferred from defaults.yaml — a run missing it is refused naming the flag (NS-6, #1733)")
+	cmd.Flags().IntVar(&dataParallelism, "dp", 1, "Data parallelism degree (MoE models only; --latency-model trained-physics only). --dp N spawns N real single-node engine replicas per --num-instances, each sized per-rank, on both `blis run` and `blis replay` (#1531, #1556). Supported with --enable-expert-parallel since #1548 (the EP group is those replicas' GPUs; re-supply both flags on replay). Supported with PD disaggregation (each pool spawns N per-rank replicas) and node pools (N×M replicas reserve N×M×TP GPUs) since #1553. Not supported with the model autoscaler (#1553: dp-group co-scaling is undefined)")
+	cmd.Flags().BoolVar(&enableExpertParallel, "enable-expert-parallel", false, "Enable expert parallelism for MoE models (mirrors vLLM --enable-expert-parallel; --latency-model trained-physics only)")
+	cmd.Flags().StringVar(&moeCommBackend, "moe-comm-backend", "", "MoE all-to-all comm backend for dispatch/combine cost (mirrors vLLM VLLM_ALL2ALL_BACKEND: naive, allgather_reducescatter [default], pplx, deepep_high_throughput, deepep_low_latency, mori, flashinfer_all2allv; MoE + --latency-model trained-physics + either --dp > 1 or --enable-expert-parallel)")
+	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "trained-physics", "Latency model backend: trained-physics (default), roofline")
+	cmd.Flags().StringVar(&kvCacheDtype, "kv-cache-dtype", "auto", "KV-cache storage precision, independent of compute and weight quantization (superset of vLLM's --kv-cache-dtype values): auto (default; follows the model/compute dtype), fp8, fp8_e4m3, fp8_e5m2, fp8_inc (1 byte/elem → ~2x KV capacity under bf16 compute), bf16, fp16, fp32. Only affects analytical backends' auto KV-block sizing (and PD KV-transfer sizing); re-supply identically on replay for run/replay parity (INV-13).")
+	cmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for analytical backends when not set.")
+
+	// Cluster config
+	cmd.Flags().IntVar(&numInstances, "num-instances", 1, "Number of instances in the cluster")
+
+	// Online routing pipeline config
+	cmd.Flags().StringVar(&admissionPolicy, "admission-policy", "always-admit", "Admission policy: "+strings.Join(sim.ValidAdmissionPolicyNames(), ", "))
+	cmd.Flags().Int64Var(&admissionLatency, "admission-latency", 0, "Admission latency in microseconds")
+	cmd.Flags().Int64Var(&routingLatency, "routing-latency", 0, "Routing latency in microseconds")
+	cmd.Flags().Float64Var(&tokenBucketCapacity, "token-bucket-capacity", 10000, "Token bucket capacity")
+	cmd.Flags().Float64Var(&tokenBucketRefillRate, "token-bucket-refill-rate", 1000, "Token bucket refill rate (tokens/second)")
+
+	// Routing policy config
+	cmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, always-busiest")
+	cmd.Flags().StringVar(&routingScorers, "routing-scorers", "", "Scorer weights for weighted routing (e.g., queue-depth:2,kv-utilization:2,load-balance:1). Default: precise-prefix-cache:2,queue-depth:1,kv-utilization:1")
+	cmd.Flags().Float64Var(&loraScorerWeight, "lora-scorer-weight", 0, "Weight of the lora-affinity routing scorer, composed into the weighted profile. Leave unset to keep routing unchanged; must be a finite positive number when set. Requires --routing-policy weighted (#1469)")
+
+	// Scheduler and preemption config
+	cmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf, reverse-priority")
+	cmd.Flags().StringVar(&preemptionPolicy, "preemption-policy", "fcfs", "Preemption victim selection: fcfs (tail-of-batch), priority (least-urgent SLO tier)")
+
+	// Policy bundle config
+	cmd.Flags().StringVar(&policyConfigPath, "policy-config", "", "Path to YAML policy configuration file")
+
+	// Fitness evaluation config (PR9)
+	cmd.Flags().StringVar(&fitnessWeights, "fitness-weights", "", "Fitness weights as key:value pairs (e.g., throughput:0.5,p99_ttft:0.3)")
+
+	// Decision trace config (PR13)
+	cmd.Flags().StringVar(&traceLevel, "trace-level", "none", "Trace verbosity: none, decisions")
+	cmd.Flags().IntVar(&counterfactualK, "counterfactual-k", 0, "Number of counterfactual candidates per routing decision")
+	cmd.Flags().BoolVar(&summarizeTrace, "summarize-trace", false, "Print trace summary after simulation")
+
+	// Tiered KV cache (PR12)
+	cmd.Flags().Int64Var(&kvCPUBlocks, "kv-cpu-blocks", 0, "CPU tier KV cache blocks (0 = disabled, single-tier mode). Typical: 1/3 of --total-kv-blocks")
+	cmd.Flags().Float64Var(&kvOffloadThreshold, "kv-offload-threshold", 0.9, "GPU utilization (0-1) above which blocks are offloaded to CPU. Default: offload when GPU >90% full")
+	cmd.Flags().Float64Var(&kvTransferBandwidth, "kv-transfer-bandwidth", 100.0, "CPU↔GPU transfer rate in blocks per tick. Higher = faster transfers")
+	cmd.Flags().Int64Var(&kvTransferBaseLatency, "kv-transfer-base-latency", 0, "Fixed per-transfer latency in ticks for CPU↔GPU KV transfers (0 = no fixed cost)")
+	cmd.Flags().Int64Var(&snapshotRefreshInterval, "snapshot-refresh-interval", 50000, "Prometheus snapshot refresh interval for all instance metrics in microseconds (0 = immediate/oracle mode, default 50ms = llm-d parity)")
+	cmd.Flags().Int64Var(&cacheSignalDelay, "cache-signal-delay", cluster.DefaultCacheSignalDelay, "Propagation delay for prefix cache signals in microseconds. Only affects precise-prefix-cache and no-hit-lru scorers; no effect on other routing policies. Default 50ms. Set to 0 for oracle mode (live cache state).")
+	cmd.Flags().Float64Var(&modelAutoscalerIntervalUs, "model-autoscaler-interval-us", 0, "Autoscaler tick interval in microseconds (0 = disabled). Overrides policy-config autoscaler.interval_us when non-zero.")
+	cmd.Flags().Float64Var(&gpuMemoryUtilization, "gpu-memory-utilization", 0.9, "Fraction of GPU memory to use for KV cache, in the range (0, 1.0]. Default: 0.9 (90%)")
+
+	// PD disaggregation config
+	cmd.Flags().IntVar(&prefillInstances, "prefill-instances", 0, "Number of instances dedicated to prefill (0 = disabled)")
+	cmd.Flags().IntVar(&decodeInstances, "decode-instances", 0, "Number of instances dedicated to decode (0 = disabled)")
+	cmd.Flags().IntVar(&prefillDecodeInstances, "prefill-decode-instances", 0, "Number of shared-role instances serving both prefill and decode (llm-d 'prefill-decode'/'both' parity; 0 = disabled). Must satisfy --prefill-instances + --decode-instances + --prefill-decode-instances <= --num-instances.")
+	cmd.Flags().StringVar(&pdDecider, "pd-decider", "never", "PD disaggregation decider: never (default), always, prefix-threshold")
+	cmd.Flags().Float64Var(&pdTransferBandwidth, "pd-transfer-bandwidth", 25.0, "PD KV transfer bandwidth in GB/s (NIXL RDMA default)")
+	cmd.Flags().Float64Var(&pdTransferBaseLatency, "pd-transfer-base-latency", 0.05, "PD KV transfer base latency in ms")
+	cmd.Flags().BoolVar(&pdTransferContention, "pd-transfer-contention", false, "Enable fair-share bandwidth contention model for concurrent KV transfers (INV-P2-2)")
+	cmd.Flags().IntVar(&pdPrefixThreshold, "pd-prefix-threshold", 16, "Non-cached token threshold for prefix-threshold decider (>= 0); disaggregate when non-cached tokens exceed this value. Default 16 matches llm-d's shipped P/D configs (deploy/config/pd-epp-config.yaml).")
+	cmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")
+	cmd.Flags().StringVar(&decodeRoutingScorers, "decode-routing-scorers", "", "Scorer weights for decode pool routing (e.g., queue-depth:2,kv-utilization:2)")
+
+	// E/P/D disaggregation (GAP-4, issue #1264). Registered on both run and replay.
+	cmd.Flags().IntVar(&encodeInstances, "encode-instances", 0, "Number of instances dedicated to encoding multimodal input (0 = encode pool disabled, default)")
+	cmd.Flags().StringVar(&encodeDecider, "encode-decider", "never", "Encode decider: never (default), always, multimodal")
+
+	// Flow control config (issue #882, GIE parity)
+	cmd.Flags().BoolVar(&flowControlEnabled, "flow-control", false, "Enable gateway queue with saturation-gated dispatch (GIE flow control)")
+	cmd.Flags().StringVar(&flowControlDetector, "saturation-detector", "never", "Saturation detector: "+strings.Join(sim.ValidSaturationDetectorNames(), ", "))
+	cmd.Flags().StringVar(&flowControlDispatchOrder, "dispatch-order", "fifo", "Gateway queue dispatch order: fifo, priority, slo-deadline")
+	cmd.Flags().StringVar(&flowControlSLOTargets, "slo-targets", "", "Per-SLO-class TTFT targets in µs for slo-deadline ordering (e.g., critical=100000,standard=500000)")
+	cmd.Flags().IntVar(&flowControlMaxQueueDepth, "max-gateway-queue-depth", 0, "Max gateway queue depth (0=unlimited)")
+	cmd.Flags().Float64Var(&flowControlQueueDepthThreshold, "queue-depth-threshold", 5, "Queue depth threshold for utilization detector")
+	cmd.Flags().Float64Var(&flowControlKVCacheUtilThreshold, "kv-cache-util-threshold", 0.8, "KV cache utilization threshold for utilization detector")
+	cmd.Flags().IntVar(&flowControlMaxConcurrency, "max-concurrency", 100, "Max concurrency per instance for concurrency detector")
+	cmd.Flags().IntVar(&flowControlPerBandCapacity, "per-band-capacity", 0, "Max requests per priority band when --flow-control is enabled (0=unlimited)")
+	cmd.Flags().Float64Var(&flowControlUsageLimitThreshold, "usage-limit-threshold", 1.0, "Per-band saturation ceiling for HoL blocking (1.0=no HoL, <1.0 gates lower-priority bands earlier)")
+	cmd.Flags().StringVar(&flowControlFairnessPolicy, "fairness-policy", "global-strict", "Intra-band dispatch fairness: global-strict, round-robin")
+	cmd.Flags().Int64Var(&flowControlRequestTTL, "request-ttl", 0, "Gateway queue request TTL in microseconds (0=disabled). Requires --flow-control.")
+	cmd.Flags().BoolVar(&flowControlQueueShedding, "queue-shedding", false, "Enable cross-band victim shedding when gateway queue is full (BLIS-extra, not in llm-d; default: reject)")
+	cmd.Flags().Int64Var(&flowControlDispatchTickInterval, "dispatch-tick-interval", 1000, "Microseconds between periodic gateway dispatch ticks (0 = use default 1ms; llm-d parity)")
+	cmd.Flags().BoolVar(&flowControlInFlightEviction, "in-flight-eviction", false, "Enable in-flight eviction of sheddable requests when saturated (BLIS-extra, not in llm-d; requires --flow-control)")
+
+	// Per-pool hardware overrides
+	cmd.Flags().IntVar(&prefillTP, "prefill-tp", 0, "Tensor parallelism degree for prefill pool instances (0 = use global --tensor-parallelism)")
+	cmd.Flags().IntVar(&decodeTP, "decode-tp", 0, "Tensor parallelism degree for decode pool instances (0 = use global --tensor-parallelism)")
+	cmd.Flags().StringVar(&prefillHardware, "prefill-hardware", "", "GPU type for prefill pool instances (\"\" = use global --gpu)")
+	cmd.Flags().StringVar(&decodeHardware, "decode-hardware", "", "GPU type for decode pool instances (\"\" = use global --gpu)")
+	cmd.Flags().StringVar(&prefillLatencyModel, "prefill-latency-model", "", "Latency model backend for prefill pool instances (\"\" = use global --latency-model)")
+	cmd.Flags().StringVar(&decodeLatencyModel, "decode-latency-model", "", "Latency model backend for decode pool instances (\"\" = use global --latency-model)")
+	cmd.Flags().Int64Var(&prefillMaxModelLen, "prefill-max-model-len", 0, "Max model length for prefill pool instances (0 = use global --max-model-len)")
+	cmd.Flags().Int64Var(&decodeMaxModelLen, "decode-max-model-len", 0, "Max model length for decode pool instances (0 = use global --max-model-len)")
+	cmd.Flags().StringVar(&prefillMoECommBackend, "prefill-moe-comm-backend", "", "MoE all-to-all comm backend for prefill pool instances (\"\" = use global --moe-comm-backend; same value set as that flag). Mirrors vLLM VLLM_ALL2ALL_BACKEND being per-process, so prefill and decode engines can run different modes")
+	cmd.Flags().StringVar(&decodeMoECommBackend, "decode-moe-comm-backend", "", "MoE all-to-all comm backend for decode pool instances (\"\" = use global --moe-comm-backend; same value set as that flag)")
+
+	// LoRA control-plane config (#1464). Registered on both run and replay (INV-13
+	// parity). All optional; absence => subsystem inert (INV-6). The adapter registry
+	// and per-rank step_overhead_tiers are config-file only (--lora-config); a scalar
+	// flag cannot express a per-rank map. Scalar coefficient flags compose with and
+	// override the file / defaults.yaml (R18: applied only when Changed).
+	cmd.Flags().StringVar(&loraConfigPath, "lora-config", "", "Path to YAML file with a top-level lora: block (adapter registry, capacity, cost coefficients). The static adapter HBM reservation is subtracted from KV capacity only on the auto-calc path; an explicit --total-kv-blocks is used as-is (reservation not applied). Absent => LoRA subsystem inert.")
+	cmd.Flags().IntVar(&loraAdapterCapacity, "lora-adapter-capacity", 0, "Per-instance resident adapter slots (0 with adapters declared => error). Applied only when set.")
+	cmd.Flags().Float64Var(&loraLoadBaseLatencyUs, "lora-load-base-latency-us", 0, "Cold adapter-load fixed latency in µs. Applied only when set; else --lora-config / defaults.yaml.")
+	cmd.Flags().Float64Var(&loraLoadBandwidthBytesUs, "lora-load-bandwidth-bytes-us", 0, "Cold adapter-load bandwidth in bytes/µs (>0). Applied only when set; else --lora-config / defaults.yaml.")
+	cmd.Flags().Float64Var(&loraFootprintBytesPerRank, "lora-footprint-bytes-per-rank", 0, "Adapter HBM footprint per rank unit in bytes (>0). Applied only when set; else --lora-config / defaults.yaml.")
+
+	// Speculative decoding / MTP (#1528). Model-level; shared by run and replay so a
+	// trace round-trips under identical flags (INV-13). Default off => byte-identical.
+	cmd.Flags().IntVar(&numSpeculativeTokens, "num-speculative-tokens", 0, "Speculative decoding: draft tokens proposed per decode step (MTP/EAGLE/Medusa). 0 = off. When >0, --speculative-acceptance-rate is required (#1528).")
+	cmd.Flags().Float64Var(&speculativeAcceptance, "speculative-acceptance-rate", 0.0, "Speculative decoding: mean fraction of draft tokens accepted, in [0,1]. Required when --num-speculative-tokens > 0.")
+	cmd.Flags().StringVar(&speculativeMethod, "speculative-method", "", "Speculative decoding method label (informational; BLIS labels, not verbatim vLLM strings — 'draft' is shorthand for vLLM's 'draft_model'): mtp|eagle|medusa|ngram|draft. Optional; requires --num-speculative-tokens > 0.")
+
+	// Cross-node collective serialization S (#1694, Part B). trained-physics only; fires
+	// only for a multi-node span with a calibrated α_hop (InterNodeHopLatencyUs). Default
+	// 1.0 is inert (byte-identical, INV-6). Re-supply identically on replay (INV-13).
+	cmd.Flags().Float64Var(&commSerializationFactor, "comm-serialization-factor", 1.0, "Cross-node collective serialization multiplier S on the size-independent inter-node latency term (#1694). 1.0 (default) = CUDA graphs / comm-compute overlap (inert). >1 = enforce-eager / no-overlap regime, where collectives serialize behind a full barrier. Must be >= 1. Multiplies an existing cross-node latency term (spanning nodes AND a calibrated per-hop α_hop); never creates cost on its own.")
+	cmd.Flags().BoolVar(&enforceEager, "enforce-eager", false, "Declare that the deployment runs without CUDA graphs / comm-compute overlap, for the CROSS-NODE COLLECTIVE latency term ONLY (#1694). This is a provenance + guard flag for --comm-serialization-factor: when set it requires an explicit --comm-serialization-factor > 1 (BLIS ships no fitted eager magnitude) and picks no value itself. It does NOT model vLLM enforce_eager generally — the broader per-step eager kernel-launch overhead (which affects single-node runs too) is not modeled, so on any config without node_pools and a calibrated α_hop this flag changes nothing.")
+
+	// KV-cache offload config surface (H5, #1587). One flag: a strict-YAML file with a
+	// single top-level kv_offload: block (CPU tier + ordered secondary tiers, per-tier
+	// device physics). Registered on run and replay (INV-13). Absent => the offload
+	// subsystem is inert and output is byte-identical to a build without the feature
+	// (BC-G5). On replay the trace header is authoritative; a passed flag must match the
+	// header (see resolveKVOffloadConfig / the replay wiring). device_class names resolve
+	// against defaults.yaml kv_offload_devices.
+	cmd.Flags().StringVar(&kvOffloadConfigPath, "kv-offload-config", "", "Path to a YAML file with a top-level kv_offload: block (multi-tier KV-cache offload config: cpu_bytes_to_use, block_size/blocks_per_chunk, eviction_policy, offload_prompt_only, secondary_tiers[] with per-tier device_class/direct_io/bandwidth). Absent => offload subsystem inert. On replay the trace header is authoritative.")
+}
+
+// loraConfigFile is the on-disk shape of a --lora-config YAML file: a single
+// top-level lora: block matching contracts/config-schema.md. Strict-parsed (R10).
+type loraConfigFile struct {
+	LoRA sim.LoRAConfig `yaml:"lora"`
+}
+
+// loadLoRAConfigFile parses a --lora-config YAML file's lora: block into a
+// sim.LoRAConfig. Strict field checking (R10). CLI boundary => logrus.Fatalf on any
+// read/parse error so a typo never silently no-ops.
+func loadLoRAConfigFile(path string) sim.LoRAConfig {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		logrus.Fatalf("Failed to read --lora-config file %q: %v", path, err)
+	}
+	var f loraConfigFile
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&f); err != nil {
+		logrus.Fatalf("Failed to parse --lora-config file %q: %v", path, err)
+	}
+	return f.LoRA
+}
+
+// resolveLoRAConfig assembles the final sim.LoRAConfig from three composable sources,
+// in increasing precedence: defaults.yaml (cost-coefficient fallback), the optional
+// --lora-config file (adapter registry + any coefficients it sets), and the scalar
+// --lora-* flags (applied only when Changed, R18). It is the single LoRAConfig
+// construction site (R4), called by BOTH runCmd and replayCmd (INV-13 parity).
+//
+// The resolved config is validated at the CLI boundary; an invalid config aborts with
+// logrus.Fatalf (Principle V) — e.g. adapters declared with adapter_capacity 0.
+//
+// With no --lora-config and no --lora-* flags set, the returned config still carries
+// the defaults.yaml cost coefficients but declares no adapters, so HasAdapters() is
+// false and the subsystem is inert (INV-6 no-op default; coefficients are unused
+// until adapters exist).
+func resolveLoRAConfig(cmd *cobra.Command) sim.LoRAConfig {
+	var cfg sim.LoRAConfig
+	if loraConfigPath != "" {
+		cfg = loadLoRAConfigFile(loraConfigPath)
+	}
+
+	// defaults.yaml cost-coefficient fallback: fill only fields the file did not set,
+	// so an unset flag defers to the file/defaults rather than clobbering it (R18).
+	if defs := loadDefaultsConfig(defaultsFilePath).LoRADefaults; defs != nil {
+		if cfg.LoadBaseLatencyUs == nil {
+			v := defs.LoadBaseLatencyUs
+			cfg.LoadBaseLatencyUs = &v
+		}
+		if cfg.LoadBandwidthBytesUs == nil {
+			v := defs.LoadBandwidthBytesUs
+			cfg.LoadBandwidthBytesUs = &v
+		}
+		if cfg.FootprintBytesPerRank == nil {
+			v := defs.FootprintBytesPerRank
+			cfg.FootprintBytesPerRank = &v
+		}
+		if len(cfg.StepOverheadTiers) == 0 && len(defs.StepOverheadTiers) > 0 {
+			cfg.StepOverheadTiers = make(map[int]sim.StepOverheadTier, len(defs.StepOverheadTiers))
+			for rank, t := range defs.StepOverheadTiers {
+				k6, k7 := t.K6, t.K7
+				cfg.StepOverheadTiers[rank] = sim.StepOverheadTier{K6: &k6, K7: &k7}
+			}
+		}
+	}
+
+	// Scalar flag overrides (R18: only when explicitly set).
+	if cmd.Flags().Changed("lora-adapter-capacity") {
+		v := loraAdapterCapacity
+		cfg.AdapterCapacity = &v
+	}
+	if cmd.Flags().Changed("lora-load-base-latency-us") {
+		v := loraLoadBaseLatencyUs
+		cfg.LoadBaseLatencyUs = &v
+	}
+	if cmd.Flags().Changed("lora-load-bandwidth-bytes-us") {
+		v := loraLoadBandwidthBytesUs
+		cfg.LoadBandwidthBytesUs = &v
+	}
+	if cmd.Flags().Changed("lora-footprint-bytes-per-rank") {
+		v := loraFootprintBytesPerRank
+		cfg.FootprintBytesPerRank = &v
+	}
+
+	if err := cfg.Validate(); err != nil {
+		logrus.Fatalf("Invalid LoRA configuration: %v", err)
+	}
+	return cfg
+}
+
+// resolveSpeculativeConfig builds the speculative-decoding / MTP config from CLI
+// flags (#1528). Shared by run and replay via the shared flag set, so a trace
+// round-trips under identical flags (INV-13). Fatalf on invalid config (CLI boundary,
+// R6).
+func resolveSpeculativeConfig(cmd *cobra.Command) sim.SpeculativeConfig {
+	// Footgun guard: --num-speculative-tokens k>0 with an unsupplied
+	// --speculative-acceptance-rate would default α=0, modeling spec-decode as PURE
+	// SLOWDOWN (verify width k+1 raises per-step cost while g=1 gives no throughput
+	// gain) — the opposite of the feature's intent. Require α to be supplied
+	// explicitly when k>0 (α=0 stays legal, but must be a deliberate choice). Mirrors
+	// the codebase's Changed()-gated required-flag idiom.
+	if numSpeculativeTokens > 0 && !cmd.Flags().Changed("speculative-acceptance-rate") {
+		logrus.Fatalf("--speculative-acceptance-rate is required when --num-speculative-tokens > 0 " +
+			"(set it explicitly, e.g. --speculative-acceptance-rate 0.7; use 0 only to deliberately model 0%% acceptance)")
+	}
+	c, err := sim.NewSpeculativeConfig(numSpeculativeTokens, speculativeAcceptance, speculativeMethod)
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	if c.IsEnabled() {
+		logrus.Infof("speculative decoding enabled: method=%q k=%d acceptance=%.3f (mean %.3f tokens/step, verify width %d)",
+			c.Method, c.K, c.Acceptance, c.EffectiveTokensPerStep(), c.VerifyWidth())
+		if c.Acceptance == 0 {
+			logrus.Warnf("speculative decoding: acceptance-rate=0 => no throughput gain but verify-width cost applies (net slowdown); this is usually not intended")
+		}
+	}
+	return c
+}
+
+// resolveCommSerializationFactor builds the cross-node collective serialization factor S
+// (#1694, Part B) from the CLI, validating it at the command boundary (CLI → Fatalf, R6).
+// Threaded identically into run and replay so a run and its replay under the same flags
+// stay byte-identical (INV-13); it is a model-level input like --kv-cache-dtype, not
+// round-tripped through the trace header.
+func resolveCommSerializationFactor(cmd *cobra.Command) float64 {
+	s := commSerializationFactor
+	// S must never make a spanning step cheaper (R3, monotonicity BC-6). A value below 1
+	// is a user error, not something to silently clamp at the CLI boundary.
+	if s < 1.0 || math.IsNaN(s) || math.IsInf(s, 0) {
+		logrus.Fatalf("--comm-serialization-factor must be a finite value >= 1 (1.0 = graphs-on/overlap, the inert default), got %v", s)
+	}
+	// --enforce-eager declares the no-overlap regime but ships NO magnitude: BLIS has no
+	// fitted eager S to supply, and inventing one would put a fabricated constant in front
+	// of every eager multi-node estimate (#1694 guardrail #2). Require the operator to
+	// supply the calibrated factor explicitly, mirroring the --speculative-acceptance-rate
+	// Changed-gated required-companion idiom.
+	if enforceEager && (!cmd.Flags().Changed("comm-serialization-factor") || s <= 1.0) {
+		logrus.Fatalf("--enforce-eager requires an explicit --comm-serialization-factor > 1: BLIS ships no measured " +
+			"eager serialization magnitude, so the multiplier must be supplied from a calibrated source (#1694). " +
+			"Set it explicitly, e.g. --enforce-eager --comm-serialization-factor 30")
+	}
+	if s > 1.0 {
+		logrus.Infof("cross-node collective serialization factor S=%.3f%s: charged on the size-independent "+
+			"inter-node latency term for spanning collectives (#1694)", s,
+			map[bool]string{true: " (enforce-eager)", false: ""}[enforceEager])
+		// R1: an S>1 that provably cannot fire is silent optimism in reverse — the operator
+		// asked for a penalty that will not appear. S multiplies the cross-node latency term,
+		// which requires the trained-physics backend AND a multi-node placement AND a
+		// calibrated α_hop. Two of those three are cheaply knowable here and, when either
+		// fails, S is guaranteed inert; warn loudly rather than let it vanish (the third,
+		// α_hop>0 on the placed GPU, is placement-time and is covered by
+		// warnIfCrossNodeUnpriced). Not latched — resolved once per command.
+		// latencyModelBackend is safe to read raw here: --latency-model defaults to
+		// "trained-physics" and registerSimConfigFlags runs for both run and replay, so it
+		// is never "" in production (the only override, at resolveLatencyConfig, sets
+		// trained-physics only when the flag was unchanged — already the default).
+		if latencyModelBackend != sim.LatencyBackendTrainedPhysics {
+			logrus.Warnf("--comm-serialization-factor %.3f will have NO effect: it scales the cross-node "+
+				"collective latency term, which only the trained-physics backend models (got %q). #1694", s,
+				latencyModelBackend)
+		} else if policyConfigPath == "" {
+			logrus.Warnf("--comm-serialization-factor %.3f will have NO effect: it scales the CROSS-NODE "+
+				"collective latency term, but without --policy-config there are no node_pools, so no "+
+				"collective spans a node boundary. It applies only to multi-node placements with a "+
+				"calibrated α_hop (InterNodeHopLatencyUs). #1694", s)
+		}
+	}
+	return s
+}
+
+// adapterReservedBytesFor returns the static LoRA HBM reservation (bytes) to carve
+// out of the KV budget for a resolved config, obtained through the sim/lora cost
+// model's pure AdapterReservedBytes() query (design boundary #4 — the memory path
+// never reaches into sim/lora internals). It routes through sim.BuildAdapterCost so
+// the activation condition matches NewSimulator's resident-set/cost wiring exactly
+// (R4): 0 when the subsystem is inert (no adapters, no capacity, or sim/lora not
+// linked), leaving KV capacity byte-identical to today (INV-6). A malformed cost
+// config aborts at the CLI boundary (Principle V), the same check NewSimulator makes.
+//
+// This deliberately builds an adapter-cost model that sim.NewSimulator (the
+// cold-load gate) and sim/cluster.NewInstanceSimulator (the latency backends,
+// #1467) each also build from the same config via sim.BuildAdapterCost. The model
+// is a pure, stateless value object, so independent builds from one config are
+// behaviorally identical — the extra one-time O(adapters) construction at startup is
+// the established BuildAdapterCost pattern, not a caching bug.
+func adapterReservedBytesFor(cfg sim.LoRAConfig) int64 {
+	ac, err := sim.BuildAdapterCost(sim.SimConfig{LoRAConfig: cfg})
+	if err != nil {
+		logrus.Fatalf("Invalid LoRA configuration (HBM reservation): %v", err)
+	}
+	if ac == nil {
+		return 0
+	}
+	// Defense in depth: NewCostModel already rejects a non-finite reservation and
+	// caps it below maxReservedBytes (< math.MaxInt64), so this conversion is exact
+	// and non-negative for any model built through it. Guard the CLI boundary
+	// explicitly anyway — so a future construction path that bypasses that check can
+	// never silently truncate a huge/±Inf float64 to a garbage int64 (Go's
+	// out-of-range float→int conversion is implementation-defined). Principle V:
+	// fail at the CLI boundary, not deep in the KV-capacity library.
+	//
+	// int64(x) is well-defined and exact for every representable float64 strictly
+	// below 2^63. The trap is float64(math.MaxInt64): MaxInt64 (2^63-1) is not
+	// representable in float64 and rounds UP to 2^63, so it must NOT be used as the
+	// bound (int64(2^63) overflows). We reject at the comfortably-conservative,
+	// exactly-representable 2^62 (≈4.6e18) — far above any real reservation (the cost
+	// model caps at 1e18) — so the cast is provably safe without relying on the exact
+	// 2^63 edge.
+	const maxSafeReservedBytes = float64(int64(1) << 62)
+	reserved := ac.AdapterReservedBytes()
+	if math.IsNaN(reserved) || math.IsInf(reserved, 0) || reserved < 0 || reserved >= maxSafeReservedBytes {
+		logrus.Fatalf("Invalid LoRA configuration (HBM reservation): %v bytes is outside the representable range", reserved)
+	}
+	return int64(reserved)
+}
+
+// logAdapterHBMReservation surfaces the static LoRA HBM reservation once, on the
+// main auto-calculated KV-block path, so a user can see WHY usable KV shrank (the
+// success-path counterpart to the reservation term in CalculateKVBlocks'
+// insufficient-memory / infeasibility error). The reservation is a single per-instance constant applied identically to
+// every KV auto-calc (global and any per-pool), so logging it once conveys the full
+// picture without repetition. No-op when the subsystem is inert (reservation 0), so
+// non-LoRA runs log nothing new (INV-6). scope labels the originating flag/path.
+func logAdapterHBMReservation(scope string) {
+	if loraReservedBytesForKV > 0 {
+		logrus.Infof("%s: reserved %.2f GiB GPU HBM for LoRA adapters (static capacity × per-slot footprint); usable KV blocks reduced accordingly",
+			scope, float64(loraReservedBytesForKV)/float64(1<<30))
+	}
+}
+
+// logAdapterHBMReservationNotApplied warns that a configured LoRA HBM reservation
+// was NOT subtracted because auto-calc was abandoned (KV params unextractable or no
+// GPU-memory figure) and total-kv-blocks fell back to its default. Without this, a
+// user who configured adapters would see only the generic "couldn't auto-derive
+// capacity" warning and no LoRA-specific signal that the reservation was dropped
+// (silent-LoRA-misconfig class). No-op when the subsystem is inert (INV-6).
+func logAdapterHBMReservationNotApplied() {
+	if loraReservedBytesForKV > 0 {
+		logrus.Warnf("--lora-config: KV auto-calculation was skipped, so the static LoRA adapter HBM reservation (%.2f GiB) is NOT applied to the fallback total-kv-blocks=%d — fix the model/hardware config or set --total-kv-blocks with headroom for adapters",
+			float64(loraReservedBytesForKV)/float64(1<<30), totalKVBlocks)
+	}
+}
+
+// applyTimeoutToSpec sets ClientSpec.Timeout and CohortSpec.Timeout on every entry in spec.
+// timeoutSecs>0 converts to µs and sets a deadline; timeoutSecs<=0 sets an explicit *int64(0)
+// (disabled). Explicit zero is required so computeDeadline does not fall back to the 300s
+// session default. Callers must reject timeoutSecs==0 before calling (use negative to disable).
+func applyTimeoutToSpec(spec *workload.WorkloadSpec, timeoutSecs int) {
+	var us int64
+	if timeoutSecs > 0 {
+		us = int64(timeoutSecs) * 1_000_000
+	}
+	for i := range spec.Clients {
+		t := us
+		spec.Clients[i].Timeout = &t
+	}
+	for i := range spec.Cohorts {
+		t := us
+		spec.Cohorts[i].Timeout = &t
+	}
+}
+
+// applyTimeoutToRequests re-applies timeout to already-generated requests and session
+// blueprints. This corrects deadlines for inference_perf specs: spec.Clients is empty
+// when applyTimeoutToSpec runs and is populated inside GenerateWorkload, so the initial
+// deadlines are computed from nil Timeout. Safe to call for all spec types.
+// timeoutSecs>0 sets deadline=ArrivalTime+timeout; timeoutSecs<=0 sets deadline=0 (disabled).
+func applyTimeoutToRequests(wl *workload.GeneratedWorkload, timeoutSecs int) {
+	var timeoutUs int64
+	if timeoutSecs > 0 {
+		timeoutUs = int64(timeoutSecs) * 1_000_000
+	}
+	for _, req := range wl.Requests {
+		if timeoutUs == 0 {
+			req.Deadline = 0
+		} else {
+			req.Deadline = req.ArrivalTime + timeoutUs
+		}
+	}
+	for i := range wl.Sessions {
+		t := timeoutUs
+		wl.Sessions[i].Timeout = &t
+	}
+}
+
+// runCmd executes the simulation using parameters from CLI flags
+var runCmd = &cobra.Command{
+	Use:   "run",
+	Short: "Run the inference simulation",
+	Run: func(cmd *cobra.Command, args []string) {
+		// Set up logging
+		level, err := logrus.ParseLevel(logLevel)
+		if err != nil {
+			logrus.Fatalf("Invalid log level: %s", logLevel)
+		}
+		logrus.SetLevel(level)
+
+		if model == "" { // model not provided, exit
+			logrus.Fatalf("LLM name not provided. Exiting simulation.")
+		}
+
+		// LoRA control-plane (#1464): resolve the config ONCE here (R4 single site) so
+		// both the KV auto-capacity path — resolveLatencyConfig and the per-pool calc
+		// below read the resulting static HBM reservation (PR5) — and the SimConfig
+		// literal further down share one resolution. The reservation is 0 (KV
+		// unaffected) when the subsystem is inert (INV-6). Set before resolveLatencyConfig.
+		loraCfg := resolveLoRAConfig(cmd)
+		loraReservedBytesForKV = adapterReservedBytesFor(loraCfg)
+
+		// KV-cache offload config surface (#1587): resolve ONCE (R4), validated at the
+		// CLI boundary. Inert (zero value) when --kv-offload-config is absent (BC-G5).
+		// Recorded in the exported trace header below for run/replay parity (BC-G6).
+		kvOffloadCfg := resolveKVOffloadConfig(cmd)
+		// #1590 (H1): --kv-offload-config (multi-tier chain) and --kv-cpu-blocks (legacy
+		// single CPU tier) are distinct offload models; setting both is ambiguous.
+		if kvOffloadCfg.IsEnabled() && kvCPUBlocks > 0 {
+			logrus.Fatalf("--kv-offload-config and --kv-cpu-blocks are mutually exclusive (distinct KV-offload models); set only one")
+		}
+
+		// Resolve latency backend configuration (single code path shared with replayCmd).
+		lr := resolveLatencyConfig(cmd)
+
+		// PD disaggregation requires ModelConfig for KV transfer duration derivation.
+		// Analytical backends populate ModelConfig from HF config.json.
+		// When PD is enabled and ModelConfig is zero-valued, resolve and load it using the
+		// same resolution as analytical backends (the catalog entry located by --catalog / BLIS_CATALOG).
+		if prefillInstances > 0 && lr.ModelConfig.NumHeads == 0 {
+			resolved, err := resolveModelConfig(model)
+			if err != nil {
+				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing: %v", err)
+			}
+			hfPath := filepath.Join(resolved, "config.json")
+			hfConfig, parseErr := latency.ParseHFConfig(hfPath)
+			if parseErr != nil {
+				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing, but failed to parse %s: %v", hfPath, parseErr)
+			}
+			mc, mcErr := latency.GetModelConfigFromHF(hfConfig)
+			if mcErr != nil {
+				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing, but failed to extract ModelConfig: %v", mcErr)
+			}
+			applyWeightPrecisionFallback(mc, model, hfConfig.Raw)
+			applyKVCacheDtype(mc, kvCacheDtype)
+			if mc.BytesPerParam <= 0 {
+				logrus.Fatalf("PD disaggregation: could not determine model precision (BytesPerParam=%v) from %s — ensure torch_dtype or dtype is present in config.json", mc.BytesPerParam, hfPath)
+			}
+			lr.ModelConfig = *mc
+			logrus.Infof("PD disaggregation: loaded ModelConfig from %s for KV transfer derivation", hfPath)
+		}
+
+		// perPoolKVDP is the DP the per-pool KV auto-calc (below) charges: the per-rank DP
+		// (=1) when DP-as-placement (#1531, #1553) will be active, else the global --dp.
+		// Under an active plan each pool spawns N DP=1 replicas, so a pool's per-replica KV
+		// must be sized per-rank — the per-pool analogue of the global auto-KV /dp division
+		// applyDPPlacement performs. A pool override is written directly (not routed through
+		// applyDPPlacement), so it must already be per-rank here to avoid a dp² inflation.
+		//
+		// The autoscaler / node-pool predicates come from the policy bundle, parsed later in
+		// this body, so the authoritative plan (with its autoscaler rejection) is decided at
+		// resolveDPPlacement below. Here we need only whether the plan WILL be active for
+		// sizing, and neither the autoscaler nor node pools changes PerRankDP: the autoscaler
+		// case Fatalf's later regardless (so the per-pool sizing is moot), and node pools are
+		// supported. So a provisional plan.PerRankDP with the placement guards left false is
+		// exact for the perRank decision. planDPPlacement is pure — this is not a second write.
+		perPoolKVDP := dataParallelism
+		if provisional, perr := planDPPlacement(lr.ModelConfig.IsMoE(), dataParallelism, enableExpertParallel,
+			prefillInstances > 0, false, false); perr == nil && provisional.Active {
+			perPoolKVDP = provisional.PerRankDP
+		}
+
+		// Per-pool hardware override vars. TotalKVBlocks is populated from per-pool KV
+		// auto-calc in the analytical backend block below (when applicable). TP/GPU/Backend/MaxModelLen
+		// are populated from CLI flags after PD validation. Both paths are no-ops when disaggregation
+		// is disabled (prefillInstances == 0).
+		var prefillOverrides, decodeOverrides cluster.PoolOverrides
+
+		// Per-pool KV auto-calculation: when PD disaggregation is active and a pool
+		// uses different TP or GPU hardware, compute per-pool KV blocks from model + hardware.
+		// Only runs for analytical backends where hardware configs are available.
+		if lr.Backend == "roofline" || lr.Backend == "trained-physics" {
+			if prefillInstances > 0 {
+				hfPath := filepath.Join(modelConfigDir, "config.json")
+				hfConfig, err := latency.ParseHFConfig(hfPath)
+				if err != nil {
+					logrus.Fatalf("Failed to parse HuggingFace config for per-pool KV calc: %v", err)
+				}
+				kvParamsPool, kvErrPool := latency.ExtractKVCapacityParams(hfConfig)
+				if kvErrPool != nil {
+					logrus.Warnf("per-pool KV auto-calculation skipped (could not extract model KV params: %v); both pools will use global total-kv-blocks=%d", kvErrPool, totalKVBlocks)
+				} else {
+					// Prefill pool auto-calc
+					poolPrefillTP := tensorParallelism
+					if cmd.Flags().Changed("prefill-tp") {
+						poolPrefillTP = prefillTP
+					}
+					poolPrefillGPU := gpu
+					if cmd.Flags().Changed("prefill-hardware") {
+						poolPrefillGPU = prefillHardware
+					}
+					if poolPrefillTP != tensorParallelism || poolPrefillGPU != gpu {
+						poolHC, hcErr := latency.GetHWConfig(hwConfigPath, poolPrefillGPU)
+						if hcErr != nil {
+							logrus.Warnf("--prefill-hardware: failed to load hardware config for GPU %q: %v; prefill pool will use global total-kv-blocks=%d", poolPrefillGPU, hcErr, totalKVBlocks)
+						} else if poolHC.MemoryGiB <= 0 {
+							logrus.Warnf("--prefill-hardware: GPU memory capacity not available for %q in hardware config; prefill pool will use global total-kv-blocks=%d", poolPrefillGPU, totalKVBlocks)
+						} else {
+							// Per-pool TP but GLOBAL dp: per-pool DP is out of scope (#1420);
+							// --dp applies uniformly to all pools. Not a bug — see issue #1420.
+							// Under an active DP-as-placement plan (#1553) perPoolKVDP is the
+							// per-rank DP (=1): each pool spawns N DP=1 replicas, so its per-replica
+							// KV is sized per-rank, mirroring the global auto-KV /dp division.
+							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolPrefillTP, perPoolKVDP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
+								latency.WithAdapterReservedBytes(loraReservedBytesForKV),
+								latency.WithExpertParallelSize(epSizeForKVCapacity(lr.ModelConfig.IsMoE(), poolPrefillTP)))
+							if calcErr != nil {
+								logrus.Fatalf("--prefill-tp/--prefill-hardware: KV capacity auto-calculation failed for prefill pool: %v", calcErr)
+							} else {
+								prefillOverrides.TotalKVBlocks = &poolBlocks
+								logrus.Infof("--prefill-tp/--prefill-hardware: auto-calculated prefill pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d)",
+									poolBlocks, poolHC.MemoryGiB, poolPrefillTP, perPoolKVDP)
+								if !cmd.Flags().Changed("prefill-max-model-len") {
+									kvFeasibleMax := poolBlocks * int64(blockSizeTokens)
+									if kvFeasibleMax < maxModelLen {
+										prefillOverrides.MaxModelLen = &kvFeasibleMax
+										logrus.Infof("--prefill-tp/--prefill-hardware: auto-capped prefill pool max-model-len=%d (pool KV capacity smaller than global)", kvFeasibleMax)
+									}
+								}
+							}
+						}
+					}
+
+					// Decode pool auto-calc
+					poolDecodeTP := tensorParallelism
+					if cmd.Flags().Changed("decode-tp") {
+						poolDecodeTP = decodeTP
+					}
+					poolDecodeGPU := gpu
+					if cmd.Flags().Changed("decode-hardware") {
+						poolDecodeGPU = decodeHardware
+					}
+					if poolDecodeTP != tensorParallelism || poolDecodeGPU != gpu {
+						poolHC, hcErr := latency.GetHWConfig(hwConfigPath, poolDecodeGPU)
+						if hcErr != nil {
+							logrus.Warnf("--decode-hardware: failed to load hardware config for GPU %q: %v; decode pool will use global total-kv-blocks=%d", poolDecodeGPU, hcErr, totalKVBlocks)
+						} else if poolHC.MemoryGiB <= 0 {
+							logrus.Warnf("--decode-hardware: GPU memory capacity not available for %q in hardware config; decode pool will use global total-kv-blocks=%d", poolDecodeGPU, totalKVBlocks)
+						} else {
+							// Per-pool TP, global dp (see prefill-pool note above; #1420).
+							// perPoolKVDP is per-rank (=1) under an active DP plan (#1553).
+							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolDecodeTP, perPoolKVDP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
+								latency.WithAdapterReservedBytes(loraReservedBytesForKV),
+								latency.WithExpertParallelSize(epSizeForKVCapacity(lr.ModelConfig.IsMoE(), poolDecodeTP)))
+							if calcErr != nil {
+								logrus.Fatalf("--decode-tp/--decode-hardware: KV capacity auto-calculation failed for decode pool: %v", calcErr)
+							} else {
+								decodeOverrides.TotalKVBlocks = &poolBlocks
+								logrus.Infof("--decode-tp/--decode-hardware: auto-calculated decode pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d)",
+									poolBlocks, poolHC.MemoryGiB, poolDecodeTP, perPoolKVDP)
+								if !cmd.Flags().Changed("decode-max-model-len") {
+									kvFeasibleMax := poolBlocks * int64(blockSizeTokens)
+									if kvFeasibleMax < maxModelLen {
+										decodeOverrides.MaxModelLen = &kvFeasibleMax
+										logrus.Infof("--decode-tp/--decode-hardware: auto-capped decode pool max-model-len=%d (pool KV capacity smaller than global)", kvFeasibleMax)
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// R3: Validate workload generation flags (before any synthesis path consumes them)
+		if numRequests < 0 {
+			logrus.Fatalf("--num-requests must be >= 0, got %d", numRequests)
+		}
+		if prefixTokens < 0 {
+			logrus.Fatalf("--prefix-tokens must be >= 0, got %d", prefixTokens)
+		}
+
+		// R3: Validate concurrency flags
+		if concurrency < 0 {
+			logrus.Fatalf("--concurrency must be >= 0, got %d", concurrency)
+		}
+		if thinkTimeMs < 0 {
+			logrus.Fatalf("--think-time-ms must be >= 0, got %d", thinkTimeMs)
+		}
+		// BC-1: --concurrency and --rate are mutually exclusive
+		if concurrency > 0 && cmd.Flags().Changed("rate") {
+			logrus.Fatalf("--concurrency and --rate are mutually exclusive; use one or the other")
+		}
+
+		// Workload configuration — all paths synthesize a v2 WorkloadSpec
+		// and generate requests via workload.GenerateRequests (BC-10).
+		var spec *workload.WorkloadSpec
+		var preGeneratedRequests []*sim.Request
+		var sessionMgr *workload.SessionManager
+
+		if workloadSpecPath != "" {
+			if concurrency > 0 {
+				logrus.Fatalf("--concurrency cannot be used with --workload-spec; " +
+					"define concurrency in the spec file using clients[].concurrency instead")
+			}
+			// --workload-spec takes precedence over --workload
+			var err error
+			spec, err = workload.LoadWorkloadSpec(workloadSpecPath)
+			if err != nil {
+				logrus.Fatalf("Failed to load workload spec: %v", err)
+			}
+			// Apply CLI --seed override (R18: CLI flag precedence)
+			if cmd.Flags().Changed("seed") {
+				logrus.Infof("CLI --seed %d overrides workload-spec seed %d", seed, spec.Seed)
+				spec.Seed = seed
+			} else {
+				logrus.Infof("Using workload-spec seed %d (CLI --seed not specified)", spec.Seed)
+			}
+			if spec.Horizon > 0 && !cmd.Flags().Changed("horizon") {
+				simulationHorizon = spec.Horizon
+			}
+		} else if concurrency > 0 {
+			// Concurrency mode → synthesize v2 spec with closed-loop client.
+			// In concurrency mode, --num-requests has no meaningful default.
+			// If the user did not explicitly set it, leave it at 0 (unbounded) and
+			// require --horizon to bound the run. The existing unbounded-generation
+			// guard will fire with a clear message if neither is provided.
+			// R3: Validate distribution token bounds (shared with distribution mode).
+			if msg := validateDistributionParams(promptTokensMin, promptTokensMax, outputTokensMin, outputTokensMax,
+				promptTokensStdev, outputTokensStdev, promptTokensMean, outputTokensMean); msg != "" {
+				logrus.Fatalf("%s", msg)
+			}
+			concurrencyNumRequests := 0
+			if cmd.Flags().Changed("num-requests") {
+				concurrencyNumRequests = numRequests
+			}
+			spec = workload.SynthesizeFromDistribution(workload.DistributionParams{
+				Concurrency: concurrency, ThinkTimeMs: thinkTimeMs,
+				NumRequests: concurrencyNumRequests, PrefixTokens: prefixTokens,
+				PromptTokensMean: promptTokensMean, PromptTokensStdDev: promptTokensStdev,
+				PromptTokensMin: promptTokensMin, PromptTokensMax: promptTokensMax,
+				OutputTokensMean: outputTokensMean, OutputTokensStdDev: outputTokensStdev,
+				OutputTokensMin: outputTokensMin, OutputTokensMax: outputTokensMax,
+			})
+			spec.Seed = seed
+		} else if workloadType == "distribution" {
+			// Distribution mode → synthesize v2 spec from CLI flags
+			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
+				logrus.Fatalf("--rate must be a finite value > 0, got %v", rate)
+			}
+			// R3: Validate distribution token bounds (shared with concurrency mode).
+			if msg := validateDistributionParams(promptTokensMin, promptTokensMax, outputTokensMin, outputTokensMax,
+				promptTokensStdev, outputTokensStdev, promptTokensMean, outputTokensMean); msg != "" {
+				logrus.Fatalf("%s", msg)
+			}
+			spec = workload.SynthesizeFromDistribution(workload.DistributionParams{
+				Rate: rate, NumRequests: numRequests, PrefixTokens: prefixTokens,
+				PromptTokensMean: promptTokensMean, PromptTokensStdDev: promptTokensStdev,
+				PromptTokensMin: promptTokensMin, PromptTokensMax: promptTokensMax,
+				OutputTokensMean: outputTokensMean, OutputTokensStdDev: outputTokensStdev,
+				OutputTokensMin: outputTokensMin, OutputTokensMax: outputTokensMax,
+			})
+			spec.Seed = seed
+		} else {
+			// Preset name (chatbot, summarization, etc.) → synthesize v2 spec
+			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
+				logrus.Fatalf("--rate must be a finite value > 0, got %v", rate)
+			}
+			// #1769: the preset is read from <catalog>/workloads/<name>.yaml, through the
+			// same reader `blis convert preset` and `blis observe --workload` use.
+			wl, presetErr := loadPresetWorkload(workloadType)
+			if presetErr != nil {
+				logrus.Fatalf("--workload %q could not be resolved: %v\n"+
+					"  (or supply the workload directly with --workload-spec)", workloadType, presetErr)
+			}
+			spec = workload.SynthesizeFromPreset(workloadType, wl.toPresetConfig(), rate, numRequests)
+			spec.Seed = seed
+		}
+
+		// Apply per-request timeout to all clients.
+		// For synthesized specs, always apply (default 300s matches the session-client default).
+		// For file-loaded specs, only apply when the flag is explicitly set.
+		if requestTimeoutSecs == 0 {
+			logrus.Fatalf("--timeout must be positive (seconds) or negative to disable; got 0")
+		}
+		// Pre-expand inference-perf / ServeGen specs (LAZY MODE ONLY) so
+		// the timeout-application step below sees every client — including
+		// those populated by expansion. Without this, --lazy-generation +
+		// --workload-spec=inference_perf.yaml + an explicit --timeout
+		// would build streaming states from clients whose Timeout is nil
+		// (because expansion inside GenerateWorkloadLazy happens AFTER
+		// applyTimeoutToSpec runs), producing the default 300 s deadline
+		// instead of the user-requested value (PR #1453 self-review).
+		//
+		// Scoped to `lazyGeneration` so it does not run for eager-only
+		// invocations. Running it unconditionally would clear the
+		// spec.InferencePerf marker before GenerateWorkload's Validate,
+		// which suppresses the mixed-slo_class check via
+		// `s.InferencePerf == nil && s.ServeGenData == nil` in spec.go.
+		// Today all inference-perf-expanded clients carry SLOClass="standard"
+		// (uniform → check can't fire), so eager was accidentally safe.
+		// But scoping here defends against a future ExpandInferencePerfSpec
+		// change that emits mixed/empty slo_class from silently failing
+		// eager runs that previously validated (PR #1453 review round 3).
+		//
+		// REMOVING THIS CALL re-introduces the lazy timeout bug silently.
+		// The regression is covered by
+		// TestGenerateWorkloadLazy_InferencePerf_TimeoutAppliedAfterPreExpand
+		// at the library layer; the cmd-level smoke is covered by the
+		// inference-perf byte-identity check verified during PR review.
+		//
+		// ExpandClientsAndCohorts is idempotent — the generators'
+		// validateAndExpandSpec runs it again with no effect since both
+		// branches guard on len(spec.Clients) == 0. (#1441)
+		if lazyGeneration {
+			if err := workload.ExpandClientsAndCohorts(spec); err != nil {
+				logrus.Fatalf("Failed to expand workload spec: %v", err)
+			}
+		}
+		if workloadSpecPath == "" || cmd.Flags().Changed("timeout") {
+			applyTimeoutToSpec(spec, requestTimeoutSecs)
+		}
+
+		// Resolve maxRequests: spec.NumRequests as default, CLI --num-requests overrides
+		maxRequests := spec.NumRequests
+		if cmd.Flags().Changed("num-requests") {
+			maxRequests = int64(numRequests)
+		}
+
+		// Guard against unbounded generation
+		if maxRequests <= 0 && simulationHorizon == math.MaxInt64 {
+			logrus.Fatalf("Workload requires either num_requests or --horizon to bound generation")
+		}
+
+		// Lazy generation path (#1441, alpha). Default off. When set, build
+		// a streaming workload source instead of materializing the full
+		// request slice. As of #1460 there is NO eager-fallback class — every
+		// spec the eager generator accepts is streamed: multi-session reasoning
+		// (#1458), concurrency clients (#1459), and time-varying / per-window
+		// workloads (#1460).
+		var wl *workload.GeneratedWorkload
+		// lazyRequestSource is typed as the interface satisfied by
+		// *workload.lazyRequestSource: Next() delivers requests to the
+		// cluster; Err() surfaces any terminal sampler/generator error
+		// recorded on a per-client state after the run completes, so
+		// cmd can Fatalf and match the eager path's abort-on-invalid-spec
+		// behavior (PR #1453 review round 3).
+		var lazyRequestSource interface {
+			Next() (*sim.Request, bool)
+			Err() error
+		}
+		if lazyGeneration {
+			src, sessions, followUpBudget, lazyErr := workload.GenerateWorkloadLazy(spec, simulationHorizon, maxRequests)
+			// As of #1460 there is no ErrLazyUnsupported* fallback class — every
+			// spec the eager generator accepts is streamed. Any error is a real
+			// spec/validation failure → abort (matches eager's error handling).
+			if lazyErr != nil {
+				logrus.Fatalf("Failed to build lazy workload: %v", lazyErr)
+			}
+			lazyRequestSource = src
+			wl = &workload.GeneratedWorkload{Sessions: sessions, FollowUpBudget: followUpBudget}
+		}
+		if wl == nil {
+			var err error
+			wl, err = workload.GenerateWorkload(spec, simulationHorizon, maxRequests)
+			if err != nil {
+				logrus.Fatalf("Failed to generate workload: %v", err)
+			}
+		}
+		// Re-apply timeout to generated requests and session blueprints.
+		// For inference_perf specs, spec.Clients was empty at applyTimeoutToSpec time
+		// and populated inside GenerateWorkload — deadlines need correction here.
+		// In lazy mode wl.Requests is nil (no-op for the request loop); session
+		// blueprint Timeout pointers still need refresh.
+		if workloadSpecPath == "" || cmd.Flags().Changed("timeout") {
+			applyTimeoutToRequests(wl, requestTimeoutSecs)
+		}
+		preGeneratedRequests = wl.Requests
+		if len(wl.Sessions) > 0 {
+			sessionMgr = workload.NewSessionManager(wl.Sessions)
+			if wl.FollowUpBudget >= 0 {
+				sessionMgr.SetFollowUpBudget(wl.FollowUpBudget)
+			}
+			if lazyRequestSource != nil {
+				logrus.Infof("Generated streaming source + %d session blueprints (closed-loop, lazy)", len(wl.Sessions))
+			} else {
+				logrus.Infof("Generated %d requests + %d session blueprints (closed-loop)", len(wl.Requests), len(wl.Sessions))
+			}
+		} else if lazyRequestSource != nil {
+			logrus.Infof("Generated streaming workload source (lazy, #1441)")
+		} else {
+			logrus.Infof("Generated %d requests via unified workload pipeline", len(wl.Requests))
+		}
+
+		if numInstances < 1 {
+			logrus.Fatalf("num-instances must be >= 1")
+		}
+		if totalKVBlocks <= 0 {
+			logrus.Fatalf("--total-kv-blocks must be > 0, got %d", totalKVBlocks)
+		}
+		if maxNumSeqs <= 0 {
+			logrus.Fatalf("--max-num-seqs must be > 0, got %d", maxNumSeqs)
+		}
+		if maxNumBatchedTokens <= 0 {
+			logrus.Fatalf("--max-num-batched-tokens must be > 0, got %d", maxNumBatchedTokens)
+		}
+		if longPrefillTokenThreshold < 0 {
+			logrus.Fatalf("--long-prefill-token-threshold must be >= 0, got %d", longPrefillTokenThreshold)
+		}
+		// Changed() guard: unlike peer flags (default always positive), --horizon defaults
+		// to math.MaxInt64 which would fail <= 0. Only validate when user explicitly sets it.
+		if cmd.Flags().Changed("horizon") && simulationHorizon <= 0 {
+			logrus.Fatalf("--horizon must be > 0, got %d", simulationHorizon)
+		}
+
+		// Resolve policy configuration (single code path shared with replayCmd).
+		// Per-pool scorer configs (PD disaggregation) remain inline below.
+		parsedScorerConfigs, bundle := resolvePolicies(cmd)
+
+		// Resolve autoscaler and node pool config from policy bundle, then apply CLI overrides.
+		var (
+			bundleAutoscalerIntervalUs           float64
+			bundleScaleUpStabilizationWindowUs   float64
+			bundleScaleDownStabilizationWindowUs float64
+			bundleHPAScrapeDelayMean             float64
+			bundleHPAScrapeDelayStddev           float64
+			bundleAnalyzerCfg                    cluster.V2SaturationAnalyzerConfig
+			bundleNodePools                      []cluster.NodePoolConfig
+			bundleInstanceLifecycle              cluster.InstanceLifecycleConfig
+		)
+		if bundle != nil {
+			if bundle.Autoscaler.IntervalUs > 0 {
+				bundleAutoscalerIntervalUs = bundle.Autoscaler.IntervalUs
+				bundleScaleUpStabilizationWindowUs = bundle.Autoscaler.ScaleUpStabilizationWindowUs
+				bundleScaleDownStabilizationWindowUs = bundle.Autoscaler.ScaleDownStabilizationWindowUs
+				bundleHPAScrapeDelayMean = bundle.Autoscaler.HPAScrapeDelay.Mean
+				bundleHPAScrapeDelayStddev = bundle.Autoscaler.HPAScrapeDelay.Stddev
+				bundleAnalyzerCfg = cluster.V2SaturationAnalyzerConfig{
+					KvCacheThreshold:  bundle.Autoscaler.Analyzer.KVCacheThreshold,
+					ScaleUpThreshold:  bundle.Autoscaler.Analyzer.ScaleUpThreshold,
+					ScaleDownBoundary: bundle.Autoscaler.Analyzer.ScaleDownBoundary,
+					AvgInputTokens:    bundle.Autoscaler.Analyzer.AvgInputTokens,
+				}
+			}
+			for _, np := range bundle.NodePools {
+				bundleNodePools = append(bundleNodePools, cluster.NodePoolConfig{
+					Name:         np.Name,
+					GPUType:      np.GPUType,
+					GPUsPerNode:  np.GPUsPerNode,
+					GPUMemoryGiB: np.GPUMemoryGiB,
+					InitialNodes: np.InitialNodes,
+					MinNodes:     np.MinNodes,
+					MaxNodes:     np.MaxNodes,
+					ProvisioningDelay: cluster.DelaySpec{
+						Mean:   np.ProvisioningDelay.Mean,
+						Stddev: np.ProvisioningDelay.Stddev,
+					},
+					CostPerHour: np.CostPerHour,
+				})
+			}
+			bundleInstanceLifecycle = cluster.InstanceLifecycleConfig{
+				LoadingDelay: cluster.DelaySpec{
+					Mean:   bundle.InstanceLifecycle.LoadingDelay.Mean,
+					Stddev: bundle.InstanceLifecycle.LoadingDelay.Stddev,
+				},
+				WarmStartInitialInstances: bundle.InstanceLifecycle.WarmStartInitialInstances,
+			}
+		}
+		// CLI flag overrides bundle value when explicitly set.
+		if cmd.Flags().Changed("model-autoscaler-interval-us") {
+			bundleAutoscalerIntervalUs = modelAutoscalerIntervalUs
+		}
+
+		// PD disaggregation validation (R3: validate at CLI boundary)
+		if prefillInstances < 0 {
+			logrus.Fatalf("--prefill-instances must be >= 0, got %d", prefillInstances)
+		}
+		if decodeInstances < 0 {
+			logrus.Fatalf("--decode-instances must be >= 0, got %d", decodeInstances)
+		}
+		if prefillDecodeInstances < 0 {
+			logrus.Fatalf("--prefill-decode-instances must be >= 0, got %d", prefillDecodeInstances)
+		}
+		if !sim.IsValidDisaggregationDecider(pdDecider) {
+			logrus.Fatalf("Unknown PD decider %q. Valid: %s", pdDecider, strings.Join(sim.ValidDisaggregationDeciderNames(), ", "))
+		}
+		if err := cluster.ValidatePoolTopology(prefillInstances, decodeInstances, prefillDecodeInstances, encodeInstances, numInstances); err != nil {
+			logrus.Fatalf("Invalid PD pool topology: %v", err)
+		}
+		// PD transfer parameter validation (R3, R11)
+		if prefillInstances > 0 {
+			if pdTransferBandwidth <= 0 || math.IsInf(pdTransferBandwidth, 0) || math.IsNaN(pdTransferBandwidth) {
+				logrus.Fatalf("--pd-transfer-bandwidth must be a finite positive number, got %f", pdTransferBandwidth)
+			}
+			if pdTransferBaseLatency < 0 || math.IsInf(pdTransferBaseLatency, 0) || math.IsNaN(pdTransferBaseLatency) {
+				logrus.Fatalf("--pd-transfer-base-latency must be a finite non-negative number, got %f", pdTransferBaseLatency)
+			}
+		}
+		if pdDecider == "prefix-threshold" && pdPrefixThreshold < 0 {
+			logrus.Fatalf("--pd-prefix-threshold must be >= 0, got %d", pdPrefixThreshold)
+		}
+		if pdDecider != "prefix-threshold" && cmd.Flags().Changed("pd-prefix-threshold") {
+			logrus.Warnf("--pd-prefix-threshold=%d is ignored when --pd-decider=%q (only applies to the prefix-threshold decider)", pdPrefixThreshold, pdDecider)
+		}
+		if pdDecider != "" && pdDecider != "never" && prefillInstances == 0 {
+			logrus.Warnf("--pd-decider=%q has no effect because --prefill-instances=0 (disaggregation is disabled); set --prefill-instances and --decode-instances to enable", pdDecider)
+		}
+
+		// E/P/D disaggregation validation (GAP-4, issue #1264).
+		if encodeInstances < 0 {
+			logrus.Fatalf("--encode-instances must be >= 0, got %d", encodeInstances)
+		}
+		if !sim.IsValidEncodeDecider(encodeDecider) {
+			logrus.Fatalf("Unknown encode decider %q. Valid: %s", encodeDecider, strings.Join(sim.ValidEncodeDeciderNames(), ", "))
+		}
+		if encodeDecider != "" && encodeDecider != "never" && encodeInstances == 0 {
+			logrus.Fatalf("--encode-decider=%q requires --encode-instances > 0 (the encode pool is disabled)", encodeDecider)
+		}
+		if encodeInstances > 0 && (encodeDecider == "" || encodeDecider == "never") {
+			logrus.Warnf("--encode-decider=%q has no effect because --encode-instances=%d but the decider never encodes; set --encode-decider=multimodal or always to activate the encode pool", encodeDecider, encodeInstances)
+		}
+
+		// Per-pool hardware override construction (R3): build PoolOverrides from CLI flags.
+		// Pointer fields use cmd.Flags().Changed() to distinguish "not set" from "set to value".
+		// Warns if per-pool flags are set but disaggregation is disabled.
+		perPoolFlagsChanged := anyPerPoolHardwareFlagChanged(cmd.Flags().Changed)
+		if perPoolFlagsChanged && prefillInstances == 0 {
+			logrus.Warnf("per-pool hardware flags (--prefill-tp, --decode-tp, etc.) have no effect when --prefill-instances=0 (disaggregation is disabled)")
+		}
+		if prefillInstances > 0 {
+			// Prefill pool overrides
+			if cmd.Flags().Changed("prefill-tp") {
+				if prefillTP <= 0 {
+					logrus.Fatalf("--prefill-tp must be > 0, got %d", prefillTP)
+				}
+				tp := prefillTP
+				prefillOverrides.TP = &tp
+			}
+			if cmd.Flags().Changed("prefill-hardware") {
+				prefillOverrides.GPU = prefillHardware
+			}
+			if cmd.Flags().Changed("prefill-latency-model") {
+				if !sim.IsValidLatencyBackend(prefillLatencyModel) {
+					logrus.Fatalf("--prefill-latency-model %q is not a recognized backend; valid: %s",
+						prefillLatencyModel, strings.Join(sim.ValidLatencyBackendNames(), ", "))
+				}
+				prefillOverrides.LatencyBackend = prefillLatencyModel
+			}
+			if cmd.Flags().Changed("prefill-max-model-len") {
+				if prefillMaxModelLen <= 0 {
+					logrus.Fatalf("--prefill-max-model-len must be > 0 when set, got %d", prefillMaxModelLen)
+				}
+				ml := prefillMaxModelLen
+				prefillOverrides.MaxModelLen = &ml
+			}
+			// Decode pool overrides
+			if cmd.Flags().Changed("decode-tp") {
+				if decodeTP <= 0 {
+					logrus.Fatalf("--decode-tp must be > 0, got %d", decodeTP)
+				}
+				tp := decodeTP
+				decodeOverrides.TP = &tp
+			}
+			if cmd.Flags().Changed("decode-hardware") {
+				decodeOverrides.GPU = decodeHardware
+			}
+			if cmd.Flags().Changed("decode-latency-model") {
+				if !sim.IsValidLatencyBackend(decodeLatencyModel) {
+					logrus.Fatalf("--decode-latency-model %q is not a recognized backend; valid: %s",
+						decodeLatencyModel, strings.Join(sim.ValidLatencyBackendNames(), ", "))
+				}
+				decodeOverrides.LatencyBackend = decodeLatencyModel
+			}
+			if cmd.Flags().Changed("decode-max-model-len") {
+				if decodeMaxModelLen <= 0 {
+					logrus.Fatalf("--decode-max-model-len must be > 0 when set, got %d", decodeMaxModelLen)
+				}
+				ml := decodeMaxModelLen
+				decodeOverrides.MaxModelLen = &ml
+			}
+			// A per-pool latency-model override must not silently opt a pool out of the
+			// DP/EP step-time physics the rest of the cluster is using (#1548).
+			if err := validatePerPoolLatencyBackends(dataParallelism > 1 || enableExpertParallel,
+				prefillOverrides, decodeOverrides); err != nil {
+				logrus.Fatalf("%v", err)
+			}
+			// Per-ROLE MoE all-to-all backend (#1548), shared with blis replay (R23).
+			if err := applyPerRoleMoECommBackends(cmd.Flags().Changed, lr.ModelConfig.IsMoE(),
+				dataParallelism > 1 || enableExpertParallel, &prefillOverrides, &decodeOverrides); err != nil {
+				logrus.Fatalf("%v", err)
+			}
+		}
+
+		// Parse per-pool scorer configs (PD disaggregation — not in resolvePolicies)
+		var prefillScorerCfgs, decodeScorerCfgs []sim.ScorerConfig
+		if prefillRoutingScorers != "" {
+			var err error
+			prefillScorerCfgs, err = sim.ParseScorerConfigs(prefillRoutingScorers)
+			if err != nil {
+				logrus.Fatalf("Invalid --prefill-routing-scorers: %v", err)
+			}
+		}
+		if decodeRoutingScorers != "" {
+			var err error
+			decodeScorerCfgs, err = sim.ParseScorerConfigs(decodeRoutingScorers)
+			if err != nil {
+				logrus.Fatalf("Invalid --decode-routing-scorers: %v", err)
+			}
+		}
+		// LoRA control-plane (#1464). loraCfg was resolved once at the top of RunE (for
+		// the KV HBM reservation); here we cross-validate every workload adapter
+		// reference against the declared registry (unknown id / base-model mismatch =>
+		// Fatalf, never a silent no-op). With no adapters and no workload adapter
+		// references this is inert (INV-6).
+		var loraRegistry sim.AdapterRegistry
+		if loraCfg.HasAdapters() {
+			r, regErr := sim.NewAdapterRegistryFunc(loraCfg.Adapters)
+			if regErr != nil {
+				logrus.Fatalf("Invalid LoRA adapter registry: %v", regErr)
+			}
+			loraRegistry = r
+		}
+		if err := workload.ValidateAdapterReferences(spec, loraRegistry); err != nil {
+			logrus.Fatalf("LoRA workload validation: %v", err)
+		}
+
+		startTime := time.Now() // Get current time (start)
+
+		// DP-as-real-placement (#1531, #1553): on an MoE model, `--dp N` means N independent
+		// single-node engine replicas (vLLM's internal DP EngineCores), not one lumped
+		// instance. Expand to numInstances × N real replicas — reusing the existing
+		// per-instance placement path — and configure each replica per-rank (DP=1) so its
+		// latency + KV model describe one rank. PD disaggregation and node pools are SUPPORTED
+		// (#1553, each pool spawns its own N per-rank replicas); the autoscaler still fails
+		// fast (decided above at planDPPlacement). resolveDPPlacement is the ONE code path run
+		// and replay share (R23), so INV-13 parity is structural (#1556). A no-op for --dp 1
+		// and dense models.
+		//
+		// The authoritative plan is decided HERE — after the policy bundle is parsed, so the
+		// autoscaler / node-pool predicates are real (the provisional plan above, used only to
+		// size the per-pool KV per-rank, deliberately left the placement guards false). This is
+		// where the autoscaler rejection (#1553 decision) surfaces. The former ordering caveat —
+		// the per-pool KV block reading a pre-division maxModelLen while PD + --dp>1 was a
+		// fail-fast — is resolved: that block now uses perPoolKVDP (the plan's per-rank DP)
+		// rather than depending on the guard. resolveDPPlacement APPLIES the plan (the single
+		// write site for numInstances / totalKVBlocks / maxModelLen / the four PD pool counts).
+		dpPlan, dpErr := planDPPlacement(lr.ModelConfig.IsMoE(), dataParallelism, enableExpertParallel,
+			prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0,
+			bundleAutoscalerIntervalUs > 0, len(bundleNodePools) > 0)
+		if dpErr != nil {
+			logrus.Fatalf("%v", dpErr)
+		}
+		dpPlan, dpErr = resolveDPPlacement(lr, dpPlan)
+		if dpErr != nil {
+			logrus.Fatalf("%v", dpErr)
+		}
+
+		// Log configuration after all config sources (CLI, workload spec, policy bundle)
+		// AND the DP-as-placement adjustment are resolved, so the reported block count is
+		// the per-replica one actually configured — matching the equivalent line in
+		// cmd/replay.go, which also logs after the DP block (diagnostic parity for a
+		// feature whose whole point is that the two commands agree).
+		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v",
+			totalKVBlocks, simulationHorizon, lr.AlphaCoeffs, lr.BetaCoeffs)
+
+		// #1590 (H1): derive per_block_bytes for the offload tier chain. sim/kv cannot
+		// import sim/latency, so compute the per-rank KV byte size of one GPU block here
+		// (model + TP are resolved) and record it on the resolved offload config. It
+		// feeds the CPU-tier block capacity and transfer-job sizing, and round-trips
+		// through the trace header (INV-13). Only when offload is enabled.
+		if kvOffloadCfg.IsEnabled() {
+			perTokenKVBytes, err := latency.KVBytesPerToken(lr.ModelConfig, tensorParallelism)
+			if err != nil {
+				logrus.Fatalf("kv_offload: cannot derive per_block_bytes from the model: %v", err)
+			}
+			kvOffloadCfg.PerBlockBytes = int64(perTokenKVBytes * float64(blockSizeTokens))
+			if kvOffloadCfg.PerBlockBytes <= 0 {
+				logrus.Fatalf("kv_offload: derived per_block_bytes must be > 0 (KVBytesPerToken=%v × block_size=%d)", perTokenKVBytes, blockSizeTokens)
+			}
+		}
+
+		// All ModelHardwareOptions (EP-group width #1548, cross-node serialization S #1694)
+		// are composed in one shared helper so run and replay cannot diverge (R23, INV-13).
+		mhwOpts := modelHardwareOptions(cmd, dpPlan)
+
+		// Unified cluster path (used for all values of numInstances).
+		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/replay.go (replayCmd
+		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
+		config := cluster.DeploymentConfig{
+			SimConfig: sim.SimConfig{
+				Horizon: simulationHorizon,
+				Seed:    seed,
+				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
+					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency,
+					sim.WithKVOffload(kvOffloadCfg)),
+				BatchConfig:   sim.NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold),
+				LatencyCoeffs: sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
+				// DP-as-placement (#1531): dpPlan.PerRankDP is the per-replica DP — 1 when
+				// the plan is active (each replica is one rank), else the CLI dataParallelism
+				// unchanged. Passing it through the canonical constructor (R4) keeps the config
+				// authoritative from the start (no construct-then-override). Since #1556 replay
+				// wires the SAME dpPlan.PerRankDP from the SAME resolveDPPlacement, so the two
+				// paths agree for every config both support (INV-13).
+				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen, mhwOpts...),
+				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
+				LoRAConfig:           loraCfg,
+				SpeculativeConfig:    resolveSpeculativeConfig(cmd),
+				SLOPriorityOverrides: sloPriorityOverrides,
+			},
+			NumInstances:                    numInstances,
+			AdmissionPolicy:                 admissionPolicy,
+			AdmissionLatency:                admissionLatency,
+			RoutingLatency:                  routingLatency,
+			TokenBucketCapacity:             tokenBucketCapacity,
+			TokenBucketRefillRate:           tokenBucketRefillRate,
+			RoutingPolicy:                   routingPolicy,
+			RoutingScorerConfigs:            parsedScorerConfigs,
+			TraceLevel:                      traceLevel,
+			CounterfactualK:                 counterfactualK,
+			SnapshotRefreshInterval:         snapshotRefreshInterval,
+			CacheSignalDelay:                cacheSignalDelay,
+			PrefillInstances:                prefillInstances,
+			DecodeInstances:                 decodeInstances,
+			SharedInstances:                 prefillDecodeInstances,
+			EncodeInstances:                 encodeInstances,
+			EncodeDecider:                   encodeDecider,
+			PDDecider:                       pdDecider,
+			PDPrefixThreshold:               pdPrefixThreshold,
+			PDTransferBandwidthGBps:         pdTransferBandwidth,
+			PDTransferBaseLatencyMs:         pdTransferBaseLatency,
+			PDTransferContention:            pdTransferContention,
+			PrefillScorerConfigs:            prefillScorerCfgs,
+			DecodeScorerConfigs:             decodeScorerCfgs,
+			PrefillOverrides:                prefillOverrides,
+			DecodeOverrides:                 decodeOverrides,
+			TierShedThreshold:               tierShedThreshold,
+			TierShedMinPriority:             tierShedMinPriority,
+			GAIEQDThreshold:                 gaieQDThreshold,
+			GAIEKVThreshold:                 gaieKVThreshold,
+			TenantBudgets:                   tenantBudgets,
+			FlowControlEnabled:              flowControlEnabled,
+			FlowControlDetector:             flowControlDetector,
+			FlowControlDispatchOrder:        flowControlDispatchOrder,
+			FlowControlSLOTargets:           sloTargetsMap,
+			FlowControlMaxQueueDepth:        flowControlMaxQueueDepth,
+			FlowControlQueueDepthThreshold:  flowControlQueueDepthThreshold,
+			FlowControlKVCacheUtilThreshold: flowControlKVCacheUtilThreshold,
+			FlowControlMaxConcurrency:       flowControlMaxConcurrency,
+			FlowControlPerBandCapacity:      flowControlPerBandCapacity,
+			FlowControlUsageLimitThreshold:  flowControlUsageLimitThreshold,
+			FlowControlFairnessPolicy:       flowControlFairnessPolicy,
+			FlowControlRequestTTL:           flowControlRequestTTL,
+			FlowControlQueueShedding:        flowControlQueueShedding,
+			FlowControlDispatchTickInterval: flowControlDispatchTickInterval,
+			FlowControlInFlightEviction:     flowControlInFlightEviction,
+			ModelAutoscalerIntervalUs:       bundleAutoscalerIntervalUs,
+			ScaleUpStabilizationWindowUs:    bundleScaleUpStabilizationWindowUs,
+			ScaleDownStabilizationWindowUs:  bundleScaleDownStabilizationWindowUs,
+			HPAScrapeDelay:                  cluster.DelaySpec{Mean: bundleHPAScrapeDelayMean, Stddev: bundleHPAScrapeDelayStddev},
+			AutoscalerAnalyzerConfig:        bundleAnalyzerCfg,
+			NodePools:                       bundleNodePools,
+			InstanceLifecycle:               bundleInstanceLifecycle,
+			// Issue #1522: enable per-instance KV auto-calc for node-pool placement so
+			// each instance sizes KV capacity from its ACTUAL placed GPU memory.
+			// Precedence: an explicit --total-kv-blocks disables this (uniform global
+			// capacity wins); only analytical backends with extractable KV params qualify.
+			// Inert when no node pools are configured (the recalc sites are node-pool-only).
+			KVAutoCalc: cluster.KVAutoCalcConfig{
+				Enabled: !cmd.Flags().Changed("total-kv-blocks") && lr.KVParamsOK &&
+					(lr.Backend == "roofline" || lr.Backend == "trained-physics"),
+				GPUMemoryUtilization: gpuMemoryUtilization,
+				Params:               lr.KVParams,
+				AdapterReservedBytes: loraReservedBytesForKV,
+			},
+		}
+		// Session callback installation (Constraint 3 fix):
+		// Follow-up collection must be UNCONDITIONAL for saturation analysis correctness.
+		// The TraceV2 export (lines 1582-1601) remains gated on --trace-output, but the
+		// follow-up accumulation happens regardless so saturation analysis sees complete workloads.
+		var followUpRequests []*sim.Request
+		var onRequestDone func(*sim.Request, int64) []*sim.Request
+		if sessionMgr != nil {
+			// Always install callback to accumulate follow-ups (for saturation analysis + optional trace export)
+			baseCb := sessionMgr.OnComplete
+			onRequestDone = func(req *sim.Request, clock int64) []*sim.Request {
+				followUps := baseCb(req, clock)
+				followUpRequests = append(followUpRequests, followUps...)
+				return followUps
+			}
+		}
+		// RequestSource: streaming in lazy mode, eager-slice otherwise.
+		// The workload package's lazy source satisfies cluster.RequestSource
+		// via structural typing — both define the same Next() method.
+		var clusterRequestSource cluster.RequestSource
+		if lazyRequestSource != nil {
+			clusterRequestSource = lazyRequestSource
+		} else {
+			clusterRequestSource = cluster.NewSliceRequestSource(preGeneratedRequests)
+		}
+		cs := cluster.NewClusterSimulator(config, clusterRequestSource, onRequestDone)
+
+		// Arrival hook: capture trace-emission references at the cluster's
+		// single arrival boundary so the trace exporter no longer relies on
+		// the eager preGeneratedRequests + followUpRequests list assembly
+		// (issue #1440). The hook fires once per fresh arrival in
+		// clock-monotonic order — see ClusterArrivalEvent.Execute. We hold
+		// pointers (not copies) so the request's final state (set by the
+		// event loop) is visible at export time.
+		//
+		// Only install when --trace-output is set (BC-1: zero overhead when
+		// trace is disabled). Saturation analysis continues to use the
+		// preGeneratedRequests + followUpRequests path below — those slices
+		// remain populated for that purpose only.
+		//
+		// Install/export coupling: traceArrivals is declared nil here and
+		// assigned a non-nil empty slice ONLY inside the install branch.
+		// A nil traceArrivals at the export site below with traceOutput
+		// non-empty means the install branch was dropped — we fail loudly
+		// rather than write a silent empty trace (R1).
+		// The arrival hook captures fresh-arrival references at the single
+		// cluster boundary. It powers trace export (#1440). As of #1516 the
+		// saturation trace is streamed over BuildOutput's completed-request
+		// metrics, not over the arrival list, so the hook is needed only for
+		// --trace-output (BC-1 zero overhead otherwise).
+		var traceArrivals []*sim.Request
+		arrivalHookNeeded := traceOutput != ""
+		if arrivalHookNeeded {
+			traceArrivals = make([]*sim.Request, 0)
+			cs.SetArrivalHook(func(req *sim.Request) {
+				traceArrivals = append(traceArrivals, req)
+			})
+		}
+
+		// Resolve the saturation tracer from --detectors / --saturation-config /
+		// --saturation-report BEFORE the run so an unknown name, bad config, or
+		// unwritable report path fails fast (#1516 single detector, #1519 bank).
+		satTracer, satErr := resolveSaturation()
+		if satErr != nil {
+			logrus.Fatalf("%v", satErr)
+		}
+
+		if err := cs.Run(); err != nil {
+			logrus.Fatalf("Simulation failed: %v", err)
+		}
+
+		// Surface any terminal sampler / generator error the lazy source
+		// recorded on a per-client state during the run. Eager mode would
+		// have hit logrus.Fatalf inside cmd on the same invalid spec;
+		// without this check, lazy mode would exit 0 with reduced traffic
+		// and misleading capacity numbers (PR #1453 review round 3).
+		if lazyRequestSource != nil {
+			if err := lazyRequestSource.Err(); err != nil {
+				logrus.Fatalf("Lazy workload sampler failure: %v", err)
+			}
+		}
+
+		// Wall-clock timing on stderr (BC-6); stdout remains deterministic (BC-7)
+		logrus.Infof("Simulation wall-clock time: %.3fs", time.Since(startTime).Seconds())
+
+		// Resolve goodput SLO targets early so the trace export and aggregate metrics
+		// see the same merged map (#1413, BC-1). Run has no trace header; precedence
+		// here is CLI > workload spec.
+		cliTTFT, cliITL, cliE2E, gpErr := resolveGoodputCLIFlags(goodputSLOTTFT, goodputSLOITL, goodputSLOE2E)
+		if gpErr != nil {
+			logrus.Fatalf("%v", gpErr)
+		}
+		var specTargets map[string]workload.SLODimTargets
+		if spec != nil {
+			specTargets = spec.GoodputSLOTargets
+		}
+		goodputTargets := mergeGoodputTargets(cliTTFT, cliITL, cliE2E, nil, specTargets)
+
+		// Export trace if requested (BC-1, BC-7). Records are sourced from
+		// the arrival hook (issue #1440) — already in clock-monotonic order
+		// per INV-3, so no sort is required.
+		if traceOutput != "" {
+			// Install/export coupling guard (R1): traceArrivals is a non-nil
+			// empty slice when SetArrivalHook ran above. A nil here means
+			// the install branch was dropped or moved without updating this
+			// site — refuse to write a silent empty trace.
+			if traceArrivals == nil {
+				logrus.Fatalf("Trace export: arrival hook was not installed but --trace-output=%q is set — install/export branches diverged (issue #1440)", traceOutput)
+			}
+			records := workload.RequestsToTraceRecords(traceArrivals)
+			header := &workload.TraceHeader{
+				Version:           3,
+				TimeUnit:          "microseconds",
+				Mode:              "generated",
+				WorkloadSeed:      &spec.Seed,
+				GoodputSLOTargets: goodputTargets,                   // #1413, BC-7: persist resolved targets for downstream replay/calibrate
+				KVOffload:         simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: nil when inert (omitted); round-trips resolved config
+				// #1530: record multi-node placement so replay can refuse a trace whose
+				// step times it cannot reproduce. 0/1 (no span) is omitted, so a run
+				// without multi-node placement writes a byte-identical header (INV-6).
+				MaxNodesSpanned: crossNodeSpanForTrace(cs.MaxNodesSpanned()),
+			}
+			if err := workload.ExportTraceV2(header, records, traceOutput+".yaml", traceOutput+".csv"); err != nil {
+				logrus.Fatalf("Trace export failed: %v", err)
+			}
+			logrus.Infof("Trace exported: %s.yaml, %s.csv (%d records)", traceOutput, traceOutput, len(records))
+		}
+
+		if numInstances > 1 {
+			// Print per-instance metrics to stdout (multi-instance only). Per-instance
+			// output carries no saturation field — the final label is a cluster-level
+			// verdict, emitted on the aggregate below (#1517).
+			for _, inst := range cs.Instances() {
+				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, ""); err != nil {
+					logrus.Fatalf("SaveResults for instance %s: %v", inst.ID(), err)
+				}
+			}
+		}
+		// Build aggregate output, inject goodput, run the saturation reducer, then
+		// emit (#1413 goodput / #1517 saturation share the build-then-mutate-then-emit
+		// pattern). The saturation label must reach stdout, so the tracer runs BEFORE
+		// EmitOutput and mutates clusterOutput.Saturation — sim/ builds the struct and
+		// knows nothing about saturation; cmd/ sets the field.
+		aggregated := cs.AggregatedMetrics()
+		clusterOutput := aggregated.BuildOutput("cluster")
+		emitGoodput(&clusterOutput, aggregated, cs.InjectedByClass(),
+			float64(aggregated.SimEndedTime)/1e6, goodputTargets)
+
+		// Saturation (#1516 single detector / #1519 bank / #1517 final label): stream
+		// the selected detector(s) over the aggregate's completed-request metrics,
+		// write the per-event verdict trace to --saturation-report (if given), and
+		// splice the per-detector final label onto stdout. Same pipeline as
+		// replay/observe; only the input slice differs (here it is sim-derived,
+		// INV-13). Guard on the tracer so the common no-detector path skips the
+		// O(n log n) sort + O(n) copy in CompletedRequestMetrics().
+		if satTracer != nil {
+			final, err := satTracer.run(aggregated.CompletedRequestMetrics())
+			if err != nil {
+				logrus.Fatalf("Saturation: %v", err)
+			}
+			if len(final) > 0 {
+				clusterOutput.Saturation = final
+			}
+		}
+
+		// Catalog provenance (#1732): file-only, so it is passed as an EmitOutput option
+		// rather than mutated onto clusterOutput above — stdout must stay byte-identical
+		// (INV-6). Same shared helper on the replay path (INV-13).
+		if err := aggregated.EmitOutput(clusterOutput, metricsPath,
+			catalogProvenanceEmitOptions(metricsPath, resolvedCatalogRoot)...); err != nil {
+			logrus.Fatalf("SaveResults: %v", err)
+		}
+
+		// Collect RawMetrics and compute fitness (PR9)
+		rawMetrics := cluster.CollectRawMetrics(
+			cs.AggregatedMetrics(),
+			cs.PerInstanceMetrics(),
+			cs.RejectedRequests(),
+			scheduler,
+			cs.RoutingRejections(),
+			cs.EncodeRoutingRejections(),
+			cs.InjectedByClass(),
+		)
+
+		rawMetrics.PD = cluster.CollectPDMetrics(
+			cs.ParentRequests(),
+			cs.AggregatedMetrics(),
+			cs.PoolMembership(),
+			cs.PerInstanceMetricsByID(),
+		)
+		rawMetrics.ShedByTier = cs.ShedByTier()                     // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
+		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth()       // Issue #882: gateway queue depth at horizon
+		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()         // Issue #882: gateway queue shed count
+		rawMetrics.GatewayQueueRejected = cs.GatewayQueueRejected() // Issue #1190: gateway queue rejected count
+		rawMetrics.GatewayEvicted = cs.GatewayEvicted()             // Phase 4: in-flight eviction count (#1228)
+		rawMetrics.GatewayExpired = cs.GatewayExpired()             // Phase 6: TTL expiration count (#1193)
+
+		if rawMetrics.PD != nil && config.PDTransferContention {
+			rawMetrics.PD.PeakConcurrentTransfers = cs.PeakConcurrentTransfers()
+			rawMetrics.PD.MeanTransferQueueDepth = cs.MeanTransferQueueDepth()
+		}
+
+		if fitnessWeights != "" {
+			weights, err := cluster.ParseFitnessWeights(fitnessWeights)
+			if err != nil {
+				logrus.Fatalf("Invalid fitness weights: %v", err)
+			}
+			fitness, fitErr := cluster.ComputeFitness(rawMetrics, weights)
+			if fitErr != nil {
+				logrus.Fatalf("Fitness evaluation failed: %v", fitErr)
+			}
+			fmt.Println("=== Fitness Evaluation ===")
+			fmt.Printf("Score: %.6f\n", fitness.Score)
+			// Sort keys for deterministic output order
+			componentKeys := make([]string, 0, len(fitness.Components))
+			for k := range fitness.Components {
+				componentKeys = append(componentKeys, k)
+			}
+			sort.Strings(componentKeys)
+			for _, k := range componentKeys {
+				fmt.Printf("  %s: %.6f\n", k, fitness.Components[k])
+			}
+		}
+
+		// Print anomaly counters if any detected
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 || rawMetrics.GatewayQueueRejected > 0 || rawMetrics.GatewayEvicted > 0 || rawMetrics.GatewayExpired > 0 || rawMetrics.EncodeRoutingRejections > 0 || rawMetrics.TimedOutRequests > 0 {
+			fmt.Println("=== Anomaly Counters ===")
+			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
+			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
+			fmt.Printf("Rejected Requests (Admission): %d\n", rawMetrics.RejectedRequests)
+			if len(rawMetrics.ShedByTier) > 0 {
+				tierKeys := make([]string, 0, len(rawMetrics.ShedByTier))
+				for k := range rawMetrics.ShedByTier {
+					tierKeys = append(tierKeys, k)
+				}
+				sort.Strings(tierKeys) // R2/INV-6: deterministic output order
+				for _, tier := range tierKeys {
+					fmt.Printf("  Shed (%s): %d\n", tier, rawMetrics.ShedByTier[tier])
+				}
+			}
+			fmt.Printf("Rejected Requests (Routing): %d\n", rawMetrics.RoutingRejections)
+			fmt.Printf("Dropped Unservable: %d\n", rawMetrics.DroppedUnservable)
+			fmt.Printf("Timed Out Requests: %d\n", rawMetrics.TimedOutRequests)
+			fmt.Printf("Length-Capped Requests: %d\n", rawMetrics.LengthCappedRequests)
+			if rawMetrics.GatewayQueueDepth > 0 {
+				fmt.Printf("Gateway Queue Depth (horizon): %d\n", rawMetrics.GatewayQueueDepth)
+			}
+			if rawMetrics.GatewayQueueShed > 0 {
+				fmt.Printf("Gateway Queue Shed: %d\n", rawMetrics.GatewayQueueShed)
+			}
+			if rawMetrics.GatewayQueueRejected > 0 {
+				fmt.Printf("Gateway Queue Rejected: %d\n", rawMetrics.GatewayQueueRejected)
+			}
+			if rawMetrics.GatewayEvicted > 0 {
+				fmt.Printf("Gateway Evicted (in-flight): %d\n", rawMetrics.GatewayEvicted)
+			}
+			if rawMetrics.GatewayExpired > 0 {
+				fmt.Printf("Gateway Expired (TTL): %d\n", rawMetrics.GatewayExpired)
+			}
+			if rawMetrics.EncodeRoutingRejections > 0 {
+				fmt.Printf("Encode Routing Rejections: %d\n", rawMetrics.EncodeRoutingRejections)
+			}
+		}
+
+		// Print KV cache metrics if any nonzero (BC-1, BC-2)
+		printKVCacheMetrics(os.Stdout, rawMetrics.PreemptionRate, rawMetrics.CacheHitRate, rawMetrics.KVThrashingRate)
+
+		// Print per-SLO metrics. With goodput targets configured, the section prints
+		// even for a single class (#1413, BC-5). Without goodput, the legacy
+		// suppression for ≤1 class is preserved.
+		sloDistributions := cluster.ComputePerSLODistributions(cs.AggregatedMetrics())
+		printPerSLOMetrics(os.Stdout, sloDistributions, len(goodputTargets) > 0)
+
+		// Print per-model metrics if requests carry model tags (Phase 1A, FR-011)
+		perModelMetrics := cluster.ComputePerModelMetrics(cs.AggregatedMetrics())
+		printPerModelMetrics(os.Stdout, perModelMetrics)
+
+		// Print per-tenant fairness metrics if any request carries a tenant label (Phase 1B-2b, FR-010)
+		perTenantMetrics := cluster.ComputePerTenantMetrics(cs.AggregatedMetrics())
+		printPerTenantMetrics(os.Stdout, perTenantMetrics)
+
+		// Print session metrics if any request carries a session label (#1058)
+		sessionMetrics := cluster.ComputeSessionMetrics(cs.AggregatedMetrics())
+		printSessionMetrics(os.Stdout, sessionMetrics)
+
+		// Print PD disaggregation metrics if disaggregation was active (PR4)
+		printPDMetrics(os.Stdout, rawMetrics.PD, config.PDTransferContention)
+
+		// Build and print trace summary if requested (BC-9)
+		if cs.Trace() != nil && summarizeTrace {
+			traceSummary := trace.Summarize(cs.Trace())
+			fmt.Println("=== Trace Summary ===")
+			fmt.Printf("Total Decisions: %d\n", traceSummary.TotalDecisions)
+			fmt.Printf("  Admitted: %d\n", traceSummary.AdmittedCount)
+			fmt.Printf("  Rejected: %d\n", traceSummary.RejectedCount)
+			fmt.Printf("Unique Targets: %d\n", traceSummary.UniqueTargets)
+			if len(traceSummary.TargetDistribution) > 0 {
+				fmt.Println("Target Distribution:")
+				targetKeys := make([]string, 0, len(traceSummary.TargetDistribution))
+				for k := range traceSummary.TargetDistribution {
+					targetKeys = append(targetKeys, k)
+				}
+				sort.Strings(targetKeys)
+				for _, k := range targetKeys {
+					fmt.Printf("  %s: %d\n", k, traceSummary.TargetDistribution[k])
+				}
+			}
+			fmt.Printf("Mean Regret: %.6f\n", traceSummary.MeanRegret)
+			fmt.Printf("Max Regret: %.6f\n", traceSummary.MaxRegret)
+		}
+
+		logrus.Info("Simulation complete.")
+	},
+}
+
+// printKVCacheMetrics prints KV cache metrics to w when any value is nonzero.
+func printKVCacheMetrics(w io.Writer, preemptionRate, cacheHitRate, kvThrashingRate float64) {
+	if preemptionRate == 0 && cacheHitRate == 0 && kvThrashingRate == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "=== KV Cache Metrics ===")
+	_, _ = fmt.Fprintf(w, "Preemption Rate: %.4f\n", preemptionRate)
+	_, _ = fmt.Fprintf(w, "Cache Hit Rate: %.4f\n", cacheHitRate)
+	_, _ = fmt.Fprintf(w, "KV Thrashing Rate: %.4f\n", kvThrashingRate)
+}
+
+// printPerSLOMetrics prints per-SLO-class latency distributions. Without
+// goodput targets configured, the section is suppressed for ≤1 class (the
+// legacy no-spurious-section behavior). With goodput targets configured, the
+// section prints even for a single class so operators see the dimensions
+// gating their goodput score (#1413, BC-5).
+func printPerSLOMetrics(w io.Writer, sloMetrics map[string]*cluster.SLOMetrics, goodputConfigured bool) {
+	if len(sloMetrics) == 0 {
+		return
+	}
+	if len(sloMetrics) == 1 && !goodputConfigured {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "=== Per-SLO Metrics ===")
+	keys := make([]string, 0, len(sloMetrics))
+	for k := range sloMetrics {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, cls := range keys {
+		m := sloMetrics[cls]
+		if m == nil {
+			continue
+		}
+		_, _ = fmt.Fprintf(w, "  %s:\n", cls)
+		_, _ = fmt.Fprintf(w, "    TTFT: mean=%.2f p99=%.2f (n=%d)\n", m.TTFT.Mean, m.TTFT.P99, m.TTFT.Count)
+		_, _ = fmt.Fprintf(w, "    ITL:  mean=%.2f p99=%.2f (n=%d)\n", m.ITL.Mean, m.ITL.P99, m.ITL.Count)
+		_, _ = fmt.Fprintf(w, "    E2E:  mean=%.2f p99=%.2f (n=%d)\n", m.E2E.Mean, m.E2E.P99, m.E2E.Count)
+	}
+}
+
+// printPerModelMetrics prints per-model TTFT, E2E, and throughput.
+// Follows the same pattern as printPerSLOMetrics (R2: sorted keys).
+// No-op when perModelMetrics is nil or empty.
+func printPerModelMetrics(w io.Writer, perModelMetrics map[string]*cluster.ModelMetrics) {
+	if len(perModelMetrics) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "=== Per-Model Metrics ===")
+	keys := make([]string, 0, len(perModelMetrics))
+	for k := range perModelMetrics {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, model := range keys {
+		m := perModelMetrics[model]
+		if m == nil {
+			continue
+		}
+		_, _ = fmt.Fprintf(w, "  %s:\n", model)
+		_, _ = fmt.Fprintf(w, "    TTFT: p50=%.2f p99=%.2f (n=%d)\n", m.TTFT.P50, m.TTFT.P99, m.TTFT.Count)
+		_, _ = fmt.Fprintf(w, "    E2E:  p50=%.2f p99=%.2f (n=%d)\n", m.E2E.P50, m.E2E.P99, m.E2E.Count)
+		_, _ = fmt.Fprintf(w, "    Throughput: %.2f req/s, %.2f tok/s\n", m.ThroughputRPS, m.ThroughputTokenSec)
+	}
+}
+
+// printPerTenantMetrics prints per-tenant request counts, token totals, and Jain fairness index.
+// Follows the same pattern as printPerModelMetrics (R2: sorted keys).
+// No-op when perTenantMetrics is nil or empty.
+func printPerTenantMetrics(w io.Writer, perTenantMetrics map[string]*cluster.TenantMetrics) {
+	if len(perTenantMetrics) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "=== Per-Tenant Metrics ===")
+	keys := make([]string, 0, len(perTenantMetrics))
+	for k := range perTenantMetrics {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	tokenMap := make(map[string]float64, len(perTenantMetrics))
+	for _, tid := range keys {
+		tm := perTenantMetrics[tid]
+		_, _ = fmt.Fprintf(w, "  %s: requests=%d, tokens=%d\n", tid, tm.CompletedRequests, tm.TotalTokensServed)
+		tokenMap[tid] = float64(tm.TotalTokensServed)
+	}
+	jain := cluster.JainFairnessIndex(tokenMap)
+	_, _ = fmt.Fprintf(w, "  Jain Fairness Index: %.4f\n", jain)
+}
+
+// printSessionMetrics writes the session metrics section to w.
+// No-op when sm is nil (single-turn workloads produce no session output).
+func printSessionMetrics(w io.Writer, sm *cluster.SessionMetrics) {
+	if sm == nil {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "=== Session Metrics ===")
+	_, _ = fmt.Fprintf(w, "  Sessions: %d\n", sm.SessionCount)
+	if sm.TTFTCold.Count > 0 {
+		_, _ = fmt.Fprintf(w, "  TTFT cold (round 0): mean=%.2f p50=%.2f p95=%.2f p99=%.2f ms (n=%d)\n",
+			sm.TTFTCold.Mean, sm.TTFTCold.P50, sm.TTFTCold.P95, sm.TTFTCold.P99, sm.TTFTCold.Count)
+	}
+	if sm.TTFTWarm.Count > 0 {
+		_, _ = fmt.Fprintf(w, "  TTFT warm (round≥1): mean=%.2f p50=%.2f p95=%.2f p99=%.2f ms (n=%d)\n",
+			sm.TTFTWarm.Mean, sm.TTFTWarm.P50, sm.TTFTWarm.P95, sm.TTFTWarm.P99, sm.TTFTWarm.Count)
+	}
+	if sm.SessionDuration.Count > 0 {
+		_, _ = fmt.Fprintf(w, "  Session duration:    mean=%.2f p50=%.2f p95=%.2f p99=%.2f ms (n=%d)\n",
+			sm.SessionDuration.Mean, sm.SessionDuration.P50, sm.SessionDuration.P95, sm.SessionDuration.P99, sm.SessionDuration.Count)
+	}
+}
+
+// printPDMetrics prints the PD disaggregation metrics section when disaggregation was active.
+// No-op when pd is nil (disaggregation inactive). When contentionEnabled, also prints
+// peak concurrent transfers and mean transfer queue depth.
+func printPDMetrics(w io.Writer, pd *cluster.PDMetrics, contentionEnabled bool) {
+	if pd == nil {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "=== PD Metrics ===")
+	_, _ = fmt.Fprintf(w, "Disaggregated Requests: %d\n", pd.DisaggregatedCount)
+	_, _ = fmt.Fprintf(w, "Dropped at Decode KV: %d\n", pd.DroppedAtDecodeKV)
+	_, _ = fmt.Fprintf(w, "Prefill Throughput: %.4f sub-req/s\n", pd.PrefillThroughput)
+	_, _ = fmt.Fprintf(w, "Decode Throughput: %.4f sub-req/s\n", pd.DecodeThroughput)
+	if pd.LoadImbalanceRatio == math.MaxFloat64 {
+		_, _ = fmt.Fprintf(w, "Load Imbalance Ratio: inf (one pool idle)\n")
+	} else {
+		_, _ = fmt.Fprintf(w, "Load Imbalance Ratio: %.4f\n", pd.LoadImbalanceRatio)
+	}
+	if pd.ParentTTFT.Count > 0 {
+		_, _ = fmt.Fprintf(w, "Parent TTFT (us): mean=%.1f p50=%.1f p95=%.1f p99=%.1f\n",
+			pd.ParentTTFT.Mean, pd.ParentTTFT.P50, pd.ParentTTFT.P95, pd.ParentTTFT.P99)
+	}
+	if pd.TransferDuration.Count > 0 {
+		_, _ = fmt.Fprintf(w, "KV Transfer Duration (us): mean=%.1f p50=%.1f p95=%.1f p99=%.1f\n",
+			pd.TransferDuration.Mean, pd.TransferDuration.P50, pd.TransferDuration.P95, pd.TransferDuration.P99)
+	}
+	if contentionEnabled {
+		_, _ = fmt.Fprintf(w, "Peak Concurrent Transfers: %d\n", pd.PeakConcurrentTransfers)
+		_, _ = fmt.Fprintf(w, "Mean Transfer Queue Depth: %.4f\n", pd.MeanTransferQueueDepth)
+	}
+}
+
+// Execute runs the CLI root command
+func Execute() {
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
+}
+
+// init sets up CLI flags and subcommands
+func init() {
+	registerSimConfigFlags(runCmd)
+
+	// Workload generation flags (run-only)
+	runCmd.Flags().StringVar(&workloadType, "workload", "distribution", "Workload type (chatbot, summarization, contentgen, multidoc, distribution)")
+
+	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")
+	runCmd.Flags().IntVar(&numRequests, "num-requests", 100, "Number of requests to generate")
+	runCmd.Flags().IntVar(&concurrency, "concurrency", 0, "Number of concurrent virtual users (closed-loop, mutually exclusive with --rate)")
+	runCmd.Flags().IntVar(&thinkTimeMs, "think-time-ms", 0, "Think time in ms between response and next request (concurrency mode)")
+	runCmd.Flags().IntVar(&prefixTokens, "prefix-tokens", 0, "Prefix Token Count")
+	runCmd.Flags().IntVar(&promptTokensMean, "prompt-tokens", defaultPromptMean, "Average Prompt Token Count")
+	runCmd.Flags().IntVar(&promptTokensStdev, "prompt-tokens-stdev", defaultPromptStdev, "Stddev Prompt Token Count")
+	runCmd.Flags().IntVar(&promptTokensMin, "prompt-tokens-min", defaultPromptMin, "Min Prompt Token Count")
+	runCmd.Flags().IntVar(&promptTokensMax, "prompt-tokens-max", defaultPromptMax, "Max Prompt Token Count")
+	runCmd.Flags().IntVar(&outputTokensMean, "output-tokens", defaultOutputMean, "Average Output Token Count")
+	runCmd.Flags().IntVar(&outputTokensStdev, "output-tokens-stdev", defaultOutputStdev, "Stddev Output Token Count")
+	runCmd.Flags().IntVar(&outputTokensMin, "output-tokens-min", defaultOutputMin, "Min Output Token Count")
+	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", defaultOutputMax, "Max Output Token Count")
+	runCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "Path to YAML workload specification file (overrides --workload)")
+	runCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", false, "Alpha (#1441): stream requests from the workload generator instead of pre-generating the full slice. Default off. Supports every workload class — single-shot, single- and multi-session reasoning (#1458), concurrency clients (#1459), and time-varying / per-window workloads (#1460); no eager fallback.")
+	runCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "Per-request deadline in seconds (default 300s matches the session-client default in computeDeadline). Negative = disabled; 0 is rejected. Consistent with blis observe: both commands reject 0.")
+	runCmd.Flags().StringVar(&goodputSLOTTFT, "slo-ttft", "", "Per-class TTFT goodput thresholds (e.g. \"critical=100ms,standard=500ms\"). Precedence: CLI > trace header > workload spec.")
+	runCmd.Flags().StringVar(&goodputSLOITL, "slo-itl", "", "Per-class mean ITL goodput thresholds (e.g. \"critical=50ms,standard=150ms\").")
+	runCmd.Flags().StringVar(&goodputSLOE2E, "slo-e2e", "", "Per-class E2E goodput thresholds (e.g. \"critical=5s,standard=30s\").")
+
+	// Run-specific export
+	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")
+	runCmd.Flags().StringVar(&metricsPath, "metrics-path", "", "File to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats). Use --results-path on blis replay for per-request SimResult JSON.")
+
+	// Saturation trace flags (#1516): --detectors + --saturation-config + --saturation-report.
+	registerDetectorFlags(runCmd)
+
+	// Attach `run` as a subcommand to `root`
+	rootCmd.AddCommand(runCmd)
+}
+
+// ─── Per-role (per-pool) MoE all-to-all backend (#1548) ─────────────────────
+
+// perPoolHardwareFlags is the complete set of per-pool hardware override flag names.
+// Both `blis run` and `blis replay` decide "did the user set any per-pool flag?" from
+// this ONE list (R23), so a new per-pool flag joins that check in a single place instead
+// of two hand-maintained boolean chains that can drift apart.
+var perPoolHardwareFlags = []string{
+	"prefill-tp", "decode-tp",
+	"prefill-hardware", "decode-hardware",
+	"prefill-latency-model", "decode-latency-model",
+	"prefill-max-model-len", "decode-max-model-len",
+	"prefill-moe-comm-backend", "decode-moe-comm-backend",
+}
+
+// anyPerPoolHardwareFlagChanged reports whether the operator explicitly set any per-pool
+// hardware override flag. changed is cmd.Flags().Changed, injected so the function is pure
+// and unit-testable without a cobra command.
+func anyPerPoolHardwareFlagChanged(changed func(string) bool) bool {
+	for _, name := range perPoolHardwareFlags {
+		if changed(name) {
+			return true
+		}
+	}
+	return false
+}
+
+// validatePerPoolLatencyBackends closes a gate the global check in resolveLatencyConfig
+// cannot reach (#1548). That check rejects `--dp > 1` / `--enable-expert-parallel` on any
+// backend but trained-physics, but it reads the GLOBAL backend only: a per-pool
+// --prefill-latency-model / --decode-latency-model override can put ONE pool on a backend
+// that models no DP/EP step-time effect while the global backend satisfies the check. That
+// pool would then be silently DP/EP-blind — a real mis-model, not a cosmetic one.
+//
+// It was harmless before #1548 (expert parallelism had NO step-time effect, so a DP/EP-blind
+// pool computed the same thing as an EP-aware one) AND while MoE `--dp>1` + PD disaggregation
+// was a #1531-era fail-fast (the per-pool override path was unreachable with `--dp>1`). Making
+// the EP toggle live (#1548) turned the documented latent hole into a live path, and #1553
+// lifting the PD + `--dp>1` fail-fast makes it reachable end-to-end — so this gate is now a
+// live check. It covers both activation reasons (`--dp>1` and EP-on).
+//
+// Returns an error rather than terminating: the CLI boundary owns termination.
+func validatePerPoolLatencyBackends(dpepActive bool, prefill, decode cluster.PoolOverrides) error {
+	if !dpepActive {
+		return nil
+	}
+	for _, role := range []struct {
+		name    string
+		backend string
+	}{
+		{"prefill", prefill.LatencyBackend},
+		{"decode", decode.LatencyBackend},
+	} {
+		if role.backend == "" || role.backend == sim.LatencyBackendTrainedPhysics {
+			continue
+		}
+		return fmt.Errorf("--%s-latency-model %s cannot be combined with --dp > 1 or "+
+			"--enable-expert-parallel: the %s pool would model no DP/EP step-time effect while the rest "+
+			"of the cluster does, so its latency would be silently wrong. Use --%s-latency-model "+
+			"trained-physics, or drop the DP/EP flags",
+			role.name, role.backend, role.name, role.name)
+	}
+	return nil
+}
+
+// applyPerRoleMoECommBackends resolves --prefill-moe-comm-backend /
+// --decode-moe-comm-backend onto the two pools' overrides (#1548). One implementation
+// shared by both command bodies (R23), so the two roles and the two commands cannot
+// validate differently.
+//
+// An unrecognized backend name is a hard error, exactly as for the global
+// --moe-comm-backend: silently resolving a typo to the default volume model would hand
+// back a plausible-looking number for a config the operator did not ask for (R1).
+//
+// isMoE / dispatchActive drive the inertness diagnostics. dispatchActive must be true iff
+// the MoE dispatch/combine term can fire at all — since #1548 that is `--dp > 1 ||
+// --enable-expert-parallel` (EP-on routes tokens to whole-expert owners even at DP=1);
+// before #1548 only DP>1 did. A backend selected where no dispatch term fires has no
+// effect, and saying so beats letting an operator believe the recipe took hold.
+//
+// Returns an error rather than calling logrus.Fatalf so the CLI boundary keeps owning
+// termination (and so this stays testable).
+func applyPerRoleMoECommBackends(changed func(string) bool, isMoE, dispatchActive bool,
+	prefill, decode *cluster.PoolOverrides) error {
+	for _, role := range []struct {
+		name  string
+		value string
+		dst   *cluster.PoolOverrides
+	}{
+		{"prefill", prefillMoECommBackend, prefill},
+		{"decode", decodeMoECommBackend, decode},
+	} {
+		flag := role.name + "-moe-comm-backend"
+		if !changed(flag) {
+			continue
+		}
+		if !latency.IsValidMoECommBackend(role.value) {
+			return fmt.Errorf("--%s %q is not a recognized vLLM MoE all-to-all backend (valid: %s)",
+				flag, role.value, strings.Join(latency.ValidMoECommBackends, ", "))
+		}
+		role.dst.MoECommBackend = role.value
+		switch {
+		case !isMoE:
+			logrus.Warnf("--%s=%s has no effect on a dense model; MoE dispatch/combine comm is only "+
+				"charged for MoE models.", flag, role.value)
+		case !dispatchActive:
+			logrus.Warnf("--%s=%s has no effect at --dp=1 without --enable-expert-parallel; the MoE "+
+				"dispatch/combine term it selects only fires when expert parallelism is on or --dp > 1 "+
+				"(otherwise the MoE FFN all-reduces over the TP group instead).", flag, role.value)
+		}
+	}
+	return nil
+}

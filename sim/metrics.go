@@ -1,0 +1,365 @@
+// Tracks simulation-wide and per-request performance metrics such as:
+
+package sim
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"slices"
+	"sort"
+
+	"github.com/sirupsen/logrus"
+)
+
+// Metrics aggregates statistics about the simulation
+// for final reporting. Useful for evaluating system performance
+// and debugging behavior over time.
+type Metrics struct {
+	CompletedRequests int     // Number of requests completed
+	TotalInputTokens  int     // Total number of input tokens
+	TotalOutputTokens int     // Total number of output tokens
+	SimEndedTime      int64   // Sim clock time in ticks when simulation ends
+	KVBlocksUsed      float64 // Integral of KVBlockUsage over time
+	PeakKVBlocksUsed  int64   // Max number of simultaneously used KV blocks
+	PreemptionCount      int64   // Total preemption events (PR12)
+	KVAllocationFailures int64   // KV allocation failures for the final decode token at completion; non-zero indicates a cache accounting anomaly (#183)
+	CacheHitRate         float64 // Cumulative cache hit rate at finalization (PR12). Intentional observability signal: set by cluster/instance.go Finalize() from KVStore.CacheHitRate(). Read-only statistic — does not feed back into state evolution.
+	KVThrashingRate      float64 // KV thrashing rate at finalization (PR12)
+	StillQueued          int     // Requests still in wait queue at sim end
+	StillRunning         int     // Requests still in running batch at sim end
+	DroppedUnservable    int // Requests dropped at enqueue: negative MaxOutputLen (R3), MaxModelLen violation, or input exceeds KV capacity (R19)
+	LengthCappedRequests int // Requests force-completed at MaxModelLen-1 boundary (proactive cap)
+	TimedOutRequests     int // Requests cancelled by client timeout
+
+	TTFTSum int64 // Total time-to-first-token sum (in ticks)
+	ITLSum  int64 // Total ITL sum across requests (in ticks)
+
+	RequestTTFTs            map[string]float64 // list of all requests' TTFT
+	RequestITLs             map[string]float64 // list of all requests' ITL
+	RequestSchedulingDelays map[string]int64   // list of all requests' scheduling delays
+	AllITLs                 []int64            // list of all requests' ITL
+	RequestE2Es             map[string]float64 // list of all requests' latencies
+	RequestCompletionTimes  map[string]float64 // list of all requests' completion times in ticks
+	RequestStepCounters     []int              // list of all requests' num of steps between scheduled and finished
+
+	NumWaitQRequests        []int                     // number of requests in waitQ over different steps
+	NumRunningBatchRequests []int                     // number of request in runningBatch over different steps
+	Requests                map[string]RequestMetrics // request metrics list
+
+	// Per-adapter resident-set event counts (LoRA control-plane subsystem).
+	// AdapterLoadCounts[id] is
+	// incremented each time id is cold-loaded into an instance's resident set;
+	// AdapterEvictionCounts[id] each time id is evicted. These are cumulative EVENT
+	// counts, not distinct-adapter or request counts — a hot adapter loaded/evicted
+	// repeatedly accrues one per transition, so totals scale with adapter churn (and
+	// thus horizon), not just the registry size. Bounded in size by the declared
+	// adapter registry. In cluster mode they are summed per adapter across instances
+	// (cluster.aggregateMetrics). Both are always non-nil (allocated in NewMetrics) but
+	// empty (a missing key reads as 0) unless the LoRA subsystem is active, so an
+	// adapter-blind run produces no adapter output (INV-6). Surfaced via buildAdapterMetrics.
+	AdapterLoadCounts     map[string]int64
+	AdapterEvictionCounts map[string]int64
+}
+
+func NewMetrics() *Metrics {
+	return &Metrics{
+		CompletedRequests:       0,
+		RequestTTFTs:            make(map[string]float64),
+		RequestITLs:             make(map[string]float64),
+		AllITLs:                 []int64{},
+		RequestE2Es:             make(map[string]float64),
+		RequestCompletionTimes:  make(map[string]float64),
+		RequestSchedulingDelays: make(map[string]int64),
+		NumWaitQRequests:        []int{},
+		NumRunningBatchRequests: []int{},
+		Requests:                make(map[string]RequestMetrics),
+		AdapterLoadCounts:       make(map[string]int64),
+		AdapterEvictionCounts:   make(map[string]int64),
+	}
+}
+
+// BuildOutput populates and returns a MetricsOutput from m, including aggregate
+// percentiles and per-request rows (sorted by arrival). It does NOT write
+// anywhere — callers (SaveResults, cmd/-side goodput and saturation emitters)
+// handle stdout and file output. Splitting build-from-emit lets cmd/ inject
+// goodput (#1413) and the saturation final label (#1517) into the returned struct
+// between the two steps without changing SaveResults's signature.
+//
+// The output.Saturation field is left nil here; cmd/ populates it from the
+// detector-agnostic reducer (saturation.ReduceAll) via the same
+// build-then-mutate-then-emit pattern goodput uses (#1517). This removed the
+// former sim.BatchClassifier seam — sim/ no longer knows anything about
+// saturation.
+func (m *Metrics) BuildOutput(instanceID string) MetricsOutput {
+	vllmRuntime := float64(m.SimEndedTime) / float64(1e6)
+
+	output := MetricsOutput{
+		InstanceID:           instanceID,
+		CompletedRequests:    m.CompletedRequests,
+		StillQueued:          m.StillQueued,
+		StillRunning:         m.StillRunning,
+		InjectedRequests:     m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests,
+		TotalInputTokens:     int(m.TotalInputTokens),
+		TotalOutputTokens:    int(m.TotalOutputTokens),
+		VllmDurationSec:      vllmRuntime,
+		KVAllocationFailures: m.KVAllocationFailures,
+		PreemptionCount:      m.PreemptionCount,
+		DroppedUnservable:    m.DroppedUnservable,
+		LengthCappedRequests: m.LengthCappedRequests,
+		TimedOutRequests:     m.TimedOutRequests,
+	}
+
+	if m.CompletedRequests > 0 {
+		// --- TTFT Calculations ---
+		sortedTTFTs := make([]float64, 0, len(m.RequestTTFTs))
+		for _, value := range m.RequestTTFTs {
+			sortedTTFTs = append(sortedTTFTs, value)
+		}
+		sort.Float64s(sortedTTFTs)
+		output.TTFTMeanMs = CalculateMean(sortedTTFTs)
+		output.TTFTP90Ms = CalculatePercentile(sortedTTFTs, 90)
+		output.TTFTP95Ms = CalculatePercentile(sortedTTFTs, 95)
+		output.TTFTP99Ms = CalculatePercentile(sortedTTFTs, 99)
+
+		// --- E2E Calculations ---
+		sortedE2Es := make([]float64, 0, len(m.RequestE2Es))
+		for _, value := range m.RequestE2Es {
+			sortedE2Es = append(sortedE2Es, value)
+		}
+		sort.Float64s(sortedE2Es)
+		output.E2EMeanMs = CalculateMean(sortedE2Es)
+		output.E2EP90Ms = CalculatePercentile(sortedE2Es, 90)
+		output.E2EP95Ms = CalculatePercentile(sortedE2Es, 95)
+		output.E2EP99Ms = CalculatePercentile(sortedE2Es, 99)
+
+		// --- ITL Calculations ---
+		slices.Sort(m.AllITLs)
+		output.ITLMeanMs = CalculateMean(m.AllITLs)
+		output.ITLP90Ms = CalculatePercentile(m.AllITLs, 90)
+		output.ITLP95Ms = CalculatePercentile(m.AllITLs, 95)
+		output.ITLP99Ms = CalculatePercentile(m.AllITLs, 99)
+
+		// --- P99 Scheduling Delay ---
+		sortedSchedulingDelays := make([]float64, 0, len(m.RequestSchedulingDelays))
+		for _, value := range m.RequestSchedulingDelays {
+			sortedSchedulingDelays = append(sortedSchedulingDelays, float64(value))
+		}
+		sort.Float64s(sortedSchedulingDelays)
+		output.SchedulingDelayP99Ms = CalculatePercentile(sortedSchedulingDelays, 99)
+
+		if vllmRuntime > 0 {
+			output.ResponsesPerSec = float64(m.CompletedRequests) / vllmRuntime
+			output.TokensPerSec = float64(m.TotalOutputTokens) / vllmRuntime
+		}
+	}
+
+	// Per-adapter aggregate metrics (#1464, US1). Group COMPLETED requests by their
+	// non-empty adapter id; base-model requests (adapter == "") are attributed to no
+	// adapter and excluded. When no request carries an adapter the map stays nil and
+	// omitempty drops the block entirely, so an adapter-blind run is byte-identical to
+	// the pre-feature build (INV-6).
+	output.Adapters = buildAdapterMetrics(m, vllmRuntime)
+
+	return output
+}
+
+// CompletedRequestMetrics returns the per-request metrics for completed requests
+// (RequestE2Es[id] > 0), sorted by request id, with E2E and TTFT converted from
+// ticks to milliseconds. This is the exact extraction the batch classifier and
+// the #1516 streaming replay both consume; exposing it as one method keeps the
+// run/replay saturation input identical to what BuildOutput historically built
+// internally (extractor parity — the observe leg's TraceRecordsToRequestMetrics
+// must produce the same (ArrivedAt, E2E, ID) triples for INV-13).
+func (m *Metrics) CompletedRequestMetrics() []RequestMetrics {
+	completedReqs := make([]RequestMetrics, 0, m.CompletedRequests)
+	for _, id := range sortedRequestIDs(m.Requests) {
+		if m.RequestE2Es[id] > 0 { // Only completed requests
+			rm := m.Requests[id]
+			rm.E2E = m.RequestE2Es[id] / 1e3   // ticks → ms
+			rm.TTFT = m.RequestTTFTs[id] / 1e3 // ticks → ms
+			completedReqs = append(completedReqs, rm)
+		}
+	}
+	return completedReqs
+}
+
+// buildAdapterMetrics computes the per-adapter aggregate block from completed requests.
+// Returns nil when no request is attributed to an adapter (INV-6 no-op). TTFT
+// percentiles are in microseconds; throughput is completed output tokens / runtime.
+func buildAdapterMetrics(m *Metrics, vllmRuntime float64) map[string]AdapterMetrics {
+	ttftsByAdapter := make(map[string][]float64)
+	outTokensByAdapter := make(map[string]int64)
+	// R2/determinism note: this walks m.Requests in Go's non-deterministic map order,
+	// but the result is order-independent — throughput is a commutative token sum and
+	// each adapter's TTFT slice is sort.Float64s'd before percentiles. Any future
+	// order-sensitive accumulation added here (e.g. sequential load events) MUST sort
+	// the request ids first (see sortedRequestIDs).
+	for id, rm := range m.Requests {
+		if rm.Adapter == "" {
+			continue // base-model-only request: attributed to no adapter
+		}
+		if m.RequestE2Es[id] <= 0 {
+			continue // completed requests only (partitions global completed accounting, INV-1)
+		}
+		ttftsByAdapter[rm.Adapter] = append(ttftsByAdapter[rm.Adapter], m.RequestTTFTs[id])
+		outTokensByAdapter[rm.Adapter] += int64(rm.NumDecodeTokens)
+	}
+	// An adapter surfaces if it served a completed request OR saw a resident-set
+	// event (load/eviction), so counts appear even for an adapter loaded then
+	// evicted before any of its requests completed in-window. All three empty =>
+	// adapter-blind run => nil (INV-6 no-op).
+	if len(ttftsByAdapter) == 0 && len(m.AdapterLoadCounts) == 0 && len(m.AdapterEvictionCounts) == 0 {
+		return nil
+	}
+	idSet := make(map[string]struct{}, len(ttftsByAdapter)+len(m.AdapterLoadCounts)+len(m.AdapterEvictionCounts))
+	for id := range ttftsByAdapter {
+		idSet[id] = struct{}{}
+	}
+	for id := range m.AdapterLoadCounts {
+		idSet[id] = struct{}{}
+	}
+	for id := range m.AdapterEvictionCounts {
+		idSet[id] = struct{}{}
+	}
+	// Build in sorted id order (R2). The output is a map (JSON marshals keys sorted),
+	// so this is defensive rather than load-bearing, but it keeps any future
+	// order-sensitive accumulation here deterministic without a second audit.
+	ids := make([]string, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	adapters := make(map[string]AdapterMetrics, len(ids))
+	for _, adapter := range ids {
+		am := AdapterMetrics{
+			LoadCount:     m.AdapterLoadCounts[adapter],
+			EvictionCount: m.AdapterEvictionCounts[adapter],
+		}
+		if ttfts, ok := ttftsByAdapter[adapter]; ok {
+			sort.Float64s(ttfts)
+			// CalculatePercentile returns ms (÷1000); ×1000 recovers µs for the _us fields.
+			am.TTFTP50Us = CalculatePercentile(ttfts, 50) * 1000
+			am.TTFTP99Us = CalculatePercentile(ttfts, 99) * 1000
+			if vllmRuntime > 0 {
+				am.ThroughputTokPerS = float64(outTokensByAdapter[adapter]) / vllmRuntime
+			}
+		}
+		adapters[adapter] = am
+	}
+	return adapters
+}
+
+// EmitOption customizes the FILE half of EmitOutput. It exists for metadata that
+// belongs in the results file but must never reach stdout, so it cannot be supplied by
+// mutating the MetricsOutput before the call (the build-then-mutate-then-emit pattern
+// goodput and saturation use, which lands on stdout by design). Variadic so all
+// existing EmitOutput call sites are untouched (R4).
+type EmitOption func(*emitOptions)
+
+// emitOptions is the resolved option set for one EmitOutput call.
+type emitOptions struct {
+	catalog *CatalogProvenance
+}
+
+// WithCatalogProvenance records which model catalog produced the result (#1732, R1/S5)
+// in the --metrics-path file only. A nil provenance is a no-op (the block stays absent),
+// so a caller that could not resolve a catalog passes nil rather than a half-filled
+// block. Supplying the option with no output file path is likewise a no-op: the
+// provenance is file-only metadata, and stdout is the byte-identical channel INV-6
+// protects.
+func WithCatalogProvenance(p *CatalogProvenance) EmitOption {
+	return func(o *emitOptions) { o.catalog = p }
+}
+
+// EmitOutput writes a populated MetricsOutput to stdout (always) and an
+// optional file (when outputFilePath != ""). The file variant additionally
+// embeds per-request rows sorted by ArrivedAt for downstream tooling. Callers
+// that want goodput fields populated should call BuildOutput, mutate the
+// returned struct, then call this method (#1413).
+//
+// opts carry file-only additions (see EmitOption); they are applied after the stdout
+// marshal so they cannot perturb stdout (INV-6).
+func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts ...EmitOption) error {
+	var resolvedOpts emitOptions
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&resolvedOpts)
+		}
+	}
+	// Always emit the metrics section so callers can reliably parse output,
+	// even when CompletedRequests == 0 (e.g., all requests dropped as unservable).
+	fmt.Println("=== Simulation Metrics ===")
+	data, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		return fmt.Errorf("error marshalling metrics: %w", err)
+	}
+	fmt.Println(string(data))
+
+	if outputFilePath != "" {
+		// Aggregate KV-cache hit rate (#1583): file-only, alongside Requests[] below.
+		// Kept off stdout (the marshal above already ran) so stdout stays
+		// byte-identical to a pre-feature build (INV-6, BC-9). calibrate --sim-metrics
+		// reads this as the simulator's hit rate. run and replay of the same trace
+		// produce identical values (INV-13).
+		hitRate := m.CacheHitRate
+		output.CacheHitRate = &hitRate
+
+		// Catalog provenance (#1732): same file-only discipline as cache_hit_rate above
+		// — the stdout marshal has already run, and `output` is a value copy, so this
+		// assignment cannot reach stdout or the caller's struct. Nil (no catalog
+		// resolved, or a caller that passed no option) leaves the block absent.
+		output.Catalog = resolvedOpts.catalog
+
+		// request-level metrics for detailed output in file
+		// Iterate over all registered requests (not just completed prefill)
+		// so incomplete requests appear with zero-valued metrics.
+		for _, id := range sortedRequestIDs(m.Requests) {
+			detail := m.Requests[id]
+			detail.TTFT = m.RequestTTFTs[id] / 1e3                               // zero if not in map
+			detail.E2E = m.RequestE2Es[id] / 1e3                                 // zero if not in map
+			detail.ITL = m.RequestITLs[id] / 1e3                                 // ticks → ms (consistent with TTFT, E2E)
+			detail.SchedulingDelay = float64(m.RequestSchedulingDelays[id]) / 1e3 // ticks → ms
+			output.Requests = append(output.Requests, detail)
+		}
+
+		sort.Slice(output.Requests, func(i, j int) bool {
+			return output.Requests[i].ArrivedAt < output.Requests[j].ArrivedAt
+		})
+
+		data, err := json.MarshalIndent(output, "", "  ")
+		if err != nil {
+			return fmt.Errorf("error marshalling metrics to JSON: %w", err)
+		}
+
+		writeErr := os.WriteFile(outputFilePath, data, 0644)
+		if writeErr != nil {
+			return fmt.Errorf("error writing JSON file: %w", writeErr)
+		}
+		logrus.Infof("Metrics written to: %s", outputFilePath)
+	}
+	return nil
+}
+
+// SaveResults computes aggregate metrics and emits them to stdout and an optional
+// file. This is a thin wrapper around BuildOutput + EmitOutput; see those methods
+// for the extension hook used by goodput (#1413) and saturation (#1517) wiring.
+// The horizon and totalBlocks parameters are retained for backwards compatibility
+// with existing callers but are unused — they were never read by SaveResults.
+func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int64, outputFilePath string) error {
+	_ = horizon
+	_ = totalBlocks
+	output := m.BuildOutput(instanceID)
+	return m.EmitOutput(output, outputFilePath)
+}
+
+// sortedRequestIDs returns request IDs from the Requests map in sorted order.
+// Ensures deterministic output ordering for JSON serialization.
+func sortedRequestIDs(requests map[string]RequestMetrics) []string {
+	ids := make([]string, 0, len(requests))
+	for id := range requests {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}

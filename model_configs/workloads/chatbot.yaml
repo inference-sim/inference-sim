@@ -1,0 +1,9 @@
+prefix_tokens: 0
+prompt_tokens: 256
+prompt_tokens_stdev: 100
+prompt_tokens_min: 2
+prompt_tokens_max: 800
+output_tokens: 256
+output_tokens_stdev: 100
+output_tokens_min: 1
+output_tokens_max: 1024

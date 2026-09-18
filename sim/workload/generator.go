@@ -1,0 +1,1342 @@
+package workload
+
+import (
+	"fmt"
+	"math"
+	"math/rand"
+	"sort"
+	"strings"
+
+	"github.com/inference-sim/inference-sim/sim"
+	"github.com/sirupsen/logrus"
+)
+
+// GenerateRequests creates a request sequence from a WorkloadSpec.
+// Deterministic given the same spec, seed, and maxRequests.
+// maxRequests caps the total number of requests (0 = unlimited, use horizon only).
+// Returns requests sorted by ArrivalTime with sequential IDs.
+func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*sim.Request, error) {
+	if horizon <= 0 {
+		return nil, nil // EC-5: zero/negative horizon returns empty
+	}
+	if maxRequests < 0 {
+		return nil, fmt.Errorf("maxRequests must be non-negative, got %d", maxRequests)
+	}
+	if err := validateAndExpandSpec(spec); err != nil {
+		return nil, err
+	}
+
+	// Build working client list without mutating spec.Clients (idempotency, INV-6).
+	allClients := append([]ClientSpec{}, spec.Clients...)
+	if len(spec.Cohorts) > 0 {
+		expanded := ExpandCohorts(spec.Cohorts, spec.Seed)
+		allClients = append(allClients, expanded...)
+	}
+
+	// Create partitioned RNG for deterministic generation
+	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(spec.Seed))
+	workloadRNG := rng.ForSubsystem(sim.SubsystemWorkloadGen)
+
+	// Normalize rate fractions
+	clientRates := normalizeRateFractions(allClients, spec.AggregateRate)
+
+	// Route to time-varying generator when any client has per-window parameter
+	// overrides (TraceRate, Arrival, InputDist, OutputDist on ActiveWindow).
+	// This path uses per-window proportional allocation and IAT rescaling.
+	// Prefix generation happens inside each branch to avoid double-advancing the RNG.
+	if hasPerWindowParameters(allClients) {
+		return generateTimeVaryingRequests(spec, horizon, maxRequests, allClients, workloadRNG)
+	}
+
+	// Generate shared prefix tokens per prefix group (non-time-varying path only)
+	prefixes := generatePrefixTokens(allClients, workloadRNG)
+
+	// Per-client generation cap: prevent OOM when horizon >> maxRequests.
+	// Each client generates at most 2x maxRequests, then post-merge truncation finalizes.
+	perClientCap := int64(0)
+	if maxRequests > 0 {
+		perClientCap = 2 * maxRequests
+		if perClientCap < maxRequests { // int64 overflow guard
+			perClientCap = math.MaxInt64
+		}
+	}
+
+	// Per-client generation
+	var allRequests []*sim.Request
+	for i := range allClients {
+		client := &allClients[i]
+		clientRate := clientRates[i]
+		if clientRate <= 0 {
+			continue // EC-4: skip zero-rate clients
+		}
+
+		// Create per-client RNG (derived from main RNG for isolation)
+		clientSeed := workloadRNG.Int63()
+		clientRNG := newRandFromSeed(clientSeed)
+
+		// Create samplers.
+		// When CustomSamplerFactory is set, clientRate is only used for the
+		// skip guard above (line 106); the factory overrides the actual arrival rate.
+		var arrivalSampler ArrivalSampler
+		if client.CustomSamplerFactory != nil {
+			// Derive sub-RNG for factory with single entropy draw from clientRNG.
+			// This isolates the sampler's N-draw RNG consumption (for N pre-generated intervals)
+			// from downstream content sampling, keeping input/output distributions stable.
+			subSeed := clientRNG.Int63()
+			subRNG := newRandFromSeed(subSeed)
+			arrivalSampler = client.CustomSamplerFactory(subRNG)
+		} else {
+			arrivalSampler = NewArrivalSampler(client.Arrival, clientRate)
+		}
+		inputSampler, err := NewLengthSampler(client.InputDist)
+		if err != nil {
+			return nil, fmt.Errorf("client %q input distribution: %w", client.ID, err)
+		}
+		outputSampler, err := NewLengthSampler(client.OutputDist)
+		if err != nil {
+			return nil, fmt.Errorf("client %q output distribution: %w", client.ID, err)
+		}
+
+		// Get prefix for this client's group
+		var prefix []sim.TokenID
+		if client.PrefixGroup != "" {
+			prefix = prefixes[client.PrefixGroup]
+		}
+
+		// Handle reasoning/multi-turn clients.
+		if client.Reasoning != nil && client.Reasoning.MultiTurn != nil {
+			mt := client.Reasoning.MultiTurn
+
+			if mt.SingleSession {
+				// Single session: sample one start time, generate one session,
+				// filter rounds against horizon. Models inference-perf's behavior
+				// where each client is one persistent session cycling through rounds.
+				iat := arrivalSampler.SampleIAT(clientRNG)
+				if iat == 0 {
+					// Stateful sampler exhausted (e.g., NormalizedExponentialSampler).
+					// Stateless samplers (Poisson, Gamma, etc.) never return 0.
+					continue
+				}
+				startTime := iat
+				// For clients with lifecycle windows, offset into the first window.
+				// The IAT sample provides staggering within the window.
+				if client.Lifecycle != nil && len(client.Lifecycle.Windows) > 0 {
+					startTime = client.Lifecycle.Windows[0].StartUs + iat
+				}
+				if startTime >= horizon {
+					continue
+				}
+				if client.Lifecycle != nil && !isInActiveWindow(startTime, client.Lifecycle) {
+					continue
+				}
+				// Prefix is passed in so reasoning.go can seed the shared session
+				// buffer once at index 0 — eliminating the per-round prefix copy
+				// that would otherwise defeat the sessionTokenBuffer storage win
+				// (#1445). reasoning.go sets req.PrefixLength accordingly.
+				reasoningReqs, err := GenerateReasoningRequests(
+					clientRNG, client.Reasoning,
+					inputSampler, outputSampler,
+					startTime,
+					client.ID, client.TenantID, client.SLOClass, client.Model, client.Adapter,
+					prefix,
+				)
+				if err != nil {
+					return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
+				}
+				// Set Deadline and SLOTargetUs on all reasoning requests (not set in reasoning.go)
+				for _, req := range reasoningReqs {
+					req.Deadline = computeDeadline(req.ArrivalTime, client.Timeout, true)
+					req.SLOTargetUs = derefInt64(client.SLOTargetUs)
+				}
+				for _, req := range reasoningReqs {
+					if req.ArrivalTime >= horizon {
+						break // rounds are in chronological order
+					}
+					if client.Lifecycle != nil && !isInActiveWindow(req.ArrivalTime, client.Lifecycle) {
+						continue // suppress rounds outside lifecycle windows (BC-6)
+					}
+					allRequests = append(allRequests, req)
+				}
+				continue
+			}
+
+			// Multi-session: generate multiple sessions based on the arrival process,
+			// each session producing MaxRounds requests.
+			var clientReqCount int64
+			currentTime := int64(0)
+			for currentTime < horizon {
+				if perClientCap > 0 && clientReqCount >= perClientCap {
+					break
+				}
+				iat := arrivalSampler.SampleIAT(clientRNG)
+				if iat == 0 {
+					// Stateful sampler exhausted (e.g., NormalizedExponentialSampler).
+					// Stateless samplers (Poisson, Gamma, etc.) never return 0.
+					break
+				}
+				currentTime += iat
+				if currentTime >= horizon {
+					break
+				}
+				// Check lifecycle windows
+				if client.Lifecycle != nil && !isInActiveWindow(currentTime, client.Lifecycle) {
+					if currentTime >= lastWindowEndUs(client.Lifecycle) {
+						break
+					}
+					continue
+				}
+				reasoningReqs, err := GenerateReasoningRequests(
+					clientRNG, client.Reasoning,
+					inputSampler, outputSampler,
+					currentTime,
+					client.ID, client.TenantID, client.SLOClass, client.Model, client.Adapter,
+					prefix,
+				)
+				if err != nil {
+					return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
+				}
+				// Prefix is seeded into the shared buffer inside reasoning.go (#1445).
+				// Set Deadline and SLOTargetUs on all reasoning requests (not set in reasoning.go)
+				for _, req := range reasoningReqs {
+					req.Deadline = computeDeadline(req.ArrivalTime, client.Timeout, true)
+					req.SLOTargetUs = derefInt64(client.SLOTargetUs)
+				}
+				// Count all generated rounds for perClientCap safety (R19)
+				clientReqCount += int64(len(reasoningReqs))
+				// Filter individual rounds against horizon and lifecycle windows (BC-3, BC-4, #515)
+				for _, req := range reasoningReqs {
+					if req.ArrivalTime >= horizon {
+						break // rounds are in chronological order (BC-4)
+					}
+					if client.Lifecycle != nil && !isInActiveWindow(req.ArrivalTime, client.Lifecycle) {
+						continue // suppress rounds outside lifecycle windows (BC-3)
+					}
+					allRequests = append(allRequests, req)
+				}
+				// Note: we do NOT skip ahead by session duration. Sessions overlap
+				// in time — the arrival process controls inter-session spacing.
+				// This models concurrent chat users starting sessions independently.
+			}
+			continue
+		}
+
+		// Generate requests for this client
+		var clientReqCount int64
+		currentTime := int64(0)
+		for currentTime < horizon {
+			if perClientCap > 0 && clientReqCount >= perClientCap {
+				break
+			}
+
+			iat := arrivalSampler.SampleIAT(clientRNG)
+			if iat == 0 {
+				// Stateful sampler exhausted (e.g., NormalizedExponentialSampler).
+				// Stateless samplers (Poisson, Gamma, etc.) never return 0.
+				break
+			}
+			currentTime += iat
+			if currentTime >= horizon {
+				break
+			}
+
+			// Check lifecycle windows
+			if client.Lifecycle != nil && !isInActiveWindow(currentTime, client.Lifecycle) {
+				if currentTime >= lastWindowEndUs(client.Lifecycle) {
+					break
+				}
+				continue
+			}
+
+			var inputTokens []sim.TokenID
+			var outputTokens []sim.TokenID
+			var textCount, imageCount, audioCount, videoCount int
+
+			if client.Multimodal != nil {
+				// Multimodal generation (BC-8)
+				var err error
+				inputTokens, textCount, imageCount, audioCount, videoCount, err = GenerateMultimodalTokens(clientRNG, client.Multimodal)
+				if err != nil {
+					return nil, fmt.Errorf("client %q multimodal: %w", client.ID, err)
+				}
+				outputLen := outputSampler.Sample(clientRNG)
+				outputTokens = sim.GenerateRandomTokenIDs(clientRNG, outputLen)
+			} else {
+				// Standard language generation
+				inputLen := inputSampler.Sample(clientRNG)
+				outputLen := outputSampler.Sample(clientRNG)
+				inputTokens = sim.GenerateRandomTokenIDs(clientRNG, inputLen)
+				outputTokens = sim.GenerateRandomTokenIDs(clientRNG, outputLen)
+			}
+
+			var prefixLength int
+			if len(prefix) > 0 {
+				inputTokens = append(append([]sim.TokenID{}, prefix...), inputTokens...)
+				prefixLength = len(prefix)
+			}
+
+			req := &sim.Request{
+				ID:               "", // assigned after merge+sort
+				ArrivalTime:      currentTime,
+				InputTokens:      inputTokens,
+				OutputTokens:     outputTokens,
+				MaxOutputLen:     len(outputTokens),
+				State:            sim.StateQueued,
+				ScheduledStepIdx: 0,
+				FinishedStepIdx:  0,
+				TenantID:         client.TenantID,
+				SLOClass:         client.SLOClass,
+				Model:            client.Model,
+				Adapter:          client.Adapter,
+				TextTokenCount:   textCount,
+				ImageTokenCount:  imageCount,
+				AudioTokenCount:  audioCount,
+				VideoTokenCount:  videoCount,
+				Deadline:         computeDeadline(currentTime, client.Timeout, isClosedLoop(client)),
+				SLOTargetUs:      derefInt64(client.SLOTargetUs),
+				ClientID:         client.ID,
+				PrefixGroup:      client.PrefixGroup,
+				PrefixLength:     prefixLength,
+				Streaming:        client.Streaming,
+			}
+			allRequests = append(allRequests, req)
+			clientReqCount++
+		}
+	}
+
+	// Sort by arrival time (stable sort preserves client order for ties)
+	sort.SliceStable(allRequests, func(i, j int) bool {
+		return allRequests[i].ArrivalTime < allRequests[j].ArrivalTime
+	})
+
+	// Truncate to maxRequests after merge-sort (preserves client proportionality)
+	if maxRequests > 0 && int64(len(allRequests)) > maxRequests {
+		allRequests = allRequests[:maxRequests]
+	}
+
+	// Assign sequential IDs
+	for i, req := range allRequests {
+		req.ID = fmt.Sprintf("request_%d", i)
+	}
+
+	return allRequests, nil
+}
+
+// GeneratedWorkload holds the output of GenerateWorkload: requests plus session blueprints.
+type GeneratedWorkload struct {
+	Requests []*sim.Request
+	Sessions []SessionBlueprint // nil for non-session workloads
+	// FollowUpBudget is the cap on follow-up requests for concurrency sessions.
+	// -1 = no cap (maxRequests was 0/unlimited, or only closed-loop multi-turn clients present).
+	//  0 = no follow-ups allowed (seeds consumed the entire budget, or no sessions at all).
+	// >0 = exactly that many follow-ups allowed.
+	FollowUpBudget int64
+}
+
+// GenerateWorkload creates requests and session blueprints from a WorkloadSpec.
+// For closed-loop reasoning/multi-turn clients, only round-0 requests are generated
+// and SessionBlueprints are created for the SessionManager to generate follow-up rounds.
+// For concurrency clients (Concurrency > 0), seed requests and unlimited-round
+// SessionBlueprints are generated directly (concurrency clients have RateFraction=0,
+// so GenerateRequests naturally skips them).
+// For all other clients (including open-loop reasoning), identical to GenerateRequests.
+func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*GeneratedWorkload, error) {
+	// Generate all requests using existing logic.
+	// For closed-loop clients, this currently generates ALL rounds (open-loop style).
+	// We'll filter to round-0 only below and create blueprints for the rest.
+	// Concurrency clients (RateFraction=0) are skipped by GenerateRequests.
+	reqs, err := GenerateRequests(spec, horizon, maxRequests)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if any client is closed-loop or concurrency — if neither, return early (no sessions)
+	hasClosedLoop := false
+	hasConcurrency := false
+	allClients := append([]ClientSpec{}, spec.Clients...)
+	if len(spec.Cohorts) > 0 {
+		allClients = append(allClients, ExpandCohorts(spec.Cohorts, spec.Seed)...)
+	}
+	for i := range allClients {
+		if isClosedLoop(&allClients[i]) {
+			hasClosedLoop = true
+		}
+		if allClients[i].Concurrency > 0 {
+			hasConcurrency = true
+		}
+	}
+	if !hasClosedLoop && !hasConcurrency {
+		return &GeneratedWorkload{Requests: reqs}, nil
+	}
+
+	// For closed-loop clients: filter requests to round-0 only, create blueprints.
+	// Blueprint RNG uses a fixed offset from spec seed to avoid colliding with
+	// GenerateRequests' internal RNG draws. The offset (spec.Seed + 7919) is a
+	// prime shift that produces an independent stream.
+	blueprintRNG := rand.New(rand.NewSource(spec.Seed + 7919))
+
+	var sessions []SessionBlueprint
+	round0Only := make([]*sim.Request, 0, len(reqs))
+	closedLoopSessionIDs := make(map[string]bool)
+
+	// Build session blueprints for closed-loop multi-turn clients
+	for i := range allClients {
+		client := &allClients[i]
+		if !isClosedLoop(client) {
+			continue
+		}
+		if client.Reasoning == nil || client.Reasoning.MultiTurn == nil {
+			continue
+		}
+		mt := client.Reasoning.MultiTurn
+
+		// Create samplers for the blueprint
+		inputSampler, err := NewLengthSampler(client.InputDist)
+		if err != nil {
+			return nil, fmt.Errorf("client %q input distribution for blueprint: %w", client.ID, err)
+		}
+		outputSampler, err := NewLengthSampler(client.OutputDist)
+		if err != nil {
+			return nil, fmt.Errorf("client %q output distribution for blueprint: %w", client.ID, err)
+		}
+
+		// Get prefix tokens by extracting from the first round-0 request for this client.
+		// GenerateRequests already prepended the correct prefix — we extract it here
+		// to pass to the SessionBlueprint for follow-up round generation.
+		// Match by ClientID to avoid conflating clients that share TenantID/SLOClass
+		// (e.g. all stages in a multi-stage workload share the same prefixGroup TenantID).
+		var prefixTokens []sim.TokenID
+		if client.PrefixGroup != "" && client.PrefixLength > 0 {
+			for _, req := range reqs {
+				if req.SessionID != "" && req.RoundIndex == 0 && req.ClientID == client.ID {
+					// The first PrefixLength tokens of InputTokens are the prefix
+					if req.InputLen() >= int64(client.PrefixLength) {
+						prefixTokens = make([]sim.TokenID, client.PrefixLength)
+						copy(prefixTokens, req.InputTokenSlice(0, int64(client.PrefixLength)))
+					}
+					break
+				}
+			}
+		}
+
+		// Find all session IDs for this client in the generated requests.
+		// Match by ClientID: GenerateReasoningRequests sets req.ClientID = client.ID,
+		// so this is an exact 1:1 mapping. Matching by (TenantID, SLOClass, Model) was
+		// incorrect — in multi-stage workloads, all stages share the same TenantID
+		// (prefixGroup), causing the first client to claim all sessions (#974).
+		sessionIDsForClient := make(map[string]bool)
+		for _, req := range reqs {
+			if req.SessionID != "" && req.RoundIndex == 0 && req.ClientID == client.ID {
+				sessionIDsForClient[req.SessionID] = true
+				closedLoopSessionIDs[req.SessionID] = true
+			}
+		}
+		// Warn if a closed-loop client produced no sessions. This indicates that
+		// round-0 requests for this client have ClientID unset or mismatched
+		// (e.g. a future code path that bypasses GenerateReasoningRequests).
+		// With the current implementation this should never fire.
+		//
+		// R1 note: warn-only is intentional. Returning an error here would abort the
+		// entire workload generation for a condition that is only possible through a
+		// future implementation bug (unreachable via current public API). The warning
+		// makes the condition observable; the subsequent blueprint loop is a no-op
+		// on an empty map, so execution continues safely with zero blueprints for
+		// this client.
+		if len(sessionIDsForClient) == 0 {
+			logrus.Warnf("GenerateWorkload: closed-loop client %q produced no sessions — ClientID may not be set on round-0 requests", client.ID)
+		}
+
+		// Create a blueprint per session (R2: sort map keys for deterministic RNG draws)
+		sortedSessionIDs := make([]string, 0, len(sessionIDsForClient))
+		for sessID := range sessionIDsForClient {
+			sortedSessionIDs = append(sortedSessionIDs, sessID)
+		}
+		sort.Strings(sortedSessionIDs)
+		for _, sessID := range sortedSessionIDs {
+			sessSeed := blueprintRNG.Int63()
+			sessions = append(sessions, SessionBlueprint{
+				SessionID:     sessID,
+				ClientID:      client.ID,
+				MaxRounds:     mt.MaxRounds,
+				ContextGrowth: mt.ContextGrowth,
+				ThinkTimeUs:   mt.ThinkTimeUs,
+				Timeout:       client.Timeout,
+				Horizon:       horizon,
+				InputSampler:  inputSampler,
+				OutputSampler: outputSampler,
+				RNG:           rand.New(rand.NewSource(sessSeed)),
+				Prefix:        prefixTokens,
+				TenantID:      client.TenantID,
+				SLOClass:      client.SLOClass,
+				Model:         client.Model,
+				Adapter:       client.Adapter,
+				SLOTargetUs:   derefInt64(client.SLOTargetUs),
+			})
+		}
+	}
+
+	// Filter: keep round-0 only for closed-loop sessions, keep all for non-session requests
+	for _, req := range reqs {
+		if req.SessionID != "" && closedLoopSessionIDs[req.SessionID] {
+			// Closed-loop session: keep only round 0
+			if req.RoundIndex == 0 {
+				round0Only = append(round0Only, req)
+			}
+		} else {
+			// Non-session request or open-loop session: keep all
+			round0Only = append(round0Only, req)
+		}
+	}
+
+	// --- Handle concurrency clients ---
+	// Concurrency clients have RateFraction=0, so GenerateRequests skips them.
+	// We generate seed requests and SessionBlueprints via the shared helper
+	// (also used by GenerateWorkloadLazy, #1459) so the RNG-draw order and cap
+	// semantics are byte-identical between eager and lazy modes.
+	//
+	// Re-derive prefix tokens by initializing a fresh RNG from spec.Seed —
+	// same seed produces same prefix tokens as GenerateRequests produced.
+	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(spec.Seed))
+	workloadRNG := rng.ForSubsystem(sim.SubsystemWorkloadGen)
+	prefixes := generatePrefixTokens(allClients, workloadRNG)
+
+	concurrencySeeds, concurrencyBlueprints, totalConcurrencyUsers, err :=
+		generateConcurrencySeedsAndBlueprints(allClients, prefixes, spec.Seed, horizon, maxRequests, int64(len(round0Only)))
+	if err != nil {
+		return nil, err
+	}
+	sessions = append(sessions, concurrencyBlueprints...)
+
+	// Merge closed-loop round-0 requests with concurrency seeds
+	allReqs := append(round0Only, concurrencySeeds...)
+
+	// Sort by arrival time (stable sort preserves order for ties)
+	sort.SliceStable(allReqs, func(i, j int) bool {
+		return allReqs[i].ArrivalTime < allReqs[j].ArrivalTime
+	})
+
+	// Re-assign sequential IDs
+	for i, req := range allReqs {
+		req.ID = fmt.Sprintf("request_%d", i)
+	}
+
+	// Compute follow-up budget for concurrency sessions (shared with lazy).
+	followUpBudget := concurrencyFollowUpBudget(maxRequests, int64(len(allReqs)), totalConcurrencyUsers)
+
+	return &GeneratedWorkload{Requests: allReqs, Sessions: sessions, FollowUpBudget: followUpBudget}, nil
+}
+
+// generateConcurrencySeedsAndBlueprints produces the seed requests and session
+// blueprints for every concurrency client (Concurrency > 0) in allClients.
+// Extracted from GenerateWorkload (#1459) so the eager and lazy
+// (GenerateWorkloadLazy) paths share ONE construction site (R4) and are
+// byte-identical: same concurrencyRNG (spec.Seed + 10007), same per-user draw
+// order (userSeed → token samples → bpSeed), same stagger, and the same seed
+// cap that references alreadyKept.
+//
+// alreadyKept is the number of non-concurrency (open-loop / closed-loop round-0)
+// requests already retained under the maxRequests cap — eager passes
+// len(round0Only); lazy passes the count of open-loop requests its streaming
+// source will emit. The per-user cap breaks when
+// alreadyKept + len(seeds) >= maxRequests, matching eager's original
+// len(round0Only)+len(concurrencySeeds) check exactly.
+//
+// The returned seeds are in generation order (client-major, user-minor); the
+// caller owns final merge/sort/ID assignment. Blueprints are 1:1 with seeds in
+// the same order. totalUsers sums Concurrency across all concurrency clients
+// (matching eager's totalConcurrencyUsers, used for the follow-up budget).
+//
+// The cap-check MUST remain the first statement of the per-user loop and the
+// double-loop structure MUST be preserved: a huge Concurrency vs a small
+// maxRequests then terminates in O(cap), not O(Concurrency).
+func generateConcurrencySeedsAndBlueprints(
+	allClients []ClientSpec,
+	prefixes map[string][]sim.TokenID,
+	specSeed int64,
+	horizon int64,
+	maxRequests int64,
+	alreadyKept int64,
+) (seeds []*sim.Request, blueprints []SessionBlueprint, totalUsers int, err error) {
+	// concurrencyRNG drives per-user seed selection and blueprint RNG seeding.
+	// Uses specSeed + 10007, distinct from the closed-loop blueprintRNG's
+	// specSeed + 7919, so the two streams do not produce identical sequences for
+	// the same spec seed. If new per-client RNG streams are added here, choose an
+	// offset not already in use and document it with the same pattern.
+	concurrencyRNG := rand.New(rand.NewSource(specSeed + 10007))
+
+	for i := range allClients {
+		client := &allClients[i]
+		if client.Concurrency <= 0 {
+			continue
+		}
+
+		inputSampler, sErr := NewLengthSampler(client.InputDist)
+		if sErr != nil {
+			return nil, nil, 0, fmt.Errorf("client %q input distribution: %w", client.ID, sErr)
+		}
+		outputSampler, sErr := NewLengthSampler(client.OutputDist)
+		if sErr != nil {
+			return nil, nil, 0, fmt.Errorf("client %q output distribution: %w", client.ID, sErr)
+		}
+
+		var prefix []sim.TokenID
+		if client.PrefixGroup != "" {
+			prefix = prefixes[client.PrefixGroup]
+		}
+
+		for u := 0; u < client.Concurrency; u++ {
+			// Never generate more seeds than the global request budget allows.
+			// (cap-check MUST be the first statement — see godoc.)
+			if maxRequests > 0 && alreadyKept+int64(len(seeds)) >= maxRequests {
+				break
+			}
+			userSeed := concurrencyRNG.Int63()
+			userRNG := rand.New(rand.NewSource(userSeed))
+
+			sessionID := fmt.Sprintf("concurrency_%s_user_%d", client.ID, u)
+
+			// BC-3: Stagger seed arrivals within [0, think_time)
+			var arrivalTime int64
+			if client.ThinkTimeUs > 0 && client.Concurrency > 1 {
+				arrivalTime = int64(u) * client.ThinkTimeUs / int64(client.Concurrency)
+			}
+
+			// Sample token lengths
+			inputLen := inputSampler.Sample(userRNG)
+			outputLen := outputSampler.Sample(userRNG)
+			inputTokens := sim.GenerateRandomTokenIDs(userRNG, inputLen)
+			outputTokens := sim.GenerateRandomTokenIDs(userRNG, outputLen)
+
+			var prefixLength int
+			if len(prefix) > 0 {
+				inputTokens = append(append([]sim.TokenID{}, prefix...), inputTokens...)
+				prefixLength = len(prefix)
+			}
+
+			seed := &sim.Request{
+				ID:           "", // assigned after merge+sort
+				ArrivalTime:  arrivalTime,
+				InputTokens:  inputTokens,
+				OutputTokens: outputTokens,
+				MaxOutputLen: len(outputTokens),
+				State:        sim.StateQueued,
+				Deadline:     computeDeadline(arrivalTime, client.Timeout, true),
+				SLOTargetUs:  derefInt64(client.SLOTargetUs),
+				TenantID:     client.TenantID,
+				SLOClass:     client.SLOClass,
+				Model:        client.Model,
+				Adapter:      client.Adapter,
+				ClientID:     client.ID,
+				PrefixGroup:  client.PrefixGroup,
+				PrefixLength: prefixLength,
+				Streaming:    client.Streaming,
+				SessionID:    sessionID,
+				RoundIndex:   0,
+			}
+			seeds = append(seeds, seed)
+
+			// Create blueprint for this virtual user's session
+			bpSeed := concurrencyRNG.Int63()
+			blueprints = append(blueprints, SessionBlueprint{
+				SessionID:       sessionID,
+				ClientID:        client.ID,
+				UnlimitedRounds: true,
+				ContextGrowth:   "", // no accumulation for concurrency clients
+				ThinkTimeUs:     client.ThinkTimeUs,
+				Timeout:         client.Timeout,
+				Horizon:         horizon,
+				InputSampler:    inputSampler,
+				OutputSampler:   outputSampler,
+				RNG:             rand.New(rand.NewSource(bpSeed)),
+				Prefix:          prefix,
+				TenantID:        client.TenantID,
+				SLOClass:        client.SLOClass,
+				Model:           client.Model,
+				Adapter:         client.Adapter,
+				SLOTargetUs:     derefInt64(client.SLOTargetUs),
+			})
+		}
+		totalUsers += client.Concurrency
+	}
+	return seeds, blueprints, totalUsers, nil
+}
+
+// concurrencyFollowUpBudget computes the follow-up budget for concurrency
+// sessions, shared by eager and lazy so the formula cannot drift.
+// -1 = no cap (unbounded maxRequests, or no concurrency users). >=0 = exact cap.
+// totalRequests is the emitted request count (open-loop kept + concurrency seeds).
+func concurrencyFollowUpBudget(maxRequests, totalRequests int64, totalUsers int) int64 {
+	if maxRequests > 0 && totalUsers > 0 {
+		budget := maxRequests - totalRequests
+		if budget < 0 {
+			budget = 0
+		}
+		return budget
+	}
+	return -1
+}
+
+// isInActiveWindow checks if a timestamp falls within any active window.
+func isInActiveWindow(timeUs int64, lifecycle *LifecycleSpec) bool {
+	for _, w := range lifecycle.Windows {
+		if timeUs >= w.StartUs && timeUs < w.EndUs {
+			return true
+		}
+	}
+	return false
+}
+
+// lastWindowEndUs returns the maximum EndUs across all lifecycle windows.
+// Returns 0 if Windows is empty; callers must ensure the lifecycle is validated.
+func lastWindowEndUs(lifecycle *LifecycleSpec) int64 {
+	var maxEnd int64
+	for _, w := range lifecycle.Windows {
+		if w.EndUs > maxEnd {
+			maxEnd = w.EndUs
+		}
+	}
+	return maxEnd
+}
+
+// newRandFromSeed creates a new *rand.Rand from a seed (avoids importing math/rand in callers).
+func newRandFromSeed(seed int64) *rand.Rand {
+	return rand.New(rand.NewSource(seed))
+}
+
+// validateAndExpandSpec performs the spec-mutating prelude shared by
+// GenerateRequests and GenerateWorkloadLazy: mutual-exclusion check across
+// primary workload sources, inference-perf expansion, ServeGen data load,
+// v1→v2 upgrade, and final Validate.
+//
+// Mutates spec in place: spec.Clients may be populated by InferencePerf /
+// ServeGen expansion; spec.AggregateRate may be overridden by the
+// inference-perf expanded value.
+func validateAndExpandSpec(spec *WorkloadSpec) error {
+	// Mutual exclusion: at most one primary workload source allowed (R1).
+	// Clients+Cohorts compose (cohorts expand into clients), but
+	// InferencePerf and ServeGenData are exclusive alternatives.
+	var sourceNames []string
+	if len(spec.Clients) > 0 {
+		sourceNames = append(sourceNames, "clients")
+	}
+	if spec.ServeGenData != nil {
+		sourceNames = append(sourceNames, "servegen_data")
+	}
+	if spec.InferencePerf != nil {
+		sourceNames = append(sourceNames, "inference_perf")
+	}
+	if len(sourceNames) > 1 {
+		return fmt.Errorf("workload sources {%s} are mutually exclusive; specify exactly one of: clients, servegen_data, inference_perf", strings.Join(sourceNames, ", "))
+	}
+	if err := expandClientsAndCohorts(spec); err != nil {
+		return err
+	}
+	UpgradeV1ToV2(spec)
+	if err := spec.Validate(); err != nil {
+		return fmt.Errorf("invalid workload spec: %w", err)
+	}
+	return nil
+}
+
+// ExpandClientsAndCohorts performs only the spec-populating expansion
+// step shared by GenerateRequests and GenerateWorkloadLazy: inference-perf
+// expansion into spec.Clients and ServeGen data load into spec.Cohorts.
+//
+// Mutates spec in place. Idempotent: callers may invoke it before the
+// generators run (e.g., cmd/root.go pre-populates spec.Clients so that
+// applyTimeoutToSpec covers every client even when the original spec
+// only set InferencePerf — fixes the --lazy-generation + inference-perf
+// timeout divergence found in PR #1453 review).
+//
+// After expansion, the consumed marker (spec.InferencePerf or
+// spec.ServeGenData) is cleared so the generators' subsequent
+// validateAndExpandSpec call does not flag the (Clients > 0 + marker)
+// state as a mutual-exclusion violation. This is the canonical form:
+// after expansion, the workload is fully expressed through spec.Clients
+// and spec.Cohorts. Note: this clearing means downstream
+// spec.Validate() loses the inference-perf "slo_class skip" marker;
+// callers that need that semantic should not pre-expand.
+//
+// Does NOT run mutual-exclusion checks or spec.Validate(). The
+// generators run those themselves.
+func ExpandClientsAndCohorts(spec *WorkloadSpec) error {
+	if err := expandClientsAndCohorts(spec); err != nil {
+		return err
+	}
+	// Clear consumed markers — see godoc for rationale.
+	spec.InferencePerf = nil
+	spec.ServeGenData = nil
+	return nil
+}
+
+func expandClientsAndCohorts(spec *WorkloadSpec) error {
+	// Expand inference-perf spec if specified (populates spec.Clients).
+	// Idempotent: the len(spec.Clients) == 0 guard prevents re-expansion
+	// if a prior call already ran.
+	if spec.InferencePerf != nil && len(spec.Clients) == 0 {
+		expanded, err := ExpandInferencePerfSpec(spec.InferencePerf, spec.Seed)
+		if err != nil {
+			return fmt.Errorf("expanding inference-perf spec: %w", err)
+		}
+		spec.Clients = expanded.Clients
+		if spec.Category == "" {
+			spec.Category = expanded.Category
+		}
+		// Always use the expanded aggregate rate — per-stage rates define the
+		// ground truth. A user-specified aggregate_rate would silently scale
+		// all per-stage rates by the wrong factor.
+		if spec.AggregateRate > 0 && spec.AggregateRate != expanded.AggregateRate {
+			logrus.Warnf("overriding aggregate_rate %.2f with sum of stage rates %.2f",
+				spec.AggregateRate, expanded.AggregateRate)
+		}
+		spec.AggregateRate = expanded.AggregateRate
+	}
+	// Load ServeGen data if specified (populates spec.Cohorts).
+	// Idempotent for the same reason as above.
+	if spec.ServeGenData != nil && len(spec.Clients) == 0 && len(spec.Cohorts) == 0 {
+		if err := loadServeGenData(spec); err != nil {
+			return fmt.Errorf("loading ServeGen data: %w", err)
+		}
+	}
+	return nil
+}
+
+// DefaultTimeoutUs is the default per-request timeout (300s = 5 minutes).
+// Matches cmd/observe.go HTTP client timeout for consistency between
+// simulated and real-backend modes.
+const DefaultTimeoutUs = 300_000_000
+
+// computeDeadline derives the absolute deadline tick for a request.
+// nil timeout + session client → default (300s). nil timeout + non-session → no deadline (0).
+// Explicit 0 → no deadline (0). Positive → arrival + timeout.
+// The isSessionClient flag determines whether the 300s default applies.
+// Non-session clients do NOT get a default timeout to preserve backward compatibility.
+func computeDeadline(arrivalTime int64, clientTimeout *int64, isSessionClient bool) int64 {
+	if clientTimeout == nil {
+		if isSessionClient {
+			return arrivalTime + DefaultTimeoutUs
+		}
+		return 0 // no timeout for non-session clients (backward compatible)
+	}
+	if *clientTimeout == 0 {
+		return 0 // explicit no timeout
+	}
+	return arrivalTime + *clientTimeout
+}
+
+func derefInt64(p *int64) int64 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+// isClosedLoop returns whether a client should use closed-loop session generation.
+// Default: true for reasoning/multi-turn clients. Overridden by explicit ClosedLoop field.
+func isClosedLoop(client *ClientSpec) bool {
+	if client.ClosedLoop != nil {
+		return *client.ClosedLoop
+	}
+	// Default: true for reasoning/multi-turn clients
+	return client.Reasoning != nil && client.Reasoning.MultiTurn != nil
+}
+
+// hasPerWindowParameters checks if any client has per-window parameter overrides
+// (TraceRate, Arrival, InputDist, or OutputDist set on any ActiveWindow).
+// Returns true when time-varying generation should be used instead of static generation.
+func hasPerWindowParameters(clients []ClientSpec) bool {
+	for _, client := range clients {
+		if client.Lifecycle == nil {
+			continue
+		}
+		for _, window := range client.Lifecycle.Windows {
+			if window.TraceRate != nil || window.Arrival != nil ||
+				window.InputDist != nil || window.OutputDist != nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// generateTimeVaryingRequests generates requests for workloads with per-window
+// parameters, using proportional rate allocation and IAT rescaling to match
+// window durations. Each client's lifecycle windows are iterated, generating
+// requests per window using window-specific distributions and rates.
+//
+// Windows beyond the horizon are skipped. Requests from all clients and windows
+// are merged, sorted by arrival time, truncated to maxRequests, and assigned
+// sequential IDs.
+func generateTimeVaryingRequests(
+	spec *WorkloadSpec,
+	horizon int64,
+	maxRequests int64,
+	allClients []ClientSpec,
+	rng *rand.Rand,
+) ([]*sim.Request, error) {
+	var allRequests []*sim.Request
+
+	// Build prefix tokens map for all prefix groups (BC-2).
+	// Uses generatePrefixTokens() for cross-path parity with non-time-varying path.
+	// With line 89 moved into the non-time-varying branch, both paths now call
+	// generatePrefixTokens exactly once on the same RNG state.
+	prefixes := generatePrefixTokens(allClients, rng)
+
+	// Generate requests for each client's windows.
+	for i := range allClients {
+		client := &allClients[i]
+
+		if client.Lifecycle == nil || len(client.Lifecycle.Windows) == 0 {
+			// Client has no lifecycle windows - skip.
+			// Always-on clients mixed with windowed clients are handled
+			// by computeProportionalRate (contributes RateFraction to denominator).
+			logrus.Warnf("generateTimeVaryingRequests: client %q has no lifecycle windows and will generate no requests (mixed always-on + windowed clients are not supported)", client.ID)
+			continue
+		}
+
+		// Create per-client RNG for determinism (isolates client entropy).
+		clientSeed := rng.Int63()
+		clientRNG := newRandFromSeed(clientSeed)
+
+		// Generate requests for each window.
+		for _, window := range client.Lifecycle.Windows {
+			// Skip windows that start beyond the simulation horizon.
+			if window.StartUs >= horizon {
+				continue
+			}
+
+			// Clamp window end to horizon to avoid generating requests beyond it.
+			effectiveWindow := window
+			if effectiveWindow.EndUs > horizon {
+				effectiveWindow.EndUs = horizon
+			}
+
+			prefix := prefixes[client.PrefixGroup] // empty slice if no prefix group
+			windowRequests, err := generateRequestsForWindow(
+				*client, effectiveWindow, allClients, spec.AggregateRate, clientRNG, prefix,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("generating window [%d-%d] for client %q: %w",
+					effectiveWindow.StartUs, effectiveWindow.EndUs, client.ID, err)
+			}
+			allRequests = append(allRequests, windowRequests...)
+		}
+	}
+
+	// Sort all requests by arrival time (stable sort preserves client order for ties).
+	sort.SliceStable(allRequests, func(i, j int) bool {
+		return allRequests[i].ArrivalTime < allRequests[j].ArrivalTime
+	})
+
+	// Apply maxRequests cap if specified.
+	if maxRequests > 0 && int64(len(allRequests)) > maxRequests {
+		allRequests = allRequests[:maxRequests]
+	}
+
+	// Assign sequential IDs.
+	for i, req := range allRequests {
+		req.ID = fmt.Sprintf("request_%d", i)
+	}
+
+	return allRequests, nil
+}
+
+// generateRequestsForWindow generates requests for a single lifecycle window
+// with proportional rate allocation and IAT rescaling to match the window duration.
+//
+// Steps:
+//  1. Resolve parameters with fallback to client-level defaults.
+//  2. Compute allocated rate via proportional allocation across co-active windows.
+//  3. Sample one MORE IAT than requests wanted, from the resolved arrival process.
+//  4. Rescale all of them to the target window duration (exact rate matching).
+//  5. Generate requests with window-specific token distributions, from the
+//     first N of the N+1 rescaled gaps; the extra gap is trailing slack that
+//     keeps every arrival strictly inside the window (see step 5's comment
+//     in the implementation for why this is needed).
+//
+// Requests are returned in arrival-time order. IDs are left empty (assigned by caller
+// after merging requests from all windows).
+func generateRequestsForWindow(
+	client ClientSpec,
+	window ActiveWindow,
+	allClients []ClientSpec,
+	aggregateRate float64,
+	rng *rand.Rand,
+	prefix []sim.TokenID,
+) ([]*sim.Request, error) {
+	// Step 1: Resolve parameters with fallback to client-level defaults.
+	arrival, inputDist, outputDist, _ := resolveWindowParameters(client, window)
+
+	// Step 2: Compute allocated rate for this window via proportional allocation.
+	windowTargetRate := computeProportionalRate(client, window, allClients, aggregateRate)
+	if windowTargetRate <= 0 {
+		return nil, nil
+	}
+
+	windowDurationUs := window.EndUs - window.StartUs
+	windowDurationSec := float64(windowDurationUs) / 1e6
+
+	// Step 3: Determine number of requests from allocated rate and window duration.
+	expectedRequests := windowTargetRate * windowDurationSec
+	numRequests := int(math.Ceil(expectedRequests))
+	if numRequests == 0 {
+		return nil, nil
+	}
+
+	// Step 4: Create samplers from resolved parameters.
+	// The rate passed to NewArrivalSampler is in requests/microsecond; it
+	// affects the mean IAT of the underlying distribution. Post-hoc rescaling
+	// (step 6) ensures the sum of IATs matches the window duration exactly.
+	arrivalSampler := NewArrivalSampler(arrival, windowTargetRate/1e6)
+	inputSampler, err := NewLengthSampler(inputDist)
+	if err != nil {
+		return nil, fmt.Errorf("client %q input dist: %w", client.ID, err)
+	}
+	outputSampler, err := NewLengthSampler(outputDist)
+	if err != nil {
+		return nil, fmt.Errorf("client %q output dist: %w", client.ID, err)
+	}
+
+	// Step 5: Sample IATs using the resolved arrival process (shape/scale for CV).
+	//
+	// We sample numRequests+1 gaps, not numRequests. Step 7 below only emits
+	// numRequests arrivals (the cumulative sums of the FIRST numRequests gaps),
+	// leaving the (numRequests+1)-th gap unused as trailing slack. This is the
+	// fix for a defect where the window's last request was unconditionally
+	// dropped: with exactly numRequests gaps rescaled (step 6) to sum to
+	// windowDurationUs, the cumulative time after the final gap lands exactly
+	// on window.EndUs, which is the next window's start instant, so the
+	// boundary guard in step 7 discarded it every time. Sampling one extra gap
+	// and rescaling across all numRequests+1 of them means the numRequests
+	// emitted arrivals fall inside [window.StartUs, window.EndUs) — with
+	// jitter at both ends from the extra gap's share of the rescaling — while
+	// the count stays exactly numRequests. The bound is asymmetric: no arrival
+	// can reach window.EndUs (the residual lands on the trailing gap, so it is
+	// floored up), but the LEADING gap has no such floor and can truncate to
+	// zero, putting the first arrival exactly on window.StartUs — legal, since
+	// a window is half-open. See rescaleIATsToMatchDuration and the interiority
+	// tests in generator_perwindow_test.go. The cost is that the
+	// effective mean gap inside the window becomes windowDurationUs/(numRequests+1)
+	// rather than windowDurationUs/numRequests; that is the correct reading of
+	// "numRequests arrivals inside a window of length windowDurationUs" (there
+	// are numRequests+1 gaps around numRequests interior points), and it is
+	// what removes the boundary bias.
+	iats := make([]int64, numRequests+1)
+	for i := 0; i < numRequests+1; i++ {
+		iats[i] = arrivalSampler.SampleIAT(rng)
+	}
+
+	// Step 6: Rescale IATs to match target window duration.
+	// This preserves relative ratios (CV) while ensuring total span equals windowDurationUs.
+	// Note len(iats) == numRequests+1 here (see step 5); rescaling still sums
+	// ALL of them to windowDurationUs, so the trailing (numRequests+1)-th gap
+	// absorbs the residual arithmetic exactly, not one of the numRequests gaps
+	// that get emitted.
+	iats = rescaleIATsToMatchDuration(iats, windowDurationUs)
+
+	// Step 7: Generate requests with window-specific distributions.
+	// BC-1: Detect reasoning clients and route to GenerateReasoningRequests.
+	// BC-6: Non-reasoning clients use single-shot path (unchanged).
+	if client.Reasoning != nil && client.Reasoning.MultiTurn != nil {
+		mt := client.Reasoning.MultiTurn
+		var allRequests []*sim.Request
+
+		if mt.SingleSession {
+			// Single session: use first IAT, generate one session, filter rounds.
+			// Matches non-time-varying path (generator.go:154-209).
+			startTime := window.StartUs
+			if len(iats) > 0 {
+				startTime += iats[0]
+			}
+			if startTime >= window.EndUs {
+				// Unreachable in normal operation: step 5 samples
+				// numRequests+1 gaps and step 6 rescales ALL of them to sum
+				// to windowDurationUs, so iats[0] alone is strictly less
+				// than the window duration. That relies on the TRAILING gap
+				// being strictly positive, which needs two facts, not one:
+				// rescaleIATsToMatchDuration puts its residual on the last
+				// element, AND every sampler reachable via NewArrivalSampler
+				// floors its raw IAT to >= 1us. The exact-sum property alone
+				// is not enough -- a zero raw IAT would rescale to a zero
+				// gap. Reaching this means one of those two was broken by a
+				// later change, which would silently drop this window's only
+				// session -- warn rather than truncate quietly (R1).
+				logrus.Warnf("generateRequestsForWindow: client %q window [%d-%d]: single session start %d is at/beyond window end (numRequests+1 gap invariant violated); dropping the window's only session",
+					client.ID, window.StartUs, window.EndUs, startTime)
+				return nil, nil // Session starts beyond window boundary
+			}
+
+			// BC-1: Call GenerateReasoningRequests to create session metadata
+			reasoningReqs, err := GenerateReasoningRequests(
+				rng, client.Reasoning,
+				inputSampler, outputSampler,
+				startTime,
+				client.ID, client.TenantID, client.SLOClass, client.Model, client.Adapter,
+				prefix,
+			)
+			if err != nil {
+				// BC-9: Propagate error with client ID context
+				return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
+			}
+
+			// BC-2: prefix is seeded into the shared buffer inside reasoning.go (#1445).
+			// BC-3: Set Deadline on all reasoning requests
+			for _, req := range reasoningReqs {
+				req.Deadline = computeDeadline(req.ArrivalTime, client.Timeout, true)
+			}
+
+			// BC-5: Filter rounds outside window boundary
+			// Invariant: GenerateReasoningRequests returns rounds in chronological order
+			for _, req := range reasoningReqs {
+				if req.ArrivalTime >= window.EndUs {
+					break // Safe to break: remaining rounds arrive even later
+				}
+				allRequests = append(allRequests, req)
+			}
+
+			return allRequests, nil
+		}
+
+		// Multi-session: loop over IAT samples to generate multiple sessions.
+		// Matches non-time-varying path (generator.go:212-272).
+		//
+		// Bounded by numRequests, not len(iats): iats now holds numRequests+1
+		// gaps (step 5), and only the first numRequests are meant to produce a
+		// session start; the trailing gap is unused slack that keeps every
+		// emitted start strictly inside the window. The boundary guard below
+		// is defense in depth only — with numRequests gaps rescaled (step 6)
+		// to sum to strictly less than windowDurationUs, it should be
+		// unreachable in normal operation.
+		currentTime := window.StartUs
+		for i := 0; i < numRequests; i++ {
+			currentTime += iats[i]
+			if currentTime >= window.EndUs {
+				// Unreachable in normal operation (see the loop-bound
+				// comment above): the numRequests emitted gaps sum to
+				// strictly less than windowDurationUs, because the trailing
+				// gap is strictly positive -- which needs both the residual
+				// placement in rescaleIATsToMatchDuration and the >= 1us raw
+				// IAT floor every NewArrivalSampler sampler applies. Reaching
+				// this means a later change broke one of those, which would
+				// silently truncate the window's sessions -- warn rather than
+				// truncate quietly (R1).
+				logrus.Warnf("generateRequestsForWindow: client %q window [%d-%d]: session %d of %d starts at %d, at/beyond window end (numRequests+1 gap invariant violated); truncating window",
+					client.ID, window.StartUs, window.EndUs, i+1, numRequests, currentTime)
+				break // Session start is beyond window boundary
+			}
+
+			// BC-1: Call GenerateReasoningRequests to create session metadata
+			reasoningReqs, err := GenerateReasoningRequests(
+				rng, client.Reasoning,
+				inputSampler, outputSampler,
+				currentTime,
+				client.ID, client.TenantID, client.SLOClass, client.Model, client.Adapter,
+				prefix,
+			)
+			if err != nil {
+				// BC-9: Propagate error with client ID context
+				return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
+			}
+
+			// BC-2: prefix is seeded into the shared buffer inside reasoning.go (#1445).
+			// BC-3: Set Deadline on all reasoning requests
+			for _, req := range reasoningReqs {
+				req.Deadline = computeDeadline(req.ArrivalTime, client.Timeout, true)
+			}
+
+			// BC-5: Filter rounds outside window boundary
+			// Invariant: GenerateReasoningRequests returns rounds in chronological order
+			for _, req := range reasoningReqs {
+				if req.ArrivalTime >= window.EndUs {
+					break // Safe to break: remaining rounds arrive even later
+				}
+				allRequests = append(allRequests, req)
+			}
+		}
+
+		return allRequests, nil
+	}
+
+	// BC-6: Single-shot path.
+	requests := make([]*sim.Request, 0, numRequests)
+	currentTime := window.StartUs
+
+	// Bounded by numRequests, leaving iats[numRequests] (the extra gap from
+	// step 5) unused: see step 5's comment for why. The boundary guard below
+	// is defense in depth only — with numRequests gaps rescaled (step 6) to
+	// sum to strictly less than windowDurationUs, it should be unreachable in
+	// normal operation.
+	for i := 0; i < numRequests; i++ {
+		currentTime += iats[i]
+
+		// Stop if we exceed window boundary.
+		if currentTime >= window.EndUs {
+			// Unreachable in normal operation (see the loop-bound comment
+			// above): the numRequests emitted gaps sum to strictly less than
+			// windowDurationUs, because the trailing gap is strictly positive
+			// -- which needs both the residual placement in
+			// rescaleIATsToMatchDuration and the >= 1us raw IAT floor every
+			// NewArrivalSampler sampler applies. Reaching this means a later
+			// change broke one of those, which would silently shorten the
+			// window -- warn rather than truncate quietly (R1).
+			logrus.Warnf("generateRequestsForWindow: client %q window [%d-%d]: request %d of %d arrives at %d, at/beyond window end (numRequests+1 gap invariant violated); truncating window",
+				client.ID, window.StartUs, window.EndUs, i+1, numRequests, currentTime)
+			break
+		}
+
+		// Sample token lengths from resolved distributions.
+		inputLen := inputSampler.Sample(rng)
+		outputLen := outputSampler.Sample(rng)
+		inputTokens := sim.GenerateRandomTokenIDs(rng, inputLen)
+		outputTokens := sim.GenerateRandomTokenIDs(rng, outputLen)
+
+		req := &sim.Request{
+			ID:           "", // Assigned later after merge+sort across all windows.
+			ArrivalTime:  currentTime,
+			InputTokens:  inputTokens,
+			OutputTokens: outputTokens,
+			MaxOutputLen: outputLen,
+			State:        sim.StateQueued,
+			TenantID:     client.TenantID,
+			SLOClass:     client.SLOClass,
+			Model:        client.Model,
+			Adapter:      client.Adapter,
+			ClientID:     client.ID,
+			Streaming:    client.Streaming,
+			Deadline:     0, // Set by caller if needed.
+			SLOTargetUs:  derefInt64(client.SLOTargetUs),
+		}
+		requests = append(requests, req)
+	}
+
+	return requests, nil
+}
+
+// computeProportionalRate computes the allocated rate for a window using
+// proportional allocation across co-active clients. When aggregate_rate > 0,
+// returns: target_aggregate_rate * (window_trace_rate / sum_of_co_active_trace_rates).
+// When aggregate_rate is 0 (absolute rate mode), returns window.TraceRate directly.
+//
+// For each co-active client (any client whose window overlaps the queried window),
+// the first overlapping window's trace rate is summed into totalTraceRate. Always-on
+// clients (no lifecycle) contribute their RateFraction. If totalTraceRate is zero,
+// returns zero to avoid division by zero (R11).
+func computeProportionalRate(
+	client ClientSpec,
+	window ActiveWindow,
+	allClients []ClientSpec,
+	aggregateRate float64,
+) float64 {
+	// Get this window's trace rate (resolveWindowParameters falls back to client.RateFraction)
+	_, _, _, traceRate := resolveWindowParameters(client, window)
+
+	// Absolute rate mode: when aggregate_rate is 0, use trace_rate directly.
+	// This signals "use per-window rates verbatim, don't scale". Useful for
+	// workloads with time-varying aggregate load that cannot be represented
+	// by a single scalar aggregate_rate.
+	if aggregateRate == 0 && window.TraceRate != nil {
+		return traceRate
+	}
+	// Sum trace rates of all co-active windows
+	totalTraceRate := 0.0
+
+	for _, otherClient := range allClients {
+		// Always-on clients (no lifecycle) contribute their RateFraction
+		if otherClient.Lifecycle == nil || len(otherClient.Lifecycle.Windows) == 0 {
+			totalTraceRate += otherClient.RateFraction
+			continue
+		}
+
+		// Check if any of otherClient's windows overlap with the current window.
+		// Only count each client once (first overlapping window) to avoid
+		// double-counting a client that has multiple overlapping windows.
+		for _, otherWindow := range otherClient.Lifecycle.Windows {
+			// Time-based overlap: windows overlap iff start_a < end_b AND start_b < end_a
+			if otherWindow.StartUs < window.EndUs && window.StartUs < otherWindow.EndUs {
+				_, _, _, otherRate := resolveWindowParameters(otherClient, otherWindow)
+				totalTraceRate += otherRate
+				break // Only count each client once per query window
+			}
+		}
+	}
+
+	if totalTraceRate == 0 {
+		logrus.Warnf("computeProportionalRate: totalTraceRate is zero for client %q window [%d-%d] (no co-active windows with non-zero rates)",
+			client.ID, window.StartUs, window.EndUs)
+		return 0
+	}
+
+	// Proportional allocation
+	return aggregateRate * (traceRate / totalTraceRate)
+}
+
+// rescaleIATsToMatchDuration rescales inter-arrival times to sum exactly to
+// targetDuration, preserving relative ratios (CV). This ensures that N requests
+// generated with a given rate will fill exactly the specified window duration.
+//
+// Each IAT is multiplied by (targetDuration / sumIATs). A rounding residual
+// from int64 truncation is applied to the last element so the sum is exact.
+// Returns nil for empty input; returns the original slice unchanged if all
+// IATs are zero (no scaling possible).
+func rescaleIATsToMatchDuration(iats []int64, targetDuration int64) []int64 {
+	if len(iats) == 0 {
+		return nil
+	}
+
+	// Compute sum of original IATs.
+	sumIATs := int64(0)
+	for _, iat := range iats {
+		sumIATs += iat
+	}
+
+	// Guard against zero sum: scaling undefined, return original values.
+	if sumIATs == 0 {
+		return iats
+	}
+
+	// Scale factor preserves relative ratios (CV).
+	scaleFactor := float64(targetDuration) / float64(sumIATs)
+
+	// Rescale all IATs, tracking the accumulated sum for residual correction.
+	rescaled := make([]int64, len(iats))
+	rescaledSum := int64(0)
+	for i, iat := range iats {
+		rescaled[i] = int64(float64(iat) * scaleFactor)
+		rescaledSum += rescaled[i]
+	}
+
+	// Distribute rounding residual to the last element so sum is exact.
+	rescaled[len(rescaled)-1] += targetDuration - rescaledSum
+
+	return rescaled
+}
+
+// resolveWindowParameters resolves per-window parameters with fallback to client-level defaults.
+// Returns the effective arrival spec, input distribution, output distribution, and trace rate.
+// When a window field is nil, the corresponding client-level value is used.
+func resolveWindowParameters(client ClientSpec, window ActiveWindow) (ArrivalSpec, DistSpec, DistSpec, float64) {
+	// Resolve arrival spec
+	arrival := client.Arrival
+	if window.Arrival != nil {
+		arrival = *window.Arrival
+	}
+
+	// Resolve input distribution
+	inputDist := client.InputDist
+	if window.InputDist != nil {
+		inputDist = *window.InputDist
+	}
+
+	// Resolve output distribution
+	outputDist := client.OutputDist
+	if window.OutputDist != nil {
+		outputDist = *window.OutputDist
+	}
+
+	// Resolve trace rate (falls back to client RateFraction)
+	traceRate := client.RateFraction
+	if window.TraceRate != nil {
+		traceRate = *window.TraceRate
+	}
+
+	return arrival, inputDist, outputDist, traceRate
+}

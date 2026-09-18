@@ -1,0 +1,555 @@
+package sim
+
+import (
+	"github.com/sirupsen/logrus"
+
+	"github.com/inference-sim/inference-sim/sim/internal/util"
+)
+
+// BatchFormation encapsulates the batch composition strategy for a simulation step.
+// Implementations handle KV allocation and preemption decisions internally
+// but do NOT schedule events or record metrics — those are kernel concerns
+// handled by the Simulator after FormBatch returns.
+type BatchFormation interface {
+	FormBatch(ctx BatchContext) BatchResult
+}
+
+// BatchContext provides the inputs for batch formation.
+// The BatchFormation implementation may mutate WaitQ (dequeue/prepend) and
+// KVCache (allocate/release) during FormBatch. ComputedTokens must be updated
+// by the implementation: for each request that receives new tokens, set or
+// increment ComputedTokens[req.ID] to the total computed tokens (including
+// cached). Phase 2 of Step() reads this map to advance ProgressIndex.
+type BatchContext struct {
+	RunningBatch          *Batch
+	WaitQ                 *WaitQueue
+	KVCache               KVStore
+	MaxNumBatchedTokens   int64
+	MaxNumSeqs            int64
+	PrefillTokenThreshold int64
+	MaxModelLen           int64 // 0 = unlimited (proactive cap disabled)
+	Now                   int64
+	StepCount             int
+	ComputedTokens        map[string]int64
+
+	// AdapterResident is the cold-load pre-admission gate predicate (#1466): it
+	// reports whether a request's LoRA adapter is currently resident on the
+	// instance. A new prefill request whose adapter is NOT resident is held out of
+	// the batch (blocking model: it also stalls the requests behind it) until the
+	// kernel-scheduled adapter load completes. nil ⇒ no LoRA gating; admission is
+	// byte-identical to a pre-feature build (INV-6).
+	AdapterResident func(id string) bool
+
+	// DecodeTokensPerStep returns the PROPOSED accepted-token count g for a decode
+	// request under speculative decoding / MTP (#1528) — a PURE peek that does not
+	// consume the carry (FormBatch caps g afterward by KV budget / MaxModelLen; the
+	// Simulator commits the granted count in executeBatchStep). nil ⇒ 1 token/step
+	// (byte-identical to a pre-feature build, INV-6). Supplied by the Simulator, which
+	// owns the per-request fractional-carry state; the peek itself is oracle-blind
+	// (mean rate + carry only). FormBatch then caps the proposal, including by the
+	// request's distance to its completion boundary (decodeTokensToCompletion, #1657) —
+	// a per-step execution read of OutputTokens that INV-9 permits here, not a
+	// servability decision.
+	DecodeTokensPerStep func(req *Request) int64
+}
+
+// ScheduledRequest carries metadata about a newly scheduled request.
+type ScheduledRequest struct {
+	Request *Request
+}
+
+// PreemptedRequest carries metadata about a preempted request.
+type PreemptedRequest struct {
+	Request *Request
+}
+
+// BatchResult describes the outcome of batch formation.
+type BatchResult struct {
+	RunningBatch       *Batch
+	NewlyScheduled     []ScheduledRequest
+	Preempted          []PreemptedRequest
+	PreemptionHappened bool
+}
+
+// PreemptionPolicy controls how preemption selects a victim from the running batch.
+type PreemptionPolicy string
+
+const (
+	// PreemptionFCFS evicts the last request in the running batch (tail).
+	// Matches vLLM's FCFS scheduling mode (self.running.pop()).
+	PreemptionFCFS PreemptionPolicy = "fcfs"
+
+	// PreemptionPriority evicts the least-urgent request based on Request.Priority (vLLM convention).
+	// Selects max(Priority) with max(ArrivalTime) tiebreak — direct parity with
+	// vLLM scheduler.py:1086: max(self.running, key=lambda r: (r.priority, r.arrival_time)).
+	PreemptionPriority PreemptionPolicy = "priority"
+)
+
+// decodeTokensToCompletion returns how many more decode tokens a request needs to reach
+// its completion boundary (Request.completionProgressIndex — the same value
+// processCompletions tests against). Zero means the request already sits at, or past,
+// the boundary.
+//
+// It exists so a speculative-decoding / MTP step (#1528) that advances g > 1 tokens
+// lands exactly ON the boundary instead of past it (#1657). vLLM does the same thing:
+// _update_from_output appends the accepted tokens one at a time and trims the tail once
+// check_stop fires, so a request never records more output tokens than it was budgeted
+// (the forward pass still cost the full verify width). An overshoot inflates
+// ProgressIndex beyond the request's assigned output, which a closed-loop accumulate
+// session reads back as output-accounting corruption (SessionManager.OnComplete
+// cancels the whole session).
+//
+// Reading OutputTokens here is per-step execution planning — which INV-9's Scope
+// paragraph permits for FormBatch, the same read the decode-phase gate already performs
+// — not a servability decision. The Phase-2 (admission-loop) call site is covered by
+// INV-9's explicit bounded carve-out: the cap is monotone-shrinking and floored at 1, so
+// it can never reject or reorder an admission — see invariants.md INV-9.
+func decodeTokensToCompletion(req *Request) int64 {
+	return max(req.completionProgressIndex()-req.ProgressIndex, 0)
+}
+
+// VLLMBatchFormation implements the vLLM FCFS + chunked-prefill + preemption strategy.
+type VLLMBatchFormation struct {
+	preemptionPolicy PreemptionPolicy
+}
+
+func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
+	if ctx.RunningBatch == nil {
+		ctx.RunningBatch = &Batch{}
+	}
+
+	result := BatchResult{
+		RunningBatch: ctx.RunningBatch,
+	}
+
+	tokenBudget := ctx.MaxNumBatchedTokens
+
+	// Zero NumNewTokens for all running requests at the start of each scheduling pass.
+	// This prevents stale values from the prior step from causing phantom budget
+	// restoration when a request is preempted before being visited in this pass.
+	for _, req := range result.RunningBatch.Requests {
+		req.NumNewTokens = 0
+	}
+
+	// Phase 1: Process continuing requests (chunked prefill + decode).
+	// Index-based loop: re-evaluates len() each iteration so evicted requests
+	// are never visited. In priority mode, non-tail eviction shifts elements
+	// left; the reqAdjustment returned by preemptForTokens compensates by
+	// decrementing reqIndex, preventing element skipping.
+	// Analog of vLLM v1 req_index -= 1 (scheduler.py:853).
+	reqIndex := 0
+	for reqIndex < len(result.RunningBatch.Requests) {
+		if tokenBudget <= 0 {
+			logrus.Warnf("[tick %07d] token budget exhausted, deferring remaining requests to next step", ctx.Now)
+			break
+		}
+		req := result.RunningBatch.Requests[reqIndex]
+
+		numNewTokens := req.InputLen() - req.ProgressIndex
+		// Chunked prefill for running requests
+		if numNewTokens > 0 {
+			if 0 < ctx.PrefillTokenThreshold && ctx.PrefillTokenThreshold < numNewTokens {
+				numNewTokens = ctx.PrefillTokenThreshold
+			}
+			numNewTokens = min(numNewTokens, tokenBudget)
+			// Proactive MaxModelLen cap (BC-1): match vLLM scheduler.py:773-774.
+			// Note: the enqueue guard (len(InputTokens) < maxModelLen) guarantees
+			// maxAllowed >= 1 during prefill, so this clamp only reduces chunk size,
+			// never eliminates it. Defense-in-depth for bypass scenarios.
+			if ctx.MaxModelLen > 0 {
+				maxAllowed := max(ctx.MaxModelLen-1-req.ProgressIndex, 0)
+				numNewTokens = min(numNewTokens, maxAllowed)
+			}
+
+			canSchedule, adj := v.preemptForTokens(req, numNewTokens, &result, ctx, &tokenBudget, reqIndex)
+			reqIndex -= adj
+			if !canSchedule {
+				break
+			}
+
+			tokenBudget -= numNewTokens
+			req.NumNewTokens = int(numNewTokens)
+			ctx.ComputedTokens[req.ID] += numNewTokens
+		}
+		// Decode phase: allocate the accepted-token count for this step.
+		if req.ProgressIndex >= req.InputLen() && len(req.OutputTokens) > 0 {
+			// Base is 1 token/step. Under speculative decoding / MTP (#1528) the
+			// step advances by g = accepted tokens (1 + accepted drafts), proposed by
+			// the pure DecodeTokensPerStep peek. nil predicate ⇒ g=1 ⇒ byte-identical.
+			decodeTokens := int64(1)
+			if ctx.DecodeTokensPerStep != nil {
+				decodeTokens = ctx.DecodeTokensPerStep(req)
+				// Cap g by remaining token budget (spec-decode only; g can exceed 1).
+				decodeTokens = min(decodeTokens, tokenBudget)
+				// Output-budget cap (#1657): land exactly ON the completion boundary,
+				// never past it. A running decode request is always at least one token
+				// short of the boundary — processCompletions completes every batch member
+				// that reaches it, in the same step — so in practice this only reduces a
+				// multi-token grant and never zeroes one (INV-12 holds). Should it ever
+				// return 0, the outcome is the benign MaxModelLen-boundary one below: a
+				// zero-work step, after which processCompletions finishes the request.
+				decodeTokens = min(decodeTokens, decodeTokensToCompletion(req))
+			}
+			// Proactive MaxModelLen cap (BC-1): stop exactly at the boundary.
+			// For g=1 this reproduces the pre-feature "skip decode at boundary" logic:
+			// min(1, max(M-1-PI,0)) == 0 iff PI+1 > M-1 (byte-identical). For g>1 it
+			// clamps the multi-token advance so a spec-decode step can't overshoot the
+			// model-length cap. Note: when decodeTokens=0, the request stays in
+			// RunningBatch with its previously-allocated KV blocks for one zero-work
+			// step until processCompletions releases them via ReleaseKVBlocks.
+			if ctx.MaxModelLen > 0 {
+				decodeTokens = min(decodeTokens, max(ctx.MaxModelLen-1-req.ProgressIndex, 0))
+			}
+			if decodeTokens > 0 {
+				canSchedule, adj := v.preemptForTokens(req, decodeTokens, &result, ctx, &tokenBudget, reqIndex)
+				reqIndex -= adj
+				if !canSchedule {
+					break
+				}
+				tokenBudget -= decodeTokens
+				req.NumNewTokens = int(decodeTokens)
+				ctx.ComputedTokens[req.ID] += decodeTokens
+			}
+		}
+		reqIndex++
+	}
+
+	// H3 kv_deferral (#1591): when the KV store supports step-boundary deferral (the
+	// offload chain with secondary tiers), advance its deferred requests once per
+	// step and collect the set still waiting for a secondary→CPU fetch. Batch
+	// formation SKIPS those (they are re-polled next step) and admits others behind
+	// them — mirroring vLLM's step_skipped_waiting + continue. The type-assert fails
+	// for the single-tier and legacy-tiered stores, so deferrable/deferredSet stay
+	// nil and Phase 2 below is byte-identical to the pre-#1591 loop (INV-6).
+	var deferrable DeferrableKVStore
+	var deferredSet map[string]bool
+	if d, ok := ctx.KVCache.(DeferrableKVStore); ok {
+		deferrable = d
+		if ids := d.PollDeferred(ctx.Now); len(ids) > 0 {
+			deferredSet = make(map[string]bool, len(ids))
+			for _, id := range ids {
+				deferredSet[id] = true
+			}
+		}
+	}
+
+	// #1699: when the KV store can enlarge a new admission's cached prefix by reloading
+	// from the CPU/secondary offload tier DURING AllocateKVBlocks, re-bill prefill work
+	// against the post-reload boundary (otherwise a genuine cache hit is charged as a
+	// full recompute — hit rate moves but timing does not). Both offload stores implement
+	// the interface (OffloadCache and the legacy TieredKVCache); the non-offload
+	// single-tier KVCacheState does not, so reloadReporter stays nil and Phase 2 is
+	// byte-identical to the pre-#1699 loop (INV-6).
+	reloadReporter, _ := ctx.KVCache.(ReloadReportingKVStore)
+
+	// Phase 2: Dequeue new requests from wait queue.
+	// skipped counts requests set aside this step (offload-deferred). It is the scan
+	// cursor: with no deferrals it stays 0, so PeekAt(0)==Peek() and admissions use
+	// DequeueBatch — identical to the pre-#1591 head-only loop.
+	skipped := 0
+	for len(result.RunningBatch.Requests) < int(ctx.MaxNumSeqs) && ctx.WaitQ.Len() > skipped && tokenBudget > 0 && !result.PreemptionHappened {
+		next := ctx.WaitQ.PeekAt(skipped)
+
+		// A request whose secondary-tier fetch is still in flight is not admittable
+		// this step — set it aside and try the next (offload only; inert otherwise).
+		if deferredSet != nil && deferredSet[next.ID] {
+			skipped++
+			continue
+		}
+
+		// Cold-load pre-admission gate (LoRA, #1466): a new prefill request whose
+		// adapter is not yet resident on this instance is held out of the batch
+		// until its adapter load completes (FR-007, §7). This gate is head-of-line
+		// (break, not skip) by design — the DT-faithful blocking model — a gated
+		// request stalls the warm requests behind it for the load duration. Decode
+		// sub-requests (PD) are already past the gate (their prefill ran with the
+		// adapter resident).
+		if ctx.AdapterResident != nil && !next.IsDecodeSubRequest && next.Adapter != "" && !ctx.AdapterResident(next.Adapter) {
+			break
+		}
+
+		// Handle decode-only requests (PD disaggregation: KV pre-allocated by transfer).
+		// IsDecodeSubRequest is set exclusively by KVTransferStartedEvent when it
+		// reserves KV on the decode pod (issue #1343), so this path fires only for
+		// requests that genuinely arrived via PD KV transfer.
+		// ProgressIndex has already been set to len(InputTokens) by ReserveTransferredKV.
+		if next.IsDecodeSubRequest {
+			decodeTokens := int64(1)
+			// Speculative decoding / MTP (#1528): a PD decode sub-request advances by
+			// g accepted tokens per step, same as a non-PD decode request. This whole
+			// block is byte-identity-gated (I-4): unlike Phase 1, the pre-feature PD
+			// path applied NO MaxModelLen/budget cap, so caps fire ONLY when the
+			// feature is on (DecodeTokensPerStep != nil). Feature off ⇒ decodeTokens
+			// stays 1 and every line below is unchanged (BC-1/INV-6).
+			if ctx.DecodeTokensPerStep != nil {
+				decodeTokens = ctx.DecodeTokensPerStep(next)
+				// Output-budget cap (#1657): land exactly ON the completion boundary.
+				// Floored at 1 for the same reason the MaxModelLen cap below is: a
+				// 1-output-token decode sub-request is admitted ALREADY at its boundary
+				// (ProgressIndex == InputLen == boundary), and granting 0 would break out
+				// of the admission loop every step forever — it is not yet in
+				// RunningBatch, so nothing force-completes it (INV-8/INV-11). Emitting
+				// that one final token is exactly what the pre-feature (k=0) PD path did.
+				if outRoom := decodeTokensToCompletion(next); outRoom >= 1 {
+					decodeTokens = min(decodeTokens, outRoom)
+				} else {
+					decodeTokens = 1
+				}
+				// Cap the multi-token advance so it can't overshoot the model-length
+				// window by more than the single token the pre-feature (k=0) PD path
+				// already allowed.
+				if ctx.MaxModelLen > 0 {
+					room := max(ctx.MaxModelLen-1-next.ProgressIndex, 0)
+					if room >= 1 {
+						decodeTokens = min(decodeTokens, room)
+					} else {
+						// At/past the boundary: emit exactly one final token — identical
+						// to the k=0 PD path, which never capped here — so
+						// processCompletions force-completes it next step. Flooring at 1
+						// (never 0) is essential: a PD decode sub-request is NOT yet in
+						// RunningBatch, so a 0-token break would strand it in WaitQ forever
+						// (unlike Phase 1, where a boundary request already sits in the
+						// batch and is force-completed at zero work). INV-8/INV-11.
+						decodeTokens = 1
+					}
+				}
+				// Token-budget cap: this alone may hit 0, which is transient (next step
+				// has fresh budget), so breaking here — like the KV-alloc-failure break
+				// below — is safe and does not strand the request.
+				decodeTokens = min(decodeTokens, tokenBudget)
+				if decodeTokens < 1 {
+					break
+				}
+			}
+			if ok := ctx.KVCache.AllocateKVBlocks(next, next.ProgressIndex, next.ProgressIndex+decodeTokens, nil); !ok {
+				break
+			}
+			dequeueAdmitted(ctx.WaitQ, next, skipped)
+			result.RunningBatch.Requests = append(result.RunningBatch.Requests, next)
+			next.ScheduledStepIdx = ctx.StepCount
+			result.NewlyScheduled = append(result.NewlyScheduled, ScheduledRequest{Request: next})
+			tokenBudget -= decodeTokens
+			next.State = StateRunning
+			next.NumNewTokens = int(decodeTokens)
+			ctx.ComputedTokens[next.ID] = next.ProgressIndex + decodeTokens
+			continue
+		}
+
+		cachedBlocks := ctx.KVCache.GetCachedBlocks(next.FullInputTokens())
+		startIndex := util.Len64(cachedBlocks) * ctx.KVCache.BlockSize()
+
+		// #1699/#1706: fold the same-step CPU->GPU-reloadable offload prefix into the
+		// computed baseline BEFORE the chunk/budget clamp, mirroring vLLM's ordering
+		// (num_computed_tokens = num_local_computed + num_external_computed, sized before
+		// the long_prefill_token_threshold cap). computedStart advances past the reloadable
+		// prefix; the chunk then covers only the uncached remainder, so the whole reloaded
+		// prefix is credited even under chunked prefill (not just the single committed
+		// chunk — the #1699 one-chunk cap this PR removes). The reloadable boundary comes
+		// from a PURE pre-allocation query (ReloadablePrefixEnd, the analogue of vLLM's
+		// get_num_new_matched_tokens); the actual reload + commit still happens inside
+		// AllocateKVBlocks below, which — because endIndex >= computedStart == the reloaded
+		// boundary — always commits the full reloaded prefix. Both offload stores implement
+		// the interface; the non-offload single-tier KVCacheState does not, so reloadReporter
+		// stays nil, computedStart == startIndex, and Phase 2 is byte-identical (INV-6).
+		// Secondary-tier-only runs are not counted here — they stay on the H3 deferral path.
+		computedStart := startIndex
+		if reloadReporter != nil {
+			if reloadableEnd, ok := reloadReporter.ReloadablePrefixEnd(next, startIndex); ok && reloadableEnd > computedStart {
+				computedStart = reloadableEnd
+			}
+		}
+
+		numNewTokens := next.InputLen() - computedStart
+		if 0 < ctx.PrefillTokenThreshold && ctx.PrefillTokenThreshold < numNewTokens {
+			numNewTokens = ctx.PrefillTokenThreshold
+		}
+		numNewTokens = min(numNewTokens, tokenBudget)
+		// Proactive MaxModelLen cap (BC-2): BLIS safety extension (vLLM only caps running requests).
+		// For valid enqueued requests (input < maxModelLen), this is a no-op.
+		if ctx.MaxModelLen > 0 {
+			maxAllowed := max(ctx.MaxModelLen-1-computedStart, 0)
+			numNewTokens = min(numNewTokens, maxAllowed)
+		}
+		endIndex := computedStart + numNewTokens
+
+		// AllocateKVBlocks is called with the GPU-cached startIndex and cachedBlocks: the
+		// reload happens inside it, committing [startIndex, computedStart) and allocating
+		// the tail [computedStart, endIndex). Passing computedStart directly would treat the
+		// reloadable prefix as already GPU-committed, which it is not yet.
+		if ok := ctx.KVCache.AllocateKVBlocks(next, startIndex, endIndex, cachedBlocks); !ok {
+			// H3: distinguish a fresh deferral (the offload chain set this request
+			// aside for a secondary fetch — skip and keep it in the WaitQ) from
+			// genuine GPU pressure (break, head-of-line as before).
+			if deferrable != nil && deferrable.IsDeferred(next.ID) {
+				skipped++
+				continue
+			}
+			break
+		}
+
+		dequeueAdmitted(ctx.WaitQ, next, skipped)
+		result.RunningBatch.Requests = append(result.RunningBatch.Requests, next)
+		next.ScheduledStepIdx = ctx.StepCount
+
+		result.NewlyScheduled = append(result.NewlyScheduled, ScheduledRequest{
+			Request: next,
+		})
+
+		// numNewTokens is the uncached remainder only (the reloaded prefix was folded into
+		// computedStart above), so it is both the billed prefill work (the StepTime input)
+		// and the chunk over which progress advances: ComputedTokens reaches endIndex, which
+		// sits past the whole reloaded prefix.
+		tokenBudget -= numNewTokens
+		next.State = StateRunning
+		next.NumNewTokens = int(numNewTokens)
+		ctx.ComputedTokens[next.ID] = endIndex
+	}
+
+	return result
+}
+
+// dequeueAdmitted removes the just-admitted request from the wait queue. When no
+// requests were skipped this step it is the head, removed via the O(1) DequeueBatch
+// (the pre-#1591 fast path, preserving byte-identity when offload is off); when
+// requests were skipped ahead of it (offload deferral) it is at index `skipped` and
+// removed by pointer identity via the O(n) Remove.
+func dequeueAdmitted(wq *WaitQueue, req *Request, skipped int) {
+	if skipped == 0 {
+		wq.DequeueBatch()
+		return
+	}
+	wq.Remove(req)
+}
+
+// preemptForTokens tries to allocate numNewTokens of KV blocks for req,
+// evicting victims if needed. Returns (canSchedule, reqAdjustment) where
+// reqAdjustment counts evictions at indices below reqIndex.
+// The caller must apply reqIndex -= reqAdjustment after each call to prevent
+// element skipping when non-tail removal shifts elements left.
+// Analog of vLLM scheduler.py:853 (req_index -= 1).
+func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, result *BatchResult, ctx BatchContext, tokenBudget *int64, reqIndex int) (bool, int) {
+	adjustment := 0
+	for {
+		if ok := ctx.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, nil); !ok {
+			// Circuit breaker: empty batch means cache is too small (R19)
+			if len(result.RunningBatch.Requests) == 0 {
+				logrus.Warnf("[tick %07d] preemption: KV cache too small for request %s (need %d tokens, no running requests to evict)",
+					ctx.Now, req.ID, numNewTokens)
+				return false, adjustment
+			}
+
+			result.PreemptionHappened = true
+
+			var victimIdx int
+			switch v.preemptionPolicy {
+			case PreemptionPriority:
+				victimIdx = v.selectPriorityVictim(result.RunningBatch.Requests)
+			default:
+				victimIdx = len(result.RunningBatch.Requests) - 1
+			}
+
+			preemptedRequest := result.RunningBatch.Requests[victimIdx]
+			logrus.Warnf("[tick %07d] preemption: evicting %s to make room", ctx.Now, preemptedRequest.ID)
+
+			// Remove by index (supports non-tail eviction in priority mode).
+			result.RunningBatch.Requests = append(
+				result.RunningBatch.Requests[:victimIdx],
+				result.RunningBatch.Requests[victimIdx+1:]...,
+			)
+
+			// Track Phase 1 index adjustment: if the victim was before the
+			// caller's current position, elements shifted left under the cursor.
+			// The caller must decrement reqIndex by the returned adjustment.
+			// Analog of vLLM scheduler.py:853 (req_index -= 1 when preempted
+			// request was in scheduled_running_reqs).
+			// For FCFS, victimIdx is always the tail (>= reqIndex), so adjustment
+			// is always 0 — preserving current FCFS behavior exactly.
+			//
+			// Divergence from vLLM: vLLM's req_index -= 1 is conditional on
+			// preempted_req in scheduled_running_reqs. BLIS fires unconditionally
+			// for any victim below reqIndex. This is correct because BLIS's Phase 1
+			// loop can leave a MaxModelLen-capped request (decodeTokens=0) in the
+			// batch below reqIndex without calling preemptForTokens. In vLLM, all
+			// skip paths (lines 743/759/808) increment req_index before continue,
+			// so unscheduled requests are never below req_index when preemption fires.
+			if victimIdx < reqIndex-adjustment {
+				adjustment++
+			}
+
+			result.Preempted = append(result.Preempted, PreemptedRequest{
+				Request: preemptedRequest,
+			})
+
+			// Restore token budget if preempted request was already scheduled
+			// in this step (visited earlier in Phase 1, NumNewTokens > 0).
+			// Reachable in priority mode when victim was at index < reqIndex
+			// (already visited and allocated tokens this step).
+			// With FCFS (tail-only eviction), unreachable because evicted
+			// requests are always unvisited (beyond reqIndex).
+			if preemptedRequest.NumNewTokens > 0 {
+				*tokenBudget += int64(preemptedRequest.NumNewTokens)
+				preemptedRequest.NumNewTokens = 0
+			}
+
+			// INV-2 (request lifecycle): preemption is the only place a request moves
+			// BACKWARD, running -> queued, and it is a full reset — progress, ITL, and
+			// TTFT return to their pre-prefill state. INV-2's statement enumerates only
+			// the forward queued -> running -> completed path, so this edge is code
+			// truth the statement does not yet name.
+			preemptedRequest.State = StateQueued
+			preemptedRequest.ProgressIndex = 0
+			preemptedRequest.ITL = nil
+			preemptedRequest.specDecodeCarry = 0 // reset spec-decode carry with progress; re-prefill starts a fresh decode phase (#1528)
+			preemptedRequest.TTFTSet = false     // lets the !TTFTSet guard in executeBatchStep fire on re-prefill, updating FirstTokenTime (#1122)
+			ctx.KVCache.ReleaseKVBlocks(preemptedRequest)
+			delete(ctx.ComputedTokens, preemptedRequest.ID)
+			ctx.WaitQ.PrependFront(preemptedRequest)
+
+			if preemptedRequest == req {
+				return false, adjustment
+			}
+		} else {
+			return true, adjustment
+		}
+	}
+}
+
+// selectPriorityVictim returns the index of the least-urgent running request.
+// Least urgent = highest Request.Priority value (vLLM convention: lower = more urgent).
+// Ties broken by latest ArrivalTime (most recently arrived evicted first, least KV investment).
+//
+// Directly mirrors vLLM scheduler.py:1086-1089:
+//
+//	preempted_req = max(self.running, key=lambda r: (r.priority, r.arrival_time))
+//
+// Priority is set at instance entry by the pre-processor (EnqueueRequest/EnqueueDecodeSubRequest)
+// via SLOPriorityMap.InvertForVLLM — not read from SLOClass here.
+func (v *VLLMBatchFormation) selectPriorityVictim(requests []*Request) int {
+	victimIdx := len(requests) - 1
+	victimPri := requests[victimIdx].Priority
+	victimArrival := requests[victimIdx].ArrivalTime
+
+	for i := len(requests) - 2; i >= 0; i-- {
+		pri := requests[i].Priority
+		if pri > victimPri || (pri == victimPri && requests[i].ArrivalTime > victimArrival) {
+			victimIdx = i
+			victimPri = pri
+			victimArrival = requests[i].ArrivalTime
+		}
+	}
+	return victimIdx
+}
+
+// NewBatchFormation creates the default BatchFormation.
+// preemptionPolicy selects victim strategy: "fcfs" (tail-of-batch) or "priority" (least-urgent SLO tier).
+// In "priority" mode, victim selection reads Request.Priority directly (set by the pre-processor
+// in Simulator.EnqueueRequest via SLOPriorityMap.InvertForVLLM — no sloMap needed here).
+func NewBatchFormation(preemptionPolicy string) BatchFormation {
+	policy := PreemptionPolicy(preemptionPolicy)
+	if policy == "" {
+		policy = PreemptionFCFS
+	}
+	return &VLLMBatchFormation{
+		preemptionPolicy: policy,
+	}
+}

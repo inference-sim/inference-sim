@@ -1,0 +1,699 @@
+package sim
+
+import (
+	"fmt"
+	"math"
+)
+
+// KVCacheConfig groups KV cache parameters for KV store construction.
+type KVCacheConfig struct {
+	TotalKVBlocks         int64   // GPU tier capacity in blocks (must be > 0)
+	BlockSizeTokens       int64   // tokens per block (must be > 0)
+	KVCPUBlocks           int64   // CPU tier capacity (0 = single-tier, default)
+	KVOffloadThreshold    float64 // DEPRECATED: Ignored in vLLM v1 mirror model. Was: GPU utilization threshold for offload. (CLI default: 0.9, zero-value: 0)
+	KVTransferBandwidth   float64 // blocks/tick transfer rate (CLI default: 100.0, zero-value: 0)
+	KVTransferBaseLatency int64   // fixed cost per transfer (ticks, default 0)
+	// Offload captures vLLM's multi-tier KV-offload config surface (H5, #1587). Its
+	// zero value is inert (Enabled=false) and unread by sim/kv in this PR (INV-6);
+	// it is set only via the WithKVOffload option. Kept as a nested sub-config value
+	// rather than more positional constructor args (R16, R4).
+	Offload KVOffloadConfig
+}
+
+// KVCacheOption is a functional option applied inside NewKVCacheConfig. It lets the
+// constructor accept the nested KVOffloadConfig value without a 7th positional
+// parameter (which would break every existing call site) while keeping the single
+// struct-literal construction site intact (R4).
+type KVCacheOption func(*KVCacheConfig)
+
+// WithKVOffload sets the KVOffloadConfig sub-config. Absent (no option passed) ⇒ the
+// offload subsystem is inert and output is byte-identical to a build without the
+// feature (BC-G5).
+func WithKVOffload(o KVOffloadConfig) KVCacheOption {
+	return func(c *KVCacheConfig) { c.Offload = o }
+}
+
+// NewKVCacheConfig creates a KVCacheConfig with all fields explicitly set.
+// This is the canonical constructor — all construction sites must use it (R4).
+// Parameter order matches struct field order. Optional KVCacheOptions (e.g.
+// WithKVOffload) set nested sub-configs; existing call sites pass none and get the
+// inert zero-value Offload.
+func NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks int64,
+	kvOffloadThreshold, kvTransferBandwidth float64,
+	kvTransferBaseLatency int64, opts ...KVCacheOption) KVCacheConfig {
+	if totalKVBlocks <= 0 {
+		panic(fmt.Sprintf("NewKVCacheConfig: TotalKVBlocks must be > 0, got %d", totalKVBlocks))
+	}
+	if blockSizeTokens <= 0 {
+		panic(fmt.Sprintf("NewKVCacheConfig: BlockSizeTokens must be > 0, got %d", blockSizeTokens))
+	}
+	if kvCPUBlocks < 0 {
+		panic(fmt.Sprintf("NewKVCacheConfig: KVCPUBlocks must be >= 0, got %d", kvCPUBlocks))
+	}
+	if kvCPUBlocks > 0 {
+		// Note: KVOffloadThreshold is NOT validated here — it is deprecated and
+		// ignored in the vLLM v1 mirror model. NewKVStore validates it for legacy
+		// reasons, but the constructor should not tighten a deprecated contract.
+		if kvTransferBandwidth <= 0 || math.IsNaN(kvTransferBandwidth) || math.IsInf(kvTransferBandwidth, 0) {
+			panic(fmt.Sprintf("NewKVCacheConfig: KVTransferBandwidth must be finite and > 0 when KVCPUBlocks > 0, got %v", kvTransferBandwidth))
+		}
+		if kvTransferBaseLatency < 0 {
+			panic(fmt.Sprintf("NewKVCacheConfig: KVTransferBaseLatency must be >= 0 when KVCPUBlocks > 0, got %d", kvTransferBaseLatency))
+		}
+	}
+	cfg := KVCacheConfig{
+		TotalKVBlocks:         totalKVBlocks,
+		BlockSizeTokens:       blockSizeTokens,
+		KVCPUBlocks:           kvCPUBlocks,
+		KVOffloadThreshold:    kvOffloadThreshold,
+		KVTransferBandwidth:   kvTransferBandwidth,
+		KVTransferBaseLatency: kvTransferBaseLatency,
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	// Factory validation (R3): an enabled offload sub-config must be self-consistent.
+	// The CLI resolver validates and logrus.Fatalf's before reaching here, so this is
+	// defense-in-depth for other callers (tests, future code). Panic matches this
+	// constructor's existing panic-on-invalid contract.
+	if err := cfg.Offload.Validate(); err != nil {
+		panic(fmt.Sprintf("NewKVCacheConfig: invalid offload config: %v", err))
+	}
+	return cfg
+}
+
+// BatchConfig groups batch formation parameters.
+type BatchConfig struct {
+	MaxNumSeqs                int64 // max requests in RunningBatch (vLLM: --max-num-seqs)
+	MaxNumBatchedTokens       int64 // max total new tokens across all requests in RunningBatch (vLLM: --max-num-batched-tokens)
+	LongPrefillTokenThreshold int64 // threshold for long prefill chunking
+}
+
+// NewBatchConfig creates a BatchConfig with all fields explicitly set.
+// This is the canonical constructor — all construction sites must use it (R4).
+// Panics on invalid values: MaxNumSeqs and MaxNumBatchedTokens must be > 0,
+// LongPrefillTokenThreshold must be >= 0 (0 means disabled).
+func NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold int64) BatchConfig {
+	if maxNumSeqs <= 0 {
+		panic(fmt.Sprintf("NewBatchConfig: MaxNumSeqs must be > 0, got %d", maxNumSeqs))
+	}
+	if maxNumBatchedTokens <= 0 {
+		panic(fmt.Sprintf("NewBatchConfig: MaxNumBatchedTokens must be > 0, got %d", maxNumBatchedTokens))
+	}
+	if longPrefillTokenThreshold < 0 {
+		panic(fmt.Sprintf("NewBatchConfig: LongPrefillTokenThreshold must be >= 0, got %d", longPrefillTokenThreshold))
+	}
+	return BatchConfig{
+		MaxNumSeqs:                maxNumSeqs,
+		MaxNumBatchedTokens:       maxNumBatchedTokens,
+		LongPrefillTokenThreshold: longPrefillTokenThreshold,
+	}
+}
+
+// MaxSpeculativeTokens bounds SpeculativeConfig.K so verify width (K+1) and the
+// mean tokens/step (1+α·K) stay well within int/int64 range and can never produce an
+// int overflow or an undefined int64(float64) conversion (#1528). 1024 is far above
+// any real spec-decode config (vLLM's num_speculative_tokens is single digits;
+// GLM-5.2 MTP is 5) while leaving a wide safety margin.
+const MaxSpeculativeTokens = 1024
+
+// isValidSpeculativeMethod reports whether label is an accepted --speculative-method
+// value. The label does not change the step-time math in the current model
+// (throughput and verify-width cost are driven by K and α); it is informational
+// provenance and the extension point for future per-method behavior. Implemented as
+// a function over a switch (not a package-level map) so there is no shared mutable
+// state (R8).
+//
+// These are BLIS labels, not verbatim vLLM method strings. "mtp", "eagle", "medusa",
+// and "ngram" match vLLM's SpeculativeMethod literals exactly; "draft" is a BLIS
+// shorthand for vLLM's "draft_model". Since the label is pure provenance today, the
+// abbreviation is harmless — but this is the spot to reconcile names if a future
+// per-method cost model needs to key off the exact vLLM string.
+func isValidSpeculativeMethod(label string) bool {
+	switch label {
+	case "mtp", "eagle", "medusa", "ngram", "draft":
+		return true
+	default:
+		return false
+	}
+}
+
+// SpeculativeConfig groups speculative-decoding / Multi-Token-Prediction (MTP)
+// parameters (#1528). It is a MODEL-LEVEL attribute (one speculative config per
+// served model), not per-request. Its zero value (K=0) is inert: the feature is off
+// and simulator output is byte-identical to a pre-feature build (INV-6).
+//
+// Model: a decode step verifies K draft tokens plus 1 always-generated bonus token
+// in a single target forward pass. Two decoupled quantities follow:
+//   - VerifyWidth() = K+1 positions processed per forward pass — drives the per-step
+//     COST (verifying drafts is not free).
+//   - EffectiveTokensPerStep() = 1 + α·K mean accepted tokens — drives sequence
+//     PROGRESS (throughput). Modeled as a deterministic mean (no per-step RNG), so
+//     determinism (INV-6) holds and metrics are expectations.
+type SpeculativeConfig struct {
+	K          int     // num_speculative_tokens: draft tokens proposed per decode step. 0 = off.
+	Acceptance float64 // α: mean fraction of the K drafts accepted, in [0,1]. Read only when K>0.
+	Method     string  // informational label: "mtp","eagle","medusa","ngram","draft". "" when off.
+}
+
+// NewSpeculativeConfig is the canonical constructor (R4). Returns the config and a
+// validation error; CLI callers Fatalf on error, library callers propagate it. The
+// "α must be supplied explicitly when K>0" rule is a CLI concern (it needs
+// cmd.Flags().Changed) enforced at flag resolution, NOT here — a library caller
+// passing (K=5, α=0) legitimately means "0% acceptance".
+func NewSpeculativeConfig(k int, acceptance float64, method string) (SpeculativeConfig, error) {
+	c := SpeculativeConfig{K: k, Acceptance: acceptance, Method: method}
+	return c, c.Validate()
+}
+
+// Validate enforces the SpeculativeConfig constraints (R1, R3, R20).
+func (c SpeculativeConfig) Validate() error {
+	if c.K < 0 {
+		return fmt.Errorf("speculative: num-speculative-tokens must be >= 0, got %d", c.K)
+	}
+	if c.K > MaxSpeculativeTokens {
+		return fmt.Errorf("speculative: num-speculative-tokens must be <= %d, got %d", MaxSpeculativeTokens, c.K)
+	}
+	if math.IsNaN(c.Acceptance) || math.IsInf(c.Acceptance, 0) {
+		return fmt.Errorf("speculative: acceptance-rate must be finite, got %v", c.Acceptance)
+	}
+	if c.Acceptance < 0 || c.Acceptance > 1 {
+		return fmt.Errorf("speculative: acceptance-rate must be in [0,1], got %v", c.Acceptance)
+	}
+	if c.K == 0 {
+		// Feature off: reject dangling knobs rather than silently ignore them (R1).
+		if c.Acceptance != 0 {
+			return fmt.Errorf("speculative: acceptance-rate set (%v) but num-speculative-tokens is 0", c.Acceptance)
+		}
+		if c.Method != "" {
+			return fmt.Errorf("speculative: method %q set but num-speculative-tokens is 0", c.Method)
+		}
+		return nil
+	}
+	if c.Method != "" {
+		if !isValidSpeculativeMethod(c.Method) {
+			return fmt.Errorf("speculative: unknown method %q (valid: mtp, eagle, medusa, ngram, draft)", c.Method)
+		}
+	}
+	return nil
+}
+
+// IsEnabled reports whether speculative decoding is active (K>0).
+func (c SpeculativeConfig) IsEnabled() bool { return c.K > 0 }
+
+// EffectiveTokensPerStep is the mean accepted tokens per decode step: 1 + α·K.
+// Returns 1.0 when off (K=0), so the fractional carry advances exactly one token.
+func (c SpeculativeConfig) EffectiveTokensPerStep() float64 {
+	return 1.0 + c.Acceptance*float64(c.K)
+}
+
+// VerifyWidth is the number of token positions the target processes per decode
+// forward pass: K+1 (K drafts + 1 bonus). Returns 1 when off.
+func (c SpeculativeConfig) VerifyWidth() int {
+	return c.K + 1
+}
+
+// LatencyCoeffs groups regression coefficients for the latency model.
+type LatencyCoeffs struct {
+	BetaCoeffs  []float64 // regression coefficients for step time (≥3 elements required)
+	AlphaCoeffs []float64 // regression coefficients for queueing time (≥3 elements required)
+}
+
+// NewLatencyCoeffs creates a LatencyCoeffs with all fields explicitly set.
+// This is the canonical constructor — all construction sites must use it (R4).
+func NewLatencyCoeffs(betaCoeffs, alphaCoeffs []float64) LatencyCoeffs {
+	return LatencyCoeffs{
+		BetaCoeffs:  betaCoeffs,
+		AlphaCoeffs: alphaCoeffs,
+	}
+}
+
+// ModelHardwareConfig groups model identity and hardware specification.
+type ModelHardwareConfig struct {
+	ModelConfig ModelConfig   // HuggingFace model parameters (for roofline and trained-physics modes)
+	HWConfig    HardwareCalib // GPU specifications (for roofline and trained-physics modes)
+	Model       string        // model name (e.g., "meta-llama/llama-3.1-8b-instruct")
+	GPU         string        // GPU type (e.g., "H100")
+	TP          int           // tensor parallelism degree
+
+	// DP is the data-parallel degree (default 1). DP > 1 is only meaningful for
+	// MoE models — vLLM treats non-MoE DP as N independent engines, which BLIS
+	// already expresses via the router-replica mechanism — and only affects the
+	// trained-physics latency backend.
+	DP int
+	// EnableExpertParallel mirrors vLLM --enable-expert-parallel. When true (and
+	// the model is MoE), the flattened TP·DP MoE group is used as the
+	// expert-parallel group. Only affects the trained-physics latency backend.
+	EnableExpertParallel bool
+
+	// EPGroupDP is the data-parallel WIDTH of the expert-parallel group, for a config
+	// whose own DP has been rewritten to 1 by DP-as-real-placement (#1531/#1556). 0 (the
+	// default) means "use this config's own DP", which is every configuration that
+	// existed before #1548 — so the zero value is inert.
+	//
+	// It exists because the EP group is a LOGICAL topology fact that survives placement:
+	// `--tp 8 --dp 2 --enable-expert-parallel` is ONE 16-GPU expert-parallel group, but
+	// DP-as-placement expresses it as 2 engine replicas each configured DP=1. A
+	// config-bound EP size read off such a replica collapses to TP and silently no-ops
+	// the sharding (the exact trap #1656 documents on the KV-capacity side).
+	//
+	// It carries the DP WIDTH rather than an absolute group size on purpose: PD
+	// disaggregation can override a pool's TP (cluster.ResolvePoolConfig), and an absolute
+	// group size stamped from the global TP would then contradict the pool's own TP. A
+	// width composes — the pool's group is poolTP·EPGroupDP.
+	//
+	// Supplied via WithExpertParallelGroupDP. Only meaningful for an MoE model with
+	// expert parallelism enabled; EffectiveEP ignores it otherwise.
+	EPGroupDP int
+
+	// MoECommBackend mirrors vLLM VLLM_ALL2ALL_BACKEND. It selects the MoE
+	// dispatch/combine communication cost model used by the trained-physics
+	// backend when DP > 1. Empty string resolves to the vLLM default
+	// (allgather_reducescatter) at the latency-model factory. Only meaningful for
+	// MoE models on the trained-physics backend.
+	MoECommBackend string
+
+	Backend     string // latency model backend: "" or "roofline" (default), "trained-physics"
+	MaxModelLen int64  // max total sequence length (input + output); 0 = unlimited (mirrors vLLM --max-model-len)
+
+	// NetworkTopology is the placement-derived inter-node interconnect topology
+	// (#1530): the size of the node(s) this instance was actually placed on. It sits
+	// here, alongside TP/DP/EnableExpertParallel/MoECommBackend, because it is a
+	// latency-model input like them — the trained-physics backend uses it to decide
+	// whether a collective crosses a node boundary and must therefore be charged at
+	// the (slower) inter-node fabric bandwidth.
+	//
+	// In production this is written by sim/cluster's placement sites, which stamp it
+	// onto an already-built per-instance config (the same way they stamp the placed GPU
+	// type and KV capacity) — placement is only known after the config exists. The
+	// WithNetworkTopology option supplies it at construction instead, for tests and for
+	// standalone callers; it mirrors how WithKVOffload extends NewKVCacheConfig and is
+	// what the Validate() guard below covers. Its zero value is inert: no node-pool
+	// placement means no cross-node collective, so step time is byte-identical to a
+	// pre-#1530 build (INV-6/INV-BC-DP1).
+	NetworkTopology NetworkTopology
+
+	// CommSerializationFactor is S, the eager/no-overlap serialization multiplier on the
+	// size-independent cross-node collective latency term (#1694, Part B). It captures a
+	// DEPLOYMENT REGIME, not a fabric property: a deployment running CUDA graphs with
+	// comm/compute overlap hides most of each collective's launch+sync cost (S≈1), while
+	// one running enforce-eager + un-fused + no overlap serializes every collective behind
+	// a full barrier (S≫1). It sits here, beside TP/DP/MoECommBackend/NetworkTopology,
+	// because it is a latency-model input like them (R16).
+	//
+	// It multiplies ONLY the cross-node latency term (n_steps·α_hop), never the bandwidth
+	// halves and never the whole step. It is deliberately kept SEPARATE from the per-fabric
+	// α_hop (HardwareCalib.InterNodeHopLatencyUs): folding S into α_hop would make a
+	// graphs-ON deployment inherit a graphs-OFF fabric constant (#1694). Its zero value —
+	// and any value ≤ 1 — is inert: EffectiveCommSerializationFactor clamps to 1.0, so
+	// output is byte-identical to a pre-#1694 build (INV-6/INV-BC-DP1). It is a global,
+	// per-run choice (safe to stamp on every DP replica), supplied via
+	// WithCommSerializationFactor and re-supplied identically on run and replay rather than
+	// round-tripped through the trace header (INV-13, like --kv-cache-dtype).
+	CommSerializationFactor float64
+}
+
+// ModelHardwareOption customizes a ModelHardwareConfig at construction. Used to add
+// optional inputs without churning NewModelHardwareConfig's ~200 call sites (R4),
+// the same pattern KVCacheOption uses for NewKVCacheConfig.
+type ModelHardwareOption func(*ModelHardwareConfig)
+
+// WithNetworkTopology supplies the placement-derived inter-node interconnect topology
+// (#1530) at construction. Omitting it leaves the topology unknown, which makes every
+// cross-node cost inert (INV-6).
+//
+// The production path does NOT use this option: placement is not known until after the
+// config is built, so sim/cluster stamps the field directly on the per-instance copy.
+// The option serves tests and standalone construction, and is the path the constructor's
+// Validate() guard protects. Either way the value must come from real placement — it is
+// a placement fact, never a user-declared knob.
+func WithNetworkTopology(topo NetworkTopology) ModelHardwareOption {
+	return func(c *ModelHardwareConfig) { c.NetworkTopology = topo }
+}
+
+// WithExpertParallelGroupDP supplies the data-parallel width of the expert-parallel group
+// (#1548) for a per-replica config whose own DP was rewritten to 1 by DP-as-real-placement.
+// Omitting it leaves EPGroupDP at 0, which means "use this config's own DP" — the
+// pre-#1548 behaviour, so every existing configuration is byte-identical (INV-6).
+//
+// Pass the LOGICAL, user-requested --dp. A value at or below the config's own DP is
+// absorbed by EffectiveEPGroupDP's max, so it can never SHRINK a group.
+func WithExpertParallelGroupDP(dp int) ModelHardwareOption {
+	return func(c *ModelHardwareConfig) { c.EPGroupDP = dp }
+}
+
+// WithCommSerializationFactor supplies S, the eager/no-overlap serialization multiplier
+// on the cross-node collective latency term (#1694, Part B). Omitting it leaves S at 0,
+// which EffectiveCommSerializationFactor treats as 1.0 (inert) — so every existing
+// configuration is byte-identical (INV-6). Pass the deployment's calibrated factor
+// (≥ 1); a value ≤ 1 is clamped to 1.0 (S must never make a spanning step cheaper).
+func WithCommSerializationFactor(s float64) ModelHardwareOption {
+	return func(c *ModelHardwareConfig) { c.CommSerializationFactor = s }
+}
+
+// NewModelHardwareConfig creates a ModelHardwareConfig with all fields explicitly set.
+// This is the canonical constructor — all construction sites must use it (R4).
+// Parameter order matches struct field order.
+//
+// Validation (library boundary → panic): MaxModelLen must be >= 0; DP must be >= 1;
+// DP > 1 is rejected for dense models (NumLocalExperts <= 1) because dense data
+// parallelism is the router-replica mechanism, not a latency divisor. DP > 1 is
+// allowed for MoE models with either EnableExpertParallel setting.
+//
+// TP is intentionally NOT validated here: TP=0 is a meaningful "invalid config"
+// vehicle that the latency-model factory (NewLatencyModel → trained-physics/roofline)
+// rejects with an error, and several tests rely on that factory-validation seam.
+// Every consumer of the TP-based helpers (EffectiveMoEGroupSize/EffectiveEP) goes
+// through NewLatencyModel, so a zero-TP divisor cannot reach latency math.
+func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
+	model, gpu string, tp, dp int, enableExpertParallel bool,
+	moeCommBackend, backend string, maxModelLen int64,
+	opts ...ModelHardwareOption) ModelHardwareConfig {
+	if maxModelLen < 0 {
+		panic(fmt.Sprintf("NewModelHardwareConfig: MaxModelLen must be >= 0, got %d", maxModelLen))
+	}
+	if dp < 1 {
+		panic(fmt.Sprintf("NewModelHardwareConfig: DP must be >= 1, got %d", dp))
+	}
+	if dp > 1 && !modelConfig.IsMoE() {
+		panic(fmt.Sprintf("NewModelHardwareConfig: DP > 1 is only supported for MoE models "+
+			"(NumLocalExperts >= %d), got DP=%d with NumLocalExperts=%d. Dense data parallelism "+
+			"is expressed via router replicas, not the latency model.", MoEMinExperts, dp, modelConfig.NumLocalExperts))
+	}
+	c := ModelHardwareConfig{
+		ModelConfig:          modelConfig,
+		HWConfig:             hwConfig,
+		Model:                model,
+		GPU:                  gpu,
+		TP:                   tp,
+		DP:                   dp,
+		EnableExpertParallel: enableExpertParallel,
+		MoECommBackend:       moeCommBackend,
+		Backend:              backend,
+		MaxModelLen:          maxModelLen,
+	}
+	for _, opt := range opts {
+		opt(&c)
+	}
+	// Options can carry a hand-built value, so validate what they applied. The
+	// canonical NewNetworkTopology already normalizes a negative node size, so this
+	// only catches a struct literal built directly (which R4 discourages) — but a
+	// negative node size would make a collective's node span meaningless.
+	if err := c.NetworkTopology.validate(); err != nil {
+		panic(fmt.Sprintf("NewModelHardwareConfig: %v", err))
+	}
+	return c
+}
+
+// isMoE reports whether the model is a mixture-of-experts model. It delegates to
+// the canonical predicate ModelConfig.IsMoE (threshold MoEMinExperts); see that
+// constant for the rationale and the documented vLLM divergence.
+func (c ModelHardwareConfig) isMoE() bool {
+	return c.ModelConfig.IsMoE()
+}
+
+// EffectiveDP returns the data-parallel degree, clamped to a minimum of 1. The
+// canonical constructor already rejects DP < 1, so this clamp only guards a
+// zero-valued struct built directly (bypassing NewModelHardwareConfig, which R4
+// discourages) — there it treats an unset DP as a single rank.
+func (c ModelHardwareConfig) EffectiveDP() int {
+	if c.DP < 1 {
+		return 1
+	}
+	return c.DP
+}
+
+// EffectiveCommSerializationFactor returns S, the cross-node latency serialization
+// multiplier (#1694, Part B), clamped so it can only ever RAISE the charged latency.
+// Returns exactly 1.0 (inert — byte-identical to a pre-#1694 build, INV-6) when the
+// factor is unset, ≤ 1, or non-finite (NaN/Inf); otherwise the calibrated value. The
+// CLI is the loud validation boundary (a value < 1 is rejected there, R3); this clamp
+// is the library-side R20 degrade-to-baseline guard for a struct built directly.
+func (c ModelHardwareConfig) EffectiveCommSerializationFactor() float64 {
+	if c.CommSerializationFactor <= 1.0 || math.IsNaN(c.CommSerializationFactor) || math.IsInf(c.CommSerializationFactor, 0) {
+		return 1.0
+	}
+	return c.CommSerializationFactor
+}
+
+// EffectiveMoEGroupSize returns the size of the flattened MoE tensor-parallel
+// group. For MoE models this is TP·DP (mirroring vLLM's flattened dp·pcp·tp MoE
+// group; PCP is not modeled here and is assumed 1), used by both the EP-off and
+// EP-on MoE paths. For dense models it is just TP.
+//
+// This is the sharding divisor for routed-expert COMPUTE. Since #1548 it is no longer
+// also the divisor for routed-expert WEIGHTS: see EffectiveExpertShardGroupSize for why
+// the two separate under expert parallelism (compute is EP-mode-invariant, weights are
+// not). The two are equal for every configuration that existed before #1548.
+func (c ModelHardwareConfig) EffectiveMoEGroupSize() int {
+	if c.isMoE() {
+		return c.TP * c.EffectiveDP()
+	}
+	return c.TP
+}
+
+// EffectiveEPSize is the canonical expert-parallel group-size formula: TP·DP when
+// expert parallelism is enabled for an MoE model (mirroring vLLM, where
+// --enable-expert-parallel makes ep_size = dp_size·tp_size), else 1 meaning "EP off"
+// — routed experts are then replicated per DP rank and tensor-sharded across the TP
+// group. It is an EP-mode predicate/size only: it is NOT the EP-off sharding divisor
+// (that is EffectiveMoEGroupSize).
+//
+// It is a free function, not only the ModelHardwareConfig accessor below, because the
+// consumers that need the LOGICAL (user-requested) group size — the CLI KV-capacity
+// auto-calculation paths (#1656), which hold the raw --tp / --dp /
+// --enable-expert-parallel values — cannot read it off a per-instance config:
+// DP-as-placement (#1531) reconfigures each engine replica to DP=1, so a config-bound
+// EP collapses to TP and any EP-dependent sizing would silently no-op for exactly the
+// TP×DP topology that needs it. Pure (no receiver state), so both the logical and the
+// config-bound value are computed by one formula (R23).
+//
+// dp is clamped at 1 (an unset/zero DP is a single rank). tp is NOT clamped: TP=0 is a
+// meaningful "invalid config" vehicle rejected downstream by the latency-model factory
+// and by CalculateKVBlocks (see NewModelHardwareConfig), and returning 0 there keeps
+// this a pure formula rather than a second validation site.
+func EffectiveEPSize(isMoE bool, tp, dp int, enableExpertParallel bool) int {
+	if !enableExpertParallel || !isMoE {
+		return 1
+	}
+	if dp < 1 {
+		dp = 1
+	}
+	return tp * dp
+}
+
+// EffectiveEPGroupDP is the data-parallel width of the expert-parallel group: the
+// explicitly-supplied EPGroupDP when it is WIDER than this config's own DP, else the
+// config's own DP. Taking the max (rather than preferring EPGroupDP outright) means the
+// option can only ever widen a group, so a stale or too-small value cannot silently
+// shrink one — and the unset 0 falls straight through to EffectiveDP() (INV-6).
+func (c ModelHardwareConfig) EffectiveEPGroupDP() int {
+	if dp := c.EffectiveDP(); c.EPGroupDP < dp {
+		return dp
+	}
+	return c.EPGroupDP
+}
+
+// EffectiveEP is the config-bound accessor for EffectiveEPSize: the expert-parallel
+// group size implied by this config's parallelism degrees — TP·DP when EP is enabled for
+// an MoE model, else 1.
+//
+// Since #1548 the DP it uses is EffectiveEPGroupDP(), so a per-replica config produced by
+// DP-as-placement (own DP rewritten to 1) still reports the LOGICAL TP·DP group when the
+// CLI supplied WithExpertParallelGroupDP. With the option absent this is exactly
+// EffectiveDP(), i.e. the pre-#1548 value.
+func (c ModelHardwareConfig) EffectiveEP() int {
+	return EffectiveEPSize(c.isMoE(), c.TP, c.EffectiveEPGroupDP(), c.EnableExpertParallel)
+}
+
+// EffectiveExpertShardGroupSize is the group the routed (FusedMoE) expert WEIGHTS are
+// sharded over — the divisor behind "how many full-expert-equivalents does one GPU hold".
+// It is deliberately distinct from EffectiveMoEGroupSize, which is the group that shares
+// the routed-expert COMPUTE:
+//
+//   - COMPUTE is EP-mode-invariant. With EP on, G GPUs jointly process the whole group's
+//     tokens (n_dp · T_local of them) over G ranks ⇒ T_local·k/TP per GPU — the same value
+//     EP-off gets from tensor-sharding the FFN width by TP. EP re-organises expert
+//     OWNERSHIP, not FLOPs. (That step assumes the DP ranks are in lockstep, which vLLM
+//     enforces with dummy batches. BLIS runs the replicas as independent instances, so the
+//     charge is exact at the saturation operating point this model targets and pessimistic
+//     below it — the same assumption the other MoE terms already make.)
+//   - WEIGHTS are not. EP-off holds all num_experts at 1/TP of their width (num_experts/TP
+//     full-expert-equivalents); EP-on holds num_experts/EP WHOLE experts. At EP > TP (i.e.
+//     DP > 1) that is a genuine per-GPU reduction, and it is the reason expert parallelism
+//     exists.
+//
+// Returns EffectiveEP() when expert parallelism is really in force (> 1), else
+// EffectiveMoEGroupSize(). Those two coincide for every pre-#1548 configuration — EP-off
+// gives 1 and falls through; EP-on at this config's own DP gives TP·DP, which IS
+// EffectiveMoEGroupSize — so the value only diverges for a DP-as-placement replica
+// carrying EPGroupDP (INV-6).
+//
+// This mirrors the KV-capacity side, where #1656 already charges routed-expert weights
+// against sim.EffectiveEPSize(...). Step-time and capacity therefore agree on the
+// footprint of the same experts.
+func (c ModelHardwareConfig) EffectiveExpertShardGroupSize() int {
+	if ep := c.EffectiveEP(); ep > 1 {
+		return ep
+	}
+	return c.EffectiveMoEGroupSize()
+}
+
+// PolicyConfig groups scheduling and preemption policy selection.
+type PolicyConfig struct {
+	Scheduler        string // "fcfs" (default), "priority-fcfs", "sjf", "reverse-priority"
+	PreemptionPolicy string // "fcfs" (default) or "priority"
+}
+
+// NewPolicyConfig creates a PolicyConfig with all fields explicitly set.
+// This is the canonical constructor — all construction sites must use it (R4).
+func NewPolicyConfig(scheduler, preemptionPolicy string) PolicyConfig {
+	return PolicyConfig{
+		Scheduler:        scheduler,
+		PreemptionPolicy: preemptionPolicy,
+	}
+}
+
+// AdapterSpec declares one LoRA adapter in the pre-declared registry
+// (contracts/config-schema.md, data-model.md "Adapter"). Rank is the single source
+// of truth for both cold-load latency and HBM footprint. BaseModel is optional: when
+// set it names the base model the adapter attaches to and workload references are
+// checked against it; when empty, base-model matching is skipped (permissive).
+type AdapterSpec struct {
+	ID        string `yaml:"id"`
+	Rank      int    `yaml:"rank"`
+	BaseModel string `yaml:"base_model,omitempty"`
+}
+
+// StepOverheadTier holds the per-rank-tier compute-overhead coefficients (DT Eq.1:
+// K6·A + K7, fitted per rank). K7 is the per-tier normalization denominator (> 0);
+// K6 is the linear coefficient in active-batch adapter count (>= 0). Consumed by the
+// per-step compute-overhead factor in a later PR; validated here so the config is
+// well-formed at declaration time. Pointer fields (R9): a zero K6 is a meaningful
+// user value (no overhead for that tier), distinct from an omitted coefficient.
+type StepOverheadTier struct {
+	K6 *float64 `yaml:"k6"`
+	K7 *float64 `yaml:"k7"`
+}
+
+// LoRAConfig is the module-scoped sub-config for the LoRA control-plane subsystem
+// (R16; contracts/config-schema.md). It is the 7th SimConfig sub-config. Every field
+// is optional and the zero value is inert: with no adapters declared and no capacity
+// set, the subsystem is a no-op and output is byte-identical to a pre-feature build
+// (INV-6, SC-001).
+//
+// Pointer types are used where zero is a meaningful user value (R9): AdapterCapacity
+// of 0 means "adapters forbidden" (distinct from unset/inert), and the cost
+// coefficients distinguish an explicit 0 from an unset default supplied by
+// defaults.yaml.
+type LoRAConfig struct {
+	// AdapterCapacity is the per-instance resident adapter slot count. nil/absent =>
+	// subsystem inert (no-op default). A pointer to 0 with adapters declared is a
+	// configuration error (adapters forbidden). Consumed by the resident set (PR2).
+	AdapterCapacity *int `yaml:"adapter_capacity,omitempty"`
+
+	// Cold-load cost shape (deltas onto the calibrated base). Consumed by PR3.
+	LoadBaseLatencyUs    *float64 `yaml:"load_base_latency_us,omitempty"`    // >= 0
+	LoadBandwidthBytesUs *float64 `yaml:"load_bandwidth_bytes_us,omitempty"` // > 0 (R11 divisor guard)
+
+	// StepOverheadTiers maps adapter rank -> compute-overhead coefficients. Config-file
+	// only (a scalar flag cannot express a per-rank map). Consumed by PR4.
+	StepOverheadTiers map[int]StepOverheadTier `yaml:"step_overhead_tiers,omitempty"`
+
+	// FootprintBytesPerRank derives per-adapter HBM footprint (linear first-cut).
+	// Consumed by PR5.
+	FootprintBytesPerRank *float64 `yaml:"footprint_bytes_per_rank,omitempty"` // > 0
+
+	// Adapters is the pre-declared registry (id -> rank[, base model]). Empty => inert.
+	Adapters []AdapterSpec `yaml:"adapters,omitempty"`
+}
+
+// HasAdapters reports whether any adapter is declared. When false the subsystem is
+// inert regardless of the other fields (INV-6 no-op default).
+func (c LoRAConfig) HasAdapters() bool {
+	return len(c.Adapters) > 0
+}
+
+// Validate checks the LoRAConfig for internal consistency (R3 numeric guards, R11
+// divisor guard). It is a pure query — the library boundary returns an error and the
+// caller decides fatality (cmd/ -> logrus.Fatalf; sim/ factory -> panic). An empty
+// config is valid and inert (INV-6).
+//
+// Note: cross-validation of workload adapter references against this registry
+// (every referenced id must resolve, base model must match) lives in the workload
+// layer where the registry meets the client/cohort model — see
+// sim/workload.ValidateAdapterReferences.
+func (c LoRAConfig) Validate() error {
+	// Capacity: a pointer to a non-positive value is only an error when adapters are
+	// actually declared (adapters present but zero/negative slots is unservable).
+	if c.HasAdapters() && c.AdapterCapacity != nil && *c.AdapterCapacity <= 0 {
+		return fmt.Errorf("LoRAConfig: adapter_capacity must be > 0 when adapters are declared, got %d", *c.AdapterCapacity)
+	}
+
+	// Adapter registry entries: unique non-empty ids, positive rank (R3).
+	seen := make(map[string]struct{}, len(c.Adapters))
+	for i, a := range c.Adapters {
+		if a.ID == "" {
+			return fmt.Errorf("LoRAConfig: adapter[%d] has empty id", i)
+		}
+		if a.Rank <= 0 {
+			return fmt.Errorf("LoRAConfig: adapter %q rank must be > 0, got %d", a.ID, a.Rank)
+		}
+		if _, dup := seen[a.ID]; dup {
+			return fmt.Errorf("LoRAConfig: duplicate adapter id %q", a.ID)
+		}
+		seen[a.ID] = struct{}{}
+	}
+
+	// Cost coefficients (validated whenever set, even absent adapters, so a malformed
+	// coefficient is caught at declaration time). Non-finite values (NaN/±Inf) slip
+	// past the ordering guards below — NaN comparisons are always false and +Inf
+	// passes > 0 — and later poison the cost model's arithmetic, so reject them (R3/R20).
+	if c.LoadBaseLatencyUs != nil && (math.IsNaN(*c.LoadBaseLatencyUs) || math.IsInf(*c.LoadBaseLatencyUs, 0) || *c.LoadBaseLatencyUs < 0) {
+		return fmt.Errorf("LoRAConfig: load_base_latency_us must be finite and >= 0, got %v", *c.LoadBaseLatencyUs)
+	}
+	if c.LoadBandwidthBytesUs != nil && (math.IsNaN(*c.LoadBandwidthBytesUs) || math.IsInf(*c.LoadBandwidthBytesUs, 0) || *c.LoadBandwidthBytesUs <= 0) {
+		return fmt.Errorf("LoRAConfig: load_bandwidth_bytes_us must be finite and > 0 (divisor guard), got %v", *c.LoadBandwidthBytesUs)
+	}
+	if c.FootprintBytesPerRank != nil && (math.IsNaN(*c.FootprintBytesPerRank) || math.IsInf(*c.FootprintBytesPerRank, 0) || *c.FootprintBytesPerRank <= 0) {
+		return fmt.Errorf("LoRAConfig: footprint_bytes_per_rank must be finite and > 0, got %v", *c.FootprintBytesPerRank)
+	}
+
+	// Step-overhead tiers: rank key > 0, K6 >= 0, K7 > 0 (divisor).
+	for rank, tier := range c.StepOverheadTiers {
+		if rank <= 0 {
+			return fmt.Errorf("LoRAConfig: step_overhead_tiers rank key must be > 0, got %d", rank)
+		}
+		if tier.K6 != nil && (math.IsNaN(*tier.K6) || math.IsInf(*tier.K6, 0) || *tier.K6 < 0) {
+			return fmt.Errorf("LoRAConfig: step_overhead_tiers[%d].k6 must be finite and >= 0, got %v", rank, *tier.K6)
+		}
+		if tier.K7 == nil || math.IsNaN(*tier.K7) || math.IsInf(*tier.K7, 0) || *tier.K7 <= 0 {
+			return fmt.Errorf("LoRAConfig: step_overhead_tiers[%d].k7 must be finite and > 0 (divisor guard)", rank)
+		}
+	}
+
+	// Cost coefficients are REQUIRED once the subsystem is active (adapters declared
+	// with a positive capacity): the cold-load gate consumes them via the cost model
+	// (#1466), and NewSimulator hard-fails without them. Require them here so the CLI
+	// catches the gap at its validation gate with a clear message rather than
+	// surfacing a confusing constructor error later. The CLI backfills these from
+	// defaults.yaml before validating (resolveLoRAConfig), so a config that reaches
+	// here still missing them declared adapters with no cost source at all. Checked
+	// last so a malformed-but-present coefficient reports its own specific error first.
+	if c.HasAdapters() && c.AdapterCapacity != nil && *c.AdapterCapacity > 0 {
+		if c.LoadBaseLatencyUs == nil || c.LoadBandwidthBytesUs == nil || c.FootprintBytesPerRank == nil {
+			return fmt.Errorf("LoRAConfig: load_base_latency_us, load_bandwidth_bytes_us, and footprint_bytes_per_rank must all be set when adapters are declared with a positive capacity")
+		}
+	}
+
+	return nil
+}
+
+// WorkloadConfig is retained as an empty struct for SimConfig embedding compatibility.
+// All workload generation now happens externally via workload.GenerateRequests().
+type WorkloadConfig struct{}
+
+// NewWorkloadConfig creates an empty WorkloadConfig.
+func NewWorkloadConfig() WorkloadConfig {
+	return WorkloadConfig{}
+}

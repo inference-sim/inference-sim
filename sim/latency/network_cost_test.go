@@ -1,0 +1,1034 @@
+// network_cost_test.go — inter-node network cost for cross-node collectives (#1530).
+//
+// The trained-physics comm bases divide byte volume by an EFFECTIVE link bandwidth:
+// the on-package bwHbmUs for a collective contained in one node, or bwHbmUs scaled
+// down by a cross-node penalty when the collective's participant group spans nodes.
+// These tests verify the penalty's algebra from first principles, its monotonicity
+// in fabric quality, its effect on StepTime through both comm legs, and — the tight
+// regression guard — that every configuration expressible before #1530 is
+// byte-identical.
+package latency
+
+import (
+	"math"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/inference-sim/inference-sim/sim"
+)
+
+// fabricHW returns a hardware calib with a calibrated interconnect: an on-node link
+// `ratio` times faster than the fabric.
+func fabricHW(ratio float64) sim.HardwareCalib {
+	hw := dpepTestHW()
+	hw.IntraNodeBwGBps = 450
+	hw.InterNodeBwGBps = 450 / ratio
+	return hw
+}
+
+// newNetModel builds a trained-physics model through NewLatencyModel (so the
+// WithNetworkTopology option path is exercised) at the given parallelism, hardware
+// and placed node size. gpusPerNode == 0 means "no node-pool placement" (inert).
+func newNetModel(t *testing.T, mc sim.ModelConfig, hw sim.HardwareCalib, tp, dp int, ep bool, backend string, gpusPerNode int) *TrainedPhysicsModel {
+	t.Helper()
+	mhw := sim.NewModelHardwareConfig(mc, hw, "m", "H100", tp, dp, ep, backend, "trained-physics", 0,
+		sim.WithNetworkTopology(sim.NewNetworkTopology(gpusPerNode)))
+	lm, err := NewLatencyModel(*testCoeffs(), mhw)
+	require.NoError(t, err)
+	m, ok := lm.(*TrainedPhysicsModel)
+	require.True(t, ok, "expected a TrainedPhysicsModel")
+	return m
+}
+
+// ─── Analytic cross-node hop count (#1694, Part A) ───────────────────────────
+
+// TestCrossNodeHopCounts_MatchAlgorithmDerivation pins the analytic hop count for
+// both collective algorithms against hand-derived values, with NO reference to any
+// InferenceX run (anti-overfitting guardrail #1: n_steps carries zero free
+// parameters). The ≥3-node cases are the load-bearing ones: a hierarchical ring does
+// 2·(nodes−1) inter-node steps and an all-to-all does (nodes−1). At a 2-node span the
+// ring value is 2, which also equals the per-layer collective-count factor of 2 that
+// multiplies α_hop elsewhere — so a 2-node test cannot tell "2 hops" from "2
+// collectives × 1 hop." Only a span of 3+ nodes makes the ring's factor of 2
+// unambiguous and distinguishes it from the all-to-all form. Testing n=3,4,8 does so.
+func TestCrossNodeHopCounts_MatchAlgorithmDerivation(t *testing.T) {
+	cases := []struct {
+		nodes       int
+		wantRing    int // 2·(nodes−1), 0 at a single node
+		wantAll2All int // (nodes−1),   0 at a single node
+	}{
+		{nodes: 0, wantRing: 0, wantAll2All: 0}, // degenerate
+		{nodes: 1, wantRing: 0, wantAll2All: 0}, // single node — no cross-node hop
+		{nodes: 2, wantRing: 2, wantAll2All: 1},
+		{nodes: 3, wantRing: 4, wantAll2All: 2}, // ≥3: ring is unambiguously 2× the all-to-all
+		{nodes: 4, wantRing: 6, wantAll2All: 3},
+		{nodes: 8, wantRing: 14, wantAll2All: 7},
+	}
+	for _, c := range cases {
+		assert.Equalf(t, c.wantRing, crossNodeRingHops(c.nodes),
+			"ring hop count at %d nodes must be 2·(nodes−1)", c.nodes)
+		assert.Equalf(t, c.wantAll2All, crossNodeAll2AllHops(c.nodes),
+			"all-to-all hop count at %d nodes must be (nodes−1)", c.nodes)
+	}
+	// The ring is exactly twice the all-to-all for every genuine span (nodes ≥ 2) —
+	// the structural relationship the two algorithms guarantee.
+	for n := 2; n <= 16; n++ {
+		assert.Equalf(t, 2*crossNodeAll2AllHops(n), crossNodeRingHops(n),
+			"ring hops must be 2× all-to-all hops at %d nodes", n)
+	}
+}
+
+// ─── The penalty algebra ────────────────────────────────────────────────────
+
+// TestSpanScale_NeutralCases verifies that the shared penalty form is exactly 1.0
+// — no penalty, and therefore a bit-for-bit unchanged divisor — for every case in
+// which nothing should be charged (BC-4, BC-8).
+func TestSpanScale_NeutralCases(t *testing.T) {
+	tests := []struct {
+		name        string
+		crossHops   int
+		totalHops   int
+		ratio       float64
+		wantExactly float64
+	}{
+		{"no cross hops", 0, 15, 9.0, 1.0},
+		{"negative cross hops", -1, 15, 9.0, 1.0},
+		{"no total hops", 1, 0, 9.0, 1.0},
+		{"negative total hops", 1, -3, 9.0, 1.0},
+		{"neutral ratio", 1, 15, 1.0, 1.0},
+		{"sub-unit ratio", 1, 15, 0.5, 1.0},
+		{"zero ratio", 1, 15, 0.0, 1.0},
+		{"NaN ratio", 1, 15, math.NaN(), 1.0},
+		{"+Inf ratio", 1, 15, math.Inf(1), 1.0},
+		{"-Inf ratio", 1, 15, math.Inf(-1), 1.0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.wantExactly, spanScale(tc.crossHops, tc.totalHops, tc.ratio))
+		})
+	}
+}
+
+// TestSpanScale_MonotoneAndBounded verifies the two properties every consumer
+// relies on: the penalty never shrinks as the fabric gets worse (BC-3), and it is
+// always at least 1 — a spanning collective is never cheaper than an intra-node one.
+func TestSpanScale_MonotoneAndBounded(t *testing.T) {
+	prev := 1.0
+	for _, ratio := range []float64{1, 1.5, 2, 4, 9, 12, 50} {
+		got := spanScale(3, 15, ratio)
+		assert.GreaterOrEqual(t, got, prev, "penalty must not shrink as the fabric worsens (ratio=%v)", ratio)
+		assert.GreaterOrEqual(t, got, 1.0, "penalty must never make spanning cheaper than not spanning")
+		prev = got
+	}
+	assert.Greater(t, prev, 1.0)
+}
+
+// TestRingSpanScale_MatchesHierarchicalDecomposition validates the closed form
+// against the physics it was derived from, rather than against a captured number.
+// A multi-node ring all-reduce is hierarchical: an intra-node reduce-scatter +
+// all-gather over the g ranks on a node (2(g-1)/g of the volume on the fast link),
+// then an inter-node all-reduce of the reduced 1/g chunk across the n nodes
+// (2(n-1)/n of that chunk on the fabric). Normalizing by the flat single-node
+// baseline 2(G-1)/G must reproduce ringSpanScale exactly.
+func TestRingSpanScale_MatchesHierarchicalDecomposition(t *testing.T) {
+	for _, gpusPerNode := range []int{1, 2, 4, 8} {
+		for _, nodes := range []int{1, 2, 3, 4} {
+			for _, ratio := range []float64{1, 2, 9, 25} {
+				g := float64(gpusPerNode)
+				n := float64(nodes)
+				group := gpusPerNode * nodes
+				bigG := float64(group)
+
+				intraPhase := 2 * (g - 1) / g
+				interPhase := 2 * (n - 1) / n / g * ratio
+				baseline := 2 * (bigG - 1) / bigG
+				var want float64
+				if baseline == 0 { // G == 1: no collective at all
+					want = 1.0
+				} else {
+					want = (intraPhase + interPhase) / baseline
+				}
+
+				topo := sim.NewNetworkTopology(gpusPerNode)
+				got := ringSpanScale(topo, group, ratio)
+				assert.InDelta(t, want, got, 1e-12,
+					"gpusPerNode=%d nodes=%d ratio=%v", gpusPerNode, nodes, ratio)
+			}
+		}
+	}
+}
+
+// TestRingSpanScale_NeutralAtEqualBandwidth verifies the physical sanity check the
+// closed form makes explicit: if the fabric were as fast as the on-node link,
+// spanning would cost nothing extra. This is what pins the formula's constant term
+// — it is why the penalty is a pure function of (ratio-1).
+func TestRingSpanScale_NeutralAtEqualBandwidth(t *testing.T) {
+	for _, gpusPerNode := range []int{1, 2, 4, 8} {
+		for _, group := range []int{1, 2, 4, 8, 16, 32} {
+			topo := sim.NewNetworkTopology(gpusPerNode)
+			assert.Equal(t, 1.0, ringSpanScale(topo, group, 1.0),
+				"gpusPerNode=%d group=%d", gpusPerNode, group)
+		}
+	}
+}
+
+// TestRingSpanScale_SingleNodeIsNeutral verifies BC-4 at the formula level: a group
+// that fits inside one node is charged nothing extra, for any fabric quality.
+func TestRingSpanScale_SingleNodeIsNeutral(t *testing.T) {
+	topo := sim.NewNetworkTopology(8)
+	for _, group := range []int{1, 2, 4, 8} {
+		for _, ratio := range []float64{1, 9, 100} {
+			assert.Equal(t, 1.0, ringSpanScale(topo, group, ratio), "group=%d ratio=%v", group, ratio)
+		}
+	}
+	// And an unknown topology is neutral even for a huge group.
+	var unknown sim.NetworkTopology
+	assert.Equal(t, 1.0, ringSpanScale(unknown, 64, 9))
+}
+
+// TestAll2AllSpanScale_MatchesPerPeerDecomposition validates the all-to-all closed
+// form against its own derivation: a rank's egress splits over its G-1 peers, of
+// which G-g are off-node and cost `ratio` times as much.
+func TestAll2AllSpanScale_MatchesPerPeerDecomposition(t *testing.T) {
+	for _, gpusPerNode := range []int{1, 2, 4, 8} {
+		for _, nodes := range []int{1, 2, 4} {
+			for _, ratio := range []float64{1, 2, 9} {
+				group := gpusPerNode * nodes
+				if group <= 1 {
+					continue
+				}
+				g := float64(gpusPerNode)
+				bigG := float64(group)
+				want := ((g - 1) + ratio*(bigG-g)) / (bigG - 1)
+
+				topo := sim.NewNetworkTopology(gpusPerNode)
+				assert.InDelta(t, want, all2AllSpanScale(topo, group, ratio), 1e-12,
+					"gpusPerNode=%d nodes=%d ratio=%v", gpusPerNode, nodes, ratio)
+			}
+		}
+	}
+}
+
+// TestAll2AllSpanScale_ExceedsRingAtSameSpan verifies the qualitative claim that
+// motivates modeling the two collective shapes separately: for the same group and
+// the same span, an all-to-all pushes far more of its traffic across the fabric
+// than a ring does, so it is penalized more. This is why the expert all-to-all —
+// not the TP all-reduce — is the dominant cross-node cost for wide expert
+// parallelism.
+func TestAll2AllSpanScale_ExceedsRingAtSameSpan(t *testing.T) {
+	topo := sim.NewNetworkTopology(8)
+	const group, ratio = 16, 9.0
+	ring := ringSpanScale(topo, group, ratio)
+	a2a := all2AllSpanScale(topo, group, ratio)
+	assert.Greater(t, ring, 1.0, "precondition: the ring must itself be penalized")
+	assert.Greater(t, a2a, ring, "an all-to-all must be penalized more than a ring at the same span")
+}
+
+// ─── StepTime effects ───────────────────────────────────────────────────────
+
+// stepBatch is a fixed mixed batch large enough that the comm terms are resolvable
+// at microsecond granularity.
+func stepBatch() []*sim.Request {
+	return append(makePrefillBatch(4, 512), makeDecodeBatch(8, 1024)...)
+}
+
+// TestStepTime_SpanningCostsMoreThanSingleNode verifies BC-1 for the TP all-reduce
+// leg: with the same model, TP degree, hardware and batch, an instance whose TP
+// group spans two nodes has a strictly larger step time than one whose TP group
+// fits on a single node. Nothing but the placed node size differs.
+func TestStepTime_SpanningCostsMoreThanSingleNode(t *testing.T) {
+	mc := testModelConfig() // dense
+	hw := fabricHW(9)
+	batch := stepBatch()
+
+	singleNode := newNetModel(t, mc, hw, 8, 1, false, "", 8) // tp=8 on an 8-GPU node
+	spanning := newNetModel(t, mc, hw, 8, 1, false, "", 4)   // tp=8 across two 4-GPU nodes
+
+	got := singleNode.StepTime(batch)
+	want := spanning.StepTime(batch)
+	assert.Greater(t, want, got,
+		"a TP group spanning two nodes must cost strictly more than the same group on one node")
+}
+
+// TestStepTime_MoreNodesCostMore verifies the penalty tracks the span, not just its
+// existence: spreading the same TP group over more (smaller) nodes never costs
+// less, and costs strictly more than the two-node span.
+func TestStepTime_MoreNodesCostMore(t *testing.T) {
+	mc := testModelConfig()
+	hw := fabricHW(9)
+	batch := stepBatch()
+
+	prev := int64(0)
+	for _, gpusPerNode := range []int{8, 4, 2, 1} { // 1, 2, 4, 8 nodes for tp=8
+		got := newNetModel(t, mc, hw, 8, 1, false, "", gpusPerNode).StepTime(batch)
+		assert.GreaterOrEqual(t, got, prev,
+			"step time must not decrease as the same TP group spreads over more nodes (gpusPerNode=%d)", gpusPerNode)
+		prev = got
+	}
+	single := newNetModel(t, mc, hw, 8, 1, false, "", 8).StepTime(batch)
+	assert.Greater(t, prev, single, "the widest span must cost strictly more than the single-node placement")
+}
+
+// TestStepTime_MonotoneInFabricQuality verifies BC-3 (AC-2): holding the placement
+// fixed, a slower fabric never lowers the step time, and over a realistic IB→slow
+// range it strictly raises it.
+func TestStepTime_MonotoneInFabricQuality(t *testing.T) {
+	mc := testModelConfig()
+	batch := stepBatch()
+
+	prev := int64(0)
+	for _, interBw := range []float64{450, 200, 100, 50, 25, 12.5, 5} {
+		hw := dpepTestHW()
+		hw.IntraNodeBwGBps = 450
+		hw.InterNodeBwGBps = interBw
+		got := newNetModel(t, mc, hw, 8, 1, false, "", 4).StepTime(batch)
+		assert.GreaterOrEqual(t, got, prev,
+			"step time must not decrease as the fabric gets slower (inter=%v GB/s)", interBw)
+		prev = got
+	}
+	fastFabric := newNetModel(t, mc, fabricHW(1), 8, 1, false, "", 4).StepTime(batch)
+	assert.Greater(t, prev, fastFabric, "the slowest fabric must cost strictly more than a fabric as fast as NVLink")
+}
+
+// TestStepTime_MoEReduceLegChargedCrossNode verifies the DP==1 MoE-FFN reduce is priced
+// cross-node too. Isolating it needs care: it flows through the same TP-group basis as the
+// attention and dense-FFN all-reduces, so the naive check "spanning MoE > single-node MoE"
+// would pass even if this leg alone were skipped — the attention all-reduce is penalized
+// regardless.
+//
+// The sharp test is an EQUALITY. At DP=1 the MoE-FFN reduce replaces the dense-FFN reduce
+// unit for unit (a uniform MoE model has numDenseLayers=0 and numMoELayers=numLayers,
+// where a dense model has the reverse), so both models charge exactly 2·numLayers
+// all-reduce units and must therefore gain exactly the same amount from spanning. If the
+// MoE-FFN reduce were left unpenalized, the MoE model would be charged only numLayers
+// units of penalty and would come out strictly CHEAPER — which is precisely the mutation
+// this equality catches.
+func TestStepTime_MoEReduceLegChargedCrossNode(t *testing.T) {
+	hw := fabricHW(9)
+	batch := stepBatch()
+
+	moe := *dpepMoEModelConfig()
+	// Same layers/hidden/heads/FFN as the MoE config, but dense (no experts), so the only
+	// structural difference is which all-reduce unit the FFN contributes.
+	dense := moe
+	dense.NumLocalExperts = 0
+	dense.NumExpertsPerTok = 0
+
+	penalty := func(mc sim.ModelConfig) int64 {
+		return newNetModel(t, mc, hw, 8, 1, false, "", 4).StepTime(batch) -
+			newNetModel(t, mc, hw, 8, 1, false, "", 8).StepTime(batch)
+	}
+	moePenalty, densePenalty := penalty(moe), penalty(dense)
+
+	assert.Greater(t, densePenalty, int64(0), "precondition: spanning must cost the dense model something")
+	// InDelta, not Equal: both penalties are differences of truncated microsecond step
+	// times, so they can legitimately land 1 µs apart from rounding alone. The mutation
+	// this guards against — an unpenalized MoE-FFN reduce — would halve the MoE penalty,
+	// which is orders of magnitude outside a 1 µs band.
+	assert.InDelta(t, densePenalty, moePenalty, 1,
+		"an MoE model at DP=1 all-reduces its MoE FFN in place of a dense FFN, so its spanning penalty "+
+			"must equal an identically-shaped dense model's. A strictly smaller MoE penalty would mean "+
+			"the MoE-FFN reduce is not being priced cross-node (moe=%d µs, dense=%d µs)",
+		moePenalty, densePenalty)
+}
+
+// TestStepTime_CommFamilyDeterminesPenaltyShape guards the single most load-bearing
+// modeling decision in this feature: WHICH penalty shape each MoE comm family gets.
+//
+// The all-gather family (vLLM's default) moves its volume as a ring — two phases at
+// (G-1)/G efficiency, exactly like an all-reduce — so it takes the ring penalty, where
+// only the reduced inter-node chunk crosses the fabric. A true all-to-all has no
+// reduction, so a far larger share of every rank's egress leaves the node and it takes
+// the per-peer penalty. At TP·DP=16 spanning two nodes at a 9x fabric ratio those differ
+// by ~3.4x, so getting them backwards would badly over-price the default backend.
+//
+// Asserting only "spanning costs more" would NOT catch a swap: both shapes exceed 1. So
+// this compares the two families against each other at identical group, span and fabric.
+func TestStepTime_CommFamilyDeterminesPenaltyShape(t *testing.T) {
+	mc := *dpepMoEModelConfig()
+	hw := fabricHW(9)
+	batch := stepBatch()
+
+	// moeGroup = TP·DP = 4·4 = 16, spanning four 4-GPU nodes.
+	ringFamily := newNetModel(t, mc, hw, 4, 4, true, "allgather_reducescatter", 4).StepTime(batch)
+	a2aFamily := newNetModel(t, mc, hw, 4, 4, true, "deepep_high_throughput", 4).StepTime(batch)
+
+	// Contained baselines isolate the cross-node penalty from the families' differing
+	// byte volumes (all-gather moves dense hidden states; all-to-all moves top_k tokens).
+	ringContained := newNetModel(t, mc, hw, 4, 4, true, "allgather_reducescatter", 16).StepTime(batch)
+	a2aContained := newNetModel(t, mc, hw, 4, 4, true, "deepep_high_throughput", 16).StepTime(batch)
+
+	ringPenalty := ringFamily - ringContained
+	a2aPenalty := a2aFamily - a2aContained
+	assert.Greater(t, ringPenalty, int64(0), "precondition: the ring family must be penalized at all")
+	assert.Greater(t, a2aPenalty, ringPenalty,
+		"a true all-to-all sends more of its data off-node than a ring, so it must be penalized more "+
+			"for the same span; equal or inverted penalties mean the two comm families were given the "+
+			"wrong collective shapes (ring=%d µs, all-to-all=%d µs)", ringPenalty, a2aPenalty)
+}
+
+// ─── The size-independent half: per-collective latency ──────────────────────
+
+// TestStepTime_PerCollectiveLatencyIsChargedCrossNode verifies the second half of the
+// cross-node cost: a fixed launch + fabric round-trip per collective that crosses a node
+// boundary, independent of message size. A fabric as fast as the on-node link (ratio 1,
+// no bandwidth penalty at all) isolates it — any increase must come from the latency.
+func TestStepTime_PerHopLatencyIsChargedCrossNode(t *testing.T) {
+	mc := testModelConfig()
+	batch := stepBatch()
+
+	noLatency := fabricHW(1) // equal bandwidths ⇒ zero bandwidth penalty
+	withLatency := noLatency
+	withLatency.InterNodeHopLatencyUs = 5
+
+	contained := newNetModel(t, mc, withLatency, 8, 1, false, "", 8).StepTime(batch)
+	spanning := newNetModel(t, mc, withLatency, 8, 1, false, "", 4).StepTime(batch)
+	assert.Greater(t, spanning, contained,
+		"a per-hop latency must be charged when the TP group spans nodes, even with no "+
+			"bandwidth penalty")
+
+	// And with no latency declared, the same pair is byte-identical — the term is opt-in.
+	assert.Equal(t,
+		newNetModel(t, mc, noLatency, 8, 1, false, "", 8).StepTime(batch),
+		newNetModel(t, mc, noLatency, 8, 1, false, "", 4).StepTime(batch),
+		"with neither a bandwidth penalty nor a declared latency, spanning must cost nothing extra")
+}
+
+// TestStepTime_PerHopLatencyScalesWithNodeSpan is the core #1694 behavior: the fixed
+// cross-node latency is now node-span-AWARE, not flat. A hierarchical ring does
+// 2·(nodes−1) inter-node hops, so a 4-node TP span (hop count 6) must cost 3× a 2-node
+// span (hop count 2) in the latency term — the ~(nodes−1)× the flat #1667 term
+// under-charged. Isolated with ratio 1 (no bandwidth penalty) and measured against the
+// single-node baseline so only the latency term moves. Uses a ≥3-node span (TP=8 over
+// 2 GPUs/node = 4 nodes) so the factor is unambiguous (see the hop-count test). TP is 8
+// because testModelConfig has 8 KV heads (TP must divide NumKVHeads).
+func TestStepTime_PerHopLatencyScalesWithNodeSpan(t *testing.T) {
+	mc := testModelConfig()
+	batch := stepBatch()
+	hw := fabricHW(1) // no bandwidth penalty — isolate the latency
+	hw.InterNodeHopLatencyUs = 10
+
+	base := newNetModel(t, mc, hw, 8, 1, false, "", 8).StepTime(batch)  // fits one node
+	span2 := newNetModel(t, mc, hw, 8, 1, false, "", 4).StepTime(batch) // 2 nodes: 2 hops
+	span4 := newNetModel(t, mc, hw, 8, 1, false, "", 2).StepTime(batch) // 4 nodes: 6 hops
+
+	pen2 := span2 - base
+	pen4 := span4 - base
+	assert.Greater(t, pen2, int64(0), "precondition: a 2-node span must pay a latency penalty")
+	assert.Greater(t, pen4, pen2, "a wider span must cost more — the flat #1667 term did not (BC-4)")
+	// Ring hops: 2·(2−1)=2 vs 2·(4−1)=6, so the 4-node penalty is 3× the 2-node one.
+	ratio := float64(pen4) / float64(pen2)
+	assert.InDelta(t, 3.0, ratio, 0.15,
+		"4-node latency penalty must be ~3× the 2-node one (6 hops vs 2), got %.2f×", ratio)
+}
+
+// TestStepTime_MonotoneInPerHopLatency verifies AC-2's latency clause directly:
+// holding the placement fixed, raising the per-hop latency never lowers step time,
+// and strictly raises it across a realistic range.
+func TestStepTime_MonotoneInPerHopLatency(t *testing.T) {
+	mc := testModelConfig()
+	batch := stepBatch()
+
+	prev := int64(0)
+	for _, latencyUs := range []float64{0, 1, 2, 5, 10, 25} {
+		hw := fabricHW(9)
+		hw.InterNodeHopLatencyUs = latencyUs
+		got := newNetModel(t, mc, hw, 8, 1, false, "", 4).StepTime(batch)
+		assert.GreaterOrEqual(t, got, prev,
+			"step time must not decrease as the per-hop latency rises (latency=%v µs)", latencyUs)
+		prev = got
+	}
+	zeroLatency := func() int64 {
+		hw := fabricHW(9)
+		return newNetModel(t, mc, hw, 8, 1, false, "", 4).StepTime(batch)
+	}()
+	assert.Greater(t, prev, zeroLatency, "the largest latency must cost strictly more than none")
+}
+
+// TestStepTime_PerHopLatencyScalesWithCollectiveCount verifies the latency is charged
+// PER COMM UNIT (per collective) rather than once per step: a model with twice the layers
+// runs twice the collectives and must pay about twice the latency. This is orthogonal to
+// the per-hop node-span scaling (TestStepTime_PerHopLatencyScalesWithNodeSpan) — the total
+// charge is units·n_steps·α_hop·S — and it is why the term can dominate for a deep model on
+// small messages.
+func TestStepTime_PerHopLatencyScalesWithCollectiveCount(t *testing.T) {
+	batch := stepBatch()
+	hw := fabricHW(1) // no bandwidth penalty — isolate the latency
+	hw.InterNodeHopLatencyUs = 20
+
+	shallow := testModelConfig()
+	deep := shallow
+	deep.NumLayers = shallow.NumLayers * 2
+
+	penalty := func(mc sim.ModelConfig) int64 {
+		return newNetModel(t, mc, hw, 8, 1, false, "", 4).StepTime(batch) -
+			newNetModel(t, mc, hw, 8, 1, false, "", 8).StepTime(batch)
+	}
+	shallowPenalty, deepPenalty := penalty(shallow), penalty(deep)
+	assert.Greater(t, shallowPenalty, int64(0), "precondition: the shallow model must pay a latency penalty")
+	assert.Greater(t, deepPenalty, shallowPenalty,
+		"twice the layers means twice the cross-node collectives, so the latency penalty must grow "+
+			"(shallow=%d µs, deep=%d µs)", shallowPenalty, deepPenalty)
+	// Roughly proportional: within 10% of 2x, confirming per-comm-unit and not per-step.
+	ratio := float64(deepPenalty) / float64(shallowPenalty)
+	assert.InDelta(t, 2.0, ratio, 0.2, "the latency penalty should scale with the collective count")
+}
+
+// TestStepTime_NoLatencyChargedWithoutTokens verifies a step that communicates nothing
+// pays no launch cost: with no tokens there is no collective to launch.
+func TestStepTime_NoLatencyChargedWithoutTokens(t *testing.T) {
+	mc := testModelConfig()
+	hw := fabricHW(9)
+	hw.InterNodeHopLatencyUs = 1000 // enormous, so any spurious charge would be obvious
+
+	spanning := newNetModel(t, mc, hw, 8, 1, false, "", 4)
+	contained := newNetModel(t, mc, hw, 8, 1, false, "", 8)
+	assert.Equal(t, contained.StepTime(nil), spanning.StepTime(nil),
+		"an empty batch runs no collective, so no launch cost may be charged")
+}
+
+// TestStepTime_MoEDispatchLegChargedCrossNode verifies BC-2: the expert
+// dispatch/combine leg is priced cross-node when the flattened MoE group (TP·DP)
+// does not fit inside one node. Exercised at the latency-model level because
+// DP-as-placement (#1531/#1553) runs each replica as a single-node DP=1 engine,
+// so no PRODUCTION per-instance config carries a TP·DP group that spans nodes; the
+// placement-driven cross-node MoE leg would land only with a genuinely multi-node
+// expert-parallel group (#1548's inter-replica boundary, still unpriced).
+func TestStepTime_MoEDispatchLegChargedCrossNode(t *testing.T) {
+	mc := *dpepMoEModelConfig()
+	hw := fabricHW(9)
+	batch := stepBatch()
+
+	for _, backend := range []string{"allgather_reducescatter", "deepep_high_throughput"} {
+		t.Run(backend, func(t *testing.T) {
+			// moeGroup = TP·DP = 4·4 = 16. An 16-GPU node contains it; a 4-GPU node does not.
+			contained := newNetModel(t, mc, hw, 4, 4, true, backend, 16).StepTime(batch)
+			spanning := newNetModel(t, mc, hw, 4, 4, true, backend, 4).StepTime(batch)
+			assert.Greater(t, spanning, contained,
+				"an expert all-to-all/all-gather spanning nodes must cost strictly more than one contained in a node")
+		})
+	}
+}
+
+// TestStepTime_CrossNodeLatencyHopConvention pins the corrected #1694 per-leg hop-count
+// convention with ABSOLUTE value anchors on the two frozen fields — not a cross-family
+// comparison. The distinction matters: since the fix, the MoE leg uses crossNodeAll2AllHops
+// UNCONDITIONALLY (no family branch), so a family-equality assertion is invariant to any
+// UNIFORM change in the per-collective count — doubling both legs, or swapping the two
+// helpers' bodies, keeps the families equal and slips past. jgchn's mutation proof: reverting
+// the MoE leg to crossNodeRingHops (the exact bug this PR fixed) left the whole suite green.
+// So this asserts each field equals its analytic value directly:
+//
+//   - MoE dispatch/combine leg: ONE single-phase collective = crossNodeAll2AllHops(nodes) =
+//     (nodes−1). moeCrossNodeLatency then multiplies by moeDispatchCollectivesPerLayer (=2),
+//     giving 2·(nodes−1) per layer. Charging the full ring here would double-count.
+//   - TP leg: ONE whole all-reduce = crossNodeRingHops(nodes) = 2·(nodes−1), because one TP
+//     comm unit IS one all-reduce (reduce-scatter + all-gather).
+//
+// The field carries hops·α_hop·S with S=1 (unset), so the expected value is hops·α_hop.
+func TestStepTime_CrossNodeLatencyHopConvention(t *testing.T) {
+	mc := *dpepMoEModelConfig()
+	hw := fabricHW(1) // isolate the latency half; α_hop below is the only cross-node cost
+	hw.InterNodeHopLatencyUs = 20
+
+	// TP=4, DP=4 over 2 GPUs/node. The two legs span DIFFERENT node counts, so the anchors
+	// exercise each helper on its own group rather than a shared span:
+	//   TP group  = TP     = 4  ⇒ NodesSpanned(4)  = ceil(4/2)  = 2 nodes
+	//   MoE group = TP·DP  = 16 ⇒ NodesSpanned(16) = ceil(16/2) = 8 nodes
+	// Both ≥ 2 (so both terms fire), and the MoE span of 8 is well clear of the 2-node
+	// ambiguity where crossNodeRingHops and 2×crossNodeAll2AllHops coincide.
+	const gpusPerNode = 2
+	topo := sim.NewNetworkTopology(gpusPerNode)
+	tpNodes := topo.NodesSpanned(4)   // 2
+	moeNodes := topo.NodesSpanned(16) // 8
+	require.Equal(t, 2, tpNodes)
+	require.Equal(t, 8, moeNodes)
+	m := newNetModel(t, mc, hw, 4, 4, true, "allgather_reducescatter", gpusPerNode)
+
+	assert.Equal(t, float64(crossNodeAll2AllHops(moeNodes))*hw.InterNodeHopLatencyUs, m.moeCrossNodeLatencyUs,
+		"MoE dispatch/combine is per-collective (nodes−1) hops; the full ring 2·(nodes−1) here would "+
+			"double-count, since moeDispatchCollectivesPerLayer already counts both collectives")
+	assert.Equal(t, float64(crossNodeRingHops(tpNodes))*hw.InterNodeHopLatencyUs, m.tpCrossNodeLatencyUs,
+		"the TP comm unit IS one whole all-reduce, so it keeps the full-ring 2·(nodes−1) count")
+
+	// Secondary guard, kept alongside the anchors: the two comm families must charge the SAME
+	// latency (the split is real only for the bandwidth VOLUME). This catches the DIFFERENT
+	// regression of reintroducing a family branch on the latency half. It cannot catch a
+	// uniform change — that is what the absolute anchors above are for.
+	batch := stepBatch()
+	penalty := func(backend string) int64 {
+		return newNetModel(t, mc, hw, 4, 4, true, backend, gpusPerNode).StepTime(batch) -
+			newNetModel(t, mc, hw, 4, 4, true, backend, 16).StepTime(batch)
+	}
+	ringPenalty := penalty("allgather_reducescatter")
+	a2aPenalty := penalty("deepep_high_throughput")
+	assert.Greater(t, a2aPenalty, int64(0), "precondition: the all-to-all backend must pay a latency penalty")
+	assert.Equal(t, ringPenalty, a2aPenalty,
+		"the MoE latency term is family-INDEPENDENT; a difference means a family branch was "+
+			"reintroduced on the latency half (ring=%d µs, a2a=%d µs)", ringPenalty, a2aPenalty)
+}
+
+// ─── Inertness: the tight regression guard (BC-4, AC-3, INV-6, INV-BC-DP1) ──
+
+// TestStepTime_NoTopologyIsByteIdentical verifies that omitting the option
+// entirely — every configuration expressible before #1530 — leaves StepTime
+// bit-identical, even when the hardware declares a calibrated interconnect.
+func TestStepTime_NoTopologyIsByteIdentical(t *testing.T) {
+	batch := stepBatch()
+	for _, tc := range []struct {
+		name string
+		mc   sim.ModelConfig
+		tp   int
+		dp   int
+		ep   bool
+	}{
+		{"dense tp1 dp1", testModelConfig(), 1, 1, false},
+		{"dense tp8 dp1", testModelConfig(), 8, 1, false},
+		{"moe tp8 dp1", *dpepMoEModelConfig(), 8, 1, false},
+		{"moe tp4 dp4 ep", *dpepMoEModelConfig(), 4, 4, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hw := fabricHW(9)
+			mhw := sim.NewModelHardwareConfig(tc.mc, hw, "m", "H100", tc.tp, tc.dp, tc.ep, "", "trained-physics", 0)
+
+			noOption, err := NewLatencyModel(*testCoeffs(), mhw)
+			require.NoError(t, err)
+			mhwZero := sim.NewModelHardwareConfig(tc.mc, hw, "m", "H100", tc.tp, tc.dp, tc.ep, "", "trained-physics", 0,
+				sim.WithNetworkTopology(sim.NetworkTopology{}))
+			zeroTopology, err := NewLatencyModel(*testCoeffs(), mhwZero)
+			require.NoError(t, err)
+
+			assert.Equal(t, noOption.StepTime(batch), zeroTopology.StepTime(batch),
+				"a zero-value topology must be indistinguishable from no option at all")
+		})
+	}
+}
+
+// TestStepTime_ContainedGroupIsByteIdentical verifies BC-4's second gate: with a
+// KNOWN topology and a calibrated fabric, a collective that fits inside one node is
+// still bit-identical to the unplaced model. This is the case that covers every
+// existing node_pools config (single-node TP), so it is the guard that keeps #1529's
+// placements from silently changing numbers.
+func TestStepTime_ContainedGroupIsByteIdentical(t *testing.T) {
+	batch := stepBatch()
+	hw := fabricHW(9)
+	for _, tc := range []struct {
+		name        string
+		mc          sim.ModelConfig
+		tp          int
+		gpusPerNode int
+	}{
+		{"tp1 on 8-GPU node", testModelConfig(), 1, 8},
+		{"tp4 on 8-GPU node", testModelConfig(), 4, 8},
+		{"tp8 on 8-GPU node", testModelConfig(), 8, 8},
+		{"moe tp8 on 8-GPU node", *dpepMoEModelConfig(), 8, 8},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			unplaced := newNetModel(t, tc.mc, hw, tc.tp, 1, false, "", 0)
+			placed := newNetModel(t, tc.mc, hw, tc.tp, 1, false, "", tc.gpusPerNode)
+			assert.Equal(t, unplaced.StepTime(batch), placed.StepTime(batch),
+				"a collective contained in one node must not be charged anything extra")
+		})
+	}
+}
+
+// TestStepTime_UncalibratedFabricIsByteIdentical verifies BC-4's third gate: a
+// spanning placement on hardware whose config declares no interconnect bandwidths
+// is bit-identical to the pre-#1530 behavior. Cross-node cost requires calibration;
+// it is never invented.
+func TestStepTime_UncalibratedFabricIsByteIdentical(t *testing.T) {
+	batch := stepBatch()
+	mc := testModelConfig()
+	bare := dpepTestHW() // no IntraNodeBwGBps / InterNodeBwGBps
+
+	unplaced := newNetModel(t, mc, bare, 8, 1, false, "", 0)
+	spanning := newNetModel(t, mc, bare, 8, 1, false, "", 4)
+	assert.Equal(t, unplaced.StepTime(batch), spanning.StepTime(batch),
+		"an uncalibrated interconnect must leave a spanning placement priced exactly as before")
+}
+
+// TestINVBCDP1_DenseDP1UnaffectedByTopology verifies INV-BC-DP1 explicitly: a dense
+// DP=1 instance's step time is unchanged by the network feature across the TP
+// matrix, whenever its TP group fits on a node.
+func TestINVBCDP1_DenseDP1UnaffectedByTopology(t *testing.T) {
+	batch := stepBatch()
+	mc := testModelConfig()
+	hw := fabricHW(9)
+	for _, tp := range []int{1, 2, 4, 8} {
+		unplaced := newNetModel(t, mc, hw, tp, 1, false, "", 0)
+		placed := newNetModel(t, mc, hw, tp, 1, false, "", 8)
+		assert.Equal(t, unplaced.StepTime(batch), placed.StepTime(batch), "tp=%d", tp)
+	}
+}
+
+// TestStepTime_EmptyBatchUnaffected verifies the degenerate batch: no tokens means
+// no collective, so the network feature cannot change the empty-batch floor.
+func TestStepTime_EmptyBatchUnaffected(t *testing.T) {
+	mc := testModelConfig()
+	hw := fabricHW(9)
+	unplaced := newNetModel(t, mc, hw, 8, 1, false, "", 0)
+	spanning := newNetModel(t, mc, hw, 8, 1, false, "", 4)
+	assert.Equal(t, unplaced.StepTime(nil), spanning.StepTime(nil))
+	assert.Equal(t, unplaced.StepTime([]*sim.Request{}), spanning.StepTime([]*sim.Request{}))
+}
+
+// TestStepTime_HugeRatioStaysFinite verifies BC-8's robustness end: an absurdly
+// slow fabric produces a large but finite, positive step time — never NaN, Inf, or
+// a clock regression (INV-3).
+func TestStepTime_HugeRatioStaysFinite(t *testing.T) {
+	mc := testModelConfig()
+	hw := dpepTestHW()
+	hw.IntraNodeBwGBps = 450
+	hw.InterNodeBwGBps = 1e-9 // pathologically slow fabric
+	got := newNetModel(t, mc, hw, 8, 1, false, "", 4).StepTime(stepBatch())
+	assert.Greater(t, got, int64(0), "step time must stay positive")
+	assert.Less(t, got, int64(math.MaxInt64), "step time must stay below the clamp ceiling")
+}
+
+// ─── Backend scope ──────────────────────────────────────────────────────────
+
+// TestRoofline_UnaffectedByNetworkTopology documents the deliberate backend
+// asymmetry: the roofline backend models no communication term at all, so the
+// cross-node penalty has nothing to scale and its step time is unchanged.
+func TestRoofline_UnaffectedByNetworkTopology(t *testing.T) {
+	mc := testModelConfig()
+	hw := fabricHW(9)
+	hw.MemoryGiB = 80
+	mhw := sim.NewModelHardwareConfig(mc, hw, "m", "H100", 8, 1, false, "", "roofline", 0)
+	mhwTopo := sim.NewModelHardwareConfig(mc, hw, "m", "H100", 8, 1, false, "", "roofline", 0,
+		sim.WithNetworkTopology(sim.NewNetworkTopology(4)))
+	batch := stepBatch()
+
+	plain, err := NewLatencyModel(*testCoeffs(), mhw)
+	require.NoError(t, err)
+	withTopo, err := NewLatencyModel(*testCoeffs(), mhwTopo)
+	require.NoError(t, err)
+
+	assert.Equal(t, plain.StepTime(batch), withTopo.StepTime(batch),
+		"roofline has no communication term, so a cross-node topology must not change its step time")
+}
+
+// ─── Calibration validation (R1: a typo must surface, not silently disable) ──
+
+// TestNewTrainedPhysicsModel_RejectsUnusableInterconnectBw verifies that a value
+// that was clearly meant to be a bandwidth but cannot be one is rejected, rather
+// than being clamped into "no cross-node cost" where the user would never see it.
+func TestNewTrainedPhysicsModel_RejectsUnusableInterconnectBw(t *testing.T) {
+	tests := []struct {
+		name  string
+		intra float64
+		inter float64
+		want  string
+	}{
+		{"negative intra", -450, 50, "IntraNodeBwGBps"},
+		{"NaN intra", math.NaN(), 50, "IntraNodeBwGBps"},
+		{"Inf intra", math.Inf(1), 50, "IntraNodeBwGBps"},
+		{"negative inter", 450, -50, "InterNodeBwGBps"},
+		{"NaN inter", 450, math.NaN(), "InterNodeBwGBps"},
+		{"Inf inter", 450, math.Inf(-1), "InterNodeBwGBps"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hw := dpepTestHW()
+			hw.IntraNodeBwGBps = tc.intra
+			hw.InterNodeBwGBps = tc.inter
+			mhw := sim.NewModelHardwareConfig(testModelConfig(), hw, "m", "H100", 8, 1, false, "", "trained-physics", 0)
+			_, err := NewLatencyModel(*testCoeffs(), mhw)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+}
+
+// TestNewTrainedPhysicsModel_RejectsHalfCalibratedInterconnect verifies that
+// declaring one bandwidth without the other is rejected: it would produce no
+// cross-node cost at all, which a user who bothered to set a value would not expect.
+// Setting NEITHER stays valid — that is the normal inert case.
+func TestNewTrainedPhysicsModel_RejectsHalfCalibratedInterconnect(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		intra, inter float64
+	}{
+		{"intra only", 450, 0},
+		{"inter only", 0, 50},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hw := dpepTestHW()
+			hw.IntraNodeBwGBps = tc.intra
+			hw.InterNodeBwGBps = tc.inter
+			mhw := sim.NewModelHardwareConfig(testModelConfig(), hw, "m", "H100", 8, 1, false, "", "trained-physics", 0)
+			_, err := NewLatencyModel(*testCoeffs(), mhw)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "incomplete")
+		})
+	}
+
+	// Neither set: valid and inert.
+	mhw := sim.NewModelHardwareConfig(testModelConfig(), dpepTestHW(), "m", "H100", 8, 1, false, "", "trained-physics", 0)
+	_, err := NewLatencyModel(*testCoeffs(), mhw)
+	require.NoError(t, err)
+}
+
+// TestTrainedPhysicsModel_StructLiteralKeepsCommTerm guards the one way this feature
+// could silently DELETE cost instead of adding it: a model built by struct literal
+// (as several tests in this package do) leaves the span scales at their zero value,
+// and a divisor derived naively from a zero scale would be +Inf — zeroing the whole
+// TP all-reduce term. The comm basis must stay positive for such a model.
+func TestTrainedPhysicsModel_StructLiteralKeepsCommTerm(t *testing.T) {
+	m := &TrainedPhysicsModel{
+		tp:            8,
+		hiddenDim:     4096,
+		activationBPP: 2,
+		bwHbmUs:       3.35e6,
+		// tpSpanScale / moeSpanScale deliberately left at their zero value.
+	}
+	basis := m.tpAllReduceBasis(32, 1024, 1)
+	assert.Greater(t, basis, 0.0, "an unset span scale must not zero the TP all-reduce term")
+	assert.False(t, math.IsInf(basis, 0), "the comm basis must stay finite")
+	assert.False(t, math.IsNaN(basis), "the comm basis must not be NaN")
+
+	// And it must equal what an explicitly un-penalized model computes — asserted
+	// against a sibling model rather than a re-implementation of the formula, so a
+	// legitimate refactor of the basis does not break this guard.
+	unpenalized := &TrainedPhysicsModel{
+		tp: 8, hiddenDim: 4096, activationBPP: 2, bwHbmUs: 3.35e6, tpSpanScale: 1.0,
+	}
+	assert.Equal(t, unpenalized.tpAllReduceBasis(32, 1024, 1), basis,
+		"an unset span scale must behave exactly like an explicit no-penalty scale")
+}
+
+// ─── Hot-path guard ─────────────────────────────────────────────────────────
+
+// BenchmarkTrainedPhysicsStepTime measures the path this feature modifies, which had no
+// benchmark before. The three variants isolate what the feature costs: `inert` is the
+// default every run without node pools takes, `spanning_bandwidth` adds the size-dependent
+// penalty, and `spanning_bandwidth_latency` adds the size-independent one too. The
+// penalties are frozen at construction, so the inert case should be indistinguishable
+// from a pre-feature build and the spanning cases should differ only by a comparison and
+// a division.
+func BenchmarkTrainedPhysicsStepTime(b *testing.B) {
+	mc := testModelConfig()
+	batch := stepBatch()
+
+	build := func(hw sim.HardwareCalib, gpusPerNode int) sim.LatencyModel {
+		mhw := sim.NewModelHardwareConfig(mc, hw, "m", "H100", 8, 1, false, "", "trained-physics", 0,
+			sim.WithNetworkTopology(sim.NewNetworkTopology(gpusPerNode)))
+		lm, err := NewLatencyModel(*testCoeffs(), mhw)
+		if err != nil {
+			b.Fatal(err)
+		}
+		return lm
+	}
+	withLatency := fabricHW(9)
+	withLatency.InterNodeHopLatencyUs = 5
+
+	for _, variant := range []struct {
+		name string
+		lm   sim.LatencyModel
+	}{
+		{"inert", build(dpepTestHW(), 0)},
+		{"spanning_bandwidth", build(fabricHW(9), 4)},
+		{"spanning_bandwidth_latency", build(withLatency, 4)},
+	} {
+		b.Run(variant.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_ = variant.lm.StepTime(batch)
+			}
+		})
+	}
+}
+
+// TestStepTime_SpanningPathAllocatesNothing asserts what the benchmark only reports: the
+// cross-node path adds no heap allocation to StepTime. Both penalties are frozen at
+// construction and the per-collective latency is a scalar add, so the spanning path should
+// allocate exactly as much as the inert one — nothing. Asserting it rather than leaving it
+// as a comment matters because StepTime runs once per simulated scheduler step, and an
+// accidental allocation there would be invisible until someone profiled a long run.
+func TestStepTime_SpanningPathAllocatesNothing(t *testing.T) {
+	mc := testModelConfig()
+	batch := stepBatch()
+	withLatency := fabricHW(9)
+	withLatency.InterNodeHopLatencyUs = 5
+
+	for _, tc := range []struct {
+		name        string
+		hw          sim.HardwareCalib
+		gpusPerNode int
+	}{
+		{"inert", dpepTestHW(), 0},
+		{"spanning_bandwidth", fabricHW(9), 4},
+		{"spanning_bandwidth_latency", withLatency, 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newNetModel(t, mc, tc.hw, 8, 1, false, "", tc.gpusPerNode)
+			// Warm up once so any lazily-initialized state is not attributed to the measured runs.
+			_ = m.StepTime(batch)
+			allocs := testing.AllocsPerRun(50, func() { _ = m.StepTime(batch) })
+			assert.Zero(t, allocs, "StepTime must not allocate on the %s path, got %.1f allocs/op", tc.name, allocs)
+		})
+	}
+}
+
+// TestStepTime_MoEDispatchChargesTwoCollectivesPerLayer pins the per-layer cross-node
+// COLLECTIVE COUNT, which differs between the two comm paths and is easy to get wrong in
+// exactly one direction.
+//
+// A TP unit is one NCCL call (a ring all-reduce is a single call even though its byte
+// volume has two phases), and a dense step has two such units per layer — attention and
+// FFN — so 2L. An MoE step at DP>1 has the attention all-reduce plus dispatch AND combine,
+// which are two separate calls, so 3L. The volume side already counts dispatch and combine
+// separately (the `2` in each dispatch-volume branch), so charging the latency only once
+// per MoE layer would make the two halves of the same cost disagree by 2x on the
+// size-independent term.
+//
+// Asserted as a ratio against a dense model of identical shape: 3L versus 2L is 1.5x. If
+// dispatch/combine were charged once, the MoE step would come out at 2L — equal to dense —
+// and the strict inequality below would fail.
+func TestStepTime_MoEDispatchChargesTwoCollectivesPerLayer(t *testing.T) {
+	batch := stepBatch()
+	hw := fabricHW(1) // equal bandwidths ⇒ no bandwidth penalty, isolating the latency
+	hw.InterNodeHopLatencyUs = 20
+
+	moe := *dpepMoEModelConfig()
+	dense := moe
+	dense.NumLocalExperts = 0
+	dense.NumExpertsPerTok = 0
+
+	// Dense at dp=1: attention + dense-FFN all-reduce = 2 collectives per layer.
+	densePenalty := newNetModel(t, dense, hw, 8, 1, false, "", 4).StepTime(batch) -
+		newNetModel(t, dense, hw, 8, 1, false, "", 8).StepTime(batch)
+	// MoE at dp>1: attention all-reduce + dispatch + combine = 3 collectives per layer.
+	// moeGroup = TP*DP = 8*2 = 16, so a 4-GPU node spans for both groups.
+	moePenalty := newNetModel(t, moe, hw, 8, 2, true, "", 4).StepTime(batch) -
+		newNetModel(t, moe, hw, 8, 2, true, "", 16).StepTime(batch)
+
+	require.Greater(t, densePenalty, int64(0), "precondition: the dense model must pay a latency penalty")
+	assert.Greater(t, moePenalty, densePenalty,
+		"an MoE step at DP>1 launches dispatch AND combine on top of the attention all-reduce, so it "+
+			"must pay strictly more launch cost than an identically-shaped dense step; equality means "+
+			"dispatch/combine was charged as one collective instead of two (moe=%d µs, dense=%d µs)",
+		moePenalty, densePenalty)
+}
+
+// ─── Cross-feature interaction: speculative decoding ────────────────────────
+
+// TestStepTime_CrossNodePenaltyComposesWithSpecDecode guards the one place this feature
+// and speculative decoding (#1528) touch the same quantity. Spec-decode scales the decode
+// token population by the verify width K+1, and the comm bases consume that same
+// totalTokens — so a mistake in either could silently absorb the other. #1659 added
+// TestSpecDecode_DecodeStepCostIsVerifyWidth_NotGrantedTokens to pin the verify-width
+// relationship; this asserts that relationship survives with a cross-node penalty active,
+// and symmetrically that the cross-node penalty survives under spec-decode.
+//
+// Both halves matter. If the cross-node re-scale had been written as an additive term it
+// could dominate and mask the verify-width effect; if the latency half were charged per
+// token rather than per collective, spec-decode would inflate it.
+func TestStepTime_CrossNodePenaltyComposesWithSpecDecode(t *testing.T) {
+	mc := testModelConfig()
+	hw := fabricHW(9)
+	hw.InterNodeHopLatencyUs = 5 // exercise both halves of the cross-node cost
+	batch := makeDecodeBatch(8, 1024)
+
+	build := func(k, gpusPerNode int) sim.LatencyModel {
+		mhw := sim.NewModelHardwareConfig(mc, hw, "m", "H100", 8, 1, false, "", "trained-physics", 0,
+			sim.WithNetworkTopology(sim.NewNetworkTopology(gpusPerNode)))
+		lm, err := NewLatencyModel(*testCoeffs(), mhw, WithSpeculativeDecode(k))
+		require.NoError(t, err)
+		return lm
+	}
+
+	// A wider verify width costs more, whether or not the collective spans nodes.
+	for _, shape := range []struct {
+		name        string
+		gpusPerNode int
+	}{{"contained", 8}, {"spanning", 4}} {
+		t.Run(shape.name, func(t *testing.T) {
+			assert.Greater(t, build(4, shape.gpusPerNode).StepTime(batch), build(0, shape.gpusPerNode).StepTime(batch),
+				"a wider verify width must still cost more with the cross-node penalty %s", shape.name)
+		})
+	}
+
+	// And the cross-node penalty still applies at a fixed verify width.
+	assert.Greater(t, build(4, 4).StepTime(batch), build(4, 8).StepTime(batch),
+		"a spanning collective must still cost more than a contained one under speculative decoding")
+}
+
+// ─── Serialization multiplier S (#1694, Part B) ─────────────────────────────
+
+// newNetModelS builds a spanning trained-physics model with a serialization factor S,
+// threaded through the WithCommSerializationFactor option — the twin of newNetModel.
+func newNetModelS(t *testing.T, mc sim.ModelConfig, hw sim.HardwareCalib, tp, gpusPerNode int, s float64) *TrainedPhysicsModel {
+	t.Helper()
+	mhw := sim.NewModelHardwareConfig(mc, hw, "m", "H100", tp, 1, false, "", "trained-physics", 0,
+		sim.WithNetworkTopology(sim.NewNetworkTopology(gpusPerNode)),
+		sim.WithCommSerializationFactor(s))
+	lm, err := NewLatencyModel(*testCoeffs(), mhw)
+	require.NoError(t, err)
+	m, ok := lm.(*TrainedPhysicsModel)
+	require.True(t, ok)
+	return m
+}
+
+// TestStepTime_SerializationFactorDefaultIsInert verifies BC-5: S = 1 (the default /
+// unset regime) produces byte-identical step time to a model built with no S option at
+// all — the whole Part B term vanishes, output equals Part A alone (INV-6). Checked with
+// a live cross-node latency term (spanning, α_hop > 0) so the equality is meaningful.
+func TestStepTime_SerializationFactorDefaultIsInert(t *testing.T) {
+	mc := testModelConfig()
+	batch := stepBatch()
+	hw := fabricHW(9)
+	hw.InterNodeHopLatencyUs = 5
+
+	noOpt := newNetModel(t, mc, hw, 8, 1, false, "", 4).StepTime(batch)
+	s1 := newNetModelS(t, mc, hw, 8, 4, 1.0).StepTime(batch)
+	assert.Equal(t, noOpt, s1, "S=1 must be byte-identical to no serialization factor (BC-5)")
+
+	// A sub-unit S is clamped to 1.0 (S must never lower cost), so it is also inert.
+	sBelow1 := newNetModelS(t, mc, hw, 8, 4, 0.5).StepTime(batch)
+	assert.Equal(t, noOpt, sBelow1, "S<1 clamps to 1.0 and stays inert")
+}
+
+// TestStepTime_MonotoneInSerializationFactor verifies BC-6: raising S never lowers the
+// charged cross-node latency, and strictly raises it across a realistic eager range.
+func TestStepTime_MonotoneInSerializationFactor(t *testing.T) {
+	mc := testModelConfig()
+	batch := stepBatch()
+	hw := fabricHW(1) // isolate the latency term S multiplies
+	hw.InterNodeHopLatencyUs = 10
+
+	prev := int64(0)
+	for _, s := range []float64{1, 2, 5, 10, 30} {
+		got := newNetModelS(t, mc, hw, 8, 4, s).StepTime(batch)
+		assert.GreaterOrEqual(t, got, prev, "step time must not decrease as S rises (S=%v)", s)
+		prev = got
+	}
+	assert.Greater(t, prev, newNetModelS(t, mc, hw, 8, 4, 1.0).StepTime(batch),
+		"a large S must cost strictly more than S=1")
+}
+
+// TestStepTime_SerializationFactorInertWithoutLatency verifies #1694 Part-B acceptance
+// #4: S multiplies an EXISTING cross-node latency term and never creates cost on its own.
+// With α_hop = 0 (no fabric latency declared) a large S must charge nothing extra — and
+// with the group contained in one node, likewise.
+func TestStepTime_SerializationFactorInertWithoutLatency(t *testing.T) {
+	mc := testModelConfig()
+	batch := stepBatch()
+
+	// α_hop = 0: no latency term for S to scale, even spanning.
+	noAlpha := fabricHW(9) // bandwidth calibrated, but InterNodeHopLatencyUs stays 0
+	assert.Equal(t,
+		newNetModelS(t, mc, noAlpha, 8, 4, 1.0).StepTime(batch),
+		newNetModelS(t, mc, noAlpha, 8, 4, 30.0).StepTime(batch),
+		"with α_hop=0 there is no latency term, so S charges nothing (Part-B AC #4)")
+
+	// Contained group (fits one node): hop count 0, so S again charges nothing.
+	withAlpha := noAlpha
+	withAlpha.InterNodeHopLatencyUs = 10
+	assert.Equal(t,
+		newNetModelS(t, mc, withAlpha, 8, 8, 1.0).StepTime(batch),
+		newNetModelS(t, mc, withAlpha, 8, 8, 30.0).StepTime(batch),
+		"a group contained in one node spans no hops, so S charges nothing")
+}

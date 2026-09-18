@@ -1,0 +1,670 @@
+package workload
+
+import (
+	"bytes"
+	"fmt"
+	"math"
+	"math/rand"
+	"os"
+
+	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v3"
+)
+
+// v1ToV2SLOClasses maps deprecated v1 SLO class names to v2 equivalents.
+var v1ToV2SLOClasses = map[string]string{
+	"realtime":    "critical",
+	"interactive": "standard",
+}
+
+// UpgradeV1ToV2 auto-upgrades a v1 WorkloadSpec to v2 format in-place.
+// Maps deprecated SLO class names (realtime→critical, interactive→standard)
+// and sets the version field to "2". Idempotent — calling on a v2 spec is safe.
+// Emits logrus.Warn deprecation notices for mapped tier names.
+func UpgradeV1ToV2(spec *WorkloadSpec) {
+	if spec == nil {
+		return
+	}
+	if spec.Version == "" || spec.Version == "1" {
+		spec.Version = "2"
+		for i := range spec.Clients {
+			if newName, ok := v1ToV2SLOClasses[spec.Clients[i].SLOClass]; ok {
+				logrus.Warnf("deprecated SLO class %q auto-mapped to %q; update your spec to use v2 tier names",
+					spec.Clients[i].SLOClass, newName)
+				spec.Clients[i].SLOClass = newName
+			}
+		}
+	}
+}
+
+// WorkloadSpec is the top-level workload configuration.
+// Loaded from YAML via LoadWorkloadSpec(path).
+type WorkloadSpec struct {
+	Version       string             `yaml:"version"`
+	Seed          int64              `yaml:"seed"`
+	Category      string             `yaml:"category"`
+	Clients       []ClientSpec       `yaml:"clients"`
+	Cohorts       []CohortSpec       `yaml:"cohorts,omitempty"`
+	AggregateRate float64            `yaml:"aggregate_rate"`
+	Horizon       int64              `yaml:"horizon,omitempty"`
+	NumRequests   int64              `yaml:"num_requests,omitempty"` // 0 = unlimited (use horizon only)
+	ServeGenData  *ServeGenDataSpec  `yaml:"servegen_data,omitempty"`
+	InferencePerf *InferencePerfSpec `yaml:"inference_perf,omitempty"`
+	// GoodputSLOTargets: per-SLO-class TTFT/ITL/E2E thresholds for goodput
+	// measurement (issue #1409). Consumed by cmd/-side goodput wiring with
+	// CLI > trace header > workload spec precedence. Distinct from the
+	// dispatch-ordering --slo-targets flag.
+	GoodputSLOTargets map[string]SLODimTargets `yaml:"goodput_slo_targets,omitempty"`
+}
+
+// CohortSpec describes a population of clients that share arrival behavior
+// and token distributions. Expanded into explicit ClientSpecs before generation.
+// It carries all ClientSpec fields except two: ID (generated per member by
+// ExpandCohorts) and Lifecycle (synthesized from Diurnal/Spike/Drain — exposing
+// Lifecycle directly would create two conflicting paths to the same effect).
+type CohortSpec struct {
+	ID            string          `yaml:"id"`
+	Population    int             `yaml:"population"`
+	TenantID      string          `yaml:"tenant_id,omitempty"`
+	SLOClass      string          `yaml:"slo_class,omitempty"`
+	Model         string          `yaml:"model,omitempty"`
+	Adapter       string          `yaml:"adapter,omitempty"` // LoRA adapter id (registry key; #1464). omitempty => base-model-only (no-op).
+	Arrival       ArrivalSpec     `yaml:"arrival"`
+	InputDist     DistSpec        `yaml:"input_distribution"`
+	OutputDist    DistSpec        `yaml:"output_distribution"`
+	PrefixGroup   string          `yaml:"prefix_group,omitempty"`
+	PrefixSharing string          `yaml:"prefix_sharing,omitempty"` // "shared" (default) or "per_member"
+	Streaming     bool            `yaml:"streaming,omitempty"`
+	RateFraction  float64         `yaml:"rate_fraction"`
+	Diurnal       *DiurnalSpec    `yaml:"diurnal,omitempty"`
+	Spike         *SpikeSpec      `yaml:"spike,omitempty"`
+	Drain         *DrainSpec      `yaml:"drain,omitempty"`
+	PrefixLength  int             `yaml:"prefix_length,omitempty"`
+	Reasoning     *ReasoningSpec  `yaml:"reasoning,omitempty"`
+	ClosedLoop    *bool           `yaml:"closed_loop,omitempty"`
+	Timeout       *int64          `yaml:"timeout,omitempty"`
+	SLOTargetUs   *int64          `yaml:"slo_target_us,omitempty"` // Per-request SLO TTFT target in µs. nil/0 = no target. (R9: pointer)
+	Network       *NetworkSpec    `yaml:"network,omitempty"`
+	Multimodal    *MultimodalSpec `yaml:"multimodal,omitempty"`
+}
+
+// DiurnalSpec configures sinusoidal rate modulation over a 24-hour cycle.
+// Trough is placed at PeakHour ± 12 by the cosine formula.
+type DiurnalSpec struct {
+	PeakHour          int     `yaml:"peak_hour"`            // 0-23
+	PeakToTroughRatio float64 `yaml:"peak_to_trough_ratio"` // >= 1.0
+}
+
+// SpikeSpec configures a traffic spike as a lifecycle window.
+// Clients are active during [StartTimeUs, StartTimeUs+DurationUs).
+type SpikeSpec struct {
+	StartTimeUs int64    `yaml:"start_time_us"`
+	DurationUs  int64    `yaml:"duration_us"`
+	TraceRate   *float64 `yaml:"trace_rate,omitempty"` // Cohort-level rate for absolute mode
+}
+
+// DrainSpec configures a linear ramp-down to zero rate.
+type DrainSpec struct {
+	StartTimeUs    int64 `yaml:"start_time_us"`
+	RampDurationUs int64 `yaml:"ramp_duration_us"`
+}
+
+// ClientSpec defines a single client's workload behavior.
+type ClientSpec struct {
+	ID           string          `yaml:"id"`
+	TenantID     string          `yaml:"tenant_id"`
+	SLOClass     string          `yaml:"slo_class"`
+	Model        string          `yaml:"model,omitempty"`
+	Adapter      string          `yaml:"adapter,omitempty"` // LoRA adapter id (registry key; #1464). omitempty => base-model-only (no-op).
+	RateFraction float64         `yaml:"rate_fraction"`
+	Concurrency  int             `yaml:"concurrency,omitempty"`
+	ThinkTimeUs  int64           `yaml:"think_time_us,omitempty"`
+	Arrival      ArrivalSpec     `yaml:"arrival"`
+	InputDist    DistSpec        `yaml:"input_distribution"`
+	OutputDist   DistSpec        `yaml:"output_distribution"`
+	PrefixGroup  string          `yaml:"prefix_group,omitempty"`
+	PrefixLength int             `yaml:"prefix_length,omitempty"` // shared prefix token count (default 50)
+	Streaming    bool            `yaml:"streaming"`
+	Network      *NetworkSpec    `yaml:"network,omitempty"`
+	Lifecycle    *LifecycleSpec  `yaml:"lifecycle,omitempty"`
+	Multimodal   *MultimodalSpec `yaml:"multimodal,omitempty"`
+	Reasoning    *ReasoningSpec  `yaml:"reasoning,omitempty"`
+	Timeout      *int64          `yaml:"timeout,omitempty"`       // Per-request timeout in µs. nil = default (300s). 0 = no timeout. (R9: pointer for zero-value)
+	SLOTargetUs  *int64          `yaml:"slo_target_us,omitempty"` // Per-request SLO TTFT target in µs. nil/0 = no target. (R9: pointer)
+	ClosedLoop   *bool           `yaml:"closed_loop,omitempty"`   // nil = default (true for reasoning/multi-turn). false = open-loop (all rounds pre-generated).
+	// CustomSamplerFactory allows programmatic injection of arrival sampler factories,
+	// bypassing the factory-based construction from Arrival.Process.
+	//
+	// Use cases:
+	// - inference-perf expansion: NormalizedExponentialSampler for exact count control
+	// - Programmatic workload generation with custom distributions
+	//
+	// The factory receives a sub-RNG derived from clientRNG with a single entropy draw,
+	// isolating the sampler's RNG consumption from downstream content sampling.
+	// This ensures input/output token distributions remain stable regardless of request count.
+	//
+	// When CustomSamplerFactory is set, Arrival.Process validation is skipped.
+	// The factory is called once per GenerateRequests invocation, ensuring workload reusability.
+	// Callers MUST handle zero-IAT as exhaustion signal if the sampler is stateful.
+	// Not exposed in YAML (yaml:"-" tag).
+	CustomSamplerFactory func(*rand.Rand) ArrivalSampler `yaml:"-"`
+}
+
+// ArrivalSpec configures the inter-arrival time process.
+type ArrivalSpec struct {
+	Process string   `yaml:"process"`
+	CV      *float64 `yaml:"cv,omitempty"`
+
+	// Optional MLE-fitted distribution parameters (ServeGen compatibility).
+	// When present, these override CV-based derivation in NewArrivalSampler.
+	// Populated by `blis convert servegen` (trace columns 5-6) or set directly in YAML for manual calibration.
+	Shape *float64 `yaml:"shape,omitempty"` // Gamma α or Weibull k
+	Scale *float64 `yaml:"scale,omitempty"` // Gamma θ or Weibull λ (in microseconds)
+}
+
+// DistSpec parameterizes a token length distribution.
+type DistSpec struct {
+	Type   string             `yaml:"type"`
+	Params map[string]float64 `yaml:"params,omitempty"`
+	File   string             `yaml:"file,omitempty"`
+}
+
+// NetworkSpec defines client-side network characteristics.
+type NetworkSpec struct {
+	RTTMs         float64 `yaml:"rtt_ms"`
+	BandwidthMbps float64 `yaml:"bandwidth_mbps,omitempty"`
+}
+
+// LifecycleSpec defines client activity windows.
+type LifecycleSpec struct {
+	Windows []ActiveWindow `yaml:"windows"`
+}
+
+// ActiveWindow represents a period when a client is active.
+type ActiveWindow struct {
+	StartUs int64 `yaml:"start_us"`
+	EndUs   int64 `yaml:"end_us"`
+
+	// Per-window parameters for time-varying workloads (ServeGen compatibility).
+	// When set, these override the client-level parameters during this window.
+	// TraceRate semantic depends on context:
+	//   - Rate-mode clients (aggregate_rate > 0): weight for proportional rate allocation
+	//   - Cohort spikes (aggregate_rate = 0): absolute per-client rate in requests/second
+	TraceRate  *float64     `yaml:"trace_rate,omitempty"`
+	Arrival    *ArrivalSpec `yaml:"arrival,omitempty"`             // Arrival pattern (shape/scale for CV)
+	InputDist  *DistSpec    `yaml:"input_distribution,omitempty"`  // Input token distribution
+	OutputDist *DistSpec    `yaml:"output_distribution,omitempty"` // Output token distribution
+}
+
+// MultimodalSpec configures multimodal request generation.
+type MultimodalSpec struct {
+	TextDist       DistSpec `yaml:"text_distribution"`
+	ImageDist      DistSpec `yaml:"image_distribution"`
+	ImageCountDist DistSpec `yaml:"image_count_distribution"`
+	AudioDist      DistSpec `yaml:"audio_distribution"`
+	AudioCountDist DistSpec `yaml:"audio_count_distribution"`
+	VideoDist      DistSpec `yaml:"video_distribution"`
+	VideoCountDist DistSpec `yaml:"video_count_distribution"`
+}
+
+// ReasoningSpec configures reasoning model workload generation.
+type ReasoningSpec struct {
+	ReasonRatioDist DistSpec       `yaml:"reason_ratio_distribution"`
+	MultiTurn       *MultiTurnSpec `yaml:"multi_turn,omitempty"`
+}
+
+// MultiTurnSpec configures multi-turn conversation behavior.
+type MultiTurnSpec struct {
+	MaxRounds     int    `yaml:"max_rounds"`
+	ThinkTimeUs   int64  `yaml:"think_time_us"`
+	ContextGrowth string `yaml:"context_growth"`
+	SingleSession bool   `yaml:"single_session,omitempty"`
+}
+
+// ServeGenDataSpec configures native ServeGen data file loading.
+// Used during conversion; not persisted in output YAML.
+type ServeGenDataSpec struct {
+	Path               string `yaml:"path,omitempty"`
+	TimeWindow         string `yaml:"time_window,omitempty"`          // Deprecated (single-period mode)
+	SpanStart          int64  `yaml:"span_start,omitempty"`           // Internal: computed from TimeWindow
+	SpanEnd            int64  `yaml:"span_end,omitempty"`             // Internal: computed from TimeWindow
+	WindowDurationSecs int    `yaml:"window_duration_secs,omitempty"` // Multi-period: duration of each period
+	DrainTimeoutSecs   int    `yaml:"drain_timeout_secs,omitempty"`   // Multi-period: gap between periods
+}
+
+// Valid value registries.
+var (
+	validArrivalProcesses = map[string]bool{
+		"poisson": true, "gamma": true, "weibull": true, "constant": true,
+	}
+	validDistTypes = map[string]bool{
+		"gaussian": true, "exponential": true, "pareto_lognormal": true, "lognormal": true, "empirical": true, "constant": true,
+	}
+	validCategories = map[string]bool{
+		"": true, "language": true, "multimodal": true, "reasoning": true,
+	}
+	validSLOClasses = map[string]bool{
+		"": true, "critical": true, "standard": true, "sheddable": true, "batch": true, "background": true,
+	}
+)
+
+// LoadWorkloadSpec reads and parses a YAML workload specification file.
+// Uses strict parsing: unrecognized keys (typos) are rejected.
+func LoadWorkloadSpec(path string) (*WorkloadSpec, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading workload spec: %w", err)
+	}
+	var spec WorkloadSpec
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&spec); err != nil {
+		return nil, fmt.Errorf("parsing workload spec: %w", err)
+	}
+	UpgradeV1ToV2(&spec)
+	return &spec, nil
+}
+
+// Validate checks that all fields in the spec are valid.
+func (s *WorkloadSpec) Validate() error {
+	if !validCategories[s.Category] {
+		return fmt.Errorf("unknown category %q; valid: language, multimodal, reasoning", s.Category)
+	}
+	// Only require aggregate_rate > 0 when at least one client is rate-based
+	// (Concurrency == 0). All-concurrency workloads don't need aggregate_rate.
+	hasRateBasedClient := false
+	for _, c := range s.Clients {
+		if c.Concurrency == 0 {
+			hasRateBasedClient = true
+			break
+		}
+	}
+	// Cohorts are always rate-based (no concurrency field).
+	if len(s.Cohorts) > 0 {
+		hasRateBasedClient = true
+	}
+	if hasRateBasedClient {
+		// aggregate_rate can be 0 in absolute rate mode. In this mode, each window
+		// must have an explicit trace_rate that is used directly instead of being
+		// scaled by aggregate_rate. Useful for time-varying workloads.
+		if s.AggregateRate == 0 {
+			// Verify all rate-based clients have windows with trace_rate
+			for i, c := range s.Clients {
+				if c.Concurrency == 0 { // rate-based
+					if c.Lifecycle == nil || len(c.Lifecycle.Windows) == 0 {
+						return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but client %d has no lifecycle windows with trace_rate", i)
+					}
+					for j, w := range c.Lifecycle.Windows {
+						if w.TraceRate == nil {
+							return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but client %d window %d has no trace_rate", i, j)
+						}
+					}
+				}
+			}
+			// Cohorts in absolute mode require spike.trace_rate
+			if len(s.Cohorts) > 0 {
+				for i, cohort := range s.Cohorts {
+					// Diurnal/Drain patterns in absolute mode: not yet supported
+					if cohort.Diurnal != nil {
+						return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but cohort %d has diurnal pattern (not yet supported; use spike with trace_rate)", i)
+					}
+					if cohort.Drain != nil {
+						return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but cohort %d has drain pattern (not yet supported; use spike with trace_rate)", i)
+					}
+					if cohort.Spike != nil {
+						if cohort.Spike.TraceRate == nil {
+							return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but cohort %d has spike without trace_rate", i)
+						}
+						// Validate TraceRate value (R11: prevent NaN/Inf/negative)
+						if err := validateFinitePositive(fmt.Sprintf("cohort %d spike.trace_rate", i), *cohort.Spike.TraceRate); err != nil {
+							return err
+						}
+					} else {
+						// No temporal pattern at all - would silently generate 0 requests (R1)
+						return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but cohort %d has no spike pattern with trace_rate", i)
+					}
+				}
+			}
+		} else {
+			// Normal proportional mode: aggregate_rate must be positive
+			if err := validateFinitePositive("aggregate_rate", s.AggregateRate); err != nil {
+				return err
+			}
+		}
+	}
+	if len(s.Clients) == 0 && s.ServeGenData == nil && len(s.Cohorts) == 0 {
+		return fmt.Errorf("at least one client, cohort, or servegen_data path required")
+	}
+	for i, c := range s.Clients {
+		if err := validateClient(&c, i); err != nil {
+			return err
+		}
+	}
+	// Mixed concurrency + multi-turn clients: the follow-up budget for
+	// concurrency sessions does not account for closed-loop multi-turn
+	// follow-ups, which could cause total requests to exceed num_requests.
+	hasConcurrency := false
+	hasMultiTurn := false
+	for _, c := range s.Clients {
+		if c.Concurrency > 0 {
+			hasConcurrency = true
+		}
+		if c.Reasoning != nil && c.Reasoning.MultiTurn != nil {
+			hasMultiTurn = true
+		}
+	}
+	for _, c := range s.Cohorts {
+		if c.Reasoning != nil && c.Reasoning.MultiTurn != nil {
+			hasMultiTurn = true
+		}
+	}
+	if hasConcurrency && hasMultiTurn {
+		return fmt.Errorf("concurrency clients and multi-turn clients cannot be mixed in the same spec: follow-up budget accounting does not support this combination")
+	}
+	for i, c := range s.Cohorts {
+		if err := validateCohort(&c, i); err != nil {
+			return err
+		}
+	}
+
+	// Empty slo_class normalizes to "standard" in metrics; mixed specs corrupt per-tier capacity planning signals.
+	hasExplicitSLO := false
+	hasEmptySLO := false
+	var explicitIDs []string
+	var emptyIDs []string
+
+	if s.InferencePerf == nil && s.ServeGenData == nil {
+		for i, c := range s.Clients {
+			if c.SLOClass != "" {
+				hasExplicitSLO = true
+				explicitIDs = append(explicitIDs, fmt.Sprintf("clients[%d]", i))
+			} else {
+				hasEmptySLO = true
+				emptyIDs = append(emptyIDs, fmt.Sprintf("clients[%d]", i))
+			}
+		}
+	}
+
+	for i, c := range s.Cohorts {
+		if c.SLOClass != "" {
+			hasExplicitSLO = true
+			explicitIDs = append(explicitIDs, fmt.Sprintf("cohorts[%d]", i))
+		} else {
+			hasEmptySLO = true
+			emptyIDs = append(emptyIDs, fmt.Sprintf("cohorts[%d]", i))
+		}
+	}
+
+	if hasExplicitSLO && hasEmptySLO {
+		explicitSample := explicitIDs
+		if len(explicitSample) > 3 {
+			explicitSample = explicitSample[:3]
+		}
+		emptySample := emptyIDs
+		if len(emptySample) > 3 {
+			emptySample = emptySample[:3]
+		}
+		return fmt.Errorf(
+			"mixed slo_class specification: if any client/cohort specifies slo_class, all must specify it; "+
+				"%d have explicit values %v, %d are empty %v",
+			len(explicitIDs), explicitSample,
+			len(emptyIDs), emptySample,
+		)
+	}
+
+	return nil
+}
+
+func validateClient(c *ClientSpec, idx int) error {
+	prefix := fmt.Sprintf("client[%d]", idx)
+	if !validSLOClasses[c.SLOClass] {
+		return fmt.Errorf("%s: unknown slo_class %q; valid: critical, standard, sheddable, batch, background, or empty", prefix, c.SLOClass)
+	}
+	// R3: Validate concurrency and think_time_us
+	if c.Concurrency < 0 {
+		return fmt.Errorf("%s: concurrency must be non-negative, got %d", prefix, c.Concurrency)
+	}
+	if c.ThinkTimeUs < 0 {
+		return fmt.Errorf("%s: think_time_us must be non-negative, got %d", prefix, c.ThinkTimeUs)
+	}
+	// Mutual exclusion: concurrency and rate_fraction cannot both be set
+	if c.Concurrency > 0 && c.RateFraction > 0 {
+		return fmt.Errorf("%s: concurrency and rate_fraction are mutually exclusive", prefix)
+	}
+	// Only require rate_fraction when not using concurrency mode
+	if c.Concurrency == 0 {
+		if err := validateFinitePositive(prefix+".rate_fraction", c.RateFraction); err != nil {
+			return err
+		}
+	}
+	// Arrival process and CV only apply to rate-based clients. Concurrency clients
+	// use staggered fixed seed times and never construct an arrival sampler.
+	// CustomSamplerFactory also bypasses arrival process validation (programmatic injection).
+	if c.Concurrency == 0 && c.CustomSamplerFactory == nil {
+		if !validArrivalProcesses[c.Arrival.Process] {
+			return fmt.Errorf("%s: unknown arrival process %q; valid: poisson, gamma, weibull, constant", prefix, c.Arrival.Process)
+		}
+		if c.Arrival.Process == "weibull" && c.Arrival.CV != nil {
+			// Skip CV bounds check when explicit MLE-fitted shape/scale are
+			// provided. In that case CV is informational metadata from the
+			// ServeGen trace and is not used for distribution derivation.
+			hasExplicitParams := c.Arrival.Shape != nil && c.Arrival.Scale != nil &&
+				*c.Arrival.Shape > 0 && *c.Arrival.Scale > 0
+			if !hasExplicitParams {
+				cv := *c.Arrival.CV
+				if cv < 0.01 || cv > 10.4 {
+					return fmt.Errorf("%s: weibull CV must be in [0.01, 10.4], got %f", prefix, cv)
+				}
+			}
+		}
+	}
+	if c.Concurrency == 0 && c.Arrival.CV != nil {
+		if err := validateFinitePositive(prefix+".cv", *c.Arrival.CV); err != nil {
+			return err
+		}
+	}
+	// Validate explicit shape/scale parameters if provided (ServeGen MLE-fitted params)
+	if c.Arrival.Shape != nil {
+		if err := validateFinitePositive(prefix+".arrival.shape", *c.Arrival.Shape); err != nil {
+			return err
+		}
+	}
+	if c.Arrival.Scale != nil {
+		if err := validateFinitePositive(prefix+".arrival.scale", *c.Arrival.Scale); err != nil {
+			return err
+		}
+	}
+	if c.PrefixLength < 0 {
+		return fmt.Errorf("%s: prefix_length must be non-negative, got %d", prefix, c.PrefixLength)
+	}
+	if err := validateDistSpec(prefix+".input_distribution", &c.InputDist); err != nil {
+		return err
+	}
+	if err := validateDistSpec(prefix+".output_distribution", &c.OutputDist); err != nil {
+		return err
+	}
+	// R3: Validate timeout if specified (negative values are invalid)
+	if c.Timeout != nil && *c.Timeout < 0 {
+		return fmt.Errorf("%s: timeout must be non-negative, got %d", prefix, *c.Timeout)
+	}
+	if c.SLOTargetUs != nil && *c.SLOTargetUs < 0 {
+		return fmt.Errorf("%s: slo_target_us must be non-negative, got %d", prefix, *c.SLOTargetUs)
+	}
+	// Validate MaxRounds for reasoning/multi-turn (prevents panic in NewSessionManager)
+	if c.Reasoning != nil && c.Reasoning.MultiTurn != nil && c.Reasoning.MultiTurn.MaxRounds < 1 {
+		return fmt.Errorf("%s: reasoning.multi_turn.max_rounds must be >= 1, got %d", prefix, c.Reasoning.MultiTurn.MaxRounds)
+	}
+	// Validate lifecycle windows (#1131): empty or degenerate windows would cause
+	// the generator to loop indefinitely against a MaxInt64 horizon.
+	if c.Lifecycle != nil {
+		if len(c.Lifecycle.Windows) == 0 {
+			return fmt.Errorf("%s: lifecycle specified with no windows", prefix)
+		}
+		for j, w := range c.Lifecycle.Windows {
+			if w.StartUs < 0 {
+				return fmt.Errorf("%s: lifecycle.windows[%d] has negative start_us (%d)", prefix, j, w.StartUs)
+			}
+			if w.EndUs <= w.StartUs {
+				return fmt.Errorf("%s: lifecycle.windows[%d] has end_us (%d) <= start_us (%d)", prefix, j, w.EndUs, w.StartUs)
+			}
+			// Validate per-window distribution overrides up front (#1460). These
+			// are consumed by generateRequestsForWindow only when a window is built,
+			// so an invalid override would otherwise surface as a generation-time
+			// error — and under the lazy generator with a binding maxRequests cap a
+			// late malformed window may never be built, so eager (which builds every
+			// window) would abort while lazy silently completed. Validating here
+			// closes that parity gap: both paths reject a malformed spec at the same
+			// point, independent of cap or horizon.
+			//
+			// We attempt NewLengthSampler (the exact constructor
+			// generateRequestsForWindow calls) rather than the weaker
+			// validateDistSpec, so Validate rejects precisely what generation would:
+			// unknown type AND missing required params AND min>max. NewLengthSampler
+			// is a pure, side-effect-free constructor; the sampler is discarded.
+			if w.InputDist != nil {
+				if err := validateDistSpec(fmt.Sprintf("%s.lifecycle.windows[%d].input_distribution", prefix, j), w.InputDist); err != nil {
+					return err
+				}
+				if _, err := NewLengthSampler(*w.InputDist); err != nil {
+					return fmt.Errorf("%s.lifecycle.windows[%d].input_distribution: %w", prefix, j, err)
+				}
+			}
+			if w.OutputDist != nil {
+				if err := validateDistSpec(fmt.Sprintf("%s.lifecycle.windows[%d].output_distribution", prefix, j), w.OutputDist); err != nil {
+					return err
+				}
+				if _, err := NewLengthSampler(*w.OutputDist); err != nil {
+					return fmt.Errorf("%s.lifecycle.windows[%d].output_distribution: %w", prefix, j, err)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func validateDistSpec(prefix string, d *DistSpec) error {
+	if !validDistTypes[d.Type] {
+		return fmt.Errorf("%s: unknown distribution type %q; valid: gaussian, exponential, pareto_lognormal, empirical, constant, lognormal", prefix, d.Type)
+	}
+	for name, val := range d.Params {
+		if math.IsNaN(val) || math.IsInf(val, 0) {
+			return fmt.Errorf("%s.params.%s must be a finite number, got %f", prefix, name, val)
+		}
+	}
+	return nil
+}
+
+// maxCohortPopulation caps per-cohort population to prevent OOM from YAML input.
+const maxCohortPopulation = 100_000
+
+func validateCohort(c *CohortSpec, idx int) error {
+	prefix := fmt.Sprintf("cohort[%d]", idx)
+	if c.Population <= 0 {
+		return fmt.Errorf("%s: population must be positive, got %d", prefix, c.Population)
+	}
+	if c.Population > maxCohortPopulation {
+		return fmt.Errorf("%s: population %d exceeds maximum %d", prefix, c.Population, maxCohortPopulation)
+	}
+	if err := validateFinitePositive(prefix+".rate_fraction", c.RateFraction); err != nil {
+		return err
+	}
+	if !validSLOClasses[c.SLOClass] {
+		return fmt.Errorf("%s: unknown slo_class %q; valid: critical, standard, sheddable, batch, background, or empty", prefix, c.SLOClass)
+	}
+	if !validArrivalProcesses[c.Arrival.Process] {
+		return fmt.Errorf("%s: unknown arrival process %q; valid: poisson, gamma, weibull, constant", prefix, c.Arrival.Process)
+	}
+	if c.Arrival.Process == "weibull" && c.Arrival.CV != nil {
+		// Skip CV bounds check when explicit MLE-fitted shape/scale are
+		// provided (same logic as validateClient).
+		hasExplicitParams := c.Arrival.Shape != nil && c.Arrival.Scale != nil &&
+			*c.Arrival.Shape > 0 && *c.Arrival.Scale > 0
+		if !hasExplicitParams {
+			cv := *c.Arrival.CV
+			if cv < 0.01 || cv > 10.4 {
+				return fmt.Errorf("%s: weibull CV must be in [0.01, 10.4], got %f", prefix, cv)
+			}
+		}
+	}
+	if c.Arrival.CV != nil {
+		if err := validateFinitePositive(prefix+".cv", *c.Arrival.CV); err != nil {
+			return err
+		}
+	}
+	// Validate explicit shape/scale parameters if provided (ServeGen MLE-fitted params)
+	if c.Arrival.Shape != nil {
+		if err := validateFinitePositive(prefix+".arrival.shape", *c.Arrival.Shape); err != nil {
+			return err
+		}
+	}
+	if c.Arrival.Scale != nil {
+		if err := validateFinitePositive(prefix+".arrival.scale", *c.Arrival.Scale); err != nil {
+			return err
+		}
+	}
+	if err := validateDistSpec(prefix+".input_distribution", &c.InputDist); err != nil {
+		return err
+	}
+	if err := validateDistSpec(prefix+".output_distribution", &c.OutputDist); err != nil {
+		return err
+	}
+	if c.Diurnal != nil {
+		if math.IsNaN(c.Diurnal.PeakToTroughRatio) || math.IsInf(c.Diurnal.PeakToTroughRatio, 0) || c.Diurnal.PeakToTroughRatio < 1.0 {
+			return fmt.Errorf("%s: diurnal peak_to_trough_ratio must be a finite number >= 1.0, got %f", prefix, c.Diurnal.PeakToTroughRatio)
+		}
+		if c.Diurnal.PeakHour < 0 || c.Diurnal.PeakHour > 23 {
+			return fmt.Errorf("%s: diurnal peak_hour must be 0-23, got %d", prefix, c.Diurnal.PeakHour)
+		}
+	}
+	if c.Spike != nil {
+		if c.Spike.StartTimeUs < 0 {
+			return fmt.Errorf("%s: spike start_time_us must be non-negative, got %d", prefix, c.Spike.StartTimeUs)
+		}
+		if c.Spike.DurationUs <= 0 {
+			return fmt.Errorf("%s: spike duration_us must be > 0, got %d", prefix, c.Spike.DurationUs)
+		}
+	}
+	if c.Drain != nil {
+		if c.Drain.StartTimeUs < 0 {
+			return fmt.Errorf("%s: drain start_time_us must be non-negative, got %d", prefix, c.Drain.StartTimeUs)
+		}
+		if c.Drain.RampDurationUs <= 0 {
+			return fmt.Errorf("%s: drain ramp_duration_us must be > 0, got %d", prefix, c.Drain.RampDurationUs)
+		}
+	}
+	if c.PrefixLength < 0 {
+		return fmt.Errorf("%s: prefix_length must be non-negative, got %d", prefix, c.PrefixLength)
+	}
+	if c.PrefixSharing != "" && c.PrefixSharing != "shared" && c.PrefixSharing != "per_member" {
+		return fmt.Errorf("%s: prefix_sharing must be \"shared\" or \"per_member\", got %q", prefix, c.PrefixSharing)
+	}
+	if c.PrefixSharing == "per_member" && c.PrefixGroup == "" {
+		return fmt.Errorf("%s: prefix_sharing \"per_member\" requires prefix_group to be set", prefix)
+	}
+	if c.Timeout != nil && *c.Timeout < 0 {
+		return fmt.Errorf("%s: timeout must be non-negative, got %d", prefix, *c.Timeout)
+	}
+	if c.SLOTargetUs != nil && *c.SLOTargetUs < 0 {
+		return fmt.Errorf("%s: slo_target_us must be non-negative, got %d", prefix, *c.SLOTargetUs)
+	}
+	if c.Reasoning != nil && c.Reasoning.MultiTurn != nil && c.Reasoning.MultiTurn.MaxRounds < 1 {
+		return fmt.Errorf("%s: reasoning.multi_turn.max_rounds must be >= 1, got %d", prefix, c.Reasoning.MultiTurn.MaxRounds)
+	}
+	return nil
+}
+
+// IsValidSLOClass reports whether name is a valid v2 SLO class.
+// Valid classes: "", "critical", "standard", "sheddable", "batch", "background".
+func IsValidSLOClass(name string) bool {
+	return validSLOClasses[name]
+}
+
+func validateFinitePositive(name string, val float64) error {
+	if math.IsNaN(val) || math.IsInf(val, 0) {
+		return fmt.Errorf("%s must be a finite number, got %f", name, val)
+	}
+	if val <= 0 {
+		return fmt.Errorf("%s must be positive, got %f", name, val)
+	}
+	return nil
+}

@@ -1,0 +1,140 @@
+# If you prefer the allow list template instead of the deny list, see community template:
+# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
+#
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Code coverage profiles and other test artifacts
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# env file
+.env
+
+# worktrees
+.worktrees/
+
+# MkDocs build output
+site/
+
+# Editor/IDE
+# .idea/
+# .vscode/
+.DS_Store
+__pycache__/*
+*/__pycache__/*
+
+# data files
+*.json
+!testdata/goldendataset.json
+!testdata/trained_physics_iter29.json
+!testdata/roofline_goldendataset.json
+!model_configs/*/config.json
+!hardware_config.json
+!specs/**/*.json
+!cmd/testdata/**/*.json
+!sim/latency/testdata/**/*.json
+data/
+*.txt
+
+# auto-fetched HuggingFace model configs (downloaded by --roofline)
+
+# binaries
+blis
+blis_iter*
+inference-sim
+
+# archon-go pr-review --out
+.archon/
+
+# results
+results/
+largesweep/
+*.zip
+
+# Training data pipeline (large data files — keep .py and .md only)
+training
+
+# Hypothesis experiment output (generated, reproducible from run.sh)
+hypotheses/*/output/
+hypotheses/*.yaml
+!examples/*.yaml
+!defaults.yaml
+!hypotheses/**/*.yaml
+
+# MkDocs symlink (created at build time, not committed — see C3 in PR #440)
+docs/contributing.md
+
+# uv files
+.python-version
+uv.lock
+.DS_Store
+*.ipynb
+*.pyc
+
+analysis_results/
+analysis_results_*/
+baseline_reg/
+results_old/
+.inference-sim-env/
+saturation_regimes.xlsx
+traces.csv
+
+prompts.md
+
+.venv/
+actions-runner/
+
+# Convergence review state (session-local, not committed)
+.claude/convergence-state/
+
+# Claude Code worktrees (created by EnterWorktree tool, not committed)
+.claude/worktrees/
+
+# Superpowers specs/plans (agent-local, not committed)
+docs/superpowers/
+
+# Bob-Shell notes (session-local, not committed)
+.bob/notes
+
+# Agent instruction files (generated, not committed)
+AGENTS.md
+.worktrees/
+*.bak
+
+# External-repo sibling directories cloned alongside inference-sim
+ServeGen/
+aiconfigurator/
+gateway-api-inference-extension/
+llm-d-inference-payload-processor/
+llm-d-inference-scheduler/
+llm-d-kv-cache/
+llm-d-pd-utils/
+llm-d-routing-sidecar/
+llm-d/
+sarathi-serve/
+vidur/
+vllm/
+
+# Plans
+docs/plans/
+
+# Nous campaign orchestration (experiment worktrees + state, not committed)
+.nous-experiments/
+.nous/
