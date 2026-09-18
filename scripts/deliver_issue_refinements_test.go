@@ -1,6 +1,7 @@
 package scripts_test
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -548,5 +549,175 @@ func TestCommentAuthorityDecisionRecordIsLinkedAndPresent(t *testing.T) {
 				"a decision record placed there is invisible to everyone but its author and this "+
 				"link is dead with nothing reporting it", linkedFrom, m[1], err)
 		}
+	}
+}
+
+// ── The live path: establishing each author's write access ─────────────────────────────────────
+//
+// Exercised through a `gh` stub on PATH rather than reasoned about, because the distinction it draws
+// is one a reading of the docs got wrong once already. `GET
+// /repos/{owner}/{repo}/collaborators/{login}/permission` requires PUSH access, and a genuine
+// non-collaborator returns 200 with `read` — so "no write access" normally arrives as a SUCCESSFUL
+// lookup, and a failed lookup really does mean the caller could not ask. Conflating the two makes a
+// read-only caller see "no design refinements" for every issue, which is #1782's silent failure one
+// level down.
+
+// stubGh writes a fake `gh` into its own directory and returns a PATH with that directory first.
+// `comments` is the JSON `gh issue view --json comments` should print; `permissionScript` is the body
+// of the `api …/permission` branch, so each test states only the API behaviour it is about.
+func stubGh(t *testing.T, comments, permissionScript string) string {
+	t.Helper()
+	dir := t.TempDir()
+
+	script := `#!/usr/bin/env bash
+set -uo pipefail
+case "${1:-}" in
+  "issue")
+    cat <<'PAYLOAD'
+` + comments + `
+PAYLOAD
+    exit 0
+    ;;
+  "api")
+` + permissionScript + `
+    ;;
+esac
+echo "stub gh: unexpected invocation: $*" >&2
+exit 1
+`
+	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o700); err != nil {
+		t.Fatalf("writing gh stub: %v", err)
+	}
+	return dir + string(os.PathListSeparator) + os.Getenv("PATH")
+}
+
+// runLive drives the script's live path against a stubbed gh, returning stdout, stderr and the exit
+// code.
+func runLive(t *testing.T, path string) (string, string, int) {
+	t.Helper()
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("jq is not on PATH")
+	}
+
+	cmd := exec.Command("bash", scriptPath(t, "deliver-issue-refinements.sh"), "1782")
+	cmd.Env = []string{"PATH=" + path, "GH_REPO=owner/repo"}
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+
+	code := 0
+	var exitErr *exec.ExitError
+	if err != nil {
+		if !errors.As(err, &exitErr) {
+			t.Fatalf("running script: %v", err)
+		}
+		code = exitErr.ExitCode()
+	}
+	return stdout.String(), stderr.String(), code
+}
+
+const oneHumanComment = `{"comments":[{"id":"a","author":{"login":"someone"},` +
+	`"authorAssociation":"CONTRIBUTOR","body":"Actually do X, not Y.",` +
+	`"createdAt":"2026-09-18T11:00:00Z","url":"https://example.invalid/a","isMinimized":false}]}`
+
+// The happy live path: a resolvable write-access author's comment becomes a refinement.
+func TestRefinementsLive_WriteAccessAuthorIsSurfaced(t *testing.T) {
+	path := stubGh(t, oneHumanComment, `    echo "write"; exit 0`)
+	stdout, _, code := runLive(t, path)
+
+	if code != 0 {
+		t.Errorf("exit %d, want 0.\nstdout:\n%s", code, stdout)
+	}
+	if !strings.Contains(stdout, "Actually do X, not Y") {
+		t.Errorf("a write-access author's refinement was not surfaced.\nstdout:\n%s", stdout)
+	}
+}
+
+// EVERY permission lookup failing is not "nobody has write access" — it is "authority could not be
+// established", and it must be marked. This is the case a read-only caller hits on every issue.
+func TestRefinementsLive_UnresolvablePermissionsAreMarkedNotSilent(t *testing.T) {
+	path := stubGh(t, oneHumanComment,
+		`    echo "gh: HTTP 403: Must have push access to view collaborator permission." >&2; exit 1`)
+	stdout, stderr, code := runLive(t, path)
+
+	if !strings.HasPrefix(stdout, "REFINEMENT-READ-FAILED") {
+		t.Errorf("no author's permission could be established, yet the digest does not say so. A "+
+			"read-only caller would be told every issue has no refinements — #1782's silent failure "+
+			"one level down.\nstdout:\n%s\nstderr:\n%s", stdout, stderr)
+	}
+	if code != 3 {
+		t.Errorf("exit %d, want 3 (degraded) so a caller can tell the read failed", code)
+	}
+	if strings.Contains(stdout, "body is the whole specification") {
+		t.Errorf("an unresolvable thread reported the no-refinements message.\nstdout:\n%s", stdout)
+	}
+}
+
+// A 404 is a DEFINITIVE answer — GitHub saying this login is not a collaborator, which is also what
+// a non-user login such as `github-actions` returns. Treating it as a failure would fire a false
+// alarm on any thread whose only commenter is one of those, and a false alarm that fires routinely
+// is a marker nobody reads.
+func TestRefinementsLive_A404IsDefinitiveNotAFailure(t *testing.T) {
+	path := stubGh(t, oneHumanComment,
+		`    echo "gh: Not Found (HTTP 404)" >&2; exit 1`)
+	stdout, stderr, code := runLive(t, path)
+
+	if code != 0 {
+		t.Errorf("exit %d, want 0: a 404 is GitHub answering \"not a collaborator\", not a failure "+
+			"to ask.\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+	if strings.Contains(stdout, "REFINEMENT-READ-FAILED") {
+		t.Errorf("a 404 was reported as an unreadable thread.\nstdout:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "Actually do X, not Y") {
+		t.Errorf("a non-collaborator's comment was surfaced as a refinement.\nstdout:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "body is the whole specification") {
+		t.Errorf("a definitively-unauthorised thread must report the no-refinements case "+
+			"explicitly.\nstdout:\n%s", stdout)
+	}
+}
+
+// A read-only permission is a successful lookup that means "no authority" — the ordinary way an
+// outside contributor's comment is excluded, and it must not degrade.
+func TestRefinementsLive_ReadOnlyAuthorIsExcludedWithoutDegrading(t *testing.T) {
+	path := stubGh(t, oneHumanComment, `    echo "read"; exit 0`)
+	stdout, _, code := runLive(t, path)
+
+	if code != 0 {
+		t.Errorf("exit %d, want 0: a resolvable `read` permission is an answer", code)
+	}
+	if strings.Contains(stdout, "Actually do X, not Y") {
+		t.Errorf("a read-only author's comment was surfaced.\nstdout:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "body is the whole specification") {
+		t.Errorf("expected the explicit no-refinements message.\nstdout:\n%s", stdout)
+	}
+}
+
+// A thread that is entirely bot comments must not attempt a permission lookup at all — the loop's own
+// bot holds write access, so a lookup would return `true` and the bot term would be the only thing
+// keeping the loop's refusal comments out of its next agent's spec. Also confirms an all-bot thread
+// does not degrade: there is no author whose authority failed to resolve.
+func TestRefinementsLive_AllBotThreadNeitherQueriesNorDegrades(t *testing.T) {
+	const botOnly = `{"comments":[{"id":"a","author":{"login":"claude[bot]"},` +
+		`"body":"## Blocked — not delivering yet","createdAt":"2026-09-18T11:00:00Z",` +
+		`"url":"https://example.invalid/a","isMinimized":false}]}`
+
+	path := stubGh(t, botOnly,
+		`    echo "stub gh: permission must not be queried for a bot" >&2; exit 1`)
+	stdout, stderr, code := runLive(t, path)
+
+	if code != 0 {
+		t.Errorf("exit %d, want 0. An all-bot thread has no authority to establish, so it must not "+
+			"degrade.\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+	if strings.Contains(stderr, "must not be queried") {
+		t.Error("a permission lookup was made for a bot login; bots are excluded before the lookup " +
+			"so that the loop's own write-access bot cannot be weighed")
+	}
+	if !strings.Contains(stdout, "body is the whole specification") {
+		t.Errorf("expected the explicit no-refinements message.\nstdout:\n%s", stdout)
 	}
 }

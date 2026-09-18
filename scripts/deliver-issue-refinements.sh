@@ -139,20 +139,62 @@ if ! LOGINS=$(jq -r '
   degrade "could not list comment authors for #$ISSUE"
 fi
 
+# Prints the author's permission and returns 0 when the answer is DEFINITIVE; returns 1 when the
+# lookup could not be made at all.
+#
+# The distinction is the difference between two outcomes that must not be conflated. A 404 is a real
+# answer — GitHub says this login is not a collaborator (it is also what a non-user login such as
+# `github-actions` returns) — whereas a 401/403/5xx/network failure means the caller could not ask.
+# Verified against this repository: a genuine non-collaborator returns 200 with `read`, so "no write
+# access" normally arrives as a successful lookup and a failure really is a failure.
+#
+# Why it matters: `GET /repos/{owner}/{repo}/collaborators/{login}/permission` needs PUSH access, so
+# a contributor with read-only access running this script gets a failure for EVERY author. Without
+# this split that reads as "nobody has write access" and the digest reports "no design refinements" —
+# reintroducing, one level down, the exact silent failure #1782 is about.
+resolve_permission() {
+  local login="$1" out
+  if out=$(gh api "repos/$REPO/collaborators/$login/permission" --jq '.permission' 2>"$TMP/err"); then
+    printf '%s' "$out"
+    return 0
+  fi
+  if grep -qi 'HTTP 404' "$TMP/err"; then
+    printf 'none'
+    return 0
+  fi
+  printf '%s' "$(tr '\n' ' ' < "$TMP/err")"
+  return 1
+}
+
 ACCESS='{}'
+attempted=0
+resolved=0
 while IFS= read -r login; do
   [[ -n "$login" ]] || continue
-  # A lookup that fails means "not a collaborator", which is the SAFE reading: the comment becomes
-  # unauthoritative rather than authoritative. A transient API failure therefore under-trusts, and
-  # the count printed below is what tells a reader it happened.
-  perm=$(gh api "repos/$REPO/collaborators/$login/permission" --jq '.permission' 2>/dev/null) || perm=""
-  case "$perm" in
-    admin | write | maintain) ok=true ;;
-    *) ok=false; echo "$SELF: @$login has no write access (permission='${perm:-unknown}') — their comments carry no authority" >&2 ;;
-  esac
+  attempted=$((attempted + 1))
+  ok=false
+  if perm=$(resolve_permission "$login"); then
+    resolved=$((resolved + 1))
+    case "$perm" in
+      admin | write | maintain) ok=true ;;
+      *) echo "$SELF: @$login has no write access (permission='$perm') — their comments carry no authority" >&2 ;;
+    esac
+  else
+    # Unresolved, so the comment is dropped: under-trusting costs a missed refinement, over-trusting
+    # hands the spec to an unverified author. Named on stderr so it is not invisible.
+    echo "$SELF: could not establish @$login's repository permission ($perm) — their comments are being dropped" >&2
+  fi
   ACCESS=$(jq -c --arg l "$login" --argjson v "$ok" '. + {($l): $v}' <<< "$ACCESS") \
     || degrade "could not record write access for @$login"
 done <<< "$LOGINS"
+
+# Not one author's authority could be established, and there was at least one to establish. Reporting
+# "no refinements" here would be a lie of exactly the kind this script exists to end — the thread was
+# read, but nothing in it could be weighed. The likeliest cause is a caller without push access,
+# which the permission endpoint requires.
+if [[ "$attempted" -gt 0 && "$resolved" -eq 0 ]]; then
+  degrade "none of the $attempted comment author(s)' repository permissions could be established (the permission endpoint requires push access)"
+fi
 
 if ! jq --argjson access "$ACCESS" \
       '.comments |= ((. // []) | map(. + {writeAccess: ($access[.author.login // ""] == true)}))' \
