@@ -17,12 +17,10 @@ import (
 // verdict again.
 //
 // The delivering credential could not push the workflow half: a GitHub App installation token
-// without the `workflows` permission is refused by both `git push` and the contents API
-// ("refusing to allow a GitHub App to create or update workflow ... without `workflows`
-// permission"). So the workflow half travels as an appliable patch, and the tests below hold the
-// contract over whichever of the two currently carries it — asserting the real workflow the
-// moment it lands, with no edit here.
-const qaWiringPatch = "scripts/qa-review/deliver-verify-qa-wiring.patch"
+// without the `workflows` permission is refused by both `git push` and the contents API. So the
+// workflow half originally travelled as an appliable patch; it has since been applied by a
+// workflows-scoped push and the patch deleted, so the wiring is now LIVE in deliver-verify.yml and
+// the tests below assert it there directly.
 
 // The three steps #1715 adds, plus the one it amends. Named as constants because every assertion
 // below is scoped to a specific step: a needle satisfied anywhere in the job would let the
@@ -39,10 +37,6 @@ func verifyWorkflowPath() string {
 	return filepath.Join("..", ".github", "workflows", "deliver-verify.yml")
 }
 
-func qaPatchPath() string {
-	return filepath.Join("..", "scripts", "qa-review", "deliver-verify-qa-wiring.patch")
-}
-
 func readFileOrFail(t *testing.T, path string) string {
 	t.Helper()
 	raw, err := os.ReadFile(path)
@@ -52,8 +46,8 @@ func readFileOrFail(t *testing.T, path string) string {
 	return string(raw)
 }
 
-// qaWiring returns the EXECUTABLE text of each step in the qa-review wiring, keyed by step name,
-// and whether that wiring is already live in deliver-verify.yml.
+// qaWiring returns the EXECUTABLE text of each step in the (now-live) qa-review wiring, keyed by
+// step name.
 //
 // "Executable" is load-bearing in two ways. Whole-line comments are stripped, for the reason
 // stripCommentLines exists in the sibling guard file: this change's own comments have to NAME
@@ -62,32 +56,16 @@ func readFileOrFail(t *testing.T, path string) string {
 // implements it. (Found by mutation-testing this file: deleting the real `--no-exec` left every
 // assertion passing.) And only `if`, `env` values and `run` are collected — YAML keys and step
 // names carry no behaviour.
-func qaWiring(t *testing.T) (steps map[string]string, live bool) {
+func qaWiring(t *testing.T) map[string]string {
 	t.Helper()
 
 	workflow := readFileOrFail(t, verifyWorkflowPath())
-	if strings.Contains(workflow, "name: "+qaRunStep) {
-		return liveStepCode(t, workflow), true
+	if !strings.Contains(workflow, "name: "+qaRunStep) {
+		t.Fatalf("deliver-verify.yml carries no %q step: #1715's gate half is merged and REQUIRES "+
+			"QA_VERDICT, so a workflow without the qa-review wiring is one whose delivery loop cannot "+
+			"reach a verdict", qaRunStep)
 	}
-
-	raw, err := os.ReadFile(qaPatchPath())
-	if err != nil {
-		t.Fatalf("deliver-verify.yml carries no qa-review wiring and %s is missing (%v). One of the "+
-			"two must hold it: #1715's gate half is merged and REQUIRES QA_VERDICT, so a tree with "+
-			"neither is a tree whose delivery loop cannot reach a verdict", qaWiringPatch, err)
-	}
-	// Only the patch's ADDED lines. Its context lines are the workflow as it stands, and asserting
-	// a NEW contract against them would pass on text this change did not write.
-	var added []string
-	for _, line := range strings.Split(string(raw), "\n") {
-		if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
-			added = append(added, strings.TrimPrefix(line, "+"))
-		}
-	}
-	if len(added) == 0 {
-		t.Fatalf("%s adds no lines, so it cannot be the pending qa-review wiring", qaWiringPatch)
-	}
-	return patchStepCode(added), false
+	return liveStepCode(t, workflow)
 }
 
 // liveStepCode collects each step's `if`, `env` values and `run` from the parsed workflow.
@@ -129,41 +107,6 @@ func liveStepCode(t *testing.T, workflow string) map[string]string {
 		b.WriteString(stripCommentLines(s.Run))
 		out[s.Name] = b.String()
 	}
-	return out
-}
-
-// patchStepCode splits the patch's added lines into per-step blocks on their `- name:` headers, so
-// the pending state is scoped exactly like the live one.
-func patchStepCode(added []string) map[string]string {
-	header := regexp.MustCompile(`^\s*- name:\s*(.+?)\s*$`)
-	out := map[string]string{}
-	current := ""
-	var buf []string
-	flush := func() {
-		if current != "" {
-			out[current] = strings.Join(buf, "\n")
-		}
-	}
-	for _, line := range added {
-		if m := header.FindStringSubmatch(line); m != nil {
-			flush()
-			current, buf = m[1], nil
-			continue
-		}
-		if strings.HasPrefix(strings.TrimSpace(line), "#") {
-			continue
-		}
-		if current != "" {
-			buf = append(buf, line)
-		} else {
-			// Lines before the first added step header: the Decide-step env addition and the
-			// narrowed security comments. Attribute the env line to the step that consumes it.
-			if strings.Contains(line, "QA_VERDICT:") {
-				out[decideStep] += line + "\n"
-			}
-		}
-	}
-	flush()
 	return out
 }
 
@@ -262,40 +205,16 @@ func TestDeliverVerifySuppliesEveryGateRequiredVar(t *testing.T) {
 		t.Fatalf("deliver-verify.yml has no %q step, so nothing runs the gate", decideStep)
 	}
 
-	// A missing variable is tolerable only in #1715's known PENDING state, and only because the
-	// patch is read here and checked to be a complete remedy — so this is an assertion about the
-	// pending wiring, not a waved-through gap.
-	//
-	// It skips rather than fails on purpose. Failing would turn CI red on a delivery whose only
-	// defect is a credential, and a correction round told to make CI green is one edit away from
-	// "fixing" it by deleting QA_VERDICT from the gate — reinstating the advisory-only review this
-	// issue exists to replace. The merge itself is blocked by the PR staying a draft.
-	//
-	// The skip needs the workflow to carry NO qa-review wiring at all. Once it is live, a missing
-	// variable is a defect IN that wiring, and letting a leftover patch file excuse it would make
-	// this guard permanently skippable: delete QA_VERDICT from Decide, leave the patch behind, and
-	// the loop breaks silently.
-	pendingState := !strings.Contains(raw, "name: "+qaRunStep)
-	pending, pendingErr := os.ReadFile(qaPatchPath())
-
+	// Every required signal must be supplied to the gate. Now that the qa-review wiring is live,
+	// a missing one is a defect IN it — there is no longer a pending-patch state to tolerate.
 	for _, name := range required {
 		if supplied[name] {
 			continue
 		}
-		if pendingState && pendingErr == nil && strings.Contains(string(pending), name+": ${{ steps.") {
-			t.Skipf("deliver-gate.sh requires %s and the %q step does not yet supply it, but %s does "+
-				"— #1715's gate half is merged and its workflow half is pending because the "+
-				"delivering GitHub App token lacks the `workflows` permission (both `git push` and "+
-				"the contents API refuse it). THESE TWO HALVES MUST MERGE TOGETHER: the gate exits 2 "+
-				"on an unset required variable, so shipping the gate alone stops every delivery with "+
-				"a wiring error. Apply that patch with a workflows-scoped credential and delete it; "+
-				"do NOT make the gate tolerate an unset signal", name, decideStep, qaWiringPatch)
-		}
-		t.Errorf("deliver-gate.sh requires %s but the %q step does not supply it, and no pending "+
-			"patch in %s remedies it (patch read: %v). The gate exits 2 on an unset required "+
-			"variable, so EVERY delivery would stop with a wiring error rather than a verdict. Wire "+
-			"the signal into the Decide step — do NOT remove it from the gate",
-			name, decideStep, qaWiringPatch, pendingErr)
+		t.Errorf("deliver-gate.sh requires %s but the %q step does not supply it. The gate exits 2 "+
+			"on an unset required variable, so EVERY delivery would stop with a wiring error rather "+
+			"than a verdict. Wire the signal into the Decide step — do NOT remove it from the gate",
+			name, decideStep)
 	}
 }
 
@@ -306,11 +225,7 @@ func TestDeliverVerifySuppliesEveryGateRequiredVar(t *testing.T) {
 // PR-authored code must never execute there. qa-review needs to READ the PR head, which narrows
 // that invariant; these assertions are what keep the narrowing from becoming a weakening.
 func TestQAWiringPreservesTheNoExecutionInvariant(t *testing.T) {
-	steps, live := qaWiring(t)
-	if !live {
-		t.Logf("asserting against the PENDING patch %s — deliver-verify.yml does not yet carry the "+
-			"wiring (see TestDeliverVerifySuppliesEveryGateRequiredVar)", qaWiringPatch)
-	}
+	steps := qaWiring(t)
 
 	run := requireStep(t, steps, qaRunStep)
 	for _, r := range []struct{ needle, why string }{
@@ -358,7 +273,7 @@ func TestQAWiringPreservesTheNoExecutionInvariant(t *testing.T) {
 // the pre-existing DELIVER-VERDICT reader satisfy these needles while the QA reader carried none
 // of them — which is the mutation this test had to be rewritten to catch.
 func TestQAVerdictMarkerContract(t *testing.T) {
-	steps, _ := qaWiring(t)
+	steps := qaWiring(t)
 
 	read := requireStep(t, steps, qaReadStep)
 	for _, r := range []struct{ needle, why string }{
@@ -409,7 +324,7 @@ func TestQAVerdictMarkerContract(t *testing.T) {
 // drive the scripts #1714 vendored, over the OpenAI-compatible surface, with the documented
 // `vars.* || default` model selection.
 func TestQAWiringUsesTheCommittedToolingAndConfiguredModels(t *testing.T) {
-	steps, _ := qaWiring(t)
+	steps := qaWiring(t)
 	run := requireStep(t, steps, qaRunStep)
 
 	for _, script := range []string{"questioner.py", "answerer.py", "render_report.py"} {

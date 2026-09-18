@@ -659,8 +659,11 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	// total; only the full-attention layers store a per-token KV cache. The count is
 	// len(linear_attn_config.full_attn_layers). 0 for every non-hybrid model →
 	// EffectiveKVBearingLayers falls back to NumLayers, so the KV footprint is
-	// byte-identical there (INV-6). Scoped to the KV-capacity path — KDA weights
-	// (#1638) and KDA step time (#1636) are out of scope and still use all NumLayers.
+	// byte-identical there (INV-6). Consumed by BOTH the KV-capacity path (#1635) and
+	// the step-time models (#1636): both roofline and trained-physics charge the
+	// sequence-length-dependent attention cost over these layers only and price the
+	// remaining KDA layers as linear attention. KDA *weights* (#1638) remain out of
+	// scope and are still charged as full attention over all NumLayers.
 	kvBearingLayers := hf.LinearAttnFullLayerCount()
 
 	// Reject negative values for the shape fields parsed above (#1527). getInt

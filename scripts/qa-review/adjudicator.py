@@ -1,9 +1,20 @@
 #!/usr/bin/env python3
 """qa-review adjudicator — author-defence re-check (used by #1716).
 
-Reads the most recent qa-review comment's "Items to fix" (parse_items_to_fix)
-and every later comment (the PR author's responses), then adjudicates each
-prior blocking finding against the author's defence and the current code.
+Reads the most recent qa-review REPORT comment's "Items to fix"
+(select_report_comment + parse_items_to_fix) and every later comment (the PR
+author's responses), then adjudicates each prior blocking finding against the
+author's defence and the current code.
+
+Source-comment selection is structural, not a substring search: a comment
+qualifies only if it IS a rendered report — an unquoted, unfenced
+"## qa-review — PR #" heading AND an "### Items to fix" section — and, when
+--report-author/QA_REPORT_AUTHOR is set, only if that login posted it. Keying
+on the bare banner substring let a later comment that merely QUOTED it (a
+self-review discussing the findings, or one pasting an example report inside
+``` fences) hijack the selection; with no Items-to-fix section of its own that
+comment yielded zero findings and a vacuous PASS — fail-OPEN on the one signal
+the delivery gate treats as fail-closed (observed on PR #1736).
 
 Per-finding verdict:
   RESOLVED               the finding is fixed in the current code.
@@ -18,12 +29,18 @@ interpretation rather than guessing.
 
 Aggregate verdict: BLOCK iff ANY finding is STILL_OPEN or left un-adjudicated;
 emitted on STDERR as "[adjudication verdict: PASS|BLOCK]" (not a PR marker —
-#1716 derives the gate marker).
+#1716 derives the gate marker from that line).
+
+Exit codes: 0 a verdict was emitted, 2 missing proxy configuration, 3 no prior
+qa-review report comment to adjudicate (deliberately NOT a PASS: there is
+nothing to re-check, so a verdict would be vacuous).
 
 Env:
   OPENAI_BASE_URL       LiteLLM proxy base URL (required)
   OPENAI_API_KEY        proxy key; falls back to LITELLM_KEY
   QA_ADJUDICATOR_MODEL  default azure/gpt-5.6-sol
+  QA_REPORT_AUTHOR      restrict the prior-report search to this comment
+                        author login (empty = any author)
 """
 
 import argparse
@@ -77,6 +94,11 @@ Do not wrap it in markdown fences."""
 # A blocking bullet rendered by render_report.py looks like:
 #   - **F2 · FLAW_FOUND** — <text>
 _ITEM_RE = re.compile(r"^\s*-\s+\*\*(?P<id>[A-Za-z]\d+)\s*·\s*(?P<was>[A-Z_]+)\*\*\s*—\s*(?P<text>.*)$")
+
+# render_report.py emits this exact bullet when a report has no blocking findings;
+# it is the ONLY non-finding line that legitimately fills the Items-to-fix section
+# (a genuine PASS report). Matched tolerant of whitespace/rendering.
+_NO_FINDINGS_RE = re.compile(r"^\s*-\s+_None\b.*no blocking findings", re.IGNORECASE)
 
 
 def parse_items_to_fix(comment_body):
@@ -477,11 +499,160 @@ def default_banner(amodel):
     )
 
 
-def fetch_comments(repo, pr):
+# ---------------------------------------------------------------------------
+# Source-comment selection (#1716).
+# ---------------------------------------------------------------------------
+
+# render_report.py's own two structural landmarks: the top-level verdict header
+# and the blocking-findings section. Both are emitted on every report, PASS or
+# BLOCK, so requiring both identifies a report without assuming its verdict.
+_REPORT_HEADING = "## qa-review — pr #"
+_ITEMS_HEADING = "### items to fix"
+
+
+def _leading_cols(raw):
+    """Leading indentation of `raw` in columns, tabs expanded to a stop of 4
+    (CommonMark). Distinguishes a >=4-column indented code block from ordinary
+    text without counting a tab as a single column."""
+    cols = 0
+    for ch in raw:
+        if ch == " ":
+            cols += 1
+        elif ch == "\t":
+            cols += 4 - (cols % 4)
+        else:
+            break
+    return cols
+
+
+def significant_lines(body):
+    """Yield `body`'s lines, stripped, with HTML comments, fenced code blocks,
+    blockquotes, and indented code blocks dropped.
+
+    Those are how a comment QUOTES or HIDES a report it is discussing rather
+    than being one — an example report pasted inside ``` fences, indented four
+    columns as a code block, quoted with `> `, or concealed inside an
+    `<!-- ... -->` HTML comment that renders invisibly to a human yet still
+    carries the structural landmarks (#1716 G1/G6). Dropping all of them is what
+    stops a discussion of the findings — or a deliberately hidden report shape —
+    from being mistaken for the report that raised them. A genuine report
+    contains none of them (render_report.py emits its landmarks unfenced,
+    unindented and unquoted, and only its optional banner is a blockquote), so
+    nothing a report needs is lost.
+
+    HTML comments are removed span-wise (multi-line, and an unclosed `<!--`
+    through end-of-body), and each span is replaced by the newlines it spanned —
+    or a single newline when it spanned none — so the fragments on either side,
+    whether same-line (`## qa-<!--x-->review`) or across a line break, can never
+    be fused into a synthetic landmark line (#1716 G1). Removal can therefore only
+    DELETE landmarks or leave blank lines behind — never synthesise one."""
+    body = re.sub(
+        r"<!--.*?(?:-->|$)",
+        lambda m: "\n" * max(1, m.group(0).count("\n")),
+        body,
+        flags=re.DOTALL,
+    )
+    fence_char = ""  # "" when not in a fence; otherwise the fence char "`" or "~"
+    fence_len = 0
+    for raw in body.splitlines():
+        cols = _leading_cols(raw)
+        stripped = raw.lstrip(" \t")
+        # A fence marker is a run of >=3 of the same char (` or ~) at <=3 columns
+        # of indentation (CommonMark; 4+ columns is indented code, not a fence).
+        marker_char, marker_len = "", 0
+        if cols <= 3 and stripped[:1] in ("`", "~"):
+            ch = stripped[0]
+            run = len(stripped) - len(stripped.lstrip(ch))
+            if run >= 3:
+                marker_char, marker_len = ch, run
+        if fence_char:
+            # Inside a fence: only a genuine CLOSING fence ends it — the SAME char, a
+            # run at least as long as the opener, and nothing but whitespace after it.
+            # A shorter run, a different char, or a trailing info string does NOT close
+            # the fence, so ``` cannot close ````, and ~~~ cannot close ``` (the #1716
+            # G1 bug: a mismatched marker toggled the block off early and exposed a
+            # quoted report heading as if it were a real one).
+            if (marker_char == fence_char and marker_len >= fence_len
+                    and stripped[marker_len:].strip() == ""):
+                fence_char, fence_len = "", 0
+            continue
+        if marker_char:
+            # Opening a new fence (an info string after the run is allowed).
+            fence_char, fence_len = marker_char, marker_len
+            continue
+        # A line indented >=4 columns is a CommonMark indented code block, not a
+        # structural landmark — drop it so an indented copy of the headings cannot
+        # pose as a genuine report (#1716 G6). render_report.py's landmarks sit at
+        # column 0.
+        if cols >= 4:
+            continue
+        line = raw.strip()
+        if line.startswith(">"):
+            continue
+        yield line
+
+
+def is_report_comment(body):
+    """True when `body` IS a rendered qa-review report rather than a comment
+    that quotes or discusses one.
+
+    Requires the verdict header, the Items-to-fix heading, AND a non-degenerate
+    Items-to-fix section — at least one line under it that is a finding bullet
+    (`- **ID · STATUS**`) or render_report.py's explicit "no blocking findings"
+    sentinel. A report SHAPE whose Items-to-fix section is empty parses to zero
+    findings, which the adjudicator would otherwise clear as a vacuous aggregate
+    PASS; requiring content keeps a genuine PASS report (which carries the
+    sentinel) selectable while rejecting an empty shell that a newer comment
+    could use to supersede a real report's findings (#1716 G2)."""
+    has_heading = False
+    in_items = False
+    items_has_content = False
+    for line in significant_lines(body):
+        lowered = line.lower()
+        if lowered.startswith(_REPORT_HEADING):
+            has_heading = True
+            in_items = False
+        elif lowered.startswith("### "):
+            # Any next section heading closes the Items-to-fix section; only the
+            # Items-to-fix heading (re)opens it.
+            in_items = lowered.startswith(_ITEMS_HEADING)
+        elif in_items and (_ITEM_RE.match(line) or _NO_FINDINGS_RE.match(line)):
+            # Agree with parse_items_to_fix: only a real finding bullet (_ITEM_RE) or
+            # render_report's "no blocking findings" sentinel counts as content. A bare
+            # "- ..." line parses to ZERO findings, so accepting it here would let a
+            # malformed-bullet report shell supersede a real report and clear as a
+            # vacuous aggregate PASS (#1716 G2).
+            items_has_content = True
+    return has_heading and items_has_content
+
+
+def select_report_comment(comments, report_author=""):
+    """Index of the most recent genuine qa-review report comment, or -1.
+
+    A comment qualifies iff is_report_comment() accepts its body and, when
+    `report_author` is given, that login posted it. The author restriction is
+    strict on purpose: this runs against a PUBLIC repository, so without it any
+    commenter could post a report-shaped comment with an empty Items-to-fix
+    section and clear every outstanding finding. It is empty by default so the
+    tool stays usable by hand, where the report's poster is whoever ran it."""
+    chosen = -1
+    for i, c in enumerate(comments):
+        if not is_report_comment(c.get("body") or ""):
+            continue
+        if report_author and (c.get("author") or {}).get("login", "") != report_author:
+            continue
+        chosen = i
+    return chosen
+
+
+def fetch_comments(repo, pr, report_author=""):
     """Return (items_to_fix, later_author_responses) from the PR's comments.
 
-    The most recent qa-review comment supplies the prior blocking findings;
-    every comment after it is treated as the author's defence."""
+    The most recent genuine qa-review REPORT comment supplies the prior
+    blocking findings; every comment after it is treated as the author's
+    defence. `items` is None — distinct from an empty list, which is a real
+    report with no blocking findings — when no report comment was found at all,
+    so a caller can refuse rather than adjudicate nothing."""
     proc = subprocess.run(
         ["gh", "pr", "view", str(pr), "--repo", repo, "--json", "comments"],
         capture_output=True,
@@ -489,13 +660,10 @@ def fetch_comments(repo, pr):
         check=True,
     )
     comments = json.loads(proc.stdout).get("comments", [])
-    last_qa = -1
-    for i, c in enumerate(comments):
-        if "## qa-review — PR #" in c.get("body", ""):
-            last_qa = i
+    last_qa = select_report_comment(comments, report_author)
     if last_qa < 0:
-        return [], ""
-    items = parse_items_to_fix(comments[last_qa]["body"])
+        return None, ""
+    items = parse_items_to_fix(comments[last_qa].get("body") or "")
     responses = "\n\n".join(c.get("body", "") for c in comments[last_qa + 1 :])
     return items, responses
 
@@ -510,6 +678,12 @@ def main(argv=None):
         "--model",
         default=os.environ.get("QA_ADJUDICATOR_MODEL", DEFAULT_MODEL),
         help="adjudicator model (default from QA_ADJUDICATOR_MODEL)",
+    )
+    parser.add_argument(
+        "--report-author",
+        default=os.environ.get("QA_REPORT_AUTHOR", ""),
+        help="only adjudicate a prior report posted by this comment author login "
+        "(empty = any author; see select_report_comment)",
     )
     parser.add_argument("--out", default="", help="write the report here (else stdout)")
     parser.add_argument("--post-to-pr", action="store_true", help="post as a PR comment")
@@ -529,8 +703,23 @@ def main(argv=None):
         sys.stderr.write("OPENAI_API_KEY (or LITELLM_KEY) is required\n")
         return 2
 
-    items, responses = fetch_comments(args.repo, args.pr)
+    items, responses = fetch_comments(args.repo, args.pr, args.report_author)
+    if items is None:
+        # NOT a PASS. There is no prior report to re-check, so any verdict would
+        # be vacuous — and the consumer that turns this into a gate signal reads
+        # the verdict line, so emitting one here would clear the qa dimension
+        # without anything having been reviewed.
+        sys.stderr.write(
+            "no qa-review report comment%s was found on #%s, so there are no prior "
+            "findings to adjudicate; refusing to emit a verdict\n"
+            % ((" from '%s'" % args.report_author) if args.report_author else "", args.pr)
+        )
+        return 3
     if not items:
+        # A real report whose Items-to-fix section is empty: it found nothing
+        # blocking, so there is genuinely nothing left open. That is a PASS on
+        # the strength of a review that ran — unlike the `items is None` case
+        # above, where no review was found at all.
         sys.stderr.write("[adjudication verdict: PASS]\n")
         report, _ = render([], [], args.pr, args.model, default_banner(args.model))
         if args.out:
