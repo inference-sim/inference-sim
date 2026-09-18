@@ -948,3 +948,79 @@ func TestAdjudicatorRefusesWhenThereIsNoPriorReport(t *testing.T) {
 			"reads as an adjudication that happened", out)
 	}
 }
+
+// TestSelectionAgreesWithTheRenderers is the companion law to the fixture-driven cases above: the
+// selector and the renderers must not drift apart.
+//
+// The fixtures encode what a report looks like TODAY. If render_report.py's header or section
+// headings ever change, those fixtures keep passing while every real re-verify starts refusing to
+// find its own prior report — exit 3, no marker, needs-human on every round. So the actual renderer
+// output is checked here, both verdicts; and the ADJUDICATOR's output is checked to be
+// unselectable, because a chain of re-verify rounds must keep adjudicating the original report
+// rather than the previous round's adjudication of it.
+func TestSelectionAgreesWithTheRenderers(t *testing.T) {
+	requirePython3(t)
+
+	selects := func(t *testing.T, body string) bool {
+		t.Helper()
+		prog := `
+import json, sys, adjudicator
+body = open(sys.argv[1], encoding="utf-8").read()
+comments = [{"author": {"login": "github-actions"}, "body": body}]
+print(json.dumps({
+    "is_report": adjudicator.is_report_comment(body),
+    "selected": adjudicator.select_report_comment(comments),
+}))
+`
+		stdout, stderr, code := runPython(t, "", "-c", prog, writeFixture(t, "body.md", body))
+		if code != 0 {
+			t.Fatalf("selection probe exit=%d stderr=%s", code, stderr)
+		}
+		var got struct {
+			IsReport bool `json:"is_report"`
+			Selected int  `json:"selected"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+			t.Fatalf("selection probe output is not JSON: %v (%s)", err, stdout)
+		}
+		if got.IsReport != (got.Selected == 0) {
+			t.Fatalf("is_report_comment=%v disagrees with select_report_comment=%d on the same body",
+				got.IsReport, got.Selected)
+		}
+		return got.IsReport
+	}
+
+	// Both verdicts of the real renderer. A PASS report's Items-to-fix section is present but empty,
+	// which must still make it selectable — an empty section means "nothing blocking", and the
+	// adjudicator distinguishes that from "no report found".
+	for _, tc := range []struct{ name, answers string }{
+		{"blocking", `[{"id":"F1","status":"FLAW_FOUND","answer":"a","evidence":"f.go:1"}]`},
+		{"clean", `[{"id":"F1","status":"CONFIDENT","answer":"a"}]`},
+	} {
+		t.Run("render_report-"+tc.name, func(t *testing.T) {
+			if !selects(t, renderFixture(t, tc.answers)) {
+				t.Errorf("render_report.py's own %s output is not recognised as a report comment. Every "+
+					"re-verify would refuse to find its prior report and stop for a human", tc.name)
+			}
+		})
+	}
+
+	t.Run("adjudication-report-is-not-a-report", func(t *testing.T) {
+		prog := `
+import sys, adjudicator
+items = [{"id": "F1", "was": "FLAW_FOUND", "text": "t"}]
+verdicts = [{"id": "F1", "verdict": "STILL_OPEN", "rationale": "not yet"}]
+report, _ = adjudicator.render(items, verdicts, "1736", "m", adjudicator.default_banner("m"))
+sys.stdout.write(report)
+`
+		stdout, stderr, code := runPython(t, "", "-c", prog)
+		if code != 0 {
+			t.Fatalf("adjudication render probe exit=%d stderr=%s", code, stderr)
+		}
+		if selects(t, stdout) {
+			t.Errorf("the adjudicator's OWN report is recognised as a qa-review report. Round 2 would "+
+				"then adjudicate round 1's adjudication instead of the findings the probe raised:\n%s",
+				stdout)
+		}
+	})
+}
