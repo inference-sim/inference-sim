@@ -46,10 +46,15 @@ here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 # `files` is emitted NEWLINE-delimited via GITHUB_OUTPUT's multiline form (#1781 G4): a git path
 # may contain spaces or commas, so a comma-joined single line could not be split back losslessly
-# for the PR comment. `state` stays single-line. The heredoc delimiter is a string no path equals.
+# for the PR comment. `state` stays single-line. The heredoc delimiter is RANDOM per call so no
+# conflicting path can equal it and close the block early (GitHub's recommended pattern); the
+# consumers that parse it manually read the delimiter off the `files<<` line.
 emit() {
   printf 'state=%s\n' "$1"
-  printf 'files<<__BLIS_FILES_EOF__\n%s\n__BLIS_FILES_EOF__\n' "${2-}"
+  local d
+  d="BLIS_FILES_$(od -An -N8 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
+  [[ "$d" != "BLIS_FILES_" ]] || d="BLIS_FILES_${RANDOM}${RANDOM}${RANDOM}"
+  printf 'files<<%s\n%s\n%s\n' "$d" "${2-}" "$d"
   exit 0
 }
 

@@ -454,9 +454,11 @@ jobs:
             | tee -a "$GITHUB_OUTPUT" > "$RUNNER_TEMP/conflictcheck.txt"
           state=$(sed -n 's/^state=//p' "$RUNNER_TEMP/conflictcheck.txt")
           # `files` is emitted NEWLINE-delimited in GITHUB_OUTPUT's multiline heredoc form (#1781
-          # G4 — a git path may contain a space or comma). Extract the block between the delimiters
-          # rather than sed-ing a single `files=` line, so a multi-path list arrives intact.
-          files=$(awk '/^files<<__BLIS_FILES_EOF__$/{f=1;next} $0=="__BLIS_FILES_EOF__"{f=0;next} f' "$RUNNER_TEMP/conflictcheck.txt")
+          # G4 — a git path may contain a space or comma). The delimiter is RANDOM per call, so read
+          # it off the `files<<` line rather than hardcoding it, then print the block up to it.
+          # `substr($0,8)` drops the literal "files<<" (7 chars). Extracting the block rather than
+          # sed-ing a single `files=` line is what lets a multi-path list arrive intact.
+          files=$(awk '!d && /^files<</ {d=substr($0,8); next} d && $0==d {d=""; next} d {print}' "$RUNNER_TEMP/conflictcheck.txt")
           # No state at all means the script itself did not run (missing, or a usage error). Warn
           # rather than escalate: `conflicting` is the only value that stops the delivery, and it
           # must never be inferred from a check that produced nothing.

@@ -52,12 +52,20 @@ git_as_bot() {
 
 # `files` is emitted NEWLINE-delimited via GITHUB_OUTPUT's multiline form, not a single
 # `files=<comma-joined>` line: a git path may legally contain spaces AND commas (git forbids only
-# NUL), so no single-character join is lossless (#1781 G4). The heredoc delimiter is a string no
-# path can equal. `state` stays a single line. A caller teeing this into $GITHUB_OUTPUT gets the
-# newline list back as one step output; the tests parse the same two forms.
+# NUL), so no single-character join is lossless (#1781 G4). `state` stays a single line.
+#
+# The heredoc delimiter is RANDOM per call (GitHub's own recommendation for untrusted multiline
+# output): a fixed delimiter that happened to equal a conflicting path's whole line would let that
+# path close the block early and inject further GITHUB_OUTPUT keys. Randomising makes a collision
+# impossible. The caller need not know the delimiter — GitHub parses the heredoc into the step
+# output, and the consumers that DO parse it manually (the tests, deliver-correct.yml) read the
+# delimiter off the `files<<` line rather than hardcoding it.
 emit() {
   printf 'state=%s\n' "$1"
-  printf 'files<<__BLIS_FILES_EOF__\n%s\n__BLIS_FILES_EOF__\n' "${2-}"
+  local d
+  d="BLIS_FILES_$(od -An -N8 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
+  [[ "$d" != "BLIS_FILES_" ]] || d="BLIS_FILES_${RANDOM}${RANDOM}${RANDOM}"
+  printf 'files<<%s\n%s\n%s\n' "$d" "${2-}" "$d"
   exit 0
 }
 

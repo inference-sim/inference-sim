@@ -1300,12 +1300,16 @@ jobs:
           # NEWLINE-delimited via the multiline step-output form (#1781 G4): a git path may contain
           # spaces or commas, so a comma- or space-joined single line could not be split back
           # losslessly. conflicting-files.sh already emits one path per line; the gate reads this
-          # env value newline-delimited. A random delimiter that no path can equal closes the
-          # value. `printf '%s'` (no trailing newline) so an empty list yields an empty value.
+          # env value newline-delimited (GitHub de-heredocs it into the step output). The delimiter
+          # is RANDOM per call so no conflicting path can equal it and inject further outputs
+          # (GitHub's recommended pattern). `printf '%s'` (no trailing newline) so an empty list
+          # yields an empty value.
+          d="BLIS_CONFLICT_FILES_$(od -An -N8 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
+          [[ "$d" != "BLIS_CONFLICT_FILES_" ]] || d="BLIS_CONFLICT_FILES_${RANDOM}${RANDOM}${RANDOM}"
           {
-            printf 'files<<__BLIS_CONFLICT_FILES_EOF__\n'
+            printf 'files<<%s\n' "$d"
             printf '%s' "$files"
-            printf '\n__BLIS_CONFLICT_FILES_EOF__\n'
+            printf '\n%s\n' "$d"
           } >> "$GITHUB_OUTPUT"
 
       - name: Decide
