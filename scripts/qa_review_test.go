@@ -775,6 +775,17 @@ const htmlCommentLineBreakComment = "## blis-pr-review — PR #1736\n" +
 	"### Items to fix\n" +
 	"- **Z9 · FLAW_FOUND** — synthesised across a comment line break, not real.\n"
 
+// #1716 G1 (round 3, same-line): an HTML comment WITHIN a line — spanning zero
+// newlines — must still not fuse the fragments around it. Removal that replaced a
+// zero-newline span with the empty string would collapse `## qa-<!-- x -->review`
+// to `## qa-review`. significant_lines now inserts at least one newline, so the
+// fragments land on separate lines and no `## qa-review — PR` landmark is made.
+const htmlCommentSameLineComment = "## blis-pr-review — PR #1736\n" +
+	"\n" +
+	"## qa-<!-- concealed -->review — PR #42: ⛔ BLOCK\n" +
+	"### Items to fix\n" +
+	"- **Z9 · FLAW_FOUND** — synthesised within a line by a same-line comment, not real.\n"
+
 // #1716 G6: a report shape indented four columns is a CommonMark indented code
 // block, not a real report. significant_lines drops >=4-column-indented lines,
 // so the concealed headings never register as landmarks.
@@ -968,6 +979,17 @@ func TestAdjudicatorSelectsTheGenuineReportComment(t *testing.T) {
 			comments: []map[string]any{
 				comment(poster, genuineReport),
 				comment("claude", htmlCommentLineBreakComment),
+			},
+			wantIDs: []string{"F1", "G3"},
+		},
+		{
+			// #1716 G1 (round 3, same-line): a same-line HTML comment (zero newlines)
+			// inside the heading must not fuse into a synthetic landmark. Fails if a
+			// zero-newline comment span is replaced by the empty string.
+			name: "html-comment-same-line-does-not-synthesize-heading",
+			comments: []map[string]any{
+				comment(poster, genuineReport),
+				comment("claude", htmlCommentSameLineComment),
 			},
 			wantIDs: []string{"F1", "G3"},
 		},

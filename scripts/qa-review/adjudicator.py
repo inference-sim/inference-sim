@@ -541,12 +541,16 @@ def significant_lines(body):
     nothing a report needs is lost.
 
     HTML comments are removed span-wise (multi-line, and an unclosed `<!--`
-    through end-of-body), and each span is replaced by the newlines it spanned,
-    so the fragments on either side of a line break can never be fused into a
-    synthetic landmark line (#1716 G1). Removal can therefore only DELETE
-    landmarks or leave blank lines behind — never synthesise one."""
+    through end-of-body), and each span is replaced by the newlines it spanned —
+    or a single newline when it spanned none — so the fragments on either side,
+    whether same-line (`## qa-<!--x-->review`) or across a line break, can never
+    be fused into a synthetic landmark line (#1716 G1). Removal can therefore only
+    DELETE landmarks or leave blank lines behind — never synthesise one."""
     body = re.sub(
-        r"<!--.*?(?:-->|$)", lambda m: "\n" * m.group(0).count("\n"), body, flags=re.DOTALL
+        r"<!--.*?(?:-->|$)",
+        lambda m: "\n" * max(1, m.group(0).count("\n")),
+        body,
+        flags=re.DOTALL,
     )
     fence_char = ""  # "" when not in a fence; otherwise the fence char "`" or "~"
     fence_len = 0
