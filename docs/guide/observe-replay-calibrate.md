@@ -60,7 +60,7 @@ Four input modes are available. At least one must be provided per invocation:
 
 | Mode | Flags | Description |
 |------|-------|-------------|
-| **Named preset** | `--workload <name> --rate <N>` | Standard workload from `defaults.yaml`; identical token distributions to `blis run --workload <name>` |
+| **Named preset** | `--workload <name> --rate <N>` | Standard workload from the catalog (`<catalog>/workloads/<name>.yaml`, #1769); identical token distributions to `blis run --workload <name>`, which reads the same file |
 | **Workload spec** | `--workload-spec <file>` | Multi-client workload from a YAML file |
 | **Distribution synthesis** | `--rate <N>` | Single-client workload with custom token distributions (see Distribution Synthesis Flags) |
 | **Closed-loop** | `--concurrency <N>` | Fixed pool of virtual users; arrival is response-driven (token distributions from Distribution Synthesis Flags) |
@@ -107,7 +107,7 @@ Four input modes are available. At least one must be provided per invocation:
 | `--min-tokens` | `int` | `0` | Set `min_tokens` in request body; requests server to generate at least N tokens before EOS. Set equal to `--output-tokens` for exact output length control (0 = omit). Compatible with `--unconstrained-output`: `min_tokens` is still sent, `max_tokens` is still omitted |
 | `--timeout` | `int` | `300` | HTTP request timeout in seconds (per request); increase for slow servers or large-prefill workloads |
 | `--rtt-ms` | `float64` | `0` | Measured network round-trip time in milliseconds |
-| `--defaults-filepath` | `string` | `"defaults.yaml"` | Path to `defaults.yaml` containing preset definitions (preset mode only) |
+| `--catalog` | `string` | `""` | Catalog clone root holding `workloads/<name>.yaml` (preset mode only). No default; `BLIS_CATALOG` is the fallback, and the flag wins when both are set (#1769 replaced `--defaults-filepath` here) |
 | `--record-itl` | `bool` | `false` | Record per-chunk timestamps for ITL calibration (forces streaming per request; mutually exclusive with `--no-streaming`; use with `--itl-output`) |
 | `--itl-output` | `string` | `""` | Output path for ITL CSV file (default: `<trace-data>.itl.csv` when `--record-itl` is set) |
 

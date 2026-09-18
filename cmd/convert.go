@@ -68,10 +68,9 @@ var convertServeGenCmd = &cobra.Command{
 // --- blis convert preset ---
 
 var (
-	presetName         string
-	presetRate         float64
-	presetNumRequests  int
-	presetDefaultsPath string
+	presetName        string
+	presetRate        float64
+	presetNumRequests int
 )
 
 var convertPresetCmd = &cobra.Command{
@@ -85,22 +84,14 @@ var convertPresetCmd = &cobra.Command{
 		if presetNumRequests <= 0 {
 			logrus.Fatalf("--num-requests must be > 0, got %d", presetNumRequests)
 		}
-		wl := loadPresetWorkload(presetDefaultsPath, presetName)
-		if wl == nil {
-			logrus.Fatalf("Unknown preset %q. Check defaults.yaml for available workloads.", presetName)
+		// #1769: presets come from the catalog (<catalog>/workloads/<name>.yaml), not from
+		// the bundled defaults.yaml, so --name resolves identically here and under
+		// `blis run --workload` / `blis observe --workload`.
+		wl, err := loadPresetWorkload(presetName)
+		if err != nil {
+			logrus.Fatalf("--name %q: %v", presetName, err)
 		}
-		preset := workload.PresetConfig{
-			PrefixTokens:      wl.PrefixTokens,
-			PromptTokensMean:  wl.PromptTokensMean,
-			PromptTokensStdev: wl.PromptTokensStdev,
-			PromptTokensMin:   wl.PromptTokensMin,
-			PromptTokensMax:   wl.PromptTokensMax,
-			OutputTokensMean:  wl.OutputTokensMean,
-			OutputTokensStdev: wl.OutputTokensStdev,
-			OutputTokensMin:   wl.OutputTokensMin,
-			OutputTokensMax:   wl.OutputTokensMax,
-		}
-		spec, err := workload.ConvertPreset(presetName, presetRate, presetNumRequests, preset)
+		spec, err := workload.ConvertPreset(presetName, presetRate, presetNumRequests, wl.toPresetConfig())
 		if err != nil {
 			logrus.Fatalf("Preset conversion failed: %v", err)
 		}
@@ -169,16 +160,6 @@ func writeSpecToStdout(spec *workload.WorkloadSpec) {
 	fmt.Print(string(data))
 }
 
-// loadPresetWorkload loads a named preset from defaults.yaml.
-// Returns nil if the preset is not found.
-func loadPresetWorkload(defaultsPath, name string) *Workload {
-	cfg := loadDefaultsConfig(defaultsPath)
-	if wl, ok := cfg.Workloads[name]; ok {
-		return &wl
-	}
-	return nil
-}
-
 func init() {
 	convertServeGenCmd.Flags().StringVar(&serveGenPath, "path", "", "Path to ServeGen data directory")
 	convertServeGenCmd.Flags().IntVar(&serveGenWindowDurationSec, "window-duration-seconds", 600, "Duration of each time period in seconds")
@@ -186,10 +167,13 @@ func init() {
 	convertServeGenCmd.Flags().StringVar(&serveGenTimeFilter, "time", "", "Optional: filter to single period (midnight, morning, or afternoon)")
 	_ = convertServeGenCmd.MarkFlagRequired("path")
 
-	convertPresetCmd.Flags().StringVar(&presetName, "name", "", "Preset name (e.g., chatbot, summarization)")
+	convertPresetCmd.Flags().StringVar(&presetName, "name", "", "Preset name (e.g., chatbot, summarization), read from <catalog>/"+catalogWorkloadsSubdir+"/<name>"+presetFileExt)
 	convertPresetCmd.Flags().Float64Var(&presetRate, "rate", 1.0, "Request rate in req/s")
 	convertPresetCmd.Flags().IntVar(&presetNumRequests, "num-requests", 100, "Number of requests")
-	convertPresetCmd.Flags().StringVar(&presetDefaultsPath, "defaults-filepath", "defaults.yaml", "Path to defaults.yaml")
+	// #1769: the preset comes from the catalog, so this command needs the catalog locator —
+	// and no longer needs --defaults-filepath, whose only consumer was the retired
+	// defaults.yaml `workloads:` block.
+	registerCatalogFlag(convertPresetCmd)
 	_ = convertPresetCmd.MarkFlagRequired("name")
 
 	convertInfPerfCmd.Flags().StringVar(&infPerfSpecPath, "spec", "", "Path to inference-perf YAML spec")

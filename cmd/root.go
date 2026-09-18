@@ -1575,8 +1575,8 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&seed, "seed", 42, "Seed for random request generation")
 	cmd.Flags().Int64Var(&simulationHorizon, "horizon", math.MaxInt64, "Total simulation horizon (in ticks)")
 	cmd.Flags().StringVar(&logLevel, "log", "warn", "Log level for diagnostic messages (trace, debug, info, warn, error, fatal, panic). Simulation results always print to stdout regardless of this setting.")
-	cmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained coefficients, default specs and workloads")
-	cmd.Flags().StringVar(&catalogPath, "catalog", "", "Path to the model catalog CLONE ROOT (#1774). A model's HuggingFace config.json is read from <catalog>/"+catalogModelsSubdir+"/<short-name>/config.json, with a transition fallback to the flat <catalog>/<short-name>/config.json (the bundled model_configs/ tree; removed by #1771). Path semantics: a RELATIVE value is resolved against the current working directory, an ABSOLUTE value is used as given. No default and no search path — supply this flag or the "+catalogEnvVar+" environment variable (the flag wins when both are set), or the run is refused naming both. BLIS never fetches or writes a config at run time: an uncatalogued model is refused naming the path its entry belongs at (NS-6, #1733)")
+	cmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained coefficients and device constants")
+	registerCatalogFlag(cmd)
 	cmd.Flags().StringVar(&hwConfigPath, "hardware-config", "", "Path to file containing hardware config")
 
 	// vLLM server configs
@@ -2292,17 +2292,14 @@ var runCmd = &cobra.Command{
 			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
 				logrus.Fatalf("--rate must be a finite value > 0, got %v", rate)
 			}
-			wl := loadPresetWorkload(defaultsFilePath, workloadType)
-			if wl == nil {
-				logrus.Fatalf("Undefined workload %q. Use one among (chatbot, summarization, contentgen, multidoc) or --workload-spec", workloadType)
+			// #1769: the preset is read from <catalog>/workloads/<name>.yaml, through the
+			// same reader `blis convert preset` and `blis observe --workload` use.
+			wl, presetErr := loadPresetWorkload(workloadType)
+			if presetErr != nil {
+				logrus.Fatalf("--workload %q could not be resolved: %v\n"+
+					"  (or supply the workload directly with --workload-spec)", workloadType, presetErr)
 			}
-			spec = workload.SynthesizeFromPreset(workloadType, workload.PresetConfig{
-				PrefixTokens:     wl.PrefixTokens,
-				PromptTokensMean: wl.PromptTokensMean, PromptTokensStdev: wl.PromptTokensStdev,
-				PromptTokensMin: wl.PromptTokensMin, PromptTokensMax: wl.PromptTokensMax,
-				OutputTokensMean: wl.OutputTokensMean, OutputTokensStdev: wl.OutputTokensStdev,
-				OutputTokensMin: wl.OutputTokensMin, OutputTokensMax: wl.OutputTokensMax,
-			}, rate, numRequests)
+			spec = workload.SynthesizeFromPreset(workloadType, wl.toPresetConfig(), rate, numRequests)
 			spec.Seed = seed
 		}
 

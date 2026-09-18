@@ -331,7 +331,8 @@ inference-sim/
 │   ├── convert.go          # `blis convert` subcommands (servegen, preset, inference-perf)
 │   ├── compose.go          # `blis compose` for merging v2 specs
 │   ├── hfconfig.go         # Catalog lookup of a model's config.json (read-only; refuses an uncatalogued model)
-│   └── default_config.go   # defaults.yaml loading (workload presets + shipped constants; no per-model deployment policy since #1768)
+│   ├── catalog_workloads.go # Named workload presets read from <catalog>/workloads/<name>.yaml (#1769)
+│   └── default_config.go   # defaults.yaml loading (shipped constants only; no per-model deployment policy since #1768, no workload presets since #1769 — those live in the catalog)
 ├── sim/                    # Core simulation engine
 │   ├── config.go           # Module-scoped sub-config types (R16)
 │   ├── doc.go              # Package reading guide
