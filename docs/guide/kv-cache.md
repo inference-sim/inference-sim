@@ -145,19 +145,129 @@ prefill forward pass, so it lowers that request's prefill compute and TTFT rathe
 charged as a full recompute (#1699; the same correction applies to the legacy `--kv-cpu-blocks`
 tier). Reuse is single-instance (offload tiers are per-instance and invisible to the router).
 
-!!! note "Chunked-prefill limitation (#1706)"
-    The reload credit is currently capped at **one prefill chunk**. When a reload extends the
-    cached prefix past a request's per-step chunk boundary (set by `--long-prefill-token-threshold`
-    / `--max-num-batched-tokens`), only the first chunk is billed as a hit; the reloaded remainder
-    is re-billed as recompute on later steps. So for long-context prompts that are chunked (the main
-    reason to offload KV), the realized TTFT benefit is roughly `chunk_size / prompt_length` — small
-    at the default batched-token budget. Uncapped (prompt-fits-one-chunk) workloads get the full
-    credit. Tracked in [#1706](https://github.com/inference-sim/inference-sim/issues/1706).
+At `block_size == 1` decode blocks take a guarded allocation path that leaves them unhashed, so
+decode-offload is inert there — a degenerate offload block size (real offload block sizes track
+the GPU block size). With no `--kv-offload-config`, behavior is unchanged (INV-6).
 
-At `block_size == 1` decode blocks take a guarded
-allocation path that leaves them unhashed, so decode-offload is inert there — a degenerate offload
-block size (real offload block sizes track the GPU block size). With no `--kv-offload-config`,
-behavior is unchanged (INV-6).
+### Enabling and Disabling Offload
+
+Offload is **off by default**. There is one switch — the presence of `--kv-offload-config`:
+
+```bash
+# ENABLED — CPU staging tier
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --workload-spec wl_multitenant.yaml \
+  --total-kv-blocks 3000 --kv-offload-config offload_cpu.yaml
+
+# DISABLED — omit the flag
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --workload-spec wl_multitenant.yaml \
+  --total-kv-blocks 3000
+```
+
+`--kv-offload-config` is mutually exclusive with the legacy scalar `--kv-cpu-blocks` tier.
+
+### Sizing the CPU Tier
+
+The CPU tier is configured in **bytes**, but the cache uses it in **blocks** — the same unit as
+the GPU tier's `--total-kv-blocks`. BLIS converts once, at startup:
+
+```
+block_capacity = floor(cpu_bytes_to_use / per_block_bytes)
+```
+
+Because both tiers are counted in blocks, they are directly comparable, and that gives the one
+sizing rule that matters:
+
+> **`block_capacity` must comfortably exceed `--total-kv-blocks`.** A CPU tier no larger than the
+> GPU tier cannot serve anything the GPU evicted, and the run will show no benefit.
+
+`per_block_bytes` is derived from the model, so it differs per deployment. For Qwen3-14B at TP=1
+it is **2,621,440 bytes**, which makes the 1 TiB tier used in the example below
+`1099511627776 / 2621440` = **419,430 blocks** — well clear of the 3,000 GPU blocks. To check any
+config, compare `cpu_bytes_to_use / per_block_bytes` against `--total-kv-blocks` before drawing
+conclusions from a run. For the example workload below:
+
+```
+shared prefixes  100 × 1024/16 =  6,400 blocks
+unique tails     600 × 1280/16 = 48,000 blocks
+tier saturates at              = 54,400 blocks
+```
+
+!!! note "`cpu_bytes_to_use` is per GPU, not per deployment"
+    Under tensor parallelism the KV cache is sharded across ranks, so both sides of that division
+    are per-rank quantities. The host memory a deployment actually consumes is `TP × cpu_bytes_to_use`.
+    A node-level memory budget must therefore be divided by TP before it goes in the file. This
+    matches vLLM, where `cpu_bytes_to_use` is likewise a per-worker budget.
+
+### Example: The Measured Effect of CPU Offload
+
+#### The workload needs prefixes the GPU will evict
+
+Offload only helps if blocks are **evicted** from the GPU and later requested again. Otherwise the
+KV cache stays on the GPU and the lower tiers have almost nothing to serve. The fixture below uses
+100 distinct per-tenant prefixes so eviction happens without having to starve the GPU:
+
+```yaml
+# wl_multitenant.yaml — 100 tenants, each with its own 1,024-token prefix
+version: "2"
+seed: 42
+aggregate_rate: 4.0
+num_requests: 600
+cohorts:
+  - id: tenants
+    population: 100
+    prefix_group: doc
+    prefix_sharing: per_member     # 100 DISTINCT prefixes => GPU must evict
+    prefix_length: 1024            # ADDITIVE on input_distribution
+    rate_fraction: 1.0
+    arrival: {process: poisson}
+    input_distribution:  {type: constant, params: {value: 1280}}
+    output_distribution: {type: constant, params: {value: 16}}
+```
+
+```yaml
+# offload_cpu.yaml — one CPU tier, sized well above the GPU tier
+kv_offload:
+  cpu_bytes_to_use: 1099511627776   # 1 TiB
+  block_size: 16
+  eviction_policy: lru
+  offload_prompt_only: true
+```
+
+!!! warning "`prefix_length` is added to `input_distribution`"
+    The generator samples `input_distribution` first, then prepends the prefix tokens to that slice:
+
+    ```go
+    // sim/workload/generator.go
+    inputTokens = append(append([]sim.TokenID{}, prefix...), inputTokens...)
+    ```
+
+    The prefix is therefore extra tokens on top of the sampled length, not a shared portion carved
+    out of it: `input_distribution: 1280` with `prefix_length: 1024` means 1,024 prefix tokens are
+    added to 1,280 **unique** tokens per request — a **2,304**-token prompt in total.
+
+    Separately, `--workload-spec` supersedes `--prefix-tokens` / `--rate` on the command line, so
+    the arrival rate comes from the spec's `aggregate_rate: 4.0`.
+
+#### Results
+
+Run the enabled and disabled commands from the previous section. `Cache Hit Rate` is printed to
+stdout under `=== KV Cache Metrics ===`; add `--metrics-path m.json` for the full-precision
+`cache_hit_rate` field.
+
+| | `cache_hit_rate` | `ttft_mean_ms` | `e2e_mean_ms` | `responses_per_sec` |
+|---|---|---|---|---|
+| Offload **disabled** | 0.0772 | 52.550 | 250.303 | 4.1640 |
+| Offload **enabled** (1 TiB CPU tier) | **0.3678** | **40.605** | **235.619** | 4.1645 |
+
+Cache hit rate rises **4.8×** and mean TTFT falls **22.7%** (−11.9 ms). Throughput is unchanged
+because this workload is arrival-bound — 4 req/s offered against an unsaturated instance. Offload
+buys latency here; it buys *throughput* only under saturation, where spending fewer prefill tokens
+per request lets more requests into each step.
+
+Why the hit rate lands near 0.37: only the 1,024-token prefix is shareable and each tenant's first
+request must miss, so a little over a third is the ceiling. The enabled run reaches 0.3678 —
+essentially every reuse the workload contains, and the same hit rate an unconstrained GPU cache
+achieves on this workload.
 
 ## Chunked Prefill
 

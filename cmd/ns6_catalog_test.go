@@ -160,7 +160,7 @@ func TestNS6_ObserveTakesNoDeploymentFlags(t *testing.T) {
 func TestNS6_RequireDeploymentFlags_AcceptsFullySpecified(t *testing.T) {
 	// requireDeploymentFlags terminates the process on refusal, so reaching the next
 	// statement IS the assertion that a complete deployment is accepted.
-	requireDeploymentFlags("H100", 1)
+	requireDeploymentFlags(deploymentFlagValues{GPU: "H100", GPUSupplied: true, TP: 1, TPSupplied: true})
 }
 
 // ns6DeploymentFatalSubprocess drives resolveLatencyConfig in a subprocess with one of

@@ -94,7 +94,7 @@ Top-level settings that control the simulation run.
 | `--seed` | int64 | 42 | Random seed for deterministic simulation. Same seed produces byte-identical stdout. |
 | `--horizon` | int64 | MaxInt64 | Simulation time limit in ticks (microseconds). Simulation stops when clock exceeds horizon or all requests complete. |
 | `--log` | string | "warn" | Log verbosity: trace, debug, info, warn, error, fatal, panic. Logs go to stderr. |
-| `--metrics-path` | string | "" | File path to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats). blis run only — blis replay uses `--results-path` instead. Empty = no file output. |
+| `--metrics-path` | string | "" | File path to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats, plus the `cache_hit_rate` and `catalog` provenance fields when those apply). Accepted on **both** `blis run` and `blis replay` (#1583 added it to replay so `blis calibrate --sim-metrics` can read a replayed hit-rate). Distinct from replay's `--results-path`, which writes the **per-request** `[]SimResult` array and is replay-only. Empty = no file output. |
 
 ## KV Cache Configuration
 
@@ -134,7 +134,11 @@ Trained coefficients for physics-informed latency estimation. Maps to `LatencyCo
 | `--alpha-coeffs` | float64 slice | [0, 0, 0] | Alpha coefficients [alpha0, alpha1, alpha2]. Models non-GPU overhead. Must be non-negative. |
 | `--beta-coeffs` | float64 slice | [0, 0, 0] | Beta coefficients [beta0, beta1, beta2]. Models GPU step time. Must be non-negative. |
 
-When `--alpha-coeffs` and `--beta-coeffs` are not explicitly provided on the CLI, BLIS automatically loads pre-trained coefficients from `defaults.yaml` based on the model, GPU, and TP configuration. Explicitly passing `--alpha-coeffs 0,0,0` preserves zero coefficients (they are not overridden by defaults).
+When `--latency-model trained-physics` (the default) is in force and `--alpha-coeffs`/`--beta-coeffs` are not explicitly provided on the CLI, BLIS loads the coefficients from the single `trained_physics_coefficients` block in `defaults.yaml` (`alpha_coeffs` + `beta_coeffs`). That block is **global — one set for every model, GPU and TP degree**; there is no per-model, per-GPU or per-TP keyed lookup, and none has ever existed. Generalizing across architectures without a per-deployment fit is the point of the trained-physics backend: the roofline basis functions carry the architecture and hardware dependence, and the coefficients only correct them.
+
+The two flags must be supplied **together or not at all** (supplying one without the other is refused), so either both values come from the file or both come from the CLI. Explicitly passing `--alpha-coeffs 0,0,0` preserves zero coefficients — they are not overridden by the file, because the file is consulted only for a flag the user did not set.
+
+`--latency-model roofline` reads no coefficients at all: it computes step time analytically, and passing either flag alongside an explicit `--latency-model roofline` is a hard error.
 
 ### Model and Hardware Selection
 
@@ -550,8 +554,14 @@ the only model-config source.
     `field defaults not found in type cmd.Config`. Delete the block and pass `--hardware`/`--tp`
     on the command line. Nothing is lost — no run path read those values.
 
+These are the top-level keys the file may carry, and strict parsing accepts no others
+(`KnownFields(true)`, R10 — the authoritative list is `cmd.Config` in `cmd/default_config.go`;
+the bundled `defaults.yaml` is the worked example):
+
 ```yaml
-# Section 1: Workload presets
+version: 0.0.1
+
+# Workload presets, keyed by the name --workload takes (chatbot, summarization, ...)
 workloads:
   chatbot:
     prompt_tokens: 256
@@ -560,14 +570,29 @@ workloads:
     output_tokens_stdev: 100
     # ... min/max bounds
 
-# Section 2: Trained coefficients (keyed by model+GPU+TP)
-models:
-  - id: qwen/qwen3-14b
-    GPU: H100
-    tensor_parallelism: 1
-    alpha_coeffs: [8888.09, 0.18, 0.0]
-    beta_coeffs: [13578.19, 39.44, 27.32]
+# Trained-physics coefficients — ONE GLOBAL SET, not keyed by model, GPU or TP.
+# Consulted only by --latency-model trained-physics, and only for a flag the user did not pass.
+trained_physics_coefficients:
+  alpha_coeffs: [15563.199579, 777.3455, 45.907545]  # α₀-α₂: API/framework overheads (µs)
+  beta_coeffs: [0.152128, 0.0, 1.36252915, ...]      # β₁-β₁₀ + optional β_EP
+
+# LoRA control-plane cost terms (#1464). Inert unless a run declares adapters.
+lora:
+  load_base_latency_us: 1500.0
+  # ... bandwidth, per-rank footprint, per-rank step-overhead tiers
+
+# KV-offload device classes referenced by a --kv-offload-config tier's device_class
+# (#1587/#1581). Inert unless such a config names one.
+kv_offload_devices:
+  nvme_gen4: {read_bandwidth: 7.0e3, write_bandwidth: 5.0e3, base_latency: 80.0}
 ```
+
+!!! warning "There is no `models:` section, and there never was a keyed coefficient table"
+    Earlier revisions of this page showed a `models:` list mapping a model+GPU+TP triple to its own
+    `alpha_coeffs`/`beta_coeffs`. No such section exists — `cmd.Config` declares no `Models` field, so
+    strict parsing would reject one outright. Coefficients live in the single global
+    `trained_physics_coefficients` block above. The removed `defaults:` block (#1768) was a different
+    thing again: per-model `GPU`/`tensor_parallelism`/`hf_repo`, never coefficients.
 
 ### Resolution Process
 
@@ -591,7 +616,7 @@ Before any backend-specific logic runs, BLIS requires the deployment: `--hardwar
 **`--total-kv-blocks` resolution** (highest priority wins):
 
 1. **Explicit CLI flag** — if `--total-kv-blocks` is set, that value is used regardless of backend
-2. **Auto-calculation** (all backends) — when `MemoryGiB > 0` in the hardware config and `config.json` is available, `CalculateKVBlocks` derives the block count from model architecture and GPU memory. BLIS resolves `config.json` as the catalog entry `<catalog>/models/<short-name>/config.json` (transition fallback: the flat `<catalog>/<short-name>/config.json`, #1774) inside the catalog located by `--catalog` / `BLIS_CATALOG`; there is no step outside that catalog root — an uncatalogued model is refused rather than fetched (NS-6). Failure modes: (a) if `MemoryGiB` is missing from `hardware_config.json`, BLIS warns and falls back to the hardcoded default (layer 3); (b) if model architecture params cannot be extracted from `config.json`, BLIS warns and falls back to the hardcoded default; (c) if the calculation itself fails (e.g., unsupported activation function), BLIS warns and falls back to the hardcoded default. Auto-calculation currently requires SwiGLU-family activations (`silu`, `swiglu`, `geglu`, `situ` — Kimi-K3's SiTU-GLU, a 3-matrix gated GLU with SwiGLU's weight/FLOP shape); models with other activations (e.g., Falcon's `gelu`) will fall back to the hardcoded default unless `--total-kv-blocks` is explicitly set
+2. **Auto-calculation** (all backends) — when `MemoryGiB > 0` in the hardware config and `config.json` is available, `CalculateKVBlocks` derives the block count from model architecture and GPU memory. BLIS resolves `config.json` as the catalog entry `<catalog>/models/<short-name>/config.json` (transition fallback: the flat `<catalog>/<short-name>/config.json`, #1774) inside the catalog located by `--catalog` / `BLIS_CATALOG`; there is no step outside that catalog root — an uncatalogued model is refused rather than fetched (NS-6). Failure modes: (a) if `MemoryGiB` is missing from `hardware_config.json`, BLIS warns and falls back to the hardcoded default (layer 3); (b) if model architecture params cannot be extracted from `config.json`, BLIS warns and falls back to the hardcoded default; (c) if the calculation itself fails (e.g., an unsupported activation function), `CalculateKVBlocks` returns an error and BLIS **aborts with a fatal error** (`logrus.Fatalf`) rather than falling back. Auto-calculation currently requires SwiGLU-family activations (`silu`, `swiglu`, `geglu`, `situ` — Kimi-K3's SiTU-GLU, a 3-matrix gated GLU with SwiGLU's weight/FLOP shape); a model with another activation (e.g., Falcon's `gelu`) therefore aborts the run during auto-calculation unless `--total-kv-blocks` is set explicitly (which skips auto-calculation)
 3. **Hardcoded default** — 1,000,000 (CLI flag default, used when auto-calculation is unavailable or fails)
 
 !!! note "Per-instance capacity with mixed-GPU node pools (#1522)"
@@ -719,7 +744,7 @@ for the cost model and its known approximations.
 | **PolicyConfig** | `--scheduler`, `--preemption-policy` |
 | **WorkloadConfig** | `--workload`, `--workload-spec`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
 | **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` | YAML-only (no CLI flag): `node_pools`, `instance_lifecycle`. Programmatic-only, NOT a policy-bundle key despite the example above: `hw_config_by_gpu` (issue #1668) |
-| **Top-level** | `--seed`, `--horizon`, `--log`, `--metrics-path` (run only), `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
+| **Top-level** | `--seed`, `--horizon`, `--log`, `--metrics-path` (`run` and `replay`), `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
 
 ---
 
@@ -787,7 +812,12 @@ Replays a captured TraceV2 file through the discrete-event simulator. Replay reu
 |------|------|---------|-------------|
 | `--trace-header` | string | "" | Path to TraceV2 header YAML file (required). |
 | `--trace-data` | string | "" | Path to TraceV2 data CSV file (required). |
-| `--results-path` | string | "" | File to write `[]SimResult` JSON (fields: `request_id`, `ttft_us`, `e2e_us`, `input_tokens`, `output_tokens`) for `blis calibrate` consumption. |
+| `--results-path` | string | "" | File to write `[]SimResult` JSON (fields: `request_id`, `ttft_us`, `e2e_us`, `input_tokens`, `output_tokens`) for `blis calibrate` consumption. Replay-only — `blis run` does not register it. |
+
+`blis replay` also accepts `--metrics-path` (the aggregate `MetricsOutput` JSON, documented under
+[Simulation Control](#simulation-control)); it is not replay-specific, so it is not repeated in the
+table above. The two are complementary rather than alternatives: `--results-path` writes per-request
+rows, `--metrics-path` writes the run aggregate that `blis calibrate --sim-metrics` reads.
 
 ---
 
