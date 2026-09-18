@@ -53,23 +53,23 @@ import (
 // this golden updated in the same commit, and the reason recorded.
 var retiredDefaultsPresets = map[string]presetWorkload{
 	"chatbot": {
-		PrefixTokens: 0,
+		PrefixTokens:     0,
 		PromptTokensMean: 256, PromptTokensStdev: 100, PromptTokensMin: 2, PromptTokensMax: 800,
 		OutputTokensMean: 256, OutputTokensStdev: 100, OutputTokensMin: 1, OutputTokensMax: 1024,
 	},
 	"contentgen": {
-		PrefixTokens: 0,
+		PrefixTokens:     0,
 		PromptTokensMean: 1024, PromptTokensStdev: 150, PromptTokensMin: 10, PromptTokensMax: 2048,
 		OutputTokensMean: 1024, OutputTokensStdev: 200, OutputTokensMin: 10, OutputTokensMax: 2048,
 	},
 	"summarization": {
-		PrefixTokens: 0,
+		PrefixTokens:     0,
 		PromptTokensMean: 4096, PromptTokensStdev: 500, PromptTokensMin: 100, PromptTokensMax: 8192,
 		OutputTokensMean: 512, OutputTokensStdev: 150, OutputTokensMin: 10, OutputTokensMax: 2048,
 	},
 	// multidoc declared no prefix_tokens key at all, so it parsed as 0.
 	"multidoc": {
-		PrefixTokens: 0,
+		PrefixTokens:     0,
 		PromptTokensMean: 10240, PromptTokensStdev: 1200, PromptTokensMin: 500, PromptTokensMax: 20480,
 		OutputTokensMean: 1536, OutputTokensStdev: 300, OutputTokensMin: 50, OutputTokensMax: 4096,
 	},
@@ -166,7 +166,7 @@ func TestCatalogPresets_BundledCatalogMatchesRetiredDefaults(t *testing.T) {
 // shipped preset, so a reader that fell back to a built-in default would fail here.
 func TestCatalogPresets_ReaderReadsCatalogFile(t *testing.T) {
 	want := presetWorkload{
-		PrefixTokens: 7,
+		PrefixTokens:     7,
 		PromptTokensMean: 111, PromptTokensStdev: 22, PromptTokensMin: 3, PromptTokensMax: 999,
 		OutputTokensMean: 55, OutputTokensStdev: 6, OutputTokensMin: 2, OutputTokensMax: 777,
 	}

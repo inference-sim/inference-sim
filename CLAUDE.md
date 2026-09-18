@@ -276,7 +276,9 @@ go build -o blis main.go
   --workload chatbot --rate 10 --num-requests 100 --lazy-generation \
   --trace-header trace.yaml --trace-data trace.csv
 
-# Convert workload formats
+# Convert workload formats. `convert preset` reads the named preset from the catalog
+# (<catalog>/workloads/<name>.yaml, #1769), so it takes --catalog / BLIS_CATALOG like
+# `run --workload` and `observe --workload` do — one definition, three consumers.
 ./blis convert preset --name chatbot --rate 10 --num-requests 100
 ./blis convert servegen --path data/
 ./blis convert servegen --path data/ --time midnight  # Single period for testing
