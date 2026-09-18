@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/sirupsen/logrus"
 
@@ -19,6 +21,14 @@ const (
 	// --catalog is not given (#1731, R1/S4). It is read exactly like HF_TOKEN was — the
 	// only environment variables cmd/ consults.
 	catalogEnvVar = "BLIS_CATALOG"
+	// catalogModelsSubdir is the models namespace inside a catalog CLONE ROOT (#1774).
+	// --catalog / BLIS_CATALOG names the clone root, and model entries are read from
+	// <catalog>/models/<short-name>/config.json. The authoritative blis-catalog
+	// repository stores configs there, with workloads/, devices/, hardware/ and
+	// networks/ as SIBLING namespaces under the same root — those siblings only compose
+	// off a single root, which is why the root (not the models directory) is the
+	// contract every downstream reader inherits.
+	catalogModelsSubdir = "models"
 )
 
 // catalogRootFrom picks the model-catalog root from the --catalog flag value and the
@@ -48,8 +58,10 @@ func catalogRootFrom(flagValue, envValue string) (string, error) {
 		return envValue, nil
 	}
 	return "", fmt.Errorf("no model catalog was supplied: pass --catalog <path> or set the %s "+
-		"environment variable (there is no default and no search path; a catalog holds one "+
-		"directory per model, each with that model's %s)", catalogEnvVar, hfConfigFile)
+		"environment variable (there is no default and no search path; both name the catalog "+
+		"CLONE ROOT, whose model entries live at <catalog>/%s/<short-name>/%s. A relative path "+
+		"is resolved against the current working directory)",
+		catalogEnvVar, catalogModelsSubdir, hfConfigFile)
 }
 
 // resolveCatalogRoot resolves the catalog root from the --catalog flag and the
@@ -105,24 +117,18 @@ func resolveModelConfig(model string) (string, error) {
 // explicitly (the injectable core; production callers use resolveModelConfig, which
 // resolves the root from the flag and the environment).
 func resolveModelConfigInCatalog(model, catalog string) (string, error) {
-	entryDir, err := catalogModelDir(model, catalog)
+	candidates, err := catalogModelDirs(model, catalog)
 	if err != nil {
 		return "", fmt.Errorf("--latency-model: invalid model name %q: %w", model, err)
 	}
 
-	// Read the catalog entry. Absent or non-HuggingFace-shaped is a hard error (R1):
-	// there is no fallback that could supply the config, and inventing one is what NS-6
-	// forbids. The file is never rewritten or deleted — a user-provided config with
-	// non-standard field names is reported, not overwritten.
-	entryPath := filepath.Join(entryDir, hfConfigFile)
-	data, readErr := os.ReadFile(entryPath)
-	if readErr != nil {
-		return "", fmt.Errorf(
-			"model %q is not in the catalog: no %s at %s (%v).\n"+
-				"  BLIS does not fetch model configs at run time — a model runs only if it is catalogued.\n"+
-				"  Add the entry at %s, or point --catalog / %s at a catalog that has it",
-			model, hfConfigFile, entryPath, readErr, entryPath, catalogEnvVar,
-		)
+	// Read the catalog entry. Absent from every layout, or non-HuggingFace-shaped, is a
+	// hard error (R1): nothing outside the catalog could supply the config, and inventing
+	// one is what NS-6 forbids. The file is never rewritten or deleted — a user-provided
+	// config with non-standard field names is reported, not overwritten.
+	entryDir, entryPath, data, err := readCatalogEntry(model, candidates)
+	if err != nil {
+		return "", err
 	}
 	if !json.Valid(data) || !isHFConfig(data) {
 		return "", fmt.Errorf(
@@ -134,6 +140,84 @@ func resolveModelConfigInCatalog(model, catalog string) (string, error) {
 	}
 	logrus.Infof("--latency-model: using config from %s", entryDir)
 	return entryDir, nil
+}
+
+// readCatalogEntry reads the model's config.json from the first candidate entry
+// directory that has one, returning that directory, the file path it read, and the
+// bytes. candidates come from catalogModelDirs in resolution order (canonical
+// clone-root layout first, transition fallback second).
+//
+// Only ABSENCE advances to the next candidate: presence is decided by a stat, and a
+// config.json that IS there but cannot be read is reported naming that path rather than
+// silently bypassed by the transition fallback — a broken entry must never resolve to a
+// different model's config (R1, NS-6). A malformed but readable entry is judged by the
+// caller, for the same reason.
+//
+// "Absence" is specifically ENOENT (nothing at the path) or ENOTDIR (a non-directory
+// sits on the path). A flat catalog is a directory of entries, so a root that holds an
+// unrelated FILE named `models` makes the canonical candidate
+// <catalog>/models/<name>/config.json surface ENOTDIR — not a broken entry, just no entry
+// in THIS layout — and it must fall through to the flat candidate. Every OTHER stat
+// failure (EACCES on the entry directory, an I/O error) is NOT absence: it is reported
+// naming the path, never swallowed as absence, because collapsing it into the fallback
+// could resolve a DIFFERENT model's config for an entry that is present but unstatable —
+// the same hazard the readErr branch guards (R1, NS-6).
+//
+// Absent from every layout is a refusal that names every path looked at, plus the
+// canonical path an entry belongs at — the operator-actionable half of NS-6, which is
+// why the message is built here rather than signalled as a bare not-found.
+func readCatalogEntry(model string, candidates []string) (entryDir, entryPath string, data []byte, err error) {
+	// Defensive: catalogModelDirs always returns a non-empty list or an error. An empty
+	// list here must not index-panic on candidates[0].
+	if len(candidates) == 0 {
+		return "", "", nil, fmt.Errorf("model %q: no catalog entry directory to look in", model)
+	}
+	lookedAt := make([]string, 0, len(candidates))
+	for _, dir := range candidates {
+		path := filepath.Join(dir, hfConfigFile)
+		lookedAt = append(lookedAt, "    "+path)
+		info, statErr := os.Stat(path)
+		if statErr != nil {
+			// Only ABSENCE advances to the transition fallback. ENOENT and ENOTDIR both
+			// mean "no entry in this layout"; any other stat failure (EACCES, EIO) is
+			// reported naming the path rather than letting the fallback silently resolve
+			// a different model's config for an entry that is there but unstatable.
+			if os.IsNotExist(statErr) || errors.Is(statErr, syscall.ENOTDIR) {
+				continue
+			}
+			return "", "", nil, fmt.Errorf(
+				"catalog entry for model %q at %s cannot be checked: %w.\n"+
+					"  Fix that catalog path, or point --catalog / %s at a catalog whose %s is accessible",
+				model, path, statErr, catalogEnvVar, hfConfigFile,
+			)
+		}
+		// A directory sitting where config.json should be is "no entry in this
+		// layout", not a broken entry — deliberately grouped with the ENOENT/ENOTDIR
+		// absence cases above (it is not a plausible catalogued config, so the
+		// stale-flat-shadowing hazard the errno classification guards does not apply).
+		if info.IsDir() {
+			continue
+		}
+		content, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return "", "", nil, fmt.Errorf(
+				"catalog entry for model %q at %s exists but is not readable: %w.\n"+
+					"  Fix that catalog entry, or point --catalog / %s at a catalog that has a readable %s",
+				model, path, readErr, catalogEnvVar, hfConfigFile,
+			)
+		}
+		return dir, path, content, nil
+	}
+
+	canonical := filepath.Join(candidates[0], hfConfigFile)
+	return "", "", nil, fmt.Errorf(
+		"model %q is not in the catalog: no %s at any of\n%s\n"+
+			"  BLIS does not fetch model configs at run time — a model runs only if it is catalogued.\n"+
+			"  Add the entry at %s (--catalog / %s names the catalog CLONE ROOT; model entries live "+
+			"under its %s/ namespace), or point --catalog / %s at a catalog that has it",
+		model, hfConfigFile, strings.Join(lookedAt, "\n"),
+		canonical, catalogEnvVar, catalogModelsSubdir, catalogEnvVar,
+	)
 }
 
 // resolveHardwareConfig finds the hardware config JSON file.
@@ -253,21 +337,44 @@ func applyKVCacheDtype(mc *sim.ModelConfig, kvCacheDtype string) {
 	}
 }
 
-// catalogModelDir returns the catalog entry directory for a model. Model names like
-// "meta-llama/llama-3.1-8b-instruct" map to "<catalog>/llama-3.1-8b-instruct/".
+// catalogModelDirs returns the candidate catalog entry directories for a model, in
+// resolution order. Model names like "meta-llama/llama-3.1-8b-instruct" map to
+//
+//	<catalog>/models/llama-3.1-8b-instruct/   (canonical clone-root layout, #1774)
+//	<catalog>/llama-3.1-8b-instruct/          (transition fallback, removed by #1771)
+//
 // Returns an error if the catalog root is empty or the model name contains path
 // traversal sequences.
+//
+// #1774 settles what --catalog points at. BLIS used to implement ENTRIES-ROOT semantics
+// (no models/ level) while the authoritative blis-catalog repository stores configs at
+// <clone-root>/models/<name>/config.json with workloads/, devices/, hardware/ and
+// networks/ as sibling namespaces — so an operator had to pass <clone-root>/models while
+// every document described the clone root. The clone root is now the contract, because
+// the sibling namespaces (which upcoming readers consult) only compose off a single root.
+//
+// The flat fallback is a TRANSITION affordance, not a second location to search: the
+// bundled model_configs/ tree and every in-repo test catalog have no models/ level, so
+// without it this change would instantly break `export BLIS_CATALOG=$PWD/model_configs`
+// (INV-6). It also keeps the pre-#1774 invocation `--catalog <clone-root>/models`
+// working, since <clone-root>/models/models/<name> is absent and resolution falls back.
+// #1771 deletes the bundled tree and this fallback together.
+//
+// This function is PURE — it derives paths and touches no filesystem. Which candidate is
+// the entry is decided by readCatalogEntry, the one place that reads. Relative and
+// absolute roots are preserved as given: a relative candidate is resolved against the
+// process working directory by the OS at read time, an absolute one is used as-is.
 //
 // Note (I12): The org prefix is stripped, so different orgs with identical model names
 // (e.g., "org-a/llama" and "org-b/llama") would share the same directory. This matches
 // the catalog's one-directory-per-model convention and is acceptable because HuggingFace
 // model names are unique within orgs, and BLIS uses hf_repo for case-sensitive HF API calls.
-func catalogModelDir(model, catalog string) (string, error) {
+func catalogModelDirs(model, catalog string) ([]string, error) {
 	// Defensive: production callers get a non-empty root from resolveCatalogRoot, which
 	// refuses when neither --catalog nor BLIS_CATALOG is set. An empty root here would
 	// silently reintroduce the retired working-directory default (#1731).
 	if catalog == "" {
-		return "", fmt.Errorf("model catalog root is empty; pass --catalog or set %s", catalogEnvVar)
+		return nil, fmt.Errorf("model catalog root is empty; pass --catalog or set %s", catalogEnvVar)
 	}
 	// Use the part after the org prefix (after the /)
 	parts := strings.SplitN(model, "/", 2)
@@ -279,8 +386,11 @@ func catalogModelDir(model, catalog string) (string, error) {
 	// Reject path traversal attempts (Clean first to normalize sequences like "a/./b")
 	shortName = filepath.Clean(shortName)
 	if strings.Contains(shortName, "..") || filepath.IsAbs(shortName) {
-		return "", fmt.Errorf("model name %q contains invalid path components", model)
+		return nil, fmt.Errorf("model name %q contains invalid path components", model)
 	}
 
-	return filepath.Join(catalog, shortName), nil
+	return []string{
+		filepath.Join(catalog, catalogModelsSubdir, shortName),
+		filepath.Join(catalog, shortName),
+	}, nil
 }

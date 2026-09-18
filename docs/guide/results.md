@@ -64,14 +64,19 @@ written by both `blis run --metrics-path` and `blis replay --metrics-path`:
 ```json
 {
   "catalog": {
-    "path": "/home/me/blis-catalog/catalog/models",
+    "path": "/home/me/blis-catalog",
     "revision": "63a9a5010a3f0c1d9f6b2e4a7c8d5b1e2f3a4b5c",
     "dirty": false
   }
 }
 ```
 
-- `path` — the catalog root that was located by `--catalog` / `BLIS_CATALOG`.
+- `path` — the catalog **clone root** that was located by `--catalog` / `BLIS_CATALOG`,
+  recorded **verbatim as supplied**: a relative value stays relative and an absolute value
+  stays absolute, neither is rewritten. So the field is not categorically CWD-relative — a
+  relative value is only interpretable alongside the working directory the run was launched
+  from, which is a reason to prefer an absolute `--catalog` / `BLIS_CATALOG` when the
+  results file needs to be attributable later.
 - `revision` — the catalog's git commit, or `"unknown"` when the catalog is not a git
   checkout (a revision is never invented).
 - `dirty` — `true` when the catalog **subtree** has uncommitted or untracked content, i.e.
