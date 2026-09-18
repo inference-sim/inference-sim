@@ -1,0 +1,180 @@
+From 2ba8f58cb39ebb66e745168cdbccd090d8fa2aab Mon Sep 17 00:00:00 2001
+From: "claude[bot]" <41898282+claude[bot]@users.noreply.github.com>
+Date: Fri, 18 Sep 2026 17:28:17 +0000
+Subject: [PATCH] hardening(ci): record the /approve-issue-for-pr-delivery
+ approver on the delivery PR
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The implement phase knows who ran the command — the permission check gates on
+github.actor — but never propagated it onto the PR. With several app/claude
+delivery PRs in flight there is no way to tell who started which, and the
+approver is not subscribed to the thread, so they see none of the verdicts,
+correction rounds or needs-human stops that follow.
+
+- check-permissions emits the permission-checked login as an `approver` output,
+  from the same context.actor it validated, so the login recorded on the PR is
+  provably the one that passed the collaborator gate. Event payload only, never
+  comment text.
+- A new deterministic `Record the approver on the PR` step assigns the approver
+  (filterable via assignee:@me, and subscribes them) and appends a one-line
+  provenance record to the PR body. It runs on always() after `Locate the PR`,
+  so an agent that errored or was cancelled still gets its approver recorded,
+  and it is idempotent: a resumed delivery neither duplicates the line nor
+  loses a second approver.
+- Metadata never fails the delivery. Every call is caught and downgraded to a
+  warning, and a silently-dropped assignee is read back and reported rather
+  than assumed to have stuck.
+
+Refs #1790
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+---
+ .github/workflows/deliver-implement.yml | 109 +++++++++++++++++++++++-
+ 1 file changed, 108 insertions(+), 1 deletion(-)
+
+diff --git a/.github/workflows/deliver-implement.yml b/.github/workflows/deliver-implement.yml
+index adfdc6f4..af79d519 100644
+--- a/.github/workflows/deliver-implement.yml
++++ b/.github/workflows/deliver-implement.yml
+@@ -53,6 +53,15 @@ jobs:
+     outputs:
+       allowed: ${{ steps.check.outputs.allowed }}
+       issue_number: ${{ steps.parse.outputs.issue_number }}
++      # The login of whoever ran the command (#1790). Emitted by the SAME step that checks the
++      # permission, from the same `context.actor` it checked, so the login recorded on the PR is
++      # provably the one that passed the collaborator gate — not a second, independently-read
++      # value that could in principle disagree with it. `github.actor` is readable directly in
++      # the `deliver` job, but reading it there would lose that tie.
++      #
++      # It comes from the EVENT PAYLOAD, never from the comment text, which keeps the "no
++      # untrusted string in the flow" property the issue-number resolution below also holds.
++      approver: ${{ steps.check.outputs.approver }}
+     steps:
+       - name: Check invoker permissions
+         id: check
+@@ -67,7 +76,9 @@ jobs:
+               });
+               const allowed = ['admin', 'write', 'maintain'].includes(data.permission);
+               core.setOutput('allowed', allowed ? 'true' : 'false');
+-              if (!allowed) {
++              if (allowed) {
++                core.setOutput('approver', context.actor);
++              } else {
+                 core.info(`User ${context.actor} has '${data.permission}' permission — skipping.`);
+               }
+             } catch (e) {
+@@ -258,6 +269,8 @@ jobs:
+       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+       ISSUE_NUMBER: ${{ needs.check-permissions.outputs.issue_number }}
+       BRANCH: deliver/issue-${{ needs.check-permissions.outputs.issue_number }}
++      # Whoever ran /approve-issue-for-pr-delivery (#1790), recorded on the PR by the step below.
++      APPROVER: ${{ needs.check-permissions.outputs.approver }}
+       # Overridable without editing this file via the DELIVER_IMPLEMENT_MODEL repository
+       # variable. The default is verified present on the LiteLLM proxy this runner uses.
+       DELIVER_MODEL: ${{ vars.DELIVER_IMPLEMENT_MODEL || 'claude-opus-4-8' }}
+@@ -642,6 +655,100 @@ jobs:
+             // Newest wins if an earlier attempt left an open PR on the same ref.
+             core.setOutput('number', String(prs.sort((a, b) => b.number - a.number)[0].number));
+ 
++      # Record WHO approved this delivery on the PR (#1790).
++      #
++      # WHY. Every delivery PR is authored by `app/claude`, so with several in flight there is no
++      # way to tell at a glance who started which one, and the person who typed the command is not
++      # subscribed to the thread — they see none of the verdicts, correction rounds, or
++      # needs-human stops that follow. Both are fixed here: an ASSIGNEE is filterable
++      # (`assignee:@me`, the Assigned tab) and subscribes them, and a line in the BODY is a
++      # durable record that survives being unassigned.
++      #
++      # WHY A WORKFLOW STEP AND NOT THE PROMPT. The agent opening the PR is the least reliable link
++      # in this phase — it is the one action that is not workflow-guaranteed — and provenance that
++      # is missing exactly when a delivery went wrong is provenance nobody can rely on. So this is
++      # deterministic, and it runs on `always()`: an agent that errored or was cancelled still gets
++      # its approver recorded, because that is when knowing who to tell matters most.
++      #
++      # WHY HERE and not in the seeding step. On a first delivery the PR does not exist until the
++      # agent opens it, so there is nothing to assign earlier; on a resumed one there would be, but
++      # doing it in two places means two copies of this logic (R23). One step, placed after
++      # `Locate the PR` because it needs that number. The uncovered case is the documented one: a
++      # runner that dies executes no step at all, so nothing is recorded — re-issuing the command
++      # re-runs this step, and it is idempotent.
++      #
++      # NEVER FAILS THE DELIVERY. This is metadata. Every call is caught and downgraded to a
++      # warning, in the spirit of #1732's catalog provenance: a run is not failed over a record of
++      # itself. R1 all the same — each way it can come up short says so on stderr rather than
++      # going quiet.
++      - name: Record the approver on the PR
++        if: always() && steps.paused.outputs.paused == 'false' && steps.pr.outputs.number != ''
++        uses: actions/github-script@v8
++        env:
++          PR: ${{ steps.pr.outputs.number }}
++        with:
++          script: |
++            const prNumber = Number(process.env.PR);
++            const approver = (process.env.APPROVER || '').trim();
++            if (!approver) {
++              core.warning('The approver login is empty, so PR #' + prNumber + ' records nobody. ' +
++                'It is read from the event payload by the permission check, so an empty value ' +
++                'means that output was lost rather than that nobody approved.');
++              return;
++            }
++
++            // Assign. `issues.addAssignees` is the right endpoint for a PR — the pulls API has no
++            // assignee route — and it ADDS rather than replaces, so a delivery resumed by a second
++            // collaborator ends up with both of them on it, which is accurate.
++            //
++            // The API SILENTLY DROPS an assignee it will not accept (a non-collaborator, an app),
++            // returning 201 either way, so the result is read back rather than trusted. The
++            // approver always holds admin/write/maintain — the permission check above requires it —
++            // so this should not fire; if it does, the assumption has broken and saying so beats
++            // believing the PR is assigned when it is not.
++            try {
++              const { data: updated } = await github.rest.issues.addAssignees({
++                owner: context.repo.owner, repo: context.repo.repo,
++                issue_number: prNumber, assignees: [approver]
++              });
++              if ((updated.assignees || []).some(a => a.login === approver)) {
++                core.info(`Assigned @${approver} to PR #${prNumber}.`);
++              } else {
++                core.warning(`GitHub accepted the request but did not assign @${approver} to PR ` +
++                  `#${prNumber}. The API drops an assignee it will not accept without erroring, ` +
++                  `so the approver is not subscribed via assignment; the body line below is the ` +
++                  `remaining record.`);
++              }
++            } catch (e) {
++              core.warning(`Could not assign @${approver} to PR #${prNumber}: ${e.message}`);
++            }
++
++            // Provenance line in the body. Appended LAST — after the agent has replaced the body
++            // with its contract-by-contract write-up — so it is not overwritten by that rewrite,
++            // and the @-mention subscribes the approver even if someone later unassigns them.
++            //
++            // Idempotent on the login, so a resumed delivery does not stack duplicate lines, and a
++            // second approver still gets their own line.
++            const line = `Delivery approved by @${approver} via \`/approve-issue-for-pr-delivery\` ` +
++              `on #${process.env.ISSUE_NUMBER}.`;
++            try {
++              const { data: pr } = await github.rest.pulls.get({
++                owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber
++              });
++              const body = pr.body || '';
++              if (body.includes(`Delivery approved by @${approver}`)) {
++                core.info(`PR #${prNumber} already records @${approver} — leaving the body alone.`);
++                return;
++              }
++              await github.rest.pulls.update({
++                owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber,
++                body: body.trimEnd() + (body.trim() ? '\n\n' : '') + line
++              });
++              core.info(`Recorded @${approver} in the body of PR #${prNumber}.`);
++            } catch (e) {
++              core.warning(`Could not record @${approver} in the body of PR #${prNumber}: ${e.message}`);
++            }
++
+       # Since #1722 the agent opens a PR before it writes anything, so "a PR is open" no longer
+       # means "work was done". What distinguishes a delivery from an empty shell is a
+       # file change on the branch, so that is what gates the hand-off and what the reporters below
+-- 
+2.34.1
+
