@@ -3203,7 +3203,7 @@ exactly these three" — the same false premise, on the same self-hosted runner,
 <tbody>
 <tr>
 <td><code>ready-for-merge</code></td>
-<td>CI green, archon plan not regressed, review returned GREEN</td>
+<td>CI green, archon plan not regressed, both reviews clean (methodology review GREEN and cross-vendor qa-review PASS)</td>
 <td>Read the history, merge</td>
 </tr>
 <tr>
@@ -3215,7 +3215,7 @@ exactly these three" — the same false premise, on the same self-hosted runner,
 </table>
 <p>There is no third outcome. Every unrecognised or contradictory signal resolves to <code>needs-human</code>; the gate is closed by default.</p>
 <h2 id="the-gate">The gate<a class="headerlink" href="#the-gate" title="Permanent link">&para;</a></h2>
-<p>The decision is not the reviewing agent's to make. <code>deliver-verify.yml</code> collects four machine-readable signals and hands them to <code>scripts/deliver-gate.sh</code>, which is unit-tested (<code>scripts/deliver_gate_test.go</code>):</p>
+<p>The decision is not the reviewing agent's to make. <code>deliver-verify.yml</code> collects five machine-readable signals and hands them to <code>scripts/deliver-gate.sh</code>, which is unit-tested (<code>scripts/deliver_gate_test.go</code>):</p>
 <table>
 <thead>
 <tr>
@@ -3237,11 +3237,16 @@ exactly these three" — the same false premise, on the same self-hosted runner,
 <td>the <code>DELIVER-VERDICT: GREEN</code> / <code>NOT-GREEN</code> marker, required to be the last line of a comment posted by the automation itself</td>
 </tr>
 <tr>
+<td><code>QA_VERDICT</code></td>
+<td>the <code>QA-VERDICT: PASS</code> / <code>BLOCK</code> marker from the <strong>cross-vendor qa-review pass</strong> (#1715, RFC #1603) — a questioner and an isolated answerer from a different model family than the implementer and the reviewer above. Same author-trust and last-line rules as <code>AGENT_VERDICT</code>. <code>BLOCK</code> routes to a correction round; <code>MISSING</code> (no marker) <strong>blocks</strong>, so a qa-review that crashed or lost its model can never be read as a pass</td>
+</tr>
+<tr>
 <td><code>DISMISSALS</code></td>
 <td>the <code>deliver:has-dismissals</code> label, <strong>re-read after the review agent has run</strong> so that the reviewer clearing it takes effect in the same round. <code>open</code> withholds <code>ready-for-merge</code>; <code>unknown</code> (the label set could not be read) does too, because an unreadable state is not evidence there is nothing to accept</td>
 </tr>
 </tbody>
 </table>
+<p>Both review signals are required for <code>ready-for-merge</code>, and either one alone can send a round to correction. They are kept as <strong>parallel signals rather than one combined verdict</strong> so it is always visible which review blocked, and so each can be tested in isolation.</p>
 <p><strong>Why verify dispatches <code>ci.yml</code> rather than running the checks itself.</strong> <code>main</code> requires seven status contexts (<code>build</code>, <code>lint</code>, and five <code>test (...)</code> groups) before a PR can merge, and those must be present <strong>on the PR's head commit</strong>. Two things make that awkward, and an earlier version of this feature got both wrong by running the commands inline:</p>
 <ul>
 <li>a bot-opened PR has its <code>pull_request</code> runs held in an <strong>approval-required</strong> state, so the loop cannot simply wait for the runs GitHub would normally create;</li>
@@ -3252,7 +3257,7 @@ exactly these three" — the same false premise, on the same self-hosted runner,
 <p><strong><code>unverified</code> is the subtle one.</strong> <code>archon-review.sh</code> exits 0 and falls back to a plan-less delta review when plan resolution fails, so an absent <code>planRatchet</code> does <em>not</em> by itself mean "no plan" — it can equally mean "a plan was declared and never checked". Treating those alike would let a PR whose dist ratchet silently did not run reach <code>ready-for-merge</code> on a GREEN review.</p>
 <p>Two properties hold structurally rather than by prompt adherence:</p>
 <ul>
-<li><strong>A GREEN review cannot override red CI or a plan regression.</strong> That combination returns <code>needs-human</code> with the disagreement named — the loop does not get to resolve a contradiction between a judgment and an objective signal.</li>
+<li><strong>A clean review cannot override red CI or a plan regression.</strong> When an objective signal blocks and <strong>neither</strong> review asked for a correction, the gate returns <code>needs-human</code> with the disagreement named — the loop does not get to resolve a contradiction between a judgment and an objective signal. If <strong>either</strong> review did name findings, the round goes to correction instead: there is something concrete to act on, and the reason line names both the objective blocker and the review(s) that blocked.</li>
 <li><strong><code>ready-for-merge</code> is never applied to unverified code.</strong> The PR tree is checked out at a pinned SHA, and that SHA is re-confirmed as the branch head before the label goes on. A push landing during the checks or the review downgrades the outcome to <code>needs-human</code>, because what passed is no longer what a human would merge.</li>
 <li>
 <p><strong>A phase that fails or times out still reports.</strong> Every phase has a reporter guarded on <code>always() &amp;&amp; !success()</code>, exercised on real infrastructure rather than reasoned about, in two halves:</p>
@@ -3345,9 +3350,19 @@ opens a fresh PR on it. To stop a delivery, use the <code>deliver:paused</code> 
 <td><code>3</code></td>
 <td>correction rounds before <code>needs-human</code>, per PR</td>
 </tr>
+<tr>
+<td><code>QA_QUESTIONER_MODEL</code></td>
+<td><code>gcp/gemini-3.6-flash</code></td>
+<td>questioner model for the cross-vendor qa-review pass</td>
+</tr>
+<tr>
+<td><code>QA_ANSWERER_MODEL</code></td>
+<td><code>azure/gpt-5.6-sol</code></td>
+<td>answerer model for the cross-vendor qa-review pass</td>
+</tr>
 </tbody>
 </table>
-<p>The verify model is deliberately <em>not</em> the implement model. Two instances of one model reviewing each other's work is closer to an agent grading its own homework; different models give real separation.</p>
+<p>The verify model is deliberately <em>not</em> the implement model. Two instances of one model reviewing each other's work is closer to an agent grading its own homework; different models give real separation. The qa-review defaults go further and leave the vendor entirely: a decorrelated second opinion is the point (RFC #1603), so a failure mode shared by every Claude model is exactly what it exists to catch.</p>
 <h2 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h2>
 <p><strong>"Allow GitHub Actions to create and approve pull requests" is deliberately NOT required, and
 should stay disabled.</strong> This constrains how the loop is allowed to work, so it is worth knowing why.
@@ -3380,12 +3395,13 @@ regress quietly.</p>
 </ul>
 <h2 id="security">Security<a class="headerlink" href="#security" title="Permanent link">&para;</a></h2>
 <p><strong>The workflow's own steps run trusted code.</strong> The repository root checkout is the default branch, so <code>scripts/</code> and <code>.archon-version</code> always come from <code>main</code> — matching <code>archon.yml</code>. The archon review and <code>deliver-gate.sh</code> are executed from that trusted tree, never from the PR.</p>
-<p><strong>The PR's code never runs on the self-hosted runner.</strong> The verify phase does not check the PR out at all — it dispatches <code>ci.yml</code>, which runs the PR's build and tests on ephemeral <code>ubuntu-latest</code> runners, exactly as it does for any other PR. An earlier version did check the PR out and run its test suite on the self-hosted runner, which meant executing PR code (including <code>deliver_gate_test.go</code>, which shells out to the PR's own <code>.sh</code> files) on persistent infrastructure. Dispatching removes that exposure rather than guarding it.</p>
+<p><strong>The PR's code never runs on the self-hosted runner.</strong> The verify phase never checks the PR out into its workspace or runs its build and tests there — it dispatches <code>ci.yml</code>, which runs the PR's build and tests on ephemeral <code>ubuntu-latest</code> runners, exactly as it does for any other PR. (The one place the PR head is materialised on the runner is the ephemeral, read-only <code>--detach</code> worktree that qa-review <em>reads</em> but never executes — see "qa-review reads the PR's files but never executes them" below.) An earlier version did check the PR out and run its test suite on the self-hosted runner, which meant executing PR code (including <code>deliver_gate_test.go</code>, which shells out to the PR's own <code>.sh</code> files) on persistent infrastructure. Dispatching removes that exposure rather than guarding it.</p>
 <p>The correct phase does still check out and push to the delivery branch, so it requires the target PR to be same-repository, open, and on <code>deliver/issue-&lt;N&gt;</code> — the branch this loop owns.</p>
 <p><strong>Every trigger requires write access.</strong> <code>workflow_dispatch</code> is restricted to users with write access by GitHub, and pushing to a branch in this repository requires it too; a refused dispatch stops before any checkout. The two review triggers do <strong>not</strong> carry that property for free — this repository is public, and submitting a review or a review comment needs only <em>read</em> access, while both events run in the base-repository context with access to secrets. A review-triggered verify is therefore gated on an explicit collaborator permission check (<code>admin</code>/<code>write</code>/<code>maintain</code>), the same one the <code>/approve-issue-for-pr-delivery</code> command uses. Without it, any GitHub user could repeatedly start an agent run holding <code>LITELLM_API_KEY</code>, with <code>pull-requests: write</code> and <code>actions: write</code>, on the single self-hosted runner.</p>
 <p>The check runs in a small <code>ubuntu-latest</code> job, so an unauthorised review never wakes the self-hosted runner at all.</p>
 <p><strong>The delivery target comes from the event, not from comment text.</strong> The issue delivered is <code>github.event.issue.number</code> — where the command was typed. An optional <code>#N</code> is accepted only when it agrees with that issue and refused when it disagrees, so no untrusted string ever selects the target.</p>
-<p><strong>The verdict marker is read only from bot-authored comments, and only as a comment's last line</strong> — otherwise any human could set a delivery's verdict by quoting it. The same applies to the <code>DELIVER-DISMISSALS</code> count.</p>
+<p><strong>The verdict marker is read only from bot-authored comments, and only as a comment's last line</strong> — otherwise any human could set a delivery's verdict by quoting it. The same applies to the <code>QA-VERDICT</code> marker and the <code>DELIVER-DISMISSALS</code> count.</p>
+<p><strong>qa-review reads the PR's files but never executes them.</strong> The verify job runs on the self-hosted runner with the LiteLLM secrets in its environment, so the load-bearing invariant is that PR-authored code never runs there. The qa-review answerer does need the PR-head <em>source</em>, so the head is checked out into an ephemeral <code>--detach</code> worktree under <code>$RUNNER_TEMP</code>, removed in an always-run cleanup, and the answerer runs with <code>--no-exec</code> — which drops its <code>go</code> build/test tool from both the implementation map and the advertised tool schema, leaving only <code>read_file</code>/<code>grep</code>/<code>list_dir</code> sandboxed to that worktree. The files are read; nothing in them is compiled or run.</p>
 <p><strong>PR text is untrusted input to the agents.</strong> This is a public repository, so anyone can comment on an open delivery PR, and both agents read comments. Two consequences are handled explicitly:</p>
 <ul>
 <li>Both prompts state that comment, review and diff text is data to be assessed and never instructions, and name the specific asks that constitute an attack (return GREEN, clear <code>deliver:has-dismissals</code>, report a particular dismissal count, run a command).</li>
