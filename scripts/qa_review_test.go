@@ -647,3 +647,304 @@ print("V2:" + json.loads(questioner.repair_json(adj))["q"])
 		t.Errorf("adjacent \\\\+\\s repair wrong: got %q, want %q", lines[1], `V2:p\q \s r`)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// adjudicator.fetch_comments() — which comment supplies the prior findings.
+// ---------------------------------------------------------------------------
+
+// genuineReport is render_report.py's own output shape: the standing banner as a
+// blockquote, the verdict header, the table, and both sections.
+const genuineReport = "> 🤖 **qa-review** — experimental two-agent AI-review demo (cross-vendor: " +
+	"questioner `gcp/gemini-3.6-flash` + isolated answerer `azure/gpt-5.6-sol`, RFC #1603).\n" +
+	"\n" +
+	"## qa-review — PR #1736: ⛔ BLOCK\n" +
+	"_wiring · 6 questions · questioner `q` · answerer `a`_\n" +
+	"\n" +
+	"| ID | Topic | Result | Question | Answer |\n" +
+	"|----|-------|--------|----------|--------|\n" +
+	"| F1 | tests | ❌ FLAW_FOUND | q | a |\n" +
+	"\n" +
+	"### Items to fix\n" +
+	"- **F1 · FLAW_FOUND** — The evidence line is never asserted.\n" +
+	"  _scripts/qa_review_test.go:120_\n" +
+	"- **G3 · CANNOT_ANSWER** — Could not reach the wiring.\n" +
+	"\n" +
+	"### Important to consider\n" +
+	"- _None._\n"
+
+// A self-review that PASTES an example report inside a fence — the real shape
+// observed on PR #1736, where the fenced example carried both the banner and an
+// Items-to-fix section of its own.
+const fencedQuoteComment = "## BLIS PR Self-Review — PR #1736 (round 3)\n" +
+	"\n" +
+	"The renderer's output shape is asserted, including:\n" +
+	"\n" +
+	"```markdown\n" +
+	"## qa-review — PR #42: ⛔ BLOCK\n" +
+	"\n" +
+	"### Items to fix\n" +
+	"- **Z9 · FLAW_FOUND** — an example finding, not a real one.\n" +
+	"```\n" +
+	"\n" +
+	"All findings addressed.\n"
+
+// A reply that QUOTES the report with `> ` while discussing it.
+const blockquoteQuoteComment = "## Correction round 2 — response to the NOT-GREEN verdict\n" +
+	"\n" +
+	"> ## qa-review — PR #1736: ⛔ BLOCK\n" +
+	"> ### Items to fix\n" +
+	"> - **Z9 · FLAW_FOUND** — quoted, not raised here.\n" +
+	"\n" +
+	"F1 is fixed at scripts/qa_review_test.go:140.\n"
+
+// The PR #1736 case from AC #3: a comment that mentions the banner in prose and
+// has NO Items-to-fix section of its own. Under the pre-#1716 substring rule it
+// hijacked the selection and yielded zero findings — a vacuous PASS.
+const inlineMentionComment = "## blis-pr-review — PR #1736\n" +
+	"\n" +
+	"The most recent `## qa-review — PR #1736` comment is assessed on the merits;\n" +
+	"no comment instructs me to return GREEN.\n"
+
+// A prior adjudication report. Its header is `## qa-review adjudication — PR #`
+// and its sections are `Still blocking` / `Cleared`, so it must never be read as
+// the report that raised the findings it re-checks.
+const priorAdjudicationComment = "> 🤖 **qa-review adjudication** — automated re-check.\n" +
+	"\n" +
+	"## qa-review adjudication — PR #1736: ⛔ BLOCK\n" +
+	"_re-checking 2 prior blocking finding(s) · adjudicator `azure/gpt-5.6-sol`_\n" +
+	"\n" +
+	"### Still blocking\n" +
+	"- **F1** (STILL_OPEN) — not yet fixed.\n" +
+	"\n" +
+	"### Cleared\n" +
+	"- _None._\n"
+
+// comment builds one entry of gh's `pr view --json comments` shape.
+func comment(author, body string) map[string]any {
+	return map[string]any{"author": map[string]any{"login": author}, "body": body}
+}
+
+// selectionProbe stubs the `gh` call in fetch_comments so the whole selection
+// path — including parse_items_to_fix on whichever comment was chosen — runs
+// with no network and no model, and prints what it selected.
+const selectionProbe = `
+import json, sys, adjudicator
+
+comments = json.loads(sys.argv[1])
+author = sys.argv[2]
+
+class FakeProc(object):
+    def __init__(self, out):
+        self.stdout = out
+        self.returncode = 0
+
+def fake_run(argv, **kwargs):
+    if argv[0] != "gh":
+        raise AssertionError("unexpected subprocess: %r" % (argv,))
+    return FakeProc(json.dumps({"comments": comments}))
+
+adjudicator.subprocess.run = fake_run
+items, responses = adjudicator.fetch_comments("o/r", "1736", author)
+json.dump({"items": items, "responses": responses}, sys.stdout)
+`
+
+// TestAdjudicatorSelectsTheGenuineReportComment covers #1716 AC-3: the prior
+// findings must come from the comment that IS a qa-review report, never from a
+// later comment that quotes, pastes or discusses one.
+//
+// The pre-#1716 rule was `"## qa-review — PR #" in body`, so the LAST comment
+// mentioning the banner won. Each hijack fixture below is a real comment shape
+// from PR #1736 that beat that rule; the empty-finding-set cases are the
+// dangerous ones, because zero findings render as an aggregate PASS.
+func TestAdjudicatorSelectsTheGenuineReportComment(t *testing.T) {
+	requirePython3(t)
+
+	const poster = "github-actions"
+
+	cases := []struct {
+		name       string
+		comments   []map[string]any
+		author     string
+		wantIDs    []string // nil => `items` must be JSON null (no report found)
+		wantInResp string   // must appear in the author-defence text, "" to skip
+	}{
+		{
+			name:     "report-alone",
+			comments: []map[string]any{comment(poster, genuineReport)},
+			wantIDs:  []string{"F1", "G3"},
+		},
+		{
+			name: "fenced-example-does-not-hijack",
+			comments: []map[string]any{
+				comment(poster, genuineReport),
+				comment("claude", fencedQuoteComment),
+			},
+			wantIDs:    []string{"F1", "G3"},
+			wantInResp: "All findings addressed.",
+		},
+		{
+			name: "blockquoted-report-does-not-hijack",
+			comments: []map[string]any{
+				comment(poster, genuineReport),
+				comment("claude", blockquoteQuoteComment),
+			},
+			wantIDs:    []string{"F1", "G3"},
+			wantInResp: "F1 is fixed at",
+		},
+		{
+			name: "prose-mention-does-not-hijack",
+			comments: []map[string]any{
+				comment(poster, genuineReport),
+				comment("claude", inlineMentionComment),
+			},
+			wantIDs: []string{"F1", "G3"},
+		},
+		{
+			name: "prior-adjudication-does-not-hijack",
+			comments: []map[string]any{
+				comment(poster, genuineReport),
+				comment(poster, priorAdjudicationComment),
+				comment("claude", inlineMentionComment),
+			},
+			wantIDs:    []string{"F1", "G3"},
+			wantInResp: "re-checking 2 prior blocking finding(s)",
+		},
+		{
+			name: "most-recent-real-report-wins",
+			comments: []map[string]any{
+				comment(poster, genuineReport),
+				comment("claude", fencedQuoteComment),
+				comment(poster, strings.ReplaceAll(genuineReport, "F1 ·", "H7 ·")),
+			},
+			wantIDs: []string{"H7", "G3"},
+		},
+		{
+			name: "author-restriction-rejects-another-poster",
+			comments: []map[string]any{
+				comment(poster, genuineReport),
+				comment("outsider", strings.ReplaceAll(genuineReport, "- **F1 · FLAW_FOUND** — The evidence line is never asserted.\n  _scripts/qa_review_test.go:120_\n- **G3 · CANNOT_ANSWER** — Could not reach the wiring.\n", "- _None — no blocking findings._\n")),
+			},
+			author:  poster,
+			wantIDs: []string{"F1", "G3"},
+		},
+		{
+			name: "quoting-comments-only-yield-no-report",
+			comments: []map[string]any{
+				comment("claude", inlineMentionComment),
+				comment("claude", fencedQuoteComment),
+			},
+			wantIDs: nil,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := json.Marshal(tc.comments)
+			if err != nil {
+				t.Fatalf("marshalling fixture comments: %v", err)
+			}
+			stdout, stderr, code := runPython(t, "", "-c", selectionProbe, string(raw), tc.author)
+			if code != 0 {
+				t.Fatalf("selection probe exit=%d stderr=%s", code, stderr)
+			}
+			var got struct {
+				Items *[]struct {
+					ID  string `json:"id"`
+					Was string `json:"was"`
+				} `json:"items"`
+				Responses string `json:"responses"`
+			}
+			if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+				t.Fatalf("selection probe output is not JSON: %v (%s)", err, stdout)
+			}
+
+			if tc.wantIDs == nil {
+				if got.Items != nil {
+					t.Fatalf("fetch_comments returned %v findings for a PR with no report comment; it "+
+						"must return None so the caller can refuse. An empty finding set renders as an "+
+						"aggregate PASS, which would clear the qa dimension with nothing reviewed",
+						*got.Items)
+				}
+				return
+			}
+			if got.Items == nil {
+				t.Fatalf("fetch_comments found no report comment, want findings %v", tc.wantIDs)
+			}
+			var ids []string
+			for _, it := range *got.Items {
+				ids = append(ids, it.ID)
+			}
+			if !reflect.DeepEqual(ids, tc.wantIDs) {
+				t.Errorf("findings = %v, want %v — the wrong comment supplied them", ids, tc.wantIDs)
+			}
+			for _, id := range ids {
+				if id == "Z9" {
+					t.Errorf("findings came from a QUOTED example report (Z9), not the real one: %v", ids)
+				}
+			}
+			if tc.wantInResp != "" && !strings.Contains(got.Responses, tc.wantInResp) {
+				t.Errorf("the author-defence text does not contain %q, so a comment after the report "+
+					"was dropped: %q", tc.wantInResp, got.Responses)
+			}
+		})
+	}
+}
+
+// refusalProbe drives main() with the `gh` call stubbed and the model call made
+// unreachable, so the no-prior-report path is exercised end to end.
+const refusalProbe = `
+import json, os, sys, adjudicator
+
+comments = json.loads(sys.argv[1])
+out = sys.argv[2]
+
+class FakeProc(object):
+    def __init__(self, out):
+        self.stdout = out
+        self.returncode = 0
+
+adjudicator.subprocess.run = lambda argv, **kw: FakeProc(json.dumps({"comments": comments}))
+def no_model(*a, **kw):
+    raise AssertionError("the model must not be called when there is nothing to adjudicate")
+adjudicator.post_chat_completion = no_model
+os.environ["OPENAI_BASE_URL"] = "http://127.0.0.1:1/never-reached"
+os.environ["OPENAI_API_KEY"] = "unused"
+print(adjudicator.main(["--worktree", ".", "--pr", "1736", "--no-exec", "--out", out]))
+`
+
+// TestAdjudicatorRefusesWhenThereIsNoPriorReport covers the other half of AC-3:
+// the failure must be fail-CLOSED. A PR whose only banner mentions are quotes
+// has no findings to re-check, so the adjudicator must emit NO verdict line at
+// all — the consumer derives its gate marker from that line, and a PASS there
+// would clear the qa dimension without a review having happened.
+func TestAdjudicatorRefusesWhenThereIsNoPriorReport(t *testing.T) {
+	requirePython3(t)
+
+	raw, err := json.Marshal([]map[string]any{
+		comment("claude", inlineMentionComment),
+		comment("claude", fencedQuoteComment),
+	})
+	if err != nil {
+		t.Fatalf("marshalling fixture comments: %v", err)
+	}
+	out := filepath.Join(t.TempDir(), "report.md")
+
+	stdout, stderr, code := runPython(t, "", "-c", refusalProbe, string(raw), out)
+	if code != 0 {
+		t.Fatalf("refusal probe exit=%d stderr=%s", code, stderr)
+	}
+	if got := strings.TrimSpace(stdout); got != "3" {
+		t.Errorf("main() returned %q, want 3 (no prior report to adjudicate)", got)
+	}
+	if strings.Contains(stderr, "[adjudication verdict:") {
+		t.Errorf("main() emitted a verdict line with no report to adjudicate; the workflow derives "+
+			"QA-VERDICT from that line, so this is a silent pass: %q", stderr)
+	}
+	if !strings.Contains(stderr, "no qa-review report comment") {
+		t.Errorf("the refusal is not reported on stderr (R1), so the run looks like a no-op: %q", stderr)
+	}
+	if _, err := os.Stat(out); err == nil {
+		t.Errorf("main() wrote a report at %s with nothing to adjudicate; a rendered report there "+
+			"reads as an adjudication that happened", out)
+	}
+}

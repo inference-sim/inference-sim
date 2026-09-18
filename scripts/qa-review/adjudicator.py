@@ -1,9 +1,20 @@
 #!/usr/bin/env python3
 """qa-review adjudicator — author-defence re-check (used by #1716).
 
-Reads the most recent qa-review comment's "Items to fix" (parse_items_to_fix)
-and every later comment (the PR author's responses), then adjudicates each
-prior blocking finding against the author's defence and the current code.
+Reads the most recent qa-review REPORT comment's "Items to fix"
+(select_report_comment + parse_items_to_fix) and every later comment (the PR
+author's responses), then adjudicates each prior blocking finding against the
+author's defence and the current code.
+
+Source-comment selection is structural, not a substring search: a comment
+qualifies only if it IS a rendered report — an unquoted, unfenced
+"## qa-review — PR #" heading AND an "### Items to fix" section — and, when
+--report-author/QA_REPORT_AUTHOR is set, only if that login posted it. Keying
+on the bare banner substring let a later comment that merely QUOTED it (a
+self-review discussing the findings, or one pasting an example report inside
+``` fences) hijack the selection; with no Items-to-fix section of its own that
+comment yielded zero findings and a vacuous PASS — fail-OPEN on the one signal
+the delivery gate treats as fail-closed (observed on PR #1736).
 
 Per-finding verdict:
   RESOLVED               the finding is fixed in the current code.
@@ -18,12 +29,18 @@ interpretation rather than guessing.
 
 Aggregate verdict: BLOCK iff ANY finding is STILL_OPEN or left un-adjudicated;
 emitted on STDERR as "[adjudication verdict: PASS|BLOCK]" (not a PR marker —
-#1716 derives the gate marker).
+#1716 derives the gate marker from that line).
+
+Exit codes: 0 a verdict was emitted, 2 missing proxy configuration, 3 no prior
+qa-review report comment to adjudicate (deliberately NOT a PASS: there is
+nothing to re-check, so a verdict would be vacuous).
 
 Env:
   OPENAI_BASE_URL       LiteLLM proxy base URL (required)
   OPENAI_API_KEY        proxy key; falls back to LITELLM_KEY
   QA_ADJUDICATOR_MODEL  default azure/gpt-5.6-sol
+  QA_REPORT_AUTHOR      restrict the prior-report search to this comment
+                        author login (empty = any author)
 """
 
 import argparse
@@ -477,11 +494,79 @@ def default_banner(amodel):
     )
 
 
-def fetch_comments(repo, pr):
+# ---------------------------------------------------------------------------
+# Source-comment selection (#1716).
+# ---------------------------------------------------------------------------
+
+# render_report.py's own two structural landmarks: the top-level verdict header
+# and the blocking-findings section. Both are emitted on every report, PASS or
+# BLOCK, so requiring both identifies a report without assuming its verdict.
+_REPORT_HEADING = "## qa-review — pr #"
+_ITEMS_HEADING = "### items to fix"
+
+
+def significant_lines(body):
+    """Yield `body`'s lines, stripped, with fenced code blocks and blockquotes
+    dropped.
+
+    Those two are how a comment QUOTES a report it is discussing rather than
+    being one — an example report pasted inside ``` fences, or a banner quoted
+    with `> `. Dropping them is what stops a discussion of the findings from
+    being mistaken for the report that raised them. A genuine report contains
+    neither (render_report.py emits no fences, and only its optional banner is
+    a blockquote), so nothing a report needs is lost."""
+    fenced = False
+    for raw in body.splitlines():
+        line = raw.strip()
+        if line.startswith("```") or line.startswith("~~~"):
+            fenced = not fenced
+            continue
+        if fenced or line.startswith(">"):
+            continue
+        yield line
+
+
+def is_report_comment(body):
+    """True when `body` IS a rendered qa-review report rather than a comment
+    that quotes or discusses one."""
+    has_heading = False
+    has_items = False
+    for line in significant_lines(body):
+        lowered = line.lower()
+        if lowered.startswith(_REPORT_HEADING):
+            has_heading = True
+        elif lowered.startswith(_ITEMS_HEADING):
+            has_items = True
+    return has_heading and has_items
+
+
+def select_report_comment(comments, report_author=""):
+    """Index of the most recent genuine qa-review report comment, or -1.
+
+    A comment qualifies iff is_report_comment() accepts its body and, when
+    `report_author` is given, that login posted it. The author restriction is
+    strict on purpose: this runs against a PUBLIC repository, so without it any
+    commenter could post a report-shaped comment with an empty Items-to-fix
+    section and clear every outstanding finding. It is empty by default so the
+    tool stays usable by hand, where the report's poster is whoever ran it."""
+    chosen = -1
+    for i, c in enumerate(comments):
+        if not is_report_comment(c.get("body") or ""):
+            continue
+        if report_author and (c.get("author") or {}).get("login", "") != report_author:
+            continue
+        chosen = i
+    return chosen
+
+
+def fetch_comments(repo, pr, report_author=""):
     """Return (items_to_fix, later_author_responses) from the PR's comments.
 
-    The most recent qa-review comment supplies the prior blocking findings;
-    every comment after it is treated as the author's defence."""
+    The most recent genuine qa-review REPORT comment supplies the prior
+    blocking findings; every comment after it is treated as the author's
+    defence. `items` is None — distinct from an empty list, which is a real
+    report with no blocking findings — when no report comment was found at all,
+    so a caller can refuse rather than adjudicate nothing."""
     proc = subprocess.run(
         ["gh", "pr", "view", str(pr), "--repo", repo, "--json", "comments"],
         capture_output=True,
@@ -489,13 +574,10 @@ def fetch_comments(repo, pr):
         check=True,
     )
     comments = json.loads(proc.stdout).get("comments", [])
-    last_qa = -1
-    for i, c in enumerate(comments):
-        if "## qa-review — PR #" in c.get("body", ""):
-            last_qa = i
+    last_qa = select_report_comment(comments, report_author)
     if last_qa < 0:
-        return [], ""
-    items = parse_items_to_fix(comments[last_qa]["body"])
+        return None, ""
+    items = parse_items_to_fix(comments[last_qa].get("body") or "")
     responses = "\n\n".join(c.get("body", "") for c in comments[last_qa + 1 :])
     return items, responses
 
@@ -510,6 +592,12 @@ def main(argv=None):
         "--model",
         default=os.environ.get("QA_ADJUDICATOR_MODEL", DEFAULT_MODEL),
         help="adjudicator model (default from QA_ADJUDICATOR_MODEL)",
+    )
+    parser.add_argument(
+        "--report-author",
+        default=os.environ.get("QA_REPORT_AUTHOR", ""),
+        help="only adjudicate a prior report posted by this comment author login "
+        "(empty = any author; see select_report_comment)",
     )
     parser.add_argument("--out", default="", help="write the report here (else stdout)")
     parser.add_argument("--post-to-pr", action="store_true", help="post as a PR comment")
@@ -529,8 +617,23 @@ def main(argv=None):
         sys.stderr.write("OPENAI_API_KEY (or LITELLM_KEY) is required\n")
         return 2
 
-    items, responses = fetch_comments(args.repo, args.pr)
+    items, responses = fetch_comments(args.repo, args.pr, args.report_author)
+    if items is None:
+        # NOT a PASS. There is no prior report to re-check, so any verdict would
+        # be vacuous — and the consumer that turns this into a gate signal reads
+        # the verdict line, so emitting one here would clear the qa dimension
+        # without anything having been reviewed.
+        sys.stderr.write(
+            "no qa-review report comment%s was found on #%s, so there are no prior "
+            "findings to adjudicate; refusing to emit a verdict\n"
+            % ((" from '%s'" % args.report_author) if args.report_author else "", args.pr)
+        )
+        return 3
     if not items:
+        # A real report whose Items-to-fix section is empty: it found nothing
+        # blocking, so there is genuinely nothing left open. That is a PASS on
+        # the strength of a review that ran — unlike the `items is None` case
+        # above, where no review was found at all.
         sys.stderr.write("[adjudication verdict: PASS]\n")
         report, _ = render([], [], args.pr, args.model, default_banner(args.model))
         if args.out:
