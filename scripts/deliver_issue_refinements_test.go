@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -594,6 +595,12 @@ exit 1
 // runLive drives the script's live path against a stubbed gh, returning stdout, stderr and the exit
 // code.
 func runLive(t *testing.T, path string) (string, string, int) {
+	return runLiveWithDeadline(t, path, "")
+}
+
+// runLiveWithDeadline is runLive with an optional GH_DEADLINE_SECONDS override, so a test can force a
+// short deadline on the bounded `gh` wrapper without waiting the production 30s.
+func runLiveWithDeadline(t *testing.T, path, deadlineSeconds string) (string, string, int) {
 	t.Helper()
 	if _, err := exec.LookPath("jq"); err != nil {
 		t.Skip("jq is not on PATH")
@@ -601,6 +608,9 @@ func runLive(t *testing.T, path string) (string, string, int) {
 
 	cmd := exec.Command("bash", scriptPath(t, "deliver-issue-refinements.sh"), "1782")
 	cmd.Env = []string{"PATH=" + path, "GH_REPO=owner/repo"}
+	if deadlineSeconds != "" {
+		cmd.Env = append(cmd.Env, "GH_DEADLINE_SECONDS="+deadlineSeconds)
+	}
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -797,5 +807,37 @@ func TestRefinementsLive_A429IsCouldNotAskNotDefinitive(t *testing.T) {
 	if strings.Contains(stdout, "body is the whole specification") {
 		t.Errorf("a rate-limited thread reported the no-refinements message, conflating 429 with "+
 			"404.\nstdout:\n%s", stdout)
+	}
+}
+
+// A permission lookup that HANGS must not hang the delivery. The script wraps every `gh` call in a
+// deadline (`timeout`/`gtimeout`); when the lookup stalls, the wrapper kills it, the kill is a
+// non-zero exit — "could not ask" — the sole author is unresolved, and the thread degrades. Without
+// the bound a single stalled GitHub request would pin the whole job until its 60/120-minute timeout.
+// Skipped where `timeout(1)` is absent (a bare dev machine), since there is nothing to enforce the
+// deadline there; the Linux CI and self-hosted runners that actually run deliveries have it.
+func TestRefinementsLive_AHangingLookupIsBoundedAndDegrades(t *testing.T) {
+	if _, err := exec.LookPath("timeout"); err != nil {
+		t.Skip("timeout(1) is not on PATH; the deadline cannot be enforced here")
+	}
+
+	// `exec sleep` so the process the wrapper's `timeout` manages IS the sleep — killed cleanly at
+	// the deadline rather than left for the stub shell to reap.
+	path := stubGh(t, oneHumanComment, `    exec sleep 30`)
+
+	start := time.Now()
+	stdout, stderr, code := runLiveWithDeadline(t, path, "1")
+	elapsed := time.Since(start)
+
+	if elapsed > 10*time.Second {
+		t.Errorf("the lookup ran for %s against a 1s deadline — the `gh` call was not bounded", elapsed)
+	}
+	if !strings.HasPrefix(stdout, "REFINEMENT-READ-FAILED") {
+		t.Errorf("a killed (timed-out) lookup was not treated as could-not-ask.\nstdout:\n%s\nstderr:\n%s",
+			stdout, stderr)
+	}
+	if code != 3 {
+		t.Errorf("exit %d, want 3 (degraded): a lookup killed at the deadline must fail closed, like "+
+			"any other could-not-ask failure.", code)
 	}
 }

@@ -124,6 +124,32 @@ ISSUE="$1"
 
 command -v gh >/dev/null 2>&1 || degrade "gh is not on PATH"
 
+# Bound every GitHub call so a stalled request cannot hang the whole delivery job until its
+# 60/120-minute timeout. The permission lookup below is the likeliest culprit, but `gh issue view`
+# carries the same risk, so the deadline wraps all of them here rather than at one call site.
+# `timeout` (coreutils — present on the Linux CI and self-hosted runners that actually run
+# deliveries) or `gtimeout` (macOS with coreutils) enforces it; on a bare dev machine with neither,
+# the call runs unbounded, which is acceptable there because a human is at the keyboard to interrupt
+# it. A deadline expiry exits non-zero, so resolve_permission and the `gh issue view` check treat it
+# exactly like any other "could not ask" failure — fail-closed, never mistaken for a definitive
+# answer. GH_DEADLINE_SECONDS is overridable so the tests can force a short deadline.
+GH_DEADLINE_SECONDS="${GH_DEADLINE_SECONDS:-30}"
+_GH_BIN="$(command -v gh)"
+if command -v timeout >/dev/null 2>&1; then
+  _GH_TIMEOUT="timeout"
+elif command -v gtimeout >/dev/null 2>&1; then
+  _GH_TIMEOUT="gtimeout"
+else
+  _GH_TIMEOUT=""
+fi
+gh() {
+  if [[ -n "$_GH_TIMEOUT" ]]; then
+    "$_GH_TIMEOUT" "$GH_DEADLINE_SECONDS" "$_GH_BIN" "$@"
+  else
+    "$_GH_BIN" "$@"
+  fi
+}
+
 REPO="${GH_REPO:-${GITHUB_REPOSITORY:-}}"
 if [[ -z "$REPO" ]]; then
   REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner) \
@@ -154,7 +180,8 @@ fi
 #
 # The distinction is the difference between two outcomes that must not be conflated. A 404 is a real
 # answer — GitHub says this login is not a collaborator (it is also what a non-user login such as
-# `github-actions` returns) — whereas a 401/403/5xx/network failure means the caller could not ask.
+# `github-actions` returns) — whereas a 401/403/5xx/network failure, or a deadline expiry from the
+# bounded `gh` wrapper above, means the caller could not ask.
 # Verified against this repository: a genuine non-collaborator returns 200 with `read`, so "no write
 # access" normally arrives as a successful lookup and a failure really is a failure.
 #
