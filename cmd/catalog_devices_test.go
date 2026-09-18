@@ -343,6 +343,12 @@ func TestLoadCatalogStorageDevices_UnusableTableIsRefused(t *testing.T) {
 			// R10: a misspelled key must be refused, never decoded to zero bandwidth.
 			return writeCatalogStorageDevices(t, "nvme_gen4: {read_bandwidth: 7.0e3, write_bandwith: 5.0e3, base_latency: 80.0}\n")
 		}, "write_bandwith"},
+		{"missing required field", func(t *testing.T) string {
+			// R9/R10: an OMITTED required physics field must be refused, not silently decoded
+			// to 0. base_latency is the sharp case — read/write=0 is caught by Validate, but a
+			// missing base_latency would otherwise resolve to zero-latency physics.
+			return writeCatalogStorageDevices(t, "nvme_gen4: {read_bandwidth: 7.0e3, write_bandwidth: 5.0e3}\n")
+		}, "base_latency"},
 		{"table is a directory", func(t *testing.T) string {
 			root := t.TempDir()
 			if err := os.MkdirAll(filepath.Join(root, catalogDevicesSubdir, catalogStorageDevicesFile), 0o755); err != nil {

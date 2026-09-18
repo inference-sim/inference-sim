@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"gopkg.in/yaml.v3"
 )
@@ -97,6 +98,31 @@ func parseCatalogStorageDevices(data []byte) (map[string]kvOffloadDevice, error)
 			return nil, nil
 		}
 		return nil, err
+	}
+	// KnownFields(true) refuses UNKNOWN keys but does NOT require the physics triple to be
+	// PRESENT: read_bandwidth/write_bandwidth/base_latency are non-pointer floats, so an
+	// omitted key is indistinguishable from an explicit 0. A missing base_latency would
+	// resolve to zero-latency physics (read/write=0 is caught later by Validate, but 0
+	// latency is "valid") — exactly the silent-zero defect this reader's strict parsing
+	// exists to prevent (R9/R10). Re-scan the raw YAML for required-key presence and refuse
+	// an incomplete entry, naming the field. Sorted so the diagnostic is deterministic (INV-6).
+	var raw map[string]map[string]any
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(raw))
+	for name := range raw {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		for _, req := range []string{"read_bandwidth", "write_bandwidth", "base_latency"} {
+			if _, ok := raw[name][req]; !ok {
+				return nil, fmt.Errorf("storage device %q is missing required field %q "+
+					"(read_bandwidth, write_bandwidth and base_latency are all required; an omitted "+
+					"field would silently resolve to 0)", name, req)
+			}
+		}
 	}
 	return devices, nil
 }
