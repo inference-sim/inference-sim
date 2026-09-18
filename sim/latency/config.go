@@ -276,25 +276,34 @@ func jsonValueKind(v any) string {
 func (c *HFConfig) layerCountEvidence() []string {
 	clauses := make([]string, 0, 2)
 
+	// The type tests mirror the readers exactly: GetInt accepts only a JSON number
+	// (float64 after json.Unmarshal), and BlockTypeLayerCount only a []any. Asserted on
+	// the type directly rather than by comparing jsonValueKind's prose, which would make
+	// the branch depend on the wording of a message.
 	switch v, present := c.Raw[numHiddenLayersField]; {
 	case !present:
 		clauses = append(clauses, fmt.Sprintf("%q is absent", numHiddenLayersField))
-	case jsonValueKind(v) != "a number":
-		clauses = append(clauses, fmt.Sprintf("%q holds %s, not a number", numHiddenLayersField, jsonValueKind(v)))
 	default:
-		// Present and numeric, yet the scalar did not answer ⇒ it is 0 (numLayersScalar
-		// treats 0 as no answer, deliberately: 0 layers is not a model).
-		clauses = append(clauses, fmt.Sprintf("%q is 0", numHiddenLayersField))
+		if _, isNumber := v.(float64); !isNumber {
+			clauses = append(clauses, fmt.Sprintf(
+				"%q holds %s, not a number", numHiddenLayersField, jsonValueKind(v)))
+		} else {
+			// Present and numeric, yet the scalar did not answer ⇒ it is 0
+			// (numLayersScalar treats 0 as no answer, deliberately: 0 layers is not a model).
+			clauses = append(clauses, fmt.Sprintf("%q is 0", numHiddenLayersField))
+		}
 	}
 
 	switch v, present := c.Raw[LayersBlockTypeField]; {
 	case !present:
 		clauses = append(clauses, fmt.Sprintf("%q is absent", LayersBlockTypeField))
-	case jsonValueKind(v) != "a list":
-		clauses = append(clauses, fmt.Sprintf(
-			"%q holds %s, not a list (only a list's LENGTH is read)", LayersBlockTypeField, jsonValueKind(v)))
 	default:
-		clauses = append(clauses, fmt.Sprintf("%q holds an empty list", LayersBlockTypeField))
+		if _, isList := v.([]any); !isList {
+			clauses = append(clauses, fmt.Sprintf(
+				"%q holds %s, not a list (only a list's LENGTH is read)", LayersBlockTypeField, jsonValueKind(v)))
+		} else {
+			clauses = append(clauses, fmt.Sprintf("%q holds an empty list", LayersBlockTypeField))
+		}
 	}
 
 	return clauses
