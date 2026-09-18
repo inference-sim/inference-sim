@@ -1,8 +1,16 @@
 diff --git a/.github/workflows/deliver-verify.yml b/.github/workflows/deliver-verify.yml
-index ee3c795b..834c5c10 100644
+index ee3c795b..9dbeb6f8 100644
 --- a/.github/workflows/deliver-verify.yml
 +++ b/.github/workflows/deliver-verify.yml
-@@ -849,6 +849,47 @@ jobs:
+@@ -24,6 +24,7 @@ name: Deliver — Verify
+ # SECURITY: the only checkout into the WORKSPACE is the DEFAULT BRANCH, so scripts/ and
+ # .archon-version always come from trusted code. The PR's code never EXECUTES on the self-hosted
+ # runner — ci.yml runs it on ephemeral hosted runners instead. Since #1715 the qa-review answerer
++# (and since #1716 the adjudicator that replaces it on a re-verify)
+ # must READ the PR head, so it is checked out into an ephemeral `--detach` worktree under
+ # $RUNNER_TEMP and the agents run with `--no-exec`, which drops their `go` build/test tool: the PR's
+ # files are READ, never compiled or run, and the LiteLLM secrets in this job's env stay out of reach
+@@ -849,6 +850,47 @@ jobs:
            echo "AGENT_VERDICT=$marker"
            echo "value=$marker" >> "$GITHUB_OUTPUT"
  
@@ -50,7 +58,7 @@ index ee3c795b..834c5c10 100644
        # The cross-vendor second opinion (#1715, RFC #1603). A questioner and an isolated answerer
        # from a DIFFERENT model family than the Opus implementer and the Sonnet reviewer above —
        # decorrelation is the whole point, and it is why this runs AFTER that reviewer rather than
-@@ -870,7 +911,7 @@ jobs:
+@@ -870,7 +912,7 @@ jobs:
        # this step wrote from a parsed answer set.
        - name: Run qa-review
          id: qa
@@ -59,7 +67,7 @@ index ee3c795b..834c5c10 100644
          env:
            OPENAI_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
            OPENAI_API_KEY: ${{ secrets.LITELLM_API_KEY }}
-@@ -948,6 +989,84 @@ jobs:
+@@ -948,6 +990,86 @@ jobs:
            gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/qa-report.md" \
              || skip "could not post the qa-review report to #$PR"
  
@@ -105,6 +113,10 @@ index ee3c795b..834c5c10 100644
 +          # round-0 branch uses it: a bare FETCH_HEAD would follow whatever fetched last.
 +          HEAD_SHA: ${{ steps.target.outputs.sha }}
 +          WORKTREE: ${{ runner.temp }}/qa-head
++          # Via env rather than interpolated into the script, like every other value this workflow
++          # passes to a shell: the round is derived from label names, and nothing that came from
++          # the API belongs in the text of a command.
++          ROUND: ${{ steps.round.outputs.value }}
 +        run: |
 +          set -uo pipefail
 +          skip() { echo "::warning::$1 — no QA-VERDICT marker will be posted, so the gate reads MISSING and stops for a human"; exit 0; }
@@ -112,13 +124,11 @@ index ee3c795b..834c5c10 100644
 +          git worktree add --detach "$WORKTREE" "$HEAD_SHA" \
 +            || skip "could not materialise the PR head at $HEAD_SHA into a read-only worktree"
 +
-+          title=$(jq -r '.title // ""' "$RUNNER_TEMP/pr.json")
-+
 +          # stderr is captured rather than piped: it carries the verdict line AND the tool-loop
 +          # diagnostics, both of which belong in the job log too.
 +          python3 scripts/qa-review/adjudicator.py \
 +            --worktree "$WORKTREE" --no-exec \
-+            --pr "$PR" --repo "$REPO" --title "$title" \
++            --pr "$PR" --repo "$REPO" \
 +            --out "$RUNNER_TEMP/qa-report.md" \
 +            2> "$RUNNER_TEMP/qa-adjudication.err"
 +          rc=$?
@@ -137,14 +147,14 @@ index ee3c795b..834c5c10 100644
 +
 +          # The marker must be the LAST non-empty line, which is the contract the reader enforces.
 +          { echo; echo "QA-VERDICT: $verdict"; } >> "$RUNNER_TEMP/qa-report.md"
-+          echo "QA verdict: $verdict (adjudication of the prior findings; round ${{ steps.round.outputs.value }})"
++          echo "QA verdict: $verdict (adjudication of the prior findings; round $ROUND)"
 +          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/qa-report.md" \
 +            || skip "could not post the qa-review adjudication to #$PR"
 +
        # ALWAYS, so a failed or cancelled qa-review cannot leave PR-head files behind on the
        # self-hosted runner, whose workspace persists between deliveries. `rm -rf` is the fallback
        # rather than the primary: `git worktree remove` also drops the administrative entry, and
-@@ -1018,18 +1137,6 @@ jobs:
+@@ -1018,18 +1140,6 @@ jobs:
            echo "DISMISSALS=$state (was '${{ steps.dismissals.outputs.state }}' before the review)"
            echo "state=$state" >> "$GITHUB_OUTPUT"
  
