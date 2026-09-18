@@ -753,8 +753,64 @@ func resolveDPPlacement(lr latencyResolution, plan dpPlacementPlan) (dpPlacement
 	return plan, nil
 }
 
+// deploymentFlagValues carries the resolved deployment inputs together with whether the
+// operator actually SUPPLIED each flag. The two are independent: --tp's unset sentinel is
+// 0, which is also a value an operator can type, so the resolved number alone cannot tell
+// "omitted" from "explicitly wrong" (#1776).
+//
+// The supplied bits come from cobra's Flags().Changed at the single call site, carried in
+// explicitly rather than read from the command, so the refusal rule below stays a pure
+// function of its inputs (table-testable without building a cobra command).
+type deploymentFlagValues struct {
+	GPU         string
+	GPUSupplied bool
+	TP          int
+	TPSupplied  bool
+}
+
+// deploymentFlagRefusal returns the message refusing a deployment BLIS will not run, or ""
+// when both inputs are acceptable. Pure — no logging and no process exit — so every branch
+// is table-testable; requireDeploymentFlags is the Fatalf wrapper.
+//
+// Two dispositions per flag, because they need different fixes (#1776): an OMITTED flag has
+// to be added, whereas a flag supplied with an unusable value (`--tp 0`, `--tp -1`,
+// `--hardware ""`) has to be corrected. Reporting the latter as "missing" sends the
+// operator looking for a flag that is right there on their command line. When one flag is
+// omitted and the other is invalid, both clauses are emitted.
+func deploymentFlagRefusal(f deploymentFlagValues) string {
+	var missing, invalid []string
+	switch {
+	case f.GPU != "": // acceptable; the hardware key itself is validated by the config loader
+	case f.GPUSupplied:
+		invalid = append(invalid, `--hardware "" (the GPU type must be non-empty, e.g. --hardware H100)`)
+	default:
+		missing = append(missing, "--hardware (GPU type, e.g. --hardware H100)")
+	}
+	switch {
+	case f.TP > 0: // acceptable
+	case f.TPSupplied:
+		invalid = append(invalid, fmt.Sprintf("--tp %d (tensor parallelism must be > 0, e.g. --tp 1)", f.TP))
+	default:
+		missing = append(missing, "--tp (tensor parallelism, e.g. --tp 1)")
+	}
+	if len(missing) == 0 && len(invalid) == 0 {
+		return ""
+	}
+
+	var clauses []string
+	if len(missing) > 0 {
+		clauses = append(clauses, "missing required flag(s): "+strings.Join(missing, " and "))
+	}
+	if len(invalid) > 0 {
+		clauses = append(clauses, "invalid deployment flag value(s): "+strings.Join(invalid, " and "))
+	}
+	return strings.Join(clauses, "; ") + ". BLIS does not infer the deployment — " +
+		"the GPU type and tensor-parallel degree must be chosen explicitly, on both `blis run` and `blis replay`"
+}
+
 // requireDeploymentFlags refuses a run whose deployment was not chosen by the operator,
-// naming the flag(s) that are missing (NS-6, #1733).
+// naming the flag(s) that are missing — or, since #1776, the flag(s) supplied with an
+// unusable value (NS-6, #1733).
 //
 // --hardware and --tp are REQUIRED inputs: every latency backend needs both, and the GPU
 // type plus the tensor-parallel degree together decide the KV budget, the step time, and
@@ -762,23 +818,15 @@ func resolveDPPlacement(lr latencyResolution, plan dpPlacementPlan) (dpPlacement
 // emitted a `logrus.Warnf` before continuing, so a run could complete — and emit metrics —
 // on a deployment the operator never chose, which is the failure mode R1 forbids.
 //
-// A pure CLI-boundary guard: it takes the resolved values rather than reading the package
-// vars so the refusal rule is testable in isolation, and it terminates via logrus.Fatalf
-// per the cmd/-layer error-handling boundary.
-func requireDeploymentFlags(resolvedGPU string, resolvedTP int) {
-	var missing []string
-	if resolvedGPU == "" {
-		missing = append(missing, "--hardware (GPU type, e.g. --hardware H100)")
+// A CLI-boundary guard: the refusal rule itself is the pure deploymentFlagRefusal, and this
+// wrapper terminates via logrus.Fatalf per the cmd/-layer error-handling boundary. Which
+// runs are refused is UNCHANGED by #1776 (the accept condition is still a non-empty GPU and
+// a positive TP) — only the wording of the refusal differs, so INV-6 byte-identity on every
+// valid input is untouched.
+func requireDeploymentFlags(f deploymentFlagValues) {
+	if msg := deploymentFlagRefusal(f); msg != "" {
+		logrus.Fatalf("%s", msg)
 	}
-	if resolvedTP <= 0 {
-		missing = append(missing, "--tp (tensor parallelism, e.g. --tp 1)")
-	}
-	if len(missing) == 0 {
-		return
-	}
-	logrus.Fatalf("missing required flag(s): %s. BLIS does not infer the deployment — "+
-		"the GPU type and tensor-parallel degree must be chosen explicitly, on both `blis run` and `blis replay`",
-		strings.Join(missing, " and "))
 }
 
 // resolveLatencyConfig resolves the latency backend configuration from CLI flags and
@@ -874,7 +922,17 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	// complete on a deployment nobody chose. Both are now REQUIRED, refused by name (R1).
 	// Checked before any backend branch so run and replay — which share this function —
 	// refuse identically (INV-13), and so no backend can silently skip the requirement.
-	requireDeploymentFlags(gpu, tensorParallelism)
+	//
+	// Flags().Changed distinguishes an OMITTED flag from one explicitly supplied with an
+	// unusable value (#1776); --tp's unset sentinel is 0, which an operator can also type.
+	// It is safe on a command that never registered the flag (pflag returns false for an
+	// unknown name), which reads as "omitted" — the pre-#1776 disposition.
+	requireDeploymentFlags(deploymentFlagValues{
+		GPU:         gpu,
+		GPUSupplied: cmd.Flags().Changed("hardware"),
+		TP:          tensorParallelism,
+		TPSupplied:  cmd.Flags().Changed("tp"),
+	})
 
 	// --latency-model roofline
 	if backend == "roofline" {
