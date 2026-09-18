@@ -144,7 +144,7 @@ There is no third outcome. Every unrecognised or contradictory signal resolves t
 
 ## The gate
 
-The decision is not the reviewing agent's to make. `deliver-verify.yml` collects six machine-readable signals and hands them to `scripts/deliver-gate.sh`, which is unit-tested (`scripts/deliver_gate_test.go`):
+The decision is not the reviewing agent's to make. `deliver-verify.yml` collects seven machine-readable signals and hands them to `scripts/deliver-gate.sh`, which is unit-tested (`scripts/deliver_gate_test.go`):
 
 | Signal | Source |
 |---|---|

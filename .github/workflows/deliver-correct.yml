@@ -488,10 +488,25 @@ jobs:
             echo
             echo "_[Correction run](${RUN_URL})_"
           } > "$RUNNER_TEMP/conflict.md"
-          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/conflict.md" || true
+          # This is the TERMINAL conflict stop, so its writes must NOT be silently swallowed
+          # (#1781 F1/G5, R1). Previously the comment used `|| true` and the label failure only
+          # warned, so a rate-limited or briefly-unavailable API could leave a conflicting PR with
+          # no naming comment, no `needs-human`, and (because state stays `conflicting`) no hand-back
+          # either — the job would succeed having done nothing, the exact silent stall this PR
+          # removes. Now a write failure FAILS the step, which fires `Report a failed correction`
+          # below (always() && !success()): it re-applies `needs-human` and posts a comment, so the
+          # delivery still ends visibly for a human rather than succeeding into silence. Removing the
+          # stale `ready-for-merge` stays best-effort (a 404 when it was never applied is normal).
+          commented=true
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/conflict.md" \
+            || { echo "::error::could not post the conflict-naming comment on #$PR"; commented=false; }
           gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
-          gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null \
-            || echo "::warning::could not apply the needs-human label; the comment above is the record"
+          if ! gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null; then
+            echo "::error::could not apply needs-human to #$PR after an unresolved conflict; failing so the failure reporter re-applies it and the delivery stops visibly rather than silently"
+            exit 1
+          fi
+          [[ "$commented" == true ]] \
+            || { echo "::error::needs-human is applied but the conflict-naming comment could not be posted; failing so the failure reporter leaves a narrative rather than an unexplained stop"; exit 1; }
 
       # Retried with exponential backoff (#1757): same transient-dispatch hardening as
       # the verify→correct hand-off.

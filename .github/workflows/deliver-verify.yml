@@ -1384,11 +1384,15 @@ jobs:
             ready)       label=ready-for-merge; headline='Ready for merge' ;;
             needs-human) label=needs-human;     headline='Stopped — a human is needed' ;;
             correct)     label='';              headline='Correction round starting' ;;
-            # Non-terminal (#1758 G1): every signal is green but the branch's mergeability could
-            # not be read this run. Apply NO terminal label and do NOT announce a stop — the PR
-            # stays in the stall sweep's in-flight set and re-verifies on the next event. Only if
-            # it never resolves does the sweep escalate it (the bounded backstop).
-            recheck)     label='';              headline='Mergeability undetermined — will re-verify' ;;
+            # Non-terminal: this round could not be decided to a terminal verdict, for one of two
+            # reasons the gate names in `$reason` — either mergeability could not be read this run
+            # (#1758 G1), or the reviews were skipped on a stale `conflicting` hint and the branch
+            # turned out non-conflicting (#1781 G1). The headline stays neutral BECAUSE the two
+            # causes differ: hardcoding "mergeability undetermined" was false for the stale-hint
+            # case, whose mergeability is `mergeable`. Apply NO terminal label and do NOT announce a
+            # stop — the PR stays in the stall sweep's in-flight set and re-verifies on the next
+            # event; the sweep escalates only if it never resolves (the bounded backstop).
+            recheck)     label='';              headline='Not decided this round — will re-verify' ;;
             *) echo "::error::unexpected decision '$decision'"; exit 1 ;;
           esac
           {
@@ -1411,7 +1415,7 @@ jobs:
               ready)       echo "Nothing further is automated. A human reviews the history above and merges." ;;
               needs-human) echo "The delivery loop has stopped and will not resume on its own." ;;
               correct)     echo "The correct phase will address the findings above and hand back for re-verification." ;;
-              recheck)     echo "GitHub had not computed this branch's mergeability by the end of this run. The delivery is NOT stopped: it will re-verify on the next push or review, and the stall sweep will escalate it only if the mergeability stays unreadable." ;;
+              recheck)     echo "This round could not be decided to a terminal verdict (see the reason above). The delivery is NOT stopped: it will re-verify on the next push or review, and the stall sweep will escalate it only if it never resolves." ;;
             esac
             echo
             echo "_[Verify run](${RUN_URL})_"

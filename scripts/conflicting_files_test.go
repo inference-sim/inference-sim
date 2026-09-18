@@ -260,3 +260,27 @@ func TestConflictingFilesShallowMissingMergeBaseIsUndetermined(t *testing.T) {
 		t.Errorf("printed %v, want nothing — an undetermined result names no files", lines)
 	}
 }
+
+// #1781 G4/G9 — a conflicting path containing a SPACE and a COMMA is printed verbatim, one per
+// line, directly out of conflicting-files.sh (the source the newline transport and the workflow's
+// delimiter-aware awk both consume). git forbids only NUL in a path and does not quote spaces or
+// commas, so the raw path must survive `cut`/`sort` unmangled.
+func TestConflictingFilesNamesPunctuationHeavyPaths(t *testing.T) {
+	dir := newRepo(t)
+	const p = "docs/a file, notes.md" // a space AND a comma
+	commitFileAt(t, dir, p, "base line\n")
+	gitCmd(t, dir, "branch", "base")
+	gitCmd(t, dir, "checkout", "-q", "-b", "feature")
+	commitFileAt(t, dir, p, "the PR's change\n")
+	gitCmd(t, dir, "checkout", "-q", "base")
+	commitFileAt(t, dir, p, "main's change\n")
+	gitCmd(t, dir, "checkout", "-q", "feature")
+
+	lines, stderr, code := runConflictingFiles(t, dir, "base", "feature")
+	if code != 0 {
+		t.Fatalf("exit %d, want 0 (determined); stderr: %s", code, stderr)
+	}
+	if len(lines) != 1 || lines[0] != p {
+		t.Errorf("got %v, want exactly [%q] reproduced verbatim (space/comma preserved)", lines, p)
+	}
+}

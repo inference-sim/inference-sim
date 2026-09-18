@@ -6,7 +6,8 @@
 #
 # Prints two lines and exits 0:
 #   state=clean|conflicting|unknown
-#   files=<comma-separated conflicting paths; empty unless state=conflicting>
+#   files=<conflicting paths, NEWLINE-delimited (one per line) via GITHUB_OUTPUT's multiline form;
+#          empty unless state=conflicting>
 #
 #   clean        the branch merges into main with no conflict
 #   conflicting  it still conflicts, and `files` names the paths a human must resolve

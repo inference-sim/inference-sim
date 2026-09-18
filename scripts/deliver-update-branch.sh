@@ -6,7 +6,8 @@
 #
 # Prints two lines and exits 0:
 #   state=merged|current|conflicting|unknown
-#   files=<comma-separated conflicting paths; empty unless state=conflicting>
+#   files=<conflicting paths, NEWLINE-delimited (one per line) via GITHUB_OUTPUT's multiline form;
+#          empty unless state=conflicting>
 #
 #   merged       main was merged cleanly and the merge commit was PUSHED
 #   current      the branch was already up to date with main; nothing was pushed
