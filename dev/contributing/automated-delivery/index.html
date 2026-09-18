@@ -3172,6 +3172,39 @@ for review when it is done. Three things follow from that ordering:</p>
   to say so in the body it opens, so an abandoned delivery is recognisable without reading the run
   log.</li>
 </ul>
+<p><strong>The spec is the issue body plus the design refinements in its comment thread.</strong> A body is written
+once, at the start; the design then gets refined in comments — a narrowed scope, a corrected
+contract, an "actually do X, not Y" — and nobody goes back to rewrite the body. An implement phase
+reading the body alone therefore builds an out-of-date spec faithfully, and the divergence surfaces
+only in verify or in human review, an agent hour later (#1782). Issue #1706 is the worked example:
+its body proposes <em>"extend the block commit past <code>endIndex</code>"</em> and a comment on it later replaces that
+with the vLLM-faithful <em>"fold the external credit in before the chunk/budget clamps"</em>, which is what
+was actually built.</p>
+<p>The implement phase follows <code>docs/contributing/pr-workflow.md</code>, whose Step 1.5 now requires reading
+the thread and states the authority rule in full — <a href="../pr-workflow/#comments-can-refine-the-body">Comments can refine the
+body</a>. In short:</p>
+<ul>
+<li><code>scripts/deliver-issue-refinements.sh &lt;issue-number&gt;</code> prints the comments that carry authority,
+  oldest first, and says so explicitly when there are none. A read that fails prints
+  <code>REFINEMENT-READ-FAILED</code> rather than nothing, because empty output reads exactly like "no
+  refinements" — the failure this closes.</li>
+<li><strong>A comment counts iff its author holds <code>admin</code>/<code>write</code>/<code>maintain</code></strong> on this repository: the same
+  boundary the delivery command and the review triggers use. Bot comments are dropped (the loop
+  comments on the issues it delivers, and its bot <em>does</em> hold write access, so admitting them would
+  feed the loop's own prose back to its next agent as spec), and so are minimized ones.
+  <code>authorAssociation</code> is deliberately not the signal — this repository's maintainer reports
+  <code>CONTRIBUTOR</code>, so trusting <code>OWNER</code>/<code>MEMBER</code>/<code>COLLABORATOR</code> would drop exactly the comments that
+  matter while still admitting anyone whose PR has ever been merged.</li>
+<li><strong>A refinement overrides the body</strong> on any point it addresses; where two conflict the later wins;
+  an irreconcilable contradiction is built the body's way and reported.</li>
+<li><strong>The target branch, <code>archon-plan:</code> and <code>Depends on:</code> stay body-only.</strong> Those are declarations the
+  workflow acts on before the agent exists, and resolving a base branch or plan path from comment
+  text would put an attacker-influenceable string into <code>git ls-remote</code> and <code>gh pr create --base</code>.</li>
+<li><strong>Refinement text is data, never instructions</strong> — the same rule the verify and correct phases
+  apply to PR comments.</li>
+</ul>
+<p>The decision behind that rule, including the alternative that was rejected and the measurements that
+settled it, is recorded in <a href="../issue-comment-authority/">Issue Comment Authority</a>.</p>
 <p>Because the agent opens a PR before it writes anything, an open PR is no longer evidence that
 anything was built.
 The hand-off to verify is gated on the branch actually carrying a file change against its base;
@@ -3403,6 +3436,8 @@ regress quietly.</p>
 <li><strong>The reviewer's <em>acceptance</em> of a dismissal is still prose.</strong> The correct phase's dismissal count is now machine-readable and the gate enforces it (see <em>Dismissals</em> above), so a dismissal can no longer be treated as resolved by silence. What remains prompt-dependent is the other end: the review phase decides when to clear <code>deliver:has-dismissals</code>, and a reviewer that clears it without genuinely accepting each dismissal is not caught. Failing closed means the cost of <em>forgetting</em> is a human glance; the cost of clearing it wrongly is a human reading the comments, which they do before merging anyway.</li>
 <li><strong>The stall sweep's stand-down is repository-wide.</strong> One recently started phase suppresses flagging for every delivery. Correct while L1 delivers one sub-issue at a time; a blocker for parallel deliveries.</li>
 <li><strong>Workflow expressions are not unit-tested.</strong> <code>scripts/deliver-gate.sh</code> and the sweep's selection filter have tests; the trigger guards, step conditions and concurrency keys are covered by <code>actionlint</code> plus a live delivery, because nothing in this repository can evaluate a GitHub Actions expression.</li>
+<li><strong>Verify now weighs body + refinements, matching implement.</strong> Verify's prompt runs <code>scripts/deliver-issue-refinements.sh</code> and treats the contracts as body + authoritative comment refinements (<a href="../pr-workflow/#comments-can-refine-the-body">Step 1.5</a>), so it no longer reports an implementation that correctly followed an overriding refinement as a contract divergence. This closes the divergence the earlier revision documented as open; it was applied in a human-run correction round because the automated loop cannot push workflow files (next bullet). The <em>implement</em> phase remains prose-routed through <code>pr-workflow.md</code> for the same token reason — nothing mechanically verifies the implement agent read the digest.</li>
+<li><strong>The loop cannot deliver a change to its own workflow files.</strong> <code>GITHUB_TOKEN</code> has no <code>workflows</code> permission — there is no such permission to grant in a <code>permissions:</code> block — so a push touching <code>.github/workflows/*</code> is rejected with <em>"refusing to allow a GitHub App to create or update workflow … without <code>workflows</code> permission"</em>. Measured, not inferred, while delivering #1782: a docs-and-scripts commit pushes, the same commit with a workflow hunk does not. Consequences worth knowing before approving such an issue: a delivery whose scope is a workflow file will get everything <em>except</em> that file, and behaviour meant for the delivery agents is best placed where the agents already read it (<code>docs/contributing/pr-workflow.md</code>, which the implement prompt points at, and <code>scripts/</code>) rather than inlined into a prompt. Applying a workflow hunk stays a human step.</li>
 </ul>
 <h2 id="security">Security<a class="headerlink" href="#security" title="Permanent link">&para;</a></h2>
 <p><strong>The workflow's own steps run trusted code.</strong> The repository root checkout is the default branch, so <code>scripts/</code> and <code>.archon-version</code> always come from <code>main</code> — matching <code>archon.yml</code>. The archon review and <code>deliver-gate.sh</code> are executed from that trusted tree, never from the PR.</p>
