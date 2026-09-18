@@ -252,8 +252,9 @@ func TestKVOffloadDevicesBlockRemoved_StaleBlockIsRefused(t *testing.T) {
 	const staleBlock = `kv_offload_devices:
   nvme_gen4: {read_bandwidth: 7.0e3, write_bandwidth: 5.0e3, base_latency: 80.0}
 `
-	const rest = `workloads: {}
-version: "0.0.1"
+	// #1769 removed the `workloads:` field, so the negative-control remainder is now just a
+	// minimal valid file — enough to prove the same fixture minus the kv_offload_devices: block loads.
+	const rest = `version: "0.0.1"
 `
 	if os.Getenv("BLIS_STALE_KV_DEVICES_SUBPROCESS") == "1" {
 		path := filepath.Join(t.TempDir(), "defaults.yaml")

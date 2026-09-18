@@ -8,19 +8,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Workload describes a preset workload configuration in defaults.yaml.
-type Workload struct {
-	PrefixTokens      int `yaml:"prefix_tokens"`
-	PromptTokensMean  int `yaml:"prompt_tokens"`
-	PromptTokensStdev int `yaml:"prompt_tokens_stdev"`
-	PromptTokensMin   int `yaml:"prompt_tokens_min"`
-	PromptTokensMax   int `yaml:"prompt_tokens_max"`
-	OutputTokensMean  int `yaml:"output_tokens"`
-	OutputTokensStdev int `yaml:"output_tokens_stdev"`
-	OutputTokensMin   int `yaml:"output_tokens_min"`
-	OutputTokensMax   int `yaml:"output_tokens_max"`
-}
-
 // Config represents the full defaults.yaml structure.
 // All top-level sections must be listed to satisfy KnownFields(true) strict parsing (R10).
 //
@@ -33,6 +20,12 @@ type Workload struct {
 // the file is now refused at load rather than silently ignored. Do not re-add the field to
 // accept such a file: per-model deployment policy has no consumer to be silent about.
 //
+// #1769: there is likewise NO `workloads:` section. The named presets (chatbot,
+// summarization, contentgen, multidoc) existed here AND in the catalog's workloads/ namespace
+// with nothing keeping the two copies in sync; the catalog is now the single source of truth
+// (see cmd/catalog_workloads.go), and by the same one-way KnownFields(true) rule a surviving
+// `workloads:` block is refused at load rather than parsed and ignored.
+//
 // #1770: for the same reason there is deliberately NO `kv_offload_devices:` section. The
 // KV-offload storage-device physics table was duplicated between this file and the catalog's
 // devices/storage.yaml with nothing keeping the copies in sync; the catalog is now the single
@@ -41,7 +34,6 @@ type Workload struct {
 // KnownFields(true) consequence, and the same reason not to re-declare the field.
 type Config struct {
 	Version                string                  `yaml:"version"`
-	Workloads              map[string]Workload     `yaml:"workloads"`
 	TrainedPhysicsDefaults *TrainedPhysicsDefaults `yaml:"trained_physics_coefficients,omitempty"`
 	LoRADefaults           *LoRADefaults           `yaml:"lora,omitempty"`
 }

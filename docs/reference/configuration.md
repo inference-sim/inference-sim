@@ -36,7 +36,7 @@ The general precedence (CLI → YAML → hardcoded) applies everywhere, but each
 
 1. `--workload-spec` YAML file — when set, all token distribution and arrival parameters come from the YAML; CLI distribution flags are ignored
 2. CLI distribution flags — when `--workload distribution` (default) and no `--workload-spec`
-3. Named preset from `defaults.yaml` — when `--workload <name>` (e.g., `chatbot`)
+3. Named preset from the catalog (`<catalog>/workloads/<name>.yaml`, #1769) — when `--workload <name>` (e.g., `chatbot`)
 4. Hardcoded CLI flag defaults — (e.g., `--prompt-tokens 512`, `--output-tokens 512`)
 
 !!! note
@@ -163,7 +163,7 @@ For analytical step time estimation without trained coefficients.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--latency-model` | string | "trained-physics" | Latency model backend: `trained-physics` (default), `roofline`. Both read the model's `config.json` from the catalog located by `--catalog` / `BLIS_CATALOG` for latency estimation and KV sizing; an uncatalogued model is refused and nothing is fetched. Both require `--hardware` and `--tp`. |
-| `--catalog` | string | "" | Path to the **model catalog clone root** (#1774). A model's HuggingFace `config.json` is read from `<catalog>/models/<short-name>/config.json` — the layout the authoritative [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository uses, with `workloads/`, `devices/`, `hardware/` and `networks/` as sibling namespaces under the same root. A **transition fallback** also accepts the flat `<catalog>/<short-name>/config.json` (the repository's bundled `model_configs/` tree), so `export BLIS_CATALOG=$PWD/model_configs` keeps working; #1771 removes the bundled tree and the fallback together. **Path semantics:** a **relative** value is resolved against the process working directory, an **absolute** value is used as given; neither is rewritten. **No default and no search path** — supply this flag or the `BLIS_CATALOG` environment variable, or the run is refused naming both (#1731). `--catalog` wins when both are set, and the override is announced on stderr. Replaces the retired `--model-config-folder`: point `--catalog` at a scratch directory to use your own config. Registered on `run` and `replay` (not `observe`, which resolves no model config). BLIS never fetches or writes a config at run time (NS-6, #1733). |
+| `--catalog` | string | "" | Path to the **model catalog clone root** (#1774). A model's HuggingFace `config.json` is read from `<catalog>/models/<short-name>/config.json` — the layout the authoritative [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository uses, with `workloads/`, `devices/`, `hardware/` and `networks/` as sibling namespaces under the same root. A **transition fallback** also accepts the flat `<catalog>/<short-name>/config.json` (the repository's bundled `model_configs/` tree), so `export BLIS_CATALOG=$PWD/model_configs` keeps working; #1771 removes the bundled tree and the fallback together. **Path semantics:** a **relative** value is resolved against the process working directory, an **absolute** value is used as given; neither is rewritten. **No default and no search path** — supply this flag or the `BLIS_CATALOG` environment variable, or the run is refused naming both (#1731). `--catalog` wins when both are set, and the override is announced on stderr. Replaces the retired `--model-config-folder`: point `--catalog` at a scratch directory to use your own config. Registered on `run`, `replay`, `observe` and `convert preset` — the last two for the workload presets in the `workloads/` namespace (#1769), not for a model config, which only `run`/`replay` resolve. BLIS never fetches or writes a config at run time (NS-6, #1733). |
 | `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. Overrides `--latency-model` auto-resolution. Also carries the optional per-GPU interconnect calibration (`IntraNodeBwGBps` / `InterNodeBwGBps`) that prices cross-node collective traffic — see [Interconnect calibration](#interconnect-calibration) below. |
 
 See [Roofline Estimation](../concepts/roofline.md) for details on the analytical model.
@@ -334,7 +334,7 @@ BLIS supports three workload specification modes, in order of precedence:
 |------|---------|-------------|
 | **Workload-spec YAML** | `--workload-spec <path>` | Multi-client workload with per-client distributions. Highest priority. |
 | **CLI distribution** | `--workload distribution` (default) | Single-client Gaussian distribution controlled by CLI flags. |
-| **Preset** | `--workload <name>` | Named preset from `defaults.yaml`: `chatbot`, `contentgen`, `summarization`, `multidoc`. |
+| **Preset** | `--workload <name>` | Named preset read from the catalog (`<catalog>/workloads/<name>.yaml`, #1769): `chatbot`, `contentgen`, `summarization`, `multidoc`. Needs `--catalog` / `BLIS_CATALOG`, which `blis run` already requires for the model. |
 
 ### Distribution Mode Flags
 
@@ -415,7 +415,7 @@ When `--workload-spec` is set, CLI `--seed`, `--horizon`, and `--num-requests` s
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--workload-spec` | string | "" | Path to workload-spec YAML. |
-| `--defaults-filepath` | string | "defaults.yaml" | Path to `defaults.yaml`. |
+| `--defaults-filepath` | string | "defaults.yaml" | Path to `defaults.yaml` (shipped constants; workload presets come from the catalog since #1769). |
 | `--trace-output` | string | "" | Export workload as TraceV2 files (`<prefix>.yaml` + `<prefix>.csv`). |
 
 ## Policy Bundle
@@ -542,11 +542,14 @@ When configured, BLIS computes a single fitness score from aggregated metrics. L
 
 ## defaults.yaml
 
-The `defaults.yaml` file is a workload preset store and a home for shipped constants. It carries
-no per-model deployment policy: the `defaults:` block that once mapped a model to a
+The `defaults.yaml` file is a home for shipped constants — trained coefficients, LoRA cost
+terms and KV-offload device physics. It carries neither per-model deployment policy nor
+workload presets: the `defaults:` block that once mapped a model to a
 `GPU`/`tensor_parallelism`/`hf_repo` triple was removed in #1768, having been unreachable on
 every run path since NS-6 (#1733) made `--hardware`/`--tp` required and #1731 made the catalog
-the only model-config source.
+the only model-config source; the `workloads:` block was removed in #1769, because the named
+presets also existed in the catalog (`<catalog>/workloads/<name>.yaml`) with nothing keeping
+the two copies in sync. The catalog copy is now the only one.
 
 !!! warning "Custom `defaults.yaml` files must remove the `defaults:` block (migration note)"
     Strict parsing (`KnownFields(true)`) rejects an undeclared key, so a hand-maintained
@@ -554,21 +557,20 @@ the only model-config source.
     `field defaults not found in type cmd.Config`. Delete the block and pass `--hardware`/`--tp`
     on the command line. Nothing is lost — no run path read those values.
 
+!!! warning "Custom `defaults.yaml` files must remove the `workloads:` block (migration note)"
+    By the same strict-parsing rule, a hand-maintained `defaults.yaml` that still carries a
+    `workloads:` block now fails to load with
+    `field workloads not found in type cmd.Config` (#1769). Move the preset to
+    `<catalog>/workloads/<name>.yaml` — the same keys, one preset per file — and locate the
+    catalog with `--catalog` or `BLIS_CATALOG`. `blis run --workload`,
+    `blis convert preset --name` and `blis observe --workload` all read it from there.
+
 These are the top-level keys the file may carry, and strict parsing accepts no others
 (`KnownFields(true)`, R10 — the authoritative list is `cmd.Config` in `cmd/default_config.go`;
 the bundled `defaults.yaml` is the worked example):
 
 ```yaml
 version: 0.0.1
-
-# Workload presets, keyed by the name --workload takes (chatbot, summarization, ...)
-workloads:
-  chatbot:
-    prompt_tokens: 256
-    prompt_tokens_stdev: 100
-    output_tokens: 256
-    output_tokens_stdev: 100
-    # ... min/max bounds
 
 # Trained-physics coefficients — ONE GLOBAL SET, not keyed by model, GPU or TP.
 # Consulted only by --latency-model trained-physics, and only for a flag the user did not pass.
@@ -737,7 +739,7 @@ for the cost model and its known approximations.
 | **LatencyCoeffs** | `--alpha-coeffs`, `--beta-coeffs` |
 | **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--latency-model`, `--catalog` (or `BLIS_CATALOG`), `--hardware-config`, `--max-model-len`. Placement-derived, no flag: the inter-node network topology (#1530) |
 | **PolicyConfig** | `--scheduler`, `--preemption-policy` |
-| **WorkloadConfig** | `--workload`, `--workload-spec`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
+| **WorkloadConfig** | `--workload` (preset read from `<catalog>/workloads/<name>.yaml`, #1769), `--workload-spec`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
 | **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` | YAML-only (no CLI flag): `node_pools`, `instance_lifecycle`. Programmatic-only, NOT a policy-bundle key despite the example above: `hw_config_by_gpu` (issue #1668) |
 | **Top-level** | `--seed`, `--horizon`, `--log`, `--metrics-path` (`run` and `replay`), `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
 
@@ -838,14 +840,16 @@ Converts external workload formats into BLIS WorkloadSpec v2 YAML. Three subcomm
 
 ### `blis convert preset`
 
-Generates a WorkloadSpec from a named preset in `defaults.yaml`.
+Generates a WorkloadSpec from a named preset in the catalog
+(`<catalog>/workloads/<name>.yaml`, #1769 — the same definition `blis run --workload` and
+`blis observe --workload` read).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--name` | string | "" | Preset name (e.g., `chatbot`, `summarization`, `contentgen`, `multidoc`). |
 | `--rate` | float64 | 1.0 | Request rate in requests/second. |
 | `--num-requests` | int | 100 | Number of requests. |
-| `--defaults-filepath` | string | "defaults.yaml" | Path to `defaults.yaml`. |
+| `--catalog` | string | "" | Catalog clone root holding `workloads/<name>.yaml`. No default; `BLIS_CATALOG` is the fallback (the flag wins when both are set). |
 
 ### `blis convert servegen`
 
