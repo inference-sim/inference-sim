@@ -1162,6 +1162,67 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#enabling-and-disabling-offload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enabling and Disabling Offload
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sizing-the-cpu-tier" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sizing the CPU Tier
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-the-measured-effect-of-cpu-offload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: The Measured Effect of CPU Offload
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Example: The Measured Effect of CPU Offload">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-workload-needs-prefixes-the-gpu-will-evict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The workload needs prefixes the GPU will evict
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2989,6 +3050,67 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#enabling-and-disabling-offload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enabling and Disabling Offload
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sizing-the-cpu-tier" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sizing the CPU Tier
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-the-measured-effect-of-cpu-offload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: The Measured Effect of CPU Offload
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Example: The Measured Effect of CPU Offload">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-workload-needs-prefixes-the-gpu-will-evict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The workload needs prefixes the GPU will evict
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3207,26 +3329,132 @@ recomputing it. A reloaded prefix is billed as a <strong>cache hit</strong> — 
 prefill forward pass, so it lowers that request's prefill compute and TTFT rather than being
 charged as a full recompute (#1699; the same correction applies to the legacy <code>--kv-cpu-blocks</code>
 tier). Reuse is single-instance (offload tiers are per-instance and invisible to the router).</p>
+<p>At <code>block_size == 1</code> decode blocks take a guarded allocation path that leaves them unhashed, so
+decode-offload is inert there — a degenerate offload block size (real offload block sizes track
+the GPU block size). With no <code>--kv-offload-config</code>, behavior is unchanged (INV-6).</p>
+<h3 id="enabling-and-disabling-offload">Enabling and Disabling Offload<a class="headerlink" href="#enabling-and-disabling-offload" title="Permanent link">&para;</a></h3>
+<p>Offload is <strong>off by default</strong>. There is one switch — the presence of <code>--kv-offload-config</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># ENABLED — CPU staging tier</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span>--workload-spec<span class="w"> </span>wl_multitenant.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span>--total-kv-blocks<span class="w"> </span><span class="m">3000</span><span class="w"> </span>--kv-offload-config<span class="w"> </span>offload_cpu.yaml
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># DISABLED — omit the flag</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span>--workload-spec<span class="w"> </span>wl_multitenant.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">  </span>--total-kv-blocks<span class="w"> </span><span class="m">3000</span>
+</code></pre></div>
+<p><code>--kv-offload-config</code> is mutually exclusive with the legacy scalar <code>--kv-cpu-blocks</code> tier.</p>
+<h3 id="sizing-the-cpu-tier">Sizing the CPU Tier<a class="headerlink" href="#sizing-the-cpu-tier" title="Permanent link">&para;</a></h3>
+<p>The CPU tier is configured in <strong>bytes</strong>, but the cache uses it in <strong>blocks</strong> — the same unit as
+the GPU tier's <code>--total-kv-blocks</code>. BLIS converts once, at startup:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>block_capacity = floor(cpu_bytes_to_use / per_block_bytes)
+</code></pre></div>
+<p>Because both tiers are counted in blocks, they are directly comparable, and that gives the one
+sizing rule that matters:</p>
+<blockquote>
+<p><strong><code>block_capacity</code> must comfortably exceed <code>--total-kv-blocks</code>.</strong> A CPU tier no larger than the
+GPU tier cannot serve anything the GPU evicted, and the run will show no benefit.</p>
+</blockquote>
+<p><code>per_block_bytes</code> is derived from the model, so it differs per deployment. For Qwen3-14B at TP=1
+it is <strong>2,621,440 bytes</strong>, which makes the 1 TiB tier used in the example below
+<code>1099511627776 / 2621440</code> = <strong>419,430 blocks</strong> — well clear of the 3,000 GPU blocks. To check any
+config, compare <code>cpu_bytes_to_use / per_block_bytes</code> against <code>--total-kv-blocks</code> before drawing
+conclusions from a run. For the example workload below:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>shared prefixes  100 × 1024/16 =  6,400 blocks
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>unique tails     600 × 1280/16 = 48,000 blocks
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>tier saturates at              = 54,400 blocks
+</code></pre></div>
 <div class="admonition note">
-<p class="admonition-title">Chunked-prefill limitation (#1706)</p>
-<p>The reload credit is currently capped at <strong>one prefill chunk</strong>. When a reload extends the
-cached prefix past a request's per-step chunk boundary (set by <code>--long-prefill-token-threshold</code>
-/ <code>--max-num-batched-tokens</code>), only the first chunk is billed as a hit; the reloaded remainder
-is re-billed as recompute on later steps. So for long-context prompts that are chunked (the main
-reason to offload KV), the realized TTFT benefit is roughly <code>chunk_size / prompt_length</code> — small
-at the default batched-token budget. Uncapped (prompt-fits-one-chunk) workloads get the full
-credit. Tracked in <a href="https://github.com/inference-sim/inference-sim/issues/1706">#1706</a>.</p>
+<p class="admonition-title"><code>cpu_bytes_to_use</code> is per GPU, not per deployment</p>
+<p>Under tensor parallelism the KV cache is sharded across ranks, so both sides of that division
+are per-rank quantities. The host memory a deployment actually consumes is <code>TP × cpu_bytes_to_use</code>.
+A node-level memory budget must therefore be divided by TP before it goes in the file. This
+matches vLLM, where <code>cpu_bytes_to_use</code> is likewise a per-worker budget.</p>
 </div>
-<p>At <code>block_size == 1</code> decode blocks take a guarded
-allocation path that leaves them unhashed, so decode-offload is inert there — a degenerate offload
-block size (real offload block sizes track the GPU block size). With no <code>--kv-offload-config</code>,
-behavior is unchanged (INV-6).</p>
+<h3 id="example-the-measured-effect-of-cpu-offload">Example: The Measured Effect of CPU Offload<a class="headerlink" href="#example-the-measured-effect-of-cpu-offload" title="Permanent link">&para;</a></h3>
+<h4 id="the-workload-needs-prefixes-the-gpu-will-evict">The workload needs prefixes the GPU will evict<a class="headerlink" href="#the-workload-needs-prefixes-the-gpu-will-evict" title="Permanent link">&para;</a></h4>
+<p>Offload only helps if blocks are <strong>evicted</strong> from the GPU and later requested again. Otherwise the
+KV cache stays on the GPU and the lower tiers have almost nothing to serve. The fixture below uses
+100 distinct per-tenant prefixes so eviction happens without having to starve the GPU:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># wl_multitenant.yaml — 100 tenants, each with its own 1,024-token prefix</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2"</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nt">seed</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">42</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="nt">aggregate_rate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4.0</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="nt">num_requests</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">600</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="nt">cohorts</span><span class="p">:</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tenants</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">    </span><span class="nt">population</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">    </span><span class="nt">prefix_group</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">doc</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">    </span><span class="nt">prefix_sharing</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">per_member</span><span class="w">     </span><span class="c1"># 100 DISTINCT prefixes =&gt; GPU must evict</span>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="w">    </span><span class="nt">prefix_length</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1024</span><span class="w">            </span><span class="c1"># ADDITIVE on input_distribution</span>
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="w">    </span><span class="nt">rate_fraction</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0</span>
+<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="w">    </span><span class="nt">arrival</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">process</span><span class="p">:</span><span class="w"> </span><span class="nv">poisson</span><span class="p p-Indicator">}</span>
+<a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a><span class="w">    </span><span class="nt">input_distribution</span><span class="p">:</span><span class="w">  </span><span class="p p-Indicator">{</span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="nv">constant</span><span class="p p-Indicator">,</span><span class="nt"> params</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="nv">1280</span><span class="p p-Indicator">}}</span>
+<a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a><span class="w">    </span><span class="nt">output_distribution</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="nv">constant</span><span class="p p-Indicator">,</span><span class="nt"> params</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="nv">16</span><span class="p p-Indicator">}}</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># offload_cpu.yaml — one CPU tier, sized well above the GPU tier</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nt">kv_offload</span><span class="p">:</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span><span class="nt">cpu_bytes_to_use</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1099511627776</span><span class="w">   </span><span class="c1"># 1 TiB</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">  </span><span class="nt">block_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">  </span><span class="nt">eviction_policy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lru</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">  </span><span class="nt">offload_prompt_only</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title"><code>prefix_length</code> is added to <code>input_distribution</code></p>
+<p>The generator samples <code>input_distribution</code> first, then prepends the prefix tokens to that slice:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1">// sim/workload/generator.go</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nx">inputTokens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">append</span><span class="p">(</span><span class="nb">append</span><span class="p">([]</span><span class="nx">sim</span><span class="p">.</span><span class="nx">TokenID</span><span class="p">{},</span><span class="w"> </span><span class="nx">prefix</span><span class="p">...),</span><span class="w"> </span><span class="nx">inputTokens</span><span class="p">...)</span>
+</code></pre></div>
+<p>The prefix is therefore extra tokens on top of the sampled length, not a shared portion carved
+out of it: <code>input_distribution: 1280</code> with <code>prefix_length: 1024</code> means 1,024 prefix tokens are
+added to 1,280 <strong>unique</strong> tokens per request — a <strong>2,304</strong>-token prompt in total.</p>
+<p>Separately, <code>--workload-spec</code> supersedes <code>--prefix-tokens</code> / <code>--rate</code> on the command line, so
+the arrival rate comes from the spec's <code>aggregate_rate: 4.0</code>.</p>
+</div>
+<h4 id="results">Results<a class="headerlink" href="#results" title="Permanent link">&para;</a></h4>
+<p>Run the enabled and disabled commands from the previous section. <code>Cache Hit Rate</code> is printed to
+stdout under <code>=== KV Cache Metrics ===</code>; add <code>--metrics-path m.json</code> for the full-precision
+<code>cache_hit_rate</code> field.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>cache_hit_rate</code></th>
+<th><code>ttft_mean_ms</code></th>
+<th><code>e2e_mean_ms</code></th>
+<th><code>responses_per_sec</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Offload <strong>disabled</strong></td>
+<td>0.0772</td>
+<td>52.550</td>
+<td>250.303</td>
+<td>4.1640</td>
+</tr>
+<tr>
+<td>Offload <strong>enabled</strong> (1 TiB CPU tier)</td>
+<td><strong>0.3678</strong></td>
+<td><strong>40.605</strong></td>
+<td><strong>235.619</strong></td>
+<td>4.1645</td>
+</tr>
+</tbody>
+</table>
+<p>Cache hit rate rises <strong>4.8×</strong> and mean TTFT falls <strong>22.7%</strong> (−11.9 ms). Throughput is unchanged
+because this workload is arrival-bound — 4 req/s offered against an unsaturated instance. Offload
+buys latency here; it buys <em>throughput</em> only under saturation, where spending fewer prefill tokens
+per request lets more requests into each step.</p>
+<p>Why the hit rate lands near 0.37: only the 1,024-token prefix is shareable and each tenant's first
+request must miss, so a little over a third is the ceiling. The enabled run reaches 0.3678 —
+essentially every reuse the workload contains, and the same hit rate an unconstrained GPU cache
+achieves on this workload.</p>
 <h2 id="chunked-prefill">Chunked Prefill<a class="headerlink" href="#chunked-prefill" title="Permanent link">&para;</a></h2>
 <p>Long prefill sequences can cause <strong>head-of-line (HOL) blocking</strong> — a 2,048-token prefill takes ~97ms on Qwen3-14B / H100 / TP=1 (roofline mode), blocking shorter requests from starting.</p>
 <p>Chunked prefill splits long prefills into smaller chunks:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--long-prefill-token-threshold<span class="w"> </span><span class="m">256</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span>--long-prefill-token-threshold<span class="w"> </span><span class="m">256</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
 <div class="admonition info">
 <p class="admonition-title">Chunked prefill benefits TTFT, not ITL</p>
@@ -3258,13 +3486,13 @@ behavior is unchanged (INV-6).</p>
 <p>These are the primary capacity knobs — in vLLM terms, <code>max_num_seqs</code> and <code>max_num_batched_tokens</code>. Reducing them decreases KV cache pressure but also reduces throughput.</p>
 <h2 id="identifying-the-kv-pressure-cliff">Identifying the KV Pressure Cliff<a class="headerlink" href="#identifying-the-kv-pressure-cliff" title="Permanent link">&para;</a></h2>
 <p>Preemption rates spike non-linearly as KV blocks decrease past a threshold. The threshold depends on your workload's <strong>median</strong> token count (not mean or tail):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Sweep KV blocks to find the cliff</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="k">for</span><span class="w"> </span>blocks<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">100000</span><span class="w"> </span><span class="m">50000</span><span class="w"> </span><span class="m">20000</span><span class="w"> </span><span class="m">10000</span><span class="w"> </span><span class="m">5000</span><span class="w"> </span><span class="m">3000</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"=== blocks=</span><span class="nv">$blocks</span><span class="s2"> ==="</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">    </span>--total-kv-blocks<span class="w"> </span><span class="nv">$blocks</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">50</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">    </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s2">"preemption_count|completed_requests"</span>
-<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="k">done</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Sweep KV blocks to find the cliff</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="k">for</span><span class="w"> </span>blocks<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">100000</span><span class="w"> </span><span class="m">50000</span><span class="w"> </span><span class="m">20000</span><span class="w"> </span><span class="m">10000</span><span class="w"> </span><span class="m">5000</span><span class="w"> </span><span class="m">3000</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">  </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"=== blocks=</span><span class="nv">$blocks</span><span class="s2"> ==="</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">  </span>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">    </span>--total-kv-blocks<span class="w"> </span><span class="nv">$blocks</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">50</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="w">    </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s2">"preemption_count|completed_requests"</span>
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="k">done</span>
 </code></pre></div>
 <div class="admonition tip">
 <p class="admonition-title">Distribution median drives KV pressure</p>
