@@ -271,7 +271,8 @@ func TestResolveLatencyConfigSideEffectsDocComment(t *testing.T) {
 // TestModelsDocScopeClaimIsBounded pins the corrected compatibility framing on
 // docs/reference/models.md. "any other model runs" / "Any other model ... will work"
 // overstated it: a config with no derivable layer count is refused, a non-SwiGLU activation
-// loses KV auto-sizing, and several modern shapes run only under documented approximations.
+// makes KV auto-sizing fatal (the run aborts unless `--total-kv-blocks` is set), and several
+// modern shapes run only under documented approximations.
 func TestModelsDocScopeClaimIsBounded(t *testing.T) {
 	const path = "../docs/reference/models.md"
 	src, err := os.ReadFile(path)
