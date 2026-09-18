@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/sirupsen/logrus"
 
@@ -151,13 +153,15 @@ func resolveModelConfigInCatalog(model, catalog string) (string, error) {
 // different model's config (R1, NS-6). A malformed but readable entry is judged by the
 // caller, for the same reason.
 //
-// Presence is a stat rather than a read-error class on purpose. A flat catalog is a
-// directory of entries, so its canonical candidate <catalog>/models/<name>/config.json
-// can fail to open for reasons that all mean "no entry in this layout" but surface as
-// different errnos — ENOENT for a missing directory, ENOTDIR if the root happens to hold
-// an unrelated FILE named models. Classifying by errno would turn that second case into a
-// hard error for a catalog that resolves perfectly well, so anything that is not a
-// statable file is simply not an entry here.
+// "Absence" is specifically ENOENT (nothing at the path) or ENOTDIR (a non-directory
+// sits on the path). A flat catalog is a directory of entries, so a root that holds an
+// unrelated FILE named `models` makes the canonical candidate
+// <catalog>/models/<name>/config.json surface ENOTDIR — not a broken entry, just no entry
+// in THIS layout — and it must fall through to the flat candidate. Every OTHER stat
+// failure (EACCES on the entry directory, an I/O error) is NOT absence: it is reported
+// naming the path, never swallowed as absence, because collapsing it into the fallback
+// could resolve a DIFFERENT model's config for an entry that is present but unstatable —
+// the same hazard the readErr branch guards (R1, NS-6).
 //
 // Absent from every layout is a refusal that names every path looked at, plus the
 // canonical path an entry belongs at — the operator-actionable half of NS-6, which is
@@ -172,8 +176,23 @@ func readCatalogEntry(model string, candidates []string) (entryDir, entryPath st
 	for _, dir := range candidates {
 		path := filepath.Join(dir, hfConfigFile)
 		lookedAt = append(lookedAt, "    "+path)
-		if info, statErr := os.Stat(path); statErr != nil || info.IsDir() {
-			continue // no entry in this layout
+		info, statErr := os.Stat(path)
+		if statErr != nil {
+			// Only ABSENCE advances to the transition fallback. ENOENT and ENOTDIR both
+			// mean "no entry in this layout"; any other stat failure (EACCES, EIO) is
+			// reported naming the path rather than letting the fallback silently resolve
+			// a different model's config for an entry that is there but unstatable.
+			if os.IsNotExist(statErr) || errors.Is(statErr, syscall.ENOTDIR) {
+				continue
+			}
+			return "", "", nil, fmt.Errorf(
+				"catalog entry for model %q at %s cannot be checked: %w.\n"+
+					"  Fix that catalog path, or point --catalog / %s at a catalog whose %s is accessible",
+				model, path, statErr, catalogEnvVar, hfConfigFile,
+			)
+		}
+		if info.IsDir() {
+			continue // a directory, not a config.json file — no entry in this layout
 		}
 		content, readErr := os.ReadFile(path)
 		if readErr != nil {

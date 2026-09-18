@@ -268,6 +268,37 @@ func TestResolveModelConfig_UnreadableCloneRootEntry_NotBypassedByFlatFallback(t
 	}
 }
 
+// TestResolveModelConfig_UnstatableCloneRootEntry_NotBypassedByFlatFallback is the
+// stat-error analogue of the unreadable case: the canonical config.json is PRESENT but
+// its entry directory cannot be traversed (mode 000 on <root>/models/<name>), so os.Stat
+// of the config.json fails with EACCES — which is NOT absence (not ENOENT/ENOTDIR).
+// Resolution must report it naming the entry path, never silently fall through to a
+// (stale) flat entry for a same-named model, which would run a DIFFERENT config than the
+// catalogued one (R1, NS-6). Regression test for the qa-review finding on PR #1778.
+func TestResolveModelConfig_UnstatableCloneRootEntry_NotBypassedByFlatFallback(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: mode 000 does not block directory traversal")
+	}
+	root := t.TempDir()
+	nestedDir := filepath.Join(root, "models", "test-model")
+	nestedPath := writeCatalogEntry(t, nestedDir, minimalHFConfig)
+	writeCatalogEntry(t, filepath.Join(root, "test-model"), minimalHFConfig)
+
+	if err := os.Chmod(nestedDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	// Restore search permission before t.TempDir's cleanup so os.RemoveAll can descend.
+	t.Cleanup(func() { _ = os.Chmod(nestedDir, 0o755) })
+
+	dir, err := resolveModelConfigInCatalog("test-org/test-model", root)
+	if err == nil {
+		t.Fatalf("an unstatable clone-root entry (EACCES) must be refused, not bypassed; got dir=%q", dir)
+	}
+	if !strings.Contains(err.Error(), nestedPath) {
+		t.Errorf("refusal must name the unstatable entry (%s), got: %v", nestedPath, err)
+	}
+}
+
 // TestResolveModelConfig_FlatCatalogHoldingAFileNamedModels keeps the models/ candidate
 // from breaking a working flat catalog for an unrelated reason: a flat root that happens
 // to contain a regular FILE named "models" makes the canonical candidate path traverse a
