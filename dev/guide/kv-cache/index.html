@@ -3303,7 +3303,7 @@ output is byte-identical to a build without it.</p>
 <a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">      </span><span class="nt">n_write_threads</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span><span class="w">           </span><span class="c1"># vLLM default 16</span>
 <a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">      </span><span class="nt">locality</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">LOCAL</span><span class="w">               </span><span class="c1"># LOCAL | REMOTE (optional)</span>
 <a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">      </span><span class="nt">direct_io</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">               </span><span class="c1"># REQUIRED — BLIS makes vLLM's runtime O_DIRECT probe explicit</span>
-<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">      </span><span class="nt">device_class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nvme_gen4</span><span class="w">       </span><span class="c1"># resolves read/write bandwidth + latency from defaults.yaml</span>
+<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">      </span><span class="nt">device_class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nvme_gen4</span><span class="w">       </span><span class="c1"># resolves read/write bandwidth + latency from the catalog</span>
 <a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">      </span><span class="c1"># read_bandwidth: 7000.0      # bytes/µs — overrides device_class (per-direction, required as a pair)</span>
 <a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">      </span><span class="c1"># write_bandwidth: 5000.0</span>
 <a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="w">      </span><span class="c1"># base_latency: 80.0          # µs</span>
@@ -3311,9 +3311,19 @@ output is byte-identical to a build without it.</p>
 <p>Defaults match vLLM knob-for-knob. Anything vLLM accepts either maps to a BLIS config or
 fails <strong>loudly</strong> at startup — never silently ignored: <code>store_threshold &gt;= 2</code> is rejected
 (vLLM's <code>TieringOffloadingSpec</code> rejects it), and <code>obj</code>/<code>p2p</code>/<code>example</code> tier types are rejected
-(no faithful BLIS mapping yet). <code>device_class</code> names resolve against the <code>kv_offload_devices:</code>
-block shipped in <code>defaults.yaml</code> (bandwidth in bytes/µs, latency in µs); an explicit
-<code>read_bandwidth</code>/<code>write_bandwidth</code>/<code>base_latency</code> triple overrides the class.</p>
+(no faithful BLIS mapping yet). <code>device_class</code> names resolve against the storage-device table
+in the <strong>catalog</strong> — <code>&lt;catalog&gt;/devices/storage.yaml</code>, a sibling of the catalog's <code>models/</code>
+namespace, located by the same <code>--catalog</code> / <code>BLIS_CATALOG</code> that supplies the model config
+(#1770; the table used to be duplicated between <code>defaults.yaml</code> and the catalog with nothing
+keeping the copies in sync, so the catalog is now the single source of truth). An explicit
+<code>read_bandwidth</code>/<code>write_bandwidth</code>/<code>base_latency</code> triple overrides the class — a tier that
+supplies one needs no catalog device table at all, and the table is read only when some tier
+actually names a <code>device_class</code>. A named class that the catalog table does not define, or a
+missing/malformed table, is a hard error naming the path.</p>
+<p>Bandwidths are <strong>bytes per microsecond</strong>, latency in <strong>µs</strong>. Bytes/µs and MB/s (MB = 10⁶ bytes,
+not MiB) are the <em>same number</em> — 1 MB/s = 10⁶ bytes / 10⁶ µs = 1 byte/µs — so the <code>blis-catalog</code>
+file's "MB/s" header and BLIS's "bytes/µs" documentation describe identical values with no
+conversion between them.</p>
 <p>The resolved config is recorded in the exported trace header, so a <code>blis run --trace-output</code>
 round-trips through <code>blis replay</code> (INV-13): on replay the header is authoritative and a config
 the binary cannot reproduce fails loudly rather than silently degrading to single-tier.</p>
