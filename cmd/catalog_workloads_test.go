@@ -331,6 +331,101 @@ func TestCatalogPresets_StrictParsing(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// #1793: min/max/stdev distribution-bound validation on presets
+// ---------------------------------------------------------------------------
+
+// TestCatalogPresets_DistributionBoundsValidated is the #1793 contract. Before this, the
+// preset reader validated only that the token MEANS were > 0, so a malformed preset —
+// min > max, a mean outside [min, max], a negative stdev, or an omitted-and-therefore-zero
+// min/max — was accepted and the Gaussian sampler then silently clamped it to a wrong
+// distribution. The reader now applies the SAME bound validation the CLI distribution path
+// applies (validateDistributionParams, root.go), refusing the preset naming the file (R1). A
+// valid preset still loads unchanged (INV-6).
+//
+// It is also a LAW test: over well-formed preset YAML the reader must refuse a preset iff
+// validateDistributionParams refuses the same bounds, so the preset path and the
+// --prompt-tokens-* / --output-tokens-* CLI path cannot drift.
+func TestCatalogPresets_DistributionBoundsValidated(t *testing.T) {
+	// A fully-valid chatbot baseline (prompt 256 in [2,800] stdev 100; output 256 in
+	// [1,1024] stdev 100); each case mutates one aspect of it.
+	base := retiredDefaultsPresets["chatbot"]
+	if msg := validateDistributionParams(base.PromptTokensMin, base.PromptTokensMax,
+		base.OutputTokensMin, base.OutputTokensMax, base.PromptTokensStdev, base.OutputTokensStdev,
+		base.PromptTokensMean, base.OutputTokensMean); msg != "" {
+		t.Fatalf("non-vacuity: the baseline preset must itself be valid, got %q", msg)
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(w *presetWorkload)
+		refused bool
+	}{
+		{name: "valid full preset accepted", mutate: func(*presetWorkload) {}, refused: false},
+		{name: "constant preset (min=max=mean, stdev 0) accepted", mutate: func(w *presetWorkload) {
+			w.PromptTokensMean, w.PromptTokensStdev, w.PromptTokensMin, w.PromptTokensMax = 64, 0, 64, 64
+			w.OutputTokensMean, w.OutputTokensStdev, w.OutputTokensMin, w.OutputTokensMax = 16, 0, 16, 16
+		}, refused: false},
+		{name: "prompt min greater than max is refused", mutate: func(w *presetWorkload) {
+			w.PromptTokensMin, w.PromptTokensMax = 800, 2
+		}, refused: true},
+		{name: "prompt mean above max is refused", mutate: func(w *presetWorkload) {
+			w.PromptTokensMean = 900 // > max 800
+		}, refused: true},
+		{name: "output mean below min is refused", mutate: func(w *presetWorkload) {
+			w.OutputTokensMin, w.OutputTokensMean = 10, 5
+		}, refused: true},
+		{name: "negative prompt stdev is refused", mutate: func(w *presetWorkload) {
+			w.PromptTokensStdev = -1
+		}, refused: true},
+		{name: "negative output stdev is refused", mutate: func(w *presetWorkload) {
+			w.OutputTokensStdev = -1
+		}, refused: true},
+		{name: "prompt stdev above max is refused", mutate: func(w *presetWorkload) {
+			w.PromptTokensStdev = 900 // > max 800
+		}, refused: true},
+		{name: "omitted prompt min and max (zero) is refused", mutate: func(w *presetWorkload) {
+			// The exact silently-wrong case from the issue: a mean-only preset whose
+			// GaussianSampler (min==max==0) returns a zero-token distribution.
+			w.PromptTokensMin, w.PromptTokensMax = 0, 0
+		}, refused: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			w := base
+			tc.mutate(&w)
+			catalog := writeTestPresetCatalog(t, map[string]string{"chatbot": presetYAML(w)})
+
+			_, err := readCatalogPresetWorkload("chatbot", catalog)
+
+			if tc.refused {
+				if err == nil {
+					t.Fatalf("a preset with invalid distribution bounds must be refused, not silently "+
+						"clamped by the sampler: %+v", w)
+				}
+				// Actionable (R1): the refusal names the offending file.
+				if !strings.Contains(err.Error(), "chatbot"+presetFileExt) {
+					t.Errorf("refusal must name the preset file, got: %q", err.Error())
+				}
+			} else if err != nil {
+				t.Fatalf("a valid preset must still load unchanged (INV-6), got refusal: %v", err)
+			}
+
+			// Law: the reader refuses a well-formed preset iff validateDistributionParams
+			// refuses the same bounds, so the preset and CLI-distribution paths cannot drift.
+			cliRefused := validateDistributionParams(
+				w.PromptTokensMin, w.PromptTokensMax, w.OutputTokensMin, w.OutputTokensMax,
+				w.PromptTokensStdev, w.OutputTokensStdev, w.PromptTokensMean, w.OutputTokensMean,
+			) != ""
+			if (err != nil) != cliRefused {
+				t.Errorf("preset/CLI validation drift: reader refused=%v, validateDistributionParams refused=%v (bounds %+v)",
+					err != nil, cliRefused, w)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // BC-6: no catalog located
 // ---------------------------------------------------------------------------
 
@@ -357,11 +452,16 @@ func TestCatalogPresets_NoCatalogLocated_RefusedNamingBothForms(t *testing.T) {
 // law rather than only its flag half: BLIS_CATALOG alone locates the catalog, and --catalog
 // wins when both are set.
 func TestCatalogPresets_LocatorHonorsEnvVar(t *testing.T) {
+	// Full valid bounds: since #1793 the reader validates min/max/stdev, so a mean-only
+	// fixture (min==max==0) would be refused. The distinguishing signal stays the differing
+	// prompt means (100 vs 200), which is all this locator-precedence test reads.
 	viaEnv := writeTestPresetCatalog(t, map[string]string{"chatbot": presetYAML(presetWorkload{
-		PromptTokensMean: 100, OutputTokensMean: 10,
+		PromptTokensMean: 100, PromptTokensStdev: 10, PromptTokensMin: 1, PromptTokensMax: 800,
+		OutputTokensMean: 10, OutputTokensStdev: 2, OutputTokensMin: 1, OutputTokensMax: 100,
 	})})
 	viaFlag := writeTestPresetCatalog(t, map[string]string{"chatbot": presetYAML(presetWorkload{
-		PromptTokensMean: 200, OutputTokensMean: 20,
+		PromptTokensMean: 200, PromptTokensStdev: 10, PromptTokensMin: 1, PromptTokensMax: 800,
+		OutputTokensMean: 20, OutputTokensStdev: 2, OutputTokensMin: 1, OutputTokensMax: 100,
 	})})
 
 	prev := catalogPath
@@ -655,8 +755,10 @@ func TestCatalogPresets_RunCLI_PresetComesFromCatalog(t *testing.T) {
 			first, second)
 	}
 
-	// A different preset definition in the catalog must move the numbers.
-	shifted := runPresetLeg(t, newPresetRunCatalog(t, 1024, 512))
+	// A different preset definition in the catalog must move the numbers. The shifted means
+	// stay within chatbot's [min,max] bounds (prompt [2,800], output [1,1024]) so the preset
+	// passes the #1793 distribution-bound validation; 512 vs 256 still moves the simulation.
+	shifted := runPresetLeg(t, newPresetRunCatalog(t, 512, 512))
 	if shifted == first {
 		t.Error("changing the catalog preset's token means left stdout unchanged: the preset " +
 			"definition in <catalog>/workloads/chatbot.yaml is not reaching the simulation")
