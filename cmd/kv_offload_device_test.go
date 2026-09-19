@@ -1,37 +1,34 @@
 package cmd
 
 import (
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
 
-// BC-D7: a defaults.yaml device block carrying the #1581 device-model fields parses
+// BC-D7: a catalog devices/storage.yaml carrying the #1581 device-model fields parses
 // under strict YAML (KnownFields), and a tier resolved against it (direct_io=false)
 // picks up the buffered regime + ramp + jitter — the full YAML→map→resolver path.
+// #1770 retargeted the YAML source from defaults.yaml to the catalog; the resolver half
+// of the path is unchanged, which is the point.
 func TestKVOffloadDevices_DeviceModelYAMLParses(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "defaults.yaml")
-	content := "version: 0.0.1\n" +
-		"kv_offload_devices:\n" +
-		"  nvme_dm:\n" +
-		"    read_bandwidth: 7.0e3\n" +
-		"    write_bandwidth: 5.0e3\n" +
-		"    base_latency: 80.0\n" +
-		"    saturation_queue_depth: 8\n" +
-		"    single_transfer_fraction: 0.4\n" +
-		"    latency_jitter_stddev: 0.1\n" +
-		"    buffered_read_bandwidth: 4.0e3\n" +
-		"    buffered_base_latency: 120.0\n"
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatal(err)
+	catalog := writeCatalogStorageDevices(t,
+		"nvme_dm:\n"+
+			"  read_bandwidth: 7.0e3\n"+
+			"  write_bandwidth: 5.0e3\n"+
+			"  base_latency: 80.0\n"+
+			"  saturation_queue_depth: 8\n"+
+			"  single_transfer_fraction: 0.4\n"+
+			"  latency_jitter_stddev: 0.1\n"+
+			"  buffered_read_bandwidth: 4.0e3\n"+
+			"  buffered_base_latency: 120.0\n")
+	devices, err := loadCatalogStorageDevices(catalog)
+	if err != nil {
+		t.Fatalf("catalog storage device table must load: %v", err)
 	}
-	devices := loadDefaultsConfig(path).KVOffloadDevices
 	dev, ok := devices["nvme_dm"]
 	if !ok {
-		t.Fatalf("nvme_dm device class must parse from defaults.yaml")
+		t.Fatalf("nvme_dm device class must parse from %s", catalogStorageDevicesRelPath)
 	}
 	if dev.SaturationQueueDepth == nil || *dev.SaturationQueueDepth != 8 {
 		t.Errorf("saturation_queue_depth did not parse: %v", dev.SaturationQueueDepth)
@@ -55,8 +52,8 @@ func TestKVOffloadDevices_DeviceModelYAMLParses(t *testing.T) {
 // nvme_ramp declares an O_DIRECT ramp + jitter and a fully-specified buffered
 // regime; nvme_partial declares an O_DIRECT ramp but NO buffered fields (buffered
 // must fall back to the O_DIRECT values).
-func deviceModelDevices() map[string]KVOffloadDeviceDefaults {
-	return map[string]KVOffloadDeviceDefaults{
+func deviceModelDevices() map[string]kvOffloadDevice {
+	return map[string]kvOffloadDevice{
 		"nvme_ramp": {
 			ReadBandwidth: 7000, WriteBandwidth: 5000, BaseLatency: 80,
 			SaturationQueueDepth:           i64p(8),
@@ -171,7 +168,7 @@ func TestKVOffloadHeaderConversion_DeviceModelRoundTrip(t *testing.T) {
 // BC-D7: a device-class ramp with an out-of-range single_transfer_fraction is
 // rejected by post-resolve validation, naming the field.
 func TestResolveKVOffload_DeviceModelRejects(t *testing.T) {
-	bad := map[string]KVOffloadDeviceDefaults{
+	bad := map[string]kvOffloadDevice{
 		"nvme_badf1": {ReadBandwidth: 7000, WriteBandwidth: 5000, BaseLatency: 80,
 			SaturationQueueDepth: i64p(4), SingleTransferFraction: f64p(0)},
 		"nvme_badqsat": {ReadBandwidth: 7000, WriteBandwidth: 5000, BaseLatency: 80,

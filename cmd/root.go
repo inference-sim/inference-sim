@@ -1723,8 +1723,9 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// subsystem is inert and output is byte-identical to a build without the feature
 	// (BC-G5). On replay the trace header is authoritative; a passed flag must match the
 	// header (see resolveKVOffloadConfig / the replay wiring). device_class names resolve
-	// against defaults.yaml kv_offload_devices.
-	cmd.Flags().StringVar(&kvOffloadConfigPath, "kv-offload-config", "", "Path to a YAML file with a top-level kv_offload: block (multi-tier KV-cache offload config: cpu_bytes_to_use, block_size/blocks_per_chunk, eviction_policy, offload_prompt_only, secondary_tiers[] with per-tier device_class/direct_io/bandwidth). Absent => offload subsystem inert. On replay the trace header is authoritative.")
+	// against the CATALOG's storage-device table, <catalog>/devices/storage.yaml (#1770),
+	// read only when some tier actually names a class.
+	cmd.Flags().StringVar(&kvOffloadConfigPath, "kv-offload-config", "", "Path to a YAML file with a top-level kv_offload: block (multi-tier KV-cache offload config: cpu_bytes_to_use, block_size/blocks_per_chunk, eviction_policy, offload_prompt_only, secondary_tiers[] with per-tier device_class/direct_io/bandwidth). A per-tier device_class resolves its bandwidth/latency from the catalog's storage-device table at <catalog>/"+catalogStorageDevicesRelPath+" (located by --catalog / "+catalogEnvVar+"), read only when a tier names one; a tier supplying an explicit read_bandwidth + write_bandwidth + base_latency triple needs no table. Absent => offload subsystem inert. On replay the trace header is authoritative.")
 }
 
 // loraConfigFile is the on-disk shape of a --lora-config YAML file: a single
