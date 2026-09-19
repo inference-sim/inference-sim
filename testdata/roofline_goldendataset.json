@@ -5,7 +5,7 @@
     {
       "id": "17",
       "model": "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
-      "model_config_dir": "model_configs/llama-4-scout-17b-16e-instruct-fp8-dynamic",
+      "model_config_dir": "testdata/catalog/models/llama-4-scout-17b-16e-instruct-fp8-dynamic",
       "hardware": "H100",
       "tp": 2,
       "max_num_seqs": 128,
@@ -54,7 +54,7 @@
     {
       "id": "20",
       "model": "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
-      "model_config_dir": "model_configs/llama-4-scout-17b-16e-instruct-fp8-dynamic",
+      "model_config_dir": "testdata/catalog/models/llama-4-scout-17b-16e-instruct-fp8-dynamic",
       "hardware": "H100",
       "tp": 2,
       "max_num_seqs": 128,
@@ -103,7 +103,7 @@
     {
       "id": "20260217-155451",
       "model": "meta-llama/Llama-2-7b-hf",
-      "model_config_dir": "model_configs/llama-2-7b-hf",
+      "model_config_dir": "testdata/catalog/models/llama-2-7b-hf",
       "hardware": "H100",
       "tp": 1,
       "max_num_seqs": 128,
@@ -152,7 +152,7 @@
     {
       "id": "20260217-162547",
       "model": "meta-llama/Llama-2-7b-hf",
-      "model_config_dir": "model_configs/llama-2-7b-hf",
+      "model_config_dir": "testdata/catalog/models/llama-2-7b-hf",
       "hardware": "H100",
       "tp": 1,
       "max_num_seqs": 128,
@@ -197,7 +197,7 @@
     {
       "id": "20260217-231439",
       "model": "meta-llama/Llama-2-7b-hf",
-      "model_config_dir": "model_configs/llama-2-7b-hf",
+      "model_config_dir": "testdata/catalog/models/llama-2-7b-hf",
       "hardware": "H100",
       "tp": 1,
       "max_num_seqs": 128,
@@ -246,7 +246,7 @@
     {
       "id": "21",
       "model": "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
-      "model_config_dir": "model_configs/llama-4-scout-17b-16e-instruct-fp8-dynamic",
+      "model_config_dir": "testdata/catalog/models/llama-4-scout-17b-16e-instruct-fp8-dynamic",
       "hardware": "H100",
       "tp": 2,
       "max_num_seqs": 128,
@@ -291,7 +291,7 @@
     {
       "id": "48",
       "model": "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
-      "model_config_dir": "model_configs/llama-4-scout-17b-16e-instruct-fp8-dynamic",
+      "model_config_dir": "testdata/catalog/models/llama-4-scout-17b-16e-instruct-fp8-dynamic",
       "hardware": "H100",
       "tp": 2,
       "max_num_seqs": 128,
@@ -336,7 +336,7 @@
     {
       "id": "60",
       "model": "meta-llama/Llama-3.1-70B-Instruct",
-      "model_config_dir": "model_configs/llama-3.1-70b-instruct",
+      "model_config_dir": "testdata/catalog/models/llama-3.1-70b-instruct",
       "hardware": "H100",
       "tp": 4,
       "max_num_seqs": 128,
@@ -385,7 +385,7 @@
     {
       "id": "61",
       "model": "meta-llama/Llama-3.1-70B-Instruct",
-      "model_config_dir": "model_configs/llama-3.1-70b-instruct",
+      "model_config_dir": "testdata/catalog/models/llama-3.1-70b-instruct",
       "hardware": "H100",
       "tp": 4,
       "max_num_seqs": 128,
@@ -434,7 +434,7 @@
     {
       "id": "62",
       "model": "mistralai/Mistral-Nemo-Instruct-2407",
-      "model_config_dir": "model_configs/mistral-nemo-instruct-2407",
+      "model_config_dir": "testdata/catalog/models/mistral-nemo-instruct-2407",
       "hardware": "H100",
       "tp": 2,
       "max_num_seqs": 128,
@@ -483,7 +483,7 @@
     {
       "id": "63",
       "model": "mistralai/Mistral-Nemo-Instruct-2407",
-      "model_config_dir": "model_configs/mistral-nemo-instruct-2407",
+      "model_config_dir": "testdata/catalog/models/mistral-nemo-instruct-2407",
       "hardware": "H100",
       "tp": 1,
       "max_num_seqs": 128,
@@ -532,7 +532,7 @@
     {
       "id": "64",
       "model": "Qwen/Qwen2.5-7B-Instruct",
-      "model_config_dir": "model_configs/qwen2.5-7b-instruct",
+      "model_config_dir": "testdata/catalog/models/qwen2.5-7b-instruct",
       "hardware": "H100",
       "tp": 1,
       "max_num_seqs": 128,
@@ -577,7 +577,7 @@
     {
       "id": "65",
       "model": "01-ai/Yi-34B",
-      "model_config_dir": "model_configs/yi-34b",
+      "model_config_dir": "testdata/catalog/models/yi-34b",
       "hardware": "H100",
       "tp": 2,
       "max_num_seqs": 128,
@@ -626,7 +626,7 @@
     {
       "id": "66",
       "model": "Qwen/Qwen2.5-7B-Instruct",
-      "model_config_dir": "model_configs/qwen2.5-7b-instruct",
+      "model_config_dir": "testdata/catalog/models/qwen2.5-7b-instruct",
       "hardware": "H100",
       "tp": 1,
       "max_num_seqs": 128,
@@ -671,7 +671,7 @@
     {
       "id": "67",
       "model": "meta-llama/Llama-2-7b-hf",
-      "model_config_dir": "model_configs/llama-2-7b-hf",
+      "model_config_dir": "testdata/catalog/models/llama-2-7b-hf",
       "hardware": "H100",
       "tp": 1,
       "max_num_seqs": 128,

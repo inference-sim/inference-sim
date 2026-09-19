@@ -101,7 +101,11 @@ inference-sim/
 │   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods
 │   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore (pure data types, no sim/ dependency)
 │   └── summary.go             # TraceSummary, Summarize()
-├── model_configs/             # A model catalog: `<name>/config.json` per model (flat transition layout, #1774) plus the `devices/storage.yaml` KV-offload device table (#1770). Located at run time via --catalog / BLIS_CATALOG (#1731); committed files. Removed by #1771
+│                               # (The model catalog is NOT in this repo: it is the external blis-catalog
+│                               #  repository, located at run time via --catalog / BLIS_CATALOG (#1731, #1771).
+│                               #  It holds models/<name>/config.json, workloads/<name>.yaml (#1769) and the
+│                               #  devices/storage.yaml KV-offload device table (#1770). A small
+│                               #  clone-root-shaped fixture lives at testdata/catalog/ for tests.)
 ├── defaults.yaml              # Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
 ├── hardware_config.json       # GPU specifications
 ├── examples/                  # Example configuration files

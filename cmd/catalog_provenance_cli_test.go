@@ -100,7 +100,7 @@ func setupGitCatalogFixtures(t *testing.T) (catalogRoot, hwPath, defaultsPath, h
 func dirtyCatalogEntry(t *testing.T, catalogRoot string) {
 	t.Helper()
 	shortName := provenanceTestModel[strings.LastIndexByte(provenanceTestModel, '/')+1:]
-	cfg := filepath.Join(catalogRoot, shortName, "config.json")
+	cfg := testCatalogConfigPath(catalogRoot, shortName)
 	data, err := os.ReadFile(cfg)
 	if err != nil {
 		t.Fatalf("read catalog entry %s: %v", cfg, err)
