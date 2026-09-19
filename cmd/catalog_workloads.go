@@ -73,9 +73,11 @@ func (w presetWorkload) toPresetConfig() workload.PresetConfig {
 //	<catalog>/workloads/<name>.yaml
 //
 // This function is PURE — it derives a path and touches no filesystem, so the path law is
-// table-testable. There is deliberately no flat fallback (unlike catalogModelDirs, whose
-// fallback exists because in-repo model catalogs predate the models/ level): the workloads
-// namespace is new here, so it is introduced at its settled #1774 location only.
+// table-testable. There is no flat fallback: the workloads namespace is introduced at its
+// settled #1774 location only, the sibling of models/ under the catalog clone root. (The
+// pre-#1771 catalogModelDirs carried a flat fallback for the in-repo model catalogs that
+// predated the models/ level; #1771 deleted that tree and the fallback, so model and
+// workload resolution now share the single clone-root layout.)
 //
 // The preset name comes from a user flag (--workload / --name), so it is validated against
 // path traversal and separators before being joined onto the catalog root.
