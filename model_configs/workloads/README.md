@@ -14,5 +14,9 @@ They are the same four files the authoritative
 `export BLIS_CATALOG=$PWD/model_configs` keeps working from a fresh clone; #1771 removes the
 bundled tree in favour of a `blis-catalog` clone.
 
-A preset file is parsed strictly (an unrecognized key is a hard error, R10) and must declare a
-positive `prompt_tokens` and `output_tokens`.
+A preset file is parsed strictly (an unrecognized key is a hard error, R10). Its token
+distribution is validated exactly as the CLI `--prompt-tokens-*` / `--output-tokens-*` flags
+are (#1793): `prompt_tokens` and `output_tokens` must be positive, each `*_min` and `*_max` at
+least 1 with `*_min <= *_max`, each mean within `[*_min, *_max]`, and each `*_stdev`
+non-negative and within `[*_min, *_max]`. A malformed bound is refused naming the file rather
+than silently clamped by the sampler.
