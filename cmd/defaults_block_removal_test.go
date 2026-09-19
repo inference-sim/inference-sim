@@ -60,9 +60,13 @@ func TestDefaultsBlockRemoved_BundledFileStillParses(t *testing.T) {
 	if cfg.LoRADefaults == nil {
 		t.Error("lora block must survive the defaults: trim")
 	}
-	if len(cfg.KVOffloadDevices) == 0 {
-		t.Error("kv_offload_devices must survive the defaults: trim")
-	}
+	// NOTE (#1770): kv_offload_devices: used to be asserted here as a section that must
+	// survive #1768's trim. It has since been removed from defaults.yaml altogether — the
+	// KV-offload storage-device table now lives in the catalog
+	// (<catalog>/devices/storage.yaml, cmd/catalog_devices.go), which is the single source
+	// of truth. Its "the bundled file still resolves" coverage moved to
+	// TestKVOffloadDevices_CommittedCatalogTableParses, and the "a stale block is refused"
+	// coverage to TestKVOffloadDevicesBlockRemoved_StaleBlockIsRefused.
 }
 
 // ---------------------------------------------------------------------------

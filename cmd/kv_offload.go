@@ -94,7 +94,8 @@ func parseKVOffloadBytes(data []byte) (kvOffloadFile, error) {
 // resolveKVOffload turns a parsed kv_offload block into a resolved, validated
 // sim.KVOffloadConfig. It is PURE and error-returning (Deviation #9) so every reject
 // branch is unit-testable and fuzzable. It applies vLLM's defaults knob-for-knob
-// (BC-G2), resolves device_class against the shipped device physics (explicit
+// (BC-G2), resolves device_class against the catalog's storage-device table supplied by
+// the caller — <catalog>/devices/storage.yaml, #1770 (explicit
 // read/write/base override the class), enforces the block_size XOR blocks_per_chunk
 // user-input rule then derives the canonical pair, rejects store_threshold>=2 and
 // non-fs tiers loudly (BC-G1), and finally runs cfg.Validate() (BC-G3).
@@ -102,7 +103,7 @@ func parseKVOffloadBytes(data []byte) (kvOffloadFile, error) {
 // gpuBlockSizeTokens is the GPU block size (--block-size-in-tokens); vLLM's block_size
 // default equals it, and it converts between the block_size and blocks_per_chunk
 // encodings of the same quantity.
-func resolveKVOffload(block *kvOffloadBlock, devices map[string]KVOffloadDeviceDefaults, gpuBlockSizeTokens int64) (sim.KVOffloadConfig, error) {
+func resolveKVOffload(block *kvOffloadBlock, devices map[string]kvOffloadDevice, gpuBlockSizeTokens int64) (sim.KVOffloadConfig, error) {
 	if block == nil {
 		return sim.KVOffloadConfig{}, fmt.Errorf("kv_offload: the --kv-offload-config file has no top-level kv_offload: block")
 	}
@@ -200,7 +201,7 @@ func resolveKVOffload(block *kvOffloadBlock, devices map[string]KVOffloadDeviceD
 }
 
 // resolveKVOffloadTier resolves one secondary tier. index is used in error messages.
-func resolveKVOffloadTier(index int, tb kvOffloadTierBlock, devices map[string]KVOffloadDeviceDefaults) (sim.KVOffloadTier, error) {
+func resolveKVOffloadTier(index int, tb kvOffloadTierBlock, devices map[string]kvOffloadDevice) (sim.KVOffloadTier, error) {
 	var tier sim.KVOffloadTier
 
 	// type: required; only "fs" is representable (reject obj/p2p/example loudly, BC-G1).
@@ -258,7 +259,7 @@ func resolveKVOffloadTier(index int, tb kvOffloadTierBlock, devices map[string]K
 	if hasClass {
 		dev, ok := devices[*tb.DeviceClass]
 		if !ok {
-			return tier, fmt.Errorf("kv_offload: secondary_tiers[%d].device_class=%q is not defined in defaults.yaml kv_offload_devices (known: %s)", index, *tb.DeviceClass, knownDeviceClasses(devices))
+			return tier, fmt.Errorf("kv_offload: secondary_tiers[%d].device_class=%q is not defined in the catalog storage-device table %s (known: %s)", index, *tb.DeviceClass, catalogStorageDevicesRelPath, knownDeviceClasses(devices))
 		}
 		tier.DeviceClass = *tb.DeviceClass
 		rb, wb, base, qsat, f1, sigma := resolveDeviceRegime(dev, tier.DirectIO)
@@ -290,7 +291,7 @@ func resolveKVOffloadTier(index int, tb kvOffloadTierBlock, devices map[string]K
 // counterpart when present, and otherwise falls back to the O_DIRECT value. To
 // activate a real ramp a device must set BOTH saturation_queue_depth ≥ 2 AND
 // single_transfer_fraction < 1 (Qsat alone with f₁=1.0 is a no-op).
-func resolveDeviceRegime(dev KVOffloadDeviceDefaults, directIO bool) (readBW, writeBW, base float64, qsat int64, f1, sigma float64) {
+func resolveDeviceRegime(dev kvOffloadDevice, directIO bool) (readBW, writeBW, base float64, qsat int64, f1, sigma float64) {
 	readBW, writeBW, base = dev.ReadBandwidth, dev.WriteBandwidth, dev.BaseLatency
 	qsat, f1, sigma = 1, 1.0, 0
 	if dev.SaturationQueueDepth != nil {
@@ -329,7 +330,7 @@ func resolveDeviceRegime(dev KVOffloadDeviceDefaults, directIO bool) (readBW, wr
 
 // knownDeviceClasses returns the sorted device_class names for a deterministic error
 // message (INV-6: no map-iteration order in output).
-func knownDeviceClasses(devices map[string]KVOffloadDeviceDefaults) string {
+func knownDeviceClasses(devices map[string]kvOffloadDevice) string {
 	if len(devices) == 0 {
 		return "<none configured>"
 	}
@@ -353,7 +354,14 @@ func resolveKVOffloadConfig(cmd *cobra.Command) sim.KVOffloadConfig {
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
-	devices := loadDefaultsConfig(defaultsFilePath).KVOffloadDevices
+	// #1770: device_class physics come from the CATALOG (<catalog>/devices/storage.yaml),
+	// the single source of truth, not from defaults.yaml. Read LAZILY — a config whose
+	// tiers all carry explicit bandwidth/latency triples never touches the catalog
+	// devices/ namespace, so it resolves exactly as it did before the cutover.
+	devices, err := resolveKVOffloadDevices(f.KVOffload)
+	if err != nil {
+		logrus.Fatalf("--kv-offload-config %q: %v", kvOffloadConfigPath, err)
+	}
 	cfg, err := resolveKVOffload(f.KVOffload, devices, blockSizeTokens)
 	if err != nil {
 		logrus.Fatalf("--kv-offload-config %q: %v", kvOffloadConfigPath, err)

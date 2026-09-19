@@ -582,11 +582,6 @@ trained_physics_coefficients:
 lora:
   load_base_latency_us: 1500.0
   # ... bandwidth, per-rank footprint, per-rank step-overhead tiers
-
-# KV-offload device classes referenced by a --kv-offload-config tier's device_class
-# (#1587/#1581). Inert unless such a config names one.
-kv_offload_devices:
-  nvme_gen4: {read_bandwidth: 7.0e3, write_bandwidth: 5.0e3, base_latency: 80.0}
 ```
 
 !!! warning "There is no `models:` section, and there never was a keyed coefficient table"
