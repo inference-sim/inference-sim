@@ -5,9 +5,29 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
+
+// completedRequestsRe extracts the completed_requests count from a metrics-JSON stdout.
+var completedRequestsRe = regexp.MustCompile(`"completed_requests":\s*(\d+)`)
+
+// requireCompletedRequests asserts the run's stdout is a metrics JSON whose
+// completed_requests is > 0 — a non-vacuity gate stronger than a bare substring check
+// (which `"completed_requests": 0` would satisfy), so a leg that resolved the model but
+// simulated nothing cannot pass as a successful run.
+func requireCompletedRequests(t *testing.T, label, stdout string) {
+	t.Helper()
+	m := completedRequestsRe.FindStringSubmatch(stdout)
+	if m == nil {
+		t.Fatalf("non-vacuity: %s produced no completed_requests metric:\n%s", label, stdout)
+	}
+	if n, err := strconv.Atoi(m[1]); err != nil || n <= 0 {
+		t.Fatalf("non-vacuity: %s completed %s requests (want > 0):\n%s", label, m[1], stdout)
+	}
+}
 
 // CLI-level contract tests for the catalog CLONE ROOT layout: --catalog / BLIS_CATALOG
 // names the clone root, so a real `blis run` and `blis replay` read the model config from
@@ -152,11 +172,10 @@ func TestRunCmd_CatalogCloneRootLayout_ResolvesAndRuns(t *testing.T) {
 	first := runCatalogLayoutLeg(t, name, "run", catalog, "")
 	second := runCatalogLayoutLeg(t, name, "run", catalog, "")
 
-	// Non-vacuity: an empty or metric-less stdout would make the comparison trivial, and
-	// would also hide a leg that silently simulated nothing.
-	if !strings.Contains(first, "completed_requests") {
-		t.Fatalf("non-vacuity: clone-root leg produced no metrics:\n%s", first)
-	}
+	// Non-vacuity: the leg must have actually simulated the 20 requests, not merely emitted
+	// a metrics JSON — a run that resolved the model but completed nothing would otherwise
+	// pass on the substring alone.
+	requireCompletedRequests(t, "clone-root run leg", first)
 	if first != second {
 		t.Errorf("stdout must be byte-identical across runs of the clone-root layout (INV-6)\nfirst:\n%s\nsecond:\n%s",
 			first, second)
@@ -182,9 +201,7 @@ func TestReplayCmd_CatalogCloneRootLayout_ResolvesAndRuns(t *testing.T) {
 	first := runCatalogLayoutLeg(t, name, "replay", catalog, tracePrefix)
 	second := runCatalogLayoutLeg(t, name, "replay", catalog, tracePrefix)
 
-	if !strings.Contains(first, "completed_requests") {
-		t.Fatalf("non-vacuity: clone-root replay leg produced no metrics:\n%s", first)
-	}
+	requireCompletedRequests(t, "clone-root replay leg", first)
 	if first != second {
 		t.Errorf("replay stdout must be byte-identical across runs of the clone-root layout (INV-13)\nfirst:\n%s\nsecond:\n%s",
 			first, second)

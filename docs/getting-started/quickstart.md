@@ -29,7 +29,7 @@ The examples below (and elsewhere in these docs) assume you have exported it.
 This runs 100 requests through a single inference instance using the default trained-physics latency model for Qwen3 14B on an H100 GPU with TP=1.
 
 !!! note "A model runs only if it is catalogued"
-    BLIS reads the model's `config.json` from the catalog located by `--catalog` / `BLIS_CATALOG` (above) and never fetches or writes it at run time. A model with no catalog entry is refused, naming the path its entry belongs at — so runs are offline and reproducible, and running an unknown model can never quietly add a catalog entry. To use a model that is not yet catalogued, commit its `config.json` at `<catalog>/<model>/config.json`, or point `--catalog` at a scratch directory that has it.
+    BLIS reads the model's `config.json` from the catalog located by `--catalog` / `BLIS_CATALOG` (above) and never fetches or writes it at run time. A model with no catalog entry is refused, naming the path its entry belongs at — so runs are offline and reproducible, and running an unknown model can never quietly add a catalog entry. To use a model that is not yet catalogued, commit its `config.json` at `<catalog>/models/<model>/config.json`, or point `--catalog` at a scratch clone that has it.
 
 !!! note "`--hardware` and `--tp` are required"
     BLIS does not infer the deployment. Omitting either flag is refused by name rather than filled in from a per-model default, so every reported number belongs to a deployment you chose.
