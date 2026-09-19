@@ -204,8 +204,8 @@ Drives `blis run` across a configurable rate sweep against a chosen
    (the `"final"` detector→label map, #1517).
 3. Extracts throughput, latency, and all detector verdicts into a single CSV row.
 
-The output reproduces the validation table against the bundled
-`model_configs/llama-3.1-70b-instruct/`. Pointing it at any other configuration
+The output reproduces the validation table against the catalog's
+`models/llama-3.1-70b-instruct/`. Pointing it at any other configuration
 should produce a comparable table with the same column shape.
 
 ### Quick start
@@ -216,7 +216,7 @@ should produce a comparable table with the same column shape.
 
 # Llama-2-7B / TP=1, narrower sweep
 MODEL=meta-llama/Llama-2-7b-hf \
-  CATALOG=model_configs \
+  CATALOG=blis-catalog \
   TP=1 RATES="2 4 6 8 10 12 16 20" \
   ./scripts/find-saturation.sh
 
@@ -228,7 +228,7 @@ WORKLOAD=summarization NUM_REQUESTS=2000 RATES="4 6 8 10 12" \
 DETECTORS=composite ./scripts/find-saturation.sh
 
 # A different catalogued model
-MODEL=qwen/qwen3-14b CATALOG=model_configs TP=1 \
+MODEL=qwen/qwen3-14b CATALOG=blis-catalog TP=1 \
   ./scripts/find-saturation.sh
 ```
 
@@ -237,7 +237,7 @@ MODEL=qwen/qwen3-14b CATALOG=model_configs TP=1 \
 | Variable | Default | Meaning |
 |---|---|---|
 | `MODEL` | `meta-llama/Llama-3.1-70B-Instruct` | HuggingFace-style model name |
-| `CATALOG` | `model_configs` | Model catalog root (one directory per model, each with `config.json`). Passed as `--catalog`; required since #1731 — there is no default and no search path. A model with no entry is refused, never fetched. |
+| `CATALOG` | `blis-catalog` | Model catalog clone root (holds `models/<short-name>/config.json` per model). Passed as `--catalog`; required since #1731 — there is no default and no search path. Point it at a checkout of the blis-catalog repository. A model with no entry is refused, never fetched. |
 | `HARDWARE` | `H100` | GPU type passed to `--hardware` |
 | `TP` | `8` | Tensor parallelism degree |
 | `WORKLOAD` | `chatbot` | Built-in preset (chatbot/summarization/contentgen/multidoc) |
@@ -325,15 +325,16 @@ relevant variables:
 ```bash
 # Example: probe Mixtral-8x7B FP8 on 4×H100 TP=4 with summarization workload
 MODEL=mistralai/Mixtral-8x7B-Instruct-v0.1 \
-  CATALOG=model_configs \
+  CATALOG=blis-catalog \
   TP=4 WORKLOAD=summarization \
   RATES="2 4 8 16 24 32 40 48" \
   ./scripts/find-saturation.sh
 ```
 
 If your model isn't in the catalog, drop its `config.json` into
-`$CATALOG/<your-model-slug>/config.json` (the bundled `model_configs/` tree is the
-default catalog). BLIS does not fetch configs at run time — a model with no entry is
+`$CATALOG/models/<your-model-slug>/config.json` (`$CATALOG` is a checkout of the
+[`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository, or any scratch
+clone of that layout). BLIS does not fetch configs at run time — a model with no entry is
 refused, naming the path its entry belongs at.
 
 ### Dependencies

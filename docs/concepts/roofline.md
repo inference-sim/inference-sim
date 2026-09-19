@@ -1,6 +1,6 @@
 # Roofline Step Time Estimation Logic
 
-This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. Roofline is the default latency model in BLIS — it requires no training and works off-the-shelf for any Huggingface LLM whose `config.json` is committed to the catalog under `model_configs/`.
+This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. Roofline is the default latency model in BLIS — it requires no training and works off-the-shelf for any Huggingface LLM whose `config.json` is committed to the model catalog (the [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository, located via `--catalog` / `BLIS_CATALOG`).
 
 !!! tip "Trained-Physics: higher accuracy"
     For higher accuracy, use `--latency-model trained-physics` which applies learned correction factors to these roofline basis functions with MoE support. See [Trained-Physics Mode](../guide/latency-models.md#trained-physics-mode).
@@ -67,18 +67,19 @@ The simplest way to run roofline mode is with `--latency-model roofline`, which 
 ```
 
 The flag automatically:
-1. Checks `model_configs/` for an existing `config.json` (previously fetched)
+1. Reads the model's `config.json` from the catalog located by `--catalog` / `BLIS_CATALOG`, at `<catalog>/models/<short-name>/config.json`
 2. Refuses the run on miss, naming the catalog path the entry belongs at — no run-time fetch, and no run writes to the catalog (NS-6)
 
 A model runs if and only if it has a catalog entry. To add one, commit its `config.json` at
-`<catalog>/<short-name>/config.json` — `defaults.yaml` has no part in this (its per-model
-`hf_repo` mapping was removed in #1768, along with the run-time fetch it fed, #1733).
+`<catalog>/models/<short-name>/config.json` in your catalog checkout — `defaults.yaml` has no
+part in this (its per-model `hf_repo` mapping was removed in #1768, along with the run-time
+fetch it fed, #1733).
 
-### Manual: explicit config paths
+### Manual: your own catalog
 
-Alternatively, download the `config.json` manually:
+Alternatively, point `--catalog` at a scratch directory holding your own config:
 
-* Download the `config.json` for the LLM of your choice into `model_configs/`. [This](https://huggingface.co/Qwen/Qwen3-14B/blob/main/config.json) is an example config.json for `Qwen/Qwen3-14B`. The recommended file structure is `model_configs/qwen3-14b/config.json`.
+* Download the `config.json` for the LLM of your choice. [This](https://huggingface.co/Qwen/Qwen3-14B/blob/main/config.json) is an example config.json for `Qwen/Qwen3-14B`. Place it at `<catalog>/models/qwen3-14b/config.json` and pass that `<catalog>` to `--catalog`.
 
 ### Adding a new GPU
 

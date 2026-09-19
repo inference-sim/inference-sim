@@ -100,7 +100,9 @@ inference-sim/
 │   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods
 │   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore (pure data types, no sim/ dependency)
 │   └── summary.go             # TraceSummary, Summarize()
-├── model_configs/             # A model catalog (one dir per model, each with its HuggingFace config.json). Located at run time via --catalog / BLIS_CATALOG (#1731); committed files
+│                               # (The model catalog is NOT in this repo: it is the external blis-catalog
+│                               #  repository, located at run time via --catalog / BLIS_CATALOG (#1731, #1771).
+│                               #  A small clone-root-shaped fixture lives at testdata/catalog/ for tests.)
 ├── defaults.yaml              # Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
 ├── hardware_config.json       # GPU specifications
 ├── examples/                  # Example configuration files

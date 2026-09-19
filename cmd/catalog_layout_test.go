@@ -9,21 +9,26 @@ import (
 	"testing"
 )
 
-// CLI-level contract tests for #1774: --catalog / BLIS_CATALOG names the catalog CLONE
-// ROOT, so a real `blis run` and `blis replay` read the model config from
-// <catalog>/models/<short-name>/config.json — and the transition fallback keeps the flat
-// <catalog>/<short-name> layout (the bundled model_configs/ tree) working unchanged.
+// CLI-level contract tests for the catalog CLONE ROOT layout: --catalog / BLIS_CATALOG
+// names the clone root, so a real `blis run` and `blis replay` read the model config from
+// <catalog>/models/<short-name>/config.json.
 //
-// The law these pin is that the LAYOUT is not an input to the simulation:
+// #1774 introduced this layout alongside a transition fallback that also accepted the flat
+// <catalog>/<short-name> layout (the then-bundled model_configs/ tree). #1771 deleted that
+// bundled tree and the fallback, so there is now exactly ONE layout — the models/ namespace
+// — and the "layout is not an input to the simulation" law #1774 pinned across the two
+// layouts is no longer expressible (there is nothing to compare against). What remains, and
+// what these tests pin, is that the canonical layout is WIRED INTO the commands and that the
+// removed fallback did not become a way IN for an uncatalogued model:
 //
-//	INV-6  — the same config.json bytes reached through either layout produce
-//	         byte-identical stdout.
-//	INV-13 — run and replay share resolveModelConfig, so both resolve the clone-root
-//	         layout and both land on the same numbers as the flat layout.
+//	INV-6  — the clone-root layout resolves and runs deterministically (byte-identical
+//	         stdout across repeated runs of the same catalog).
+//	INV-13 — run and replay share resolveModelConfig, so both resolve the clone-root layout.
+//	NS-6   — a model absent from the (sole) layout is refused, naming the canonical path.
 //
-// The unit-level layout laws (candidate order, malformed-entry boundary, relative vs
-// absolute paths) live on catalogModelDirs / resolveModelConfigInCatalog in
-// hfconfig_test.go; these tests prove the contract is WIRED INTO the commands.
+// The unit-level layout laws (candidate derivation, malformed-entry boundary, relative vs
+// absolute paths, uncatalogued refusal) live on catalogModelDirs / resolveModelConfigInCatalog
+// in hfconfig_test.go; these tests prove the contract is wired into the commands.
 
 // Environment variables driving the re-exec subprocess legs. A leg runs the real cobra
 // tree so a logrus.Fatalf surfaces as a non-zero exit status.
@@ -33,24 +38,23 @@ const (
 	catalogLayoutTraceEnv   = "BLIS_CATALOG_LAYOUT_TRACE"
 )
 
-// catalogLayoutModel is a model catalogued in the repository's bundled model_configs/
-// tree, which is FLAT — so it is reachable directly (fallback layout) and, once mirrored
-// by newCloneRootCatalog, under a models/ namespace (canonical layout).
+// catalogLayoutModel is a model catalogued in the committed test catalog
+// testdata/catalog/models/, so newCloneRootCatalog can copy its entry.
 const catalogLayoutModel = "qwen/qwen3-14b"
 
 // newCloneRootCatalog builds a catalog CLONE ROOT whose models/ namespace holds a
-// byte-for-byte copy of the bundled entry for catalogLayoutModel, and returns its root.
-// The copy (rather than a symlink) makes the "same config.json bytes" premise of the
-// byte-identity comparison explicit and independent of symlink support.
+// byte-for-byte copy of the test-catalog entry for catalogLayoutModel, and returns its
+// root. The copy (rather than a symlink) makes the "same config.json bytes" premise of the
+// determinism comparison explicit and independent of symlink support.
 func newCloneRootCatalog(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	shortName := catalogLayoutModel[strings.Index(catalogLayoutModel, "/")+1:]
 
-	src := filepath.Join("..", "model_configs", shortName, hfConfigFile)
+	src := filepath.Join("..", "testdata", "catalog", "models", shortName, hfConfigFile)
 	content, err := os.ReadFile(src)
 	if err != nil {
-		t.Fatalf("read bundled catalog entry %s: %v", src, err)
+		t.Fatalf("read test catalog entry %s: %v", src, err)
 	}
 	entryDir := filepath.Join(root, catalogModelsSubdir, shortName)
 	if err := os.MkdirAll(entryDir, 0o755); err != nil {
@@ -133,71 +137,69 @@ func catalogLayoutSubprocess() bool {
 	return true
 }
 
-// TestRunCmd_CatalogCloneRootLayout_ByteIdenticalToFlat is the #1774 INV-6 contract at
-// the `blis run` boundary: the SAME config.json reached through the canonical clone-root
-// layout (<catalog>/models/<name>) and through the flat transition layout
-// (<catalog>/<name>, the bundled model_configs/ tree) must produce byte-identical stdout.
-// Where the entry sits inside the catalog is not an input to the simulation.
-func TestRunCmd_CatalogCloneRootLayout_ByteIdenticalToFlat(t *testing.T) {
+// TestRunCmd_CatalogCloneRootLayout_ResolvesAndRuns is the #1771 INV-6 contract at the
+// `blis run` boundary: a model config stored the way the authoritative blis-catalog
+// repository stores it — <catalog>/models/<name>/config.json — resolves and runs, and the
+// same catalog produces byte-identical stdout across runs (the layout is not a source of
+// nondeterminism). With the flat transition fallback gone, this is now the only layout.
+func TestRunCmd_CatalogCloneRootLayout_ResolvesAndRuns(t *testing.T) {
 	if catalogLayoutSubprocess() {
 		return
 	}
-	const name = "TestRunCmd_CatalogCloneRootLayout_ByteIdenticalToFlat"
+	const name = "TestRunCmd_CatalogCloneRootLayout_ResolvesAndRuns"
 
-	viaClone := runCatalogLayoutLeg(t, name, "run", newCloneRootCatalog(t), "")
-	viaFlat := runCatalogLayoutLeg(t, name, "run", filepath.Join("..", "model_configs"), "")
+	catalog := newCloneRootCatalog(t)
+	first := runCatalogLayoutLeg(t, name, "run", catalog, "")
+	second := runCatalogLayoutLeg(t, name, "run", catalog, "")
 
 	// Non-vacuity: an empty or metric-less stdout would make the comparison trivial, and
-	// would also hide a clone-root leg that silently simulated nothing.
-	if !strings.Contains(viaClone, "completed_requests") {
-		t.Fatalf("non-vacuity: clone-root leg produced no metrics:\n%s", viaClone)
+	// would also hide a leg that silently simulated nothing.
+	if !strings.Contains(first, "completed_requests") {
+		t.Fatalf("non-vacuity: clone-root leg produced no metrics:\n%s", first)
 	}
-	if viaClone != viaFlat {
-		t.Errorf("stdout must be byte-identical whichever catalog layout holds the entry (INV-6)\nclone-root:\n%s\nflat:\n%s",
-			viaClone, viaFlat)
+	if first != second {
+		t.Errorf("stdout must be byte-identical across runs of the clone-root layout (INV-6)\nfirst:\n%s\nsecond:\n%s",
+			first, second)
 	}
 }
 
-// TestReplayCmd_CatalogCloneRootLayout_ByteIdenticalToFlat is the INV-13 half: `blis
-// replay` shares resolveModelConfig with `blis run`, so it resolves the clone-root layout
-// too and lands on the same numbers as the flat layout over the same trace.
-//
-// The comparison is replay-vs-replay on one trace, so no horizon has to be pinned across
-// commands — both legs differ only in the catalog layout.
-func TestReplayCmd_CatalogCloneRootLayout_ByteIdenticalToFlat(t *testing.T) {
+// TestReplayCmd_CatalogCloneRootLayout_ResolvesAndRuns is the INV-13 half: `blis replay`
+// shares resolveModelConfig with `blis run`, so it resolves the clone-root layout too. A
+// trace exported through the clone-root catalog replays deterministically through it.
+func TestReplayCmd_CatalogCloneRootLayout_ResolvesAndRuns(t *testing.T) {
 	if catalogLayoutSubprocess() {
 		return
 	}
-	const name = "TestReplayCmd_CatalogCloneRootLayout_ByteIdenticalToFlat"
+	const name = "TestReplayCmd_CatalogCloneRootLayout_ResolvesAndRuns"
 
-	// Export a trace once, through the flat layout, so both replay legs read identical
-	// input and the only difference between them is where the model config was found.
+	catalog := newCloneRootCatalog(t)
 	tracePrefix := filepath.Join(t.TempDir(), "layout")
-	runCatalogLayoutLeg(t, name, "run-export", filepath.Join("..", "model_configs"), tracePrefix)
+	runCatalogLayoutLeg(t, name, "run-export", catalog, tracePrefix)
 	if _, err := os.Stat(tracePrefix + ".csv"); err != nil {
 		t.Fatalf("trace export produced no data file: %v", err)
 	}
 
-	viaClone := runCatalogLayoutLeg(t, name, "replay", newCloneRootCatalog(t), tracePrefix)
-	viaFlat := runCatalogLayoutLeg(t, name, "replay", filepath.Join("..", "model_configs"), tracePrefix)
+	first := runCatalogLayoutLeg(t, name, "replay", catalog, tracePrefix)
+	second := runCatalogLayoutLeg(t, name, "replay", catalog, tracePrefix)
 
-	if !strings.Contains(viaClone, "completed_requests") {
-		t.Fatalf("non-vacuity: clone-root replay leg produced no metrics:\n%s", viaClone)
+	if !strings.Contains(first, "completed_requests") {
+		t.Fatalf("non-vacuity: clone-root replay leg produced no metrics:\n%s", first)
 	}
-	if viaClone != viaFlat {
-		t.Errorf("replay stdout must be byte-identical whichever catalog layout holds the entry (INV-13)\nclone-root:\n%s\nflat:\n%s",
-			viaClone, viaFlat)
+	if first != second {
+		t.Errorf("replay stdout must be byte-identical across runs of the clone-root layout (INV-13)\nfirst:\n%s\nsecond:\n%s",
+			first, second)
 	}
 }
 
-// TestRunCmd_CatalogCloneRootLayout_UncataloguedModelStillRefused guards the fallback
-// from becoming a way IN: adding the models/ candidate must not make an uncatalogued
-// model resolve. A run naming a model absent from both layouts is still refused, and the
-// refusal names the canonical clone-root path the entry belongs at (NS-6, #1733).
+// TestRunCmd_CatalogCloneRootLayout_UncataloguedModelStillRefused guards the sole layout
+// from becoming a way IN: a model absent from <catalog>/models/ must not resolve. A run
+// naming such a model is refused, and the refusal names the canonical clone-root path the
+// entry belongs at (NS-6, #1733). #1771 removed the flat fallback, so the only path an
+// entry can live at is the one the refusal names.
 func TestRunCmd_CatalogCloneRootLayout_UncataloguedModelStillRefused(t *testing.T) {
 	root := t.TempDir()
 	if _, err := resolveModelConfigInCatalog("test-org/not-catalogued", root); err == nil {
-		t.Fatal("expected refusal for a model absent from both layouts")
+		t.Fatal("expected refusal for a model absent from the catalog")
 	} else if want := filepath.Join(root, catalogModelsSubdir, "not-catalogued", hfConfigFile); !strings.Contains(err.Error(), want) {
 		t.Errorf("refusal must name the canonical clone-root path (%s), got: %v", want, err)
 	}
