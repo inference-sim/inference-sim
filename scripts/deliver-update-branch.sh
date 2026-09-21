@@ -21,7 +21,8 @@
 # this script's own diagnostics, any git subcommand's, and anything a git HOOK writes — goes to
 # stderr, where the run log still shows it. A single stray stdout line fails the step and ends the
 # correction round at needs-human. Every git invocation run for its EXIT STATUS therefore carries an
-# explicit `>&2` (the rest are captured in `$(...)`, so their stdout never reaches this script's).
+# explicit `>&2`, with no exception; every other one either has its stdout captured in `$(...)` or is
+# silenced outright, so no git subcommand's stdout can reach this script's.
 # scripts/deliver_branch_update_test.go asserts this per path; keep any new output off stdout.
 #
 # Exit 2 only on a usage error. Every other outcome is a state, because this runs inside a
@@ -91,7 +92,7 @@ fi
 # the agent, and to verify's own mergeable_state) rather than risking data loss. Untracked files
 # are left alone deliberately — neither the merge nor the reset touches them, and a fresh checkout
 # routinely carries build scratch that is not this script's to police.
-if ! git diff --quiet || ! git diff --cached --quiet; then
+if ! git diff --quiet >&2 || ! git diff --cached --quiet >&2; then
   echo "::warning::the worktree has uncommitted tracked changes; refusing to merge or reset and leaving the update to the agent" >&2
   emit unknown
 fi
@@ -107,16 +108,25 @@ before=$(git rev-parse HEAD) || emit unknown
 # needs-human before a single finding was read. Redirecting keeps the merge's diagnostics in the run
 # log (where they are wanted) and off the payload channel.
 #
-# `fetch` and `push` above/below carry the same `>&2` even though neither writes its OWN text to
-# stdout (both report progress on stderr), because a git subcommand's stdout is not only its own: a
-# HOOK inherits it. git redirects most hook output to stderr, but not `pre-push` — an executable
+# `fetch`, the two `diff --quiet` guards above, and `push` below carry the same `>&2` even though
+# none of them writes its OWN text to stdout, because a git subcommand's stdout is not only its own:
+# a HOOK inherits it. git redirects most hook output to stderr, but not `pre-push` — an executable
 # `.git/hooks/pre-push` that echoes puts that text on `git push`'s stdout (measured, git 2.34), i.e.
 # straight onto this payload channel, reproducing #1799 from a different source. This script runs in
 # a persistent self-hosted workspace shared by every delivery, so unexpected local git state is
-# exactly the hazard to be closed rather than assumed away. Redirecting every invocation run for its
-# exit status makes the header's guarantee true by construction instead of by inspection; the
-# `rev-parse`/`ls-files` calls need nothing, being captured in `$(...)`, and `reset`/`merge --abort`
-# are already silenced outright.
+# exactly the hazard to be closed rather than assumed away.
+#
+# `diff --quiet` is the one of the three with NO leak this repository can demonstrate: measured on
+# git 2.34, `--quiet` suppresses a `diff.external`, an attributes `diff.<driver>.command`, a
+# `textconv` and `GIT_EXTERNAL_DIFF` alike — all four print nothing on stdout. It is redirected for
+# UNIFORMITY, so that the rule stated in the header is categorical ("every invocation run for its
+# exit status") with no exception a reader must re-derive from a version-specific git guarantee; a
+# categorical rule is what makes the next git call added here obviously in or out of scope. Do not
+# read this redirect as evidence of a leak — `pre-push` above is the measured one.
+#
+# The `rev-parse`/`ls-files` calls need nothing, being captured in `$(...)`, and `reset` /
+# `merge --abort` are already silenced outright, so the header's guarantee now holds by
+# construction rather than by inspection.
 if git_as_bot merge --no-edit origin/main >&2; then
   after=$(git rev-parse HEAD)
   if [[ "$after" == "$before" ]]; then
