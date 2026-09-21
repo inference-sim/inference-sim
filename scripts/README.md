@@ -13,8 +13,8 @@ Clones `archon-go` at a pinned version and builds it, so the `archon.yml` and
 # Use the version pinned in .archon-version at the repo root
 ARCHON_BIN=$(scripts/archon-build.sh)
 
-# Or override with an explicit version (git branch/tag)
-ARCHON_BIN=$(scripts/archon-build.sh v1.2.3)
+# Or override with an explicit version (an existing git branch/tag)
+ARCHON_BIN=$(scripts/archon-build.sh v0.5.0)
 ```
 
 | Argument | Meaning |
@@ -32,7 +32,8 @@ control bytes, which both of those are. A build root containing a literal newlin
 survive `$(…)` capture at all, so the script does not attempt to paper over one.
 
 Exits non-zero when no version can be resolved — no argument given **and** no `.archon-version`
-present — rather than building an arbitrary default. Requires `git` and `go` (1.26+).
+present — rather than building an arbitrary default. Requires `git` and a `go` toolchain new
+enough for the selected Archon ref's `go.mod` (the pinned `v0.5.0` declares `go 1.26.3`).
 
 ## archon-review.sh — `/archon-pr-review` review step
 
