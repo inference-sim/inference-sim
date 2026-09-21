@@ -1441,10 +1441,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#named-presets-from-defaultsyaml" class="md-nav__link">
+  <a href="#named-presets-from-the-catalog" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Named Presets from defaults.yaml
+        Named Presets from the catalog
       
     </span>
   </a>
@@ -3490,10 +3490,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#named-presets-from-defaultsyaml" class="md-nav__link">
+  <a href="#named-presets-from-the-catalog" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Named Presets from defaults.yaml
+        Named Presets from the catalog
       
     </span>
   </a>
@@ -4183,8 +4183,13 @@
 </code></pre></div>
 <p>Client TTFT = server TTFT + RTT + upload delay. Client E2E = server E2E + RTT + upload delay + download delay. Upload/download delays are computed from token counts (4 bytes per token ID).</p>
 <h2 id="built-in-presets-and-examples">Built-in Presets and Examples<a class="headerlink" href="#built-in-presets-and-examples" title="Permanent link">&para;</a></h2>
-<h3 id="named-presets-from-defaultsyaml">Named Presets from defaults.yaml<a class="headerlink" href="#named-presets-from-defaultsyaml" title="Permanent link">&para;</a></h3>
-<p>BLIS ships with preset workload profiles in <code>defaults.yaml</code>. Use them with <code>blis run</code>, <code>blis observe</code>, or the convert command:</p>
+<h3 id="named-presets-from-the-catalog">Named Presets from the catalog<a class="headerlink" href="#named-presets-from-the-catalog" title="Permanent link">&para;</a></h3>
+<p>BLIS resolves preset workload profiles from the catalog, at <code>&lt;catalog&gt;/workloads/&lt;name&gt;.yaml</code> —
+the sibling of the <code>models/</code> namespace. Locate the catalog once with <code>--catalog</code> or
+<code>export BLIS_CATALOG=$PWD/blis-catalog</code>; all three preset consumers read the same file, so a
+preset cannot mean different things per command (#1769; before that, the copy in
+<code>defaults.yaml</code> was the one that moved output while the catalog copy was read by nothing).
+Use them with <code>blis run</code>, <code>blis observe</code>, or the convert command:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="c1"># Run simulation with a named preset</span>
 <a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span>--workload<span class="w"> </span>chatbot<span class="w"> </span>--rate<span class="w"> </span><span class="m">10</span>
 <a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>
@@ -4197,7 +4202,7 @@
 <a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a>./blis<span class="w"> </span>convert<span class="w"> </span>preset<span class="w"> </span>--name<span class="w"> </span>chatbot<span class="w"> </span>--rate<span class="w"> </span><span class="m">10</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">100</span><span class="w"> </span>&gt;<span class="w"> </span>chatbot.yaml
 </code></pre></div>
 <p>Using the same preset for both <code>run</code> and <code>observe</code> ensures the observe→replay→calibrate pipeline compares identical workload shapes — eliminating workload skew as a calibration variable.</p>
-<p>Available presets from <code>defaults.yaml</code>:</p>
+<p>Available presets in the catalog (<code>&lt;catalog&gt;/workloads/</code>):</p>
 <table>
 <thead>
 <tr>

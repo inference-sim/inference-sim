@@ -3201,7 +3201,7 @@
 <tr>
 <td><strong>Named preset</strong></td>
 <td><code>--workload &lt;name&gt; --rate &lt;N&gt;</code></td>
-<td>Standard workload from <code>defaults.yaml</code>; identical token distributions to <code>blis run --workload &lt;name&gt;</code></td>
+<td>Standard workload from the catalog (<code>&lt;catalog&gt;/workloads/&lt;name&gt;.yaml</code>, #1769); identical token distributions to <code>blis run --workload &lt;name&gt;</code>, which reads the same file</td>
 </tr>
 <tr>
 <td><strong>Workload spec</strong></td>
@@ -3400,10 +3400,10 @@
 <td>Measured network round-trip time in milliseconds</td>
 </tr>
 <tr>
-<td><code>--defaults-filepath</code></td>
+<td><code>--catalog</code></td>
 <td><code>string</code></td>
-<td><code>"defaults.yaml"</code></td>
-<td>Path to <code>defaults.yaml</code> containing preset definitions (preset mode only)</td>
+<td><code>""</code></td>
+<td>Catalog clone root holding <code>workloads/&lt;name&gt;.yaml</code> (preset mode only). No default; <code>BLIS_CATALOG</code> is the fallback, and the flag wins when both are set (#1769 replaced <code>--defaults-filepath</code> here)</td>
 </tr>
 <tr>
 <td><code>--record-itl</code></td>
@@ -3616,7 +3616,7 @@ metrics (INV-13). Two things to get right:</p>
 <a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>
 <a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="c1"># Run N=2 DP replicas and export the workload...</span>
 <a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>deepseek-ai/deepseek-v2-lite<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">  </span>--catalog<span class="w"> </span>model_configs<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">  </span>--catalog<span class="w"> </span>blis-catalog<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="w">  </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--hardware-config<span class="w"> </span>hardware_config.json<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="w">  </span>--dp<span class="w"> </span><span class="m">2</span><span class="w"> </span>--num-instances<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">10</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">40</span><span class="w"> </span>--total-kv-blocks<span class="w"> </span><span class="m">20000</span><span class="w"> </span>--seed<span class="w"> </span><span class="m">42</span><span class="w"> </span><span class="se">\</span>
@@ -3626,7 +3626,7 @@ metrics (INV-13). Two things to get right:</p>
 <a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a><span class="c1"># --dp, --num-instances, --total-kv-blocks, --seed and --horizon.</span>
 <a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a>./blis<span class="w"> </span>replay<span class="w"> </span>--trace-header<span class="w"> </span>traces/dp2.yaml<span class="w"> </span>--trace-data<span class="w"> </span>traces/dp2.csv<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a><span class="w">  </span>--model<span class="w"> </span>deepseek-ai/deepseek-v2-lite<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a><span class="w">  </span>--catalog<span class="w"> </span>model_configs<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a><span class="w">  </span>--catalog<span class="w"> </span>blis-catalog<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a><span class="w">  </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--hardware-config<span class="w"> </span>hardware_config.json<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a><span class="w">  </span>--dp<span class="w"> </span><span class="m">2</span><span class="w"> </span>--num-instances<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a><span class="w">  </span>--total-kv-blocks<span class="w"> </span><span class="m">20000</span><span class="w"> </span>--seed<span class="w"> </span><span class="m">42</span><span class="w"> </span>--horizon<span class="w"> </span><span class="m">9223372036854775807</span><span class="w">   </span><span class="c1"># unlimited</span>
