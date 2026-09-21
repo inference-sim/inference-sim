@@ -106,7 +106,9 @@ inference-sim/
 │                               #  It holds models/<name>/config.json, workloads/<name>.yaml (#1769) and the
 │                               #  devices/storage.yaml KV-offload device table (#1770). A small
 │                               #  clone-root-shaped fixture lives at testdata/catalog/ for tests.)
-├── defaults.yaml              # Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
+├── defaults.yaml              # Pre-trained coefficients only: trained-physics + LoRA cost coefficients
+│                               # (what it no longer carries, and where that moved: see the
+│                               #  cmd/default_config.go entry above)
 ├── hardware_config.json       # GPU specifications
 ├── examples/                  # Example configuration files
 ├── testdata/goldendataset.json # Golden dataset for regression tests

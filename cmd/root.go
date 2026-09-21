@@ -61,7 +61,7 @@ var (
 	blockSizeTokens           int64     // Number of tokens per KV block
 	betaCoeffs                []float64 // List of beta coeffs corresponding to step features
 	alphaCoeffs               []float64 // List of alpha coeffs corresponding to pre, postprocessing delays
-	defaultsFilePath          string    // Path to default constants - trained coefficients, default specs and workloads
+	defaultsFilePath          string    // Path to default constants - trained-physics coefficients and LoRA cost coefficients (the only sections defaults.yaml still carries)
 	catalogPath               string    // --catalog: model catalog root (one directory per model, each with config.json). No default; BLIS_CATALOG is the fallback (#1731)
 	modelConfigDir            string    // Resolved catalog entry directory containing config.json (side effect of resolveLatencyConfig)
 	resolvedCatalogRoot       string    // Catalog ROOT that produced this run's model config (side effect of resolveModelConfig); recorded as results-file provenance (#1732)
@@ -1575,7 +1575,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&seed, "seed", 42, "Seed for random request generation")
 	cmd.Flags().Int64Var(&simulationHorizon, "horizon", math.MaxInt64, "Total simulation horizon (in ticks)")
 	cmd.Flags().StringVar(&logLevel, "log", "warn", "Log level for diagnostic messages (trace, debug, info, warn, error, fatal, panic). Simulation results always print to stdout regardless of this setting.")
-	cmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained coefficients and device constants")
+	cmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained-physics coefficients and LoRA cost coefficients")
 	registerCatalogFlag(cmd)
 	cmd.Flags().StringVar(&hwConfigPath, "hardware-config", "", "Path to file containing hardware config")
 
