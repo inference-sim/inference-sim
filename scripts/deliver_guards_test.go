@@ -651,6 +651,67 @@ func TestDeliverVerifyHandsOffOnTheDeliveryBranchNotTheEventRef(t *testing.T) {
 	}
 }
 
+// deliver-verify.yml's `Review the PR` prompt must direct the review agent to fetch INLINE
+// (line-level) PR review comments and weigh them as evidence (#1801).
+//
+// Inline review comments live at GET /repos/{owner}/{repo}/pulls/{n}/comments — a DIFFERENT endpoint
+// from the conversation comments `gh pr view --comments` returns. The verify prompt pointed the
+// agent at the diff, the sub-issue contracts and the refinements, but never at pulls/{n}/comments,
+// so a reviewer's precise inline fix-request was invisible to the verdict reasoning; the correction
+// round (whose work list is only the bot findings) therefore never fixed it. Observed on PR #1680,
+// where two valid inline comments from a reviewer were dropped.
+//
+// The trust model is UNCHANGED and this test does not assert any new authority: inline comments are
+// data to be assessed on the merits, exactly like conversation comments — a human comment still
+// cannot command a verdict (the SECURITY block already covers that). The contract here is only that
+// the endpoint is fetched and its output reaches the agent.
+func TestDeliverVerifyReviewPromptFetchesInlineReviewComments(t *testing.T) {
+	path := filepath.Join("..", ".github", "workflows", "deliver-verify.yml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []implementStep `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(raw, &wf); err != nil {
+		t.Fatalf("parsing %s: %v", path, err)
+	}
+	job, ok := wf.Jobs["verify"]
+	if !ok {
+		t.Fatal("deliver-verify.yml has no `verify` job")
+	}
+	agent := indexOfStep(job.Steps, func(s implementStep) bool {
+		return strings.HasPrefix(s.Uses, "anthropics/claude-code-action")
+	})
+	if agent < 0 {
+		t.Fatal("deliver-verify.yml's `verify` job no longer runs anthropics/claude-code-action")
+	}
+	prompt := job.Steps[agent].With.Prompt
+	if strings.TrimSpace(prompt) == "" {
+		t.Fatal("the review agent step has no prompt")
+	}
+
+	// Anchored on the pulls/{n}/comments endpoint, NOT a bare "comments" mention: the prompt already
+	// discusses conversation comments, and the whole defect is that the INLINE endpoint — the one
+	// `gh pr view --comments` does NOT return — was never fetched. `[^\n]*` tolerates the templated
+	// PR-number expression (`pulls/${{ env.PR }}/comments`), which carries spaces inside its braces.
+	inlineEndpoint := regexp.MustCompile(`pulls/[^\n]*/comments`)
+	if !inlineEndpoint.MatchString(prompt) {
+		t.Errorf("the review prompt does not direct the agent to fetch inline review comments from the "+
+			"`pulls/{n}/comments` endpoint. Inline comments live at a different API than conversation "+
+			"comments and are invisible to the verdict reasoning without it (#1801). Prompt:\n%s", prompt)
+	}
+	// The fetch must be a `gh api` call: `gh pr view --comments` returns only conversation comments,
+	// so a prompt that named that command instead would reintroduce the gap.
+	if !strings.Contains(prompt, "gh api") {
+		t.Errorf("the review prompt references the inline-comments endpoint but not `gh api`, the only "+
+			"gh call that returns inline review comments (`gh pr view --comments` does not). Prompt:\n%s", prompt)
+	}
+}
+
 // The #1751 defect is a CLASS, not one step: any workflow reachable from an event whose GITHUB_REF
 // is the PR merge ref `refs/pull/N/merge` must not dispatch another workflow on
 // `${{ github.ref_name }}`, because that dispatch 422s. Those events are pull_request,
