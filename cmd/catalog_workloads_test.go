@@ -640,15 +640,13 @@ func TestCatalogPresets_RetiredLocatorFlagsAreGone(t *testing.T) {
 				"retired defaults.yaml `workloads:` block (#1769)", strings.Join(path, " "))
 		}
 	}
-	// Non-vacuity / scope: run and replay DO still read defaults.yaml (its trained-physics
-	// coefficients and LoRA cost coefficients — the two sections cmd.Config still declares,
-	// the KV-offload device table having moved to the catalog in #1770), so the flag must
-	// survive there.
+	// Non-vacuity / scope: run and replay DO still read defaults.yaml (trained coefficients,
+	// LoRA and KV-offload device constants), so the flag must survive there.
 	for _, path := range [][]string{{"run"}, {"replay"}} {
 		cmd := findCommandByPath(t, rootCmd, path)
 		if f := cmd.Flags().Lookup("defaults-filepath"); f == nil {
-			t.Errorf("`blis %s` must keep --defaults-filepath: it reads the trained-physics "+
-				"coefficients and LoRA cost coefficients from that file", strings.Join(path, " "))
+			t.Errorf("`blis %s` must keep --defaults-filepath: it reads the trained coefficients "+
+				"and device constants from that file", strings.Join(path, " "))
 		}
 	}
 }
