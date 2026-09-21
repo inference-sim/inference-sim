@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -37,6 +38,11 @@ import (
 // the prose that used to describe it in the --defaults-filepath help and in the
 // defaultsFilePath declaration comment. A section is only checked while cmd.Config does NOT
 // declare it, so the guard tracks the struct rather than a frozen list.
+//
+// The aliases are banned unconditionally within those two short strings, including in a
+// negated form ("no workload presets any more"). That is deliberate: both strings answer "what
+// is this file for", and the place to explain what the file stopped carrying is the file's own
+// header or cmd/default_config.go, not a one-line flag description.
 var retiredDefaultsSections = map[string][]string{
 	// #1768: per-model GPU / tensor_parallelism / hf_repo.
 	"defaults": {"default specs", "default GPU", "deployment defaults"},
@@ -58,30 +64,41 @@ func TestDefaultsFilepathHelpDescribesOnlyDeclaredSections(t *testing.T) {
 	// The flag help, read off the live command so the guard checks the string an operator
 	// actually sees. INV-13: run and replay share registerSimConfigFlags, so checking both
 	// pins that neither can drift into describing the file differently.
-	descriptions := map[string]string{}
+	// A slice rather than a map, so the failure output is ordered (R2): a guard whose
+	// diagnostics shuffle between runs is harder to diff than one that does not.
+	var descriptions []struct{ where, text string }
 	for _, cmdName := range []string{"run", "replay"} {
 		c := findCommandByPath(t, rootCmd, []string{cmdName})
 		f := c.Flags().Lookup("defaults-filepath")
 		if f == nil {
 			t.Fatalf("non-vacuity: `blis %s` does not register --defaults-filepath", cmdName)
 		}
-		descriptions["`blis "+cmdName+"` --defaults-filepath help"] = f.Usage
+		descriptions = append(descriptions, struct{ where, text string }{
+			"`blis " + cmdName + "` --defaults-filepath help", f.Usage})
 	}
-	descriptions["cmd/root.go defaultsFilePath declaration comment"] = defaultsFilePathDeclComment(t)
+	descriptions = append(descriptions, struct{ where, text string }{
+		"cmd/root.go defaultsFilePath declaration comment", defaultsFilePathDeclComment(t)})
+
+	sections := make([]string, 0, len(retiredDefaultsSections))
+	for section := range retiredDefaultsSections {
+		sections = append(sections, section)
+	}
+	sort.Strings(sections)
 
 	checked := 0
-	for where, text := range descriptions {
+	for _, d := range descriptions {
+		where, text := d.where, d.text
 		if strings.TrimSpace(text) == "" {
 			t.Errorf("non-vacuity: %s is empty", where)
 			continue
 		}
 		lowered := strings.ToLower(text)
-		for section, aliases := range retiredDefaultsSections {
+		for _, section := range sections {
 			if declared[section] {
 				// Reinstated on purpose: describing it is now correct, so skip it.
 				continue
 			}
-			for _, alias := range aliases {
+			for _, alias := range retiredDefaultsSections[section] {
 				checked++
 				if strings.Contains(lowered, strings.ToLower(alias)) {
 					t.Errorf("%s says %q, but cmd.Config declares no %q section — defaults.yaml "+
