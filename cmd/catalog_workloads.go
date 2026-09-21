@@ -191,10 +191,14 @@ func readCatalogPresetWorkload(name, catalog string) (*presetWorkload, error) {
 	return &wl, nil
 }
 
-// loadPresetWorkload locates the catalog and reads the named preset from it. This is the
-// single production entry point shared by all three preset consumers — `blis run
-// --workload`, `blis convert preset` and `blis observe --workload` (R23) — so the three
-// cannot resolve the same preset name to different distributions.
+// loadPresetWorkload locates the catalog and reads the named preset from it. It is the
+// catalog-locating wrapper, used by `blis run --workload` and `blis convert preset`;
+// `blis observe --workload` resolves the catalog root itself (runObserve does it once, then
+// passes it down) and so calls readCatalogPresetWorkload directly.
+//
+// The funnel shared by all three consumers is therefore readCatalogPresetWorkload →
+// presetWorkload.toPresetConfig, not this function (R23) — that is what keeps the three from
+// resolving one preset name to different distributions.
 //
 // (`blis replay` resolves no preset: it replays recorded requests, so INV-13 does not reach
 // preset resolution.)
