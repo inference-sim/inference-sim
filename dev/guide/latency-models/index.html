@@ -3437,14 +3437,14 @@
 <p>Roofline mode computes step time analytically from model architecture (FLOPs, parameter count) and hardware specifications (compute throughput, memory bandwidth). It does not require pre-trained coefficients, making it suitable for new models.</p>
 <h3 id="the-latency-model-roofline-flag">The <code>--latency-model roofline</code> Flag<a class="headerlink" href="#the-latency-model-roofline-flag" title="Permanent link">&para;</a></h3>
 <p>The simplest way to use roofline mode:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--catalog<span class="w"> </span>model_configs<span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--catalog<span class="w"> </span>blis-catalog<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span>
 </code></pre></div>
-<p><code>--catalog</code> (or the <code>BLIS_CATALOG</code> environment variable) names the model catalog root, and
+<p><code>--catalog</code> (or the <code>BLIS_CATALOG</code> environment variable) names the model catalog clone root, and
 there is <strong>no default and no search path</strong> (#1731) — a run with neither is refused naming
 both forms. Given it, the two required inputs resolve as:</p>
 <ol>
-<li><strong>Model config</strong> -- reads the catalog entry at <code>&lt;catalog&gt;/&lt;model-short-name&gt;/config.json</code>; a model with no entry is refused, naming that path (nothing is fetched)</li>
+<li><strong>Model config</strong> -- reads the catalog entry at <code>&lt;catalog&gt;/models/&lt;model-short-name&gt;/config.json</code>; a model with no entry is refused, naming that path (nothing is fetched)</li>
 <li><strong>Hardware config</strong> -- uses the bundled <code>hardware_config.json</code></li>
 </ol>
 <p><strong>Supported hardware:</strong> The bundled <code>hardware_config.json</code> includes specs for <strong>H100</strong> (80 GB HBM3, 989.5 TFLOPS BF16, 3.35 TB/s), <strong>H200</strong> (141 GB HBM3e, 989.5 TFLOPS BF16, 4.8 TB/s — same Hopper compute die as H100, more/faster memory), <strong>A100-SXM</strong> (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s), <strong>A100-80</strong> (alias for A100-SXM), and <strong>L40S</strong> (48 GB GDDR6, 362 TFLOPS BF16, 0.864 TB/s). To use a different GPU, add an entry to <code>hardware_config.json</code> with the required fields (<code>TFlopsPeak</code>, <code>BwPeakTBs</code>, <code>mfuPrefill</code>, <code>mfuDecode</code>, <code>MemoryGiB</code>), plus <code>IntraNodeBwGBps</code>/<code>InterNodeBwGBps</code> if instances on that GPU may span nodes (see <a href="#inter-node-network-cost-trained-physics-only">Inter-Node Network Cost</a>) and reference it via <code>--hardware &lt;name&gt;</code>. The file is parsed strictly (#1728): an unrecognized or non-canonically-cased key is a hard error naming the key and the GPU entry, so a typo cannot silently read as 0 — only <code>_comment</code> / <code>_comment_interconnect</code> are accepted and ignored.</p>
@@ -3455,14 +3455,14 @@ both forms. Given it, the two required inputs resolve as:</p>
 <li><a href="https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1">Mixtral-8x7B</a> (MoE)</li>
 <li><a href="https://huggingface.co/codellama/CodeLlama-34b-Instruct-hf">CodeLlama-34B</a></li>
 </ul>
-<p>Each of these has a committed catalog entry. A model that does not is refused — commit its <code>config.json</code> at <code>&lt;catalog&gt;/&lt;model&gt;/config.json</code> first (<code>HF_TOKEN</code> is only needed to download a gated model's config by hand; BLIS itself makes no HuggingFace requests).</p>
+<p>Each of these has a committed catalog entry. A model that does not is refused — commit its <code>config.json</code> at <code>&lt;catalog&gt;/models/&lt;model&gt;/config.json</code> first (<code>HF_TOKEN</code> is only needed to download a gated model's config by hand; BLIS itself makes no HuggingFace requests).</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span>
 </code></pre></div>
 <h3 id="manual-configuration">Manual Configuration<a class="headerlink" href="#manual-configuration" title="Permanent link">&para;</a></h3>
 <p>For full control, point <code>--catalog</code> at your own catalog and supply an explicit hardware
-config. <code>--catalog</code> names the catalog ROOT, so the model's <code>config.json</code> is read from
-<code>./my-catalog/my-custom-model/config.json</code>:</p>
+config. <code>--catalog</code> names the catalog clone ROOT, so the model's <code>config.json</code> is read from
+<code>./my-catalog/models/my-custom-model/config.json</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>my-custom-model<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>--catalog<span class="w"> </span>./my-catalog/<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>--hardware-config<span class="w"> </span>./my-hardware-config.json<span class="w"> </span><span class="se">\</span>
@@ -3472,11 +3472,11 @@ config. <code>--catalog</code> names the catalog ROOT, so the model's <code>conf
 <p>Any model with a HuggingFace <code>config.json</code> can use roofline mode:</p>
 <ol>
 <li>Download <code>config.json</code> from HuggingFace</li>
-<li>Place it in <code>&lt;catalog&gt;/&lt;model-name&gt;/config.json</code>, where <code>&lt;catalog&gt;</code> is the directory you
-   pass to <code>--catalog</code> (the bundled <code>model_configs/</code> tree is one) — this step is required.
-   BLIS does not fetch configs at run time, so a model with no catalog entry is refused
-   rather than downloaded (NS-6). Commit the file under <code>model_configs/</code> to add the model to
-   the shared catalog for everyone.</li>
+<li>Place it in <code>&lt;catalog&gt;/models/&lt;model-name&gt;/config.json</code>, where <code>&lt;catalog&gt;</code> is the directory
+   you pass to <code>--catalog</code> — this step is required. BLIS does not fetch configs at run time,
+   so a model with no catalog entry is refused rather than downloaded (NS-6). Commit the file
+   to the <a href="https://github.com/inference-sim/blis-catalog"><code>blis-catalog</code></a> repository to add the
+   model to the shared catalog for everyone.</li>
 <li>Run with <code>--latency-model roofline --hardware &lt;GPU&gt; --tp &lt;N&gt;</code></li>
 </ol>
 <h3 id="tensor-parallelism-and-roofline">Tensor Parallelism and Roofline<a class="headerlink" href="#tensor-parallelism-and-roofline" title="Permanent link">&para;</a></h3>

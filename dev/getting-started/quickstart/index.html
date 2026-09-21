@@ -2994,14 +2994,16 @@
 
 <h1 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h1>
 <p>Run your first BLIS simulation in 30 seconds.</p>
-<p>No credentials or network access are needed: BLIS reads each model's architecture from the committed catalog under <code>model_configs/</code> and makes no HuggingFace requests. (<code>HF_TOKEN</code> matters only if you are downloading a new — possibly gated — model's <code>config.json</code> by hand to add a catalog entry.)</p>
+<p>No credentials or network access are needed to <em>run</em> a simulation: BLIS reads each model's architecture from a local checkout of the model catalog and makes no HuggingFace requests. (<code>HF_TOKEN</code> matters only if you are downloading a new — possibly gated — model's <code>config.json</code> by hand to add a catalog entry.)</p>
 <h2 id="locate-the-model-catalog">Locate the model catalog<a class="headerlink" href="#locate-the-model-catalog" title="Permanent link">&para;</a></h2>
 <p>Every <code>blis run</code> / <code>blis replay</code> must be told where the <strong>model catalog</strong> is — a directory
-holding one subdirectory per model, each with that model's HuggingFace <code>config.json</code>. The
-repository's own <code>model_configs/</code> tree is such a catalog. There is <strong>no default and no
+holding a <code>models/&lt;short-name&gt;/config.json</code> for each catalogued model. The authoritative
+catalog is the <a href="https://github.com/inference-sim/blis-catalog"><code>blis-catalog</code></a> repository;
+clone it once and point BLIS at the clone root. There is <strong>no default and no
 search path</strong>: supply <code>--catalog &lt;path&gt;</code> or set <code>BLIS_CATALOG</code> (the flag wins when both are
 set), or the run is refused naming both forms.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">BLIS_CATALOG</span><span class="o">=</span><span class="nv">$PWD</span>/model_configs<span class="w">   </span><span class="c1"># or pass --catalog on every command</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/inference-sim/blis-catalog.git
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">BLIS_CATALOG</span><span class="o">=</span><span class="nv">$PWD</span>/blis-catalog<span class="w">   </span><span class="c1"># or pass --catalog on every command</span>
 </code></pre></div>
 <p>The examples below (and elsewhere in these docs) assume you have exported it.</p>
 <h2 id="single-instance-simulation">Single-Instance Simulation<a class="headerlink" href="#single-instance-simulation" title="Permanent link">&para;</a></h2>
@@ -3010,7 +3012,7 @@ set), or the run is refused naming both forms.</p>
 <p>This runs 100 requests through a single inference instance using the default trained-physics latency model for Qwen3 14B on an H100 GPU with TP=1.</p>
 <div class="admonition note">
 <p class="admonition-title">A model runs only if it is catalogued</p>
-<p>BLIS reads the model's <code>config.json</code> from the catalog located by <code>--catalog</code> / <code>BLIS_CATALOG</code> (above) and never fetches or writes it at run time. A model with no catalog entry is refused, naming the path its entry belongs at — so runs are offline and reproducible, and running an unknown model can never quietly add a catalog entry. To use a model that is not yet catalogued, commit its <code>config.json</code> at <code>&lt;catalog&gt;/&lt;model&gt;/config.json</code>, or point <code>--catalog</code> at a scratch directory that has it.</p>
+<p>BLIS reads the model's <code>config.json</code> from the catalog located by <code>--catalog</code> / <code>BLIS_CATALOG</code> (above) and never fetches or writes it at run time. A model with no catalog entry is refused, naming the path its entry belongs at — so runs are offline and reproducible, and running an unknown model can never quietly add a catalog entry. To use a model that is not yet catalogued, commit its <code>config.json</code> at <code>&lt;catalog&gt;/models/&lt;model&gt;/config.json</code>, or point <code>--catalog</code> at a scratch clone that has it.</p>
 </div>
 <div class="admonition note">
 <p class="admonition-title"><code>--hardware</code> and <code>--tp</code> are required</p>

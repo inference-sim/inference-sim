@@ -4186,7 +4186,7 @@
 <h3 id="named-presets-from-the-catalog">Named Presets from the catalog<a class="headerlink" href="#named-presets-from-the-catalog" title="Permanent link">&para;</a></h3>
 <p>BLIS resolves preset workload profiles from the catalog, at <code>&lt;catalog&gt;/workloads/&lt;name&gt;.yaml</code> —
 the sibling of the <code>models/</code> namespace. Locate the catalog once with <code>--catalog</code> or
-<code>export BLIS_CATALOG=$PWD/model_configs</code>; all three preset consumers read the same file, so a
+<code>export BLIS_CATALOG=$PWD/blis-catalog</code>; all three preset consumers read the same file, so a
 preset cannot mean different things per command (#1769; before that, the copy in
 <code>defaults.yaml</code> was the one that moved output while the catalog copy was read by nothing).
 Use them with <code>blis run</code>, <code>blis observe</code>, or the convert command:</p>
@@ -4202,7 +4202,7 @@ Use them with <code>blis run</code>, <code>blis observe</code>, or the convert c
 <a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a>./blis<span class="w"> </span>convert<span class="w"> </span>preset<span class="w"> </span>--name<span class="w"> </span>chatbot<span class="w"> </span>--rate<span class="w"> </span><span class="m">10</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">100</span><span class="w"> </span>&gt;<span class="w"> </span>chatbot.yaml
 </code></pre></div>
 <p>Using the same preset for both <code>run</code> and <code>observe</code> ensures the observe→replay→calibrate pipeline compares identical workload shapes — eliminating workload skew as a calibration variable.</p>
-<p>Available presets in the bundled catalog (<code>model_configs/workloads/</code>):</p>
+<p>Available presets in the catalog (<code>&lt;catalog&gt;/workloads/</code>):</p>
 <table>
 <thead>
 <tr>

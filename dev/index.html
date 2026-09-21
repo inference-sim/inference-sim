@@ -2995,15 +2995,17 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/inference-sim/inference-sim.git
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">cd</span><span class="w"> </span>inference-sim
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>go<span class="w"> </span>build<span class="w"> </span>-o<span class="w"> </span>blis<span class="w"> </span>main.go
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nb">export</span><span class="w"> </span><span class="nv">BLIS_CATALOG</span><span class="o">=</span><span class="nv">$PWD</span>/model_configs<span class="w">   </span><span class="c1"># or pass --catalog on every run/replay</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/inference-sim/blis-catalog.git
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="nb">export</span><span class="w"> </span><span class="nv">BLIS_CATALOG</span><span class="o">=</span><span class="nv">$PWD</span>/blis-catalog<span class="w">   </span><span class="c1"># or pass --catalog on every run/replay</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span>
 </code></pre></div>
-<p><code>blis run</code> and <code>blis replay</code> must be told where the <strong>model catalog</strong> is — a directory
-holding one subdirectory per model, each with that model's HuggingFace <code>config.json</code>. The
-repository's <code>model_configs/</code> tree is one. Supply it with <code>--catalog &lt;path&gt;</code> or the
-<code>BLIS_CATALOG</code> environment variable (the flag wins when both are set); there is <strong>no
-default and no search path</strong>, so a run with neither is refused naming both forms. The
-examples throughout these docs omit it — export <code>BLIS_CATALOG</code> once, as above.</p>
+<p><code>blis run</code> and <code>blis replay</code> must be told where the <strong>model catalog</strong> is — a checkout of
+the authoritative <a href="https://github.com/inference-sim/blis-catalog"><code>blis-catalog</code></a>
+repository, which holds a <code>models/&lt;short-name&gt;/config.json</code> for each catalogued model.
+Supply the clone root with <code>--catalog &lt;path&gt;</code> or the <code>BLIS_CATALOG</code> environment variable
+(the flag wins when both are set); there is <strong>no default and no search path</strong>, so a run
+with neither is refused naming both forms. The examples throughout these docs omit it —
+export <code>BLIS_CATALOG</code> once, as above.</p>
 <hr />
 <h2 id="key-features">Key Features<a class="headerlink" href="#key-features" title="Permanent link">&para;</a></h2>
 <ul>

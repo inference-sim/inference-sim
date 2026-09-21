@@ -3036,23 +3036,25 @@
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>go<span class="w"> </span>build<span class="w"> </span>-o<span class="w"> </span>blis<span class="w"> </span>main.go
 </code></pre></div>
 <h2 id="environment-setup">Environment Setup<a class="headerlink" href="#environment-setup" title="Permanent link">&para;</a></h2>
-<p>BLIS reads model architecture configs from the catalog (<code>model_configs/</code>) and makes no HuggingFace requests, so running a simulation needs no token and no network access. Set <code>HF_TOKEN</code> only when downloading a new model's <code>config.json</code> by hand to add a catalog entry, e.g. for a gated model such as <a href="https://huggingface.co/meta-llama/Llama-2-7b-hf">Llama-2</a>:</p>
+<p>BLIS reads model architecture configs from a local catalog checkout and makes no HuggingFace requests, so running a simulation needs no token and no network access. Set <code>HF_TOKEN</code> only when downloading a new model's <code>config.json</code> by hand to add a catalog entry, e.g. for a gated model such as <a href="https://huggingface.co/meta-llama/Llama-2-7b-hf">Llama-2</a>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">HF_TOKEN</span><span class="o">=</span>your_token_here
 </code></pre></div>
 <p>Public models (e.g., Qwen3) work without a token. See <a href="https://huggingface.co/docs/hub/en/security-tokens">HuggingFace access tokens</a> to create a token.</p>
 <div class="admonition note">
 <p class="admonition-title">Air-gapped / offline environments</p>
-<p>Nothing to do — BLIS never reaches the network to run a simulation. Every model's <code>config.json</code> comes from the committed catalog under <code>model_configs/</code>, and a model with no catalog entry is refused rather than fetched.</p>
-<p>To simulate a model that is not yet catalogued, obtain its <code>config.json</code> on a machine with internet access, then commit it at <code>&lt;catalog&gt;/&lt;model&gt;/config.json</code> — where <code>&lt;catalog&gt;</code> is whatever directory you point <code>--catalog</code> / <code>BLIS_CATALOG</code> at (the bundled <code>model_configs/</code> tree is one).</p>
+<p>Nothing to do — BLIS never reaches the network to run a simulation. Every model's <code>config.json</code> comes from your local catalog checkout, and a model with no catalog entry is refused rather than fetched.</p>
+<p>To simulate a model that is not yet catalogued, obtain its <code>config.json</code> on a machine with internet access, then commit it at <code>&lt;catalog&gt;/models/&lt;model&gt;/config.json</code> — where <code>&lt;catalog&gt;</code> is whatever directory you point <code>--catalog</code> / <code>BLIS_CATALOG</code> at.</p>
 </div>
 <h2 id="locate-the-model-catalog">Locate the Model Catalog<a class="headerlink" href="#locate-the-model-catalog" title="Permanent link">&para;</a></h2>
 <p><code>blis run</code> and <code>blis replay</code> must be told where the model catalog is — there is no default
 and no search path, so a run with neither <code>--catalog</code> nor <code>BLIS_CATALOG</code> is refused naming
-both forms. The bundled <code>model_configs/</code> tree is a valid catalog root:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">BLIS_CATALOG</span><span class="o">=</span><span class="nv">$PWD</span>/model_configs<span class="w">   </span><span class="c1"># or pass --catalog on every command</span>
+both forms. Clone the authoritative <a href="https://github.com/inference-sim/blis-catalog"><code>blis-catalog</code></a>
+repository and point BLIS at the clone root:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/inference-sim/blis-catalog.git
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">BLIS_CATALOG</span><span class="o">=</span><span class="nv">$PWD</span>/blis-catalog<span class="w">   </span><span class="c1"># or pass --catalog on every command</span>
 </code></pre></div>
 <h2 id="verify-the-build">Verify the Build<a class="headerlink" href="#verify-the-build" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">10</span><span class="w"> </span>--catalog<span class="w"> </span>model_configs
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">10</span><span class="w"> </span>--catalog<span class="w"> </span>blis-catalog
 </code></pre></div>
 <p>You should see JSON output on stdout containing fields like <code>ttft_mean_ms</code>, <code>e2e_mean_ms</code>, and <code>responses_per_sec</code>. This confirms BLIS is working correctly.</p>
 <h2 id="optional-local-documentation">Optional: Local Documentation<a class="headerlink" href="#optional-local-documentation" title="Permanent link">&para;</a></h2>
