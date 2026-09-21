@@ -241,15 +241,20 @@ func TestProjectStructureDefaultsAnnotationIsCurrent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read %s: %v", doc, err)
 	}
+	// The TOP-LEVEL defaults.yaml entry specifically: the tree also has a cmd/default_config.go
+	// entry whose annotation names the retired blocks on purpose, to say they are gone. This
+	// guard checks the line that asserts what the file DOES hold, so it matches on the entry
+	// name rather than on the substring "defaults.yaml" anywhere.
 	var annotation string
 	for _, line := range strings.Split(string(src), "\n") {
-		if strings.Contains(line, "defaults.yaml") && strings.Contains(line, "#") {
+		entry := strings.TrimLeft(line, "│├└─ ")
+		if strings.HasPrefix(entry, "defaults.yaml") && strings.Contains(entry, "#") {
 			annotation = line
 			break
 		}
 	}
 	if annotation == "" {
-		t.Fatalf("non-vacuity: %s has no annotated defaults.yaml tree entry", doc)
+		t.Fatalf("non-vacuity: %s has no annotated top-level defaults.yaml tree entry", doc)
 	}
 	lowered := strings.ToLower(annotation)
 	for _, stale := range []string{"gpu/tp", "vllm mapping", "workload preset"} {
