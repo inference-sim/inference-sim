@@ -116,7 +116,7 @@ func resolveCatalogRoot() (string, error) {
 // package-level, like every other cobra binding in cmd/, so sharing it across commands is
 // safe: one command runs per process.
 func registerCatalogFlag(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&catalogPath, "catalog", "", "Path to the catalog CLONE ROOT (#1774). A model's HuggingFace config.json is read from <catalog>/"+catalogModelsSubdir+"/<short-name>/config.json, with a transition fallback to the flat <catalog>/<short-name>/config.json (the bundled model_configs/ tree; removed by #1771); a named workload preset is read from <catalog>/"+catalogWorkloadsSubdir+"/<name>"+presetFileExt+" (#1769). Path semantics: a RELATIVE value is resolved against the current working directory, an ABSOLUTE value is used as given. No default and no search path — supply this flag or the "+catalogEnvVar+" environment variable (the flag wins when both are set), or the run is refused naming both. BLIS never fetches or writes a config at run time: an uncatalogued model is refused naming the path its entry belongs at (NS-6, #1733)")
+	cmd.Flags().StringVar(&catalogPath, "catalog", "", "Path to the catalog CLONE ROOT (#1774; clone https://github.com/inference-sim/blis-catalog). A model's HuggingFace config.json is read from <catalog>/"+catalogModelsSubdir+"/<short-name>/config.json; a named workload preset is read from <catalog>/"+catalogWorkloadsSubdir+"/<name>"+presetFileExt+" (#1769). Path semantics: a RELATIVE value is resolved against the current working directory, an ABSOLUTE value is used as given. No default and no search path — supply this flag or the "+catalogEnvVar+" environment variable (the flag wins when both are set), or the run is refused naming both. BLIS never fetches or writes a config at run time: an uncatalogued model is refused naming the path its entry belongs at (NS-6, #1733)")
 }
 
 // resolveModelConfig finds a HuggingFace config.json for the given model inside the
@@ -177,33 +177,32 @@ func resolveModelConfigInCatalog(model, catalog string) (string, error) {
 
 // readCatalogEntry reads the model's config.json from the first candidate entry
 // directory that has one, returning that directory, the file path it read, and the
-// bytes. candidates come from catalogModelDirs in resolution order (canonical
-// clone-root layout first, transition fallback second).
+// bytes. candidates come from catalogModelDirs, which since #1771 returns exactly one:
+// the canonical clone-root layout <catalog>/models/<short-name>. The loop is kept over a
+// list so a future layout is a new candidate here rather than a second reader.
 //
-// Only ABSENCE advances to the next candidate: presence is decided by a stat, and a
-// config.json that IS there but cannot be read is reported naming that path rather than
-// silently bypassed by the transition fallback — a broken entry must never resolve to a
-// different model's config (R1, NS-6). A malformed but readable entry is judged by the
-// caller, for the same reason.
+// Only ABSENCE falls through to the not-in-catalog refusal: presence is decided by a
+// stat, and a config.json that IS there but cannot be read is reported naming that path
+// rather than silently treated as absent — a broken or unreadable entry must never be
+// mistaken for "this model is not catalogued" (R1, NS-6). A malformed but readable entry
+// is judged by the caller, for the same reason.
 //
 // The read applies the SAME absence rule as the stat (#1776): a stat that succeeded followed
 // by a read reporting ENOENT/ENOTDIR means the entry went away in between, which is absence
-// and advances — not a permission problem to report as one. Every other read failure
-// (EACCES, EIO) is reported naming the path.
+// — not a permission problem to report as one. Every other read failure (EACCES, EIO) is
+// reported naming the path.
 //
 // "Absence" is specifically ENOENT (nothing at the path) or ENOTDIR (a non-directory
-// sits on the path). A flat catalog is a directory of entries, so a root that holds an
-// unrelated FILE named `models` makes the canonical candidate
-// <catalog>/models/<name>/config.json surface ENOTDIR — not a broken entry, just no entry
-// in THIS layout — and it must fall through to the flat candidate. Every OTHER stat
-// failure (EACCES on the entry directory, an I/O error) is NOT absence: it is reported
-// naming the path, never swallowed as absence, because collapsing it into the fallback
-// could resolve a DIFFERENT model's config for an entry that is present but unstatable —
-// the same hazard the readErr branch guards (R1, NS-6).
+// sits on the path — e.g. a catalog root that holds a FILE named `models`, so the
+// canonical candidate <catalog>/models/<name>/config.json cannot be a directory entry).
+// Either way there is no entry, and the refusal below tells the operator to add one.
+// Every OTHER stat failure (EACCES on the entry directory, an I/O error) is NOT absence:
+// it is reported naming the path, never swallowed as "not catalogued", because a present
+// but unstatable entry is a fixable filesystem problem, not a missing model (R1, NS-6).
 //
-// Absent from every layout is a refusal that names every path looked at, plus the
-// canonical path an entry belongs at — the operator-actionable half of NS-6, which is
-// why the message is built here rather than signalled as a bare not-found.
+// A model with no entry is a refusal that names the path looked at, plus the canonical
+// path an entry belongs at — the operator-actionable half of NS-6, which is why the
+// message is built here rather than signalled as a bare not-found.
 func readCatalogEntry(model string, candidates []string) (entryDir, entryPath string, data []byte, err error) {
 	// Defensive: catalogModelDirs always returns a non-empty list or an error. An empty
 	// list here must not index-panic on candidates[0].
@@ -216,10 +215,9 @@ func readCatalogEntry(model string, candidates []string) (entryDir, entryPath st
 		lookedAt = append(lookedAt, "    "+path)
 		info, statErr := os.Stat(path)
 		if statErr != nil {
-			// Only ABSENCE advances to the transition fallback. ENOENT and ENOTDIR both
-			// mean "no entry in this layout"; any other stat failure (EACCES, EIO) is
-			// reported naming the path rather than letting the fallback silently resolve
-			// a different model's config for an entry that is there but unstatable.
+			// Only ABSENCE (ENOENT/ENOTDIR) means "no entry"; any other stat failure
+			// (EACCES, EIO) is reported naming the path rather than reported as an
+			// uncatalogued model, so a present-but-unstatable entry is not misread.
 			if os.IsNotExist(statErr) || errors.Is(statErr, syscall.ENOTDIR) {
 				continue
 			}
@@ -229,10 +227,9 @@ func readCatalogEntry(model string, candidates []string) (entryDir, entryPath st
 				model, path, statErr, catalogEnvVar, hfConfigFile,
 			)
 		}
-		// A directory sitting where config.json should be is "no entry in this
-		// layout", not a broken entry — deliberately grouped with the ENOENT/ENOTDIR
-		// absence cases above (it is not a plausible catalogued config, so the
-		// stale-flat-shadowing hazard the errno classification guards does not apply).
+		// A directory sitting where config.json should be is "no entry", not a broken
+		// entry — deliberately grouped with the ENOENT/ENOTDIR absence cases above (it is
+		// not a plausible catalogued config).
 		if info.IsDir() {
 			continue
 		}
@@ -240,9 +237,8 @@ func readCatalogEntry(model string, candidates []string) (entryDir, entryPath st
 		if readErr != nil {
 			// The stat above said the file was there, so a read that reports ABSENCE means
 			// it went away in between (or a racing writer replaced the entry). That is
-			// genuine absence, not a broken entry, so it advances to the next candidate on
-			// the same rule the stat uses — reporting it as "exists but is not readable"
-			// would describe a vanished file as a permission problem (#1776).
+			// genuine absence on the same rule the stat uses — reporting it as "exists but
+			// is not readable" would describe a vanished file as a permission problem (#1776).
 			if os.IsNotExist(readErr) || errors.Is(readErr, syscall.ENOTDIR) {
 				continue
 			}
@@ -257,7 +253,7 @@ func readCatalogEntry(model string, candidates []string) (entryDir, entryPath st
 
 	canonical := filepath.Join(candidates[0], hfConfigFile)
 	return "", "", nil, fmt.Errorf(
-		"model %q is not in the catalog: no %s at any of\n%s\n"+
+		"model %q is not in the catalog: no %s at\n%s\n"+
 			"  BLIS does not fetch model configs at run time — a model runs only if it is catalogued.\n"+
 			"  Add the entry at %s (--catalog / %s names the catalog CLONE ROOT; model entries live "+
 			"under its %s/ namespace), or point --catalog / %s at a catalog that has it",
@@ -387,27 +383,25 @@ func applyKVCacheDtype(mc *sim.ModelConfig, kvCacheDtype string) {
 // resolution order. Model names like "meta-llama/llama-3.1-8b-instruct" map to
 //
 //	<catalog>/models/llama-3.1-8b-instruct/   (canonical clone-root layout, #1774)
-//	<catalog>/llama-3.1-8b-instruct/          (transition fallback, removed by #1771)
 //
 // Returns an error if the catalog root is empty or the model name contains path
 // traversal sequences.
 //
-// #1774 settles what --catalog points at. BLIS used to implement ENTRIES-ROOT semantics
-// (no models/ level) while the authoritative blis-catalog repository stores configs at
+// #1774 settled what --catalog points at: the catalog CLONE ROOT, exactly the way the
+// authoritative blis-catalog repository is laid out — configs at
 // <clone-root>/models/<name>/config.json with workloads/, devices/, hardware/ and
-// networks/ as sibling namespaces — so an operator had to pass <clone-root>/models while
-// every document described the clone root. The clone root is now the contract, because
-// the sibling namespaces (which upcoming readers consult) only compose off a single root.
+// networks/ as sibling namespaces. #1771 then deleted the bundled model_configs/ tree
+// (blis-catalog is the sole catalog) AND the flat <catalog>/<name> transition fallback
+// #1774 had carried to keep that flat tree resolving during the cutover. There is now
+// exactly ONE layout: the models/ namespace. An operator who still passes
+// `--catalog <clone-root>/models` (the pre-#1774 invocation) is refused, naming the
+// canonical <clone-root>/models/models/<name> path — the flat fallback no longer masks it.
 //
-// The flat fallback is a TRANSITION affordance, not a second location to search: the
-// bundled model_configs/ tree and every in-repo test catalog have no models/ level, so
-// without it this change would instantly break `export BLIS_CATALOG=$PWD/model_configs`
-// (INV-6). It also keeps the pre-#1774 invocation `--catalog <clone-root>/models`
-// working, since <clone-root>/models/models/<name> is absent and resolution falls back.
-// #1771 deletes the bundled tree and this fallback together.
+// This function returns a one-element list rather than a bare string so readCatalogEntry
+// (the one place that reads) keeps its single, layout-agnostic reader: adding a future
+// layout is a candidate here, never a second reader.
 //
-// This function is PURE — it derives paths and touches no filesystem. Which candidate is
-// the entry is decided by readCatalogEntry, the one place that reads. Relative and
+// This function is PURE — it derives paths and touches no filesystem. Relative and
 // absolute roots are preserved as given: a relative candidate is resolved against the
 // process working directory by the OS at read time, an absolute one is used as-is.
 //
@@ -437,6 +431,5 @@ func catalogModelDirs(model, catalog string) ([]string, error) {
 
 	return []string{
 		filepath.Join(catalog, catalogModelsSubdir, shortName),
-		filepath.Join(catalog, shortName),
 	}, nil
 }

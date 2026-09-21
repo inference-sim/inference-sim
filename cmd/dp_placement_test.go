@@ -347,7 +347,7 @@ func dpRunArgs(numInstances, dp int) []string {
 	return []string{
 		"run",
 		"--model", "deepseek-ai/deepseek-v2-lite",
-		"--catalog", "../model_configs",
+		"--catalog", "../testdata/catalog",
 		"--hardware", "H100",
 		"--hardware-config", "../hardware_config.json",
 		"--tp", "1",
@@ -527,7 +527,7 @@ func dpRunBaseArgs() []string {
 	return []string{
 		"run",
 		"--model", "deepseek-ai/deepseek-v2-lite",
-		"--catalog", "../model_configs",
+		"--catalog", "../testdata/catalog",
 		"--hardware", "H100",
 		"--hardware-config", "../hardware_config.json",
 		"--tp", "1",

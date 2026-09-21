@@ -104,7 +104,7 @@ kv_offload:
       n_write_threads: 16           # vLLM default 16
       locality: LOCAL               # LOCAL | REMOTE (optional)
       direct_io: true               # REQUIRED — BLIS makes vLLM's runtime O_DIRECT probe explicit
-      device_class: nvme_gen4       # resolves read/write bandwidth + latency from defaults.yaml
+      device_class: nvme_gen4       # resolves read/write bandwidth + latency from the catalog
       # read_bandwidth: 7000.0      # bytes/µs — overrides device_class (per-direction, required as a pair)
       # write_bandwidth: 5000.0
       # base_latency: 80.0          # µs
@@ -113,9 +113,20 @@ kv_offload:
 Defaults match vLLM knob-for-knob. Anything vLLM accepts either maps to a BLIS config or
 fails **loudly** at startup — never silently ignored: `store_threshold >= 2` is rejected
 (vLLM's `TieringOffloadingSpec` rejects it), and `obj`/`p2p`/`example` tier types are rejected
-(no faithful BLIS mapping yet). `device_class` names resolve against the `kv_offload_devices:`
-block shipped in `defaults.yaml` (bandwidth in bytes/µs, latency in µs); an explicit
-`read_bandwidth`/`write_bandwidth`/`base_latency` triple overrides the class.
+(no faithful BLIS mapping yet). `device_class` names resolve against the storage-device table
+in the **catalog** — `<catalog>/devices/storage.yaml`, a sibling of the catalog's `models/`
+namespace, located by the same `--catalog` / `BLIS_CATALOG` that supplies the model config
+(#1770; the table used to be duplicated between `defaults.yaml` and the catalog with nothing
+keeping the copies in sync, so the catalog is now the single source of truth). An explicit
+`read_bandwidth`/`write_bandwidth`/`base_latency` triple overrides the class — a tier that
+supplies one needs no catalog device table at all, and the table is read only when some tier
+actually names a `device_class`. A named class that the catalog table does not define, or a
+missing/malformed table, is a hard error naming the path.
+
+Bandwidths are **bytes per microsecond**, latency in **µs**. Bytes/µs and MB/s (MB = 10⁶ bytes,
+not MiB) are the *same number* — 1 MB/s = 10⁶ bytes / 10⁶ µs = 1 byte/µs — so the `blis-catalog`
+file's "MB/s" header and BLIS's "bytes/µs" documentation describe identical values with no
+conversion between them.
 
 The resolved config is recorded in the exported trace header, so a `blis run --trace-output`
 round-trips through `blis replay` (INV-13): on replay the header is authoritative and a config

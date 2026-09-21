@@ -18,8 +18,9 @@ inference-sim/
 │   ├── compose.go             # `blis compose` for merging v2 specs
 │   ├── hfconfig.go            # Catalog LOCATION (--catalog / BLIS_CATALOG, no default and no search path — #1731) and read-only lookup of a model's config.json within it (refuses an uncatalogued model)
 │   ├── catalog_provenance.go  # Catalog provenance for the results file (#1732): captures the resolved catalog path, its git revision (`rev-parse HEAD`) and a dirty flag (`status --porcelain` scoped to the catalog subtree), degrading to revision "unknown" for a non-git or absent catalog. catalogProvenanceEmitOptions is the single shared helper both `blis run` and `blis replay` pass to sim.EmitOutput (file-only, INV-6/INV-13)
+│   ├── catalog_devices.go     # Catalog device namespace reader (#1770): the KV-offload storage-device physics table at `<catalog>/devices/storage.yaml` (a sibling of `models/`), which `--kv-offload-config`'s per-tier `device_class` resolves against. Read LAZILY (only when a tier names a class) and strictly (R10); an absent/malformed/empty table is refused naming the path
 │   ├── catalog_workloads.go   # Named workload presets read from the catalog: <catalog>/workloads/<name>.yaml (#1769). The single reader and PresetConfig construction site behind `blis run --workload`, `blis convert preset` and `blis observe --workload`; strict KnownFields parsing (R10), refusals name the path and list the presets the catalog defines
-│   └── default_config.go      # defaults.yaml loading: trained-physics coefficients, LoRA and KV-offload device constants. Carries NO per-model deployment policy — the `defaults:` block (GPU/tensor_parallelism/hf_repo) and GetHFRepo were removed in #1768, dead since NS-6 (#1733) — and NO workload presets: the `workloads:` block was removed in #1769 (the catalog is the single source)
+│   └── default_config.go      # defaults.yaml loading: trained-physics coefficients, LoRA cost coefficients. Carries NO per-model deployment policy — the `defaults:` block (GPU/tensor_parallelism/hf_repo) and GetHFRepo were removed in #1768, dead since NS-6 (#1733) — NO workload presets (`workloads:` removed in #1769) and NO KV-offload device table (`kv_offload_devices:` removed in #1770); the catalog is the single source for both
 ├── internal/                  # Repo-root internal packages (test tooling; not importable outside this module)
 │   └── invariantscan/         # AST scan for hand-rolled INV-1 conservation sums (#1720) — used by the guard tests in sim/, sim/cluster/. Root-level rather than sim/internal so cmd/ can import it too.
 ├── sim/                       # Core single-instance simulator
@@ -100,7 +101,11 @@ inference-sim/
 │   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods
 │   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore (pure data types, no sim/ dependency)
 │   └── summary.go             # TraceSummary, Summarize()
-├── model_configs/             # A model catalog (one dir per model, each with its HuggingFace config.json). Located at run time via --catalog / BLIS_CATALOG (#1731); committed files
+│                               # (The model catalog is NOT in this repo: it is the external blis-catalog
+│                               #  repository, located at run time via --catalog / BLIS_CATALOG (#1731, #1771).
+│                               #  It holds models/<name>/config.json, workloads/<name>.yaml (#1769) and the
+│                               #  devices/storage.yaml KV-offload device table (#1770). A small
+│                               #  clone-root-shaped fixture lives at testdata/catalog/ for tests.)
 ├── defaults.yaml              # Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
 ├── hardware_config.json       # GPU specifications
 ├── examples/                  # Example configuration files

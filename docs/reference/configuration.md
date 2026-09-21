@@ -163,7 +163,7 @@ For analytical step time estimation without trained coefficients.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--latency-model` | string | "trained-physics" | Latency model backend: `trained-physics` (default), `roofline`. Both read the model's `config.json` from the catalog located by `--catalog` / `BLIS_CATALOG` for latency estimation and KV sizing; an uncatalogued model is refused and nothing is fetched. Both require `--hardware` and `--tp`. |
-| `--catalog` | string | "" | Path to the **model catalog clone root** (#1774). A model's HuggingFace `config.json` is read from `<catalog>/models/<short-name>/config.json` — the layout the authoritative [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository uses, with `workloads/`, `devices/`, `hardware/` and `networks/` as sibling namespaces under the same root. A **transition fallback** also accepts the flat `<catalog>/<short-name>/config.json` (the repository's bundled `model_configs/` tree), so `export BLIS_CATALOG=$PWD/model_configs` keeps working; #1771 removes the bundled tree and the fallback together. **Path semantics:** a **relative** value is resolved against the process working directory, an **absolute** value is used as given; neither is rewritten. **No default and no search path** — supply this flag or the `BLIS_CATALOG` environment variable, or the run is refused naming both (#1731). `--catalog` wins when both are set, and the override is announced on stderr. Replaces the retired `--model-config-folder`: point `--catalog` at a scratch directory to use your own config. Registered on `run`, `replay`, `observe` and `convert preset` — the last two for the workload presets in the `workloads/` namespace (#1769), not for a model config, which only `run`/`replay` resolve. BLIS never fetches or writes a config at run time (NS-6, #1733). |
+| `--catalog` | string | "" | Path to the **model catalog clone root** (#1774). A model's HuggingFace `config.json` is read from `<catalog>/models/<short-name>/config.json` — the layout the authoritative [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository uses, with `workloads/`, `devices/`, `hardware/` and `networks/` as sibling namespaces under the same root. This is the **only** layout: #1771 deleted the bundled `model_configs/` tree (blis-catalog is the sole catalog) and the flat `<catalog>/<short-name>/config.json` transition fallback #1774 had carried. **Path semantics:** a **relative** value is resolved against the process working directory, an **absolute** value is used as given; neither is rewritten. **No default and no search path** — supply this flag or the `BLIS_CATALOG` environment variable, or the run is refused naming both (#1731). `--catalog` wins when both are set, and the override is announced on stderr. Replaces the retired `--model-config-folder`: point `--catalog` at a scratch clone to use your own config. Registered on `run`, `replay`, `observe` and `convert preset` — the last two for the workload presets in the `workloads/` namespace (#1769), not for a model config, which only `run`/`replay` resolve. BLIS never fetches or writes a config at run time (NS-6, #1733). |
 | `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. Overrides `--latency-model` auto-resolution. Also carries the optional per-GPU interconnect calibration (`IntraNodeBwGBps` / `InterNodeBwGBps`) that prices cross-node collective traffic — see [Interconnect calibration](#interconnect-calibration) below. |
 
 See [Roofline Estimation](../concepts/roofline.md) for details on the analytical model.
@@ -172,7 +172,7 @@ See [Roofline Estimation](../concepts/roofline.md) for details on the analytical
 
 The latency model mode is selected based on available configuration:
 
-1. **Trained-physics mode** (default): Resolves the model config from the catalog (`model_configs/<short-name>/config.json`) and the hardware config from the bundled `hardware_config.json`. Requires `--hardware` and `--tp` explicitly (never inferred, NS-6). Uses 13 globally-fitted coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from `trained_physics_coefficients` in `defaults.yaml`. Physics-informed basis functions with learned corrections.
+1. **Trained-physics mode** (default): Resolves the model config from the catalog (`<catalog>/models/<short-name>/config.json`) and the hardware config from the bundled `hardware_config.json`. Requires `--hardware` and `--tp` explicitly (never inferred, NS-6). Uses 13 globally-fitted coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from `trained_physics_coefficients` in `defaults.yaml`. Physics-informed basis functions with learned corrections.
 2. **Roofline mode**: If `--latency-model roofline` is explicitly set with `--hardware` and `--tp`. Pure analytical estimation from model architecture and hardware specifications.
 
 ## Cluster Configuration
@@ -582,11 +582,6 @@ trained_physics_coefficients:
 lora:
   load_base_latency_us: 1500.0
   # ... bandwidth, per-rank footprint, per-rank step-overhead tiers
-
-# KV-offload device classes referenced by a --kv-offload-config tier's device_class
-# (#1587/#1581). Inert unless such a config names one.
-kv_offload_devices:
-  nvme_gen4: {read_bandwidth: 7.0e3, write_bandwidth: 5.0e3, base_latency: 80.0}
 ```
 
 !!! warning "There is no `models:` section, and there never was a keyed coefficient table"

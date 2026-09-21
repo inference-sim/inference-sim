@@ -1,4 +1,4 @@
-# Bundled workload presets
+# Test-catalog workload presets
 
 The named workload presets (`chatbot`, `summarization`, `contentgen`, `multidoc`) that
 `blis run --workload`, `blis convert preset --name` and `blis observe --workload` resolve.
@@ -10,9 +10,10 @@ repository's `defaults.yaml`, which #1769 deleted: they now exist once.
 
 They are the same four files the authoritative
 [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository ships under
-`workloads/`. This bundled copy exists so the documented one-time
-`export BLIS_CATALOG=$PWD/model_configs` keeps working from a fresh clone; #1771 removes the
-bundled tree in favour of a `blis-catalog` clone.
+`workloads/`. This directory (`testdata/catalog/`) is a small, clone-root-shaped **test
+fixture** mirroring that repository, so the Go tests can resolve presets and model configs
+offline; #1771 deleted the former in-repo `model_configs/` tree, so operators clone
+`blis-catalog` and point `--catalog` / `BLIS_CATALOG` at it.
 
 A preset file is parsed strictly (an unrecognized key is a hard error, R10). Its token
 distribution is validated exactly as the CLI `--prompt-tokens-*` / `--output-tokens-*` flags

@@ -2,18 +2,20 @@
 
 Run your first BLIS simulation in 30 seconds.
 
-No credentials or network access are needed: BLIS reads each model's architecture from the committed catalog under `model_configs/` and makes no HuggingFace requests. (`HF_TOKEN` matters only if you are downloading a new — possibly gated — model's `config.json` by hand to add a catalog entry.)
+No credentials or network access are needed to *run* a simulation: BLIS reads each model's architecture from a local checkout of the model catalog and makes no HuggingFace requests. (`HF_TOKEN` matters only if you are downloading a new — possibly gated — model's `config.json` by hand to add a catalog entry.)
 
 ## Locate the model catalog
 
 Every `blis run` / `blis replay` must be told where the **model catalog** is — a directory
-holding one subdirectory per model, each with that model's HuggingFace `config.json`. The
-repository's own `model_configs/` tree is such a catalog. There is **no default and no
+holding a `models/<short-name>/config.json` for each catalogued model. The authoritative
+catalog is the [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository;
+clone it once and point BLIS at the clone root. There is **no default and no
 search path**: supply `--catalog <path>` or set `BLIS_CATALOG` (the flag wins when both are
 set), or the run is refused naming both forms.
 
 ```bash
-export BLIS_CATALOG=$PWD/model_configs   # or pass --catalog on every command
+git clone https://github.com/inference-sim/blis-catalog.git
+export BLIS_CATALOG=$PWD/blis-catalog   # or pass --catalog on every command
 ```
 
 The examples below (and elsewhere in these docs) assume you have exported it.
@@ -27,7 +29,7 @@ The examples below (and elsewhere in these docs) assume you have exported it.
 This runs 100 requests through a single inference instance using the default trained-physics latency model for Qwen3 14B on an H100 GPU with TP=1.
 
 !!! note "A model runs only if it is catalogued"
-    BLIS reads the model's `config.json` from the catalog located by `--catalog` / `BLIS_CATALOG` (above) and never fetches or writes it at run time. A model with no catalog entry is refused, naming the path its entry belongs at — so runs are offline and reproducible, and running an unknown model can never quietly add a catalog entry. To use a model that is not yet catalogued, commit its `config.json` at `<catalog>/<model>/config.json`, or point `--catalog` at a scratch directory that has it.
+    BLIS reads the model's `config.json` from the catalog located by `--catalog` / `BLIS_CATALOG` (above) and never fetches or writes it at run time. A model with no catalog entry is refused, naming the path its entry belongs at — so runs are offline and reproducible, and running an unknown model can never quietly add a catalog entry. To use a model that is not yet catalogued, commit its `config.json` at `<catalog>/models/<model>/config.json`, or point `--catalog` at a scratch clone that has it.
 
 !!! note "`--hardware` and `--tp` are required"
     BLIS does not infer the deployment. Omitting either flag is refused by name rather than filled in from a per-model default, so every reported number belongs to a deployment you chose.

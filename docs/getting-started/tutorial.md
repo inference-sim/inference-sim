@@ -6,9 +6,10 @@ This tutorial walks through a complete capacity planning exercise: determining h
 
 !!! note "Locate the model catalog first"
     Every command below needs the model catalog located — `--catalog <path>` or the
-    `BLIS_CATALOG` environment variable, with no default and no search path. Run
-    `export BLIS_CATALOG=$PWD/model_configs` from the repository root once, and the
-    examples work as written. See [Quick Start](quickstart.md).
+    `BLIS_CATALOG` environment variable, with no default and no search path. Clone the
+    [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository and run
+    `export BLIS_CATALOG=$PWD/blis-catalog` once, and the examples work as written. See
+    [Quick Start](quickstart.md).
 
 ## Step 1: Estimate Instance Capacity
 

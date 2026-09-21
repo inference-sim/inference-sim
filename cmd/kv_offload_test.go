@@ -16,8 +16,8 @@ import (
 )
 
 // testDevices is a fixed device map for resolver tests (independent of defaults.yaml).
-func testDevices() map[string]KVOffloadDeviceDefaults {
-	return map[string]KVOffloadDeviceDefaults{
+func testDevices() map[string]kvOffloadDevice {
+	return map[string]kvOffloadDevice{
 		"nvme_gen4": {ReadBandwidth: 7000, WriteBandwidth: 5000, BaseLatency: 80},
 		"sata_ssd":  {ReadBandwidth: 550, WriteBandwidth: 500, BaseLatency: 150},
 	}
@@ -47,36 +47,36 @@ func validBlock() *kvOffloadBlock {
 	}
 }
 
-// T4: the committed defaults.yaml device block parses, and a device resolves to a triple.
-func TestKVOffloadDevices_DefaultsYAMLParses(t *testing.T) {
-	// Write a minimal defaults.yaml with a kv_offload_devices block and parse it via
-	// the real loader to exercise Config decoding of the new field (R10 strict).
-	dir := t.TempDir()
-	path := filepath.Join(dir, "defaults.yaml")
-	content := "version: 0.0.1\n" +
-		"kv_offload_devices:\n" +
-		"  nvme_gen4: {read_bandwidth: 7.0e3, write_bandwidth: 5.0e3, base_latency: 80.0}\n"
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatal(err)
+// T4 (#1770: retargeted from defaults.yaml to the catalog): a catalog
+// devices/storage.yaml parses through the real reader and a device resolves to a triple.
+func TestKVOffloadDevices_CatalogStorageYAMLParses(t *testing.T) {
+	catalog := writeCatalogStorageDevices(t,
+		"nvme_gen4: {read_bandwidth: 7.0e3, write_bandwidth: 5.0e3, base_latency: 80.0}\n")
+	devices, err := loadCatalogStorageDevices(catalog)
+	if err != nil {
+		t.Fatalf("catalog storage device table must load: %v", err)
 	}
-	cfg := loadDefaultsConfig(path)
-	dev, ok := cfg.KVOffloadDevices["nvme_gen4"]
+	dev, ok := devices["nvme_gen4"]
 	if !ok {
-		t.Fatalf("nvme_gen4 device class must parse from defaults.yaml")
+		t.Fatalf("nvme_gen4 device class must parse from %s", catalogStorageDevicesRelPath)
 	}
 	if dev.ReadBandwidth != 7000 || dev.WriteBandwidth != 5000 || dev.BaseLatency != 80 {
 		t.Errorf("device triple mismatch: %+v", dev)
 	}
 }
 
-// T4: the actual committed repo defaults.yaml parses (catches a malformed block).
-func TestKVOffloadDevices_CommittedDefaultsParse(t *testing.T) {
-	cfg := loadDefaultsConfig("../defaults.yaml")
-	if len(cfg.KVOffloadDevices) == 0 {
-		t.Fatalf("committed defaults.yaml should define kv_offload_devices")
+// T4 (#1770): the committed catalog device table parses (catches a malformed file). Since
+// #1771 deleted the bundled model_configs/ tree, the committed clone-root fixture
+// testdata/catalog/ (mirroring blis-catalog) carries the devices/ namespace the tests
+// resolve against.
+func TestKVOffloadDevices_CommittedCatalogTableParses(t *testing.T) {
+	devices, err := loadCatalogStorageDevices("../testdata/catalog")
+	if err != nil {
+		t.Fatalf("committed catalog %s must load: %v", catalogStorageDevicesRelPath, err)
 	}
-	if _, ok := cfg.KVOffloadDevices["nvme_gen4"]; !ok {
-		t.Errorf("committed defaults.yaml should define nvme_gen4")
+	if _, ok := devices["nvme_gen4"]; !ok {
+		t.Errorf("committed catalog %s should define nvme_gen4 (got %s)",
+			catalogStorageDevicesRelPath, knownDeviceClasses(devices))
 	}
 }
 
@@ -199,7 +199,10 @@ func TestResolveKVOffload_Rejects(t *testing.T) {
 		{"tier missing type", func(b *kvOffloadBlock) { b.SecondaryTiers[0].Type = nil }, "type is required"},
 		{"tier missing root_dir", func(b *kvOffloadBlock) { b.SecondaryTiers[0].RootDir = nil }, "root_dir is required"},
 		{"tier missing direct_io", func(b *kvOffloadBlock) { b.SecondaryTiers[0].DirectIO = nil }, "direct_io must be set"},
-		{"unknown device_class", func(b *kvOffloadBlock) { b.SecondaryTiers[0].DeviceClass = strp("floppy") }, "not defined in defaults.yaml"},
+		// #1770: the device table moved from defaults.yaml to the catalog, so the refusal
+		// now names the catalog file. TestResolveKVOffload_UnknownDeviceClassNamesCatalogTable
+		// covers the full message (known classes, sorted, and no stale defaults.yaml mention).
+		{"unknown device_class", func(b *kvOffloadBlock) { b.SecondaryTiers[0].DeviceClass = strp("floppy") }, "not defined in the catalog storage-device table"},
 		{"no class no triple", func(b *kvOffloadBlock) {
 			b.SecondaryTiers[0].DeviceClass = nil
 		}, "device_class OR an explicit"},
