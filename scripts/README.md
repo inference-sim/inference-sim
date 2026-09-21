@@ -126,6 +126,19 @@ names the conflicting paths for the correction agent to resolve. Prints
 `.github/workflows/deliver-correct.yml`. Tested by `scripts/deliver_branch_update_test.go` against
 real repositories with a real remote.
 
+Because that output is teed into `GITHUB_OUTPUT`, **stdout is the payload channel, not a log**: on
+every path it carries only the `state=` line and the `files<<…` heredoc, and all human and git text
+— including any git subcommand's, and anything a git hook writes — goes to stderr. `git merge`
+writing `Already up to date.` to stdout was enough to fail the step and end a correction round at
+`needs-human` before any finding was read (#1799), so the test file asserts the grammar per path.
+Every git invocation run for its exit status carries an explicit `>&2` for that reason, with no
+exception — not only the ones that print text of their own, since a hook inherits the subcommand's
+stdout and git does not redirect `pre-push`. That includes the two `git diff --quiet` worktree
+guards, which have no demonstrable leak (`--quiet` suppresses external diff helpers) and are
+redirected for uniformity, so the rule stays categorical instead of needing a per-call exemption
+list. The remaining git calls are captured in `$(...)` or silenced outright. Add new output to
+stderr.
+
 It is a script because on PR #1778 this was a **prompt instruction** to the correction agent, the
 round completed `success` with no commit and no comment, and a human had to merge `main` by hand
 (#1781). Ordinary drift is the majority of rounds and needs no judgment, so it must not depend on
