@@ -168,6 +168,26 @@ func readCatalogPresetWorkload(name, catalog string) (*presetWorkload, error) {
 			"workload preset %q at %s declares no token distribution (prompt_tokens=%d, output_tokens=%d); both must be > 0",
 			name, path, wl.PromptTokensMean, wl.OutputTokensMean)
 	}
+
+	// #1793: the mean check above leaves the min/max/stdev bounds unvalidated, so a
+	// malformed preset — min > max, a mean outside [min, max], a negative stdev, or an
+	// omitted-and-therefore-zero min/max — would reach the Gaussian sampler
+	// (sim/workload/distribution.go) and be silently clamped to a wrong distribution. Apply
+	// the SAME bound validation the CLI distribution path applies (validateDistributionParams
+	// in root.go, shared by the concurrency and rate-mode synthesis paths), so a preset and
+	// the equivalent --prompt-tokens-* / --output-tokens-* flags are refused identically. A
+	// preset with valid bounds is unaffected (INV-6): the bundled presets all pass.
+	if msg := validateDistributionParams(
+		wl.PromptTokensMin, wl.PromptTokensMax,
+		wl.OutputTokensMin, wl.OutputTokensMax,
+		wl.PromptTokensStdev, wl.OutputTokensStdev,
+		wl.PromptTokensMean, wl.OutputTokensMean,
+	); msg != "" {
+		return nil, fmt.Errorf(
+			"workload preset %q at %s has invalid token distribution bounds: %s\n"+
+				"  (a preset's YAML keys mirror the CLI flags: e.g. prompt_tokens_min is --prompt-tokens-min)",
+			name, path, msg)
+	}
 	return &wl, nil
 }
 
