@@ -262,9 +262,9 @@ BLIS has four extension types. Identify which type your change is, then follow t
 
 ### Adding a New Model to the Catalog
 
-A model runs **if and only if it is in the catalog** (NS-6, #1733), and the catalog itself must be **located explicitly** — `--catalog <path>` or the `BLIS_CATALOG` environment variable, with no default and no search path (S4, #1731). BLIS reads the model's `config.json` from `<catalog>/<short-name>/config.json` and never downloads one at run time, so an uncatalogued model is refused rather than fetched-and-cached. The catalog entry is therefore the load-bearing step:
+A model runs **if and only if it is in the catalog** (NS-6, #1733), and the catalog itself must be **located explicitly** — `--catalog <path>` or the `BLIS_CATALOG` environment variable, with no default and no search path (S4, #1731). BLIS reads the model's `config.json` from `<catalog>/models/<short-name>/config.json` and never downloads one at run time, so an uncatalogued model is refused rather than fetched-and-cached. The catalog is the [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository (#1771 removed the in-repo `model_configs/` tree), so the catalog entry is the load-bearing step:
 
-1. **Commit the model's HuggingFace `config.json` at `model_configs/<short-name>/config.json`** (`<short-name>` is the part of the model id after the `/`, lowercased). Without it, `blis run` refuses the model. `model_configs/` is the repository's own catalog — run it with `--catalog model_configs` (or `export BLIS_CATALOG=$PWD/model_configs`).
+1. **Commit the model's HuggingFace `config.json` at `models/<short-name>/config.json` in a `blis-catalog` checkout** (`<short-name>` is the part of the model id after the `/`, lowercased). Without it, `blis run` refuses the model. Point BLIS at your checkout with `--catalog <clone-root>` (or `export BLIS_CATALOG=$PWD/blis-catalog`).
 
 **That is the whole procedure — `defaults.yaml` needs no edit at all.** As of #1768 it holds no
 per-model entry of any kind: the `defaults:` block (`GPU` / `tensor_parallelism` / `hf_repo`) is

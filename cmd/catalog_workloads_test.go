@@ -134,7 +134,8 @@ func withTestCatalogPath(t *testing.T, catalog string) func() {
 // ---------------------------------------------------------------------------
 
 // TestCatalogPresets_BundledCatalogMatchesRetiredDefaults is BC-2. It reads each preset
-// through the production reader out of the bundled catalog and compares every field to the
+// through the production reader out of the committed test catalog (testdata/catalog, a
+// clone-root-shaped fixture mirroring blis-catalog) and compares every field to the
 // values the deleted defaults.yaml block declared. Since the downstream path (PresetConfig →
 // SynthesizeFromPreset) is untouched by this PR, equal inputs there mean an equal workload,
 // which is the INV-6 argument for the cutover.
@@ -146,9 +147,9 @@ func TestCatalogPresets_BundledCatalogMatchesRetiredDefaults(t *testing.T) {
 		if want.PromptTokensMean <= 0 || want.OutputTokensMean <= 0 {
 			t.Fatalf("non-vacuity: golden preset %q has no token distribution", name)
 		}
-		got, err := readCatalogPresetWorkload(name, filepath.Join("..", "model_configs"))
+		got, err := readCatalogPresetWorkload(name, filepath.Join("..", "testdata", "catalog"))
 		if err != nil {
-			t.Fatalf("preset %q must resolve from the bundled catalog: %v", name, err)
+			t.Fatalf("preset %q must resolve from the test catalog: %v", name, err)
 		}
 		if *got != want {
 			t.Errorf("preset %q drifted from the retired defaults.yaml values:\n  catalog: %+v\n  golden:  %+v",
@@ -203,7 +204,7 @@ func TestCatalogWorkloadPath_Law(t *testing.T) {
 		wantError bool
 	}{
 		{name: "clone root", preset: "chatbot", catalog: "/cat", want: filepath.Join("/cat", "workloads", "chatbot.yaml")},
-		{name: "relative root preserved", preset: "chatbot", catalog: "model_configs", want: filepath.Join("model_configs", "workloads", "chatbot.yaml")},
+		{name: "relative root preserved", preset: "chatbot", catalog: "rel/catalog", want: filepath.Join("rel/catalog", "workloads", "chatbot.yaml")},
 		{name: "empty catalog refused", preset: "chatbot", catalog: "", wantError: true},
 		{name: "empty name refused", preset: "", catalog: "/cat", wantError: true},
 		{name: "parent traversal refused", preset: "../models/qwen3-14b", catalog: "/cat", wantError: true},
@@ -559,8 +560,8 @@ const (
 	presetRunCatalogEnv = "BLIS_PRESET_RUN_CATALOG"
 )
 
-// presetRunModel is a model catalogued in the bundled (flat) model_configs/ tree, reachable
-// through the #1774 transition fallback once copied into a temporary catalog.
+// presetRunModel is a model catalogued in the committed test catalog
+// (testdata/catalog/models/), copied into a temporary catalog by newPresetRunCatalog.
 const presetRunModel = "qwen/qwen3-14b"
 
 // newPresetRunCatalog builds a catalog holding both namespaces a preset-driven `blis run`
@@ -571,9 +572,9 @@ func newPresetRunCatalog(t *testing.T, promptMean, outputMean int) string {
 	root := t.TempDir()
 
 	shortName := presetRunModel[strings.Index(presetRunModel, "/")+1:]
-	content, err := os.ReadFile(filepath.Join("..", "model_configs", shortName, hfConfigFile))
+	content, err := os.ReadFile(filepath.Join("..", "testdata", "catalog", "models", shortName, hfConfigFile))
 	if err != nil {
-		t.Fatalf("read bundled catalog entry: %v", err)
+		t.Fatalf("read test catalog entry: %v", err)
 	}
 	entryDir := filepath.Join(root, catalogModelsSubdir, shortName)
 	if err := os.MkdirAll(entryDir, 0o755); err != nil {

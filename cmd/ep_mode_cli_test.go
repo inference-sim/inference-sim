@@ -117,7 +117,7 @@ func epPDRunArgs(extra ...string) []string {
 	return append([]string{
 		"run",
 		"--model", "deepseek-ai/deepseek-v2-lite",
-		"--catalog", "../model_configs",
+		"--catalog", "../testdata/catalog",
 		"--hardware", "H100",
 		"--hardware-config", "../hardware_config.json",
 		"--latency-model", "trained-physics",

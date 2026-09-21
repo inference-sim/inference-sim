@@ -13,9 +13,9 @@ import (
 // asserts the parsed expert fields plus the DP/EP group-size helpers across
 // several (TP, DP, EnableExpertParallel) triples.
 //
-// The fixtures are real upstream HuggingFace configs committed under
-// model_configs/. Expected values were verified against upstream config.json on
-// 2026-06-10 (design §2.2).
+// The fixtures are real upstream HuggingFace configs committed under the test
+// catalog testdata/catalog/models/. Expected values were verified against upstream
+// config.json on 2026-06-10 (design §2.2).
 //
 // numMoELayersGap records, but does NOT assert as parity, dense-layer placement
 // notes per fixture. As of #1527 (F3) BLIS DOES parse first_k_dense_replace and
@@ -78,7 +78,7 @@ func TestDPEPConfig_RealFixtures(t *testing.T) {
 
 	for _, f := range fixtures {
 		t.Run(f.name, func(t *testing.T) {
-			path := filepath.Join("..", "..", "model_configs", f.dir, "config.json")
+			path := filepath.Join("..", "..", "testdata", "catalog", "models", f.dir, "config.json")
 			mc, err := latency.GetModelConfig(path)
 			if err != nil {
 				t.Fatalf("GetModelConfig(%s): %v", path, err)

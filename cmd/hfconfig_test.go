@@ -129,7 +129,7 @@ func TestResolveCatalogRoot_RejectsUnusableRoot(t *testing.T) {
 // its catalog directory.
 func TestResolveModelConfig_CatalogHit(t *testing.T) {
 	tmpDir := t.TempDir()
-	localDir := filepath.Join(tmpDir, "test-model")
+	localDir := filepath.Join(tmpDir, catalogModelsSubdir, "test-model")
 	if err := os.MkdirAll(localDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestResolveModelConfig_CatalogHit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := filepath.Join(tmpDir, "test-model")
+	expected := filepath.Join(tmpDir, catalogModelsSubdir, "test-model")
 	if dir != expected {
 		t.Errorf("expected %s, got %s", expected, dir)
 	}
@@ -182,72 +182,30 @@ func TestResolveModelConfig_CloneRootLayout(t *testing.T) {
 	}
 }
 
-// TestResolveModelConfig_FlatLayoutFallback is the transition half of #1774 (INV-6): the
-// flat <catalog>/<short-name> layout — the bundled model_configs/ tree and every in-repo
-// test catalog — keeps resolving unchanged until #1771 removes both the tree and this
-// fallback. Without it, `export BLIS_CATALOG=$PWD/model_configs` would break instantly.
-func TestResolveModelConfig_FlatLayoutFallback(t *testing.T) {
-	root := t.TempDir()
-	entryDir := filepath.Join(root, "test-model")
-	writeCatalogEntry(t, entryDir, minimalHFConfig)
-
-	dir, err := resolveModelConfigInCatalog("test-org/test-model", root)
-	if err != nil {
-		t.Fatalf("flat layout must keep resolving during the transition: %v", err)
-	}
-	if dir != entryDir {
-		t.Errorf("resolved %q, want the flat entry %q", dir, entryDir)
-	}
-}
-
-// TestResolveModelConfig_CloneRootLayoutWinsOverFlat pins the resolution ORDER where it
-// is observable: with the SAME model present in both layouts, the canonical clone-root
-// entry is the one used. The two configs differ in an architectural field, so the
-// assertion is on which entry directory (and therefore which numbers) resolution picked —
-// not merely on "some entry resolved".
-func TestResolveModelConfig_CloneRootLayoutWinsOverFlat(t *testing.T) {
+// TestResolveModelConfig_MalformedCloneRootEntry_Refused is the R1/NS-6 boundary: a
+// clone-root entry that exists but is not a HuggingFace config.json is REPORTED naming
+// that file, never treated as "not catalogued". Resolution must not quietly substitute a
+// different config for a broken one, which would make a typo in the catalogued entry look
+// like a successful (but wrong-model) run. #1771 removed the flat fallback, so there is no
+// second layout a broken entry could be bypassed to; the refusal is unconditional.
+func TestResolveModelConfig_MalformedCloneRootEntry_Refused(t *testing.T) {
 	root := t.TempDir()
 	nested := filepath.Join(root, "models", "test-model")
-	flat := filepath.Join(root, "test-model")
-	writeCatalogEntry(t, nested, `{"num_hidden_layers": 32, "hidden_size": 4096}`)
-	writeCatalogEntry(t, flat, `{"num_hidden_layers": 8, "hidden_size": 512}`)
-
-	dir, err := resolveModelConfigInCatalog("test-org/test-model", root)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if dir != nested {
-		t.Errorf("resolved %q, want the canonical clone-root entry %q — a stale flat entry "+
-			"must not shadow a catalogued one", dir, nested)
-	}
-}
-
-// TestResolveModelConfig_MalformedCloneRootEntry_NotBypassedByFlatFallback is the
-// fallback's boundary (R1, NS-6): only ABSENCE advances to the flat layout. A clone-root
-// entry that exists but is not a HuggingFace config.json is REPORTED naming that file —
-// resolution must not quietly substitute a different config for a broken one, which would
-// make a typo in the catalogued entry look like a successful (but wrong-model) run.
-func TestResolveModelConfig_MalformedCloneRootEntry_NotBypassedByFlatFallback(t *testing.T) {
-	root := t.TempDir()
-	nested := filepath.Join(root, "models", "test-model")
-	flat := filepath.Join(root, "test-model")
 	nestedPath := writeCatalogEntry(t, nested, `{"error": "not found"}`)
-	writeCatalogEntry(t, flat, minimalHFConfig)
 
 	dir, err := resolveModelConfigInCatalog("test-org/test-model", root)
 	if err == nil {
-		t.Fatalf("a malformed clone-root entry must be refused, not bypassed; got dir=%q", dir)
+		t.Fatalf("a malformed clone-root entry must be refused; got dir=%q", dir)
 	}
 	if !strings.Contains(err.Error(), nestedPath) {
 		t.Errorf("refusal must name the offending clone-root entry (%s), got: %v", nestedPath, err)
 	}
 }
 
-// TestResolveModelConfig_UnreadableCloneRootEntry_NotBypassedByFlatFallback is the same
-// boundary as the malformed case for a config.json that is PRESENT but cannot be opened
-// (mode 000): resolution reports it naming that path instead of quietly using the flat
-// entry. Presence is what distinguishes the two dispositions — not the errno.
-func TestResolveModelConfig_UnreadableCloneRootEntry_NotBypassedByFlatFallback(t *testing.T) {
+// TestResolveModelConfig_UnreadableCloneRootEntry_Refused: a config.json that is PRESENT
+// but cannot be opened (mode 000) is reported naming that path, not treated as absent —
+// presence is what distinguishes a broken entry from an uncatalogued model, not the errno.
+func TestResolveModelConfig_UnreadableCloneRootEntry_Refused(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("running as root: mode 000 does not make a file unreadable")
 	}
@@ -257,32 +215,29 @@ func TestResolveModelConfig_UnreadableCloneRootEntry_NotBypassedByFlatFallback(t
 	if err := os.Chmod(nestedPath, 0o000); err != nil {
 		t.Fatal(err)
 	}
-	writeCatalogEntry(t, filepath.Join(root, "test-model"), minimalHFConfig)
 
 	dir, err := resolveModelConfigInCatalog("test-org/test-model", root)
 	if err == nil {
-		t.Fatalf("an unreadable clone-root entry must be refused, not bypassed; got dir=%q", dir)
+		t.Fatalf("an unreadable clone-root entry must be refused; got dir=%q", dir)
 	}
 	if !strings.Contains(err.Error(), nestedPath) {
 		t.Errorf("refusal must name the unreadable entry (%s), got: %v", nestedPath, err)
 	}
 }
 
-// TestResolveModelConfig_UnstatableCloneRootEntry_NotBypassedByFlatFallback is the
-// stat-error analogue of the unreadable case: the canonical config.json is PRESENT but
-// its entry directory cannot be traversed (mode 000 on <root>/models/<name>), so os.Stat
-// of the config.json fails with EACCES — which is NOT absence (not ENOENT/ENOTDIR).
-// Resolution must report it naming the entry path, never silently fall through to a
-// (stale) flat entry for a same-named model, which would run a DIFFERENT config than the
-// catalogued one (R1, NS-6). Regression test for the qa-review finding on PR #1778.
-func TestResolveModelConfig_UnstatableCloneRootEntry_NotBypassedByFlatFallback(t *testing.T) {
+// TestResolveModelConfig_UnstatableCloneRootEntry_Refused is the stat-error analogue of
+// the unreadable case: the canonical config.json is PRESENT but its entry directory cannot
+// be traversed (mode 000 on <root>/models/<name>), so os.Stat of the config.json fails
+// with EACCES — which is NOT absence (not ENOENT/ENOTDIR). Resolution must report it naming
+// the entry path, never treat it as an uncatalogued model (R1, NS-6). Regression test for
+// the qa-review finding on PR #1778.
+func TestResolveModelConfig_UnstatableCloneRootEntry_Refused(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("running as root: mode 000 does not block directory traversal")
 	}
 	root := t.TempDir()
 	nestedDir := filepath.Join(root, "models", "test-model")
 	nestedPath := writeCatalogEntry(t, nestedDir, minimalHFConfig)
-	writeCatalogEntry(t, filepath.Join(root, "test-model"), minimalHFConfig)
 
 	if err := os.Chmod(nestedDir, 0o000); err != nil {
 		t.Fatal(err)
@@ -292,52 +247,48 @@ func TestResolveModelConfig_UnstatableCloneRootEntry_NotBypassedByFlatFallback(t
 
 	dir, err := resolveModelConfigInCatalog("test-org/test-model", root)
 	if err == nil {
-		t.Fatalf("an unstatable clone-root entry (EACCES) must be refused, not bypassed; got dir=%q", dir)
+		t.Fatalf("an unstatable clone-root entry (EACCES) must be refused; got dir=%q", dir)
 	}
 	if !strings.Contains(err.Error(), nestedPath) {
 		t.Errorf("refusal must name the unstatable entry (%s), got: %v", nestedPath, err)
 	}
 }
 
-// TestResolveModelConfig_FlatCatalogHoldingAFileNamedModels keeps the models/ candidate
-// from breaking a working flat catalog for an unrelated reason: a flat root that happens
-// to contain a regular FILE named "models" makes the canonical candidate path traverse a
-// non-directory. That means "no entry in this layout", not "broken entry", so resolution
-// must fall through to the flat entry rather than hard-error on the errno.
-func TestResolveModelConfig_FlatCatalogHoldingAFileNamedModels(t *testing.T) {
+// TestResolveModelConfig_CatalogRootIsAFileNamedModels: with the single models/ candidate,
+// a catalog root that holds a regular FILE named "models" makes the canonical candidate
+// <root>/models/<name>/config.json traverse a non-directory (ENOTDIR). That is absence —
+// there is no entry — so resolution refuses naming the canonical path, rather than
+// hard-erroring on the errno. (#1771 removed the flat fallback this used to divert to.)
+func TestResolveModelConfig_CatalogRootIsAFileNamedModels(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, catalogModelsSubdir), []byte("not a directory"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	entryDir := filepath.Join(root, "test-model")
-	writeCatalogEntry(t, entryDir, minimalHFConfig)
 
 	dir, err := resolveModelConfigInCatalog("test-org/test-model", root)
-	if err != nil {
-		t.Fatalf("a flat catalog must keep resolving even with an unrelated file named %q: %v",
-			catalogModelsSubdir, err)
+	if err == nil {
+		t.Fatalf("a catalog with no models/ directory has no entries; expected refusal, got dir=%q", dir)
 	}
-	if dir != entryDir {
-		t.Errorf("resolved %q, want the flat entry %q", dir, entryDir)
+	want := filepath.Join(root, catalogModelsSubdir, "test-model", hfConfigFile)
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("refusal must name the canonical path (%s), got: %v", want, err)
 	}
 }
 
-// TestResolveModelConfig_AbsentFromBothLayouts_NamesEveryPathLookedAt: when neither
-// layout holds the model, the refusal must name every path resolution looked at (so the
-// operator can see BOTH were tried) and the canonical path an entry belongs at.
-func TestResolveModelConfig_AbsentFromBothLayouts_NamesEveryPathLookedAt(t *testing.T) {
+// TestResolveModelConfig_AbsentFromCatalog_NamesCanonicalPath: when the catalog does not
+// hold the model, the refusal must name the canonical path an entry belongs at. #1771
+// left exactly one layout, so there is a single path to name (before #1771 the refusal
+// named both the models/ candidate and the flat fallback).
+func TestResolveModelConfig_AbsentFromCatalog_NamesCanonicalPath(t *testing.T) {
 	root := t.TempDir()
 
 	dir, err := resolveModelConfigInCatalog("test-org/absent-model", root)
 	if err == nil {
-		t.Fatalf("expected refusal for a model absent from every layout, got dir=%q", dir)
+		t.Fatalf("expected refusal for a model absent from the catalog, got dir=%q", dir)
 	}
 	canonical := filepath.Join(root, "models", "absent-model", hfConfigFile)
-	flat := filepath.Join(root, "absent-model", hfConfigFile)
-	for _, want := range []string{canonical, flat} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("refusal must name the path it looked at (%s), got: %v", want, err)
-		}
+	if !strings.Contains(err.Error(), canonical) {
+		t.Errorf("refusal must name the canonical path it looked at (%s), got: %v", canonical, err)
 	}
 }
 
@@ -395,7 +346,7 @@ func TestResolveModelConfig_AbsentFromCatalog_RefusedNamingPath(t *testing.T) {
 		t.Fatalf("expected an uncatalogued model to be refused, got dir=%q", dir)
 	}
 
-	wantPath := filepath.Join(tmpDir, "uncatalogued-model", hfConfigFile)
+	wantPath := filepath.Join(tmpDir, catalogModelsSubdir, "uncatalogued-model", hfConfigFile)
 	if !strings.Contains(err.Error(), wantPath) {
 		t.Errorf("refusal must name the catalog path an entry belongs at (%s), got: %v", wantPath, err)
 	}
@@ -420,7 +371,7 @@ func TestResolveModelConfig_AbsentFromCatalog_CreatesNothing(t *testing.T) {
 	if len(after) != len(before) {
 		t.Errorf("resolution must not create anything under the catalog root; before=%v after=%v", before, after)
 	}
-	entryDir := filepath.Join(tmpDir, "uncatalogued-model")
+	entryDir := filepath.Join(tmpDir, catalogModelsSubdir, "uncatalogued-model")
 	if _, statErr := os.Stat(entryDir); statErr == nil {
 		t.Errorf("resolution must not create the catalog entry directory %s", entryDir)
 	}
@@ -461,7 +412,7 @@ func TestResolveModelConfig_MalformedCatalogEntry_RefusedAndPreserved(t *testing
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
-			localDir := filepath.Join(tmpDir, "test-model")
+			localDir := filepath.Join(tmpDir, catalogModelsSubdir, "test-model")
 			if err := os.MkdirAll(localDir, 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -490,7 +441,7 @@ func TestResolveModelConfig_MalformedCatalogEntry_RefusedAndPreserved(t *testing
 
 func TestResolveModelConfig_MultimodalConfig(t *testing.T) {
 	tmpDir := t.TempDir()
-	localDir := filepath.Join(tmpDir, "llama4-test")
+	localDir := filepath.Join(tmpDir, catalogModelsSubdir, "llama4-test")
 	if err := os.MkdirAll(localDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -518,7 +469,7 @@ func TestResolveModelConfig_MultimodalConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("multimodal config should be recognized: %v", err)
 	}
-	expected := filepath.Join(tmpDir, "llama4-test")
+	expected := filepath.Join(tmpDir, catalogModelsSubdir, "llama4-test")
 	if dir != expected {
 		t.Errorf("expected %s, got %s", expected, dir)
 	}
@@ -560,13 +511,13 @@ func TestResolveHardwareConfig_Missing_ReturnsError(t *testing.T) {
 
 // TestCatalogModelDir maps a model name onto its candidate catalog entry directories.
 // Since #1731 the catalog ROOT is a required input (there is no working-directory
-// default), so an empty root is an error rather than a relative path. Since #1774 the
-// root is the catalog CLONE ROOT: the canonical candidate is <catalog>/models/<name>,
-// and the flat <catalog>/<name> is the transition fallback, IN THAT ORDER.
+// default), so an empty root is an error rather than a relative path. Since #1771 there is
+// exactly ONE layout — the canonical clone-root <catalog>/models/<name> — so the candidate
+// list holds a single entry (the flat transition fallback #1774 carried is gone).
 //
-// Path semantics are pinned here too: a relative root yields relative candidates (the OS
-// resolves them against the process working directory at read time) and an absolute root
-// yields absolute candidates — neither is rewritten.
+// Path semantics are pinned here too: a relative root yields a relative candidate (the OS
+// resolves it against the process working directory at read time) and an absolute root
+// yields an absolute candidate — neither is rewritten.
 func TestCatalogModelDir(t *testing.T) {
 	tests := []struct {
 		model    string
@@ -576,26 +527,24 @@ func TestCatalogModelDir(t *testing.T) {
 	}{
 		{"meta-llama/llama-3.1-8b-instruct", "/base", []string{
 			filepath.Join("/base", "models", "llama-3.1-8b-instruct"),
-			filepath.Join("/base", "llama-3.1-8b-instruct"),
 		}, false},
 		{"codellama/codellama-34b-instruct-hf", "/base", []string{
 			filepath.Join("/base", "models", "codellama-34b-instruct-hf"),
-			filepath.Join("/base", "codellama-34b-instruct-hf"),
 		}, false},
 		{"simple-model", "/base", []string{
 			filepath.Join("/base", "models", "simple-model"),
-			filepath.Join("/base", "simple-model"),
 		}, false},
 		// A relative root stays relative (CWD-resolved by the OS), not absolutized.
 		{"meta-llama/llama-3.1-8b-instruct", "relative/catalog", []string{
 			filepath.Join("relative/catalog", "models", "llama-3.1-8b-instruct"),
-			filepath.Join("relative/catalog", "llama-3.1-8b-instruct"),
 		}, false},
-		// The pre-#1774 invocation (--catalog pointed at the models directory) still has a
-		// candidate that matches, via the fallback.
+		// The pre-#1774 invocation (--catalog pointed at the models directory) no longer
+		// has a matching candidate: with the flat fallback gone it derives only the
+		// canonical <root>/models/<name>, so <clone>/models/models/<name> is what it looks
+		// for, and an entry at <clone>/models/<name> is not found (behaviour change on the
+		// record — the operator must pass the clone root).
 		{"meta-llama/llama-3.1-8b-instruct", "/clone/models", []string{
 			filepath.Join("/clone", "models", "models", "llama-3.1-8b-instruct"),
-			filepath.Join("/clone", "models", "llama-3.1-8b-instruct"),
 		}, false},
 		// An empty root must NOT silently resolve to a working-directory-relative path:
 		// that is the retired default #1731 removed.
@@ -622,39 +571,34 @@ func TestCatalogModelDir(t *testing.T) {
 	}
 }
 
-// TestCatalogModelDirs_CanonicalLayoutIsFirst is the ORDER law on its own, stated
-// independently of the exact strings above (#1774): whatever the root, the canonical
-// clone-root candidate precedes the flat transition fallback. Reversing them would make
-// a stale flat entry shadow a fresh catalogued one — the failure this pins.
-func TestCatalogModelDirs_CanonicalLayoutIsFirst(t *testing.T) {
+// TestCatalogModelDirs_OnlyCanonicalCandidate is the single-layout law on its own, stated
+// independently of the exact strings above (#1771): whatever the root, resolution derives
+// exactly ONE candidate — the canonical clone-root <catalog>/models/<name>. Before #1771 a
+// second, flat candidate followed it; that fallback is gone, so a stale flat entry can no
+// longer shadow (or stand in for) a catalogued one.
+func TestCatalogModelDirs_OnlyCanonicalCandidate(t *testing.T) {
 	for _, catalog := range []string{"/abs/catalog", "rel/catalog", "."} {
 		got, err := catalogModelDirs("org/some-model", catalog)
 		if err != nil {
 			t.Fatalf("catalogModelDirs(_, %q): %v", catalog, err)
 		}
-		if len(got) != 2 {
-			t.Fatalf("catalogModelDirs(_, %q) = %v, want exactly 2 candidates", catalog, got)
+		if len(got) != 1 {
+			t.Fatalf("catalogModelDirs(_, %q) = %v, want exactly 1 candidate (the flat fallback is gone)", catalog, got)
 		}
-		wantPrimary := filepath.Join(catalog, catalogModelsSubdir, "some-model")
-		wantFallback := filepath.Join(catalog, "some-model")
-		if got[0] != wantPrimary {
-			t.Errorf("catalog %q: first candidate = %q, want the clone-root layout %q", catalog, got[0], wantPrimary)
-		}
-		if got[1] != wantFallback {
-			t.Errorf("catalog %q: second candidate = %q, want the flat fallback %q", catalog, got[1], wantFallback)
+		wantCanonical := filepath.Join(catalog, catalogModelsSubdir, "some-model")
+		if got[0] != wantCanonical {
+			t.Errorf("catalog %q: candidate = %q, want the clone-root layout %q", catalog, got[0], wantCanonical)
 		}
 	}
 }
 
-// TestResolveModelConfig_ResolutionInvariant verifies the documented resolution order,
-// which after #1733 (NS-6), #1731 (S4) and #1774 stays confined to ONE catalog root: the
-// entry is read from <catalog>/models/<short-name>/config.json or, during the #1771
-// transition, the flat <catalog>/<short-name>/config.json. Those are two LAYOUTS of the
-// same root, not two sources — removing the entry from a root does not open a path
-// outside it (no cross-catalog, working-directory or network fallback), it makes
-// resolution fail. Two DIFFERENT catalogs holding the same model resolve independently,
-// which is what makes "point --catalog at a scratch clone" the replacement for the
-// retired --model-config-folder.
+// TestResolveModelConfig_ResolutionInvariant verifies the documented resolution, which
+// after #1733 (NS-6), #1731 (S4), #1774 and #1771 stays confined to ONE catalog root and
+// ONE layout: the entry is read from <catalog>/models/<short-name>/config.json. Removing
+// the entry from a root does not open a path outside it (no cross-catalog,
+// working-directory or network fallback), it makes resolution fail. Two DIFFERENT catalogs
+// holding the same model resolve independently, which is what makes "point --catalog at a
+// scratch clone" the replacement for the retired --model-config-folder.
 func TestResolveModelConfig_ResolutionInvariant(t *testing.T) {
 	tmpDir := t.TempDir()
 	const cfg = `{"num_hidden_layers": 32, "hidden_size": 4096}`
@@ -662,7 +606,7 @@ func TestResolveModelConfig_ResolutionInvariant(t *testing.T) {
 	catalogA := filepath.Join(tmpDir, "catalog-a")
 	catalogB := filepath.Join(tmpDir, "catalog-b")
 	for _, root := range []string{catalogA, catalogB} {
-		entry := filepath.Join(root, "precedence-model")
+		entry := filepath.Join(root, catalogModelsSubdir, "precedence-model")
 		if err := os.MkdirAll(entry, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -677,14 +621,14 @@ func TestResolveModelConfig_ResolutionInvariant(t *testing.T) {
 		if err != nil {
 			t.Fatalf("catalog %s: resolution failed: %v", root, err)
 		}
-		if want := filepath.Join(root, "precedence-model"); dir != want {
+		if want := filepath.Join(root, catalogModelsSubdir, "precedence-model"); dir != want {
 			t.Errorf("catalog %s: expected %s, got %s", root, want, dir)
 		}
 	}
 
 	// There is no second step: with catalog A's entry removed, A is refused while B
 	// still resolves (no cross-catalog or working-directory fallback).
-	if err := os.Remove(filepath.Join(catalogA, "precedence-model", hfConfigFile)); err != nil {
+	if err := os.Remove(filepath.Join(catalogA, catalogModelsSubdir, "precedence-model", hfConfigFile)); err != nil {
 		t.Fatal(err)
 	}
 	if dir, err := resolveModelConfigInCatalog("test-org/precedence-model", catalogA); err == nil {

@@ -57,16 +57,17 @@ const noopFloatTolerance = 1e-9
 // The run is driven in a re-exec subprocess so the real cobra command tree executes
 // (and os.Exit(0) suppresses the test framework's own stdout, leaving only the metrics
 // JSON for a clean comparison). The qwen3-14b model config and hardware config are
-// git-tracked under model_configs/ (passed as --catalog) and hardware_config.json, so
-// the run is offline-safe.
+// git-tracked under the test catalog testdata/catalog/ (passed as --catalog) and
+// hardware_config.json, so the run is offline-safe.
 func TestNoOpByteIdentity_AdapterBlindRunMatchesBaseline(t *testing.T) {
 	if os.Getenv("BLIS_NOOP_SUBPROCESS") == "1" {
 		rootCmd.SetArgs([]string{
 			"run", "--model", "qwen/qwen3-14b", "--hardware", "H100", "--tp", "1", "--seed", "42",
 			"--defaults-filepath", "../defaults.yaml",
-			// #1731 AC-5: the catalog is located explicitly. The bundled model_configs/
-			// tree IS a catalog, so this run must still reproduce the pre-feature golden.
-			"--catalog", "../model_configs",
+			// #1731 AC-5: the catalog is located explicitly. The committed test catalog
+			// testdata/catalog/ holds the entry, so this run must still reproduce the
+			// pre-feature golden (INV-6: the config bytes are unchanged by #1771).
+			"--catalog", "../testdata/catalog",
 		})
 		_ = rootCmd.Execute()
 		os.Exit(0)

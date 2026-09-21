@@ -19,7 +19,7 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 
 ### Advanced
 
-- **Any catalogued HuggingFace model**: dense (Llama-2, Qwen3, etc.) and MoE (Mixtral, etc.) — the model's `config.json` is committed under `model_configs/`
+- **Any catalogued HuggingFace model**: dense (Llama-2, Qwen3, etc.) and MoE (Mixtral, etc.) — the model's `config.json` is committed in the [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository
 - **vLLM deployment configuration** (TP, chunk size, batch limits)
 - **Priority policies and instance schedulers**: constant, slo-based; fcfs, priority-fcfs, sjf
 - **Preemption policies**: fcfs (tail-of-batch), priority (least-urgent SLO tier evicted first)
@@ -46,7 +46,7 @@ cd inference-sim
 go build -o blis main.go
 ```
 
-**Note:** BLIS must be told where the model catalog is — `--catalog <path>` or the `BLIS_CATALOG` environment variable, with **no default and no search path** (the flag wins when both are set). The bundled `model_configs/` tree is a valid catalog: run `export BLIS_CATALOG=$PWD/model_configs` once and the examples work as written. BLIS then runs a model only if it is in that catalog — a `config.json` at `<catalog>/<model>/config.json`. Nothing is fetched or written at run time: a model that is not catalogued is refused, naming the path its entry belongs at. Add new models by committing their `config.json` under `model_configs/` (see CONTRIBUTING.md). Both roofline and trained-physics run fully offline.
+**Note:** BLIS must be told where the model catalog is — `--catalog <path>` or the `BLIS_CATALOG` environment variable, with **no default and no search path** (the flag wins when both are set). The catalog is the [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository: `git clone https://github.com/inference-sim/blis-catalog.git` and `export BLIS_CATALOG=$PWD/blis-catalog` once, and the examples work as written. BLIS then runs a model only if it is in that catalog — a `config.json` at `<catalog>/models/<model>/config.json`. Nothing is fetched or written at run time: a model that is not catalogued is refused, naming the path its entry belongs at. Add new models by committing their `config.json` to `blis-catalog` (see CONTRIBUTING.md). Both roofline and trained-physics run fully offline.
 
 **Environment setup (optional):**
 
@@ -414,7 +414,8 @@ inference-sim/
 │   ├── regression_workload_cache_warmup.yaml
 │   ├── regression_workload_load_spikes.yaml
 │   └── regression_workload_multiturn.yaml
-├── model_configs/          # The model catalog: committed HuggingFace config.json files
+│                            # (The model catalog is external: the blis-catalog repository,
+│                            #  located at run time via --catalog / BLIS_CATALOG.)
 ├── defaults.yaml           # Pre-trained coefficients, model defaults
 ├── hardware_config.json    # GPU hardware specifications
 ├── docs/                   # Documentation (MkDocs Material site)

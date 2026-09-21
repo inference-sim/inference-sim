@@ -7,10 +7,10 @@ import (
 	"github.com/inference-sim/inference-sim/sim/latency"
 )
 
-// modelConfigPath returns the path to a committed fixture config.json under
-// model_configs/ (two levels up from sim/latency/).
+// modelConfigPath returns the path to a committed fixture config.json under the test
+// catalog testdata/catalog/models/ (two levels up from sim/latency/).
 func modelConfigPath(dir string) string {
-	return filepath.Join("..", "..", "model_configs", dir, "config.json")
+	return filepath.Join("..", "..", "testdata", "catalog", "models", dir, "config.json")
 }
 
 // TestGLM52FP8_ModelShape is the #1527 regression test over the committed

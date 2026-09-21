@@ -81,7 +81,7 @@ var dpParityHorizon = strconv.FormatInt(math.MaxInt64, 10)
 func dpMoEFixtureArgs() []string {
 	return []string{
 		"--model", "deepseek-ai/deepseek-v2-lite",
-		"--catalog", "../model_configs",
+		"--catalog", "../testdata/catalog",
 		"--hardware", "H100",
 		"--hardware-config", "../hardware_config.json",
 		"--tp", "1",

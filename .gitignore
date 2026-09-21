@@ -45,7 +45,7 @@ __pycache__/*
 !testdata/goldendataset.json
 !testdata/trained_physics_iter29.json
 !testdata/roofline_goldendataset.json
-!model_configs/*/config.json
+!testdata/catalog/models/**/config.json
 !hardware_config.json
 !specs/**/*.json
 !cmd/testdata/**/*.json

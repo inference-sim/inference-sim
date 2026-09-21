@@ -541,7 +541,7 @@ Client TTFT = server TTFT + RTT + upload delay. Client E2E = server E2E + RTT + 
 
 BLIS resolves preset workload profiles from the catalog, at `<catalog>/workloads/<name>.yaml` —
 the sibling of the `models/` namespace. Locate the catalog once with `--catalog` or
-`export BLIS_CATALOG=$PWD/model_configs`; all three preset consumers read the same file, so a
+`export BLIS_CATALOG=$PWD/blis-catalog`; all three preset consumers read the same file, so a
 preset cannot mean different things per command (#1769; before that, the copy in
 `defaults.yaml` was the one that moved output while the catalog copy was read by nothing).
 Use them with `blis run`, `blis observe`, or the convert command:
@@ -561,7 +561,7 @@ Use them with `blis run`, `blis observe`, or the convert command:
 
 Using the same preset for both `run` and `observe` ensures the observe→replay→calibrate pipeline compares identical workload shapes — eliminating workload skew as a calibration variable.
 
-Available presets in the bundled catalog (`model_configs/workloads/`):
+Available presets in the catalog (`<catalog>/workloads/`):
 
 | Preset | Prompt Mean | Output Mean | Description |
 |--------|-------------|-------------|-------------|

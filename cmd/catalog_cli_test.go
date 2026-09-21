@@ -60,7 +60,7 @@ func TestRunCmd_CatalogLocation(t *testing.T) {
 			"--defaults-filepath", "../defaults.yaml",
 		}
 		if leg == "flag" {
-			args = append(args, "--catalog", "../model_configs")
+			args = append(args, "--catalog", "../testdata/catalog")
 		}
 		rootCmd.SetArgs(args)
 		if execErr := rootCmd.Execute(); execErr != nil {
@@ -76,7 +76,7 @@ func TestRunCmd_CatalogLocation(t *testing.T) {
 		wantFatal bool
 	}{
 		{name: "--catalog locates the catalog", leg: "flag", wantFatal: false},
-		{name: "BLIS_CATALOG locates the catalog", leg: "env", env: "../model_configs", wantFatal: false},
+		{name: "BLIS_CATALOG locates the catalog", leg: "env", env: "../testdata/catalog", wantFatal: false},
 		{name: "neither is refused", leg: "none", wantFatal: true},
 	}
 
@@ -131,7 +131,7 @@ func TestRunCmd_CatalogLocation_ByteIdenticalAcrossForms(t *testing.T) {
 	if err != nil {
 		t.Fatalf("--catalog leg failed: %v\nstderr:\n%s", err, stderrFlag)
 	}
-	viaEnv, stderrEnv, err := runCatalogLeg(t, "env", "../model_configs")
+	viaEnv, stderrEnv, err := runCatalogLeg(t, "env", "../testdata/catalog")
 	if err != nil {
 		t.Fatalf("%s leg failed: %v\nstderr:\n%s", catalogEnvVar, err, stderrEnv)
 	}

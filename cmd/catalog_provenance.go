@@ -62,7 +62,7 @@ func captureCatalogProvenance(catalogRoot string) *sim.CatalogProvenance {
 //
 // The dirty check is deliberately scoped to the catalog directory (pathspec "."), not to
 // the whole containing repository. A catalog is commonly a subdirectory of a larger
-// checkout (the bundled model_configs/ inside this repository is one), where an unrelated
+// checkout (a blis-catalog clone sitting inside a workspace, say), where an unrelated
 // edit elsewhere in the repo would otherwise mark every run an experiment and make the
 // flag useless. Untracked files count as dirty: an uncommitted new catalog entry makes
 // the catalog's content differ from its committed revision, which is precisely the

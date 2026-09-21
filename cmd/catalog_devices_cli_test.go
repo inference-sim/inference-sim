@@ -39,8 +39,7 @@ const (
 	devicesCLITraceEnv   = "BLIS_KVDEV_CLI_TRACE"
 )
 
-// devicesCLIModel is catalogued in the bundled model_configs/ tree (FLAT layout, which
-// #1774's transition fallback still resolves).
+// devicesCLIModel is catalogued in the committed test catalog testdata/catalog/models/.
 const devicesCLIModel = "qwen/qwen3-14b"
 
 // writeOffloadConfigWithClass writes a --kv-offload-config file whose single fs tier
@@ -62,16 +61,16 @@ func writeOffloadConfigWithClass(t *testing.T, deviceClass string) string {
 }
 
 // newDeviceCatalog builds a catalog CLONE ROOT with (a) a models/ entry copied verbatim
-// from the bundled tree so the model resolves, and (b) a devices/storage.yaml holding the
+// from the test catalog so the model resolves, and (b) a devices/storage.yaml holding the
 // given table. Returns the root.
 func newDeviceCatalog(t *testing.T, table string) string {
 	t.Helper()
 	root := writeCatalogStorageDevices(t, table)
 	shortName := devicesCLIModel[strings.Index(devicesCLIModel, "/")+1:]
-	src := filepath.Join("..", "model_configs", shortName, hfConfigFile)
+	src := filepath.Join("..", "testdata", "catalog", "models", shortName, hfConfigFile)
 	content, err := os.ReadFile(src)
 	if err != nil {
-		t.Fatalf("read bundled catalog entry %s: %v", src, err)
+		t.Fatalf("read test catalog entry %s: %v", src, err)
 	}
 	entryDir := filepath.Join(root, catalogModelsSubdir, shortName)
 	if err := os.MkdirAll(entryDir, 0o755); err != nil {
@@ -168,7 +167,7 @@ func TestRunCmd_KVOffloadDeviceClass_ResolvesFromCatalog(t *testing.T) {
 	}
 	const name = "TestRunCmd_KVOffloadDeviceClass_ResolvesFromCatalog"
 	offload := writeOffloadConfigWithClass(t, "nvme_gen4")
-	bundled := filepath.Join("..", "model_configs")
+	bundled := filepath.Join("..", "testdata", "catalog")
 
 	// The temp catalog's table is a verbatim copy of the historical nvme_gen4 numbers.
 	sameTable := newDeviceCatalog(t,
@@ -253,7 +252,7 @@ func TestReplayCmd_KVOffloadDeviceClass_MatchesRunResolution(t *testing.T) {
 	}
 	const name = "TestReplayCmd_KVOffloadDeviceClass_MatchesRunResolution"
 	offload := writeOffloadConfigWithClass(t, "nvme_gen4")
-	bundled := filepath.Join("..", "model_configs")
+	bundled := filepath.Join("..", "testdata", "catalog")
 
 	tracePrefix := filepath.Join(t.TempDir(), "offload")
 	if out, errOut, err := runDevicesCLILeg(t, name, "run-export", bundled, offload, tracePrefix); err != nil {

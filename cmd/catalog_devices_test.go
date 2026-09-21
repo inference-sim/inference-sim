@@ -76,7 +76,7 @@ func writeCatalogStorageDevices(t *testing.T, body string) string {
 // the process working directory) and an absolute root is used as given, exactly as
 // catalogModelDirs treats it.
 func TestCatalogStorageDevicesPath_IsDevicesSiblingOfModels(t *testing.T) {
-	for _, root := range []string{"model_configs", "/abs/catalog", "./rel/catalog"} {
+	for _, root := range []string{"rel/catalog", "/abs/catalog", "./rel/catalog"} {
 		got := catalogStorageDevicesPath(root)
 		want := filepath.Join(root, "devices", "storage.yaml")
 		if got != want {
@@ -148,7 +148,7 @@ func TestResolveKVOffloadDevices_ReadsCatalogLocatedByFlagAndEnv(t *testing.T) {
 // simulator does with them — which is why this comparison, not a run-level diff, is the
 // load-bearing equivalence check.
 func TestBundledCatalogDevices_MatchHistoricalDefaultsBlock(t *testing.T) {
-	got, err := loadCatalogStorageDevices("../model_configs")
+	got, err := loadCatalogStorageDevices("../testdata/catalog")
 	if err != nil {
 		t.Fatalf("bundled catalog device table must load: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestBundledCatalogDevices_MatchHistoricalDefaultsBlock(t *testing.T) {
 // that class's triple with the device model off. This is the value an offload run
 // actually consumes, so it is what INV-6 is about.
 func TestResolveKVOffload_CatalogClassResolvesHistoricalTriple(t *testing.T) {
-	devices, err := loadCatalogStorageDevices("../model_configs")
+	devices, err := loadCatalogStorageDevices("../testdata/catalog")
 	if err != nil {
 		t.Fatalf("bundled catalog device table must load: %v", err)
 	}

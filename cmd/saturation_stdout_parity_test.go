@@ -28,7 +28,7 @@ func TestSaturationStdout_FinalLabelShape(t *testing.T) {
 	if v := os.Getenv("BLIS_SAT_VARIANT"); v != "" {
 		args := []string{
 			"run", "--model", "qwen/qwen3-14b", "--hardware", "H100", "--tp", "1", "--seed", "42",
-			"--catalog", "../model_configs",
+			"--catalog", "../testdata/catalog",
 			"--num-requests", "50",
 			"--defaults-filepath", "../defaults.yaml",
 		}

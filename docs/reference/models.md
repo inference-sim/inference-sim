@@ -6,7 +6,7 @@ BLIS **runs many transformer models straight from a HuggingFace `config.json`** 
 
 BLIS has been tested and accuracy validated across a variety of model families and sizes, including both dense transformers and MoE (Mixture-of-Experts) architectures.
 
-The simulator reads each model's `config.json` from the catalog located by `--catalog <path>` or the `BLIS_CATALOG` environment variable — there is **no default and no search path**, so a run with neither is refused naming both forms (#1731); the repository's `model_configs/` tree is a valid catalog root. Within it, the entry is `<catalog>/<model-short-name>/config.json`. BLIS never fetches at run time: a model with no catalog entry is refused, naming the path the entry belongs at. Adding a model means committing its `config.json` (set `HF_TOKEN` when downloading a gated model's config by hand).
+The simulator reads each model's `config.json` from the catalog located by `--catalog <path>` or the `BLIS_CATALOG` environment variable — there is **no default and no search path**, so a run with neither is refused naming both forms (#1731). The catalog is a checkout of the authoritative [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository (or any scratch clone of that layout); within it, the entry is `<catalog>/models/<model-short-name>/config.json`. BLIS never fetches at run time: a model with no catalog entry is refused, naming the path the entry belongs at. Adding a model means committing its `config.json` (set `HF_TOKEN` when downloading a gated model's config by hand).
 
 ## Validated Architectures
 
