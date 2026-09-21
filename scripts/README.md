@@ -24,7 +24,12 @@ ARCHON_BIN=$(scripts/archon-build.sh v1.2.3)
 The built binary path is printed on **stdout**; every diagnostic (`Building…`, the `git clone`
 output, `Built: …`) goes to **stderr**. That split is deliberate: it is what lets a caller do
 `ARCHON_BIN=$(scripts/archon-build.sh)` and capture only the path. Mixing a diagnostic into
-stdout would silently corrupt `ARCHON_BIN`, so keep new output on the correct stream.
+stdout would silently corrupt `ARCHON_BIN`, so keep new output on the correct stream. The path
+is emitted with `printf '%s\n'` rather than `echo`, so no shell's `echo` variant (`xpg_echo`)
+can reinterpret a backslash in it. The build root is `$RUNNER_TEMP` when set and `/tmp`
+otherwise; the single-line capture above is exact for any build root free of newline and
+control bytes, which both of those are. A build root containing a literal newline cannot
+survive `$(…)` capture at all, so the script does not attempt to paper over one.
 
 Exits non-zero when no version can be resolved — no argument given **and** no `.archon-version`
 present — rather than building an arbitrary default. Requires `git` and `go` (1.26+).
