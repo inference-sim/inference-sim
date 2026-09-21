@@ -29,11 +29,13 @@ var testCatalogModels = []string{"test-model", "test-moe", "qwen3-14b"}
 
 // writeTestCatalog writes configJSON as the config.json of one catalog entry per name
 // in testCatalogModels (plus any extraModels short names a caller needs), under the
-// catalog root dir, and returns dir. Every entry holds the same architecture, so which
+// catalog root dir, and returns dir. Entries are written in the canonical clone-root
+// layout <dir>/models/<name>/config.json — the ONLY layout resolution accepts since #1771
+// removed the flat transition fallback. Every entry holds the same architecture, so which
 // name a test passes to --model does not change the resolved ModelConfig.
 func writeTestCatalog(dir, configJSON string, extraModels ...string) (string, error) {
 	for _, name := range append(append([]string{}, testCatalogModels...), extraModels...) {
-		entryDir := filepath.Join(dir, name)
+		entryDir := filepath.Join(dir, catalogModelsSubdir, name)
 		if err := os.MkdirAll(entryDir, 0o755); err != nil {
 			return "", fmt.Errorf("mkdir catalog entry %s: %w", entryDir, err)
 		}
@@ -47,9 +49,9 @@ func writeTestCatalog(dir, configJSON string, extraModels ...string) (string, er
 // testCatalogConfigPath returns the config.json path of the named entry inside a
 // catalog written by writeTestCatalog. Tests that parse the fixture directly (rather
 // than letting the CLI resolve it via --catalog) use this to address the same entry
-// the resolver would pick for that model name.
+// the resolver would pick for that model name — the canonical models/ layout.
 func testCatalogConfigPath(catalogDir, model string) string {
-	return filepath.Join(catalogDir, model, "config.json")
+	return filepath.Join(catalogDir, catalogModelsSubdir, model, "config.json")
 }
 
 // setupTrainedPhysicsTestFixtures creates a temp model catalog and hardware config

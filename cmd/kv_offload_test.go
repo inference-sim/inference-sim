@@ -65,17 +65,17 @@ func TestKVOffloadDevices_CatalogStorageYAMLParses(t *testing.T) {
 	}
 }
 
-// T4 (#1770): the actual committed bundled catalog table parses (catches a malformed
-// file). The bundled model_configs/ tree is a real catalog — it is what the documented
-// `export BLIS_CATALOG=$PWD/model_configs` points at — so its devices/ namespace must
-// keep resolving until #1771 deletes the tree.
+// T4 (#1770): the committed catalog device table parses (catches a malformed file). Since
+// #1771 deleted the bundled model_configs/ tree, the committed clone-root fixture
+// testdata/catalog/ (mirroring blis-catalog) carries the devices/ namespace the tests
+// resolve against.
 func TestKVOffloadDevices_CommittedCatalogTableParses(t *testing.T) {
-	devices, err := loadCatalogStorageDevices("../model_configs")
+	devices, err := loadCatalogStorageDevices("../testdata/catalog")
 	if err != nil {
-		t.Fatalf("bundled catalog %s must load: %v", catalogStorageDevicesRelPath, err)
+		t.Fatalf("committed catalog %s must load: %v", catalogStorageDevicesRelPath, err)
 	}
 	if _, ok := devices["nvme_gen4"]; !ok {
-		t.Errorf("bundled catalog %s should define nvme_gen4 (got %s)",
+		t.Errorf("committed catalog %s should define nvme_gen4 (got %s)",
 			catalogStorageDevicesRelPath, knownDeviceClasses(devices))
 	}
 }
