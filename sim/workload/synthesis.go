@@ -78,7 +78,9 @@ func SynthesizeFromDistribution(params DistributionParams) *WorkloadSpec {
 }
 
 // SynthesizeFromPreset creates a v2 WorkloadSpec from a named preset configuration.
-// This is equivalent to SynthesizeFromDistribution with parameters from defaults.yaml.
+// This is equivalent to SynthesizeFromDistribution with the preset's parameters. The preset
+// is read from the catalog (<catalog>/workloads/<name>.yaml) since #1769; the retired source
+// was the bundled defaults.yaml `workloads:` block.
 func SynthesizeFromPreset(presetName string, preset PresetConfig, rate float64, numRequests int) *WorkloadSpec {
 	return SynthesizeFromDistribution(DistributionParams{
 		Rate:               rate,
