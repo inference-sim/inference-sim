@@ -21,6 +21,20 @@ const bitsPerByte = 8.0
 // HFConfig represents a flexible JSON object with dynamic fields.
 type HFConfig struct {
 	// Raw holds the entire JSON as a dynamic map.
+	//
+	// PRECONDITION on the values: exactly what json.Unmarshal produces when decoding
+	// into `any` — JSON numbers as float64, objects as map[string]any, arrays as []any.
+	// ParseHFConfig is the production producer and uses exactly that path; a caller
+	// constructing an HFConfig by hand (or feeding GetModelConfigFromHF directly) must
+	// match it.
+	//
+	// json.Decoder.UseNumber() is NOT supported: it decodes numbers as json.Number, and
+	// EVERY reader here asserts a concrete type — GetInt/GetBool/GetString, the getInt
+	// closure in GetModelConfigFromHF, and parseQuantizationConfig. Teaching one reader
+	// json.Number would half-decode a config (a layer count that resolves beside a
+	// hidden_size silently read as 0), which is strictly worse than refusing, so the
+	// contract is stated here and layerCountEvidence names the violation explicitly
+	// rather than reporting the value as a non-number (#1777).
 	Raw map[string]any
 }
 
@@ -175,6 +189,10 @@ func (c *HFConfig) LinearAttnFullLayerCount() int {
 // parser can consume — the two must not disagree about what counts as a usable config.
 const LayersBlockTypeField = "layers_block_type"
 
+// numHiddenLayersField is the HF config key holding the layer-count scalar. Named once
+// so the resolver that reads it and the diagnostic that names it cannot drift apart.
+const numHiddenLayersField = "num_hidden_layers"
+
 // BlockTypeLayerCount returns the number of layers declared as the length of the
 // model's per-layer block-type list, i.e. len(layers_block_type). ParseHFConfig
 // pivots text_config onto the top-level map, so the key is reachable as a top-level
@@ -187,11 +205,12 @@ const LayersBlockTypeField = "layers_block_type"
 // there in the config.
 //
 // Returns 0 when the key is absent, holds an empty list, or holds a non-list value, so
-// the caller keeps the existing layer-count resolution (the scalar, and ultimately the
-// loud validator failure) rather than a silent 0. Only the LENGTH is read — element
-// types are irrelevant, mirroring LinearAttnFullLayerCount. Counting is deliberately
-// all this does: per-type tallies / layer groups are a later release (R4a), so a
-// derived count is a total layer count and nothing more.
+// the caller keeps the existing layer-count resolution (the scalar, and ultimately
+// GetModelConfigFromHF's loud parse-boundary refusal — see layerCountEvidence) rather
+// than a silent 0. Only the LENGTH is read — element types are irrelevant, mirroring
+// LinearAttnFullLayerCount. Counting is deliberately all this does: per-type tallies /
+// layer groups are a later release (R4a), so a derived count is a total layer count and
+// nothing more.
 func (c *HFConfig) BlockTypeLayerCount() int {
 	blocks, ok := c.Raw[LayersBlockTypeField].([]any)
 	if !ok {
@@ -202,8 +221,10 @@ func (c *HFConfig) BlockTypeLayerCount() int {
 
 // ResolveNumLayers returns the model's total transformer-layer count: the
 // num_hidden_layers scalar when it is present and non-zero, else the length of the
-// block-type list (#1729 / NS-4). Returns 0 when neither source has an answer, so the
-// per-backend validators still fail loudly (never a silent 0).
+// block-type list (#1729 / NS-4). Returns 0 when neither source has an answer — never a
+// silent 0: GetModelConfigFromHF refuses that at the parse boundary, naming both keys
+// consulted (#1777), and the per-backend validators keep their own NumLayers > 0 check as
+// defense in depth for a ModelConfig built by any other route.
 //
 // The scalar wins whenever it answers, which makes the array a pure fallback: every
 // config that declares num_hidden_layers — i.e. every currently-catalogued model —
@@ -231,8 +252,100 @@ func (c *HFConfig) ResolveNumLayers() int {
 // block-type list derive its count with no stderr line at all: exactly the silent
 // reinterpretation of an operator's config that R1 forbids.
 func (c *HFConfig) numLayersScalar() (int, bool) {
-	n, ok := c.GetInt("num_hidden_layers")
+	n, ok := c.GetInt(numHiddenLayersField)
 	return n, ok && n != 0
+}
+
+// jsonValueKind names the JSON type of a decoded config value in operator-facing terms,
+// so a "wrong type" diagnostic can say WHAT the key holds instead of only that it was
+// unusable. json.Unmarshal into `any` — the HFConfig.Raw contract — produces exactly
+// these Go types.
+//
+// json.Number is named "a number" because that is what it IS to the operator reading
+// their config: the value is a perfectly good JSON number, decoded by a Decoder the Raw
+// contract does not admit. So a caller that violates that contract must never be told
+// "num_hidden_layers holds a json.Number, not a number" — layerCountEvidence intercepts
+// that case ahead of its generic wrong-type clause and names the real problem (#1777).
+func jsonValueKind(v any) string {
+	switch v.(type) {
+	case nil:
+		return "null"
+	case bool:
+		return "a boolean"
+	case float64, json.Number:
+		return "a number"
+	case string:
+		return "a string"
+	case []any:
+		return "a list"
+	case map[string]any:
+		return "an object"
+	default:
+		return fmt.Sprintf("a %T", v)
+	}
+}
+
+// layerCountEvidence describes what each of the two keys ResolveNumLayers consults
+// actually contributes, one clause per key. PRECONDITION: ResolveNumLayers returned 0,
+// i.e. neither key answered — the clauses are phrased for that state.
+//
+// It exists because the per-backend validators' "ModelConfig.NumLayers must be > 0"
+// names a Go STRUCT FIELD, not a config key: it reports the number BLIS ended up with
+// and says nothing about where BLIS looked for it. Since #1729 there are two places to
+// look, and a present-but-malformed layers_block_type (a bare string instead of a list,
+// say) reads as "absent" to the resolver — so an operator could be staring at a config
+// that visibly states its layer count while being told the count is missing. Naming both
+// keys, and saying what is wrong with each, is the difference between a one-edit fix and
+// a source dive.
+//
+// Same standard applies when the caller — not the config — is at fault: a Raw map built
+// with json.Decoder.UseNumber() holds json.Number, which no reader here accepts, and that
+// gets its own clause naming the decoder rather than blaming the config's number (#1777).
+func (c *HFConfig) layerCountEvidence() []string {
+	clauses := make([]string, 0, 2)
+
+	// The type tests mirror the readers exactly: GetInt accepts only a JSON number
+	// (float64 after json.Unmarshal), and BlockTypeLayerCount only a []any. Asserted on
+	// the type directly rather than by comparing jsonValueKind's prose, which would make
+	// the branch depend on the wording of a message.
+	switch v, present := c.Raw[numHiddenLayersField]; {
+	case !present:
+		clauses = append(clauses, fmt.Sprintf("%q is absent", numHiddenLayersField))
+	default:
+		if _, isJSONNumber := v.(json.Number); isJSONNumber {
+			// Reachable only by violating the HFConfig.Raw contract, since Raw is exported
+			// and GetModelConfigFromHF takes an already-built *HFConfig: a caller decoding
+			// with json.Decoder.UseNumber() gets json.Number, which GetInt does not accept.
+			// Intercepted BEFORE the generic clause below, which would otherwise report a
+			// genuine JSON number as "not a number" — a self-contradiction that sends the
+			// caller looking at their config file when the defect is in their decoder.
+			clauses = append(clauses, fmt.Sprintf(
+				"%q was decoded as a json.Number, which BLIS's config readers do not accept "+
+					"(decode into `any` WITHOUT json.Decoder.UseNumber, as ParseHFConfig does — "+
+					"see the HFConfig.Raw contract)", numHiddenLayersField))
+		} else if _, isNumber := v.(float64); !isNumber {
+			clauses = append(clauses, fmt.Sprintf(
+				"%q holds %s, not a number", numHiddenLayersField, jsonValueKind(v)))
+		} else {
+			// Present and numeric, yet the scalar did not answer ⇒ it is 0
+			// (numLayersScalar treats 0 as no answer, deliberately: 0 layers is not a model).
+			clauses = append(clauses, fmt.Sprintf("%q is 0", numHiddenLayersField))
+		}
+	}
+
+	switch v, present := c.Raw[LayersBlockTypeField]; {
+	case !present:
+		clauses = append(clauses, fmt.Sprintf("%q is absent", LayersBlockTypeField))
+	default:
+		if _, isList := v.([]any); !isList {
+			clauses = append(clauses, fmt.Sprintf(
+				"%q holds %s, not a list (only a list's LENGTH is read)", LayersBlockTypeField, jsonValueKind(v)))
+		} else {
+			clauses = append(clauses, fmt.Sprintf("%q holds an empty list", LayersBlockTypeField))
+		}
+	}
+
+	return clauses
 }
 
 func parseHWConfig(HWConfigFilePath string) (map[string]sim.HardwareCalib, error) {
@@ -698,6 +811,24 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	// resolver treats as no answer. Gating on mere key absence here would let that config
 	// be silently reinterpreted (R1).
 	numLayers := hf.ResolveNumLayers()
+	// Neither key answered. Fail HERE, naming both keys the resolver consults, rather
+	// than deferring to the per-backend "ModelConfig.NumLayers must be > 0" validators:
+	// that message names a struct field the operator's config does not contain, and since
+	// #1729 there are two config keys that could have supplied the count — one of which
+	// (a present-but-wrong-typed layers_block_type) is indistinguishable from absent by
+	// the time the validator runs. The backend validators keep their own check as
+	// defense in depth, for a ModelConfig built by any other route.
+	//
+	// Scope: only the no-evidence case (numLayers == 0). A present-but-NEGATIVE scalar
+	// ANSWERED — it is bad input rather than missing input, and ResolveNumLayers
+	// deliberately passes it through so the validators report the actual value; second-
+	// guessing it here would replace a precise "got -5" with a "cannot determine" that is
+	// simply untrue.
+	if numLayers == 0 {
+		return nil, fmt.Errorf("GetModelConfigFromHF: cannot determine the model's transformer-layer "+
+			"count: %s. Set %q to the model's total layer count, or declare %q as a list with one entry "+
+			"per layer", strings.Join(hf.layerCountEvidence(), ", and "), numHiddenLayersField, LayersBlockTypeField)
+	}
 	if _, scalarAnswered := hf.numLayersScalar(); !scalarAnswered && numLayers > 0 {
 		// Never silent (R1), and warn rather than inform: the count is derived, and every
 		// entry is counted as one transformer layer whatever type it names — so a hybrid
