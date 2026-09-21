@@ -1,4 +1,6 @@
-# BLIS defaults.yaml — shipped coefficient and device constants.
+# BLIS defaults.yaml — shipped trained-physics coefficients and LoRA cost coefficients.
+# (Those two blocks are all this file still carries; the KV-offload storage-device table moved
+#  to the catalog in #1770, see the note above `version:` at the bottom.)
 #
 # There is no per-model `defaults:` block any more (#1768). The deployment is a required
 # operator input supplied via --hardware/--tp on `blis run` and `blis replay` (NS-6, #1733),
