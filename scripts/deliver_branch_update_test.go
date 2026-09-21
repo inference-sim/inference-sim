@@ -239,6 +239,52 @@ func TestUpdateBranchStdoutCarriesOnlyGitHubOutputGrammar(t *testing.T) {
 	}
 }
 
+// A git subcommand's stdout is not only its OWN text: a hook inherits it. git redirects most hook
+// output to stderr, but NOT `pre-push` — so an executable `.git/hooks/pre-push` that echoes puts
+// that text on `git push`'s stdout, i.e. straight onto the $GITHUB_OUTPUT payload channel,
+// reproducing #1799's `Invalid format` step failure from a source the original fix did not cover.
+// Measured on git 2.34; this is why `fetch`/`push` carry `>&2` alongside `merge` even though neither
+// prints text of its own on stdout.
+//
+// Worth a test rather than an argument that it cannot happen: the script runs in a persistent
+// self-hosted workspace shared by every delivery, which is precisely where unexpected local git
+// state lives. The assertion is on raw stdout, and the `merged` gate makes it non-vacuous — without
+// it the test would pass on any path that never reaches the push.
+func TestUpdateBranchStdoutStaysCleanWhenAGitHookWritesToStdout(t *testing.T) {
+	work, branch := deliveryRepos(t)
+	advanceMain(t, work, branch, "unrelated.md", "main moved on\n")
+
+	// The hook touches a marker as well as echoing, so the test can tell "stdout was clean because
+	// the redirect works" from "stdout was clean because git never ran the hook".
+	marker := filepath.Join(work, "pre-push-ran")
+	hook := filepath.Join(work, ".git", "hooks", "pre-push")
+	script := "#!/bin/sh\n: > " + marker + "\necho 'LEAK: pre-push hook stdout'\nexit 0\n"
+	if err := os.WriteFile(hook, []byte(script), 0o755); err != nil {
+		t.Fatalf("installing the pre-push hook: %v", err)
+	}
+
+	stdout, state, _, code := runStateScriptRaw(t, work, "deliver-update-branch.sh", branch)
+	if code != 0 {
+		t.Fatalf("exit %d, want 0", code)
+	}
+	// Non-vacuity, in two parts: the push must have been reached (only `merged` proves that), and
+	// the hook must actually have run — a hook git silently skipped would make clean stdout
+	// meaningless, so the marker is what makes the assertion below load-bearing.
+	if state != "merged" {
+		t.Fatalf("state = %q, want \"merged\" — the push path was not exercised, so this proves nothing", state)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("the pre-push hook did not run (%v), so a clean stdout proves nothing about the redirect", err)
+	}
+	if leaked := nonPayloadStdoutLines(stdout); len(leaked) > 0 {
+		t.Errorf("a pre-push hook's stdout reached the payload channel; $GITHUB_OUTPUT would reject %d line(s) with `Invalid format`: %q\nfull stdout:\n%s",
+			len(leaked), leaked, stdout)
+	}
+	if strings.Contains(stdout, "LEAK") {
+		t.Errorf("stdout contains the hook's text, which belongs on stderr:\n%s", stdout)
+	}
+}
+
 func remoteTip(t *testing.T, work, branch string) string {
 	t.Helper()
 	out := gitCmd(t, work, "ls-remote", "origin", "refs/heads/"+branch)

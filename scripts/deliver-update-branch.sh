@@ -18,8 +18,10 @@
 # STDOUT IS THE PAYLOAD CHANNEL, NOT A LOG (#1799). The caller tees stdout straight into
 # $GITHUB_OUTPUT, whose grammar is `key=value` / `key<<DELIM … DELIM` and nothing else, so on EVERY
 # path stdout carries only the `state=` line and the `files<<…` heredoc. All human and git text —
-# this script's own diagnostics and any git subcommand's — goes to stderr, where the run log still
-# shows it. A single stray stdout line fails the step and ends the correction round at needs-human.
+# this script's own diagnostics, any git subcommand's, and anything a git HOOK writes — goes to
+# stderr, where the run log still shows it. A single stray stdout line fails the step and ends the
+# correction round at needs-human. Every git invocation run for its EXIT STATUS therefore carries an
+# explicit `>&2` (the rest are captured in `$(...)`, so their stdout never reaches this script's).
 # scripts/deliver_branch_update_test.go asserts this per path; keep any new output off stdout.
 #
 # Exit 2 only on a usage error. Every other outcome is a state, because this runs inside a
@@ -77,7 +79,7 @@ emit() {
   exit 0
 }
 
-if ! git fetch --no-tags --quiet origin main; then
+if ! git fetch --no-tags --quiet origin main >&2; then
   echo "::warning::could not fetch origin/main; leaving the branch update to the agent" >&2
   emit unknown
 fi
@@ -99,12 +101,22 @@ before=$(git rev-parse HEAD) || emit unknown
 # `>&2` is load-bearing (#1799). This script's stdout IS the step-output payload — the caller tees
 # it straight into $GITHUB_OUTPUT, whose grammar is `key=value` / heredoc ONLY. `git merge` writes
 # its own human text to stdout on SUCCESS ("Already up to date." when the branch is current;
-# "Updating a1b2..c3d4" + "Fast-forward" + a diffstat on clean drift), and that text reached
-# $GITHUB_OUTPUT as `Invalid format 'Already up to date.'`, failing the step and ending the whole
-# correction round at needs-human before a single finding was read. Redirecting keeps the merge's
-# diagnostics in the run log (where they are wanted) and off the payload channel. Every other git
-# call here is already stdout-safe: `fetch --quiet` and `push` write to stderr, the
-# `rev-parse`/`ls-files` calls are captured in `$(...)`, and `reset`/`merge --abort` are silenced.
+# "Updating a1b2..c3d4" + "Fast-forward" + a diffstat on clean drift) and on CONFLICT ("Auto-merging
+# …", "CONFLICT (content): …"), and that text reached $GITHUB_OUTPUT as
+# `Invalid format 'Already up to date.'`, failing the step and ending the whole correction round at
+# needs-human before a single finding was read. Redirecting keeps the merge's diagnostics in the run
+# log (where they are wanted) and off the payload channel.
+#
+# `fetch` and `push` above/below carry the same `>&2` even though neither writes its OWN text to
+# stdout (both report progress on stderr), because a git subcommand's stdout is not only its own: a
+# HOOK inherits it. git redirects most hook output to stderr, but not `pre-push` — an executable
+# `.git/hooks/pre-push` that echoes puts that text on `git push`'s stdout (measured, git 2.34), i.e.
+# straight onto this payload channel, reproducing #1799 from a different source. This script runs in
+# a persistent self-hosted workspace shared by every delivery, so unexpected local git state is
+# exactly the hazard to be closed rather than assumed away. Redirecting every invocation run for its
+# exit status makes the header's guarantee true by construction instead of by inspection; the
+# `rev-parse`/`ls-files` calls need nothing, being captured in `$(...)`, and `reset`/`merge --abort`
+# are already silenced outright.
 if git_as_bot merge --no-edit origin/main >&2; then
   after=$(git rev-parse HEAD)
   if [[ "$after" == "$before" ]]; then
@@ -113,7 +125,7 @@ if git_as_bot merge --no-edit origin/main >&2; then
   fi
   # A GITHUB_TOKEN push starts no workflow run, so this cannot double-trigger the verify phase;
   # the correct phase's own hand-back dispatch is what re-verifies.
-  if git push origin "HEAD:refs/heads/$branch"; then
+  if git push origin "HEAD:refs/heads/$branch" >&2; then
     echo "merged origin/main cleanly and pushed $after" >&2
     emit merged
   fi
