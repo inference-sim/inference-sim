@@ -15,6 +15,13 @@
 #   unknown      the update could not be completed (origin unreachable, or the push lost a
 #                race); the caller must not assume the branch is either updated or conflicting
 #
+# STDOUT IS THE PAYLOAD CHANNEL, NOT A LOG (#1799). The caller tees stdout straight into
+# $GITHUB_OUTPUT, whose grammar is `key=value` / `key<<DELIM … DELIM` and nothing else, so on EVERY
+# path stdout carries only the `state=` line and the `files<<…` heredoc. All human and git text —
+# this script's own diagnostics and any git subcommand's — goes to stderr, where the run log still
+# shows it. A single stray stdout line fails the step and ends the correction round at needs-human.
+# scripts/deliver_branch_update_test.go asserts this per path; keep any new output off stdout.
+#
 # Exit 2 only on a usage error. Every other outcome is a state, because this runs inside a
 # delivery round whose job is to make progress, and failing the phase here would report
 # "the correct phase errored" rather than what actually happened to the branch.
@@ -26,7 +33,7 @@
 # push was refused, the outcome was a success with no progress and no diagnostic — the silent
 # stall #1758 set out to remove, one layer deeper. An instruction an agent may quietly not follow
 # is not a mechanism. Ordinary drift is the common case and needs no judgment, so it belongs in
-# code that runs every round and can be tested (scripts/deliver_update_branch_test.go); only a
+# code that runs every round and can be tested (scripts/deliver_branch_update_test.go); only a
 # REAL content conflict needs an agent's read of intent.
 #
 # WHY MERGE AND NOT REBASE OR GITHUB'S UPDATE-BRANCH API: a merge preserves the delivery branch's
@@ -89,7 +96,16 @@ fi
 
 before=$(git rev-parse HEAD) || emit unknown
 
-if git_as_bot merge --no-edit origin/main; then
+# `>&2` is load-bearing (#1799). This script's stdout IS the step-output payload — the caller tees
+# it straight into $GITHUB_OUTPUT, whose grammar is `key=value` / heredoc ONLY. `git merge` writes
+# its own human text to stdout on SUCCESS ("Already up to date." when the branch is current;
+# "Updating a1b2..c3d4" + "Fast-forward" + a diffstat on clean drift), and that text reached
+# $GITHUB_OUTPUT as `Invalid format 'Already up to date.'`, failing the step and ending the whole
+# correction round at needs-human before a single finding was read. Redirecting keeps the merge's
+# diagnostics in the run log (where they are wanted) and off the payload channel. Every other git
+# call here is already stdout-safe: `fetch --quiet` and `push` write to stderr, the
+# `rev-parse`/`ls-files` calls are captured in `$(...)`, and `reset`/`merge --abort` are silenced.
+if git_as_bot merge --no-edit origin/main >&2; then
   after=$(git rev-parse HEAD)
   if [[ "$after" == "$before" ]]; then
     echo "the branch is already up to date with main" >&2

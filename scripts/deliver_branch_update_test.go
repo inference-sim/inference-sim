@@ -62,8 +62,22 @@ func advanceMain(t *testing.T, work, branch, path, content string) {
 	gitCmd(t, work, "checkout", "-q", branch)
 }
 
-// runStateScript runs a `state=`/`files=` script in dir and parses its two output lines.
+// runStateScript runs a `state=`/`files=` script in dir and parses its two output lines. It is
+// STRICT about stdout: a line that is not part of the state/files payload fails the test, because
+// the caller tees this stdout straight into $GITHUB_OUTPUT (see runStateScriptRaw).
 func runStateScript(t *testing.T, dir, script string, args ...string) (state, files string, code int) {
+	t.Helper()
+	stdout, state, files, code := runStateScriptRaw(t, dir, script, args...)
+	if leaked := nonPayloadStdoutLines(stdout); len(leaked) > 0 {
+		t.Errorf("%s %v leaked %d non-payload line(s) on stdout, which $GITHUB_OUTPUT rejects (#1799): %q",
+			script, args, len(leaked), leaked)
+	}
+	return state, files, code
+}
+
+// runStateScriptRaw is runStateScript without the strict-stdout assertion, returning the raw stdout
+// so a test can make its own claim about it.
+func runStateScriptRaw(t *testing.T, dir, script string, args ...string) (stdout, state, files string, code int) {
 	t.Helper()
 	cmd := exec.Command(scriptPath(t, script), args...)
 	cmd.Dir = dir
@@ -109,7 +123,120 @@ func runStateScript(t *testing.T, dir, script string, args ...string) (state, fi
 		}
 	}
 	t.Logf("%s %v -> state=%q files=%q (exit %d)\n%s", script, args, state, files, code, errb.String())
-	return state, files, code
+	return out.String(), state, files, code
+}
+
+// nonPayloadStdoutLines returns every stdout line that is NOT part of the `state=`/`files<<DELIM …
+// DELIM` payload — i.e. every line GitHub's $GITHUB_OUTPUT parser would reject with
+// `Invalid format '<line>'`. Lines INSIDE a heredoc block are payload whatever they contain (a
+// conflicting path is arbitrary text), so the walk tracks the block rather than pattern-matching
+// each line independently. This is deliberately stricter than the parser above: the pre-#1799
+// lenient `switch` skipped unrecognized lines, so the leaked `Already up to date.` was invisible to
+// the tests and fatal in production — the harness being more forgiving than its consumer is exactly
+// what let the bug ship.
+func nonPayloadStdoutLines(stdout string) []string {
+	lines := strings.Split(strings.TrimSuffix(stdout, "\n"), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		return nil // no output at all is not a grammar violation; the state assertions cover that
+	}
+	var leaked []string
+	for i := 0; i < len(lines); i++ {
+		switch {
+		case strings.HasPrefix(lines[i], "state="), strings.HasPrefix(lines[i], "files="):
+			// A single-line `key=value`: valid GITHUB_OUTPUT grammar.
+		case strings.HasPrefix(lines[i], "files<<"):
+			delim := strings.TrimPrefix(lines[i], "files<<")
+			closed := false
+			for j := i + 1; j < len(lines); j++ {
+				if lines[j] == delim {
+					i, closed = j, true
+					break
+				}
+			}
+			if !closed {
+				// An unterminated heredoc swallows everything after it, so report the opener.
+				leaked = append(leaked, lines[i])
+				return leaked
+			}
+		default:
+			leaked = append(leaked, lines[i])
+		}
+	}
+	return leaked
+}
+
+// #1799 — on EVERY path the script's stdout must hold ONLY `state=<value>` and (when applicable) the
+// `files<<DELIM`/`DELIM` heredoc, because deliver-correct.yml tees it straight into $GITHUB_OUTPUT,
+// whose grammar admits nothing else. The bug this pins: `git merge` writes its own success text to
+// stdout — `Already up to date.` when the branch is current, `Updating …`/`Fast-forward`/a diffstat
+// on clean drift — and that reached $GITHUB_OUTPUT as `Invalid format 'Already up to date.'`, which
+// failed the step and ended the correction round at needs-human WITHOUT reading a single finding.
+//
+// Asserted on the raw stdout rather than through the parsing helper, and over all four states,
+// because "the state parsed correctly" is exactly the weaker claim that passed while the leak
+// shipped. The `current` and `merged` cases are the two the merge actually printed on.
+func TestUpdateBranchStdoutCarriesOnlyGitHubOutputGrammar(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(t *testing.T) (work, branch string)
+		want  string
+	}{
+		{
+			// The reproducing case: nothing to merge, so `git merge` prints "Already up to date."
+			name: "current",
+			setup: func(t *testing.T) (string, string) {
+				return deliveryRepos(t)
+			},
+			want: "current",
+		},
+		{
+			// The other leaking case: a clean fast-forward-style merge prints "Updating …",
+			// "Fast-forward" and a diffstat — several stray lines rather than one.
+			name: "merged",
+			setup: func(t *testing.T) (string, string) {
+				work, branch := deliveryRepos(t)
+				advanceMain(t, work, branch, "unrelated.md", "main moved on\n")
+				return work, branch
+			},
+			want: "merged",
+		},
+		{
+			name: "conflicting",
+			setup: func(t *testing.T) (string, string) {
+				work, branch := deliveryRepos(t)
+				advanceMain(t, work, branch, "CLAUDE.md", "line one — main's change\nline two\n")
+				return work, branch
+			},
+			want: "conflicting",
+		},
+		{
+			name: "unknown",
+			setup: func(t *testing.T) (string, string) {
+				work, branch := deliveryRepos(t)
+				gitCmd(t, work, "remote", "set-url", "origin", filepath.Join(work, "..", "does-not-exist.git"))
+				return work, branch
+			},
+			want: "unknown",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			work, branch := tc.setup(t)
+			stdout, state, _, code := runStateScriptRaw(t, work, "deliver-update-branch.sh", branch)
+			if code != 0 {
+				t.Fatalf("exit %d, want 0", code)
+			}
+			// Non-vacuity: a test that asserted grammar on the wrong path would pass trivially.
+			if state != tc.want {
+				t.Fatalf("state = %q, want %q — this subtest is not exercising the intended path", state, tc.want)
+			}
+			if leaked := nonPayloadStdoutLines(stdout); len(leaked) > 0 {
+				t.Errorf("stdout carries %d line(s) $GITHUB_OUTPUT would reject with `Invalid format`: %q\nfull stdout:\n%s",
+					len(leaked), leaked, stdout)
+			}
+		})
+	}
 }
 
 func remoteTip(t *testing.T, work, branch string) string {
