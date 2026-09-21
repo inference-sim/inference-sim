@@ -246,6 +246,26 @@ type ModelHardwareConfig struct {
 	// expert-parallel group. Only affects the trained-physics latency backend.
 	EnableExpertParallel bool
 
+	// EPGroupDP is the data-parallel WIDTH of the expert-parallel group, for a config
+	// whose own DP has been rewritten to 1 by DP-as-real-placement (#1531/#1556). 0 (the
+	// default) means "use this config's own DP", which is every configuration that
+	// existed before #1548 — so the zero value is inert.
+	//
+	// It exists because the EP group is a LOGICAL topology fact that survives placement:
+	// `--tp 8 --dp 2 --enable-expert-parallel` is ONE 16-GPU expert-parallel group, but
+	// DP-as-placement expresses it as 2 engine replicas each configured DP=1. A
+	// config-bound EP size read off such a replica collapses to TP and silently no-ops
+	// the sharding (the exact trap #1656 documents on the KV-capacity side).
+	//
+	// It carries the DP WIDTH rather than an absolute group size on purpose: PD
+	// disaggregation can override a pool's TP (cluster.ResolvePoolConfig), and an absolute
+	// group size stamped from the global TP would then contradict the pool's own TP. A
+	// width composes — the pool's group is poolTP·EPGroupDP.
+	//
+	// Supplied via WithExpertParallelGroupDP. Only meaningful for an MoE model with
+	// expert parallelism enabled; EffectiveEP ignores it otherwise.
+	EPGroupDP int
+
 	// MoECommBackend mirrors vLLM VLLM_ALL2ALL_BACKEND. It selects the MoE
 	// dispatch/combine communication cost model used by the trained-physics
 	// backend when DP > 1. Empty string resolves to the vLLM default
@@ -255,6 +275,80 @@ type ModelHardwareConfig struct {
 
 	Backend     string // latency model backend: "" or "roofline" (default), "trained-physics"
 	MaxModelLen int64  // max total sequence length (input + output); 0 = unlimited (mirrors vLLM --max-model-len)
+
+	// NetworkTopology is the placement-derived inter-node interconnect topology
+	// (#1530): the size of the node(s) this instance was actually placed on. It sits
+	// here, alongside TP/DP/EnableExpertParallel/MoECommBackend, because it is a
+	// latency-model input like them — the trained-physics backend uses it to decide
+	// whether a collective crosses a node boundary and must therefore be charged at
+	// the (slower) inter-node fabric bandwidth.
+	//
+	// In production this is written by sim/cluster's placement sites, which stamp it
+	// onto an already-built per-instance config (the same way they stamp the placed GPU
+	// type and KV capacity) — placement is only known after the config exists. The
+	// WithNetworkTopology option supplies it at construction instead, for tests and for
+	// standalone callers; it mirrors how WithKVOffload extends NewKVCacheConfig and is
+	// what the Validate() guard below covers. Its zero value is inert: no node-pool
+	// placement means no cross-node collective, so step time is byte-identical to a
+	// pre-#1530 build (INV-6/INV-BC-DP1).
+	NetworkTopology NetworkTopology
+
+	// CommSerializationFactor is S, the eager/no-overlap serialization multiplier on the
+	// size-independent cross-node collective latency term (#1694, Part B). It captures a
+	// DEPLOYMENT REGIME, not a fabric property: a deployment running CUDA graphs with
+	// comm/compute overlap hides most of each collective's launch+sync cost (S≈1), while
+	// one running enforce-eager + un-fused + no overlap serializes every collective behind
+	// a full barrier (S≫1). It sits here, beside TP/DP/MoECommBackend/NetworkTopology,
+	// because it is a latency-model input like them (R16).
+	//
+	// It multiplies ONLY the cross-node latency term (n_steps·α_hop), never the bandwidth
+	// halves and never the whole step. It is deliberately kept SEPARATE from the per-fabric
+	// α_hop (HardwareCalib.InterNodeHopLatencyUs): folding S into α_hop would make a
+	// graphs-ON deployment inherit a graphs-OFF fabric constant (#1694). Its zero value —
+	// and any value ≤ 1 — is inert: EffectiveCommSerializationFactor clamps to 1.0, so
+	// output is byte-identical to a pre-#1694 build (INV-6/INV-BC-DP1). It is a global,
+	// per-run choice (safe to stamp on every DP replica), supplied via
+	// WithCommSerializationFactor and re-supplied identically on run and replay rather than
+	// round-tripped through the trace header (INV-13, like --kv-cache-dtype).
+	CommSerializationFactor float64
+}
+
+// ModelHardwareOption customizes a ModelHardwareConfig at construction. Used to add
+// optional inputs without churning NewModelHardwareConfig's ~200 call sites (R4),
+// the same pattern KVCacheOption uses for NewKVCacheConfig.
+type ModelHardwareOption func(*ModelHardwareConfig)
+
+// WithNetworkTopology supplies the placement-derived inter-node interconnect topology
+// (#1530) at construction. Omitting it leaves the topology unknown, which makes every
+// cross-node cost inert (INV-6).
+//
+// The production path does NOT use this option: placement is not known until after the
+// config is built, so sim/cluster stamps the field directly on the per-instance copy.
+// The option serves tests and standalone construction, and is the path the constructor's
+// Validate() guard protects. Either way the value must come from real placement — it is
+// a placement fact, never a user-declared knob.
+func WithNetworkTopology(topo NetworkTopology) ModelHardwareOption {
+	return func(c *ModelHardwareConfig) { c.NetworkTopology = topo }
+}
+
+// WithExpertParallelGroupDP supplies the data-parallel width of the expert-parallel group
+// (#1548) for a per-replica config whose own DP was rewritten to 1 by DP-as-real-placement.
+// Omitting it leaves EPGroupDP at 0, which means "use this config's own DP" — the
+// pre-#1548 behaviour, so every existing configuration is byte-identical (INV-6).
+//
+// Pass the LOGICAL, user-requested --dp. A value at or below the config's own DP is
+// absorbed by EffectiveEPGroupDP's max, so it can never SHRINK a group.
+func WithExpertParallelGroupDP(dp int) ModelHardwareOption {
+	return func(c *ModelHardwareConfig) { c.EPGroupDP = dp }
+}
+
+// WithCommSerializationFactor supplies S, the eager/no-overlap serialization multiplier
+// on the cross-node collective latency term (#1694, Part B). Omitting it leaves S at 0,
+// which EffectiveCommSerializationFactor treats as 1.0 (inert) — so every existing
+// configuration is byte-identical (INV-6). Pass the deployment's calibrated factor
+// (≥ 1); a value ≤ 1 is clamped to 1.0 (S must never make a spanning step cheaper).
+func WithCommSerializationFactor(s float64) ModelHardwareOption {
+	return func(c *ModelHardwareConfig) { c.CommSerializationFactor = s }
 }
 
 // NewModelHardwareConfig creates a ModelHardwareConfig with all fields explicitly set.
@@ -273,7 +367,8 @@ type ModelHardwareConfig struct {
 // through NewLatencyModel, so a zero-TP divisor cannot reach latency math.
 func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 	model, gpu string, tp, dp int, enableExpertParallel bool,
-	moeCommBackend, backend string, maxModelLen int64) ModelHardwareConfig {
+	moeCommBackend, backend string, maxModelLen int64,
+	opts ...ModelHardwareOption) ModelHardwareConfig {
 	if maxModelLen < 0 {
 		panic(fmt.Sprintf("NewModelHardwareConfig: MaxModelLen must be >= 0, got %d", maxModelLen))
 	}
@@ -285,7 +380,7 @@ func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 			"(NumLocalExperts >= %d), got DP=%d with NumLocalExperts=%d. Dense data parallelism "+
 			"is expressed via router replicas, not the latency model.", MoEMinExperts, dp, modelConfig.NumLocalExperts))
 	}
-	return ModelHardwareConfig{
+	c := ModelHardwareConfig{
 		ModelConfig:          modelConfig,
 		HWConfig:             hwConfig,
 		Model:                model,
@@ -297,6 +392,17 @@ func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 		Backend:              backend,
 		MaxModelLen:          maxModelLen,
 	}
+	for _, opt := range opts {
+		opt(&c)
+	}
+	// Options can carry a hand-built value, so validate what they applied. The
+	// canonical NewNetworkTopology already normalizes a negative node size, so this
+	// only catches a struct literal built directly (which R4 discourages) — but a
+	// negative node size would make a collective's node span meaningless.
+	if err := c.NetworkTopology.validate(); err != nil {
+		panic(fmt.Sprintf("NewModelHardwareConfig: %v", err))
+	}
+	return c
 }
 
 // isMoE reports whether the model is a mixture-of-experts model. It delegates to
@@ -317,11 +423,28 @@ func (c ModelHardwareConfig) EffectiveDP() int {
 	return c.DP
 }
 
+// EffectiveCommSerializationFactor returns S, the cross-node latency serialization
+// multiplier (#1694, Part B), clamped so it can only ever RAISE the charged latency.
+// Returns exactly 1.0 (inert — byte-identical to a pre-#1694 build, INV-6) when the
+// factor is unset, ≤ 1, or non-finite (NaN/Inf); otherwise the calibrated value. The
+// CLI is the loud validation boundary (a value < 1 is rejected there, R3); this clamp
+// is the library-side R20 degrade-to-baseline guard for a struct built directly.
+func (c ModelHardwareConfig) EffectiveCommSerializationFactor() float64 {
+	if c.CommSerializationFactor <= 1.0 || math.IsNaN(c.CommSerializationFactor) || math.IsInf(c.CommSerializationFactor, 0) {
+		return 1.0
+	}
+	return c.CommSerializationFactor
+}
+
 // EffectiveMoEGroupSize returns the size of the flattened MoE tensor-parallel
 // group. For MoE models this is TP·DP (mirroring vLLM's flattened dp·pcp·tp MoE
 // group; PCP is not modeled here and is assumed 1), used by both the EP-off and
-// EP-on MoE paths. For dense models it is just TP. This is the sharding divisor
-// for routed-expert weights/compute.
+// EP-on MoE paths. For dense models it is just TP.
+//
+// This is the sharding divisor for routed-expert COMPUTE. Since #1548 it is no longer
+// also the divisor for routed-expert WEIGHTS: see EffectiveExpertShardGroupSize for why
+// the two separate under expert parallelism (compute is EP-mode-invariant, weights are
+// not). The two are equal for every configuration that existed before #1548.
 func (c ModelHardwareConfig) EffectiveMoEGroupSize() int {
 	if c.isMoE() {
 		return c.TP * c.EffectiveDP()
@@ -359,12 +482,61 @@ func EffectiveEPSize(isMoE bool, tp, dp int, enableExpertParallel bool) int {
 	return tp * dp
 }
 
+// EffectiveEPGroupDP is the data-parallel width of the expert-parallel group: the
+// explicitly-supplied EPGroupDP when it is WIDER than this config's own DP, else the
+// config's own DP. Taking the max (rather than preferring EPGroupDP outright) means the
+// option can only ever widen a group, so a stale or too-small value cannot silently
+// shrink one — and the unset 0 falls straight through to EffectiveDP() (INV-6).
+func (c ModelHardwareConfig) EffectiveEPGroupDP() int {
+	if dp := c.EffectiveDP(); c.EPGroupDP < dp {
+		return dp
+	}
+	return c.EPGroupDP
+}
+
 // EffectiveEP is the config-bound accessor for EffectiveEPSize: the expert-parallel
-// group size implied by THIS config's (possibly per-replica) parallelism degrees.
-// Semantics are unchanged from before #1656 — TP·DP when EP is enabled for an MoE
-// model, else 1.
+// group size implied by this config's parallelism degrees — TP·DP when EP is enabled for
+// an MoE model, else 1.
+//
+// Since #1548 the DP it uses is EffectiveEPGroupDP(), so a per-replica config produced by
+// DP-as-placement (own DP rewritten to 1) still reports the LOGICAL TP·DP group when the
+// CLI supplied WithExpertParallelGroupDP. With the option absent this is exactly
+// EffectiveDP(), i.e. the pre-#1548 value.
 func (c ModelHardwareConfig) EffectiveEP() int {
-	return EffectiveEPSize(c.isMoE(), c.TP, c.EffectiveDP(), c.EnableExpertParallel)
+	return EffectiveEPSize(c.isMoE(), c.TP, c.EffectiveEPGroupDP(), c.EnableExpertParallel)
+}
+
+// EffectiveExpertShardGroupSize is the group the routed (FusedMoE) expert WEIGHTS are
+// sharded over — the divisor behind "how many full-expert-equivalents does one GPU hold".
+// It is deliberately distinct from EffectiveMoEGroupSize, which is the group that shares
+// the routed-expert COMPUTE:
+//
+//   - COMPUTE is EP-mode-invariant. With EP on, G GPUs jointly process the whole group's
+//     tokens (n_dp · T_local of them) over G ranks ⇒ T_local·k/TP per GPU — the same value
+//     EP-off gets from tensor-sharding the FFN width by TP. EP re-organises expert
+//     OWNERSHIP, not FLOPs. (That step assumes the DP ranks are in lockstep, which vLLM
+//     enforces with dummy batches. BLIS runs the replicas as independent instances, so the
+//     charge is exact at the saturation operating point this model targets and pessimistic
+//     below it — the same assumption the other MoE terms already make.)
+//   - WEIGHTS are not. EP-off holds all num_experts at 1/TP of their width (num_experts/TP
+//     full-expert-equivalents); EP-on holds num_experts/EP WHOLE experts. At EP > TP (i.e.
+//     DP > 1) that is a genuine per-GPU reduction, and it is the reason expert parallelism
+//     exists.
+//
+// Returns EffectiveEP() when expert parallelism is really in force (> 1), else
+// EffectiveMoEGroupSize(). Those two coincide for every pre-#1548 configuration — EP-off
+// gives 1 and falls through; EP-on at this config's own DP gives TP·DP, which IS
+// EffectiveMoEGroupSize — so the value only diverges for a DP-as-placement replica
+// carrying EPGroupDP (INV-6).
+//
+// This mirrors the KV-capacity side, where #1656 already charges routed-expert weights
+// against sim.EffectiveEPSize(...). Step-time and capacity therefore agree on the
+// footprint of the same experts.
+func (c ModelHardwareConfig) EffectiveExpertShardGroupSize() int {
+	if ep := c.EffectiveEP(); ep > 1 {
+		return ep
+	}
+	return c.EffectiveMoEGroupSize()
 }
 
 // PolicyConfig groups scheduling and preemption policy selection.

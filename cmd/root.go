@@ -62,7 +62,9 @@ var (
 	betaCoeffs                []float64 // List of beta coeffs corresponding to step features
 	alphaCoeffs               []float64 // List of alpha coeffs corresponding to pre, postprocessing delays
 	defaultsFilePath          string    // Path to default constants - trained coefficients, default specs and workloads
-	modelConfigFolder         string    // Path to folder containing config.json and model.json
+	catalogPath               string    // --catalog: model catalog root (one directory per model, each with config.json). No default; BLIS_CATALOG is the fallback (#1731)
+	modelConfigDir            string    // Resolved catalog entry directory containing config.json (side effect of resolveLatencyConfig)
+	resolvedCatalogRoot       string    // Catalog ROOT that produced this run's model config (side effect of resolveModelConfig); recorded as results-file provenance (#1732)
 	hwConfigPath              string    // Path to constants specific to hardware type (GPU)
 	workloadType              string    // Workload type (chatbot, summarization, contentgen, multidoc, distribution)
 	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
@@ -133,6 +135,15 @@ var (
 	numSpeculativeTokens  int     // --num-speculative-tokens (K)
 	speculativeAcceptance float64 // --speculative-acceptance-rate (α ∈ [0,1])
 	speculativeMethod     string  // --speculative-method (informational label)
+
+	// Cross-node collective serialization S (#1694, Part B). A deployment-regime
+	// multiplier on the cross-node latency term: 1.0 (default) = graphs-on/overlap
+	// (inert, byte-identical INV-6); >1 = enforce-eager/no-overlap. --enforce-eager is a
+	// provenance+guard bool that REQUIRES an explicit --comm-serialization-factor > 1
+	// (BLIS ships no fitted eager magnitude, #1694 guardrail). Re-supplied on both run
+	// and replay, not round-tripped through the trace header (INV-13).
+	commSerializationFactor float64 // --comm-serialization-factor (S ≥ 1)
+	enforceEager            bool    // --enforce-eager (regime flag; requires S > 1)
 
 	// loraReservedBytesForKV carries the resolved static LoRA HBM reservation
 	// (bytes) into KV auto-capacity, mirroring how totalKVBlocks is threaded as a
@@ -207,6 +218,11 @@ var (
 	decodeLatencyModel  string
 	prefillMaxModelLen  int64
 	decodeMaxModelLen   int64
+	// Per-ROLE MoE all-to-all backend (#1548). vLLM's VLLM_ALL2ALL_BACKEND is a
+	// per-process env var, so prefill and decode engines can (and in the GLM recipe do)
+	// run different modes: high-throughput on prefill, low-latency on decode.
+	prefillMoECommBackend string
+	decodeMoECommBackend  string
 
 	// per-request timeout override for blis run (seconds; negative = disabled, 0 is rejected)
 	requestTimeoutSecs int
@@ -367,7 +383,7 @@ func allZeros(values []float64) bool {
 // latencyResolution holds the resolved components from resolveLatencyConfig.
 // Callers use these values to construct sim.SimConfig sub-configs.
 // Package-level vars (totalKVBlocks, maxModelLen, model, gpu, tensorParallelism,
-// modelConfigFolder, hwConfigPath) are mutated as side effects.
+// modelConfigDir, hwConfigPath) are mutated as side effects.
 type latencyResolution struct {
 	Backend     string            // resolved latency backend name
 	ModelConfig sim.ModelConfig   // HF-derived model architecture config
@@ -392,6 +408,38 @@ type dpPlacementPlan struct {
 	Active    bool // true ⇒ expand into Replicas engine replicas, each configured DP=1
 	Replicas  int  // engine replicas per logical --num-instances (dp when Active, else 1)
 	PerRankDP int  // DP to configure on each replica's latency+KV model (1 when Active, else dp)
+
+	// EPGroupDP is the LOGICAL data-parallel width of the expert-parallel group to carry
+	// into each replica's latency model (#1548), or 0 when there is none to carry (expert
+	// parallelism off, or no placement expansion). It is NOT a second copy of Replicas:
+	// PerRankDP deliberately erases the replica's DP for token-work purposes, and this is
+	// the one quantity that must survive that erasure — the EP group spans the replicas.
+	EPGroupDP int
+}
+
+// EPGroupOptions returns the ModelHardwareOptions carrying this plan's logical
+// expert-parallel group width, or nil when the plan carries none (#1548). Keeping the
+// decision on the plan — rather than re-deriving it at each NewModelHardwareConfig call
+// site — means `blis run` and `blis replay` cannot disagree about it (R23, INV-13), and
+// makes it unit-testable with the rest of the plan.
+//
+// nil (not a zero-valued option) when there is nothing to carry, so a config built without
+// expert parallelism is constructed exactly as it was before #1548 (INV-6).
+func (p dpPlacementPlan) EPGroupOptions() []sim.ModelHardwareOption {
+	if p.EPGroupDP <= 1 {
+		return nil
+	}
+	return []sim.ModelHardwareOption{sim.WithExpertParallelGroupDP(p.EPGroupDP)}
+}
+
+// modelHardwareOptions assembles the full ModelHardwareOption list for a NewModelHardwareConfig
+// call, in ONE place so `blis run` and `blis replay` cannot diverge on it (R23, INV-13) — the
+// same reason EPGroupOptions exists. Every latency-model input that rides an option
+// (the #1548 EP-group width, the #1694 cross-node serialization factor S) is composed here;
+// a new one is added once, not at both call sites. Reads the CLI (S resolution + its guards)
+// and the resolved placement plan.
+func modelHardwareOptions(cmd *cobra.Command, dpPlan dpPlacementPlan) []sim.ModelHardwareOption {
+	return append(dpPlan.EPGroupOptions(), sim.WithCommSerializationFactor(resolveCommSerializationFactor(cmd)))
 }
 
 // dpPlacementInstanceWarnThreshold: warn (not fatal) when DP-as-placement expands
@@ -409,12 +457,11 @@ const dpPlacementInstanceWarnThreshold = 512
 // silently vanish for exactly the TP×DP deployments that need it. Every CLI auto-calc
 // site funnels through here so one formula serves all of them (R23).
 //
-// Note the capacity effect only appears when the EP group exceeds tp — i.e. with DP>1.
-// `--dp>1` together with `--enable-expert-parallel` is currently rejected downstream by
-// planDPPlacement's #1548 guard — on BOTH commands since #1556, which replaced replay's
-// separate "MoE dp>1 is run-only" rejection with the shared resolveDPPlacement, so the
-// one #1548 guard now covers run and replay alike. Today this is therefore a no-op in
-// practice; it makes the capacity arithmetic correct ahead of #1548, and stops the weight
+// Note the capacity effect only appears when the EP group exceeds tp — i.e. with DP>1,
+// which #1548 made reachable end-to-end on both commands (it lifted planDPPlacement's
+// EP-on rejection). So this is live rather than latent, and it now agrees with the
+// step-time expert-shard group (ModelHardwareConfig.EffectiveExpertShardGroupSize), which
+// is fed the same logical width. It also still stops the weight
 // over-count from masking its diagnostics.
 //
 // Ordering note (#1556): resolveDPPlacement mutates numInstances / totalKVBlocks /
@@ -422,7 +469,8 @@ const dpPlacementInstanceWarnThreshold = 512
 // dpPlan.PerRankDP, straight into NewModelHardwareConfig. So this function reads the
 // logical CLI --dp whatever the call order, which is exactly what it needs; a future
 // change that wrote the per-rank DP back into the flag var would silently collapse the EP
-// group to tp and undo #1656.
+// group to tp and undo #1656 — and, since #1548, the step-time expert-shard group with it
+// (dpPlacementPlan.EPGroupDP is likewise read from the logical --dp).
 //
 // Two of resolveLatencyConfig's own EP rejections (roofline + EP, dense + EP) also fire
 // AFTER the auto-calc that calls this, so an EP group can be resolved for a config that is
@@ -456,60 +504,85 @@ func formatEPForLog(ep int) string {
 // returns the zero plan (Active=false, Replicas=0); callers MUST `logrus.Fatalf`
 // on error and not use the plan.
 //
-// DP-as-placement applies only to an MoE model with dp>1, expert parallelism
-// OFF, no PD disaggregation, no node pools, and no autoscaler; each replica is
-// then a standalone TP engine sized per-rank (DP=1). vLLM data parallelism is N
-// independent EngineCores with an internal load balancer distributing requests
-// disjointly — the BLIS equivalent is N real instances behind the existing
-// cluster router. The lumped single-instance DP model divided token work by dp
-// precisely because it held every request; once the router splits requests
-// across N instances each replica must be DP=1 or the /dp factor double-counts.
+// DP-as-placement applies to an MoE model with dp>1 and no autoscaler; each replica is
+// then a standalone TP engine sized per-rank (DP=1). vLLM data parallelism is N independent
+// EngineCores with an internal load balancer distributing requests disjointly — the BLIS
+// equivalent is N real instances behind the existing cluster router. The lumped
+// single-instance DP model divided token work by dp precisely because it held every
+// request; once the router splits requests across N instances each replica must be DP=1 or
+// the /dp factor double-counts.
 //
-// Guarded combinations fail fast (never silently mis-modeled):
-//   - EP on (--enable-expert-parallel): #1531 models EP-off physics (experts
-//     replicated per DP rank). EP-on placement (experts sharded across the DP
-//     group + inter-node network cost #1530) is #1548.
-//   - PD disaggregation / autoscaler / node pools: out of scope for the
-//     independent DP slice (pool-topology arithmetic, dynamic-scaling semantics,
-//     and un-audited N×M pool placement); tracked by #1553.
+// PD disaggregation and node pools are SUPPORTED alongside it (#1553, lifting #1531's
+// rejections). Neither changes the plan the way the autoscaler would: the PD extension is
+// the same per-replica transformation applied to EACH pool (a topology P+D+S+E ≤ total
+// becomes P·N+D·N+S·N+E·N ≤ total·N, which preserves the topology inequality), and node
+// pools place the N×M replicas through the existing tested per-instance placement path.
+// So the plan is identical to the plain (non-PD, non-node-pool) active plan; the per-pool
+// count expansion is carried out by applyDPPlacement, not decided here.
+//
+// Expert parallelism is ALSO allowed alongside it (#1548, lifting #1531's rejection). It
+// reserves no extra GPUs — the expert-parallel group IS the N×TP GPUs this placement
+// already takes — so the plan is unchanged by it; what EP changes is how experts map onto
+// that group, which resolveDPPlacement carries into each replica's latency model as the
+// logical EP-group DP width. epOn is therefore not a rejection reason, and is kept
+// as a parameter only so the caller's decision and its diagnostics read from one place.
+//
+// Guarded combination that still fails fast (never silently mis-modeled):
+//   - Autoscaler (#1553 DECISION): the semantics of dynamically scaling a dp-expanded
+//     population are undefined (add one rank? one whole DP group of N?), and
+//     DirectActuator.scaleUp places a single-role instance with no DP-group awareness.
+//     Supporting it would ship an untested, ambiguous path — exactly what #1531 guarded
+//     against. Rejected with a clear message stating the decision.
 //
 // Dense dp>1 is rejected earlier (resolveLatencyConfig, cmd/root.go), so here it
 // is simply a no-op.
 func planDPPlacement(isMoE bool, dp int, epOn, pdActive, autoscalerActive, nodePoolsActive bool) (dpPlacementPlan, error) {
 	if !isMoE || dp <= 1 {
+		// No expansion ⇒ nothing erases the config's own DP ⇒ no EP width to carry.
 		return dpPlacementPlan{Active: false, Replicas: 1, PerRankDP: dp}, nil
 	}
-	if epOn {
-		return dpPlacementPlan{}, fmt.Errorf("--dp > 1 with --enable-expert-parallel is not yet supported: " +
-			"DP-as-placement (#1531) models expert-parallel-OFF physics (experts replicated per DP rank); " +
-			"EP-on placement (experts sharded across the DP group + inter-node network cost) is tracked by #1548. " +
-			"Disable --enable-expert-parallel, or use --dp 1")
-	}
-	if pdActive {
-		return dpPlacementPlan{}, fmt.Errorf("--dp > 1 (MoE) is not yet supported with prefill/decode/encode " +
-			"disaggregation: DP-as-placement (#1531) reuses the --num-instances placement path, not the PD pools (#1553). " +
-			"Use --dp 1 with PD disaggregation, or remove the PD flags")
-	}
 	if autoscalerActive {
-		return dpPlacementPlan{}, fmt.Errorf("--dp > 1 (MoE) is not yet supported with the model autoscaler: " +
-			"DP-as-placement (#1531) spawns a fixed set of dp engine replicas (#1553). " +
+		return dpPlacementPlan{}, fmt.Errorf("--dp > 1 (MoE) is not supported with the model autoscaler (#1553 " +
+			"decision): DP-as-placement spawns a fixed set of dp engine replicas, and the semantics of " +
+			"dynamically scaling that population (add one rank, or one whole DP group of dp?) are undefined — " +
+			"the autoscaler places single-role instances with no DP-group awareness. " +
 			"Use --dp 1 with the autoscaler, or disable the autoscaler")
 	}
-	if nodePoolsActive {
-		return dpPlacementPlan{}, fmt.Errorf("--dp > 1 (MoE) is not yet supported with node pools: the N×M " +
-			"replica placement onto pools is not yet audited/tested (#1553). " +
-			"Use --dp 1 with node_pools, or remove the node_pools policy-bundle section")
+	// pdActive / nodePoolsActive are no longer rejection reasons (#1553). They are kept as
+	// parameters so resolveDPPlacement's diagnostics and the per-pool KV path can read the
+	// same decision, and so a future combination-specific guard has one home.
+	_ = pdActive
+	_ = nodePoolsActive
+	// epGroupDP is the ONLY effect expert parallelism has on the plan: it reserves no extra
+	// GPUs, so Replicas/PerRankDP are identical either way.
+	epGroupDP := 0
+	if epOn {
+		epGroupDP = dp
 	}
-	return dpPlacementPlan{Active: true, Replicas: dp, PerRankDP: 1}, nil
+	return dpPlacementPlan{Active: true, Replicas: dp, PerRankDP: 1, EPGroupDP: epGroupDP}, nil
 }
 
-// dpPlacementDeployment carries the three deployment quantities DP-as-real-placement
+// dpPlacementDeployment carries the deployment quantities DP-as-real-placement
 // adjusts. It is both the input (pre-expansion) and the output (post-expansion) of
 // applyDPPlacement.
+//
+// The four PD pool counts (#1553) are expanded by the same Replicas factor as
+// NumInstances: a PD topology of P prefill + D decode + S shared + E encode instances
+// (with P+D+S+E ≤ total) becomes P·N + D·N + S·N + E·N replicas of total·N. Scaling
+// every term by the same N preserves ValidatePoolTopology's inequality
+// (P·N+D·N+S·N+E·N ≤ total·N), so a topology that passed at --dp 1 still passes after
+// expansion. They are zero for a non-PD run, so the multiply is a strict no-op there.
 type dpPlacementDeployment struct {
 	NumInstances  int   // engine replicas (logical --num-instances on the way in)
 	TotalKVBlocks int64 // KV blocks per instance (the dp-multiplied aggregate on the way in when autoScaledKV)
 	MaxModelLen   int64 // --max-model-len (0 = unset/unlimited)
+
+	// PD pool counts (#1553), each scaled by Replicas when the plan is active. Zero for
+	// a non-PD deployment.
+	PrefillInstances int
+	DecodeInstances  int
+	SharedInstances  int
+	EncodeInstances  int
 }
 
 // applyDPPlacement applies a DP-as-placement plan to the deployment quantities: it
@@ -531,6 +604,13 @@ func applyDPPlacement(plan dpPlacementPlan, dp int, dep dpPlacementDeployment, a
 	}
 	out := dep
 	out.NumInstances = dep.NumInstances * plan.Replicas
+	// Scale each PD pool count by the same replica factor (#1553). The topology
+	// inequality P+D+S+E ≤ total is preserved because every term (and total) scales by
+	// the same N; the pool counts are 0 for a non-PD run, so this is a no-op there.
+	out.PrefillInstances = dep.PrefillInstances * plan.Replicas
+	out.DecodeInstances = dep.DecodeInstances * plan.Replicas
+	out.SharedInstances = dep.SharedInstances * plan.Replicas
+	out.EncodeInstances = dep.EncodeInstances * plan.Replicas
 	if autoScaledKV {
 		out.TotalKVBlocks = dep.TotalKVBlocks / int64(dp)
 	}
@@ -576,28 +656,26 @@ func applyDPPlacement(plan dpPlacementPlan, dp int, dep dpPlacementDeployment, a
 // bodies. The pure decision (planDPPlacement) and the pure arithmetic
 // (applyDPPlacement) stay separately unit-testable.
 //
-// Reads: dataParallelism, enableExpertParallel, prefill/decode/prefillDecode/encode
-// instance counts, blockSizeTokens, moeCommBackend, numInstances, totalKVBlocks,
-// maxModelLen.
+// Reads: dataParallelism, enableExpertParallel, moeCommBackend, tensorParallelism,
+// numInstances, totalKVBlocks, maxModelLen, and the prefill/decode/prefillDecode/encode
+// instance counts (as pre-expansion pool inputs).
 //
 // Side effects (package-level vars mutated, only when the plan is active and every
-// guard passes): numInstances, totalKVBlocks, maxModelLen.
+// guard passes): numInstances, totalKVBlocks, maxModelLen, and the four PD pool counts
+// (prefillInstances, decodeInstances, prefillDecodeInstances, encodeInstances) — each
+// scaled by Replicas so a PD topology spawns its N per-rank replicas per pool (#1553).
 //
-// autoscalerActive / nodePoolsActive are parameters because the two commands hold that
-// state differently: runCmd in its extracted bundleAutoscalerIntervalUs / bundleNodePools,
-// replayCmd in the parsed policy bundle plus its own flag-level rejection.
+// The plan is decided by the caller (planDPPlacement) and passed in — deliberately, so
+// the ONE decision can be made early enough for the per-pool KV auto-calc to size each
+// pool per-rank (BC-3, #1553), while its application (instance/KV/pool-count expansion)
+// stays here at the single write site. planDPPlacement is pure, so deciding early and
+// applying later is safe.
 //
 // On error NOTHING is mutated and the caller MUST `logrus.Fatalf` — the CLI boundary
 // owns termination; this function only reports. A non-Active plan (dense model, or
 // --dp 1) mutates nothing, which is what makes the feature a byte-identical no-op
 // (INV-6).
-func resolveDPPlacement(lr latencyResolution, autoscalerActive, nodePoolsActive bool) (dpPlacementPlan, error) {
-	plan, err := planDPPlacement(lr.ModelConfig.IsMoE(), dataParallelism, enableExpertParallel,
-		prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0,
-		autoscalerActive, nodePoolsActive)
-	if err != nil {
-		return dpPlacementPlan{}, err
-	}
+func resolveDPPlacement(lr latencyResolution, plan dpPlacementPlan) (dpPlacementPlan, error) {
 	if !plan.Active {
 		return plan, nil
 	}
@@ -606,14 +684,32 @@ func resolveDPPlacement(lr latencyResolution, autoscalerActive, nodePoolsActive 
 	// multiplied the total by dp for MoE) — exactly the resolveLatencyConfig auto gate.
 	autoScaledKV := lr.KVParamsOK && lr.HWConfig.MemoryGiB > 0
 	dep, err := applyDPPlacement(plan, dataParallelism, dpPlacementDeployment{
-		NumInstances:  numInstances,
-		TotalKVBlocks: totalKVBlocks,
-		MaxModelLen:   maxModelLen,
+		NumInstances:     numInstances,
+		TotalKVBlocks:    totalKVBlocks,
+		MaxModelLen:      maxModelLen,
+		PrefillInstances: prefillInstances,
+		DecodeInstances:  decodeInstances,
+		SharedInstances:  prefillDecodeInstances,
+		EncodeInstances:  encodeInstances,
 	}, autoScaledKV, blockSizeTokens)
 	if err != nil {
 		return dpPlacementPlan{}, err
 	}
+	// The scaled PD topology still satisfies P·N+D·N+S·N+E·N ≤ total·N by construction
+	// (the pre-scale topology passed ValidatePoolTopology at the CLI boundary and every
+	// term scales by the same N). Re-validate as defense in depth (#1553, BC-2): a future
+	// change to the scaling arithmetic that broke the invariant must fail loudly here
+	// rather than mis-place instances (R1).
+	if dep.PrefillInstances > 0 || dep.DecodeInstances > 0 || dep.SharedInstances > 0 || dep.EncodeInstances > 0 {
+		if verr := cluster.ValidatePoolTopology(dep.PrefillInstances, dep.DecodeInstances,
+			dep.SharedInstances, dep.EncodeInstances, dep.NumInstances); verr != nil {
+			return dpPlacementPlan{}, fmt.Errorf("DP-as-placement expanded the PD pool topology past the "+
+				"cluster invariant (this should be impossible — every term scales by the same --dp): %w", verr)
+		}
+	}
 	numInstances, totalKVBlocks, maxModelLen = dep.NumInstances, dep.TotalKVBlocks, dep.MaxModelLen
+	prefillInstances, decodeInstances = dep.PrefillInstances, dep.DecodeInstances
+	prefillDecodeInstances, encodeInstances = dep.SharedInstances, dep.EncodeInstances
 	logrus.Infof("[cluster] DP-as-placement: --dp %d (MoE) → %d single-node engine replicas per logical instance "+
 		"(%d logical × %d = %d instances), each per-rank (DP=1, %d KV blocks/replica)",
 		dataParallelism, plan.Replicas, logicalInstances, plan.Replicas, numInstances, totalKVBlocks)
@@ -621,17 +717,116 @@ func resolveDPPlacement(lr latencyResolution, autoscalerActive, nodePoolsActive 
 		logrus.Warnf("[cluster] DP-as-placement is spawning %d engine replicas (--num-instances %d × --dp %d); "+
 			"if --dp was a typo this will consume a large amount of memory and time", numInstances, logicalInstances, dataParallelism)
 	}
-	// --moe-comm-backend selects the DP>1 dispatch/combine cost; under DP-as-placement
-	// each replica is DP=1, so that term is inert (the MoE FFN all-reduces over the TP
-	// group instead — correct EP-off physics). The resolveLatencyConfig no-op warning
-	// does not fire here (it gates on the CLI dataParallelism, which is >1), so warn
-	// explicitly to avoid a user believing the backend choice affects this run.
-	if moeCommBackend != "" {
-		logrus.Warnf("--moe-comm-backend=%s is inert under DP-as-placement: each of the %d DP replicas runs "+
-			"at DP=1, so the MoE FFN all-reduces over the TP group (no cross-DP dispatch/combine). The DP>1 "+
-			"dispatch term belongs to EP-on placement, deferred to #1548.", moeCommBackend, plan.Replicas)
+	if enableExpertParallel {
+		// EP-ON placement (#1548). The expert-parallel group is the whole N×TP GPU set this
+		// placement already reserves; each replica's own DP is 1, so its latency model can
+		// only learn the group's real width from the LOGICAL --dp. Without this the group
+		// would collapse to TP and the EP sharding would silently no-op — the same trap
+		// #1656 documents on the KV-capacity side.
+		logrus.Infof("[cluster] EP-as-placement: --enable-expert-parallel over the TP·DP=%d×%d=%d GPU "+
+			"expert-parallel group (no additional GPUs reserved); routed experts are sharded across the "+
+			"group and the MoE FFN uses dispatch/combine all-to-all instead of a TP all-reduce",
+			tensorParallelism, dataParallelism, tensorParallelism*dataParallelism)
+		// Honesty boundary: the group spans plan.Replicas SEPARATELY placed replicas. BLIS
+		// prices cross-node collective traffic from real placement WITHIN one instance's TP
+		// group (#1530), but the expert-parallel group here is formed ACROSS N independently
+		// placed engine replicas — a boundary the per-instance placement topology does not
+		// cross. Node pools alongside --dp>1 are supported for GPU reservation since #1553,
+		// but that does not add inter-replica fabric pricing, so the inter-replica leg of the
+		// all-to-all is still charged at the on-node rate.
+		logrus.Warnf("[cluster] the %d-GPU expert-parallel group spans %d independently-placed engine "+
+			"replicas, whose inter-replica fabric cost is NOT priced: cross-node collective pricing is "+
+			"placement-derived within a TP group (#1530) but the EP group is formed across separately-placed "+
+			"replicas, so the all-to-all is charged at the on-node rate and step time is optimistic for a "+
+			"multi-node expert-parallel deployment", tensorParallelism*dataParallelism, plan.Replicas)
+	} else if moeCommBackend != "" {
+		// --moe-comm-backend selects the dispatch/combine cost. With EP off, each replica
+		// runs at DP=1, so that term is inert (the MoE FFN all-reduces over the TP group
+		// instead — correct EP-off physics). The resolveLatencyConfig no-op warning does not
+		// fire here (it gates on the CLI dataParallelism, which is >1), so warn explicitly to
+		// avoid a user believing the backend choice affects this run.
+		logrus.Warnf("--moe-comm-backend=%s is inert under DP-as-placement without expert parallelism: "+
+			"each of the %d DP replicas runs at DP=1, so the MoE FFN all-reduces over the TP group (no "+
+			"dispatch/combine). Add --enable-expert-parallel to select the all-to-all it prices.",
+			moeCommBackend, plan.Replicas)
 	}
 	return plan, nil
+}
+
+// deploymentFlagValues carries the resolved deployment inputs together with whether the
+// operator actually SUPPLIED each flag. The two are independent: --tp's unset sentinel is
+// 0, which is also a value an operator can type, so the resolved number alone cannot tell
+// "omitted" from "explicitly wrong" (#1776).
+//
+// The supplied bits come from cobra's Flags().Changed at the single call site, carried in
+// explicitly rather than read from the command, so the refusal rule below stays a pure
+// function of its inputs (table-testable without building a cobra command).
+type deploymentFlagValues struct {
+	GPU         string
+	GPUSupplied bool
+	TP          int
+	TPSupplied  bool
+}
+
+// deploymentFlagRefusal returns the message refusing a deployment BLIS will not run, or ""
+// when both inputs are acceptable. Pure — no logging and no process exit — so every branch
+// is table-testable; requireDeploymentFlags is the Fatalf wrapper.
+//
+// Two dispositions per flag, because they need different fixes (#1776): an OMITTED flag has
+// to be added, whereas a flag supplied with an unusable value (`--tp 0`, `--tp -1`,
+// `--hardware ""`) has to be corrected. Reporting the latter as "missing" sends the
+// operator looking for a flag that is right there on their command line. When one flag is
+// omitted and the other is invalid, both clauses are emitted.
+func deploymentFlagRefusal(f deploymentFlagValues) string {
+	var missing, invalid []string
+	switch {
+	case f.GPU != "": // acceptable; the hardware key itself is validated by the config loader
+	case f.GPUSupplied:
+		invalid = append(invalid, `--hardware "" (the GPU type must be non-empty, e.g. --hardware H100)`)
+	default:
+		missing = append(missing, "--hardware (GPU type, e.g. --hardware H100)")
+	}
+	switch {
+	case f.TP > 0: // acceptable
+	case f.TPSupplied:
+		invalid = append(invalid, fmt.Sprintf("--tp %d (tensor parallelism must be > 0, e.g. --tp 1)", f.TP))
+	default:
+		missing = append(missing, "--tp (tensor parallelism, e.g. --tp 1)")
+	}
+	if len(missing) == 0 && len(invalid) == 0 {
+		return ""
+	}
+
+	var clauses []string
+	if len(missing) > 0 {
+		clauses = append(clauses, "missing required flag(s): "+strings.Join(missing, " and "))
+	}
+	if len(invalid) > 0 {
+		clauses = append(clauses, "invalid deployment flag value(s): "+strings.Join(invalid, " and "))
+	}
+	return strings.Join(clauses, "; ") + ". BLIS does not infer the deployment — " +
+		"the GPU type and tensor-parallel degree must be chosen explicitly, on both `blis run` and `blis replay`"
+}
+
+// requireDeploymentFlags refuses a run whose deployment was not chosen by the operator,
+// naming the flag(s) that are missing — or, since #1776, the flag(s) supplied with an
+// unusable value (NS-6, #1733).
+//
+// --hardware and --tp are REQUIRED inputs: every latency backend needs both, and the GPU
+// type plus the tensor-parallel degree together decide the KV budget, the step time, and
+// the placement footprint. BLIS previously looked them up per-model in defaults.yaml and
+// emitted a `logrus.Warnf` before continuing, so a run could complete — and emit metrics —
+// on a deployment the operator never chose, which is the failure mode R1 forbids.
+//
+// A CLI-boundary guard: the refusal rule itself is the pure deploymentFlagRefusal, and this
+// wrapper terminates via logrus.Fatalf per the cmd/-layer error-handling boundary. Which
+// runs are refused is UNCHANGED by #1776 (the accept condition is still a non-empty GPU and
+// a positive TP) — only the wording of the refusal differs, so INV-6 byte-identity on every
+// valid input is untouched.
+func requireDeploymentFlags(f deploymentFlagValues) {
+	if msg := deploymentFlagRefusal(f); msg != "" {
+		logrus.Fatalf("%s", msg)
+	}
 }
 
 // resolveLatencyConfig resolves the latency backend configuration from CLI flags and
@@ -641,16 +836,21 @@ func resolveDPPlacement(lr latencyResolution, autoscalerActive, nodePoolsActive 
 // What it does:
 //   - Normalizes model name to lowercase
 //   - Validates gpuMemoryUtilization and blockSizeTokens (used in KV auto-calc)
-//   - Applies defaults.yaml for GPU and TP when not set via CLI
+//   - Requires --hardware and --tp (NS-6: the deployment is never inferred from defaults.yaml)
 //   - Validates alpha/beta coefficients and auto-detects trained-physics mode when coefficients are provided
-//   - For roofline/trained-physics: resolves model config folder and
+//   - For roofline/trained-physics: resolves the catalog entry directory and
 //     hardware config, loads coefficients from defaults.yaml, auto-calculates
 //     total-kv-blocks and max-model-len from the HF config
 //
 // Side effects (package-level vars mutated):
 //
-//	model, gpu, tensorParallelism, modelConfigFolder, hwConfigPath,
-//	totalKVBlocks, maxModelLen
+//	model, gpu, tensorParallelism, modelConfigDir, resolvedCatalogRoot,
+//	hwConfigPath, totalKVBlocks, maxModelLen
+//
+// resolvedCatalogRoot is set transitively, by the resolveModelConfig call on each
+// analytical-backend branch (#1732); the emit sites read it back as results-file
+// catalog provenance rather than re-resolving --catalog / BLIS_CATALOG, which would
+// re-announce the precedence override on stderr.
 //
 // Returns values that cannot be stored as package-level vars (local coeff copies,
 // resolved modelConfig/hwConfig structs, backend string).
@@ -662,7 +862,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	beta := append([]float64(nil), betaCoeffs...)
 
 	// Normalize model name for consistent lookups (defaults.yaml keys, hf_repo,
-	// bundled model_configs/, coefficient matching all use lowercase).
+	// the catalog entry directory, coefficient matching all use lowercase).
 	model = strings.ToLower(model)
 
 	// Validate --latency-model flag
@@ -722,36 +922,25 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	var kvParams latency.KVCapacityParams
 	var kvParamsOK bool
 
-	// Early defaults resolution: load hardware/TP from defaults.yaml
-	// when not explicitly set via CLI flags.
-	if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
-		hardware, tp := GetDefaultSpecs(model)
-		if tensorParallelism == 0 && tp > 0 {
-			logrus.Warnf("Finding default values of TP for model=%v", model)
-			logrus.Warnf("Using default tp=%v", tp)
-			tensorParallelism = tp
-		}
-		if gpu == "" && len(hardware) > 0 {
-			logrus.Warnf("Finding default values of hardware for model=%v", model)
-			logrus.Warnf("Using default GPU=%v", hardware)
-			gpu = hardware
-		}
-	}
+	// NS-6 (#1733): the deployment is an operator input, never inferred. BLIS used to look
+	// --hardware/--tp up per-model in defaults.yaml and warn-and-continue, so a run could
+	// complete on a deployment nobody chose. Both are now REQUIRED, refused by name (R1).
+	// Checked before any backend branch so run and replay — which share this function —
+	// refuse identically (INV-13), and so no backend can silently skip the requirement.
+	//
+	// Flags().Changed distinguishes an OMITTED flag from one explicitly supplied with an
+	// unusable value (#1776); --tp's unset sentinel is 0, which an operator can also type.
+	// It is safe on a command that never registered the flag (pflag returns false for an
+	// unknown name), which reads as "omitted" — the pre-#1776 disposition.
+	requireDeploymentFlags(deploymentFlagValues{
+		GPU:         gpu,
+		GPUSupplied: cmd.Flags().Changed("hardware"),
+		TP:          tensorParallelism,
+		TPSupplied:  cmd.Flags().Changed("tp"),
+	})
 
 	// --latency-model roofline
 	if backend == "roofline" {
-		var missing []string
-		if gpu == "" {
-			missing = append(missing, "--hardware (GPU type)")
-		}
-		if tensorParallelism <= 0 {
-			missing = append(missing, "--tp (tensor parallelism)")
-		}
-		if len(missing) > 0 {
-			logrus.Fatalf("Roofline mode requires %s. No defaults found in defaults.yaml for model=%s. "+
-				"Provide these flags explicitly, or use --latency-model trained-physics for coefficient-based estimation",
-				strings.Join(missing, " and "), model)
-		}
 		// alphaChanged == betaChanged is guaranteed by the "both or neither" check above,
 		// so checking betaChanged alone is sufficient to confirm both were provided.
 		if cmd.Flags().Changed("latency-model") && betaChanged {
@@ -759,17 +948,14 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 				"Roofline computes step time analytically. " +
 				"Use --latency-model trained-physics if you want coefficient-based estimation")
 		}
-		if modelConfigFolder != "" {
-			logrus.Infof("--latency-model: explicit --model-config-folder takes precedence over auto-resolution")
-		}
 		if hwConfigPath != "" {
 			logrus.Infof("--latency-model: explicit --hardware-config takes precedence over auto-resolution")
 		}
-		resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
+		resolved, err := resolveModelConfig(model)
 		if err != nil {
 			logrus.Fatalf("%v", err)
 		}
-		modelConfigFolder = resolved
+		modelConfigDir = resolved
 		resolvedHW, err := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
 		if err != nil {
 			logrus.Fatalf("%v", err)
@@ -780,22 +966,11 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	// --latency-model trained-physics: physics-informed roofline with architecture-aware MoE overhead.
 	// Uses trained_physics_coefficients from defaults.yaml (10-beta, 3-alpha).
 	if backend == "trained-physics" {
-		var missing []string
-		if gpu == "" {
-			missing = append(missing, "--hardware (GPU type)")
-		}
-		if tensorParallelism <= 0 {
-			missing = append(missing, "--tp (tensor parallelism)")
-		}
-		if len(missing) > 0 {
-			logrus.Fatalf("--latency-model trained-physics requires %s. No defaults found in defaults.yaml for model=%s. "+
-				"Provide these flags explicitly", strings.Join(missing, " and "), model)
-		}
-		resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
+		resolved, err := resolveModelConfig(model)
 		if err != nil {
 			logrus.Fatalf("%v", err)
 		}
-		modelConfigFolder = resolved
+		modelConfigDir = resolved
 		resolvedHW, err := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
 		if err != nil {
 			logrus.Fatalf("%v", err)
@@ -837,7 +1012,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 
 	// Analytical backends: parse HF config, extract model/hardware config, auto-calc KV blocks and max-model-len.
 	if backend == "roofline" || backend == "trained-physics" {
-		hfPath := filepath.Join(modelConfigFolder, "config.json")
+		hfPath := filepath.Join(modelConfigDir, "config.json")
 		hfConfig, err := latency.ParseHFConfig(hfPath)
 		if err != nil {
 			logrus.Fatalf("Failed to parse HuggingFace config: %v", err)
@@ -1003,15 +1178,13 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		// INV BC-ROOFLINE: roofline does not model DP/EP step-time effects, so
 		// accepting these flags there would imply unsupported latency semantics.
 		//
-		// LATENT HOLE — READ THIS BEFORE LIFTING #1553. This gate reads the GLOBAL
-		// backend only. A per-pool override (--prefill-latency-model / --decode-latency-model
-		// roofline) can put a pool on roofline while the global backend is trained-physics,
-		// which slips past this check and would give that pool DP/EP-blind step time with
-		// --dp > 1 in force. It is unreachable TODAY only because PD disaggregation with
-		// MoE --dp > 1 is itself rejected by planDPPlacement (#1553) — i.e. two independent
-		// guards happen to compose. Whoever lifts #1553 must revisit this gate and validate
-		// the per-pool backends here (or in the per-pool override block), because at that
-		// moment this becomes a live silent-mis-model path rather than a theoretical one.
+		// This gate reads the GLOBAL backend only. A per-pool override
+		// (--prefill-latency-model / --decode-latency-model roofline) can put a pool on
+		// roofline while the global backend is trained-physics, which slips past THIS check
+		// and would give that pool DP/EP-blind step time with --dp > 1 in force. That
+		// per-pool hole is CLOSED separately by validatePerPoolLatencyBackends (#1548),
+		// called from the PD override block in both runCmd and replayCmd — now a live path
+		// since #1553 made PD + --dp > 1 supported (BC-7).
 		logrus.Fatalf("--dp > 1 and --enable-expert-parallel require --latency-model trained-physics "+
 			"(got --dp=%d, --enable-expert-parallel=%t, --latency-model %s). The roofline backend is "+
 			"DP/EP-blind for step time.",
@@ -1035,9 +1208,10 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		logrus.Fatalf("--enable-expert-parallel requires a MoE model (got dense model %q with no experts); "+
 			"vLLM fatally rejects this configuration.", model)
 	}
-	// --moe-comm-backend selects the MoE dispatch/combine cost model (trained-physics
-	// only, DP>1). Validate the name and reject non-default values on other backends so
-	// the flag never silently no-ops. Empty string defers to the model factory's default.
+	// --moe-comm-backend selects the MoE dispatch/combine cost model (trained-physics only;
+	// charged at DP>1 OR with --enable-expert-parallel since #1548). Validate the name and
+	// reject non-default values on other backends so the flag never silently no-ops. Empty
+	// string defers to the model factory's default.
 	if moeCommBackend != "" {
 		if !latency.IsValidMoECommBackend(moeCommBackend) {
 			logrus.Fatalf("--moe-comm-backend %q is not a recognized vLLM MoE all-to-all backend (valid: %s).",
@@ -1049,15 +1223,18 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 				"MoE communication.", moeCommBackend, backend)
 		}
 		// The flag is harmless but inert unless the MoE dispatch/combine term is actually
-		// charged (isMoE && DP>1). Warn (not fatal) on the no-op cases so a user does not
-		// believe a backend choice is affecting a run where it cannot.
+		// charged. Since #1548 that is isMoE && (DP>1 || EP-on) — expert parallelism owns
+		// whole experts per rank, so tokens are routed to their owner even at DP=1. Warn
+		// (not fatal) on the no-op cases so a user does not believe a backend choice is
+		// affecting a run where it cannot.
 		if !modelConfig.IsMoE() {
 			logrus.Warnf("--moe-comm-backend=%s has no effect on a dense model; "+
 				"MoE dispatch/combine comm is only charged for MoE models.", moeCommBackend)
-		} else if dataParallelism <= 1 {
-			logrus.Warnf("--moe-comm-backend=%s has no effect at --dp=%d; "+
-				"MoE dispatch/combine comm is only charged when DP > 1 (at DP=1 the MoE FFN "+
-				"all-reduces over the TP group instead).", moeCommBackend, dataParallelism)
+		} else if dataParallelism <= 1 && !enableExpertParallel {
+			logrus.Warnf("--moe-comm-backend=%s has no effect at --dp=%d without "+
+				"--enable-expert-parallel; MoE dispatch/combine comm is only charged when expert "+
+				"parallelism is on or DP > 1 (otherwise the MoE FFN all-reduces over the TP group "+
+				"instead).", moeCommBackend, dataParallelism)
 		}
 	}
 
@@ -1398,8 +1575,8 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&seed, "seed", 42, "Seed for random request generation")
 	cmd.Flags().Int64Var(&simulationHorizon, "horizon", math.MaxInt64, "Total simulation horizon (in ticks)")
 	cmd.Flags().StringVar(&logLevel, "log", "warn", "Log level for diagnostic messages (trace, debug, info, warn, error, fatal, panic). Simulation results always print to stdout regardless of this setting.")
-	cmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained coefficients, default specs and workloads")
-	cmd.Flags().StringVar(&modelConfigFolder, "model-config-folder", "", "Path to folder containing config.json")
+	cmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained coefficients and device constants")
+	registerCatalogFlag(cmd)
 	cmd.Flags().StringVar(&hwConfigPath, "hardware-config", "", "Path to file containing hardware config")
 
 	// vLLM server configs
@@ -1423,11 +1600,11 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 
 	// BLIS model configs
 	cmd.Flags().StringVar(&model, "model", "", "LLM name")
-	cmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
-	cmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
-	cmd.Flags().IntVar(&dataParallelism, "dp", 1, "Data parallelism degree (MoE models only; --latency-model trained-physics only). --dp N spawns N real single-node engine replicas per --num-instances, each sized per-rank, on both `blis run` and `blis replay` (#1531, #1556). Not yet supported with --enable-expert-parallel (#1548), or with PD disaggregation / the autoscaler / node pools (#1553)")
+	cmd.Flags().StringVar(&gpu, "hardware", "", "GPU type, e.g. H100 (REQUIRED on run and replay). Must name a key in the hardware config. Never inferred from defaults.yaml — a run missing it is refused naming the flag (NS-6, #1733)")
+	cmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism degree, e.g. 1 (REQUIRED on run and replay; must be > 0). Never inferred from defaults.yaml — a run missing it is refused naming the flag (NS-6, #1733)")
+	cmd.Flags().IntVar(&dataParallelism, "dp", 1, "Data parallelism degree (MoE models only; --latency-model trained-physics only). --dp N spawns N real single-node engine replicas per --num-instances, each sized per-rank, on both `blis run` and `blis replay` (#1531, #1556). Supported with --enable-expert-parallel since #1548 (the EP group is those replicas' GPUs; re-supply both flags on replay). Supported with PD disaggregation (each pool spawns N per-rank replicas) and node pools (N×M replicas reserve N×M×TP GPUs) since #1553. Not supported with the model autoscaler (#1553: dp-group co-scaling is undefined)")
 	cmd.Flags().BoolVar(&enableExpertParallel, "enable-expert-parallel", false, "Enable expert parallelism for MoE models (mirrors vLLM --enable-expert-parallel; --latency-model trained-physics only)")
-	cmd.Flags().StringVar(&moeCommBackend, "moe-comm-backend", "", "MoE all-to-all comm backend for dispatch/combine cost (mirrors vLLM VLLM_ALL2ALL_BACKEND: naive, allgather_reducescatter [default], pplx, deepep_high_throughput, deepep_low_latency, mori, flashinfer_all2allv; MoE + --latency-model trained-physics + --dp > 1)")
+	cmd.Flags().StringVar(&moeCommBackend, "moe-comm-backend", "", "MoE all-to-all comm backend for dispatch/combine cost (mirrors vLLM VLLM_ALL2ALL_BACKEND: naive, allgather_reducescatter [default], pplx, deepep_high_throughput, deepep_low_latency, mori, flashinfer_all2allv; MoE + --latency-model trained-physics + either --dp > 1 or --enable-expert-parallel)")
 	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "trained-physics", "Latency model backend: trained-physics (default), roofline")
 	cmd.Flags().StringVar(&kvCacheDtype, "kv-cache-dtype", "auto", "KV-cache storage precision, independent of compute and weight quantization (superset of vLLM's --kv-cache-dtype values): auto (default; follows the model/compute dtype), fp8, fp8_e4m3, fp8_e5m2, fp8_inc (1 byte/elem → ~2x KV capacity under bf16 compute), bf16, fp16, fp32. Only affects analytical backends' auto KV-block sizing (and PD KV-transfer sizing); re-supply identically on replay for run/replay parity (INV-13).")
 	cmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for analytical backends when not set.")
@@ -1514,6 +1691,8 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&decodeLatencyModel, "decode-latency-model", "", "Latency model backend for decode pool instances (\"\" = use global --latency-model)")
 	cmd.Flags().Int64Var(&prefillMaxModelLen, "prefill-max-model-len", 0, "Max model length for prefill pool instances (0 = use global --max-model-len)")
 	cmd.Flags().Int64Var(&decodeMaxModelLen, "decode-max-model-len", 0, "Max model length for decode pool instances (0 = use global --max-model-len)")
+	cmd.Flags().StringVar(&prefillMoECommBackend, "prefill-moe-comm-backend", "", "MoE all-to-all comm backend for prefill pool instances (\"\" = use global --moe-comm-backend; same value set as that flag). Mirrors vLLM VLLM_ALL2ALL_BACKEND being per-process, so prefill and decode engines can run different modes")
+	cmd.Flags().StringVar(&decodeMoECommBackend, "decode-moe-comm-backend", "", "MoE all-to-all comm backend for decode pool instances (\"\" = use global --moe-comm-backend; same value set as that flag)")
 
 	// LoRA control-plane config (#1464). Registered on both run and replay (INV-13
 	// parity). All optional; absence => subsystem inert (INV-6). The adapter registry
@@ -1532,14 +1711,21 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&speculativeAcceptance, "speculative-acceptance-rate", 0.0, "Speculative decoding: mean fraction of draft tokens accepted, in [0,1]. Required when --num-speculative-tokens > 0.")
 	cmd.Flags().StringVar(&speculativeMethod, "speculative-method", "", "Speculative decoding method label (informational; BLIS labels, not verbatim vLLM strings — 'draft' is shorthand for vLLM's 'draft_model'): mtp|eagle|medusa|ngram|draft. Optional; requires --num-speculative-tokens > 0.")
 
+	// Cross-node collective serialization S (#1694, Part B). trained-physics only; fires
+	// only for a multi-node span with a calibrated α_hop (InterNodeHopLatencyUs). Default
+	// 1.0 is inert (byte-identical, INV-6). Re-supply identically on replay (INV-13).
+	cmd.Flags().Float64Var(&commSerializationFactor, "comm-serialization-factor", 1.0, "Cross-node collective serialization multiplier S on the size-independent inter-node latency term (#1694). 1.0 (default) = CUDA graphs / comm-compute overlap (inert). >1 = enforce-eager / no-overlap regime, where collectives serialize behind a full barrier. Must be >= 1. Multiplies an existing cross-node latency term (spanning nodes AND a calibrated per-hop α_hop); never creates cost on its own.")
+	cmd.Flags().BoolVar(&enforceEager, "enforce-eager", false, "Declare that the deployment runs without CUDA graphs / comm-compute overlap, for the CROSS-NODE COLLECTIVE latency term ONLY (#1694). This is a provenance + guard flag for --comm-serialization-factor: when set it requires an explicit --comm-serialization-factor > 1 (BLIS ships no fitted eager magnitude) and picks no value itself. It does NOT model vLLM enforce_eager generally — the broader per-step eager kernel-launch overhead (which affects single-node runs too) is not modeled, so on any config without node_pools and a calibrated α_hop this flag changes nothing.")
+
 	// KV-cache offload config surface (H5, #1587). One flag: a strict-YAML file with a
 	// single top-level kv_offload: block (CPU tier + ordered secondary tiers, per-tier
 	// device physics). Registered on run and replay (INV-13). Absent => the offload
 	// subsystem is inert and output is byte-identical to a build without the feature
 	// (BC-G5). On replay the trace header is authoritative; a passed flag must match the
 	// header (see resolveKVOffloadConfig / the replay wiring). device_class names resolve
-	// against defaults.yaml kv_offload_devices.
-	cmd.Flags().StringVar(&kvOffloadConfigPath, "kv-offload-config", "", "Path to a YAML file with a top-level kv_offload: block (multi-tier KV-cache offload config: cpu_bytes_to_use, block_size/blocks_per_chunk, eviction_policy, offload_prompt_only, secondary_tiers[] with per-tier device_class/direct_io/bandwidth). Absent => offload subsystem inert. On replay the trace header is authoritative.")
+	// against the CATALOG's storage-device table, <catalog>/devices/storage.yaml (#1770),
+	// read only when some tier actually names a class.
+	cmd.Flags().StringVar(&kvOffloadConfigPath, "kv-offload-config", "", "Path to a YAML file with a top-level kv_offload: block (multi-tier KV-cache offload config: cpu_bytes_to_use, block_size/blocks_per_chunk, eviction_policy, offload_prompt_only, secondary_tiers[] with per-tier device_class/direct_io/bandwidth). A per-tier device_class resolves its bandwidth/latency from the catalog's storage-device table at <catalog>/"+catalogStorageDevicesRelPath+" (located by --catalog / "+catalogEnvVar+"), read only when a tier names one; a tier supplying an explicit read_bandwidth + write_bandwidth + base_latency triple needs no table. Absent => offload subsystem inert. On replay the trace header is authoritative.")
 }
 
 // loraConfigFile is the on-disk shape of a --lora-config YAML file: a single
@@ -1659,6 +1845,57 @@ func resolveSpeculativeConfig(cmd *cobra.Command) sim.SpeculativeConfig {
 		}
 	}
 	return c
+}
+
+// resolveCommSerializationFactor builds the cross-node collective serialization factor S
+// (#1694, Part B) from the CLI, validating it at the command boundary (CLI → Fatalf, R6).
+// Threaded identically into run and replay so a run and its replay under the same flags
+// stay byte-identical (INV-13); it is a model-level input like --kv-cache-dtype, not
+// round-tripped through the trace header.
+func resolveCommSerializationFactor(cmd *cobra.Command) float64 {
+	s := commSerializationFactor
+	// S must never make a spanning step cheaper (R3, monotonicity BC-6). A value below 1
+	// is a user error, not something to silently clamp at the CLI boundary.
+	if s < 1.0 || math.IsNaN(s) || math.IsInf(s, 0) {
+		logrus.Fatalf("--comm-serialization-factor must be a finite value >= 1 (1.0 = graphs-on/overlap, the inert default), got %v", s)
+	}
+	// --enforce-eager declares the no-overlap regime but ships NO magnitude: BLIS has no
+	// fitted eager S to supply, and inventing one would put a fabricated constant in front
+	// of every eager multi-node estimate (#1694 guardrail #2). Require the operator to
+	// supply the calibrated factor explicitly, mirroring the --speculative-acceptance-rate
+	// Changed-gated required-companion idiom.
+	if enforceEager && (!cmd.Flags().Changed("comm-serialization-factor") || s <= 1.0) {
+		logrus.Fatalf("--enforce-eager requires an explicit --comm-serialization-factor > 1: BLIS ships no measured " +
+			"eager serialization magnitude, so the multiplier must be supplied from a calibrated source (#1694). " +
+			"Set it explicitly, e.g. --enforce-eager --comm-serialization-factor 30")
+	}
+	if s > 1.0 {
+		logrus.Infof("cross-node collective serialization factor S=%.3f%s: charged on the size-independent "+
+			"inter-node latency term for spanning collectives (#1694)", s,
+			map[bool]string{true: " (enforce-eager)", false: ""}[enforceEager])
+		// R1: an S>1 that provably cannot fire is silent optimism in reverse — the operator
+		// asked for a penalty that will not appear. S multiplies the cross-node latency term,
+		// which requires the trained-physics backend AND a multi-node placement AND a
+		// calibrated α_hop. Two of those three are cheaply knowable here and, when either
+		// fails, S is guaranteed inert; warn loudly rather than let it vanish (the third,
+		// α_hop>0 on the placed GPU, is placement-time and is covered by
+		// warnIfCrossNodeUnpriced). Not latched — resolved once per command.
+		// latencyModelBackend is safe to read raw here: --latency-model defaults to
+		// "trained-physics" and registerSimConfigFlags runs for both run and replay, so it
+		// is never "" in production (the only override, at resolveLatencyConfig, sets
+		// trained-physics only when the flag was unchanged — already the default).
+		if latencyModelBackend != sim.LatencyBackendTrainedPhysics {
+			logrus.Warnf("--comm-serialization-factor %.3f will have NO effect: it scales the cross-node "+
+				"collective latency term, which only the trained-physics backend models (got %q). #1694", s,
+				latencyModelBackend)
+		} else if policyConfigPath == "" {
+			logrus.Warnf("--comm-serialization-factor %.3f will have NO effect: it scales the CROSS-NODE "+
+				"collective latency term, but without --policy-config there are no node_pools, so no "+
+				"collective spans a node boundary. It applies only to multi-node placements with a "+
+				"calibrated α_hop (InterNodeHopLatencyUs). #1694", s)
+		}
+	}
+	return s
 }
 
 // adapterReservedBytesFor returns the static LoRA HBM reservation (bytes) to carve
@@ -1816,9 +2053,9 @@ var runCmd = &cobra.Command{
 		// PD disaggregation requires ModelConfig for KV transfer duration derivation.
 		// Analytical backends populate ModelConfig from HF config.json.
 		// When PD is enabled and ModelConfig is zero-valued, resolve and load it using the
-		// same resolution as analytical backends (--model-config-folder → local bundled → HuggingFace fetch → error).
+		// same resolution as analytical backends (the catalog entry located by --catalog / BLIS_CATALOG).
 		if prefillInstances > 0 && lr.ModelConfig.NumHeads == 0 {
-			resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
+			resolved, err := resolveModelConfig(model)
 			if err != nil {
 				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing: %v", err)
 			}
@@ -1840,6 +2077,26 @@ var runCmd = &cobra.Command{
 			logrus.Infof("PD disaggregation: loaded ModelConfig from %s for KV transfer derivation", hfPath)
 		}
 
+		// perPoolKVDP is the DP the per-pool KV auto-calc (below) charges: the per-rank DP
+		// (=1) when DP-as-placement (#1531, #1553) will be active, else the global --dp.
+		// Under an active plan each pool spawns N DP=1 replicas, so a pool's per-replica KV
+		// must be sized per-rank — the per-pool analogue of the global auto-KV /dp division
+		// applyDPPlacement performs. A pool override is written directly (not routed through
+		// applyDPPlacement), so it must already be per-rank here to avoid a dp² inflation.
+		//
+		// The autoscaler / node-pool predicates come from the policy bundle, parsed later in
+		// this body, so the authoritative plan (with its autoscaler rejection) is decided at
+		// resolveDPPlacement below. Here we need only whether the plan WILL be active for
+		// sizing, and neither the autoscaler nor node pools changes PerRankDP: the autoscaler
+		// case Fatalf's later regardless (so the per-pool sizing is moot), and node pools are
+		// supported. So a provisional plan.PerRankDP with the placement guards left false is
+		// exact for the perRank decision. planDPPlacement is pure — this is not a second write.
+		perPoolKVDP := dataParallelism
+		if provisional, perr := planDPPlacement(lr.ModelConfig.IsMoE(), dataParallelism, enableExpertParallel,
+			prefillInstances > 0, false, false); perr == nil && provisional.Active {
+			perPoolKVDP = provisional.PerRankDP
+		}
+
 		// Per-pool hardware override vars. TotalKVBlocks is populated from per-pool KV
 		// auto-calc in the analytical backend block below (when applicable). TP/GPU/Backend/MaxModelLen
 		// are populated from CLI flags after PD validation. Both paths are no-ops when disaggregation
@@ -1851,7 +2108,7 @@ var runCmd = &cobra.Command{
 		// Only runs for analytical backends where hardware configs are available.
 		if lr.Backend == "roofline" || lr.Backend == "trained-physics" {
 			if prefillInstances > 0 {
-				hfPath := filepath.Join(modelConfigFolder, "config.json")
+				hfPath := filepath.Join(modelConfigDir, "config.json")
 				hfConfig, err := latency.ParseHFConfig(hfPath)
 				if err != nil {
 					logrus.Fatalf("Failed to parse HuggingFace config for per-pool KV calc: %v", err)
@@ -1878,7 +2135,10 @@ var runCmd = &cobra.Command{
 						} else {
 							// Per-pool TP but GLOBAL dp: per-pool DP is out of scope (#1420);
 							// --dp applies uniformly to all pools. Not a bug — see issue #1420.
-							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolPrefillTP, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
+							// Under an active DP-as-placement plan (#1553) perPoolKVDP is the
+							// per-rank DP (=1): each pool spawns N DP=1 replicas, so its per-replica
+							// KV is sized per-rank, mirroring the global auto-KV /dp division.
+							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolPrefillTP, perPoolKVDP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
 								latency.WithAdapterReservedBytes(loraReservedBytesForKV),
 								latency.WithExpertParallelSize(epSizeForKVCapacity(lr.ModelConfig.IsMoE(), poolPrefillTP)))
 							if calcErr != nil {
@@ -1886,7 +2146,7 @@ var runCmd = &cobra.Command{
 							} else {
 								prefillOverrides.TotalKVBlocks = &poolBlocks
 								logrus.Infof("--prefill-tp/--prefill-hardware: auto-calculated prefill pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d)",
-									poolBlocks, poolHC.MemoryGiB, poolPrefillTP, dataParallelism)
+									poolBlocks, poolHC.MemoryGiB, poolPrefillTP, perPoolKVDP)
 								if !cmd.Flags().Changed("prefill-max-model-len") {
 									kvFeasibleMax := poolBlocks * int64(blockSizeTokens)
 									if kvFeasibleMax < maxModelLen {
@@ -1915,7 +2175,8 @@ var runCmd = &cobra.Command{
 							logrus.Warnf("--decode-hardware: GPU memory capacity not available for %q in hardware config; decode pool will use global total-kv-blocks=%d", poolDecodeGPU, totalKVBlocks)
 						} else {
 							// Per-pool TP, global dp (see prefill-pool note above; #1420).
-							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolDecodeTP, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
+							// perPoolKVDP is per-rank (=1) under an active DP plan (#1553).
+							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolDecodeTP, perPoolKVDP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
 								latency.WithAdapterReservedBytes(loraReservedBytesForKV),
 								latency.WithExpertParallelSize(epSizeForKVCapacity(lr.ModelConfig.IsMoE(), poolDecodeTP)))
 							if calcErr != nil {
@@ -1923,7 +2184,7 @@ var runCmd = &cobra.Command{
 							} else {
 								decodeOverrides.TotalKVBlocks = &poolBlocks
 								logrus.Infof("--decode-tp/--decode-hardware: auto-calculated decode pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d)",
-									poolBlocks, poolHC.MemoryGiB, poolDecodeTP, dataParallelism)
+									poolBlocks, poolHC.MemoryGiB, poolDecodeTP, perPoolKVDP)
 								if !cmd.Flags().Changed("decode-max-model-len") {
 									kvFeasibleMax := poolBlocks * int64(blockSizeTokens)
 									if kvFeasibleMax < maxModelLen {
@@ -2032,17 +2293,14 @@ var runCmd = &cobra.Command{
 			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
 				logrus.Fatalf("--rate must be a finite value > 0, got %v", rate)
 			}
-			wl := loadPresetWorkload(defaultsFilePath, workloadType)
-			if wl == nil {
-				logrus.Fatalf("Undefined workload %q. Use one among (chatbot, summarization, contentgen, multidoc) or --workload-spec", workloadType)
+			// #1769: the preset is read from <catalog>/workloads/<name>.yaml, through the
+			// same reader `blis convert preset` and `blis observe --workload` use.
+			wl, presetErr := loadPresetWorkload(workloadType)
+			if presetErr != nil {
+				logrus.Fatalf("--workload %q could not be resolved: %v\n"+
+					"  (or supply the workload directly with --workload-spec)", workloadType, presetErr)
 			}
-			spec = workload.SynthesizeFromPreset(workloadType, workload.PresetConfig{
-				PrefixTokens:     wl.PrefixTokens,
-				PromptTokensMean: wl.PromptTokensMean, PromptTokensStdev: wl.PromptTokensStdev,
-				PromptTokensMin: wl.PromptTokensMin, PromptTokensMax: wl.PromptTokensMax,
-				OutputTokensMean: wl.OutputTokensMean, OutputTokensStdev: wl.OutputTokensStdev,
-				OutputTokensMin: wl.OutputTokensMin, OutputTokensMax: wl.OutputTokensMax,
-			}, rate, numRequests)
+			spec = workload.SynthesizeFromPreset(workloadType, wl.toPresetConfig(), rate, numRequests)
 			spec.Seed = seed
 		}
 
@@ -2292,10 +2550,7 @@ var runCmd = &cobra.Command{
 		// Per-pool hardware override construction (R3): build PoolOverrides from CLI flags.
 		// Pointer fields use cmd.Flags().Changed() to distinguish "not set" from "set to value".
 		// Warns if per-pool flags are set but disaggregation is disabled.
-		perPoolFlagsChanged := cmd.Flags().Changed("prefill-tp") || cmd.Flags().Changed("decode-tp") ||
-			cmd.Flags().Changed("prefill-hardware") || cmd.Flags().Changed("decode-hardware") ||
-			cmd.Flags().Changed("prefill-latency-model") || cmd.Flags().Changed("decode-latency-model") ||
-			cmd.Flags().Changed("prefill-max-model-len") || cmd.Flags().Changed("decode-max-model-len")
+		perPoolFlagsChanged := anyPerPoolHardwareFlagChanged(cmd.Flags().Changed)
 		if perPoolFlagsChanged && prefillInstances == 0 {
 			logrus.Warnf("per-pool hardware flags (--prefill-tp, --decode-tp, etc.) have no effect when --prefill-instances=0 (disaggregation is disabled)")
 		}
@@ -2350,6 +2605,17 @@ var runCmd = &cobra.Command{
 				ml := decodeMaxModelLen
 				decodeOverrides.MaxModelLen = &ml
 			}
+			// A per-pool latency-model override must not silently opt a pool out of the
+			// DP/EP step-time physics the rest of the cluster is using (#1548).
+			if err := validatePerPoolLatencyBackends(dataParallelism > 1 || enableExpertParallel,
+				prefillOverrides, decodeOverrides); err != nil {
+				logrus.Fatalf("%v", err)
+			}
+			// Per-ROLE MoE all-to-all backend (#1548), shared with blis replay (R23).
+			if err := applyPerRoleMoECommBackends(cmd.Flags().Changed, lr.ModelConfig.IsMoE(),
+				dataParallelism > 1 || enableExpertParallel, &prefillOverrides, &decodeOverrides); err != nil {
+				logrus.Fatalf("%v", err)
+			}
 		}
 
 		// Parse per-pool scorer configs (PD disaggregation — not in resolvePolicies)
@@ -2387,21 +2653,31 @@ var runCmd = &cobra.Command{
 
 		startTime := time.Now() // Get current time (start)
 
-		// DP-as-real-placement (#1531): on an MoE model, `--dp N` means N independent
+		// DP-as-real-placement (#1531, #1553): on an MoE model, `--dp N` means N independent
 		// single-node engine replicas (vLLM's internal DP EngineCores), not one lumped
 		// instance. Expand to numInstances × N real replicas — reusing the existing
 		// per-instance placement path — and configure each replica per-rank (DP=1) so its
-		// latency + KV model describe one rank. Guarded combos (EP-on, PD, autoscaler)
-		// fail fast rather than being silently mis-modeled. resolveDPPlacement is the ONE
-		// code path run and replay share (R23), so INV-13 parity is structural (#1556).
-		// A no-op for --dp 1 and dense models.
+		// latency + KV model describe one rank. PD disaggregation and node pools are SUPPORTED
+		// (#1553, each pool spawns its own N per-rank replicas); the autoscaler still fails
+		// fast (decided above at planDPPlacement). resolveDPPlacement is the ONE code path run
+		// and replay share (R23), so INV-13 parity is structural (#1556). A no-op for --dp 1
+		// and dense models.
 		//
-		// Ordering caveat (mirrored in cmd/replay.go): the per-pool KV auto-calc earlier in
-		// this body also reads maxModelLen (for prefillOverrides / decodeOverrides) and so
-		// sees the pre-division value. Safe only because PD + --dp>1 is a guarded combo
-		// (#1553): an active DP plan Fatalf's, and a PD run never has an active plan. If
-		// #1553 is lifted, recompute the per-pool overrides after this call.
-		dpPlan, dpErr := resolveDPPlacement(lr, bundleAutoscalerIntervalUs > 0, len(bundleNodePools) > 0)
+		// The authoritative plan is decided HERE — after the policy bundle is parsed, so the
+		// autoscaler / node-pool predicates are real (the provisional plan above, used only to
+		// size the per-pool KV per-rank, deliberately left the placement guards false). This is
+		// where the autoscaler rejection (#1553 decision) surfaces. The former ordering caveat —
+		// the per-pool KV block reading a pre-division maxModelLen while PD + --dp>1 was a
+		// fail-fast — is resolved: that block now uses perPoolKVDP (the plan's per-rank DP)
+		// rather than depending on the guard. resolveDPPlacement APPLIES the plan (the single
+		// write site for numInstances / totalKVBlocks / maxModelLen / the four PD pool counts).
+		dpPlan, dpErr := planDPPlacement(lr.ModelConfig.IsMoE(), dataParallelism, enableExpertParallel,
+			prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0,
+			bundleAutoscalerIntervalUs > 0, len(bundleNodePools) > 0)
+		if dpErr != nil {
+			logrus.Fatalf("%v", dpErr)
+		}
+		dpPlan, dpErr = resolveDPPlacement(lr, dpPlan)
 		if dpErr != nil {
 			logrus.Fatalf("%v", dpErr)
 		}
@@ -2430,6 +2706,10 @@ var runCmd = &cobra.Command{
 			}
 		}
 
+		// All ModelHardwareOptions (EP-group width #1548, cross-node serialization S #1694)
+		// are composed in one shared helper so run and replay cannot diverge (R23, INV-13).
+		mhwOpts := modelHardwareOptions(cmd, dpPlan)
+
 		// Unified cluster path (used for all values of numInstances).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/replay.go (replayCmd
 		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
@@ -2448,7 +2728,7 @@ var runCmd = &cobra.Command{
 				// authoritative from the start (no construct-then-override). Since #1556 replay
 				// wires the SAME dpPlan.PerRankDP from the SAME resolveDPPlacement, so the two
 				// paths agree for every config both support (INV-13).
-				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen),
+				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen, mhwOpts...),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				LoRAConfig:           loraCfg,
 				SpeculativeConfig:    resolveSpeculativeConfig(cmd),
@@ -2636,6 +2916,10 @@ var runCmd = &cobra.Command{
 				WorkloadSeed:      &spec.Seed,
 				GoodputSLOTargets: goodputTargets,                   // #1413, BC-7: persist resolved targets for downstream replay/calibrate
 				KVOffload:         simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: nil when inert (omitted); round-trips resolved config
+				// #1530: record multi-node placement so replay can refuse a trace whose
+				// step times it cannot reproduce. 0/1 (no span) is omitted, so a run
+				// without multi-node placement writes a byte-identical header (INV-6).
+				MaxNodesSpanned: crossNodeSpanForTrace(cs.MaxNodesSpanned()),
 			}
 			if err := workload.ExportTraceV2(header, records, traceOutput+".yaml", traceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)
@@ -2680,7 +2964,11 @@ var runCmd = &cobra.Command{
 			}
 		}
 
-		if err := aggregated.EmitOutput(clusterOutput, metricsPath); err != nil {
+		// Catalog provenance (#1732): file-only, so it is passed as an EmitOutput option
+		// rather than mutated onto clusterOutput above — stdout must stay byte-identical
+		// (INV-6). Same shared helper on the replay path (INV-13).
+		if err := aggregated.EmitOutput(clusterOutput, metricsPath,
+			catalogProvenanceEmitOptions(metricsPath, resolvedCatalogRoot)...); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
@@ -3011,4 +3299,117 @@ func init() {
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)
+}
+
+// ─── Per-role (per-pool) MoE all-to-all backend (#1548) ─────────────────────
+
+// perPoolHardwareFlags is the complete set of per-pool hardware override flag names.
+// Both `blis run` and `blis replay` decide "did the user set any per-pool flag?" from
+// this ONE list (R23), so a new per-pool flag joins that check in a single place instead
+// of two hand-maintained boolean chains that can drift apart.
+var perPoolHardwareFlags = []string{
+	"prefill-tp", "decode-tp",
+	"prefill-hardware", "decode-hardware",
+	"prefill-latency-model", "decode-latency-model",
+	"prefill-max-model-len", "decode-max-model-len",
+	"prefill-moe-comm-backend", "decode-moe-comm-backend",
+}
+
+// anyPerPoolHardwareFlagChanged reports whether the operator explicitly set any per-pool
+// hardware override flag. changed is cmd.Flags().Changed, injected so the function is pure
+// and unit-testable without a cobra command.
+func anyPerPoolHardwareFlagChanged(changed func(string) bool) bool {
+	for _, name := range perPoolHardwareFlags {
+		if changed(name) {
+			return true
+		}
+	}
+	return false
+}
+
+// validatePerPoolLatencyBackends closes a gate the global check in resolveLatencyConfig
+// cannot reach (#1548). That check rejects `--dp > 1` / `--enable-expert-parallel` on any
+// backend but trained-physics, but it reads the GLOBAL backend only: a per-pool
+// --prefill-latency-model / --decode-latency-model override can put ONE pool on a backend
+// that models no DP/EP step-time effect while the global backend satisfies the check. That
+// pool would then be silently DP/EP-blind — a real mis-model, not a cosmetic one.
+//
+// It was harmless before #1548 (expert parallelism had NO step-time effect, so a DP/EP-blind
+// pool computed the same thing as an EP-aware one) AND while MoE `--dp>1` + PD disaggregation
+// was a #1531-era fail-fast (the per-pool override path was unreachable with `--dp>1`). Making
+// the EP toggle live (#1548) turned the documented latent hole into a live path, and #1553
+// lifting the PD + `--dp>1` fail-fast makes it reachable end-to-end — so this gate is now a
+// live check. It covers both activation reasons (`--dp>1` and EP-on).
+//
+// Returns an error rather than terminating: the CLI boundary owns termination.
+func validatePerPoolLatencyBackends(dpepActive bool, prefill, decode cluster.PoolOverrides) error {
+	if !dpepActive {
+		return nil
+	}
+	for _, role := range []struct {
+		name    string
+		backend string
+	}{
+		{"prefill", prefill.LatencyBackend},
+		{"decode", decode.LatencyBackend},
+	} {
+		if role.backend == "" || role.backend == sim.LatencyBackendTrainedPhysics {
+			continue
+		}
+		return fmt.Errorf("--%s-latency-model %s cannot be combined with --dp > 1 or "+
+			"--enable-expert-parallel: the %s pool would model no DP/EP step-time effect while the rest "+
+			"of the cluster does, so its latency would be silently wrong. Use --%s-latency-model "+
+			"trained-physics, or drop the DP/EP flags",
+			role.name, role.backend, role.name, role.name)
+	}
+	return nil
+}
+
+// applyPerRoleMoECommBackends resolves --prefill-moe-comm-backend /
+// --decode-moe-comm-backend onto the two pools' overrides (#1548). One implementation
+// shared by both command bodies (R23), so the two roles and the two commands cannot
+// validate differently.
+//
+// An unrecognized backend name is a hard error, exactly as for the global
+// --moe-comm-backend: silently resolving a typo to the default volume model would hand
+// back a plausible-looking number for a config the operator did not ask for (R1).
+//
+// isMoE / dispatchActive drive the inertness diagnostics. dispatchActive must be true iff
+// the MoE dispatch/combine term can fire at all — since #1548 that is `--dp > 1 ||
+// --enable-expert-parallel` (EP-on routes tokens to whole-expert owners even at DP=1);
+// before #1548 only DP>1 did. A backend selected where no dispatch term fires has no
+// effect, and saying so beats letting an operator believe the recipe took hold.
+//
+// Returns an error rather than calling logrus.Fatalf so the CLI boundary keeps owning
+// termination (and so this stays testable).
+func applyPerRoleMoECommBackends(changed func(string) bool, isMoE, dispatchActive bool,
+	prefill, decode *cluster.PoolOverrides) error {
+	for _, role := range []struct {
+		name  string
+		value string
+		dst   *cluster.PoolOverrides
+	}{
+		{"prefill", prefillMoECommBackend, prefill},
+		{"decode", decodeMoECommBackend, decode},
+	} {
+		flag := role.name + "-moe-comm-backend"
+		if !changed(flag) {
+			continue
+		}
+		if !latency.IsValidMoECommBackend(role.value) {
+			return fmt.Errorf("--%s %q is not a recognized vLLM MoE all-to-all backend (valid: %s)",
+				flag, role.value, strings.Join(latency.ValidMoECommBackends, ", "))
+		}
+		role.dst.MoECommBackend = role.value
+		switch {
+		case !isMoE:
+			logrus.Warnf("--%s=%s has no effect on a dense model; MoE dispatch/combine comm is only "+
+				"charged for MoE models.", flag, role.value)
+		case !dispatchActive:
+			logrus.Warnf("--%s=%s has no effect at --dp=1 without --enable-expert-parallel; the MoE "+
+				"dispatch/combine term it selects only fires when expert parallelism is on or --dp > 1 "+
+				"(otherwise the MoE FFN all-reduces over the TP group instead).", flag, role.value)
+		}
+	}
+	return nil
 }

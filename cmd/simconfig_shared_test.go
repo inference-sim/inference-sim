@@ -76,7 +76,8 @@ func TestRunCmd_SimConfigFlagsParity(t *testing.T) {
 		"latency-model", "hardware", "tp", "dp", "enable-expert-parallel",
 		"alpha-coeffs", "beta-coeffs",
 		"total-kv-blocks", "block-size-in-tokens", "max-model-len",
-		"gpu-memory-utilization", "model-config-folder", "hardware-config",
+		"gpu-memory-utilization", "catalog", "hardware-config",
+		"comm-serialization-factor", "enforce-eager", // #1694 Part B
 	}
 	for _, name := range latencyFlags {
 		runFlag := runCmd.Flags().Lookup(name)
@@ -155,7 +156,8 @@ func TestBothCommands_SimConfigFlagsHaveIdenticalDefaults(t *testing.T) {
 		"latency-model", "hardware", "tp", "dp", "enable-expert-parallel",
 		"alpha-coeffs", "beta-coeffs",
 		"total-kv-blocks", "block-size-in-tokens", "max-model-len",
-		"gpu-memory-utilization", "model-config-folder", "hardware-config",
+		"gpu-memory-utilization", "catalog", "hardware-config",
+		"comm-serialization-factor", "enforce-eager", // #1694 Part B
 		"admission-policy", "routing-policy", "scheduler", "preemption-policy",
 		"routing-scorers", "lora-scorer-weight", "token-bucket-capacity", "token-bucket-refill-rate",
 		"kv-cpu-blocks", "kv-offload-threshold", "kv-transfer-bandwidth",

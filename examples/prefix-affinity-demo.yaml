@@ -13,7 +13,7 @@
 #
 #   # Prefix-affinity dominant (requests cluster onto cached instances)
 #   ./blis run \
-#     --model meta-llama/llama-3.1-8b-instruct \
+#     --model meta-llama/llama-3.1-8b-instruct --hardware H100 --tp 1 \
 #     --num-instances 4 --routing-policy weighted \
 #     --routing-scorers "prefix-affinity:5,queue-depth:1" \
 #     --workload-spec examples/prefix-affinity-demo.yaml \
@@ -21,7 +21,7 @@
 #
 #   # Load-only (no prefix awareness — requests spread uniformly)
 #   ./blis run \
-#     --model meta-llama/llama-3.1-8b-instruct \
+#     --model meta-llama/llama-3.1-8b-instruct --hardware H100 --tp 1 \
 #     --num-instances 4 --routing-policy weighted \
 #     --routing-scorers "queue-depth:1" \
 #     --workload-spec examples/prefix-affinity-demo.yaml \
@@ -29,7 +29,7 @@
 #
 #   # Default profile (balanced llm-d parity)
 #   ./blis run \
-#     --model meta-llama/llama-3.1-8b-instruct \
+#     --model meta-llama/llama-3.1-8b-instruct --hardware H100 --tp 1 \
 #     --num-instances 4 --routing-policy weighted \
 #     --workload-spec examples/prefix-affinity-demo.yaml \
 #     --trace-level decisions --summarize-trace

@@ -63,7 +63,7 @@ Known limitations:
     still_queued/still_running in the aggregate metrics output.
 
 Example:
-  blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b`,
+  blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b --hardware H100 --tp 1`,
 	Run: func(cmd *cobra.Command, args []string) {
 		level, err := logrus.ParseLevel(logLevel)
 		if err != nil {
@@ -95,15 +95,43 @@ Example:
 		}
 		logrus.Infof("Loaded trace: %d records (mode=%s)", len(traceData.Records), traceData.Header.Mode)
 
+		// #1530: refuse a trace whose source run had a multi-node fleet. Cross-node
+		// collective traffic is charged to step time, but replay cannot reconstruct a
+		// multi-node fleet — node pools are `blis run`-only and rejected below — so
+		// replaying such a trace would silently reproduce the workload at single-node
+		// speed, faster than the run it came from. INV-13 requires a loud failure for a
+		// feature replay cannot reproduce, never silent degradation. Absent/0/1 (every
+		// run without multi-node placement) passes through untouched.
+		if span := traceData.Header.MaxNodesSpanned; span > 1 {
+			logrus.Fatalf("blis replay cannot reproduce this trace: its source run placed a model "+
+				"instance across %d nodes (max_nodes_spanned=%d in the trace header), and cross-node "+
+				"collective traffic is charged to step time (#1530). Replay does not support node_pools, "+
+				"so it would model the same workload at single-node speed — faster than the run that "+
+				"produced this trace. Re-run the workload with `blis run` if you need multi-node timing.",
+				span, span)
+		}
+
 		// Validate session mode flags (BC-11)
-		if replaySessionMode != "fixed" && replaySessionMode != "closed-loop" {
-			logrus.Fatalf("--session-mode must be \"fixed\" or \"closed-loop\", got %q", replaySessionMode)
+		// fixed-accumulate (#1692): recorded (open-loop) arrivals like "fixed", but with
+		// the growing accumulate-delta input reconstructed like "closed-loop". It is the
+		// only faithful replay mode for a high-concurrency agentic corpus — see the guards
+		// and request-building branch below.
+		if replaySessionMode != "fixed" && replaySessionMode != "closed-loop" && replaySessionMode != "fixed-accumulate" {
+			logrus.Fatalf("--session-mode must be \"fixed\", \"closed-loop\", or \"fixed-accumulate\", got %q", replaySessionMode)
 		}
 		if replayThinkTimeMs < 0 {
 			logrus.Fatalf("--think-time-ms must be non-negative, got %d", replayThinkTimeMs)
 		}
 		if replayConcurrentSessions < 0 {
 			logrus.Fatalf("--concurrent-sessions must be >= 0, got %d", replayConcurrentSessions)
+		}
+		// fixed-accumulate is an open-loop mode: it injects every round at its recorded
+		// arrival, so there is no session pool to maintain. --concurrent-sessions (which
+		// auto-promotes to closed-loop below) is incompatible — reject it here, BEFORE
+		// the auto-promote block, so the conflict is reported rather than silently
+		// overridden into closed-loop (R1).
+		if replaySessionMode == "fixed-accumulate" && replayConcurrentSessions > 0 {
+			logrus.Fatalf("--concurrent-sessions is incompatible with --session-mode fixed-accumulate (fixed-accumulate injects every round at its recorded arrival time; use --concurrent-sessions with --session-mode closed-loop for a pooled prediction instead)")
 		}
 		if replayTotalSessions < 0 {
 			logrus.Fatalf("--total-sessions must be >= 0, got %d", replayTotalSessions)
@@ -126,8 +154,18 @@ Example:
 		// produce wrong-but-plausible-looking metrics. Fail fast instead. This
 		// check runs after the auto-promote block above, so a pool run
 		// (--concurrent-sessions > 0, already promoted to closed-loop) passes.
-		if traceData.Header.SessionContextGrowth == "accumulate" && replaySessionMode != "closed-loop" {
-			logrus.Fatalf("trace header has session_context_growth=accumulate (per-round input_tokens are deltas that only reconstruct correctly in closed-loop replay), but --session-mode is %q. Re-run with --session-mode closed-loop, or use --concurrent-sessions N for pooled replay.", replaySessionMode)
+		// fixed-accumulate (#1692) is the third way to reconstruct the deltas correctly:
+		// it walks the same accumulate delta law on the request-building path while
+		// keeping recorded (open-loop) arrivals, so it is EXEMPT from this reject.
+		if traceData.Header.SessionContextGrowth == "accumulate" && replaySessionMode != "closed-loop" && replaySessionMode != "fixed-accumulate" {
+			logrus.Fatalf("trace header has session_context_growth=accumulate (per-round input_tokens are deltas that only reconstruct correctly in closed-loop or fixed-accumulate replay), but --session-mode is %q. Re-run with --session-mode closed-loop (load-adaptive arrivals), --session-mode fixed-accumulate (recorded arrivals — faithful for high-concurrency runs), or use --concurrent-sessions N for pooled replay.", replaySessionMode)
+		}
+		// fixed-accumulate only makes sense on an accumulate corpus: on a non-accumulate
+		// trace the per-round inputs are already absolute, so plain --session-mode fixed
+		// is correct and fixed-accumulate would needlessly walk an inert delta law. Reject
+		// rather than silently behave like fixed (R1).
+		if replaySessionMode == "fixed-accumulate" && traceData.Header.SessionContextGrowth != "accumulate" {
+			logrus.Fatalf("--session-mode fixed-accumulate requires an accumulate corpus (trace header session_context_growth=accumulate), but this trace's session_context_growth is %q. Use --session-mode fixed for a trace with absolute per-round inputs.", traceData.Header.SessionContextGrowth)
 		}
 		if replayTotalSessions > 0 && replayConcurrentSessions == 0 {
 			logrus.Fatalf("--total-sessions requires --concurrent-sessions > 0")
@@ -182,7 +220,8 @@ Example:
 		var requests []*sim.Request
 		var sessionMgr *workload.SessionManager
 		var poolDriver *workload.SessionPoolDriver
-		if replaySessionMode == "closed-loop" {
+		switch replaySessionMode {
+		case "closed-loop":
 			// Closed-loop: inject only round-0 requests; SessionManager drives follow-ups.
 			// Compute the preliminary horizon from trace records directly (O(n)) so we can
 			// call LoadTraceV2SessionBlueprints exactly once with correct parameters.
@@ -233,7 +272,20 @@ Example:
 				sessionMgr = workload.NewSessionManager(blueprints)
 				logrus.Infof("Closed-loop mode: %d session blueprints, %d round-0 requests", len(blueprints), len(requests))
 			}
-		} else {
+		case "fixed-accumulate":
+			// fixed-accumulate (#1692): pre-bake every session round as a request at its
+			// RECORDED arrival time (open-loop, breaks the closed-loop self-throttling
+			// feedback loop) while reconstructing the growing accumulate-delta input purely
+			// from trace data. The real cross-session arrival overlap is preserved, so N
+			// large prefills pile into the scheduler at the real clock and produce genuine
+			// queueing delay — the whole point for high-concurrency agentic corpora.
+			var bErr error
+			requests, bErr = workload.LoadTraceV2FixedAccumulateRequests(traceData, seed)
+			if bErr != nil {
+				logrus.Fatalf("Failed to build fixed-accumulate requests from trace: %v", bErr)
+			}
+			logrus.Infof("Built %d fixed-accumulate requests for replay (recorded arrivals, reconstructed accumulate inputs)", len(requests))
+		default:
 			// Fixed mode (default): pre-baked arrivals, existing behavior (BC-8)
 			var bErr error
 			requests, bErr = workload.LoadTraceV2Requests(traceData, seed)
@@ -402,7 +454,7 @@ Example:
 		// be loaded from the HF config to calculate per-pool KV block counts. If resolveLatencyConfig
 		// already loaded it (roofline/trained-physics), lr.ModelConfig.NumHeads will be non-zero.
 		if prefillInstances > 0 && lr.ModelConfig.NumHeads == 0 {
-			resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
+			resolved, err := resolveModelConfig(model)
 			if err != nil {
 				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing: %v", err)
 			}
@@ -424,6 +476,26 @@ Example:
 			logrus.Infof("PD disaggregation: loaded ModelConfig from %s for KV transfer derivation", hfPath)
 		}
 
+		// DP-as-placement plan DECISION (#1531/#1556, #1553) — decided here, early, so the
+		// per-pool KV auto-calc below sizes each pool per-rank when the plan is active (BC-3),
+		// exactly as runCmd does. planDPPlacement is pure; it is APPLIED below at the shared
+		// resolveDPPlacement (R23). autoscaler / node pools are structurally false on replay
+		// (rejected unconditionally above), so a replay plan is only ever active for PD or a
+		// plain MoE --dp>1.
+		dpPlan, dpErr := planDPPlacement(lr.ModelConfig.IsMoE(), dataParallelism, enableExpertParallel,
+			prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0,
+			cmd.Flags().Changed("model-autoscaler-interval-us") || (bundle != nil && bundle.Autoscaler.IntervalUs > 0),
+			bundle != nil && len(bundle.NodePools) > 0)
+		if dpErr != nil {
+			logrus.Fatalf("%v", dpErr)
+		}
+		// perPoolKVDP: per-rank DP (=1) under an active plan, else global --dp. Same rationale
+		// as runCmd — a pool override is written directly, so it must be per-rank at calc time.
+		perPoolKVDP := dataParallelism
+		if dpPlan.Active {
+			perPoolKVDP = dpPlan.PerRankDP
+		}
+
 		// Per-pool hardware override construction (same as runCmd).
 		var prefillOverrides, decodeOverrides cluster.PoolOverrides
 
@@ -432,7 +504,7 @@ Example:
 		// compute per-pool KV blocks from model + hardware for analytical backends.
 		if lr.Backend == "roofline" || lr.Backend == "trained-physics" {
 			if prefillInstances > 0 {
-				hfPath := filepath.Join(modelConfigFolder, "config.json")
+				hfPath := filepath.Join(modelConfigDir, "config.json")
 				hfConfig, err := latency.ParseHFConfig(hfPath)
 				if err != nil {
 					logrus.Fatalf("Failed to parse HuggingFace config for per-pool KV calc: %v", err)
@@ -459,7 +531,8 @@ Example:
 						} else {
 							// Per-pool TP but GLOBAL dp: per-pool DP is out of scope (#1420);
 							// --dp applies uniformly to all pools. Mirrors run (cmd/root.go).
-							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolPrefillTP, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
+							// perPoolKVDP is per-rank (=1) under an active DP plan (#1553).
+							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolPrefillTP, perPoolKVDP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
 								latency.WithAdapterReservedBytes(loraReservedBytesForKV),
 								latency.WithExpertParallelSize(epSizeForKVCapacity(lr.ModelConfig.IsMoE(), poolPrefillTP)))
 							if calcErr != nil {
@@ -467,7 +540,7 @@ Example:
 							} else {
 								prefillOverrides.TotalKVBlocks = &poolBlocks
 								logrus.Infof("--prefill-tp/--prefill-hardware: auto-calculated prefill pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d)",
-									poolBlocks, poolHC.MemoryGiB, poolPrefillTP, dataParallelism)
+									poolBlocks, poolHC.MemoryGiB, poolPrefillTP, perPoolKVDP)
 								if !cmd.Flags().Changed("prefill-max-model-len") {
 									kvFeasibleMax := poolBlocks * int64(blockSizeTokens)
 									if kvFeasibleMax < maxModelLen {
@@ -496,7 +569,8 @@ Example:
 							logrus.Warnf("--decode-hardware: GPU memory capacity not available for %q in hardware config; decode pool will use global total-kv-blocks=%d", poolDecodeGPU, totalKVBlocks)
 						} else {
 							// Per-pool TP, global dp (see prefill-pool note above; #1420).
-							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolDecodeTP, dataParallelism, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
+							// perPoolKVDP is per-rank (=1) under an active DP plan (#1553).
+							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolDecodeTP, perPoolKVDP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
 								latency.WithAdapterReservedBytes(loraReservedBytesForKV),
 								latency.WithExpertParallelSize(epSizeForKVCapacity(lr.ModelConfig.IsMoE(), poolDecodeTP)))
 							if calcErr != nil {
@@ -504,7 +578,7 @@ Example:
 							} else {
 								decodeOverrides.TotalKVBlocks = &poolBlocks
 								logrus.Infof("--decode-tp/--decode-hardware: auto-calculated decode pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d)",
-									poolBlocks, poolHC.MemoryGiB, poolDecodeTP, dataParallelism)
+									poolBlocks, poolHC.MemoryGiB, poolDecodeTP, perPoolKVDP)
 								if !cmd.Flags().Changed("decode-max-model-len") {
 									kvFeasibleMax := poolBlocks * int64(blockSizeTokens)
 									if kvFeasibleMax < maxModelLen {
@@ -519,10 +593,7 @@ Example:
 			}
 		}
 
-		perPoolFlagsChanged := cmd.Flags().Changed("prefill-tp") || cmd.Flags().Changed("decode-tp") ||
-			cmd.Flags().Changed("prefill-hardware") || cmd.Flags().Changed("decode-hardware") ||
-			cmd.Flags().Changed("prefill-latency-model") || cmd.Flags().Changed("decode-latency-model") ||
-			cmd.Flags().Changed("prefill-max-model-len") || cmd.Flags().Changed("decode-max-model-len")
+		perPoolFlagsChanged := anyPerPoolHardwareFlagChanged(cmd.Flags().Changed)
 		if perPoolFlagsChanged && prefillInstances == 0 {
 			logrus.Fatalf("per-pool hardware flags (--prefill-tp, --decode-tp, etc.) have no effect when --prefill-instances=0 (disaggregation is disabled); either set --prefill-instances > 0 or remove the per-pool flags")
 		}
@@ -575,6 +646,18 @@ Example:
 				ml := decodeMaxModelLen
 				decodeOverrides.MaxModelLen = &ml
 			}
+			// A per-pool latency-model override must not silently opt a pool out of the
+			// DP/EP step-time physics the rest of the cluster is using (#1548).
+			if err := validatePerPoolLatencyBackends(dataParallelism > 1 || enableExpertParallel,
+				prefillOverrides, decodeOverrides); err != nil {
+				logrus.Fatalf("%v", err)
+			}
+			// Per-ROLE MoE all-to-all backend (#1548), the same shared resolver blis run
+			// calls, so the two commands cannot validate it differently (R23, INV-13).
+			if err := applyPerRoleMoECommBackends(cmd.Flags().Changed, lr.ModelConfig.IsMoE(),
+				dataParallelism > 1 || enableExpertParallel, &prefillOverrides, &decodeOverrides); err != nil {
+				logrus.Fatalf("%v", err)
+			}
 		}
 
 		// Parse per-pool scorer configs (same as runCmd).
@@ -594,32 +677,21 @@ Example:
 			}
 		}
 
-		// DP-as-real-placement (#1531 for run, #1556 for replay): on an MoE model, `--dp N`
-		// means N independent single-node engine replicas (vLLM's internal DP EngineCores),
-		// not one lumped instance. resolveDPPlacement is the ONE code path run and replay
-		// share (R23) — it expands numInstances × N, divides the auto-KV total back to the
-		// per-rank budget, and re-caps --max-model-len to that budget — so identical flags
-		// over the same trace produce identical metrics (INV-13). Placed AFTER the PD /
-		// autoscaler / node-pool validation above so the guarded-combo decision sees the
-		// validated topology, and BEFORE the DeploymentConfig literal below, which reads
-		// all three adjusted quantities. A no-op for --dp 1 and dense models (INV-6).
+		// DP-as-real-placement (#1531 for run, #1556 for replay; #1553 lifts PD/node-pool
+		// guards): on an MoE model, `--dp N` means N independent single-node engine replicas
+		// (vLLM's internal DP EngineCores), not one lumped instance. resolveDPPlacement is the
+		// ONE code path run and replay share (R23) — it expands numInstances × N (and the four
+		// PD pool counts), divides the auto-KV total back to the per-rank budget, and re-caps
+		// --max-model-len to that budget — so identical flags over the same trace produce
+		// identical metrics (INV-13). Placed AFTER the PD / autoscaler / node-pool validation
+		// above and BEFORE the DeploymentConfig literal below, which reads the adjusted
+		// quantities. A no-op for --dp 1 and dense models (INV-6).
 		//
-		// Ordering caveat: this is NOT the only reader of the three quantities. The
-		// per-pool KV auto-calc above also reads maxModelLen (for prefillOverrides /
-		// decodeOverrides) and runs BEFORE this call, so it would see the pre-division
-		// value. That is safe only because PD + --dp>1 is a guarded combo (#1553) — an
-		// active DP plan Fatalf's before any PD run reaches the cluster, and a PD run
-		// never has an active plan. If #1553 is ever lifted, the per-pool overrides must
-		// be recomputed after this call (or this call moved above them). runCmd carries
-		// the same ordering and the same caveat.
-		// autoscalerActive / nodePoolsActive: replay rejects both unconditionally above
-		// (the --model-autoscaler-interval-us flag guard and the bundle guards), so these
-		// are structurally false here. They are still computed as the real predicates —
-		// the same set run folds into bundleAutoscalerIntervalUs / bundleNodePools — so the
-		// guarded-combo decision stays correct if replay ever gains support for either.
-		dpPlan, dpErr := resolveDPPlacement(lr,
-			cmd.Flags().Changed("model-autoscaler-interval-us") || (bundle != nil && bundle.Autoscaler.IntervalUs > 0),
-			bundle != nil && len(bundle.NodePools) > 0)
+		// The plan was DECIDED above (dpPlan), before the per-pool KV auto-calc, so each pool
+		// is sized per-rank via perPoolKVDP (BC-3, #1553) — the former ordering caveat (the
+		// per-pool block reading a pre-division maxModelLen while PD + --dp>1 was a fail-fast)
+		// is resolved rather than merely guarded. runCmd carries the identical structure.
+		dpPlan, dpErr = resolveDPPlacement(lr, dpPlan)
 		if dpErr != nil {
 			logrus.Fatalf("%v", dpErr)
 		}
@@ -628,6 +700,13 @@ Example:
 			totalKVBlocks, replayHorizon, lr.AlphaCoeffs, lr.BetaCoeffs)
 
 		startTime := time.Now()
+
+		// ModelHardwareOptions composed via the SAME shared helper as the run path, so the
+		// two cannot diverge (R23, INV-13). Note the #1694 S term is STRUCTURALLY UNREACHABLE
+		// on replay: it only fires for a multi-node span, and replay logrus.Fatalf's on
+		// node_pools and on any trace with max_nodes_spanned > 1 (#1530) — so this is
+		// flag-surface parity, and re-supplying S keeps the non-spanning path byte-identical.
+		mhwOpts := modelHardwareOptions(cmd, dpPlan)
 
 		// Build cluster config (same as runCmd, using replayHorizon instead of simulationHorizon).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/root.go (runCmd
@@ -645,7 +724,7 @@ Example:
 				// per-replica DP — 1 when the plan is active (each replica is one rank),
 				// else the CLI dataParallelism unchanged. Identical to the run wiring
 				// (cmd/root.go), from the same shared resolveDPPlacement (INV-13).
-				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen),
+				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen, mhwOpts...),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				LoRAConfig:           loraCfg,
 				SpeculativeConfig:    resolveSpeculativeConfig(cmd),
@@ -816,7 +895,13 @@ Example:
 		// simulator's hit-rate. Empty path → stdout only, byte-identical to before
 		// (BC-8). run and replay --metrics-path of the same trace produce identical
 		// cache_hit_rate (INV-13).
-		if err := aggregated.EmitOutput(clusterOutput, replayMetricsPath); err != nil {
+		// Catalog provenance (#1732): the same file-only block `blis run` records, via
+		// the same shared helper, so a replay's results file is attributable to the
+		// catalog that supplied its model config too (INV-13). Passed as an EmitOutput
+		// option rather than mutated onto clusterOutput, so stdout stays byte-identical
+		// (INV-6).
+		if err := aggregated.EmitOutput(clusterOutput, replayMetricsPath,
+			catalogProvenanceEmitOptions(replayMetricsPath, resolvedCatalogRoot)...); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
@@ -1007,13 +1092,13 @@ func init() {
 	replayCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "Path to TraceV2 header YAML file (required)")
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
 	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us) for blis calibrate consumption.")
-	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\"")
+	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\". Under --session-mode fixed-accumulate the export records reconstructed ABSOLUTE per-round inputs (no session_context_growth header) — re-replay it with --session-mode fixed, not fixed-accumulate.")
 	replayCmd.Flags().StringVar(&replayMetricsPath, "metrics-path", "", "File to write aggregate MetricsOutput JSON (incl. cache_hit_rate for `blis calibrate --sim-metrics`, #1583). Symmetric with `blis run --metrics-path`; stdout is unaffected.")
 
 	// Saturation trace flags (#1516): --detectors + --saturation-config + --saturation-report.
 	registerDetectorFlags(replayCmd)
 
-	replayCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", `Session replay mode: "fixed" (pre-baked arrivals from trace) or "closed-loop" (load-adaptive follow-ups via SessionManager)`)
+	replayCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", `Session replay mode: "fixed" (pre-baked arrivals from trace), "closed-loop" (load-adaptive follow-ups via SessionManager), or "fixed-accumulate" (recorded arrivals + reconstructed accumulate-delta inputs; faithful replay of high-concurrency agentic corpora, #1692)`)
 	replayCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "Override think time between session rounds in milliseconds (0 = derive from trace inter-round arrival gaps; mutually exclusive with --think-time-dist; requires --session-mode closed-loop)")
 	replayCmd.Flags().StringVar(&replayThinkTimeDist, "think-time-dist", "", `Think-time distribution spec for closed-loop replay (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s" or "constant:value=500ms"). Mutually exclusive with --think-time-ms. Requires --session-mode closed-loop.`)
 	replayCmd.Flags().IntVar(&replayConcurrentSessions, "concurrent-sessions", 0, "Replay a fixed pool of N concurrent closed-loop sessions drawn from the trace corpus (0 = disabled). Implies closed-loop session semantics.")

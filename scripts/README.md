@@ -77,10 +77,15 @@ CI_STATUS=success PLAN_GATE=pass AGENT_VERDICT=GREEN ROUND=0 MAX_ROUNDS=3 \
 | `CI_STATUS` | `success` \| `failure` \| `unknown` | verify runs `go build`, `go test` and `golangci-lint` against the PR tree; anything but all three passing is `failure`, and an unread signal is `unknown` |
 | `PLAN_GATE` | `pass` \| `regression` \| `conflicts` \| `unverified` \| `absent` | from `.archon/review.json`; `absent` (no plan claimed) delivers exactly as `pass`, while `unverified` (a plan declared but never checked) blocks — `archon-review.sh` exits 0 after falling back to a plan-less review, so the two must not be conflated |
 | `AGENT_VERDICT` | `GREEN` \| `NOT-GREEN` \| `MISSING` | the review comment's `DELIVER-VERDICT:` marker |
+| `QA_VERDICT` | `PASS` \| `BLOCK` \| `MISSING` | the cross-vendor qa-review comment's `QA-VERDICT:` marker (#1715). `MISSING` blocks — a crashed qa-review is missing evidence, never a pass |
+| `DISMISSALS` | `none` \| `open` \| `unknown` | from the `deliver:has-dismissals` label. `open` withholds `ready` — a correction dismissed a finding the review has not accepted; `unknown` (unreadable) is treated the same way |
+| `MERGE_STATE` | `mergeable` \| `conflicting` \| `unknown` | GitHub's `mergeable_state` mapped through `map-merge-state.sh` (#1758). `conflicting` can never be `ready`; `unknown` returns the non-terminal `recheck` |
+| `REVIEWS_SKIPPED` | `true` \| `false` | whether verify skipped both agent reviews this round on a `conflicting` pre-review hint (#1781 G1). When `true` and the branch turns out **not** conflicting, the gate returns the non-terminal `recheck` (re-verify) instead of deciding a round whose reviews never ran — so a stale hint can never dead-end at the round cap |
+| `CONFLICT_FILES` | *(optional)* paths | **newline-delimited** paths that conflict with main, from `conflicting-files.sh` (#1781). Newline is the only delimiter, because a git path may legally contain spaces or commas (#1781 G4). Named in the reason so a stop satisfies #1758's "needs-human **naming the conflict**". Read only when `MERGE_STATE` is `conflicting`; absent is fine |
 | `ROUND` | integer | correction rounds already spent, read from the `deliver:round-N` label |
 | `MAX_ROUNDS` | integer | cap before stopping for a human |
 
-Prints `decision=ready|correct|needs-human` and a one-line `reason`, exiting 0. Exit 2 only on a
+Prints `decision=ready|correct|needs-human|recheck` and a one-line `reason`, exiting 0. Exit 2 only on a
 wiring error — an unset input or a non-integer counter — so a misconfigured workflow fails
 loudly instead of receiving a verdict. A value outside a declared domain is different: it takes
 a catch-all and returns `needs-human`, because GitHub has eight check conclusions rather than
@@ -88,6 +93,96 @@ two and an unmapped one must not fall through with no decision at all.
 
 `ready` requires the checks passing, a non-regressing (or absent) plan signal, **and** an explicit GREEN. A GREEN that contradicts an objective signal returns `needs-human` naming the
 disagreement — never `ready`, at any round.
+
+A **conflicting** branch is named on every decision row, not just the one row that mentions it
+(#1781). The clause is composed once and prepended at the script's single exit point, and a
+conflict **outranks an unreadable review marker**: a branch with no merge ref cannot produce a
+verdict, so the round routes to `correct` while rounds remain and, at the cap, to a `needs-human`
+that names the conflict — rather than to "the verify phase posted no DELIVER-VERDICT marker", which
+is what dead-ended PR #1778.
+
+## conflicting-files.sh — which paths conflict with main
+
+Names the paths that conflict when one committish is merged into another, so a stopped delivery can
+say WHAT conflicts. Trial-merges in a throwaway worktree, so the caller's index, working tree and
+HEAD are untouched; reads conflicted paths from the index (`git ls-files -u`), so delete/modify and
+add/add conflicts are named too. Works on git 2.34 (the runners), where `merge-tree --write-tree` is
+unavailable. Tested by `scripts/conflicting_files_test.go`.
+
+```bash
+scripts/conflicting-files.sh origin/main "$HEAD_SHA"
+# CLAUDE.md
+```
+
+Exit 0 = determined (**no output means the merge is clean**); exit 3 = could not determine, so a
+caller must not read the absence of output as "clean". Best-effort by contract: it is a diagnostic,
+never the authority on whether a branch conflicts, and it never fails its caller.
+
+## deliver-update-branch.sh — bring a delivery branch up to date with main
+
+Fetches `origin/main`, merges it, and pushes when the merge is clean; on conflict it aborts and
+names the conflicting paths for the correction agent to resolve. Prints
+`state=merged|current|conflicting|unknown` plus `files=`, teed into `GITHUB_OUTPUT` by
+`.github/workflows/deliver-correct.yml`. Tested by `scripts/deliver_branch_update_test.go` against
+real repositories with a real remote.
+
+It is a script because on PR #1778 this was a **prompt instruction** to the correction agent, the
+round completed `success` with no commit and no comment, and a human had to merge `main` by hand
+(#1781). Ordinary drift is the majority of rounds and needs no judgment, so it must not depend on
+anything an agent chooses to do; only a real content conflict reaches the agent.
+
+## deliver-conflict-check.sh — did the correction round resolve the conflict?
+
+Fetches both ends into their remote-tracking refs — the agent pushes from inside
+claude-code-action, so the workflow's own checkout has not seen the branch tip — and reports
+`state=clean|conflicting|unknown` plus `files=`. On `conflicting` the caller posts a comment naming
+those files, applies `needs-human`, and withholds the hand-back. It escalates **only on positive
+evidence**: `unknown` hands the decision to the phase that reads GitHub's `mergeable_state`, so a
+transient fetch failure cannot stop a healthy delivery. Same test file as above.
+
+## deliver-stall-candidates.jq — which deliveries a stall sweep may flag
+
+Reads a `gh pr list --state open --json number,headRefName,labels,createdAt` array on stdin and
+emits one `<number>\t<createdAt>` line per delivery that is genuinely in flight: on a
+`deliver/issue-<N>` branch, carrying neither terminal label, and not paused. Called by
+`.github/workflows/deliver-stall-sweep.yml` via `jq -f`.
+
+It lives here rather than inline in the workflow for the same reason `deliver-gate.sh` does:
+selecting one PR too many means labelling a healthy delivery `needs-human` and halting it, so
+the rule needs tests (`scripts/deliver_stall_candidates_test.go`). Excluding `deliver:paused` is
+the case most easily missed — a paused delivery goes quiet by design, so it crosses any quiet
+threshold every time, and sweeping it would overrule the human who paused it.
+
+## deliver-issue-refinements.sh — the design refinements in an issue's comment thread
+
+Prints the comments on an issue that carry authority over its **body**, oldest first, and says so
+explicitly when there are none. Read before planning any PR — see
+[docs/contributing/pr-workflow.md](../docs/contributing/pr-workflow.md#comments-can-refine-the-body)
+Step 1.5 for the rule and
+[docs/contributing/issue-comment-authority.md](../docs/contributing/issue-comment-authority.md) for
+the decision behind it.
+
+```bash
+scripts/deliver-issue-refinements.sh 1782            # read the thread from GitHub
+scripts/deliver-issue-refinements.sh --render p.json # render a prepared payload, no network
+```
+
+An issue body is written once; the design is then refined in comments and nobody rewrites the body.
+So a plan made from the body alone builds an out-of-date spec faithfully — #1706's body proposes a
+shape its own thread later replaced, and the replacement is what was built.
+
+**A comment counts iff its author holds `admin`/`write`/`maintain`** on this repository, the same
+boundary `/approve-issue-for-pr-delivery` uses; bot, minimized, empty and slash-command-only comments
+are dropped. `authorAssociation` is deliberately not the signal — this repository's maintainer
+reports `CONTRIBUTOR`. The selection law is the sibling `deliver-issue-refinements.jq`, kept as a
+separate file for the same reason `deliver-stall-candidates.jq` is: it is the part with tests
+(`scripts/deliver_issue_refinements_test.go`), and both failure directions are expensive — selecting
+too little ignores a correction someone wrote down, selecting too much lets a stranger's comment
+steer an agent run holding credentials.
+
+Exit 0 when the thread was read (with or without refinements), 2 on a usage error, and **3 when the
+read failed** — in which case the digest's first line is `REFINEMENT-READ-FAILED` rather than empty,
+because empty output reads exactly like "this issue has no refinements".
 
 ## archon-plan-resolve.sh — find and extract a declared archon plan
 
@@ -134,8 +229,8 @@ Drives `blis run` across a configurable rate sweep against a chosen
    (the `"final"` detector→label map, #1517).
 3. Extracts throughput, latency, and all detector verdicts into a single CSV row.
 
-The output reproduces the validation table against the bundled
-`model_configs/llama-3.1-70b-instruct/`. Pointing it at any other configuration
+The output reproduces the validation table against the catalog's
+`models/llama-3.1-70b-instruct/`. Pointing it at any other configuration
 should produce a comparable table with the same column shape.
 
 ### Quick start
@@ -146,7 +241,7 @@ should produce a comparable table with the same column shape.
 
 # Llama-2-7B / TP=1, narrower sweep
 MODEL=meta-llama/Llama-2-7b-hf \
-  MODEL_CONFIG_FOLDER=model_configs/llama-2-7b-hf \
+  CATALOG=blis-catalog \
   TP=1 RATES="2 4 6 8 10 12 16 20" \
   ./scripts/find-saturation.sh
 
@@ -157,8 +252,8 @@ WORKLOAD=summarization NUM_REQUESTS=2000 RATES="4 6 8 10 12" \
 # Only one detector (skip the bank)
 DETECTORS=composite ./scripts/find-saturation.sh
 
-# No bundled config — let blis fetch from HuggingFace
-MODEL=qwen/qwen3-14b MODEL_CONFIG_FOLDER="" TP=1 \
+# A different catalogued model
+MODEL=qwen/qwen3-14b CATALOG=blis-catalog TP=1 \
   ./scripts/find-saturation.sh
 ```
 
@@ -167,7 +262,7 @@ MODEL=qwen/qwen3-14b MODEL_CONFIG_FOLDER="" TP=1 \
 | Variable | Default | Meaning |
 |---|---|---|
 | `MODEL` | `meta-llama/Llama-3.1-70B-Instruct` | HuggingFace-style model name |
-| `MODEL_CONFIG_FOLDER` | `model_configs/llama-3.1-70b-instruct` | Path to bundled `config.json`; set to `""` to force HF auto-fetch |
+| `CATALOG` | `blis-catalog` | Model catalog clone root (holds `models/<short-name>/config.json` per model). Passed as `--catalog`; required since #1731 — there is no default and no search path. Point it at a checkout of the blis-catalog repository. A model with no entry is refused, never fetched. |
 | `HARDWARE` | `H100` | GPU type passed to `--hardware` |
 | `TP` | `8` | Tensor parallelism degree |
 | `WORKLOAD` | `chatbot` | Built-in preset (chatbot/summarization/contentgen/multidoc) |
@@ -255,16 +350,17 @@ relevant variables:
 ```bash
 # Example: probe Mixtral-8x7B FP8 on 4×H100 TP=4 with summarization workload
 MODEL=mistralai/Mixtral-8x7B-Instruct-v0.1 \
-  MODEL_CONFIG_FOLDER=model_configs/mixtral-8x7b-instruct \
+  CATALOG=blis-catalog \
   TP=4 WORKLOAD=summarization \
   RATES="2 4 8 16 24 32 40 48" \
   ./scripts/find-saturation.sh
 ```
 
-If your model isn't in `model_configs/`, either:
-- Drop a `config.json` into `model_configs/<your-model-slug>/` and point
-  `MODEL_CONFIG_FOLDER` at it, or
-- Set `MODEL_CONFIG_FOLDER=""` to let `blis` fetch from HuggingFace at startup.
+If your model isn't in the catalog, drop its `config.json` into
+`$CATALOG/models/<your-model-slug>/config.json` (`$CATALOG` is a checkout of the
+[`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository, or any scratch
+clone of that layout). BLIS does not fetch configs at run time — a model with no entry is
+refused, naming the path its entry belongs at.
 
 ### Dependencies
 

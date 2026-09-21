@@ -4,7 +4,7 @@ Routing decides **which instance** receives a request. Scheduling decides **what
 
 ```bash
 # Priority-FCFS scheduling with SLO-class-based priority in a 4-instance cluster
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --rate 100 --num-requests 500 \
   --scheduler priority-fcfs
 # SLO class is set in the workload spec (slo_class: critical/standard/batch/etc.)

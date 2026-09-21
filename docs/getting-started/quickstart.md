@@ -2,22 +2,37 @@
 
 Run your first BLIS simulation in 30 seconds.
 
-**Optional:** Set `HF_TOKEN` to access gated models (e.g., [Llama-2](https://huggingface.co/meta-llama/Llama-2-7b-hf)) and avoid HuggingFace rate limits:
+No credentials or network access are needed to *run* a simulation: BLIS reads each model's architecture from a local checkout of the model catalog and makes no HuggingFace requests. (`HF_TOKEN` matters only if you are downloading a new — possibly gated — model's `config.json` by hand to add a catalog entry.)
+
+## Locate the model catalog
+
+Every `blis run` / `blis replay` must be told where the **model catalog** is — a directory
+holding a `models/<short-name>/config.json` for each catalogued model. The authoritative
+catalog is the [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository;
+clone it once and point BLIS at the clone root. There is **no default and no
+search path**: supply `--catalog <path>` or set `BLIS_CATALOG` (the flag wins when both are
+set), or the run is refused naming both forms.
 
 ```bash
-export HF_TOKEN=your_token_here
+git clone https://github.com/inference-sim/blis-catalog.git
+export BLIS_CATALOG=$PWD/blis-catalog   # or pass --catalog on every command
 ```
+
+The examples below (and elsewhere in these docs) assume you have exported it.
 
 ## Single-Instance Simulation
 
 ```bash
-./blis run --model qwen/qwen3-14b
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1
 ```
 
 This runs 100 requests through a single inference instance using the default trained-physics latency model for Qwen3 14B on an H100 GPU with TP=1.
 
-!!! note "First-run HuggingFace fetch"
-    On first use, BLIS auto-fetches the model's `config.json` from HuggingFace (~1 second for public models). Subsequent runs use the cached config in `model_configs/`. For air-gapped environments, pre-populate `model_configs/<model>/config.json` and use `--model-config-folder`.
+!!! note "A model runs only if it is catalogued"
+    BLIS reads the model's `config.json` from the catalog located by `--catalog` / `BLIS_CATALOG` (above) and never fetches or writes it at run time. A model with no catalog entry is refused, naming the path its entry belongs at — so runs are offline and reproducible, and running an unknown model can never quietly add a catalog entry. To use a model that is not yet catalogued, commit its `config.json` at `<catalog>/models/<model>/config.json`, or point `--catalog` at a scratch clone that has it.
+
+!!! note "`--hardware` and `--tp` are required"
+    BLIS does not infer the deployment. Omitting either flag is refused by name rather than filled in from a per-model default, so every reported number belongs to a deployment you chose.
 
 ### Reading the Output
 
@@ -55,7 +70,7 @@ Scale to 4 instances with routing:
 
 ```bash
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 \
   --routing-policy weighted \
   --rate 100 --num-requests 500
@@ -70,11 +85,11 @@ This simulates a 4-instance cluster receiving 100 requests/second. The `weighted
 
 ```bash
 # Higher traffic rate
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --rate 500 --num-requests 2000
 
 # With decision tracing (see where each request was routed)
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --rate 100 --num-requests 500 \
   --trace-level decisions --summarize-trace
 

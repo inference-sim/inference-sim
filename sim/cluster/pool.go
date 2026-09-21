@@ -140,6 +140,13 @@ func BuildPoolMembershipFromIndices(total, prefill, decode, shared, encode int) 
 // semantics (issue #1276, Permalink 3).
 //
 // Order is preserved (stable relative to the input slice).
+//
+// Enforces INV-PD-2 (pool exclusivity): prefill sub-requests route only to prefill-role
+// instances, decode only to decode-role. Every role-scoped routing decision funnels
+// through here, so a change to this filter changes pool exclusivity for all callers.
+// PoolRoleEncode is filtered by the same mechanism, but INV-PD-2's statement names
+// prefill and decode only, so whether the invariant covers the encode pool is an open
+// question — do not read this comment as widening it.
 func FilterSnapshotsByPool(snapshots []sim.RoutingSnapshot, membership map[string]PoolRole, role PoolRole) []sim.RoutingSnapshot {
 	filtered := make([]sim.RoutingSnapshot, 0, len(snapshots))
 	for _, snap := range snapshots {

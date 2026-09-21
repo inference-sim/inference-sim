@@ -24,6 +24,25 @@ type ClusterSimulator struct {
 	hasRun            bool
 	aggregatedMetrics *sim.Metrics
 
+	// Cross-node network-cost diagnostics (#1530), latched PER CAUSE so a mixed fleet
+	// reports each distinct reason once rather than only whichever happened first. The
+	// three crossNode* latches each cover a way a genuinely spanning placement ends up
+	// unpriced (no comm term in the backend / unresolvable node size / uncalibrated
+	// interconnect); implausibleFabricWarned covers a calibration whose intra-to-inter
+	// ratio looks like a unit mistake. Never reset. See warnIfCrossNodeUnpriced.
+	crossNodeBackendWarned      bool
+	crossNodeUnresolvedWarned   bool
+	crossNodeUncalibratedWarned bool
+	implausibleFabricWarned     bool
+
+	// maxNodesSpanned is the largest number of physical nodes any single instance has
+	// occupied (#1530). 0/1 = every instance is single-node. Exported via
+	// MaxNodesSpanned() so `blis run --trace-output` can record it in the trace header;
+	// replay refuses a trace whose fleet spanned nodes, because it cannot reconstruct
+	// one (node pools are run-only) and would otherwise silently replay the workload at
+	// single-node speed.
+	maxNodesSpanned int
+
 	// Online routing pipeline fields
 	clusterEvents     ClusterEventQueue
 	seqCounter        int64
@@ -132,7 +151,9 @@ type ClusterSimulator struct {
 	//   - Fires at most once per (logical) request.
 	//   - Called from ClusterArrivalEvent.Execute on the cluster's single
 	//     Run() goroutine (no concurrency). Firing at execute time — not
-	//     push time — is what makes the hook clock-monotonic per INV-3.
+	//     push time — is what makes the hook's stream non-decreasing in
+	//     arrival time (INV-15; the clock invariant it used to cite is INV-3,
+	//     which is about the clock the loop advances, not this input stream).
 	//   - Must be cheap (recording-only). Heavy work belongs in Run finalization.
 	//   - Receives the *sim.Request pointer the cluster will inject. The hook
 	//     must not mutate the request — it is shared with the cluster pipeline.
@@ -401,6 +422,10 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			// override above, giving the placed GPU authority over KV capacity too.
 			// No-op when KVAutoCalc.Enabled is false (INV-6).
 			applyPerInstanceKVCapacity(&simCfg, poolGPUMemoryGiB, config.KVAutoCalc, matchedGPUType)
+			// Issue #1530: stamp the placement-derived interconnect topology (the size
+			// of the node(s) this instance actually landed on) so the latency model can
+			// price cross-node collective traffic. Inert when unresolvable.
+			cs.applyPlacementTopology(&simCfg, gpuIDs)
 			inst := NewInstanceSimulator(id, simCfg)
 			inst.Model = config.Model
 			inst.nodeID = nodeID
@@ -695,8 +720,9 @@ func (cs *ClusterSimulator) pushArrival(req *sim.Request, timeUs int64) {
 // fireArrivalHook is called from ClusterArrivalEvent.Execute on the single
 // path that all fresh arrivals (initial workload and closed-loop follow-ups)
 // traverse at their effective arrival time. Firing here — rather than at
-// pushArrival — gives the hook a clock-monotonic stream (INV-3), so trace
-// records emerge already in arrival order without a downstream sort.
+// pushArrival — gives the hook a stream that is non-decreasing in arrival
+// time (INV-15), so trace records emerge already in arrival order without a
+// downstream sort.
 // REDIRECT re-injections are skipped: req.Redirected=true marks requests
 // the drain policy is rerouting internally. Whether or not a prior
 // ClusterArrivalEvent fired for this request, emitting a trace record
@@ -714,7 +740,11 @@ func (cs *ClusterSimulator) fireArrivalHook(req *sim.Request, timeUs int64) {
 		return
 	}
 	if timeUs < cs.lastArrivalHookTime {
-		panic(fmt.Sprintf("ClusterSimulator: arrival hook received out-of-order request %q (timeUs=%d < last=%d) — INV-3/INV-6 violation: arrivals must be non-decreasing in ArrivalTime",
+		// INV-15, not INV-3 or INV-6 (the IDs this guard cited before #1772):
+		// this is a precondition on the arrival stream the cluster is GIVEN, so
+		// the repair is in the arrival source, not in the clock or in output
+		// ordering. See docs/contributing/standards/invariants.md#inv-15.
+		panic(fmt.Sprintf("ClusterSimulator: arrival hook received out-of-order request %q (timeUs=%d < last=%d) — INV-15 violation: arrivals must be non-decreasing in ArrivalTime",
 			req.ID, timeUs, cs.lastArrivalHookTime))
 	}
 	cs.lastArrivalHookTime = timeUs
@@ -742,6 +772,16 @@ func (cs *ClusterSimulator) SetArrivalHook(hook func(*sim.Request)) {
 		cs.lastArrivalHookTime = 0
 	}
 }
+
+// MaxNodesSpanned returns the largest number of physical nodes any single model
+// instance in this cluster occupies (#1530). Returns 0 when no node pools are
+// configured (no placement), and 1 when every instance fits on one node.
+//
+// `blis run --trace-output` records it in the trace header so `blis replay` can refuse
+// a trace whose fleet spanned nodes: cross-node collective traffic is charged to step
+// time, but replay cannot reconstruct a multi-node fleet (node pools are run-only), so
+// replaying such a trace would silently be faster than the run it came from.
+func (cs *ClusterSimulator) MaxNodesSpanned() int { return cs.maxNodesSpanned }
 
 // Run executes the cluster simulation using online routing pipeline: drains the
 // configured RequestSource into ClusterArrivalEvents, runs a shared-clock event
@@ -1234,6 +1274,11 @@ func (c *ClusterSimulator) poolsConfigured() bool {
 
 // PoolMembership returns a copy of the pool role membership map (R8: no exported mutable maps).
 // Returns nil when disaggregation is disabled.
+//
+// The copy is also how INV-PD-5 (pool membership fixed at construction) holds against
+// callers outside this package: none of them can reach c.poolMembership to reassign a
+// role mid-run. In-package callers do receive the raw map (see buildPoolFilteredSnapshots)
+// and read it only.
 func (c *ClusterSimulator) PoolMembership() map[string]PoolRole {
 	if c.poolMembership == nil {
 		return nil
@@ -1356,6 +1401,8 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 		// For roofline (overhead=0), value is byte-identical to before.
 		// No zero-output guard needed: decode sub-requests always carry the full
 		// output token list from the original request (set in KVTransferCompletedEvent.Execute).
+		//
+		// This line IS INV-PD-6b (parent completion includes post-decode overhead).
 		parent.CompletionTime = c.clock + inst.PostDecodeFixedOverhead()
 		delete(c.pendingDecodeCompletions, subReqID)
 		c.pdDecodeCompletedCount++
@@ -1387,6 +1434,19 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 	// SessionManager cancels the session. The PD path needs the same treatment.
 	for _, subReqID := range timedOutIDs {
 		parent := c.parentRequests[c.pendingDecodeCompletions[subReqID]]
+		// No PostDecodeFixedOverhead here, unlike the INV-PD-6b line above: a
+		// timed-out parent never finished decoding, so it never pays the
+		// post-decode overhead.
+		//
+		// Note for anyone reconciling this against the doc: these timed-out parents
+		// DO satisfy INV-PD-6b's parenthetical `DecodeInstanceID != ""`
+		// (detectDecodeCompletions reaches them by decode-instance match), so read
+		// on its own that gloss appears to cover this line. It does not: the
+		// statement's governing qualifier is "successfully decoded" parent
+		// requests, and a parent whose decode sub-request timed out is by
+		// definition not successfully decoded. The parenthetical is loose; the
+		// statement is correctly scoped and must NOT be narrowed on the strength
+		// of this line.
 		parent.CompletionTime = c.clock
 		delete(c.pendingDecodeCompletions, subReqID)
 		c.pdDecodeTimedOutCount++

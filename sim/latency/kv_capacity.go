@@ -321,13 +321,41 @@ func resolveExpertShardSize(ep, tp, dp, numRoutedExperts int) (int, error) {
 	//
 	// Warned, never silent (R1): the caller's requested group, the model's expert count and
 	// the substituted divisor are all named on stderr.
-	if numRoutedExperts > 0 && ep > numRoutedExperts {
+	if clamped, wasClamped := ClampExpertShardToExpertCount(ep, numRoutedExperts); wasClamped {
 		logrus.Warnf("KV capacity: expert-parallel group size %d exceeds the model's routed-expert count %d; "+
 			"charging routed-expert weights over %d GPUs (one whole expert each) instead. Expert redundancy "+
-			"(--enable-eplb / --num-redundant-experts) is not modeled.", ep, numRoutedExperts, numRoutedExperts)
-		return numRoutedExperts, nil
+			"(--enable-eplb / --num-redundant-experts) is not modeled.", ep, numRoutedExperts, clamped)
+		return clamped, nil
 	}
 	return ep, nil
+}
+
+// ClampExpertShardToExpertCount is the shared "a loaded rank holds one WHOLE expert" rule
+// for the routed-expert WEIGHT divisor (#1548), used by both the KV-capacity model and the
+// trained-physics step-time model so the two cannot disagree about the same experts (R23 —
+// the agreement sim.ModelHardwareConfig.EffectiveExpertShardGroupSize documents).
+//
+// An expert-parallel group wider than the routed-expert count is a legitimate planning input
+// (DeepSeek-class EP320 over 256 experts; anything using --enable-eplb /
+// --num-redundant-experts), so it is CLAMPED rather than rejected. num_experts is the widest
+// divisor the weight footprint can support: charging the sub-one-expert average
+// num_experts/ep would model memory that does not exist, which is the optimistic direction.
+// Clamping DOWN shrinks the divisor and so charges MORE weight bytes — the safe direction.
+//
+// It returns wasClamped so each caller can word its own diagnostic (R1: never silent);
+// numRoutedExperts <= 0 (a dense model, or an unpopulated config) is a no-op.
+//
+// IMPORTANT — this rule holds only for EXPERT-PARALLEL sharding, where each rank owns whole
+// experts. It must NOT be applied to the expert-parallel-OFF divisor, where experts are
+// TENSOR-sharded and a rank genuinely holds a FRACTION of every expert: num_experts/group
+// below 1 full-expert-equivalent is the correct charge there (e.g. 8 experts tensor-sharded
+// over a 16-GPU TP·DP group is 0.5 each). Nor to the dispatch/combine collective, which
+// really does run over every rank in the group.
+func ClampExpertShardToExpertCount(ep, numRoutedExperts int) (int, bool) {
+	if numRoutedExperts > 0 && ep > numRoutedExperts {
+		return numRoutedExperts, true
+	}
+	return ep, false
 }
 
 // CalculateKVBlocks computes the maximum number of KV cache blocks that fit

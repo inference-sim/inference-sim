@@ -12,8 +12,18 @@ The simulator is CPU-only, deterministic, and designed for **capacity planning**
 git clone https://github.com/inference-sim/inference-sim.git
 cd inference-sim
 go build -o blis main.go
-./blis run --model qwen/qwen3-14b
+git clone https://github.com/inference-sim/blis-catalog.git
+export BLIS_CATALOG=$PWD/blis-catalog   # or pass --catalog on every run/replay
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1
 ```
+
+`blis run` and `blis replay` must be told where the **model catalog** is — a checkout of
+the authoritative [`blis-catalog`](https://github.com/inference-sim/blis-catalog)
+repository, which holds a `models/<short-name>/config.json` for each catalogued model.
+Supply the clone root with `--catalog <path>` or the `BLIS_CATALOG` environment variable
+(the flag wins when both are set); there is **no default and no search path**, so a run
+with neither is refused naming both forms. The examples throughout these docs omit it —
+export `BLIS_CATALOG` once, as above.
 
 ---
 

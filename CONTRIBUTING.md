@@ -155,12 +155,13 @@ BLIS development workflows are orchestrated through [Claude Code](https://claude
 The lightest path. For bug fixes, docs updates, and single-PR changes that don't introduce new module boundaries.
 
 1. **Create worktree** — `git worktree add .worktrees/fix-<name> -b fix-<name>`
-2. **Write plan** — behavioral contracts (GIVEN/WHEN/THEN) and TDD task breakdown
-3. **Review plan** — review for correctness before proceeding
-4. **Human approval** — review contracts and tasks, approve to proceed
-5. **Implement** — execute TDD tasks from the plan
-6. **Review code** — review implementation for correctness
-7. **Self-audit + commit** — deliberate critical thinking, then commit and push
+2. **Read the issue *and its comment thread*** — `scripts/deliver-issue-refinements.sh <issue-number>`. A body is written once and the design is then refined in comments; a plan made from the body alone builds an out-of-date spec. See [Comments can refine the body](docs/contributing/pr-workflow.md#comments-can-refine-the-body) for which comments carry authority and how they combine with the body
+3. **Write plan** — behavioral contracts (GIVEN/WHEN/THEN) and TDD task breakdown
+4. **Review plan** — review for correctness before proceeding
+5. **Human approval** — review contracts and tasks, approve to proceed
+6. **Implement** — execute TDD tasks from the plan
+7. **Review code** — review implementation for correctness
+8. **Self-audit + commit** — deliberate critical thinking, then commit and push
 
 Full process: [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md)
 
@@ -171,7 +172,7 @@ For adding a routing policy, admission policy, scorer, scheduler, priority polic
 1. **Identify extension type** — see [Adding New Components](#adding-new-components) below
 2. **Create worktree** — `git worktree add .worktrees/<extension-name> -b <extension-name>`
 3. **Write plan** — follow [`docs/contributing/extension-recipes.md`](docs/contributing/extension-recipes.md) for the recipe
-4. **Follow steps 3–7 from Bug Fix** (review → approve → implement → review → commit)
+4. **Follow steps 4–8 from Bug Fix** (review → approve → implement → review → commit)
 
 No design doc needed for policy templates. Full process: [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md)
 
@@ -189,7 +190,7 @@ The full pipeline for features that introduce new module boundaries, new interfa
 5. **PR0** — create `feature/<name>` branch, persist plan to `specs/NNN-feature/`, push
 
 **Phase 3 — Deliver** (repeat for each sub-issue, PRs target the feature branch):
-6. **Follow the Bug Fix journey** (steps 1–7) for each hole
+6. **Follow the Bug Fix journey** (steps 1–8) for each hole
 7. **Final PR** — merge feature branch → main when dist=0 + tests pass
 
 Each phase produces an artifact that feeds the next. Human approval gates between phases prevent wasted work.
@@ -199,10 +200,11 @@ Each phase produces an artifact that feeds the next. Human approval gates betwee
 If you are not using Claude Code, here is the simplified workflow:
 
 1. **Branch** — `git checkout -b feature/my-change`
-2. **Plan** — write behavioral contracts (GIVEN/WHEN/THEN) and a task breakdown. Post as a PR draft or issue comment for review.
-3. **Implement** — follow TDD: write a failing test, implement the minimal code to pass it, run `go test ./...`, run `golangci-lint run ./...`, commit. Repeat for each contract.
-4. **Self-review** — check the [Antipattern Checklist](#antipattern-checklist) below. Run `go build ./... && go test ./... && golangci-lint run ./...` one final time.
-5. **PR** — push your branch and open a PR. Maintainers will run `@claude /blis-pr-review` and `/archon-pr-review`.
+2. **Read the issue and its comment thread** — `scripts/deliver-issue-refinements.sh <issue-number>`. The design may have been corrected in a comment after the body was written; a later comment by someone with write access overrides the body on any point it addresses ([the rule](docs/contributing/pr-workflow.md#comments-can-refine-the-body))
+3. **Plan** — write behavioral contracts (GIVEN/WHEN/THEN) and a task breakdown. Post as a PR draft or issue comment for review.
+4. **Implement** — follow TDD: write a failing test, implement the minimal code to pass it, run `go test ./...`, run `golangci-lint run ./...`, commit. Repeat for each contract.
+5. **Self-review** — check the [Antipattern Checklist](#antipattern-checklist) below. Run `go build ./... && go test ./... && golangci-lint run ./...` one final time.
+6. **PR** — push your branch and open a PR. Maintainers will run `@claude /blis-pr-review` and `/archon-pr-review`.
 
 For large features: write the RFC following [`docs/contributing/rfc.md`](docs/contributing/rfc.md) and submit for team discussion. The `.archon` encoding can be done with Claude Code after agreement.
 
@@ -232,7 +234,7 @@ Before submitting a PR, verify:
 - [ ] R7: Invariant tests alongside any golden tests
 - [ ] R8: No exported mutable maps
 - [ ] R9: `*float64` for YAML fields where zero is valid
-- [ ] R10: YAML strict parsing (`KnownFields(true)`)
+- [ ] R10: strict config parsing, YAML and JSON (`KnownFields(true)` / no unknown keys)
 - [ ] R11: Division by runtime-derived denominators guarded
 - [ ] R12: Golden dataset regenerated if output changed
 - [ ] R13: New interfaces work for 2+ implementations
@@ -258,13 +260,28 @@ BLIS has four extension types. Identify which type your change is, then follow t
 | **Backend Swap** | Alternative implementation of internal module | Yes (covers both phases) | SGLang latency model |
 | **Tier Composition** | Wrapper layering behavior on existing module | Recommended | NVMe KV tier |
 
-### Adding a New Model to defaults.yaml
+### Adding a New Model to the Catalog
 
-When adding a new model configuration:
+A model runs **if and only if it is in the catalog** (NS-6, #1733), and the catalog itself must be **located explicitly** — `--catalog <path>` or the `BLIS_CATALOG` environment variable, with no default and no search path (S4, #1731). BLIS reads the model's `config.json` from `<catalog>/models/<short-name>/config.json` and never downloads one at run time, so an uncatalogued model is refused rather than fetched-and-cached. The catalog is the [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository (#1771 removed the in-repo `model_configs/` tree), so the catalog entry is the load-bearing step:
 
-1. Add an entry to the `defaults:` section with `GPU` and `tensor_parallelism`
-2. Add an `hf_repo` field mapping the BLIS model name (lowercase) to the case-sensitive HuggingFace repository path (e.g., `hf_repo: Qwen/Qwen3-14B`). This enables `--latency-model roofline` auto-fetch. Models without real HuggingFace repos (e.g., synthetic benchmarks) may omit `hf_repo` — document why with a YAML comment.
-3. If trained coefficients exist, add a corresponding entry to the `models:` list
+1. **Commit the model's HuggingFace `config.json` at `models/<short-name>/config.json` in a `blis-catalog` checkout** (`<short-name>` is the part of the model id after the `/`, lowercased). Without it, `blis run` refuses the model. Point BLIS at your checkout with `--catalog <clone-root>` (or `export BLIS_CATALOG=$PWD/blis-catalog`).
+
+**That is the whole procedure — `defaults.yaml` needs no edit at all.** As of #1768 it holds no
+per-model entry of any kind: the `defaults:` block (`GPU` / `tensor_parallelism` / `hf_repo`) is
+deleted, having been unreachable on every run path since the deployment became a required
+`--hardware`/`--tp` input. Two consequences for a contributor:
+
+1. **Do not add a `defaults:` block back.** `defaults.yaml` is decoded into a fixed struct
+   (`cmd.Config`) with strict field checking (R10), so an unrecognized top-level key is a parse
+   error rather than an inert extra — a file carrying `defaults:` fails to load with
+   `field defaults not found in type cmd.Config`.
+2. **Provenance goes in the commit, not the YAML.** The retired `hf_repo` field recorded where a
+   committed `config.json` came from; say that in the commit message or PR instead (the
+   `blis-catalog` repository records it per model in `models/<name>/model.yaml`).
+
+Nothing further is needed for latency either: the trained-physics coefficients
+(`trained_physics_coefficients`) are a single global block shared by every model, not a per-model
+list.
 
 ### Policy Template (lightest — ~3 files)
 
@@ -326,7 +343,7 @@ See design guidelines Section 5.4 for the full two-phase recipe.
 |---|---|---|
 | `CLAUDE.md` | Code architecture, file organization, CLI flags, compact rule/invariant tables | Always — authoritative for current codebase state |
 | `docs/contributing/standards/rules.md` | 23 antipattern rules with evidence, checks, enforcement | When reviewing or writing code |
-| `docs/contributing/standards/invariants.md` | 13 system invariants (INV-1 through INV-13), plus PD disaggregation (INV-PD-*) and pool/transfer (INV-P2-*) invariants, with verification strategies | When touching request lifecycle, KV cache, or metrics |
+| `docs/contributing/standards/invariants.md` | The invariant registry, grouped by scope (run-level, subsystem) plus a cross-cutting code-boundary group: 19 core invariants (INV-1 through INV-19, the last six enforcement-anchored) plus INV-A, INV-A2, INV-W3, INV-BC-DP1, the LoRA family (INV-L1–INV-L7, by pointer), PD disaggregation (INV-PD-*) and pool/transfer (INV-P2-*), with verification strategies. Every `INV-*` ID cited in code is resolvable from it. | When touching request lifecycle, KV cache, metrics, or placement |
 | `docs/contributing/pr-workflow.md` | End-to-end PR lifecycle (worktree → plan → review → implement → audit → PR) | Before starting any PR |
 | `docs/concepts/` | System architecture, core engine, concepts glossary, roofline estimation | When learning how BLIS works before contributing |
 | `docs/contributing/templates/design-guidelines.md` | DES foundations, module architecture, extension framework | Before designing a new feature or extending BLIS |

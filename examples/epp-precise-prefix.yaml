@@ -46,7 +46,7 @@
 # ============================================================================
 #
 #   ./blis run \
-#     --model meta-llama/llama-3.1-8b-instruct \
+#     --model meta-llama/llama-3.1-8b-instruct --hardware H100 --tp 1 \
 #     --num-instances 4 \
 #     --policy-config examples/epp-precise-prefix.yaml \
 #     --workload-spec examples/prefix-affinity-demo.yaml \

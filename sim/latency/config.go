@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,6 +21,20 @@ const bitsPerByte = 8.0
 // HFConfig represents a flexible JSON object with dynamic fields.
 type HFConfig struct {
 	// Raw holds the entire JSON as a dynamic map.
+	//
+	// PRECONDITION on the values: exactly what json.Unmarshal produces when decoding
+	// into `any` — JSON numbers as float64, objects as map[string]any, arrays as []any.
+	// ParseHFConfig is the production producer and uses exactly that path; a caller
+	// constructing an HFConfig by hand (or feeding GetModelConfigFromHF directly) must
+	// match it.
+	//
+	// json.Decoder.UseNumber() is NOT supported: it decodes numbers as json.Number, and
+	// EVERY reader here asserts a concrete type — GetInt/GetBool/GetString, the getInt
+	// closure in GetModelConfigFromHF, and parseQuantizationConfig. Teaching one reader
+	// json.Number would half-decode a config (a layer count that resolves beside a
+	// hidden_size silently read as 0), which is strictly worse than refusing, so the
+	// contract is stated here and layerCountEvidence names the violation explicitly
+	// rather than reporting the value as a non-number (#1777).
 	Raw map[string]any
 }
 
@@ -90,10 +106,10 @@ func (c *HFConfig) mustGetIntFallback(def int, keys ...string) int {
 // compatibility. NumExpertsPerTok / n_shared_experts are activation counts, NOT
 // totals, and are deliberately excluded.
 var moeExpertCountFields = []string{
-	"num_experts",       // Jamba
-	"moe_num_experts",   // Dbrx
-	"n_routed_experts",  // DeepSeek
-	"num_local_experts", // Mixtral
+	"num_experts",        // Jamba
+	"moe_num_experts",    // Dbrx
+	"n_routed_experts",   // DeepSeek
+	"num_local_experts",  // Mixtral
 	"num_routed_experts", // BLIS-historical alias
 }
 
@@ -167,10 +183,197 @@ func (c *HFConfig) LinearAttnFullLayerCount() int {
 	return len(full)
 }
 
+// LayersBlockTypeField is the HF config key whose list length expresses a model's
+// total layer count when no num_hidden_layers scalar is declared (#1729 / NS-4).
+// Exported so the CLI's HF-config presence detection recognizes exactly the key the
+// parser can consume — the two must not disagree about what counts as a usable config.
+const LayersBlockTypeField = "layers_block_type"
+
+// numHiddenLayersField is the HF config key holding the layer-count scalar. Named once
+// so the resolver that reads it and the diagnostic that names it cannot drift apart.
+const numHiddenLayersField = "num_hidden_layers"
+
+// BlockTypeLayerCount returns the number of layers declared as the length of the
+// model's per-layer block-type list, i.e. len(layers_block_type). ParseHFConfig
+// pivots text_config onto the top-level map, so the key is reachable as a top-level
+// value for multimodal configs too.
+//
+// Some configs (Nemotron-3-Ultra-550B) omit the num_hidden_layers scalar entirely and
+// express the layer count only as this list — one entry per layer, naming its block
+// type ("attention", "mamba", …). BLIS read the scalar, got 0, and aborted before any
+// simulation with "NumLayers must be > 0" (#1729), even though the count was right
+// there in the config.
+//
+// Returns 0 when the key is absent, holds an empty list, or holds a non-list value, so
+// the caller keeps the existing layer-count resolution (the scalar, and ultimately
+// GetModelConfigFromHF's loud parse-boundary refusal — see layerCountEvidence) rather
+// than a silent 0. Only the LENGTH is read — element types are irrelevant, mirroring
+// LinearAttnFullLayerCount. Counting is deliberately all this does: per-type tallies /
+// layer groups are a later release (R4a), so a derived count is a total layer count and
+// nothing more.
+func (c *HFConfig) BlockTypeLayerCount() int {
+	blocks, ok := c.Raw[LayersBlockTypeField].([]any)
+	if !ok {
+		return 0
+	}
+	return len(blocks)
+}
+
+// ResolveNumLayers returns the model's total transformer-layer count: the
+// num_hidden_layers scalar when it is present and non-zero, else the length of the
+// block-type list (#1729 / NS-4). Returns 0 when neither source has an answer — never a
+// silent 0: GetModelConfigFromHF refuses that at the parse boundary, naming both keys
+// consulted (#1777), and the per-backend validators keep their own NumLayers > 0 check as
+// defense in depth for a ModelConfig built by any other route.
+//
+// The scalar wins whenever it answers, which makes the array a pure fallback: every
+// config that declares num_hidden_layers — i.e. every currently-catalogued model —
+// resolves exactly as it did before this fallback existed (INV-6). A present-but-
+// negative scalar is returned as-is rather than overridden: it is bad input, and the
+// validators' "NumLayers must be > 0" is the right response, not a second opinion.
+//
+// This is the single source of truth for layer-count resolution (R23 code-path
+// parity); ExtractKVCapacityParams derives no layer count of its own.
+func (c *HFConfig) ResolveNumLayers() int {
+	if n, answered := c.numLayersScalar(); answered {
+		return n
+	}
+	return c.BlockTypeLayerCount()
+}
+
+// numLayersScalar reports the num_hidden_layers scalar and whether it ANSWERS the
+// layer-count question: present AND non-zero. It is the single predicate both
+// ResolveNumLayers and the derivation warning in GetModelConfigFromHF read, so the
+// two can never disagree about whether the fallback fired.
+//
+// Keeping them in one place is the point. The two predicates were briefly separate —
+// the resolver falling back on "absent or 0" while the warning gate fired only on
+// key ABSENCE — which let a config carrying "num_hidden_layers": 0 alongside a
+// block-type list derive its count with no stderr line at all: exactly the silent
+// reinterpretation of an operator's config that R1 forbids.
+func (c *HFConfig) numLayersScalar() (int, bool) {
+	n, ok := c.GetInt(numHiddenLayersField)
+	return n, ok && n != 0
+}
+
+// jsonValueKind names the JSON type of a decoded config value in operator-facing terms,
+// so a "wrong type" diagnostic can say WHAT the key holds instead of only that it was
+// unusable. json.Unmarshal into `any` — the HFConfig.Raw contract — produces exactly
+// these Go types.
+//
+// json.Number is named "a number" because that is what it IS to the operator reading
+// their config: the value is a perfectly good JSON number, decoded by a Decoder the Raw
+// contract does not admit. So a caller that violates that contract must never be told
+// "num_hidden_layers holds a json.Number, not a number" — layerCountEvidence intercepts
+// that case ahead of its generic wrong-type clause and names the real problem (#1777).
+func jsonValueKind(v any) string {
+	switch v.(type) {
+	case nil:
+		return "null"
+	case bool:
+		return "a boolean"
+	case float64, json.Number:
+		return "a number"
+	case string:
+		return "a string"
+	case []any:
+		return "a list"
+	case map[string]any:
+		return "an object"
+	default:
+		return fmt.Sprintf("a %T", v)
+	}
+}
+
+// layerCountEvidence describes what each of the two keys ResolveNumLayers consults
+// actually contributes, one clause per key. PRECONDITION: ResolveNumLayers returned 0,
+// i.e. neither key answered — the clauses are phrased for that state.
+//
+// It exists because the per-backend validators' "ModelConfig.NumLayers must be > 0"
+// names a Go STRUCT FIELD, not a config key: it reports the number BLIS ended up with
+// and says nothing about where BLIS looked for it. Since #1729 there are two places to
+// look, and a present-but-malformed layers_block_type (a bare string instead of a list,
+// say) reads as "absent" to the resolver — so an operator could be staring at a config
+// that visibly states its layer count while being told the count is missing. Naming both
+// keys, and saying what is wrong with each, is the difference between a one-edit fix and
+// a source dive.
+//
+// Same standard applies when the caller — not the config — is at fault: a Raw map built
+// with json.Decoder.UseNumber() holds json.Number, which no reader here accepts, and that
+// gets its own clause naming the decoder rather than blaming the config's number (#1777).
+func (c *HFConfig) layerCountEvidence() []string {
+	clauses := make([]string, 0, 2)
+
+	// The type tests mirror the readers exactly: GetInt accepts only a JSON number
+	// (float64 after json.Unmarshal), and BlockTypeLayerCount only a []any. Asserted on
+	// the type directly rather than by comparing jsonValueKind's prose, which would make
+	// the branch depend on the wording of a message.
+	switch v, present := c.Raw[numHiddenLayersField]; {
+	case !present:
+		clauses = append(clauses, fmt.Sprintf("%q is absent", numHiddenLayersField))
+	default:
+		if _, isJSONNumber := v.(json.Number); isJSONNumber {
+			// Reachable only by violating the HFConfig.Raw contract, since Raw is exported
+			// and GetModelConfigFromHF takes an already-built *HFConfig: a caller decoding
+			// with json.Decoder.UseNumber() gets json.Number, which GetInt does not accept.
+			// Intercepted BEFORE the generic clause below, which would otherwise report a
+			// genuine JSON number as "not a number" — a self-contradiction that sends the
+			// caller looking at their config file when the defect is in their decoder.
+			clauses = append(clauses, fmt.Sprintf(
+				"%q was decoded as a json.Number, which BLIS's config readers do not accept "+
+					"(decode into `any` WITHOUT json.Decoder.UseNumber, as ParseHFConfig does — "+
+					"see the HFConfig.Raw contract)", numHiddenLayersField))
+		} else if _, isNumber := v.(float64); !isNumber {
+			clauses = append(clauses, fmt.Sprintf(
+				"%q holds %s, not a number", numHiddenLayersField, jsonValueKind(v)))
+		} else {
+			// Present and numeric, yet the scalar did not answer ⇒ it is 0
+			// (numLayersScalar treats 0 as no answer, deliberately: 0 layers is not a model).
+			clauses = append(clauses, fmt.Sprintf("%q is 0", numHiddenLayersField))
+		}
+	}
+
+	switch v, present := c.Raw[LayersBlockTypeField]; {
+	case !present:
+		clauses = append(clauses, fmt.Sprintf("%q is absent", LayersBlockTypeField))
+	default:
+		if _, isList := v.([]any); !isList {
+			clauses = append(clauses, fmt.Sprintf(
+				"%q holds %s, not a list (only a list's LENGTH is read)", LayersBlockTypeField, jsonValueKind(v)))
+		} else {
+			clauses = append(clauses, fmt.Sprintf("%q holds an empty list", LayersBlockTypeField))
+		}
+	}
+
+	return clauses
+}
+
 func parseHWConfig(HWConfigFilePath string) (map[string]sim.HardwareCalib, error) {
 	data, err := os.ReadFile(HWConfigFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("read hardware config %q: %w", HWConfigFilePath, err)
+	}
+
+	// #1694: reject the pre-#1694 per-COLLECTIVE key. A legacy "InterNodeLatencyUs" is
+	// caught by the generic unknown-key check below too (#1728), but this guard runs
+	// FIRST so the operator gets the migration message instead: the value is NOT a
+	// drop-in rename — the unit changed from µs-per-collective to µs-per-hop, so it must
+	// be re-divided by the hop count. A bare "unknown key" would lose that hint, and
+	// silently dropping the value to 0 would discard a calibrated number with no warning
+	// at all (the bandwidths alone already satisfy HasInterconnectCalibration, so
+	// warnIfCrossNodeUnpriced stays quiet) — the R1 "never silent" case.
+	if err := rejectLegacyInterNodeLatencyKey(data); err != nil {
+		return nil, err
+	}
+
+	// #1728: parse strictly. This was the last permissively-parsed config path in BLIS
+	// (every YAML path uses decoder.KnownFields(true)), which meant an arbitrary
+	// misspelling of a numeric key — IntraNodeBandwidthGBps for IntraNodeBwGBps, MemoryGB
+	// for MemoryGiB — decoded to 0 and produced a plausible-but-wrong result with no
+	// diagnostic. A blocklist (the legacy-key guard above) catches one known key; only an
+	// allowlist catches an arbitrary typo.
+	if err := rejectUnknownHardwareCalibKeys(data); err != nil {
+		return nil, err
 	}
 
 	var HardwareList map[string]sim.HardwareCalib
@@ -178,6 +381,160 @@ func parseHWConfig(HWConfigFilePath string) (map[string]sim.HardwareCalib, error
 		return nil, fmt.Errorf("parse hardware config JSON: %w", err)
 	}
 	return HardwareList, nil
+}
+
+// hardwareCalibProvenanceKeys are the documentation-only keys a hardware-config GPU
+// entry may carry alongside its numeric fields. The bundled hardware_config.json uses
+// both to record where each calibration came from (Discussion #589 for the MFU values,
+// the datasheet reasoning for the interconnect bandwidths) — provenance that belongs
+// next to the numbers it explains, since a reader checking a value looks at the entry,
+// not at a doc page. They are accepted and ignored: the value decode never reads them.
+// These exact spellings are what a config must use — like the calibration fields, a
+// case-only variant ("_Comment") is rejected with the canonical spelling named.
+var hardwareCalibProvenanceKeys = []string{"_comment", "_comment_interconnect"}
+
+// hardwareCalibKnownKeys maps the ASCII-lowercased form of every JSON key
+// parseHWConfig accepts on a GPU entry to its canonical spelling. It is derived from
+// sim.HardwareCalib's struct tags rather than hand-listed, so a field added to the
+// struct is accepted with no parser change and the accepted set cannot drift from the
+// fields the decoder actually populates (R23 code-path parity).
+//
+// The folded form is kept so a key that differs from a declared field ONLY in letter
+// case can be diagnosed as such (encoding/json would silently accept it — see
+// rejectUnknownHardwareCalibKeys).
+var hardwareCalibKnownKeys = buildHardwareCalibKnownKeys()
+
+func buildHardwareCalibKnownKeys() map[string]string {
+	typ := reflect.TypeOf(sim.HardwareCalib{})
+	keys := make(map[string]string, typ.NumField()+len(hardwareCalibProvenanceKeys))
+	for i := 0; i < typ.NumField(); i++ {
+		f := typ.Field(i)
+		if !f.IsExported() {
+			continue // unexported fields are invisible to encoding/json
+		}
+		name := f.Name
+		if tag, ok := f.Tag.Lookup("json"); ok {
+			tagName := strings.Split(tag, ",")[0]
+			if tagName == "-" {
+				continue // explicitly not part of the JSON surface
+			}
+			if tagName != "" {
+				name = tagName
+			}
+		}
+		keys[strings.ToLower(name)] = name
+	}
+	for _, p := range hardwareCalibProvenanceKeys {
+		keys[strings.ToLower(p)] = p
+	}
+	return keys
+}
+
+// hardwareCalibFieldKeyList returns the canonical calibration-field keys (i.e. excluding
+// the provenance keys, which are listed separately in the diagnostic) in sorted order.
+// Sorted so the message is byte-identical run to run (INV-6).
+func hardwareCalibFieldKeyList() []string {
+	names := make([]string, 0, len(hardwareCalibKnownKeys))
+	for _, canonical := range hardwareCalibKnownKeys {
+		if slices.Contains(hardwareCalibProvenanceKeys, canonical) {
+			continue
+		}
+		names = append(names, canonical)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// rejectUnknownHardwareCalibKeys scans a hardware-config file for keys that are not
+// fields of sim.HardwareCalib (nor one of the ignored provenance keys) and returns a
+// fatal, actionable error listing every one of them with the GPU entry it appears under
+// (#1728).
+//
+// It is the allowlist equivalent of json.DisallowUnknownFields, chosen over the decoder
+// flag for three reasons: the decoder reports only `unknown field "X"` without saying
+// WHICH GPU entry it came from (useless in a file with a dozen entries); it would reject
+// the provenance keys the bundled file depends on; and it inherits encoding/json's
+// case-insensitive field matching, which hides a whole class of near-miss key (below).
+//
+// Two offender classes, both errors, deliberately distinguished:
+//
+//   - UNKNOWN: no declared field matches even case-insensitively. This is the silent-zero
+//     case the fix exists for — the decoder drops the key and the field reads 0.
+//   - CASE MISMATCH: the key matches a declared field when folded but is not spelled
+//     canonically (e.g. IntraNodeBwGbps for IntraNodeBwGBps). encoding/json's fallback
+//     accepts these and reads the value CORRECTLY, so they never produced a wrong number —
+//     but relying on that leaves the file one letter away from a genuine typo, and two
+//     spellings of one field in the same entry resolve last-wins. Requiring the canonical
+//     spelling costs an operator one trivially-actionable error naming the exact key to use.
+//
+// The scan is file-wide rather than scoped to the GPU being run — unlike GetHWConfig's
+// per-GPU ValidateInterconnect call, which checks whether a PRESENT value is usable and so
+// only matters for the entry in use. A misspelled key is different in kind: it is a
+// file-integrity defect that nothing else will ever surface, which is exactly why it needs
+// to fail here. This also matches the sibling rejectLegacyInterNodeLatencyKey guard, which
+// has always been file-wide.
+func rejectUnknownHardwareCalibKeys(data []byte) error {
+	var raw map[string]map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		// Not the expected shape; the main decode in parseHWConfig will produce the real
+		// parse error rather than a confusing "unknown key" one.
+		return nil //nolint:nilerr // defer the diagnostic to the primary json.Unmarshal
+	}
+
+	var offenders []string
+	for gpu, fields := range raw {
+		for key := range fields {
+			canonical, folds := hardwareCalibKnownKeys[strings.ToLower(key)]
+			switch {
+			case folds && canonical == key:
+				continue // canonical spelling of a declared field (or a provenance key)
+			case folds:
+				offenders = append(offenders, fmt.Sprintf(
+					"GPU %q key %q (differs from the declared key %q only in letter case — use the canonical spelling)",
+					gpu, key, canonical))
+			default:
+				offenders = append(offenders, fmt.Sprintf("GPU %q key %q (unknown)", gpu, key))
+			}
+		}
+	}
+	if len(offenders) == 0 {
+		return nil
+	}
+	// Sorted so a multi-offender diagnostic is byte-identical across runs (INV-6) rather
+	// than following Go's randomized map order.
+	sort.Strings(offenders)
+	return fmt.Errorf("hardware config declares unrecognized key(s): %s. Parsing is strict: an "+
+		"unrecognized key is almost always a misspelling, and accepting it would leave the "+
+		"intended field at 0 — a plausible-but-wrong bandwidth, MFU or memory capacity with no "+
+		"diagnostic anywhere. Valid keys are %v, plus the ignored provenance keys %v",
+		strings.Join(offenders, "; "), hardwareCalibFieldKeyList(), hardwareCalibProvenanceKeys)
+}
+
+// rejectLegacyInterNodeLatencyKey scans a hardware-config file for the pre-#1694
+// per-collective "InterNodeLatencyUs" key on any GPU entry and returns a fatal,
+// actionable error if present. Named per-GPU so the operator knows where to look.
+func rejectLegacyInterNodeLatencyKey(data []byte) error {
+	var raw map[string]map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		// Not the expected shape; the main decode below will produce the real parse error.
+		return nil //nolint:nilerr // defer the diagnostic to the primary json.Unmarshal
+	}
+	var offenders []string
+	for gpu, fields := range raw {
+		if _, ok := fields["InterNodeLatencyUs"]; ok {
+			offenders = append(offenders, gpu)
+		}
+	}
+	if len(offenders) == 0 {
+		return nil
+	}
+	sort.Strings(offenders)
+	return fmt.Errorf("hardware config declares the removed per-collective key %q on GPU(s) %v; "+
+		"it was replaced by the per-HOP key %q in #1694 (the charge is now n_steps·α_hop, so the "+
+		"unit changed from µs-per-collective to µs-per-hop). This is a RECALIBRATION, not a rename: "+
+		"divide the old value by the collective's cross-node hop count before setting %q — do not "+
+		"copy it verbatim. Remove the old key to proceed",
+		"InterNodeLatencyUs", offenders, "InterNodeHopLatencyUs", "InterNodeHopLatencyUs")
 }
 
 // GetHWConfig returns hardware calibration data for the specified GPU.
@@ -195,6 +552,15 @@ func GetHWConfig(HWConfigFilePath string, GPU string) (sim.HardwareCalib, error)
 		}
 		sort.Strings(available)
 		return sim.HardwareCalib{}, fmt.Errorf("GPU %q not found in hardware config (available: %v)", GPU, available)
+	}
+	// #1530: the optional interconnect calibration is validated here, at the load
+	// boundary, so a malformed hardware config fails identically regardless of which
+	// latency backend will consume it — the roofline backend ignores these fields, and
+	// silently accepting a typo under roofline while rejecting it under trained-physics
+	// would be a confusing asymmetry (R23). Only the requested GPU is checked, so an
+	// unrelated malformed entry elsewhere in the file does not block an unrelated run.
+	if err := config.ValidateInterconnect(); err != nil {
+		return sim.HardwareCalib{}, fmt.Errorf("hardware config %q, GPU %q: %w", HWConfigFilePath, GPU, err)
 	}
 	return config, nil
 }
@@ -406,8 +772,11 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	// total; only the full-attention layers store a per-token KV cache. The count is
 	// len(linear_attn_config.full_attn_layers). 0 for every non-hybrid model →
 	// EffectiveKVBearingLayers falls back to NumLayers, so the KV footprint is
-	// byte-identical there (INV-6). Scoped to the KV-capacity path — KDA weights
-	// (#1638) and KDA step time (#1636) are out of scope and still use all NumLayers.
+	// byte-identical there (INV-6). Consumed by BOTH the KV-capacity path (#1635) and
+	// the step-time models (#1636): both roofline and trained-physics charge the
+	// sequence-length-dependent attention cost over these layers only and price the
+	// remaining KDA layers as linear attention. KDA *weights* (#1638) remain out of
+	// scope and are still charged as full attention over all NumLayers.
 	kvBearingLayers := hf.LinearAttnFullLayerCount()
 
 	// Reject negative values for the shape fields parsed above (#1527). getInt
@@ -430,8 +799,52 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 		}
 	}
 
+	// Total layer count: the num_hidden_layers scalar when it answers, else the length of
+	// the block-type list (#1729 / NS-4). Some configs (Nemotron-3-Ultra-550B) declare no
+	// scalar at all, and BLIS used to abort before any simulation with "NumLayers must be
+	// > 0"; the count was in the config, just phrased as a list. The scalar still wins
+	// whenever it answers, so every config that declares it parses exactly as before
+	// (INV-6).
+	//
+	// The warning gate reads the SAME numLayersScalar predicate the resolver does, so it
+	// fires for every derivation — including the "num_hidden_layers": 0 case, which the
+	// resolver treats as no answer. Gating on mere key absence here would let that config
+	// be silently reinterpreted (R1).
+	numLayers := hf.ResolveNumLayers()
+	// Neither key answered. Fail HERE, naming both keys the resolver consults, rather
+	// than deferring to the per-backend "ModelConfig.NumLayers must be > 0" validators:
+	// that message names a struct field the operator's config does not contain, and since
+	// #1729 there are two config keys that could have supplied the count — one of which
+	// (a present-but-wrong-typed layers_block_type) is indistinguishable from absent by
+	// the time the validator runs. The backend validators keep their own check as
+	// defense in depth, for a ModelConfig built by any other route.
+	//
+	// Scope: only the no-evidence case (numLayers == 0). A present-but-NEGATIVE scalar
+	// ANSWERED — it is bad input rather than missing input, and ResolveNumLayers
+	// deliberately passes it through so the validators report the actual value; second-
+	// guessing it here would replace a precise "got -5" with a "cannot determine" that is
+	// simply untrue.
+	if numLayers == 0 {
+		return nil, fmt.Errorf("GetModelConfigFromHF: cannot determine the model's transformer-layer "+
+			"count: %s. Set %q to the model's total layer count, or declare %q as a list with one entry "+
+			"per layer", strings.Join(hf.layerCountEvidence(), ", and "), numHiddenLayersField, LayersBlockTypeField)
+	}
+	if _, scalarAnswered := hf.numLayersScalar(); !scalarAnswered && numLayers > 0 {
+		// Never silent (R1), and warn rather than inform: the count is derived, and every
+		// entry is counted as one transformer layer whatever type it names — so a hybrid
+		// block list (Nemotron's "attention"/"mamba" mix) prices its non-attention layers
+		// as full attention. Pessimistic, and worth one stderr line at the default log
+		// level, exactly as the hybrid-attention detection is (#1635/#1636). Only fires for
+		// a config whose scalar has no answer, so catalogued models stay quiet.
+		logrus.Warnf("HuggingFace config declares no usable num_hidden_layers (absent or 0); derived NumLayers=%d "+
+			"from len(%s). Every entry is counted as one transformer layer regardless of the block type it names, "+
+			"so a hybrid (e.g. attention/mamba) block list is priced as all-attention — pessimistic. Per-type "+
+			"layer groups are not modeled",
+			numLayers, LayersBlockTypeField)
+	}
+
 	modelConfig := &sim.ModelConfig{
-		NumLayers:              getInt("num_hidden_layers"),
+		NumLayers:              numLayers,
 		HiddenDim:              getInt("hidden_size"),
 		VocabSize:              getInt("vocab_size"),
 		IntermediateDim:        intermediateDim,

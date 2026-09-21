@@ -1,5 +1,10 @@
 package sim
 
+import (
+	"fmt"
+	"math"
+)
+
 // ModelConfig holds model architecture parameters parsed from a HuggingFace config.json.
 // Used by the roofline and cross-model latency models for step time estimation.
 // Parsing functions are in sim/latency/config.go.
@@ -169,4 +174,155 @@ type HardwareCalib struct {
 	MfuPrefill float64 `json:"mfuPrefill"`
 	MfuDecode  float64 `json:"mfuDecode"`
 	MemoryGiB  float64 `json:"MemoryGiB"` // GPU memory capacity in GiB
+
+	// Interconnect calibration (#1530), used only to price CROSS-NODE collective
+	// traffic in the trained-physics step-time model. Both are effective
+	// (achievable, not theoretical-peak) per-GPU unidirectional bandwidths in GB/s.
+	// Only their RATIO enters the cost model, so the absolute scale cancels — what
+	// matters is how much slower the fabric is than the on-node link.
+	//
+	// Either field left at 0 (or non-finite) means "interconnect uncalibrated":
+	// InterconnectBwRatio() then returns 1.0 and cross-node traffic is priced
+	// exactly like intra-node traffic, i.e. byte-identical to a pre-#1530 build
+	// (INV-6). Adding them to a hardware config is what turns the cross-node
+	// penalty on for a spanning placement.
+	IntraNodeBwGBps float64 `json:"IntraNodeBwGBps"` // on-node GPU-to-GPU link (NVLink/xGMI, or PCIe on non-NVLink parts)
+	InterNodeBwGBps float64 `json:"InterNodeBwGBps"` // per-GPU share of the node's inter-node fabric (InfiniBand/RoCE NIC)
+
+	// InterNodeHopLatencyUs is the fixed cost of ONE cross-node collective HOP in
+	// microseconds — the NCCL launch plus fabric round-trip plus synchronization one
+	// inter-node communication step imposes — independent of message size. It is the
+	// per-HOP constant α_hop of the analytic form
+	//
+	//	T_collective_fixed = n_steps(algorithm, topology) · α_hop · S
+	//
+	// (#1694, superseding the flat per-COLLECTIVE InterNodeLatencyUs of #1667). n_steps
+	// is the cross-node hop count, derived analytically from the collective algorithm and
+	// the placed node span (NetworkTopology.NodesSpanned) with NO free parameters:
+	//
+	//   - a hierarchical ring all-reduce (the TP-group collectives: attention, dense-FFN,
+	//     and the DP==1 MoE-FFN reduce) does its inter-node phase in 2·(nodes−1) hops per
+	//     collective;
+	//   - an all-to-all (the MoE expert dispatch/combine on an all-to-all backend) does
+	//     (nodes−1) hops per direction per collective.
+	//
+	// The per-layer COLLECTIVE COUNT is a separate, already-modeled factor (one comm unit
+	// per TP collective; moeDispatchCollectivesPerLayer=2 for MoE dispatch+combine) that
+	// multiplies α_hop alongside the hop count in sim/latency. So the flat #1667 term
+	// (node-span-INVARIANT, under-charging a wide span by ~(nodes−1)×) becomes span-aware
+	// without changing those existing multipliers.
+	//
+	// This is the size-independent half of the cross-node cost, and for the small messages
+	// a decode step produces it can exceed the bandwidth half by an order of magnitude. It
+	// is nonetheless 0 (uncalibrated ⇒ not charged) in the bundled hardware config,
+	// deliberately: BLIS has no measured per-hop latency to ship, and inventing one would
+	// put a fabricated constant in front of every multi-node estimate. α_hop must come
+	// from an independent NCCL microbenchmark on a reference cluster (the MFU / Discussion
+	// #589 pattern), reused unchanged across fabrics/topologies — NOT back-solved from any
+	// single run's residual (#1694). Supply a measured value here to model it.
+	//
+	// Calibration frame: like the bandwidth half, this rides the learned communication
+	// coefficient (β₄ for TP collectives, β_EP for MoE dispatch), so the charge is
+	// β·units·n_steps·α_hop·S. Calibrate α_hop in that frame (per-fabric, S=1), not as a
+	// raw wall-clock number. S (the eager/no-overlap serialization multiplier) is a
+	// SEPARATE deployment-regime input on ModelHardwareConfig.CommSerializationFactor,
+	// never folded into this fabric constant.
+	InterNodeHopLatencyUs float64 `json:"InterNodeHopLatencyUs"`
+}
+
+// ValidateInterconnect checks the optional interconnect calibration (#1530). Declaring
+// none of the three fields is valid and inert — that is every hardware config written
+// before #1530, and cross-node traffic is then priced at the on-node rate.
+//
+// It rejects two things, both of which would otherwise be swallowed by the accessors'
+// clamps and leave the user believing a fabric was modeled when it was not (R1):
+//
+//   - a value that was clearly meant to be a bandwidth or a latency but cannot be one
+//     (negative, NaN, or infinite);
+//   - exactly one of the two BANDWIDTHS set. The cost model uses only their ratio, so a
+//     lone bandwidth produces no bandwidth penalty at all. There is no reading of a
+//     half-calibrated pair, whereas a latency on its own IS meaningful (a fabric can be
+//     modeled as latency-dominated), so the latency is deliberately not paired.
+//
+// Pure query; the caller decides fatality (cmd/ → logrus.Fatalf, sim/ factory → error).
+func (hc HardwareCalib) ValidateInterconnect() error {
+	for _, f := range []struct {
+		name string
+		v    float64
+	}{
+		{"IntraNodeBwGBps", hc.IntraNodeBwGBps},
+		{"InterNodeBwGBps", hc.InterNodeBwGBps},
+		{"InterNodeHopLatencyUs", hc.InterNodeHopLatencyUs},
+	} {
+		if f.v == 0 {
+			continue // not calibrated — the feature stays inert for this field
+		}
+		if f.v < 0 || math.IsNaN(f.v) || math.IsInf(f.v, 0) {
+			return fmt.Errorf("%s must be a finite positive value (or 0 for \"not calibrated\"), got %v", f.name, f.v)
+		}
+	}
+	if (hc.IntraNodeBwGBps > 0) != (hc.InterNodeBwGBps > 0) {
+		return fmt.Errorf("interconnect bandwidth calibration is incomplete "+
+			"(IntraNodeBwGBps=%v, InterNodeBwGBps=%v): the cost model uses their ratio, so it needs BOTH "+
+			"bandwidths, or neither (which prices cross-node traffic at the on-node rate)",
+			hc.IntraNodeBwGBps, hc.InterNodeBwGBps)
+	}
+	return nil
+}
+
+// HasInterconnectCalibration reports whether this GPU declares enough interconnect
+// calibration to charge ANY cross-node cost: either a usable bandwidth ratio (the
+// size-dependent half) or a positive per-hop latency α_hop (the size-independent
+// half). When false, a collective that crosses a node boundary is priced exactly as
+// if it had not (INV-6) — which callers should surface rather than leave silent (R1).
+func (hc HardwareCalib) HasInterconnectCalibration() bool {
+	return hc.InterconnectBwRatio() > 1.0 || hc.EffectiveInterNodeHopLatencyUs() > 0
+}
+
+// EffectiveInterNodeHopLatencyUs returns the per-cross-node-HOP latency α_hop to
+// charge (#1694), or 0 when it is unset or unusable (negative, NaN, Inf). Pure query.
+// The caller multiplies it by the analytic hop count and the serialization factor S.
+func (hc HardwareCalib) EffectiveInterNodeHopLatencyUs() float64 {
+	if hc.InterNodeHopLatencyUs <= 0 || math.IsNaN(hc.InterNodeHopLatencyUs) || math.IsInf(hc.InterNodeHopLatencyUs, 0) {
+		return 0
+	}
+	return hc.InterNodeHopLatencyUs
+}
+
+// InterconnectBwRatio returns how many times slower this GPU's inter-node fabric
+// is than its on-node link: IntraNodeBwGBps / InterNodeBwGBps.
+//
+// Returns exactly 1.0 — "cross-node traffic costs the same as on-node traffic",
+// the pre-#1530 behavior — whenever the ratio cannot be trusted or would make
+// spanning cheaper than not spanning:
+//   - either bandwidth is unset (0), negative, NaN or Inf (uncalibrated hardware);
+//   - the computed ratio is below 1 (a fabric declared faster than the on-node
+//     link). Clamping instead of honoring a sub-unit ratio matters because the
+//     comm coefficient beta_4 is calibrated ON the intra-node link: scaling BELOW
+//     that baseline would price a spanning instance faster than a single-node one,
+//     which is physically absurd (R20 — degrade to the calibrated baseline, never
+//     to a nonsense value);
+//   - the division itself overflows to +Inf (reachable only from absurd inputs, e.g.
+//     a subnormal inter-node bandwidth against a near-MaxFloat64 on-node one). Every
+//     consumer must be able to treat the result as a finite number, so this returns
+//     the neutral 1.0 rather than a value that would poison the cost model. Callers
+//     that report on the calibration should therefore describe a 1.0 as "no USABLE
+//     bandwidths", which covers both the unset and the unusable case.
+//
+// Pure query, no state (R13).
+func (hc HardwareCalib) InterconnectBwRatio() float64 {
+	intra, inter := hc.IntraNodeBwGBps, hc.InterNodeBwGBps
+	if intra <= 0 || inter <= 0 ||
+		math.IsNaN(intra) || math.IsInf(intra, 0) ||
+		math.IsNaN(inter) || math.IsInf(inter, 0) {
+		return 1.0
+	}
+	ratio := intra / inter
+	// `!(ratio > 1.0)` is false for NaN too — belt-and-braces after the guards above.
+	// The explicit Inf test keeps the contract "always finite": both bandwidths can be
+	// finite and positive while their quotient still overflows.
+	if !(ratio > 1.0) || math.IsInf(ratio, 0) {
+		return 1.0
+	}
+	return ratio
 }

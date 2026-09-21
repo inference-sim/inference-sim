@@ -14,6 +14,20 @@ import (
 
 // baselineNoopGolden is the pre-feature no-op stdout golden captured in T002
 // (./blis run --model qwen/qwen3-14b --seed 42). Path is relative to the cmd/ test cwd.
+//
+// #1733 (NS-6) gave this golden a SECOND load-bearing role. It was captured when
+// --hardware/--tp were absent and inferred per-model from defaults.yaml's per-model
+// GPU/tensor_parallelism keys; the run below now passes them explicitly as
+// --hardware H100 --tp 1 — the pair those keys recorded for qwen/qwen3-14b. That it still
+// matches is the INV-6 evidence for #1733's acceptance criterion 4: making an input REQUIRED
+// changed no number.
+//
+// #1768 then deleted those keys (the whole defaults: block was dead once the deployment became
+// a required operator input), together with the anchor test that machine-verified the
+// equality. So the explicit pair above is now a HISTORICAL fact about how the golden was
+// captured, no longer cross-checkable against defaults.yaml; see the tombstone comment in
+// cmd/ns6_catalog_test.go. The INV-6 evidence is undiminished — it is this test matching a
+// golden captured from a run that supplied neither flag.
 const baselineNoopGolden = "../specs/007-lora-control-plane/testdata/baseline_noop.json"
 
 // noopFloatTolerance is the relative tolerance applied when comparing numeric
@@ -43,12 +57,17 @@ const noopFloatTolerance = 1e-9
 // The run is driven in a re-exec subprocess so the real cobra command tree executes
 // (and os.Exit(0) suppresses the test framework's own stdout, leaving only the metrics
 // JSON for a clean comparison). The qwen3-14b model config and hardware config are
-// git-tracked under model_configs/ and hardware_config.json, so the run is offline-safe.
+// git-tracked under the test catalog testdata/catalog/ (passed as --catalog) and
+// hardware_config.json, so the run is offline-safe.
 func TestNoOpByteIdentity_AdapterBlindRunMatchesBaseline(t *testing.T) {
 	if os.Getenv("BLIS_NOOP_SUBPROCESS") == "1" {
 		rootCmd.SetArgs([]string{
-			"run", "--model", "qwen/qwen3-14b", "--seed", "42",
+			"run", "--model", "qwen/qwen3-14b", "--hardware", "H100", "--tp", "1", "--seed", "42",
 			"--defaults-filepath", "../defaults.yaml",
+			// #1731 AC-5: the catalog is located explicitly. The committed test catalog
+			// testdata/catalog/ holds the entry, so this run must still reproduce the
+			// pre-feature golden (INV-6: the config bytes are unchanged by #1771).
+			"--catalog", "../testdata/catalog",
 		})
 		_ = rootCmd.Execute()
 		os.Exit(0)

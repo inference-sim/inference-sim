@@ -155,7 +155,7 @@ func TestStepTime_MoEReduceChargedAtDP1(t *testing.T) {
 	// tp>1,dp=1 — verified by constructing a model whose only tp>1 comm contribution on
 	// MoE layers is tMoEReduce and asserting it is nonzero via the basis.
 	m2 := newDPEPModel(t, mc, 2, 1, false, "")
-	reduce := m2.tpAllReduceBasis(float64(m2.numMoELayers), 100)
+	reduce := m2.tpAllReduceBasis(float64(m2.numMoELayers), 100, 1)
 	assert.Greater(t, reduce, 0.0, "uniform-MoE tMoEReduce basis must be nonzero at tp=2 (numMoELayers>0)")
 	assert.Positive(t, tp1, "sanity")
 	assert.Positive(t, tp2, "sanity")

@@ -4,7 +4,7 @@ This guide covers running multi-instance BLIS simulations — the full pipeline 
 
 ```bash
 # Quick example: 4-instance cluster with tracing
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --rate 100 --num-requests 500 \
   --trace-level decisions --summarize-trace
 ```
@@ -39,11 +39,11 @@ The `--tp` flag sets the tensor parallelism degree for all instances. TP affects
 
 ```bash
 # TP=2: 2 GPUs per instance
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 \
   --num-instances 4 --tp 2 --rate 100 --num-requests 500
 
 # TP=4: 4 GPUs per instance (lower latency, fewer KV blocks per GPU)
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 \
   --num-instances 2 --tp 4 --rate 100 --num-requests 500
 ```
 
@@ -64,8 +64,8 @@ A spanning instance is billed for every node it occupies (`cost_per_hour × node
     - A per-role tensor-parallel override (`--prefill-tp` / `--decode-tp`) that **differs from the global `--tp`** is not supported with `node_pools`: placement, node-span, and cost all use the global `--tp`, so a differing per-role TP would be simulated at one degree but placed and billed at another. Use a uniform `--tp`.
     - Every pool must have a **distinct `gpu_type`**: cost (`cost_per_hour`) and capacity (`gpu_memory_gib`) are resolved by first-match on `gpu_type`, so two pools sharing a type would resolve ambiguously.
 
-!!! warning "Cross-node interconnect not yet priced"
-    The TP all-reduce latency term currently assumes intra-node NVLink and does not add a cross-node network penalty (tracked by [#1530](https://github.com/inference-sim/inference-sim/issues/1530)). Latency and throughput for a multi-node instance are therefore **optimistic** until that lands; BLIS emits a one-time warning when an instance first spans nodes. Note that cross-node TP is itself the aggressive topology: vLLM recommends **pipeline parallelism across nodes and tensor parallelism within a node**, precisely because per-layer TP all-reduce is punishing over inter-node links (InfiniBand/Ethernet, roughly an order of magnitude below NVLink). So the optimism here is not a small rounding gap — a comm-dominated step can be under-priced substantially. Multi-node placement is `blis run` only (`blis replay`/`observe` reject node pools). Pipeline parallelism is not yet modeled (tracked by [#1535](https://github.com/inference-sim/inference-sim/issues/1535)).
+!!! warning "Cross-node interconnect: bandwidth priced, per-hop latency not calibrated"
+    Cross-node collective traffic **is** priced ([#1530](https://github.com/inference-sim/inference-sim/issues/1530)): when a collective's group does not fit inside one node, the trained-physics communication terms charge it at a blended intra/inter-node bandwidth derived from the actual placement. Two things gate it. The `--latency-model` must be `trained-physics` (roofline models no communication at all — [#1663](https://github.com/inference-sim/inference-sim/issues/1663)), and the placed GPU's entry in `--hardware-config` must declare `IntraNodeBwGBps` / `InterNodeBwGBps`; BLIS warns once, on first span, when either is missing, so an unpriced span is never silent. Expect roughly +10% on step time for TP=16 on 2×8 H100 — modest because NCCL's hierarchical all-reduce sends only the reduced chunk across the fabric. What is still **optimistic** is the fixed launch and round-trip cost of each cross-node hop: it *is* modeled as an analytic `n_steps · α_hop · S` term (`InterNodeHopLatencyUs`, [#1694](https://github.com/inference-sim/inference-sim/issues/1694) — `n_steps` is the hop count of the placed span, node-span-aware), but `α_hop` ships **uncalibrated at 0**, so nothing is charged for it out of the box — and at decode message sizes it is plausibly the larger of the two effects. Supplying a measured `α_hop` from an NCCL microbenchmark is [#1694](https://github.com/inference-sim/inference-sim/issues/1694). The eager/no-overlap serialization multiplier `S` (`--comm-serialization-factor`, default 1.0; `--enforce-eager` requires an explicit `S > 1`) scales that term for deployments that run without CUDA graphs. Note also that cross-node TP is itself the aggressive topology: vLLM recommends **pipeline parallelism across nodes and tensor parallelism within a node**, precisely because per-layer TP all-reduce means many small collectives over inter-node links (InfiniBand/Ethernet, roughly an order of magnitude below NVLink). Multi-node placement is `blis run` only: `blis replay` rejects `node_pools` outright, and `blis observe` cannot express them at all (it has no `--policy-config` and builds no simulator — its timing comes from a real server). Pipeline parallelism is not yet modeled (tracked by [#1535](https://github.com/inference-sim/inference-sim/issues/1535)).
 
 ## Scaling and Saturation
 
@@ -101,7 +101,7 @@ These add simulated delays to the admission and routing pipeline, modeling gRPC 
 Log every routing decision for offline analysis:
 
 ```bash
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --rate 100 --num-requests 500 \
   --trace-level decisions --summarize-trace --counterfactual-k 3
 ```

@@ -19,7 +19,7 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 
 ### Advanced
 
-- **Any HuggingFace model**: dense (Llama-2, Qwen3, etc.) and MoE (Mixtral, etc.) — auto-fetches model config on first run
+- **Any catalogued HuggingFace model**: dense (Llama-2, Qwen3, etc.) and MoE (Mixtral, etc.) — the model's `config.json` is committed in the [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository
 - **vLLM deployment configuration** (TP, chunk size, batch limits)
 - **Priority policies and instance schedulers**: constant, slo-based; fcfs, priority-fcfs, sjf
 - **Preemption policies**: fcfs (tail-of-batch), priority (least-urgent SLO tier evicted first)
@@ -46,11 +46,11 @@ cd inference-sim
 go build -o blis main.go
 ```
 
-**Note:** On first run, BLIS auto-fetches the model's `config.json` from HuggingFace (~1 second for public models like Qwen3). Subsequent runs use the cached config in `model_configs/`. For offline use with cached configs, both roofline and trained-physics modes work without network access.
+**Note:** BLIS must be told where the model catalog is — `--catalog <path>` or the `BLIS_CATALOG` environment variable, with **no default and no search path** (the flag wins when both are set). The catalog is the [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository: `git clone https://github.com/inference-sim/blis-catalog.git` and `export BLIS_CATALOG=$PWD/blis-catalog` once, and the examples work as written. BLIS then runs a model only if it is in that catalog — a `config.json` at `<catalog>/models/<model>/config.json`. Nothing is fetched or written at run time: a model that is not catalogued is refused, naming the path its entry belongs at. Add new models by committing their `config.json` to `blis-catalog` (see CONTRIBUTING.md). Both roofline and trained-physics run fully offline.
 
 **Environment setup (optional):**
 
-Set `HF_TOKEN` to access gated models (e.g., [Llama-2](https://huggingface.co/meta-llama/Llama-2-7b-hf)) and avoid HuggingFace rate limits.
+`HF_TOKEN` is not needed to run a simulation — BLIS makes no HuggingFace requests. Set it only when you are fetching a new model's `config.json` by hand to add a catalog entry (e.g., for a gated model such as [Llama-2](https://huggingface.co/meta-llama/Llama-2-7b-hf)).
 
 ```bash
 export HF_TOKEN=your_token_here
@@ -62,13 +62,13 @@ See [HuggingFace access tokens](https://huggingface.co/docs/hub/en/security-toke
 
 ## Quick Start
 
-Run BLIS for `qwen/qwen3-14b` with default configs (auto-fetches model config from HuggingFace):
+Run BLIS for `qwen/qwen3-14b` with default configs. `--hardware` and `--tp` are required — BLIS does not infer the deployment:
 
 ```bash
-./blis run --model qwen/qwen3-14b
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1
 ```
 
-**Hardware/TP defaults:** Omitting `--hardware` and `--tp` flags will default to H100 and TP=1 with warnings. Specify explicitly for other configurations.
+**No inferred deployment:** BLIS never guesses `--hardware`/`--tp`. A run missing either is refused, naming the missing flag — pass both explicitly on every command.
 
 You should see JSON output on stdout with key fields:
 
@@ -89,13 +89,13 @@ You should see JSON output on stdout with key fields:
 ### Multi-client workload specification
 
 ```bash
-./blis run --model qwen/qwen3-14b --workload-spec examples/servegen-language.yaml
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --workload-spec examples/servegen-language.yaml
 ```
 
 ### Cluster simulation with weighted routing
 
 ```bash
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --routing-policy weighted \
   --routing-scorers "precise-prefix-cache:2,queue-depth:1,kv-utilization:1" \
   --rate 100 --num-requests 500
@@ -104,7 +104,7 @@ You should see JSON output on stdout with key fields:
 ### Trained-physics mode (architecture-aware, no per-model calibration)
 
 ```bash
-./blis run --model qwen/qwen3-14b --latency-model trained-physics 
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --latency-model trained-physics 
 ```
 
 Accurate across most model architectures (dense, uniform MoE, interleaved MoE) using physics-informed basis functions with learned corrections. See the [latency models guide](docs/guide/latency-models.md) for details.
@@ -144,13 +144,13 @@ See [Workload Specifications](docs/guide/workloads.md) for the workload spec YAM
 Replay a captured TraceV2 file through the discrete-event simulator:
 
 ```bash
-./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b
+./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b --hardware H100 --tp 1
 ```
 
 To produce per-request results for calibration, add `--results-path`:
 
 ```bash
-./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
+./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --results-path results.json
 ```
 
@@ -201,12 +201,12 @@ Separate prefill (prompt processing) and decode (token generation) onto dedicate
 ```bash
 # Baseline: 4 co-located instances (no disaggregation)
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --rate 100 --num-requests 1000
 
 # PD disaggregation: 2 prefill + 2 decode, always disaggregate
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 \
   --prefill-instances 2 --decode-instances 2 \
   --pd-decider always \
@@ -215,7 +215,7 @@ Separate prefill (prompt processing) and decode (token generation) onto dedicate
 
 # Selective disaggregation: only disaggregate when non-cached token count exceeds threshold
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 \
   --prefill-instances 2 --decode-instances 2 \
   --pd-decider prefix-threshold --pd-prefix-threshold 16 \
@@ -223,7 +223,7 @@ Separate prefill (prompt processing) and decode (token generation) onto dedicate
 
 # Heterogeneous pools: prefill on A100-80 (high compute), decode on H100 (high memory)
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --tp 1 \
   --num-instances 4 \
   --prefill-instances 2 --decode-instances 2 \
   --hardware A100-80 --decode-hardware H100 \
@@ -279,14 +279,14 @@ routing:
 ```bash
 # Run with autoscaler enabled via policy config
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 1 \
   --policy-config autoscaler-demo.yaml \
   --workload-spec examples/regression_workload_load_spikes.yaml
 
 # Override the autoscaler tick interval from the CLI
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 1 \
   --policy-config autoscaler-demo.yaml \
   --model-autoscaler-interval-us 5000000 \
@@ -330,8 +330,9 @@ inference-sim/
 │   ├── observe_cmd.go      # `blis observe` command: flags, prefix string generation, dispatch orchestrator
 │   ├── convert.go          # `blis convert` subcommands (servegen, preset, inference-perf)
 │   ├── compose.go          # `blis compose` for merging v2 specs
-│   ├── hfconfig.go         # HuggingFace config resolution (--latency-model auto-fetch into model_configs/)
-│   └── default_config.go   # defaults.yaml loading (includes GetHFRepo for HF repo mapping)
+│   ├── hfconfig.go         # Catalog lookup of a model's config.json (read-only; refuses an uncatalogued model)
+│   ├── catalog_workloads.go # Named workload presets read from <catalog>/workloads/<name>.yaml (#1769)
+│   └── default_config.go   # defaults.yaml loading (shipped constants only; no per-model deployment policy since #1768, no workload presets since #1769 — those live in the catalog)
 ├── sim/                    # Core simulation engine
 │   ├── config.go           # Module-scoped sub-config types (R16)
 │   ├── doc.go              # Package reading guide
@@ -413,7 +414,8 @@ inference-sim/
 │   ├── regression_workload_cache_warmup.yaml
 │   ├── regression_workload_load_spikes.yaml
 │   └── regression_workload_multiturn.yaml
-├── model_configs/          # Auto-fetched HuggingFace config.json files (gitignored)
+│                            # (The model catalog is external: the blis-catalog repository,
+│                            #  located at run time via --catalog / BLIS_CATALOG.)
 ├── defaults.yaml           # Pre-trained coefficients, model defaults
 ├── hardware_config.json    # GPU hardware specifications
 ├── docs/                   # Documentation (MkDocs Material site)

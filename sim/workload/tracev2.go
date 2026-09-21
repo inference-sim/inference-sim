@@ -64,6 +64,31 @@ type TraceHeader struct {
 	// regenerates it. `blis calibrate` compares it against the simulator's own
 	// aggregate cache_hit_rate.
 	ObservedKVMetrics *TraceObservedKVMetrics `yaml:"observed_kv_metrics,omitempty"`
+
+	// MaxNodesSpanned records the largest number of physical nodes any single model
+	// instance occupied during the source run (#1530). Written by `blis run` only when
+	// node-pool placement actually spread an instance's tensor-parallel group across a
+	// node boundary; absent (0, omitempty) otherwise, so a run without multi-node
+	// placement writes a byte-identical header to a pre-feature build (INV-6).
+	//
+	// READ BY REPLAY, BUT ONLY AS A REFUSAL SIGNAL — never to reconstruct anything.
+	// This is the distinction to keep in mind before building on this field. #1530 offered
+	// two designs for run/replay parity: round-trip the cross-node signal so replay
+	// reproduces the run's step times, or keep a loud rejection. This is the SECOND one,
+	// extended to cover the trace path. Cross-node collective traffic is charged to step
+	// time, and node pools are `blis run`-only, so a trace from a multi-node run replayed
+	// without them would silently reproduce the workload at single-node speed — faster
+	// than the run it came from. `blis replay` therefore treats a value above 1 as a hard
+	// error (INV-13: a feature replay cannot reproduce must fail loudly, never degrade
+	// silently). It does NOT use the value to rebuild a fleet, and a future change that
+	// wanted replay to reproduce cross-node timing would need the topology per instance,
+	// not this single fleet-wide maximum.
+	//
+	// Normalization note: `omitempty` drops only 0, so a span of exactly 1 WOULD be
+	// serialized. The writer normalizes 1 to 0 (see cmd.crossNodeSpanForTrace) so that a
+	// single-node node-pool run does not start emitting a new header key; the coupling is
+	// pinned by TestTraceHeader_MaxNodesSpanned_OneIsNotOmittedBySerialization.
+	MaxNodesSpanned int `yaml:"max_nodes_spanned,omitempty"`
 }
 
 // TraceObservedKVMetrics is the real-side KV-cache hit-rate observed from a vLLM

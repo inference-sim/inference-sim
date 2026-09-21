@@ -250,12 +250,43 @@ func buildAdapterMetrics(m *Metrics, vllmRuntime float64) map[string]AdapterMetr
 	return adapters
 }
 
+// EmitOption customizes the FILE half of EmitOutput. It exists for metadata that
+// belongs in the results file but must never reach stdout, so it cannot be supplied by
+// mutating the MetricsOutput before the call (the build-then-mutate-then-emit pattern
+// goodput and saturation use, which lands on stdout by design). Variadic so all
+// existing EmitOutput call sites are untouched (R4).
+type EmitOption func(*emitOptions)
+
+// emitOptions is the resolved option set for one EmitOutput call.
+type emitOptions struct {
+	catalog *CatalogProvenance
+}
+
+// WithCatalogProvenance records which model catalog produced the result (#1732, R1/S5)
+// in the --metrics-path file only. A nil provenance is a no-op (the block stays absent),
+// so a caller that could not resolve a catalog passes nil rather than a half-filled
+// block. Supplying the option with no output file path is likewise a no-op: the
+// provenance is file-only metadata, and stdout is the byte-identical channel INV-6
+// protects.
+func WithCatalogProvenance(p *CatalogProvenance) EmitOption {
+	return func(o *emitOptions) { o.catalog = p }
+}
+
 // EmitOutput writes a populated MetricsOutput to stdout (always) and an
 // optional file (when outputFilePath != ""). The file variant additionally
 // embeds per-request rows sorted by ArrivedAt for downstream tooling. Callers
 // that want goodput fields populated should call BuildOutput, mutate the
 // returned struct, then call this method (#1413).
-func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string) error {
+//
+// opts carry file-only additions (see EmitOption); they are applied after the stdout
+// marshal so they cannot perturb stdout (INV-6).
+func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts ...EmitOption) error {
+	var resolvedOpts emitOptions
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&resolvedOpts)
+		}
+	}
 	// Always emit the metrics section so callers can reliably parse output,
 	// even when CompletedRequests == 0 (e.g., all requests dropped as unservable).
 	fmt.Println("=== Simulation Metrics ===")
@@ -273,6 +304,12 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string) error 
 		// produce identical values (INV-13).
 		hitRate := m.CacheHitRate
 		output.CacheHitRate = &hitRate
+
+		// Catalog provenance (#1732): same file-only discipline as cache_hit_rate above
+		// — the stdout marshal has already run, and `output` is a value copy, so this
+		// assignment cannot reach stdout or the caller's struct. Nil (no catalog
+		// resolved, or a caller that passed no option) leaves the block absent.
+		output.Catalog = resolvedOpts.catalog
 
 		// request-level metrics for detailed output in file
 		// Iterate over all registered requests (not just completed prefill)

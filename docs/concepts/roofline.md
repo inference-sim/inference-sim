@@ -1,13 +1,13 @@
 # Roofline Step Time Estimation Logic
 
-This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. Roofline is the default latency model in BLIS — it requires no training and works off-the-shelf for any Huggingface LLM whose `config.json` is saved under `model_configs/` (auto-fetched from HuggingFace on first use).
+This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. Roofline is the default latency model in BLIS — it requires no training and works off-the-shelf for any Huggingface LLM whose `config.json` is committed to the model catalog (the [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository, located via `--catalog` / `BLIS_CATALOG`).
 
 !!! tip "Trained-Physics: higher accuracy"
     For higher accuracy, use `--latency-model trained-physics` which applies learned correction factors to these roofline basis functions with MoE support. See [Trained-Physics Mode](../guide/latency-models.md#trained-physics-mode).
 
 
 !!! note "Scope: TP-only, quantized weight memory supported"
-    The roofline model accounts for tensor parallelism (TP) but is DP/EP-blind for step time. It does not merely ignore them: `--dp > 1` and `--enable-expert-parallel` are **rejected with a fatal error** under `--latency-model roofline` (they require `trained-physics`), so a roofline run can never silently mis-model a data- or expert-parallel deployment. MoE DP-as-placement (`--dp N` → N engine replicas, #1531 on `blis run` / #1556 on `blis replay`) is therefore trained-physics-only too. (Expert parallelism *does* affect the shared KV-capacity weight footprint — routed experts are sharded across the `TP·DP` EP group, #1656 — but that is capacity sizing, not this backend's step time.) Quantized weight precision is auto-detected from HuggingFace `quantization_config` (GPTQ, AWQ, FP8, compressed-tensors), model name conventions (e.g., `w4a16`, `FP8`), or `torch_dtype` fallback, and is used for weight bandwidth and KV capacity calculations. Activation memory uses the compute dtype (`BytesPerParam` from `torch_dtype`); KV-cache storage precision is configured independently via `--kv-cache-dtype` (#1565).
+    The roofline model accounts for tensor parallelism (TP) but is DP/EP-blind for step time. It does not merely ignore them: `--dp > 1` and `--enable-expert-parallel` are **rejected with a fatal error** under `--latency-model roofline` (they require `trained-physics`), so a roofline run can never silently mis-model a data- or expert-parallel deployment. MoE DP-as-placement (`--dp N` → N engine replicas, #1531 on `blis run` / #1556 on `blis replay`) is therefore trained-physics-only too. (Expert parallelism affects the shared KV-capacity weight footprint — routed experts are sharded across the `TP·DP` EP group, #1656 — and, since #1548, trained-physics **step time** as well; roofline models neither EP step-time effect, which is why it rejects the flag rather than ignoring it.) Quantized weight precision is auto-detected from HuggingFace `quantization_config` (GPTQ, AWQ, FP8, compressed-tensors), model name conventions (e.g., `w4a16`, `FP8`), or `torch_dtype` fallback, and is used for weight bandwidth and KV capacity calculations. Activation memory uses the compute dtype (`BytesPerParam` from `torch_dtype`); KV-cache storage precision is configured independently via `--kv-cache-dtype` (#1565).
 
 ## 1. Why Roofline?
 
@@ -46,7 +46,7 @@ The final step time is the sum of independent phases and overheads:
 
 1.  **Prefill Phase:** Calculated for the initial prompt processing chunk.
 2.  **Decode Phase:** Calculated for generating new tokens (usually memory-bound).
-3.  **Communication Overhead:** If using Tensor Parallelism ($TP > 1$), adds All-Reduce latency per layer.
+3.  **Communication Overhead:** Not modeled. Tensor parallelism enters only as a sharding divisor on compute and memory traffic — there is no All-Reduce term, so TP communication is free in this backend at any $TP$, within a node or across nodes. `--latency-model trained-physics` does model it (including a cross-node penalty, #1530); closing the gap here is tracked by [#1663](https://github.com/inference-sim/inference-sim/issues/1663).
 4.  **Hardware Overheads:** Static kernel launch times and layer-by-layer overhead constants.
 
 ---
@@ -67,16 +67,19 @@ The simplest way to run roofline mode is with `--latency-model roofline`, which 
 ```
 
 The flag automatically:
-1. Checks `model_configs/` for an existing `config.json` (previously fetched)
-2. Fetches from HuggingFace on miss and writes into `model_configs/` (supports `HF_TOKEN` for gated models)
+1. Reads the model's `config.json` from the catalog located by `--catalog` / `BLIS_CATALOG`, at `<catalog>/models/<short-name>/config.json`
+2. Refuses the run on miss, naming the catalog path the entry belongs at — no run-time fetch, and no run writes to the catalog (NS-6)
 
-For models not in `defaults.yaml`, add an `hf_repo` entry mapping the BLIS model name to the case-sensitive HuggingFace repo path.
+A model runs if and only if it has a catalog entry. To add one, commit its `config.json` at
+`<catalog>/models/<short-name>/config.json` in your catalog checkout — `defaults.yaml` has no
+part in this (its per-model `hf_repo` mapping was removed in #1768, along with the run-time
+fetch it fed, #1733).
 
-### Manual: explicit config paths
+### Manual: your own catalog
 
-Alternatively, download the `config.json` manually:
+Alternatively, point `--catalog` at a scratch directory holding your own config:
 
-* Download the `config.json` for the LLM of your choice into `model_configs/`. [This](https://huggingface.co/Qwen/Qwen3-14B/blob/main/config.json) is an example config.json for `Qwen/Qwen3-14B`. The recommended file structure is `model_configs/qwen3-14b/config.json`.
+* Download the `config.json` for the LLM of your choice. [This](https://huggingface.co/Qwen/Qwen3-14B/blob/main/config.json) is an example config.json for `Qwen/Qwen3-14B`. Place it at `<catalog>/models/qwen3-14b/config.json` and pass that `<catalog>` to `--catalog`.
 
 ### Adding a new GPU
 
@@ -103,3 +106,5 @@ Alternatively, download the `config.json` manually:
 | `MemoryGiB` | GPU memory capacity in GiB. Used by `CalculateKVBlocks` to auto-derive `--total-kv-blocks` when roofline or trained-physics mode is active and the flag is not explicitly set. |
 
 > Note: The Peak TFLOPS and BW for a given GPU family might vary by GPU connectivity (e.g. SXM vs PCIe). We recommend a separate entry for each GPU connectivity type - e.g. A100-SXM, A100-PCIe etc in `hardware_config.json`.
+
+> Note: the file is parsed **strictly** (#1728) — an unrecognized key is a hard error naming the key and the GPU entry, rather than a field that silently reads 0. Spell the keys exactly as above (a case-only variant is also rejected, with the canonical spelling named). You may add `_comment` and `_comment_interconnect` strings to record where a calibration came from; both are ignored by the parser.

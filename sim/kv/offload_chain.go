@@ -17,6 +17,14 @@ import (
 // negative. It is a numerical guard, not a physical parameter.
 const jitterMinFactor = 0.05
 
+// Compile-time capability assertions: OffloadCache is a full KVStore, can defer
+// secondary-tier fetches (H3, #1591), and reports reloaded-prefix boundaries (#1699).
+var (
+	_ sim.KVStore                = (*OffloadCache)(nil)
+	_ sim.DeferrableKVStore      = (*OffloadCache)(nil)
+	_ sim.ReloadReportingKVStore = (*OffloadCache)(nil)
+)
+
 // OffloadOption configures an OffloadCache at construction.
 type OffloadOption func(*OffloadCache)
 
@@ -191,10 +199,62 @@ func (o *OffloadCache) drawJitterFactor(tier int) float64 {
 func (o *OffloadCache) GetCachedBlocks(tokens []sim.TokenID) []int64 {
 	return o.gpu.GetCachedBlocks(tokens)
 }
+
 func (o *OffloadCache) ReleaseKVBlocks(req *sim.Request) { o.gpu.ReleaseKVBlocks(req) }
 func (o *OffloadCache) BlockSize() int64                 { return o.gpu.BlockSize() }
 func (o *OffloadCache) UsedBlocks() int64                { return o.gpu.UsedBlocks() }
 func (o *OffloadCache) TotalCapacity() int64             { return o.gpu.TotalCapacity() }
+
+// ReloadablePrefixEnd implements sim.ReloadReportingKVStore (#1699/#1706): a PURE
+// pre-allocation query (the analogue of vLLM's get_num_new_matched_tokens) reporting the
+// token boundary to which a same-step CPU->GPU reload WOULD extend this request's
+// GPU-cached prefix, WITHOUT committing or mutating any tier. Batch formation folds it
+// into the computed baseline before the chunk/budget clamp, so the whole reloaded prefix
+// is credited even under chunked prefill.
+//
+// It walks the uncached tail past startIndex exactly like consultAndReload but only
+// COUNTS contiguous CPU-resident (reloadable) blocks — skipping already-GPU-resident
+// blocks, stopping at the first cpuHitPending/cpuMiss/end. A secondary-tier-only run is
+// NOT counted (it defers via H3). Gated to genuinely-new prefill admissions
+// (`!running && !IsDecodeSubRequest`), matching the class batch formation credits;
+// returns (startIndex, false) for a running continuation, a PD decode sub-request, or
+// when no reload would extend the prefix.
+func (o *OffloadCache) ReloadablePrefixEnd(req *sim.Request, startIndex int64) (int64, bool) {
+	if _, running := o.gpu.RequestMap[req.ID]; running || req.IsDecodeSubRequest {
+		return startIndex, false
+	}
+	bs := o.gpu.BlockSize()
+	tokens := req.FullInputTokens()
+	n := util.Len64(tokens) / bs
+	startBlock := startIndex / bs
+	if startBlock >= n {
+		return startIndex, false
+	}
+	// Seed the hash chain just past the GPU-cached prefix so only the uncached tail is
+	// keyed (hot-path parity with consultAndReload). startIndex is block-aligned (a GPU
+	// prefix boundary), so startBlock*bs == startIndex.
+	prevHash := ""
+	if startBlock > 0 {
+		if cached := o.gpu.GetCachedBlocks(tokens); int64(len(cached)) >= startBlock {
+			prevHash = o.gpu.Blocks[cached[startBlock-1]].Hash
+		}
+	}
+	tailKeys := kvkey.DeriveChunkKeys(kvkey.BlockKey(prevHash), tokens[startBlock*bs:], int(bs))
+	reloadable := int64(0)
+	for i := startBlock; i < n; i++ {
+		key := tailKeys[i-startBlock]
+		if _, inGPU := o.gpu.HashToBlock[string(key)]; inGPU {
+			reloadable++ // already GPU-resident: part of the same-step-available prefix
+			continue
+		}
+		if o.cpu.lookup(key) != cpuHit {
+			break // cpuHitPending / cpuMiss (secondary or genuine miss): not same-step reloadable
+		}
+		reloadable++
+	}
+	reloadableEnd := startIndex + reloadable*bs
+	return reloadableEnd, reloadableEnd > startIndex
+}
 
 // SnapshotCachedBlocksFn delegates to the GPU tier so cluster routing keeps its
 // frozen-snapshot semantics (INV-7). Offload tiers are intentionally invisible to

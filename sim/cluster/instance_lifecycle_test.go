@@ -198,16 +198,11 @@ func TestInstanceLifecycle_RedirectDrainPreservesConservation(t *testing.T) {
 		t.Fatalf("Run() failed: %v", err)
 	}
 
-	// INV-1: injected = completed + queued + running + dropped + timed_out
+	assertClusterINV1Conservation(t, cs, numSeeded, noRejections, "drain redirect")
+
 	m := cs.AggregatedMetrics()
-	injected := numSeeded
-	total := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests
-	if total != injected {
-		t.Errorf("INV-1 violated: injected=%d total=%d (completed=%d queued=%d running=%d dropped=%d timedOut=%d)",
-			injected, total, m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable, m.TimedOutRequests)
-	}
-	if m.CompletedRequests != injected {
-		t.Errorf("expected all %d redirected requests to complete, got %d", injected, m.CompletedRequests)
+	if m.CompletedRequests != numSeeded {
+		t.Errorf("expected all %d redirected requests to complete, got %d", numSeeded, m.CompletedRequests)
 	}
 
 	// Issue #1440: REDIRECT re-injections must not fire the arrival hook.
@@ -346,4 +341,75 @@ func TestInstanceLifecycleConfig_Validation(t *testing.T) {
 			}
 		})
 	}
+}
+// ─── INV-14 clause 2: the seeding carve-out ──────────────────────────────────
+
+// TestINV14_SeedingCarveOutAcceptsAnyFirstTransition covers the clause the
+// edge table above cannot reach: TestInstanceStateMachine_ValidTransitions
+// assigns State before every call, so it always takes the validated path and
+// never exercises the empty-State branch.
+//
+// INV-14 clause 2 says an instance with lifecycle tracking disabled (State == "")
+// accepts ONE unvalidated transition to seed the state, and is validated from then
+// on. Both halves matter: the first makes the backward-compat path explicit rather
+// than something a reader has to discover, and the second is what stops the carve-out
+// from being a permanent hole in clause 1.
+func TestINV14_SeedingCarveOutAcceptsAnyFirstTransition(t *testing.T) {
+	// Every state is a legal SEED, including ones that are not reachable as a first
+	// transition under clause 1 (nothing legally enters Draining or Terminated from
+	// Scheduling, and Scheduling has no in-edges at all).
+	seeds := []sim.InstanceState{
+		sim.InstanceStateScheduling,
+		sim.InstanceStateLoading,
+		sim.InstanceStateWarmingUp,
+		sim.InstanceStateActive,
+		sim.InstanceStateDraining,
+		sim.InstanceStateTerminated,
+	}
+	for _, seed := range seeds {
+		t.Run("seed_"+string(seed), func(t *testing.T) {
+			inst := &InstanceSimulator{id: "seed-test"} // State == "" (tracking disabled)
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						t.Fatalf("INV-14 clause 2 violated: seeding transition to %s panicked: %v", seed, r)
+					}
+				}()
+				inst.TransitionTo(seed)
+			}()
+			if inst.State != seed {
+				t.Errorf("seeding transition did not set State: got %q, want %q", inst.State, seed)
+			}
+		})
+	}
+
+	// The carve-out is single-use: once State is seeded, clause 1 applies. Seeding
+	// with Terminated and then attempting Terminated → Active must panic, because
+	// Terminated has no out-edges.
+	t.Run("second_transition_is_validated", func(t *testing.T) {
+		inst := &InstanceSimulator{id: "seed-then-validate"}
+		inst.TransitionTo(sim.InstanceStateTerminated) // seeds, unvalidated
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("INV-14 clause 2 violated: the transition AFTER seeding was not validated — Terminated → Active must panic")
+			}
+		}()
+		inst.TransitionTo(sim.InstanceStateActive)
+	})
+
+	// And a legal edge after seeding is still accepted, so the carve-out does not
+	// leave the instance in a state the table cannot leave.
+	t.Run("legal_edge_after_seeding_accepted", func(t *testing.T) {
+		inst := &InstanceSimulator{id: "seed-then-advance"}
+		inst.TransitionTo(sim.InstanceStateLoading) // seeds
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("legal edge Loading → Active after seeding panicked: %v", r)
+			}
+		}()
+		inst.TransitionTo(sim.InstanceStateActive)
+		if inst.State != sim.InstanceStateActive {
+			t.Errorf("State = %q, want Active", inst.State)
+		}
+	})
 }

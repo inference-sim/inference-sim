@@ -532,6 +532,10 @@ func TestSession_RoundGeneration_CorrectArrivalTime(t *testing.T) {
 
 // TestSession_TimeoutCancels_NoMoreRounds verifies BC-7:
 // when a round times out, the session is cancelled.
+// This covers the "cancelled" terminal state of INV-11 (session completeness): the
+// session stops producing rounds rather than being silently abandoned. It does not
+// assert the exactly-one-terminal-state clause; TestClusterSimulator_SessionTerminalStateCompleteness
+// in sim/cluster does that.
 func TestSession_TimeoutCancels_NoMoreRounds(t *testing.T) {
 	bp := makeTestBlueprint("sess2", 5, 1000, "", 1_000_000)
 	sm := NewSessionManager([]SessionBlueprint{bp})
@@ -900,6 +904,9 @@ func TestSession_LengthCapped_ContinuesSession(t *testing.T) {
 
 // TestSession_FinalRound_Completes verifies that the final round
 // transitions the session to completed (no more follow-ups).
+// This covers the "completed" terminal state of INV-11 (session completeness); the
+// cancelled counterpart is TestSession_TimeoutCancels_NoMoreRounds. Like that test it
+// asserts the session produces no further rounds, not the exactly-one clause.
 func TestSession_FinalRound_Completes(t *testing.T) {
 	bp := makeTestBlueprint("sess7", 2, 1000, "", 1_000_000)
 	sm := NewSessionManager([]SessionBlueprint{bp})

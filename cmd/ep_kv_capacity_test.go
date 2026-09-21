@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -149,13 +148,9 @@ func TestEveryKVCapacityCallSiteIsEPAware(t *testing.T) {
 // float16) do NOT fit on 8×80 GiB when charged to each DP rank's TP group, but DO fit
 // when sharded across a 16-GPU expert-parallel group — the #1656 condition, sized so the
 // two answers differ.
-func writeBigMoEFixture(t *testing.T) (mcDir, hwPath string) {
+func writeBigMoEFixture(t *testing.T) (catalogDir, hwPath string) {
 	t.Helper()
 	dir := t.TempDir()
-	mcDir = filepath.Join(dir, "config")
-	if err := os.MkdirAll(mcDir, 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
 	configJSON := `{
   "architectures": ["MixtralForCausalLM"],
   "num_attention_heads": 32,
@@ -170,28 +165,30 @@ func writeBigMoEFixture(t *testing.T) (mcDir, hwPath string) {
   "torch_dtype": "float16",
   "max_position_embeddings": 4096
 }`
-	if err := os.WriteFile(filepath.Join(mcDir, "config.json"), []byte(configJSON), 0644); err != nil {
-		t.Fatalf("write config: %v", err)
+	catalogDir, err := writeTestCatalog(dir, configJSON)
+	if err != nil {
+		t.Fatalf("write test catalog: %v", err)
 	}
 	hwPath = filepath.Join(dir, "hw.json")
 	if err := os.WriteFile(hwPath, []byte(`{"H100": {"MemoryGiB": 80.0, "TFlopsPeak": 989.5, "BwPeakTBs": 3.35}}`), 0644); err != nil {
 		t.Fatalf("write hw: %v", err)
 	}
-	return mcDir, hwPath
+	return catalogDir, hwPath
 }
 
-// TestRunCmd_EPMoE_CapacityErrorNoLongerMasksPlacementGuard is BC-9, the user-visible
-// effect of #1656 today. A large MoE at --tp 8 --dp 2 --enable-expert-parallel is a real
-// EP deployment that fits on its 16 GPUs, so KV auto-calculation must now succeed and the
-// run must fail on the honest reason — EP-on DP placement is not modelled yet (#1548) —
-// rather than on a weight over-count that told the operator to buy more GPUs.
-func TestRunCmd_EPMoE_CapacityErrorNoLongerMasksPlacementGuard(t *testing.T) {
+// TestRunCmd_EPMoE_CapacityFitsAndRuns is BC-9 of #1656, now completed by #1548. A large
+// MoE at --tp 8 --dp 2 --enable-expert-parallel is a real EP deployment that fits on its 16
+// GPUs. #1656 made KV auto-calculation succeed for it (previously a weight over-count told
+// the operator to buy more GPUs), but the run still stopped at the #1548 EP-placement
+// guard. With that guard lifted the whole deployment now runs end to end, which is the
+// strongest form of this contract: the arithmetic is not merely un-masked, it is USED.
+func TestRunCmd_EPMoE_CapacityFitsAndRuns(t *testing.T) {
 	if os.Getenv("BLIS_RUN_EP_KV") == "1" {
-		mcDir, hwPath := writeBigMoEFixture(t)
+		catalogDir, hwPath := writeBigMoEFixture(t)
 		rootCmd.SetArgs([]string{
 			"run",
 			"--model", "test-moe",
-			"--model-config-folder", mcDir,
+			"--catalog", catalogDir,
 			"--hardware", "H100",
 			"--hardware-config", hwPath,
 			"--latency-model", "trained-physics",
@@ -207,25 +204,22 @@ func TestRunCmd_EPMoE_CapacityErrorNoLongerMasksPlacementGuard(t *testing.T) {
 		_ = rootCmd.Execute()
 		os.Exit(0)
 	}
-	cmd := exec.Command(os.Args[0], "-test.run=^TestRunCmd_EPMoE_CapacityErrorNoLongerMasksPlacementGuard$")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRunCmd_EPMoE_CapacityFitsAndRuns$")
 	cmd.Env = append(os.Environ(), "BLIS_RUN_EP_KV=1")
 	out, err := cmd.CombinedOutput()
 
-	// The run still ends at the #1548 EP-placement guard (exit 1) — that is the honest
-	// unsupported-feature signal, and it is what must be visible.
-	if err == nil {
-		t.Fatalf("expected non-zero exit (the #1548 EP-placement guard), got exit 0; output:\n%s", out)
-	}
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
-		t.Fatalf("expected exit code 1 (logrus.Fatalf), got %v; output:\n%s", err, out)
+	if err != nil {
+		t.Fatalf("a --tp 8 --dp 2 --enable-expert-parallel MoE must now run to completion "+
+			"(#1656 capacity + #1548 EP placement), got %v; output:\n%s", err, out)
 	}
 	if strings.Contains(string(out), "KV capacity auto-calculation failed") {
 		t.Errorf("BC-9: KV auto-calculation must succeed for an EP-sharded MoE — the weight "+
-			"over-count must no longer mask the placement guard; output:\n%s", out)
+			"over-count must not return; output:\n%s", out)
 	}
-	if !strings.Contains(string(out), "1548") {
-		t.Errorf("BC-9: expected the #1548 EP-placement guard to be the failure reason; output:\n%s", out)
+	// Activation check: the run must really be the EP-sharded 16-GPU deployment, not a
+	// silently-degraded single replica.
+	if !strings.Contains(string(out), `"instance_id": "instance_1"`) {
+		t.Errorf("BC-9: --dp 2 must place a second engine replica; output:\n%s", out)
 	}
 }
 
@@ -236,24 +230,24 @@ func TestRunCmd_EPMoE_CapacityErrorNoLongerMasksPlacementGuard(t *testing.T) {
 // routed experts are charged to the whole TP·DP group, so strictly more memory is left for
 // KV. This survives a refactor of how the option reaches CalculateKVBlocks.
 func TestResolveLatencyConfig_EPRaisesAutoKVCapacity(t *testing.T) {
-	mcDir, hwPath := writeCompleteMoEFixture(t)
+	catalogDir, hwPath := writeCompleteMoEFixture(t)
 
 	origModel, origBackend, origGPU := model, latencyModelBackend, gpu
 	origTP, origDP, origEP, origComm := tensorParallelism, dataParallelism, enableExpertParallel, moeCommBackend
 	origBlocks, origBlockSize, origMML := totalKVBlocks, blockSizeTokens, maxModelLen
-	origUtil, origMCFolder, origHW, origDefaults := gpuMemoryUtilization, modelConfigFolder, hwConfigPath, defaultsFilePath
+	origUtil, origCatalogDir, origHW, origDefaults := gpuMemoryUtilization, catalogPath, hwConfigPath, defaultsFilePath
 	t.Cleanup(func() {
 		model, latencyModelBackend, gpu = origModel, origBackend, origGPU
 		tensorParallelism, dataParallelism, enableExpertParallel, moeCommBackend = origTP, origDP, origEP, origComm
 		totalKVBlocks, blockSizeTokens, maxModelLen = origBlocks, origBlockSize, origMML
-		gpuMemoryUtilization, modelConfigFolder, hwConfigPath, defaultsFilePath = origUtil, origMCFolder, origHW, origDefaults
+		gpuMemoryUtilization, catalogPath, hwConfigPath, defaultsFilePath = origUtil, origCatalogDir, origHW, origDefaults
 	})
 
 	resolveAutoKV := func(epOn bool) int64 {
 		args := []string{
 			"--model", "test-model", "--latency-model", "trained-physics",
 			"--hardware", "H100", "--tp", "2", "--dp", "2",
-			"--model-config-folder", mcDir, "--hardware-config", hwPath,
+			"--catalog", catalogDir, "--hardware-config", hwPath,
 			"--defaults-filepath", "../defaults.yaml",
 		}
 		if epOn {
@@ -262,7 +256,7 @@ func TestResolveLatencyConfig_EPRaisesAutoKVCapacity(t *testing.T) {
 		model, latencyModelBackend, gpu = "test-model", "trained-physics", "H100"
 		tensorParallelism, dataParallelism, enableExpertParallel, moeCommBackend = 2, 2, epOn, ""
 		totalKVBlocks, blockSizeTokens, maxModelLen = 0, 16, 0
-		gpuMemoryUtilization, modelConfigFolder, hwConfigPath = 0.9, mcDir, hwPath
+		gpuMemoryUtilization, catalogPath, hwConfigPath = 0.9, catalogDir, hwPath
 		defaultsFilePath = "../defaults.yaml"
 
 		testCmd := &cobra.Command{}

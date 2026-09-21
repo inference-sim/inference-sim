@@ -1795,46 +1795,44 @@ func TestObserveCmd_WorkloadFlag_Exists(t *testing.T) {
 	}
 }
 
-func TestObserveCmd_DefaultsFilepathFlag_Exists(t *testing.T) {
-	f := observeCmd.Flags().Lookup("defaults-filepath")
+// TestObserveCmd_CatalogFlag_Exists is the observe half of BC-7 (#1769): presets come from
+// the catalog, so observe must accept the same locator run/replay accept. It replaced
+// --defaults-filepath, whose only consumer on this command was the retired `workloads:`
+// block; the retirement is pinned by TestCatalogPresets_RetiredLocatorFlagsAreGone.
+func TestObserveCmd_CatalogFlag_Exists(t *testing.T) {
+	f := observeCmd.Flags().Lookup("catalog")
 	if f == nil {
-		t.Fatal("missing expected flag --defaults-filepath on observeCmd")
+		t.Fatal("missing expected flag --catalog on observeCmd")
 	}
-	if f.DefValue != "defaults.yaml" {
-		t.Errorf("--defaults-filepath default: got %q, want %q", f.DefValue, "defaults.yaml")
+	if f.DefValue != "" {
+		t.Errorf("--catalog default: got %q, want %q (no default, no search path — #1731)", f.DefValue, "")
 	}
 }
 
 // TestBuildPresetSpec_MatchesPresetDefinition verifies BC-1:
-// buildPresetSpec loads token distribution from defaults.yaml and passes it
-// to SynthesizeFromPreset, producing a spec with correct rate and token means.
+// buildPresetSpec loads the token distribution from the catalog preset
+// (<catalog>/workloads/<name>.yaml, #1769) and passes it to SynthesizeFromPreset,
+// producing a spec with the correct rate and token means.
 //
 // This is the wiring test: it exercises the actual buildPresetSpec code path
 // in observe_cmd.go, not just the workload package independently.
 func TestBuildPresetSpec_MatchesPresetDefinition(t *testing.T) {
-	dir := t.TempDir()
-	defaultsPath := filepath.Join(dir, "defaults.yaml")
-	// YAML keys must match Workload struct tags exactly (R10: KnownFields(true)).
-	// prompt_tokens → PromptTokensMean, output_tokens → OutputTokensMean (see default_config.go:15,19)
-	defaultsContent := `workloads:
-  chatbot:
-    prefix_tokens: 0
-    prompt_tokens: 512
-    prompt_tokens_stdev: 100
-    prompt_tokens_min: 50
-    prompt_tokens_max: 1024
-    output_tokens: 256
-    output_tokens_stdev: 50
-    output_tokens_min: 10
-    output_tokens_max: 512
-`
-	if err := os.WriteFile(defaultsPath, []byte(defaultsContent), 0600); err != nil {
-		t.Fatalf("write defaults.yaml: %v", err)
-	}
+	// Deliberately NOT the bundled values: a spec built from a built-in default would pass
+	// a golden-value assertion just as well, so the fixture has to be distinguishable.
+	catalog := writeTestPresetCatalog(t, map[string]string{"chatbot": `prefix_tokens: 0
+prompt_tokens: 512
+prompt_tokens_stdev: 100
+prompt_tokens_min: 50
+prompt_tokens_max: 1024
+output_tokens: 256
+output_tokens_stdev: 50
+output_tokens_min: 10
+output_tokens_max: 512
+`})
 
 	const testRate = 5.0
 	const testNumRequests = 10
-	spec, errMsg := buildPresetSpec("chatbot", defaultsPath, testRate, testNumRequests)
+	spec, errMsg := buildPresetSpec("chatbot", catalog, testRate, testNumRequests)
 	if errMsg != "" {
 		t.Fatalf("buildPresetSpec returned error: %q", errMsg)
 	}
@@ -1865,56 +1863,48 @@ func TestBuildPresetSpec_MatchesPresetDefinition(t *testing.T) {
 	}
 }
 
-// TestBuildPresetSpec_ParityWithRunPresetPath verifies BC-1 cross-command parity:
-// buildPresetSpec (observe path, observe_cmd.go:177-188) must produce a WorkloadSpec
-// identical to the inline synthesis in root.go:1167-1173 (run path) for the same input.
+// TestBuildPresetSpec_ParityWithRunPresetPath verifies BC-1/BC-3 cross-command parity: the
+// observe preset path (buildPresetSpec) must produce a WorkloadSpec identical to the run
+// preset path (root.go's --workload branch) for the same catalog preset.
 //
-// This is a law test: it exercises both code paths against the same Workload input and
-// asserts they produce identical WorkloadSpec output. If a future change adds a field
-// to Workload but updates only one code path's PresetConfig construction, this test fails.
+// This is a law test over the observable specs, not over the construction code: since #1769
+// both paths go through loadPresetWorkload/readCatalogPresetWorkload and one
+// toPresetConfig, so a field added to the preset shape reaches both — and this test is what
+// fails if a future change re-inlines either side and drops a field on the way.
+//
+// The run leg deliberately goes through the PRODUCTION locator (loadPresetWorkload, which
+// reads --catalog / BLIS_CATALOG) rather than the injectable core, so the two commands are
+// shown to agree on where the catalog is as well as on what the preset says.
 func TestBuildPresetSpec_ParityWithRunPresetPath(t *testing.T) {
-	// Write a temp defaults.yaml so buildPresetSpec (observe path) can load the preset.
-	dir := t.TempDir()
-	defaultsPath := filepath.Join(dir, "defaults.yaml")
-	defaultsContent := `workloads:
-  chatbot:
-    prefix_tokens: 32
-    prompt_tokens: 512
-    prompt_tokens_stdev: 100
-    prompt_tokens_min: 50
-    prompt_tokens_max: 1024
-    output_tokens: 256
-    output_tokens_stdev: 50
-    output_tokens_min: 10
-    output_tokens_max: 512
-`
-	if err := os.WriteFile(defaultsPath, []byte(defaultsContent), 0600); err != nil {
-		t.Fatalf("write defaults.yaml: %v", err)
-	}
+	catalog := writeTestPresetCatalog(t, map[string]string{"chatbot": `prefix_tokens: 32
+prompt_tokens: 512
+prompt_tokens_stdev: 100
+prompt_tokens_min: 50
+prompt_tokens_max: 1024
+output_tokens: 256
+output_tokens_stdev: 50
+output_tokens_min: 10
+output_tokens_max: 512
+`})
 
 	const presetName = "chatbot"
 	const testRate = 7.0
 	const testNumRequests = 20
 
-	// blis observe path: goes through buildPresetSpec -> loadPresetWorkload -> SynthesizeFromPreset
-	observeSpec, errMsg := buildPresetSpec(presetName, defaultsPath, testRate, testNumRequests)
+	// blis observe path: buildPresetSpec -> readCatalogPresetWorkload -> SynthesizeFromPreset
+	observeSpec, errMsg := buildPresetSpec(presetName, catalog, testRate, testNumRequests)
 	if errMsg != "" {
 		t.Fatalf("buildPresetSpec error: %q", errMsg)
 	}
 
-	// blis run path (root.go:1163-1173): loadPresetWorkload + inline PresetConfig construction.
-	// Mirror the exact field mapping from root.go to catch any future divergence.
-	wl := loadPresetWorkload(defaultsPath, presetName)
-	if wl == nil {
-		t.Fatal("loadPresetWorkload returned nil for chatbot preset")
+	// blis run path: loadPresetWorkload (locator + reader) -> toPresetConfig -> synthesis.
+	restore := withTestCatalogPath(t, catalog)
+	defer restore()
+	wl, err := loadPresetWorkload(presetName)
+	if err != nil {
+		t.Fatalf("loadPresetWorkload(%q): %v", presetName, err)
 	}
-	runSpec := workload.SynthesizeFromPreset(presetName, workload.PresetConfig{
-		PrefixTokens:     wl.PrefixTokens,
-		PromptTokensMean: wl.PromptTokensMean, PromptTokensStdev: wl.PromptTokensStdev,
-		PromptTokensMin: wl.PromptTokensMin, PromptTokensMax: wl.PromptTokensMax,
-		OutputTokensMean: wl.OutputTokensMean, OutputTokensStdev: wl.OutputTokensStdev,
-		OutputTokensMin: wl.OutputTokensMin, OutputTokensMax: wl.OutputTokensMax,
-	}, testRate, testNumRequests)
+	runSpec := workload.SynthesizeFromPreset(presetName, wl.toPresetConfig(), testRate, testNumRequests)
 
 	if runSpec == nil || observeSpec == nil {
 		t.Fatal("SynthesizeFromPreset returned nil spec")
@@ -1960,23 +1950,23 @@ func TestBuildPresetSpec_ParityWithRunPresetPath(t *testing.T) {
 	}
 }
 
-// TestBuildPresetSpec_MissingDefaultsFile verifies that buildPresetSpec returns a
-// user-friendly error (mentioning --workload and --defaults-filepath) when the
-// defaults.yaml file does not exist, rather than a generic fatal from loadDefaultsConfig.
-func TestBuildPresetSpec_MissingDefaultsFile(t *testing.T) {
-	spec, errMsg := buildPresetSpec("chatbot", "/nonexistent/path/defaults.yaml", 5.0, 10)
+// TestBuildPresetSpec_MissingCatalogWorkloads verifies that buildPresetSpec returns a
+// user-friendly error naming the path it looked at and the catalog locator when the catalog
+// has no workloads/ namespace at all, rather than a bare "unknown preset" that would blame
+// the preset name for a mistyped catalog path (R1).
+func TestBuildPresetSpec_MissingCatalogWorkloads(t *testing.T) {
+	spec, errMsg := buildPresetSpec("chatbot", "/nonexistent/path/catalog", 5.0, 10)
 	if spec != nil {
-		t.Error("expected nil spec for missing defaults file, got non-nil")
+		t.Error("expected nil spec for a catalog with no presets, got non-nil")
 	}
 	if errMsg == "" {
-		t.Fatal("expected error for missing defaults file, got empty message")
+		t.Fatal("expected error for a catalog with no presets, got empty message")
 	}
-	// Error must guide user toward --defaults-filepath flag
-	if !strings.Contains(errMsg, "--defaults-filepath") {
-		t.Errorf("error should mention --defaults-filepath, got: %q", errMsg)
-	}
-	if !strings.Contains(errMsg, "--workload") {
-		t.Errorf("error should mention --workload, got: %q", errMsg)
+	// The refusal must name the path looked at, the locator, and the flag that failed.
+	for _, want := range []string{"--workload", "--catalog", catalogEnvVar, "workloads", "chatbot"} {
+		if !strings.Contains(errMsg, want) {
+			t.Errorf("error should mention %q, got: %q", want, errMsg)
+		}
 	}
 }
 
@@ -1984,21 +1974,18 @@ func TestBuildPresetSpec_MissingDefaultsFile(t *testing.T) {
 // buildPresetSpec returns a non-empty error for an undefined preset name.
 // Error message must list valid preset names.
 func TestBuildPresetSpec_UnknownPreset_ReturnsError(t *testing.T) {
-	dir := t.TempDir()
-	defaultsPath := filepath.Join(dir, "defaults.yaml")
-	// Minimal valid defaults.yaml — no workloads section means all presets are undefined
-	if err := os.WriteFile(defaultsPath, []byte("version: test\n"), 0600); err != nil {
-		t.Fatalf("write defaults.yaml: %v", err)
-	}
+	// A catalog that defines the four bundled presets and nothing else.
+	catalog := writeTestPresetCatalog(t, bundledPresetFixtures())
 
-	spec, errMsg := buildPresetSpec("unknown-preset", defaultsPath, 5.0, 10)
+	spec, errMsg := buildPresetSpec("unknown-preset", catalog, 5.0, 10)
 	if spec != nil {
 		t.Error("expected nil spec for unknown preset, got non-nil")
 	}
 	if errMsg == "" {
 		t.Fatal("expected error for unknown preset, got empty message")
 	}
-	// Invariant: error lists valid preset names so users know what to pass
+	// Invariant: the error lists the presets THIS catalog defines, so the user learns what
+	// to pass without the list going stale when a catalog adds a preset.
 	for _, name := range []string{"chatbot", "summarization", "contentgen", "multidoc"} {
 		if !strings.Contains(errMsg, name) {
 			t.Errorf("error message should list valid preset %q, got: %q", name, errMsg)
@@ -2201,7 +2188,6 @@ func setObserveGlobalsForSubprocess(serverURL, header, data string) {
 	observeThinkTimeMs = 0
 	observeThinkTimeDist = ""
 	observeUnconstrainedOutput = false
-	observeDefaultsFilePath = "../defaults.yaml"
 	// Shared saturation/goodput globals (#1516: --detectors / --saturation-config / --saturation-report).
 	detectorName = ""
 	saturationConfigPath = ""

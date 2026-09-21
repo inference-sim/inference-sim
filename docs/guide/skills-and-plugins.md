@@ -14,7 +14,7 @@ BLIS development uses Claude Code skills for review workflows. Skills are checke
 
 | Skill | Location | Purpose |
 |-------|----------|---------|
-| `blis-pr-review` | `.claude/skills/blis-pr-review/` | PR review: correctness, invariants (INV-1–INV-13), rules (R1–R23), cross-path parity, preemption safety, Q/A probing phase |
+| `blis-pr-review` | `.claude/skills/blis-pr-review/` | PR review: correctness, invariants (the full registry, not just INV-1–INV-19), rules (R1–R23), cross-path parity, preemption safety, Q/A probing phase |
 | `issue-review` | `.claude/skills/issue-review/` | Issue validation: VALID / NEEDS WORK / SUPERSEDED / DUPLICATE verdict |
 
 Project skills require no installation — they are checked into the repository and automatically available.
@@ -22,6 +22,8 @@ Project skills require no installation — they are checked into the repository 
 ## CI Integration
 
 Both skills are triggered via GitHub Actions (`@claude /blis-pr-review` on PRs, `@claude /issue-review` on issues). Additionally, `/archon-pr-review` runs as a separate CI action for structural architecture review (boundary moves, surface changes, edge deltas). See [Archon PR Review](archon-pr-review.md).
+
+`/blis-pr-review` runs on a **read-only** token — it can post its review comment, but cannot push to the branch it is reviewing (the pass/fail commit status is published by a separate job). Every other `@claude` trigger keeps write access, since those may legitimately be asked to make a change. Do not widen the review token to work around a failure: see [Agent Trust Boundaries](../contributing/standards/agent-trust.md#structural-separation-of-judgement-and-action).
 
 ## Which Skills for Which Workflow
 

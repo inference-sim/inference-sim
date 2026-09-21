@@ -1,3 +1,29 @@
+# GitHub Actions self-hosted runner.
+#
+# This manifest is reconciled against the deployment actually running in the
+# `blis` namespace. Three facts about it are load-bearing and easy to get wrong
+# (all three were mis-diagnosed once; see k8s/README.md "Disk Usage"):
+#
+# 1. THE RUNNERS ARE EPHEMERAL. The image entrypoint tests
+#    `[ -n "${EPHEMERAL}" ]` — *non-empty*, not `== "true"` — so ANY value
+#    enables `--ephemeral`, including the string "false". Each container serves
+#    exactly one job, then deregisters and exits; the kubelet starts a fresh
+#    container with a FRESH WRITABLE LAYER. That is why Go build/module caches
+#    do NOT accumulate across jobs ($HOME is /root, measured at ~1 MB) and why
+#    no post-job cleanup hook is needed here.
+#
+# 2. DISK PRESSURE IS A SINGLE-JOB PEAK, NOT ACCUMULATION. The `blislimits`
+#    LimitRange injects a DEFAULT ephemeral-storage limit of 4Gi into any
+#    container that declares none. Baseline occupancy is already ~3 GB (~2.3 GB
+#    writable layer, of which ~600 MB is the image's own `externals`, plus the
+#    /tmp emptyDir), so one `go test ./...` on top of that exceeded 4Gi and the
+#    kubelet evicted the pod with "Pod ephemeral local storage usage exceeds the
+#    total limit of containers 4Gi". The fix is to declare a real limit below.
+#
+# 3. RUNNER NAMES MUST BE PER-POD. RUNNER_NAME comes from `metadata.name` via
+#    fieldRef. A literal shared name plus config.sh `--replace` would make each
+#    pod replace the previous registration and invalidate the older listener's
+#    credentials, so replicas > 1 would fight. Do not hardcode it.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -6,126 +32,100 @@ metadata:
   labels:
     app: github-runner
 spec:
-  replicas: 1
+  replicas: 6
   selector:
     matchLabels:
       app: github-runner
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      # Never take a runner down before its replacement is Ready. A terminating
+      # pod loses whatever job it was mid-way through, so prefer surging.
+      maxUnavailable: 0
   template:
     metadata:
       labels:
         app: github-runner
     spec:
-      initContainers:
-      - name: copy-runner
-        image: myoung34/github-runner:latest
-        imagePullPolicy: IfNotPresent
-        command: ["sh", "-c"]
-        args:
-        - |
-          # Copy only /actions-runner contents (not the full 2.4GB image).
-          # Use cp --no-preserve to avoid permission/timestamp errors under OpenShift's forced UID.
-          cp -r --no-preserve=mode,ownership /actions-runner/bin /runner/bin
-          cp -r --no-preserve=mode,ownership /actions-runner/externals /runner/externals
-          cp --no-preserve=mode,ownership /actions-runner/env.sh /runner/env.sh
-          cp --no-preserve=mode,ownership /actions-runner/run.sh /runner/run.sh
-          cp --no-preserve=mode,ownership /actions-runner/run-helper.sh.template /runner/run-helper.sh.template
-          cp --no-preserve=mode,ownership /actions-runner/safe_sleep.sh /runner/safe_sleep.sh
-          cp --no-preserve=mode,ownership /actions-runner/config.sh /runner/config.sh
-          # Copy entrypoint to writable location
-          cp --no-preserve=mode,ownership /entrypoint.sh /runner/entrypoint.sh
-          # Restore execute bits on all binaries (cp --no-preserve strips them)
-          find /runner/bin -type f -exec chmod +x {} +
-          find /runner/externals -type f -name "node" -exec chmod +x {} +
-          find /runner/externals -type f -name "*.sh" -exec chmod +x {} +
-          chmod +x /runner/entrypoint.sh /runner/*.sh
-          # Patch entrypoint: replace the RUN_AS_ROOT block that checks UID with a pass-through.
-          # The original checks if UID==0 when RUN_AS_ROOT=true and errors out on OpenShift's forced UID.
-          # Replace: the entire RUN_AS_ROOT=true block just execs the command directly.
-          python3 -c "
-          import re
-          with open('/runner/entrypoint.sh') as f:
-              s = f.read()
-          # Replace the gosu fallback with direct exec
-          s = s.replace('exec gosu runner \"\$@\"', 'exec \"\$@\"')
-          # Remove the UID mismatch error block
-          s = re.sub(r'echo \"ERROR: RUN_AS_ROOT.*?exit 1', ':', flags=re.DOTALL, string=s)
-          with open('/runner/entrypoint.sh','w') as f:
-              f.write(s)
-          "
-          echo "Init done: $(du -sh /runner | cut -f1)"
-        volumeMounts:
-        - name: runner-home
-          mountPath: /runner
+      serviceAccountName: anyuid-sa
+      imagePullSecrets:
+      - name: dockerhub-secret
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: ibm-cloud.kubernetes.io/worker-pool-name
+                operator: NotIn
+                values:
+                - trusted-image-repo
       containers:
       - name: runner
-        image: myoung34/github-runner:latest
+        image: myoung34/github-runner:ubuntu-jammy
         imagePullPolicy: IfNotPresent
-        workingDir: /runner
-        command: ["/bin/bash", "-c"]
-        args:
-        - |
-          cd /runner
-
-          # Only register if not already configured (skip on container restarts)
-          if [ ! -f .runner ]; then
-            REG_TOKEN=$(curl -s -X POST \
-              -H "Authorization: token ${ACCESS_TOKEN}" \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/${GITHUB_REPO}/actions/runners/registration-token" \
-              | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
-
-            ./config.sh --unattended \
-              --url "${REPO_URL}" \
-              --token "${REG_TOKEN}" \
-              --name "${RUNNER_NAME}" \
-              --labels "${LABELS}" \
-              --work "${RUNNER_WORKDIR}" \
-              --replace
-          fi
-
-          # Run the listener (stays alive, picks up jobs continuously)
-          exec ./bin/Runner.Listener run
         env:
-        - name: GITHUB_REPO
-          value: "inference-sim/inference-sim"
         - name: REPO_URL
-          value: "https://github.com/$(GITHUB_REPO)"
+          value: "https://github.com/inference-sim/inference-sim"
+        # Per-pod unique name — see note 3 in the header comment.
+        - name: RUNNER_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: LABELS
+          value: "self-hosted"
+        - name: RUNNER_SCOPE
+          value: "repo"
+        # Enables `--ephemeral` (see note 1). The entrypoint's `-n` test means
+        # the VALUE is irrelevant — "true" and "false" both enable it. Spelled
+        # "true" so the manifest reads the way it behaves; to genuinely disable
+        # ephemeral mode this variable must be REMOVED, not set to "false".
+        - name: EPHEMERAL
+          value: "true"
+        # Pin the runner version to the image's. Without this the runner
+        # self-updates on registration, exits to apply the update, and — because
+        # ephemeral mode wipes .runner on exit — re-downloads the same ~200 MB
+        # update on the next container, repeatedly charging it to the
+        # ephemeral-storage budget in note 2.
+        - name: DISABLE_AUTO_UPDATE
+          value: "true"
+        - name: RUN_AS_ROOT
+          value: "true"
+        - name: RUNNER_WORKDIR
+          value: "/tmp/runner/_work"
         - name: ACCESS_TOKEN
           valueFrom:
             secretKeyRef:
               name: github-runner-secret
-              key: github_pat
-        - name: RUNNER_NAME
-          value: "k8s-runner"
-        - name: RUNNER_NAME_PREFIX
-          value: "k8s"
-        - name: RUNNER_SCOPE
-          value: "repo"
-        - name: LABELS
-          value: "self-hosted"
-        - name: EPHEMERAL
-          value: "false"
-        - name: RUNNER_WORKDIR
-          value: "/tmp/runner/_work"
-        - name: RUN_AS_ROOT
-          value: "true"
-        - name: HOME
-          value: "/runner"
+              key: github_token
         volumeMounts:
-        - name: runner-home
-          mountPath: /runner
         - name: tmp
           mountPath: /tmp
         resources:
           requests:
             cpu: "1"
             memory: "2Gi"
+            # Measured baseline is ~3 GB, but the request is what the scheduler
+            # reserves on every node, so keep it modest and let the limit carry
+            # the peak. A pod stays eviction-safe from node DiskPressure while
+            # under its request.
+            ephemeral-storage: "2Gi"
           limits:
             cpu: "2"
             memory: "4Gi"
+            # MUST be declared. Undeclared, the blislimits LimitRange defaults
+            # it to 4Gi, which a Go build exceeds (note 2). ~3 GB baseline plus
+            # a Go build/module cache peak of ~2.5 GB, with headroom.
+            ephemeral-storage: "12Gi"
       volumes:
-      - name: runner-home
-        emptyDir: {}
+      # Sized so an overflow evicts THIS pod naming THIS volume, rather than
+      # counting only against the container's total. This is the one path that
+      # survives a container restart, so _work checkouts accumulate here across
+      # the pod's lifetime (measured ~650 MB, bounded by actions/checkout
+      # reusing the clone).
       - name: tmp
-        emptyDir: {}
+        emptyDir:
+          sizeLimit: 6Gi
       restartPolicy: Always
+      terminationGracePeriodSeconds: 30

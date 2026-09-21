@@ -270,21 +270,8 @@ func TestTimeout_PreemptThenTimeout_SafeNoOp(t *testing.T) {
 
 	// The test succeeds if no panic occurs (BC-15: no double-free).
 	// Additionally verify conservation holds.
-	completed := sim.Metrics.CompletedRequests
-	queued := sim.WaitQ.Len()
-	running := 0
-	if sim.RunningBatch != nil {
-		running = len(sim.RunningBatch.Requests)
-	}
-	dropped := sim.Metrics.DroppedUnservable
-	timedOut := sim.Metrics.TimedOutRequests
-	injected := 2 // we injected exactly 2 requests
-
-	sum := completed + queued + running + dropped + timedOut
-	if sum != injected {
-		t.Errorf("BC-15 conservation: completed(%d) + queued(%d) + running(%d) + dropped(%d) + timedOut(%d) = %d, want %d",
-			completed, queued, running, dropped, timedOut, sum, injected)
-	}
+	assertMetricsSnapshotMatchesLiveState(t, sim)
+	assertINV1Conservation(t, sim.Metrics, 2, "BC-15 no double-free")
 }
 
 // TestTimeout_OrphanedTimeout_DoesNotInflateSimEndedTime verifies that a
@@ -482,12 +469,7 @@ func TestTimeout_CascadeDoesNotCreateOrphanedStepEvents(t *testing.T) {
 		t.Errorf("CompletedRequests: got %d, want %d", sim.Metrics.CompletedRequests, numSurviving)
 	}
 
-	// INV-1: conservation across all terminal states.
-	total := sim.Metrics.CompletedRequests + sim.Metrics.TimedOutRequests +
-		sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
-	if total != numRequests {
-		t.Errorf("INV-1 violated: total %d != injected %d", total, numRequests)
-	}
+	assertINV1Conservation(t, sim.Metrics, numRequests, "cascading orphaned StepEvents")
 
 	// THEN: SimEndedTime must reflect realistic per-step latency for the surviving
 	// requests, not the collapsed timing caused by cascading orphaned StepEvents.

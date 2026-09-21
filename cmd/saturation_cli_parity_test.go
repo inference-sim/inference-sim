@@ -29,7 +29,8 @@ func TestSaturationCLI_RunReplayParity(t *testing.T) {
 	// Subprocess leg: execute the command named by the env var.
 	if leg := os.Getenv("BLIS_PARITY_LEG"); leg != "" {
 		common := []string{
-			"--model", "qwen/qwen3-14b",
+			"--model", "qwen/qwen3-14b", "--hardware", "H100", "--tp", "1",
+			"--catalog", "../testdata/catalog",
 			"--defaults-filepath", "../defaults.yaml",
 			"--detectors", os.Getenv("BLIS_PARITY_DETECTORS"),
 			"--saturation-config", os.Getenv("BLIS_PARITY_CONFIG"),

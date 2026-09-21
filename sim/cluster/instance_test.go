@@ -122,13 +122,11 @@ func TestInstanceSimulator_GoldenDataset_Invariants(t *testing.T) {
 			instance.Run()
 			m := instance.Metrics()
 
-			// INV-1: Request conservation
-			// completed + still_queued + still_running + dropped == injected
-			total := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable
-			if total != tc.NumRequests {
-				t.Errorf("INV-1 request conservation: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want %d (NumRequests)",
-					m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable, total, tc.NumRequests)
-			}
+			// INV-1: the five-term specialisation is the correct equation here —
+			// these are one instance's own metrics, with no router, gateway queue or
+			// encode pool above them, so the seven cluster-only buckets are zero by
+			// construction rather than by fixture.
+			assertInstanceINV1Conservation(t, m, tc.NumRequests, tc.Model+"/"+tc.Workload)
 
 			// INV-5: Causality — for every completed request, TTFT >= 0 and E2E >= TTFT
 			for reqID, e2e := range m.RequestE2Es {

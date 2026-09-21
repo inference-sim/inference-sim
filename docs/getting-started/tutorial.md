@@ -4,13 +4,20 @@ This tutorial walks through a complete capacity planning exercise: determining h
 
 **Scenario:** You're deploying Qwen3 14B on H100 GPUs with TP=1. Your SLO is TTFT p99 < 500ms. You need to find the minimum number of instances for 200 requests/second.
 
+!!! note "Locate the model catalog first"
+    Every command below needs the model catalog located — `--catalog <path>` or the
+    `BLIS_CATALOG` environment variable, with no default and no search path. Clone the
+    [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository and run
+    `export BLIS_CATALOG=$PWD/blis-catalog` once, and the examples work as written. See
+    [Quick Start](quickstart.md).
+
 ## Step 1: Estimate Instance Capacity
 
 Before scaling up, measure the throughput of a single instance under load. Run enough requests at a high arrival rate to saturate the instance — this reveals the maximum throughput with continuous batching:
 
 ```bash
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --rate 500 --num-requests 2000
 ```
 
@@ -28,7 +35,7 @@ This means for 200 req/s, you need at minimum `ceil(200/17) = 12` instances. Let
 
 ```bash
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --rate 2 --num-requests 50
 ```
 
@@ -41,17 +48,17 @@ Run simulations at increasing instance counts for 200 req/s:
 ```bash
 # 4 instances (50 req/s per instance vs ~17 saturated capacity → heavily overloaded)
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --rate 200 --num-requests 1000
 
 # 8 instances (25 req/s per instance → still above capacity but batching helps)
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 8 --rate 200 --num-requests 1000
 
 # 12 instances (~17 req/s per instance → balanced, near baseline)
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 12 --rate 200 --num-requests 1000
 ```
 
@@ -87,19 +94,19 @@ With 8 instances at 200 req/s (near saturation), compare routing strategies:
 ```bash
 # Round-robin (baseline)
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 8 --rate 200 --num-requests 1000 \
   --routing-policy round-robin
 
 # Weighted (default profile)
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 8 --rate 200 --num-requests 1000 \
   --routing-policy weighted
 
 # Least-loaded
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 8 --rate 200 --num-requests 1000 \
   --routing-policy least-loaded
 ```
@@ -108,7 +115,7 @@ With uniform workloads (same prompt/output distribution), routing policies produ
 
 ```bash
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 8 --rate 200 --num-requests 1000 \
   --routing-policy weighted \
   --routing-scorers "prefix-affinity:5,queue-depth:1" \
@@ -121,7 +128,7 @@ For automated comparison across many configurations, use fitness evaluation:
 
 ```bash
 ./blis run \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 12 --rate 200 --num-requests 1000 \
   --routing-policy weighted \
   --fitness-weights "p99_ttft:3,mean_e2e:1,throughput:2"

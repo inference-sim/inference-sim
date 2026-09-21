@@ -72,7 +72,7 @@ blis observe --server-url http://localhost:8000 --model <model> \
 #    --kv-offload-config matching the observed deployment — replay models the tiers and
 #    derives the aggregate cache_hit_rate into --metrics-path. (A tiered observation
 #    replayed WITHOUT an offload config is a hard error, never a silent GPU-only value.)
-blis replay --trace-header t.yaml --trace-data t.csv --model <model> \
+blis replay --trace-header t.yaml --trace-data t.csv --model <model> --hardware <gpu> --tp <N> \
   --kv-offload-config offload.yaml \
   --results-path sim.json --metrics-path simagg.json
 

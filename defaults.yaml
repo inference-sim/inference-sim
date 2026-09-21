@@ -1,164 +1,19 @@
-defaults:
-  ibm-granite/granite-3.1-8b-instruct:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: ibm-granite/granite-3.1-8b-instruct
-  meta-llama/llama-3.1-8b-instruct:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: meta-llama/Llama-3.1-8B-Instruct
-  meta-llama/llama-3.3-70b-instruct:
-    GPU: H100
-    tensor_parallelism: 4
-    hf_repo: meta-llama/Llama-3.3-70B-Instruct
-  meta-llama/llama-4-maverick-17b-128e-instruct-fp8:
-    GPU: H100
-    tensor_parallelism: 8
-    hf_repo: meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8
-  codellama/codellama-34b-instruct-hf:
-    GPU: H100
-    tensor_parallelism: 2
-    hf_repo: codellama/CodeLlama-34b-Instruct-hf
-  meta-llama/llama-4-scout-17b-16e-instruct:
-    GPU: H100
-    tensor_parallelism: 4
-    hf_repo: meta-llama/Llama-4-Scout-17B-16E-Instruct
-  microsoft/phi-4:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: microsoft/phi-4
-  mistralai/mistral-small-24b-instruct-2501:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: mistralai/Mistral-Small-24B-Instruct-2501
-  mistralai/mistral-small-3.1-24b-instruct-2503:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: mistralai/Mistral-Small-3.1-24B-Instruct-2503
-  nvidia/llama-3.1-nemotron-70b-instruct-hf:
-    GPU: H100
-    tensor_parallelism: 4
-    hf_repo: nvidia/Llama-3.1-Nemotron-70B-Instruct-HF
-  # openai/gpt-oss-* are synthetic benchmark models without real HuggingFace repos.
-  # --roofline requires --model-config-folder for these models.
-  openai/gpt-oss-120b:
-    GPU: H100
-    tensor_parallelism: 4
-  openai/gpt-oss-20b:
-    GPU: H100
-    tensor_parallelism: 1
-  qwen/qwen2.5-3b-instruct:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: Qwen/Qwen2.5-3B-Instruct
-  qwen/qwen3-14b:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: Qwen/Qwen3-14B
-  qwen/qwen2.5-7b-instruct:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: Qwen/Qwen2.5-7B-Instruct
-  redhatai/llama-3.1-nemotron-70b-instruct-hf-fp8-dynamic:
-    GPU: H100
-    tensor_parallelism: 2
-    hf_repo: RedHatAI/Llama-3.1-Nemotron-70B-Instruct-HF-FP8-dynamic
-  redhatai/llama-3.3-70b-instruct-quantized.w4a16:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: RedHatAI/Llama-3.3-70B-Instruct-quantized.w4a16
-  redhatai/llama-3.3-70b-instruct-quantized.w8a8:
-    GPU: H100
-    tensor_parallelism: 2
-    hf_repo: RedHatAI/Llama-3.3-70B-Instruct-quantized.w8a8
-  redhatai/llama-4-scout-17b-16e-instruct-fp8-dynamic:
-    GPU: H100
-    tensor_parallelism: 2
-    hf_repo: RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic
-  redhatai/llama-4-scout-17b-16e-instruct-quantized.w4a16:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: RedHatAI/Llama-4-Scout-17B-16E-Instruct-quantized.w4a16
-  redhatai/mistral-small-3.1-24b-instruct-2503-fp8-dynamic:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-FP8-dynamic
-  redhatai/mistral-small-3.1-24b-instruct-2503-quantized.w4a16:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-quantized.w4a16
-  redhatai/mistral-small-3.1-24b-instruct-2503-quantized.w8a8:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-quantized.w8a8
-  redhatai/phi-4-fp8-dynamic:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: RedHatAI/phi-4-FP8-dynamic
-  redhatai/phi-4-quantized.w4a16:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: RedHatAI/phi-4-quantized.w4a16
-  redhatai/phi-4-quantized.w8a8:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: RedHatAI/phi-4-quantized.w8a8
-  redhatai/qwen2.5-7b-instruct-fp8-dynamic:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: RedHatAI/Qwen2.5-7B-Instruct-FP8-dynamic
-  redhatai/qwen2.5-7b-instruct-quantized.w4a16:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: RedHatAI/Qwen2.5-7B-Instruct-quantized.w4a16
-  redhatai/qwen2.5-7b-instruct-quantized.w8a8:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: RedHatAI/Qwen2.5-7B-Instruct-quantized.w8a8
-  redhatai/smollm3-3b-fp8-dynamic:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: RedHatAI/SmolLM3-3B-FP8-dynamic
-workloads:
-  chatbot:
-    prefix_tokens: 0
-    prompt_tokens: 256
-    prompt_tokens_stdev: 100
-    prompt_tokens_min: 2
-    prompt_tokens_max: 800
-    output_tokens: 256
-    output_tokens_stdev: 100
-    output_tokens_min: 1
-    output_tokens_max: 1024
-  contentgen:
-    prefix_tokens: 0
-    prompt_tokens: 1024
-    prompt_tokens_stdev: 150
-    prompt_tokens_min: 10
-    prompt_tokens_max: 2048
-    output_tokens: 1024
-    output_tokens_stdev: 200
-    output_tokens_min: 10
-    output_tokens_max: 2048
-  summarization:
-    prefix_tokens: 0
-    prompt_tokens: 4096
-    prompt_tokens_stdev: 500
-    prompt_tokens_min: 100
-    prompt_tokens_max: 8192
-    output_tokens: 512
-    output_tokens_stdev: 150
-    output_tokens_min: 10
-    output_tokens_max: 2048
-  multidoc:
-    prompt_tokens: 10240
-    prompt_tokens_stdev: 1200
-    prompt_tokens_min: 500
-    prompt_tokens_max: 20480
-    output_tokens: 1536
-    output_tokens_stdev: 300
-    output_tokens_min: 50
-    output_tokens_max: 4096
+# BLIS defaults.yaml — shipped coefficient and device constants.
+#
+# There is no per-model `defaults:` block any more (#1768). The deployment is a required
+# operator input supplied via --hardware/--tp on `blis run` and `blis replay` (NS-6, #1733),
+# never inferred per-model, and the model config is read from the catalog located by
+# --catalog / BLIS_CATALOG (#1731). A `defaults:` key left in a hand-maintained copy of this
+# file is now rejected by strict parsing (R10) — delete the block and pass the flags.
+#
+# There is no `workloads:` block any more (#1769). The named workload presets (chatbot,
+# summarization, contentgen, multidoc) live in the catalog, at
+# <catalog>/workloads/<name>.yaml — one copy, read by `blis run --workload`,
+# `blis convert preset --name` and `blis observe --workload` alike. They used to be
+# duplicated here as well, with nothing keeping the two copies in sync. A `workloads:` key
+# left in a hand-maintained copy of this file is now rejected by strict parsing (R10) —
+# delete the block and point --catalog / BLIS_CATALOG at a catalog that defines the preset.
+
 # Trained from iter29: sequential golden section search, β₆ +57%, loss 34.57%.
 trained_physics_coefficients:
   # Alpha coefficients: API/framework overheads (µs)
@@ -197,31 +52,10 @@ lora:
     8: {k6: 0.02, k7: 1.0}
     16: {k6: 0.035, k7: 1.0}
     32: {k6: 0.06, k7: 1.0}
-# KV-cache offload device physics (H5, #1587). INERT: these seed the bandwidth/latency
-# classes for --kv-offload-config's per-tier `device_class` field. With no
-# --kv-offload-config the offload subsystem is a no-op and output is byte-identical to a
-# pre-feature build (INV-6/BC-G5). Shipped constants (operator input), never fitted
-# (BC-G4). read_bandwidth/write_bandwidth are bytes per microsecond; base_latency is
-# microseconds. A per-tier explicit read_bandwidth/write_bandwidth/base_latency triple
-# overrides the class (same override shape as --lora-load-base-latency-us over the lora
-# block). Numbers are representative device classes seeded for the multi-tier offload
-# holes (#1588/#1589); operators override per run for their hardware.
-#
-# #1581 adds an OPTIONAL non-linear device model per class (all fields absent below =>
-# behavior byte-identical to pre-#1581; tuned curves are calibration's job, #1583):
-#   saturation_queue_depth: <int>       # Qsat: in-service depth where bandwidth saturates
-#   single_transfer_fraction: <0..1]    # f1: fraction of peak bw at queue depth 1
-#                                        #     (ramp is active only when Qsat>=2 AND f1<1)
-#   latency_jitter_stddev: <float>=0     # sigma: relative stddev of seeded latency jitter
-#   buffered_read_bandwidth / buffered_write_bandwidth / buffered_base_latency /
-#   buffered_saturation_queue_depth / buffered_single_transfer_fraction /
-#   buffered_latency_jitter_stddev       # buffered-I/O regime, selected per tier by
-#                                        # direct_io: false; each absent field falls back
-#                                        # to the O_DIRECT value above.
-kv_offload_devices:
-  nvme_gen4: {read_bandwidth: 7.0e3, write_bandwidth: 5.0e3, base_latency: 80.0}
-  nvme_gen3: {read_bandwidth: 3.5e3, write_bandwidth: 3.0e3, base_latency: 100.0}
-  sata_ssd:  {read_bandwidth: 5.5e2, write_bandwidth: 5.0e2, base_latency: 150.0}
-  cpu_dram:  {read_bandwidth: 2.0e4, write_bandwidth: 2.0e4, base_latency: 1.0}
-  s3:        {read_bandwidth: 1.0e3, write_bandwidth: 1.0e3, base_latency: 30000.0}
+# KV-cache offload storage-device physics (H5, #1587) used to live here as a
+# `kv_offload_devices:` block. #1770 removed it: the table was duplicated with the
+# catalog's devices/storage.yaml and nothing kept the copies in sync, so the CATALOG is
+# now the single source of truth. --kv-offload-config's per-tier `device_class` resolves
+# against <catalog>/devices/storage.yaml (--catalog / BLIS_CATALOG names the catalog clone
+# root). Re-adding the block here does not work: strict parsing (R10) refuses it.
 version: 0.0.1

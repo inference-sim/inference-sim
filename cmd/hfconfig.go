@@ -2,94 +2,264 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
-	"time"
+	"syscall"
 
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/latency"
 )
 
-// validHFRepoPattern matches valid HuggingFace repo paths (e.g., "meta-llama/Llama-3.1-8B-Instruct").
-// Rejects URL-special characters (?, #, @, spaces) that could alter URL semantics (I14).
-var validHFRepoPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$`)
-
 const (
-	hfBaseURL       = "https://huggingface.co"
-	hfConfigFile    = "config.json"
-	modelConfigsDir = "model_configs"
-	httpTimeout     = 30 * time.Second
-	// maxResponseBytes caps HF config.json reads to 10 MB — real config.json files
-	// are typically <100 KB. This prevents unbounded memory allocation from
-	// malformed or malicious responses.
-	maxResponseBytes = 10 << 20 // 10 MB
+	hfConfigFile = "config.json"
+	// catalogEnvVar names the environment variable that locates the model catalog when
+	// --catalog is not given (#1731, R1/S4). It is read exactly like HF_TOKEN was — the
+	// only environment variables cmd/ consults.
+	catalogEnvVar = "BLIS_CATALOG"
+	// catalogModelsSubdir is the models namespace inside a catalog CLONE ROOT (#1774).
+	// --catalog / BLIS_CATALOG names the clone root, and model entries are read from
+	// <catalog>/models/<short-name>/config.json. The authoritative blis-catalog
+	// repository stores configs there, with workloads/, devices/, hardware/ and
+	// networks/ as SIBLING namespaces under the same root — those siblings only compose
+	// off a single root, which is why the root (not the models directory) is the
+	// contract every downstream reader inherits.
+	catalogModelsSubdir = "models"
 )
 
-// resolveModelConfig finds a HuggingFace config.json for the given model.
-// Resolution order: explicit flag > model_configs/ > HF fetch (into model_configs/).
-// Returns the path to a directory containing config.json.
-// Paths are resolved relative to defaultsFile's directory (consistent with resolveHardwareConfig).
-func resolveModelConfig(model, explicitFolder, defaultsFile string) (string, error) {
-	// 1. Explicit override takes precedence
-	if explicitFolder != "" {
-		return explicitFolder, nil
+// catalogRootFrom picks the model-catalog root from the --catalog flag value and the
+// BLIS_CATALOG environment value (#1731). The flag wins when both are set (an explicit
+// CLI input beats the environment), and the override is announced on stderr so the choice
+// is visible in the run's history. With NEITHER there is no default, no search path and
+// no remote fetch: the caller is refused, naming both forms. The retired working-directory
+// default (model_configs/ resolved against --defaults-filepath's directory) meant
+// `blis run` silently worked only from the repository root, and inferring a catalog
+// location is exactly what NS-6 forbids — nothing about the model is inferred.
+//
+// Pure with respect to process state: both inputs are supplied by the caller, so the
+// precedence law is table-testable without touching globals or the environment.
+func catalogRootFrom(flagValue, envValue string) (string, error) {
+	if flagValue != "" {
+		if envValue != "" && envValue != flagValue {
+			// Warnf, not Infof: both commands default --log to warn, so an Infof precedence
+			// notice would be silent under normal invocation. This choice overrides an
+			// explicit BLIS_CATALOG, so the announcement must be visible in the run's
+			// history at the default log level (qa-review G3, #1731).
+			logrus.Warnf("--catalog %q takes precedence over %s=%q", flagValue, catalogEnvVar, envValue)
+		}
+		return flagValue, nil
 	}
+	if envValue != "" {
+		logrus.Infof("model catalog located via %s=%q", catalogEnvVar, envValue)
+		return envValue, nil
+	}
+	return "", fmt.Errorf("no model catalog was supplied: pass --catalog <path> or set the %s "+
+		"environment variable (there is no default and no search path; both name the catalog "+
+		"CLONE ROOT, whose model entries live at <catalog>/%s/<short-name>/%s. A relative path "+
+		"is resolved against the current working directory)",
+		catalogEnvVar, catalogModelsSubdir, hfConfigFile)
+}
 
-	// Derive the local model_configs/<short-name>/ path relative to defaults.yaml location
-	// (consistent with resolveHardwareConfig using filepath.Dir(defaultsFile))
-	baseDir := filepath.Dir(defaultsFile)
-	localDir, err := bundledModelConfigDir(model, baseDir)
+// resolveCatalogRoot resolves the catalog root from the --catalog flag and the
+// BLIS_CATALOG environment variable, then verifies that it EXISTS AND IS A DIRECTORY. A
+// missing, unstatable or non-directory catalog is refused naming both forms (R1) rather than
+// deferred into a per-model "not in the catalog" message that would blame the model for
+// a mistyped catalog path.
+//
+// The check is deliberately existence + directory-ness and NOT an accessibility probe
+// (#1776, which asked for one or the other and got this one). BLIS never LISTS the catalog
+// — it opens one config.json per model at a path it derives — so a root with search-only
+// permission (mode --x) is perfectly usable, and probing for read permission here would
+// refuse a catalog that works. There is no portable probe for "can traverse but not list",
+// so the honest thing is to state what is checked. The residual case (a root that exists,
+// is a directory, but cannot be traversed) therefore still surfaces one layer down, where
+// readCatalogEntry reports the real errno naming the entry path it could not stat — an
+// accurate diagnostic since #1778, not a "model is not catalogued" mislabel.
+//
+// Three dispositions rather than one (#1776), because "%q is not readable: no such file or
+// directory" described a mistyped path as a permission problem:
+//   - absent      → the path does not exist (the overwhelmingly common typo)
+//   - unstatable  → the real error (EACCES on a parent, EIO, a symlink loop)
+//   - not a dir   → a file where the catalog root should be
+func resolveCatalogRoot() (string, error) {
+	root, err := catalogRootFrom(catalogPath, os.Getenv(catalogEnvVar))
+	if err != nil {
+		return "", err
+	}
+	info, statErr := os.Stat(root)
+	switch {
+	case statErr != nil && os.IsNotExist(statErr):
+		return "", fmt.Errorf("model catalog %q does not exist (set --catalog or %s to the catalog root; "+
+			"a relative path is resolved against the current working directory)", root, catalogEnvVar)
+	case statErr != nil:
+		return "", fmt.Errorf("model catalog %q cannot be inspected: %w (set --catalog or %s to the catalog root)",
+			root, statErr, catalogEnvVar)
+	case !info.IsDir():
+		return "", fmt.Errorf("model catalog %q is not a directory (set --catalog or %s to the catalog root; "+
+			"it names the catalog CLONE ROOT, not a config.json)", root, catalogEnvVar)
+	}
+	return root, nil
+}
+
+// registerCatalogFlag declares --catalog on the given command. It is the ONE declaration of
+// the flag (R23): every command that locates the catalog registers it from here, so the four
+// commands cannot drift into different help text — or, worse, different defaults — for the
+// input that decides which catalog a run reads.
+//
+// Registered by `run` and `replay` (via registerSimConfigFlags, for the model config) and by
+// `observe` and `convert preset` (for the workload presets, #1769). The flag var is
+// package-level, like every other cobra binding in cmd/, so sharing it across commands is
+// safe: one command runs per process.
+func registerCatalogFlag(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&catalogPath, "catalog", "", "Path to the catalog CLONE ROOT (#1774; clone https://github.com/inference-sim/blis-catalog). A model's HuggingFace config.json is read from <catalog>/"+catalogModelsSubdir+"/<short-name>/config.json; a named workload preset is read from <catalog>/"+catalogWorkloadsSubdir+"/<name>"+presetFileExt+" (#1769). Path semantics: a RELATIVE value is resolved against the current working directory, an ABSOLUTE value is used as given. No default and no search path — supply this flag or the "+catalogEnvVar+" environment variable (the flag wins when both are set), or the run is refused naming both. BLIS never fetches or writes a config at run time: an uncatalogued model is refused naming the path its entry belongs at (NS-6, #1733)")
+}
+
+// resolveModelConfig finds a HuggingFace config.json for the given model inside the
+// catalog located by --catalog / BLIS_CATALOG. Returns the path to the catalog entry
+// directory containing config.json.
+//
+// NS-6 (#1733): a model runs if and only if it is in the catalog. This function READS the
+// catalog and never writes to it — a model whose config.json is absent is refused, naming
+// the path the entry belongs at. It used to download config.json from HuggingFace and write
+// it into model_configs/, which made "run an unknown model" silently ADD a catalog entry;
+// that fetch (and every path that could create or modify a catalog file) is gone.
+//
+// S4 (#1731): the catalog's LOCATION is now an explicit input (--catalog / BLIS_CATALOG)
+// rather than a working-directory-relative default, and the retired per-model folder flag
+// is subsumed by it — pointing --catalog at a scratch directory covers the same
+// "use my own config" need, so there is exactly one way to supply a model config.
+func resolveModelConfig(model string) (string, error) {
+	catalog, err := resolveCatalogRoot()
+	if err != nil {
+		return "", err
+	}
+	// Record the catalog root that produced this run's model config, so the results
+	// file can attribute the result to it (#1732, R1/S5). A side effect in the same
+	// spirit as modelConfigDir: the root is not otherwise recoverable at the emit site,
+	// and re-resolving there would re-emit the precedence announcement.
+	resolvedCatalogRoot = catalog
+	return resolveModelConfigInCatalog(model, catalog)
+}
+
+// resolveModelConfigInCatalog is resolveModelConfig with the catalog root supplied
+// explicitly (the injectable core; production callers use resolveModelConfig, which
+// resolves the root from the flag and the environment).
+func resolveModelConfigInCatalog(model, catalog string) (string, error) {
+	candidates, err := catalogModelDirs(model, catalog)
 	if err != nil {
 		return "", fmt.Errorf("--latency-model: invalid model name %q: %w", model, err)
 	}
 
-	// 2. Check model_configs/ for an existing config.json (bundled or previously fetched)
-	localPath := filepath.Join(localDir, hfConfigFile)
-	if data, err := os.ReadFile(localPath); err == nil {
-		if json.Valid(data) && isHFConfig(data) {
-			logrus.Infof("--latency-model: using config from %s", localDir)
-			return localDir, nil
-		}
-		// Don't delete — the file may be a user-provided config with non-standard
-		// field names. Fall through to HF fetch, which will overwrite if successful.
-		logrus.Warnf("--latency-model: config at %s exists but lacks expected HuggingFace fields (num_hidden_layers, hidden_size, or text_config.num_hidden_layers, text_config.hidden_size); trying HuggingFace fetch", localPath)
-	}
-
-	// 3. Fetch from HuggingFace and write into model_configs/<short-name>/
-	var defaultsErr error
-	hfRepo, err := GetHFRepo(model, defaultsFile)
+	// Read the catalog entry. Absent from every layout, or non-HuggingFace-shaped, is a
+	// hard error (R1): nothing outside the catalog could supply the config, and inventing
+	// one is what NS-6 forbids. The file is never rewritten or deleted — a user-provided
+	// config with non-standard field names is reported, not overwritten.
+	entryDir, entryPath, data, err := readCatalogEntry(model, candidates)
 	if err != nil {
-		defaultsErr = err
-		logrus.Warnf("--latency-model: could not read hf_repo from defaults: %v (HuggingFace fetch may fail due to case-sensitivity)", err)
+		return "", err
 	}
-	if hfRepo == "" {
-		hfRepo = model
+	if !json.Valid(data) || !isHFConfig(data) {
+		return "", fmt.Errorf(
+			"catalog entry for model %q at %s is not a HuggingFace config.json: it lacks the expected "+
+				"fields (num_hidden_layers, hidden_size, layers_block_type, or the same fields under text_config).\n"+
+				"  Fix that catalog entry, or point --catalog / %s at a catalog that has a valid %s",
+			model, entryPath, catalogEnvVar, hfConfigFile,
+		)
+	}
+	logrus.Infof("--latency-model: using config from %s", entryDir)
+	return entryDir, nil
+}
+
+// readCatalogEntry reads the model's config.json from the first candidate entry
+// directory that has one, returning that directory, the file path it read, and the
+// bytes. candidates come from catalogModelDirs, which since #1771 returns exactly one:
+// the canonical clone-root layout <catalog>/models/<short-name>. The loop is kept over a
+// list so a future layout is a new candidate here rather than a second reader.
+//
+// Only ABSENCE falls through to the not-in-catalog refusal: presence is decided by a
+// stat, and a config.json that IS there but cannot be read is reported naming that path
+// rather than silently treated as absent — a broken or unreadable entry must never be
+// mistaken for "this model is not catalogued" (R1, NS-6). A malformed but readable entry
+// is judged by the caller, for the same reason.
+//
+// The read applies the SAME absence rule as the stat (#1776): a stat that succeeded followed
+// by a read reporting ENOENT/ENOTDIR means the entry went away in between, which is absence
+// — not a permission problem to report as one. Every other read failure (EACCES, EIO) is
+// reported naming the path.
+//
+// "Absence" is specifically ENOENT (nothing at the path) or ENOTDIR (a non-directory
+// sits on the path — e.g. a catalog root that holds a FILE named `models`, so the
+// canonical candidate <catalog>/models/<name>/config.json cannot be a directory entry).
+// Either way there is no entry, and the refusal below tells the operator to add one.
+// Every OTHER stat failure (EACCES on the entry directory, an I/O error) is NOT absence:
+// it is reported naming the path, never swallowed as "not catalogued", because a present
+// but unstatable entry is a fixable filesystem problem, not a missing model (R1, NS-6).
+//
+// A model with no entry is a refusal that names the path looked at, plus the canonical
+// path an entry belongs at — the operator-actionable half of NS-6, which is why the
+// message is built here rather than signalled as a bare not-found.
+func readCatalogEntry(model string, candidates []string) (entryDir, entryPath string, data []byte, err error) {
+	// Defensive: catalogModelDirs always returns a non-empty list or an error. An empty
+	// list here must not index-panic on candidates[0].
+	if len(candidates) == 0 {
+		return "", "", nil, fmt.Errorf("model %q: no catalog entry directory to look in", model)
+	}
+	lookedAt := make([]string, 0, len(candidates))
+	for _, dir := range candidates {
+		path := filepath.Join(dir, hfConfigFile)
+		lookedAt = append(lookedAt, "    "+path)
+		info, statErr := os.Stat(path)
+		if statErr != nil {
+			// Only ABSENCE (ENOENT/ENOTDIR) means "no entry"; any other stat failure
+			// (EACCES, EIO) is reported naming the path rather than reported as an
+			// uncatalogued model, so a present-but-unstatable entry is not misread.
+			if os.IsNotExist(statErr) || errors.Is(statErr, syscall.ENOTDIR) {
+				continue
+			}
+			return "", "", nil, fmt.Errorf(
+				"catalog entry for model %q at %s cannot be checked: %w.\n"+
+					"  Fix that catalog path, or point --catalog / %s at a catalog whose %s is accessible",
+				model, path, statErr, catalogEnvVar, hfConfigFile,
+			)
+		}
+		// A directory sitting where config.json should be is "no entry", not a broken
+		// entry — deliberately grouped with the ENOENT/ENOTDIR absence cases above (it is
+		// not a plausible catalogued config).
+		if info.IsDir() {
+			continue
+		}
+		content, readErr := os.ReadFile(path)
+		if readErr != nil {
+			// The stat above said the file was there, so a read that reports ABSENCE means
+			// it went away in between (or a racing writer replaced the entry). That is
+			// genuine absence on the same rule the stat uses — reporting it as "exists but
+			// is not readable" would describe a vanished file as a permission problem (#1776).
+			if os.IsNotExist(readErr) || errors.Is(readErr, syscall.ENOTDIR) {
+				continue
+			}
+			return "", "", nil, fmt.Errorf(
+				"catalog entry for model %q at %s exists but cannot be read: %w.\n"+
+					"  Fix that catalog entry, or point --catalog / %s at a catalog that has a readable %s",
+				model, path, readErr, catalogEnvVar, hfConfigFile,
+			)
+		}
+		return dir, path, content, nil
 	}
 
-	fetchedDir, err := fetchHFConfigFunc(hfRepo, localDir)
-	if err == nil {
-		logrus.Infof("--latency-model: fetched config for %s into %s", model, fetchedDir)
-		return fetchedDir, nil
-	}
-	logrus.Warnf("--latency-model: HF fetch failed for %s: %v", model, err)
-
-	errMsg := fmt.Sprintf(
-		"--latency-model: could not find config.json for model %q.\n"+
-			"  Tried: %s, HuggingFace (%s/%s).\n"+
-			"  Provide --model-config-folder explicitly",
-		model, localDir, hfBaseURL, hfRepo,
+	canonical := filepath.Join(candidates[0], hfConfigFile)
+	return "", "", nil, fmt.Errorf(
+		"model %q is not in the catalog: no %s at\n%s\n"+
+			"  BLIS does not fetch model configs at run time — a model runs only if it is catalogued.\n"+
+			"  Add the entry at %s (--catalog / %s names the catalog CLONE ROOT; model entries live "+
+			"under its %s/ namespace), or point --catalog / %s at a catalog that has it",
+		model, hfConfigFile, strings.Join(lookedAt, "\n"),
+		canonical, catalogEnvVar, catalogModelsSubdir, catalogEnvVar,
 	)
-	if defaultsErr != nil {
-		errMsg += fmt.Sprintf("\n  Note: defaults.yaml read failed: %v", defaultsErr)
-	}
-	return "", fmt.Errorf("%s", errMsg)
 }
 
 // resolveHardwareConfig finds the hardware config JSON file.
@@ -113,118 +283,18 @@ func resolveHardwareConfig(explicitPath, defaultsFile string) (string, error) {
 	)
 }
 
-// fetchHFConfigFunc is the function used to fetch HF configs. Package-level
-// variable allows tests to inject a mock without hitting real HuggingFace.
-// Second parameter is the target directory to write config.json into.
-//
-// WARNING: NOT safe for t.Parallel() — tests that swap this variable must
-// run sequentially within the cmd package. See t.Cleanup() restore pattern.
-var fetchHFConfigFunc = fetchHFConfig
-
-// fetchHFConfig downloads config.json from HuggingFace and writes it to targetDir.
-// Supports HF_TOKEN env var for gated models.
-// Validates hfRepo format to prevent URL injection (I14).
-func fetchHFConfig(hfRepo, targetDir string) (string, error) {
-	if !validHFRepoPattern.MatchString(hfRepo) {
-		return "", fmt.Errorf("invalid HuggingFace repo name %q: must match org/model pattern with alphanumeric, '.', '-', '_' characters", hfRepo)
-	}
-	fetchURL := fmt.Sprintf("%s/%s/resolve/main/%s", hfBaseURL, hfRepo, hfConfigFile)
-	return fetchHFConfigFromURL(fetchURL, targetDir)
-}
-
-// fetchHFConfigFromURL fetches config.json from the given URL and writes it to targetDir.
-// Extracted for testability (allows injecting test server URLs).
-func fetchHFConfigFromURL(url, targetDir string) (string, error) {
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return "", fmt.Errorf("create request: %w", err)
-	}
-
-	// Support gated models via HF_TOKEN
-	if token := os.Getenv("HF_TOKEN"); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	client := &http.Client{
-		Timeout: httpTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 3 {
-				return fmt.Errorf("too many redirects (max 3)")
-			}
-			// I11: Validate redirect targets stay on HuggingFace domains.
-			// HF uses CDN redirects (e.g., cdn-lfs.huggingface.co) which are legitimate.
-			host := req.URL.Hostname()
-			if host != "huggingface.co" && !strings.HasSuffix(host, ".huggingface.co") {
-				return fmt.Errorf("redirect to non-HuggingFace host %q blocked", host)
-			}
-			// Strip Authorization header on subdomain redirects to avoid leaking
-			// HF_TOKEN to CDN or other HuggingFace subdomains (defense-in-depth).
-			if host != "huggingface.co" {
-				req.Header.Del("Authorization")
-			}
-			return nil
-		},
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("fetch %s: %w", url, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch resp.StatusCode {
-	case http.StatusOK:
-		// success, continue
-	case http.StatusNotFound:
-		return "", fmt.Errorf("not found on HuggingFace (HTTP 404). Check --model spelling. URL: %s", url)
-	case http.StatusUnauthorized:
-		return "", fmt.Errorf("authentication required (HTTP 401). Set HF_TOKEN env var. URL: %s", url)
-	default:
-		return "", fmt.Errorf("unexpected HTTP %d from HuggingFace for %s", resp.StatusCode, url)
-	}
-
-	// Limit response body to maxResponseBytes to prevent unbounded memory allocation
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
-	if err != nil {
-		return "", fmt.Errorf("read response body: %w", err)
-	}
-	if int64(len(body)) > maxResponseBytes {
-		return "", fmt.Errorf("response body exceeds %d bytes limit — likely not a config.json", maxResponseBytes)
-	}
-
-	// Validate that the response is valid JSON before writing — prevents writing
-	// HTML error pages or other non-JSON responses
-	if !json.Valid(body) {
-		return "", fmt.Errorf("response from %s is not valid JSON", url)
-	}
-
-	// Semantic validation: verify the JSON contains at least one expected
-	// HuggingFace config field. Catches empty objects {}, HF error responses
-	// like {"error": "..."}, and non-config JSON that passes json.Valid.
-	if !isHFConfig(body) {
-		return "", fmt.Errorf("response from %s is valid JSON but does not contain expected "+
-			"HuggingFace config fields (num_hidden_layers, hidden_size, or text_config.num_hidden_layers, text_config.hidden_size). "+
-			"The model may not exist or the response is an error page", url)
-	}
-
-	// Write to target directory
-	if err := os.MkdirAll(targetDir, 0o755); err != nil {
-		return "", fmt.Errorf("create directory %s: %w", targetDir, err)
-	}
-
-	targetPath := filepath.Join(targetDir, hfConfigFile)
-	if err := os.WriteFile(targetPath, body, 0o644); err != nil {
-		return "", fmt.Errorf("write config file %s: %w", targetPath, err)
-	}
-
-	return targetDir, nil
-}
-
 // isHFConfig checks whether JSON bytes represent a HuggingFace transformer
-// config.json. It looks for num_hidden_layers or hidden_size at the top level
-// (text-only models) or nested inside text_config (multimodal models such as
-// Llama4ForConditionalGeneration). This prevents caching empty JSON {},
-// error responses like {"error":"..."}, or unrelated JSON that passes json.Valid.
+// config.json. It looks for num_hidden_layers, hidden_size, or a non-empty
+// layers_block_type list at the top level (text-only models) or nested inside
+// text_config (multimodal models such as Llama4ForConditionalGeneration). This
+// rejects an empty JSON {} or unrelated JSON that passes json.Valid as a catalog entry.
+//
+// layers_block_type is accepted because latency.GetModelConfigFromHF derives the layer
+// count from its length when no num_hidden_layers scalar is declared (#1729 / NS-4). A
+// config the parser can read must not be rejected one layer up as "not a HuggingFace
+// config" — that would reject a perfectly good catalogued config. An empty or non-list
+// value is NOT accepted: the parser cannot count it either, so the two paths agree on
+// exactly what counts as usable evidence.
 func isHFConfig(data []byte) bool {
 	var m map[string]interface{}
 	// Defensive: callers currently pre-validate with json.Valid, but retain this guard for future call sites.
@@ -232,18 +302,25 @@ func isHFConfig(data []byte) bool {
 		return false
 	}
 
+	hasLayerCountEvidence := func(cfg map[string]interface{}) bool {
+		if _, ok := cfg["num_hidden_layers"]; ok {
+			return true
+		}
+		if _, ok := cfg["hidden_size"]; ok {
+			return true
+		}
+		blocks, ok := cfg[latency.LayersBlockTypeField].([]interface{})
+		return ok && len(blocks) > 0
+	}
+
 	// Top-level fields cover text-only transformer configs.
-	_, hasLayers := m["num_hidden_layers"]
-	_, hasHidden := m["hidden_size"]
-	if hasLayers || hasHidden {
+	if hasLayerCountEvidence(m) {
 		return true
 	}
 
 	// Fall back to text_config.* for multimodal models (Llama4ForConditionalGeneration, etc.)
 	if textCfg, ok := m["text_config"].(map[string]interface{}); ok {
-		_, hasLayers = textCfg["num_hidden_layers"]
-		_, hasHidden = textCfg["hidden_size"]
-		return hasLayers || hasHidden
+		return hasLayerCountEvidence(textCfg)
 	}
 
 	return false
@@ -302,16 +379,43 @@ func applyKVCacheDtype(mc *sim.ModelConfig, kvCacheDtype string) {
 	}
 }
 
-// bundledModelConfigDir returns the expected path for bundled model configs.
-// Model names like "meta-llama/llama-3.1-8b-instruct" map to "<baseDir>/model_configs/llama-3.1-8b-instruct/".
-// When baseDir is empty, returns a relative path (resolved relative to CWD).
-// Returns an error if the model name contains path traversal sequences.
+// catalogModelDirs returns the candidate catalog entry directories for a model, in
+// resolution order. Model names like "meta-llama/llama-3.1-8b-instruct" map to
+//
+//	<catalog>/models/llama-3.1-8b-instruct/   (canonical clone-root layout, #1774)
+//
+// Returns an error if the catalog root is empty or the model name contains path
+// traversal sequences.
+//
+// #1774 settled what --catalog points at: the catalog CLONE ROOT, exactly the way the
+// authoritative blis-catalog repository is laid out — configs at
+// <clone-root>/models/<name>/config.json with workloads/, devices/, hardware/ and
+// networks/ as sibling namespaces. #1771 then deleted the bundled model_configs/ tree
+// (blis-catalog is the sole catalog) AND the flat <catalog>/<name> transition fallback
+// #1774 had carried to keep that flat tree resolving during the cutover. There is now
+// exactly ONE layout: the models/ namespace. An operator who still passes
+// `--catalog <clone-root>/models` (the pre-#1774 invocation) is refused, naming the
+// canonical <clone-root>/models/models/<name> path — the flat fallback no longer masks it.
+//
+// This function returns a one-element list rather than a bare string so readCatalogEntry
+// (the one place that reads) keeps its single, layout-agnostic reader: adding a future
+// layout is a candidate here, never a second reader.
+//
+// This function is PURE — it derives paths and touches no filesystem. Relative and
+// absolute roots are preserved as given: a relative candidate is resolved against the
+// process working directory by the OS at read time, an absolute one is used as-is.
 //
 // Note (I12): The org prefix is stripped, so different orgs with identical model names
 // (e.g., "org-a/llama" and "org-b/llama") would share the same directory. This matches
-// the existing model_configs/ convention and is acceptable because HuggingFace model
-// names are unique within orgs, and BLIS uses hf_repo for case-sensitive HF API calls.
-func bundledModelConfigDir(model, baseDir string) (string, error) {
+// the catalog's one-directory-per-model convention and is acceptable because HuggingFace
+// model names are unique within orgs, and BLIS uses hf_repo for case-sensitive HF API calls.
+func catalogModelDirs(model, catalog string) ([]string, error) {
+	// Defensive: production callers get a non-empty root from resolveCatalogRoot, which
+	// refuses when neither --catalog nor BLIS_CATALOG is set. An empty root here would
+	// silently reintroduce the retired working-directory default (#1731).
+	if catalog == "" {
+		return nil, fmt.Errorf("model catalog root is empty; pass --catalog or set %s", catalogEnvVar)
+	}
 	// Use the part after the org prefix (after the /)
 	parts := strings.SplitN(model, "/", 2)
 	shortName := model
@@ -322,11 +426,10 @@ func bundledModelConfigDir(model, baseDir string) (string, error) {
 	// Reject path traversal attempts (Clean first to normalize sequences like "a/./b")
 	shortName = filepath.Clean(shortName)
 	if strings.Contains(shortName, "..") || filepath.IsAbs(shortName) {
-		return "", fmt.Errorf("model name %q contains invalid path components", model)
+		return nil, fmt.Errorf("model name %q contains invalid path components", model)
 	}
 
-	if baseDir != "" {
-		return filepath.Join(baseDir, modelConfigsDir, shortName), nil
-	}
-	return filepath.Join(modelConfigsDir, shortName), nil
+	return []string{
+		filepath.Join(catalog, catalogModelsSubdir, shortName),
+	}, nil
 }

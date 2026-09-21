@@ -3,8 +3,11 @@ package sim
 import (
 	"bytes"
 	"fmt"
+	"go/scanner"
+	"go/token"
 	"math"
 	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -867,30 +870,17 @@ func TestSimulator_RequestConservation_InfiniteHorizon_AllRequestsComplete(t *te
 	injectRequests(sim, requests)
 	sim.Run()
 
-	// Five-term equation: injected == completed + queued + running + dropped + timedOut (INV-1)
-	injected := 50 // independent count: we injected exactly 50 requests above
-	completed := sim.Metrics.CompletedRequests
-	queued := sim.WaitQ.Len()
-	running := 0
-	if sim.RunningBatch != nil {
-		running = len(sim.RunningBatch.Requests)
-	}
-	dropped := sim.Metrics.DroppedUnservable
-	timedOut := sim.Metrics.TimedOutRequests
-
-	if completed+queued+running+dropped+timedOut != injected {
-		t.Errorf("request conservation violated: completed(%d) + queued(%d) + running(%d) + dropped(%d) + timedOut(%d) = %d, injected = %d",
-			completed, queued, running, dropped, timedOut, completed+queued+running+dropped+timedOut, injected)
-	}
+	assertMetricsSnapshotMatchesLiveState(t, sim)
+	assertINV1Conservation(t, sim.Metrics, 50, "infinite horizon, 50 requests")
 
 	// With infinite horizon, all should complete
-	if completed != 50 {
+	if completed := sim.Metrics.CompletedRequests; completed != 50 {
 		t.Errorf("infinite horizon: expected all 50 requests to complete, got %d", completed)
 	}
-	if queued != 0 {
+	if queued := sim.Metrics.StillQueued; queued != 0 {
 		t.Errorf("infinite horizon: expected empty queue, got %d queued", queued)
 	}
-	if running != 0 {
+	if running := sim.Metrics.StillRunning; running != 0 {
 		t.Errorf("infinite horizon: expected empty batch, got %d running", running)
 	}
 }
@@ -946,25 +936,13 @@ func TestSimulator_RequestConservation_FiniteHorizon_ThreeTermEquation(t *testin
 
 	sim.Run()
 
-	injected := 15 // independent count: 10 early + 5 late
+	assertMetricsSnapshotMatchesLiveState(t, sim)
+	assertINV1Conservation(t, sim.Metrics, 15, "10 early + 5 late arrivals")
 	completed := sim.Metrics.CompletedRequests
-	queued := sim.WaitQ.Len()
-	running := 0
-	if sim.RunningBatch != nil {
-		running = len(sim.RunningBatch.Requests)
-	}
-	dropped := sim.Metrics.DroppedUnservable
-	timedOut := sim.Metrics.TimedOutRequests
-
-	sum := completed + queued + running + dropped + timedOut
-	if sum != injected {
-		t.Errorf("request conservation violated: completed(%d) + queued(%d) + running(%d) + dropped(%d) + timedOut(%d) = %d, injected = %d",
-			completed, queued, running, dropped, timedOut, sum, injected)
-	}
 
 	// Verify we actually tested the non-trivial case: some but not all completed
-	if completed == injected {
-		t.Fatalf("all %d requests completed — horizon too long, conservation case untested", injected)
+	if completed == 15 {
+		t.Fatal("all 15 requests completed — horizon too long, conservation case untested")
 	}
 	if completed == 0 {
 		t.Fatalf("no requests completed — horizon too short, test setup invalid")
@@ -1325,6 +1303,117 @@ func TestWorkConserving_StepRestartsWhenWaitQNonEmpty(t *testing.T) {
 	if total != injected {
 		t.Errorf("INV-1 conservation: completed(%d) + queued(%d) + running(%d) = %d, injected = %d",
 			s.Metrics.CompletedRequests, s.WaitQ.Len(), running, total, injected)
+	}
+}
+
+// TestINV3_ClockNeverDecreases verifies INV-3 (clock monotonicity):
+// GIVEN a simulator running several requests to completion, each carrying a deadline
+//
+//	far enough out that its TimeoutEvent is orphaned by the request's own
+//	completion (the lazy-cancellation path)
+//
+// WHEN the event loop is driven one event at a time
+// THEN every event the loop actually PROCESSES has a timestamp >= its predecessor's
+// AND the run is non-vacuous: many events processed and the clock advanced past 0.
+//
+// The doc calls INV-3 true "by construction" via min-heap extraction.
+// TestSimulator_ClockMonotonicity_NeverDecreases (BC-6, above) already drives the loop
+// and asserts monotonicity — but on the raw sim.Clock FIELD, and without naming INV-3.
+// So the gap this fills is narrower than "untested": no test named INV-3 as its
+// subject, and none used the formulation the invariant is actually stated in. This
+// asserts on PROCESSED EVENT TIMESTAMPS rather than on a clock field, which is that
+// formulation and the only one that generalizes to the cluster loop. Scope, stated precisely so nobody over-reads this test: within package
+// sim, sim.Clock is assigned exactly once during the run (from the heap pop in
+// ProcessNextEvent; the only other write is the Clock: 0 constructor initializer,
+// which cannot make it decrease), so an assertion on sim.Clock would also pass here. The formulation
+// matters at the CLUSTER level, where ClusterSimulator deliberately RESTORES an
+// optimistic clock advance after an orphaned timeout (the prevClusterClock restore in
+// sim/cluster/cluster.go) — a raw-clock-field assertion fails there and looks like a
+// real bug. This test covers the single-instance skip, not that cluster restore.
+//
+// Skipping orphans below uses exactly the predicate production uses, so the test
+// tracks the real behaviour rather than a paraphrase of it.
+func TestINV3_ClockNeverDecreases(t *testing.T) {
+	const horizon = int64(10_000_000)
+
+	cfg := SimConfig{
+		Horizon:             horizon,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(2, 2048, 0), // small batch: forces queueing, so events interleave
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-inv3", "H100", 1, 1, false, "", "roofline", 0),
+	}
+
+	s := mustNewSimulator(t, cfg)
+
+	// Deadline is inside the horizon (so the TimeoutEvent is actually scheduled) but
+	// far beyond any request's completion, so every timeout is orphaned at pop time.
+	// That is the lazy-cancellation path this test must tolerate rather than trip on.
+	const orphanDeadline = horizon / 2
+	for i := 0; i < 6; i++ {
+		s.InjectArrival(&Request{
+			ID:           fmt.Sprintf("req-%d", i),
+			ArrivalTime:  int64(i) * 500,
+			Deadline:     orphanDeadline,
+			InputTokens:  make([]TokenID, 20),
+			OutputTokens: make([]TokenID, 8),
+			State:        StateQueued,
+		})
+	}
+
+	var (
+		processed int
+		orphans   int
+		// The first processed event has no predecessor, so seed prev below every
+		// possible timestamp: the first comparison is meant to be vacuously true.
+		// It cannot mask a real violation, because event timestamps are non-negative.
+		prev = int64(math.MinInt64)
+	)
+	for s.HasPendingEvents() {
+		ev := s.ProcessNextEvent()
+
+		// Orphaned timeout: popped and returned without Execute() and without
+		// advancing the clock, so no event was processed. This is the one place the
+		// test must know a concrete event type — the skip is type-dispatched in
+		// production, so mirroring ProcessNextEvent's own guard is what keeps the two
+		// in step. An executed TimeoutEvent leaves the request in StateTimedOut, never
+		// StateCompleted, so reading state after the call gives the same answer the
+		// production guard got before it.
+		if te, ok := ev.(*TimeoutEvent); ok && te.Request.State == StateCompleted {
+			orphans++
+			continue
+		}
+
+		ts := ev.Timestamp()
+		if ts < prev {
+			t.Fatalf("INV-3 violated: processed event %T at timestamp %d after an event at %d "+
+				"(processed %d events so far)", ev, ts, prev, processed)
+		}
+		prev = ts
+		processed++
+
+		if s.Clock > s.Horizon {
+			break
+		}
+	}
+
+	// Non-vacuity: a test that processed nothing would pass the ordering check.
+	if processed < 10 {
+		t.Fatalf("non-vacuity: only %d events processed, want >= 10 "+
+			"(the ordering assertion above is meaningless on a near-empty run)", processed)
+	}
+	if prev <= 0 {
+		t.Fatalf("non-vacuity: last processed timestamp = %d, want > 0 (clock never advanced)", prev)
+	}
+	if orphans == 0 {
+		t.Fatalf("setup no longer exercises lazy cancellation: 0 orphaned TimeoutEvents, so the "+
+			"skipped-event branch above went untaken. %d events processed, last at %d, %d requests "+
+			"completed, %d timed out; deadline was %d and horizon %d. A timeout is orphaned only "+
+			"while its request completes before its deadline AND the deadline is inside the horizon "+
+			"(EnqueueRequest skips scheduling otherwise)",
+			processed, prev, s.Metrics.CompletedRequests, s.Metrics.TimedOutRequests,
+			orphanDeadline, horizon)
 	}
 }
 
@@ -1736,12 +1825,7 @@ func TestSimulator_RuntimeLengthCap_E2E(t *testing.T) {
 	if sim.Metrics.LengthCappedRequests != 1 {
 		t.Errorf("LengthCappedRequests = %d, want 1", sim.Metrics.LengthCappedRequests)
 	}
-	// INV-1: conservation holds
-	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
-	if total != 1 {
-		t.Errorf("INV-1: completed(%d)+queued(%d)+running(%d)+dropped(%d) = %d, want 1",
-			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning, sim.Metrics.DroppedUnservable, total)
-	}
+	assertINV1Conservation(t, sim.Metrics, 1, "length-cap force-completion")
 	// Output was truncated below the full 200
 	if sim.Metrics.TotalOutputTokens >= 200 {
 		t.Errorf("TotalOutputTokens = %d, want < 200 (force-completion should truncate)", sim.Metrics.TotalOutputTokens)
@@ -1804,15 +1888,7 @@ func TestSimulator_Conservation_WithMaxModelLen_Drops(t *testing.T) {
 
 	sim.Run()
 
-	// INV-1: injected == completed + still_queued + still_running + dropped
-	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued +
-		sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
-	if total != numInjected {
-		t.Errorf("INV-1 violation: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want %d",
-			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued,
-			sim.Metrics.StillRunning, sim.Metrics.DroppedUnservable,
-			total, numInjected)
-	}
+	assertINV1Conservation(t, sim.Metrics, numInjected, "oversized-request enqueue guard")
 
 	// Verify: 10 requests should be dropped, 10 should complete
 	if sim.Metrics.DroppedUnservable != 10 {
@@ -1856,20 +1932,157 @@ func TestNewModelHardwareConfig_NegativeMaxModelLen_Panics(t *testing.T) {
 	NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", -1)
 }
 
-// INV-9: Oracle Knowledge Boundary — control-plane functions must not reference OutputTokens.
-// This is a structural enforcement test: it reads the source files for servability-decision
-// functions and verifies zero references to OutputTokens.
+// oracleReadPatterns are the two ways a control-plane file can reach oracle output
+// length. The registry claims both are grep-verified; before #1720 only the first
+// was actually checked.
+//
+// completionProgressIndex() derives a request's terminal ProgressIndex from
+// len(OutputTokens) (#1657), so calling it from a servability path smuggles the
+// oracle past a plain OutputTokens grep. Its legitimate callers are execution-side
+// only.
+var oracleReadPatterns = []string{"OutputTokens", "completionProgressIndex"}
+
+// simControlPlaneGlobs resolve the sim/ files subject to INV-9. Globs rather than a
+// hardcoded list so a new file is covered by default: the previous list omitted
+// router_state.go, routing_nohit_lru_scorer.go and routing_precise_prefix_scorer.go,
+// two of which are scorers — the class already covered — so the next scorer added
+// would have escaped silently too (#1720, Finding 3).
+// Not exhaustive over sim/: files whose names do not match a pattern below still have
+// to be added by hand. sim/saturation.go is here because its value gates gateway
+// dispatch, and it is clean today.
+//
+// Deliberately out of scope: sim/ subpackages. sim/workload/ generates requests rather
+// than deciding whether to admit or route them, so it holds no servability decision for
+// INV-9 to constrain — it is the source of the oracle, not a consumer of it. sim/latency/
+// and sim/kv/ are likewise execution-side. Only sim/cluster/ contains control-plane code,
+// and it is scanned by the explicit list further down.
+var simControlPlaneGlobs = []string{
+	"routing*.go",
+	"admission*.go",
+	"scheduler*.go",
+	"slo*.go",
+	"saturation*.go",
+	"router_state.go",
+	// Self-cites INV-9 in both decider contracts ("Implementations must not read
+	// Request.OutputTokens"), so a new decider reading the oracle is exactly what this
+	// scan is for. Its name matches no pattern above, so it is listed explicitly.
+	"disaggregation.go",
+}
+
+// simControlPlaneExemptions names files the globs match that are legitimately
+// allowed to read oracle output, with the reason. Exempting a file is a deliberate,
+// reviewable act; forgetting to register one is not. Empty today.
+var simControlPlaneExemptions = map[string]string{}
+
+// resolveSimControlPlaneFiles expands simControlPlaneGlobs, drops test files and
+// exempted files, and returns the result sorted (R2: deterministic ordering).
+func resolveSimControlPlaneFiles(t *testing.T) []string {
+	t.Helper()
+	seen := map[string]bool{}
+	for _, pattern := range simControlPlaneGlobs {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			t.Fatalf("bad glob %q: %v", pattern, err)
+		}
+		for _, name := range matches {
+			if strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			if reason, exempt := simControlPlaneExemptions[name]; exempt {
+				t.Logf("INV-9: %s exempted — %s", name, reason)
+				continue
+			}
+			seen[name] = true
+		}
+	}
+	files := make([]string, 0, len(seen))
+	for name := range seen {
+		files = append(files, name)
+	}
+	sort.Strings(files)
+	return files
+}
+
+// stripGoComments removes comments from Go source, so a comment that *names* an
+// oracle read is not mistaken for one. This matters: the invariant registry
+// encourages writing "must not read OutputTokens" next to the code that must not, and
+// INV-9's own carve-out for completionProgressIndex is documented in prose inside
+// batch_formation.go. Flagging those would train contributors to describe the rule
+// obliquely, which is worse than not documenting it.
+//
+// go/scanner is a lexer, not a parser, so it accepts a fragment (a single line, a
+// snippet with no package clause) and only reports genuinely malformed tokens — an
+// unterminated string or an illegal character. On any such error this returns the raw
+// source unchanged: over-reporting a violation is the safe direction here, since a
+// missed one is what INV-9 exists to prevent.
+func stripGoComments(src string) string {
+	var sc scanner.Scanner
+	fset := token.NewFileSet()
+	file := fset.AddFile("", fset.Base(), len(src))
+	failed := false
+	sc.Init(file, []byte(src), func(token.Position, string) { failed = true }, 0)
+
+	var b strings.Builder
+	for {
+		_, tok, lit := sc.Scan()
+		if tok == token.EOF {
+			break
+		}
+		if lit != "" {
+			b.WriteString(lit)
+		} else {
+			b.WriteString(tok.String())
+		}
+		b.WriteByte(' ')
+	}
+	if failed {
+		return src
+	}
+	return b.String()
+}
+
+// oracleReadsIn reports which oracle-read patterns appear in src, ignoring comments
+// and the metric aggregate TotalOutputTokens.
+func oracleReadsIn(src string) []string {
+	cleaned := strings.ReplaceAll(stripGoComments(src), "TotalOutputTokens", "")
+	var hits []string
+	for _, pattern := range oracleReadPatterns {
+		if strings.Contains(cleaned, pattern) {
+			hits = append(hits, pattern)
+		}
+	}
+	return hits
+}
+
+// INV-9: Oracle Knowledge Boundary — control-plane functions must not reference
+// OutputTokens or the accessor derived from it. This is a structural enforcement
+// test: it reads the source of servability-decision code rather than testing
+// behaviour, which is why it can catch a violation the moment it is written.
 func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T) {
-	// Control-plane files in sim/ that must not reference OutputTokens.
-	// These files contain no metric-aggregate names like TotalOutputTokens,
-	// so a whole-file scan is safe and maximally conservative.
-	simControlPlaneFiles := []string{
+	simControlPlaneFiles := resolveSimControlPlaneFiles(t)
+
+	// Non-vacuity: the globs must actually resolve, and must cover the three files
+	// the previous hardcoded list missed. Without this, a typo in a pattern would
+	// read as a clean pass.
+	if len(simControlPlaneFiles) == 0 {
+		t.Fatal("INV-9 file globs matched nothing — the scan proves nothing")
+	}
+	for _, required := range []string{
 		"admission.go",
+		"router_state.go",
 		"routing.go",
-		"routing_scorers.go",
+		"routing_nohit_lru_scorer.go",
+		"routing_precise_prefix_scorer.go",
 		"routing_prefix_scorer.go",
+		"disaggregation.go",
+		"routing_scorers.go",
+		"saturation.go",
 		"scheduler.go",
 		"slo_priority.go",
+	} {
+		if !slices.Contains(simControlPlaneFiles, required) {
+			t.Errorf("INV-9 scan does not cover %s — the globs or the exemption list regressed", required)
+		}
 	}
 
 	for _, filename := range simControlPlaneFiles {
@@ -1877,15 +2090,29 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 		if err != nil {
 			t.Fatalf("failed to read %s: %v", filename, err)
 		}
-		content := string(data)
-		if strings.Contains(content, "OutputTokens") {
-			t.Errorf("INV-9 violation: %s references OutputTokens — control-plane code must not access oracle output length", filename)
+		for _, hit := range oracleReadsIn(string(data)) {
+			t.Errorf("INV-9 violation: %s references %s — control-plane code must not access oracle output length", filename, hit)
+		}
+	}
+
+	// Sorted: a multi-failure message must not reorder between runs (R2).
+	exempted := make([]string, 0, len(simControlPlaneExemptions))
+	for name := range simControlPlaneExemptions {
+		exempted = append(exempted, name)
+	}
+	sort.Strings(exempted)
+	for _, name := range exempted {
+		if _, err := os.Stat(name); err != nil {
+			t.Errorf("INV-9 exemption for %s (%s) names a file that does not exist — remove the stale entry", name, simControlPlaneExemptions[name])
 		}
 	}
 
 	// Cluster control-plane files that handle *Request in the routing pipeline.
-	// These files may contain TotalOutputTokens (metric aggregation, not oracle access),
-	// so we use line-level scanning with TotalOutputTokens exclusion.
+	// These stay an explicit list rather than a glob: they are large mixed files that
+	// legitimately carry the TotalOutputTokens metric aggregate, so they need
+	// line-level scanning with that exclusion, and no glob shape separates them from
+	// the rest of sim/cluster. A new cluster control-plane file therefore still has
+	// to be added here by hand — the inverse of the sim/ default, and a known gap.
 	clusterControlPlaneFiles := []string{
 		"cluster/cluster.go",
 		"cluster/cluster_event.go",
@@ -1899,11 +2126,9 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 			t.Fatalf("failed to read %s: %v", filename, err)
 		}
 		for lineNum, line := range strings.Split(string(data), "\n") {
-			// Remove known-safe metric aggregate names, then check for remaining OutputTokens
-			cleaned := strings.ReplaceAll(line, "TotalOutputTokens", "")
-			if strings.Contains(cleaned, "OutputTokens") {
-				t.Errorf("INV-9 violation: %s line %d references OutputTokens — control-plane code must not access oracle output length",
-					filename, lineNum+1)
+			for _, hit := range oracleReadsIn(line) {
+				t.Errorf("INV-9 violation: %s line %d references %s — control-plane code must not access oracle output length",
+					filename, lineNum+1, hit)
 			}
 		}
 	}
@@ -1925,8 +2150,64 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 		t.Fatal("could not find end of EnqueueRequest function")
 	}
 	enqueueBody := content[startIdx : startIdx+1+endIdx]
-	if strings.Contains(enqueueBody, "OutputTokens") {
-		t.Error("INV-9 violation: EnqueueRequest references OutputTokens — enqueue guard must not access oracle output length")
+	for _, hit := range oracleReadsIn(enqueueBody) {
+		t.Errorf("INV-9 violation: EnqueueRequest references %s — the enqueue guard must not access oracle output length", hit)
+	}
+}
+
+// TestINV9_OracleReadDetectorFires proves the scan above is not vacuous. The
+// completionProgressIndex clause in particular is new: the registry claimed it was
+// grep-verified while no test checked it, so a fixture is needed to show the
+// predicate actually rejects it (#1720, and #1657 for why the accessor counts).
+func TestINV9_OracleReadDetectorFires(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "direct oracle field read",
+			src:  "package p\nfunc f(r *Request) int { return len(r.OutputTokens) }\n",
+			want: []string{"OutputTokens"},
+		},
+		{
+			name: "oracle read through the derived accessor",
+			src:  "package p\nfunc f(r *Request) bool { return r.ProgressIndex >= r.completionProgressIndex() }\n",
+			want: []string{"completionProgressIndex"},
+		},
+		{
+			name: "metric aggregate is not an oracle read",
+			src:  "package p\nfunc f(m *Metrics) int { return m.TotalOutputTokens }\n",
+			want: nil,
+		},
+		{
+			name: "clean control-plane code",
+			src:  "package p\nfunc f(r *Request) int64 { return r.MaxOutputLen }\n",
+			want: nil,
+		},
+		{
+			// The registry encourages documenting the rule next to the code it
+			// governs; flagging the documentation would be perverse.
+			name: "a comment naming the rule is not a violation",
+			src:  "package p\n// INV-9: must never read OutputTokens or completionProgressIndex().\nfunc f(r *Request) int64 { return r.MaxOutputLen }\n",
+			want: nil,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "fixture.go")
+			if err := os.WriteFile(path, []byte(tc.src), 0o600); err != nil {
+				t.Fatalf("cannot write fixture: %v", err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("cannot read fixture: %v", err)
+			}
+			got := oracleReadsIn(string(data))
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("oracleReadsIn() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -1988,14 +2269,8 @@ func TestSimulator_OversizedRequests_TerminatesNoLivelock(t *testing.T) {
 		t.Errorf("CompletedRequests = %d, want 1", sim.Metrics.CompletedRequests)
 	}
 
-	// AND conservation must hold (BC-5):
-	// completed + still_queued + still_running + dropped = total injected into EnqueueRequest
-	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
-	if total != 2 {
-		t.Errorf("conservation: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want 2",
-			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning,
-			sim.Metrics.DroppedUnservable, total)
-	}
+	// AND conservation must hold (BC-5)
+	assertINV1Conservation(t, sim.Metrics, 2, "mixed oversized and normal")
 }
 
 // BC-6: All oversized — simulation still terminates
@@ -2216,12 +2491,7 @@ func TestSimulator_ChunkedPrefill_MaxModelLen_NoSpuriousCap(t *testing.T) {
 		t.Errorf("TotalOutputTokens = %d, want 50 (prefill-generated + decode PI 201→249)", sim.Metrics.TotalOutputTokens)
 	}
 
-	// INV-1 conservation
-	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
-	if total != 1 {
-		t.Errorf("INV-1: completed(%d)+queued(%d)+running(%d)+dropped(%d) = %d, want 1",
-			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning, sim.Metrics.DroppedUnservable, total)
-	}
+	assertINV1Conservation(t, sim.Metrics, 1, "MaxOutputLen auto-fill")
 }
 
 // TestEnqueueRequest_AutoFill_MaxOutputLen verifies the engine-level auto-fill
@@ -2348,12 +2618,7 @@ func TestSimulator_ProactiveCap_EliminatesOvershoot(t *testing.T) {
 	if sim.Metrics.LengthCappedRequests != 1 {
 		t.Errorf("LengthCappedRequests = %d, want 1", sim.Metrics.LengthCappedRequests)
 	}
-	// INV-1 conservation
-	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
-	if total != 1 {
-		t.Errorf("INV-1 violated: %d+%d+%d+%d = %d, want 1",
-			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning, sim.Metrics.DroppedUnservable, total)
-	}
+	assertINV1Conservation(t, sim.Metrics, 1, "proactive MaxModelLen cap")
 }
 
 // TestSimulator_ProactiveCap_MaxModelLen2_ZeroOutput verifies BC-11:
@@ -2386,11 +2651,7 @@ func TestSimulator_ProactiveCap_MaxModelLen2_ZeroOutput(t *testing.T) {
 	if sim.Metrics.LengthCappedRequests != 1 {
 		t.Errorf("LengthCappedRequests = %d, want 1", sim.Metrics.LengthCappedRequests)
 	}
-	// INV-1 conservation
-	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
-	if total != 1 {
-		t.Errorf("INV-1 violated: %d", total)
-	}
+	assertINV1Conservation(t, sim.Metrics, 1, "proactive cap with zero decode budget")
 }
 
 // TestProcessCompletions_LengthCapped_MetricsRefreshed verifies BC-7:
@@ -2548,29 +2809,17 @@ func TestSimulator_Conservation_FiveTermWithTimeout(t *testing.T) {
 
 	sim.Run()
 
-	completed := sim.Metrics.CompletedRequests
-	queued := sim.WaitQ.Len()
-	running := 0
-	if sim.RunningBatch != nil {
-		running = len(sim.RunningBatch.Requests)
-	}
-	dropped := sim.Metrics.DroppedUnservable
-	timedOut := sim.Metrics.TimedOutRequests
-
-	fiveTermSum := completed + queued + running + dropped + timedOut
-	if fiveTermSum != injectedCount {
-		t.Errorf("BC-4 INV-1 5-term conservation violated: completed(%d) + queued(%d) + running(%d) + dropped(%d) + timedOut(%d) = %d, injected = %d",
-			completed, queued, running, dropped, timedOut, fiveTermSum, injectedCount)
-	}
+	assertMetricsSnapshotMatchesLiveState(t, sim)
+	assertINV1Conservation(t, sim.Metrics, injectedCount, "BC-4 mixed arrivals")
 
 	// All three terms must be exercised
-	if timedOut == 0 {
+	if sim.Metrics.TimedOutRequests == 0 {
 		t.Error("expected at least 1 timed-out request")
 	}
-	if completed == 0 {
+	if sim.Metrics.CompletedRequests == 0 {
 		t.Error("expected at least 1 completed request")
 	}
-	if dropped == 0 {
+	if sim.Metrics.DroppedUnservable == 0 {
 		t.Error("expected at least 1 dropped request (input > KV capacity)")
 	}
 }
@@ -2808,12 +3057,7 @@ func TestSimulator_TotalOutputTokens_NoDoubleCountAfterPreemption(t *testing.T) 
 			got, want, got-want)
 	}
 
-	// INV-1: all requests must be accounted for.
-	total := s.Metrics.CompletedRequests + s.Metrics.StillQueued + s.Metrics.StillRunning +
-		s.Metrics.DroppedUnservable + s.Metrics.TimedOutRequests
-	if total != 2 {
-		t.Errorf("INV-1 violated: accounted = %d, want 2", total)
-	}
+	assertINV1Conservation(t, s.Metrics, 2, "ITL entries after preemption")
 }
 
 // TestSimulator_ITL_NoDuplicateEntriesAfterPreemption verifies that AllITLs contains

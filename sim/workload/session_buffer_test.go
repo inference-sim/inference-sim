@@ -155,6 +155,46 @@ func TestSessionTokenBufferResetShrinksAndPreservesOrphan(t *testing.T) {
 	}
 }
 
+// TestSessionTokenBufferResetWithCapacity verifies the explicit-capacity reset (#1696):
+// the fresh segment has the requested capacity (so later appends don't reallocate), the
+// content is correct, and a capacity below len(toks) is clamped up to len(toks).
+func TestSessionTokenBufferResetWithCapacity(t *testing.T) {
+	b := newSessionTokenBuffer()
+	b.Append([]sim.TokenID{1, 2, 3})
+	prior := b.Slice(0, 3)
+
+	// Reset to [7,8] but reserve capacity for 10 tokens.
+	start, end := b.ResetWithCapacity([]sim.TokenID{7, 8}, 10)
+	if start != 0 || end != 2 {
+		t.Fatalf("ResetWithCapacity returned [%d,%d), want [0,2)", start, end)
+	}
+	if b.Len() != 2 {
+		t.Fatalf("len after ResetWithCapacity = %d, want 2", b.Len())
+	}
+	if b.bufCap() != 10 {
+		t.Errorf("cap after ResetWithCapacity = %d, want 10 (reserved)", b.bufCap())
+	}
+	// Appending up to the reserved capacity must NOT reallocate (view start address stable).
+	viewAddr := &b.Slice(0, 2)[0]
+	b.Append([]sim.TokenID{9, 10, 11, 12, 13, 14, 15, 16}) // fills to exactly cap=10
+	if newAddr := &b.Slice(0, 2)[0]; newAddr != viewAddr {
+		t.Error("append within reserved capacity reallocated — capacity reservation ineffective")
+	}
+	// Orphaned prior view stays content-correct.
+	if !reflect.DeepEqual(prior, []sim.TokenID{1, 2, 3}) {
+		t.Errorf("orphan drifted after ResetWithCapacity: got %v", prior)
+	}
+
+	// Capacity below len(toks) is clamped up to len(toks) (no truncation).
+	start2, end2 := b.ResetWithCapacity([]sim.TokenID{20, 21, 22, 23}, 2)
+	if start2 != 0 || end2 != 4 {
+		t.Fatalf("clamped ResetWithCapacity returned [%d,%d), want [0,4)", start2, end2)
+	}
+	if b.bufCap() < 4 {
+		t.Errorf("cap after clamped ResetWithCapacity = %d, want >= 4", b.bufCap())
+	}
+}
+
 func TestSessionTokenBufferForcedReallocOrphanContentCorrect(t *testing.T) {
 	// Start with cap=4. The first Slice() returns a view of [1,2,3,4].
 	b := newSessionTokenBufferWithCapacity(4)

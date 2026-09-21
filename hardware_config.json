@@ -6,7 +6,22 @@
 		"BwPeakTBs":   3.35,
 		"mfuPrefill":  0.45,
 		"mfuDecode":   0.30,
-		"MemoryGiB":   80.0
+		"MemoryGiB":   80.0,
+		"_comment_interconnect": "Per-GPU EFFECTIVE unidirectional bandwidths in GB/s; only their RATIO is used, to price cross-node collective traffic (#1530). NVLink 4 (900 GB/s bidirectional => 450 unidirectional per GPU); inter-node = one 400 Gb/s ConnectX-7 per GPU on an HGX H100 (50 GB/s), the standard 8-NIC config. Ratio 9x.",
+		"IntraNodeBwGBps": 450,
+		"InterNodeBwGBps": 50
+	},
+	"H200": {
+		"_comment":    "SXM H200 shares the H100 GH100 Hopper compute die (same SMs/Tensor Cores) => identical peak FLOPs; differs only in memory: 141 GiB HBM3e vs 80, 4.8 TB/s vs 3.35. FLOPs & bandwidth are the NVIDIA H200 datasheet spec (https://www.nvidia.com/en-us/data-center/h200/; dense BF16 989.5 TFLOPS, dense FP8 1979 TFLOPS). MFU is CARRIED OVER from H100 (Discussion #589). BLIS roofline step time is max(compute, memory) (sim/latency/roofline.go): mfuPrefill transfers cleanly since prefill is compute-bound on the identical die, and small-batch (memory-bound) decode — the common case — is unaffected by mfuDecode because the ~1.43x = 4.8/3.35 speedup flows through BwPeakTBs on the memory branch. CAVEAT: large-batch decode can be compute-bound, where mfuDecode binds directly and this carried-over H100 value is UNVALIDATED for H200. An H200-specific MFU fit is tracked as a follow-up in #1711.",
+		"TFlopsPeak":  989.5,
+		"TFlopsFP8":   1979.0,
+		"BwPeakTBs":   4.8,
+		"mfuPrefill":  0.45,
+		"mfuDecode":   0.30,
+		"MemoryGiB":   141.0,
+		"_comment_interconnect": "Per-GPU EFFECTIVE unidirectional bandwidths in GB/s; only their RATIO is used, to price cross-node collective traffic (#1530). NVLink 4: 900 GB/s bidirectional per GPU (NVIDIA H200 datasheet) => 450 unidirectional. Inter-node: standard 8-GPU HGX H200 pairs each GPU with one single-port 400 Gb/s ConnectX-7 NIC (1:1 GPU:NIC rail) => 50 GB/s. Ratio 9x — same NVLink 4 + ConnectX-7 fabric as HGX H100.",
+		"IntraNodeBwGBps": 450,
+		"InterNodeBwGBps": 50
 	},
 	"A100-SXM": {
 		"_comment":    "MFU values calibrated per Discussion #589: https://github.com/inference-sim/inference-sim/discussions/589",
@@ -15,7 +30,10 @@
 		"BwPeakTBs":   2.039,
 		"mfuPrefill":  0.38,
 		"mfuDecode":   0.18,
-		"MemoryGiB":   80.0
+		"MemoryGiB":   80.0,
+		"_comment_interconnect": "Per-GPU EFFECTIVE unidirectional bandwidths in GB/s; only their RATIO is used, to price cross-node collective traffic (#1530). NVLink 3 (600 GB/s bidirectional => 300 unidirectional per GPU); inter-node = one HDR 200 Gb/s port per GPU on an HGX A100 (25 GB/s). Ratio 12x.",
+		"IntraNodeBwGBps": 300,
+		"InterNodeBwGBps": 25
 	},
 	"A100-80": {
 		"_comment":    "Alias for A100-SXM — defaults.yaml uses A100-80 for all A100 model entries (BC-14). MFU values calibrated per Discussion #589: https://github.com/inference-sim/inference-sim/discussions/589",
@@ -24,7 +42,10 @@
 		"BwPeakTBs":   2.039,
 		"mfuPrefill":  0.38,
 		"mfuDecode":   0.18,
-		"MemoryGiB":   80.0
+		"MemoryGiB":   80.0,
+		"_comment_interconnect": "Per-GPU EFFECTIVE unidirectional bandwidths in GB/s; only their RATIO is used, to price cross-node collective traffic (#1530). Alias of A100-SXM; same interconnect. Ratio 12x.",
+		"IntraNodeBwGBps": 300,
+		"InterNodeBwGBps": 25
 	},
 	"L40S": {
 		"_comment":    "MFU values calibrated per Discussion #589: https://github.com/inference-sim/inference-sim/discussions/589",
@@ -33,6 +54,9 @@
 		"BwPeakTBs":   0.864,
 		"mfuPrefill":  0.32,
 		"mfuDecode":   0.08,
-		"MemoryGiB":   48.0
+		"MemoryGiB":   48.0,
+		"_comment_interconnect": "Per-GPU EFFECTIVE unidirectional bandwidths in GB/s; only their RATIO is used, to price cross-node collective traffic (#1530). No NVLink: peer-to-peer runs over PCIe Gen4 x16 (~32 GB/s per direction); inter-node = one 100 GbE port per GPU (12.5 GB/s). Ratio 2.6x — a PCIe node is far less penalized by spanning than an NVLink node, because its on-node link is already slow.",
+		"IntraNodeBwGBps": 32,
+		"InterNodeBwGBps": 12.5
 	}
 }

@@ -207,12 +207,7 @@ func TestClusterSimulator_SingleInstance_GoldenInvariants(t *testing.T) {
 			m := cs.AggregatedMetrics()
 
 			// INV-1: Request conservation — compare against tc.NumRequests (independent source).
-			conservation := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable
-			if conservation != tc.NumRequests {
-				t.Errorf("INV-1 conservation: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want numRequests(%d)",
-					m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
-					conservation, tc.NumRequests)
-			}
+			assertClusterINV1Conservation(t, cs, tc.NumRequests, noRejections, tc.Model+"/"+tc.Workload)
 
 			// INV-5: Causality — TTFT >= 0 and E2E >= TTFT for all completed requests
 			for reqID, ttft := range m.RequestTTFTs {
@@ -1048,7 +1043,8 @@ func meanMapValues(m map[string]float64) float64 {
 // across 10 policy combinations (promoted from H12 hypothesis experiment):
 // GIVEN each policy combination with infinite horizon and ample resources
 // WHEN the cluster simulation completes
-// THEN completed + still_queued + still_running == len(Requests) (map-based conservation)
+// THEN the twelve-term conservation equation holds against an independent count, with
+// no rejections permitted,
 // AND all requests complete (infinite horizon, no resource pressure).
 func TestClusterSimulator_Conservation_PolicyMatrix(t *testing.T) {
 	matrix := []struct {
@@ -1091,17 +1087,7 @@ func TestClusterSimulator_Conservation_PolicyMatrix(t *testing.T) {
 			mustRun(t, cs)
 
 			agg := cs.AggregatedMetrics()
-			injected := len(agg.Requests)
-
-			// INV-1 conservation (map-based): len(Requests) == completed + queued + running.
-			// Three-term because dropped requests are deleted from the Requests map.
-			// The four-term formula (including dropped) is verified via InjectedRequests
-			// in TestSaveResults_DroppedUnservable_InJSON.
-			conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning
-			if conservation != injected {
-				t.Errorf("INV-1 conservation: completed(%d) + queued(%d) + running(%d) = %d, injected = %d",
-					agg.CompletedRequests, agg.StillQueued, agg.StillRunning, conservation, injected)
-			}
+			assertClusterINV1Conservation(t, cs, numRequests, noRejections, "infinite horizon")
 
 			// BC-4: All complete under infinite horizon with ample resources
 			if agg.CompletedRequests != numRequests {
@@ -1239,31 +1225,30 @@ func TestClusterSimulator_OverloadConservation(t *testing.T) {
 			mustRun(t, cs)
 
 			agg := cs.AggregatedMetrics()
-			injected := len(agg.Requests)
-			rejected := cs.RejectedRequests()
 
-			// INV-1 conservation (map-based): len(Requests) == completed + queued + running.
-			// Three-term because dropped requests are deleted from the Requests map.
-			conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning
+			assertClusterINV1Conservation(t, cs, numRequests, cs.RejectedRequests(), tc.admissionPolicy)
+
+			// The full-pipeline clause, against an observation independent of the
+			// counters: the Metrics.Requests map. The helper cannot do this — it
+			// folds the pipeline clause into the same equality, and the map is not a
+			// general baseline: the drop guards, drain redirect and PD parent collapse
+			// delete from it (undercount), while the timeout paths do not delete at all
+			// (overcount). Sound here only because this fixture does neither, which the
+			// guards below pin.
+			if agg.DroppedUnservable != 0 {
+				t.Fatalf("fixture now drops %d requests, so len(Requests) undercounts and is no longer a valid injected count", agg.DroppedUnservable)
+			}
+			if agg.TimedOutRequests != 0 {
+				t.Fatalf("fixture now times out %d requests, which stay in Requests, so len(Requests) overcounts and is no longer a valid injected count", agg.TimedOutRequests)
+			}
+			if injected := len(agg.Requests); injected+cs.RejectedRequests() != numRequests {
+				t.Errorf("INV-1 pipeline: len(Requests)=%d + rejected=%d = %d, want %d generated",
+					injected, cs.RejectedRequests(), injected+cs.RejectedRequests(), numRequests)
+			}
+
 			if tc.admissionPolicy == "always-admit" {
-				// No rejections expected
-				if conservation != injected {
-					t.Errorf("INV-1 conservation (always-admit): completed(%d) + queued(%d) + running(%d) = %d, want %d (injected)",
-						agg.CompletedRequests, agg.StillQueued, agg.StillRunning, conservation, injected)
-				}
-				if rejected != 0 {
+				if rejected := cs.RejectedRequests(); rejected != 0 {
 					t.Errorf("always-admit should have 0 rejections, got %d", rejected)
-				}
-			} else {
-				// Pipeline conservation: injected + rejected == total generated
-				totalGenerated := injected + rejected
-				if conservation != injected {
-					t.Errorf("INV-1 conservation (token-bucket): completed(%d) + queued(%d) + running(%d) = %d, want %d (injected)",
-						agg.CompletedRequests, agg.StillQueued, agg.StillRunning, conservation, injected)
-				}
-				if totalGenerated != numRequests {
-					t.Errorf("pipeline conservation: injected(%d) + rejected(%d) = %d, want %d (total generated)",
-						injected, rejected, totalGenerated, numRequests)
 				}
 			}
 
@@ -1465,14 +1450,8 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 		mustRun(t, cs)
 
 		agg := cs.AggregatedMetrics()
-		injected := len(agg.Requests)
 
-		// INV-1 conservation (map-based three-term)
-		conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning
-		if conservation != injected {
-			t.Errorf("INV-1: completed(%d) + queued(%d) + running(%d) = %d, want %d (injected)",
-				agg.CompletedRequests, agg.StillQueued, agg.StillRunning, conservation, injected)
-		}
+		assertClusterINV1Conservation(t, cs, numRequests, noRejections, "always-admit/ample-kv")
 
 		// All requests complete under infinite horizon with ample resources
 		if agg.CompletedRequests != numRequests {
@@ -1502,14 +1481,8 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 		mustRun(t, cs)
 
 		agg := cs.AggregatedMetrics()
-		injected := len(agg.Requests)
 
-		// INV-1 conservation (map-based three-term)
-		conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning
-		if conservation != injected {
-			t.Errorf("INV-1: completed(%d) + queued(%d) + running(%d) = %d, want %d (injected)",
-				agg.CompletedRequests, agg.StillQueued, agg.StillRunning, conservation, injected)
-		}
+		assertClusterINV1Conservation(t, cs, len(constRequests), noRejections, "always-admit/constrained-kv")
 
 		// Verify stress path is actually exercised: preemptions must occur
 		if agg.PreemptionCount == 0 {
@@ -1532,19 +1505,22 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 		mustRun(t, cs)
 
 		agg := cs.AggregatedMetrics()
-		injected := len(agg.Requests)
 		rejected := cs.RejectedRequests()
 
-		// INV-1 conservation (map-based three-term)
-		conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning
-		if conservation != injected {
-			t.Errorf("INV-1: completed(%d) + queued(%d) + running(%d) = %d, want %d (injected)",
-				agg.CompletedRequests, agg.StillQueued, agg.StillRunning, conservation, injected)
-		}
+		assertClusterINV1Conservation(t, cs, numRequests, rejected, "token-bucket")
 
-		// Pipeline conservation: injected + rejected == total generated
-		if injected+rejected != numRequests {
-			t.Errorf("pipeline conservation: injected(%d) + rejected(%d) = %d, want %d",
+		// The full-pipeline clause against the Metrics.Requests map, independent of
+		// the counters the helper reads. Sound here only because nothing is dropped and
+		// nothing times out; see the longer note at the equivalent check in
+		// TestClusterSimulator_OverloadConservation.
+		if agg.DroppedUnservable != 0 {
+			t.Fatalf("fixture now drops %d requests, so len(Requests) undercounts and is no longer a valid injected count", agg.DroppedUnservable)
+		}
+		if agg.TimedOutRequests != 0 {
+			t.Fatalf("fixture now times out %d requests, which stay in Requests, so len(Requests) overcounts and is no longer a valid injected count", agg.TimedOutRequests)
+		}
+		if injected := len(agg.Requests); injected+rejected != numRequests {
+			t.Errorf("INV-1 pipeline: len(Requests)=%d + rejected=%d = %d, want %d generated",
 				injected, rejected, injected+rejected, numRequests)
 		}
 
@@ -1634,13 +1610,7 @@ func TestClusterSimulator_MaxModelLen_DroppedUnservable(t *testing.T) {
 			agg.DroppedUnservable, expectedDropped, numGuard1a, numGuard1b)
 	}
 
-	// INV-1 conservation: injected == completed + queued + running + dropped
-	conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning + agg.DroppedUnservable
-	if conservation != totalInjected {
-		t.Errorf("INV-1: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want %d",
-			agg.CompletedRequests, agg.StillQueued, agg.StillRunning, agg.DroppedUnservable,
-			conservation, totalInjected)
-	}
+	assertClusterINV1Conservation(t, cs, totalInjected, noRejections, "oversized-request guards")
 
 	// Post-simulation drain: all requests completed or dropped, nothing in-flight
 	if agg.StillQueued != 0 || agg.StillRunning != 0 {
@@ -1782,23 +1752,8 @@ func TestClusterSimulator_FlowControl_Conservation(t *testing.T) {
 	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
-	m := cs.AggregatedMetrics()
-	gwDepth := cs.GatewayQueueDepth()
-	gwShed := cs.GatewayQueueShed()
+	assertClusterINV1Conservation(t, cs, len(requests), cs.RejectedRequests(), "flow control conservation")
 
-	// INV-1: injected == completed + queued + running + dropped + timedout + routingRejections + gwDepth + gwShed + gwRejected + gwEvicted + gwExpired + encodeRoutingRejections
-	gwRejected := cs.GatewayQueueRejected()
-	gwEvicted := cs.GatewayEvicted()
-	gwExpired := cs.GatewayExpired()
-	encRej := cs.EncodeRoutingRejections()
-	injected := len(requests) - cs.RejectedRequests()
-	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() + gwDepth + gwShed + gwRejected + gwEvicted + gwExpired + encRej
-	if injected != accounted {
-		t.Errorf("INV-1: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d routingRejections=%d gwDepth=%d gwShed=%d gwRejected=%d gwEvicted=%d gwExpired=%d encodeRoutingRejections=%d)",
-			injected, accounted,
-			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
-			m.TimedOutRequests, cs.RoutingRejections(), gwDepth, gwShed, gwRejected, gwEvicted, gwExpired, encRej)
-	}
 	// Note: gwRejected is included in the conservation formula but may be 0 here.
 	// The rejection path (queue full + no sheddable victim) is exercised at the unit level
 	// in TestGatewayQueue_CriticalityProtection_NonSheddableNeverEvicted and related tests.
@@ -2460,9 +2415,9 @@ func TestClusterSimulator_SessionFollowUpCausality(t *testing.T) {
 // RoundIndex > 0, and every session generates at least one follow-up.
 // This is the first test of the standard (non-disaggregated) cluster path
 // with real multi-turn session management.
-// NOTE: assertINV1Conservation checks 5 of 8 INV-1 terms; the 3 missing terms
-// (RoutingRejections, GatewayQueueDepth, GatewayQueueShed)
-// are zero for this config (no gateway queue, no deferred queue, no routing rejections).
+// NOTE: totalInjected counts seeds plus dynamically injected follow-ups, so it is
+// the one baseline the helper's "eager slice" precondition does not cover — the
+// test must compute it, which it does in onDone below.
 func TestClusterSimulator_MultiTurnSession_EndToEnd(t *testing.T) {
 	inputSampler, err := workload.NewLengthSampler(workload.DistSpec{
 		Type:   "constant",
@@ -2536,7 +2491,7 @@ func TestClusterSimulator_MultiTurnSession_EndToEnd(t *testing.T) {
 	metrics := cs.AggregatedMetrics()
 
 	// BC-5 (INV-1): conservation with dynamic follow-up injection
-	assertINV1Conservation(t, metrics, totalInjected, "multi-turn end-to-end")
+	assertClusterINV1Conservation(t, cs, totalInjected, noRejections, "multi-turn end-to-end")
 
 	if metrics.CompletedRequests == 0 {
 		t.Error("BC-5: CompletedRequests = 0, expected > 0 (work must be done)")
@@ -3039,25 +2994,9 @@ func TestClusterSimulator_FlowControl_Eviction_Conservation(t *testing.T) {
 	mustRun(t, cs)
 
 	m := cs.AggregatedMetrics()
-	gwDepth := cs.GatewayQueueDepth()
-	gwShed := cs.GatewayQueueShed()
-	gwRejected := cs.GatewayQueueRejected()
 	gwEvicted := cs.GatewayEvicted()
-	gwExpired := cs.GatewayExpired()
-	encRej := cs.EncodeRoutingRejections()
 
-	// INV-1: injected == completed + queued + running + dropped + timedout +
-	//         routingRejections + gwDepth + gwShed + gwRejected + gwEvicted + gwExpired + encRej
-	injected := len(requests) - cs.RejectedRequests()
-	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning +
-		m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() +
-		gwDepth + gwShed + gwRejected + gwEvicted + gwExpired + encRej
-	if injected != accounted {
-		t.Errorf("INV-1 violated: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d routingRejections=%d gwDepth=%d gwShed=%d gwRejected=%d gwEvicted=%d gwExpired=%d encRej=%d)",
-			injected, accounted,
-			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
-			m.TimedOutRequests, cs.RoutingRejections(), gwDepth, gwShed, gwRejected, gwEvicted, gwExpired, encRej)
-	}
+	assertClusterINV1Conservation(t, cs, len(requests), cs.RejectedRequests(), "in-flight eviction")
 
 	// BC-1: eviction must actually fire — a silent regression that disables eviction
 	// would still pass INV-1 trivially (gwEvicted=0 doesn't break the sum).
@@ -3081,7 +3020,7 @@ func TestClusterSimulator_FlowControl_Eviction_Conservation(t *testing.T) {
 	}
 
 	t.Logf("Results: completed=%d gwEvicted=%d gwShed=%d gwDepth=%d criticalCompleted=%d",
-		m.CompletedRequests, gwEvicted, gwShed, gwDepth, criticalCompleted)
+		m.CompletedRequests, gwEvicted, cs.GatewayQueueShed(), cs.GatewayQueueDepth(), criticalCompleted)
 }
 
 // TestClusterSimulator_FlowControl_NoEviction_Default verifies that in-flight
@@ -3130,18 +3069,8 @@ func TestClusterSimulator_FlowControl_NoEviction_Default(t *testing.T) {
 	}
 
 	m := cs.AggregatedMetrics()
-	gwDepth := cs.GatewayQueueDepth()
-	gwShed := cs.GatewayQueueShed()
-	gwRejected := cs.GatewayQueueRejected()
-	gwExpired := cs.GatewayExpired()
-	encRej := cs.EncodeRoutingRejections()
-	injected := len(requests) - cs.RejectedRequests()
-	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning +
-		m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() +
-		gwDepth + gwShed + gwRejected + gwEvicted + gwExpired + encRej
-	if injected != accounted {
-		t.Errorf("INV-1 violated: injected=%d != accounted=%d", injected, accounted)
-	}
+
+	assertClusterINV1Conservation(t, cs, len(requests), cs.RejectedRequests(), "eviction disabled")
 
 	if m.CompletedRequests != len(requests) {
 		t.Errorf("expected all %d requests to complete when eviction disabled, got %d completed", len(requests), m.CompletedRequests)
@@ -3194,18 +3123,7 @@ func TestClusterSimulator_FlowControl_Eviction_PD(t *testing.T) {
 	m := cs.AggregatedMetrics()
 	gwEvicted := cs.GatewayEvicted()
 
-	// INV-1 conservation
-	gwDepth := cs.GatewayQueueDepth()
-	gwShed := cs.GatewayQueueShed()
-	gwRejected := cs.GatewayQueueRejected()
-	encRej := cs.EncodeRoutingRejections()
-	injected := len(requests) - cs.RejectedRequests()
-	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning +
-		m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() +
-		gwDepth + gwShed + gwRejected + gwEvicted + encRej
-	if injected != accounted {
-		t.Errorf("INV-1 violated: injected=%d != accounted=%d", injected, accounted)
-	}
+	assertClusterINV1Conservation(t, cs, len(requests), cs.RejectedRequests(), "PD + flow control")
 
 	if gwEvicted == 0 {
 		t.Errorf("expected gwEvicted > 0 in PD+flow-control mode")

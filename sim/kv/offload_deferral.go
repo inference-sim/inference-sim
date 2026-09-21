@@ -291,3 +291,9 @@ func (o *OffloadCache) ClearDeferred(id string) {
 // (like promotionsFired, #1586); 0 for a run where no request ever waited on a
 // secondary tier.
 func (o *OffloadCache) DeferralsStarted() int64 { return o.deferralsStarted }
+
+// ReloadsPerformed returns the cumulative count of CPU→GPU block reloads. It exposes
+// the existing reloadCount diagnostic (the #1586 load-independent counter family); the
+// reloaded blocks are exactly those whose prefill this PR bills as a cache hit rather
+// than a recompute (#1699). 0 for a run where no CPU-resident prefix was ever reloaded.
+func (o *OffloadCache) ReloadsPerformed() int64 { return o.reloadCount }

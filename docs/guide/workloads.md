@@ -4,7 +4,7 @@ This guide covers how to define the traffic patterns BLIS simulates — from sim
 
 ```bash
 # Quick example: workload-spec YAML
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --workload-spec examples/multiturn-chat-demo.yaml
 ```
 
@@ -54,7 +54,7 @@ clients:
 Pair with weighted routing for cache-aware request distribution (the default profile uses `precise-prefix-cache`):
 
 ```bash
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --workload-spec chat.yaml \
   --routing-policy weighted
 ```
@@ -88,7 +88,7 @@ clients:
 Run with weighted routing to maximize cache reuse (the default `precise-prefix-cache` scorer queries actual KV cache state):
 
 ```bash
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --num-instances 4 --workload-spec rag.yaml \
   --routing-policy weighted
 ```
@@ -198,7 +198,7 @@ Setting `closed_loop: false` switches to **open-loop** scheduling: all round arr
 The simplest way to generate traffic:
 
 ```bash
-./blis run --model qwen/qwen3-14b \
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --rate 100 --num-requests 500 \
   --prompt-tokens 512 --prompt-tokens-stdev 256 \
   --output-tokens 256 --output-tokens-stdev 128
@@ -537,13 +537,18 @@ Client TTFT = server TTFT + RTT + upload delay. Client E2E = server E2E + RTT + 
 
 ## Built-in Presets and Examples
 
-### Named Presets from defaults.yaml
+### Named Presets from the catalog
 
-BLIS ships with preset workload profiles in `defaults.yaml`. Use them with `blis run`, `blis observe`, or the convert command:
+BLIS resolves preset workload profiles from the catalog, at `<catalog>/workloads/<name>.yaml` —
+the sibling of the `models/` namespace. Locate the catalog once with `--catalog` or
+`export BLIS_CATALOG=$PWD/blis-catalog`; all three preset consumers read the same file, so a
+preset cannot mean different things per command (#1769; before that, the copy in
+`defaults.yaml` was the one that moved output while the catalog copy was read by nothing).
+Use them with `blis run`, `blis observe`, or the convert command:
 
 ```bash
 # Run simulation with a named preset
-./blis run --model qwen/qwen3-14b --workload chatbot --rate 10
+./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --workload chatbot --rate 10
 
 # Observe a real server with the same preset (identical token distributions as run)
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
@@ -556,7 +561,7 @@ BLIS ships with preset workload profiles in `defaults.yaml`. Use them with `blis
 
 Using the same preset for both `run` and `observe` ensures the observe→replay→calibrate pipeline compares identical workload shapes — eliminating workload skew as a calibration variable.
 
-Available presets from `defaults.yaml`:
+Available presets in the catalog (`<catalog>/workloads/`):
 
 | Preset | Prompt Mean | Output Mean | Description |
 |--------|-------------|-------------|-------------|

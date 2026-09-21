@@ -27,9 +27,8 @@ The general precedence (CLI → YAML → hardcoded) applies everywhere, but each
 
 **Hardware and TP** (`--hardware`, `--tp`):
 
-1. Explicit CLI flags
-2. `defaults.yaml` `defaults[]` entry — matched by `--model`
-3. Error — roofline/trained-physics require these values
+1. Explicit CLI flags — the only source. Both are **required** on `blis run` and `blis replay`
+2. Error — omitting either is refused naming the missing flag. There is no per-model fallback: the `defaults:` block that once supplied them is gone (NS-6, #1733; block removed in #1768)
 
 **KV cache blocks** (`--total-kv-blocks`): See the detailed [Resolution Process](#resolution-process) below — three layers: CLI flag, auto-calculation, or 1M default.
 
@@ -37,7 +36,7 @@ The general precedence (CLI → YAML → hardcoded) applies everywhere, but each
 
 1. `--workload-spec` YAML file — when set, all token distribution and arrival parameters come from the YAML; CLI distribution flags are ignored
 2. CLI distribution flags — when `--workload distribution` (default) and no `--workload-spec`
-3. Named preset from `defaults.yaml` — when `--workload <name>` (e.g., `chatbot`)
+3. Named preset from the catalog (`<catalog>/workloads/<name>.yaml`, #1769) — when `--workload <name>` (e.g., `chatbot`)
 4. Hardcoded CLI flag defaults — (e.g., `--prompt-tokens 512`, `--output-tokens 512`)
 
 !!! note
@@ -95,7 +94,7 @@ Top-level settings that control the simulation run.
 | `--seed` | int64 | 42 | Random seed for deterministic simulation. Same seed produces byte-identical stdout. |
 | `--horizon` | int64 | MaxInt64 | Simulation time limit in ticks (microseconds). Simulation stops when clock exceeds horizon or all requests complete. |
 | `--log` | string | "warn" | Log verbosity: trace, debug, info, warn, error, fatal, panic. Logs go to stderr. |
-| `--metrics-path` | string | "" | File path to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats). blis run only — blis replay uses `--results-path` instead. Empty = no file output. |
+| `--metrics-path` | string | "" | File path to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats, plus the `cache_hit_rate` and `catalog` provenance fields when those apply). Accepted on **both** `blis run` and `blis replay` (#1583 added it to replay so `blis calibrate --sim-metrics` can read a replayed hit-rate). Distinct from replay's `--results-path`, which writes the **per-request** `[]SimResult` array and is replay-only. Empty = no file output. |
 
 ## KV Cache Configuration
 
@@ -135,7 +134,11 @@ Trained coefficients for physics-informed latency estimation. Maps to `LatencyCo
 | `--alpha-coeffs` | float64 slice | [0, 0, 0] | Alpha coefficients [alpha0, alpha1, alpha2]. Models non-GPU overhead. Must be non-negative. |
 | `--beta-coeffs` | float64 slice | [0, 0, 0] | Beta coefficients [beta0, beta1, beta2]. Models GPU step time. Must be non-negative. |
 
-When `--alpha-coeffs` and `--beta-coeffs` are not explicitly provided on the CLI, BLIS automatically loads pre-trained coefficients from `defaults.yaml` based on the model, GPU, and TP configuration. Explicitly passing `--alpha-coeffs 0,0,0` preserves zero coefficients (they are not overridden by defaults).
+When `--latency-model trained-physics` (the default) is in force and `--alpha-coeffs`/`--beta-coeffs` are not explicitly provided on the CLI, BLIS loads the coefficients from the single `trained_physics_coefficients` block in `defaults.yaml` (`alpha_coeffs` + `beta_coeffs`). That block is **global — one set for every model, GPU and TP degree**; there is no per-model, per-GPU or per-TP keyed lookup, and none has ever existed. Generalizing across architectures without a per-deployment fit is the point of the trained-physics backend: the roofline basis functions carry the architecture and hardware dependence, and the coefficients only correct them.
+
+The two flags must be supplied **together or not at all** (supplying one without the other is refused), so either both values come from the file or both come from the CLI. Explicitly passing `--alpha-coeffs 0,0,0` preserves zero coefficients — they are not overridden by the file, because the file is consulted only for a flag the user did not set.
+
+`--latency-model roofline` reads no coefficients at all: it computes step time analytically, and passing either flag alongside an explicit `--latency-model roofline` is a hard error.
 
 ### Model and Hardware Selection
 
@@ -144,11 +147,13 @@ Maps to `ModelHardwareConfig`.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--model` | string | (required) | LLM model name (e.g., `qwen/qwen3-14b`). |
-| `--hardware` | string | "" | GPU type. Bundled options: `H100`, `A100-SXM`, `A100-80`. If empty, loaded from `defaults.yaml`. Add new GPUs to `hardware_config.json`. |
-| `--tp` | int | 0 | Tensor parallelism degree. If 0, loaded from `defaults.yaml`. |
-| `--dp` | int | 1 | Data parallelism degree (MoE models only; `--latency-model trained-physics` only). `--dp N` spawns N real single-node engine replicas per `--num-instances`, each sized per-rank (`DP=1`) — on both `blis run` (#1531) and `blis replay` (#1556); re-supply it identically on replay — the TraceV2 header has no `data_parallel` field at all, and replay reads no parallelism field back from it, so omitting `--dp` on the replay leg silently compares an N-replica run against a 1-replica replay. Rejected with `--enable-expert-parallel` (#1548) and with PD disaggregation / the autoscaler / node pools (#1553). |
-| `--enable-expert-parallel` | bool | false | Enable expert parallelism for MoE models (mirrors vLLM `--enable-expert-parallel`; `--latency-model trained-physics` only). A latency-model term only — EP-as-placement is #1548, so combining it with `--dp > 1` fails fast. |
-| `--moe-comm-backend` | string | "" | MoE all-to-all comm backend for the DP>1 dispatch/combine cost (mirrors vLLM `VLLM_ALL2ALL_BACKEND`): `naive`, `allgather_reducescatter` (default), `pplx`, `deepep_high_throughput`, `deepep_low_latency`, `mori`, `flashinfer_all2allv`. Inert under DP-as-placement (each replica runs at `DP=1`). |
+| `--hardware` | string | "" | **Required** GPU type (`run` and `replay`). Bundled options: `H100`, `A100-SXM`, `A100-80`. Never loaded from `defaults.yaml` — omitting it is refused naming the flag (NS-6, #1733). Add new GPUs to `hardware_config.json` (include `IntraNodeBwGBps`/`InterNodeBwGBps` if instances on that GPU may span nodes — see [Interconnect Calibration](#interconnect-calibration)). |
+| `--tp` | int | 0 | **Required** tensor parallelism degree, > 0 (`run` and `replay`). Never loaded from `defaults.yaml` — omitting it is refused naming the flag (NS-6, #1733). |
+| `--dp` | int | 1 | Data parallelism degree (MoE models only; `--latency-model trained-physics` only). `--dp N` spawns N real single-node engine replicas per `--num-instances`, each sized per-rank (`DP=1`) — on both `blis run` (#1531) and `blis replay` (#1556); re-supply it identically on replay — the TraceV2 header has no `data_parallel` field at all, and replay reads no parallelism field back from it, so omitting `--dp` on the replay leg silently compares an N-replica run against a 1-replica replay. Supported with `--enable-expert-parallel` since #1548 (the EP group is those same replicas' GPUs; re-supply both flags on replay). Supported with PD disaggregation (each pool spawns N per-rank replicas) and node pools (N×M replicas reserve N×M×TP GPUs, each sized per-rank) since #1553. Rejected with the model autoscaler (#1553: dp-group co-scaling is undefined). |
+| `--enable-expert-parallel` | bool | false | Enable expert parallelism for MoE models (mirrors vLLM `--enable-expert-parallel`; `--latency-model trained-physics` only). Since #1548 it affects **step time** (routed-expert weights shard across the `TP·DP` EP group; the MoE FFN dispatch/combines instead of all-reducing) as well as KV-capacity sizing (#1656), and is supported alongside `--dp > 1`. Reserves no GPUs beyond those `--dp` placement already takes. |
+| `--moe-comm-backend` | string | "" | MoE all-to-all comm backend for the dispatch/combine cost (mirrors vLLM `VLLM_ALL2ALL_BACKEND`): `naive`, `allgather_reducescatter` (default), `pplx`, `deepep_high_throughput`, `deepep_low_latency`, `mori`, `flashinfer_all2allv`. Charged when `--dp > 1` **or** `--enable-expert-parallel` (#1548); inert otherwise. The two DeepEP modes share one placeholder cost until #1568 calibrates them. |
+| `--prefill-moe-comm-backend` | string | "" | Per-role MoE all-to-all backend for prefill pool instances (`""` = inherit `--moe-comm-backend`). Mirrors `VLLM_ALL2ALL_BACKEND` being per-process, so prefill and decode engines can run different modes (#1548). |
+| `--decode-moe-comm-backend` | string | "" | Per-role MoE all-to-all backend for decode pool instances (`""` = inherit `--moe-comm-backend`) (#1548). |
 | `--max-model-len` | int64 | 0 | Max total sequence length (input + output) in tokens. 0 = unlimited. Mirrors vLLM's `--max-model-len`. Auto-derived from `max_position_embeddings` in HuggingFace `config.json` for roofline/trained-physics backends. Applies `rope_scaling` factor for types `linear`, `dynamic`, `yarn`, `default`, `mrope`; excludes `su`, `longrope`, `llama3`; skips entirely for `gemma3` models. Capped at KV-feasible maximum. |
 
 ### Roofline Mode
@@ -157,9 +162,9 @@ For analytical step time estimation without trained coefficients.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--latency-model` | string | "trained-physics" | Latency model backend: `trained-physics` (default), `roofline`. Both backends auto-fetch HuggingFace config.json for KV block auto-calculation (may require network access). Both require `config.json` for latency estimation and KV sizing. Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. |
-| `--model-config-folder` | string | "" | Path to folder containing HuggingFace `config.json`. Overrides `--latency-model` auto-resolution. |
-| `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. Overrides `--latency-model` auto-resolution. |
+| `--latency-model` | string | "trained-physics" | Latency model backend: `trained-physics` (default), `roofline`. Both read the model's `config.json` from the catalog located by `--catalog` / `BLIS_CATALOG` for latency estimation and KV sizing; an uncatalogued model is refused and nothing is fetched. Both require `--hardware` and `--tp`. |
+| `--catalog` | string | "" | Path to the **model catalog clone root** (#1774). A model's HuggingFace `config.json` is read from `<catalog>/models/<short-name>/config.json` — the layout the authoritative [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository uses, with `workloads/`, `devices/`, `hardware/` and `networks/` as sibling namespaces under the same root. This is the **only** layout: #1771 deleted the bundled `model_configs/` tree (blis-catalog is the sole catalog) and the flat `<catalog>/<short-name>/config.json` transition fallback #1774 had carried. **Path semantics:** a **relative** value is resolved against the process working directory, an **absolute** value is used as given; neither is rewritten. **No default and no search path** — supply this flag or the `BLIS_CATALOG` environment variable, or the run is refused naming both (#1731). `--catalog` wins when both are set, and the override is announced on stderr. Replaces the retired `--model-config-folder`: point `--catalog` at a scratch clone to use your own config. Registered on `run`, `replay`, `observe` and `convert preset` — the last two for the workload presets in the `workloads/` namespace (#1769), not for a model config, which only `run`/`replay` resolve. BLIS never fetches or writes a config at run time (NS-6, #1733). |
+| `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. Overrides `--latency-model` auto-resolution. Also carries the optional per-GPU interconnect calibration (`IntraNodeBwGBps` / `InterNodeBwGBps`) that prices cross-node collective traffic — see [Interconnect calibration](#interconnect-calibration) below. |
 
 See [Roofline Estimation](../concepts/roofline.md) for details on the analytical model.
 
@@ -167,7 +172,7 @@ See [Roofline Estimation](../concepts/roofline.md) for details on the analytical
 
 The latency model mode is selected based on available configuration:
 
-1. **Trained-physics mode** (default): Auto-resolves model config from HuggingFace and hardware config from bundled `hardware_config.json`. Requires `--hardware` and `--tp` (loaded from `defaults.yaml` when available). Uses 13 globally-fitted coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from `trained_physics_coefficients` in `defaults.yaml`. Physics-informed basis functions with learned corrections.
+1. **Trained-physics mode** (default): Resolves the model config from the catalog (`<catalog>/models/<short-name>/config.json`) and the hardware config from the bundled `hardware_config.json`. Requires `--hardware` and `--tp` explicitly (never inferred, NS-6). Uses 13 globally-fitted coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from `trained_physics_coefficients` in `defaults.yaml`. Physics-informed basis functions with learned corrections.
 2. **Roofline mode**: If `--latency-model roofline` is explicitly set with `--hardware` and `--tp`. Pure analytical estimation from model architecture and hardware specifications.
 
 ## Cluster Configuration
@@ -329,7 +334,7 @@ BLIS supports three workload specification modes, in order of precedence:
 |------|---------|-------------|
 | **Workload-spec YAML** | `--workload-spec <path>` | Multi-client workload with per-client distributions. Highest priority. |
 | **CLI distribution** | `--workload distribution` (default) | Single-client Gaussian distribution controlled by CLI flags. |
-| **Preset** | `--workload <name>` | Named preset from `defaults.yaml`: `chatbot`, `contentgen`, `summarization`, `multidoc`. |
+| **Preset** | `--workload <name>` | Named preset read from the catalog (`<catalog>/workloads/<name>.yaml`, #1769): `chatbot`, `contentgen`, `summarization`, `multidoc`. Needs `--catalog` / `BLIS_CATALOG`, which `blis run` already requires for the model. |
 
 ### Distribution Mode Flags
 
@@ -410,7 +415,7 @@ When `--workload-spec` is set, CLI `--seed`, `--horizon`, and `--num-requests` s
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--workload-spec` | string | "" | Path to workload-spec YAML. |
-| `--defaults-filepath` | string | "defaults.yaml" | Path to `defaults.yaml`. |
+| `--defaults-filepath` | string | "defaults.yaml" | Path to `defaults.yaml` (shipped constants; workload presets come from the catalog since #1769). |
 | `--trace-output` | string | "" | Export workload as TraceV2 files (`<prefix>.yaml` + `<prefix>.csv`). |
 
 ## Policy Bundle
@@ -461,12 +466,19 @@ node_pools:
       stddev: 5.0  # 0 = constant delay
 
 # Per-GPU hardware calibration overrides for roofline/trained-physics backends (issue #893 — optional)
+# ⚠ NOT settable through --policy-config as shown — PolicyBundle has no such key. Tracked
+#   as a pre-existing doc defect in issue #1668; the block below is programmatic-only today.
 # Key: GPU type string matching a pool's gpu_type. Value: HardwareCalib for that GPU.
 # When a pool's gpu_type is found in this map, the matched calibration overrides the CLI
 # --gpu calibration at instance construction time (both sync and deferred/NodeReadyEvent paths),
 # ensuring pool-placed instances use the correct TFlopsPeak/BwPeakTBs for roofline math.
 # Omitting this field (zero value) is safe: no override, backward-compatible with all callers.
 # Keys must exactly match the gpu_type strings used in the node_pools entries above.
+# NOTE (#1530): an entry REPLACES the whole calibration, including the optional
+# interconnect fields, so a programmatic caller must repeat them for any pool whose
+# instances may span nodes. Until #1668 makes this reachable from a policy bundle, a
+# mixed-gpu_type node-pool fleet shares the single --hardware entry (issue #893).
+# See "Interconnect Calibration" below.
 hw_config_by_gpu:
   H100:
     tflops_peak: 1979.0    # FP16 TFLOPS
@@ -530,33 +542,54 @@ When configured, BLIS computes a single fitness score from aggregated metrics. L
 
 ## defaults.yaml
 
-The `defaults.yaml` file serves as a model registry and workload preset store:
+The `defaults.yaml` file is a home for shipped constants — trained coefficients, LoRA cost
+terms and KV-offload device physics. It carries neither per-model deployment policy nor
+workload presets: the `defaults:` block that once mapped a model to a
+`GPU`/`tensor_parallelism`/`hf_repo` triple was removed in #1768, having been unreachable on
+every run path since NS-6 (#1733) made `--hardware`/`--tp` required and #1731 made the catalog
+the only model-config source; the `workloads:` block was removed in #1769, because the named
+presets also existed in the catalog (`<catalog>/workloads/<name>.yaml`) with nothing keeping
+the two copies in sync. The catalog copy is now the only one.
+
+!!! warning "Custom `defaults.yaml` files must remove the `defaults:` block (migration note)"
+    Strict parsing (`KnownFields(true)`) rejects an undeclared key, so a hand-maintained
+    `defaults.yaml` that still carries a `defaults:` block now fails to load with
+    `field defaults not found in type cmd.Config`. Delete the block and pass `--hardware`/`--tp`
+    on the command line. Nothing is lost — no run path read those values.
+
+!!! warning "Custom `defaults.yaml` files must remove the `workloads:` block (migration note)"
+    By the same strict-parsing rule, a hand-maintained `defaults.yaml` that still carries a
+    `workloads:` block now fails to load with
+    `field workloads not found in type cmd.Config` (#1769). Move the preset to
+    `<catalog>/workloads/<name>.yaml` — the same keys, one preset per file — and locate the
+    catalog with `--catalog` or `BLIS_CATALOG`. `blis run --workload`,
+    `blis convert preset --name` and `blis observe --workload` all read it from there.
+
+These are the top-level keys the file may carry, and strict parsing accepts no others
+(`KnownFields(true)`, R10 — the authoritative list is `cmd.Config` in `cmd/default_config.go`;
+the bundled `defaults.yaml` is the worked example):
 
 ```yaml
-# Section 1: Hardware/TP mappings (keyed by model ID)
-defaults:
-  qwen/qwen3-14b:
-    GPU: H100
-    tensor_parallelism: 1
-    hf_repo: Qwen/Qwen3-14B
+version: 0.0.1
 
-# Section 2: Workload presets
-workloads:
-  chatbot:
-    prompt_tokens: 256
-    prompt_tokens_stdev: 100
-    output_tokens: 256
-    output_tokens_stdev: 100
-    # ... min/max bounds
+# Trained-physics coefficients — ONE GLOBAL SET, not keyed by model, GPU or TP.
+# Consulted only by --latency-model trained-physics, and only for a flag the user did not pass.
+trained_physics_coefficients:
+  alpha_coeffs: [15563.199579, 777.3455, 45.907545]  # α₀-α₂: API/framework overheads (µs)
+  beta_coeffs: [0.152128, 0.0, 1.36252915, ...]      # β₁-β₁₀ + optional β_EP
 
-# Section 3: Trained coefficients (keyed by model+GPU+TP)
-models:
-  - id: qwen/qwen3-14b
-    GPU: H100
-    tensor_parallelism: 1
-    alpha_coeffs: [8888.09, 0.18, 0.0]
-    beta_coeffs: [13578.19, 39.44, 27.32]
+# LoRA control-plane cost terms (#1464). Inert unless a run declares adapters.
+lora:
+  load_base_latency_us: 1500.0
+  # ... bandwidth, per-rank footprint, per-rank step-overhead tiers
 ```
+
+!!! warning "There is no `models:` section, and there never was a keyed coefficient table"
+    Earlier revisions of this page showed a `models:` list mapping a model+GPU+TP triple to its own
+    `alpha_coeffs`/`beta_coeffs`. No such section exists — `cmd.Config` declares no `Models` field, so
+    strict parsing would reject one outright. Coefficients live in the single global
+    `trained_physics_coefficients` block above. The removed `defaults:` block (#1768) was a different
+    thing again: per-model `GPU`/`tensor_parallelism`/`hf_repo`, never coefficients.
 
 ### Resolution Process
 
@@ -564,23 +597,23 @@ When BLIS starts, it resolves latency configuration through a layered process. E
 
 **Hardware and TP defaults resolution (all backends):**
 
-Before any backend-specific logic runs, BLIS loads hardware/TP/vLLM-version defaults from `defaults.yaml` for the specified `--model` when those flags are not explicitly provided. This ensures analytical backends (roofline, trained-physics) can auto-resolve without requiring explicit `--hardware` and `--tp` for models listed in `defaults.yaml`.
+Before any backend-specific logic runs, BLIS requires the deployment: `--hardware` and `--tp` must both be supplied, on `blis run` and `blis replay` alike. Omitting either is refused naming the missing flag (NS-6, #1733). BLIS reads no per-model `GPU`/`tensor_parallelism` values from `defaults.yaml` — inferring a deployment let a run complete and emit metrics for a configuration nobody chose — and as of #1768 the file declares no such keys at all.
 
 **Backend-specific resolution:**
 
 1. If `--latency-model trained-physics` (default) or `roofline`:
-   - Auto-resolve model config: check `model_configs/` for existing `config.json`, fetch from HuggingFace on miss (set `HF_TOKEN` for gated models)
+   - Resolve the model config inside the catalog located by `--catalog` / `BLIS_CATALOG`, which names the catalog **clone root**: `<catalog>/models/<short-name>/config.json`, with a transition fallback to the flat `<catalog>/<short-name>/config.json` (#1774; #1771 removes the fallback). A relative catalog path is resolved against the process working directory, an absolute one is used as given. A run that names no catalog is refused naming both forms (#1731); a model with no entry in **either** layout is refused naming every path looked at and the canonical `models/` path its entry belongs at — nothing is fetched, and no run writes to the catalog (NS-6). Only ABSENCE falls through to the flat layout: a `models/` entry that exists but is malformed is reported, never silently replaced by a flat one
    - Auto-resolve hardware config from bundled `hardware_config.json`
    - For roofline: beta coefficients are computed analytically from model architecture and hardware specs
    - For trained-physics: load 13 global coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from `trained_physics_coefficients` in `defaults.yaml`
-   - `--model-config-folder` and `--hardware-config` override auto-resolution when explicitly set
+   - `--catalog` / `BLIS_CATALOG` locates the model config (required, no default); `--hardware-config` overrides auto-resolution when explicitly set
 2. If `--alpha-coeffs` and `--beta-coeffs` are explicitly provided via CLI:
    - Use them directly, no `defaults.yaml` lookup
 
 **`--total-kv-blocks` resolution** (highest priority wins):
 
 1. **Explicit CLI flag** — if `--total-kv-blocks` is set, that value is used regardless of backend
-2. **Auto-calculation** (all backends) — when `MemoryGiB > 0` in the hardware config and `config.json` is available, `CalculateKVBlocks` derives the block count from model architecture and GPU memory. BLIS attempts to resolve `config.json` by checking `--model-config-folder`, then `model_configs/` (cached/bundled), then fetching from HuggingFace (set `HF_TOKEN` for gated models). Failure modes: (a) if `MemoryGiB` is missing from `hardware_config.json`, BLIS warns and falls back to the hardcoded default (layer 3); (b) if model architecture params cannot be extracted from `config.json`, BLIS warns and falls back to the hardcoded default; (c) if the calculation itself fails (e.g., unsupported activation function), BLIS warns and falls back to the hardcoded default. Auto-calculation currently requires SwiGLU-family activations (`silu`, `swiglu`, `geglu`, `situ` — Kimi-K3's SiTU-GLU, a 3-matrix gated GLU with SwiGLU's weight/FLOP shape); models with other activations (e.g., Falcon's `gelu`) will fall back to the hardcoded default unless `--total-kv-blocks` is explicitly set
+2. **Auto-calculation** (all backends) — when `MemoryGiB > 0` in the hardware config and `config.json` is available, `CalculateKVBlocks` derives the block count from model architecture and GPU memory. BLIS resolves `config.json` as the catalog entry `<catalog>/models/<short-name>/config.json` (transition fallback: the flat `<catalog>/<short-name>/config.json`, #1774) inside the catalog located by `--catalog` / `BLIS_CATALOG`; there is no step outside that catalog root — an uncatalogued model is refused rather than fetched (NS-6). Failure modes: (a) if `MemoryGiB` is missing from `hardware_config.json`, BLIS warns and falls back to the hardcoded default (layer 3); (b) if model architecture params cannot be extracted from `config.json`, BLIS warns and falls back to the hardcoded default; (c) if the calculation itself fails (e.g., an unsupported activation function), `CalculateKVBlocks` returns an error and BLIS **aborts with a fatal error** (`logrus.Fatalf`) rather than falling back. Auto-calculation currently requires SwiGLU-family activations (`silu`, `swiglu`, `geglu`, `situ` — Kimi-K3's SiTU-GLU, a 3-matrix gated GLU with SwiGLU's weight/FLOP shape); a model with another activation (e.g., Falcon's `gelu`) therefore aborts the run during auto-calculation unless `--total-kv-blocks` is set explicitly (which skips auto-calculation)
 3. **Hardcoded default** — 1,000,000 (CLI flag default, used when auto-calculation is unavailable or fails)
 
 !!! note "Per-instance capacity with mixed-GPU node pools (#1522)"
@@ -602,6 +635,101 @@ BLIS uses a data-driven calibration strategy to ensure simulation accuracy. This
 
 For environments where live profiling is not feasible, the [Roofline model](../concepts/roofline.md) provides analytical step time estimation without any training data.
 
+## Interconnect Calibration
+
+`hardware_config.json` carries two optional per-GPU fields that price **cross-node**
+collective traffic in the trained-physics backend (issue #1530):
+
+| Field | Meaning |
+|-------|---------|
+| `IntraNodeBwGBps` | On-node GPU-to-GPU link bandwidth (NVLink/xGMI, or PCIe on parts without NVLink) |
+| `InterNodeBwGBps` | Per-GPU share of the node's inter-node fabric (InfiniBand/RoCE NIC) |
+| `InterNodeHopLatencyUs` | Per-**hop** inter-node latency α_hop in µs (launch + fabric round-trip of one collective step). The charge is `n_steps · α_hop · S`, where `n_steps` is the analytic hop count of the placed span (#1694). **0 in the bundled config** — see below |
+
+Both are **effective (achievable, not theoretical-peak) per-GPU unidirectional GB/s**.
+Only their *ratio* is used, so the absolute scale cancels — but the convention must
+match across the two fields, since mixing a bidirectional figure with a unidirectional
+one changes the ratio by 2×.
+
+```json
+{
+  "H100": {
+    "TFlopsPeak": 989.5,
+    "TFlopsFP8": 1979.0,
+    "BwPeakTBs": 3.35,
+    "mfuPrefill": 0.45,
+    "mfuDecode": 0.30,
+    "MemoryGiB": 80.0,
+    "IntraNodeBwGBps": 450,
+    "InterNodeBwGBps": 50,
+    "InterNodeHopLatencyUs": 0
+  }
+}
+```
+
+Rules:
+
+- **Set both, or neither.** Declaring one without the other is a hard error: it would
+  produce no cross-node cost at all, which is not what someone who set a value expects.
+- **Omitting both is valid and inert** — cross-node traffic is then priced at the
+  on-node rate, exactly as before #1530, and BLIS warns once if an instance actually
+  spans nodes so the optimism is visible.
+- A negative, NaN or infinite value is rejected rather than silently clamped, at load
+  time — so the same malformed file fails identically under either latency backend.
+- **Unrecognized keys are rejected** (#1728). `hardware_config.json` is parsed strictly,
+  like every other BLIS config file: a key that is not one of the fields below fails the
+  load with an error naming the key *and* the GPU entry it appears under, instead of
+  leaving the intended field at 0 (a plausible-but-wrong bandwidth, MFU or memory
+  capacity). Two documentation-only keys are accepted and ignored — `_comment` and
+  `_comment_interconnect`, which the bundled file uses to record calibration provenance
+  next to the numbers. Keys must be spelled canonically: a key differing only in letter
+  case (`IntraNodeBwGbps`) is also rejected, with the canonical spelling named. Valid
+  keys: `TFlopsPeak`, `TFlopsFP8`, `BwPeakTBs`, `mfuPrefill`, `mfuDecode`, `MemoryGiB`,
+  `IntraNodeBwGBps`, `InterNodeBwGBps`, `InterNodeHopLatencyUs`.
+- **Migrating from the pre-#1694 `InterNodeLatencyUs` key:** it was renamed to
+  `InterNodeHopLatencyUs` **and its unit changed** from µs-per-collective to µs-per-hop.
+  A config still carrying the old key is **rejected at load** with an error naming the GPU
+  and the new key — it is not silently accepted (which would drop the value to 0). This is
+  a *recalibration*, not a rename: divide the old per-collective value by the collective's
+  cross-node hop count before setting the new key; do not copy it verbatim.
+- `InterNodeHopLatencyUs` (α_hop) stands alone (a fabric can be modeled as
+  latency-dominated), so it is not paired with the bandwidths. It is **0 in the bundled
+  config**: BLIS has no measured per-hop latency to ship, and a guessed constant would sit
+  in front of every multi-node estimate. Out of the box the cross-node cost is therefore
+  bandwidth-only. Supply a measured value (from an independent NCCL microbenchmark, reused
+  across fabrics — never back-solved from one run, #1694) to model the size-independent
+  half — it is often the larger one for decode-sized messages. It rides the learned
+  communication coefficient, so the charge is `β · units · n_steps · α_hop · S`, where
+  `n_steps` is the analytic hop count of the placed span.
+- The topology (*whether* a collective crosses a boundary, and over how many nodes) is
+  **not** configured here. It is derived from real `node_pools` placement; there is no CLI
+  flag for it.
+- The **serialization factor `S`** (`--comm-serialization-factor`, default 1.0) is a
+  *deployment-regime* input, **not** a hardware field — it captures eager / no-overlap
+  execution and multiplies only the α_hop term. It lives on the CLI (both `run` and
+  `replay`), never in this file, so a graphs-on deployment cannot inherit a graphs-off
+  constant. `--enforce-eager` requires an explicit `S > 1`.
+- Whether the cost applies also depends on the backend: only
+  `--latency-model trained-physics` models communication.
+
+To compare fabrics, change `InterNodeBwGBps` (a slower fabric never lowers the charged
+cost), or give pools distinct `gpu_type` entries with different values.
+
+!!! note "Node-pool instances use the `--hardware` entry"
+    A node-pool instance is calibrated from whichever `hardware_config.json` entry
+    `--hardware` resolved, including these fabric fields — `hw_config_by_gpu` would
+    override it per placed pool, but that field has no policy-bundle key today (issue
+    #893), so a mixed-`gpu_type` fleet currently shares one calibration. Where
+    `hw_config_by_gpu` *is* supplied programmatically it replaces the *entire*
+    `HardwareCalib`, so an entry omitting the interconnect fields drops them. Either way
+    BLIS warns once when a spanning placement lands on an uncalibrated GPU, so the
+    resulting optimism is never silent.
+
+See [Latency Models — Inter-Node Network Cost](../guide/latency-models.md#inter-node-network-cost-trained-physics-only)
+for the cost model and its known approximations.
+
+---
+
 ## CLI Flag Summary by Sub-Config
 
 | Sub-Config | Flags |
@@ -609,11 +737,11 @@ For environments where live profiling is not feasible, the [Roofline model](../c
 | **KVCacheConfig** | `--total-kv-blocks`, `--block-size-in-tokens`, `--kv-cpu-blocks`, `--kv-offload-threshold`, `--kv-transfer-bandwidth`, `--kv-transfer-base-latency` |
 | **BatchConfig** | `--max-num-seqs`, `--max-num-batched-tokens`, `--long-prefill-token-threshold` |
 | **LatencyCoeffs** | `--alpha-coeffs`, `--beta-coeffs` |
-| **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--latency-model`, `--model-config-folder`, `--hardware-config`, `--max-model-len` |
+| **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--latency-model`, `--catalog` (or `BLIS_CATALOG`), `--hardware-config`, `--max-model-len`. Placement-derived, no flag: the inter-node network topology (#1530) |
 | **PolicyConfig** | `--scheduler`, `--preemption-policy` |
-| **WorkloadConfig** | `--workload`, `--workload-spec`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
-| **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` | YAML-only (no CLI flag): `node_pools`, `instance_lifecycle`, `hw_config_by_gpu` |
-| **Top-level** | `--seed`, `--horizon`, `--log`, `--metrics-path` (run only), `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
+| **WorkloadConfig** | `--workload` (preset read from `<catalog>/workloads/<name>.yaml`, #1769), `--workload-spec`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
+| **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` | YAML-only (no CLI flag): `node_pools`, `instance_lifecycle`. Programmatic-only, NOT a policy-bundle key despite the example above: `hw_config_by_gpu` (issue #1668) |
+| **Top-level** | `--seed`, `--horizon`, `--log`, `--metrics-path` (`run` and `replay`), `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
 
 ---
 
@@ -681,7 +809,12 @@ Replays a captured TraceV2 file through the discrete-event simulator. Replay reu
 |------|------|---------|-------------|
 | `--trace-header` | string | "" | Path to TraceV2 header YAML file (required). |
 | `--trace-data` | string | "" | Path to TraceV2 data CSV file (required). |
-| `--results-path` | string | "" | File to write `[]SimResult` JSON (fields: `request_id`, `ttft_us`, `e2e_us`, `input_tokens`, `output_tokens`) for `blis calibrate` consumption. |
+| `--results-path` | string | "" | File to write `[]SimResult` JSON (fields: `request_id`, `ttft_us`, `e2e_us`, `input_tokens`, `output_tokens`) for `blis calibrate` consumption. Replay-only — `blis run` does not register it. |
+
+`blis replay` also accepts `--metrics-path` (the aggregate `MetricsOutput` JSON, documented under
+[Simulation Control](#simulation-control)); it is not replay-specific, so it is not repeated in the
+table above. The two are complementary rather than alternatives: `--results-path` writes per-request
+rows, `--metrics-path` writes the run aggregate that `blis calibrate --sim-metrics` reads.
 
 ---
 
@@ -707,14 +840,16 @@ Converts external workload formats into BLIS WorkloadSpec v2 YAML. Three subcomm
 
 ### `blis convert preset`
 
-Generates a WorkloadSpec from a named preset in `defaults.yaml`.
+Generates a WorkloadSpec from a named preset in the catalog
+(`<catalog>/workloads/<name>.yaml`, #1769 — the same definition `blis run --workload` and
+`blis observe --workload` read).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--name` | string | "" | Preset name (e.g., `chatbot`, `summarization`, `contentgen`, `multidoc`). |
 | `--rate` | float64 | 1.0 | Request rate in requests/second. |
 | `--num-requests` | int | 100 | Number of requests. |
-| `--defaults-filepath` | string | "defaults.yaml" | Path to `defaults.yaml`. |
+| `--catalog` | string | "" | Catalog clone root holding `workloads/<name>.yaml`. No default; `BLIS_CATALOG` is the fallback (the flag wins when both are set). |
 
 ### `blis convert servegen`
 

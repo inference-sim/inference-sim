@@ -7,7 +7,7 @@ This guide covers the end-to-end pipeline for validating BLIS simulator accuracy
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --workload-spec workload.yaml --trace-header trace.yaml --trace-data trace.csv
 ./blis replay --trace-header trace.yaml --trace-data trace.csv \
-  --model qwen/qwen3-14b --results-path results.json
+  --model qwen/qwen3-14b --hardware H100 --tp 1 --results-path results.json
 ./blis calibrate --trace-header trace.yaml --trace-data trace.csv \
   --sim-results results.json --report calibration.json
 ```
@@ -60,7 +60,7 @@ Four input modes are available. At least one must be provided per invocation:
 
 | Mode | Flags | Description |
 |------|-------|-------------|
-| **Named preset** | `--workload <name> --rate <N>` | Standard workload from `defaults.yaml`; identical token distributions to `blis run --workload <name>` |
+| **Named preset** | `--workload <name> --rate <N>` | Standard workload from the catalog (`<catalog>/workloads/<name>.yaml`, #1769); identical token distributions to `blis run --workload <name>`, which reads the same file |
 | **Workload spec** | `--workload-spec <file>` | Multi-client workload from a YAML file |
 | **Distribution synthesis** | `--rate <N>` | Single-client workload with custom token distributions (see Distribution Synthesis Flags) |
 | **Closed-loop** | `--concurrency <N>` | Fixed pool of virtual users; arrival is response-driven (token distributions from Distribution Synthesis Flags) |
@@ -107,7 +107,7 @@ Four input modes are available. At least one must be provided per invocation:
 | `--min-tokens` | `int` | `0` | Set `min_tokens` in request body; requests server to generate at least N tokens before EOS. Set equal to `--output-tokens` for exact output length control (0 = omit). Compatible with `--unconstrained-output`: `min_tokens` is still sent, `max_tokens` is still omitted |
 | `--timeout` | `int` | `300` | HTTP request timeout in seconds (per request); increase for slow servers or large-prefill workloads |
 | `--rtt-ms` | `float64` | `0` | Measured network round-trip time in milliseconds |
-| `--defaults-filepath` | `string` | `"defaults.yaml"` | Path to `defaults.yaml` containing preset definitions (preset mode only) |
+| `--catalog` | `string` | `""` | Catalog clone root holding `workloads/<name>.yaml` (preset mode only). No default; `BLIS_CATALOG` is the fallback, and the flag wins when both are set (#1769 replaced `--defaults-filepath` here) |
 | `--record-itl` | `bool` | `false` | Record per-chunk timestamps for ITL calibration (forces streaming per request; mutually exclusive with `--no-streaming`; use with `--itl-output`) |
 | `--itl-output` | `string` | `""` | Output path for ITL CSV file (default: `<trace-data>.itl.csv` when `--record-itl` is set) |
 
@@ -250,7 +250,7 @@ Replay also accepts all shared simulation config flags (`--latency-model`, `--to
 
     # Run N=2 DP replicas and export the workload...
     ./blis run --model deepseek-ai/deepseek-v2-lite \
-      --model-config-folder model_configs/deepseek-v2-lite \
+      --catalog blis-catalog \
       --hardware H100 --hardware-config hardware_config.json --tp 1 \
       --dp 2 --num-instances 1 \
       --rate 10 --num-requests 40 --total-kv-blocks 20000 --seed 42 \
@@ -260,16 +260,18 @@ Replay also accepts all shared simulation config flags (`--latency-model`, `--to
     # --dp, --num-instances, --total-kv-blocks, --seed and --horizon.
     ./blis replay --trace-header traces/dp2.yaml --trace-data traces/dp2.csv \
       --model deepseek-ai/deepseek-v2-lite \
-      --model-config-folder model_configs/deepseek-v2-lite \
+      --catalog blis-catalog \
       --hardware H100 --hardware-config hardware_config.json --tp 1 \
       --dp 2 --num-instances 1 \
       --total-kv-blocks 20000 --seed 42 --horizon 9223372036854775807   # unlimited
     ```
 
-    The physics guards still apply: `--enable-expert-parallel` with `--dp > 1` and PD
-    disaggregation with `--dp > 1` are unmodeled and fail fast on **both** commands
-    (#1548 / #1553); the autoscaler and node pools are rejected by `blis replay`
-    unconditionally, independently of `--dp`.
+    `--enable-expert-parallel` is supported alongside `--dp > 1` on both commands since
+    #1548, and — like `--dp` itself — must be re-supplied identically on the replay leg
+    (the EP-group width is a model-level input, not a trace field). PD disaggregation with
+    `--dp > 1` is supported on both commands since #1553 (each pool spawns N per-rank
+    replicas; re-supply the same flags for byte-identical replay). The autoscaler and node
+    pools are still rejected by `blis replay` unconditionally, independently of `--dp`.
 
 ### How Replay Differs from `blis run`
 
@@ -343,7 +345,7 @@ blis convert otel --input otel_json --trace-output corpus \
 
 # Replay a fixed pool of 8 concurrent sessions, 200 total (corpus duplicated to fill).
 blis replay --trace-header corpus.yaml --trace-data corpus.csv \
-  --model qwen/qwen3-14b --concurrent-sessions 8 --total-sessions 200
+  --model qwen/qwen3-14b --hardware H100 --tp 1 --concurrent-sessions 8 --total-sessions 200
 ```
 
 The recorded source model names are pure provenance and are dropped during
@@ -414,7 +416,7 @@ To calibrate real vs simulated over the same corpus:
 
 ```bash
 blis replay --trace-header corpus.yaml --trace-data corpus.csv \
-  --model qwen/qwen3-14b --concurrent-sessions 8 --total-sessions 200 \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 --concurrent-sessions 8 --total-sessions 200 \
   --results-path sim.results.json
 blis calibrate --trace-header observed.yaml --trace-data observed.csv \
   --sim-results sim.results.json --report calibration.json
@@ -463,7 +465,7 @@ blis convert weka --input traces.jsonl --trace-output corpus \
 
 # Replay closed-loop (or as a concurrent pool, exactly as for OTel above).
 blis replay --trace-header corpus.yaml --trace-data corpus.csv \
-  --model qwen/qwen3-14b --session-mode closed-loop --max-model-len 1000000
+  --model qwen/qwen3-14b --hardware H100 --tp 1 --session-mode closed-loop --max-model-len 1000000
 ```
 
 The reader filters each session's `requests[]` to the **linear main-agent stream** —
@@ -495,6 +497,72 @@ model names are dropped during conversion (same routing-safety reason as OTel).
     (INV-6). Traces converted by an **older build** (no marker column) still over-count —
     re-run `convert` to get compaction-aware output. (The separate think-time lossy-0
     sentinel was resolved in #1608 — see the non-lossy note above.)
+
+### Faithful high-concurrency replay: `--session-mode fixed-accumulate` (#1692)
+
+An accumulate corpus can be replayed three ways. Only the third is faithful at
+concurrency > 1:
+
+| Mode | Arrivals | Accumulate inputs | Faithful high-conc? |
+|------|----------|-------------------|---------------------|
+| `--session-mode closed-loop` | regenerated (`completion + think`) | ✅ reconstructed | ❌ self-throttles — arrivals chain to sim completion, so the queue drains instead of piling up and TTFT collapses to compute-only (30–100× low at conc ≥ 8) |
+| `--session-mode fixed` | recorded | ❌ **hard-rejected** on an accumulate corpus (reads deltas as absolutes) | ❌ not usable |
+| `--session-mode fixed-accumulate` | **recorded** | ✅ reconstructed | ✅ recorded arrivals carry the real cross-session overlap, so N large prefills pile into the scheduler at the real clock and produce genuine queue wait |
+
+```bash
+# Convert once, then replay with recorded arrivals AND reconstructed growing context.
+# (This uses a committed MoE config and a hardware key present in hardware_config.json,
+# so it runs as-is; the motivating shape is a large MLA MoE such as Kimi-K3 on H200.)
+blis convert weka --input traces.jsonl --trace-output corpus --context-growth accumulate
+blis replay --trace-header corpus.yaml --trace-data corpus.csv \
+  --model qwen/qwen3-30b-a3b --hardware H100 --tp 2 --dp 2 --enable-expert-parallel \
+  --session-mode fixed-accumulate --max-model-len 1000000
+```
+
+The arrival timestamps are already in the corpus (`ArrivalTimeUs`, written per round by
+the converter) — this mode consumes data that exists today; no trace-format change. It
+requires an accumulate corpus, and is mutually exclusive with `--concurrent-sessions`
+(open-loop, so there is no session pool to maintain) and `--think-time-*` (arrivals are
+recorded, not regenerated). INV-10 (session causality) is **scoped to closed-loop** and
+does not apply — chaining arrivals to sim completion is exactly the feedback loop this
+mode breaks.
+
+!!! warning "Necessary, not sufficient (decode-side gap, #1627)"
+    Even with faithful arrivals, BLIS's decode/step model currently runs ~5–10× fast on
+    this workload (the unmodeled `--enforce-eager` regime plus MTP-speedup-without-
+    contention, #1627), so queue depth is still under-predicted until decode is
+    calibrated. Treat `fixed-accumulate` as a **necessary precondition** for high-
+    concurrency fidelity — land and validate it alongside (or ahead of) the decode-side
+    work, not as a standalone fix.
+
+!!! warning "Intra-session overlap: recorded arrivals ignore sim completion"
+    Each round is injected at its recorded arrival regardless of when the previous round
+    of the **same** session finishes in the sim. A real agentic client is serial (round N
+    waits for round N−1's response), but the recorded inter-round gap includes the *real*
+    server time; the moment sim service time exceeds that real time — exactly the
+    queueing regime this mode creates — round N is injected while round N−1 is still
+    decoding. Two consequences to keep in mind when reading results:
+
+    1. **Measured concurrency is inflated** above what a real serial client produces,
+       because same-session rounds can be in flight at once.
+    2. **Prefix-cache hit rate is partly fictional**: round N's prompt contains round
+       N−1's output tokens, which (under overlap) round N−1 has not finished emitting —
+       so part of the modeled prefix hit corresponds to tokens that did not yet exist.
+
+    This is a distinct effect from the (faithful) *cross*-session overlap the mode
+    reproduces, and it is not covered by the INV-10 exemption (which is about the arrival
+    *source*). It is inherent to open-loop replay of a serial workload; closed-loop avoids
+    it but at the cost of the self-throttling feedback loop this mode exists to break.
+
+!!! note "`--trace-output` produces an absolute (non-accumulate) corpus"
+    fixed-accumulate reconstructs each round's growing context in memory, so
+    `--trace-output` re-exports the **already-reconstructed absolute** per-round inputs —
+    the exported header carries **no** `session_context_growth`, and the CSV records
+    absolute `input_tokens` (not deltas). This export is a faithful absolute-mode corpus:
+    re-replay it with `--session-mode fixed` (the default). It is **not** an accumulate
+    corpus, so `--session-mode fixed-accumulate` will reject it (the accumulate-corpus
+    guard) — re-run the original `convert` step if you need to re-export deltas. This is
+    lossless: the absolute inputs are exactly what fixed-accumulate reconstructed.
 
 ---
 
@@ -662,7 +730,7 @@ The report uses two levels of analysis because they catch different problems. **
 
     ```bash
     ./blis replay --trace-header trace.yaml --trace-data trace.csv \
-      --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
+      --model qwen/qwen3-14b --hardware H100 --tp 1 --flow-control --saturation-detector utilization \
       --queue-depth-threshold 5 --kv-cache-util-threshold 0.8
     ```
 
@@ -721,7 +789,7 @@ This sends 50 requests to the server at ~5 req/s, excludes the first 5 from the 
 ./blis replay \
   --trace-header trace.yaml \
   --trace-data trace.csv \
-  --model qwen/qwen3-14b \
+  --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --latency-model roofline \
   --results-path results.json
 ```

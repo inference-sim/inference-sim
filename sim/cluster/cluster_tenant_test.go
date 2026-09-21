@@ -211,13 +211,7 @@ func TestTenantAdmission_INV1_BudgetShedConservation(t *testing.T) {
 		t.Fatal("INV-1 test setup error: alice was never over-budget; budget enforcement did not fire")
 	}
 
-	// INV-1 conservation: every request must be accounted for.
-	agg := cs.AggregatedMetrics()
-	conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning + agg.DroppedUnservable + agg.TimedOutRequests + cs.RejectedRequests()
-	if conservation != n {
-		t.Errorf("INV-1 violated: completed(%d) + queued(%d) + running(%d) + dropped(%d) + timedOut(%d) + rejected(%d) = %d, want %d",
-			agg.CompletedRequests, agg.StillQueued, agg.StillRunning, agg.DroppedUnservable, agg.TimedOutRequests, cs.RejectedRequests(), conservation, n)
-	}
+	assertClusterINV1Conservation(t, cs, n, cs.RejectedRequests(), "per-tenant budget enforcement")
 }
 
 // T_TenantInteg_005 — INV-9: tenant budget decision never reads req.OutputTokens.

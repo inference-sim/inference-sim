@@ -103,6 +103,10 @@ func (a *DirectActuator) scaleUp(d ScaleDecision) error {
 		// created instances too (mirrors startup + deferred paths). No-op when
 		// KVAutoCalc.Enabled is false.
 		applyPerInstanceKVCapacity(&simCfg, poolGPUMemoryGiB, a.cluster.config.KVAutoCalc, matchedGPU)
+		// Issue #1530: stamp the placement-derived interconnect topology (mirrors the
+		// startup + deferred paths) so an autoscaled instance prices cross-node comm
+		// identically.
+		a.cluster.applyPlacementTopology(&simCfg, gpuIDs)
 
 		// #1529: cost = distinct-nodes-spanned × pool cost_per_hour (mirrors startup +
 		// deferred paths). Single-node instances are unchanged (1×).

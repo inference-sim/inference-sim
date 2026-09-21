@@ -28,7 +28,7 @@
 - [ ] Invariant tests alongside golden tests (R7)
 - [ ] No exported mutable maps — use `IsValid*()` accessors (R8)
 - [ ] `*float64` for YAML fields where zero is valid (R9)
-- [ ] YAML strict parsing with `KnownFields(true)` (R10)
+- [ ] Strict config parsing — YAML `KnownFields(true)`, JSON no-unknown-keys (R10)
 - [ ] New interfaces work for 2+ implementations (R13)
 - [ ] No method spans multiple module responsibilities (R14)
 - [ ] Routing scorer signals documented for freshness tier (R17)
@@ -46,7 +46,7 @@
 
 <!-- Which invariants does this PR maintain or test? Full details: docs/contributing/standards/invariants.md -->
 
-- [ ] Request conservation: injected == completed + still_queued + still_running + dropped_unservable + timed_out (+ gateway/routing/encode buckets for cluster runs) (INV-1)
+- [ ] Request conservation (INV-1): assert it with a shared helper, not a hand-rolled sum — `assertClusterINV1Conservation` (12 terms) for anything cluster-level, `assertInstanceINV1Conservation` / `assertINV1Conservation` (5 terms) for per-instance metrics only
 - [ ] Request lifecycle: queued -> running -> completed (INV-2)
 - [ ] KV block conservation: allocated + free == total (INV-4)
 - [ ] Causality: arrival <= schedule <= completion (INV-5)
