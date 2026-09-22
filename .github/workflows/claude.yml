@@ -39,8 +39,9 @@ jobs:
         uses: actions/github-script@v8
         with:
           script: |
-            // Before the try, so a bug in these two lines surfaces as a failed job rather
-            // than being absorbed by the catch below and misreported as "not a collaborator".
+            // Before the try, so a bug in these two lines surfaces as a plain failed job
+            // rather than being fed to the catch below, which classifies API errors and would
+            // have to report a TypeError as though the permission probe had answered.
             //
             // The match is deliberately OVER-inclusive: case-insensitive, and satisfied by a
             // body that merely quotes the command rather than invoking it. Both errors are
@@ -66,8 +67,85 @@ jobs:
                 core.info(`User ${context.actor} has '${data.permission}' permission — skipping.`);
               }
             } catch (e) {
+              // FAIL CLOSED FIRST, and unconditionally: `allowed` is 'false' whether the probe
+              // DENIED the caller or could not answer at all. Every branch below leaves it
+              // alone — what they change is only how the outcome is REPORTED (#1707).
+              //
+              // Why reporting matters here more than in most catch blocks: `allowed=false`
+              // skips both agent jobs, and report-status skips with them (it requires an agent
+              // job to have produced an execution_file), so an unreported error drops a
+              // collaborator's request with no comment, no commit status, and a log line
+              // asserting a reason that did not occur. That is the silent-failure class R1
+              // exists for, and it is why the escalation branch below is loud.
               core.setOutput('allowed', 'false');
-              core.info(`User ${context.actor} is not a collaborator — skipping.`);
+
+              const status = e.status;
+              const headers = e.response?.headers ?? {};
+              // Throttling arrives as a 403 as often as a 429, and a throttled probe is a
+              // probe that did not answer — never a permission decision. Four independent
+              // signals because GitHub spells it differently per mechanism: primary rate limit
+              // (exhausted budget header), secondary/abuse limits (Retry-After, or only a
+              // message), and the plain 429.
+              const throttled = status === 429 ||
+                headers['x-ratelimit-remaining'] === '0' ||
+                headers['retry-after'] !== undefined ||
+                /rate limit|abuse detection/i.test(e.message ?? '');
+              // 404 is the unambiguous denial: on a PUBLIC repo that is the only status a
+              // non-collaborator gets. A 403 is a denial ONLY on a private repo, where it is
+              // also how "cannot see the collaborator list" surfaces — and never when it
+              // carries a throttling signal. On this public repo that makes a bare 403 an
+              // ESCALATION, which agrees with deliver-verify.yml's authorize job: this endpoint
+              // needs only Metadata:read, which Actions always grants, so a 403 here points at
+              // an org or enterprise policy and deserves a named failure rather than a denial.
+              // An absent `private` flag (no repository in the payload) reads as public, so the
+              // unknown case escalates rather than denying silently.
+              const privateRepo = context.payload.repository?.private === true;
+              const denied = status === 404 || (status === 403 && privateRepo && !throttled);
+              // The reason reported is always the reason that occurred. A transport-level
+              // failure carries no HTTP status at all, hence the fallback — String() rather
+              // than `${e.name}: ${e.message}` so that a throw of something that is not an
+              // Error still says what it was instead of "undefined: undefined".
+              const detail = status === undefined ? String(e) : `HTTP ${status}`;
+              // What the PUBLIC comment is allowed to say. The comment lands on a public
+              // thread, notifies every subscriber and stays there; a transport failure's text
+              // is unbounded and carries incidental request detail, so the comment gets a
+              // bounded category and the precise text stays in the failure annotation below.
+              const publicReason = status === undefined
+                ? 'no HTTP status (network or transport error)'
+                : `HTTP ${status}`;
+
+              if (denied) {
+                core.info(`User ${context.actor} is not a collaborator (${detail}) — skipping.`);
+              } else {
+                // Comment BEFORE failing the job: the requester is reading the issue or PR, not
+                // the Actions tab, and on this path no commit status is ever published. The
+                // comment names neither trigger command, so it cannot read as a fresh request
+                // (GITHUB_TOKEN-authored comments do not start workflow runs, but the outer
+                // trigger is a bare substring test, so this does not lean on that alone).
+                //
+                // Best effort, in its own try: a comment that cannot be posted must not replace
+                // the real diagnostic, so it only warns and the setFailed below still runs.
+                try {
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: context.issue.number,
+                    body: `Could not verify whether \`${context.actor}\` has write access ` +
+                      `(${publicReason}), so this request was not run. This is a failure of ` +
+                      `the permission probe, not a permission decision — retrying the command ` +
+                      `should work. ` +
+                      `[Run log](${context.serverUrl}/${context.repo.owner}/` +
+                      `${context.repo.repo}/actions/runs/${context.runId})`
+                  });
+                } catch (commentErr) {
+                  core.warning(
+                    `Could not comment about the failed permission probe: ${commentErr.message}`);
+                }
+                core.setFailed(
+                  `Permission probe for ${context.actor} failed: ${detail}. This is not a ` +
+                  `permission denial — failing closed, but reporting the error rather than ` +
+                  `dropping the request silently.`);
+              }
             }
 
   # Two agent jobs, identical steps, DIFFERENT tokens. They exist as two jobs only because
