@@ -21,6 +21,12 @@ package scripts_test
 // may be `=== 404` or `[404, 403].includes(status)`, a throttling signal may be read off any
 // of four headers or the message — so a rewrite that preserves the behaviour keeps them
 // green.
+//
+// The limitation of reading it as text, stated rather than left to be discovered: these tests
+// cannot tell a script that PARSES from one that does not, so they pin the decision table and
+// not the syntax. Closing that needs a Node-version-pinned parse gate in CI rather than a Go
+// test on the delivery runner, whose Node (v12) cannot parse the optional chaining the script
+// legitimately uses — tracked as #1811.
 
 import (
 	"regexp"
@@ -45,28 +51,45 @@ import (
 // assertions below with no code behind it — and it made the assertions describe today's
 // formatting rather than the law they claim to pin. Hence a scanner.
 //
-// It is NOT a JavaScript parser, and the two places it guesses are worth knowing:
+// An earlier version went one step further wrong in the same way: it copied template literals
+// ENTIRELY verbatim, `${...}` substitutions included. A substitution holds CODE, not literal
+// text, so `${/* status === 403 x-ratelimit */ detail}` left the same hole one spelling over
+// again — two assertions below satisfied by prose with no code behind them. Hence the mutual
+// recursion between this scanner and copyTemplate: literal text is copied, substitutions are
+// scanned.
 //
-//   - whether `/` opens a regex or divides is decided by which character precedes it, the
-//     standard heuristic, not by a grammar. A regex after a keyword (`return /x/`) is read as
-//     division;
-//   - a template literal is copied verbatim, `${}` substitutions included, so a comment written
-//     inside a substitution would survive.
+// It is NOT a JavaScript parser, and the one place it guesses is worth knowing: whether `/`
+// opens a regex or divides is decided by which character precedes it, the standard heuristic,
+// not by a grammar. A regex after a keyword (`return /x/`) is read as division.
 //
-// Both guesses are conservative in the one direction that matters: every branch here COPIES
-// what it cannot classify, so a misjudgement can only leave a comment un-stripped — it can
-// never delete code and quietly turn an assertion vacuous the other way.
+// That guess is conservative in the one direction that matters: the ambiguous branch COPIES,
+// so a misjudgement can only leave a comment un-stripped — it can never delete code and
+// quietly turn an assertion vacuous the other way.
 // TestCodeOnly_LeavesTheRealScriptsCodeIntact is the guard, stripping the actual workflow
 // script and asserting its code survives.
 func codeOnly(script string) string {
 	var out strings.Builder
-	src := []rune(script)
+	scanCode(&out, []rune(script), 0, false)
+	return out.String()
+}
 
+// scanCode copies src from i onwards into out as CODE — every comment removed, every string,
+// template and regex literal intact — and returns the index at which it stopped.
+//
+// insideSubstitution scopes it to the inside of one template `${...}`: it then stops at the `}`
+// closing that substitution and returns its index WITHOUT writing it (copyTemplate emits it),
+// or len(src) if the script ends first. At the top level it always runs to len(src).
+func scanCode(out *strings.Builder, src []rune, i int, insideSubstitution bool) int {
 	// The most recent non-whitespace rune emitted, which is what decides whether a `/` can
-	// open a regex literal. Zero at the start of the script, where one can.
+	// open a regex literal. Zero at the start, where one can — which is also correct just
+	// inside a `${`, since a substitution may open with one (`${/rate limit/i.test(m)}`).
 	var prev rune
 
-	for i := 0; i < len(src); i++ {
+	// Braces opened since this substitution began — an object literal, a block — so that only
+	// the `}` which actually closes it ends the scan. Unused at the top level.
+	depth := 0
+
+	for ; i < len(src); i++ {
 		r := src[i]
 		switch {
 		case r == '/' && i+1 < len(src) && src[i+1] == '/':
@@ -81,22 +104,32 @@ func codeOnly(script string) string {
 		case r == '/' && i+1 < len(src) && src[i+1] == '*':
 			i = skipBlockComment(src, i)
 		case r == '\'' || r == '"':
-			i = copyQuoted(&out, src, i, r)
+			i = copyQuoted(out, src, i, r)
 			prev = r
 		case r == '`':
-			i = copyTemplate(&out, src, i)
+			i = copyTemplate(out, src, i)
 			prev = r
 		case r == '/' && regexCanFollow(prev):
-			i = copyRegex(&out, src, i)
+			i = copyRegex(out, src, i)
 			prev = '/'
+		case insideSubstitution && r == '}' && depth == 0:
+			return i
 		default:
+			if insideSubstitution {
+				switch r {
+				case '{':
+					depth++
+				case '}':
+					depth--
+				}
+			}
 			out.WriteRune(r)
 			if !unicode.IsSpace(r) {
 				prev = r
 			}
 		}
 	}
-	return out.String()
+	return len(src)
 }
 
 // regexCanFollow reports whether a `/` appearing after prev opens a regex literal rather than
@@ -135,26 +168,38 @@ func copyQuoted(out *strings.Builder, src []rune, i int, quote rune) int {
 	return len(src) - 1
 }
 
-// copyTemplate copies the `...` literal starting at i verbatim and returns the index of its
-// closing backtick. `${}` depth is tracked so a backtick inside a substitution cannot close the
-// outer literal early.
+// copyTemplate copies the `...` literal starting at i and returns the index of its closing
+// backtick.
+//
+// The literal TEXT is copied verbatim — a `//` there is not a comment — but each `${...}`
+// substitution is handed back to scanCode, because a substitution holds code and a comment
+// written inside one is a comment. That is also what keeps a backtick inside a substitution
+// from closing the outer literal early: the nested template is consumed by the recursive scan
+// rather than seen here.
 func copyTemplate(out *strings.Builder, src []rune, i int) int {
 	out.WriteRune(src[i])
-	depth := 0
 	for i++; i < len(src); i++ {
-		out.WriteRune(src[i])
 		switch {
 		case src[i] == '\\' && i+1 < len(src):
+			out.WriteRune(src[i])
 			i++
 			out.WriteRune(src[i])
 		case src[i] == '$' && i+1 < len(src) && src[i+1] == '{':
+			out.WriteRune(src[i])
 			i++
 			out.WriteRune(src[i])
-			depth++
-		case src[i] == '}' && depth > 0:
-			depth--
-		case src[i] == '`' && depth == 0:
+			i = scanCode(out, src, i+1, true)
+			if i >= len(src) {
+				// An unterminated substitution: everything left has been copied already.
+				return len(src) - 1
+			}
+			// The `}` scanCode stopped at and deliberately left unwritten.
+			out.WriteRune(src[i])
+		case src[i] == '`':
+			out.WriteRune(src[i])
 			return i
+		default:
+			out.WriteRune(src[i])
 		}
 	}
 	return len(src) - 1
@@ -624,6 +669,50 @@ func TestCodeOnly_RemovesCommentsAndKeepsLiterals(t *testing.T) {
 			script:      `const s = 'it\'s // not a comment'; const keep = 403;`,
 			wantPresent: []string{"not a comment", "403"},
 		},
+		{
+			// A `${...}` substitution holds CODE, so a comment inside one is a comment. An
+			// earlier version copied substitutions verbatim, which left this hole one spelling
+			// further over than the block-comment case above.
+			name:        "block comment inside a template substitution is stripped",
+			script:      "core.info(`probe ${/* status === 403 x-ratelimit */ detail}`);",
+			wantAbsent:  []string{"403", "x-ratelimit"},
+			wantPresent: []string{"core.info(`probe ${", "detail}`);"},
+		},
+		{
+			name:        "whole-line comment inside a multi-line template substitution is stripped",
+			script:      "core.info(`probe ${\n  // 429 retry-after\n  detail}`);",
+			wantAbsent:  []string{"429", "retry-after"},
+			wantPresent: []string{"detail}`);"},
+		},
+		{
+			// The other direction: a substitution is code, but the literal TEXT around it is
+			// not, so a `//` there must survive. Stripping inside `${}` must not leak outwards.
+			name:        "a // in the literal text of a template is still not a comment",
+			script:      "core.info(`see https://x/403 ${detail} // not a comment`);",
+			wantPresent: []string{"https://x/403", "${detail}", "// not a comment"},
+		},
+		{
+			// Braces WITHIN a substitution must not be read as closing it, or the scan would
+			// resume as code in the middle of a template literal.
+			name:        "an object literal inside a substitution does not end it early",
+			script:      "core.info(`x ${ {a: 1}.a } // not a comment`); // 403",
+			wantAbsent:  []string{"403"},
+			wantPresent: []string{"{a: 1}.a", "// not a comment"},
+		},
+		{
+			name:        "comment inside a template nested in a substitution is stripped",
+			script:      "core.info(`a ${cond ? `b ${/* 403 */ x}` : 'c'}`);",
+			wantAbsent:  []string{"403"},
+			wantPresent: []string{"cond ?", "'c'"},
+		},
+		{
+			// A regex can open immediately inside a substitution, since `${` is a statement
+			// boundary — so the regex-vs-division heuristic must start fresh there.
+			name:        "a regex at the start of a substitution survives",
+			script:      "core.info(`${/rate limit/i.test(m)}`); // 403",
+			wantAbsent:  []string{"403"},
+			wantPresent: []string{"/rate limit/i.test(m)"},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := codeOnly(tc.script)
@@ -644,9 +733,10 @@ func TestCodeOnly_RemovesCommentsAndKeepsLiterals(t *testing.T) {
 	}
 }
 
-// The guard on codeOnly's two guesses (regex-vs-division, and verbatim template
-// substitutions), run against the script it actually has to handle. A heuristic that misjudged
-// this script would fail here, loudly, rather than silently weakening every assertion above.
+// The guard on codeOnly's guess (regex-vs-division) and on its one recursion (into template
+// `${...}` substitutions), run against the script it actually has to handle. A heuristic that
+// misjudged this script — or a recursion that over-stripped it — would fail here, loudly,
+// rather than silently weakening every assertion above.
 //
 // The tokens asserted on are ones the probe has in EVERY state — before the #1707 hunk and
 // after — so this test does not depend on the pending hunk.
@@ -661,6 +751,10 @@ func TestCodeOnly_LeavesTheRealScriptsCodeIntact(t *testing.T) {
 		"'/blis-pr-review'",
 		"context.payload.comment?.body",
 		"catch (",
+		// Inside a template `${...}`, which codeOnly now scans as code rather than copying:
+		// the guard that stripping there does not eat the substitution it is scanning. Present
+		// in every state of the script, before the #1707 hunk and after.
+		"${context.actor}",
 	} {
 		if !strings.Contains(stripped, code) {
 			t.Errorf("codeOnly removed %q from the real permission probe — it is deleting "+
