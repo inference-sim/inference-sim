@@ -172,6 +172,53 @@ Exit 0 when the thread was read (with or without refinements), 2 on a usage erro
 read failed** — in which case the digest's first line is `REFINEMENT-READ-FAILED` rather than empty,
 because empty output reads exactly like "this issue has no refinements".
 
+## deliver-trusted-comments.sh — the comment text an AI flow is allowed to read
+
+Prints the discussion on an issue or PR with every comment from an author who holds **no** write
+access on this repository removed, and says how many it withheld.
+
+```bash
+scripts/deliver-trusted-comments.sh --pr 1807        # conversation + reviews + inline comments
+scripts/deliver-trusted-comments.sh --issue 1806     # conversation comments
+scripts/deliver-trusted-comments.sh --render p.json  # render a prepared payload, no network
+```
+
+**Why (#1806).** *Who* may trigger the AI flows (`@claude`, `/blis-pr-review`,
+`/approve-issue-for-pr-delivery`) was already gated to admin/maintain/write. *What* they then read
+was not gated at all — and this repository is public, so any GitHub user can comment on any issue or
+PR. An agent cannot reliably separate "context" from "instruction", so that text is a
+prompt-injection surface into flows that run on a persistent self-hosted runner with credentials in
+the environment and, in the correction phase, `contents: write`. The defence used to be a prompt
+asking the agent to treat comments as data; this is the structural half.
+
+It covers **all three** sources the flows read — issue/PR conversation comments, PR reviews, and PR
+inline (line-level) review comments — because a filter on one endpoint leaves the hole open at the
+others. Unlike `deliver-issue-refinements.sh` it **keeps** bot comments, labelled `[automation]`: the
+delivery loop's own `DELIVER-VERDICT` / `QA-VERDICT` markers are exactly the text the correction
+phase works from. Human write-access entries are labelled `[write access]`, which is what makes the
+prompts' "only the automation carries authority" rule applicable at all.
+
+It never refuses. Excluding the text is enough, and halting a delivery whenever an outsider commented
+would strand legitimate work — so it continues on the trusted subset and reports the count it
+withheld. Excluded authors are named on **stderr** (and therefore in the workflow log) but not in the
+digest: a login is attacker-chosen text, and the agent only needs the count.
+
+Exit 0 when the discussion was read, 2 on a usage error, and **3 when the read failed** — in which
+case the first line is `COMMENT-READ-FAILED` rather than empty, because empty output reads exactly
+like "nobody has commented", and an agent that concludes that will return a clean verdict on findings
+it never saw. The selection law is the sibling `deliver-trusted-comments.jq`, tested by
+`scripts/deliver_trusted_comments_test.go`.
+
+## lib-gh-write-access.sh — the write-access trust boundary (sourced, not run)
+
+The repository's one implementation of "does this comment author hold write access?", plus the
+bounded `gh` wrapper (SIGTERM then SIGKILL) that every such lookup runs under. Sourced by
+`deliver-issue-refinements.sh` and `deliver-trusted-comments.sh`, which need the same answer for two
+different questions — *whose design opinion overrides an issue body* and *whose text may an agent read
+at all*. One copy, so the 404-vs-403 split cannot drift: a 404 is GitHub answering "not a
+collaborator", while a 401/403/429/5xx or a deadline expiry means the caller **could not ask** and
+must fail closed. A caller must define `degrade`, `SELF`, `REPO` and `TMP` before sourcing it.
+
 ## archon-plan-resolve.sh — find and extract a declared archon plan
 
 Finds the first `archon-plan: <path>` line in the declaration text and extracts that file
