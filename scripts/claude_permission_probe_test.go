@@ -4,12 +4,15 @@ package scripts_test
 // check-permissions job (#1707).
 //
 // The defect these tests exist to prevent: the probe's `catch` mapped EVERY error to
-// `allowed=false` and logged "is not a collaborator — skipping". A 404 means that; a 403, a
-// 5xx and a network error do not. Because `allowed=false` skips both agent jobs, and
-// report-status skips with them (it requires an agent job to have produced an
-// execution_file), an unreported probe error dropped a collaborator's request with no
-// comment, no commit status, and a stated reason that was false. Fail-closed was never the
-// problem and is preserved below; being unobservable and misattributed was.
+// `allowed=false` and logged "is not a collaborator — skipping". A 404 means that; a 5xx and a
+// network error do not; and a 403 means it only sometimes — on a PRIVATE repo, where a 403 is
+// also how "cannot see the collaborator list" surfaces, and then only when it carries no
+// throttling signal. On this PUBLIC repo a non-collaborator gets 404, so a bare 403 here is a
+// probe that could not answer rather than one that said no. Because `allowed=false` skips both
+// agent jobs, and report-status skips with them (it requires an agent job to have produced an
+// execution_file), an unreported probe error dropped a collaborator's request with no comment,
+// no commit status, and a stated reason that was false. Fail-closed was never the problem and
+// is preserved below; being unobservable and misattributed was.
 //
 // These assertions read the workflow's inline script as text, for the reason the sibling
 // file states: for a workflow file the declared content IS the behaviour, GitHub reads
@@ -23,9 +26,11 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"unicode"
 )
 
-// codeOnly strips whole-line `//` comments from an inline script.
+// codeOnly strips every JavaScript comment from an inline script — whole-line, trailing and
+// block — leaving string, template and regex literals intact.
 //
 // Every assertion below runs on the stripped form, and that is load-bearing rather than
 // tidiness. The comments in check-permissions explain the classification, and in doing so they
@@ -34,18 +39,155 @@ import (
 // inspection: deleting the 403 clause outright left both `DistinguishesDenialFromFailure`
 // assertions green, because "403" and "rate limit" still appeared in the prose above them.
 //
-// Only whole-line comments are removed. A trailing `//` cannot be stripped without a JS
-// parser (it may sit inside a string or a regex literal, and this script has both), and
-// whole-line is what the workflow actually uses.
+// An earlier version removed only whole-line comments, reasoning that a trailing `//` cannot be
+// stripped without a parser and that whole-line is what the workflow happens to use. That left
+// the same hole one spelling over — `/* status === 403; x-ratelimit */` satisfies two of the
+// assertions below with no code behind it — and it made the assertions describe today's
+// formatting rather than the law they claim to pin. Hence a scanner.
+//
+// It is NOT a JavaScript parser, and the two places it guesses are worth knowing:
+//
+//   - whether `/` opens a regex or divides is decided by which character precedes it, the
+//     standard heuristic, not by a grammar. A regex after a keyword (`return /x/`) is read as
+//     division;
+//   - a template literal is copied verbatim, `${}` substitutions included, so a comment written
+//     inside a substitution would survive.
+//
+// Both guesses are conservative in the one direction that matters: every branch here COPIES
+// what it cannot classify, so a misjudgement can only leave a comment un-stripped — it can
+// never delete code and quietly turn an assertion vacuous the other way.
+// TestCodeOnly_LeavesTheRealScriptsCodeIntact is the guard, stripping the actual workflow
+// script and asserting its code survives.
 func codeOnly(script string) string {
-	var kept []string
-	for _, line := range strings.Split(script, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "//") {
+	var out strings.Builder
+	src := []rune(script)
+
+	// The most recent non-whitespace rune emitted, which is what decides whether a `/` can
+	// open a regex literal. Zero at the start of the script, where one can.
+	var prev rune
+
+	for i := 0; i < len(src); i++ {
+		r := src[i]
+		switch {
+		case r == '/' && i+1 < len(src) && src[i+1] == '/':
+			for i < len(src) && src[i] != '\n' {
+				i++
+			}
+			// Keep the newline, so stripping never joins two statements onto one line and
+			// failure messages still read like the script.
+			if i < len(src) {
+				out.WriteRune('\n')
+			}
+		case r == '/' && i+1 < len(src) && src[i+1] == '*':
+			i = skipBlockComment(src, i)
+		case r == '\'' || r == '"':
+			i = copyQuoted(&out, src, i, r)
+			prev = r
+		case r == '`':
+			i = copyTemplate(&out, src, i)
+			prev = r
+		case r == '/' && regexCanFollow(prev):
+			i = copyRegex(&out, src, i)
+			prev = '/'
+		default:
+			out.WriteRune(r)
+			if !unicode.IsSpace(r) {
+				prev = r
+			}
+		}
+	}
+	return out.String()
+}
+
+// regexCanFollow reports whether a `/` appearing after prev opens a regex literal rather than
+// dividing. A regex can only follow an operator, an opening bracket or a statement boundary; an
+// identifier, a literal, `)` or `]` means division. prev is zero at the start of the script.
+func regexCanFollow(prev rune) bool {
+	return prev == 0 || strings.ContainsRune("(,=:[!&|?{};+-*%^~<>", prev)
+}
+
+// skipBlockComment returns the index of the `/` closing the `/*` comment that starts at i, or
+// the last index of src if it is never closed.
+func skipBlockComment(src []rune, i int) int {
+	for i += 2; i+1 < len(src); i++ {
+		if src[i] == '*' && src[i+1] == '/' {
+			return i + 1
+		}
+	}
+	return len(src) - 1
+}
+
+// copyQuoted copies the '...' or "..." literal starting at i verbatim, honouring backslash
+// escapes, and returns the index of its closing quote.
+func copyQuoted(out *strings.Builder, src []rune, i int, quote rune) int {
+	out.WriteRune(src[i])
+	for i++; i < len(src); i++ {
+		out.WriteRune(src[i])
+		if src[i] == '\\' && i+1 < len(src) {
+			i++
+			out.WriteRune(src[i])
 			continue
 		}
-		kept = append(kept, line)
+		if src[i] == quote {
+			return i
+		}
 	}
-	return strings.Join(kept, "\n")
+	return len(src) - 1
+}
+
+// copyTemplate copies the `...` literal starting at i verbatim and returns the index of its
+// closing backtick. `${}` depth is tracked so a backtick inside a substitution cannot close the
+// outer literal early.
+func copyTemplate(out *strings.Builder, src []rune, i int) int {
+	out.WriteRune(src[i])
+	depth := 0
+	for i++; i < len(src); i++ {
+		out.WriteRune(src[i])
+		switch {
+		case src[i] == '\\' && i+1 < len(src):
+			i++
+			out.WriteRune(src[i])
+		case src[i] == '$' && i+1 < len(src) && src[i+1] == '{':
+			i++
+			out.WriteRune(src[i])
+			depth++
+		case src[i] == '}' && depth > 0:
+			depth--
+		case src[i] == '`' && depth == 0:
+			return i
+		}
+	}
+	return len(src) - 1
+}
+
+// copyRegex copies the /.../flags literal starting at i verbatim and returns the index of its
+// last rune. A newline ends it: a regex literal cannot span lines, so reaching one means the `/`
+// was a division after all — and since everything has been copied, nothing is lost either way.
+func copyRegex(out *strings.Builder, src []rune, i int) int {
+	out.WriteRune(src[i])
+	inClass := false
+	for i++; i < len(src); i++ {
+		out.WriteRune(src[i])
+		switch {
+		case src[i] == '\\' && i+1 < len(src):
+			i++
+			out.WriteRune(src[i])
+		case src[i] == '[':
+			inClass = true
+		case src[i] == ']':
+			inClass = false
+		case src[i] == '\n':
+			return i
+		case src[i] == '/' && !inClass:
+			// Consume the flags too, so a following `/` is not read as opening another literal.
+			for i+1 < len(src) && unicode.IsLetter(src[i+1]) {
+				i++
+				out.WriteRune(src[i])
+			}
+			return i
+		}
+	}
+	return len(src) - 1
 }
 
 // callArgs returns the text of the first `callee(...)` call in code, from the callee name to
@@ -341,5 +483,198 @@ func TestClaudePermissionProbe_CommentCannotRetriggerTheWorkflow(t *testing.T) {
 				"would read as a new request rather than a report of a failed one. Write it "+
 				"so it cannot match:\n%s", trigger, escalationPath)
 		}
+	}
+}
+
+// The escalation comment is published to a PUBLIC thread, where it persists and notifies long
+// after the run log has scrolled past. So it names a BOUNDED reason — a status, or a category
+// when there is no status — and never the raw exception: a transport failure's text is
+// unbounded and carries incidental request detail that has no business in a permanent public
+// notification. The precise text still reaches core.setFailed, which is the diagnostic channel.
+func TestClaudePermissionProbe_CommentPublishesOnlyABoundedReason(t *testing.T) {
+	wf := loadClaudeWorkflow(t)
+	catchBlock := probeCatchBlock(t, permissionProbeScript(t, wf))
+	_, escalationPath := probeCatchPaths(t, catchBlock)
+
+	comment := callArgs(t, escalationPath, "createComment")
+
+	// The spellings that put the caught exception itself into the text.
+	rawExceptions := []string{"String(e)", "${e}", "${e.", "JSON.stringify(e"}
+	for _, expr := range rawExceptions {
+		if strings.Contains(comment, expr) {
+			t.Errorf("the probe's escalation comment interpolates %s — the raw exception text "+
+				"is unbounded and this comment is public and permanent. Publish the status or "+
+				"a category, and leave the exception to core.setFailed:\n%s", expr, comment)
+		}
+	}
+
+	// And the same thing one hop through a variable, which is how the check above would be
+	// satisfied without changing a word of what actually gets published.
+	for _, name := range interpolatedIdents(comment) {
+		decl := declarationOf(catchBlock, name)
+		if decl == "" {
+			continue
+		}
+		for _, expr := range rawExceptions {
+			if strings.Contains(decl, expr) {
+				t.Errorf("the escalation comment interpolates ${%s}, and %s is assigned %s — "+
+					"the raw exception reaches the public comment through a variable:\n%s",
+					name, name, expr, decl)
+			}
+		}
+	}
+}
+
+// interpolation matches the leading identifier of a `${...}` substitution: `detail` in
+// `${detail}`, `commentErr` in `${commentErr.message}`.
+var interpolation = regexp.MustCompile(`\$\{\s*([A-Za-z_$][\w$]*)`)
+
+// interpolatedIdents returns those identifiers, in order, without repeats.
+func interpolatedIdents(code string) []string {
+	var names []string
+	seen := map[string]bool{}
+	for _, m := range interpolation.FindAllStringSubmatch(code, -1) {
+		if !seen[m[1]] {
+			seen[m[1]] = true
+			names = append(names, m[1])
+		}
+	}
+	return names
+}
+
+// declarationOf returns the text of code's `const|let|var <name> = ...` statement up to its
+// terminating `;`, or "" when code declares no such variable (`context`, for instance, is
+// interpolated everywhere and declared nowhere).
+func declarationOf(code, name string) string {
+	decl := regexp.MustCompile(`(?:const|let|var)\s+` + regexp.QuoteMeta(name) + `\s*=`)
+	loc := decl.FindStringIndex(code)
+	if loc == nil {
+		return ""
+	}
+	rest := code[loc[0]:]
+	if end := strings.Index(rest, ";"); end >= 0 {
+		return rest[:end+1]
+	}
+	return rest
+}
+
+// codeOnly's own contract. It is asserted on directly because every assertion above runs on its
+// output, so a hole in it weakens all of them at once — which is exactly what happened to the
+// line-based version it replaced.
+func TestCodeOnly_RemovesCommentsAndKeepsLiterals(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		script      string
+		wantAbsent  []string
+		wantPresent []string
+	}{
+		{
+			name:       "whole-line comment",
+			script:     "// status === 403\nconst x = 1;",
+			wantAbsent: []string{"403"},
+		},
+		{
+			name:       "trailing comment",
+			script:     "const x = 1; // status === 403 and x-ratelimit-remaining",
+			wantAbsent: []string{"403", "x-ratelimit"},
+			// This is the case the line-based version could not reach.
+			wantPresent: []string{"const x = 1;"},
+		},
+		{
+			name:       "block comment on one line",
+			script:     "const x = /* status === 403; x-ratelimit */ 1;",
+			wantAbsent: []string{"403", "x-ratelimit"},
+			// The concrete evasion the reviewer named.
+			wantPresent: []string{"const x =", "1;"},
+		},
+		{
+			name:        "block comment spanning lines",
+			script:      "const a = 1;\n/*\n429 retry-after\n*/\nconst b = 2;",
+			wantAbsent:  []string{"429", "retry-after"},
+			wantPresent: []string{"const a = 1;", "const b = 2;"},
+		},
+		{
+			name:        "// inside a single-quoted string is not a comment",
+			script:      "const u = 'https://api.github.com/403';",
+			wantPresent: []string{"'https://api.github.com/403'"},
+		},
+		{
+			name:        "// inside a template literal is not a comment",
+			script:      "core.info(`see https://x/403 ${status}`);",
+			wantPresent: []string{"https://x/403", "${status}"},
+		},
+		{
+			name:        "/* inside a string does not open a comment",
+			script:      "const s = '/*'; const keep = 403;",
+			wantPresent: []string{"'/*'", "403"},
+		},
+		{
+			name:        "regex literal survives and its slashes do not open a comment",
+			script:      "const t = /rate limit|abuse detection/i.test(e.message ?? '');",
+			wantPresent: []string{"/rate limit|abuse detection/i", "e.message"},
+		},
+		{
+			name:        "division is not mistaken for a regex",
+			script:      "const r = a / b; // 403\nconst keep = 429;",
+			wantAbsent:  []string{"403"},
+			wantPresent: []string{"a / b;", "429"},
+		},
+		{
+			name:        "escaped quote does not end a string early",
+			script:      `const s = 'it\'s // not a comment'; const keep = 403;`,
+			wantPresent: []string{"not a comment", "403"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := codeOnly(tc.script)
+			for _, absent := range tc.wantAbsent {
+				if strings.Contains(got, absent) {
+					t.Errorf("codeOnly kept %q, so a comment can still satisfy an assertion "+
+						"about code:\ninput:  %s\noutput: %s", absent, tc.script, got)
+				}
+			}
+			for _, present := range tc.wantPresent {
+				if !strings.Contains(got, present) {
+					t.Errorf("codeOnly dropped %q — it deleted code, which would make an "+
+						"assertion fail for a reason that has nothing to do with the "+
+						"contract:\ninput:  %s\noutput: %s", present, tc.script, got)
+				}
+			}
+		})
+	}
+}
+
+// The guard on codeOnly's two guesses (regex-vs-division, and verbatim template
+// substitutions), run against the script it actually has to handle. A heuristic that misjudged
+// this script would fail here, loudly, rather than silently weakening every assertion above.
+//
+// The tokens asserted on are ones the probe has in EVERY state — before the #1707 hunk and
+// after — so this test does not depend on the pending hunk.
+func TestCodeOnly_LeavesTheRealScriptsCodeIntact(t *testing.T) {
+	script := permissionProbeScript(t, loadClaudeWorkflow(t))
+	stripped := codeOnly(script)
+
+	// Code, including a string literal holding a slash and an optional-chaining expression.
+	for _, code := range []string{
+		"getCollaboratorPermissionLevel",
+		"core.setOutput('allowed'",
+		"'/blis-pr-review'",
+		"context.payload.comment?.body",
+		"catch (",
+	} {
+		if !strings.Contains(stripped, code) {
+			t.Errorf("codeOnly removed %q from the real permission probe — it is deleting "+
+				"code, so every assertion running on its output is unsound:\n%s", code, stripped)
+		}
+	}
+
+	// And the comments really are gone, so the stripping is not a no-op that only looks safe.
+	if !strings.Contains(script, "//") {
+		t.Fatal("the permission probe contains no comments at all — this test can no longer " +
+			"tell stripping from a no-op; assert on whatever prose it does carry instead")
+	}
+	if strings.Contains(stripped, "//") {
+		t.Errorf("codeOnly left a `//` in the real permission probe, so prose can still "+
+			"satisfy the assertions above:\n%s", stripped)
 	}
 }

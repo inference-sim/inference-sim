@@ -92,13 +92,19 @@ if the routing gates stop failing closed, or if the two agent jobs' steps drift 
 One gate sits upstream of the split and has its own contracts, in
 `scripts/claude_permission_probe_test.go` (#1707). `check-permissions` decides *whether* the
 caller is allowed at all, and it must distinguish a genuine denial from a probe that could not
-answer. Both outcomes deny — a failed probe never admits anyone — but only a denial is quiet: a
-403, a 5xx or a network error fails the job with the real status and comments on the trigger,
-because `allowed=false` skips both agent jobs and `report-status` skips with them, so an
-unreported probe error drops a collaborator's request with no comment, no commit status, and a
-log line asserting a reason that did not occur. Note the consequence for the `issues: write`
-scope on this job: it is what lets that comment be posted, so narrowing it turns the report
-back into silence.
+answer. Both outcomes deny — a failed probe never admits anyone — but only a denial is quiet.
+A 404 is the denial. A 5xx or a network error fails the job with the real status and comments on
+the trigger, and so does a 403 unless the repository is private and the error carries no
+throttling signal — that is the one case where a 403 is a genuine denial rather than a probe
+that could not answer, and on this *public* repository a non-collaborator gets 404, so a bare
+403 here escalates. Reporting it matters because `allowed=false` skips both agent jobs and
+`report-status` skips with them, so an unreported probe error drops a collaborator's request
+with no comment, no commit status, and a log line asserting a reason that did not occur. Two
+consequences worth knowing. The `issues: write` scope on this job is what lets that comment be
+posted, so narrowing it turns the report back into silence. And the comment names a *bounded*
+reason — a status, or a category when there is no status — never the caught exception's own
+text, which is unbounded and would land verbatim on a public thread that notifies and persists;
+the precise error goes to the run's failure annotation instead.
 
 ## Known Failure Modes
 
