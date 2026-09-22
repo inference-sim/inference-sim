@@ -150,7 +150,8 @@ present, so the gap is a deliberate, marked decision rather than a missing step.
 
 **Out of scope here: the PR *body*.** The qa-review question generator is fed the raw PR body
 (`scripts/qa-review/questioner.py`), which on a community PR is outside-authored — a distinct
-surface from comment text, tracked in #1808. This filter covers comments only.
+surface from comment text, tracked in #1812 (the qa-review Python path that reads unfiltered
+*comments* is the separate #1808). This filter covers comments only.
 
 Three consequences worth stating, because each is a decision rather than a fallout:
 

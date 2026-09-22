@@ -68,7 +68,54 @@ func TestWiring_VerifyAndCorrect_AssembleAndReadTheTrustedDigest(t *testing.T) {
 			t.Errorf("%s does not point the agent at %s — the prompt reads a different path than "+
 				"the digest step writes, so the filter is bypassed (#1806)", wf, consumer)
 		}
+		// The empty-file guard is load-bearing: `|| true` swallows a helper that fails to RUN AT ALL
+		// (not found / not executable), so this `[ ! -s ]` fallback is the only thing that turns the
+		// resulting zero-byte digest into the fail-closed marker rather than a file the agent reads as
+		// "nobody commented" (the silent-empty class this PR exists to close, R1).
+		if !strings.Contains(text, `[ ! -s "$RUNNER_TEMP/trusted-comments.md" ]`) {
+			t.Errorf("%s has no empty-digest guard (`[ ! -s ... ]`) — a helper that fails to run leaves "+
+				"a zero-byte digest the agent reads as 'no comments' (#1806)", wf)
+		}
+		if !strings.Contains(text, "COMMENT-READ-FAILED") {
+			t.Errorf("%s does not synthesize COMMENT-READ-FAILED for an empty digest, so an unproduced "+
+				"digest is indistinguishable from an empty thread (#1806)", wf)
+		}
+		// Ordering: the digest MUST be assembled before the agent runs, or the agent reads a missing
+		// or stale file. A presence check alone passes even if the step is moved below the agent, so
+		// pin the byte order of the step name vs the agent action (the first — and only — one on the
+		// digest-consuming path in each of these two workflows).
+		stepIdx := strings.Index(text, "Assemble the trusted comment digest")
+		agentIdx := strings.Index(text, "anthropics/claude-code-action")
+		if stepIdx < 0 || agentIdx < 0 || stepIdx > agentIdx {
+			t.Errorf("%s does not assemble the digest BEFORE the agent step (stepIdx=%d agentIdx=%d) — "+
+				"the agent would read a missing or stale digest (#1806)", wf, stepIdx, agentIdx)
+		}
 	}
+}
+
+// The digest trusts only the automation logins on `AUTOMATION_LOGINS` (#1806 G2). That set MUST
+// cover every identity the delivery loop posts its verdict comments under (`DELIVER-VERDICT` /
+// `QA-VERDICT`); if one drops off, the correction phase reads the digest, finds its work list
+// filtered out, and silently does nothing. This pins the coupling the helper's "keep in sync"
+// comment only asks for — a future action-identity change that isn't mirrored here trips this.
+func TestWiring_AutomationAllowlistCoversVerdictPosters(t *testing.T) {
+	helper := readWorkflowFile(t, filepath.Join("..", "scripts", "deliver-trusted-comments.sh"))
+	for _, login := range []string{"github-actions[bot]", "claude[bot]"} {
+		if !strings.Contains(helper, `"`+login+`"`) {
+			t.Errorf("scripts/deliver-trusted-comments.sh AUTOMATION_LOGINS does not include %q — the "+
+				"delivery loop posts verdict comments under it, so dropping it empties the correction "+
+				"phase's work list (#1806 G2)", login)
+		}
+	}
+}
+
+func readWorkflowFile(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(raw)
 }
 
 // claude.yml cannot be wired the same way — its jobs run claude-code-action in tag mode and the
