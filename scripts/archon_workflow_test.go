@@ -27,7 +27,10 @@ package scripts_test
 // patch (.github/archon-trigger-anchor.patch) for a human to apply, following the convention
 // .github/deliver-conflict-wiring.patch set on #1781. So these tests resolve the gate that is
 // (or, once that patch is applied, will be) in force — see effectiveArchonGate. Both terminal
-// states pass; the two ways of losing half the change fail.
+// states pass; the two ways of losing half the change fail. The one state that stays green is
+// "merged and never applied" — this test reads the gate out of the patch, so it cannot fail on
+// a pending patch without also failing on the state it exists to support. Applying the patch is
+// therefore tracked in #1809 rather than guarded here.
 
 import (
 	"encoding/json"
@@ -308,8 +311,10 @@ func TestArchonWorkflow_TriggersOnDirectivesNotMentions(t *testing.T) {
 				"guarded promises changed.\n",
 			want: true,
 			why: "expressions have no regex, so \"alone on its line\" is not expressible. " +
-				"One comment in 268 hit this. Recorded as behaviour rather than left " +
-				"undocumented — if a scripted gate ever closes it, flip this case",
+				"One comment in 275 hit this. Recorded as behaviour rather than left " +
+				"undocumented: a line-leading occurrence IS a directive under this rule, " +
+				"and the stricter reading is tracked in #1810 — if a scripted gate ever " +
+				"closes it, flip this case to false",
 		},
 	}
 

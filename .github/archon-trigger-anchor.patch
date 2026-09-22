@@ -1,4 +1,4 @@
-# PENDING WORKFLOW CHANGE for #1675 — apply and delete this file.
+# PENDING WORKFLOW CHANGE for #1675 — apply and delete this file. Tracked by #1809.
 #
 #     git apply .github/archon-trigger-anchor.patch
 #     git rm .github/archon-trigger-anchor.patch
@@ -38,6 +38,11 @@
 # test reads archon.yml directly, and it FAILS if this file is deleted without being applied,
 # or is left behind after being applied — so neither half can be silently lost.
 #
+# WHAT THAT DOES *NOT* CATCH, AND WHY #1809 EXISTS. The one state CI stays green in is "merged
+# and simply never applied": while this file exists the test reads the gate out of it, so the
+# suite passes with the live gate still matching anywhere in the body. Nothing else surfaces
+# that, which is why the pending state is tracked as an issue and not only as this header.
+#
 # Everything below this line is a plain `git diff`; the `#` lines above are ignored by git apply.
 diff --git a/.github/workflows/archon.yml b/.github/workflows/archon.yml
 index cbd84c30..c16e7f2f 100644
@@ -74,7 +79,7 @@ index cbd84c30..c16e7f2f 100644
 +    # NO_CHANGE …". Closing it needs a scripted gate, and the cheap expression tightening —
 +    # requiring the command be FOLLOWED by a newline — would reject real CRLF invocations,
 +    # trading 0 false negatives for 1 false positive. So the anchor stays as it is; the
-+    # residual is pinned as a test case, not left undocumented.
++    # residual is pinned as a test case and tracked in #1810, not left undocumented.
 +    #
 +    # scripts/archon_workflow_test.go evaluates THIS expression against real comment bodies,
 +    # so an edit that widens it back to whole-body matching fails the test suite.

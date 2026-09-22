@@ -25,13 +25,17 @@ covered: a line that begins with the command and then carries on in prose — a 
 `/archon-pr-review issued NO_CHANGE …` — still fires. The gate is a workflow expression, and
 expressions have no regex, so "alone on its line" cannot be expressed. When quoting a report
 whose line starts with the command, prefix the line (`> `) or indent it; either is enough to
-stop it being read as a directive.
+stop it being read as a directive. That last case is deliberate rather than overlooked — a
+line-leading occurrence *is* a directive under the rule above — and the stricter reading, where
+the command must be alone on its line, is tracked in
+[#1810](https://github.com/inference-sim/inference-sim/issues/1810).
 
 !!! note "Not yet in force"
     The anchoring described above is carried as a pending patch,
     `.github/archon-trigger-anchor.patch`, because the delivery runner's token cannot write to
     `.github/workflows/`. Until a maintainer applies it, the live gate still matches the command
-    **anywhere** in a comment body, so prose mentions do trigger runs. Remove this note in the
+    **anywhere** in a comment body, so prose mentions do trigger runs. Applying it is tracked in
+    [#1809](https://github.com/inference-sim/inference-sim/issues/1809); remove this note in the
     same commit that applies the patch.
 
 Each round's full body is also written to its own workflow run's job summary. That is
