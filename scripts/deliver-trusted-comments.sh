@@ -159,13 +159,25 @@ else
     || degrade "gh issue view $NUMBER --json comments failed"
 fi
 
-# Normalise to the one shape the filter reads. `author.is_bot` is gh's own field; the `[bot]` login
-# suffix is the belt-and-braces half, because a payload assembled from REST carries no `is_bot`.
-jq '[ (.comments // [])[]
+# The automation identities whose comments are trusted WITHOUT a permission lookup. #1806 says the
+# filter keeps "the automation's OWN" comments, not every bot's: a third-party GitHub App that
+# comments on a PR is as untrusted as any stranger, so it must NOT be trusted on `[bot]`-ness alone.
+# Trust is therefore an explicit allowlist of THIS repository's automation logins, not `is_bot` or a
+# `[bot]` suffix. A login not on this list falls through to the permission lookup below — where a
+# genuine bot 404s and is dropped (correct), and a human write-access author is kept. Defined once
+# and threaded to the three normalisations via `--argjson` so the set cannot drift between them (R4).
+# Keep in sync with the identities the delivery loop posts its DELIVER-VERDICT / QA-VERDICT markers
+# under; a missing one would drop the loop's own work list (the regression the skip-before-lookup
+# step guards). Verified against the live thread by deliver_trusted_comments_test.go.
+AUTOMATION_LOGINS='["github-actions[bot]","claude[bot]"]'
+
+# Normalise to the one shape the filter reads. `isBot` here means "trusted automation of THIS repo",
+# resolved against the allowlist above — not gh's `is_bot`, which is true for any App.
+jq --argjson automation "$AUTOMATION_LOGINS" '[ (.comments // [])[]
       | { source: "conversation",
           id: ((.id // .url // "") | tostring),
           login: (.author.login // ""),
-          isBot: ((.author.is_bot == true) or ((.author.login // "") | test("\\[bot\\]$"))),
+          isBot: ((.author.login // "") as $l | ($automation | index($l)) != null),
           body: (.body // ""),
           createdAt: (.createdAt // ""),
           url: (.url // ""),
@@ -187,11 +199,11 @@ if [[ "$MODE" == pr ]]; then
     || degrade "could not read the reviews of #$NUMBER"
   # `--paginate` concatenates one array per page, so `-s` + `add` flattens them. `// []` covers the
   # zero-page case, where `add` on an empty list yields null.
-  jq -s '[ ((add // []) | .[])
+  jq -s --argjson automation "$AUTOMATION_LOGINS" '[ ((add // []) | .[])
            | { source: "review",
                id: ((.id // .html_url // "") | tostring),
                login: (.user.login // ""),
-               isBot: ((.user.type == "Bot") or ((.user.login // "") | test("\\[bot\\]$"))),
+               isBot: ((.user.login // "") as $l | ($automation | index($l)) != null),
                body: (.body // ""),
                createdAt: (.submitted_at // ""),
                url: (.html_url // ""),
@@ -209,11 +221,11 @@ if [[ "$MODE" == pr ]]; then
   # may already be addressed while one on still-present code is live.
   gh api "repos/$REPO/pulls/$NUMBER/comments?per_page=100" --paginate > "$TMP/inline.json" \
     || degrade "could not read the inline review comments of #$NUMBER"
-  jq -s '[ ((add // []) | .[])
+  jq -s --argjson automation "$AUTOMATION_LOGINS" '[ ((add // []) | .[])
            | { source: "inline",
                id: ((.id // .html_url // "") | tostring),
                login: (.user.login // ""),
-               isBot: ((.user.type == "Bot") or ((.user.login // "") | test("\\[bot\\]$"))),
+               isBot: ((.user.login // "") as $l | ($automation | index($l)) != null),
                body: (.body // ""),
                createdAt: (.created_at // ""),
                url: (.html_url // ""),

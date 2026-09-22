@@ -612,26 +612,27 @@ func TestTrustedCommentsLive_BotAuthorsAreNotQueried(t *testing.T) {
 //
 // The inventory below is every login that posts a comment from this repository's workflows, taken
 // from their `github.actor` / commenting steps (`grep '\[bot\]' .github/workflows/*.yml`) and
-// confirmed against a live thread (PR #1807 carries comments from both). Both end in the reserved
-// `[bot]` suffix, which is what makes the suffix half of the test sufficient today.
+// confirmed against a live thread (PR #1807 carries comments from both). As of #1806 (G2) trust is
+// an explicit AUTOMATION ALLOWLIST (`AUTOMATION_LOGINS` in deliver-trusted-comments.sh), not a
+// `[bot]` suffix or `is_bot` flag — a third-party App is as untrusted as a stranger. So this
+// inventory must match that allowlist exactly.
 //
 // Each login is fed with its bot METADATA DELIBERATELY WITHHELD — no `is_bot` on the conversation
-// comment, `"type":"User"` on the review and inline ones — so what is under test is the `[bot]`
-// suffix rule ALONE. That is the half that has to hold, because the digest is also assembled from
-// REST payloads that carry no `is_bot` at all, and because a stub that supplied both signals could
-// pass with either one broken.
+// comment, `"type":"User"` on the review and inline ones — which now proves the STRONGER property:
+// recognition depends only on the login being on the allowlist, not on any bot metadata at all. A
+// stub that supplied `is_bot`/`type:Bot` could pass on a code path this repository does not always
+// have (REST payloads carry no `is_bot`), so withholding it keeps the test honest.
 //
-// THE RESIDUAL, stated because it is a real limit and not covered by this test: a GitHub App that
-// posts under a standard user account with no `[bot]` suffix and no Bot type is indistinguishable
-// from a human here, so it takes the permission path and is dropped on a 404. No such identity
-// exists in this repository today. If one is added, it must either be granted write access (the
-// permission path then admits it on the merits, which is the preferable fix — one trust term) or be
-// added to the normalisers' bot test AND to this inventory in the same commit.
-func TestTrustedCommentsLive_EveryAutomationIdentityIsRecognisedByTheSuffixAlone(t *testing.T) {
+// THE RESIDUAL: an automation identity NOT on the allowlist takes the permission path and is dropped
+// on a 404 — see the negative test below, which is the whole point of G2 (a third-party bot is
+// dropped). If a NEW first-party automation login is added, it must either hold write access (the
+// permission path then admits it on the merits) or be added to `AUTOMATION_LOGINS` AND this
+// inventory in the same commit, or the loop loses that identity's verdict comments.
+func TestTrustedCommentsLive_EveryAutomationIdentityIsRecognisedByTheAllowlist(t *testing.T) {
 	for _, login := range []string{"github-actions[bot]", "claude[bot]"} {
 		t.Run(login, func(t *testing.T) {
 			dir := t.TempDir()
-			// No `is_bot`, and `"type":"User"` — the suffix is the only signal available.
+			// No `is_bot`, and `"type":"User"` — recognition is by the allowlist login match alone.
 			conversation := `{"comments":[{"id":"c1","author":{"login":"` + login + `"},` +
 				`"body":"CONVERSATION-VERDICT","createdAt":"2026-09-20T10:00:00Z",` +
 				`"url":"https://e/c1","isMinimized":false}]}`
@@ -693,6 +694,67 @@ exit 1
 				}
 			}
 		})
+	}
+}
+
+// The other half of G2, and the whole reason for the allowlist: a bot login NOT on it is NOT trusted
+// on `[bot]`-ness. It takes the permission path like any non-collaborator, 404s, and is DROPPED — so
+// a third-party GitHub App that comments on the PR cannot inject text into the agent. Before G2 the
+// `[bot]` suffix alone would have trusted it; this pins the narrowing and would fail against the
+// pre-#1806-G2 helper.
+func TestTrustedCommentsLive_ANonAllowlistedBotIsNotTrusted(t *testing.T) {
+	dir := t.TempDir()
+	// A real maintainer (kept via the permission path) plus a third-party bot that is NOT on the
+	// automation allowlist. `is_bot:true` is set deliberately: even with GitHub's own bot flag, an
+	// unlisted App is untrusted now — trust is the allowlist, not `is_bot`.
+	conversation := `{"comments":[` +
+		`{"id":"m1","author":{"login":"maintainer","is_bot":false},"body":"MAINTAINER-FINDING",` +
+		`"createdAt":"2026-09-20T10:00:00Z","url":"https://e/m1","isMinimized":false},` +
+		`{"id":"b1","author":{"login":"dependabot[bot]","is_bot":true},"body":"THIRDPARTY-BOT-PAYLOAD",` +
+		`"createdAt":"2026-09-20T10:30:00Z","url":"https://e/b1","isMinimized":false}]}`
+	script := `#!/usr/bin/env bash
+set -uo pipefail
+case "${1:-}" in
+  "pr"|"issue") cat <<'PAYLOAD'
+` + conversation + `
+PAYLOAD
+    exit 0 ;;
+  "api")
+    case "${2:-}" in
+      *"/pulls/"*"/reviews"*) echo '[]'; exit 0 ;;
+      *"/pulls/"*"/comments"*) echo '[]'; exit 0 ;;
+      *"/collaborators/maintainer/permission") echo "write"; exit 0 ;;
+      *"/collaborators/dependabot"*"/permission") echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
+    esac
+    echo "stub gh: unexpected api call: $*" >&2; exit 1 ;;
+esac
+echo "stub gh: unexpected invocation: $*" >&2; exit 1
+`
+	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o700); err != nil {
+		t.Fatalf("writing gh stub: %v", err)
+	}
+	path := dir + string(os.PathListSeparator) + os.Getenv("PATH")
+	stdout, stderr, code := runTrusted(t, path, []string{"--pr", "1807"}, "", "")
+
+	if code != 0 {
+		t.Fatalf("exit %d, want 0.\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+	// G2: the unlisted bot must have been treated as an ordinary author — resolved through the
+	// permission path and found to lack write access. The library logs exactly that when a login is
+	// looked up and dropped; before G2 the `[bot]` suffix would have SKIPPED the lookup and trusted
+	// it, so this log line would never appear for a bot.
+	if !strings.Contains(stderr, "dependabot[bot]") || !strings.Contains(stderr, "no write access") {
+		t.Errorf("dependabot[bot] was not resolved through the permission path — an unlisted bot is "+
+			"still trusted on `[bot]`-ness rather than the allowlist (G2 regression).\nstderr:\n%s", stderr)
+	}
+	// 404 → dropped: its text must not reach the agent.
+	if strings.Contains(stdout, "THIRDPARTY-BOT-PAYLOAD") {
+		t.Errorf("a non-allowlisted bot's comment reached the digest — it must be dropped like any "+
+			"non-collaborator (G2).\nstdout:\n%s", stdout)
+	}
+	// The maintainer (real write access) is still kept, so this is a real drop, not an empty digest.
+	if !strings.Contains(stdout, "MAINTAINER-FINDING") {
+		t.Errorf("the maintainer's comment was dropped too — the filter is over-excluding.\nstdout:\n%s", stdout)
 	}
 }
 
