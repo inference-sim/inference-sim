@@ -567,16 +567,31 @@ func GetHWConfig(HWConfigFilePath string, GPU string) (sim.HardwareCalib, error)
 		sort.Strings(available)
 		return sim.HardwareCalib{}, fmt.Errorf("GPU %q not found in hardware config (available: %v)", GPU, available)
 	}
-	// #1530: the optional interconnect calibration is validated here, at the load
-	// boundary, so a malformed hardware config fails identically regardless of which
-	// latency backend will consume it — the roofline backend ignores these fields, and
-	// silently accepting a typo under roofline while rejecting it under trained-physics
-	// would be a confusing asymmetry (R23). Only the requested GPU is checked, so an
-	// unrelated malformed entry elsewhere in the file does not block an unrelated run.
-	if err := config.ValidateInterconnect(); err != nil {
+	// Only the requested GPU is validated, so an unrelated malformed entry elsewhere in the
+	// file does not block an unrelated run. ValidateHardwareCalibEntry holds the rules
+	// themselves so the strict catalog-load gate applies the same ones (see its comment).
+	if err := ValidateHardwareCalibEntry(config); err != nil {
 		return sim.HardwareCalib{}, fmt.Errorf("hardware config %q, GPU %q: %w", HWConfigFilePath, GPU, err)
 	}
 	return config, nil
+}
+
+// ValidateHardwareCalibEntry applies the load-boundary validation rules for ONE decoded GPU
+// calibration entry, and is the single home for them (R23). Two callers share it: GetHWConfig,
+// for the GPU a run selected, and the strict catalog-load gate (#1750), for every
+// <catalog>/hardware/<gpu>.yaml entry. Neither re-implements a rule, so a rule added HERE
+// reaches both rather than only the path whose author remembered it — the drift a reviewer of
+// #1750 could otherwise only prevent by noticing.
+//
+// It takes a decoded entry rather than a payload because strict KEY policy is already shared
+// one level up, in ParseHardwareCalibEntries; this is the VALUE half.
+//
+// Today the rule set is the #1530 interconnect pair: validated at the load boundary so a
+// malformed hardware config fails identically regardless of which latency backend will consume
+// it — the roofline backend ignores these fields, and silently accepting a typo under roofline
+// while rejecting it under trained-physics would be a confusing asymmetry (R23).
+func ValidateHardwareCalibEntry(calib sim.HardwareCalib) error {
+	return calib.ValidateInterconnect()
 }
 
 // ParseHFConfig parses a HuggingFace config.json file into an HFConfig.

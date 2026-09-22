@@ -201,9 +201,18 @@ fails if the default stops being a 40-hex SHA.
 
 Two failure modes are why this is a tested script rather than an inline workflow step: the load test
 **skips** when `BLIS_CATALOG` never reaches it (so a local `go test ./...` needs no catalog checkout)
-and `go test` reports a skip as a **pass**, so the script greps for `--- SKIP` and fails — otherwise a
-broken checkout turns the gate green having loaded nothing. The ci.yml job that calls it is quoted
-verbatim in the script header.
+and `go test` reports a skip as a **pass** — so the script fails on a `--- SKIP:` line for the
+top-level test, and also requires its `--- PASS:` line, which catches a `-run` pattern that matched
+no test at all. Both patterns are anchored to the test name: an unanchored `--- SKIP` would match a
+skipped *subtest* (go test indents those) and fail a load that ran fine.
+
+**Wiring is a pending human step.** The `catalog-load` job that calls this script is quoted verbatim
+in the script header but is **not yet in `.github/workflows/ci.yml`** — the delivery loop's
+`GITHUB_TOKEN` has no `workflows` permission ([automated-delivery.md](../docs/contributing/automated-delivery.md)),
+so a human must paste it. Until then the authoritative-catalog load is an on-demand command, and
+only the committed fixture catalog is loaded on every PR (by `go test ./cmd/...`). Adding the job —
+and, if the check should block merges, marking it required in branch protection — is a merge
+precondition for #1750, not something this script can enforce from inside the repository.
 
 ## archon-plan-resolve.sh — find and extract a declared archon plan
 

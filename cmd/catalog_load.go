@@ -36,7 +36,10 @@ import (
 //
 //  2. The GATE is a test, not a subcommand: cmd/catalog_load_test.go drives loadCatalog
 //     against the committed fixture catalog (testdata/catalog) unconditionally, and
-//     scripts/catalog-load-gate.sh drives it against a pinned blis-catalog checkout in CI.
+//     scripts/catalog-load-gate.sh drives it against a pinned blis-catalog checkout. The
+//     workflow job that calls that script is a PENDING HUMAN EDIT to
+//     .github/workflows/ci.yml — the delivery loop's token cannot push workflow files — and its
+//     body is quoted verbatim in the script's header.
 //
 // SCOPE BOUNDARY, stated because it is the one place this file could be misread as doing
 // less than the issue asks: the completeness rule ("a models/<name>/ dir missing either
@@ -232,10 +235,10 @@ func readCatalogModelEntry(entryDir, name string) (*catalogModelEntry, error) {
 		return nil, fmt.Errorf("%s: %s is not readable: %w", path, catalogModelEntryFile, err)
 	}
 
-	// Deployment facts first, so the specific "not catalog data" message wins over the
-	// generic unknown-key one (the same precedence rejectLegacyInterNodeLatencyKey takes
-	// over rejectUnknownHardwareCalibKeys).
-	if err := rejectCatalogDeploymentFacts(path, data); err != nil {
+	// The catalog-wide YAML rules first, so the specific "not catalog data" / "not one
+	// document" message wins over the generic unknown-key one (the same precedence
+	// rejectLegacyInterNodeLatencyKey takes over rejectUnknownHardwareCalibKeys).
+	if err := checkCatalogAuthoredYAML(path, data); err != nil {
 		return nil, err
 	}
 
@@ -307,8 +310,26 @@ func loadCatalogHardwareEntries(root string) (int, []string) {
 //
 // TFlopsFP8 is required to be PRESENT but may legitimately be 0 (an A100 has no FP8 path),
 // so it is listed here and excluded from the positivity check below.
+//
+// This list plus hardwareCalibOptionalKeys must CLASSIFY every field of sim.HardwareCalib:
+// TestCatalogHardwareKeys_ClassifyEveryCalibField reflects over the struct and fails when a
+// field appears in neither. That is what keeps a field added to the struct from becoming a key
+// this gate silently ignores — the accepted-key set is derived reflectively one package over
+// (latency.ParseHardwareCalibEntries), but whether a new field is REQUIRED is a judgement no
+// reflection can make, so the guard forces the judgement instead of defaulting to "optional".
 var hardwareCalibRequiredKeys = []string{
 	"TFlopsPeak", "TFlopsFP8", "BwPeakTBs", "mfuPrefill", "mfuDecode", "MemoryGiB",
+}
+
+// hardwareCalibOptionalKeys are the calibration keys a catalog hardware file may omit, each
+// because "not stated" is a SUPPORTED state with defined behaviour rather than a silent zero:
+// an omitted interconnect pair means "interconnect uncalibrated", which prices cross-node
+// traffic exactly like intra-node traffic (#1530), and an omitted InterNodeHopLatencyUs means
+// the per-hop latency term is not charged at all (#1694 ships it uncalibrated deliberately).
+// Requiring either would reject every hardware entry that has no measured fabric number, which
+// is most of them.
+var hardwareCalibOptionalKeys = []string{
+	"IntraNodeBwGBps", "InterNodeBwGBps", "InterNodeHopLatencyUs",
 }
 
 // hardwareCalibPositiveKeys are the required keys whose value must additionally be > 0.
@@ -326,15 +347,16 @@ var hardwareCalibPositiveKeys = []string{
 // case-mismatch diagnostic, and reject the retired per-collective InterNodeLatencyUs key
 // identically. A second key list would be free to drift from the one the decoder honours.
 //
-// The interconnect pair is validated through sim.HardwareCalib.ValidateInterconnect, the same
-// check GetHWConfig applies at the load boundary, so a half-set bandwidth pair fails here too.
+// The VALUE policy is shared the same way: latency.ValidateHardwareCalibEntry is the single home
+// for the load-boundary rules GetHWConfig applies to the GPU a run selects, so a rule added
+// there fails a catalog entry here too rather than only the run path (R23).
 func readCatalogHardwareEntry(path string) (sim.HardwareCalib, error) {
 	gpu := strings.TrimSuffix(filepath.Base(path), catalogYAMLExt)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return sim.HardwareCalib{}, fmt.Errorf("%s: hardware entry is not readable: %w", path, err)
 	}
-	if err := rejectCatalogDeploymentFacts(path, data); err != nil {
+	if err := checkCatalogAuthoredYAML(path, data); err != nil {
 		return sim.HardwareCalib{}, err
 	}
 
@@ -374,7 +396,7 @@ func readCatalogHardwareEntry(path string) (sim.HardwareCalib, error) {
 				path, key, fields[key])
 		}
 	}
-	if err := calib.ValidateInterconnect(); err != nil {
+	if err := latency.ValidateHardwareCalibEntry(calib); err != nil {
 		return sim.HardwareCalib{}, fmt.Errorf("%s: %w", path, err)
 	}
 	return calib, nil
@@ -420,8 +442,8 @@ func loadCatalogWorkloadEntries(root string) (int, []string) {
 			problems = append(problems, fmt.Sprintf("%s: workload preset is not readable: %v", path, readErr))
 			continue
 		}
-		if factErr := rejectCatalogDeploymentFacts(path, data); factErr != nil {
-			problems = append(problems, factErr.Error())
+		if yamlErr := checkCatalogAuthoredYAML(path, data); yamlErr != nil {
+			problems = append(problems, yamlErr.Error())
 			continue
 		}
 		if _, err := readCatalogPresetWorkload(name, root); err != nil {
@@ -442,20 +464,26 @@ func loadCatalogDeviceEntries(root string) (int, []string) {
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			// An absent devices/ namespace is fine — nothing reads it until a tier names a
-			// device_class. But a namespace that EXISTS and holds YAML while missing the one
-			// file BLIS reads is reported: that is what a misnamed storage table looks like
-			// (storages.yaml), and it would otherwise pass this gate as "no devices to load"
-			// and then fail a real run with "device_class is not defined".
-			if siblings, listErr := catalogYAMLFiles(filepath.Join(root, catalogDevicesSubdir)); listErr == nil && len(siblings) > 0 {
+			// device_class. But a namespace that EXISTS and holds ANYTHING while missing the
+			// one file BLIS reads is reported: that is what a misnamed storage table looks
+			// like (storages.yaml), what a table filed one level too deep looks like
+			// (devices/storage/storage.yaml), and what a namespace holding only prose looks
+			// like — each would otherwise pass this gate as "no devices to load" and then
+			// fail a real run with "device_class is not defined".
+			//
+			// Every entry is listed, not just the .yaml ones: filtering to YAML is what made
+			// the subdirectory and non-YAML shapes indistinguishable from an absent
+			// namespace, which is exactly the silence this diagnostic exists to break.
+			if contents := catalogDirContents(filepath.Join(root, catalogDevicesSubdir)); len(contents) > 0 {
 				return 0, []string{fmt.Sprintf("%s: the devices namespace holds %v but no %s, the only "+
-					"storage-device table BLIS reads", path, siblings, catalogStorageDevicesFile)}
+					"storage-device table BLIS reads", path, contents, catalogStorageDevicesFile)}
 			}
 			return 0, nil
 		}
 		return 0, []string{fmt.Sprintf("%s: storage-device table is not readable: %v", path, err)}
 	}
-	if factErr := rejectCatalogDeploymentFacts(path, data); factErr != nil {
-		return 0, []string{factErr.Error()}
+	if yamlErr := checkCatalogAuthoredYAML(path, data); yamlErr != nil {
+		return 0, []string{yamlErr.Error()}
 	}
 	devices, err := loadCatalogStorageDevices(root)
 	if err != nil {
@@ -481,6 +509,28 @@ func catalogYAMLFiles(dir string) ([]string, error) {
 	}
 	sort.Strings(paths)
 	return paths, nil
+}
+
+// catalogDirContents lists everything dir holds, sorted (INV-6), with a directory marked by a
+// trailing separator so "unexpected/" reads as one. Unlike catalogYAMLFiles it filters nothing:
+// its caller is diagnosing a namespace that is PRESENT but has nothing BLIS can read, and a
+// filter there would report that namespace as absent. An absent or unreadable dir yields
+// nothing, which is the caller's "namespace absent" case.
+func catalogDirContents(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() {
+			name += string(filepath.Separator)
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // catalogDeploymentFactKeys are the key spellings a catalog file may NOT use, in the
@@ -527,8 +577,74 @@ func normalizeCatalogKey(key string) string {
 	return b.String()
 }
 
+// checkCatalogAuthoredYAML applies the two rules that hold for EVERY catalog-authored YAML
+// file whatever namespace it sits in, and is the single gate each namespace reader calls before
+// its typed parse (R23 — four readers each calling two guards would be free to drift):
+//
+//  1. it states no deployment fact, at any nesting depth, in ANY document of the file;
+//  2. it holds exactly one document.
+//
+// Rule 2 is not tidiness. EVERY typed reader in BLIS decodes exactly ONE document — this file's
+// model and hardware readers, readCatalogPresetWorkload (#1769), parseCatalogStorageDevices
+// (#1770) — so content after a `---` separator is read by nothing: not the strict-key check,
+// not a required-field check, not a run. That is the silent-drop defect strict parsing exists
+// to prevent (R10) one level up from a single key, so a stream is refused rather than
+// half-read. An EMPTY trailing document (a file ending in `---`) carries nothing and does not
+// count: yaml.v3 yields a nil document for it, and refusing that would reject a harmless
+// separator.
+//
+// Rule 1 is still checked over every document, so the specific "this states a deployment fact"
+// diagnostic wins over the generic stream one — the same precedence
+// rejectLegacyInterNodeLatencyKey takes over rejectUnknownHardwareCalibKeys.
+func checkCatalogAuthoredYAML(path string, data []byte) error {
+	docs, err := catalogYAMLDocuments(data)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	if err := rejectCatalogDeploymentFacts(path, docs); err != nil {
+		return err
+	}
+	if len(docs) > 1 {
+		return fmt.Errorf("%s: catalog file is a multi-document YAML stream (%d documents). BLIS reads "+
+			"exactly ONE document per catalog file, so everything after the first `---` separator is read "+
+			"by nothing — not the strict-key check, not a run. Split it into one file per document",
+			path, len(docs))
+	}
+	return nil
+}
+
+// catalogYAMLDocuments decodes every content-bearing document of a YAML stream.
+//
+// A failure on the FIRST document yields no documents and no error: the caller defers that
+// diagnostic to the typed parse, which produces the real error for its namespace (the same
+// nilerr shape the sibling guards in sim/latency/config.go use). A failure on a LATER document
+// IS returned, because no typed parse ever reaches it.
+func catalogYAMLDocuments(data []byte) ([]any, error) {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	var docs []any
+	for {
+		var doc any
+		err := decoder.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			return docs, nil
+		}
+		if err != nil {
+			if len(docs) == 0 {
+				return nil, nil //nolint:nilerr // defer the diagnostic to the typed parse
+			}
+			return nil, fmt.Errorf("document %d of this multi-document YAML stream does not parse: %w",
+				len(docs)+1, err)
+		}
+		if doc == nil {
+			continue // an empty document (a bare `---`) carries nothing to check
+		}
+		docs = append(docs, doc)
+	}
+}
+
 // rejectCatalogDeploymentFacts refuses a catalog-authored YAML file that states a GPU or a
-// tensor-parallel degree, at ANY nesting depth, naming the file and the offending key path.
+// tensor-parallel degree, at ANY nesting depth of ANY of its documents, naming the file and the
+// offending key path.
 //
 // SCOPE: the catalog's own YAML (models/*/model.yaml, hardware/*.yaml, workloads/*.yaml,
 // devices/*.yaml) — NOT the vendor config.json, which is committed VERBATIM and never
@@ -536,15 +652,18 @@ func normalizeCatalogKey(key string) string {
 // configs carry `pretraining_tp`, the TP degree a model was PRETRAINED with — an
 // architectural fact of the checkpoint, not a choice about how to serve it. Scanning the
 // vendor file would reject most of the catalog for stating something it is right to state.
-//
-// A file that is not a YAML mapping at all defers to the typed parse, which produces the
-// real error (the same nilerr shape the sibling guards in sim/latency/config.go use).
-func rejectCatalogDeploymentFacts(path string, data []byte) error {
-	var doc any
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil //nolint:nilerr // defer the diagnostic to the typed parse
+func rejectCatalogDeploymentFacts(path string, docs []any) error {
+	var offenders []string
+	for i, doc := range docs {
+		// A single-document file — every catalog file today — is qualified by key path alone.
+		// A stream qualifies by document too, so the key is findable: the file is refused for
+		// being a stream as well, but THIS diagnostic is the one that wins.
+		prefix := ""
+		if len(docs) > 1 {
+			prefix = fmt.Sprintf("document[%d]", i+1)
+		}
+		offenders = append(offenders, collectCatalogDeploymentFacts(doc, prefix)...)
 	}
-	offenders := collectCatalogDeploymentFacts(doc, "")
 	if len(offenders) == 0 {
 		return nil
 	}

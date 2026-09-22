@@ -77,16 +77,26 @@ status=0
 go test -v -count=1 -timeout "$GATE_TIMEOUT" -run TestCatalogStrictLoad_RealCatalog ./cmd \
   2>&1 | tee "$log" || status=$?
 
-# The SKIP guard is the load-bearing part. TestCatalogStrictLoad_RealCatalog SKIPS when
-# BLIS_CATALOG is unset — deliberately, so a local `go test ./...` needs no catalog checkout —
-# and `go test` reports a skip as a PASS. Without this check, a broken clone or a lost
+# The did-it-actually-run guard is the load-bearing part. TestCatalogStrictLoad_RealCatalog SKIPS
+# when BLIS_CATALOG is unset — deliberately, so a local `go test ./...` needs no catalog
+# checkout — and `go test` reports a skip as a PASS. Without this check, a broken clone or a lost
 # environment variable would turn the gate green having loaded nothing at all.
-if grep -q -- '--- SKIP' "$log"; then
+#
+# Both patterns are ANCHORED to the top-level test name. An unanchored `--- SKIP` would also match
+# a SKIPPED SUBTEST (go test indents those: `    --- SKIP: TestX/sub`) and any log line quoting
+# the string, failing the gate on a load that ran fine.
+if grep -qE -- '^--- SKIP: TestCatalogStrictLoad_RealCatalog([[:space:]]|$)' "$log"; then
   echo "ERROR: the catalog-load gate SKIPPED — BLIS_CATALOG did not reach the test, so no catalog entry was loaded" >&2
   exit 1
 fi
 if [[ "$status" -ne 0 ]]; then
   echo "ERROR: the catalog at ${BLIS_CATALOG} did not load clean (see the failure above)" >&2
   exit "$status"
+fi
+# The positive half: the load must have PASSED, not merely not-failed. A `-run` pattern matching
+# nothing (a renamed test) exits 0 with "no tests to run", which the skip check above cannot see.
+if ! grep -qE -- '^--- PASS: TestCatalogStrictLoad_RealCatalog([[:space:]]|$)' "$log"; then
+  echo "ERROR: the catalog-load gate did not RUN TestCatalogStrictLoad_RealCatalog (no PASS line) — the -run pattern matched no test" >&2
+  exit 1
 fi
 echo "catalog-load gate: every catalog entry loaded through the production loader"

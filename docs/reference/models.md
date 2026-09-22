@@ -10,7 +10,10 @@ The simulator reads each model's `config.json` from the catalog located by `--ca
 
 ### Catalog validation — there is no `validate` command
 
-BLIS validates whatever it reads and fails naming the file and the problem; there is deliberately no `blis validate` subcommand, because a separate validator would be free to accept a catalog a run rejects. What keeps the catalog loadable is a CI gate that loads **every** entry through the same code path a run uses (#1750): `scripts/catalog-load-gate.sh` clones `blis-catalog` at a pinned revision and runs the whole-catalog load over it.
+BLIS validates whatever it reads and fails naming the file and the problem; there is deliberately no `blis validate` subcommand, because a separate validator would be free to accept a catalog a run rejects. What keeps the catalog loadable is a whole-catalog load that goes through the same code path a run uses (#1750), in two layers:
+
+- **Unconditional** — `go test ./cmd/...` loads the committed fixture catalog (`testdata/catalog`) on every test run.
+- **Against the authoritative catalog** — `scripts/catalog-load-gate.sh` clones `blis-catalog` at a pinned revision and runs the same load over every entry. Wiring that script into `.github/workflows/ci.yml` as a `catalog-load` job is **a pending human step** (the job body is quoted in the script's header), so until that edit lands the authoritative-catalog load runs on demand — `scripts/catalog-load-gate.sh` — rather than on every PR.
 
 What the load requires of a catalog:
 
@@ -19,6 +22,7 @@ What the load requires of a catalog:
 | Every `models/<name>/` entry has **both** halves — the vendor `config.json` **and** `model.yaml` (identity + `source.provider`/`repo`/`revision`), whose `name` matches the directory | `models/` |
 | Every `config.json` resolves and parses through the run path (`--model` resolution, then the model-config parser) | `models/` |
 | Strict parsing — an **unknown key is a hard error naming the file and the key**, never a silently dropped field | `models/*/model.yaml`, `hardware/*.yaml`, `workloads/*.yaml`, `devices/*.yaml` |
+| **One YAML document per file** — every reader decodes exactly one, so content after a `---` separator would be read by nothing (an empty trailing `---` is fine) | every catalog-authored YAML file |
 | No catalog-authored file states a **GPU** or a **tensor-parallel degree** at any nesting depth: those are deployment choices, stated on the command line and required there (`--hardware` / `--tp`, NS-6) | every catalog-authored YAML file |
 | Hardware entries state every calibration field they need (an omitted one would silently read 0) and keep the interconnect bandwidth pair complete | `hardware/*.yaml` |
 

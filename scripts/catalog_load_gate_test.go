@@ -32,7 +32,12 @@ func TestCatalogLoadGate_PinsTheCatalogRevision(t *testing.T) {
 	for _, want := range []struct{ fragment, why string }{
 		{"inference-sim/blis-catalog", "the gate must load the authoritative catalog"},
 		{"TestCatalogStrictLoad_RealCatalog", "the gate must run the whole-catalog load"},
-		{"--- SKIP", "a skipped load must fail the gate; go test reports a skip as a pass"},
+		// Both guards are ANCHORED to the top-level test name. Unanchored, `--- SKIP` also
+		// matches a skipped SUBTEST (go test indents those) or any line quoting the string, and
+		// would fail the gate on a load that ran fine. The PASS half catches the opposite
+		// failure: a `-run` pattern that matched no test exits 0 with no SKIP line at all.
+		{`'^--- SKIP: TestCatalogStrictLoad_RealCatalog`, "a skipped load must fail the gate; go test reports a skip as a pass"},
+		{`'^--- PASS: TestCatalogStrictLoad_RealCatalog`, "the load must be proven to have RUN, not merely not-failed"},
 		{"set -euo pipefail", "a failing step must not be swallowed"},
 	} {
 		if !strings.Contains(source, want.fragment) {

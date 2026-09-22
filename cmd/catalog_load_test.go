@@ -1,12 +1,19 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
+
+	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/latency"
 )
 
 // This file is the R1/C6 acceptance GATE (#1750): CI runs a load over every catalog entry,
@@ -196,13 +203,21 @@ func TestCatalogStrictLoad_CommittedFixtureCatalog(t *testing.T) {
 	}
 }
 
-// TestCatalogStrictLoad_RealCatalog is the CI gate against the authoritative catalog. The
-// `catalog-load` job in .github/workflows/ci.yml checks blis-catalog out at a pinned revision
-// and sets BLIS_CATALOG to it. Skipped when unset so a local run needs no checkout.
+// TestCatalogStrictLoad_RealCatalog is the gate against the authoritative catalog.
+// scripts/catalog-load-gate.sh is what drives it: the script itself clones blis-catalog at the
+// pinned revision it holds, points BLIS_CATALOG at the checkout, runs this test and fails if it
+// skipped or never ran. Skipped when the variable is unset so a local `go test ./...` needs no
+// checkout.
+//
+// Wiring that script into .github/workflows/ci.yml as a `catalog-load` job is a PENDING HUMAN
+// EDIT — the delivery loop's token cannot push workflow files (docs/contributing/automated-delivery.md),
+// so the job body is quoted verbatim in the script's header for a human to paste. Until it
+// lands, this test runs on demand rather than on every PR; the unconditional coverage is
+// TestCatalogStrictLoad_CommittedFixtureCatalog over testdata/catalog.
 func TestCatalogStrictLoad_RealCatalog(t *testing.T) {
 	root := os.Getenv(catalogEnvVar)
 	if root == "" {
-		t.Skipf("%s is not set; the CI catalog-load job sets it to a blis-catalog checkout", catalogEnvVar)
+		t.Skipf("%s is not set; scripts/catalog-load-gate.sh sets it to a blis-catalog checkout", catalogEnvVar)
 	}
 	report, err := loadCatalog(root)
 	if err != nil {
@@ -418,6 +433,40 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 			wantFile:    catalogStorageDevicesRelPath,
 			wantPhrases: []string{"deployment fact", "--tp"},
 		},
+		{
+			// A second document is read by NOTHING: every typed reader decodes one document,
+			// so its keys face neither the strict-key check nor a required-field check. The
+			// file is refused rather than half-read.
+			name: "model.yaml is a multi-document YAML stream",
+			mutate: func(t *testing.T, root string) {
+				writeCatalogFile(t, filepath.Join(root, modelEntry, catalogModelEntryFile),
+					modelEntryYAML(gateModel)+"---\nlicence: apache-2.0\n")
+			},
+			wantFile:    catalogModelEntryFile,
+			wantPhrases: []string{"multi-document", "2 documents"},
+		},
+		{
+			// The loophole this closes: a deployment fact parked after a `---` was invisible
+			// to a guard that only ever unmarshalled the first document.
+			name: "a later document of a stream states a GPU",
+			mutate: func(t *testing.T, root string) {
+				writeCatalogFile(t, filepath.Join(root, catalogHardwareSubdir, "h100"+catalogYAMLExt),
+					validHardwareEntry+"---\ngpu: H100\n")
+			},
+			wantFile:    filepath.Join(catalogHardwareSubdir, "h100"+catalogYAMLExt),
+			wantPhrases: []string{"deployment fact", "--hardware", "document[2].gpu"},
+		},
+		{
+			// A later document that does not even parse is reported here, because no typed
+			// parse reaches it: the first document decodes fine and the reader stops.
+			name: "a later document of a stream does not parse",
+			mutate: func(t *testing.T, root string) {
+				writeCatalogFile(t, filepath.Join(root, catalogWorkloadsSubdir, "chatbot"+presetFileExt),
+					validWorkloadEntry+"---\nbroken: [1\n")
+			},
+			wantFile:    filepath.Join(catalogWorkloadsSubdir, "chatbot"+presetFileExt),
+			wantPhrases: []string{"document 2", "does not parse"},
+		},
 	}
 
 	for _, tc := range tests {
@@ -488,6 +537,205 @@ func TestCatalogStrictLoad_MisnamedStorageTableIsReported(t *testing.T) {
 			t.Errorf("the diagnostic must name %q; got:\n%v", want, err)
 		}
 	}
+}
+
+// TestCatalogStrictLoad_DevicesNamespaceWithNothingReadableIsReported covers the rest of the
+// half-present devices/ namespace: the misnamed-table case above lists a sibling .yaml, but a
+// namespace holding only prose, or the table filed one directory too deep, is just as broken and
+// used to be indistinguishable from an absent namespace (the listing filtered to .yaml files, so
+// both filtered down to nothing and the loader returned "no devices to load"). Each would then
+// fail a real run with "device_class is not defined", blaming the operator's config.
+func TestCatalogStrictLoad_DevicesNamespaceWithNothingReadableIsReported(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		populate func(t *testing.T, devices string)
+		wantName string
+	}{
+		{
+			name: "only a non-YAML file",
+			populate: func(t *testing.T, devices string) {
+				writeCatalogFile(t, filepath.Join(devices, "README.txt"), "device tables live here\n")
+			},
+			wantName: "README.txt",
+		},
+		{
+			name: "the table filed one directory too deep",
+			populate: func(t *testing.T, devices string) {
+				writeCatalogFile(t, filepath.Join(devices, "storage", catalogStorageDevicesFile), validDeviceTable)
+			},
+			wantName: "storage",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := newCompleteCatalog(t)
+			devices := filepath.Join(root, catalogDevicesSubdir)
+			if err := os.Remove(catalogStorageDevicesPath(root)); err != nil {
+				t.Fatalf("remove storage table: %v", err)
+			}
+			tc.populate(t, devices)
+
+			report := loadOrFatal(t, root)
+			err := report.Err()
+			if err == nil {
+				t.Fatalf("a devices namespace holding %s but no %s must be reported",
+					tc.wantName, catalogStorageDevicesFile)
+			}
+			for _, want := range []string{catalogStorageDevicesFile, tc.wantName} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the diagnostic must name %q; got:\n%v", want, err)
+				}
+			}
+		})
+	}
+
+	// The negative control that keeps the rule from becoming "devices/ is mandatory": an
+	// EMPTY namespace (or an absent one) stays silent, because nothing reads the table until a
+	// --kv-offload-config tier names a device_class.
+	t.Run("empty namespace stays silent", func(t *testing.T) {
+		root := newCompleteCatalog(t)
+		if err := os.Remove(catalogStorageDevicesPath(root)); err != nil {
+			t.Fatalf("remove storage table: %v", err)
+		}
+		if err := loadOrFatal(t, root).Err(); err != nil {
+			t.Fatalf("an empty devices namespace must load clean; got: %v", err)
+		}
+	})
+}
+
+// TestCatalogStrictLoad_EmptyTrailingDocumentIsAccepted is the precision control on the
+// one-document rule: a file ending in a bare `---` carries no second document (yaml.v3 decodes
+// it as nil), so refusing it would reject a harmless separator rather than hidden content.
+func TestCatalogStrictLoad_EmptyTrailingDocumentIsAccepted(t *testing.T) {
+	root := newCompleteCatalog(t)
+	writeCatalogFile(t, filepath.Join(root, catalogModelsSubdir, gateModel, catalogModelEntryFile),
+		modelEntryYAML(gateModel)+"---\n")
+	if err := loadOrFatal(t, root).Err(); err != nil {
+		t.Fatalf("a trailing empty YAML document must load clean; got: %v", err)
+	}
+}
+
+// TestCatalogHardwareKeys_ClassifyEveryCalibField is the drift guard on the hardware namespace's
+// one hand-written policy. The ACCEPTED key set is derived reflectively in
+// latency.ParseHardwareCalibEntries, so a field added to sim.HardwareCalib is accepted with no
+// parser change — but whether a new field must be STATED is a judgement no reflection can make,
+// and defaulting it to "optional" would silently reintroduce the silent-zero defect
+// hardwareCalibRequiredKeys exists to prevent. So every field must appear in exactly one of the
+// two lists, and this test is what forces that decision at the moment the field is added.
+func TestCatalogHardwareKeys_ClassifyEveryCalibField(t *testing.T) {
+	classification := make(map[string]string, len(hardwareCalibRequiredKeys)+len(hardwareCalibOptionalKeys))
+	for _, key := range hardwareCalibRequiredKeys {
+		classification[key] = "required"
+	}
+	for _, key := range hardwareCalibOptionalKeys {
+		if was, dup := classification[key]; dup {
+			t.Errorf("%q is classified both %s and optional; a key must be one or the other", key, was)
+		}
+		classification[key] = "optional"
+	}
+
+	typ := reflect.TypeOf(sim.HardwareCalib{})
+	fields := make(map[string]bool, typ.NumField())
+	for i := 0; i < typ.NumField(); i++ {
+		f := typ.Field(i)
+		if !f.IsExported() {
+			continue // invisible to the decoder, so not a catalog key either
+		}
+		key := f.Name
+		if tag, ok := f.Tag.Lookup("json"); ok {
+			if name := strings.Split(tag, ",")[0]; name == "-" {
+				continue
+			} else if name != "" {
+				key = name
+			}
+		}
+		fields[key] = true
+		if _, classified := classification[key]; !classified {
+			t.Errorf("sim.HardwareCalib field %q is in neither hardwareCalibRequiredKeys nor "+
+				"hardwareCalibOptionalKeys: decide whether a catalog hardware entry must STATE it "+
+				"(an omitted non-pointer float reads 0) and add it to the right list", key)
+		}
+	}
+	for key := range classification {
+		if !fields[key] {
+			t.Errorf("%q is classified but is not a sim.HardwareCalib field; it could never be "+
+				"required or omitted", key)
+		}
+	}
+	// A positivity rule on a key nothing requires would never run.
+	for _, key := range hardwareCalibPositiveKeys {
+		if classification[key] != "required" {
+			t.Errorf("%q must be > 0 but is not required to be present; the check would never run", key)
+		}
+	}
+}
+
+// TestCatalogHardwareEntry_SharesTheRunPathValueValidation pins the PARITY the catalog reader
+// depends on: the values a hardware entry may hold are decided by
+// latency.ValidateHardwareCalibEntry, the single home for the load-boundary rules, so the
+// catalog namespace and the run path (latency.GetHWConfig over hardware_config.json) accept and
+// reject the same entries (R23). A rule that lands there fails a catalog entry too; a rule added
+// to only one path is what this asserts against, and its row goes here.
+func TestCatalogHardwareEntry_SharesTheRunPathValueValidation(t *testing.T) {
+	const gpu = "h100"
+	for _, tc := range []struct {
+		name       string
+		yamlBody   string
+		wantReject bool
+	}{
+		{
+			name:     "a complete interconnect pair is accepted by both",
+			yamlBody: validHardwareEntry,
+		},
+		{
+			name:       "a half-set interconnect pair is rejected by both",
+			yamlBody:   strings.Replace(validHardwareEntry, "InterNodeBwGBps: 50\n", "", 1),
+			wantReject: true,
+		},
+		{
+			name:       "a negative per-hop latency is rejected by both",
+			yamlBody:   validHardwareEntry + "InterNodeHopLatencyUs: -3.0\n",
+			wantReject: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			yamlPath := filepath.Join(dir, gpu+catalogYAMLExt)
+			writeCatalogFile(t, yamlPath, tc.yamlBody)
+			_, catalogErr := readCatalogHardwareEntry(yamlPath)
+
+			// The same entry as the run path sees it: one GPU of a hardware_config.json.
+			calib, err := parseHardwareYAMLForTest(t, tc.yamlBody)
+			if err != nil {
+				t.Fatalf("convert the fixture entry to a hardware config: %v", err)
+			}
+			jsonPath := filepath.Join(dir, "hardware_config.json")
+			writeCatalogFile(t, jsonPath, calib)
+			_, runErr := latency.GetHWConfig(jsonPath, gpu)
+
+			if (catalogErr != nil) != (runErr != nil) {
+				t.Fatalf("the catalog namespace and the run path disagree about this entry — "+
+					"catalog: %v; run path (GetHWConfig): %v", catalogErr, runErr)
+			}
+			if tc.wantReject && catalogErr == nil {
+				t.Fatalf("both paths accepted an entry they must reject")
+			}
+			if !tc.wantReject && catalogErr != nil {
+				t.Fatalf("both paths rejected a valid entry: %v", catalogErr)
+			}
+		})
+	}
+}
+
+// parseHardwareYAMLForTest re-expresses a hardware/<gpu>.yaml body as the hardware_config.json
+// payload the run path reads, so one fixture drives both sides of the parity test above.
+func parseHardwareYAMLForTest(t *testing.T, body string) (string, error) {
+	t.Helper()
+	var fields map[string]any
+	if err := yaml.Unmarshal([]byte(body), &fields); err != nil {
+		return "", err
+	}
+	payload, err := json.Marshal(map[string]any{"h100": fields})
+	return string(payload), err
 }
 
 // TestCatalogStrictLoad_VendorConfigMayStatePretrainingTP is the precision control on the
@@ -594,10 +842,11 @@ func TestCatalogStrictLoad_MissingNamespaceIsNotAProblem(t *testing.T) {
 	})
 }
 
-// The CI half of the gate — that a job actually runs the load against the authoritative
-// catalog, at a pinned revision, and fails when the load SKIPS — is driven by
+// The CI half of the gate — that the load actually runs against the authoritative catalog, at a
+// pinned revision, and fails when it SKIPS or never ran — is implemented by
 // scripts/catalog-load-gate.sh and pinned by scripts/catalog_load_gate_test.go. It lives there
-// because the workflow calls the script, and the script is what holds the pinned revision.
+// because the script is what holds the pinned revision and what a workflow job calls (that job
+// is a pending human edit to .github/workflows/ci.yml; see the script header).
 
 // TestNormalizeCatalogKey pins the key folding the deployment-fact rule relies on, so a
 // separator or case variant of a banned key cannot slip through.
