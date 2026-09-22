@@ -214,7 +214,43 @@ var canonicalCatalogPin = regexp.MustCompile("(?m)^\\*\\*Compatible blis-catalog
 // It requires the full repository URL, so it matches instructions a reader can copy and
 // paste and not the abbreviated `git clone .../blis-catalog` that appears in CLAUDE.md's
 // change history — a record of what a past PR said, which must not be rewritten.
+//
+// It is matched against a RECONSTRUCTED command (docLogicalLines below), not a physical
+// line, so a clone wrapped across lines with `\` is still seen as one command.
 var catalogCloneCommand = regexp.MustCompile(`git clone\b[^\n]*github\.com/inference-sim/blis-catalog`)
+
+// docLogicalLine is one reconstructed shell command from a doc file, with the 1-based
+// physical line it starts on so a diagnostic names the line a reader would edit.
+type docLogicalLine struct {
+	num  int
+	text string
+}
+
+// docLogicalLines joins `\` continuations into the single command line a shell would see —
+// the same reconstruction TestDocExamplesPassDeploymentFlags does for `blis run` examples.
+//
+// Matching physical lines instead would be wrong in both directions for a wrapped clone
+// command: `git clone <url> \` / `  --branch <tag>` reports a false "unpinned" (the pin is
+// on the continuation line), and `git clone --branch <tag> \` / `  <url>` is missed entirely
+// (no single line carries both `git clone` and the URL).
+//
+// A markdown hard line break is also a trailing `\`, so prose can be joined too. That is
+// safe here: joining only ever ADDS text to a logical line, so it can make the pin check
+// more permissive but can never turn a correctly pinned clone into a failure. The matched
+// text is reported collapsed, so an over-joined diagnostic still reads as one command.
+func docLogicalLines(src string) []docLogicalLine {
+	lines := strings.Split(src, "\n")
+	out := make([]docLogicalLine, 0, len(lines))
+	for i := 0; i < len(lines); i++ {
+		start, command := i, lines[i]
+		for strings.HasSuffix(strings.TrimRight(lines[i], " \t"), `\`) && i+1 < len(lines) {
+			i++
+			command += " " + lines[i]
+		}
+		out = append(out, docLogicalLine{num: start + 1, text: command})
+	}
+	return out
+}
 
 // TestDocExamplesPinTheCatalogVersion is #1814: every documented clone of blis-catalog must
 // pin an explicit release tag, and they must all pin the SAME tag — the one declared in
@@ -229,7 +265,19 @@ var catalogCloneCommand = regexp.MustCompile(`git clone\b[^\n]*github\.com/infer
 //
 // It is the sibling of TestDocExamplesDocumentTheCatalogEnvVar (which pins that the
 // location is documented at all) and scans the whole live docs set, not just the entry
-// points, so a NEW page cannot introduce an unpinned clone either.
+// points, so a NEW page that introduces an unpinned clone fails too.
+//
+// Two separate things are checked, because a global count cannot establish either alone:
+// every clone found anywhere pins the canonical tag, AND every page in
+// docCatalogEntryPoints still carries a clone of its own (so a matcher that stops seeing
+// one entry point's command cannot be covered for by a second match on another page).
+//
+// Scope, stated so the guarantee is not read wider than it is: what is checked is every
+// clone command catalogCloneCommand recognizes, which by design means those carrying the
+// full repository URL (see that matcher). A clone written with an abbreviated URL is not
+// matched and so not checked — deliberate, since that is the shape CLAUDE.md's change
+// history uses and must keep. The per-entry-point count above is what keeps a *recognized*
+// command from quietly becoming an unrecognized one on the pages that matter.
 func TestDocExamplesPinTheCatalogVersion(t *testing.T) {
 	declaration, err := os.ReadFile(catalogCompatibilityDoc)
 	if err != nil {
@@ -253,37 +301,42 @@ func TestDocExamplesPinTheCatalogVersion(t *testing.T) {
 
 	// Every documented clone of the catalog pins that exact tag.
 	wantPin := "--branch " + tag
-	clones := 0
+	clonesByFile := map[string]int{}
 	for _, file := range collectDocFiles(t) {
 		src, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatalf("read %s: %v", file, err)
 		}
-		for i, line := range strings.Split(string(src), "\n") {
-			if !catalogCloneCommand.MatchString(line) {
+		for _, command := range docLogicalLines(string(src)) {
+			if !catalogCloneCommand.MatchString(command.text) {
 				continue
 			}
-			clones++
-			if !strings.Contains(line, "--branch ") {
+			clonesByFile[filepath.Clean(file)]++
+			if !strings.Contains(command.text, "--branch ") {
 				t.Errorf("%s:%d: documented blis-catalog clone is unpinned — it takes whatever "+
 					"`main` is at clone time, so a catalog release can break this build (strict "+
 					"parsing makes a schema change a hard load error). Pin it with `%s`:\n  %s",
-					file, i+1, wantPin, strings.TrimSpace(line))
+					file, command.num, wantPin, collapse(command.text))
 				continue
 			}
-			if !strings.Contains(line, wantPin) {
+			if !strings.Contains(command.text, wantPin) {
 				t.Errorf("%s:%d: documented blis-catalog clone pins a different release than the "+
 					"canonical declaration in %s (`%s`). One version, stated once:\n  %s",
-					file, i+1, catalogCompatibilityDoc, tag, strings.TrimSpace(line))
+					file, command.num, catalogCompatibilityDoc, tag, collapse(command.text))
 			}
 		}
 	}
-	// Non-vacuity: the entry points named by docCatalogEntryPoints each show the clone, so a
-	// scan that finds fewer has a broken matcher (or lost an instruction a reader needs).
-	if clones < len(docCatalogEntryPoints) {
-		t.Errorf("non-vacuity: found %d documented blis-catalog clone commands, expected at least "+
-			"one per entry point (%d) — catalogCloneCommand or the docs are wrong",
-			clones, len(docCatalogEntryPoints))
+
+	// Non-vacuity, PER ENTRY POINT: each page a reader starts from must carry a clone command
+	// of its own. A single total would let extra matches on one page cover for an entry point
+	// the matcher stopped seeing — which is the case that matters, since a missed clone is
+	// silently exempt from the pin check above.
+	for _, entry := range docCatalogEntryPoints {
+		if clonesByFile[filepath.Clean(entry)] == 0 {
+			t.Errorf("non-vacuity: found no documented blis-catalog clone command in %s — either "+
+				"the page lost an instruction a reader needs, or catalogCloneCommand no longer "+
+				"matches how it is written (in which case its pin is unchecked)", entry)
+		}
 	}
 }
 
@@ -291,25 +344,89 @@ func TestDocExamplesPinTheCatalogVersion(t *testing.T) {
 // in one canonical place, linked from the others": a page showing the pinned clone must also
 // say where the version comes from. Without the link the tag reads as an arbitrary string,
 // and a reader hitting a catalog incompatibility has nowhere to go.
+//
+// Every entry point is required to link the note, unconditionally — there is deliberately no
+// "this page has no clone, skip it" escape, which would make the check silently vacuous for
+// exactly the page whose clone command the matcher had stopped recognizing. That every entry
+// point does show a clone is the sibling test's per-entry-point non-vacuity assertion.
 func TestDocCatalogEntryPointsLinkTheCompatibilityNote(t *testing.T) {
 	for _, path := range docCatalogEntryPoints {
+		if filepath.Clean(path) == filepath.Clean(catalogCompatibilityDoc) {
+			continue // the canonical note itself, checked by the sibling test
+		}
 		src, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("read %s: %v (docCatalogEntryPoints is stale)", path, err)
 		}
 		text := string(src)
-		if !catalogCloneCommand.MatchString(text) {
-			continue // this page defers the clone instruction to another entry point
-		}
-		if filepath.Clean(path) == filepath.Clean(catalogCompatibilityDoc) {
-			continue // the canonical note itself, checked above
-		}
 		if !strings.Contains(text, "#catalog-compatibility") &&
 			!strings.Contains(text, "Catalog compatibility") {
-			t.Errorf("%s shows the pinned blis-catalog clone but never points at the canonical "+
-				"Catalog compatibility note (%s#catalog-compatibility), so a reader cannot tell "+
-				"where the pinned version comes from or how to move off it",
+			t.Errorf("%s never points at the canonical Catalog compatibility note "+
+				"(%s#catalog-compatibility): every entry point shows the pinned blis-catalog "+
+				"clone, so without the link a reader cannot tell where the pinned version comes "+
+				"from or how to move off it",
 				path, catalogCompatibilityDoc)
 		}
+	}
+}
+
+// TestDocLogicalLinesReconstructsWrappedCloneCommands covers the guard's own matcher over the
+// wrapped forms a doc author may reasonably write. A line-oriented scan mis-reads both: the
+// first as an unpinned clone (the pin is on the continuation line) and the second as no clone
+// at all (no single line carries both `git clone` and the URL) — so a wrapped clone would
+// either fail a correct page or exempt an unpinned one from the check.
+func TestDocLogicalLinesReconstructsWrappedCloneCommands(t *testing.T) {
+	const url = "https://github.com/inference-sim/blis-catalog.git"
+	for _, tc := range []struct {
+		name     string
+		src      string
+		wantPin  bool // the reconstructed clone command carries --branch
+		wantLine int  // physical line the command is reported at
+	}{
+		{
+			name:     "single line pinned",
+			src:      "git clone --branch 0.1.1 --depth 1 " + url + "\n",
+			wantPin:  true,
+			wantLine: 1,
+		},
+		{
+			name:     "url first, pin on continuation",
+			src:      "git clone " + url + " \\\n  --branch 0.1.1 --depth 1\n",
+			wantPin:  true,
+			wantLine: 1,
+		},
+		{
+			name:     "pin first, url on continuation",
+			src:      "git clone --branch 0.1.1 --depth 1 \\\n  " + url + "\n",
+			wantPin:  true,
+			wantLine: 1,
+		},
+		{
+			name:     "wrapped and genuinely unpinned is still caught",
+			src:      "git clone --depth 1 \\\n  " + url + "\n",
+			wantPin:  false,
+			wantLine: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var found []docLogicalLine
+			for _, command := range docLogicalLines(tc.src) {
+				if catalogCloneCommand.MatchString(command.text) {
+					found = append(found, command)
+				}
+			}
+			if len(found) != 1 {
+				t.Fatalf("expected exactly 1 reconstructed catalog clone command, got %d from:\n%s",
+					len(found), tc.src)
+			}
+			if got := strings.Contains(found[0].text, "--branch "); got != tc.wantPin {
+				t.Errorf("pin detected = %v, want %v, in reconstructed command: %s",
+					got, tc.wantPin, collapse(found[0].text))
+			}
+			if found[0].num != tc.wantLine {
+				t.Errorf("reported line = %d, want %d (a diagnostic must name the line a reader edits)",
+					found[0].num, tc.wantLine)
+			}
+		})
 	}
 }
