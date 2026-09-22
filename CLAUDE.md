@@ -24,8 +24,12 @@ go build -o blis main.go
 #     The retired --model-config-folder is gone: point --catalog at a scratch clone to
 #     use your own config, so there is exactly one way to supply a model config.
 #     The catalog is the blis-catalog repository (#1771 deleted the former in-repo
-#     model_configs/ tree). The examples below OMIT the flag — clone it and export once:
-#         git clone https://github.com/inference-sim/blis-catalog.git
+#     model_configs/ tree). The examples below OMIT the flag — clone it at the PINNED
+#     release tag (#1814: the catalog versions independently, and strict parsing makes a
+#     schema change a hard load error, so an unpinned clone can break a working build;
+#     docs/getting-started/installation.md#catalog-compatibility is the canonical
+#     declaration and says how to bump it) and export once:
+#         git clone --branch 0.1.1 --depth 1 https://github.com/inference-sim/blis-catalog.git
 #         export BLIS_CATALOG=$PWD/blis-catalog
 #     (its workloads/ namespace holds the named presets — see rule 4.)
 #     `blis observe` and `blis convert preset` take the SAME two forms since #1769, for the
