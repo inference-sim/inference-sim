@@ -353,7 +353,21 @@ func parseHWConfig(HWConfigFilePath string) (map[string]sim.HardwareCalib, error
 	if err != nil {
 		return nil, fmt.Errorf("read hardware config %q: %w", HWConfigFilePath, err)
 	}
+	return ParseHardwareCalibEntries(data)
+}
 
+// ParseHardwareCalibEntries strictly decodes a hardware-config PAYLOAD — a JSON object of
+// GPU name -> calibration — into HardwareCalib entries. parseHWConfig is this function plus
+// a file read, so the bundled hardware_config.json and any other caller share one decode and
+// one strict-key policy (R23): a second parser would be free to accept a key this one
+// rejects, which is exactly the drift #1728 closed inside a single file.
+//
+// Exported for the strict catalog-load gate (#1750), which validates the catalog's
+// hardware/<gpu>.yaml namespace by converting each file's YAML mapping to this payload shape
+// and decoding it HERE, rather than re-deriving the accepted key set. The catalog's hardware
+// namespace is not yet consumed by a run (calibration still comes from hardware_config.json),
+// so the gate is what keeps it loadable.
+func ParseHardwareCalibEntries(data []byte) (map[string]sim.HardwareCalib, error) {
 	// #1694: reject the pre-#1694 per-COLLECTIVE key. A legacy "InterNodeLatencyUs" is
 	// caught by the generic unknown-key check below too (#1728), but this guard runs
 	// FIRST so the operator gets the migration message instead: the value is NOT a
