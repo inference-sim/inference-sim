@@ -125,6 +125,14 @@ jobs:
                 && format('refs/pull/{0}/head', github.event.issue.number))
              || '' }}
 
+      # TRUSTED-COMMENTS-LIMITATION (#1806): the delivery loop's verify/correct phases filter
+      # comment text through scripts/deliver-trusted-comments.sh before the agent reads it, but
+      # this path CANNOT — claude-code-action runs in TAG MODE (triggered by the @claude comment,
+      # no prompt: we control), so the action assembles the PR/issue context, comments included,
+      # itself, before any workflow step could substitute a filtered digest. The residual untrusted-
+      # comment surface here is bounded instead by the two controls already on this path: triggering
+      # is gated to admin/maintain/write (check-permissions above), and the /blis-pr-review job runs
+      # read-only (contents: read, #1697). Documented in docs/contributing/standards/agent-trust.md.
       - uses: anthropics/claude-code-action@v1
         id: claude
         env:

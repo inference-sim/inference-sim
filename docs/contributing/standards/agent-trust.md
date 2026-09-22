@@ -111,18 +111,29 @@ maintainer, so it would both admit the wrong people and drop the right ones. The
 boundary, in the same code (`scripts/lib-gh-write-access.sh`), as the trigger gate: *trusted
 to be read* matches *trusted to trigger* exactly.
 
-**Deployment state — the rule is not yet enforced.** The filter exists and is tested
-(`scripts/deliver_trusted_comments_test.go`); **no workflow calls it yet**, so
-`deliver-verify.yml`, `deliver-correct.yml` and `claude.yml` still read comments unfiltered
-and the surface described above is still open. Say so plainly rather than describing the
-intended end state, because a reader who believes the boundary is live will not think to
-check a prompt they are editing. The wiring commit is outstanding for an access reason, not a
-design one: a GitHub App may not write under `.github/workflows/` without the `workflows`
-permission, which the delivery runner's installation does not hold (`git push` is refused
-with "refusing to allow a GitHub App to create or update workflow … without `workflows`
-permission", and the Contents API with 403 "Resource not accessible by integration"), so it
-has to come from a human. Three guards land with it, listed at the end of
-`scripts/deliver_trusted_comments_test.go`. Update this paragraph in that same commit.
+**Deployment state.** The two delivery-loop phases that read comments through a prompt this
+repository controls are wired: `deliver-verify.yml` and `deliver-correct.yml` each run
+`scripts/deliver-trusted-comments.sh --pr` in a step BEFORE the agent, write the filtered
+digest to `$RUNNER_TEMP/trusted-comments.md`, and the agent prompt reads that file and is told
+NOT to run `gh pr view --comments` / `gh api .../comments` itself. The correction phase is the
+one that matters most — it holds `contents: write` — and its work list (the automation-posted
+`DELIVER-VERDICT` / `QA-VERDICT` comments) survives the filter because automation authors are
+kept. `scripts/deliver_trusted_comments_wiring_test.go` pins both, and fails if either prompt
+regains a raw comment read or drops the digest step.
+
+**`claude.yml` is the documented partial case, by a limitation of the tool, not an oversight.**
+Both its jobs invoke `claude-code-action` in **tag mode** (triggered by the `@claude` comment,
+with no `prompt:` we control): the action assembles the PR/issue context — comments included —
+*itself*, before any workflow step could substitute a digest. There is no knob to make it read
+only a pre-filtered set, so the structural filter cannot be applied there. The residual is
+bounded by the two controls already on that path: triggering is gated to `admin`/`maintain`/
+`write` (`check-permissions`), and the `/blis-pr-review` job runs read-only (`contents: read`,
+#1697). A comment in `claude.yml` records this, and the wiring test asserts that marker is
+present, so the gap is a deliberate, marked decision rather than a missing step.
+
+**Out of scope here: the PR *body*.** The qa-review question generator is fed the raw PR body
+(`scripts/qa-review/questioner.py`), which on a community PR is outside-authored — a distinct
+surface from comment text, tracked in #1808. This filter covers comments only.
 
 Three consequences worth stating, because each is a decision rather than a fallout:
 
