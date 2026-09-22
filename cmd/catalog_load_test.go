@@ -22,10 +22,11 @@ import (
 //  2. TestCatalogStrictLoad_CompleteCatalogLoadsClean and the contract tables — a fully
 //     populated catalog (all four namespaces) loads with zero problems, and each strict rule
 //     fires when violated.
-//  3. TestCatalogStrictLoad_RealCatalog — the CI job (.github/workflows/ci.yml, `catalog-load`)
-//     checks out inference-sim/blis-catalog at a pinned revision, points BLIS_CATALOG at it,
-//     and runs this test. Skipped when the variable is unset, so a local `go test ./...` needs
-//     no catalog checkout.
+//  3. TestCatalogStrictLoad_RealCatalog — the load over the AUTHORITATIVE catalog. It is
+//     driven by scripts/catalog-load-gate.sh, which clones inference-sim/blis-catalog at a
+//     pinned revision, points BLIS_CATALOG at it, runs this test and fails when it skips. This
+//     test skips when the variable is unset, so a local `go test ./...` needs no catalog
+//     checkout.
 
 // fixtureCatalog is the committed clone-root-shaped test catalog.
 const fixtureCatalog = "../testdata/catalog"
@@ -544,6 +545,11 @@ func TestCatalogStrictLoad_MissingNamespaceIsNotAProblem(t *testing.T) {
 		}
 	})
 }
+
+// The CI half of the gate — that a job actually runs the load against the authoritative
+// catalog, at a pinned revision, and fails when the load SKIPS — is driven by
+// scripts/catalog-load-gate.sh and pinned by scripts/catalog_load_gate_test.go. It lives there
+// because the workflow calls the script, and the script is what holds the pinned revision.
 
 // TestNormalizeCatalogKey pins the key folding the deployment-fact rule relies on, so a
 // separator or case variant of a banned key cannot slip through.
