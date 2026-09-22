@@ -3002,10 +3002,14 @@ catalog is the <a href="https://github.com/inference-sim/blis-catalog"><code>bli
 clone it once and point BLIS at the clone root. There is <strong>no default and no
 search path</strong>: supply <code>--catalog &lt;path&gt;</code> or set <code>BLIS_CATALOG</code> (the flag wins when both are
 set), or the run is refused naming both forms.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/inference-sim/blis-catalog.git
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>--branch<span class="w"> </span><span class="m">0</span>.1.1<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>https://github.com/inference-sim/blis-catalog.git
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">BLIS_CATALOG</span><span class="o">=</span><span class="nv">$PWD</span>/blis-catalog<span class="w">   </span><span class="c1"># or pass --catalog on every command</span>
 </code></pre></div>
 <p>The examples below (and elsewhere in these docs) assume you have exported it.</p>
+<p>The clone pins release tag <code>0.1.1</code> — the catalog version BLIS is tested against — so a later
+catalog release cannot change what a fresh clone hands your build. See
+<a href="../installation/#catalog-compatibility">Catalog compatibility</a> for why, and for how to move
+to a newer catalog release deliberately.</p>
 <h2 id="single-instance-simulation">Single-Instance Simulation<a class="headerlink" href="#single-instance-simulation" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span>
 </code></pre></div>

@@ -659,6 +659,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#catalog-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Catalog compatibility
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#verify-the-build" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2961,6 +2972,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#catalog-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Catalog compatibility
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#verify-the-build" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3049,10 +3071,33 @@
 <p><code>blis run</code> and <code>blis replay</code> must be told where the model catalog is — there is no default
 and no search path, so a run with neither <code>--catalog</code> nor <code>BLIS_CATALOG</code> is refused naming
 both forms. Clone the authoritative <a href="https://github.com/inference-sim/blis-catalog"><code>blis-catalog</code></a>
-repository and point BLIS at the clone root:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/inference-sim/blis-catalog.git
+repository <strong>at the pinned release tag</strong> (see <a href="#catalog-compatibility">Catalog compatibility</a>
+below) and point BLIS at the clone root:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>git<span class="w"> </span>clone<span class="w"> </span>--branch<span class="w"> </span><span class="m">0</span>.1.1<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>https://github.com/inference-sim/blis-catalog.git
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">BLIS_CATALOG</span><span class="o">=</span><span class="nv">$PWD</span>/blis-catalog<span class="w">   </span><span class="c1"># or pass --catalog on every command</span>
 </code></pre></div>
+<h2 id="catalog-compatibility">Catalog compatibility<a class="headerlink" href="#catalog-compatibility" title="Permanent link">&para;</a></h2>
+<p><code>blis-catalog</code> versions independently of BLIS and keeps releasing, so the documented clone
+names an explicit tag rather than whatever <code>main</code> happens to be. This is the one place the
+compatible version is stated; every other page's clone command pins the same tag.</p>
+<!-- Canonical declaration. cmd.TestDocExamplesPinTheCatalogVersion reads the tag from the
+     line below and requires every documented blis-catalog clone to pin exactly it, so keep
+     the `**Compatible blis-catalog release: `<tag>`**` shape intact when bumping. -->
+
+<p><strong>Compatible blis-catalog release: <code>0.1.1</code></strong> — <a href="https://github.com/inference-sim/blis-catalog/releases/tag/0.1.1">release notes</a>.</p>
+<p>Why pin at all: BLIS parses every catalog file strictly (<code>KnownFields(true)</code>), and strict
+parsing is one-way — an added or renamed key in a future catalog schema is a <strong>hard load
+error</strong>, not a silently ignored field. An unpinned clone therefore lets a catalog release
+turn a <code>blis run</code> that worked yesterday into a startup failure with no change to BLIS
+itself. Pinning also makes results attributable: two people running the documented commands
+months apart read the same catalog. (<code>blis run --metrics-path</code> records the catalog's git
+revision and whether it was dirty — see <a href="../../guide/results/">Results</a>; a <code>--depth 1</code>
+tag clone still carries the revision, so that provenance is unaffected.)</p>
+<p><strong>Upgrading to a newer catalog release</strong> is deliberately opt-in: clone the newer tag, run
+your workload against it, and if it works, bump the tag on the line above — the guard test
+then requires every documented clone command to match, so no page is left behind. Nothing
+stops you pointing <code>--catalog</code> at a <code>main</code> checkout or a scratch clone of your own; the pin
+is what the <em>documentation</em> promises, not a restriction the binary enforces.</p>
 <h2 id="verify-the-build">Verify the Build<a class="headerlink" href="#verify-the-build" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">10</span><span class="w"> </span>--catalog<span class="w"> </span>blis-catalog
 </code></pre></div>
