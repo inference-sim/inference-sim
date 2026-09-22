@@ -651,26 +651,37 @@ func TestDeliverVerifyHandsOffOnTheDeliveryBranchNotTheEventRef(t *testing.T) {
 	}
 }
 
-// deliver-verify.yml's `Review the PR` prompt must direct the review agent to fetch INLINE
-// (line-level) PR review comments and weigh them as evidence (#1801).
+// Inline (line-level) PR review comments must still reach the verdict reasoning (#1801, first
+// observed on PR #1680) — but as of #1806 they reach it THROUGH the trusted-comment digest, not via
+// a raw `gh api pulls/{n}/comments` fetch in the prompt.
 //
-// Inline review comments live at GET /repos/{owner}/{repo}/pulls/{n}/comments — a DIFFERENT endpoint
-// from the conversation comments `gh pr view --comments` returns. The verify prompt pointed the
-// agent at the diff, the sub-issue contracts and the refinements, but never at pulls/{n}/comments,
-// so a reviewer's precise inline fix-request was invisible to the verdict reasoning; the correction
-// round (whose work list is only the bot findings) therefore never fixed it (first observed on
-// PR #1680).
+// #1801 originally had the agent fetch `pulls/{n}/comments` itself. #1806 supersedes that mechanism:
+// the agent must NOT fetch comments raw (that bypasses the write-access filter), so the verify phase
+// assembles the digest with `deliver-trusted-comments.sh --pr` — whose `--pr` form covers
+// conversation + reviews + INLINE — and the prompt reads the digest file. The intent of #1801 is
+// preserved (a reviewer's inline point still reaches the verdict, now filtered to write-access
+// authors); only the delivery mechanism changed. The trust model is unchanged: inline entries are
+// data assessed on the merits, never a command.
 //
-// The trust model is UNCHANGED and this test does not assert any new authority: inline comments are
-// data to be assessed on the merits, exactly like conversation comments — a human comment still
-// cannot command a verdict (the SECURITY block already covers that). The contract here is only that
-// the endpoint is fetched and its output reaches the agent.
-func TestDeliverVerifyReviewPromptFetchesInlineReviewComments(t *testing.T) {
+// So this test now pins the two halves of the new path: the digest is produced by `--pr` (the source
+// that includes inline comments), and the prompt does NOT reintroduce a raw inline fetch that would
+// route around the filter.
+func TestDeliverVerifyReviewInlineCommentsReachTheAgentThroughTheDigest(t *testing.T) {
 	path := filepath.Join("..", ".github", "workflows", "deliver-verify.yml")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("reading %s: %v", path, err)
 	}
+	text := string(raw)
+
+	// The digest is assembled with `--pr`, the form that includes inline review comments — this is
+	// how an inline finding now reaches the agent (#1806 replacing #1801's raw fetch).
+	if !strings.Contains(text, "deliver-trusted-comments.sh --pr") {
+		t.Errorf("deliver-verify.yml does not assemble the trusted digest with `--pr` — inline review " +
+			"comments reach the verdict through the `--pr` digest since #1806; without it a reviewer's " +
+			"inline point is invisible to the verdict (#1801/#1680).")
+	}
+
 	var wf struct {
 		Jobs map[string]struct {
 			Steps []implementStep `yaml:"steps"`
@@ -694,44 +705,28 @@ func TestDeliverVerifyReviewPromptFetchesInlineReviewComments(t *testing.T) {
 		t.Fatal("the review agent step has no prompt")
 	}
 
-	// Anchored on the pulls/{n}/comments endpoint, NOT a bare "comments" mention: the prompt already
-	// discusses conversation comments, and the whole defect is that the INLINE endpoint — the one
-	// `gh pr view --comments` does NOT return — was never fetched. `[^\n]*` tolerates the templated
-	// PR-number expression (`pulls/${{ env.PR }}/comments`), which carries spaces inside its braces.
-	inlineEndpoint := regexp.MustCompile(`pulls/[^\n]*/comments`)
-	if !inlineEndpoint.MatchString(prompt) {
-		t.Errorf("the review prompt does not direct the agent to fetch inline review comments from the "+
-			"`pulls/{n}/comments` endpoint. Inline comments live at a different API than conversation "+
-			"comments and are invisible to the verdict reasoning without it (#1801). Prompt:\n%s", prompt)
-	}
-	// The fetch must be a `gh api` call: `gh pr view --comments` returns only conversation comments,
-	// so a prompt that named that command instead would reintroduce the gap.
-	if !strings.Contains(prompt, "gh api") {
-		t.Errorf("the review prompt references the inline-comments endpoint but not `gh api`, the only "+
-			"gh call that returns inline review comments (`gh pr view --comments` does not). Prompt:\n%s", prompt)
-	}
-	// `--paginate` is load-bearing, not decoration: without it the fetch returns only the first page
-	// (per_page=100), so on a PR whose inline review runs past 100 comments the tail is silently
-	// dropped — the same "reviewer's point never reaches the verdict" failure this PR fixes, just at
-	// a page boundary instead of a wrong endpoint. Pin it so a future edit cannot quietly drop it.
-	if !strings.Contains(prompt, "--paginate") {
-		t.Errorf("the review prompt's inline-comments fetch does not use `--paginate`, so it would read "+
-			"only the first page and silently drop inline comments past it. Prompt:\n%s", prompt)
+	// The prompt must point the agent at the filtered digest as its comment source (which is where
+	// inline comments now arrive). A raw-fetch NEGATIVE assertion is deliberately NOT made here: the
+	// prompt legitimately NAMES `gh api .../pulls/{n}/comments` in a "do NOT run" instruction, which a
+	// substring/regex check cannot tell apart from an actual fetch. The positive checks below — the
+	// `--pr` digest is produced and the prompt reads it — plus deliver_trusted_comments_wiring_test.go
+	// are what pin that the filtered digest, not a raw fetch, is the source.
+	if !strings.Contains(prompt, "trusted-comments.md") {
+		t.Errorf("the review prompt does not point the agent at the trusted-comments digest, so inline "+
+			"(and all) comments have no filtered path to the verdict (#1806). Prompt:\n%s", prompt)
 	}
 
-	// AC-3 (non-goal): the fix is VERIFY-ONLY. The correction phase's work list stays the two bot
-	// findings — it must not grow an inline-comments source. Pin that deliver-correct.yml never
-	// acquires this fetch, so an accidental copy of the prompt block into the correction phase (which
-	// would change the correction findings source #1801 explicitly leaves alone) trips here.
+	// The correction phase reads the same filtered digest, produced with `--pr` (inline-inclusive).
+	// #1801 was verify-only for the RAW-fetch mechanism; #1806 gives both phases the same filtered
+	// source, so both assemble the `--pr` digest.
 	correctPath := filepath.Join("..", ".github", "workflows", "deliver-correct.yml")
 	correctRaw, err := os.ReadFile(correctPath)
 	if err != nil {
 		t.Fatalf("reading %s: %v", correctPath, err)
 	}
-	if inlineEndpoint.Match(correctRaw) {
-		t.Errorf("deliver-correct.yml now fetches inline review comments (`pulls/{n}/comments`). #1801 "+
-			"is verify-only: the correction phase's findings source must stay the two bot findings, not "+
-			"grow a new inline-comments input.")
+	if !strings.Contains(string(correctRaw), "deliver-trusted-comments.sh --pr") {
+		t.Errorf("deliver-correct.yml does not assemble the `--pr` trusted digest — its comment source " +
+			"must be the filtered digest (#1806), not a raw fetch.")
 	}
 }
 
