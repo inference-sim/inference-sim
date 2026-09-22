@@ -331,7 +331,7 @@ func TestTrustedComments_OrderingIsOldestFirstAndTotal(t *testing.T) {
 	if first < 0 || second < 0 || third < 0 {
 		t.Fatalf("not every trusted comment was rendered.\ngot:\n%s", got)
 	}
-	if !(first < second && second < third) {
+	if first >= second || second >= third {
 		t.Errorf("the digest is not ordered oldest-first with a total tie-break. \"The most recent "+
 			"verdict comment\" is a rule the correction phase acts on, so the order must be "+
 			"fixed.\ngot:\n%s", got)
@@ -602,6 +602,100 @@ func TestTrustedCommentsLive_BotAuthorsAreNotQueried(t *testing.T) {
 	}
 }
 
+// ── The automation-identity inventory ──────────────────────────────────────────────────────────
+//
+// The bot test above proves ONE login is recognised. This proves the recognised set actually covers
+// the automation identities THIS repository's flows post under, which is the question that matters:
+// a bot the filter fails to recognise is queried for a permission, 404s, and is dropped — so the
+// delivery loop loses the very `DELIVER-VERDICT` / `QA-VERDICT` comment the correction phase works
+// from. Failing closed is the safe direction against injection and the WRONG direction here.
+//
+// The inventory below is every login that posts a comment from this repository's workflows, taken
+// from their `github.actor` / commenting steps (`grep '\[bot\]' .github/workflows/*.yml`) and
+// confirmed against a live thread (PR #1807 carries comments from both). Both end in the reserved
+// `[bot]` suffix, which is what makes the suffix half of the test sufficient today.
+//
+// Each login is fed with its bot METADATA DELIBERATELY WITHHELD — no `is_bot` on the conversation
+// comment, `"type":"User"` on the review and inline ones — so what is under test is the `[bot]`
+// suffix rule ALONE. That is the half that has to hold, because the digest is also assembled from
+// REST payloads that carry no `is_bot` at all, and because a stub that supplied both signals could
+// pass with either one broken.
+//
+// THE RESIDUAL, stated because it is a real limit and not covered by this test: a GitHub App that
+// posts under a standard user account with no `[bot]` suffix and no Bot type is indistinguishable
+// from a human here, so it takes the permission path and is dropped on a 404. No such identity
+// exists in this repository today. If one is added, it must either be granted write access (the
+// permission path then admits it on the merits, which is the preferable fix — one trust term) or be
+// added to the normalisers' bot test AND to this inventory in the same commit.
+func TestTrustedCommentsLive_EveryAutomationIdentityIsRecognisedByTheSuffixAlone(t *testing.T) {
+	for _, login := range []string{"github-actions[bot]", "claude[bot]"} {
+		t.Run(login, func(t *testing.T) {
+			dir := t.TempDir()
+			// No `is_bot`, and `"type":"User"` — the suffix is the only signal available.
+			conversation := `{"comments":[{"id":"c1","author":{"login":"` + login + `"},` +
+				`"body":"CONVERSATION-VERDICT","createdAt":"2026-09-20T10:00:00Z",` +
+				`"url":"https://e/c1","isMinimized":false}]}`
+			reviews := `[{"id":9001,"user":{"login":"` + login + `","type":"User"},` +
+				`"body":"REVIEW-VERDICT","state":"COMMENTED",` +
+				`"submitted_at":"2026-09-20T11:00:00Z","html_url":"https://e/r1"}]`
+			inline := `[{"id":7001,"user":{"login":"` + login + `","type":"User"},` +
+				`"body":"INLINE-VERDICT","path":"sim/foo.go","line":42,"side":"RIGHT",` +
+				`"created_at":"2026-09-20T12:00:00Z","html_url":"https://e/i1"}]`
+
+			// Any permission lookup at all is a failure: reaching the endpoint means the login was
+			// not recognised as automation, and on the real endpoint that answer is a 404 → dropped.
+			script := `#!/usr/bin/env bash
+set -uo pipefail
+case "${1:-}" in
+  "pr"|"issue") cat <<'PAYLOAD'
+` + conversation + `
+PAYLOAD
+    exit 0 ;;
+  "api")
+    case "${2:-}" in
+      *"/pulls/"*"/reviews"*) cat <<'PAYLOAD'
+` + reviews + `
+PAYLOAD
+        exit 0 ;;
+      *"/pulls/"*"/comments"*) cat <<'PAYLOAD'
+` + inline + `
+PAYLOAD
+        exit 0 ;;
+      *"/collaborators/"*"/permission")
+        echo "stub gh: a permission lookup was made for $2" >&2; exit 1 ;;
+    esac ;;
+esac
+echo "stub gh: unexpected invocation: $*" >&2
+exit 1
+`
+			if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o700); err != nil {
+				t.Fatalf("writing gh stub: %v", err)
+			}
+			path := dir + string(os.PathListSeparator) + os.Getenv("PATH")
+
+			stdout, stderr, code := runTrusted(t, path, []string{"--pr", "1807"}, "", "")
+
+			if strings.Contains(stderr, "a permission lookup was made") {
+				t.Errorf("%s was not recognised as automation, so its permission was queried. The "+
+					"real endpoint 404s for a bot login, which would DROP the automation's own "+
+					"verdict comment and starve the correction phase of its work list.\nstderr:\n%s",
+					login, stderr)
+			}
+			if code != 0 {
+				t.Errorf("exit %d, want 0.\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+			}
+			// One per source: a login recognised on the conversation normaliser but not on the two
+			// REST ones would still lose the inline and review channels.
+			for _, want := range []string{"CONVERSATION-VERDICT", "REVIEW-VERDICT", "INLINE-VERDICT"} {
+				if !strings.Contains(stdout, want) {
+					t.Errorf("%s: %s is missing from the digest — the source it came from does not "+
+						"recognise this automation login.\nstdout:\n%s", login, want, stdout)
+				}
+			}
+		})
+	}
+}
+
 // A source endpoint that ERRORS must degrade, never render a partial digest. An inline-comment read
 // that silently returned nothing would let the agent conclude there were no line-level findings —
 // the exact reasoning deliver-verify's prompt already spells out for the hand-rolled `gh api` call
@@ -666,12 +760,28 @@ func TestTrustedCommentsLive_BadUsageIsRejected(t *testing.T) {
 	}
 }
 
-// ── The wiring guard lives in scripts/deliver_trusted_comments_wiring_test.go ───────────────────
+// ── What is NOT guarded here, and why (the wiring is not in this commit) ───────────────────────
 //
-// Three further assertions belong with these — that each of the three workflows NAMES this filter,
-// that no agent prompt also instructs an unfiltered comment read, and that claude.yml runs the
-// filter step in BOTH agent jobs. They are in a separate file because they can only pass once
-// `.github/workflows/` has been updated, and the delivery runner that wrote this file is refused by
-// GitHub when it tries to push a workflow file ("refusing to allow a GitHub App to create or update
-// workflow ... without `workflows` permission"). Both halves are attached to the pull request as one
-// patch; applying it turns the guard on in the same commit that wires the flows up.
+// Everything above pins the FILTER. Nothing above pins that any workflow CALLS it, because at this
+// commit none does: `.github/workflows/{deliver-verify,deliver-correct,claude}.yml` still read
+// comments unfiltered, so the filter is correct and unused. That is not an oversight being papered
+// over — it is the half of #1806 this branch does not carry, and it is stated here so a reader of
+// these tests cannot mistake "the filter is well covered" for "the flows are protected".
+//
+// Three assertions belong with these once the wiring lands, and they are written down here rather
+// than as a skipped test because a test that asserts nothing is worse than a sentence that does:
+//
+//  1. each of the three workflows NAMES scripts/deliver-trusted-comments.sh;
+//  2. no agent prompt ALSO instructs an unfiltered comment read (`gh pr view --comments`, or a raw
+//     `issues/{n}/comments` / `pulls/{n}/comments` fetch) — a filter the prompt then tells the agent
+//     to work around protects nothing;
+//  3. claude.yml runs the filter step in BOTH agent jobs, since its two jobs differ only by token
+//     and a step added to one is routinely forgotten in the other.
+//
+// Why they are absent rather than failing: a GitHub App may not create or update a file under
+// `.github/workflows/` without the `workflows` permission, which the delivery runner's installation
+// does not hold. Both write routes were probed on this branch and both are refused — `git push`
+// with "refusing to allow a GitHub App to create or update workflow `.github/workflows/claude.yml`
+// without `workflows` permission", and the Contents API with 403 "Resource not accessible by
+// integration". So the wiring commit has to come from a human, and #1806's own note says as much:
+// it expects this delivery to end at `needs-human` for exactly this reason.

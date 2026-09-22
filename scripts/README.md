@@ -188,8 +188,14 @@ scripts/deliver-trusted-comments.sh --render p.json  # render a prepared payload
 was not gated at all — and this repository is public, so any GitHub user can comment on any issue or
 PR. An agent cannot reliably separate "context" from "instruction", so that text is a
 prompt-injection surface into flows that run on a persistent self-hosted runner with credentials in
-the environment and, in the correction phase, `contents: write`. The defence used to be a prompt
-asking the agent to treat comments as data; this is the structural half.
+the environment and, in the correction phase, `contents: write`. The defence today is a prompt asking
+the agent to treat comments as data; this is the structural half that replaces it.
+
+**Not yet called by any workflow.** `deliver-verify.yml`, `deliver-correct.yml` and `claude.yml` still
+read comments unfiltered, so running this script is currently a manual act and the surface above is
+still open. The wiring commit needs the `workflows` permission, which the delivery runner's GitHub App
+installation does not hold — see the deployment-state paragraph in
+[`docs/contributing/standards/agent-trust.md`](../docs/contributing/standards/agent-trust.md).
 
 It covers **all three** sources the flows read — issue/PR conversation comments, PR reviews, and PR
 inline (line-level) review comments — because a filter on one endpoint leaves the hole open at the

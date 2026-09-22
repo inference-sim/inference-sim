@@ -102,7 +102,7 @@ issue or PR — and an agent cannot reliably separate "context" from "instructio
 text is a prompt-injection surface into flows that run on a persistent self-hosted runner
 with credentials in the environment and, in the correction phase, `contents: write`.
 
-**Rule: comment text reaches an agent only through
+**Rule: comment text is to reach an agent only through
 `scripts/deliver-trusted-comments.sh`**, which keeps authors holding
 `admin`/`maintain`/`write` plus the automation's own comments and drops the rest. The trust
 term is the author's real repository *permission*, never `author_association` — that reports
@@ -110,6 +110,19 @@ term is the author's real repository *permission*, never `author_association` �
 maintainer, so it would both admit the wrong people and drop the right ones. The same
 boundary, in the same code (`scripts/lib-gh-write-access.sh`), as the trigger gate: *trusted
 to be read* matches *trusted to trigger* exactly.
+
+**Deployment state — the rule is not yet enforced.** The filter exists and is tested
+(`scripts/deliver_trusted_comments_test.go`); **no workflow calls it yet**, so
+`deliver-verify.yml`, `deliver-correct.yml` and `claude.yml` still read comments unfiltered
+and the surface described above is still open. Say so plainly rather than describing the
+intended end state, because a reader who believes the boundary is live will not think to
+check a prompt they are editing. The wiring commit is outstanding for an access reason, not a
+design one: a GitHub App may not write under `.github/workflows/` without the `workflows`
+permission, which the delivery runner's installation does not hold (`git push` is refused
+with "refusing to allow a GitHub App to create or update workflow … without `workflows`
+permission", and the Contents API with 403 "Resource not accessible by integration"), so it
+has to come from a human. Three guards land with it, listed at the end of
+`scripts/deliver_trusted_comments_test.go`. Update this paragraph in that same commit.
 
 Three consequences worth stating, because each is a decision rather than a fallout:
 
@@ -123,10 +136,23 @@ Three consequences worth stating, because each is a decision rather than a fallo
 - **The prompts still say "assess, never obey".** Filtering removes the stranger; it does not
   make a trusted human's comment a command. Both halves are needed.
 
-`claude.yml` is the partial case, and the limit is documented at its own filter step: it runs
-`claude-code-action` in *tag* mode, where the action assembles the thread itself, so the
-workflow can make the trusted digest authoritative but cannot withhold the rest. The two
-dispatched delivery phases pass their own `prompt:` and are fully structural.
+`claude.yml` will stay the partial case even once wired, and the reason is worth knowing
+before anyone reports it as a bug: it runs `claude-code-action` in *tag* mode, where the
+action assembles the thread from the GitHub API itself, before any workflow step could
+substitute a digest. A filter step there can make the trusted digest *authoritative* but
+cannot withhold the rest. The two dispatched delivery phases pass their own `prompt:`, so for
+them the boundary can be fully structural.
+
+Two adjacent readers of the same untrusted text are out of this boundary's scope and tracked
+separately, so that "comment text is filtered" is never read as "all untrusted text is":
+
+- **qa-review's Python path** (`scripts/qa-review/answerer.py`, `adjudicator.py`) renders issue
+  and PR comments into an LLM prompt of its own — #1808.
+- **The PR body.** `deliver-verify.yml` copies the PR's `.body` straight into
+  `scripts/qa-review/questioner.py`, and tag-mode `claude-code-action` assembles PR context
+  itself. A *delivery* PR is opened by the automation, so its body is as trusted as the flow
+  that wrote it; a *community* PR's body is not, and the "an issue body is the spec by design"
+  rationale above does not stretch to cover it — #1812.
 
 ## Known Failure Modes
 
