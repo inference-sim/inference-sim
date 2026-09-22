@@ -3053,9 +3053,11 @@
 <p class="admonition-title">Locate the model catalog first</p>
 <p>Every command below needs the model catalog located — <code>--catalog &lt;path&gt;</code> or the
 <code>BLIS_CATALOG</code> environment variable, with no default and no search path. Clone the
-<a href="https://github.com/inference-sim/blis-catalog"><code>blis-catalog</code></a> repository and run
-<code>export BLIS_CATALOG=$PWD/blis-catalog</code> once, and the examples work as written. See
-<a href="../quickstart/">Quick Start</a>.</p>
+<a href="https://github.com/inference-sim/blis-catalog"><code>blis-catalog</code></a> repository at the pinned
+release tag — <code>git clone --branch 0.1.1 --depth 1 https://github.com/inference-sim/blis-catalog.git</code>
+— and run <code>export BLIS_CATALOG=$PWD/blis-catalog</code> once, and the examples work as written.
+See <a href="../quickstart/">Quick Start</a> and
+<a href="../installation/#catalog-compatibility">Catalog compatibility</a>.</p>
 </div>
 <h2 id="step-1-estimate-instance-capacity">Step 1: Estimate Instance Capacity<a class="headerlink" href="#step-1-estimate-instance-capacity" title="Permanent link">&para;</a></h2>
 <p>Before scaling up, measure the throughput of a single instance under load. Run enough requests at a high arrival rate to saturate the instance — this reveals the maximum throughput with continuous batching:</p>
