@@ -18,6 +18,9 @@ package scripts_test
 // the RULE is the intended one and that the file still declares that rule. It cannot prove
 // GitHub's parser accepts the syntax — that is what the first real invocation after merge
 // shows, and why the gate keeps `startsWith` (plain, documented) as its first alternative.
+// Where the documented semantics are surprising they are modelled rather than simplified:
+// `contains`/`startsWith`/`endsWith` compare case-INSENSITIVELY (see foldExprCase), so the
+// cases below cover the mixed-case bodies that behaviour makes reachable.
 //
 // WHERE THE GATE IS READ FROM. #1675's fix could not be committed into archon.yml: the L1
 // delivery runner's App token has no `workflows` permission, so it is carried as a pending
@@ -260,6 +263,32 @@ func TestArchonWorkflow_TriggersOnDirectivesNotMentions(t *testing.T) {
 			want: false,
 			why: "the whole-body -claude exclusion is unchanged by #1675 and fails closed; " +
 				"pinned so a future edit to the anchor cannot quietly drop it",
+		},
+		{
+			name: "a mixed-case directive fires, because GitHub folds case",
+			body: "/Archon-PR-Review",
+			want: true,
+			why: "contains/startsWith are documented \"not case sensitive\", so this IS an " +
+				"invocation at the runtime; pinned so the evaluator keeps modelling that " +
+				"rather than quietly comparing case-sensitively",
+		},
+		{
+			name: "a mixed-case -claude variant is still routed elsewhere",
+			body: "/Archon-PR-Review-Claude",
+			want: false,
+			why: "the direction case-folding actually matters in: a case-sensitive exclusion " +
+				"would let this through the `!contains` conjunct and double-handle a comment " +
+				"claude.yml owns",
+		},
+		{
+			name: "CRLF line endings do not break the later-line anchor",
+			body: "Rebased onto `main`; new head `ce1f1505`.\r\n\r\n/archon-pr-review",
+			want: true,
+			why: "comment payloads from some clients carry \\r\\n. The anchor looks for a " +
+				"newline immediately before the command, and in CRLF that newline is the LF " +
+				"that follows the CR — so it still matches. A tighter rule requiring the " +
+				"command be FOLLOWED by \\n would instead reject this real invocation, which " +
+				"is why the residual below is left open rather than closed that way",
 		},
 		{
 			name: "a directive on an issue rather than a pull request",
@@ -546,23 +575,36 @@ func (p *exprParser) parseArgs() ([]any, error) {
 	}
 }
 
+// foldExprCase normalizes both operands of a string comparison. GitHub documents contains,
+// startsWith and endsWith as "not case sensitive", so a model that compared case-sensitively
+// would disagree with the runtime in the permissive direction: it would report that a
+// mixed-case `/Archon-PR-Review` does not fire when GitHub fires on it, and — the direction
+// that actually matters — that a mixed-case `/archon-pr-review-CLAUDE` escapes the exclusion
+// conjunct when GitHub excludes it. Both operands are folded, matching the runtime.
+func foldExprCase(a, b any) (string, string) {
+	return strings.ToLower(asString(a)), strings.ToLower(asString(b))
+}
+
 func callExprFunc(name string, args []any) (any, error) {
 	switch strings.ToLower(name) {
 	case "contains":
 		if len(args) != 2 {
 			return nil, fmt.Errorf("contains takes 2 arguments, got %d", len(args))
 		}
-		return strings.Contains(asString(args[0]), asString(args[1])), nil
+		s, sub := foldExprCase(args[0], args[1])
+		return strings.Contains(s, sub), nil
 	case "startswith":
 		if len(args) != 2 {
 			return nil, fmt.Errorf("startsWith takes 2 arguments, got %d", len(args))
 		}
-		return strings.HasPrefix(asString(args[0]), asString(args[1])), nil
+		s, prefix := foldExprCase(args[0], args[1])
+		return strings.HasPrefix(s, prefix), nil
 	case "endswith":
 		if len(args) != 2 {
 			return nil, fmt.Errorf("endsWith takes 2 arguments, got %d", len(args))
 		}
-		return strings.HasSuffix(asString(args[0]), asString(args[1])), nil
+		s, suffix := foldExprCase(args[0], args[1])
+		return strings.HasSuffix(s, suffix), nil
 	case "format":
 		if len(args) == 0 {
 			return nil, fmt.Errorf("format takes at least 1 argument")

@@ -2,6 +2,8 @@
 #
 #     git apply .github/archon-trigger-anchor.patch
 #     git rm .github/archon-trigger-anchor.patch
+#     # then delete the "Not yet in force" admonition in docs/guide/archon-pr-review.md,
+#     # which documents exactly this pending state
 #     go test ./scripts/ -run TestArchonWorkflow -count=1
 #
 # WHY IT IS A PATCH AND NOT APPLIED. The whole of #1675 IS a change to a trigger `if:` in
@@ -25,6 +27,10 @@
 #               + a comment block recording why the anchor is not first-line-only, the measured
 #                 effect, and the one residual the expression language cannot close.
 #
+# NOT IN THIS PATCH BUT PART OF LANDING IT: docs/guide/archon-pr-review.md carries a "Not yet in
+# force" admonition saying the live gate is still whole-body. That note is true only while this
+# file exists, so delete it in the commit that applies this patch (see the command list above).
+#
 # ALREADY LANDED, NOT IN THIS PATCH: scripts/archon_workflow_test.go, which evaluates the gate
 # against real comment bodies from this repository's history. Until this patch is applied that
 # test reads the gate OUT OF THIS FILE (it applies the diff to a temp copy), so the contract is
@@ -37,7 +43,7 @@ diff --git a/.github/workflows/archon.yml b/.github/workflows/archon.yml
 index cbd84c30..c16e7f2f 100644
 --- a/.github/workflows/archon.yml
 +++ b/.github/workflows/archon.yml
-@@ -13,9 +13,33 @@ on:
+@@ -13,9 +13,41 @@ on:
  
  jobs:
    check-permissions:
@@ -49,18 +55,26 @@ index cbd84c30..c16e7f2f 100644
 +    #
 +    # The rule is "the command begins a line": the body's first line (startsWith) or any
 +    # later line (a newline immediately before it). Deliberately NOT first-line-only — of
-+    # this repository's 134 real invocations, many are the LAST line of a long rebase or
++    # this repository's 133 real invocations, many are the LAST line of a long rebase or
 +    # verification report (#1667 has several), so anchoring to the first line alone would
-+    # reject the established habit. Measured over all 268 comments that contain the string,
-+    # this rule accepts exactly the 134 invocations and rejects the 134 mentions.
++    # reject the established habit.
++    #
++    # Measured over the 275 comments containing the string — a snapshot, since the corpus
++    # grows with every comment, including this PR's own thread: the rule accepts ALL 133
++    # invocations (no false negatives) and rejects 141 of the 142 prose mentions. It is not
++    # "rejects every mention": the one exception is the residual below, which is why that
++    # count is 141 and not 142.
 +    #
 +    # `fromJSON('"\n"')` is how an expression obtains a newline: GitHub's single-quoted
 +    # strings have no escape sequences, so '\n' written directly is a backslash then an n.
 +    #
 +    # Residual, accepted knowingly: expressions have no regex, so "alone on its line" is not
-+    # expressible — a sentence that *starts* with the command still fires (one comment in the
-+    # 268 did, a bot report opening with "/archon-pr-review issued NO_CHANGE …"). Closing that
-+    # needs a scripted gate; the cheap anchor removes every observed prose trigger but one.
++    # expressible — a sentence that *starts* with the command still fires. One comment of the
++    # 275 does: a bot report on #1484 whose first line opens "/archon-pr-review issued
++    # NO_CHANGE …". Closing it needs a scripted gate, and the cheap expression tightening —
++    # requiring the command be FOLLOWED by a newline — would reject real CRLF invocations,
++    # trading 0 false negatives for 1 false positive. So the anchor stays as it is; the
++    # residual is pinned as a test case, not left undocumented.
 +    #
 +    # scripts/archon_workflow_test.go evaluates THIS expression against real comment bodies,
 +    # so an edit that widens it back to whole-body matching fails the test suite.
