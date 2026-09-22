@@ -19,8 +19,12 @@
 # invisible from its exit code (see the SKIP guard below). scripts/catalog_load_gate_test.go
 # drives it against throwaway catalogs.
 #
-# CI WIRING (a human step — the delivery loop's GITHUB_TOKEN has no `workflows` permission, so
-# it cannot push .github/workflows/*; see docs/contributing/automated-delivery.md). Add this
+# CI WIRING — TRACKED BY #1823, a human step. The delivery loop's GITHUB_TOKEN has no
+# `workflows` permission (there is no such permission to grant in a `permissions:` block), so a
+# push touching .github/workflows/* is rejected outright; see
+# docs/contributing/automated-delivery.md. Until #1823 lands, this script runs on demand rather
+# than on every PR, and the authoritative-catalog leg of the gate is NOT enforced pre-merge — the
+# unconditional fixture leg (cmd.TestCatalogStrictLoad_CommittedFixtureCatalog) still is. Add this
 # job to .github/workflows/ci.yml:
 #
 #   catalog-load:

@@ -13,7 +13,7 @@ The simulator reads each model's `config.json` from the catalog located by `--ca
 BLIS validates whatever it reads and fails naming the file and the problem; there is deliberately no `blis validate` subcommand, because a separate validator would be free to accept a catalog a run rejects. What keeps the catalog loadable is a whole-catalog load that goes through the same code path a run uses (#1750), in two layers:
 
 - **Unconditional** — `go test ./cmd/...` loads the committed fixture catalog (`testdata/catalog`) on every test run.
-- **Against the authoritative catalog** — `scripts/catalog-load-gate.sh` clones `blis-catalog` at a pinned revision and runs the same load over every entry. Wiring that script into `.github/workflows/ci.yml` as a `catalog-load` job is **a pending human step** (the job body is quoted in the script's header), so until that edit lands the authoritative-catalog load runs on demand — `scripts/catalog-load-gate.sh` — rather than on every PR.
+- **Against the authoritative catalog** — `scripts/catalog-load-gate.sh` clones `blis-catalog` at a pinned revision and runs the same load over every entry. Wiring that script into `.github/workflows/ci.yml` as a `catalog-load` job is **a pending human step, tracked by [#1823](https://github.com/inference-sim/inference-sim/issues/1823)** (the job body is quoted in the script's header; the automated delivery loop's token cannot push workflow files). So until that edit lands, the authoritative-catalog load runs **on demand only** — `scripts/catalog-load-gate.sh` — and is not enforced pre-merge; the unconditional fixture layer above is.
 
 What the load requires of a catalog:
 

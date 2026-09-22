@@ -846,7 +846,9 @@ func TestCatalogStrictLoad_MissingNamespaceIsNotAProblem(t *testing.T) {
 // pinned revision, and fails when it SKIPS or never ran — is implemented by
 // scripts/catalog-load-gate.sh and pinned by scripts/catalog_load_gate_test.go. It lives there
 // because the script is what holds the pinned revision and what a workflow job calls (that job
-// is a pending human edit to .github/workflows/ci.yml; see the script header).
+// is a pending human edit to .github/workflows/ci.yml, tracked by #1823; see the script header).
+// So until #1823 lands, the leg that runs unconditionally on every `go test ./cmd/...` is
+// TestCatalogStrictLoad_CommittedFixtureCatalog below, over the committed testdata/catalog.
 
 // TestNormalizeCatalogKey pins the key folding the deployment-fact rule relies on, so a
 // separator or case variant of a banned key cannot slip through.
