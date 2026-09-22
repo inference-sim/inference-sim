@@ -89,6 +89,17 @@ The permission split is pinned by `scripts/claude_workflow_test.go`, which fails
 review job gains write access, if the workflow-level default returns to `contents: write`,
 if the routing gates stop failing closed, or if the two agent jobs' steps drift apart.
 
+One gate sits upstream of the split and has its own contracts, in
+`scripts/claude_permission_probe_test.go` (#1707). `check-permissions` decides *whether* the
+caller is allowed at all, and it must distinguish a genuine denial from a probe that could not
+answer. Both outcomes deny — a failed probe never admits anyone — but only a denial is quiet: a
+403, a 5xx or a network error fails the job with the real status and comments on the trigger,
+because `allowed=false` skips both agent jobs and `report-status` skips with them, so an
+unreported probe error drops a collaborator's request with no comment, no commit status, and a
+log line asserting a reason that did not occur. Note the consequence for the `issues: write`
+scope on this job: it is what lets that comment be posted, so narrowing it turns the report
+back into silence.
+
 ## Known Failure Modes
 
 Each failure mode below was discovered in a real PR. The tier system exists
