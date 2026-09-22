@@ -197,3 +197,119 @@ func TestDocExamplesDocumentTheCatalogEnvVar(t *testing.T) {
 			"downstream examples rely on", catalogEnvVar)
 	}
 }
+
+// catalogCompatibilityDoc is the CANONICAL place the compatible blis-catalog release is
+// declared (#1814). Every other page's clone command must pin the same tag; this is the only
+// file whose prose the guard below reads a version out of.
+const catalogCompatibilityDoc = "../docs/getting-started/installation.md"
+
+// canonicalCatalogPin extracts the declared release tag from catalogCompatibilityDoc. The
+// shape is fixed deliberately: a bump edits one line, and the guard fails loudly (rather
+// than silently finding nothing to compare against) if that line is reworded away.
+var canonicalCatalogPin = regexp.MustCompile("(?m)^\\*\\*Compatible blis-catalog release: `([^`]+)`\\*\\*")
+
+// catalogCloneCommand matches a documented `git clone` of the model catalog, in a fenced
+// block or inline in prose. Both forms exist today (README.md states it inline).
+//
+// It requires the full repository URL, so it matches instructions a reader can copy and
+// paste and not the abbreviated `git clone .../blis-catalog` that appears in CLAUDE.md's
+// change history — a record of what a past PR said, which must not be rewritten.
+var catalogCloneCommand = regexp.MustCompile(`git clone\b[^\n]*github\.com/inference-sim/blis-catalog`)
+
+// TestDocExamplesPinTheCatalogVersion is #1814: every documented clone of blis-catalog must
+// pin an explicit release tag, and they must all pin the SAME tag — the one declared in
+// docs/getting-started/installation.md.
+//
+// Why this is a guard test rather than a docs convention: blis-catalog versions
+// independently of BLIS, and BLIS parses every catalog file with KnownFields(true) (R10).
+// Strict parsing is one-way — an added or renamed key in a future catalog schema is a hard
+// load error, not a silently ignored field — so a bare `git clone` of `main` lets a catalog
+// release turn a previously-working `blis run` into a startup failure with no change to
+// BLIS. The floating clone is the bug; an edit that reintroduces one has to fail.
+//
+// It is the sibling of TestDocExamplesDocumentTheCatalogEnvVar (which pins that the
+// location is documented at all) and scans the whole live docs set, not just the entry
+// points, so a NEW page cannot introduce an unpinned clone either.
+func TestDocExamplesPinTheCatalogVersion(t *testing.T) {
+	declaration, err := os.ReadFile(catalogCompatibilityDoc)
+	if err != nil {
+		t.Fatalf("read %s: %v (catalogCompatibilityDoc is stale)", catalogCompatibilityDoc, err)
+	}
+	match := canonicalCatalogPin.FindStringSubmatch(string(declaration))
+	if match == nil {
+		t.Fatalf("%s must declare the compatible catalog release on its own line, as "+
+			"**Compatible blis-catalog release: `<tag>`** — it is the single place the version "+
+			"is stated, and every documented clone command is checked against it", catalogCompatibilityDoc)
+	}
+	tag := match[1]
+	if strings.TrimSpace(tag) == "" || strings.Contains(tag, "<") {
+		t.Fatalf("%s declares a placeholder catalog release %q — the pin must name a real "+
+			"blis-catalog release tag", catalogCompatibilityDoc, tag)
+	}
+	if !strings.Contains(string(declaration), "## Catalog compatibility") {
+		t.Errorf("%s must keep the `## Catalog compatibility` heading: the other pages link to "+
+			"its #catalog-compatibility anchor", catalogCompatibilityDoc)
+	}
+
+	// Every documented clone of the catalog pins that exact tag.
+	wantPin := "--branch " + tag
+	clones := 0
+	for _, file := range collectDocFiles(t) {
+		src, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("read %s: %v", file, err)
+		}
+		for i, line := range strings.Split(string(src), "\n") {
+			if !catalogCloneCommand.MatchString(line) {
+				continue
+			}
+			clones++
+			if !strings.Contains(line, "--branch ") {
+				t.Errorf("%s:%d: documented blis-catalog clone is unpinned — it takes whatever "+
+					"`main` is at clone time, so a catalog release can break this build (strict "+
+					"parsing makes a schema change a hard load error). Pin it with `%s`:\n  %s",
+					file, i+1, wantPin, strings.TrimSpace(line))
+				continue
+			}
+			if !strings.Contains(line, wantPin) {
+				t.Errorf("%s:%d: documented blis-catalog clone pins a different release than the "+
+					"canonical declaration in %s (`%s`). One version, stated once:\n  %s",
+					file, i+1, catalogCompatibilityDoc, tag, strings.TrimSpace(line))
+			}
+		}
+	}
+	// Non-vacuity: the entry points named by docCatalogEntryPoints each show the clone, so a
+	// scan that finds fewer has a broken matcher (or lost an instruction a reader needs).
+	if clones < len(docCatalogEntryPoints) {
+		t.Errorf("non-vacuity: found %d documented blis-catalog clone commands, expected at least "+
+			"one per entry point (%d) — catalogCloneCommand or the docs are wrong",
+			clones, len(docCatalogEntryPoints))
+	}
+}
+
+// TestDocCatalogEntryPointsLinkTheCompatibilityNote pins the other half of #1814's "state it
+// in one canonical place, linked from the others": a page showing the pinned clone must also
+// say where the version comes from. Without the link the tag reads as an arbitrary string,
+// and a reader hitting a catalog incompatibility has nowhere to go.
+func TestDocCatalogEntryPointsLinkTheCompatibilityNote(t *testing.T) {
+	for _, path := range docCatalogEntryPoints {
+		src, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v (docCatalogEntryPoints is stale)", path, err)
+		}
+		text := string(src)
+		if !catalogCloneCommand.MatchString(text) {
+			continue // this page defers the clone instruction to another entry point
+		}
+		if filepath.Clean(path) == filepath.Clean(catalogCompatibilityDoc) {
+			continue // the canonical note itself, checked above
+		}
+		if !strings.Contains(text, "#catalog-compatibility") &&
+			!strings.Contains(text, "Catalog compatibility") {
+			t.Errorf("%s shows the pinned blis-catalog clone but never points at the canonical "+
+				"Catalog compatibility note (%s#catalog-compatibility), so a reader cannot tell "+
+				"where the pinned version comes from or how to move off it",
+				path, catalogCompatibilityDoc)
+		}
+	}
+}
