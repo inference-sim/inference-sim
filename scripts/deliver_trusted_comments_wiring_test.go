@@ -7,9 +7,15 @@ package scripts_test
 //
 // Like the sibling workflow tests, these assert on file text: for a workflow the declared text IS
 // the behaviour — GitHub reads nothing else, and the file only ever runs inside Actions, where no
-// other test can reach it. The regression each guards is concrete and has already happened once
-// (the helper shipped unwired): a future edit that deletes the digest step, or re-points a prompt
-// at `gh pr view --comments`, would silently reopen the prompt-injection surface this closed.
+// other test can reach it. The regression guarded is concrete and has already happened once (the
+// helper shipped unwired): these pin that the digest step is PRESENT and its producer path matches
+// the path the prompt reads, so deleting the step or drifting the path fails.
+//
+// Scope, stated honestly: this checks the digest wiring is present, NOT that a raw comment read is
+// ABSENT. A negative "no `gh api .../comments`" assertion is deliberately not made — the prompts
+// legitimately NAME that endpoint in a "do NOT run" instruction, which a text check cannot tell
+// apart from an actual fetch. So a future edit that KEPT the digest but ALSO added a raw fetch would
+// pass here; that is out of a text test's reach and left to review.
 
 import (
 	"os"
