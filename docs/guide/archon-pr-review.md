@@ -14,6 +14,30 @@ The GitHub Action runs automatically and posts the results as a PR comment. Re-r
 `/archon-pr-review` **updates that same comment in place** rather than adding a new one, so
 a long-running PR keeps one current report instead of a stack of near-identical ones.
 
+The command must **begin a line** to count as an invocation — on its own line, either first in
+the comment or after a report it follows. Arguments still work on that line
+(`/archon-pr-review --archon-ref <ref>`).
+
+Mentioning the command *inside* a sentence, a table or a quoted review does **not** trigger a
+run, so you can discuss it in a PR thread without re-reviewing the PR
+([#1675](https://github.com/inference-sim/inference-sim/issues/1675)). One case is **not**
+covered: a line that begins with the command and then carries on in prose — a report opening
+`/archon-pr-review issued NO_CHANGE …` — still fires. The gate is a workflow expression, and
+expressions have no regex, so "alone on its line" cannot be expressed. When quoting a report
+whose line starts with the command, prefix the line (`> `) or indent it; either is enough to
+stop it being read as a directive. That last case is deliberate rather than overlooked — a
+line-leading occurrence *is* a directive under the rule above — and the stricter reading, where
+the command must be alone on its line, is tracked in
+[#1810](https://github.com/inference-sim/inference-sim/issues/1810).
+
+!!! note "Not yet in force"
+    The anchoring described above is carried as a pending patch,
+    `.github/archon-trigger-anchor.patch`, because the delivery runner's token cannot write to
+    `.github/workflows/`. Until a maintainer applies it, the live gate still matches the command
+    **anywhere** in a comment body, so prose mentions do trigger runs. Applying it is tracked in
+    [#1809](https://github.com/inference-sim/inference-sim/issues/1809); remove this note in the
+    same commit that applies the patch.
+
 Each round's full body is also written to its own workflow run's job summary. That is
 retention-bound, not an archive: it disappears when the run is aged out under the
 repository's retention policy. If you need a round preserved, quote it in a PR comment.
