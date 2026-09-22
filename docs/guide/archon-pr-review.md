@@ -14,6 +14,12 @@ The GitHub Action runs automatically and posts the results as a PR comment. Re-r
 `/archon-pr-review` **updates that same comment in place** rather than adding a new one, so
 a long-running PR keeps one current report instead of a stack of near-identical ones.
 
+The command must **begin a line** to count as an invocation — on its own line, either first
+in the comment or after a report it follows. Mentioning it inside a sentence, a table or a
+quoted review does **not** trigger a run, so you can discuss the command in a PR thread
+without re-reviewing the PR ([#1675](https://github.com/inference-sim/inference-sim/issues/1675)).
+Arguments still work on that line (`/archon-pr-review --archon-ref <ref>`).
+
 Each round's full body is also written to its own workflow run's job summary. That is
 retention-bound, not an archive: it disappears when the run is aged out under the
 repository's retention policy. If you need a round preserved, quote it in a PR comment.
