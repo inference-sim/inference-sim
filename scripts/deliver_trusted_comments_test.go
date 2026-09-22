@@ -762,26 +762,10 @@ func TestTrustedCommentsLive_BadUsageIsRejected(t *testing.T) {
 
 // ── What is NOT guarded here, and why (the wiring is not in this commit) ───────────────────────
 //
-// Everything above pins the FILTER. Nothing above pins that any workflow CALLS it, because at this
-// commit none does: `.github/workflows/{deliver-verify,deliver-correct,claude}.yml` still read
-// comments unfiltered, so the filter is correct and unused. That is not an oversight being papered
-// over — it is the half of #1806 this branch does not carry, and it is stated here so a reader of
-// these tests cannot mistake "the filter is well covered" for "the flows are protected".
-//
-// Three assertions belong with these once the wiring lands, and they are written down here rather
-// than as a skipped test because a test that asserts nothing is worse than a sentence that does:
-//
-//  1. each of the three workflows NAMES scripts/deliver-trusted-comments.sh;
-//  2. no agent prompt ALSO instructs an unfiltered comment read (`gh pr view --comments`, or a raw
-//     `issues/{n}/comments` / `pulls/{n}/comments` fetch) — a filter the prompt then tells the agent
-//     to work around protects nothing;
-//  3. claude.yml runs the filter step in BOTH agent jobs, since its two jobs differ only by token
-//     and a step added to one is routinely forgotten in the other.
-//
-// Why they are absent rather than failing: a GitHub App may not create or update a file under
-// `.github/workflows/` without the `workflows` permission, which the delivery runner's installation
-// does not hold. Both write routes were probed on this branch and both are refused — `git push`
-// with "refusing to allow a GitHub App to create or update workflow `.github/workflows/claude.yml`
-// without `workflows` permission", and the Contents API with 403 "Resource not accessible by
-// integration". So the wiring commit has to come from a human, and #1806's own note says as much:
-// it expects this delivery to end at `needs-human` for exactly this reason.
+// Everything above pins the FILTER. That the WORKFLOWS actually call it is pinned separately, in
+// deliver_trusted_comments_wiring_test.go: deliver-verify.yml and deliver-correct.yml each assemble
+// the digest via `deliver-trusted-comments.sh --pr` before the agent and read it from a file, and
+// claude.yml carries the documented tag-mode limitation marker (its jobs run claude-code-action in
+// tag mode, which assembles comment context itself, so the filter cannot be applied there). The
+// `.github/workflows/` commit was pushed by a maintainer holding `workflows` permission, which the
+// delivery runner's GitHub App installation lacks.

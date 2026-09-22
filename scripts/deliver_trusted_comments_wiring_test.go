@@ -29,22 +29,38 @@ func readWorkflow(t *testing.T, name string) string {
 }
 
 // The two delivery-loop phases read comments through a prompt this repository controls, so both
-// MUST assemble the filtered digest in a step and point the agent at it.
+// MUST assemble the filtered digest in a step and point the agent at THE SAME FILE.
+//
+// The producer path (`$RUNNER_TEMP/trusted-comments.md`, written by the step's shell) and the
+// consumer path (`${{ runner.temp }}/trusted-comments.md`, named in the prompt) are asserted as
+// exact strings, not as two independent substrings: `$RUNNER_TEMP` and `${{ runner.temp }}` are the
+// same directory, so pinning both spellings of the full path is what catches a producer/consumer
+// mismatch (e.g. writing a.md and reading b.md) that a bare "does `trusted-comments.md` appear
+// anywhere" check would pass.
 func TestWiring_VerifyAndCorrect_AssembleAndReadTheTrustedDigest(t *testing.T) {
+	const (
+		producer = `> "$RUNNER_TEMP/trusted-comments.md"`      // the digest step's redirect
+		consumer = "${{ runner.temp }}/trusted-comments.md"   // the path named in the agent prompt
+	)
 	for _, wf := range []string{"deliver-verify.yml", "deliver-correct.yml"} {
 		text := readWorkflow(t, wf)
 
-		// The structural step: the helper is invoked to build the digest before the agent runs.
+		if !strings.Contains(text, "Assemble the trusted comment digest") {
+			t.Errorf("%s is missing the `Assemble the trusted comment digest` step (#1806)", wf)
+		}
+		// The step invokes the helper and writes the digest to the producer path.
 		if !strings.Contains(text, "deliver-trusted-comments.sh --pr") {
 			t.Errorf("%s does not invoke `deliver-trusted-comments.sh --pr` — the comment filter "+
 				"(#1806) is not wired; the agent would read comments unfiltered", wf)
 		}
-		if !strings.Contains(text, "Assemble the trusted comment digest") {
-			t.Errorf("%s is missing the `Assemble the trusted comment digest` step (#1806)", wf)
+		if !strings.Contains(text, producer) {
+			t.Errorf("%s does not write the digest to %s — the producer path drifted from the "+
+				"consumer path the prompt reads (#1806)", wf, producer)
 		}
-		// The agent is pointed at the digest file rather than fetching comments itself.
-		if !strings.Contains(text, "trusted-comments.md") {
-			t.Errorf("%s does not point the agent at the trusted-comments.md digest (#1806)", wf)
+		// The prompt points the agent at THAT SAME file rather than fetching comments itself.
+		if !strings.Contains(text, consumer) {
+			t.Errorf("%s does not point the agent at %s — the prompt reads a different path than "+
+				"the digest step writes, so the filter is bypassed (#1806)", wf, consumer)
 		}
 	}
 }

@@ -754,6 +754,13 @@ jobs:
           # and treats the channel as UNREAD, rather than the step failing and the phase losing its
           # comment input silently. A read with no trusted comments is a normal exit 0 with a note.
           scripts/deliver-trusted-comments.sh --pr "$PR" > "$RUNNER_TEMP/trusted-comments.md" || true
+          # Guard the one gap `|| true` opens: if the helper could not run AT ALL (not found, not
+          # executable, or an error before it printed its own marker), the redirect leaves an EMPTY
+          # file — which reads to the agent exactly like "nobody commented". Synthesize the marker so
+          # an unproduced digest is never mistaken for an empty thread.
+          if [ ! -s "$RUNNER_TEMP/trusted-comments.md" ]; then
+            printf 'COMMENT-READ-FAILED\n\nThe trusted-comment digest could not be produced: scripts/deliver-trusted-comments.sh failed to run before emitting output. Treat the comment channel as UNREAD.\n' > "$RUNNER_TEMP/trusted-comments.md"
+          fi
 
       # Skipped on a branch that already conflicts with main (#1781) — see `mergehint` above. The
       # marker reader below still runs and reports MISSING, which is what the gate consumes.

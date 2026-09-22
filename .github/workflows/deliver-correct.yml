@@ -184,6 +184,13 @@ jobs:
           # stdout either way (`|| true`) so the agent sees the marker rather than the step failing
           # and the phase losing its work-list input silently.
           scripts/deliver-trusted-comments.sh --pr "$PR" > "$RUNNER_TEMP/trusted-comments.md" || true
+          # Guard the one gap `|| true` opens: if the helper could not run AT ALL (not found, not
+          # executable, or an error before it printed its own marker), the redirect leaves an EMPTY
+          # file — which reads to the agent exactly like "nobody commented". Synthesize the marker so
+          # an unproduced digest is never mistaken for an empty thread.
+          if [ ! -s "$RUNNER_TEMP/trusted-comments.md" ]; then
+            printf 'COMMENT-READ-FAILED\n\nThe trusted-comment digest could not be produced: scripts/deliver-trusted-comments.sh failed to run before emitting output. Treat the comment channel as UNREAD.\n' > "$RUNNER_TEMP/trusted-comments.md"
+          fi
 
       - name: Correct the findings
         if: steps.paused.outputs.paused == 'false'
