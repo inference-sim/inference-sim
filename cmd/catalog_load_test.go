@@ -138,7 +138,7 @@ func TestCatalogStrictLoad_CompleteCatalogLoadsClean(t *testing.T) {
 	}{
 		{"models", report.Models},
 		{catalogHardwareSubdir, report.Hardware},
-		{catalogWorkloadsSubdir, report.Workloads},
+		{catalogWorkloadsSubdir, report.Presets},
 		{catalogDevicesSubdir, report.DeviceClasses},
 	} {
 		if got.count == 0 {
@@ -164,7 +164,7 @@ func TestCatalogStrictLoad_CompleteCatalogLoadsClean(t *testing.T) {
 func TestCatalogStrictLoad_CommittedFixtureCatalog(t *testing.T) {
 	report := loadOrFatal(t, fixtureCatalog)
 
-	if report.Workloads == 0 {
+	if report.Presets == 0 {
 		t.Error("the fixture catalog's committed workload presets must all load through the production reader")
 	}
 	if report.DeviceClasses == 0 {
@@ -212,7 +212,7 @@ func TestCatalogStrictLoad_RealCatalog(t *testing.T) {
 		t.Fatalf("catalog %q did not load clean: %v", root, err)
 	}
 	t.Logf("catalog %q loaded: %d model(s), %d hardware entr(ies), %d workload preset(s), %d device class(es)",
-		root, report.Models, report.Hardware, report.Workloads, report.DeviceClasses)
+		root, report.Models, report.Hardware, report.Presets, report.DeviceClasses)
 	// Non-vacuity: a catalog checkout that silently produced an empty tree (a wrong path, a
 	// failed checkout) must not pass as "loaded clean".
 	for _, got := range []struct {
@@ -221,7 +221,7 @@ func TestCatalogStrictLoad_RealCatalog(t *testing.T) {
 	}{
 		{"models", report.Models},
 		{catalogHardwareSubdir, report.Hardware},
-		{catalogWorkloadsSubdir, report.Workloads},
+		{catalogWorkloadsSubdir, report.Presets},
 		{catalogDevicesSubdir, report.DeviceClasses},
 	} {
 		if got.count == 0 {

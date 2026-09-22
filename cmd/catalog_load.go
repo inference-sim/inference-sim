@@ -35,8 +35,8 @@ import (
 //     latency.ParseHardwareCalibEntries rather than re-deriving it.
 //
 //  2. The GATE is a test, not a subcommand: cmd/catalog_load_test.go drives loadCatalog
-//     against the committed fixture catalog (testdata/catalog) unconditionally, and against
-//     the real blis-catalog checkout in the ci.yml `catalog-load` job via BLIS_CATALOG.
+//     against the committed fixture catalog (testdata/catalog) unconditionally, and
+//     scripts/catalog-load-gate.sh drives it against a pinned blis-catalog checkout in CI.
 //
 // SCOPE BOUNDARY, stated because it is the one place this file could be misread as doing
 // less than the issue asks: the completeness rule ("a models/<name>/ dir missing either
@@ -91,7 +91,7 @@ type catalogModelEntry struct {
 type catalogLoadReport struct {
 	Models        int
 	Hardware      int
-	Workloads     int
+	Presets       int
 	DeviceClasses int
 	Problems      []string
 }
@@ -136,7 +136,7 @@ func loadCatalog(root string) (catalogLoadReport, error) {
 	}{
 		{&report.Models, loadCatalogModelEntries},
 		{&report.Hardware, loadCatalogHardwareEntries},
-		{&report.Workloads, loadCatalogWorkloadEntries},
+		{&report.Presets, loadCatalogWorkloadEntries},
 		{&report.DeviceClasses, loadCatalogDeviceEntries},
 	} {
 		loaded, found := namespace.load(root)
