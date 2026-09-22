@@ -257,16 +257,13 @@ func callArgs(t *testing.T, code, callee string) string {
 	return rest[:end]
 }
 
-// pendingHunkNote is appended to every failure that means "the script does not classify its
-// errors at all". The automated delivery loop cannot push .github/workflows/* — both App
-// tokens are rejected with "refusing to allow a GitHub App to create or update workflow ...
-// without `workflows` permission" — so the #1707 hunk is applied by a human, and until it is
-// these tests fail. That is deliberate: this issue is about a failure being unobservable, so
-// pinning it with something that can pass while unapplied would repeat the defect.
-const pendingHunkNote = "\n\nIf this is a fresh checkout of the #1707 delivery branch: the " +
-	"hunk to .github/workflows/claude.yml has not been applied yet. The delivery loop cannot " +
-	"push workflow files (docs/contributing/automated-delivery.md), so it is applied by hand " +
-	"from the PR body. These tests go green once it lands."
+// regressionNote is appended to every failure that means "the script no longer classifies its
+// errors at all" — i.e. a regression of the #1707 fix back to the single-path catch that mapped
+// every error to "not a collaborator". It points the reader at the contract these tests pin
+// rather than at any one-time delivery step.
+const regressionNote = "\n\nThis is the #1707 contract: the check-permissions catch must fail " +
+	"closed AND distinguish a genuine denial from a probe that could not answer. A single-path " +
+	"catch reintroduces the silent-drop defect. See docs/contributing/standards/agent-trust.md."
 
 // permissionProbeScript returns the inline script of the check-permissions step that probes
 // the caller's permission, failing the test if no step does.
@@ -301,7 +298,7 @@ func probeCatchBlock(t *testing.T, script string) string {
 	i := strings.Index(script, "catch (")
 	if i < 0 {
 		t.Fatalf("the permission probe has no catch block — an API error would now fail the "+
-			"job with a raw stack trace instead of failing closed.%s", pendingHunkNote)
+			"job with a raw stack trace instead of failing closed.%s", regressionNote)
 	}
 	return script[i:]
 }
@@ -320,7 +317,7 @@ func probeCatchPaths(t *testing.T, catchBlock string) (denialPath, escalationPat
 	if i < 0 {
 		t.Fatalf("the probe's catch block has a single path — it cannot be distinguishing a "+
 			"genuine denial from a probe that failed to answer, which is the whole of "+
-			"#1707.%s", pendingHunkNote)
+			"#1707.%s", regressionNote)
 	}
 	return catchBlock[:i], catchBlock[i:]
 }
@@ -738,8 +735,8 @@ func TestCodeOnly_RemovesCommentsAndKeepsLiterals(t *testing.T) {
 // misjudged this script — or a recursion that over-stripped it — would fail here, loudly,
 // rather than silently weakening every assertion above.
 //
-// The tokens asserted on are ones the probe has in EVERY state — before the #1707 hunk and
-// after — so this test does not depend on the pending hunk.
+// The tokens asserted on are ones the probe has regardless of how its catch classifies errors,
+// so this test guards codeOnly itself rather than the #1707 classification.
 func TestCodeOnly_LeavesTheRealScriptsCodeIntact(t *testing.T) {
 	script := permissionProbeScript(t, loadClaudeWorkflow(t))
 	stripped := codeOnly(script)
@@ -753,7 +750,7 @@ func TestCodeOnly_LeavesTheRealScriptsCodeIntact(t *testing.T) {
 		"catch (",
 		// Inside a template `${...}`, which codeOnly now scans as code rather than copying:
 		// the guard that stripping there does not eat the substitution it is scanning. Present
-		// in every state of the script, before the #1707 hunk and after.
+		// present regardless of how the catch classifies errors.
 		"${context.actor}",
 	} {
 		if !strings.Contains(stripped, code) {
