@@ -312,6 +312,16 @@ output).
 - **Diagnostics in `Signals`**: put intermediate quantities (slopes, ratios,
   noise floors) there so the trace explains each verdict.
 
+## Migration from the pre-#1516 flags
+
+The pre-#1516 CLI used a different flag surface. Map old flags to new as follows:
+
+- `--post-hoc-detector X` → `--detectors X`
+- `--saturation-threshold-ms N` → `--saturation-config` with `threshold: {threshold_ms: N}`
+- the 10 backlog-drift tuning flags (`--saturation-window`, `--saturation-min-windows`, `--saturation-classifier`, …) → `--saturation-config` `backlog_drift:` block
+- the standalone `--saturation-report` (per-window `BacklogDriftReport`) is removed; `--saturation-report` now writes the `{"final":{...},"trace":[...]}` object (final label + per-event trace)
+- detector `Classify` is removed from the `Detector` interface (streaming-only: `Name`/`Observe`/`Detect`/`Reset`); the post-hoc batch analysis library (`workload.AnalyzeBacklogDrift*`, the `slope-based`/`drain-ratio` classifiers, `BacklogDriftReport`) was fully removed in #1547 — it had no live-path caller once the streaming detectors (#1515/#1516) and the reducer (#1517) landed. `BacklogDriftConfig` was relocated verbatim into `sim/saturation` in the same PR, fully decoupling `sim/saturation` from `sim/workload` (the config type was the last import edge)
+
 ## Need help?
 
 Reference implementations:
