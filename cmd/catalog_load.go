@@ -389,6 +389,9 @@ func yamlFloat(v any) (float64, bool) {
 		return float64(n), true
 	case int64:
 		return float64(n), true
+	case uint64:
+		// yaml.v3 falls back to uint64 for an integer too large for int64.
+		return float64(n), true
 	case float64:
 		return n, true
 	default:
@@ -438,6 +441,15 @@ func loadCatalogDeviceEntries(root string) (int, []string) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
+			// An absent devices/ namespace is fine — nothing reads it until a tier names a
+			// device_class. But a namespace that EXISTS and holds YAML while missing the one
+			// file BLIS reads is reported: that is what a misnamed storage table looks like
+			// (storages.yaml), and it would otherwise pass this gate as "no devices to load"
+			// and then fail a real run with "device_class is not defined".
+			if siblings, listErr := catalogYAMLFiles(filepath.Join(root, catalogDevicesSubdir)); listErr == nil && len(siblings) > 0 {
+				return 0, []string{fmt.Sprintf("%s: the devices namespace holds %v but no %s, the only "+
+					"storage-device table BLIS reads", path, siblings, catalogStorageDevicesFile)}
+			}
 			return 0, nil
 		}
 		return 0, []string{fmt.Sprintf("%s: storage-device table is not readable: %v", path, err)}

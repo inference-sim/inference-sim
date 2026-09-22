@@ -442,6 +442,54 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 	}
 }
 
+// TestReadCatalogModelEntry_ParsesIdentityAndProvenance pins what a model entry is FOR: a
+// result must be auditable and the vendor fetch reproducible by hand, which takes the whole
+// provenance record, not just a name. It also pins that an unquoted ISO date decodes as the
+// string it looks like rather than as a YAML timestamp — the field is provenance text, and a
+// silently-empty `retrieved` would leave a record that cannot answer "as of when".
+func TestReadCatalogModelEntry_ParsesIdentityAndProvenance(t *testing.T) {
+	root := newCompleteCatalog(t)
+	entry, err := readCatalogModelEntry(filepath.Join(root, catalogModelsSubdir, gateModel), gateModel)
+	if err != nil {
+		t.Fatalf("readCatalogModelEntry: %v", err)
+	}
+	for _, got := range []struct{ field, value, want string }{
+		{"name", entry.Name, gateModel},
+		{"source.provider", entry.Source.Provider, "huggingface"},
+		{"source.repo", entry.Source.Repo, "Example/" + gateModel},
+		{"source.revision", entry.Source.Revision, "0000000000000000000000000000000000000000"},
+		{"source.retrieved", entry.Source.Retrieved, "2026-09-16"},
+	} {
+		if got.value != got.want {
+			t.Errorf("%s = %q, want %q", got.field, got.value, got.want)
+		}
+	}
+}
+
+// TestCatalogStrictLoad_MisnamedStorageTableIsReported covers the one devices/ failure a
+// lazily-read namespace would otherwise swallow: the namespace exists and holds YAML, but not
+// the storage.yaml BLIS reads. Absent-entirely stays fine (covered by
+// TestCatalogStrictLoad_MissingNamespaceIsNotAProblem) — it is the half-present case that
+// signals a typo, and that would fail a real run with a message blaming the operator's
+// device_class.
+func TestCatalogStrictLoad_MisnamedStorageTableIsReported(t *testing.T) {
+	root := newCompleteCatalog(t)
+	if err := os.Rename(catalogStorageDevicesPath(root),
+		filepath.Join(root, catalogDevicesSubdir, "storages"+catalogYAMLExt)); err != nil {
+		t.Fatalf("rename storage table: %v", err)
+	}
+	report := loadOrFatal(t, root)
+	err := report.Err()
+	if err == nil {
+		t.Fatal("a devices namespace holding YAML but no storage.yaml must be reported")
+	}
+	for _, want := range []string{catalogStorageDevicesFile, "storages" + catalogYAMLExt} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the diagnostic must name %q; got:\n%v", want, err)
+		}
+	}
+}
+
 // TestCatalogStrictLoad_VendorConfigMayStatePretrainingTP is the precision control on the
 // deployment-fact rule: it is scoped to catalog-AUTHORED YAML, never the vendor config.json,
 // which is committed verbatim and never edited. 10 of the authoritative catalog's vendor
