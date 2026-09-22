@@ -1,0 +1,74 @@
+# PENDING WORKFLOW CHANGE for #1675 — apply and delete this file.
+#
+#     git apply .github/archon-trigger-anchor.patch
+#     git rm .github/archon-trigger-anchor.patch
+#     go test ./scripts/ -run TestArchonWorkflow -count=1
+#
+# WHY IT IS A PATCH AND NOT APPLIED. The whole of #1675 IS a change to a trigger `if:` in
+# .github/workflows/archon.yml, and the L1 delivery runner's GitHub App token carries no
+# `workflows` permission, so any change under .github/workflows/ is refused — by `git push`
+# and by the Contents API alike:
+#
+#     refusing to allow a GitHub App to create or update workflow
+#     `.github/workflows/archon.yml` without `workflows` permission
+#
+# (DEFAULT_WORKFLOW_TOKEN is refused identically; both were tried.) So this half needs a
+# human, or any token that carries `workflows: write`. Same situation and same convention as
+# .github/deliver-conflict-wiring.patch on #1781.
+#
+# WHAT IT CHANGES
+#   archon.yml  ~ check-permissions' `if:` gate. The command must now BEGIN A LINE to count as
+#                 an invocation — the body's first line (`startsWith`) or any later one (a
+#                 newline immediately before it) — instead of appearing anywhere in the body.
+#                 The `github.event.issue.pull_request` guard and the whole-body
+#                 `/archon-pr-review-claude` exclusion are unchanged.
+#               + a comment block recording why the anchor is not first-line-only, the measured
+#                 effect, and the one residual the expression language cannot close.
+#
+# ALREADY LANDED, NOT IN THIS PATCH: scripts/archon_workflow_test.go, which evaluates the gate
+# against real comment bodies from this repository's history. Until this patch is applied that
+# test reads the gate OUT OF THIS FILE (it applies the diff to a temp copy), so the contract is
+# under test now and the patch is proven to apply cleanly on every CI run. Once applied, the
+# test reads archon.yml directly, and it FAILS if this file is deleted without being applied,
+# or is left behind after being applied — so neither half can be silently lost.
+#
+# Everything below this line is a plain `git diff`; the `#` lines above are ignored by git apply.
+diff --git a/.github/workflows/archon.yml b/.github/workflows/archon.yml
+index cbd84c30..c16e7f2f 100644
+--- a/.github/workflows/archon.yml
++++ b/.github/workflows/archon.yml
+@@ -13,9 +13,33 @@ on:
+ 
+ jobs:
+   check-permissions:
++    # The command must read as a DIRECTIVE, not a prose mention (#1675). A `contains()` over
++    # the whole body cannot tell the two apart, so any comment that merely discusses the
++    # trigger — a review table, a postmortem, a doc quote — fired a full self-hosted
++    # `archon-go pr-review`. All three runs on #1674 came from comments that only talked
++    # about it; the comment reporting the double-fire caused a double-fire.
++    #
++    # The rule is "the command begins a line": the body's first line (startsWith) or any
++    # later line (a newline immediately before it). Deliberately NOT first-line-only — of
++    # this repository's 134 real invocations, many are the LAST line of a long rebase or
++    # verification report (#1667 has several), so anchoring to the first line alone would
++    # reject the established habit. Measured over all 268 comments that contain the string,
++    # this rule accepts exactly the 134 invocations and rejects the 134 mentions.
++    #
++    # `fromJSON('"\n"')` is how an expression obtains a newline: GitHub's single-quoted
++    # strings have no escape sequences, so '\n' written directly is a backslash then an n.
++    #
++    # Residual, accepted knowingly: expressions have no regex, so "alone on its line" is not
++    # expressible — a sentence that *starts* with the command still fires (one comment in the
++    # 268 did, a bot report opening with "/archon-pr-review issued NO_CHANGE …"). Closing that
++    # needs a scripted gate; the cheap anchor removes every observed prose trigger but one.
++    #
++    # scripts/archon_workflow_test.go evaluates THIS expression against real comment bodies,
++    # so an edit that widens it back to whole-body matching fails the test suite.
+     if: |
+       github.event.issue.pull_request &&
+-      contains(github.event.comment.body, '/archon-pr-review') &&
++      (startsWith(github.event.comment.body, '/archon-pr-review') ||
++       contains(github.event.comment.body, format('{0}/archon-pr-review', fromJSON('"\n"')))) &&
+       !contains(github.event.comment.body, '/archon-pr-review-claude')
+     runs-on: ubuntu-latest
+     outputs:
