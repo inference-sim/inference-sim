@@ -428,29 +428,32 @@ jobs:
           # Resolved via the API, never interpolated into the script: an author login is data.
           if ! author=$(gh api "/repos/$REPO/issues/$ISSUE_NUMBER" --jq '.user.login'); then
             echo "::error::could not read the author of #$ISSUE_NUMBER — failing closed"
-            echo "blocked=true" >> "$GITHUB_OUTPUT"
-            gh pr comment "$PR" --repo "$REPO" --body \
-              "Delivery stopped: could not read the author of #$ISSUE_NUMBER, so the verify agent was not run. This is a probe failure, not a verdict — retry once the API is reachable." || true
-            gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
-            gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null 2>&1 || true
-            exit 1
-          fi
-          rc=0
-          verdict=$(scripts/deliver-author-gate.sh "$author") || rc=$?
-          printf '%s\n' "$verdict"
-          if [[ "$rc" -eq 0 ]]; then
-            echo "blocked=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "blocked=true" >> "$GITHUB_OUTPUT"
-          # rc 1 = definitive denial (outside author); rc 3 = probe failure. Both refuse; the
-          # message differs so the requester knows whether to vet-and-retrigger or simply retry.
-          if [[ "$rc" -eq 1 ]]; then
-            body="Delivery stopped: #$ISSUE_NUMBER was authored by \`$author\`, who does not hold write access to this repository. The verify agent reads the issue body and the diff, so an outside-authored issue is not run automatically (#1813). A maintainer must vet it and re-issue \`/approve-issue-for-pr-delivery\`."
+            body="Delivery stopped: could not read the author of #$ISSUE_NUMBER, so the verify agent was not run. This is a probe failure, not a verdict — retry once the API is reachable."
           else
-            body="Delivery stopped: could not verify whether \`$author\` (author of #$ISSUE_NUMBER) has write access, so the verify agent was not run. This is a probe failure, not a verdict — retry should work."
+            rc=0
+            verdict=$(scripts/deliver-author-gate.sh "$author") || rc=$?
+            printf '%s\n' "$verdict"
+            if [[ "$rc" -eq 0 ]]; then
+              echo "blocked=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            # rc 1 = definitive denial (outside author); rc 3 = probe failure. Both refuse; the
+            # message differs so the requester knows whether to vet-and-retrigger or simply retry.
+            if [[ "$rc" -eq 1 ]]; then
+              body="Delivery stopped: #$ISSUE_NUMBER was authored by \`$author\`, who does not hold write access to this repository. The verify agent reads the issue body and the diff, so an outside-authored issue is not run automatically (#1813). A maintainer must vet it and re-issue \`/approve-issue-for-pr-delivery\`."
+            else
+              body="Delivery stopped: could not verify whether \`$author\` (author of #$ISSUE_NUMBER) has write access, so the verify agent was not run. This is a probe failure, not a verdict — retry should work."
+            fi
           fi
-          gh pr comment "$PR" --repo "$REPO" --body "$body" || true
+          # A refusal must never be silent (R1). Suppress the generic `Report a failed verify`
+          # (blocked=true) ONLY when the SPECIFIC comment posts; if the comment API fails, leave
+          # `blocked` unset so that reporter fires as a fallback rather than the requester getting
+          # a red run with no explanation.
+          if gh pr comment "$PR" --repo "$REPO" --body "$body"; then
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::could not post the author-gate refusal on #$PR; the generic failure reporter will report instead"
+          fi
           gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
           gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null 2>&1 || true
           exit 1
