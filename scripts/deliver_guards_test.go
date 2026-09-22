@@ -658,8 +658,8 @@ func TestDeliverVerifyHandsOffOnTheDeliveryBranchNotTheEventRef(t *testing.T) {
 // from the conversation comments `gh pr view --comments` returns. The verify prompt pointed the
 // agent at the diff, the sub-issue contracts and the refinements, but never at pulls/{n}/comments,
 // so a reviewer's precise inline fix-request was invisible to the verdict reasoning; the correction
-// round (whose work list is only the bot findings) therefore never fixed it. Observed on PR #1680,
-// where two valid inline comments from a reviewer were dropped.
+// round (whose work list is only the bot findings) therefore never fixed it (first observed on
+// PR #1680).
 //
 // The trust model is UNCHANGED and this test does not assert any new authority: inline comments are
 // data to be assessed on the merits, exactly like conversation comments — a human comment still
@@ -709,6 +709,29 @@ func TestDeliverVerifyReviewPromptFetchesInlineReviewComments(t *testing.T) {
 	if !strings.Contains(prompt, "gh api") {
 		t.Errorf("the review prompt references the inline-comments endpoint but not `gh api`, the only "+
 			"gh call that returns inline review comments (`gh pr view --comments` does not). Prompt:\n%s", prompt)
+	}
+	// `--paginate` is load-bearing, not decoration: without it the fetch returns only the first page
+	// (per_page=100), so on a PR whose inline review runs past 100 comments the tail is silently
+	// dropped — the same "reviewer's point never reaches the verdict" failure this PR fixes, just at
+	// a page boundary instead of a wrong endpoint. Pin it so a future edit cannot quietly drop it.
+	if !strings.Contains(prompt, "--paginate") {
+		t.Errorf("the review prompt's inline-comments fetch does not use `--paginate`, so it would read "+
+			"only the first page and silently drop inline comments past it. Prompt:\n%s", prompt)
+	}
+
+	// AC-3 (non-goal): the fix is VERIFY-ONLY. The correction phase's work list stays the two bot
+	// findings — it must not grow an inline-comments source. Pin that deliver-correct.yml never
+	// acquires this fetch, so an accidental copy of the prompt block into the correction phase (which
+	// would change the correction findings source #1801 explicitly leaves alone) trips here.
+	correctPath := filepath.Join("..", ".github", "workflows", "deliver-correct.yml")
+	correctRaw, err := os.ReadFile(correctPath)
+	if err != nil {
+		t.Fatalf("reading %s: %v", correctPath, err)
+	}
+	if inlineEndpoint.Match(correctRaw) {
+		t.Errorf("deliver-correct.yml now fetches inline review comments (`pulls/{n}/comments`). #1801 "+
+			"is verify-only: the correction phase's findings source must stay the two bot findings, not "+
+			"grow a new inline-comments input.")
 	}
 }
 
