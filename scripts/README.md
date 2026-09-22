@@ -188,8 +188,10 @@ scripts/deliver-trusted-comments.sh --render p.json  # render a prepared payload
 was not gated at all — and this repository is public, so any GitHub user can comment on any issue or
 PR. An agent cannot reliably separate "context" from "instruction", so that text is a
 prompt-injection surface into flows that run on a persistent self-hosted runner with credentials in
-the environment and, in the correction phase, `contents: write`. The defence today is a prompt asking
-the agent to treat comments as data; this is the structural half that replaces it.
+the environment and, in the correction phase, `contents: write`. A prompt asking the agent to treat
+comments as data is the behavioural half (still needed for the text that IS shown); this script is
+the structural half that stops a stranger's text from reaching the agent in the first place, in the
+flows wired to it (see below).
 
 **Wired into the delivery loop.** `deliver-verify.yml` and `deliver-correct.yml` each run this script
 (`--pr`) in a step before the agent and have the agent read the resulting digest instead of fetching
