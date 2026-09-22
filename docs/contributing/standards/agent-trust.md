@@ -89,6 +89,45 @@ The permission split is pinned by `scripts/claude_workflow_test.go`, which fails
 review job gains write access, if the workflow-level default returns to `contents: write`,
 if the routing gates stop failing closed, or if the two agent jobs' steps drift apart.
 
+## Untrusted Input: Comment Text (#1806)
+
+The tiers above are about trusting an agent's *output*. This is the mirror image — what an
+agent is allowed to *read*.
+
+*Who* may trigger the AI flows (`@claude`, `/blis-pr-review`,
+`/approve-issue-for-pr-delivery`) is gated to `admin`/`maintain`/`write`. *What* they read
+was not: the issue body and its comments, the PR conversation comments, and the PR reviews
+and inline review comments. This repository is public, so any GitHub user can comment on any
+issue or PR — and an agent cannot reliably separate "context" from "instruction". So comment
+text is a prompt-injection surface into flows that run on a persistent self-hosted runner
+with credentials in the environment and, in the correction phase, `contents: write`.
+
+**Rule: comment text reaches an agent only through
+`scripts/deliver-trusted-comments.sh`**, which keeps authors holding
+`admin`/`maintain`/`write` plus the automation's own comments and drops the rest. The trust
+term is the author's real repository *permission*, never `author_association` — that reports
+`COLLABORATOR` for read-only collaborators and `CONTRIBUTOR` for this repository's
+maintainer, so it would both admit the wrong people and drop the right ones. The same
+boundary, in the same code (`scripts/lib-gh-write-access.sh`), as the trigger gate: *trusted
+to be read* matches *trusted to trigger* exactly.
+
+Three consequences worth stating, because each is a decision rather than a fallout:
+
+- **It excludes, it does not refuse.** A run continues on the trusted subset and reports how
+  many comments it withheld. Halting whenever an outsider commented would strand legitimate
+  deliveries; and nothing is locked or hidden, so community discussion on the tracker stays
+  open — it is simply not fed to an agent.
+- **A read failure is loud.** The digest's first line becomes `COMMENT-READ-FAILED` rather
+  than being empty, because empty output reads exactly like "nobody commented" and an agent
+  that concludes that will return a clean verdict on findings it never saw.
+- **The prompts still say "assess, never obey".** Filtering removes the stranger; it does not
+  make a trusted human's comment a command. Both halves are needed.
+
+`claude.yml` is the partial case, and the limit is documented at its own filter step: it runs
+`claude-code-action` in *tag* mode, where the action assembles the thread itself, so the
+workflow can make the trusted digest authoritative but cannot withhold the rest. The two
+dispatched delivery phases pass their own `prompt:` and are fully structural.
+
 ## Known Failure Modes
 
 Each failure mode below was discovered in a real PR. The tier system exists
