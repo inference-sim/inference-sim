@@ -106,6 +106,23 @@ reason — a status, or a category when there is no status — never the caught 
 text, which is unbounded and would land verbatim on a public thread that notifies and persists;
 the precise error goes to the run's failure annotation instead.
 
+The triggerer gate authorises *who asked*. A second gate authorises *whose content the agent will
+read* (#1813). Every AI flow can be pointed at a PR or issue whose **author** holds no write access,
+and there the untrusted input is the PR/issue **body** and, on a PR, the **diff** — reading it *is*
+the task, so #1806's comment-text filter does not help, and a maintainer triggering the run does not
+sanitise it. `scripts/deliver-author-gate.sh` is the one place that decision lives, applying the same
+`admin`/`write`/`maintain` law as the triggerer gate with two differences for a single-author gate:
+`github-actions[bot]`/`claude[bot]` are trusted **without** a probe (the delivery loop's own PRs and
+issues are bot-authored, and the permission endpoint 404s for a bot login), and a probe failure fails
+closed **and** loud (exit 3), distinct from a clean-404 denial (exit 1). The signal is the **author**,
+never fork-ness: a same-repo branch or issue opened by an outsider is as untrusted as a fork, and a
+fork opened by a maintainer is fine. `claude.yml` and `deliver-implement.yml` run it in their
+ubuntu `check-permissions` job (so a refused author never wakes the self-hosted runner);
+`deliver-verify.yml` and `deliver-correct.yml` run it before the agent, gating the **sub-issue**
+author (their delivery PR is bot-authored and same-repo, so the issue — read via `gh issue view` — is
+the untrusted container). The four wirings are pinned by `scripts/deliver_author_gate_wiring_test.go`
+and the decision by `scripts/deliver_author_gate_test.go`.
+
 ## Known Failure Modes
 
 Each failure mode below was discovered in a real PR. The tier system exists

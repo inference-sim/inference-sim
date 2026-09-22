@@ -136,6 +136,50 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Container-level author gate (#1813), before the branch update and the agent. This phase has
+      # contents: write and pushes, and it reads the sub-issue (#$ISSUE_NUMBER) for context alongside
+      # the diff and the review comments — so an outside-authored issue must not reach the agent.
+      # deliver-author-gate.sh applies the same admin/write/maintain law as the triggerer gate (bots
+      # trusted without a probe; a probe failure fails closed AND loud). In normal operation the
+      # verify phase's identical gate blocks first, so this is defence-in-depth for a correction
+      # dispatched by any other route; the delivery PR is bot-authored and same-repo (Validate the
+      # target PR), so the issue is the untrusted container.
+      #
+      # On a refusal it posts a specific comment and moves the label, then exits non-zero: the
+      # downstream steps skip (implicitly `success()`-gated) and `Report a failed correction` is
+      # excluded via `author_gate.outputs.blocked`, so there is exactly one comment.
+      - name: Gate on the sub-issue author's write access
+        id: author_gate
+        if: steps.paused.outputs.paused == 'false'
+        run: |
+          set -uo pipefail
+          if ! author=$(gh api "/repos/$REPO/issues/$ISSUE_NUMBER" --jq '.user.login'); then
+            echo "::error::could not read the author of #$ISSUE_NUMBER — failing closed"
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+            gh pr comment "$PR" --repo "$REPO" --body \
+              "Correction stopped: could not read the author of #$ISSUE_NUMBER, so the agent was not run. This is a probe failure, not a verdict — retry once the API is reachable." || true
+            gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
+            gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null 2>&1 || true
+            exit 1
+          fi
+          rc=0
+          verdict=$(scripts/deliver-author-gate.sh "$author") || rc=$?
+          printf '%s\n' "$verdict"
+          if [[ "$rc" -eq 0 ]]; then
+            echo "blocked=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "blocked=true" >> "$GITHUB_OUTPUT"
+          if [[ "$rc" -eq 1 ]]; then
+            body="Correction stopped: #$ISSUE_NUMBER was authored by \`$author\`, who does not hold write access to this repository. The correction agent (contents: write) reads the issue, diff and comments, so an outside-authored issue is not run automatically (#1813). A maintainer must vet it and re-issue \`/approve-issue-for-pr-delivery\`."
+          else
+            body="Correction stopped: could not verify whether \`$author\` (author of #$ISSUE_NUMBER) has write access, so the agent was not run. This is a probe failure, not a verdict — retry should work."
+          fi
+          gh pr comment "$PR" --repo "$REPO" --body "$body" || true
+          gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
+          gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null 2>&1 || true
+          exit 1
+
       # #1781 — THE BRANCH UPDATE IS A WORKFLOW STEP, not a delegated instruction.
       #
       # STEP 1 of the prompt below has always asked the agent to `git merge origin/main`. On PR
@@ -354,7 +398,7 @@ jobs:
       # Still gated on `owned` and on a non-paused delivery: a validation refusal must not be
       # followed by a label on a PR this loop does not own, and a paused exit writes nothing.
       - name: Record the dismissal state from the correction comment
-        if: always() && steps.target.outputs.owned == 'true' && steps.paused.outputs.paused == 'false'
+        if: always() && steps.target.outputs.owned == 'true' && steps.paused.outputs.paused == 'false' && steps.author_gate.outputs.blocked != 'true'
         env:
           SINCE: ${{ steps.since.outputs.at }}
         run: |
@@ -436,7 +480,7 @@ jobs:
       # vaguer comment about the phase having errored.
       - name: Did the conflict actually get resolved?
         id: conflictcheck
-        if: always() && steps.target.outputs.owned == 'true' && steps.paused.outputs.paused == 'false'
+        if: always() && steps.target.outputs.owned == 'true' && steps.paused.outputs.paused == 'false' && steps.author_gate.outputs.blocked != 'true'
         env:
           BRANCH: deliver/issue-${{ inputs.issue_number }}
           UPDATE_STATE: ${{ steps.update.outputs.state }}
@@ -545,8 +589,10 @@ jobs:
       # runner receives a shutdown signal no step executes, whatever its `if:` says — even
       # `always()` ones, and even the action's own post-steps. That class is the stall sweep's
       # job (deliver-stall-sweep.yml), not this reporter's.
+      # `author_gate.outputs.blocked != 'true'` excludes the author-gate refusal (#1813), which
+      # already posted a specific comment and moved the label — same exclusion shape as `paused`.
       - name: Report a failed correction
-        if: always() && !success() && steps.target.outputs.owned == 'true' && steps.paused.outputs.paused != 'true'
+        if: always() && !success() && steps.target.outputs.owned == 'true' && steps.paused.outputs.paused != 'true' && steps.author_gate.outputs.blocked != 'true'
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |

@@ -407,6 +407,54 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Container-level author gate (#1813), before the CI dispatch and the agent. The TRIGGERER is
+      # already write-checked (the authorize job), but that is not the untrusted axis here: this
+      # phase feeds the agent `gh issue view $ISSUE_NUMBER` for the contracts (see the review step's
+      # prompt) plus the diff, and the SUB-ISSUE's author may hold no write access even when a
+      # maintainer triggered the run — reading that outside-authored body IS the task, so no comment
+      # filter (#1806) helps. deliver-author-gate.sh applies the same admin/write/maintain law the
+      # triggerer gate uses (bots trusted without a probe; a probe failure fails closed AND loud,
+      # distinct from a denial). The delivery PR itself is bot-authored and same-repo (Validate the
+      # target PR), so the issue — not the PR — is the untrusted container this phase must gate.
+      #
+      # On a refusal this posts its own specific comment and moves the label, then exits non-zero;
+      # the downstream steps skip (their `if:` is implicitly `success()`-gated) and `Report a failed
+      # verify` is excluded via `author_gate.outputs.blocked`, so there is exactly one comment.
+      - name: Gate on the sub-issue author's write access
+        id: author_gate
+        if: steps.paused.outputs.paused == 'false'
+        run: |
+          set -uo pipefail
+          # Resolved via the API, never interpolated into the script: an author login is data.
+          if ! author=$(gh api "/repos/$REPO/issues/$ISSUE_NUMBER" --jq '.user.login'); then
+            echo "::error::could not read the author of #$ISSUE_NUMBER — failing closed"
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+            gh pr comment "$PR" --repo "$REPO" --body \
+              "Delivery stopped: could not read the author of #$ISSUE_NUMBER, so the verify agent was not run. This is a probe failure, not a verdict — retry once the API is reachable." || true
+            gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
+            gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null 2>&1 || true
+            exit 1
+          fi
+          rc=0
+          verdict=$(scripts/deliver-author-gate.sh "$author") || rc=$?
+          printf '%s\n' "$verdict"
+          if [[ "$rc" -eq 0 ]]; then
+            echo "blocked=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "blocked=true" >> "$GITHUB_OUTPUT"
+          # rc 1 = definitive denial (outside author); rc 3 = probe failure. Both refuse; the
+          # message differs so the requester knows whether to vet-and-retrigger or simply retry.
+          if [[ "$rc" -eq 1 ]]; then
+            body="Delivery stopped: #$ISSUE_NUMBER was authored by \`$author\`, who does not hold write access to this repository. The verify agent reads the issue body and the diff, so an outside-authored issue is not run automatically (#1813). A maintainer must vet it and re-issue \`/approve-issue-for-pr-delivery\`."
+          else
+            body="Delivery stopped: could not verify whether \`$author\` (author of #$ISSUE_NUMBER) has write access, so the verify agent was not run. This is a probe failure, not a verdict — retry should work."
+          fi
+          gh pr comment "$PR" --repo "$REPO" --body "$body" || true
+          gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
+          gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null 2>&1 || true
+          exit 1
+
       # No PR checkout INTO THE WORKSPACE, and no execution of PR code anywhere in this job. The
       # repository's own CI compiles and tests the delivery branch, so nothing here needs to build
       # it. Narrowed by #1715 rather than dropped, because the invariant still holds in its
@@ -1519,8 +1567,13 @@ jobs:
       # runner receives a shutdown signal no step executes, whatever its `if:` says — even
       # `always()` ones, and even the action's own post-steps. That class is the stall sweep's
       # job (deliver-stall-sweep.yml), not this reporter's.
+      # `author_gate.outputs.blocked != 'true'` excludes the one failure this generic reporter would
+      # mis-describe: the author gate (#1813) already posted a SPECIFIC comment and moved the label
+      # on a refusal, so this must not also post "the automation failed... re-issue once fixed" —
+      # an author refusal IS a deliberate verdict, and re-issuing without a maintainer vetting the
+      # issue would just be refused again. Same exclusion shape as `paused`, one step over.
       - name: Report a failed verify
-        if: always() && !success() && steps.target.outputs.owned == 'true' && steps.paused.outputs.paused != 'true'
+        if: always() && !success() && steps.target.outputs.owned == 'true' && steps.paused.outputs.paused != 'true' && steps.author_gate.outputs.blocked != 'true'
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |

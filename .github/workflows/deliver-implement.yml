@@ -247,6 +247,42 @@ jobs:
             }
             core.setOutput('issue_number', String(here));
 
+      # Trusted tree, for scripts/deliver-author-gate.sh only. On an issue_comment event
+      # `github.ref` is the DEFAULT branch, so this is BLIS's own main-branch script — never issue
+      # or PR content — and nothing here executes anything but that script.
+      - uses: actions/checkout@v5
+        if: steps.check.outputs.allowed == 'true'
+        with:
+          fetch-depth: 0
+
+      # Container-level author gate (#1813). The TRIGGERER passed the collaborator gate above, but
+      # the untrusted content this delivery builds is the SUB-ISSUE'S BODY, whose author may hold no
+      # write access even when a maintainer typed the command. That body flows into an agent with
+      # contents: write on a self-hosted runner, so it is gated here with the same admin/write/
+      # maintain law (bots trusted without a probe; a probe failure fails closed AND loud). A
+      # refusal comments on the issue and fails this job, so the `deliver` job — `needs:
+      # check-permissions` — never starts. Author, not fork-ness, is the signal: a same-repo branch
+      # or issue opened by an outsider is as untrusted as a fork.
+      - name: Gate on the sub-issue author's write access
+        if: steps.check.outputs.allowed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AUTHOR: ${{ github.event.issue.user.login }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          set -uo pipefail
+          rc=0
+          verdict=$(scripts/deliver-author-gate.sh "$AUTHOR") || rc=$?
+          printf '%s\n' "$verdict"
+          [[ "$rc" -eq 0 ]] && exit 0
+          if [[ "$rc" -eq 1 ]]; then
+            body="Not delivering #$ISSUE: it was authored by \`$AUTHOR\`, who does not hold write access to this repository. The delivery agent builds the issue body on a runner with credentials, so an outside-authored issue is not delivered automatically (#1813). A maintainer must vet it — re-file or re-author it, then re-issue \`/approve-issue-for-pr-delivery\`."
+          else
+            body="Not delivering #$ISSUE: could not verify whether \`$AUTHOR\` has write access, so nothing was started. This is a probe failure, not a verdict — retrying should work."
+          fi
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$body" || true
+          exit 1
+
   deliver:
     needs: check-permissions
     if: needs.check-permissions.outputs.allowed == 'true'
