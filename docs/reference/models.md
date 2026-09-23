@@ -8,6 +8,29 @@ BLIS has been tested and accuracy validated across a variety of model families a
 
 The simulator reads each model's `config.json` from the catalog located by `--catalog <path>` or the `BLIS_CATALOG` environment variable — there is **no default and no search path**, so a run with neither is refused naming both forms (#1731). The catalog is a checkout of the authoritative [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository (or any scratch clone of that layout); within it, the entry is `<catalog>/models/<model-short-name>/config.json`. BLIS never fetches at run time: a model with no catalog entry is refused, naming the path the entry belongs at. Adding a model means committing its `config.json` (set `HF_TOKEN` when downloading a gated model's config by hand).
 
+### Catalog validation — there is no `validate` command
+
+BLIS validates whatever it reads and fails naming the file and the problem; there is deliberately no `blis validate` subcommand, because a separate validator would be free to accept a catalog a run rejects. What keeps the catalog loadable is a whole-catalog load that goes through the same code path a run uses (#1750), in two layers:
+
+- **Unconditional** — `go test ./cmd/...` loads the committed fixture catalog (`testdata/catalog`) on every test run.
+- **Against the authoritative catalog** — `scripts/catalog-load-gate.sh` clones `blis-catalog` at a pinned revision and runs the same load over every entry. Wiring that script into `.github/workflows/ci.yml` as a `catalog-load` job is **a pending human step, tracked by [#1823](https://github.com/inference-sim/inference-sim/issues/1823)** (the job body is quoted in the script's header; the automated delivery loop's token cannot push workflow files). So until that edit lands, the authoritative-catalog load runs **on demand only** — `scripts/catalog-load-gate.sh` — and is not enforced pre-merge; the unconditional fixture layer above is.
+
+What the load requires of a catalog:
+
+| Rule | Where it applies |
+|---|---|
+| Every `models/<name>/` entry has **both** halves — the vendor `config.json` **and** `model.yaml` (identity + `source.provider`/`repo`/`revision`), whose `name` matches the directory | `models/` |
+| Every `config.json` resolves and parses through the run path (`--model` resolution, then the model-config parser) | `models/` |
+| Strict parsing — an **unknown key is a hard error naming the file and the key**, never a silently dropped field | `models/*/model.yaml`, `hardware/*.yaml`, `workloads/*.yaml`, `devices/*.yaml` |
+| **One YAML document per file** — every reader decodes exactly one, so content after a `---` separator would be read by nothing (an empty trailing `---` is fine) | every catalog-authored YAML file |
+| No catalog-authored file states a **GPU** or a **tensor-parallel degree** at any nesting depth: those are deployment choices, stated on the command line and required there (`--hardware` / `--tp`, NS-6) | every catalog-authored YAML file |
+| Hardware entries state every calibration field they need (an omitted one would silently read 0) and keep the interconnect bandwidth pair complete | `hardware/*.yaml` |
+
+Two scope notes worth knowing before editing a catalog:
+
+- The deployment-fact rule is scoped to the catalog's **own** YAML, never the vendor `config.json`, which is committed verbatim. Many vendor configs state `pretraining_tp` — the TP degree the checkpoint was *pretrained* with, an architectural fact of the model rather than a choice about how to serve it.
+- `blis run` itself is **not** tightened by this gate: it resolves one model and reads only that model's `config.json`, so a scratch clone carrying a `config.json` with no `model.yaml` still runs. The completeness rule is a property of a *published* catalog, checked in CI.
+
 ## Validated Architectures
 
 The latency models have been validated against real vLLM measurements on:
