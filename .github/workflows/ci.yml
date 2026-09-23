@@ -101,16 +101,4 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Enforce the CLAUDE.md size ceiling
-        run: |
-          set -uo pipefail
-          ceiling=40000
-          size=$(wc -c < CLAUDE.md)
-          echo "CLAUDE.md is $size bytes (ceiling $ceiling)"
-          if [ "$size" -gt "$ceiling" ]; then
-            echo "::error file=CLAUDE.md::CLAUDE.md is $size bytes, over the $ceiling-byte ceiling."
-            echo "CLAUDE.md is agent operating context, not a changelog (see the charter at the top"
-            echo "of the file). Per-PR rationale, migration notes and byte-identity evidence belong"
-            echo "in the commit body and the relevant docs/ guide — not here. Move the new content"
-            echo "there and leave a pointer, or raise the ceiling in ci.yml only with a reason."
-            exit 1
-          fi
+        run: scripts/claude-md-size.sh CLAUDE.md 40000
