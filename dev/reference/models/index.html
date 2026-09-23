@@ -1471,6 +1471,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#catalog-validation-there-is-no-validate-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Catalog validation — there is no validate command
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#validated-architectures" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2879,6 +2890,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#catalog-validation-there-is-no-validate-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Catalog validation — there is no validate command
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#validated-architectures" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2953,6 +2975,52 @@
 <p><strong>Fidelity, however, is architecture-dependent.</strong> The latency models are validated against real vLLM measurements for the <a href="#validated-architectures">architectures listed below</a>; most other transformer models run too, but their numbers are unvalidated. <strong>Most</strong>, not any: a config from which no layer count can be derived is refused outright, and an activation outside the SwiGLU family is unsupported by KV auto-sizing — auto-calculation aborts the run with a fatal error unless you pass <code>--total-kv-blocks</code> to size KV manually. Beyond that, hardware MFU is a calibration input (see the <em>MFU Calibration</em> note below), several modern shapes — MLA, hybrid attention, block-wise FP8, MTP — carry the <em>Known approximations</em> documented on this page, and a run still needs the usual CLI configuration for its deployment topology (<code>--tp</code>/<code>--dp</code>, <code>--enable-expert-parallel</code>, KV capacity, <code>--kv-cache-dtype</code>). For an unvalidated architecture, treat absolute latencies as an estimate and calibrate against a real server (<code>blis observe</code> → <code>blis replay</code> → <code>blis calibrate</code>) before relying on them.</p>
 <p>BLIS has been tested and accuracy validated across a variety of model families and sizes, including both dense transformers and MoE (Mixture-of-Experts) architectures.</p>
 <p>The simulator reads each model's <code>config.json</code> from the catalog located by <code>--catalog &lt;path&gt;</code> or the <code>BLIS_CATALOG</code> environment variable — there is <strong>no default and no search path</strong>, so a run with neither is refused naming both forms (#1731). The catalog is a checkout of the authoritative <a href="https://github.com/inference-sim/blis-catalog"><code>blis-catalog</code></a> repository (or any scratch clone of that layout); within it, the entry is <code>&lt;catalog&gt;/models/&lt;model-short-name&gt;/config.json</code>. BLIS never fetches at run time: a model with no catalog entry is refused, naming the path the entry belongs at. Adding a model means committing its <code>config.json</code> (set <code>HF_TOKEN</code> when downloading a gated model's config by hand).</p>
+<h3 id="catalog-validation-there-is-no-validate-command">Catalog validation — there is no <code>validate</code> command<a class="headerlink" href="#catalog-validation-there-is-no-validate-command" title="Permanent link">&para;</a></h3>
+<p>BLIS validates whatever it reads and fails naming the file and the problem; there is deliberately no <code>blis validate</code> subcommand, because a separate validator would be free to accept a catalog a run rejects. What keeps the catalog loadable is a whole-catalog load that goes through the same code path a run uses (#1750), in two layers:</p>
+<ul>
+<li><strong>Unconditional</strong> — <code>go test ./cmd/...</code> loads the committed fixture catalog (<code>testdata/catalog</code>) on every test run.</li>
+<li><strong>Against the authoritative catalog</strong> — <code>scripts/catalog-load-gate.sh</code> clones <code>blis-catalog</code> at a pinned revision and runs the same load over every entry. Wiring that script into <code>.github/workflows/ci.yml</code> as a <code>catalog-load</code> job is <strong>a pending human step, tracked by <a href="https://github.com/inference-sim/inference-sim/issues/1823">#1823</a></strong> (the job body is quoted in the script's header; the automated delivery loop's token cannot push workflow files). So until that edit lands, the authoritative-catalog load runs <strong>on demand only</strong> — <code>scripts/catalog-load-gate.sh</code> — and is not enforced pre-merge; the unconditional fixture layer above is.</li>
+</ul>
+<p>What the load requires of a catalog:</p>
+<table>
+<thead>
+<tr>
+<th>Rule</th>
+<th>Where it applies</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Every <code>models/&lt;name&gt;/</code> entry has <strong>both</strong> halves — the vendor <code>config.json</code> <strong>and</strong> <code>model.yaml</code> (identity + <code>source.provider</code>/<code>repo</code>/<code>revision</code>), whose <code>name</code> matches the directory</td>
+<td><code>models/</code></td>
+</tr>
+<tr>
+<td>Every <code>config.json</code> resolves and parses through the run path (<code>--model</code> resolution, then the model-config parser)</td>
+<td><code>models/</code></td>
+</tr>
+<tr>
+<td>Strict parsing — an <strong>unknown key is a hard error naming the file and the key</strong>, never a silently dropped field</td>
+<td><code>models/*/model.yaml</code>, <code>hardware/*.yaml</code>, <code>workloads/*.yaml</code>, <code>devices/*.yaml</code></td>
+</tr>
+<tr>
+<td><strong>One YAML document per file</strong> — every reader decodes exactly one, so content after a <code>---</code> separator would be read by nothing (an empty trailing <code>---</code> is fine)</td>
+<td>every catalog-authored YAML file</td>
+</tr>
+<tr>
+<td>No catalog-authored file states a <strong>GPU</strong> or a <strong>tensor-parallel degree</strong> at any nesting depth: those are deployment choices, stated on the command line and required there (<code>--hardware</code> / <code>--tp</code>, NS-6)</td>
+<td>every catalog-authored YAML file</td>
+</tr>
+<tr>
+<td>Hardware entries state every calibration field they need (an omitted one would silently read 0) and keep the interconnect bandwidth pair complete</td>
+<td><code>hardware/*.yaml</code></td>
+</tr>
+</tbody>
+</table>
+<p>Two scope notes worth knowing before editing a catalog:</p>
+<ul>
+<li>The deployment-fact rule is scoped to the catalog's <strong>own</strong> YAML, never the vendor <code>config.json</code>, which is committed verbatim. Many vendor configs state <code>pretraining_tp</code> — the TP degree the checkpoint was <em>pretrained</em> with, an architectural fact of the model rather than a choice about how to serve it.</li>
+<li><code>blis run</code> itself is <strong>not</strong> tightened by this gate: it resolves one model and reads only that model's <code>config.json</code>, so a scratch clone carrying a <code>config.json</code> with no <code>model.yaml</code> still runs. The completeness rule is a property of a <em>published</em> catalog, checked in CI.</li>
+</ul>
 <h2 id="validated-architectures">Validated Architectures<a class="headerlink" href="#validated-architectures" title="Permanent link">&para;</a></h2>
 <p>The latency models have been validated against real vLLM measurements on:</p>
 <ul>
