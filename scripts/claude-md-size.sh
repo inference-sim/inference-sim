@@ -19,7 +19,9 @@ if [ ! -f "$file" ]; then
   exit 1
 fi
 
-size=$(wc -c < "$file")
+size=$(wc -c < "$file" | tr -d '[:space:]')
+# `| tr -d [:space:]` strips the leading padding BSD/macOS `wc -c` prints (e.g. " 14500"), which
+# would otherwise fail the numeric check below on those platforms (GNU/CI does not pad).
 # wc on an existing file yields a number, but guard explicitly rather than trust it: a non-numeric
 # value must fail, not be treated as "under the ceiling" by a broken comparison.
 if ! [[ "$size" =~ ^[0-9]+$ ]]; then

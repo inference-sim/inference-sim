@@ -1131,15 +1131,17 @@ func TestDeliverVerifyGuardsUnauthorizedClaudeMdEdits(t *testing.T) {
 		t.Fatal("deliver-verify.yml has no `verify` job")
 	}
 
-	// The detection step.
-	guardRun, guardFound := "", false
-	for _, s := range job.Steps {
+	// The detection step, and its POSITION: a step's output is visible only to LATER steps, so
+	// claude_md_edit must run BEFORE `Apply the decision` or CLAUDE_MD_UNAUTHORIZED reaches it empty
+	// and an unauthorized edit slips through. Asserted as order, not mere presence.
+	guardRun, guardIdx := "", -1
+	for i, s := range job.Steps {
 		if s.ID == "claude_md_edit" {
-			guardRun, guardFound = s.Run, true
+			guardRun, guardIdx = s.Run, i
 			break
 		}
 	}
-	if !guardFound {
+	if guardIdx < 0 {
 		t.Fatal("deliver-verify.yml has no step with `id: claude_md_edit`. A delivery that edits " +
 			"CLAUDE.md without the `docs:claude-md` opt-in label must be detected so the gate can " +
 			"withhold ready-for-merge (#1818/#1824)")
@@ -1152,17 +1154,23 @@ func TestDeliverVerifyGuardsUnauthorizedClaudeMdEdits(t *testing.T) {
 		t.Error("the `claude_md_edit` step never references CLAUDE.md, so it detects nothing")
 	}
 
-	// The decision step must RECEIVE the signal and act on it.
-	applyRun, applyFound := "", false
+	// The decision step must RECEIVE the signal and act on it, and must come AFTER the detection.
+	applyRun, applyIdx := "", -1
 	var applyEnv map[string]string
-	for _, s := range job.Steps {
+	for i, s := range job.Steps {
 		if s.Name == "Apply the decision" {
-			applyRun, applyEnv, applyFound = s.Run, s.Env, true
+			applyRun, applyEnv, applyIdx = s.Run, s.Env, i
 			break
 		}
 	}
-	if !applyFound {
+	if applyIdx < 0 {
 		t.Fatal("deliver-verify.yml has no `Apply the decision` step to consume the CLAUDE.md guard")
+	}
+	if guardIdx > applyIdx {
+		t.Errorf("the `claude_md_edit` step is at index %d, AFTER `Apply the decision` at index %d — "+
+			"the detection output must be produced before the decision consumes it, or "+
+			"CLAUDE_MD_UNAUTHORIZED is empty at the gate and an unauthorized edit reaches ready-for-merge",
+			guardIdx, applyIdx)
 	}
 	wired := applyEnv["CLAUDE_MD_UNAUTHORIZED"]
 	if wired == "" {

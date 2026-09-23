@@ -314,7 +314,7 @@ BLIS has a comprehensive documentation site built with MkDocs Material:
 
 ## Project Structure
 
-> For the authoritative file-level architecture documentation with interface names, method signatures, and module descriptions, see [`CLAUDE.md`](./CLAUDE.md).
+> For the annotated file-level architecture — the module tree and where each subsystem lives — see [`docs/reference/project-structure.md`](./docs/reference/project-structure.md).
 
 <details>
 <summary>Click to expand full directory tree</summary>
