@@ -2927,6 +2927,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#migration-from-the-pre-1516-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migration from the pre-#1516 flags
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3247,6 +3258,15 @@ output).</p>
 <li><code>sim/saturation/replay.go</code> — the single-detector drive loop and event
   reconstruction.</li>
 <li><code>sim/saturation/reduce.go</code> — the final-label plurality reducer.</li>
+</ul>
+<h2 id="migration-from-the-pre-1516-flags">Migration from the pre-#1516 flags<a class="headerlink" href="#migration-from-the-pre-1516-flags" title="Permanent link">&para;</a></h2>
+<p>The pre-#1516 CLI used a different flag surface. Map old flags to new as follows:</p>
+<ul>
+<li><code>--post-hoc-detector X</code> → <code>--detectors X</code></li>
+<li><code>--saturation-threshold-ms N</code> → <code>--saturation-config</code> with <code>threshold: {threshold_ms: N}</code></li>
+<li>the 10 backlog-drift tuning flags (<code>--saturation-window</code>, <code>--saturation-min-windows</code>, <code>--saturation-classifier</code>, …) → <code>--saturation-config</code> <code>backlog_drift:</code> block</li>
+<li>the standalone <code>--saturation-report</code> (per-window <code>BacklogDriftReport</code>) is removed; <code>--saturation-report</code> now writes the <code>{"final":{...},"trace":[...]}</code> object (final label + per-event trace)</li>
+<li>detector <code>Classify</code> is removed from the <code>Detector</code> interface (streaming-only: <code>Name</code>/<code>Observe</code>/<code>Detect</code>/<code>Reset</code>); the post-hoc batch analysis library (<code>workload.AnalyzeBacklogDrift*</code>, the <code>slope-based</code>/<code>drain-ratio</code> classifiers, <code>BacklogDriftReport</code>) was fully removed in #1547 — it had no live-path caller once the streaming detectors (#1515/#1516) and the reducer (#1517) landed. <code>BacklogDriftConfig</code> was relocated verbatim into <code>sim/saturation</code> in the same PR, fully decoupling <code>sim/saturation</code> from <code>sim/workload</code> (the config type was the last import edge)</li>
 </ul>
 
 

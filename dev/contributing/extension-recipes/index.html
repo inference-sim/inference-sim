@@ -3106,7 +3106,7 @@
 <p>Use <code>&amp;RouterState{Snapshots: snapshots, Clock: clock}</code> in test setup</p>
 </li>
 <li>
-<p><strong>Update documentation</strong>: CLAUDE.md file organization, README policy lists</p>
+<p><strong>Update documentation</strong>: the relevant <code>docs/</code> guide and README policy lists. Touch <code>CLAUDE.md</code> only if you are adding an operating rule an agent needs every session (see the charter at the top of CLAUDE.md) — it holds pointers, not per-feature detail.</p>
 </li>
 </ol>
 <p><strong>Important:</strong> For composite load signals, use <code>snap.EffectiveLoad()</code> — never compute <code>QueueDepth + BatchSize + InFlightRequests</code> inline. For queue-depth-only signals, use <code>snap.QueueDepth</code> directly.</p>
