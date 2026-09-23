@@ -30,7 +30,14 @@ Every `blis run` / `blis replay` obeys these; see `docs/getting-started/` and `d
 
 ## Build and Run Commands
 
-One canonical form per command. The many feature flags (goodput SLOs, speculative decoding/MTP, KV-offload, flow-control, saturation detectors, MoE `--dp`/`--enable-expert-parallel`, closed-loop/corpus sessions, lazy generation, agentic-trace conversion) are documented in `docs/guide/*` and `--help`.
+One canonical form per command. `--help` and the guides carry the full flag surface — by home:
+
+- SLO goodput, flow-control, dispatch ordering → `docs/guide/admission.md`
+- speculative decoding/MTP, MoE `--dp`/`--enable-expert-parallel`, `--kv-cache-dtype`, inter-node cost → `docs/guide/latency-models.md` (+ `docs/reference/models.md` for MLA/hybrid/quant)
+- KV-offload (`--kv-offload-config`, `--scrape-kv-metrics`) → `docs/guide/kv-offload-calibration.md`
+- closed-loop/corpus sessions, `observe`, `calibrate` → `docs/guide/observe-replay-calibrate.md`
+- workloads & `convert` → `docs/guide/workloads.md`
+- saturation detectors → `docs/contributing/saturation-analyzer-extension.md`
 
 ```bash
 # Build
@@ -98,7 +105,7 @@ Full registry (19 core invariants INV-1…INV-19 plus INV-A, INV-BC-DP1, the LoR
 
 ### Notable subsystems (pointers)
 
-Routing scorers, LoRA control plane, MoE `--dp` placement + expert parallelism, speculative decoding/MTP, tiered KV-offload, and per-detector saturation all live in `docs/guide/*` and `docs/reference/*` (and `git log` for history). Extension recipes for policies, scorers, latency backends, KV tiers, trace records, and metrics: `docs/contributing/extension-recipes.md`.
+Routing scorers + the default profile (`precise-prefix-cache:2,queue-depth:1,kv-utilization:1`): `docs/guide/routing.md`. LoRA control plane, MoE `--dp` placement + expert parallelism, speculative decoding/MTP, tiered KV-offload, and per-detector saturation live in the guides mapped above and `docs/reference/*` (and `git log` for history). Extension recipes for policies, scorers, latency backends, KV tiers, trace records, and metrics: `docs/contributing/extension-recipes.md`.
 
 ### Code Style
 
