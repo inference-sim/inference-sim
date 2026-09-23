@@ -44,6 +44,28 @@ trained_physics_coefficients:
 # declared, the subsystem is a no-op and output is byte-identical to a pre-feature
 # build (INV-6). adapter_capacity is intentionally absent (nil => inert); the adapter
 # registry is declared per-run via a config file, not here.
+#
+# PROVENANCE: illustrative, NEVER fitted. The values below mirror the schema examples in
+# specs/007-lora-control-plane/contracts/config-schema.md; they are not a calibration, and
+# no result should cite them as one. Enabling LoRA without an explicit --lora-config gives
+# plausibly-shaped but uncalibrated adapter physics.
+#
+# The functional FORMS are sourced. All three cost terms are deltas onto BLIS's separately
+# calibrated base, taken from the Agullo et al. Digital Twin (arXiv:2508.08343), whose
+# Eq. 1 Lat_model = (K4·B + K5)·(K6·A + K7) supplies the per-step factor; see research.md
+# R2/R3/R5. Per-model constants for Llama-3.1-8B-Instruct and Qwen-2.5-7B-Instruct can be
+# derived from the DT's own estimators (FerranAgulloLopez/GPULLMAdapterOptimization @
+# 8650744a, digital_twin_dynamic/estimators/); its Llama loading estimator implies a fixed
+# activation cost several times larger than load_base_latency_us below. Supply such a set
+# via --lora-config: they are model-specific, and nothing cross-checks them against
+# --model, so a config carrying one model's constants while running another validates
+# cleanly and is silently mis-calibrated.
+#
+# UNITS: load_base_latency_us is microseconds; load_bandwidth_bytes_us is bytes per
+# microsecond (2.0e6 = 2 TB/s); footprint_bytes_per_rank is bytes per rank unit. NOTE that
+# 2.0e6 is an HBM-class bandwidth while an adapter cold-load is a host->device transfer:
+# FootprintBytes is footprint_bytes_per_rank·rank, so at these two equal values the byte
+# term is exactly `rank` µs and LoadLatency reduces to 1500 + rank µs -- effectively inert.
 lora:
   load_base_latency_us: 1500.0
   load_bandwidth_bytes_us: 2.0e6
