@@ -30,7 +30,7 @@ flowchart TD
         DD["Design Docs"] <-->|cross-reference| MP["Macro Plan"]
         DD --> MiP["Micro Plans"]
         MP --> MiP
-        MiP --> CM["CLAUDE.md<br/>(updated by each PR)"]
+        MiP --> CM["CLAUDE.md<br/>(operating context; pointers, not per-PR detail)"]
     end
 
     style DG fill:#e1f5fe
@@ -44,7 +44,7 @@ flowchart TD
 | Refactoring / bug fix | Issue or design doc → Micro plan directly |
 | Macro plan PR | Macro plan section → Micro plan |
 
-**Key distinction:** This document describes the *target state* and *design principles*. CLAUDE.md describes the *current state* and *implementation rules*. Where they diverge, this document is aspirational and CLAUDE.md is authoritative for today's code.
+**Key distinction:** This document describes the *target state* and *design principles*. CLAUDE.md holds the durable *operating rules* an agent needs every session and points to the canonical docs/guides for detail — it is not a per-PR changelog (see the charter at its top). Where this document and CLAUDE.md diverge on today's code, CLAUDE.md is authoritative.
 
 ---
 

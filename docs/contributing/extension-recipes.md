@@ -22,7 +22,7 @@ To add a new policy template (e.g., a new routing algorithm):
    - Include empty-snapshots panic test for routing policies (defensive programming convention)
    - Use `&RouterState{Snapshots: snapshots, Clock: clock}` in test setup
 
-4. **Update documentation**: CLAUDE.md file organization, README policy lists
+4. **Update documentation**: the relevant `docs/` guide and README policy lists. Touch `CLAUDE.md` only if you are adding an operating rule an agent needs every session (see the charter at the top of CLAUDE.md) — it holds pointers, not per-feature detail.
 
 **Important:** For composite load signals, use `snap.EffectiveLoad()` — never compute `QueueDepth + BatchSize + InFlightRequests` inline. For queue-depth-only signals, use `snap.QueueDepth` directly.
 
