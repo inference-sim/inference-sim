@@ -30,7 +30,7 @@ flowchart TD
         DD["Design Docs"] <-->|cross-reference| MP["Macro Plan"]
         DD --> MiP["Micro Plans"]
         MP --> MiP
-        MiP --> CM["CLAUDE.md<br/>(updated by each PR)"]
+        MiP --> CM["CLAUDE.md<br/>(operating context; pointers, not per-PR detail)"]
     end
 
     style DG fill:#e1f5fe
@@ -44,7 +44,7 @@ flowchart TD
 | Refactoring / bug fix | Issue or design doc → Micro plan directly |
 | Macro plan PR | Macro plan section → Micro plan |
 
-**Key distinction:** This document describes the *target state* and *design principles*. CLAUDE.md describes the *current state* and *implementation rules*. Where they diverge, this document is aspirational and CLAUDE.md is authoritative for today's code.
+**Key distinction:** This document describes the *target state* and *design principles*. CLAUDE.md holds the durable *operating rules* an agent needs every session and points to the canonical docs/guides for detail — it is not a per-PR changelog (see the charter at its top). Where this document and CLAUDE.md diverge on today's code, CLAUDE.md is authoritative.
 
 ---
 
@@ -342,7 +342,7 @@ This is the lightest extension type. The interface already exists, the factory a
 - No side effects beyond its owned state (if stateful)
 - Handles edge cases defined by the interface (e.g., empty snapshot list for routing policies)
 
-**Steps:** Documented in CLAUDE.md "Adding New Policy Templates" — these guidelines don't duplicate, they reference.
+**Steps:** Documented in `docs/contributing/extension-recipes.md` (the policy-template recipe) — these guidelines don't duplicate, they reference.
 
 **Parallel development:** Multiple policy templates for the same interface can be developed simultaneously by different contributors with zero coordination, since they share only the interface contract.
 
@@ -358,7 +358,7 @@ This is the most architecturally significant extension type. Examples: AutoScale
 2. **Interface design** — prefer single-method interfaces where possible. If multiple methods are needed, justify each one. The interface must be testable with a mock.
 3. **Event integration** — what new event types are added to the cluster event queue? What are their priority constants? How do they interact with existing events?
 4. **State ownership** — what new mutable state does this module introduce? Who creates it, who reads it, who mutates it? No shared mutable state across module boundaries.
-5. **Failure modes** — what happens when the module fails? (Error return? Panic? Graceful degradation?) Which error handling boundary applies? (See CLAUDE.md Engineering Principles)
+5. **Failure modes** — what happens when the module fails? (Error return? Panic? Graceful degradation?) Which error handling boundary applies? (See the error-handling boundaries in `docs/contributing/standards/principles.md`)
 6. **Default behavior** — what does BLIS do when this module is not configured? (A no-op default must exist so existing workflows are unaffected)
 7. **Configuration surface** — what CLI flags / YAML config does this add? Validated how?
 

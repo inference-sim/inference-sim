@@ -289,7 +289,7 @@ list.
 2. Register in `sim/bundle.go` (valid names map + `IsValid*` function)
 3. Add `case` to factory function
 4. Add behavioral tests (`TestMyPolicy_Scenario_Behavior`)
-5. Update CLAUDE.md and README
+5. Update README and the relevant `docs/` guide (not CLAUDE.md — it holds pointers, per its charter)
 
 ### Subsystem Module (heaviest — new interface + integration)
 
@@ -301,7 +301,7 @@ Requires a design doc defining the module contract (observes / controls / owns /
 4. Integrate into cluster event pipeline
 5. Add CLI flags with full validation
 6. Add behavioral tests + invariant tests
-7. Update CLAUDE.md, README, and design guidelines module map if needed
+7. Update README, the relevant `docs/` guide, and the design guidelines module map if needed
 
 ### Backend Swap (two phases — extract interface, then add alternative)
 
@@ -341,7 +341,7 @@ See design guidelines Section 5.4 for the full two-phase recipe.
 
 | Document | What It Covers | When to Read |
 |---|---|---|
-| `CLAUDE.md` | Code architecture, file organization, CLI flags, compact rule/invariant tables | Always — authoritative for current codebase state |
+| `CLAUDE.md` | Agent operating context: catalog/deployment rules, canonical commands, and pointers to the standards docs and topic guides (not a per-PR changelog — see its charter) | Always — the starting point for working in this repo |
 | `docs/contributing/standards/rules.md` | 23 antipattern rules with evidence, checks, enforcement | When reviewing or writing code |
 | `docs/contributing/standards/invariants.md` | The invariant registry, grouped by scope (run-level, subsystem) plus a cross-cutting code-boundary group: 19 core invariants (INV-1 through INV-19, the last six enforcement-anchored) plus INV-A, INV-A2, INV-W3, INV-BC-DP1, the LoRA family (INV-L1–INV-L7, by pointer), PD disaggregation (INV-PD-*) and pool/transfer (INV-P2-*), with verification strategies. Every `INV-*` ID cited in code is resolvable from it. | When touching request lifecycle, KV cache, metrics, or placement |
 | `docs/contributing/pr-workflow.md` | End-to-end PR lifecycle (worktree → plan → review → implement → audit → PR) | Before starting any PR |
