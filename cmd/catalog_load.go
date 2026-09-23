@@ -133,6 +133,13 @@ func loadCatalog(root string) (catalogLoadReport, error) {
 
 	var report catalogLoadReport
 	var problems []string
+	// The namespace list is hardcoded rather than discovered, because each namespace has its
+	// own typed reader with its own shape — there is nothing generic to iterate. The cost is
+	// that a namespace BLIS cannot read is a namespace this gate does not check, so extending
+	// this list is part of adding a reader.
+	//
+	// R2 adds networks/ + clusters (#1817): add each here when its reader lands, or this gate
+	// silently skips it.
 	for _, namespace := range []struct {
 		count *int
 		load  func(string) (int, []string)
