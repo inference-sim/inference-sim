@@ -87,3 +87,18 @@ jobs:
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.9.0
+
+  # A NEW job, not a step added to an existing shard: renaming a required check blocks PRs, so the
+  # size guard gets its own name. Path-independent backstop for the CLAUDE.md charter — it catches
+  # regrowth from ANY route (a fork PR, a human commit, a future workflow), including the paths the
+  # delivery-verify `claude_md_edit` guard never sees. The ceiling leaves generous headroom over
+  # the lean file so a legitimate operating-rule addition does not trip it; it fires only on
+  # changelog-scale bloat, which is what #1818 removed.
+  claude-md-size:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Enforce the CLAUDE.md size ceiling
+        run: scripts/claude-md-size.sh CLAUDE.md 40000

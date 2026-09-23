@@ -306,6 +306,13 @@ func TestDeliverImplementPromptContract(t *testing.T) {
 				"work, but a prompt that says only \"implement it\" makes a re-issued command " +
 				"re-derive everything from scratch, which wastes the recovery",
 		},
+		{
+			needle: "docs:claude-md",
+			why: "the prompt must forbid editing CLAUDE.md unless the issue carries the " +
+				"`docs:claude-md` label. CLAUDE.md is loaded into every session; without this the " +
+				"process re-accretes the per-PR changelog bloat #1818 removed (verify withholds " +
+				"ready-for-merge on an unlabelled CLAUDE.md edit, but preventing it here is cheaper)",
+		},
 	}
 	// The allowlist is stated positively, so a catalogue skill nobody has thought of yet is out
 	// of scope by default. Banning brainstorming alone would leave every other

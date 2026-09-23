@@ -600,6 +600,11 @@ jobs:
 
             - Implement exactly the declared surface, no more. Do not import anything outside
               the allow list.
+            - Do NOT edit `CLAUDE.md` unless THIS issue carries the `docs:claude-md` label.
+              CLAUDE.md is loaded into every session, so it is agent operating context, not a
+              changelog — per-PR rationale belongs in the commit body and the relevant `docs/`
+              guide. The verify phase withholds `ready-for-merge` from an unlabelled CLAUDE.md
+              edit, so making one here only sends the delivery to needs-human.
             - Every contract in the sub-issue gets a test that would fail if the contract were
               violated.
             - PUSH AS YOU GO — after the first build passes, and after each contract's test goes
