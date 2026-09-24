@@ -46,7 +46,7 @@ cd inference-sim
 go build -o blis main.go
 ```
 
-**Note:** BLIS must be told where the model catalog is — `--catalog <path>` or the `BLIS_CATALOG` environment variable, with **no default and no search path** (the flag wins when both are set). The catalog is the [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository: `git clone https://github.com/inference-sim/blis-catalog.git` and `export BLIS_CATALOG=$PWD/blis-catalog` once, and the examples work as written. BLIS then runs a model only if it is in that catalog — a `config.json` at `<catalog>/models/<model>/config.json`. Nothing is fetched or written at run time: a model that is not catalogued is refused, naming the path its entry belongs at. Add new models by committing their `config.json` to `blis-catalog` (see CONTRIBUTING.md). Both roofline and trained-physics run fully offline.
+**Note:** BLIS must be told where the model catalog is — `--catalog <path>` or the `BLIS_CATALOG` environment variable, with **no default and no search path** (the flag wins when both are set). The catalog is the [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository, pinned to the release tag BLIS is tested against: `git clone --branch 0.1.1 --depth 1 https://github.com/inference-sim/blis-catalog.git` and `export BLIS_CATALOG=$PWD/blis-catalog` once, and the examples work as written. The pin keeps a later catalog release from changing a working build under you — see [Catalog compatibility](docs/getting-started/installation.md#catalog-compatibility) for how to move to a newer one. BLIS then runs a model only if it is in that catalog — a `config.json` at `<catalog>/models/<model>/config.json`. Nothing is fetched or written at run time: a model that is not catalogued is refused, naming the path its entry belongs at. Add new models by committing their `config.json` to `blis-catalog` (see CONTRIBUTING.md). Both roofline and trained-physics run fully offline.
 
 **Environment setup (optional):**
 
@@ -314,7 +314,7 @@ BLIS has a comprehensive documentation site built with MkDocs Material:
 
 ## Project Structure
 
-> For the authoritative file-level architecture documentation with interface names, method signatures, and module descriptions, see [`CLAUDE.md`](./CLAUDE.md).
+> For the annotated file-level architecture — the module tree and where each subsystem lives — see [`docs/reference/project-structure.md`](./docs/reference/project-structure.md).
 
 <details>
 <summary>Click to expand full directory tree</summary>

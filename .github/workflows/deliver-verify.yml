@@ -758,6 +758,42 @@ jobs:
           [[ -n "$touched" ]] && echo "self-verification files touched: $touched" || echo "no workflow files touched"
           echo "touched=$touched" >> "$GITHUB_OUTPUT"
 
+      # CLAUDE.md is loaded into every Claude session, so it is agent operating context, not a
+      # per-PR changelog — treating it as one is what grew it past the context limit (#1818). A
+      # delivery may edit it only when its issue is explicitly about CLAUDE.md, signalled by the
+      # `docs:claude-md` label on the issue this branch delivers. This mirrors `ci_edit` above: it
+      # only DETECTS; the `Apply the decision` step withholds `ready-for-merge` on an unauthorised
+      # edit. Fails closed — an unreadable file list or unreadable labels count as unauthorised.
+      - name: Does this delivery edit CLAUDE.md without authorization?
+        id: claude_md_edit
+        if: steps.paused.outputs.paused == 'false'
+        run: |
+          set -uo pipefail
+          touched=$(gh api "/repos/$REPO/pulls/$PR/files?per_page=100" --paginate \
+            --jq '[.[] | select(.filename == "CLAUDE.md") | .filename] | join(", ")' 2>/dev/null || echo "unreadable")
+          if [[ "$touched" == "unreadable" ]]; then
+            echo "::warning::could not list changed files; treating CLAUDE.md as edited"
+            echo "unauthorized=CLAUDE.md (file list unreadable)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ -z "$touched" ]]; then
+            echo "CLAUDE.md not modified by this delivery"
+            echo "unauthorized=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # CLAUDE.md is edited — authorised only if the issue carries the docs:claude-md label.
+          if labels=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json labels --jq '.labels[].name' 2>/dev/null); then
+            if grep -qx 'docs:claude-md' <<< "$labels"; then
+              echo "CLAUDE.md edited; issue #$ISSUE_NUMBER carries docs:claude-md — authorised"
+              echo "unauthorized=" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "CLAUDE.md edited without the docs:claude-md label on issue #$ISSUE_NUMBER"
+          else
+            echo "::warning::could not read issue #$ISSUE_NUMBER labels; treating the CLAUDE.md edit as unauthorised"
+          fi
+          echo "unauthorized=CLAUDE.md" >> "$GITHUB_OUTPUT"
+
       # Item 5: a dismissal must not become a resolution silently. The correct phase reports a
       # `DELIVER-DISMISSALS: <n>` count and one of ITS workflow steps derives
       # `deliver:has-dismissals` from that count — not the agent, so a correction that dismisses a
@@ -1469,6 +1505,7 @@ jobs:
           REASON: ${{ steps.gate.outputs.reason }}
           MOVED: ${{ steps.recheck.outputs.moved }}
           CI_TOUCHED: ${{ steps.ci_edit.outputs.touched }}
+          CLAUDE_MD_UNAUTHORIZED: ${{ steps.claude_md_edit.outputs.unauthorized }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -uo pipefail
@@ -1485,6 +1522,15 @@ jobs:
           if [[ "$decision" == "ready" && -n "$CI_TOUCHED" ]]; then
             decision=needs-human
             reason="every signal was green, but this delivery modifies the workflows that verify it ($CI_TOUCHED). The dispatched CI ran the branch's own copy of those files, so the loop is not in a position to vouch for the change — a human needs to read it"
+          fi
+          # A delivery that edits CLAUDE.md without the docs:claude-md opt-in may not be declared
+          # ready: CLAUDE.md is agent operating context loaded into every session, not a per-PR
+          # changelog (see the charter at the top of CLAUDE.md). Move the content to the relevant
+          # docs/ guide, or label the issue docs:claude-md if it genuinely targets CLAUDE.md, then
+          # re-verify. Correction rounds are unaffected — only `ready` is withheld (#1818).
+          if [[ "$decision" == "ready" && -n "$CLAUDE_MD_UNAUTHORIZED" ]]; then
+            decision=needs-human
+            reason="every signal was green, but this delivery edits CLAUDE.md ($CLAUDE_MD_UNAUTHORIZED) and issue #$ISSUE_NUMBER does not carry the docs:claude-md label. CLAUDE.md is agent operating context, not a changelog — move the content to the relevant docs/ guide, or label the issue docs:claude-md if the change genuinely targets CLAUDE.md, then re-verify"
           fi
           case "$decision" in
             ready)       label=ready-for-merge; headline='Ready for merge' ;;

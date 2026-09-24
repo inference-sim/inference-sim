@@ -196,6 +196,48 @@ uses, so a stalled probe cannot hang a job. Tested by `scripts/deliver_author_ga
 (decision, via a `gh` stub + the `--permission` seam) and `scripts/deliver_author_gate_wiring_test.go`
 (each workflow runs it from the trusted checkout and gates the agent on it).
 
+## catalog-load-gate.sh — the strict catalog-load CI gate (R1/C6)
+
+Loads **every** entry in the authoritative [`blis-catalog`](https://github.com/inference-sim/blis-catalog)
+through the same loader code path `blis run` uses, and fails on any rejection. C6 says there is *no
+validate command* — the simulator validates whatever it reads and fails naming the file and the
+problem — so the gate is this script driving `cmd.TestCatalogStrictLoad_RealCatalog`, not a
+subcommand and not a bespoke validator that could accept what a run rejects (#1750).
+
+```bash
+scripts/catalog-load-gate.sh                       # clone the pinned revision and load it
+BLIS_CATALOG=~/blis-catalog scripts/catalog-load-gate.sh   # load a checkout you already have
+```
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BLIS_CATALOG` | *(unset)* | An existing catalog checkout to load. When set, nothing is cloned and the revision is whatever that checkout holds — for a local run against a work-in-progress catalog. |
+| `CATALOG_REPO` | the blis-catalog GitHub URL | Clone source. The tests point it at a throwaway local repository, so they stay offline. |
+| `CATALOG_REVISION` | a pinned 40-hex SHA | Revision to check out. |
+| `CATALOG_CHECKOUT` | a fresh `mktemp -d` | Where to clone. |
+| `GATE_TIMEOUT` | `5m` | `go test -timeout`. |
+
+The revision is **pinned, not floating**: a green run must mean "this commit loads *that* catalog".
+Tracking the catalog's default branch would let an unrelated catalog commit redden an unrelated PR and
+would make a past green run unreproducible — so adopting catalog changes is a `CATALOG_REVISION` bump
+in its own PR, which is then the review of the catalog change. `scripts/catalog_load_gate_test.go`
+fails if the default stops being a 40-hex SHA.
+
+Two failure modes are why this is a tested script rather than an inline workflow step: the load test
+**skips** when `BLIS_CATALOG` never reaches it (so a local `go test ./...` needs no catalog checkout)
+and `go test` reports a skip as a **pass** — so the script fails on a `--- SKIP:` line for the
+top-level test, and also requires its `--- PASS:` line, which catches a `-run` pattern that matched
+no test at all. Both patterns are anchored to the test name: an unanchored `--- SKIP` would match a
+skipped *subtest* (go test indents those) and fail a load that ran fine.
+
+**Wiring is a pending human step.** The `catalog-load` job that calls this script is quoted verbatim
+in the script header but is **not yet in `.github/workflows/ci.yml`** — the delivery loop's
+`GITHUB_TOKEN` has no `workflows` permission ([automated-delivery.md](../docs/contributing/automated-delivery.md)),
+so a human must paste it. Until then the authoritative-catalog load is an on-demand command, and
+only the committed fixture catalog is loaded on every PR (by `go test ./cmd/...`). Adding the job —
+and, if the check should block merges, marking it required in branch protection — is a merge
+precondition for #1750, not something this script can enforce from inside the repository.
+
 ## archon-plan-resolve.sh — find and extract a declared archon plan
 
 Finds the first `archon-plan: <path>` line in the declaration text and extracts that file
