@@ -118,17 +118,19 @@ closed **and** loud (exit 3), distinct from a clean-404 denial (exit 1). The sig
 never fork-ness: a same-repo branch or issue opened by an outsider is as untrusted as a fork, and a
 fork opened by a maintainer is fine. `claude.yml` and `deliver-implement.yml` run it in their
 ubuntu `check-permissions` job (so a refused author never wakes the self-hosted runner);
-`deliver-verify.yml` and `deliver-correct.yml` run it before the agent, gating the **sub-issue**
-author (their delivery PR is bot-authored and same-repo, so the issue — read via `gh issue view` — is
-the untrusted container). **The gate script itself must be trusted:** it is run from a dedicated
-`actions/checkout` pinned to `github.event.repository.default_branch` in a `.gate-trusted` path, never
-the implicit event/delivery checkout — for a `pull_request_review_comment` that implicit ref is the PR
-*merge* tree, and `deliver-correct` checks out the delivery branch, so a bare invocation would let the
-author replace the gate with an allow result and self-authorize. And a refusal must never be silent:
-where skipping the agent would otherwise leave a green run with no comment (a comment-API outage),
-the job fails loudly (`claude.yml`) or falls back to the generic failure reporter (verify/correct).
-The four wirings are pinned by `scripts/deliver_author_gate_wiring_test.go` (including the trusted-ref
-pin) and the decision by `scripts/deliver_author_gate_test.go`.
+`deliver-verify.yml` and `deliver-correct.yml` run it before the agent, gating **both** the delivery
+PR's author (expected `github-actions[bot]`; same-repo + `deliver/issue-N` shape does not by itself
+prove bot authorship, so it is checked rather than assumed) **and** the sub-issue's author (the spec
+read via `gh issue view`). **The gate script itself must be trusted:** it runs from a checkout pinned
+to `github.event.repository.default_branch` at the workspace ROOT, placed BEFORE any event/delivery
+checkout — never the implicit ref (for a `pull_request_review_comment` that is the PR *merge* tree)
+and never a path nested under an untrusted tree (a delivery ref could carry a symlink at that path
+that `actions/checkout` would follow). `deliver-correct` checks out the delivery branch it edits only
+*after* the gate passes. And a refusal must never be silent: where skipping the agent would otherwise
+leave a green run with no comment (a comment-API outage), the job fails loudly (`claude.yml`) or falls
+back to the generic failure reporter (verify/correct). The four wirings are pinned by
+`scripts/deliver_author_gate_wiring_test.go` (including the trusted-ref pin and the correct-phase
+ordering) and the decision by `scripts/deliver_author_gate_test.go`.
 
 ## Known Failure Modes
 

@@ -153,18 +153,18 @@ jobs:
               }
             }
 
-      # Trusted tree for scripts/deliver-author-gate.sh ONLY. The ref is pinned EXPLICITLY to the
-      # default branch and checked out into its own `.gate-trusted` path — do NOT rely on the
-      # implicit checkout ref. For `pull_request_review_comment` GitHub sets `github.ref` to the
-      # PR MERGE tree (`refs/pull/N/merge`), so an implicit checkout would run the FORK's copy of
-      # the gate script; a fork could replace it with an "allow" result and a maintainer's inline
-      # `@claude` would then admit the agent (the bypass #1813's own gate must not have). Pinning
-      # to `default_branch` guarantees BLIS's own script runs, whatever event fired.
+      # Trusted tree for scripts/deliver-author-gate.sh. The ref is pinned EXPLICITLY to the default
+      # branch — do NOT rely on the implicit checkout ref. For `pull_request_review_comment` GitHub
+      # sets `github.ref` to the PR MERGE tree (`refs/pull/N/merge`), so an implicit checkout would
+      # run the FORK's copy of the gate script; a fork could replace it with an "allow" result and a
+      # maintainer's inline `@claude` would then admit the agent (the bypass #1813's own gate must
+      # not have). This job does no other checkout, so checking the trusted ref out at the workspace
+      # ROOT is clean — there is no untrusted tree to nest under (unlike verify/correct, which check
+      # the gate out at root BEFORE any event/delivery checkout).
       - uses: actions/checkout@v5
         if: steps.check.outputs.allowed == 'true'
         with:
           ref: ${{ github.event.repository.default_branch }}
-          path: .gate-trusted
           fetch-depth: 1
 
       # Container-level author gate (#1813), ANDed with the triggerer check into both agent jobs.
@@ -179,9 +179,6 @@ jobs:
       - name: Gate on the item author's write access
         id: author_gate
         if: steps.check.outputs.allowed == 'true'
-        # Run FROM the trusted checkout, so even a relative path the script might read resolves
-        # inside .gate-trusted, never the workspace root — belt-and-braces with the pinned ref.
-        working-directory: .gate-trusted
         env:
           GH_TOKEN: ${{ github.token }}
           # For a pull_request_review_comment the PR object carries the author; for an

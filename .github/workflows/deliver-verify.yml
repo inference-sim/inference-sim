@@ -348,6 +348,12 @@ jobs:
             echo "branch=$branch"
             # Consumed by the failure reporter: it must not write to a PR this loop does not own.
             echo "owned=true"
+            # The PR author's CANONICAL login (REST `.user.login`, so a bot reads as
+            # `github-actions[bot]`, which the gate's allowlist matches — `gh pr view --json author`
+            # would drop the `[bot]` suffix). Read here, where `/pulls` is already fetched with no
+            # POST, so the author gate can consume it without a `gh api …/pulls` call of its own
+            # (which, beside its label POST, would trip the repo-wide "no PR creation" guard).
+            echo "pr_author=$(jq -r '.user.login' "$RUNNER_TEMP/pr.json")"
           } >> "$GITHUB_OUTPUT"
 
       # BC-9, before any agent runs or any label moves.
@@ -401,70 +407,69 @@ jobs:
             fi
           done
 
-      # Working tree for the job's later steps (archon build, qa-review worktree). NOTE: this ref
-      # is the EVENT ref — for `pull_request_review`/`pull_request_review_comment` that is the PR
-      # MERGE tree, not the default branch, so despite the historical "trusted tree" label this is
-      # NOT guaranteed to be BLIS's own code. The author gate below therefore does NOT run from
-      # here; it uses its own default-branch-pinned `.gate-trusted` checkout. (Building archon from
-      # this possibly-untrusted ref is a separate, pre-existing concern tracked outside #1813.)
+      # Trusted working tree, pinned EXPLICITLY to the default branch. This is the ONLY checkout in
+      # the job (the PR head is never checked out into the workspace — CI runs on hosted runners and
+      # qa-review reads an ephemeral `--detach` worktree), so pinning the ref makes "scripts/ and
+      # .archon-version always come from trusted code" TRUE for every trigger — including the review
+      # events, whose implicit ref is the PR MERGE tree. The author gate below runs its script from
+      # this trusted root, and it runs BEFORE the CI dispatch and the agent.
       - uses: actions/checkout@v5
         if: steps.paused.outputs.paused == 'false'
         with:
-          fetch-depth: 0
-
-      # Trusted copy of the gate script ONLY, pinned EXPLICITLY to the default branch in its own
-      # `.gate-trusted` path — never the checkout above. For a review event that checkout is the PR
-      # MERGE tree, and for a push it is the delivery branch, so running the gate from it would let
-      # an outside-authored delivery replace deliver-author-gate.sh with an "allow" result and
-      # self-authorize. Pinning to `default_branch` guarantees BLIS's own script runs.
-      - name: Check out the trusted gate script
-        if: steps.paused.outputs.paused == 'false'
-        uses: actions/checkout@v5
-        with:
           ref: ${{ github.event.repository.default_branch }}
-          path: .gate-trusted
-          fetch-depth: 1
+          fetch-depth: 0
 
       # Container-level author gate (#1813), before the CI dispatch and the agent. The TRIGGERER is
       # already write-checked (the authorize job), but that is not the untrusted axis here: this
-      # phase feeds the agent `gh issue view $ISSUE_NUMBER` for the contracts (see the review step's
-      # prompt) plus the diff, and the SUB-ISSUE's author may hold no write access even when a
-      # maintainer triggered the run — reading that outside-authored body IS the task, so no comment
-      # filter (#1806) helps. deliver-author-gate.sh applies the same admin/write/maintain law the
-      # triggerer gate uses (bots trusted without a probe; a probe failure fails closed AND loud,
-      # distinct from a denial). The delivery PR itself is bot-authored and same-repo (Validate the
-      # target PR), so the issue — not the PR — is the untrusted container this phase must gate.
+      # phase reads the delivery PR's diff and feeds the agent `gh issue view $ISSUE_NUMBER` for the
+      # contracts. It gates BOTH authors: the DELIVERY PR's author (expected `github-actions[bot]` —
+      # `Validate the target PR` proves same-repo + `deliver/issue-N` but NOT bot authorship, so this
+      # makes that structural rather than assumed) and the SUB-ISSUE's author (the spec the agent
+      # reads). deliver-author-gate.sh applies the same admin/write/maintain law the triggerer gate
+      # uses (bots trusted without a probe; a probe failure fails closed AND loud). Both authors run
+      # through it from the trusted checkout above.
       #
       # On a refusal this posts its own specific comment and moves the label, then exits non-zero;
       # the downstream steps skip (their `if:` is implicitly `success()`-gated) and `Report a failed
       # verify` is excluded via `author_gate.outputs.blocked`, so there is exactly one comment.
-      - name: Gate on the sub-issue author's write access
+      - name: Gate on the delivery PR and sub-issue authors' write access
         id: author_gate
         if: steps.paused.outputs.paused == 'false'
-        # Run FROM the trusted checkout so any relative path resolves inside it, not the (untrusted)
-        # workspace root. The gh calls below are CWD-independent.
-        working-directory: .gate-trusted
+        env:
+          # Canonical PR-author login, resolved by `Validate the target PR` (see there). Passed via
+          # env, never interpolated into the script — an author login is data.
+          PR_AUTHOR: ${{ steps.target.outputs.pr_author }}
         run: |
           set -uo pipefail
-          # Resolved via the API, never interpolated into the script: an author login is data.
-          if ! author=$(gh api "/repos/$REPO/issues/$ISSUE_NUMBER" --jq '.user.login'); then
-            echo "::error::could not read the author of #$ISSUE_NUMBER — failing closed"
-            body="Delivery stopped: could not read the author of #$ISSUE_NUMBER, so the verify agent was not run. This is a probe failure, not a verdict — retry once the API is reachable."
-          else
-            rc=0
-            verdict=$(scripts/deliver-author-gate.sh "$author") || rc=$?
+          block_reason=""
+          probe_fail=""
+          # An empty login (a missing output or an API failure) is a probe failure, so the gate
+          # fails closed rather than skipping the check.
+          check_author() {
+            local what="$1" login="$2" rc=0 verdict
+            [[ -n "$block_reason" || -n "$probe_fail" ]] && return   # first failure wins
+            if [[ -z "$login" ]]; then probe_fail="could not read the $what"; return; fi
+            verdict=$(scripts/deliver-author-gate.sh "$login") || rc=$?
             printf '%s\n' "$verdict"
-            if [[ "$rc" -eq 0 ]]; then
-              echo "blocked=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            # rc 1 = definitive denial (outside author); rc 3 = probe failure. Both refuse; the
-            # message differs so the requester knows whether to vet-and-retrigger or simply retry.
             if [[ "$rc" -eq 1 ]]; then
-              body="Delivery stopped: #$ISSUE_NUMBER was authored by \`$author\`, who does not hold write access to this repository. The verify agent reads the issue body and the diff, so an outside-authored issue is not run automatically (#1813). A maintainer must vet it and re-issue \`/approve-issue-for-pr-delivery\`."
-            else
-              body="Delivery stopped: could not verify whether \`$author\` (author of #$ISSUE_NUMBER) has write access, so the verify agent was not run. This is a probe failure, not a verdict — retry should work."
+              block_reason="the $what (\`$login\`) does not hold write access to this repository"
+            elif [[ "$rc" -ne 0 ]]; then
+              probe_fail="could not verify the $what (\`$login\`)"
             fi
+          }
+          pr_author="$PR_AUTHOR"
+          # The sub-issue author is resolved here (an `/issues/` read carries no PR-creation risk).
+          issue_author=$(gh api "/repos/$REPO/issues/$ISSUE_NUMBER" --jq '.user.login' 2>/dev/null || echo "")
+          check_author "delivery PR #$PR author" "$pr_author"
+          check_author "sub-issue #$ISSUE_NUMBER author" "$issue_author"
+          if [[ -z "$block_reason" && -z "$probe_fail" ]]; then
+            echo "blocked=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ -n "$block_reason" ]]; then
+            body="Delivery stopped: $block_reason. The verify agent reads the issue body and the diff, so outside-authored delivery content is not run automatically (#1813). A maintainer must vet it and re-issue \`/approve-issue-for-pr-delivery\`."
+          else
+            body="Delivery stopped: $probe_fail, so the verify agent was not run. This is a probe failure, not a verdict — retry should work."
           fi
           # A refusal must never be silent (R1). Suppress the generic `Report a failed verify`
           # (blocked=true) ONLY when the SPECIFIC comment posts; if the comment API fails, leave

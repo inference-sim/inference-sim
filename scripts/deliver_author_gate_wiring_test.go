@@ -28,14 +28,53 @@ func readWorkflow(t *testing.T, name string) string {
 	return string(raw)
 }
 
-// All four flows must reach the ONE gate script — never a re-implementation of the author-trust law
-// (R23). deliver-verify/correct/implement invoke it directly; claude.yml invokes it too (asserted in
-// TestClaudeGatesBothAgentJobsOnAuthor below via the gate step it wires).
-func TestDeliveryFlowsInvokeTheAuthorGate(t *testing.T) {
-	type step struct {
-		Run              string `yaml:"run"`
-		WorkingDirectory string `yaml:"working-directory"`
+// wiringStep models the fields these tests assert on.
+type wiringStep struct {
+	Uses string `yaml:"uses"`
+	Run  string `yaml:"run"`
+	With struct {
+		Ref  string `yaml:"ref"`
+		Path string `yaml:"path"`
+	} `yaml:"with"`
+}
+
+// gateJobSteps returns, for a workflow, the steps of the job that contains the author-gate step, in
+// file order. Panics via t.Fatalf if no gate step is found.
+func gateJobSteps(t *testing.T, wf string) []wiringStep {
+	t.Helper()
+	path := filepath.Join("..", ".github", "workflows", wf)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
 	}
+	var doc struct {
+		Jobs map[string]struct {
+			Steps []wiringStep `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("parsing %s: %v", path, err)
+	}
+	for _, job := range doc.Jobs {
+		for _, s := range job.Steps {
+			if strings.Contains(s.Run, "deliver-author-gate.sh") {
+				return job.Steps
+			}
+		}
+	}
+	t.Fatalf("%s has no step invoking deliver-author-gate.sh — the author gate (#1813) must run "+
+		"before the agent reads an outside-authored body/diff", wf)
+	return nil
+}
+
+// The gate must run from a TRUSTED tree: in file order, the checkout IMMEDIATELY PRECEDING the gate
+// step must be pinned to the repository default branch. This is the P0 fix. A bare checkout would
+// leave the workspace at the event/delivery ref — for a `pull_request_review_comment` the PR MERGE
+// tree, for `deliver-correct` the delivery branch — and the author could replace the gate script
+// with an allow result. Asserting ORDER (not just "a pinned checkout exists somewhere") is what
+// catches `deliver-correct`, where the delivery-branch checkout must come AFTER the gate, never
+// before it.
+func TestGateRunsFromTrustedDefaultBranchCheckout(t *testing.T) {
 	for _, wf := range []string{
 		"deliver-implement.yml",
 		"deliver-verify.yml",
@@ -43,98 +82,102 @@ func TestDeliveryFlowsInvokeTheAuthorGate(t *testing.T) {
 		"claude.yml",
 	} {
 		t.Run(wf, func(t *testing.T) {
-			path := filepath.Join("..", ".github", "workflows", wf)
-			raw, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatalf("reading %s: %v", path, err)
-			}
-			var doc struct {
-				Jobs map[string]struct {
-					Steps []step `yaml:"steps"`
-				} `yaml:"jobs"`
-			}
-			if err := yaml.Unmarshal(raw, &doc); err != nil {
-				t.Fatalf("parsing %s: %v", path, err)
-			}
-			found := false
-			for _, job := range doc.Jobs {
-				for _, s := range job.Steps {
-					if !strings.Contains(s.Run, "deliver-author-gate.sh") {
-						continue
+			steps := gateJobSteps(t, wf)
+			var lastCheckoutRef string
+			var sawCheckout, checked bool
+			for _, s := range steps {
+				if strings.Contains(s.Uses, "actions/checkout") {
+					lastCheckoutRef = s.With.Ref
+					sawCheckout = true
+					continue
+				}
+				if strings.Contains(s.Run, "deliver-author-gate.sh") {
+					checked = true
+					if !sawCheckout {
+						t.Errorf("%s: no checkout precedes the author-gate step — it would run the "+
+							"workspace's implicit (event/delivery) ref", wf)
+					} else if !strings.Contains(lastCheckoutRef, "default_branch") {
+						t.Errorf("%s: the checkout immediately before the author-gate step pins ref %q, "+
+							"not the repository default branch — the gate could run attacker-replaceable "+
+							"code (P0 bypass)", wf, lastCheckoutRef)
 					}
-					found = true
-					// The gate must run FROM the trusted `.gate-trusted` checkout. A bare
-					// `scripts/deliver-author-gate.sh` executed from the workspace root would run
-					// whatever the event/delivery ref checked out (for a review event, the PR merge
-					// tree) — the P0 bypass. `working-directory: .gate-trusted` is what pins it, so
-					// even a relative path the script might read resolves inside the trusted tree.
-					if s.WorkingDirectory != ".gate-trusted" {
-						t.Errorf("%s: the author-gate step invokes deliver-author-gate.sh but its "+
-							"working-directory is %q, not \".gate-trusted\" — the gate could then run "+
-							"attacker-controlled content from the event/delivery checkout", wf, s.WorkingDirectory)
-					}
+					break
 				}
 			}
-			if !found {
-				t.Errorf("%s does not invoke deliver-author-gate.sh — the author gate (#1813) must run "+
-					"before the agent reads an outside-authored body/diff", wf)
+			if !checked {
+				t.Errorf("%s: never reached the author-gate step while scanning in order", wf)
 			}
 		})
 	}
 }
 
-// The P0 fix: the gate script is executed from a checkout pinned to the default branch into its own
-// `.gate-trusted` path — NOT the implicit event/delivery checkout. For a `pull_request_review_comment`
-// GitHub checks out the PR MERGE tree, and `deliver-correct` is dispatched on the delivery branch, so
-// a bare checkout would run attacker-replaceable code before the author decision. This asserts every
-// gate-bearing workflow pins that trusted ref, so a future edit that drops the pin fails here.
-func TestGateRunsFromTrustedDefaultBranchCheckout(t *testing.T) {
-	type checkoutStep struct {
-		Uses string `yaml:"uses"`
-		With struct {
-			Ref  string `yaml:"ref"`
-			Path string `yaml:"path"`
-		} `yaml:"with"`
+// deliver-correct must edit the delivery branch, so it checks that branch out — but ONLY after the
+// gate. This pins the reviewer-requested ordering: a default-branch checkout, then the gate, then a
+// checkout that is NOT pinned to the default branch (the delivery branch). Without it, moving the
+// delivery checkout back before the gate would silently reopen the bypass.
+func TestCorrectChecksOutDeliveryBranchOnlyAfterGate(t *testing.T) {
+	steps := gateJobSteps(t, "deliver-correct.yml")
+	gateIdx := -1
+	for i, s := range steps {
+		if strings.Contains(s.Run, "deliver-author-gate.sh") {
+			gateIdx = i
+			break
+		}
 	}
-	for _, wf := range []string{
-		"deliver-implement.yml",
-		"deliver-verify.yml",
-		"deliver-correct.yml",
-		"claude.yml",
-	} {
+	if gateIdx < 0 {
+		t.Fatal("deliver-correct.yml: no gate step found")
+	}
+	// Before the gate: every checkout must be default-branch-pinned.
+	for _, s := range steps[:gateIdx] {
+		if strings.Contains(s.Uses, "actions/checkout") && !strings.Contains(s.With.Ref, "default_branch") {
+			t.Errorf("deliver-correct.yml: a checkout before the gate pins ref %q, not the default "+
+				"branch — the delivery branch must not be present when the gate runs", s.With.Ref)
+		}
+	}
+	// After the gate: the delivery-branch checkout (its ref is NOT the default branch).
+	sawDeliveryCheckout := false
+	for _, s := range steps[gateIdx+1:] {
+		if strings.Contains(s.Uses, "actions/checkout") && !strings.Contains(s.With.Ref, "default_branch") {
+			sawDeliveryCheckout = true
+		}
+	}
+	if !sawDeliveryCheckout {
+		t.Error("deliver-correct.yml: no delivery-branch checkout after the gate — the agent edits the " +
+			"delivery branch, so it must be checked out (only once the gate has passed)")
+	}
+}
+
+// Defense in depth (#1813, P0 from review): verify/correct read the PR diff AND the sub-issue, so
+// BOTH authors are gated — same-repo + branch shape does not prove the PR is bot-authored. The PR
+// author is resolved via REST in `Validate the target PR` (a GET, kept out of the gate step so its
+// label POST does not trip the repo-wide PR-creation guard) and consumed by the gate as `PR_AUTHOR`;
+// the sub-issue author is resolved in the gate. Assert the JOB resolves both and the gate checks both.
+func TestVerifyAndCorrectGateBothAuthors(t *testing.T) {
+	for _, wf := range []string{"deliver-verify.yml", "deliver-correct.yml"} {
 		t.Run(wf, func(t *testing.T) {
-			path := filepath.Join("..", ".github", "workflows", wf)
-			raw, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatalf("reading %s: %v", path, err)
-			}
-			// Model just the jobs→steps shape and scan every step, so this does not depend on which
-			// job the gate lives in.
-			var doc struct {
-				Jobs map[string]struct {
-					Steps []checkoutStep `yaml:"steps"`
-				} `yaml:"jobs"`
-			}
-			if err := yaml.Unmarshal(raw, &doc); err != nil {
-				t.Fatalf("parsing %s: %v", path, err)
-			}
-			found := false
-			for _, job := range doc.Jobs {
-				for _, s := range job.Steps {
-					if !strings.Contains(s.Uses, "actions/checkout") || s.With.Path != ".gate-trusted" {
-						continue
-					}
-					found = true
-					if !strings.Contains(s.With.Ref, "default_branch") {
-						t.Errorf("%s: the `.gate-trusted` checkout pins ref %q, which is not the "+
-							"repository default branch — for a review event the implicit ref is the PR "+
-							"merge tree, so the gate could run attacker-replaceable code", wf, s.With.Ref)
-					}
+			steps := gateJobSteps(t, wf)
+			var gateRun, jobRun string
+			for _, s := range steps {
+				jobRun += s.Run + "\n"
+				if strings.Contains(s.Run, "deliver-author-gate.sh") {
+					gateRun = s.Run
 				}
 			}
-			if !found {
-				t.Errorf("%s has no `path: .gate-trusted` checkout — the author gate must run from a "+
-					"dedicated default-branch checkout, not the job's event/delivery checkout", wf)
+			// PR author resolved in the job (REST GET) and exposed as an output.
+			if !strings.Contains(jobRun, "/pulls/") || !strings.Contains(jobRun, "pr_author=") {
+				t.Errorf("%s: the job does not resolve the delivery PR author via REST into a "+
+					"pr_author output — the PR author would be unguarded (#1813)", wf)
+			}
+			// The gate consumes the PR author and resolves + checks the issue author too.
+			if !strings.Contains(gateRun, "PR_AUTHOR") {
+				t.Errorf("%s: the gate step does not consume the PR author (PR_AUTHOR)", wf)
+			}
+			if !strings.Contains(gateRun, "/issues/") {
+				t.Errorf("%s: the gate does not resolve the sub-issue author (issues/…)", wf)
+			}
+			if strings.Count(gateRun, "check_author") < 3 { // 1 definition + 2 calls
+				t.Errorf("%s: the gate does not check BOTH authors (expected a check_author call for "+
+					"the PR author and the sub-issue author)", wf)
 			}
 		})
 	}

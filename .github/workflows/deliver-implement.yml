@@ -247,16 +247,15 @@ jobs:
             }
             core.setOutput('issue_number', String(here));
 
-      # Trusted tree for scripts/deliver-author-gate.sh ONLY, pinned EXPLICITLY to the default
-      # branch and checked out into its own `.gate-trusted` path. This trigger is `issue_comment`,
-      # whose `github.ref` is already the default branch — but the ref is pinned anyway so the gate
-      # cannot be sourced from any other ref (defense in depth, and provable by a test) and never
-      # runs issue/PR content.
+      # Trusted tree for scripts/deliver-author-gate.sh, pinned EXPLICITLY to the default branch.
+      # This trigger is `issue_comment`, whose `github.ref` is already the default branch — but the
+      # ref is pinned anyway so the gate cannot be sourced from any other ref (defense in depth, and
+      # provable by a test) and never runs issue/PR content. This job does no other checkout, so the
+      # workspace ROOT is clean to use.
       - uses: actions/checkout@v5
         if: steps.check.outputs.allowed == 'true'
         with:
           ref: ${{ github.event.repository.default_branch }}
-          path: .gate-trusted
           fetch-depth: 1
 
       # Container-level author gate (#1813). The TRIGGERER passed the collaborator gate above, but
@@ -269,8 +268,6 @@ jobs:
       # or issue opened by an outsider is as untrusted as a fork.
       - name: Gate on the sub-issue author's write access
         if: steps.check.outputs.allowed == 'true'
-        # Run FROM the trusted checkout so any relative path resolves inside it, not the workspace root.
-        working-directory: .gate-trusted
         env:
           GH_TOKEN: ${{ github.token }}
           AUTHOR: ${{ github.event.issue.user.login }}

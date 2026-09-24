@@ -177,8 +177,9 @@ because empty output reads exactly like "this issue has no refinements".
 The single decision behind the container-level author gate (#1813): given one login, decide whether
 an AI flow may run on content that login authored. Every AI flow (the delivery loop's
 implement/verify/correct, interactive `@claude`, `/blis-pr-review`) calls it so the trust rule has
-one definition rather than four, and it is invoked from a **default-branch-pinned `.gate-trusted`
-checkout** in each workflow — never a PR/delivery-ref copy, which the author could replace.
+one definition rather than four, and it is invoked from a **checkout pinned to the default branch at
+the workspace root**, placed before any event/delivery checkout — never a PR/delivery-ref copy, which
+the author could replace.
 
 ```bash
 scripts/deliver-author-gate.sh octocat                 # probe the login via gh

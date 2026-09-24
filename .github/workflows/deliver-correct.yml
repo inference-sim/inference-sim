@@ -78,6 +78,10 @@ jobs:
             || { echo "::error::#$PR is not open"; exit 1; }
           # Consumed by the failure reporter, which must not write to a PR this loop does not own.
           echo "owned=true" >> "$GITHUB_OUTPUT"
+          # The PR author's CANONICAL login for the gate below (REST `.user.login`, so a bot reads
+          # as `github-actions[bot]`, matching the allowlist — `gh pr view --json author` drops the
+          # `[bot]` suffix). A GET with no POST, so it does not trip the repo-wide PR-creation guard.
+          echo "pr_author=$(gh api "/repos/$REPO/pulls/$PR" --jq '.user.login')" >> "$GITHUB_OUTPUT"
 
       # BC-9, before any agent runs and before the round counter moves.
       - name: Honour deliver:paused
@@ -131,63 +135,69 @@ jobs:
           fi
           echo "round=$next" >> "$GITHUB_OUTPUT"
 
-      # The working tree is the DELIVERY BRANCH: this phase is dispatched with `--ref
-      # deliver/issue-N`, and the agent below edits and pushes it. So this checkout is deliberately
-      # NOT trusted content, which is exactly why the gate below must not run its script from here.
+      # Trusted working tree for the gate, pinned to the default branch, at the workspace ROOT and
+      # BEFORE the delivery-branch checkout below. The gate must run in a tree the delivery branch
+      # cannot influence: a nested path under an untrusted checkout is not a boundary (the delivery
+      # ref could carry a `.gate-trusted` symlink whose target actions/checkout would then prepare),
+      # so the trusted checkout goes first and at root, and the delivery branch is checked out only
+      # AFTER the gate passes.
       - uses: actions/checkout@v5
         if: steps.paused.outputs.paused == 'false'
         with:
-          fetch-depth: 0
-
-      # Trusted copy of the gate script ONLY, pinned EXPLICITLY to the default branch in its own
-      # `.gate-trusted` path — never the delivery-branch checkout above. Running the gate from the
-      # delivery branch would let an outside-authored delivery replace deliver-author-gate.sh with
-      # an "allow" result and self-authorize; pinning to `default_branch` guarantees BLIS's own
-      # script runs.
-      - name: Check out the trusted gate script
-        if: steps.paused.outputs.paused == 'false'
-        uses: actions/checkout@v5
-        with:
           ref: ${{ github.event.repository.default_branch }}
-          path: .gate-trusted
           fetch-depth: 1
 
-      # Container-level author gate (#1813), before the branch update and the agent. This phase has
-      # contents: write and pushes, and it reads the sub-issue (#$ISSUE_NUMBER) for context alongside
-      # the diff and the review comments — so an outside-authored issue must not reach the agent.
-      # deliver-author-gate.sh applies the same admin/write/maintain law as the triggerer gate (bots
-      # trusted without a probe; a probe failure fails closed AND loud). In normal operation the
-      # verify phase's identical gate blocks first, so this is defence-in-depth for a correction
-      # dispatched by any other route; the delivery PR is bot-authored and same-repo (Validate the
-      # target PR), so the issue is the untrusted container.
+      # Container-level author gate (#1813), before the delivery checkout, the branch update and the
+      # agent. This phase has contents: write and pushes, and it reads the sub-issue (#$ISSUE_NUMBER)
+      # alongside the diff and review comments. It gates BOTH authors: the DELIVERY PR's author
+      # (expected `github-actions[bot]`; `Validate the target PR` proves same-repo + `deliver/issue-N`
+      # but NOT bot authorship) and the SUB-ISSUE's author. deliver-author-gate.sh applies the same
+      # admin/write/maintain law as the triggerer gate (bots trusted without a probe; a probe failure
+      # fails closed AND loud), run from the trusted checkout above. In normal operation the verify
+      # phase's identical gate blocks first, so this is defence-in-depth for a correction dispatched
+      # by any other route.
       #
       # On a refusal it posts a specific comment and moves the label, then exits non-zero: the
       # downstream steps skip (implicitly `success()`-gated) and `Report a failed correction` is
       # excluded via `author_gate.outputs.blocked`, so there is exactly one comment.
-      - name: Gate on the sub-issue author's write access
+      - name: Gate on the delivery PR and sub-issue authors' write access
         id: author_gate
         if: steps.paused.outputs.paused == 'false'
-        # Run FROM the trusted checkout so any relative path resolves inside it, not the
-        # delivery-branch workspace root. The gh calls below are CWD-independent.
-        working-directory: .gate-trusted
+        env:
+          # Canonical PR-author login, resolved by `Validate the target PR` (see there). Passed via
+          # env, never interpolated into the script — an author login is data.
+          PR_AUTHOR: ${{ steps.target.outputs.pr_author }}
         run: |
           set -uo pipefail
-          if ! author=$(gh api "/repos/$REPO/issues/$ISSUE_NUMBER" --jq '.user.login'); then
-            echo "::error::could not read the author of #$ISSUE_NUMBER — failing closed"
-            body="Correction stopped: could not read the author of #$ISSUE_NUMBER, so the agent was not run. This is a probe failure, not a verdict — retry once the API is reachable."
-          else
-            rc=0
-            verdict=$(scripts/deliver-author-gate.sh "$author") || rc=$?
+          block_reason=""
+          probe_fail=""
+          # An empty login (a missing output or an API failure) is a probe failure, so the gate
+          # fails closed rather than skipping the check.
+          check_author() {
+            local what="$1" login="$2" rc=0 verdict
+            [[ -n "$block_reason" || -n "$probe_fail" ]] && return   # first failure wins
+            if [[ -z "$login" ]]; then probe_fail="could not read the $what"; return; fi
+            verdict=$(scripts/deliver-author-gate.sh "$login") || rc=$?
             printf '%s\n' "$verdict"
-            if [[ "$rc" -eq 0 ]]; then
-              echo "blocked=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
             if [[ "$rc" -eq 1 ]]; then
-              body="Correction stopped: #$ISSUE_NUMBER was authored by \`$author\`, who does not hold write access to this repository. The correction agent (contents: write) reads the issue, diff and comments, so an outside-authored issue is not run automatically (#1813). A maintainer must vet it and re-issue \`/approve-issue-for-pr-delivery\`."
-            else
-              body="Correction stopped: could not verify whether \`$author\` (author of #$ISSUE_NUMBER) has write access, so the agent was not run. This is a probe failure, not a verdict — retry should work."
+              block_reason="the $what (\`$login\`) does not hold write access to this repository"
+            elif [[ "$rc" -ne 0 ]]; then
+              probe_fail="could not verify the $what (\`$login\`)"
             fi
+          }
+          pr_author="$PR_AUTHOR"
+          # The sub-issue author is resolved here (an `/issues/` read carries no PR-creation risk).
+          issue_author=$(gh api "/repos/$REPO/issues/$ISSUE_NUMBER" --jq '.user.login' 2>/dev/null || echo "")
+          check_author "delivery PR #$PR author" "$pr_author"
+          check_author "sub-issue #$ISSUE_NUMBER author" "$issue_author"
+          if [[ -z "$block_reason" && -z "$probe_fail" ]]; then
+            echo "blocked=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ -n "$block_reason" ]]; then
+            body="Correction stopped: $block_reason. The correction agent (contents: write) reads the issue, diff and comments, so outside-authored delivery content is not run automatically (#1813). A maintainer must vet it and re-issue \`/approve-issue-for-pr-delivery\`."
+          else
+            body="Correction stopped: $probe_fail, so the agent was not run. This is a probe failure, not a verdict — retry should work."
           fi
           # A refusal must never be silent (R1). Suppress the generic `Report a failed correction`
           # (blocked=true) ONLY when the SPECIFIC comment posts; if the comment API fails, leave
@@ -200,6 +210,14 @@ jobs:
           gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
           gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null 2>&1 || true
           exit 1
+
+      # ONLY AFTER the gate passes: check out the DELIVERY BRANCH the agent edits and pushes (this
+      # phase is dispatched with `--ref deliver/issue-N`, so the implicit ref is that branch). It
+      # overwrites the trusted checkout above at the workspace root.
+      - uses: actions/checkout@v5
+        if: steps.paused.outputs.paused == 'false'
+        with:
+          fetch-depth: 0
 
       # #1781 — THE BRANCH UPDATE IS A WORKFLOW STEP, not a delegated instruction.
       #
