@@ -4016,6 +4016,10 @@
 review commands, stopping at <code>ready-for-merge</code> for a human to merge or at <code>needs-human</code> with
 a reason. The implement phase follows this document, so the rules below are still the source
 of truth. See <a href="../automated-delivery/">Automated Delivery (L1)</a>.</p>
+<p>Both the <em>triggerer</em> and the <em>issue author</em> must hold <code>admin</code>/<code>write</code>/<code>maintain</code> (#1813): the
+agent builds the issue body on a runner with credentials, so an outside-authored issue is
+refused even when a maintainer runs the command — vet and re-author it first. The same
+author gate applies to <code>@claude</code> and <code>/blis-pr-review</code> (they refuse an outside-authored PR/issue).</p>
 </blockquote>
 <h3 id="step-1-create-an-isolated-workspace">Step 1: Create an Isolated Workspace<a class="headerlink" href="#step-1-create-an-isolated-workspace" title="Permanent link">&para;</a></h3>
 <p>Create a git worktree BEFORE any work begins:</p>

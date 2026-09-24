@@ -3024,6 +3024,31 @@ posted, so narrowing it turns the report back into silence. And the comment name
 reason — a status, or a category when there is no status — never the caught exception's own
 text, which is unbounded and would land verbatim on a public thread that notifies and persists;
 the precise error goes to the run's failure annotation instead.</p>
+<p>The triggerer gate authorises <em>who asked</em>. A second gate authorises <em>whose content the agent will
+read</em> (#1813). Every AI flow can be pointed at a PR or issue whose <strong>author</strong> holds no write access,
+and there the untrusted input is the PR/issue <strong>body</strong> and, on a PR, the <strong>diff</strong> — reading it <em>is</em>
+the task, so #1806's comment-text filter does not help, and a maintainer triggering the run does not
+sanitise it. <code>scripts/deliver-author-gate.sh</code> is the one place that decision lives, applying the same
+<code>admin</code>/<code>write</code>/<code>maintain</code> law as the triggerer gate with two differences for a single-author gate:
+<code>github-actions[bot]</code>/<code>claude[bot]</code> are trusted <strong>without</strong> a probe (the delivery loop's own PRs and
+issues are bot-authored, and the permission endpoint 404s for a bot login), and a probe failure fails
+closed <strong>and</strong> loud (exit 3), distinct from a clean-404 denial (exit 1). The signal is the <strong>author</strong>,
+never fork-ness: a same-repo branch or issue opened by an outsider is as untrusted as a fork, and a
+fork opened by a maintainer is fine. <code>claude.yml</code> and <code>deliver-implement.yml</code> run it in their
+ubuntu <code>check-permissions</code> job (so a refused author never wakes the self-hosted runner);
+<code>deliver-verify.yml</code> and <code>deliver-correct.yml</code> run it before the agent, gating <strong>both</strong> the delivery
+PR's author (expected <code>github-actions[bot]</code>; same-repo + <code>deliver/issue-N</code> shape does not by itself
+prove bot authorship, so it is checked rather than assumed) <strong>and</strong> the sub-issue's author (the spec
+read via <code>gh issue view</code>). <strong>The gate script itself must be trusted:</strong> it runs from a checkout pinned
+to <code>github.event.repository.default_branch</code> at the workspace ROOT, placed BEFORE any event/delivery
+checkout — never the implicit ref (for a <code>pull_request_review_comment</code> that is the PR <em>merge</em> tree)
+and never a path nested under an untrusted tree (a delivery ref could carry a symlink at that path
+that <code>actions/checkout</code> would follow). <code>deliver-correct</code> checks out the delivery branch it edits only
+<em>after</em> the gate passes. And a refusal must never be silent: where skipping the agent would otherwise
+leave a green run with no comment (a comment-API outage), the job fails loudly (<code>claude.yml</code>) or falls
+back to the generic failure reporter (verify/correct). The four wirings are pinned by
+<code>scripts/deliver_author_gate_wiring_test.go</code> (including the trusted-ref pin and the correct-phase
+ordering) and the decision by <code>scripts/deliver_author_gate_test.go</code>.</p>
 <h2 id="known-failure-modes">Known Failure Modes<a class="headerlink" href="#known-failure-modes" title="Permanent link">&para;</a></h2>
 <p>Each failure mode below was discovered in a real PR. The tier system exists
 because these failures occurred.</p>
