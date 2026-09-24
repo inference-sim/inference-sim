@@ -32,6 +32,10 @@ func readWorkflow(t *testing.T, name string) string {
 // (R23). deliver-verify/correct/implement invoke it directly; claude.yml invokes it too (asserted in
 // TestClaudeGatesBothAgentJobsOnAuthor below via the gate step it wires).
 func TestDeliveryFlowsInvokeTheAuthorGate(t *testing.T) {
+	type step struct {
+		Run              string `yaml:"run"`
+		WorkingDirectory string `yaml:"working-directory"`
+	}
 	for _, wf := range []string{
 		"deliver-implement.yml",
 		"deliver-verify.yml",
@@ -39,15 +43,41 @@ func TestDeliveryFlowsInvokeTheAuthorGate(t *testing.T) {
 		"claude.yml",
 	} {
 		t.Run(wf, func(t *testing.T) {
-			body := readWorkflow(t, wf)
-			// The invocation MUST be from the `.gate-trusted` checkout, never a bare
-			// `scripts/deliver-author-gate.sh` (which would run whatever the event/delivery ref
-			// checked out — the P0 bypass namasl caught). Asserting the `.gate-trusted/` prefix is
-			// what pins that.
-			if !strings.Contains(body, ".gate-trusted/scripts/deliver-author-gate.sh") {
-				t.Errorf("%s does not invoke `.gate-trusted/scripts/deliver-author-gate.sh` — the "+
-					"author gate (#1813) must run the TRUSTED copy of the script, not one sourced from "+
-					"a PR/delivery ref that the author could have replaced with an allow result", wf)
+			path := filepath.Join("..", ".github", "workflows", wf)
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("reading %s: %v", path, err)
+			}
+			var doc struct {
+				Jobs map[string]struct {
+					Steps []step `yaml:"steps"`
+				} `yaml:"jobs"`
+			}
+			if err := yaml.Unmarshal(raw, &doc); err != nil {
+				t.Fatalf("parsing %s: %v", path, err)
+			}
+			found := false
+			for _, job := range doc.Jobs {
+				for _, s := range job.Steps {
+					if !strings.Contains(s.Run, "deliver-author-gate.sh") {
+						continue
+					}
+					found = true
+					// The gate must run FROM the trusted `.gate-trusted` checkout. A bare
+					// `scripts/deliver-author-gate.sh` executed from the workspace root would run
+					// whatever the event/delivery ref checked out (for a review event, the PR merge
+					// tree) — the P0 bypass. `working-directory: .gate-trusted` is what pins it, so
+					// even a relative path the script might read resolves inside the trusted tree.
+					if s.WorkingDirectory != ".gate-trusted" {
+						t.Errorf("%s: the author-gate step invokes deliver-author-gate.sh but its "+
+							"working-directory is %q, not \".gate-trusted\" — the gate could then run "+
+							"attacker-controlled content from the event/delivery checkout", wf, s.WorkingDirectory)
+					}
+				}
+			}
+			if !found {
+				t.Errorf("%s does not invoke deliver-author-gate.sh — the author gate (#1813) must run "+
+					"before the agent reads an outside-authored body/diff", wf)
 			}
 		})
 	}

@@ -179,6 +179,9 @@ jobs:
       - name: Gate on the item author's write access
         id: author_gate
         if: steps.check.outputs.allowed == 'true'
+        # Run FROM the trusted checkout, so even a relative path the script might read resolves
+        # inside .gate-trusted, never the workspace root — belt-and-braces with the pinned ref.
+        working-directory: .gate-trusted
         env:
           GH_TOKEN: ${{ github.token }}
           # For a pull_request_review_comment the PR object carries the author; for an
@@ -193,7 +196,7 @@ jobs:
         run: |
           set -uo pipefail
           rc=0
-          verdict=$(.gate-trusted/scripts/deliver-author-gate.sh "$AUTHOR") || rc=$?
+          verdict=$(scripts/deliver-author-gate.sh "$AUTHOR") || rc=$?
           printf '%s\n' "$verdict"
           if [[ "$rc" -eq 0 ]]; then
             echo "author_allowed=true" >> "$GITHUB_OUTPUT"

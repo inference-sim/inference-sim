@@ -269,6 +269,8 @@ jobs:
       # or issue opened by an outsider is as untrusted as a fork.
       - name: Gate on the sub-issue author's write access
         if: steps.check.outputs.allowed == 'true'
+        # Run FROM the trusted checkout so any relative path resolves inside it, not the workspace root.
+        working-directory: .gate-trusted
         env:
           GH_TOKEN: ${{ github.token }}
           AUTHOR: ${{ github.event.issue.user.login }}
@@ -276,7 +278,7 @@ jobs:
         run: |
           set -uo pipefail
           rc=0
-          verdict=$(.gate-trusted/scripts/deliver-author-gate.sh "$AUTHOR") || rc=$?
+          verdict=$(scripts/deliver-author-gate.sh "$AUTHOR") || rc=$?
           printf '%s\n' "$verdict"
           [[ "$rc" -eq 0 ]] && exit 0
           if [[ "$rc" -eq 1 ]]; then

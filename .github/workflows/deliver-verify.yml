@@ -441,6 +441,9 @@ jobs:
       - name: Gate on the sub-issue author's write access
         id: author_gate
         if: steps.paused.outputs.paused == 'false'
+        # Run FROM the trusted checkout so any relative path resolves inside it, not the (untrusted)
+        # workspace root. The gh calls below are CWD-independent.
+        working-directory: .gate-trusted
         run: |
           set -uo pipefail
           # Resolved via the API, never interpolated into the script: an author login is data.
@@ -449,7 +452,7 @@ jobs:
             body="Delivery stopped: could not read the author of #$ISSUE_NUMBER, so the verify agent was not run. This is a probe failure, not a verdict — retry once the API is reachable."
           else
             rc=0
-            verdict=$(.gate-trusted/scripts/deliver-author-gate.sh "$author") || rc=$?
+            verdict=$(scripts/deliver-author-gate.sh "$author") || rc=$?
             printf '%s\n' "$verdict"
             if [[ "$rc" -eq 0 ]]; then
               echo "blocked=false" >> "$GITHUB_OUTPUT"
