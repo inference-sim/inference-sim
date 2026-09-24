@@ -183,31 +183,71 @@ def tool_go(worktree, subcommand):
 # the same tools); each vendored qa-review script stays self-contained rather than sharing a
 # module, so the two are kept in sync by hand — if you edit one, edit both.
 #
-# gh_issue uses `--json ... -q`, NOT the default `--comments` view: the pretty view fetches
-# Projects-classic data (repository.issue.projectCards), which this repo's GitHub has
-# DEPRECATED, so `gh issue view --comments` exits non-zero with only a deprecation notice and
-# never returns the acceptance criteria. A non-zero gh exit is surfaced as an explicit failure
-# marker so the model treats it as missing evidence, never mistakes an error string for data.
-_GH_ISSUE_JQ = (
-    r'"#\(.number) \(.title)\n\n\(.body)\n\n--- comments ---\n"'
-    r' + ([.comments[] | "@\(.author.login): \(.body)"] | join("\n\n"))'
+# gh_issue reads the issue HEAD (number/title/body) via `--json ... -q`, NOT the default
+# `--comments` view: the pretty view fetches Projects-classic data
+# (repository.issue.projectCards), which this repo's GitHub has DEPRECATED, so
+# `gh issue view --comments` exits non-zero with only a deprecation notice and never returns
+# the acceptance criteria. A non-zero gh exit is surfaced as an explicit failure marker so
+# the model treats it as missing evidence, never mistakes an error string for data.
+#
+# The issue COMMENTS are read through scripts/deliver-trusted-comments.sh (#1806), NOT
+# inline: this repository is public, so a stranger's comment on the closing issue is a
+# prompt-injection surface into this LLM. The filter returns only comments whose author
+# holds write access (plus this repo's automation); a read failure surfaces as an UNREAD
+# marker rather than an empty thread, so a failed read is never mistaken for "no comments".
+_GH_ISSUE_HEAD_JQ = r'"#\(.number) \(.title)\n\n\(.body)"'
+
+# scripts/deliver-trusted-comments.sh, resolved relative to THIS file (scripts/qa-review/)
+# so it is found regardless of the caller's working directory.
+_TRUSTED_COMMENTS_SH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
+    "deliver-trusted-comments.sh",
 )
 
 
+def _trusted_comment_lines(repo, mode, number):
+    """Return the write-access-filtered comments as `@login: body` blocks (#1806).
+
+    `mode` is "--issue" or "--pr". On ANY read failure the filter exits non-zero (its first
+    line is COMMENT-READ-FAILED); this returns that marker so the caller renders the channel
+    as UNREAD rather than as an empty thread — a stranger's comment must never reach the
+    model, and a failed read must never look like "no comments"."""
+    proc = subprocess.run(
+        ["bash", _TRUSTED_COMMENTS_SH, "--json", mode, str(number)],
+        capture_output=True,
+        text=True,
+        env=dict(os.environ, GH_REPO=repo),
+    )
+    if proc.returncode != 0:
+        return "COMMENT-READ-FAILED: the comment channel could not be read (%s)" % (
+            proc.stderr.strip()[:500] or "no detail"
+        )
+    try:
+        comments = json.loads(proc.stdout).get("comments", [])
+    except json.JSONDecodeError:
+        return "COMMENT-READ-FAILED: the comment filter did not return JSON"
+    return "\n\n".join(
+        "@%s: %s" % ((c.get("author") or {}).get("login", ""), c.get("body", ""))
+        for c in comments
+    )
+
+
 def tool_gh_issue(worktree, number):
-    """Read-only: fetch a GitHub issue's acceptance criteria + comments."""
+    """Read-only: a GitHub issue's acceptance criteria + WRITE-ACCESS-FILTERED comments
+    (#1792, #1806)."""
     repo = os.environ.get("QA_REPO", "inference-sim/inference-sim")
     proc = subprocess.run(
         [
             "gh", "issue", "view", str(number), "--repo", repo,
-            "--json", "number,title,body,comments", "-q", _GH_ISSUE_JQ,
+            "--json", "number,title,body", "-q", _GH_ISSUE_HEAD_JQ,
         ],
         capture_output=True,
         text=True,
     )
     if proc.returncode != 0:
         return "gh_issue failed (exit %d): %s" % (proc.returncode, proc.stderr.strip()[:2000])
-    return proc.stdout[:12000]
+    comments = _trusted_comment_lines(repo, "--issue", number)
+    return (proc.stdout + "\n\n--- comments ---\n" + comments)[:12000]
 
 
 def tool_pr_diff(worktree, number):
@@ -675,14 +715,25 @@ def fetch_comments(repo, pr, report_author=""):
     blocking findings; every comment after it is treated as the author's
     defence. `items` is None — distinct from an empty list, which is a real
     report with no blocking findings — when no report comment was found at all,
-    so a caller can refuse rather than adjudicate nothing."""
+    so a caller can refuse rather than adjudicate nothing.
+
+    Comments are read through scripts/deliver-trusted-comments.sh (#1806), so a stranger's
+    comment on this PUBLIC PR never enters the adjudication prompt. The filter also returns
+    PR reviews and inline review comments; only CONVERSATION comments carry the qa-review
+    report and the author's later defence, so the others are ignored here — preserving this
+    selection's pre-#1806 behaviour. A read failure exits non-zero (check=True), which the
+    caller already treats as 'no adjudicable evidence' rather than a clean pass."""
     proc = subprocess.run(
-        ["gh", "pr", "view", str(pr), "--repo", repo, "--json", "comments"],
+        ["bash", _TRUSTED_COMMENTS_SH, "--json", "--pr", str(pr)],
         capture_output=True,
         text=True,
+        env=dict(os.environ, GH_REPO=repo),
         check=True,
     )
-    comments = json.loads(proc.stdout).get("comments", [])
+    comments = [
+        c for c in json.loads(proc.stdout).get("comments", [])
+        if c.get("source") == "conversation"
+    ]
     last_qa = select_report_comment(comments, report_author)
     if last_qa < 0:
         return None, ""
