@@ -48,6 +48,11 @@ flowchart TD
 > review commands, stopping at `ready-for-merge` for a human to merge or at `needs-human` with
 > a reason. The implement phase follows this document, so the rules below are still the source
 > of truth. See [Automated Delivery (L1)](automated-delivery.md).
+>
+> Both the *triggerer* and the *issue author* must hold `admin`/`write`/`maintain` (#1813): the
+> agent builds the issue body on a runner with credentials, so an outside-authored issue is
+> refused even when a maintainer runs the command — vet and re-author it first. The same
+> author gate applies to `@claude` and `/blis-pr-review` (they refuse an outside-authored PR/issue).
 
 ### Step 1: Create an Isolated Workspace
 

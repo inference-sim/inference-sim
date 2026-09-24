@@ -29,6 +29,11 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       allowed: ${{ steps.check.outputs.allowed }}
+      # The item AUTHOR's gate (#1813), ANDed into both agent jobs alongside `allowed`. The
+      # triggerer check above authorises WHO ASKED; this authorises WHOSE CONTENT the agent will
+      # read — the PR/issue body and, on a PR, the diff. A maintainer typing `@claude` on an
+      # outside-authored PR/issue does not sanitise it, so both must pass.
+      author_allowed: ${{ steps.author_gate.outputs.author_allowed }}
       # Routes the trigger to ONE of the two mutually-exclusive agent jobs below.
       # Computed here, once, so the substring test has a single definition — the two
       # job-level `if`s then differ only in the sense of the comparison.
@@ -148,6 +153,69 @@ jobs:
               }
             }
 
+      # Trusted tree for scripts/deliver-author-gate.sh. The ref is pinned EXPLICITLY to the default
+      # branch — do NOT rely on the implicit checkout ref. For `pull_request_review_comment` GitHub
+      # sets `github.ref` to the PR MERGE tree (`refs/pull/N/merge`), so an implicit checkout would
+      # run the FORK's copy of the gate script; a fork could replace it with an "allow" result and a
+      # maintainer's inline `@claude` would then admit the agent (the bypass #1813's own gate must
+      # not have). This job does no other checkout, so checking the trusted ref out at the workspace
+      # ROOT is clean — there is no untrusted tree to nest under (unlike verify/correct, which check
+      # the gate out at root BEFORE any event/delivery checkout).
+      - uses: actions/checkout@v5
+        if: steps.check.outputs.allowed == 'true'
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+
+      # Container-level author gate (#1813), ANDed with the triggerer check into both agent jobs.
+      # The check above authorises WHO ASKED; the untrusted content the agent actually reads is the
+      # PR/issue BODY and, on a PR, the DIFF — authored by the item's author, who may hold no write
+      # access even when a maintainer typed `@claude`. Reading that outside-authored body/diff IS
+      # the task, so no comment filter helps. deliver-author-gate.sh applies the same admin/write/
+      # maintain law as the triggerer check (bots trusted without a probe; a probe failure fails
+      # closed AND loud). Author, not fork-ness: a same-repo branch opened by an outsider is as
+      # untrusted as a fork. On a block this comments so the requester is not left with silence —
+      # both agent jobs and report-status skip when author_allowed != 'true', posting nothing.
+      - name: Gate on the item author's write access
+        id: author_gate
+        if: steps.check.outputs.allowed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # For a pull_request_review_comment the PR object carries the author; for an
+          # issue_comment (on an issue OR a PR) and an issues event, `issue.user` does — for a PR
+          # comment the `issue` IS the PR, so `issue.user` is the PR author. Passed via env, never
+          # interpolated into the script: an author login is data.
+          AUTHOR: >-
+            ${{ github.event_name == 'pull_request_review_comment'
+                && github.event.pull_request.user.login
+                || github.event.issue.user.login }}
+          TARGET: ${{ github.event.issue.number || github.event.pull_request.number }}
+        run: |
+          set -uo pipefail
+          rc=0
+          verdict=$(scripts/deliver-author-gate.sh "$AUTHOR") || rc=$?
+          printf '%s\n' "$verdict"
+          if [[ "$rc" -eq 0 ]]; then
+            echo "author_allowed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "author_allowed=false" >> "$GITHUB_OUTPUT"
+          if [[ "$rc" -eq 1 ]]; then
+            body="\`@claude\` will not run here: this was authored by \`$AUTHOR\`, who does not hold write access to this repository. The agent reads the body and diff, so it is not run on outside-authored content (#1813). A maintainer can reproduce the request on an item they authored."
+          else
+            body="\`@claude\` was not run: could not verify whether \`$AUTHOR\` has write access. This is a probe failure, not a permission decision — retrying should work."
+          fi
+          # A refusal must never be SILENT (R1). On this path both agent jobs and report-status skip
+          # (they need author_allowed=='true' / an execution_file), so this comment is the ONLY
+          # signal the requester gets. If it posts, exit 0 for a clean skip that keeps report-status
+          # semantics (only an agent run publishes a status). If it FAILS, exit 1 so the run goes RED
+          # rather than green-with-no-explanation — the same silent-refusal bug fixed in verify/correct.
+          if gh issue comment "$TARGET" --repo "$GITHUB_REPOSITORY" --body "$body"; then
+            exit 0
+          fi
+          echo "::error::author gate refused (@$AUTHOR) but the explanatory comment could not be posted; failing loudly rather than skipping silently"
+          exit 1
+
   # Two agent jobs, identical steps, DIFFERENT tokens. They exist as two jobs only because
   # `permissions:` accepts no expressions — it cannot be varied per trigger inside one job.
   # report-status reads whichever one was not skipped.
@@ -168,6 +236,7 @@ jobs:
     needs: check-permissions
     if: |
       needs.check-permissions.outputs.allowed == 'true' &&
+      needs.check-permissions.outputs.author_allowed == 'true' &&
       needs.check-permissions.outputs.is_review == 'false'
     runs-on: [self-hosted]
     timeout-minutes: 60
@@ -255,6 +324,7 @@ jobs:
     needs: check-permissions
     if: |
       needs.check-permissions.outputs.allowed == 'true' &&
+      needs.check-permissions.outputs.author_allowed == 'true' &&
       needs.check-permissions.outputs.is_review == 'true'
     runs-on: [self-hosted]
     timeout-minutes: 60
