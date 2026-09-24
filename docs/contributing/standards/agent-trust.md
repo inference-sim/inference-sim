@@ -120,8 +120,15 @@ fork opened by a maintainer is fine. `claude.yml` and `deliver-implement.yml` ru
 ubuntu `check-permissions` job (so a refused author never wakes the self-hosted runner);
 `deliver-verify.yml` and `deliver-correct.yml` run it before the agent, gating the **sub-issue**
 author (their delivery PR is bot-authored and same-repo, so the issue — read via `gh issue view` — is
-the untrusted container). The four wirings are pinned by `scripts/deliver_author_gate_wiring_test.go`
-and the decision by `scripts/deliver_author_gate_test.go`.
+the untrusted container). **The gate script itself must be trusted:** it is run from a dedicated
+`actions/checkout` pinned to `github.event.repository.default_branch` in a `.gate-trusted` path, never
+the implicit event/delivery checkout — for a `pull_request_review_comment` that implicit ref is the PR
+*merge* tree, and `deliver-correct` checks out the delivery branch, so a bare invocation would let the
+author replace the gate with an allow result and self-authorize. And a refusal must never be silent:
+where skipping the agent would otherwise leave a green run with no comment (a comment-API outage),
+the job fails loudly (`claude.yml`) or falls back to the generic failure reporter (verify/correct).
+The four wirings are pinned by `scripts/deliver_author_gate_wiring_test.go` (including the trusted-ref
+pin) and the decision by `scripts/deliver_author_gate_test.go`.
 
 ## Known Failure Modes
 

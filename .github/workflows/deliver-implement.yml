@@ -247,13 +247,17 @@ jobs:
             }
             core.setOutput('issue_number', String(here));
 
-      # Trusted tree, for scripts/deliver-author-gate.sh only. On an issue_comment event
-      # `github.ref` is the DEFAULT branch, so this is BLIS's own main-branch script — never issue
-      # or PR content — and nothing here executes anything but that script.
+      # Trusted tree for scripts/deliver-author-gate.sh ONLY, pinned EXPLICITLY to the default
+      # branch and checked out into its own `.gate-trusted` path. This trigger is `issue_comment`,
+      # whose `github.ref` is already the default branch — but the ref is pinned anyway so the gate
+      # cannot be sourced from any other ref (defense in depth, and provable by a test) and never
+      # runs issue/PR content.
       - uses: actions/checkout@v5
         if: steps.check.outputs.allowed == 'true'
         with:
-          fetch-depth: 0
+          ref: ${{ github.event.repository.default_branch }}
+          path: .gate-trusted
+          fetch-depth: 1
 
       # Container-level author gate (#1813). The TRIGGERER passed the collaborator gate above, but
       # the untrusted content this delivery builds is the SUB-ISSUE'S BODY, whose author may hold no
@@ -272,7 +276,7 @@ jobs:
         run: |
           set -uo pipefail
           rc=0
-          verdict=$(scripts/deliver-author-gate.sh "$AUTHOR") || rc=$?
+          verdict=$(.gate-trusted/scripts/deliver-author-gate.sh "$AUTHOR") || rc=$?
           printf '%s\n' "$verdict"
           [[ "$rc" -eq 0 ]] && exit 0
           if [[ "$rc" -eq 1 ]]; then

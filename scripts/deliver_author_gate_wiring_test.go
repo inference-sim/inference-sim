@@ -40,12 +40,88 @@ func TestDeliveryFlowsInvokeTheAuthorGate(t *testing.T) {
 	} {
 		t.Run(wf, func(t *testing.T) {
 			body := readWorkflow(t, wf)
-			if !strings.Contains(body, "scripts/deliver-author-gate.sh") {
-				t.Errorf("%s does not invoke scripts/deliver-author-gate.sh — the author gate (#1813) "+
-					"is the container-level complement to the triggerer check and must run before the "+
-					"agent reads an outside-authored body/diff", wf)
+			// The invocation MUST be from the `.gate-trusted` checkout, never a bare
+			// `scripts/deliver-author-gate.sh` (which would run whatever the event/delivery ref
+			// checked out — the P0 bypass namasl caught). Asserting the `.gate-trusted/` prefix is
+			// what pins that.
+			if !strings.Contains(body, ".gate-trusted/scripts/deliver-author-gate.sh") {
+				t.Errorf("%s does not invoke `.gate-trusted/scripts/deliver-author-gate.sh` — the "+
+					"author gate (#1813) must run the TRUSTED copy of the script, not one sourced from "+
+					"a PR/delivery ref that the author could have replaced with an allow result", wf)
 			}
 		})
+	}
+}
+
+// The P0 fix: the gate script is executed from a checkout pinned to the default branch into its own
+// `.gate-trusted` path — NOT the implicit event/delivery checkout. For a `pull_request_review_comment`
+// GitHub checks out the PR MERGE tree, and `deliver-correct` is dispatched on the delivery branch, so
+// a bare checkout would run attacker-replaceable code before the author decision. This asserts every
+// gate-bearing workflow pins that trusted ref, so a future edit that drops the pin fails here.
+func TestGateRunsFromTrustedDefaultBranchCheckout(t *testing.T) {
+	type checkoutStep struct {
+		Uses string `yaml:"uses"`
+		With struct {
+			Ref  string `yaml:"ref"`
+			Path string `yaml:"path"`
+		} `yaml:"with"`
+	}
+	for _, wf := range []string{
+		"deliver-implement.yml",
+		"deliver-verify.yml",
+		"deliver-correct.yml",
+		"claude.yml",
+	} {
+		t.Run(wf, func(t *testing.T) {
+			path := filepath.Join("..", ".github", "workflows", wf)
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("reading %s: %v", path, err)
+			}
+			// Model just the jobs→steps shape and scan every step, so this does not depend on which
+			// job the gate lives in.
+			var doc struct {
+				Jobs map[string]struct {
+					Steps []checkoutStep `yaml:"steps"`
+				} `yaml:"jobs"`
+			}
+			if err := yaml.Unmarshal(raw, &doc); err != nil {
+				t.Fatalf("parsing %s: %v", path, err)
+			}
+			found := false
+			for _, job := range doc.Jobs {
+				for _, s := range job.Steps {
+					if !strings.Contains(s.Uses, "actions/checkout") || s.With.Path != ".gate-trusted" {
+						continue
+					}
+					found = true
+					if !strings.Contains(s.With.Ref, "default_branch") {
+						t.Errorf("%s: the `.gate-trusted` checkout pins ref %q, which is not the "+
+							"repository default branch — for a review event the implicit ref is the PR "+
+							"merge tree, so the gate could run attacker-replaceable code", wf, s.With.Ref)
+					}
+				}
+			}
+			if !found {
+				t.Errorf("%s has no `path: .gate-trusted` checkout — the author gate must run from a "+
+					"dedicated default-branch checkout, not the job's event/delivery checkout", wf)
+			}
+		})
+	}
+}
+
+// P1: on claude.yml's refusal path both agent jobs and report-status skip, so the gate's own comment
+// is the ONLY signal. If that comment cannot be posted the job must fail LOUDLY (red run), not exit 0
+// green-with-no-explanation — the silent-refusal class R1 exists for.
+func TestClaudeGateFailsLoudWhenRefusalCommentCannotPost(t *testing.T) {
+	body := readWorkflow(t, "claude.yml")
+	if !strings.Contains(body, "if gh issue comment") {
+		t.Error("claude.yml author gate does not condition on whether the refusal comment posted; a " +
+			"`gh issue comment ... || true` followed by `exit 0` would refuse silently on an API outage")
+	}
+	if !strings.Contains(body, "::error::author gate refused") {
+		t.Error("claude.yml author gate has no loud `::error::` failure when the refusal comment cannot " +
+			"be posted — the run would be green with no explanation (R1)")
 	}
 }
 
@@ -102,19 +178,5 @@ func TestClaudeGatesBothAgentJobsOnAuthor(t *testing.T) {
 			t.Errorf("agent job %q does not gate on `author_allowed == 'true'` — @claude would still "+
 				"run on an outside-authored PR/issue via this path (#1813). if:\n%s", job, j.If)
 		}
-	}
-}
-
-// The two ubuntu permission jobs run the gate script, so they must check out the repo first — and it
-// must be the TRUSTED default-branch tree (no `ref:` pointing at PR head), so only BLIS's own script
-// runs, never issue/PR content.
-func TestUbuntuGateJobsCheckoutTrustedTree(t *testing.T) {
-	for _, wf := range []string{"claude.yml", "deliver-implement.yml"} {
-		t.Run(wf, func(t *testing.T) {
-			body := readWorkflow(t, wf)
-			if !strings.Contains(body, "actions/checkout") {
-				t.Errorf("%s does not check out the repo, but the author gate runs a script from it", wf)
-			}
-		})
 	}
 }

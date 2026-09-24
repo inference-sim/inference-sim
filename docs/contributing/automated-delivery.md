@@ -14,7 +14,13 @@ Comment on the sub-issue you want delivered:
 
 **No issue number.** The target is the issue you commented on. An argument would be redundant — you are already on the issue — and a hazard: commenting on #100 with `#200` would deliver something other than what you are reading. A `#N` that *agrees* with the current issue is tolerated, since the earlier documented form used one; a disagreeing one is refused with an explanation rather than silently ignored.
 
-Restricted to repository collaborators, same as `/archon-pr-review` and `@claude`.
+Restricted to repository collaborators, same as `/archon-pr-review` and `@claude`. **The
+*triggerer* is not the only check: the ISSUE AUTHOR must also hold `admin`/`write`/`maintain`
+(#1813).** The delivery agent builds the issue body on a runner with credentials, so a maintainer
+commenting the command on an outside-authored issue is refused with a comment — vet and re-author
+(or re-file) it first. `github-actions[bot]`/`claude[bot]` authors are trusted. This is why "any
+single deliverable issue works" is qualified: an outside-authored one does not, until a maintainer
+owns it.
 
 **Your delivery is recorded as yours.** Every delivery PR is authored by `app/claude`, so with several in flight nothing on the PR itself said who started it. The implement phase now puts your login there: you are added as an **assignee**, and a `Delivery approved by @you` line is appended to the body. The assignee makes your deliveries findable (`is:pr assignee:@me`, or the Assigned tab) and subscribes you to the thread, so verdicts, correction rounds and a `needs-human` stop reach you without polling; the body line is the durable record, and survives someone clearing assignees. Four properties are deliberate:
 
@@ -305,7 +311,7 @@ Not yet automated, each its own follow-up: sequencing sub-issues `0..N` and open
 
 ## Security
 
-**The workflow's own steps run trusted code.** The repository root checkout is the default branch, so `scripts/` and `.archon-version` always come from `main` — matching `archon.yml`. The archon review and `deliver-gate.sh` are executed from that trusted tree, never from the PR.
+**The workflow's own steps run trusted code — but the root checkout ref is not universally `main`, so trust must be pinned where it matters.** For `workflow_dispatch` (the normal delivery path) the root checkout is the dispatched ref; for a `push` it is the delivery branch; and for a `pull_request_review`/`pull_request_review_comment` GitHub sets the ref to the PR *merge* tree. So the older claim that `scripts/`/`.archon-version` "always come from `main`" was not true for the review and correction paths. The **author gate** (below) therefore does **not** run its script from the root checkout: it uses a dedicated `actions/checkout` pinned to `github.event.repository.default_branch` in a separate `.gate-trusted` path, so the decision that admits the agent can never be sourced from content the author controls (#1813). `deliver-gate.sh` runs post-verdict from the root tree; building archon from a possibly-untrusted root ref on the review/correction paths is a separate, pre-existing hardening item tracked outside #1813.
 
 **The PR's code never runs on the self-hosted runner.** The verify phase never checks the PR out into its workspace or runs its build and tests there — it dispatches `ci.yml`, which runs the PR's build and tests on ephemeral `ubuntu-latest` runners, exactly as it does for any other PR. (The one place the PR head is materialised on the runner is the ephemeral, read-only `--detach` worktree that qa-review *reads* but never executes — see "qa-review reads the PR's files but never executes them" below.) An earlier version did check the PR out and run its test suite on the self-hosted runner, which meant executing PR code (including `deliver_gate_test.go`, which shells out to the PR's own `.sh` files) on persistent infrastructure. Dispatching removes that exposure rather than guarding it.
 
@@ -314,6 +320,8 @@ The correct phase does still check out and push to the delivery branch, so it re
 **Every trigger requires write access.** `workflow_dispatch` is restricted to users with write access by GitHub, and pushing to a branch in this repository requires it too; a refused dispatch stops before any checkout. The two review triggers do **not** carry that property for free — this repository is public, and submitting a review or a review comment needs only *read* access, while both events run in the base-repository context with access to secrets. A review-triggered verify is therefore gated on an explicit collaborator permission check (`admin`/`write`/`maintain`), the same one the `/approve-issue-for-pr-delivery` command uses. Without it, any GitHub user could repeatedly start an agent run holding `LITELLM_API_KEY`, with `pull-requests: write` and `actions: write`, on the single self-hosted runner.
 
 The check runs in a small `ubuntu-latest` job, so an unauthorised review never wakes the self-hosted runner at all.
+
+**The triggerer gate is not enough — the PR/issue AUTHOR is also gated (#1813).** A write-access triggerer can point a flow at content authored by someone *without* write access, and the untrusted input is then the PR/issue body and, on a PR, the diff — which the agent must read, so no comment filter helps and triggering does not sanitise it. Every AI flow (implement, verify, correct, `@claude`, `/blis-pr-review`) refuses when the author lacks `admin`/`write`/`maintain`, gating on the **author** rather than fork-status; `github-actions[bot]`/`claude[bot]` are trusted so bot-authored deliveries pass. The one decision lives in `scripts/deliver-author-gate.sh`, run from the trusted `.gate-trusted` checkout above; a probe outage fails closed and loud (never a silent skip). See [agent-trust.md](standards/agent-trust.md).
 
 **The delivery target comes from the event, not from comment text.** The issue delivered is `github.event.issue.number` — where the command was typed. An optional `#N` is accepted only when it agrees with that issue and refused when it disagrees, so no untrusted string ever selects the target.
 

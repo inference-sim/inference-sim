@@ -172,6 +172,29 @@ Exit 0 when the thread was read (with or without refinements), 2 on a usage erro
 read failed** — in which case the digest's first line is `REFINEMENT-READ-FAILED` rather than empty,
 because empty output reads exactly like "this issue has no refinements".
 
+## deliver-author-gate.sh — may an AI flow run on this author's content?
+
+The single decision behind the container-level author gate (#1813): given one login, decide whether
+an AI flow may run on content that login authored. Every AI flow (the delivery loop's
+implement/verify/correct, interactive `@claude`, `/blis-pr-review`) calls it so the trust rule has
+one definition rather than four, and it is invoked from a **default-branch-pinned `.gate-trusted`
+checkout** in each workflow — never a PR/delivery-ref copy, which the author could replace.
+
+```bash
+scripts/deliver-author-gate.sh octocat                 # probe the login via gh
+scripts/deliver-author-gate.sh --permission write alice # decide from a given permission, no network
+```
+
+The law matches `deliver-issue-refinements.sh`: allowed iff the author holds `admin`/`write`/`maintain`.
+Two single-author differences: `github-actions[bot]`/`claude[bot]` are trusted **without** a probe
+(the delivery loop's own PRs/issues are bot-authored, and the permission endpoint 404s for a bot
+login), and the exit codes distinguish outcomes the callers must not conflate — **0** allowed, **1**
+a definitive denial (clean 404 / `read` / `none`), **3** a probe failure (5xx/403/network/deadline)
+that fails closed **and loud**, `2` usage. The bounded-`gh` watchdog is the same one the sibling
+uses, so a stalled probe cannot hang a job. Tested by `scripts/deliver_author_gate_test.go`
+(decision, via a `gh` stub + the `--permission` seam) and `scripts/deliver_author_gate_wiring_test.go`
+(each workflow runs it from the trusted checkout and gates the agent on it).
+
 ## archon-plan-resolve.sh — find and extract a declared archon plan
 
 Finds the first `archon-plan: <path>` line in the declaration text and extracts that file

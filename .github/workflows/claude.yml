@@ -153,14 +153,19 @@ jobs:
               }
             }
 
-      # Trusted tree, for scripts/deliver-author-gate.sh only. For every trigger here — an
-      # issue_comment, a pull_request_review_comment, or an issue — `github.ref` is the DEFAULT
-      # branch (GitHub does not associate these events with a PR head), so this checks out BLIS's
-      # own main-branch script, never PR content, and nothing runs but that script.
+      # Trusted tree for scripts/deliver-author-gate.sh ONLY. The ref is pinned EXPLICITLY to the
+      # default branch and checked out into its own `.gate-trusted` path — do NOT rely on the
+      # implicit checkout ref. For `pull_request_review_comment` GitHub sets `github.ref` to the
+      # PR MERGE tree (`refs/pull/N/merge`), so an implicit checkout would run the FORK's copy of
+      # the gate script; a fork could replace it with an "allow" result and a maintainer's inline
+      # `@claude` would then admit the agent (the bypass #1813's own gate must not have). Pinning
+      # to `default_branch` guarantees BLIS's own script runs, whatever event fired.
       - uses: actions/checkout@v5
         if: steps.check.outputs.allowed == 'true'
         with:
-          fetch-depth: 0
+          ref: ${{ github.event.repository.default_branch }}
+          path: .gate-trusted
+          fetch-depth: 1
 
       # Container-level author gate (#1813), ANDed with the triggerer check into both agent jobs.
       # The check above authorises WHO ASKED; the untrusted content the agent actually reads is the
@@ -188,7 +193,7 @@ jobs:
         run: |
           set -uo pipefail
           rc=0
-          verdict=$(scripts/deliver-author-gate.sh "$AUTHOR") || rc=$?
+          verdict=$(.gate-trusted/scripts/deliver-author-gate.sh "$AUTHOR") || rc=$?
           printf '%s\n' "$verdict"
           if [[ "$rc" -eq 0 ]]; then
             echo "author_allowed=true" >> "$GITHUB_OUTPUT"
@@ -200,11 +205,16 @@ jobs:
           else
             body="\`@claude\` was not run: could not verify whether \`$AUTHOR\` has write access. This is a probe failure, not a permission decision — retrying should work."
           fi
-          gh issue comment "$TARGET" --repo "$GITHUB_REPOSITORY" --body "$body" || true
-          # Do NOT fail the job: a non-blocking exit lets the agent jobs make the skip decision
-          # from author_allowed, keeping the report-status semantics (only an agent run publishes a
-          # status) intact — a failed check-permissions job would itself read as an error.
-          exit 0
+          # A refusal must never be SILENT (R1). On this path both agent jobs and report-status skip
+          # (they need author_allowed=='true' / an execution_file), so this comment is the ONLY
+          # signal the requester gets. If it posts, exit 0 for a clean skip that keeps report-status
+          # semantics (only an agent run publishes a status). If it FAILS, exit 1 so the run goes RED
+          # rather than green-with-no-explanation — the same silent-refusal bug fixed in verify/correct.
+          if gh issue comment "$TARGET" --repo "$GITHUB_REPOSITORY" --body "$body"; then
+            exit 0
+          fi
+          echo "::error::author gate refused (@$AUTHOR) but the explanatory comment could not be posted; failing loudly rather than skipping silently"
+          exit 1
 
   # Two agent jobs, identical steps, DIFFERENT tokens. They exist as two jobs only because
   # `permissions:` accepts no expressions — it cannot be varied per trigger inside one job.

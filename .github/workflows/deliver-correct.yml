@@ -131,10 +131,26 @@ jobs:
           fi
           echo "round=$next" >> "$GITHUB_OUTPUT"
 
+      # The working tree is the DELIVERY BRANCH: this phase is dispatched with `--ref
+      # deliver/issue-N`, and the agent below edits and pushes it. So this checkout is deliberately
+      # NOT trusted content, which is exactly why the gate below must not run its script from here.
       - uses: actions/checkout@v5
         if: steps.paused.outputs.paused == 'false'
         with:
           fetch-depth: 0
+
+      # Trusted copy of the gate script ONLY, pinned EXPLICITLY to the default branch in its own
+      # `.gate-trusted` path — never the delivery-branch checkout above. Running the gate from the
+      # delivery branch would let an outside-authored delivery replace deliver-author-gate.sh with
+      # an "allow" result and self-authorize; pinning to `default_branch` guarantees BLIS's own
+      # script runs.
+      - name: Check out the trusted gate script
+        if: steps.paused.outputs.paused == 'false'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: .gate-trusted
+          fetch-depth: 1
 
       # Container-level author gate (#1813), before the branch update and the agent. This phase has
       # contents: write and pushes, and it reads the sub-issue (#$ISSUE_NUMBER) for context alongside
@@ -158,7 +174,7 @@ jobs:
             body="Correction stopped: could not read the author of #$ISSUE_NUMBER, so the agent was not run. This is a probe failure, not a verdict — retry once the API is reachable."
           else
             rc=0
-            verdict=$(scripts/deliver-author-gate.sh "$author") || rc=$?
+            verdict=$(.gate-trusted/scripts/deliver-author-gate.sh "$author") || rc=$?
             printf '%s\n' "$verdict"
             if [[ "$rc" -eq 0 ]]; then
               echo "blocked=false" >> "$GITHUB_OUTPUT"

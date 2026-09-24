@@ -401,11 +401,29 @@ jobs:
             fi
           done
 
-      # Trusted tree: our scripts, our .archon-version.
+      # Working tree for the job's later steps (archon build, qa-review worktree). NOTE: this ref
+      # is the EVENT ref — for `pull_request_review`/`pull_request_review_comment` that is the PR
+      # MERGE tree, not the default branch, so despite the historical "trusted tree" label this is
+      # NOT guaranteed to be BLIS's own code. The author gate below therefore does NOT run from
+      # here; it uses its own default-branch-pinned `.gate-trusted` checkout. (Building archon from
+      # this possibly-untrusted ref is a separate, pre-existing concern tracked outside #1813.)
       - uses: actions/checkout@v5
         if: steps.paused.outputs.paused == 'false'
         with:
           fetch-depth: 0
+
+      # Trusted copy of the gate script ONLY, pinned EXPLICITLY to the default branch in its own
+      # `.gate-trusted` path — never the checkout above. For a review event that checkout is the PR
+      # MERGE tree, and for a push it is the delivery branch, so running the gate from it would let
+      # an outside-authored delivery replace deliver-author-gate.sh with an "allow" result and
+      # self-authorize. Pinning to `default_branch` guarantees BLIS's own script runs.
+      - name: Check out the trusted gate script
+        if: steps.paused.outputs.paused == 'false'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: .gate-trusted
+          fetch-depth: 1
 
       # Container-level author gate (#1813), before the CI dispatch and the agent. The TRIGGERER is
       # already write-checked (the authorize job), but that is not the untrusted axis here: this
@@ -431,7 +449,7 @@ jobs:
             body="Delivery stopped: could not read the author of #$ISSUE_NUMBER, so the verify agent was not run. This is a probe failure, not a verdict — retry once the API is reachable."
           else
             rc=0
-            verdict=$(scripts/deliver-author-gate.sh "$author") || rc=$?
+            verdict=$(.gate-trusted/scripts/deliver-author-gate.sh "$author") || rc=$?
             printf '%s\n' "$verdict"
             if [[ "$rc" -eq 0 ]]; then
               echo "blocked=false" >> "$GITHUB_OUTPUT"
