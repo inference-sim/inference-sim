@@ -78,6 +78,10 @@ jobs:
             || { echo "::error::#$PR is not open"; exit 1; }
           # Consumed by the failure reporter, which must not write to a PR this loop does not own.
           echo "owned=true" >> "$GITHUB_OUTPUT"
+          # The PR author's CANONICAL login for the gate below (REST `.user.login`, so a bot reads
+          # as `github-actions[bot]`, matching the allowlist — `gh pr view --json author` drops the
+          # `[bot]` suffix). A GET with no POST, so it does not trip the repo-wide PR-creation guard.
+          echo "pr_author=$(gh api "/repos/$REPO/pulls/$PR" --jq '.user.login')" >> "$GITHUB_OUTPUT"
 
       # BC-9, before any agent runs and before the round counter moves.
       - name: Honour deliver:paused
@@ -131,6 +135,85 @@ jobs:
           fi
           echo "round=$next" >> "$GITHUB_OUTPUT"
 
+      # Trusted working tree for the gate, pinned to the default branch, at the workspace ROOT and
+      # BEFORE the delivery-branch checkout below. The gate must run in a tree the delivery branch
+      # cannot influence: a nested path under an untrusted checkout is not a boundary (the delivery
+      # ref could carry a `.gate-trusted` symlink whose target actions/checkout would then prepare),
+      # so the trusted checkout goes first and at root, and the delivery branch is checked out only
+      # AFTER the gate passes.
+      - uses: actions/checkout@v5
+        if: steps.paused.outputs.paused == 'false'
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+
+      # Container-level author gate (#1813), before the delivery checkout, the branch update and the
+      # agent. This phase has contents: write and pushes, and it reads the sub-issue (#$ISSUE_NUMBER)
+      # alongside the diff and review comments. It gates BOTH authors: the DELIVERY PR's author
+      # (expected `github-actions[bot]`; `Validate the target PR` proves same-repo + `deliver/issue-N`
+      # but NOT bot authorship) and the SUB-ISSUE's author. deliver-author-gate.sh applies the same
+      # admin/write/maintain law as the triggerer gate (bots trusted without a probe; a probe failure
+      # fails closed AND loud), run from the trusted checkout above. In normal operation the verify
+      # phase's identical gate blocks first, so this is defence-in-depth for a correction dispatched
+      # by any other route.
+      #
+      # On a refusal it posts a specific comment and moves the label, then exits non-zero: the
+      # downstream steps skip (implicitly `success()`-gated) and `Report a failed correction` is
+      # excluded via `author_gate.outputs.blocked`, so there is exactly one comment.
+      - name: Gate on the delivery PR and sub-issue authors' write access
+        id: author_gate
+        if: steps.paused.outputs.paused == 'false'
+        env:
+          # Canonical PR-author login, resolved by `Validate the target PR` (see there). Passed via
+          # env, never interpolated into the script — an author login is data.
+          PR_AUTHOR: ${{ steps.target.outputs.pr_author }}
+        run: |
+          set -uo pipefail
+          block_reason=""
+          probe_fail=""
+          # An empty login (a missing output or an API failure) is a probe failure, so the gate
+          # fails closed rather than skipping the check.
+          check_author() {
+            local what="$1" login="$2" rc=0 verdict
+            [[ -n "$block_reason" || -n "$probe_fail" ]] && return   # first failure wins
+            if [[ -z "$login" ]]; then probe_fail="could not read the $what"; return; fi
+            verdict=$(scripts/deliver-author-gate.sh "$login") || rc=$?
+            printf '%s\n' "$verdict"
+            if [[ "$rc" -eq 1 ]]; then
+              block_reason="the $what (\`$login\`) does not hold write access to this repository"
+            elif [[ "$rc" -ne 0 ]]; then
+              probe_fail="could not verify the $what (\`$login\`)"
+            fi
+          }
+          pr_author="$PR_AUTHOR"
+          # The sub-issue author is resolved here (an `/issues/` read carries no PR-creation risk).
+          issue_author=$(gh api "/repos/$REPO/issues/$ISSUE_NUMBER" --jq '.user.login' 2>/dev/null || echo "")
+          check_author "delivery PR #$PR author" "$pr_author"
+          check_author "sub-issue #$ISSUE_NUMBER author" "$issue_author"
+          if [[ -z "$block_reason" && -z "$probe_fail" ]]; then
+            echo "blocked=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ -n "$block_reason" ]]; then
+            body="Correction stopped: $block_reason. The correction agent (contents: write) reads the issue, diff and comments, so outside-authored delivery content is not run automatically (#1813). A maintainer must vet it and re-issue \`/approve-issue-for-pr-delivery\`."
+          else
+            body="Correction stopped: $probe_fail, so the agent was not run. This is a probe failure, not a verdict — retry should work."
+          fi
+          # A refusal must never be silent (R1). Suppress the generic `Report a failed correction`
+          # (blocked=true) ONLY when the SPECIFIC comment posts; if the comment API fails, leave
+          # `blocked` unset so that reporter fires as a fallback.
+          if gh pr comment "$PR" --repo "$REPO" --body "$body"; then
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::could not post the author-gate refusal on #$PR; the generic failure reporter will report instead"
+          fi
+          gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
+          gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null 2>&1 || true
+          exit 1
+
+      # ONLY AFTER the gate passes: check out the DELIVERY BRANCH the agent edits and pushes (this
+      # phase is dispatched with `--ref deliver/issue-N`, so the implicit ref is that branch). It
+      # overwrites the trusted checkout above at the workspace root.
       - uses: actions/checkout@v5
         if: steps.paused.outputs.paused == 'false'
         with:
@@ -354,7 +437,7 @@ jobs:
       # Still gated on `owned` and on a non-paused delivery: a validation refusal must not be
       # followed by a label on a PR this loop does not own, and a paused exit writes nothing.
       - name: Record the dismissal state from the correction comment
-        if: always() && steps.target.outputs.owned == 'true' && steps.paused.outputs.paused == 'false'
+        if: always() && steps.target.outputs.owned == 'true' && steps.paused.outputs.paused == 'false' && steps.author_gate.outputs.blocked != 'true'
         env:
           SINCE: ${{ steps.since.outputs.at }}
         run: |
@@ -436,7 +519,7 @@ jobs:
       # vaguer comment about the phase having errored.
       - name: Did the conflict actually get resolved?
         id: conflictcheck
-        if: always() && steps.target.outputs.owned == 'true' && steps.paused.outputs.paused == 'false'
+        if: always() && steps.target.outputs.owned == 'true' && steps.paused.outputs.paused == 'false' && steps.author_gate.outputs.blocked != 'true'
         env:
           BRANCH: deliver/issue-${{ inputs.issue_number }}
           UPDATE_STATE: ${{ steps.update.outputs.state }}
@@ -545,8 +628,10 @@ jobs:
       # runner receives a shutdown signal no step executes, whatever its `if:` says — even
       # `always()` ones, and even the action's own post-steps. That class is the stall sweep's
       # job (deliver-stall-sweep.yml), not this reporter's.
+      # `author_gate.outputs.blocked != 'true'` excludes the author-gate refusal (#1813), which
+      # already posted a specific comment and moved the label — same exclusion shape as `paused`.
       - name: Report a failed correction
-        if: always() && !success() && steps.target.outputs.owned == 'true' && steps.paused.outputs.paused != 'true'
+        if: always() && !success() && steps.target.outputs.owned == 'true' && steps.paused.outputs.paused != 'true' && steps.author_gate.outputs.blocked != 'true'
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
