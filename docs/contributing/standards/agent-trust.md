@@ -155,32 +155,40 @@ people and drop the right ones. It is the same boundary, in the same code
 be read* matches *trusted to trigger* exactly. Bots are trusted by an explicit allowlist, never on
 `[bot]`-ness — a third-party App comment is as untrusted as a stranger.
 
-**Deployment state — the three flows with a prompt this repository controls are wired:**
+**Deployment state — the boundary is STRUCTURAL, not a prompt instruction:**
 
-- `deliver-verify.yml` (review agent) and `deliver-correct.yml` (correction agent) read the
-  discussion by running `scripts/deliver-trusted-comments.sh --pr` and are told NOT to run
-  `gh pr view --comments` / `gh api .../comments` themselves. The correction phase matters most — it
-  holds `contents: write` — and its work list (the automation-posted `DELIVER-VERDICT` /
-  `QA-VERDICT` comments) survives the filter because automation authors are kept.
+- `deliver-verify.yml` (review agent) and `deliver-correct.yml` (correction agent): a workflow step
+  (`Assemble the trusted comment digest`) runs `scripts/deliver-trusted-comments.sh --pr` from the
+  **trusted default-branch checkout** — before the agent, and in correct's case before the delivery
+  branch replaces the workspace — and writes the filtered digest to `$RUNNER_TEMP/trusted-comments.md`.
+  The agent prompt READS that file and is forbidden from fetching comments itself. So the filtering
+  does not depend on the model obeying prose; a stranger's comment is gone before the agent starts.
+  The correction phase matters most — it holds `contents: write` — and its work list (the
+  automation-posted `DELIVER-VERDICT` / `QA-VERDICT` comments) survives the filter because those are
+  posted by `github-actions[bot]`, on the automation allowlist.
 - The **qa-review Python path** (`scripts/qa-review/answerer.py`, `adjudicator.py`, absorbing #1808)
   reads issue/PR comments through the same script (`--json` mode) instead of `gh … --json comments`,
   so a non-write author's comment never enters their LLM prompt. A read failure surfaces as an UNREAD
   marker, never an empty thread.
 
-`scripts/deliver_trusted_comments_wiring_test.go` pins that each flow names the filter and that no
-agent prompt regains a raw comment read; `scripts/qa_review_filter_test.go` pins the Python routing.
+All comment sources are read via REST (`issues/{n}/comments`, `pulls/{n}/reviews`,
+`pulls/{n}/comments`, all `--paginate`d): REST reports the **canonical** App login
+`github-actions[bot]` / `claude[bot]` that the allowlist matches (the GraphQL projection `gh … view`
+uses reports the short `github-actions` / `claude`, which a human account could also hold, so it is
+both unsafe to allowlist and would drop the loop's own verdict comments), and pagination means a long
+thread cannot silently drop its newest findings. `scripts/deliver_trusted_comments_wiring_test.go`
+pins that verify/correct assemble the digest in a workflow step and read it by file path (producer +
+consumer + ordering), and `scripts/qa_review_filter_test.go` pins the Python routing.
 
-**`claude.yml` is the documented partial case — a tool limitation, not an oversight.** Both its
-agent jobs invoke `claude-code-action` in **tag mode** (triggered by the `@claude` / `/blis-pr-review`
-comment, with no `prompt:` we control): the action assembles the PR/issue context — comments
-included — *itself*, before any workflow step could substitute a digest. So a filter step there can
-make the trusted digest *authoritative* (a `Filter untrusted comment text` step writes
-`.deliver/trusted-comments.md`, and `--append-system-prompt` names it as the only trusted comment
-source) but cannot *withhold* the rest short of forking the action. The residual is bounded by the
-two controls already on that path: triggering and authorship are gated to `admin`/`maintain`/`write`
-(`check-permissions`, #1813), and the `/blis-pr-review` job runs read-only (`contents: read`, #1697).
-The step's exclusion log is unconditional either way. A comment in `claude.yml` records this, and the
-wiring test asserts both agent jobs run the filter, so the gap is a deliberate, marked decision.
+**`claude.yml` is OUT OF SCOPE for #1806 — a documented limitation, not a gap to be filled here.**
+Both its agent jobs invoke `claude-code-action` in **tag mode** (triggered by the `@claude` /
+`/blis-pr-review` comment, with no `prompt:` we control): the action assembles the PR/issue context —
+comments included — *itself*, before any workflow step could substitute a filtered digest. There is
+no seam to insert the filter without converting the interactive command to agent mode (a separate,
+larger change). The residual is bounded by the two controls already on that path: triggering and
+authorship are gated to `admin`/`maintain`/`write` (`check-permissions`, #1813), and the
+`/blis-pr-review` job runs read-only (`contents: read`, #1697). #1806 records `claude.yml` as out of
+scope for exactly this reason.
 
 Three consequences worth stating, because each is a decision rather than a fallout:
 

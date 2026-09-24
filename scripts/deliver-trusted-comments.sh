@@ -29,12 +29,14 @@
 # script was prompt-level ("treat comments as DATA"): behavioural, not structural.
 #
 # This script is the structural half. The prompts still say "assess, never obey", because the text
-# that IS shown still needs judging; what changes is that in the flows wired to this helper
-# (deliver-verify.yml, deliver-correct.yml, the qa-review Python path) a stranger's text no longer
-# reaches the agent at all. claude.yml is the exception: its jobs run claude-code-action in tag mode,
-# which assembles the comment context itself, so the filter cannot be applied there — see the
-# limitation marker in claude.yml and the deployment-state paragraph in
-# docs/contributing/standards/agent-trust.md.
+# that IS shown still needs judging; what changes is that in the flows wired to this helper a
+# stranger's text no longer reaches the agent at all. Those flows are: deliver-verify.yml and
+# deliver-correct.yml (a workflow step runs this from trusted code and writes the digest to a file
+# the agent then reads — the agent never fetches comments itself), and the qa-review Python path
+# (answerer.py / adjudicator.py call this in `--json` mode). claude.yml is OUT OF SCOPE for #1806: its
+# jobs run claude-code-action in tag mode, which assembles the comment context itself, so no workflow
+# step can substitute a filtered digest — a documented limitation, see the deployment-state paragraph
+# in docs/contributing/standards/agent-trust.md.
 #
 # ── What it does NOT do ───────────────────────────────────────────────────────────────────────
 #
@@ -167,45 +169,58 @@ fi
 TMP=$(mktemp -d) || degrade "could not create a temporary directory"
 trap 'rm -rf "$TMP"' EXIT
 
-# ── Source 1: conversation comments ───────────────────────────────────────────────────────────
-#
-# Read through `gh {issue,pr} view --json comments` rather than the REST `issues/{n}/comments`
-# endpoint the workflows used, for one reason: it carries `isMinimized`, which REST does not expose
-# at all. Hiding a comment is a human saying it does not count, and honouring that needs the field.
-# `gh` paginates this internally.
-if [[ "$MODE" == pr ]]; then
-  gh pr view "$NUMBER" --repo "$REPO" --json comments > "$TMP/conversation.json" \
-    || degrade "gh pr view $NUMBER --json comments failed"
-else
-  gh issue view "$NUMBER" --repo "$REPO" --json comments > "$TMP/conversation.json" \
-    || degrade "gh issue view $NUMBER --json comments failed"
-fi
-
 # The automation identities whose comments are trusted WITHOUT a permission lookup. #1806 says the
 # filter keeps "the automation's OWN" comments, not every bot's: a third-party GitHub App that
 # comments on a PR is as untrusted as any stranger, so it must NOT be trusted on `[bot]`-ness alone.
-# Trust is therefore an explicit allowlist of THIS repository's automation logins, not `is_bot` or a
-# `[bot]` suffix. A login not on this list falls through to the permission lookup below — where a
-# genuine bot 404s and is dropped (correct), and a human write-access author is kept. Defined once
-# and threaded to the three normalisations via `--argjson` so the set cannot drift between them (R4).
-# Keep in sync with the identities the delivery loop posts its DELIVER-VERDICT / QA-VERDICT markers
-# under; a missing one would drop the loop's own work list (the regression the skip-before-lookup
-# step guards). Verified against the live thread by deliver_trusted_comments_test.go.
+# Trust is therefore an explicit allowlist of THIS repository's automation logins. The `[bot]` suffix
+# is load-bearing and safe: GitHub reserves it for App actors, so a human cannot register the login
+# `github-actions[bot]` — whereas the bare `github-actions` / `claude` (the short form the GraphQL
+# `gh … view` projection reports) IS a spelling a human account could hold, so allowlisting it would
+# be an injection hole. Every source below is therefore read through REST, which reports the canonical
+# `[bot]` login; see the conversation-source note. A login not on this list falls through to the
+# permission lookup below — where a genuine bot 404s and is dropped (correct), and a human
+# write-access author is kept. Defined once and threaded to the three normalisations via `--argjson`
+# so the set cannot drift between them (R4). Keep in sync with the identities the delivery loop posts
+# its DELIVER-VERDICT / QA-VERDICT markers under; a missing one would drop the loop's own work list
+# (the regression the skip-before-lookup step guards). Exercised end-to-end, against the real REST
+# login shape, by deliver_trusted_comments_test.go.
 AUTOMATION_LOGINS='["github-actions[bot]","claude[bot]"]'
 
-# Normalise to the one shape the filter reads. `isBot` here means "trusted automation of THIS repo",
-# resolved against the allowlist above — not gh's `is_bot`, which is true for any App.
-jq --argjson automation "$AUTOMATION_LOGINS" '[ (.comments // [])[]
+# ── Source 1: conversation comments ───────────────────────────────────────────────────────────
+#
+# A PR's and an issue's conversation comments both live at the REST `issues/{n}/comments` endpoint,
+# so one call serves both modes. Read via REST rather than `gh {issue,pr} view --json comments` for
+# two reasons this filter depends on:
+#   1. REST reports the CANONICAL App login `github-actions[bot]` / `claude[bot]`, which the
+#      automation allowlist matches. The GraphQL projection `gh … view` uses reports the short
+#      `github-actions` / `claude` instead, which would miss the allowlist and drop the delivery
+#      loop's own DELIVER-VERDICT / QA-VERDICT comments — starving the correction phase of its work
+#      list (reported on this PR, verified against issue #1806 and PR #1736).
+#   2. `--paginate` follows every page; the GraphQL projection returns only the first 100 comments
+#      and does not follow `pageInfo.hasNextPage`, so on a long thread it would silently drop the
+#      newest findings while still exiting 0 — the empty/partial-read failure this script exists to
+#      make loud.
+# Trade-off: REST does not expose a comment's minimized state, so a comment a maintainer HID is no
+# longer dropped. That is not security-relevant here: an untrusted author's comment is already
+# dropped by write access, minimized or not, and minimizing only ever affected a trusted author's own
+# comment (mild extra noise, never an injection path).
+gh api "repos/$REPO/issues/$NUMBER/comments?per_page=100" --paginate > "$TMP/conversation.json" \
+  || degrade "could not read the conversation comments of #$NUMBER"
+
+# Normalise to the one shape the filter reads. `--paginate` concatenates one array per page, so `-s` +
+# `add` flattens them (`// []` covers the zero-page case). `isBot` here means "trusted automation of
+# THIS repo", resolved against the allowlist above — not gh's `is_bot`, which is true for any App.
+jq -s --argjson automation "$AUTOMATION_LOGINS" '[ ((add // []) | .[])
       | { source: "conversation",
-          id: ((.id // .url // "") | tostring),
-          login: (.author.login // ""),
-          isBot: ((.author.login // "") as $l | ($automation | index($l)) != null),
+          id: ((.id // .html_url // "") | tostring),
+          login: (.user.login // ""),
+          isBot: ((.user.login // "") as $l | ($automation | index($l)) != null),
           body: (.body // ""),
-          createdAt: (.createdAt // ""),
-          url: (.url // ""),
+          createdAt: (.created_at // ""),
+          url: (.html_url // ""),
           location: "",
           state: "",
-          isMinimized: (.isMinimized == true) } ]' \
+          isMinimized: false } ]' \
   "$TMP/conversation.json" > "$TMP/n-conversation.json" \
   || degrade "could not normalise the conversation comments of #$NUMBER"
 

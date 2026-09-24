@@ -9,112 +9,130 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ── The wiring: the three flows must actually USE the filter ───────────────────────────────────
+// ── The wiring: the filter must be a STRUCTURAL boundary, not a prompt instruction (#1806) ──────
 //
-// deliver_trusted_comments_test.go pins the selection LAW. But a helper that nothing calls is inert,
-// and a prompt that ALSO hands the agent a raw `gh api …/comments` call re-opens the hole beside the
-// filter rather than instead of it. Those two regressions are invisible in the logic tests and are
-// exactly what a later edit to a 1500-line workflow does by accident. For a workflow file the
-// declared structure IS the behaviour — GitHub reads nothing else — so these assertions are
-// behavioural, in the same sense as those in claude_workflow_test.go.
+// deliver_trusted_comments_test.go pins the selection LAW. This file pins that the flows USE it, and
+// use it in the one way that actually closes the hole: a WORKFLOW STEP assembles the filtered digest
+// from trusted code BEFORE the agent runs, and the agent reads the resulting FILE. An earlier draft
+// had the agent run the helper itself from its prompt — but that makes the filtering contingent on
+// the model obeying prose, which is the exact behavioural-not-structural weakness this hardening
+// replaces (raised in review). So the assertions below check producer + consumer + ordering, not
+// merely that a prompt names the script.
+//
+// For a workflow file the declared structure IS the behaviour — GitHub reads nothing else — so these
+// assertions are behavioural, in the same sense as those in claude_workflow_test.go.
 
-// agentInstructions returns every piece of text in a workflow that INSTRUCTS an agent: each step's
-// `with.prompt` (the dispatched delivery phases) and `with.claude_args` (tag mode's only injection
-// point). Workflow `run:` scripts are deliberately excluded — the verdict-marker readers legitimately
-// query the raw comments API and filter on `user.type == "Bot"` themselves; they hand nothing to a
-// model.
-func agentInstructions(t *testing.T, workflow string) []string {
+type tcWiringStep struct {
+	Name string `yaml:"name"`
+	ID   string `yaml:"id"`
+	Uses string `yaml:"uses"`
+	Run  string `yaml:"run"`
+	With struct {
+		Prompt     string `yaml:"prompt"`
+		ClaudeArgs string `yaml:"claude_args"`
+	} `yaml:"with"`
+}
+
+func wiringJobSteps(t *testing.T, workflow, job string) []tcWiringStep {
 	t.Helper()
-
 	path := filepath.Join("..", ".github", "workflows", workflow)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
-
 	var wf struct {
 		Jobs map[string]struct {
-			Steps []struct {
-				With struct {
-					Prompt     string `yaml:"prompt"`
-					ClaudeArgs string `yaml:"claude_args"`
-				} `yaml:"with"`
-			} `yaml:"steps"`
+			Steps []tcWiringStep `yaml:"steps"`
 		} `yaml:"jobs"`
 	}
 	if err := yaml.Unmarshal(raw, &wf); err != nil {
 		t.Fatalf("parse %s: %v", path, err)
 	}
-
-	var out []string
-	for _, job := range wf.Jobs {
-		for _, step := range job.Steps {
-			for _, text := range []string{step.With.Prompt, step.With.ClaudeArgs} {
-				if strings.TrimSpace(text) != "" {
-					out = append(out, text)
-				}
-			}
-		}
+	j, ok := wf.Jobs[job]
+	if !ok {
+		t.Fatalf("%s has no %q job", workflow, job)
 	}
-	if len(out) == 0 {
-		t.Fatalf("%s carries no agent prompt or claude_args at all — the workflow was "+
-			"restructured, so re-derive these assertions rather than deleting them", workflow)
+	if len(j.Steps) == 0 {
+		t.Fatalf("%s job %q has no steps", workflow, job)
 	}
-	return out
+	return j.Steps
 }
 
-// Every flow that puts comment text in front of an agent must name the filter. Without this the
-// helper can be added, tested, and then silently never called — which is indistinguishable from not
-// having written it.
-func TestTrustedComments_EveryAIFlowNamesTheFilter(t *testing.T) {
-	for workflow, want := range map[string]string{
-		// The two dispatched phases pass their own `prompt:`, so they invoke the script directly.
-		"deliver-verify.yml":  "deliver-trusted-comments.sh",
-		"deliver-correct.yml": "deliver-trusted-comments.sh",
-		// claude.yml runs in TAG mode: a workflow step writes the digest and the appended system
-		// prompt names the file, because the action assembles the thread itself.
-		"claude.yml": "trusted-comments.md",
+func indexOf(steps []tcWiringStep, match func(tcWiringStep) bool) int {
+	for i, s := range steps {
+		if match(s) {
+			return i
+		}
+	}
+	return -1
+}
+
+// The two dispatched delivery phases must assemble the digest in a workflow step (PRODUCER) that runs
+// the filter, BEFORE the agent, and the agent must read that file (CONSUMER). Ordering matters: a
+// producer placed after the agent would satisfy a presence check while handing the agent nothing.
+func TestTrustedComments_VerifyAndCorrectAssembleDigestBeforeTheAgent(t *testing.T) {
+	for _, tc := range []struct{ workflow, job string }{
+		{"deliver-verify.yml", "verify"},
+		{"deliver-correct.yml", "correct"},
 	} {
-		t.Run(workflow, func(t *testing.T) {
-			found := false
-			for _, text := range agentInstructions(t, workflow) {
-				if strings.Contains(text, want) {
-					found = true
-				}
+		t.Run(tc.workflow, func(t *testing.T) {
+			steps := wiringJobSteps(t, tc.workflow, tc.job)
+
+			producer := indexOf(steps, func(s tcWiringStep) bool {
+				return strings.Contains(s.Run, "deliver-trusted-comments.sh")
+			})
+			if producer < 0 {
+				t.Fatalf("%s job %q has no workflow step running deliver-trusted-comments.sh — the "+
+					"filter must be assembled by a step from trusted code, not left to the agent (#1806)",
+					tc.workflow, tc.job)
 			}
-			if !found {
-				t.Errorf("no agent instruction in %s names %q, so the comment filter is not "+
-					"reaching this flow's agent — any GitHub user's comment text can still steer "+
-					"it (#1806)", workflow, want)
+			// The producer must write the digest to a file the agent then reads.
+			if !strings.Contains(steps[producer].Run, "trusted-comments.md") {
+				t.Errorf("%s producer step does not write trusted-comments.md; the agent reads a file, "+
+					"so the step must produce one", tc.workflow)
+			}
+
+			agent := indexOf(steps, func(s tcWiringStep) bool {
+				return strings.HasPrefix(s.Uses, "anthropics/claude-code-action")
+			})
+			if agent < 0 {
+				t.Fatalf("%s job %q no longer runs anthropics/claude-code-action", tc.workflow, tc.job)
+			}
+			if producer >= agent {
+				t.Errorf("%s: the digest-producer step is at index %d, not BEFORE the agent at %d — a "+
+					"digest assembled after the agent runs is never read, and the agent would fall back "+
+					"to unfiltered comments (#1806)", tc.workflow, producer, agent)
+			}
+
+			// CONSUMER: the agent prompt must read the digest file...
+			if !strings.Contains(steps[agent].With.Prompt, "trusted-comments.md") {
+				t.Errorf("%s: the agent prompt does not read the trusted-comments.md digest the step "+
+					"produced, so the structural filter does not reach the agent (#1806)", tc.workflow)
 			}
 		})
 	}
 }
 
-// The other half: no agent prompt may ALSO hand the agent a raw, unfiltered comment read. Leaving one
-// in place beside the filter re-opens the hole — the agent would simply run the call it was shown.
-// Deliberately matched on the raw API/CLI shapes rather than on any mention of "comment", so the
-// prompts can go on discussing comments at length (they must) while still being unable to instruct an
-// unfiltered fetch.
+// No agent prompt in the dispatched phases may instruct a raw, unfiltered comment read — leaving one
+// beside the filtered digest re-opens the hole, because the agent would run the call it was shown.
+// Matched on the raw API/CLI shapes rather than any mention of "comment", so the prompts can discuss
+// comments at length (they must) while being unable to instruct an unfiltered fetch.
 func TestTrustedComments_NoAgentPromptInstructsAnUnfilteredCommentRead(t *testing.T) {
-	// Each entry is a shape that, appearing in an agent's instructions, tells it to read the raw
-	// thread. `gh pr view … --comments` and a `gh api` path ending in `/comments` are the two the
-	// prompts used before #1806.
-	forbidden := []string{
-		"--comments",
-		"/comments?",
-		"/comments\"",
-		"/comments'",
-	}
-	for _, workflow := range []string{"deliver-verify.yml", "deliver-correct.yml", "claude.yml"} {
-		t.Run(workflow, func(t *testing.T) {
-			for _, text := range agentInstructions(t, workflow) {
+	forbidden := []string{"--comments", "/comments?", "/comments\"", "/comments'"}
+	for _, tc := range []struct{ workflow, job string }{
+		{"deliver-verify.yml", "verify"},
+		{"deliver-correct.yml", "correct"},
+	} {
+		t.Run(tc.workflow, func(t *testing.T) {
+			for _, s := range wiringJobSteps(t, tc.workflow, tc.job) {
+				if strings.TrimSpace(s.With.Prompt) == "" {
+					continue
+				}
 				for _, shape := range forbidden {
-					if strings.Contains(text, shape) {
-						t.Errorf("an agent instruction in %s still contains %q. A raw comment read "+
-							"beside the filter re-opens the injection surface, because the agent "+
-							"will run the call it was shown (#1806).\ninstruction:\n%s",
-							workflow, shape, text)
+					if strings.Contains(s.With.Prompt, shape) {
+						t.Errorf("an agent prompt in %s still contains %q. A raw comment read beside the "+
+							"filtered digest re-opens the injection surface (#1806).\nprompt:\n%s",
+							tc.workflow, shape, s.With.Prompt)
 					}
 				}
 			}
@@ -122,44 +140,18 @@ func TestTrustedComments_NoAgentPromptInstructsAnUnfilteredCommentRead(t *testin
 	}
 }
 
-// claude.yml's two agent jobs are kept step-for-step identical by
-// TestClaudeWorkflow_AgentJobsStayInSync; this pins that the filter step is one of those steps in
-// the first place. The review path is the one that matters most to get right here — it is the path a
-// `/blis-pr-review` on a public PR takes — and it is also the easier one to forget, since it is the
-// duplicate.
-func TestTrustedComments_ClaudeWorkflowRunsTheFilterInBothAgentJobs(t *testing.T) {
+// claude.yml is OUT OF SCOPE for #1806 (tag mode assembles comment context itself; documented in
+// agent-trust.md). Pin that it stays unwired, so a future edit cannot silently reintroduce the
+// out-of-scope tag-mode mitigation the review asked to remove without also updating the docs/decision.
+func TestTrustedComments_ClaudeYmlStaysOutOfScope(t *testing.T) {
 	path := filepath.Join("..", ".github", "workflows", "claude.yml")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
-
-	var wf struct {
-		Jobs map[string]struct {
-			Steps []struct {
-				Name string `yaml:"name"`
-				Run  string `yaml:"run"`
-			} `yaml:"steps"`
-		} `yaml:"jobs"`
-	}
-	if err := yaml.Unmarshal(raw, &wf); err != nil {
-		t.Fatalf("parse %s: %v", path, err)
-	}
-
-	for _, job := range []string{"claude", "claude-review"} {
-		steps, ok := wf.Jobs[job]
-		if !ok {
-			t.Fatalf("job %q missing from %s", job, path)
-		}
-		found := false
-		for _, step := range steps.Steps {
-			if strings.Contains(step.Run, "deliver-trusted-comments.sh") {
-				found = true
-			}
-		}
-		if !found {
-			t.Errorf("job %q in %s has no step running deliver-trusted-comments.sh, so nothing "+
-				"records which comment authors were excluded for that trigger (#1806)", job, path)
-		}
+	if strings.Contains(string(raw), "deliver-trusted-comments") {
+		t.Errorf("claude.yml references deliver-trusted-comments, but #1806 records it as OUT OF SCOPE " +
+			"(tag mode leaves no seam to filter). If this is intentional new scope, update the issue and " +
+			"the agent-trust.md decision rather than wiring it silently.")
 	}
 }

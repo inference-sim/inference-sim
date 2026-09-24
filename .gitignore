@@ -138,7 +138,3 @@ docs/plans/
 # Nous campaign orchestration (experiment worktrees + state, not committed)
 .nous-experiments/
 .nous/
-
-# Trusted-comment digest written by the AI workflows before an agent runs (#1806) —
-# generated per run, never committed
-.deliver/

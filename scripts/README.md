@@ -192,12 +192,13 @@ prompt-injection surface into flows on a self-hosted runner with credentials (an
 phase, `contents: write`). This script is the structural half that stops a stranger's text reaching
 the agent; the prompts' "treat comments as data" is the behavioural half for the text that IS shown.
 
-**Wired into all three flows we control:** the delivery loop's `deliver-verify.yml` and
-`deliver-correct.yml` agents read the digest instead of fetching comments themselves, and the
-qa-review `answerer.py`/`adjudicator.py` read it (`--json`) instead of `gh … --json comments`.
-`claude.yml` runs `claude-code-action` in tag mode, which assembles comment context itself, so the
-filter can only make the digest authoritative there — a documented, marked limitation. See the
-comment-text section in
+**Wired STRUCTURALLY into the flows we control:** in `deliver-verify.yml` and `deliver-correct.yml`
+a workflow step runs this from the trusted default-branch checkout before the agent and writes the
+digest to `$RUNNER_TEMP/trusted-comments.md`; the agent reads that file and never fetches comments
+itself. The qa-review `answerer.py`/`adjudicator.py` read it (`--json`) instead of
+`gh … --json comments`. `claude.yml` is **out of scope** (#1806): it runs `claude-code-action` in tag
+mode, which assembles comment context itself, leaving no seam for the filter — a documented
+limitation. See the comment-text section in
 [docs/contributing/standards/agent-trust.md](../docs/contributing/standards/agent-trust.md).
 
 It covers **all three** sources the flows read — conversation comments, PR reviews, and PR inline

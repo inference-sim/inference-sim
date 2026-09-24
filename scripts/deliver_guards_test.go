@@ -700,12 +700,13 @@ func TestDeliverVerifyReviewPromptReadsInlineCommentsThroughTheFilter(t *testing
 		t.Fatal("the review agent step has no prompt")
 	}
 
-	// The comment channel is the filter, invoked in PR mode (which is what returns the review and
-	// inline sources alongside the conversation comments).
-	if !strings.Contains(prompt, "deliver-trusted-comments.sh --pr") {
-		t.Errorf("the review prompt does not read comments through `deliver-trusted-comments.sh --pr`, "+
-			"the filter that returns conversation + review + inline comments write-access-filtered "+
-			"(#1806). Prompt:\n%s", prompt)
+	// The comment channel is the filtered digest a workflow step assembled before the agent (the
+	// producer step + ordering is pinned by deliver_trusted_comments_wiring_test.go); the prompt
+	// reads that FILE, which holds conversation + review + inline comments write-access-filtered.
+	if !strings.Contains(prompt, "trusted-comments.md") {
+		t.Errorf("the review prompt does not read the trusted-comments.md digest (conversation + "+
+			"review + inline comments, write-access-filtered, assembled by a workflow step before the "+
+			"agent, #1806). Prompt:\n%s", prompt)
 	}
 	// The prompt must still tell the agent the digest carries INLINE entries and how to weigh them,
 	// or the #1801 guarantee (inline findings reach the verdict) is lost even though the fetch moved.
