@@ -133,6 +133,8 @@ Phases chain with `workflow_dispatch`, passing the PR and sub-issue numbers as i
 - **It caps at three levels.** "You can't use `workflow_run` to chain together more than three levels of workflows." implement → verify → correct → verify exhausts the budget, so the fourth link never fires and the loop dies after a single correction round — silently, since nothing runs to report it.
 - **It cannot get a CI verdict anyway.** When a workflow using `GITHUB_TOKEN` opens or updates a PR, "the resulting `pull_request` event creates workflow runs in an **approval-required** state". The delivery's own CI runs would sit waiting for a human to click *Approve and run*, so polling for a conclusion would time out every round.
 
+**The dispatched phases must declare `allowed_bots`.** Because verify and correct are dispatched by the preceding phase under `GITHUB_TOKEN`, their initiating actor is `github-actions[bot]`, and `claude-code-action` refuses to run for a bot initiator unless the phase lists it — the agent step otherwise fails with `Workflow initiated by non-human actor` and no delivery reaches a verdict (#1681). So `deliver-verify.yml` and `deliver-correct.yml` set `allowed_bots: "github-actions"`. `deliver-implement.yml` deliberately does not: it is triggered by a human `/approve-issue-for-pr-delivery` comment, so its initiator is already a person. The bot is **named rather than `*`** because on a public repository `*` would let external Apps invoke the action with prompts they control; `github-actions` is the only initiator these dispatched phases can legitimately have. Anyone adding a fourth phase, or copying `deliver-verify.yml` as a template, must carry this input over.
+
 ## How it ends
 
 | Outcome | Meaning | What you do |
