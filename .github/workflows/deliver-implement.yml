@@ -283,6 +283,10 @@ jobs:
           else
             body="Not delivering #$ISSUE: could not verify whether \`$AUTHOR\` has write access, so nothing was started. This is a probe failure, not a verdict — retrying should work."
           fi
+          # The reason is echoed to the run log too, so a comment-API outage cannot make this a
+          # silent refusal: the job already fails loudly (exit 1 → `deliver` skips), and now the
+          # WHY is on the run regardless of whether the PR/issue comment posted (parity with claude.yml).
+          echo "::error::$body"
           gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$body" || true
           exit 1
 

@@ -175,9 +175,14 @@ func TestVerifyAndCorrectGateBothAuthors(t *testing.T) {
 			if !strings.Contains(gateRun, "/issues/") {
 				t.Errorf("%s: the gate does not resolve the sub-issue author (issues/…)", wf)
 			}
-			if strings.Count(gateRun, "check_author") < 3 { // 1 definition + 2 calls
-				t.Errorf("%s: the gate does not check BOTH authors (expected a check_author call for "+
-					"the PR author and the sub-issue author)", wf)
+			// Assert the two calls target DISTINCT authors, not the same one twice — a copy-paste
+			// checking the PR author twice would satisfy a bare count. The gate labels them
+			// "delivery PR" and "sub-issue".
+			if !strings.Contains(gateRun, `check_author "delivery PR`) {
+				t.Errorf("%s: the gate has no check_author call for the delivery PR author", wf)
+			}
+			if !strings.Contains(gateRun, `check_author "sub-issue`) {
+				t.Errorf("%s: the gate has no check_author call for the sub-issue author", wf)
 			}
 		})
 	}
