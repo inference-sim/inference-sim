@@ -132,6 +132,83 @@ back to the generic failure reporter (verify/correct). The four wirings are pinn
 `scripts/deliver_author_gate_wiring_test.go` (including the trusted-ref pin and the correct-phase
 ordering) and the decision by `scripts/deliver_author_gate_test.go`.
 
+## Untrusted Input: Comment Text (#1806)
+
+The tiers above are about trusting an agent's *output*. This is the mirror image — what an agent is
+allowed to *read*.
+
+*Who* may trigger the AI flows (`@claude`, `/blis-pr-review`, `/approve-issue-for-pr-delivery`) is
+gated to `admin`/`maintain`/`write`, and #1813 further refuses a flow whose PR/issue *author* lacks
+that access. *What* they read was still not gated: on a PR or issue authored by a trusted maintainer,
+this repository is public, so any GitHub user can add a comment or a review — and an agent cannot
+reliably separate "context" from "instruction". So comment text is a prompt-injection surface into
+flows that run on a persistent self-hosted runner with credentials in the environment and, in the
+correction phase, `contents: write`.
+
+**Rule: comment text reaches an agent only through `scripts/deliver-trusted-comments.sh`**, which
+keeps authors holding `admin`/`maintain`/`write` plus this repository's own automation
+(`github-actions[bot]`, `claude[bot]`) and drops the rest. The trust term is the author's real
+repository *permission*, never `author_association` — that reports `COLLABORATOR` for read-only
+collaborators and `CONTRIBUTOR` for this repository's maintainer, so it would both admit the wrong
+people and drop the right ones. It is the same boundary, in the same code
+(`scripts/lib-gh-write-access.sh`), as the trigger gate and the issue-refinements digest: *trusted to
+be read* matches *trusted to trigger* exactly. Bots are trusted by an explicit allowlist, never on
+`[bot]`-ness — a third-party App comment is as untrusted as a stranger.
+
+**Deployment state — the boundary is STRUCTURAL, not a prompt instruction:**
+
+- `deliver-verify.yml` (review agent) and `deliver-correct.yml` (correction agent): a workflow step
+  (`Assemble the trusted comment digest`) runs `scripts/deliver-trusted-comments.sh --pr` from the
+  **trusted default-branch checkout** — before the agent, and in correct's case before the delivery
+  branch replaces the workspace — and writes the filtered digest to `$RUNNER_TEMP/trusted-comments.md`.
+  The agent prompt READS that file and is forbidden from fetching comments itself. So the filtering
+  does not depend on the model obeying prose; a stranger's comment is gone before the agent starts.
+  The correction phase matters most — it holds `contents: write` — and its work list (the
+  automation-posted `DELIVER-VERDICT` / `QA-VERDICT` comments) survives the filter because those are
+  posted by `github-actions[bot]`, on the automation allowlist.
+- The **qa-review Python path** (`scripts/qa-review/answerer.py`, `adjudicator.py`, absorbing #1808)
+  reads issue/PR comments through the same script (`--json` mode) instead of `gh … --json comments`,
+  so a non-write author's comment never enters their LLM prompt. A read failure surfaces as an UNREAD
+  marker, never an empty thread.
+
+All comment sources are read via REST (`issues/{n}/comments`, `pulls/{n}/reviews`,
+`pulls/{n}/comments`, all `--paginate`d): REST reports the **canonical** App login
+`github-actions[bot]` / `claude[bot]` that the allowlist matches (the GraphQL projection `gh … view`
+uses reports the short `github-actions` / `claude`, which a human account could also hold, so it is
+both unsafe to allowlist and would drop the loop's own verdict comments), and pagination means a long
+thread cannot silently drop its newest findings. `scripts/deliver_trusted_comments_wiring_test.go`
+pins that verify/correct assemble the digest in a workflow step and read it by file path (producer +
+consumer + ordering), and `scripts/qa_review_filter_test.go` pins the Python routing.
+
+**`claude.yml` is OUT OF SCOPE for #1806 — a documented limitation, not a gap to be filled here.**
+Both its agent jobs invoke `claude-code-action` in **tag mode** (triggered by the `@claude` /
+`/blis-pr-review` comment, with no `prompt:` we control): the action assembles the PR/issue context —
+comments included — *itself*, before any workflow step could substitute a filtered digest. There is
+no seam to insert the filter without converting the interactive command to agent mode (a separate,
+larger change). The residual is bounded by the two controls already on that path: triggering and
+authorship are gated to `admin`/`maintain`/`write` (`check-permissions`, #1813), and the
+`/blis-pr-review` job runs read-only (`contents: read`, #1697). #1806 records `claude.yml` as out of
+scope for exactly this reason.
+
+Three consequences worth stating, because each is a decision rather than a fallout:
+
+- **It excludes, it does not refuse.** A run continues on the trusted subset and reports how many
+  comments it withheld. Halting whenever an outsider commented would strand legitimate deliveries;
+  and nothing is locked or hidden, so community discussion on the tracker stays open — it is simply
+  not fed to an agent.
+- **A read failure is loud.** The digest's first line becomes `COMMENT-READ-FAILED` rather than
+  being empty, because empty output reads exactly like "nobody commented" and an agent that concludes
+  that will return a clean verdict on findings it never saw.
+- **The prompts still say "assess, never obey".** Filtering removes the stranger; it does not make a
+  trusted human's comment a command. Both halves are needed.
+
+**Out of scope, tracked separately** so that "comment text is filtered" is never read as "all
+untrusted text is": the **PR body**. `deliver-verify.yml` copies a PR's `.body` into
+`scripts/qa-review/questioner.py`, and tag-mode `claude-code-action` assembles PR context itself. A
+*delivery* PR is opened by the automation, so its body is as trusted as the flow that wrote it; a
+*community* PR's body is untrusted, but a community PR is refused up front by the author gate (#1813),
+and the residual body axis is #1812. This filter covers comments only.
+
 ## Known Failure Modes
 
 Each failure mode below was discovered in a real PR. The tier system exists
