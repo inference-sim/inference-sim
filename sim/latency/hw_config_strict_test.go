@@ -258,13 +258,15 @@ func TestStrictHWConfig_NoTwoFieldsDifferOnlyInCase(t *testing.T) {
 	}
 }
 
-// TestStrictHWConfig_ProvenanceKeysAreAccepted covers BC-3: the two documentation-only
-// keys the bundled file carries per GPU entry survive strict parsing, and the numeric
-// values around them are read correctly (i.e. they are ignored, not treated as data).
+// TestStrictHWConfig_ProvenanceKeysAreAccepted covers BC-3: the documentation-only keys
+// a GPU entry may carry survive strict parsing, and the numeric values around them are
+// read correctly (i.e. they are ignored, not treated as data). "Provenance" (R2H2,
+// blis-catalog#10) joins the two _comment keys as an accepted-and-ignored tag.
 func TestStrictHWConfig_ProvenanceKeysAreAccepted(t *testing.T) {
 	fields := baseHWFields()
 	fields["_comment"] = `"MFU values calibrated per Discussion #589"`
 	fields["_comment_interconnect"] = `"Per-GPU effective unidirectional GB/s; ratio 9x"`
+	fields["Provenance"] = `"vendor_spec"` // structured provenance tag; accepted, ignored by the value decode
 
 	path := writeHWConfig(t, "H100", fields)
 	hc, err := latency.GetHWConfig(path, "H100")
