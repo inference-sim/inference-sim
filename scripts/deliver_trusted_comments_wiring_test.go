@@ -30,6 +30,7 @@ type tcWiringStep struct {
 	With struct {
 		Prompt     string `yaml:"prompt"`
 		ClaudeArgs string `yaml:"claude_args"`
+		Ref        string `yaml:"ref"`
 	} `yaml:"with"`
 }
 
@@ -110,6 +111,49 @@ func TestTrustedComments_VerifyAndCorrectAssembleDigestBeforeTheAgent(t *testing
 					"produced, so the structural filter does not reach the agent (#1806)", tc.workflow)
 			}
 		})
+	}
+}
+
+// The correction phase's digest MUST be assembled from the TRUSTED default-branch checkout — after
+// it, and BEFORE the delivery-branch checkout replaces the workspace. Otherwise the producer would
+// run a PR-CONTROLLED copy of the filter, and this phase holds `contents: write`. `producer < agent`
+// alone does not pin this (the producer could sit between the delivery checkout and the agent), so
+// this asserts the tighter window explicitly: it fails if the producer is moved across the delivery
+// checkout (raised in review).
+func TestTrustedComments_CorrectAssemblesDigestFromTheTrustedCheckout(t *testing.T) {
+	steps := wiringJobSteps(t, "deliver-correct.yml", "correct")
+
+	isCheckout := func(s tcWiringStep) bool { return strings.HasPrefix(s.Uses, "actions/checkout") }
+
+	// The trusted checkout pins the default branch; the delivery checkout is the later one with no
+	// explicit ref (it takes the dispatched `deliver/issue-N` ref implicitly).
+	trusted := indexOf(steps, func(s tcWiringStep) bool {
+		return isCheckout(s) && strings.Contains(s.With.Ref, "default_branch")
+	})
+	if trusted < 0 {
+		t.Fatal("deliver-correct.yml has no trusted default-branch checkout (ref: default_branch) — the " +
+			"digest must be assembled from it, so its absence is itself the regression (#1806)")
+	}
+	delivery := -1
+	for i, s := range steps {
+		if i > trusted && isCheckout(s) && !strings.Contains(s.With.Ref, "default_branch") {
+			delivery = i
+			break
+		}
+	}
+	if delivery < 0 {
+		t.Fatal("deliver-correct.yml has no delivery-branch checkout after the trusted one")
+	}
+	producer := indexOf(steps, func(s tcWiringStep) bool {
+		return strings.Contains(s.Run, "deliver-trusted-comments.sh")
+	})
+	if producer < 0 {
+		t.Fatal("deliver-correct.yml has no digest-producer step running deliver-trusted-comments.sh")
+	}
+	if !(trusted < producer && producer < delivery) {
+		t.Errorf("the digest producer (step %d) must run AFTER the trusted default-branch checkout "+
+			"(step %d) and BEFORE the delivery-branch checkout (step %d). Outside that window the "+
+			"filter runs from PR-controlled code with `contents: write` (#1806).", producer, trusted, delivery)
 	}
 }
 

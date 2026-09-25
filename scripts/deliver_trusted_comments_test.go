@@ -427,25 +427,64 @@ func TestTrustedLive_AutomationBotKeptByCanonicalRestLogin(t *testing.T) {
 	}
 }
 
-// A thread longer than one REST page must not be silently capped (the review's finding 2). `gh api
-// --paginate` concatenates every page; the stub returns the already-concatenated array, and the
-// script must process all of it — so a 150-comment thread yields 150 kept entries, not 100. This
-// pins that the script itself imposes no cap on top of gh's pagination.
-func TestTrustedLive_ConversationBeyond100NotCapped(t *testing.T) {
-	const n = 150
+// commentPage builds a REST issues/{n}/comments page: a JSON array of `count` write-access-maintainer
+// comments starting at index `start`, with distinct createdAt so ordering stays total.
+func commentPage(start, count int) string {
 	var b strings.Builder
 	b.WriteByte('[')
-	for i := 0; i < n; i++ {
+	for i := 0; i < count; i++ {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		// Distinct createdAt so ordering is total; all authored by a write-access maintainer.
-		fmt.Fprintf(&b, `{"id":%d,"user":{"login":"maint"},"body":"finding-%d","created_at":"2026-01-01T00:%02d:%02dZ","html_url":"u%d"}`,
-			i+1, i, i/60, i%60, i+1)
+		id := start + i
+		fmt.Fprintf(&b, `{"id":%d,"user":{"login":"maint"},"body":"finding-%d","created_at":"2026-01-01T%02d:%02d:00Z","html_url":"u%d"}`,
+			id, id, id/60, id%60, id)
 	}
 	b.WriteByte(']')
-	path := stubGhForPR(t, b.String(), `[]`, `[]`, `    echo "write"; exit 0`)
-	stdout, _, code := runTrustedLive(t, path, true)
+	return b.String()
+}
+
+// A thread longer than one REST page must not be silently capped (the review's finding 2), and the
+// test must actually EXERCISE pagination — an earlier version handed the stub one impossible 150-item
+// page and passed even with `--paginate` removed from production, so it caught nothing. This stub
+// models the real thing: page 1 (100) is always returned, and page 2 (50 more) is returned ONLY when
+// `--paginate` is on the argv, exactly as `gh api --paginate` follows the next-page link. So the
+// production fetch (which passes `--paginate`) sees all 150; drop that flag and the fetch sees 100,
+// and this test fails — pinning the flag rather than just the script's lack of an internal cap.
+func TestTrustedLive_ConversationPaginationIsExercised(t *testing.T) {
+	page1 := commentPage(1, 100)
+	page2 := commentPage(101, 50)
+	dir := t.TempDir()
+	// The conversation branch emits page 1 unconditionally and page 2 only if --paginate was passed;
+	// `gh --paginate` concatenates pages as consecutive JSON arrays, which the script slurps with
+	// `jq -s add`.
+	script := `#!/usr/bin/env bash
+set -uo pipefail
+case "${1:-}" in
+  "api")
+    case "${2:-}" in
+      *"/issues/"*"/comments"*)
+        cat <<'PAGE1'
+` + page1 + `
+PAGE1
+        if [[ "$*" == *"--paginate"* ]]; then
+          cat <<'PAGE2'
+` + page2 + `
+PAGE2
+        fi
+        exit 0 ;;
+      *"/pulls/"*"/reviews"*) echo '[]'; exit 0 ;;
+      *"/pulls/"*"/comments"*) echo '[]'; exit 0 ;;
+      *"/collaborators/"*"/permission"*) echo "write"; exit 0 ;;
+    esac ;;
+esac
+echo "stub gh: unexpected invocation: $*" >&2
+exit 1
+`
+	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o700); err != nil {
+		t.Fatalf("writing gh stub: %v", err)
+	}
+	stdout, _, code := runTrustedLive(t, dir+string(os.PathListSeparator)+os.Getenv("PATH"), true)
 	if code != 0 {
 		t.Fatalf("exit %d, want 0:\n%s", code, stdout)
 	}
@@ -455,8 +494,9 @@ func TestTrustedLive_ConversationBeyond100NotCapped(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &parsed); err != nil {
 		t.Fatalf("not valid JSON: %v\n%s", err, stdout)
 	}
-	if len(parsed.Comments) != n {
-		t.Errorf("a %d-comment thread yielded %d kept entries — the script capped a paginated read "+
-			"(#1806 finding 2)", n, len(parsed.Comments))
+	if len(parsed.Comments) != 150 {
+		t.Errorf("a 150-comment (2-page) thread yielded %d kept entries — the conversation fetch is not "+
+			"paginating, so a thread past 100 comments silently drops its tail (#1806 finding 2)",
+			len(parsed.Comments))
 	}
 }
