@@ -172,6 +172,59 @@ Exit 0 when the thread was read (with or without refinements), 2 on a usage erro
 read failed** — in which case the digest's first line is `REFINEMENT-READ-FAILED` rather than empty,
 because empty output reads exactly like "this issue has no refinements".
 
+## deliver-trusted-comments.sh — the comment text an AI flow is allowed to read
+
+Prints the discussion on an issue or PR with every comment from an author who holds **no** write
+access on this repository removed, and says how many it withheld. `--json` emits the same trusted set
+as structured data for the qa-review Python consumers.
+
+```bash
+scripts/deliver-trusted-comments.sh --pr 1807         # conversation + reviews + inline comments
+scripts/deliver-trusted-comments.sh --issue 1806      # conversation comments
+scripts/deliver-trusted-comments.sh --json --pr 1807  # same trusted set, as JSON
+scripts/deliver-trusted-comments.sh --render p.json   # render a prepared payload, no network
+```
+
+**Why (#1806).** *Who* may trigger the AI flows was already gated to admin/maintain/write; *what*
+they then read was not — and this repository is public, so any GitHub user can comment on any issue
+or PR. An agent cannot reliably separate "context" from "instruction", so that text is a
+prompt-injection surface into flows on a self-hosted runner with credentials (and, in the correction
+phase, `contents: write`). This script is the structural half that stops a stranger's text reaching
+the agent; the prompts' "treat comments as data" is the behavioural half for the text that IS shown.
+
+**Wired STRUCTURALLY into the flows we control:** in `deliver-verify.yml` and `deliver-correct.yml`
+a workflow step runs this from the trusted default-branch checkout before the agent and writes the
+digest to `$RUNNER_TEMP/trusted-comments.md`; the agent reads that file and never fetches comments
+itself. The qa-review `answerer.py`/`adjudicator.py` read it (`--json`) instead of
+`gh … --json comments`. `claude.yml` is **out of scope** (#1806): it runs `claude-code-action` in tag
+mode, which assembles comment context itself, leaving no seam for the filter — a documented
+limitation. See the comment-text section in
+[docs/contributing/standards/agent-trust.md](../docs/contributing/standards/agent-trust.md).
+
+It covers **all three** sources the flows read — conversation comments, PR reviews, and PR inline
+(line-level) review comments — because a filter on one endpoint leaves the others open. Unlike
+`deliver-issue-refinements.sh` it **keeps** the automation's own comments, labelled `[automation]`
+(the `DELIVER-VERDICT` / `QA-VERDICT` markers the correction phase works from); human write-access
+entries are labelled `[write access]`. It never refuses — it continues on the trusted subset and
+reports the count withheld; excluded authors are named on **stderr** (and the workflow log) but not
+in the digest, because a login is attacker-chosen text and the agent only needs the count.
+
+Exit 0 when the discussion was read, 2 on a usage error, and **3 when the read failed** — first line
+`COMMENT-READ-FAILED` rather than empty, because empty output reads like "nobody has commented" and an
+agent that concludes that returns a clean verdict on findings it never saw. The selection law is the
+sibling `deliver-trusted-comments.jq`, tested by `scripts/deliver_trusted_comments_test.go`; the
+wiring into the flows by `scripts/deliver_trusted_comments_wiring_test.go`.
+
+## lib-gh-write-access.sh — the write-access trust boundary (sourced, not run)
+
+The repository's one implementation of "does this comment author hold write access?", plus the
+bounded `gh` wrapper (SIGTERM then SIGKILL) every such lookup runs under. Sourced by
+`deliver-issue-refinements.sh` and `deliver-trusted-comments.sh`, which need the same answer for two
+questions — *whose design opinion overrides an issue body* and *whose text may an agent read at all*.
+One copy, so the 404-vs-403 split cannot drift: a 404 is GitHub answering "not a collaborator", while
+a 401/403/429/5xx or a deadline expiry means the caller **could not ask** and must fail closed. A
+caller defines `degrade`, `SELF`, `REPO` and `TMP` before sourcing it.
+
 ## deliver-author-gate.sh — may an AI flow run on this author's content?
 
 The single decision behind the container-level author gate (#1813): given one login, decide whether

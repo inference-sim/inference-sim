@@ -154,33 +154,73 @@ def tool_go(worktree, subcommand):
 # prototype's per-script layout), so the two are kept identical by hand — if you edit one,
 # edit both. A shared read-only-gh helper is a possible follow-up.
 #
-# gh_issue uses `--json ... -q`, NOT the default `--comments` view: the pretty view
-# fetches Projects-classic data (repository.issue.projectCards), which this repo's GitHub
-# has DEPRECATED, so `gh issue view --comments` exits non-zero with only a deprecation
-# notice and never returns the acceptance criteria — the exact failure that would defeat
-# the round-0 completeness check. A non-zero gh exit is surfaced as an explicit failure
-# marker so the model treats it as missing evidence (leading to CANNOT_ANSWER), never
-# mistakes an error string for the issue body or the diff.
-_GH_ISSUE_JQ = (
-    r'"#\(.number) \(.title)\n\n\(.body)\n\n--- comments ---\n"'
-    r' + ([.comments[] | "@\(.author.login): \(.body)"] | join("\n\n"))'
+# gh_issue reads the issue HEAD (number/title/body) via `--json ... -q`, NOT the default
+# `--comments` view: the pretty view fetches Projects-classic data
+# (repository.issue.projectCards), which this repo's GitHub has DEPRECATED, so
+# `gh issue view --comments` exits non-zero with only a deprecation notice and never
+# returns the acceptance criteria — the exact failure that would defeat the round-0
+# completeness check. A non-zero gh exit is surfaced as an explicit failure marker so the
+# model treats it as missing evidence (leading to CANNOT_ANSWER), never mistakes an error
+# string for the issue body or the diff.
+#
+# The issue COMMENTS are read through scripts/deliver-trusted-comments.sh (#1806), NOT
+# inline: this repository is public, so a stranger's comment on the closing issue is a
+# prompt-injection surface into this LLM. The filter returns only comments whose author
+# holds write access (plus this repo's automation); a read failure surfaces as an UNREAD
+# marker rather than an empty thread, so a failed read is never mistaken for "no comments".
+_GH_ISSUE_HEAD_JQ = r'"#\(.number) \(.title)\n\n\(.body)"'
+
+# scripts/deliver-trusted-comments.sh, resolved relative to THIS file (scripts/qa-review/)
+# so it is found regardless of the caller's working directory.
+_TRUSTED_COMMENTS_SH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
+    "deliver-trusted-comments.sh",
 )
 
 
+def _trusted_comment_lines(repo, mode, number):
+    """Return the write-access-filtered comments as `@login: body` blocks (#1806).
+
+    `mode` is "--issue" or "--pr". On ANY read failure the filter exits non-zero (its first
+    line is COMMENT-READ-FAILED); this returns that marker so the caller renders the channel
+    as UNREAD rather than as an empty thread — a stranger's comment must never reach the
+    model, and a failed read must never look like "no comments"."""
+    proc = subprocess.run(
+        ["bash", _TRUSTED_COMMENTS_SH, "--json", mode, str(number)],
+        capture_output=True,
+        text=True,
+        env=dict(os.environ, GH_REPO=repo),
+    )
+    if proc.returncode != 0:
+        return "COMMENT-READ-FAILED: the comment channel could not be read (%s)" % (
+            proc.stderr.strip()[:500] or "no detail"
+        )
+    try:
+        comments = json.loads(proc.stdout).get("comments", [])
+    except json.JSONDecodeError:
+        return "COMMENT-READ-FAILED: the comment filter did not return JSON"
+    return "\n\n".join(
+        "@%s: %s" % ((c.get("author") or {}).get("login", ""), c.get("body", ""))
+        for c in comments
+    )
+
+
 def tool_gh_issue(worktree, number):
-    """Read-only: fetch a GitHub issue's acceptance criteria + comments (#1792)."""
+    """Read-only: a GitHub issue's acceptance criteria + WRITE-ACCESS-FILTERED comments
+    (#1792, #1806)."""
     repo = os.environ.get("QA_REPO", "inference-sim/inference-sim")
     proc = subprocess.run(
         [
             "gh", "issue", "view", str(number), "--repo", repo,
-            "--json", "number,title,body,comments", "-q", _GH_ISSUE_JQ,
+            "--json", "number,title,body", "-q", _GH_ISSUE_HEAD_JQ,
         ],
         capture_output=True,
         text=True,
     )
     if proc.returncode != 0:
         return "gh_issue failed (exit %d): %s" % (proc.returncode, proc.stderr.strip()[:2000])
-    return proc.stdout[:12000]
+    comments = _trusted_comment_lines(repo, "--issue", number)
+    return (proc.stdout + "\n\n--- comments ---\n" + comments)[:12000]
 
 
 def tool_pr_diff(worktree, number):

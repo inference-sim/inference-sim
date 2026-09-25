@@ -63,7 +63,12 @@
 set -uo pipefail
 
 SELF="$0"
-FILTER="$(cd "$(dirname "$SELF")" && pwd)/deliver-issue-refinements.jq"
+_HERE="$(cd "$(dirname "$SELF")" && pwd)"
+FILTER="$_HERE/deliver-issue-refinements.jq"
+# The trust boundary itself (bounded `gh` + per-author permission resolution) is shared with
+# deliver-trusted-comments.sh — see lib-gh-write-access.sh. Sourced AFTER `degrade` is defined
+# below, because the library reports every failure through it.
+LIB="$_HERE/lib-gh-write-access.sh"
 
 # Printed on stdout so it reaches whoever reads the digest, with the cause on stderr too so it
 # reaches a workflow log. Both, deliberately: a reader who only sees one of the two channels must
@@ -85,6 +90,11 @@ usage() {
 if [[ ! -r "$FILTER" ]]; then
   degrade "the selection filter $FILTER is missing"
 fi
+if [[ ! -r "$LIB" ]]; then
+  degrade "the write-access library $LIB is missing"
+fi
+# shellcheck source=scripts/lib-gh-write-access.sh
+source "$LIB"
 for tool in jq; do
   command -v "$tool" >/dev/null 2>&1 || degrade "$tool is not on PATH"
 done
@@ -124,60 +134,9 @@ ISSUE="$1"
 
 command -v gh >/dev/null 2>&1 || degrade "gh is not on PATH"
 
-# Bound every GitHub call so a stalled request cannot hang the whole delivery job until its
-# 60/120-minute timeout. The permission lookup below is the likeliest culprit, but `gh issue view`
-# carries the same risk, so the deadline wraps all of them here rather than at one call site.
-# `timeout` (coreutils — present on the Linux CI and self-hosted runners that actually run
-# deliveries) or `gtimeout` (macOS with coreutils) enforces it where present; where neither is
-# installed the portable `run_bounded` watchdog below enforces the same deadline, so NO execution
-# path runs `gh` unbounded. The deadline first sends SIGTERM and then, after a short grace, escalates
-# to SIGKILL — which cannot be caught — so even a call that ignores or blocks SIGTERM is bounded at
-# deadline + grace, never indefinitely. Any of these exits non-zero, so resolve_permission and the
-# `gh issue view` check treat it exactly like any other "could not ask" failure — fail-closed, never
-# mistaken for a definitive answer. GH_DEADLINE_SECONDS / GH_KILL_GRACE_SECONDS are overridable so
-# the tests can force short values.
-GH_DEADLINE_SECONDS="${GH_DEADLINE_SECONDS:-30}"
-GH_KILL_GRACE_SECONDS="${GH_KILL_GRACE_SECONDS:-5}"
-_GH_BIN="$(command -v gh)"
-if command -v timeout >/dev/null 2>&1; then
-  _GH_TIMEOUT="timeout"
-elif command -v gtimeout >/dev/null 2>&1; then
-  _GH_TIMEOUT="gtimeout"
-else
-  _GH_TIMEOUT=""
-fi
-
-# Portable fallback deadline, used when neither `timeout` nor `gtimeout` is installed, so there is NO
-# execution path on which a stalled `gh` call runs unbounded — not even on a host without coreutils.
-# A watchdog subshell kills the call after the deadline, escalating SIGTERM to SIGKILL after the
-# grace so a TERM-resistant call cannot evade it. Its stdout/stderr go to /dev/null so it can never
-# hold the command-substitution pipe open: were it to, `out=$(gh …)` would block on the watchdog's
-# own sleep instead of returning when the call does, defeating the bound.
-run_bounded() {
-  local secs="$1"; shift
-  "$@" &
-  local pid=$!
-  (
-    sleep "$secs"
-    kill -TERM "$pid" 2>/dev/null
-    sleep "$GH_KILL_GRACE_SECONDS"
-    kill -KILL "$pid" 2>/dev/null
-  ) >/dev/null 2>&1 &
-  local watcher=$!
-  wait "$pid" 2>/dev/null
-  local rc=$?
-  kill -KILL "$watcher" 2>/dev/null
-  wait "$watcher" 2>/dev/null
-  return "$rc"
-}
-
-gh() {
-  if [[ -n "$_GH_TIMEOUT" ]]; then
-    "$_GH_TIMEOUT" --kill-after="$GH_KILL_GRACE_SECONDS" "$GH_DEADLINE_SECONDS" "$_GH_BIN" "$@"
-  else
-    run_bounded "$GH_DEADLINE_SECONDS" "$_GH_BIN" "$@"
-  fi
-}
+# Every `gh` call below runs under the library's deadline wrapper (SIGTERM then SIGKILL), so a
+# stalled GitHub request cannot pin the delivery job until its 60/120-minute timeout.
+gh_bounded_setup
 
 REPO="${GH_REPO:-${GITHUB_REPOSITORY:-}}"
 if [[ -z "$REPO" ]]; then
@@ -204,55 +163,14 @@ if ! LOGINS=$(jq -r '
   degrade "could not list comment authors for #$ISSUE"
 fi
 
-# Prints the author's permission and returns 0 when the answer is DEFINITIVE; returns 1 when the
-# lookup could not be made at all.
-#
-# The distinction is the difference between two outcomes that must not be conflated. A 404 is a real
-# answer — GitHub says this login is not a collaborator (it is also what a non-user login such as
-# `github-actions` returns) — whereas a 401/403/5xx/network failure, or a deadline expiry from the
-# bounded `gh` wrapper above, means the caller could not ask.
-# Verified against this repository: a genuine non-collaborator returns 200 with `read`, so "no write
-# access" normally arrives as a successful lookup and a failure really is a failure.
-#
-# Why it matters: `GET /repos/{owner}/{repo}/collaborators/{login}/permission` needs PUSH access, so
-# a contributor with read-only access running this script gets a failure for EVERY author. Without
-# this split that reads as "nobody has write access" and the digest reports "no design refinements" —
-# reintroducing, one level down, the exact silent failure #1782 is about.
-resolve_permission() {
-  local login="$1" out
-  if out=$(gh api "repos/$REPO/collaborators/$login/permission" --jq '.permission' 2>"$TMP/err"); then
-    printf '%s' "$out"
-    return 0
-  fi
-  if grep -qi 'HTTP 404' "$TMP/err"; then
-    printf 'none'
-    return 0
-  fi
-  printf '%s' "$(tr '\n' ' ' < "$TMP/err")"
-  return 1
-}
-
-ACCESS='{}'
-attempted=0
-resolved=0
-while IFS= read -r login; do
-  [[ -n "$login" ]] || continue
-  attempted=$((attempted + 1))
-  ok=false
-  if perm=$(resolve_permission "$login"); then
-    resolved=$((resolved + 1))
-    case "$perm" in
-      admin | write | maintain) ok=true ;;
-      *) echo "$SELF: @$login has no write access (permission='$perm') — their comments carry no authority" >&2 ;;
-    esac
-  else
-    # Unresolved, so the comment is dropped: under-trusting costs a missed refinement, over-trusting
-    # hands the spec to an unverified author. Named on stderr so it is not invisible.
-    echo "$SELF: could not establish @$login's repository permission ($perm) — their comments are being dropped" >&2
-  fi
-  ACCESS=$(jq -c --arg l "$login" --argjson v "$ok" '. + {($l): $v}' <<< "$ACCESS") \
-    || degrade "could not record write access for @$login"
-done <<< "$LOGINS"
+# Per-author permission resolution, including the 404-is-definitive / 403-is-could-not-ask split
+# and the per-author fail-closed drop, lives in the shared library. It writes the map to a file and
+# sets WA_ATTEMPTED / WA_RESOLVED in THIS shell, which the wholly-unresolvable check below reads —
+# a command substitution would put those counters in a subshell and lose them.
+resolve_write_access_map "$TMP/access.json" <<< "$LOGINS"
+ACCESS=$(cat "$TMP/access.json") || degrade "could not read back the write-access map"
+attempted=$WA_ATTEMPTED
+resolved=$WA_RESOLVED
 
 # Not one author's authority could be established, and there was at least one to establish. Reporting
 # "no refinements" here would be a lie of exactly the kind this script exists to end — the thread was

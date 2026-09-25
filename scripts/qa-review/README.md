@@ -92,6 +92,17 @@ so it knows which to query; the system prompt directs it to consult them for
 F1/F2/F3 but **not** to answer from the diff alone when the surrounding code
 decides the answer — verify against the real code. `QA_REPO` targets the calls.
 
+**Comments are read WRITE-ACCESS-FILTERED (#1806).** `gh_issue` fetches the issue
+HEAD (title/body) directly, but its **comments** — and the PR comments
+`adjudicator.py`'s `fetch_comments` selects the prior findings from — are read
+through `scripts/deliver-trusted-comments.sh`, not `gh … --json comments`. This
+repository is public, so a stranger's comment on the issue or PR is a
+prompt-injection surface into this LLM; the filter keeps only comments whose
+author holds write access (plus this repo's automation) and a read failure
+surfaces as an `COMMENT-READ-FAILED` marker rather than an empty thread. See the
+comment-text section in
+[docs/contributing/standards/agent-trust.md](../../docs/contributing/standards/agent-trust.md).
+
 The tool loop has a finite budget (`MAX_TOOL_TURNS = 24`). Exhausting it is a
 normal outcome, not an error, so the loop **degrades instead of crashing**: it
 honors a final answer array the assistant already produced, and otherwise

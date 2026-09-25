@@ -967,12 +967,17 @@ const malformedBulletReportShape = "## qa-review — PR #1736: ⛔ BLOCK\n" +
 	"### Important to consider\n" +
 	"- _None._\n"
 
-// comment builds one entry of gh's `pr view --json comments` shape.
+// comment builds one entry of the deliver-trusted-comments.sh `--json` shape (#1806): the
+// selection consumes `source`/`author.login`/`body`, and only CONVERSATION entries feed it.
 func comment(author, body string) map[string]any {
-	return map[string]any{"author": map[string]any{"login": author}, "body": body}
+	return map[string]any{
+		"author": map[string]any{"login": author},
+		"body":   body,
+		"source": "conversation",
+	}
 }
 
-// selectionProbe stubs the `gh` call in fetch_comments so the whole selection
+// selectionProbe stubs the comment-read call in fetch_comments so the whole selection
 // path — including parse_items_to_fix on whichever comment was chosen — runs
 // with no network and no model, and prints what it selected.
 const selectionProbe = `
@@ -987,8 +992,10 @@ class FakeProc(object):
         self.returncode = 0
 
 def fake_run(argv, **kwargs):
-    if argv[0] != "gh":
-        raise AssertionError("unexpected subprocess: %r" % (argv,))
+    # fetch_comments reads through deliver-trusted-comments.sh (#1806); the probe stubs that
+    # call and feeds a pre-filtered comment set, exercising the SELECTION logic in isolation
+    # (write-access filtering itself is covered by deliver_trusted_comments_test.go).
+    assert argv[0] == "bash" and "deliver-trusted-comments.sh" in argv[1], argv
     return FakeProc(json.dumps({"comments": comments}))
 
 adjudicator.subprocess.run = fake_run

@@ -53,6 +53,10 @@ flowchart TD
 > agent builds the issue body on a runner with credentials, so an outside-authored issue is
 > refused even when a maintainer runs the command — vet and re-author it first. The same
 > author gate applies to `@claude` and `/blis-pr-review` (they refuse an outside-authored PR/issue).
+> Beyond *who authored* the PR/issue, the review/correction agents and the cross-vendor qa-review
+> read comment text only through the write-access filter (`scripts/deliver-trusted-comments.sh`), so
+> a stranger's comment on a maintainer's PR cannot steer them (#1806); see
+> [agent-trust.md](standards/agent-trust.md#untrusted-input-comment-text-1806).
 
 ### Step 1: Create an Isolated Workspace
 
