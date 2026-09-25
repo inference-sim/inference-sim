@@ -4019,7 +4019,11 @@ of truth. See <a href="../automated-delivery/">Automated Delivery (L1)</a>.</p>
 <p>Both the <em>triggerer</em> and the <em>issue author</em> must hold <code>admin</code>/<code>write</code>/<code>maintain</code> (#1813): the
 agent builds the issue body on a runner with credentials, so an outside-authored issue is
 refused even when a maintainer runs the command — vet and re-author it first. The same
-author gate applies to <code>@claude</code> and <code>/blis-pr-review</code> (they refuse an outside-authored PR/issue).</p>
+author gate applies to <code>@claude</code> and <code>/blis-pr-review</code> (they refuse an outside-authored PR/issue).
+Beyond <em>who authored</em> the PR/issue, the review/correction agents and the cross-vendor qa-review
+read comment text only through the write-access filter (<code>scripts/deliver-trusted-comments.sh</code>), so
+a stranger's comment on a maintainer's PR cannot steer them (#1806); see
+<a href="../standards/agent-trust/#untrusted-input-comment-text-1806">agent-trust.md</a>.</p>
 </blockquote>
 <h3 id="step-1-create-an-isolated-workspace">Step 1: Create an Isolated Workspace<a class="headerlink" href="#step-1-create-an-isolated-workspace" title="Permanent link">&para;</a></h3>
 <p>Create a git worktree BEFORE any work begins:</p>
