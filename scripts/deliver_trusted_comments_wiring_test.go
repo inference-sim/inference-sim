@@ -150,7 +150,7 @@ func TestTrustedComments_CorrectAssemblesDigestFromTheTrustedCheckout(t *testing
 	if producer < 0 {
 		t.Fatal("deliver-correct.yml has no digest-producer step running deliver-trusted-comments.sh")
 	}
-	if !(trusted < producer && producer < delivery) {
+	if trusted >= producer || producer >= delivery {
 		t.Errorf("the digest producer (step %d) must run AFTER the trusted default-branch checkout "+
 			"(step %d) and BEFORE the delivery-branch checkout (step %d). Outside that window the "+
 			"filter runs from PR-controlled code with `contents: write` (#1806).", producer, trusted, delivery)
