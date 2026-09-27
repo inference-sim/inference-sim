@@ -399,7 +399,7 @@ func ParseHardwareCalibEntries(data []byte) (map[string]sim.HardwareCalib, error
 
 // hardwareCalibProvenanceKeys are the documentation-only keys a hardware-config GPU
 // entry may carry alongside its numeric fields. The bundled hardware_config.json uses
-// both to record where each calibration came from (Discussion #589 for the MFU values,
+// the two _comment keys to record where each calibration came from (Discussion #589 for the MFU values,
 // the datasheet reasoning for the interconnect bandwidths) — provenance that belongs
 // next to the numbers it explains, since a reader checking a value looks at the entry,
 // not at a doc page. They are accepted and ignored: the value decode never reads them.

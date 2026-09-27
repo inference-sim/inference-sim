@@ -288,6 +288,19 @@ func TestStrictHWConfig_ProvenanceKeyCaseMismatchIsRejected(t *testing.T) {
 	_, err := latency.GetHWConfig(path, "H100")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "_comment", "error must name the canonical provenance key")
+
+	// "Provenance" (R2H2, #1831) is a documentation-only key like the _comment keys, so a
+	// case-only variant ("provenance") must get the SAME case-mismatch diagnostic — naming
+	// the canonical "Provenance", not accepted by accident and not reported as unknown.
+	pfields := baseHWFields()
+	pfields["provenance"] = `"vendor_spec"`
+	ppath := writeHWConfig(t, "H100", pfields)
+	_, perr := latency.GetHWConfig(ppath, "H100")
+	require.Error(t, perr, "a case-only variant of Provenance must be rejected")
+	assert.Contains(t, perr.Error(), "Provenance", "error must name the canonical spelling to use")
+	assert.Contains(t, perr.Error(), "H100", "error must name the GPU entry the key appears under")
+	assert.Contains(t, strings.ToLower(perr.Error()), "case",
+		"the diagnostic must say the problem is letter case, not an unknown field")
 }
 
 // TestStrictHWConfig_AllOffendersReportedDeterministically covers BC-7: several unknown
