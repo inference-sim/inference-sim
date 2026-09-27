@@ -154,7 +154,17 @@ The trained-physics model is designed to generalize without per-model calibratio
 - **H100** (80 GB HBM3, 989.5 TFLOPS BF16 / 1979 TFLOPS FP8, 3.35 TB/s)
 - **A100-SXM** (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s)
 - **A100-80** (alias for A100-SXM)
-- **L40S** (48 GB GDDR6, 362 TFLOPS BF16 / 1466 TFLOPS FP8, 0.864 TB/s)
+- **L40S** (48 GB GDDR6, 362 TFLOPS BF16 / 733 TFLOPS FP8, 0.864 TB/s)
+
+!!! warning "Peak FLOPs are the **dense** figures — never the with-sparsity ones"
+    `TFlopsPeak` and `TFlopsFP8` are both dense tensor-core throughput, so their ratio is
+    ~2.0x on every entry (H100 1979/989.5, L40S 733/362.05). NVIDIA datasheets also quote a
+    2x-larger *with-sparsity* number, and taking `TFlopsFP8` from that column while
+    `TFlopsPeak` stays dense doubles the FP8 compute ceiling — which is exactly what the
+    bundled L40S entry did until #1829 (it shipped `1466.0`, implying an impossible 4.05x
+    ratio). When adding a GPU, read both numbers out of the same column; the ratio of every
+    entry is guarded by a test (`sim/latency/hw_fp8_ratio_test.go`) that names the offending
+    GPU.
 
 **Coefficients were trained on H100 traces** but the roofline basis functions automatically scale to each GPU's compute/bandwidth specifications via hardware config. This enables the model to generalize across hardware without GPU-specific calibration.
 

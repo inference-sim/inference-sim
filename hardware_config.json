@@ -48,9 +48,9 @@
 		"InterNodeBwGBps": 25
 	},
 	"L40S": {
-		"_comment":    "MFU values calibrated per Discussion #589: https://github.com/inference-sim/inference-sim/discussions/589",
+		"_comment":    "MFU values calibrated per Discussion #589: https://github.com/inference-sim/inference-sim/discussions/589. TFlopsFP8 is the DENSE FP8 figure (733.0), reconciled with blis-catalog/hardware/l40s.yaml in #1829: this table shipped 1466.0, the NVIDIA L40S datasheet's WITH-SPARSITY number, while TFlopsPeak 362.05 is dense BF16 — mixing the two conventions implied a dense FP8:BF16 ratio of 4.05x, which no architecture delivers (the tensor-core ratio is 2.0x on Hopper/Ada/Blackwell). sim/latency/hw_fp8_ratio_test.go guards the ratio of every entry so the mix cannot re-enter.",
 		"TFlopsPeak":  362.05,
-		"TFlopsFP8":   1466.0,
+		"TFlopsFP8":   733.0,
 		"BwPeakTBs":   0.864,
 		"mfuPrefill":  0.32,
 		"mfuDecode":   0.08,
