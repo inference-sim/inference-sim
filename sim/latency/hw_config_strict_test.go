@@ -338,7 +338,8 @@ func TestStrictHWConfig_AllOffendersReportedDeterministically(t *testing.T) {
 
 // TestStrictHWConfig_CommittedFileDeclaresOnlyKnownKeys covers BC-4 over the committed
 // hardware_config.json: every key in the shipped file is either a declared
-// sim.HardwareCalib field or one of the two provenance keys. Without this, adding a GPU
+// sim.HardwareCalib field or one of the two `_comment` provenance keys the bundled file
+// carries (the third accepted key, `Provenance`, is catalog-only). Without this, adding a GPU
 // entry with a typo'd key would make the bundled file unloadable — a failure discovered
 // by a user rather than by CI. It enumerates the file, so a newly added entry is covered.
 func TestStrictHWConfig_CommittedFileDeclaresOnlyKnownKeys(t *testing.T) {
