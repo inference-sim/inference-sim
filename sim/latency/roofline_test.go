@@ -2,6 +2,7 @@ package latency
 
 import (
 	"math"
+	"path/filepath"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -959,39 +960,66 @@ func TestRooflineStepTime_FP8ComputeSelection_A100UsesFP16Rate(t *testing.T) {
 	}
 }
 
-// TestRooflineStepTime_FP8ComputeSelection_L40SBehavior tests L40S behavior
-// with FP8 weights (should use FP16 compute rate like A100).
-func TestRooflineStepTime_FP8ComputeSelection_L40SBehavior(t *testing.T) {
-	// GIVEN an FP8 model
+// TestRooflineStepTime_FP8ComputeSelection_L40SUsesTheCommittedDenseFP8Rate is the step-time
+// witness for #1829, and it deliberately reads the COMMITTED L40S entry rather than an inline
+// one: the bug was a wrong number in hardware_config.json, so a test that hand-builds its own
+// L40S cannot see it. (Until #1829 this test did exactly that, and asserted L40S had no native
+// FP8 path at all — Ada does have FP8 tensor cores, and the bundled entry has declared a rate
+// for them all along. The "TFlopsFP8 == 0 falls back to the BF16 rate" contract that premise
+// was standing in for is covered by _A100UsesFP16Rate and by _EdgeCases.)
+//
+// The assertion is the regression itself: a compute-bound FP8 prefill step on the real L40S is
+// 2x slower than the same step under the pre-fix 1466.0, because the roofline compute term is
+// FLOPs/peak and nothing else in the step changed. That is the output #1829 moves, stated as a
+// ratio law rather than a µs value, so it survives an MFU recalibration.
+func TestRooflineStepTime_FP8ComputeSelection_L40SUsesTheCommittedDenseFP8Rate(t *testing.T) {
+	// GIVEN the bundled L40S entry, loaded the way a run loads it
+	hwL40S, err := GetHWConfig(filepath.Join("..", "..", "hardware_config.json"), "L40S")
+	if err != nil {
+		t.Fatalf("bundled L40S entry must load: %v", err)
+	}
+	if hwL40S.TFlopsFP8 != 733.0 {
+		t.Fatalf("this test witnesses the #1829 dense FP8 rate; bundled L40S TFlopsFP8 = %v, want 733.0", hwL40S.TFlopsFP8)
+	}
+
+	// AND an FP8-weight model on a compute-bound prefill step, where the compute ceiling is
+	// what decides step time (a memory-bound step would mask the change entirely).
 	mcFP8 := testModelConfig()
 	mcFP8.WeightBytesPerParam = 1.0
-
-	// AND an L40S with no native FP8 support
-	hwL40S := sim.HardwareCalib{
-		TFlopsPeak: 362.05,
-		TFlopsFP8:  0,
-		BwPeakTBs:  0.864,
-		MfuPrefill: 0.45,
-		MfuDecode:  0.30,
-		MemoryGiB:  48.0,
-	}
-
-	// AND a mixed step
 	step := StepConfig{
 		PrefillRequests: []PrefillRequestConfig{
-			{ProgressIndex: 0, NumNewPrefillTokens: 128},
-		},
-		DecodeRequests: []DecodeRequestConfig{
-			{ProgressIndex: 256, NumNewDecodeTokens: 1},
+			{ProgressIndex: 0, NumNewPrefillTokens: 4096},
 		},
 	}
 
-	// WHEN rooflineStepTime is called
-	latency := rooflineStepTime(mcFP8, hwL40S, step, 1)
+	// WHEN the step is priced against the committed entry, and against the pre-fix one
+	latencyDense := rooflineStepTime(mcFP8, hwL40S, step, 1)
 
-	// THEN latency should be positive and finite
-	if latency <= 0 {
-		t.Errorf("L40S latency should be positive, got %d µs", latency)
+	hwPreFix := hwL40S
+	hwPreFix.TFlopsFP8 = 1466.0 // the with-sparsity figure this table shipped before #1829
+	latencyPreFix := rooflineStepTime(mcFP8, hwPreFix, step, 1)
+
+	// THEN the corrected entry is exactly 2x slower: halving the compute ceiling doubles the
+	// compute term, and this step is compute-bound so max(compute, memory) tracks it.
+	if latencyDense <= 0 {
+		t.Fatalf("L40S FP8 latency should be positive, got %d µs", latencyDense)
+	}
+	ratio := float64(latencyDense) / float64(latencyPreFix)
+	if ratio < 1.98 || ratio > 2.02 {
+		t.Errorf("committed L40S FP8 step time should be 2x the pre-#1829 (1466.0) one on a compute-bound step, "+
+			"got %.3fx (%d µs at 733.0 vs %d µs at 1466.0); if this step is no longer compute-bound the test needs "+
+			"a larger prefill, not a wider tolerance", ratio, latencyDense, latencyPreFix)
+	}
+
+	// AND the FP8 rate is genuinely in use: 733 is 2x the BF16 rate, so the same step with
+	// BF16 weights must be slower on compute. This is what fails if the selector ever stops
+	// reading TFlopsFP8 for one-byte weights.
+	mcBF16 := testModelConfig()
+	mcBF16.WeightBytesPerParam = 2.0
+	latencyBF16 := rooflineStepTime(mcBF16, hwL40S, step, 1)
+	if latencyDense >= latencyBF16 {
+		t.Errorf("FP8-weight latency (%d µs) should be below BF16-weight latency (%d µs) on an L40S declaring "+
+			"TFlopsFP8 = %v; the FP8 compute rate is not being selected", latencyDense, latencyBF16, hwL40S.TFlopsFP8)
 	}
 }
 

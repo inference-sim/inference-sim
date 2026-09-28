@@ -325,8 +325,22 @@ func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, s
 	// Select compute throughput based on weight precision and hardware capability.
 	// FP8 models (exactly 1 byte/param) on GPUs with native FP8 tensor cores use the FP8 rate.
 	// Sub-FP8 formats (e.g., W4A16 at 0.5 bytes/param) dequantize to FP16 during GEMM, using FP16 rate.
-	// This reflects that H100 has native FP8 tensor cores (~1979 TFLOPS, 2× FP16),
-	// while A100/L40S use W8A16 via Marlin kernels (weights dequantized to FP16 during GEMM, preserving the FP16 compute rate).
+	//
+	// Which GPUs those are is decided by the DATA, not by a list here: a non-zero TFlopsFP8
+	// in the hardware config declares a native FP8 path. Hopper (H100/H200, 1979 TFLOPS = 2x
+	// BF16) and Ada (L40S, 733 TFLOPS = 2x BF16) both declare one; Ampere (A100) has no FP8
+	// tensor cores and leaves TFlopsFP8 at 0, so an FP8 model there runs W8A16 via Marlin
+	// kernels — weights dequantized to FP16 during GEMM, preserving the FP16 compute rate.
+	// #1829 fixed the L40S rate (it shipped the with-sparsity 1466.0 against a dense BF16
+	// figure); sim/latency/hw_fp8_ratio_test.go now guards every entry's dense ratio.
+	//
+	// Known approximation: the selector reads the WEIGHT width only. A one-byte-weight model
+	// takes the FP8 rate even when its activations and KV cache are higher precision (W8A16),
+	// and a higher-precision-weight model keeps the BF16 rate even if only its KV cache is
+	// FP8 — BytesPerParam, the activation width, prices memory traffic (above) but never
+	// shifts the compute ceiling. Real mixed-precision GEMMs land between the two rates, so
+	// this is a two-valued proxy for a continuum, deliberately kept because weight width is
+	// what decides whether the FP8 tensor-core path is taken at all.
 	peakFlops := hwConfig.TFlopsPeak * 1e12
 	if modelConfig.EffectiveWeightBytesPerParam() == 1.0 && hwConfig.TFlopsFP8 > 0 {
 		peakFlops = hwConfig.TFlopsFP8 * 1e12
