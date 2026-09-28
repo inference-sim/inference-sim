@@ -413,7 +413,7 @@ func readCatalogHardwareEntry(path string) (sim.HardwareCalib, error) {
 				path, key, fields[key])
 		}
 	}
-	if err := latency.ValidateHardwareCalibEntry(calib); err != nil {
+	if err := latency.ValidateHardwareCalibEntry(gpu, calib); err != nil {
 		return sim.HardwareCalib{}, fmt.Errorf("%s: %w", path, err)
 	}
 	return calib, nil
