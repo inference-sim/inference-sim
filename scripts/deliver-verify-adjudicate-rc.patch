@@ -1,8 +1,10 @@
-# PENDING WORKFLOW CHANGE for #1834 — apply and delete this file.
+# PENDING WORKFLOW CHANGE for #1834 — apply and delete this file. Tracked by #1837.
 #
 #     git apply scripts/deliver-verify-adjudicate-rc.patch
 #     git rm scripts/deliver-verify-adjudicate-rc.patch
-#     go test ./scripts/ -run 'TestQAAdjudication|TestQAReportAuthor' -count=1
+#     # then remove the "Pending now:" sentence in docs/contributing/automated-delivery.md,
+#     # which documents exactly this pending state
+#     go test ./scripts/ -run 'TestQAAdjudication|TestQAReportAuthor|TestAdjudicateRC' -count=1
 #
 # WHY IT IS A PATCH AND NOT APPLIED. The L1 delivery runner's GitHub App token carries no
 # `workflows` permission — there is no such permission to grant in a `permissions:` block — so
@@ -47,7 +49,8 @@
 # applied they read deliver-verify.yml directly, and they FAIL if this file is deleted without
 # being applied — so neither half can be silently lost. The state CI stays green in is "merged
 # and simply never applied": the `-e` masking then persists, which costs a clear diagnostic on a
-# failing adjudication but no longer breaks the loop, because the primary fix is live.
+# failing adjudication but no longer breaks the loop, because the primary fix is live. Nothing else
+# surfaces that state, which is why it is tracked as #1837 and not only as this header.
 #
 # Everything below this line is a plain `git diff`; the `#` lines above are ignored by git apply.
 diff --git a/.github/workflows/deliver-verify.yml b/.github/workflows/deliver-verify.yml
