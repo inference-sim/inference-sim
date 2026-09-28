@@ -354,6 +354,12 @@ Example:
 			}
 		}
 
+		// #1819 (R2G3b-sim): the legacy single-CPU-tier transfer rate, priced from the
+		// catalog cpu_dram device through the SAME helper runCmd uses — the flags are
+		// registered in the shared registerSimConfigFlags, so run and replay must derive
+		// identically (INV-13). No-op unless --kv-cpu-blocks > 0.
+		kvTransferBandwidth = resolveLegacyKVTransferBandwidth(cmd, lr.ModelConfig, tensorParallelism)
+
 		// Numeric flag validation (same as runCmd)
 		if numInstances < 1 {
 			logrus.Fatalf("num-instances must be >= 1")
