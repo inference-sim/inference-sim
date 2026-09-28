@@ -4858,9 +4858,11 @@ one changes the ratio by 2×.</p>
   like every other BLIS config file: a key that is not one of the fields below fails the
   load with an error naming the key <em>and</em> the GPU entry it appears under, instead of
   leaving the intended field at 0 (a plausible-but-wrong bandwidth, MFU or memory
-  capacity). Two documentation-only keys are accepted and ignored — <code>_comment</code> and
+  capacity). Three documentation-only keys are accepted and ignored — <code>_comment</code> and
   <code>_comment_interconnect</code>, which the bundled file uses to record calibration provenance
-  next to the numbers. Keys must be spelled canonically: a key differing only in letter
+  next to the numbers, plus <code>Provenance</code>, the structured provenance tag catalog <code>hardware/</code>
+  entries carry (R2H2, blis-catalog#10); its enum value is validated by the catalog CI gate,
+  not by this loader. Keys must be spelled canonically: a key differing only in letter
   case (<code>IntraNodeBwGbps</code>) is also rejected, with the canonical spelling named. Valid
   keys: <code>TFlopsPeak</code>, <code>TFlopsFP8</code>, <code>BwPeakTBs</code>, <code>mfuPrefill</code>, <code>mfuDecode</code>, <code>MemoryGiB</code>,
   <code>IntraNodeBwGBps</code>, <code>InterNodeBwGBps</code>, <code>InterNodeHopLatencyUs</code>.</li>
