@@ -488,6 +488,19 @@ func TestQAReportAuthorFindsTheReportTheDeliveryLoopPosts(t *testing.T) {
 			filterReportLogin)
 	}
 
+	// The THIRD side of the contract, since the `[bot]`-suffix equivalence became conditional on
+	// the trust label (#1834 G2): the adjudicator grants it only to a comment labelled
+	// `filterAutomationLabel`, so if the filter ever spells that label differently the equivalence
+	// silently stops applying — and #1834's silent needs-human comes straight back. Asserted
+	// against the emitting jq, which is where the string is produced.
+	labels := readFileOrFail(t, filepath.Join("..", "scripts", "deliver-trusted-comments.jq"))
+	if !strings.Contains(labels, `"`+filterAutomationLabel+`"`) {
+		t.Fatalf("scripts/deliver-trusted-comments.jq no longer emits the trust label %q, which is "+
+			"the evidence adjudicator.py requires before it treats `github-actions` and "+
+			"`github-actions[bot]` as one actor. Without it the restriction is exact again and "+
+			"every re-verify goes back to exiting 3", filterAutomationLabel)
+	}
+
 	// EVERY shape the step can run in, live included. The live workflow still carries the short
 	// form while the workflow patch is pending, and that is the one the next delivery uses — so it
 	// is the one that must work, not merely the post-patch shape.
@@ -509,7 +522,7 @@ func TestQAReportAuthorFindsTheReportTheDeliveryLoopPosts(t *testing.T) {
 					"empty Items-to-fix section clears every outstanding finding as a vacuous PASS",
 					name, qaAdjudicateStep)
 			}
-			if !selectionFindsReport(t, filterReportLogin, configured) {
+			if !selectionFindsReport(t, filterReportLogin, filterAutomationLabel, configured) {
 				t.Errorf("adjudicator.py does not find a qa-review report posted by %q when the "+
 					"restriction is QA_REPORT_AUTHOR=%q, as %s configures it. That is #1834: the "+
 					"report is skipped, fetch_comments returns None, main() exits 3 with no verdict "+

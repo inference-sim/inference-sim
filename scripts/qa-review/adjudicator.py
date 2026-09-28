@@ -704,28 +704,64 @@ def is_report_comment(body):
 # re-break it.
 _BOT_LOGIN_SUFFIX = "[bot]"
 
+# The label deliver-trusted-comments.sh puts on a comment whose author is one of THIS
+# repository's allowlisted automation identities. That allowlist is keyed on the canonical
+# `[bot]`-suffixed login precisely because GitHub reserves the suffix for App actors and the
+# bare spelling is one a human could register, so the label — unlike the login string on its
+# own — is positive evidence that the poster really is the App. It gates the suffix
+# equivalence below.
+_AUTOMATION_LABEL = "automation"
 
-def same_login(a, b):
+
+def _fold_login(login):
+    """A GitHub login reduced to its identity for comparison only.
+
+    Case-insensitive because GitHub account identity is: `GitHub-Actions[bot]` and
+    `github-actions[bot]` are one account, and no two accounts can differ by case alone, so
+    folding cannot conflate distinct actors. Surrounding whitespace is stripped for the same
+    reason in reverse — a login can never contain any, so it is always an artefact of the
+    environment or the command line that carried the value here, never part of the name."""
+    return (login or "").strip().casefold()
+
+
+def same_login(a, b, app_actor=False):
     """True iff two comment-author logins name the same actor.
 
-    The App "[bot]" suffix is ignored on both sides (see _BOT_LOGIN_SUFFIX). For
-    comparison only — never use the canonical form to display or re-post a login."""
+    Compared after _fold_login on both sides. An empty login on either side matches nothing:
+    absence is not an identity, so a restriction that folds away to nothing (`--report-author
+    '[bot]'`, or a whitespace-only value) fails closed rather than matching every App.
 
-    def canonical(login):
-        login = login or ""
+    `app_actor` says the CALLER has independent evidence that `a` was posted by a GitHub App
+    — for select_report_comment, the trusted-comments filter's `automation` label. Only then
+    is the reserved "[bot]" suffix ignored, which is what makes the two API spellings of one
+    App actor compare equal (#1834). Without that evidence the comparison stays exact,
+    because the suffix is the ONLY thing distinguishing the App `github-actions[bot]` from a
+    bare `github-actions` a human could hold: stripping it unconditionally would let that
+    human satisfy a restriction written for the App.
+
+    For comparison only — never use the folded form to display or re-post a login."""
+    a, b = _fold_login(a), _fold_login(b)
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    if not app_actor:
+        return False
+
+    def unsuffixed(login):
         if login.endswith(_BOT_LOGIN_SUFFIX):
             return login[: -len(_BOT_LOGIN_SUFFIX)]
         return login
 
-    return canonical(a) == canonical(b)
+    a, b = unsuffixed(a), unsuffixed(b)
+    return bool(a) and a == b
 
 
 def select_report_comment(comments, report_author=""):
     """Index of the most recent genuine qa-review report comment, or -1.
 
     A comment qualifies iff is_report_comment() accepts its body and, when
-    `report_author` is given, that login posted it (compared with same_login, so
-    either spelling of an App actor matches — #1834). The author restriction is
+    `report_author` is given, that login posted it. The author restriction is
     strict on purpose: this runs against a PUBLIC repository, so without it any
     commenter could post a report-shaped comment with an empty Items-to-fix
     section and clear every outstanding finding. It is empty by default so the
@@ -736,19 +772,22 @@ def select_report_comment(comments, report_author=""):
     admits only this repository's allowlisted automation logins and humans with
     write access.
 
-    Residual of the suffix equivalence, accepted knowingly: the SHORT spelling is
-    one a human account could hold (deliver-trusted-comments.sh says so, which is
-    why its own allowlist keys on the suffixed form only). So a human logged in as
-    "github-actions" would match a restriction written "github-actions[bot]". That
-    account would first have to clear the write-access filter above, and anyone
-    who has cleared it can already influence a delivery far more directly than by
-    forging a report comment — whereas the exact comparison this replaces broke
-    every multi-round delivery outright."""
+    The login is compared with same_login, so either spelling of an App actor
+    matches (#1834) — but the suffix equivalence is granted ONLY to a comment that
+    filter labelled `automation`, i.e. one whose author is on its canonical
+    `[bot]`-keyed allowlist. A comment admitted for its author's WRITE ACCESS is
+    compared exactly, so a human holding the bare login `github-actions` does not
+    satisfy a restriction written `github-actions[bot]`. Fails closed on a missing
+    or unrecognised label: no label, no equivalence."""
     chosen = -1
     for i, c in enumerate(comments):
         if not is_report_comment(c.get("body") or ""):
             continue
-        if report_author and not same_login((c.get("author") or {}).get("login", ""), report_author):
+        if report_author and not same_login(
+            (c.get("author") or {}).get("login", ""),
+            report_author,
+            app_actor=c.get("label") == _AUTOMATION_LABEL,
+        ):
             continue
         chosen = i
     return chosen

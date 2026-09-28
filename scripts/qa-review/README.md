@@ -156,15 +156,35 @@ the only barrier — every comment reaching the selection already cleared
 allowlisted automation logins and humans with write access.
 
 **The two spellings of one App actor match (#1834).** The login is compared with
-`same_login()`, which ignores GitHub's reserved `[bot]` suffix, so
-`github-actions` and `github-actions[bot]` are the same poster. They are the same
-actor read through two APIs: the GraphQL projection behind `gh pr view --json
-comments` reports the short form, REST — which the trusted-comments filter uses
-since #1806 — reports the canonical suffixed one. An exact comparison against the
-short form therefore stopped finding the adjudicator's *own* round-0 report the
-moment the read switched to REST, and every re-verify exited **3** (PR #1832; the
-whole multi-round correction path was unusable). Tolerating both spellings means
-a future source switch in either direction cannot silently re-break it.
+`same_login()`, so `github-actions` and `github-actions[bot]` are the same poster.
+They are the same actor read through two APIs: the GraphQL projection behind `gh
+pr view --json comments` reports the short form, REST — which the trusted-comments
+filter uses since #1806 — reports the canonical suffixed one. An exact comparison
+against the short form therefore stopped finding the adjudicator's *own* round-0
+report the moment the read switched to REST, and every re-verify exited **3** (PR
+#1832; the whole multi-round correction path was unusable). Tolerating both
+spellings means a future source switch in either direction cannot silently
+re-break it.
+
+Two limits on that tolerance, both load-bearing:
+
+- **The `[bot]` suffix is ignored only for a comment the filter labelled
+  `automation`** — i.e. one whose author is on its canonical, suffix-keyed
+  allowlist, which is positive evidence the poster really is the App. GitHub
+  reserves the suffixed spelling for Apps but *not* the bare one, so a human can
+  register `github-actions`; stripping the suffix unconditionally would have let
+  that account satisfy a restriction written `github-actions[bot]`, turning
+  `QA_REPORT_AUTHOR` from "the App posted this" into "some account with this stem
+  did". A comment admitted for its author's **write access** is compared exactly,
+  and a missing or unrecognised label fails closed.
+- **Logins are compared case-insensitively, after trimming surrounding
+  whitespace.** GitHub account identity is case-insensitive and no two accounts
+  can differ by case alone, so folding case cannot conflate distinct actors; a
+  login can never *contain* whitespace, so whitespace only ever arrives from the
+  environment variable or command line that carried the value. Both would
+  otherwise fail closed for an invisible reason — #1834's silent `needs-human`
+  again. A value that folds away to nothing (`[bot]`, or whitespace only) matches
+  **no** login rather than every App.
 
 Finding **no** report comment is **not** a `PASS`: `fetch_comments` returns
 `None` (distinct from `[]`, a real report with nothing blocking) and the tool

@@ -23,7 +23,9 @@
 # `same_login()` compares `github-actions` and `github-actions[bot]` as one actor, so the LIVE
 # workflow's short-form QA_REPORT_AUTHOR matches the canonical login REST reports. That ordering
 # was deliberate. A fix that lived only in this patch would have left the delivery loop broken
-# until a human applied it.
+# until a human applied it. (The equivalence is granted only to a comment the trusted-comments
+# filter labelled `automation`, whose allowlist is keyed on the suffixed login — so it identifies
+# the App rather than merely matching a login stem a human could also hold. See that function.)
 #
 # WHAT IT CHANGES — both hunks are in the `Run qa-review adjudication` step, and both are
 # secondary hardening on top of that fix:
