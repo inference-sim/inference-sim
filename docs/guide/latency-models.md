@@ -152,7 +152,8 @@ The trained-physics model is designed to generalize without per-model calibratio
 **Supported hardware:**
 
 - **H100** (80 GB HBM3, 989.5 TFLOPS BF16 / 1979 TFLOPS FP8, 3.35 TB/s)
-- **A100-SXM** (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s)
+- **H200** (141 GB HBM3e, 989.5 TFLOPS BF16 / 1979 TFLOPS FP8, 4.8 TB/s — same Hopper compute die as H100)
+- **A100-SXM** (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s — Ampere has no FP8 tensor cores)
 - **A100-80** (alias for A100-SXM)
 - **L40S** (48 GB GDDR6, 362 TFLOPS BF16 / 733 TFLOPS FP8, 0.864 TB/s)
 
@@ -162,9 +163,12 @@ The trained-physics model is designed to generalize without per-model calibratio
     2x-larger *with-sparsity* number, and taking `TFlopsFP8` from that column while
     `TFlopsPeak` stays dense doubles the FP8 compute ceiling — which is exactly what the
     bundled L40S entry did until #1829 (it shipped `1466.0`, implying an impossible 4.05x
-    ratio). When adding a GPU, read both numbers out of the same column; the ratio of every
-    entry is guarded by a test (`sim/latency/hw_fp8_ratio_test.go`) that names the offending
-    GPU.
+    ratio). When adding a GPU, read both numbers out of the same column. The ratio of every
+    bundled entry is a hard test failure (`sim/latency/hw_fp8_ratio_test.go`), and every
+    hardware table BLIS *reads* — a `<catalog>/hardware/<gpu>.yaml` entry or your own
+    `--hardware` file — is checked at the load boundary, which **warns on stderr naming the
+    GPU** rather than refusing the run (the band is a heuristic over today's NVIDIA parts, so
+    a legitimate accelerator outside it must still run).
 
 **Coefficients were trained on H100 traces** but the roofline basis functions automatically scale to each GPU's compute/bandwidth specifications via hardware config. This enables the model to generalize across hardware without GPU-specific calibration.
 

@@ -17,59 +17,30 @@
 // land in band: taking FP8 from the sparse column reads ~4x, and taking BF16 from the
 // sparse column (the mirror-image slip) reads ~1x. Both directions are rejected here,
 // naming the GPU, which is the part an operator needs in a file of a dozen entries.
+//
+// The band itself lives in production code, not here: latency.DenseFP8RatioWarning is the
+// single home for the rule (R23) and latency.ValidateHardwareCalibEntry calls it, so the
+// check reaches every hardware table BLIS reads — the bundled file, a catalog
+// hardware/<gpu>.yaml entry, and a user's own file — rather than only the committed table
+// this file fences. These tests assert against that same function, so there is no second
+// copy of the band to drift.
 package latency_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"testing"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/latency"
 )
-
-// The plausible band for TFlopsFP8 / TFlopsPeak. The physical value is 2.0 on every
-// architecture BLIS models; the band is widened to ±~25% so datasheet rounding and a
-// future part that quotes a slightly different boost clock for the two rates still pass,
-// while leaving a 1.6x margin to the nearest thing the guard must catch (a 2x sparsity
-// multiplier applied to one of the two fields).
-const (
-	minDenseFP8Ratio = 1.8
-	maxDenseFP8Ratio = 2.5
-)
-
-// denseFP8RatioProblem returns a diagnostic naming gpu when hc's peak-FLOPs pair is not
-// a self-consistent DENSE pair, or "" when the entry is in band.
-//
-// An entry with TFlopsFP8 == 0 declares no native FP8 path (an A100 has none) and is
-// exempt: the roofline model never divides by it, it falls back to TFlopsPeak.
-func denseFP8RatioProblem(gpu string, hc sim.HardwareCalib) string {
-	if hc.TFlopsFP8 == 0 {
-		return ""
-	}
-	if !(hc.TFlopsPeak > 0) || math.IsInf(hc.TFlopsPeak, 0) {
-		return fmt.Sprintf("GPU %q declares TFlopsFP8 = %v but TFlopsPeak = %v: the FP8 rate "+
-			"cannot be checked against a missing or non-finite BF16 rate", gpu, hc.TFlopsFP8, hc.TFlopsPeak)
-	}
-	ratio := hc.TFlopsFP8 / hc.TFlopsPeak
-	if !(ratio >= minDenseFP8Ratio) || ratio > maxDenseFP8Ratio {
-		return fmt.Sprintf("GPU %q has a dense FP8:BF16 peak-FLOPs ratio of %.3gx "+
-			"(TFlopsFP8 = %v, TFlopsPeak = %v), outside the plausible band [%.2g, %.2g]. "+
-			"FP8 tensor-core throughput is 2x BF16 on every architecture BLIS models, so a "+
-			"ratio near 4x means TFlopsFP8 was taken from the datasheet's WITH-SPARSITY "+
-			"column while TFlopsPeak is dense (and a ratio near 1x means the mirror-image "+
-			"slip). Read both numbers out of the same column — see #1829",
-			gpu, ratio, hc.TFlopsFP8, hc.TFlopsPeak, minDenseFP8Ratio, maxDenseFP8Ratio)
-	}
-	return ""
-}
 
 // committedHWConfigPath is the bundled hardware table, as seen from this package.
 func committedHWConfigPath() string { return filepath.Join("..", "..", "hardware_config.json") }
@@ -104,7 +75,7 @@ func TestHWFP8Ratio_CommittedTableIsDenseThroughout(t *testing.T) {
 	for _, gpu := range committedHWGPUNames(t) {
 		hc, err := latency.GetHWConfig(path, gpu)
 		require.NoError(t, err, "bundled entry %q must load", gpu)
-		assert.Empty(t, denseFP8RatioProblem(gpu, hc),
+		assert.Empty(t, latency.DenseFP8RatioWarning(gpu, hc),
 			"bundled entry %q mixes datasheet conventions", gpu)
 		if hc.TFlopsFP8 != 0 {
 			checked++
@@ -233,7 +204,7 @@ func TestHWFP8Ratio_OutOfBandPairIsRejectedNamingTheGPU(t *testing.T) {
 				return
 			}
 
-			problem := denseFP8RatioProblem(tt.gpu, hc)
+			problem := latency.DenseFP8RatioWarning(tt.gpu, hc)
 			if !tt.wantReject {
 				assert.Empty(t, problem, "a legitimate dense pair must not be flagged")
 				return
@@ -242,4 +213,55 @@ func TestHWFP8Ratio_OutOfBandPairIsRejectedNamingTheGPU(t *testing.T) {
 			assert.Contains(t, problem, tt.gpu, "the diagnostic must name the offending GPU")
 		})
 	}
+}
+
+// TestHWFP8Ratio_LoadBoundaryWarnsOnAUserSuppliedMix pins the WIRING, which is the half a
+// test-only band cannot deliver: the committed table is fenced by the tests above, but a
+// hardware config BLIS reads is not always the committed one — a catalog hardware/<gpu>.yaml
+// entry or a user's own `--hardware` table can carry a sparsity-mixed pair too, and before
+// the rule moved into latency.DenseFP8RatioWarning nothing told the operator.
+// ValidateHardwareCalibEntry now calls it on every entry either load path decodes.
+//
+// It is deliberately a WARNING and this test says so twice over: the mixed config still
+// LOADS (no false refusal for a legitimate future part outside the band), and the diagnostic
+// reaches stderr via logrus, never stdout — so INV-6's byte-identical stdout is untouched.
+func TestHWFP8Ratio_LoadBoundaryWarnsOnAUserSuppliedMix(t *testing.T) {
+	capture := func(t *testing.T) *bytes.Buffer {
+		t.Helper()
+		var buf bytes.Buffer
+		orig := logrus.StandardLogger().Out
+		logrus.SetOutput(&buf)
+		t.Cleanup(func() { logrus.SetOutput(orig) })
+		return &buf
+	}
+
+	t.Run("a sparsity-mixed pair loads but warns, naming the GPU", func(t *testing.T) {
+		fields := baseHWFields()
+		fields["TFlopsPeak"] = "362.05"
+		fields["TFlopsFP8"] = "1466.0" // the pre-#1829 L40S mix, as a user could still write it
+		path := writeHWConfig(t, "MyL40S", fields)
+
+		buf := capture(t)
+		hc, err := latency.GetHWConfig(path, "MyL40S")
+
+		require.NoError(t, err, "an out-of-band ratio is advisory: the run must not be refused")
+		assert.Equal(t, 1466.0, hc.TFlopsFP8, "the value must be handed back unchanged, not silently corrected (R1)")
+		logged := buf.String()
+		assert.Contains(t, logged, "MyL40S", "the warning must name the offending GPU")
+		assert.Contains(t, logged, "WITH-SPARSITY", "the warning must say what the operator got wrong")
+	})
+
+	t.Run("the corrected pair loads silently", func(t *testing.T) {
+		fields := baseHWFields()
+		fields["TFlopsPeak"] = "362.05"
+		fields["TFlopsFP8"] = "733.0"
+		path := writeHWConfig(t, "MyL40S", fields)
+
+		buf := capture(t)
+		_, err := latency.GetHWConfig(path, "MyL40S")
+
+		require.NoError(t, err)
+		assert.NotContains(t, buf.String(), "FP8:BF16",
+			"an in-band entry must print nothing — a warning every run would train operators to ignore it")
+	})
 }
