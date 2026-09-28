@@ -2,6 +2,7 @@ package kv
 
 import (
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -58,6 +59,24 @@ func TestNewTieredKVCache_NegativeBaseLat_Panics(t *testing.T) {
 	assert.Panics(t, func() {
 		NewTieredKVCache(NewKVCacheState(10, 2), 10, 0.0, 1.0, -1)
 	})
+}
+
+func TestNewTieredKVCache_RejectsUnrepresentableTransferLatency(t *testing.T) {
+	gpu := NewKVCacheState(10, 16)
+
+	assert.Panics(t, func() { NewTieredKVCache(gpu, 10, 0, 1e-300, 0) })
+	assert.PanicsWithValue(t,
+		"NewTieredKVCache: baseLat 9223372036854775807 plus the 1-tick bandwidth charge for one 16-token block exceeds int64",
+		func() { NewTieredKVCache(gpu, 10, 0, 100, math.MaxInt64) })
+}
+
+func TestTieredKVCache_RejectsCumulativeTransferLatencyOverflow(t *testing.T) {
+	tiered := NewTieredKVCache(NewKVCacheState(10, 16), 10, 0, 16, 1)
+	tiered.pendingLatency = math.MaxInt64 - tiered.transferLatencyPerBlock + 1
+	before := tiered.pendingLatency
+
+	assert.Panics(t, tiered.accumulateTransferLatency)
+	assert.Equal(t, before, tiered.pendingLatency, "overflow refusal must not corrupt pending latency")
 }
 
 func TestKVCacheState_SetClock_IsNoOp(t *testing.T) {

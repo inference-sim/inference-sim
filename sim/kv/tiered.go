@@ -145,10 +145,9 @@ func (c *cpuTier) unlink(blk *cpuBlock) {
 // GPU prefix cache is preserved on release (vLLM v1 model). CPU tier serves as a secondary
 // cache that extends prefix lifetime beyond GPU eviction.
 type TieredKVCache struct {
-	gpu               *KVCacheState
-	cpu               *cpuTier
-	transferBandwidth float64
-	baseLatency       int64
+	gpu                     *KVCacheState
+	cpu                     *cpuTier
+	transferLatencyPerBlock int64
 
 	// Transfer latency accumulator (query-and-clear)
 	pendingLatency int64
@@ -169,7 +168,9 @@ var (
 )
 
 // NewTieredKVCache creates a TieredKVCache.
-// Panics if gpu is nil, cpuBlocks is non-positive, bandwidth is non-positive/NaN/Inf, or threshold is NaN/Inf.
+// Panics if gpu is nil, cpuBlocks is non-positive, bandwidth is non-positive/NaN/Inf,
+// baseLat is negative, threshold is NaN/Inf, or the combined per-block transfer latency
+// does not fit int64.
 // The threshold parameter is deprecated in the vLLM v1 mirror model and is ignored.
 // A deprecation warning is logged if threshold != 0.
 func NewTieredKVCache(gpu *KVCacheState, cpuBlocks int64, threshold, bandwidth float64, baseLat int64) *TieredKVCache {
@@ -188,17 +189,40 @@ func NewTieredKVCache(gpu *KVCacheState, cpuBlocks int64, threshold, bandwidth f
 	if baseLat < 0 {
 		panic(fmt.Sprintf("NewTieredKVCache: baseLat must be >= 0, got %d", baseLat))
 	}
+	transferTicksFloat := math.Ceil(float64(gpu.BlockSize()) / bandwidth)
+	// float64(math.MaxInt64) rounds to 2^63. Requiring a strict inequality keeps the
+	// float64-to-int64 conversion in range on every architecture instead of relying on
+	// the implementation-dependent result of an overflowing conversion.
+	if transferTicksFloat < 1 || transferTicksFloat >= float64(math.MaxInt64) {
+		panic(fmt.Sprintf("NewTieredKVCache: bandwidth %v charges %v ticks for one %d-token block, which does not fit int64",
+			bandwidth, transferTicksFloat, gpu.BlockSize()))
+	}
+	transferTicks := int64(transferTicksFloat)
+	if baseLat > math.MaxInt64-transferTicks {
+		panic(fmt.Sprintf("NewTieredKVCache: baseLat %d plus the %d-tick bandwidth charge for one %d-token block exceeds int64",
+			baseLat, transferTicks, gpu.BlockSize()))
+	}
 	// BC-7: Log deprecation warning if threshold is set to non-default
 	if threshold != 0 {
 		logrus.Warn("KVOffloadThreshold is deprecated in vLLM v1 mirror model and will be ignored. " +
 			"GPU prefix cache is now preserved on release; CPU tier is populated via MirrorToCPU.")
 	}
 	return &TieredKVCache{
-		gpu:               gpu,
-		cpu:               newCpuTier(cpuBlocks, gpu.BlockSizeTokens),
-		transferBandwidth: bandwidth,
-		baseLatency:       baseLat,
+		gpu:                     gpu,
+		cpu:                     newCpuTier(cpuBlocks, gpu.BlockSizeTokens),
+		transferLatencyPerBlock: baseLat + transferTicks,
 	}
+}
+
+// accumulateTransferLatency performs the shared, checked update for every legacy-tier
+// reload. Constructor validation proves one charge fits; this check proves an arbitrary
+// number of charges cannot wrap pendingLatency negative before the scheduler consumes it.
+func (t *TieredKVCache) accumulateTransferLatency() {
+	if t.pendingLatency > math.MaxInt64-t.transferLatencyPerBlock {
+		panic(fmt.Sprintf("TieredKVCache: pending transfer latency %d plus the next %d-tick block transfer exceeds int64; consume pending latency before accumulating more",
+			t.pendingLatency, t.transferLatencyPerBlock))
+	}
+	t.pendingLatency += t.transferLatencyPerBlock
 }
 
 func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
@@ -359,10 +383,9 @@ func (t *TieredKVCache) reloadPrefixFromCPU(tokens []sim.TokenID, startBlock int
 		t.gpu.HashToBlock[h] = gpuBlk.ID
 		t.gpu.appendToFreeList(gpuBlk)
 
-		// Accumulate transfer latency
-		blockSize := float64(t.gpu.BlockSize())
-		transferTicks := int64(math.Ceil(blockSize / t.transferBandwidth))
-		t.pendingLatency += t.baseLatency + transferTicks
+		// Accumulate transfer latency through the checked shared boundary. The constructor
+		// validated the combined per-block charge; this protects cumulative addition.
+		t.accumulateTransferLatency()
 
 		// Touch CPU block to refresh LRU recency (block is actively needed)
 		t.cpu.touch(h)
