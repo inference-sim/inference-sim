@@ -1160,7 +1160,10 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 		dFFDense = hw.ModelConfig.DenseIntermediateDim
 	}
 
-	// Select compute throughput: FP8 for 1-byte-per-param models on FP8-capable GPUs
+	// Select compute throughput: FP8 for 1-byte-per-param models on FP8-capable GPUs.
+	// Same rule as the roofline backend (rooflineStepTime), including its weight-width-only
+	// approximation — see the comment there for which GPUs declare a native FP8 path and why
+	// activation/KV precision does not shift the ceiling.
 	peakFlops := hw.HWConfig.TFlopsPeak * 1e6 // TFLOPS → FLOP/µs
 	weightBPP := hw.ModelConfig.EffectiveWeightBytesPerParam()
 	if weightBPP == 1.0 && hw.HWConfig.TFlopsFP8 > 0 {
