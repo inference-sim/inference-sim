@@ -104,7 +104,8 @@ func TestHWFP8Ratio_CommittedTableIsDenseThroughout(t *testing.T) {
 	for _, gpu := range committedHWGPUNames(t) {
 		hc, err := latency.GetHWConfig(path, gpu)
 		require.NoError(t, err, "bundled entry %q must load", gpu)
-		assert.Empty(t, denseFP8RatioProblem(gpu, hc))
+		assert.Empty(t, denseFP8RatioProblem(gpu, hc),
+			"bundled entry %q mixes datasheet conventions", gpu)
 		if hc.TFlopsFP8 != 0 {
 			checked++
 		}
