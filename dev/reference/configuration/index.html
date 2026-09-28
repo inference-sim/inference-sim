@@ -4895,6 +4895,23 @@ one changes the ratio by 2×.</p>
 <p>To compare fabrics, change <code>InterNodeBwGBps</code> (a slower fabric never lowers the charged
 cost), or give pools distinct <code>gpu_type</code> entries with different values.</p>
 <div class="admonition note">
+<p class="admonition-title">The catalog's <code>networks/</code> fabric classes state bandwidth, not a PD-transfer base latency</p>
+<p>The catalog's reusable fabric classes (<code>&lt;catalog&gt;/networks/*.yaml</code> — <code>ethernet-100gbe</code>,
+<code>ib-400g</code>, <code>roce-200g</code>) state a nominal <code>InterNodeBwGBps</code>, and that figure <strong>is</strong> the
+PD-transfer bandwidth: there is no separate PD bandwidth number
+(<a href="https://github.com/inference-sim/blis-catalog/pull/10">blis-catalog#10</a>). They carry <strong>no</strong>
+<code>PDTransferBaseLatencyMs</code> — <a href="https://github.com/inference-sim/blis-catalog/pull/12">blis-catalog#12</a>
+removed it, because a fabric class has no inherent per-transfer base latency to state (the
+nominal value was always a <code>0</code> placeholder), and the fabric schema is <em>closed</em>, so the catalog
+CI gate now rejects the key as unknown. The PD-transfer base latency is a <strong>modeling
+estimate</strong>, supplied by <code>--pd-transfer-base-latency</code> (default <code>0.05</code> ms) and owned by
+<a href="https://github.com/inference-sim/blis-registry/issues/10"><code>blis-registry</code></a> (<code>method: assumed</code>);
+the effective value is that number alone, with no catalog <code>0</code> to compose with. BLIS has no
+<code>networks/</code> reader yet (nothing reads a fabric file today) — <code>cmd/catalog_networks_fabric_test.go</code>
+guards the rule so the reader cannot be written against the retired field
+(<a href="https://github.com/inference-sim/inference-sim/issues/1838">#1838</a>).</p>
+</div>
+<div class="admonition note">
 <p class="admonition-title">Node-pool instances use the <code>--hardware</code> entry</p>
 <p>A node-pool instance is calibrated from whichever <code>hardware_config.json</code> entry
 <code>--hardware</code> resolved, including these fabric fields — <code>hw_config_by_gpu</code> would
