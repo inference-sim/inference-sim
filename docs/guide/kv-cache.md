@@ -63,7 +63,6 @@ BLIS models tiered KV cache with GPU→CPU offloading:
 ./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --kv-cpu-blocks 50000 \
   --kv-offload-threshold 0.9 \
-  --kv-transfer-bandwidth 100.0 \
   --rate 100 --num-requests 500
 ```
 
@@ -71,8 +70,51 @@ BLIS models tiered KV cache with GPU→CPU offloading:
 |------|---------|-------------|
 | `--kv-cpu-blocks` | 0 | CPU-tier blocks (0 = disabled) |
 | `--kv-offload-threshold` | 0.9 | GPU utilization fraction above which blocks offload to CPU |
-| `--kv-transfer-bandwidth` | 100.0 | GPU→CPU transfer rate in blocks/tick |
-| `--kv-transfer-base-latency` | 0 | Fixed per-transfer latency in ticks |
+| `--kv-transfer-bandwidth` | unset ⇒ derive | Override the CPU↔GPU transfer rate, in tokens/tick. Omit it to derive from `cpu_dram`; a supplied value must be finite and > 0 |
+| `--kv-transfer-base-latency` | unset ⇒ derive | Override the fixed per-block latency in ticks. Omit it to derive from `cpu_dram`; an explicitly supplied `0` disables the fixed cost |
+
+#### Where the transfer cost comes from (#1819)
+
+The per-block transfer cost on this path is **derived**, not defaulted:
+
+```
+ticks per block = ceil(per_block_bytes / effective_bandwidth) + ceil(base_latency)
+per_block_bytes = KVBytesPerToken × block_size
+```
+
+`bandwidth` and `base_latency` are **catalog** facts for the `cpu_dram` storage device —
+`<catalog>/devices/storage.yaml`, the same table `--kv-offload-config`'s `device_class` reads
+— with the bandwidth scaled by a dimensionless **efficiency residual** (R2G3b). Catalog base
+latency is in microseconds; one simulator tick is one microsecond, and fractional values are
+rounded up. Each flag independently overrides its component, including an explicit
+`--kv-transfer-base-latency=0`. If either flag is omitted, `cpu_dram` is required; supplying
+both overrides avoids reading the device table.
+
+The residual is not an efficiency below 1. It is anchored so the derived rate reproduces the
+rate this flag used to default to (100.0) at one named reference deployment
+(`qwen/qwen3-14b`, TP=1) — which works out to **≈819×** `cpu_dram`'s rated bandwidth. That
+number is the honest record of what the retired bandwidth default asserted, and that bandwidth
+term is preserved. The additive catalog base latency is intentionally new: at the reference it
+changes a reload from 1 tick to 2 ticks. The committed matrix remains byte-identical because it
+does not enable the legacy tier. **If you want a faithful CPU-offload cost, use
+`--kv-offload-config`**, whose tiers price the catalog device directly with no residual.
+Authoring the residual into `blis-registry` alongside `kv_transfer_base_latency` is tracked in
+[blis-registry#17](https://github.com/inference-sim/blis-registry/issues/17).
+
+Away from the reference the derived rate scales as `1 / KVBytesPerToken` — a model with a
+quarter the KV per token moves four times the tokens per tick over the same bus, which the
+retired constant could not express.
+
+All latency arithmetic is checked. A rate small enough to make the bandwidth charge exceed
+`2^52` ticks is refused, as is a base latency that is negative, non-finite, unrepresentable, or
+too large to add to the bandwidth charge. `TieredKVCache` repeats the combined check for every
+caller and checks cumulative additions, so repeated reloads cannot wrap pending latency
+negative. These checks apply to **both** catalog-derived and explicitly supplied values on
+`run` and `replay`:
+
+- invalid `cpu_dram` physics is refused with the device and offending field;
+- invalid overrides are refused with the relevant flag. Being finite and `> 0` is not
+  sufficient for bandwidth: `--kv-transfer-bandwidth 1e-300` would still overflow.
 
 ### Multi-Tier Offload Config Surface (`--kv-offload-config`)
 

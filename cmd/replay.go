@@ -354,6 +354,13 @@ Example:
 			}
 		}
 
+		// #1819/#1841: both legacy single-CPU-tier transfer components are resolved
+		// through the SAME helper runCmd uses. The flags are registered in the shared
+		// registerSimConfigFlags, so run and replay derive and override identically
+		// (INV-13). No-op unless --kv-cpu-blocks > 0.
+		legacyTransfer := resolveLegacyKVTransferCost(cmd, lr.ModelConfig, tensorParallelism)
+		kvTransferBandwidth, kvTransferBaseLatency = legacyTransfer.bandwidth, legacyTransfer.baseLatency
+
 		// Numeric flag validation (same as runCmd)
 		if numInstances < 1 {
 			logrus.Fatalf("num-instances must be >= 1")
