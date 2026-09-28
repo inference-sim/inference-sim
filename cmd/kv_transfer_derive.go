@@ -109,13 +109,19 @@ const (
 	// left here with no filed owner (#1840 review F2).
 	legacyKVTransferResidual = 819.2
 
-	// maxLegacyKVTransferTicksPerBlock bounds the per-block tick charge the derived rate may
-	// produce, because sim/kv.TieredKVCache converts it with
+	// maxLegacyKVTransferTicksPerBlock bounds the per-block tick charge the rate handed to
+	// sim/kv may produce, because sim/kv.TieredKVCache converts it with
 	// `int64(math.Ceil(block_tokens / rate))` (sim/kv/tiered.go) and Go's float→int64
 	// conversion is UNDEFINED when the value does not fit: on amd64 it yields MinInt64, so a
-	// catalog read_bandwidth of, say, 1e-300 — positive, finite, and accepted by every check
+	// read_bandwidth of, say, 1e-300 — positive, finite, and accepted by every check
 	// below — would inject a large NEGATIVE pending latency instead of a large positive one
 	// (#1840 review F3).
+	//
+	// The bound is a property of the RATE, not of where the rate came from, so it is enforced
+	// on BOTH of resolveLegacyKVTransferBandwidth's paths — the catalog-derived rate and a
+	// supplied --kv-transfer-bandwidth override. A positive finite override like 1e-300 clears
+	// resolvePolicies' range check and then overflows exactly the same way (#1840 review N1);
+	// see legacyKVTransferTickBudgetError, which both paths call.
 	//
 	// 2^52 rather than MaxInt64: beyond 2^53 a float64 cannot represent consecutive integers,
 	// so `math.Ceil` stops being meaningful there anyway, and one bit of headroom below that
@@ -124,6 +130,29 @@ const (
 	// refused by it — it only catches a catalog fact that is not one.
 	maxLegacyKVTransferTicksPerBlock = 1 << 52
 )
+
+// legacyKVTransferTickBudgetError reports whether a tokens/tick transfer rate is safe for the
+// int64 arithmetic sim/kv.TieredKVCache performs on it, returning nil when it is and the
+// arithmetic that fails when it is not.
+//
+// It exists as its own function because the bound belongs to the RATE and not to its
+// provenance: a derived rate and an operator-supplied --kv-transfer-bandwidth override reach
+// the identical `int64(math.Ceil(block_tokens / rate))` conversion, so a check on only one of
+// them is a hole rather than a partial defence (#1840 review N1). Both callers add their own
+// "who to blame / what to change" context around it, which is the only thing that legitimately
+// differs between the two paths.
+//
+// Pure: rate and block size are arguments, so the bound is table-testable independently of
+// the catalog, the flags and cobra.
+func legacyKVTransferTickBudgetError(rate float64, blockSizeTokens int64) error {
+	ticksPerBlock := math.Ceil(float64(blockSizeTokens) / rate)
+	if ticksPerBlock <= maxLegacyKVTransferTicksPerBlock {
+		return nil
+	}
+	return fmt.Errorf("a CPU↔GPU transfer rate of %v tokens/tick charges %v ticks for one "+
+		"%d-token block, which does not fit the simulator's int64 tick budget (max %d)",
+		rate, ticksPerBlock, blockSizeTokens, int64(maxLegacyKVTransferTicksPerBlock))
+}
 
 // deriveLegacyKVTransferRate converts a catalog storage-device bandwidth into the rate
 // sim/kv.TieredKVCache consumes (tokens per tick), applying the R2G3b residual.
@@ -161,15 +190,13 @@ func deriveLegacyKVTransferRate(dev kvOffloadDevice, perTokenKVBytes float64, bl
 	// ceil(block_tokens / rate) exceed int64, and Go's conversion then wraps to MinInt64
 	// rather than saturating. Refuse here, where the catalog device and the model are still
 	// nameable, instead of shipping a negative transfer latency into the DES.
-	if ticksPerBlock := math.Ceil(float64(blockSizeTokens) / rate); ticksPerBlock > maxLegacyKVTransferTicksPerBlock {
-		return 0, fmt.Errorf("derived CPU↔GPU transfer rate %v tokens/tick charges %v ticks for one "+
-			"%d-token block, which does not fit the simulator's int64 tick budget (max %d): "+
-			"catalog device %q read_bandwidth=%v is implausibly small for per-token KV bytes=%v "+
-			"(residual=%v).\n"+
+	if budgetErr := legacyKVTransferTickBudgetError(rate, blockSizeTokens); budgetErr != nil {
+		return 0, fmt.Errorf("the derivation produced %w: catalog device %q read_bandwidth=%v is "+
+			"implausibly small for per-token KV bytes=%v (residual=%v).\n"+
 			"  Fix that catalog value, or set --kv-transfer-bandwidth explicitly to override the "+
 			"derivation",
-			rate, ticksPerBlock, blockSizeTokens, int64(maxLegacyKVTransferTicksPerBlock),
-			legacyKVTransferDeviceClass, dev.ReadBandwidth, perTokenKVBytes, legacyKVTransferResidual)
+			budgetErr, legacyKVTransferDeviceClass, dev.ReadBandwidth, perTokenKVBytes,
+			legacyKVTransferResidual)
 	}
 	return rate, nil
 }
@@ -227,7 +254,9 @@ func loadLegacyKVTransferDevice(catalog string) (kvOffloadDevice, error) {
 //     before this change. Derivation is selected by OMITTING the flag, not by its zero
 //     registered default — a supplied 0 never reaches here, because resolvePolicies
 //     range-checks supplied values and refuses it (a typo must be loud, not silently read as
-//     "derive").
+//     "derive"). "Verbatim" is about the VALUE, not about skipping validation: the override
+//     is held to the same int64 tick-budget bound as a derived rate, because it reaches the
+//     same sim/kv arithmetic (#1840 review N1).
 //  3. otherwise: DERIVED from the catalog cpu_dram device (see the file comment).
 //
 // Both callers reach here after resolveLatencyConfig, which refuses --block-size-in-tokens <= 0,
@@ -239,6 +268,18 @@ func resolveLegacyKVTransferBandwidth(cmd *cobra.Command, mc sim.ModelConfig, tp
 		return kvTransferBandwidth
 	}
 	if cmd.Flags().Changed("kv-transfer-bandwidth") {
+		// resolvePolicies has already refused a supplied value that is <= 0, NaN or Inf — but
+		// "positive and finite" is exactly the condition maxLegacyKVTransferTicksPerBlock
+		// exists because it is not sufficient. An override of 1e-300 clears that range check
+		// and then lands in the same int64(ceil(block_tokens / rate)) conversion the derived
+		// path is bounded against, wrapping to MinInt64 and moving the clock backwards
+		// (#1840 review N1). Refuse it here, blaming the flag rather than the catalog: the
+		// catalog is not at fault on this path and may not even have been read.
+		if budgetErr := legacyKVTransferTickBudgetError(kvTransferBandwidth, blockSizeTokens); budgetErr != nil {
+			logrus.Fatalf("--kv-transfer-bandwidth=%v is too small to simulate: %v.\n"+
+				"  Supply a larger rate, or omit --kv-transfer-bandwidth entirely to derive it from "+
+				"the catalog %q device", kvTransferBandwidth, budgetErr, legacyKVTransferDeviceClass)
+		}
 		logrus.Infof("--kv-transfer-bandwidth=%v overrides the value derived from the catalog %q device",
 			kvTransferBandwidth, legacyKVTransferDeviceClass)
 		return kvTransferBandwidth

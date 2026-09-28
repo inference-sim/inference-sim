@@ -109,10 +109,17 @@ of every enabled legacy run — 2 ticks per reference block where the retired co
 charged 1 — so it is outside the value-preserving conversion and is tracked separately in
 [inference-sim#1841](https://github.com/inference-sim/inference-sim/issues/1841).
 
-A derived rate must also leave the per-block tick charge inside the simulator's `int64` budget.
-A `cpu_dram` `read_bandwidth` small enough to break that — positive and finite, but so small the
-charge exceeds `2^52` ticks — is refused naming the device, the block size and
-`--kv-transfer-bandwidth`, rather than wrapping round to a negative transfer latency.
+Whatever the rate, it must leave the per-block tick charge inside the simulator's `int64`
+budget. A rate small enough to break that — positive and finite, but so small the charge
+exceeds `2^52` ticks — is refused rather than wrapping round to a negative transfer latency.
+That bound is a property of the *rate*, not of where it came from, so it applies to **both**
+paths on `run` and `replay` alike:
+
+- a `cpu_dram` `read_bandwidth` that derives such a rate is refused naming the device, the
+  block size and `--kv-transfer-bandwidth` (the escape hatch);
+- a **supplied** `--kv-transfer-bandwidth` that is such a rate is refused too, naming the flag
+  rather than the catalog. Being finite and `> 0` is not sufficient: `--kv-transfer-bandwidth
+  1e-300` clears that range check and would still overflow.
 
 ### Multi-Tier Offload Config Surface (`--kv-offload-config`)
 

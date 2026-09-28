@@ -40,6 +40,9 @@ import (
 //	BC-10 a derived rate that is positive and finite but so small that the library's
 //	      int64(ceil(block_tokens / rate)) would overflow is REFUSED here, not shipped into
 //	      the DES as a negative latency (#1840 review F3)
+//	BC-11 that bound is a property of the RATE, not of its provenance: a SUPPLIED
+//	      --kv-transfer-bandwidth override is held to it too, on both run and replay, so the
+//	      override path is not a way around BC-10 (#1840 review N1)
 //
 // The static half — "a physics literal cannot come back into a cmd/ flag default", plus the
 // LoRA defaults-vs-registry drift guard — lives in physics_literal_guard_test.go.
@@ -313,6 +316,65 @@ func TestDeriveLegacyKVTransferRate_RefusesRatesThatOverflowTheTickBudget(t *tes
 		if _, err := deriveLegacyKVTransferRate(dev, referenceKVBytesPerToken, 128); err != nil {
 			t.Errorf("read_bandwidth=%v must still be accepted: %v", bandwidth, err)
 		}
+	}
+}
+
+// TestLegacyKVTransferTickBudget_IsAPropertyOfTheRateNotItsProvenance is the unit half of
+// BC-11, and it states the law BC-10's implementation originally got half right.
+//
+// The int64 tick budget is a constraint on the NUMBER handed to sim/kv.TieredKVCache. Where
+// that number came from — the catalog conversion or an operator's --kv-transfer-bandwidth —
+// cannot change whether `int64(math.Ceil(block_tokens / rate))` fits. So the bound is asserted
+// on the shared checker directly, and the same rate is shown to be refused whether it arrives
+// via the derivation or verbatim from the flag: a test that only exercised one path is how the
+// override hole survived three reviews (#1840 review N1).
+func TestLegacyKVTransferTickBudget_IsAPropertyOfTheRateNotItsProvenance(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		rate      float64
+		blockSize int64
+		wantErr   bool
+	}{
+		// Refused: positive, finite, and small enough that the library's conversion wraps.
+		{"denormal_rate", 1e-300, referenceBlockSizeTokens, true},
+		{"tiny_rate", 1e-20, referenceBlockSizeTokens, true},
+		{"large_block_size", 1e-15, 128, true},
+		// Accepted: the reference, and rates far slower than any real bus.
+		{"reference_rate", retiredKVTransferBandwidthDefault, referenceBlockSizeTokens, false},
+		{"nominal_rate", referenceCPUDRAM().ReadBandwidth / referenceKVBytesPerToken, referenceBlockSizeTokens, false},
+		{"very_slow_but_representable", 1e-12, referenceBlockSizeTokens, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := legacyKVTransferTickBudgetError(tc.rate, tc.blockSize)
+			if tc.wantErr && err == nil {
+				t.Fatalf("rate %v with a %d-token block charges %v ticks and must be refused",
+					tc.rate, tc.blockSize, math.Ceil(float64(tc.blockSize)/tc.rate))
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("rate %v with a %d-token block is representable and must be accepted: %v",
+					tc.rate, tc.blockSize, err)
+			}
+			if !tc.wantErr {
+				// Non-vacuity for the accepted half: the library's own conversion really does
+				// produce a positive charge, so "accepted" is not hiding the same overflow.
+				if charged := int64(math.Ceil(float64(tc.blockSize) / tc.rate)); charged <= 0 {
+					t.Fatalf("an accepted rate must charge a positive number of ticks, got %d", charged)
+				}
+				return
+			}
+			if !strings.Contains(err.Error(), "int64") {
+				t.Errorf("the refusal must name the int64 budget it protects, got: %v", err)
+			}
+			// The derived path must reach the SAME refusal for a catalog bandwidth that
+			// produces this rate — the two paths are checked against one bound, not two.
+			dev := referenceCPUDRAM()
+			dev.ReadBandwidth = tc.rate * referenceKVBytesPerToken / legacyKVTransferResidual
+			if dev.ReadBandwidth > 0 && !math.IsInf(dev.ReadBandwidth, 0) {
+				if _, derivedErr := deriveLegacyKVTransferRate(dev, referenceKVBytesPerToken, tc.blockSize); derivedErr == nil {
+					t.Errorf("the derived path must refuse the same rate %v that the bound refuses", tc.rate)
+				}
+			}
+		})
 	}
 }
 
@@ -695,6 +757,78 @@ func TestRunCmd_LegacyKVTransfer_SuppliedZeroIsRefused(t *testing.T) {
 	}
 	if !strings.Contains(derived, "completed_requests") {
 		t.Fatalf("non-vacuity: the derived control leg produced no metrics:\n%s", derived)
+	}
+}
+
+// TestLegacyKVTransfer_OverrideThatOverflowsTheTickBudgetIsRefused is the CLI half of BC-11,
+// on BOTH run and replay.
+//
+// The finding it pins: BC-10 bounded the DERIVED rate, and resolvePolicies range-checks a
+// supplied --kv-transfer-bandwidth for <= 0 / NaN / Inf — so `--kv-transfer-bandwidth 1e-300`
+// satisfied every check on the books and was returned verbatim into sim/kv, where
+// int64(ceil(16 / 1e-300)) wraps to MinInt64 and subtracts ~292 years from the clock. The
+// override path is the operator-facing one and the escape hatch every other diagnostic in this
+// file recommends, so a hole there is reachable from the documented happy path.
+//
+// Each refusal leg is paired with a leg that differs ONLY in the flag's value and completes,
+// so the refusal is attributable to the rate and not to the deployment or the trace.
+func TestLegacyKVTransfer_OverrideThatOverflowsTheTickBudgetIsRefused(t *testing.T) {
+	if kvTransferCLISubprocess() {
+		return
+	}
+	const name = "TestLegacyKVTransfer_OverrideThatOverflowsTheTickBudgetIsRefused"
+	catalog := filepath.Join("..", "testdata", "catalog")
+	tracePrefix := filepath.Join(t.TempDir(), "legacy-kv-overflow")
+
+	// Non-vacuity, stated before the refusals: this really is a value resolvePolicies lets
+	// through, and the library conversion really does wrap on it. If either stops being true
+	// the test below is checking something else.
+	const overflowing = "1e-300"
+	if bw := 1e-300; bw <= 0 || math.IsNaN(bw) || math.IsInf(bw, 0) {
+		t.Fatalf("non-vacuity: %s must pass resolvePolicies' range check", overflowing)
+	}
+	if charged := int64(math.Ceil(float64(referenceBlockSizeTokens) / 1e-300)); charged > 0 {
+		t.Fatalf("non-vacuity: the unguarded charge for %s must be an overflow, got %d",
+			overflowing, charged)
+	}
+
+	// The trace the replay leg needs, exported at the derived rate.
+	exported, errOut, err := runKVTransferCLILeg(t, name, "run-export", catalog, "", "300", tracePrefix)
+	if err != nil {
+		t.Fatalf("run-export leg failed: %v\nstdout:\n%s\nstderr:\n%s", err, exported, errOut)
+	}
+
+	for _, leg := range []string{"run", "replay"} {
+		t.Run(leg, func(t *testing.T) {
+			out, errOut, err := runKVTransferCLILeg(t, name, leg, catalog, overflowing, "300", tracePrefix)
+			if err == nil {
+				t.Fatalf("%s: --kv-transfer-bandwidth %s must be refused — it overflows the int64 "+
+					"tick budget in sim/kv and injects a negative transfer latency;\nstdout:\n%s",
+					leg, overflowing, out)
+			}
+			// The diagnostic must blame the flag the operator set (the catalog is not at fault
+			// here and may not even have been read) and name the constraint it violated.
+			for _, frag := range []string{"--kv-transfer-bandwidth", "int64"} {
+				if !strings.Contains(errOut, frag) {
+					t.Errorf("%s: the refusal must name %q, got:\n%s", leg, frag, errOut)
+				}
+			}
+			if strings.Contains(errOut, "Fix that catalog value") {
+				t.Errorf("%s: the refusal must not blame the catalog for a value the operator "+
+					"supplied, got:\n%s", leg, errOut)
+			}
+
+			// The paired control: the same leg, same catalog, same trace, a representable rate.
+			ok, errOut, err := runKVTransferCLILeg(t, name, leg, catalog,
+				formatFloatForFlag(retiredKVTransferBandwidthDefault), "300", tracePrefix)
+			if err != nil {
+				t.Fatalf("%s: a representable override must still run: %v\nstdout:\n%s\nstderr:\n%s",
+					leg, err, ok, errOut)
+			}
+			if !strings.Contains(ok, "completed_requests") {
+				t.Fatalf("%s: non-vacuity: the control leg produced no metrics:\n%s", leg, ok)
+			}
+		})
 	}
 }
 
