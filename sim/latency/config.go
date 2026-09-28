@@ -399,13 +399,19 @@ func ParseHardwareCalibEntries(data []byte) (map[string]sim.HardwareCalib, error
 
 // hardwareCalibProvenanceKeys are the documentation-only keys a hardware-config GPU
 // entry may carry alongside its numeric fields. The bundled hardware_config.json uses
-// both to record where each calibration came from (Discussion #589 for the MFU values,
+// the two _comment keys to record where each calibration came from (Discussion #589 for the MFU values,
 // the datasheet reasoning for the interconnect bandwidths) — provenance that belongs
 // next to the numbers it explains, since a reader checking a value looks at the entry,
 // not at a doc page. They are accepted and ignored: the value decode never reads them.
 // These exact spellings are what a config must use — like the calibration fields, a
 // case-only variant ("_Comment") is rejected with the canonical spelling named.
-var hardwareCalibProvenanceKeys = []string{"_comment", "_comment_interconnect"}
+//
+// "Provenance" (R2H2, blis-catalog#10) is the structured provenance tag every catalog
+// hardware/ and networks/ entry now carries — a `vendor_spec` enum on hardware that
+// mirrors the reusable Network fabric classes. Like the _comment keys it is accepted
+// and ignored here (the value decode never reads it); its enum is validated by the
+// catalog-side CI gate (R2H3, blis-catalog#8), not by this loader.
+var hardwareCalibProvenanceKeys = []string{"_comment", "_comment_interconnect", "Provenance"}
 
 // hardwareCalibKnownKeys maps the ASCII-lowercased form of every JSON key
 // parseHWConfig accepts on a GPU entry to its canonical spelling. It is derived from
