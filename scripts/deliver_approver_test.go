@@ -69,7 +69,7 @@ func implementWorkflowWithApproverWiring(t *testing.T) (workflow string, live bo
 			"this guard would be asserting against an unchanged file",
 			recordStep, approverPatch, err)
 	}
-	patched, err := applyUnifiedDiff(current, string(patch))
+	patched, err := applyUnifiedDiff(current, string(patch), "deliver-implement.yml")
 	if err != nil {
 		t.Fatalf("%s no longer applies to deliver-implement.yml: %v\n\n"+
 			"The patch carries #1790's workflow half because the delivering App token lacks the "+
@@ -85,7 +85,10 @@ func implementWorkflowWithApproverWiring(t *testing.T) (workflow string, live bo
 }
 
 // applyUnifiedDiff applies the single-file unified diff embedded in patch to orig and returns the
-// post-image.
+// post-image. `wantFile` is the path the diff's `diff --git` header must name — a patch that
+// touches anything else is refused rather than partially applied (see below). It is a parameter
+// rather than a constant because #1834 carries a second pending workflow patch, against
+// deliver-verify.yml, through this same reconstruction.
 //
 // Deliberately hand-rolled rather than shelling out to `git apply`. The point of this test is the
 // staleness check, and reconstructing the post-image in memory is what lets the assertions below
@@ -101,7 +104,7 @@ func implementWorkflowWithApproverWiring(t *testing.T) (workflow string, live bo
 // Both inputs are normalized to LF first. A `git format-patch` diff carries LF line endings; if the
 // checked-out workflow has CRLF (a Windows checkout, or `core.autocrlf`), otherwise-identical
 // context lines would compare unequal and a good patch would be reported as stale.
-func applyUnifiedDiff(orig, patch string) (string, error) {
+func applyUnifiedDiff(orig, patch, wantFile string) (string, error) {
 	orig = strings.ReplaceAll(orig, "\r\n", "\n")
 	patch = strings.ReplaceAll(patch, "\r\n", "\n")
 	lines := strings.Split(patch, "\n")
@@ -116,7 +119,7 @@ func applyUnifiedDiff(orig, patch string) (string, error) {
 	if start < 0 {
 		return "", fmt.Errorf("no `diff --git` header found, so this is not a git patch")
 	}
-	// A second file header means the patch touches more than deliver-implement.yml. Refused rather
+	// A second file header means the patch touches more than the one workflow. Refused rather
 	// than partially applied: the caller is asserting that this patch IS the workflow half, and a
 	// patch that quietly also edits something else is not that.
 	for _, l := range lines[start+1:] {
@@ -124,8 +127,8 @@ func applyUnifiedDiff(orig, patch string) (string, error) {
 			return "", fmt.Errorf("patch contains more than one file diff; expected only the workflow")
 		}
 	}
-	if !strings.Contains(lines[start], ".github/workflows/deliver-implement.yml") {
-		return "", fmt.Errorf("patch's file header is %q, not deliver-implement.yml", lines[start])
+	if !strings.Contains(lines[start], ".github/workflows/"+wantFile) {
+		return "", fmt.Errorf("patch's file header is %q, not %s", lines[start], wantFile)
 	}
 
 	src := strings.Split(orig, "\n")
@@ -621,7 +624,7 @@ func TestApplyUnifiedDiff(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := applyUnifiedDiff(tt.orig, tt.patch)
+			got, err := applyUnifiedDiff(tt.orig, tt.patch, "deliver-implement.yml")
 			if tt.errIs != "" {
 				if err == nil {
 					t.Fatalf("expected an error containing %q, got none (result %q)", tt.errIs, got)
