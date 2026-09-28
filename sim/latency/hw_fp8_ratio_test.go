@@ -185,6 +185,26 @@ func TestHWFP8Ratio_OutOfBandPairIsRejectedNamingTheGPU(t *testing.T) {
 			name: "an FP8 rate with no BF16 rate to check it against is rejected, not divided by zero",
 			gpu:  "Nonsense", bf16: 0, fp8: 733.0, wantReject: true,
 		},
+		// Band edges. bf16 = 1 makes the ratio exactly fp8 (x/1.0 is exact in IEEE 754), so
+		// these pin the [1.8, 2.5] inclusivity the constants and the band comment state: the
+		// floor is inclusive (>= min) and the ceiling is inclusive (> max rejects only ABOVE
+		// 2.5), while a hair past either edge is rejected.
+		{
+			name: "the band floor is inclusive: an exactly-1.8x pair is accepted",
+			gpu:  "BandFloorInclusive", bf16: 1.0, fp8: 1.8,
+		},
+		{
+			name: "a hair below the floor (1.7x) is rejected",
+			gpu:  "BelowBandFloor", bf16: 1.0, fp8: 1.7, wantReject: true,
+		},
+		{
+			name: "the band ceiling is inclusive: an exactly-2.5x pair is accepted",
+			gpu:  "BandCeilingInclusive", bf16: 1.0, fp8: 2.5,
+		},
+		{
+			name: "a hair above the ceiling (2.6x) is rejected",
+			gpu:  "AboveBandCeiling", bf16: 1.0, fp8: 2.6, wantReject: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -195,14 +215,12 @@ func TestHWFP8Ratio_OutOfBandPairIsRejectedNamingTheGPU(t *testing.T) {
 			fields["TFlopsPeak"] = fmt.Sprintf("%v", tt.bf16)
 			fields["TFlopsFP8"] = fmt.Sprintf("%v", tt.fp8)
 			hc, err := latency.GetHWConfig(writeHWConfig(t, tt.gpu, fields), tt.gpu)
-			if err != nil {
-				// A row whose numbers ValidateRooflineConfig itself refuses (a 0 BF16
-				// rate) never reaches the ratio guard — the refusal is the rejection,
-				// and it must still name the field.
-				require.True(t, tt.wantReject, "a legitimate pair must load: %v", err)
-				assert.Contains(t, err.Error(), "TFlops", "the refusal must name the peak-FLOPs field")
-				return
-			}
+			// The guard is advisory, not a load-time refusal: GetHWConfig validates through
+			// ValidateHardwareCalibEntry (which logs DenseFP8RatioWarning but never fails on
+			// it) and ValidateInterconnect — not ValidateRooflineConfig — so even the
+			// missing-BF16 row (bf16 = 0) loads without error, and DenseFP8RatioWarning is
+			// what rejects it below.
+			require.NoError(t, err, "the config must load; the ratio check is advisory, not a refusal")
 
 			problem := latency.DenseFP8RatioWarning(tt.gpu, hc)
 			if !tt.wantReject {
