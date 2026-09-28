@@ -327,7 +327,8 @@ func TestCreationSeamInert_LoRAActiveOnDemandByteIdentity(t *testing.T) {
 			loraCfg = "testdata/lora_ondemand.yaml"
 		}
 		rootCmd.SetArgs([]string{
-			"run", "--model", "qwen/qwen3-14b", "--seed", "42",
+			"run", "--model", "qwen/qwen3-14b", "--hardware", "H100", "--tp", "1", "--seed", "42",
+			"--catalog", "../testdata/catalog",
 			"--defaults-filepath", "../defaults.yaml",
 			"--lora-config", loraCfg,
 		})
@@ -390,7 +391,8 @@ func TestCreationSeamInert_LoRAActiveOnDemandByteIdentity(t *testing.T) {
 func TestPrePlacementCLI_PlumbingDeterministic(t *testing.T) {
 	if os.Getenv("BLIS_NOOP_SUBPROCESS") == "1" {
 		rootCmd.SetArgs([]string{
-			"run", "--model", "qwen/qwen3-14b", "--seed", "42",
+			"run", "--model", "qwen/qwen3-14b", "--hardware", "H100", "--tp", "1", "--seed", "42",
+			"--catalog", "../testdata/catalog",
 			"--defaults-filepath", "../defaults.yaml",
 			"--lora-config", "testdata/lora_ondemand.yaml",
 			"--creation-policy", "pre-placement",
@@ -435,7 +437,8 @@ func TestPrePlacementCLI_PlumbingDeterministic(t *testing.T) {
 func TestNoOpByteIdentity_MultiInstanceEvictionPolicyInert(t *testing.T) {
 	if os.Getenv("BLIS_NOOP_SUBPROCESS") == "1" {
 		args := []string{
-			"run", "--model", "qwen/qwen3-14b", "--seed", "42",
+			"run", "--model", "qwen/qwen3-14b", "--hardware", "H100", "--tp", "1", "--seed", "42",
+			"--catalog", "../testdata/catalog",
 			"--num-instances", "2",
 			"--defaults-filepath", "../defaults.yaml",
 		}

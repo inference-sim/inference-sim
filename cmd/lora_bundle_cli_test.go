@@ -292,7 +292,8 @@ func TestResolveLoRAPeriodicInterval_NegativeFatal(t *testing.T) {
 func TestProvenance_EmittedOnLoRAActiveBundleRun(t *testing.T) {
 	if os.Getenv("BLIS_NOOP_SUBPROCESS") == "1" {
 		rootCmd.SetArgs([]string{
-			"run", "--model", "qwen/qwen3-14b", "--seed", "42",
+			"run", "--model", "qwen/qwen3-14b", "--hardware", "H100", "--tp", "1", "--seed", "42",
+			"--catalog", "../testdata/catalog",
 			"--defaults-filepath", "../defaults.yaml",
 			"--lora-config", "testdata/lora_ondemand.yaml",
 			"--lora-bundle", "lora-affinity",
