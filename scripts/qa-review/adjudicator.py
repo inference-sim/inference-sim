@@ -734,7 +734,16 @@ def select_report_comment(comments, report_author=""):
     Since #1806 it is defence in depth rather than the only barrier: every
     comment reaching here already cleared deliver-trusted-comments.sh, which
     admits only this repository's allowlisted automation logins and humans with
-    write access."""
+    write access.
+
+    Residual of the suffix equivalence, accepted knowingly: the SHORT spelling is
+    one a human account could hold (deliver-trusted-comments.sh says so, which is
+    why its own allowlist keys on the suffixed form only). So a human logged in as
+    "github-actions" would match a restriction written "github-actions[bot]". That
+    account would first have to clear the write-access filter above, and anyone
+    who has cleared it can already influence a delivery far more directly than by
+    forging a report comment — whereas the exact comparison this replaces broke
+    every multi-round delivery outright."""
     chosen = -1
     for i, c in enumerate(comments):
         if not is_report_comment(c.get("body") or ""):
