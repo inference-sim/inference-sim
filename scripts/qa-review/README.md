@@ -150,7 +150,21 @@ because that is how a comment quotes a report it is discussing) — and, when
 `--report-author` / `QA_REPORT_AUTHOR` is set, only if that login posted it. The
 author restriction is strict: on a public repository, anything looser lets a
 commenter supply a report-shaped comment with an empty Items-to-fix section and
-clear every outstanding finding.
+clear every outstanding finding. Since #1806 it is *defence in depth* rather than
+the only barrier — every comment reaching the selection already cleared
+`scripts/deliver-trusted-comments.sh`, which admits only this repository's
+allowlisted automation logins and humans with write access.
+
+**The two spellings of one App actor match (#1834).** The login is compared with
+`same_login()`, which ignores GitHub's reserved `[bot]` suffix, so
+`github-actions` and `github-actions[bot]` are the same poster. They are the same
+actor read through two APIs: the GraphQL projection behind `gh pr view --json
+comments` reports the short form, REST — which the trusted-comments filter uses
+since #1806 — reports the canonical suffixed one. An exact comparison against the
+short form therefore stopped finding the adjudicator's *own* round-0 report the
+moment the read switched to REST, and every re-verify exited **3** (PR #1832; the
+whole multi-round correction path was unusable). Tolerating both spellings means
+a future source switch in either direction cannot silently re-break it.
 
 Finding **no** report comment is **not** a `PASS`: `fetch_comments` returns
 `None` (distinct from `[]`, a real report with nothing blocking) and the tool
@@ -200,7 +214,7 @@ selects it by the round counter.)
 | `QA_QUESTIONER_MODEL` | questioner model | `gcp/gemini-3.6-flash` |
 | `QA_ANSWERER_MODEL` | answerer model | `azure/gpt-5.6-sol` |
 | `QA_ADJUDICATOR_MODEL` | adjudicator model | `azure/gpt-5.6-sol` |
-| `QA_REPORT_AUTHOR` | adjudicator: only adjudicate a prior report posted by this comment author login | empty (any author) |
+| `QA_REPORT_AUTHOR` | adjudicator: only adjudicate a prior report posted by this comment author login (the App `[bot]` suffix is optional — #1834) | empty (any author) |
 | `QA_REPO` | `owner/repo` for `gh` calls | `inference-sim/inference-sim` |
 | `QA_REPO_DIR` | local clone the worktree is cut from | — |
 

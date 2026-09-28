@@ -1236,6 +1236,118 @@ func TestAdjudicatorSelectsTheGenuineReportComment(t *testing.T) {
 	}
 }
 
+// filterReportLogin is the login scripts/deliver-trusted-comments.sh reports for the identity
+// that posts the qa-review report — `gh pr comment` under GITHUB_TOKEN. It reads via REST since
+// #1806, so it emits the CANONICAL App login, suffix included; the script's own
+// AUTOMATION_LOGINS allowlist is keyed on exactly this spelling, and
+// TestQAReportAuthorFindsTheReportTheDeliveryLoopPosts cross-checks that it still is.
+const filterReportLogin = "github-actions[bot]"
+
+// selectionFindsReport runs adjudicator.fetch_comments over a single genuine report authored by
+// `poster`, with the report-author restriction set to `configured`, and reports whether the
+// report was found.
+//
+// False is the failure mode #1834 is about: no report found means `items` is None, which main()
+// turns into exit 3 with no verdict line — which the delivery gate reads as MISSING.
+func selectionFindsReport(t *testing.T, poster, configured string) bool {
+	t.Helper()
+	raw, err := json.Marshal([]map[string]any{comment(poster, genuineReport)})
+	if err != nil {
+		t.Fatalf("marshalling the report fixture: %v", err)
+	}
+	stdout, stderr, code := runPython(t, "", "-c", selectionProbe, string(raw), configured)
+	if code != 0 {
+		t.Fatalf("selection probe exit=%d stderr=%s", code, stderr)
+	}
+	var got struct {
+		Items *[]struct {
+			ID string `json:"id"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("selection probe output is not JSON: %v (%s)", err, stdout)
+	}
+	return got.Items != nil && len(*got.Items) > 0
+}
+
+// TestAdjudicatorFindsItsOwnReportAcrossLoginForms is the #1834 regression guard.
+//
+// The adjudicate-only re-verify (#1716) restricts the prior-report search to the login that
+// POSTED the round-0 report (QA_REPORT_AUTHOR). #1806 then rewired fetch_comments onto
+// scripts/deliver-trusted-comments.sh, which reads REST and so reports the canonical App login
+// `github-actions[bot]` where the GraphQL projection it replaced reported the short
+// `github-actions`. The restriction was still spelled short and the comparison was exact, so the
+// adjudicator could no longer find its OWN report: select_report_comment returned -1,
+// fetch_comments returned None, and the tool exited 3 on EVERY re-verify — deterministically, for
+// every multi-round PR (observed on PR #1832, run 36432999708).
+//
+// The contract: the two spellings of one App actor match in BOTH directions, so neither the
+// pre-#1806 short form nor the canonical form is silently required — while a DIFFERENT login is
+// still rejected, which is what the restriction exists for.
+func TestAdjudicatorFindsItsOwnReportAcrossLoginForms(t *testing.T) {
+	requirePython3(t)
+
+	cases := []struct {
+		name       string
+		poster     string // the login the comment source reports for the report's author
+		configured string // the QA_REPORT_AUTHOR value the restriction is written with
+		wantFound  bool
+		why        string
+	}{
+		{
+			name: "canonical-restriction-matches-canonical-poster", poster: filterReportLogin,
+			configured: filterReportLogin, wantFound: true,
+			why: "the canonical REST spelling on both sides is the post-#1806 steady state",
+		},
+		{
+			name: "short-restriction-matches-canonical-poster", poster: filterReportLogin,
+			configured: "github-actions", wantFound: true,
+			why: "THE #1834 BUG. A restriction still spelled the pre-#1806 short way must not stop " +
+				"the adjudicator finding the report the REST-reading filter hands it — that mismatch " +
+				"is what made every correction round end at needs-human",
+		},
+		{
+			name: "canonical-restriction-matches-short-poster", poster: "github-actions",
+			configured: filterReportLogin, wantFound: true,
+			why: "the other direction too: a source that reverts to the GraphQL short projection " +
+				"must not re-break a restriction written canonically. Tolerating one direction only " +
+				"would leave the same trap set for the next source switch",
+		},
+		{
+			name: "short-restriction-matches-short-poster", poster: "github-actions",
+			configured: "github-actions", wantFound: true,
+			why: "the pre-#1806 behaviour is preserved, so this is a widening and not a swap",
+		},
+		{
+			name: "a-different-app-is-still-rejected", poster: "third-party-reviewer[bot]",
+			configured: filterReportLogin, wantFound: false,
+			why: "the restriction must still discriminate. A third-party App's comment is as " +
+				"untrusted as a stranger's, so it must not be able to supply the prior findings",
+		},
+		{
+			name: "a-different-human-is-still-rejected", poster: "outsider",
+			configured: filterReportLogin, wantFound: false,
+			why: "suffix tolerance must not degrade into matching any login: an unrelated account " +
+				"could otherwise post a report-shaped comment with no findings and clear the gate",
+		},
+		{
+			name: "the-suffix-alone-is-not-a-login", poster: filterReportLogin,
+			configured: "[bot]", wantFound: false,
+			why: "the suffix is stripped, not treated as a wildcard — `[bot]` canonicalises to the " +
+				"empty string and must match no login rather than every App",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := selectionFindsReport(t, tc.poster, tc.configured); got != tc.wantFound {
+				t.Errorf("report from %q found under QA_REPORT_AUTHOR=%q = %v, want %v: %s",
+					tc.poster, tc.configured, got, tc.wantFound, tc.why)
+			}
+		})
+	}
+}
+
 // refusalProbe drives main() with the `gh` call stubbed and the model call made
 // unreachable, so the no-prior-report path is exercised end to end.
 const refusalProbe = `

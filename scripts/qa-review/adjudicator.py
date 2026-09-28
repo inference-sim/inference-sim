@@ -9,7 +9,8 @@ author's defence and the current code.
 Source-comment selection is structural, not a substring search: a comment
 qualifies only if it IS a rendered report — an unquoted, unfenced
 "## qa-review — PR #" heading AND an "### Items to fix" section — and, when
---report-author/QA_REPORT_AUTHOR is set, only if that login posted it. Keying
+--report-author/QA_REPORT_AUTHOR is set, only if that login posted it (either
+spelling of a GitHub App actor matches — see same_login, #1834). Keying
 on the bare banner substring let a later comment that merely QUOTED it (a
 self-review discussing the findings, or one pasting an example report inside
 ``` fences) hijack the selection; with no Items-to-fix section of its own that
@@ -40,7 +41,9 @@ Env:
   OPENAI_API_KEY        proxy key; falls back to LITELLM_KEY
   QA_ADJUDICATOR_MODEL  default azure/gpt-5.6-sol
   QA_REPORT_AUTHOR      restrict the prior-report search to this comment
-                        author login (empty = any author)
+                        author login (empty = any author). Either spelling of a
+                        GitHub App actor is accepted -- "github-actions" and
+                        "github-actions[bot]" name the same poster (#1834).
 """
 
 import argparse
@@ -689,20 +692,54 @@ def is_report_comment(body):
     return has_heading and items_has_content
 
 
+# GitHub reserves the "[bot]" suffix for GitHub App actors, so "github-actions" and
+# "github-actions[bot]" are ONE actor spelled by two APIs: the GraphQL projection behind
+# `gh pr view --json comments` reports the short form, REST reports the canonical suffixed
+# one. That difference broke the re-verify (#1834): --report-author was written for the
+# short form, then #1806 rewired fetch_comments onto scripts/deliver-trusted-comments.sh,
+# which reads REST. The comparison was exact, so the adjudicator could no longer find its
+# OWN round-0 report — exit 3 on every re-verify, and every multi-round delivery stopped at
+# needs-human. Comparing the suffix-stripped spellings makes the restriction independent of
+# which API supplied the comment, so a source switch in either direction cannot silently
+# re-break it.
+_BOT_LOGIN_SUFFIX = "[bot]"
+
+
+def same_login(a, b):
+    """True iff two comment-author logins name the same actor.
+
+    The App "[bot]" suffix is ignored on both sides (see _BOT_LOGIN_SUFFIX). For
+    comparison only — never use the canonical form to display or re-post a login."""
+
+    def canonical(login):
+        login = login or ""
+        if login.endswith(_BOT_LOGIN_SUFFIX):
+            return login[: -len(_BOT_LOGIN_SUFFIX)]
+        return login
+
+    return canonical(a) == canonical(b)
+
+
 def select_report_comment(comments, report_author=""):
     """Index of the most recent genuine qa-review report comment, or -1.
 
     A comment qualifies iff is_report_comment() accepts its body and, when
-    `report_author` is given, that login posted it. The author restriction is
+    `report_author` is given, that login posted it (compared with same_login, so
+    either spelling of an App actor matches — #1834). The author restriction is
     strict on purpose: this runs against a PUBLIC repository, so without it any
     commenter could post a report-shaped comment with an empty Items-to-fix
     section and clear every outstanding finding. It is empty by default so the
-    tool stays usable by hand, where the report's poster is whoever ran it."""
+    tool stays usable by hand, where the report's poster is whoever ran it.
+
+    Since #1806 it is defence in depth rather than the only barrier: every
+    comment reaching here already cleared deliver-trusted-comments.sh, which
+    admits only this repository's allowlisted automation logins and humans with
+    write access."""
     chosen = -1
     for i, c in enumerate(comments):
         if not is_report_comment(c.get("body") or ""):
             continue
-        if report_author and (c.get("author") or {}).get("login", "") != report_author:
+        if report_author and not same_login((c.get("author") or {}).get("login", ""), report_author):
             continue
         chosen = i
     return chosen
@@ -757,7 +794,7 @@ def main(argv=None):
         "--report-author",
         default=os.environ.get("QA_REPORT_AUTHOR", ""),
         help="only adjudicate a prior report posted by this comment author login "
-        "(empty = any author; see select_report_comment)",
+        "(empty = any author; the App '[bot]' suffix is optional; see select_report_comment)",
     )
     parser.add_argument("--out", default="", help="write the report here (else stdout)")
     parser.add_argument("--post-to-pr", action="store_true", help="post as a PR comment")
