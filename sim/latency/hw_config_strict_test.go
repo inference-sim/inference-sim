@@ -258,13 +258,15 @@ func TestStrictHWConfig_NoTwoFieldsDifferOnlyInCase(t *testing.T) {
 	}
 }
 
-// TestStrictHWConfig_ProvenanceKeysAreAccepted covers BC-3: the two documentation-only
-// keys the bundled file carries per GPU entry survive strict parsing, and the numeric
-// values around them are read correctly (i.e. they are ignored, not treated as data).
+// TestStrictHWConfig_ProvenanceKeysAreAccepted covers BC-3: the documentation-only keys
+// a GPU entry may carry survive strict parsing, and the numeric values around them are
+// read correctly (i.e. they are ignored, not treated as data). "Provenance" (R2H2,
+// blis-catalog#10) joins the two _comment keys as an accepted-and-ignored tag.
 func TestStrictHWConfig_ProvenanceKeysAreAccepted(t *testing.T) {
 	fields := baseHWFields()
 	fields["_comment"] = `"MFU values calibrated per Discussion #589"`
 	fields["_comment_interconnect"] = `"Per-GPU effective unidirectional GB/s; ratio 9x"`
+	fields["Provenance"] = `"vendor_spec"` // structured provenance tag; accepted, ignored by the value decode
 
 	path := writeHWConfig(t, "H100", fields)
 	hc, err := latency.GetHWConfig(path, "H100")
@@ -286,6 +288,19 @@ func TestStrictHWConfig_ProvenanceKeyCaseMismatchIsRejected(t *testing.T) {
 	_, err := latency.GetHWConfig(path, "H100")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "_comment", "error must name the canonical provenance key")
+
+	// "Provenance" (R2H2, #1831) is a documentation-only key like the _comment keys, so a
+	// case-only variant ("provenance") must get the SAME case-mismatch diagnostic — naming
+	// the canonical "Provenance", not accepted by accident and not reported as unknown.
+	pfields := baseHWFields()
+	pfields["provenance"] = `"vendor_spec"`
+	ppath := writeHWConfig(t, "H100", pfields)
+	_, perr := latency.GetHWConfig(ppath, "H100")
+	require.Error(t, perr, "a case-only variant of Provenance must be rejected")
+	assert.Contains(t, perr.Error(), "Provenance", "error must name the canonical spelling to use")
+	assert.Contains(t, perr.Error(), "H100", "error must name the GPU entry the key appears under")
+	assert.Contains(t, strings.ToLower(perr.Error()), "case",
+		"the diagnostic must say the problem is letter case, not an unknown field")
 }
 
 // TestStrictHWConfig_AllOffendersReportedDeterministically covers BC-7: several unknown
@@ -323,7 +338,8 @@ func TestStrictHWConfig_AllOffendersReportedDeterministically(t *testing.T) {
 
 // TestStrictHWConfig_CommittedFileDeclaresOnlyKnownKeys covers BC-4 over the committed
 // hardware_config.json: every key in the shipped file is either a declared
-// sim.HardwareCalib field or one of the two provenance keys. Without this, adding a GPU
+// sim.HardwareCalib field or one of the two `_comment` provenance keys the bundled file
+// carries (the third accepted key, `Provenance`, is catalog-only). Without this, adding a GPU
 // entry with a typo'd key would make the bundled file unloadable — a failure discovered
 // by a user rather than by CI. It enumerates the file, so a newly added entry is covered.
 func TestStrictHWConfig_CommittedFileDeclaresOnlyKnownKeys(t *testing.T) {
