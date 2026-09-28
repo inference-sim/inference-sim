@@ -72,19 +72,35 @@ rather than discarding seventeen turns of tool work — and the retry does not
 spend a turn out of `MAX_TOOL_TURNS`.
 
 - **Retried:** HTTP `408`/`429` and every `5xx`, plus connection-level failures
-  (`URLError`, socket timeout, connection reset, a disconnect mid-read).
+  (`URLError`, socket timeout, connection reset, a disconnect mid-read), plus a
+  **response body that will not decode** — a proxy blip can answer `200` with an
+  HTML error page or a body truncated mid-JSON, which urllib reports as a
+  perfectly clean response, so the decode failure is the only evidence that this
+  was not the model's answer.
 - **Not retried:** every other `4xx`. `400`/`401`/`403`/`404` are deterministic
   configuration errors (bad payload, wrong key, unknown model) — retrying them
-  cannot succeed and only burns CI wall-clock.
-- `Retry-After` wins when present and numeric (capped at 120s, so a large or
-  hostile value cannot park the job); otherwise exponential backoff with half
-  jitter, i.e. a wait drawn from `[w/2, w]`.
+  cannot succeed and only burns CI wall-clock. The **gateway's own response body
+  is written to stderr** before the error is re-raised: the status line says
+  `Bad Request`, the body says which field, model or limit was rejected.
+- `Retry-After` wins when present, and is honoured **in full** — both the
+  delay-seconds and the HTTP-date form, never shortened. The absolute form is
+  differenced against the response's own `Date` header when it has one, so both
+  timestamps come from the gateway and a skewed runner clock cannot distort the
+  window. An unusable header (a negative count, an unparseable word, a deadline
+  already past) falls through to exponential backoff with half jitter, i.e. a
+  wait drawn from `[w/2, w]`.
+- **The waiting is bounded in aggregate, not per wait** (`QA_HTTP_MAX_TOTAL_WAIT`,
+  900s). A delay that does not fit the remaining budget **ends the retry loop**
+  rather than being truncated: retrying earlier than the gateway asked earns the
+  same error and spends an attempt for nothing. That is also a firmer bound on a
+  hostile `Retry-After: 99999` than a per-wait cap was — no wait happens at all.
 - Every attempt carries an **explicit `timeout=`**, so a hung connection fails
   into a retry instead of hanging the review.
-- **Fail-closed on genuine exhaustion.** When the budget runs out the last error
-  is re-raised after a stderr diagnostic, so the script still exits without a
-  marker and the gate still reads `MISSING` ⇒ `needs-human`. Only the
-  single-blip hair-trigger is gone; a sustained outage still stops for a human.
+- **Fail-closed on genuine exhaustion.** When the attempt budget (or the wait
+  budget) runs out the last error is re-raised after a stderr diagnostic naming
+  it and the gateway's body, so the script still exits without a marker and the
+  gate still reads `MISSING` ⇒ `needs-human`. Only the single-blip hair-trigger
+  is gone; a sustained outage still stops for a human.
 
 ### questioner.py
 
@@ -238,8 +254,9 @@ selects it by the round counter.)
 | `QA_HTTP_TIMEOUT` | `_http.py`: per-attempt request timeout, seconds | `600` |
 | `QA_HTTP_MAX_ATTEMPTS` | `_http.py`: total attempts including the first | `5` |
 | `QA_HTTP_BACKOFF` | `_http.py`: first backoff, seconds, doubled per retry | `2` |
+| `QA_HTTP_MAX_TOTAL_WAIT` | `_http.py`: total waiting allowed between attempts, seconds, across the whole call | `900` |
 
-The three `QA_HTTP_*` knobs are optional tuning only. An unusable value (not a
+The `QA_HTTP_*` knobs are optional tuning only. An unusable value (not a
 number, or non-positive) is reported on stderr and ignored rather than raised: a
 typo'd knob must not be the thing that turns a review into `MISSING`.
 
@@ -264,9 +281,12 @@ paths need the live proxy and are not unit-tested here.
 lower than the rest: they replace `_http.send` — the single named seam that
 touches the network — and `_http.sleep`, rather than `post_chat_completion`,
 which is the function under test. Pinned: retry-then-success for every transient
-status and connection error, the retry re-sending the request verbatim,
-`Retry-After` (honoured, capped, and falling back on an unusable value), the
-jittered exponential window, no retry at all on `4xx`/an unparseable body, the
-fail-closed re-raise and diagnostic on exhaustion, that all three agents share
-the one client, and that a mid-loop `504` resumes with its message history
-intact without spending a tool turn.
+status, connection error and unparseable body; the retry re-sending the request
+verbatim; `Retry-After` honoured in full in both forms (delay-seconds, HTTP-date
+differenced against the response `Date`) and falling back to backoff on an
+unusable value; the cumulative wait budget ending the loop rather than waiting a
+truncated delay; the jittered exponential window; no retry at all on a `4xx`,
+with the gateway's own body reaching stderr; the fail-closed re-raise and
+diagnostic on exhaustion (including a body that never parses); that all three
+agents share the one client; and that a mid-loop `504` resumes with its message
+history intact without spending a tool turn.
