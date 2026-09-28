@@ -3899,7 +3899,7 @@
 <td><code>--hardware</code></td>
 <td>string</td>
 <td>""</td>
-<td><strong>Required</strong> GPU type (<code>run</code> and <code>replay</code>). Bundled options: <code>H100</code>, <code>A100-SXM</code>, <code>A100-80</code>. Never loaded from <code>defaults.yaml</code> — omitting it is refused naming the flag (NS-6, #1733). Add new GPUs to <code>hardware_config.json</code> (include <code>IntraNodeBwGBps</code>/<code>InterNodeBwGBps</code> if instances on that GPU may span nodes — see <a href="#interconnect-calibration">Interconnect Calibration</a>).</td>
+<td><strong>Required</strong> GPU type (<code>run</code> and <code>replay</code>). Bundled options: <code>H100</code>, <code>H200</code>, <code>A100-SXM</code>, <code>A100-80</code>, <code>L40S</code> (the full set of <code>hardware_config.json</code> entries — see <a href="../../guide/latency-models/#generalization-scope">Generalization Scope</a> for each one's specs). Never loaded from <code>defaults.yaml</code> — omitting it is refused naming the flag (NS-6, #1733). Add new GPUs to <code>hardware_config.json</code> (include <code>IntraNodeBwGBps</code>/<code>InterNodeBwGBps</code> if instances on that GPU may span nodes — see <a href="#interconnect-calibration">Interconnect Calibration</a>).</td>
 </tr>
 <tr>
 <td><code>--tp</code></td>

@@ -3535,10 +3535,25 @@ config. <code>--catalog</code> names the catalog clone ROOT, so the model's <cod
 <p><strong>Supported hardware:</strong></p>
 <ul>
 <li><strong>H100</strong> (80 GB HBM3, 989.5 TFLOPS BF16 / 1979 TFLOPS FP8, 3.35 TB/s)</li>
-<li><strong>A100-SXM</strong> (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s)</li>
+<li><strong>H200</strong> (141 GB HBM3e, 989.5 TFLOPS BF16 / 1979 TFLOPS FP8, 4.8 TB/s — same Hopper compute die as H100)</li>
+<li><strong>A100-SXM</strong> (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s — Ampere has no FP8 tensor cores)</li>
 <li><strong>A100-80</strong> (alias for A100-SXM)</li>
-<li><strong>L40S</strong> (48 GB GDDR6, 362 TFLOPS BF16 / 1466 TFLOPS FP8, 0.864 TB/s)</li>
+<li><strong>L40S</strong> (48 GB GDDR6, 362 TFLOPS BF16 / 733 TFLOPS FP8, 0.864 TB/s)</li>
 </ul>
+<div class="admonition warning">
+<p class="admonition-title">Peak FLOPs are the <strong>dense</strong> figures — never the with-sparsity ones</p>
+<p><code>TFlopsPeak</code> and <code>TFlopsFP8</code> are both dense tensor-core throughput, so their ratio is
+~2.0x on every entry (H100 1979/989.5, L40S 733/362.05). NVIDIA datasheets also quote a
+2x-larger <em>with-sparsity</em> number, and taking <code>TFlopsFP8</code> from that column while
+<code>TFlopsPeak</code> stays dense doubles the FP8 compute ceiling — which is exactly what the
+bundled L40S entry did until #1829 (it shipped <code>1466.0</code>, implying an impossible 4.05x
+ratio). When adding a GPU, read both numbers out of the same column. The ratio of every
+bundled entry is a hard test failure (<code>sim/latency/hw_fp8_ratio_test.go</code>), and every
+hardware table BLIS <em>reads</em> — a <code>&lt;catalog&gt;/hardware/&lt;gpu&gt;.yaml</code> entry or your own
+<code>--hardware</code> file — is checked at the load boundary, which <strong>warns on stderr naming the
+GPU</strong> rather than refusing the run (the band is a heuristic over today's NVIDIA parts, so
+a legitimate accelerator outside it must still run).</p>
+</div>
 <p><strong>Coefficients were trained on H100 traces</strong> but the roofline basis functions automatically scale to each GPU's compute/bandwidth specifications via hardware config. This enables the model to generalize across hardware without GPU-specific calibration.</p>
 <p><strong>Model architectures:</strong></p>
 <ul>
