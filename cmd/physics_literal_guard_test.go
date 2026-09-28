@@ -379,9 +379,8 @@ func TestPhysicsPricedFlagDefaults_NoneInProductionSources(t *testing.T) {
 
 // TestPhysicsPricedFlagDefaults_ConvertedFlagsAreZero is the positive statement of the same
 // law for the flags #1819 and R2G3b touched: both legacy KV-transfer flags must register a
-// ZERO default. Zero is load-bearing — it is what makes "unset" distinguishable from a rate
-// (for --kv-transfer-bandwidth, unset ⇒ derive; for --kv-transfer-base-latency, the
-// registry's `method: not_charged`).
+// ZERO registered default. Cobra's Changed bit is load-bearing: omission derives each value,
+// while a supplied bandwidth 0 is invalid and a supplied base-latency 0 is a valid override.
 // Both commands are checked: the flags live in the shared registerSimConfigFlags, so a
 // divergence would also be an INV-13 defect.
 func TestPhysicsPricedFlagDefaults_ConvertedFlagsAreZero(t *testing.T) {
@@ -635,7 +634,7 @@ func f(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&w, "snapshot-refresh-interval", 50000, "us")
 	// A converted physics flag: zero means "absent => derive".
 	cmd.Flags().Float64Var(&a, "kv-transfer-bandwidth", 0, "derived")
-	cmd.Flags().Int64Var(&b, "kv-transfer-base-latency", 0, "not charged")
+	cmd.Flags().Int64Var(&b, "kv-transfer-base-latency", 0, "unset derives; explicit zero overrides")
 	// A named constant has a declaration site that can carry provenance.
 	cmd.Flags().Float64Var(&c, "host-dram-bandwidth", hostDRAMBandwidth, "bytes/us")
 	// The flag name in help text must not trip the AST detector.

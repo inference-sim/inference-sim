@@ -69,7 +69,7 @@ All internal timestamps in the DES (arrival time, schedule time, completion time
 | `think_time_us` (workload YAML) | microseconds | Inter-round delay in multi-turn sessions. 5,000,000 = 5 seconds |
 | `aggregate_rate`, `--rate` | requests/second | Not ticks — real-world time unit |
 | `--kv-transfer-bandwidth` | tokens/tick | Transfer rate between GPU and CPU KV tiers on the legacy `--kv-cpu-blocks` path. Unset ⇒ **derived** from the catalog `cpu_dram` device (#1819) |
-| `--kv-transfer-base-latency` | ticks (μs) | Fixed per-transfer overhead. `0` = not charged (the `blis-registry` `kv_transfer_base_latency` coefficient) |
+| `--kv-transfer-base-latency` | ticks (μs) | Fixed per-block overhead on the legacy CPU tier. Unset ⇒ derived from `cpu_dram.base_latency`; explicit `0` disables it |
 
 ### Common Pitfalls
 
@@ -107,8 +107,8 @@ Controls GPU and CPU memory simulation for key-value cache blocks. Maps to `KVCa
 | `--block-size-in-tokens` | int64 | 16 | Tokens per KV block. |
 | `--kv-cpu-blocks` | int64 | 0 | CPU-tier blocks. 0 disables tiered caching. |
 | `--kv-offload-threshold` | float64 | 0.9 | GPU utilization fraction above which blocks are offloaded to CPU. Range [0, 1]. |
-| `--kv-transfer-bandwidth` | float64 | unset ⇒ derive | GPU↔CPU transfer rate in tokens/tick for the legacy `--kv-cpu-blocks` tier. **Unset ⇒ derived** from the catalog `cpu_dram` storage device: `ticks/block = per_block_bytes / bandwidth`, with the R2G3b efficiency residual applied (#1819). Supply a value to override the derivation; it must then be finite, > 0, and large enough that the per-block tick charge fits the simulator's `int64` budget (a supplied `1e-300` is finite and > 0 but is refused for that reason — the same bound the derived rate is held to, on both `run` and `replay`). Derivation is selected by **omitting** the flag, not by its zero registered default — `--kv-transfer-bandwidth 0` is a supplied value, so it is refused as out of range rather than read as "derive" (that is deliberate: it makes a typo loud instead of silently reinstating the derivation). Enabling `--kv-cpu-blocks > 0` without an override requires `<catalog>/devices/storage.yaml` to define `cpu_dram`. |
-| `--kv-transfer-base-latency` | int64 | 0 | Fixed per-transfer latency in ticks. This is the *modelling* per-transfer cost (`blis-registry` `kv_transfer_base_latency`, `method: not_charged`), **not** `cpu_dram`'s physical `base_latency` — the two are distinct quantities. |
+| `--kv-transfer-bandwidth` | float64 | unset ⇒ derive | GPU↔CPU transfer rate in tokens/tick for the legacy `--kv-cpu-blocks` tier. Omit it to derive from `cpu_dram.read_bandwidth` with the R2G3b residual; supply a finite positive value to override it. A rate whose per-block charge exceeds the safe tick budget is refused. Passing `0` is invalid, not a request to derive. |
+| `--kv-transfer-base-latency` | int64 | unset ⇒ derive | Fixed per-block latency in ticks. Omit it to derive from `cpu_dram.base_latency` (microseconds rounded up to whole ticks); an explicitly supplied `0` is a valid independent override. If either transfer flag is omitted, `<catalog>/devices/storage.yaml` must define `cpu_dram`; if both are supplied, the table is not read. Combined and cumulative transfer-latency additions are checked against `int64`. |
 
 \* The effective value of `--total-kv-blocks` follows a 3-layer resolution: (1) explicit `--total-kv-blocks` CLI flag, (2) auto-calculation from model architecture and GPU memory via `CalculateKVBlocks` (for all backends when `config.json` and `MemoryGiB` are available), (3) hardcoded default of 1,000,000 blocks. See [Resolution Process](#resolution-process) for details.
 

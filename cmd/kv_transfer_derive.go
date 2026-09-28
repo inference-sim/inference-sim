@@ -27,43 +27,20 @@ import (
 // with per_block_bytes = KVBytesPerToken(model, TP) × block_size_tokens.
 //
 // HOW THAT REACHES THE SIMULATOR. sim/kv.TieredKVCache charges
-// `baseLatency + ceil(block_size_tokens / transferBandwidth)` per reloaded block, so its
-// rate is in TOKENS per tick (the flag's "blocks per tick" help text has always been a
-// misnomer — the divisor is the block's TOKEN count, not 1). Expressing the derivation in
-// that unit makes block_size_tokens cancel exactly:
+// `baseLatency + ceil(block_size_tokens / transferBandwidth)` per reloaded block. The rate
+// is therefore in TOKENS per tick (the flag's old "blocks per tick" help text was a
+// misnomer — the divisor is the block's TOKEN count, not 1). Expressing the bandwidth
+// derivation in that unit makes block_size_tokens cancel exactly:
 //
 //	rate = bandwidth / KVBytesPerToken           [tokens/tick]
 //	ceil(block_size_tokens / rate) = ceil(block_size_tokens × KVBytesPerToken / bandwidth)
 //	                               = ceil(per_block_bytes / bandwidth)
 //
-// so the rate this file derives IS the formula above, charged per block by the existing
-// library code. Nothing in sim/ changes.
-//
-// THE `+ base_latency` TERM IS NOT TAKEN FROM THE DEVICE — a TRACKED deferral
-// (inference-sim#1841), not a silent implementation choice.
-//
-// #1819's change list asks for both `bandwidth` and `base_latency` to be read from cpu_dram.
-// Its acceptance criteria ask for something that cannot hold at the same time for the
-// latency term: "the derived cost ... reproduces the pre-change cost for the same inputs",
-// under a governing invariant the issue states outright — "R2: value-preserving,
-// byte-identical stdout on both backends".
-//
-// They conflict because TieredKVCache charges `baseLatency + ceil(block_tokens / rate)` per
-// reloaded block. The retired configuration charged baseLatency = 0 (the shipped
-// --kv-transfer-base-latency default). cpu_dram's base_latency is 1.0 µs and 1 tick = 1 µs
-// (docs/reference/configuration.md), so folding it in makes the reference block cost 2 ticks
-// where it was 1 — and no choice of residual can absorb that, because the residual is
-// multiplicative on the second term while the first is additive, and `ceil` of a positive
-// quantity is never 0. Charging the device latency is therefore a COST CHANGE, which is
-// exactly what the issue's own governing invariant forbids.
-//
-// So this file derives the bandwidth side only, and the physics question — SHOULD the legacy
-// tier charge cpu_dram's 1.0 µs per transfer? — is deferred to a maintainer in
-// inference-sim#1841 rather than decided here. The authority for the deferral is #1819's own
-// acceptance criteria. blis-registry's separate `kv_transfer_base_latency` = 0 ticks,
-// `method: not_charged` entry (coefficients/legacy-kv-transfer.yaml) AGREES with the outcome,
-// but it is another repository's decision and cannot refine an issue here, so it is corroboration
-// and not the reason.
+// The effective base latency is independently selected: an explicit
+// --kv-transfer-base-latency wins (including 0), otherwise cpu_dram.base_latency is rounded
+// up to whole simulator ticks. The #1819 design refinement made this additive catalog
+// latency an intentional cost change for the explicitly enabled legacy path (#1841). R2's
+// byte-identity promise still covers the committed matrix, where this path is disabled.
 //
 // INERT unless --kv-cpu-blocks > 0 (the pre-#1590 path, mutually exclusive with
 // --kv-offload-config), so every run that does not enable the legacy tier is byte-identical
@@ -94,10 +71,10 @@ const (
 	// READ IT HONESTLY: a residual of 819.2 is not an efficiency ≤ 1. It records that the
 	// retired default asserted ~819× cpu_dram's rated bandwidth — which is exactly why
 	// R2G3b would not transcribe it as physics. It is preserved rather than corrected
-	// because R2 is value-preserving: the conversion must reproduce today's cost, and a
-	// physics correction is a separate, arguable change. Operators who want a faithful
-	// CPU-offload cost should use --kv-offload-config, whose tiers price the catalog
-	// device directly with no residual.
+	// to preserve the historical bandwidth term. The separately derived catalog base
+	// latency is the intentional enabled-path cost change specified by #1819/#1841.
+	// Operators who want a faithful CPU-offload cost should use --kv-offload-config, whose
+	// tiers price the catalog device directly with no residual.
 	//
 	// Away from the reference the derived rate scales as 1/KVBytesPerToken — the physically
 	// meaningful behaviour the retired constant could not express (a model with a quarter
@@ -109,8 +86,8 @@ const (
 	// left here with no filed owner (#1840 review F2).
 	legacyKVTransferResidual = 819.2
 
-	// maxLegacyKVTransferTicksPerBlock bounds the per-block tick charge the rate handed to
-	// sim/kv may produce, because sim/kv.TieredKVCache converts it with
+	// maxLegacyKVTransferTicksPerBlock bounds the bandwidth portion of the per-block tick
+	// charge handed to sim/kv, because sim/kv.TieredKVCache converts it with
 	// `int64(math.Ceil(block_tokens / rate))` (sim/kv/tiered.go) and Go's float→int64
 	// conversion is UNDEFINED when the value does not fit: on amd64 it yields MinInt64, so a
 	// read_bandwidth of, say, 1e-300 — positive, finite, and accepted by every check
@@ -118,18 +95,23 @@ const (
 	// (#1840 review F3).
 	//
 	// The bound is a property of the RATE, not of where the rate came from, so it is enforced
-	// on BOTH of resolveLegacyKVTransferBandwidth's paths — the catalog-derived rate and a
+	// on BOTH bandwidth paths through resolveLegacyKVTransferCost — the catalog-derived rate and a
 	// supplied --kv-transfer-bandwidth override. A positive finite override like 1e-300 clears
 	// resolvePolicies' range check and then overflows exactly the same way (#1840 review N1);
 	// see legacyKVTransferTickBudgetError, which both paths call.
 	//
 	// 2^52 rather than MaxInt64: beyond 2^53 a float64 cannot represent consecutive integers,
-	// so `math.Ceil` stops being meaningful there anyway, and one bit of headroom below that
-	// leaves room for the accumulation across reloaded blocks that pendingLatency performs.
-	// As a duration it is ~4.5e15 ticks ≈ 143,000 years, so no plausible deployment is
-	// refused by it — it only catches a catalog fact that is not one.
+	// so `math.Ceil` stops being meaningful there anyway. This is an input-sanity bound, not
+	// an overflow proof: the combined base+transfer charge and cumulative pending latency are
+	// checked independently at the shared TieredKVCache boundary. As a duration it is
+	// ~4.5e15 ticks ≈ 143,000 years, so no plausible deployment is refused by it.
 	maxLegacyKVTransferTicksPerBlock = 1 << 52
 )
+
+type legacyKVTransferCost struct {
+	bandwidth   float64
+	baseLatency int64
+}
 
 // legacyKVTransferTickBudgetError reports whether a tokens/tick transfer rate is safe for the
 // int64 arithmetic sim/kv.TieredKVCache performs on it, returning nil when it is and the
@@ -152,6 +134,37 @@ func legacyKVTransferTickBudgetError(rate float64, blockSizeTokens int64) error 
 	return fmt.Errorf("a CPU↔GPU transfer rate of %v tokens/tick charges %v ticks for one "+
 		"%d-token block, which does not fit the simulator's int64 tick budget (max %d)",
 		rate, ticksPerBlock, blockSizeTokens, int64(maxLegacyKVTransferTicksPerBlock))
+}
+
+// deriveLegacyKVTransferBaseLatency converts cpu_dram.base_latency from microseconds to the
+// simulator's whole-microsecond ticks. Rounding up preserves a positive physical latency
+// instead of silently erasing a fractional one. The strict upper bound avoids Go's
+// implementation-dependent float64-to-int64 conversion when the rounded value reaches 2^63.
+func deriveLegacyKVTransferBaseLatency(dev kvOffloadDevice) (int64, error) {
+	if dev.BaseLatency < 0 || math.IsNaN(dev.BaseLatency) || math.IsInf(dev.BaseLatency, 0) {
+		return 0, fmt.Errorf("catalog device %q has a negative or non-finite base_latency (%v); "+
+			"the legacy CPU↔GPU transfer cost cannot be derived from it",
+			legacyKVTransferDeviceClass, dev.BaseLatency)
+	}
+	ticks := math.Ceil(dev.BaseLatency)
+	if ticks >= float64(math.MaxInt64) {
+		return 0, fmt.Errorf("catalog device %q base_latency=%v rounds to %v ticks, which does not "+
+			"fit the simulator's int64 tick budget", legacyKVTransferDeviceClass, dev.BaseLatency, ticks)
+	}
+	return int64(ticks), nil
+}
+
+// legacyKVTransferCombinedBudgetError catches a base-latency override that is individually
+// representable but leaves no room for the positive bandwidth charge. TieredKVCache repeats
+// this check at the shared library boundary and checks every cumulative addition; this CLI
+// check exists to give flag/catalog users an actionable error before simulation starts.
+func legacyKVTransferCombinedBudgetError(rate float64, blockSizeTokens, baseLatency int64) error {
+	transferTicks := int64(math.Ceil(float64(blockSizeTokens) / rate))
+	if baseLatency > math.MaxInt64-transferTicks {
+		return fmt.Errorf("base latency %d plus the %d-tick bandwidth charge for one %d-token "+
+			"block exceeds the simulator's int64 tick budget", baseLatency, transferTicks, blockSizeTokens)
+	}
+	return nil
 }
 
 // deriveLegacyKVTransferRate converts a catalog storage-device bandwidth into the rate
@@ -178,8 +191,8 @@ func deriveLegacyKVTransferRate(dev kvOffloadDevice, perTokenKVBytes float64, bl
 	}
 	// Order matters for exactness at the reference: (bandwidth / perTokenKVBytes) is
 	// exactly representable there (2.0e4 / 163840 == 125/1024), so multiplying by the
-	// residual last lands on exactly 100.0 and the conversion is bit-for-bit
-	// value-preserving rather than merely close (INV-6).
+	// residual last lands on exactly 100.0 and preserves the retired bandwidth term
+	// bit-for-bit rather than merely approximately.
 	rate := dev.ReadBandwidth / perTokenKVBytes * legacyKVTransferResidual
 	if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
 		return 0, fmt.Errorf("derived CPU↔GPU transfer rate must be finite and > 0, got %v "+
@@ -210,7 +223,7 @@ func deriveLegacyKVTransferRate(dev kvOffloadDevice, perTokenKVBytes float64, bl
 // law are shared (parseCatalogStorageDevices / catalogStorageDevicesPath), so the two
 // readers cannot disagree about the file's location or shape — only about who to blame.
 //
-// Every failure names the path and the escape hatch (R1).
+// Every failure names the path and the two overrides that together bypass it (R1).
 func loadLegacyKVTransferDevice(catalog string) (kvOffloadDevice, error) {
 	path := catalogStorageDevicesPath(catalog)
 	data, err := os.ReadFile(path)
@@ -219,55 +232,69 @@ func loadLegacyKVTransferDevice(catalog string) (kvOffloadDevice, error) {
 			"--kv-cpu-blocks > 0 prices CPU↔GPU KV transfers from the catalog storage-device "+
 				"table, but %s is not readable: %w.\n"+
 				"  Add it to the catalog (--catalog / %s names the catalog CLONE ROOT; the table "+
-				"lives at its %s), point --catalog / %s at a catalog that has it, or set "+
-				"--kv-transfer-bandwidth explicitly to override the derivation",
+				"lives at its %s), point --catalog / %s at a catalog that has it, or supply "+
+				"both --kv-transfer-bandwidth and --kv-transfer-base-latency to override it",
 			path, err, catalogEnvVar, catalogStorageDevicesRelPath, catalogEnvVar)
 	}
 	devices, parseErr := parseCatalogStorageDevices(data)
 	if parseErr != nil {
 		return kvOffloadDevice{}, fmt.Errorf(
 			"--kv-cpu-blocks > 0: catalog storage-device table %s is malformed: %w.\n"+
-				"  Fix that catalog file, or set --kv-transfer-bandwidth explicitly to override "+
-				"the derivation", path, parseErr)
+				"  Fix that catalog file, or supply both --kv-transfer-bandwidth and "+
+				"--kv-transfer-base-latency to override it", path, parseErr)
 	}
 	dev, ok := devices[legacyKVTransferDeviceClass]
 	if !ok {
 		return kvOffloadDevice{}, fmt.Errorf(
 			"--kv-cpu-blocks > 0 prices CPU↔GPU KV transfers from the %q device class, which the "+
 				"catalog storage-device table %s does not define (known: %s).\n"+
-				"  Fix that catalog file, or set --kv-transfer-bandwidth explicitly to override "+
-				"the derivation",
+				"  Fix that catalog file, or supply both --kv-transfer-bandwidth and "+
+				"--kv-transfer-base-latency to override it",
 			legacyKVTransferDeviceClass, path, knownDeviceClasses(devices))
 	}
 	return dev, nil
 }
 
-// resolveLegacyKVTransferBandwidth decides the --kv-transfer-bandwidth value a run actually
-// uses. It is the ONE place the legacy transfer rate is decided, called from both runCmd and
-// replayCmd with the same inputs, so the two commands cannot drift (R23, INV-13). `observe`
+// resolveLegacyKVTransferCost decides the bandwidth and base-latency values a run actually
+// uses. It is the ONE place both legacy transfer components are decided, called from runCmd
+// and replayCmd with the same inputs so the commands cannot drift (R23, INV-13). `observe`
 // resolves no model config and registers neither flag, so it never reaches here.
 //
 // Three cases, in order:
-//  1. --kv-cpu-blocks == 0 (the default): the legacy tier is disabled and the rate is
-//     unused. Returned unchanged — no catalog read, no model arithmetic (INV-6).
-//  2. --kv-transfer-bandwidth supplied: the operator's override wins verbatim, exactly as
-//     before this change. Derivation is selected by OMITTING the flag, not by its zero
-//     registered default — a supplied 0 never reaches here, because resolvePolicies
-//     range-checks supplied values and refuses it (a typo must be loud, not silently read as
-//     "derive"). "Verbatim" is about the VALUE, not about skipping validation: the override
-//     is held to the same int64 tick-budget bound as a derived rate, because it reaches the
-//     same sim/kv arithmetic (#1840 review N1).
-//  3. otherwise: DERIVED from the catalog cpu_dram device (see the file comment).
+//  1. --kv-cpu-blocks == 0 (the default): both values are unused and returned unchanged —
+//     no catalog read and no model arithmetic (INV-6).
+//  2. Each supplied flag independently wins. An explicit base latency of 0 is a real
+//     override, while a supplied bandwidth of 0 is refused by resolvePolicies.
+//  3. Any omitted component is derived from the catalog cpu_dram device. The table is read
+//     once if either component is omitted and not at all when both are supplied.
 //
 // Both callers reach here after resolveLatencyConfig, which refuses --block-size-in-tokens <= 0,
 // so the block size the int64-budget bound is checked against is the one the run will use.
 //
 // CLI boundary, so failures are logrus.Fatalf (R1) rather than a returned error.
-func resolveLegacyKVTransferBandwidth(cmd *cobra.Command, mc sim.ModelConfig, tp int) float64 {
+func resolveLegacyKVTransferCost(cmd *cobra.Command, mc sim.ModelConfig, tp int) legacyKVTransferCost {
+	cost := legacyKVTransferCost{bandwidth: kvTransferBandwidth, baseLatency: kvTransferBaseLatency}
 	if kvCPUBlocks <= 0 {
-		return kvTransferBandwidth
+		return cost
 	}
-	if cmd.Flags().Changed("kv-transfer-bandwidth") {
+	bandwidthOverridden := cmd.Flags().Changed("kv-transfer-bandwidth")
+	baseLatencyOverridden := cmd.Flags().Changed("kv-transfer-base-latency")
+
+	var dev kvOffloadDevice
+	if !bandwidthOverridden || !baseLatencyOverridden {
+		catalog, err := resolveCatalogRoot()
+		if err != nil {
+			logrus.Fatalf("--kv-cpu-blocks > 0 prices CPU↔GPU KV transfers from the catalog's %s: %v",
+				catalogStorageDevicesRelPath, err)
+		}
+		var devErr error
+		dev, devErr = loadLegacyKVTransferDevice(catalog)
+		if devErr != nil {
+			logrus.Fatalf("%v", devErr)
+		}
+	}
+
+	if bandwidthOverridden {
 		// resolvePolicies has already refused a supplied value that is <= 0, NaN or Inf — but
 		// "positive and finite" is exactly the condition maxLegacyKVTransferTicksPerBlock
 		// exists because it is not sufficient. An override of 1e-300 clears that range check
@@ -275,34 +302,47 @@ func resolveLegacyKVTransferBandwidth(cmd *cobra.Command, mc sim.ModelConfig, tp
 		// path is bounded against, wrapping to MinInt64 and moving the clock backwards
 		// (#1840 review N1). Refuse it here, blaming the flag rather than the catalog: the
 		// catalog is not at fault on this path and may not even have been read.
-		if budgetErr := legacyKVTransferTickBudgetError(kvTransferBandwidth, blockSizeTokens); budgetErr != nil {
+		if budgetErr := legacyKVTransferTickBudgetError(cost.bandwidth, blockSizeTokens); budgetErr != nil {
 			logrus.Fatalf("--kv-transfer-bandwidth=%v is too small to simulate: %v.\n"+
 				"  Supply a larger rate, or omit --kv-transfer-bandwidth entirely to derive it from "+
-				"the catalog %q device", kvTransferBandwidth, budgetErr, legacyKVTransferDeviceClass)
+				"the catalog %q device", cost.bandwidth, budgetErr, legacyKVTransferDeviceClass)
 		}
 		logrus.Infof("--kv-transfer-bandwidth=%v overrides the value derived from the catalog %q device",
-			kvTransferBandwidth, legacyKVTransferDeviceClass)
-		return kvTransferBandwidth
+			cost.bandwidth, legacyKVTransferDeviceClass)
+	} else {
+		perTokenKVBytes, ptErr := latency.KVBytesPerToken(mc, tp)
+		if ptErr != nil {
+			logrus.Fatalf("--kv-cpu-blocks > 0: cannot derive the CPU↔GPU transfer cost from the model: %v", ptErr)
+		}
+		rate, rateErr := deriveLegacyKVTransferRate(dev, perTokenKVBytes, blockSizeTokens)
+		if rateErr != nil {
+			logrus.Fatalf("--kv-cpu-blocks > 0: %v", rateErr)
+		}
+		cost.bandwidth = rate
+		logrus.Infof("Derived CPU↔GPU KV transfer rate %g tokens/tick from catalog device %q "+
+			"(read_bandwidth=%g bytes/µs, KVBytesPerToken=%g, residual=%g)",
+			rate, legacyKVTransferDeviceClass, dev.ReadBandwidth, perTokenKVBytes, legacyKVTransferResidual)
 	}
-	catalog, err := resolveCatalogRoot()
-	if err != nil {
-		logrus.Fatalf("--kv-cpu-blocks > 0 prices CPU↔GPU KV transfers from the catalog's %s: %v",
-			catalogStorageDevicesRelPath, err)
+
+	if baseLatencyOverridden {
+		logrus.Infof("--kv-transfer-base-latency=%d overrides the value derived from the catalog %q device",
+			cost.baseLatency, legacyKVTransferDeviceClass)
+	} else {
+		baseLatency, latencyErr := deriveLegacyKVTransferBaseLatency(dev)
+		if latencyErr != nil {
+			logrus.Fatalf("--kv-cpu-blocks > 0: %v.\n  Fix that catalog value, or set "+
+				"--kv-transfer-base-latency explicitly to override it", latencyErr)
+		}
+		cost.baseLatency = baseLatency
+		logrus.Infof("Derived CPU↔GPU KV transfer base latency %d ticks from catalog device %q "+
+			"(base_latency=%g µs, rounded up to whole ticks)",
+			baseLatency, legacyKVTransferDeviceClass, dev.BaseLatency)
 	}
-	dev, devErr := loadLegacyKVTransferDevice(catalog)
-	if devErr != nil {
-		logrus.Fatalf("%v", devErr)
+
+	if budgetErr := legacyKVTransferCombinedBudgetError(cost.bandwidth, blockSizeTokens, cost.baseLatency); budgetErr != nil {
+		logrus.Fatalf("legacy CPU↔GPU transfer cost is too large to simulate: %v.\n"+
+			"  Supply a smaller --kv-transfer-base-latency or a larger --kv-transfer-bandwidth",
+			budgetErr)
 	}
-	perTokenKVBytes, ptErr := latency.KVBytesPerToken(mc, tp)
-	if ptErr != nil {
-		logrus.Fatalf("--kv-cpu-blocks > 0: cannot derive the CPU↔GPU transfer cost from the model: %v", ptErr)
-	}
-	rate, rateErr := deriveLegacyKVTransferRate(dev, perTokenKVBytes, blockSizeTokens)
-	if rateErr != nil {
-		logrus.Fatalf("--kv-cpu-blocks > 0: %v", rateErr)
-	}
-	logrus.Infof("Derived CPU↔GPU KV transfer rate %g tokens/tick from catalog device %q "+
-		"(read_bandwidth=%g bytes/µs, KVBytesPerToken=%g, residual=%g)",
-		rate, legacyKVTransferDeviceClass, dev.ReadBandwidth, perTokenKVBytes, legacyKVTransferResidual)
-	return rate
+	return cost
 }

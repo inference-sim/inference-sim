@@ -1421,12 +1421,13 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 	}
 	// Note: gpuMemoryUtilization and blockSizeTokens are validated in resolveLatencyConfig
 	// (before KV auto-calc). Not repeated here to avoid double-validation.
-	// #1819: an UNSUPPLIED --kv-transfer-bandwidth no longer means "invalid" — it means
-	// "derive from the catalog cpu_dram device" (resolveLegacyKVTransferBandwidth, called
-	// once the model config is resolved). Derivation is selected by OMITTING the flag, not by
-	// its zero value: only an operator-SUPPLIED override is range-checked here, so a supplied
-	// 0 is refused as out of range rather than silently read as "derive". It is checked
-	// whether or not the legacy tier is enabled so a typo is never silently inert.
+	// #1819: an UNSUPPLIED --kv-transfer-bandwidth means "derive from the catalog cpu_dram
+	// device" (resolveLegacyKVTransferCost, called once the model config is resolved).
+	// Derivation is selected by OMITTING the flag, not by its zero value: only an
+	// operator-SUPPLIED override is range-checked here, so a supplied 0 is refused rather
+	// than silently read as "derive". It is checked whether or not the legacy tier is enabled
+	// so a typo is never silently inert. Base latency is an int64 and has no invalid sentinel:
+	// Changed("kv-transfer-base-latency") distinguishes an explicit 0 override from omission.
 	if cmd.Flags().Changed("kv-transfer-bandwidth") &&
 		(kvTransferBandwidth <= 0 || math.IsNaN(kvTransferBandwidth) || math.IsInf(kvTransferBandwidth, 0)) {
 		logrus.Fatalf("--kv-transfer-bandwidth must be a finite value > 0 when supplied, got %f", kvTransferBandwidth)
@@ -1656,7 +1657,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// overrides the derivation verbatim — including a supplied 0, which is therefore refused
 	// as out of range rather than read as a request to derive (resolvePolicies).
 	cmd.Flags().Float64Var(&kvTransferBandwidth, "kv-transfer-bandwidth", 0, "Override the CPU↔GPU transfer rate, in tokens per tick, used when --kv-cpu-blocks > 0. LEAVE IT UNSET to derive the rate from the catalog cpu_dram storage device (<catalog>/devices/storage.yaml) — derivation is selected by omitting the flag, not by passing 0, which is refused. A supplied value must be finite and > 0; higher = faster transfers")
-	cmd.Flags().Int64Var(&kvTransferBaseLatency, "kv-transfer-base-latency", 0, "Fixed per-transfer latency in ticks for CPU↔GPU KV transfers (0 = no fixed cost)")
+	cmd.Flags().Int64Var(&kvTransferBaseLatency, "kv-transfer-base-latency", 0, "Override the fixed per-block CPU↔GPU transfer latency in ticks used when --kv-cpu-blocks > 0. LEAVE IT UNSET to derive the latency from the catalog cpu_dram storage device; an explicitly supplied 0 is a valid override that disables the fixed cost")
 	cmd.Flags().Int64Var(&snapshotRefreshInterval, "snapshot-refresh-interval", 50000, "Prometheus snapshot refresh interval for all instance metrics in microseconds (0 = immediate/oracle mode, default 50ms = llm-d parity)")
 	cmd.Flags().Int64Var(&cacheSignalDelay, "cache-signal-delay", cluster.DefaultCacheSignalDelay, "Propagation delay for prefix cache signals in microseconds. Only affects precise-prefix-cache and no-hit-lru scorers; no effect on other routing policies. Default 50ms. Set to 0 for oracle mode (live cache state).")
 	cmd.Flags().Float64Var(&modelAutoscalerIntervalUs, "model-autoscaler-interval-us", 0, "Autoscaler tick interval in microseconds (0 = disabled). Overrides policy-config autoscaler.interval_us when non-zero.")
@@ -2719,11 +2720,12 @@ var runCmd = &cobra.Command{
 			}
 		}
 
-		// #1819 (R2G3b-sim): price the LEGACY single-CPU-tier transfer from the catalog
-		// cpu_dram device now that the model config and TP are resolved. Shared with
-		// replayCmd through this one helper (R23, INV-13); a no-op unless
-		// --kv-cpu-blocks > 0, and an operator override wins verbatim.
-		kvTransferBandwidth = resolveLegacyKVTransferBandwidth(cmd, lr.ModelConfig, tensorParallelism)
+		// #1819/#1841: resolve both components of the LEGACY single-CPU-tier transfer
+		// from the catalog cpu_dram device now that the model config and TP are known.
+		// Shared with replayCmd through one helper (R23, INV-13); a no-op unless
+		// --kv-cpu-blocks > 0, and each operator override wins independently.
+		legacyTransfer := resolveLegacyKVTransferCost(cmd, lr.ModelConfig, tensorParallelism)
+		kvTransferBandwidth, kvTransferBaseLatency = legacyTransfer.bandwidth, legacyTransfer.baseLatency
 
 		// All ModelHardwareOptions (EP-group width #1548, cross-node serialization S #1694)
 		// are composed in one shared helper so run and replay cannot diverge (R23, INV-13).
