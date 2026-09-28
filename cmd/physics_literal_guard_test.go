@@ -115,6 +115,38 @@ func physicsPricedFlagDefaults(fset *token.FileSet, file *ast.File, name string)
 	return findings
 }
 
+// flagVarCallCounts counts the `<something>.<T>Var("name", ...)` calls in a file two ways:
+// `viaAccessor` applies the same Flags()/PersistentFlags() receiver filter the detector does,
+// `total` does not. They must be equal for the detector's coverage to be complete — see
+// TestPhysicsPricedFlagDefaults_DetectorSeesEveryRegistration.
+func flagVarCallCounts(file *ast.File) (viaAccessor, total int) {
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || len(call.Args) < 3 {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || !strings.HasSuffix(sel.Sel.Name, "Var") {
+			return true
+		}
+		if _, isString := stringLiteral(call.Args[1]); !isString {
+			return true
+		}
+		total++
+		recv, ok := sel.X.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		recvSel, ok := recv.Fun.(*ast.SelectorExpr)
+		if !ok || (recvSel.Sel.Name != "Flags" && recvSel.Sel.Name != "PersistentFlags") {
+			return true
+		}
+		viaAccessor++
+		return true
+	})
+	return viaAccessor, total
+}
+
 // stringLiteral unwraps a plain string literal argument.
 func stringLiteral(e ast.Expr) (string, bool) {
 	basic, ok := e.(*ast.BasicLit)
@@ -239,6 +271,44 @@ func TestPhysicsPricedFlagDefaults_ConvertedFlagsAreZero(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestPhysicsPricedFlagDefaults_DetectorSeesEveryRegistration closes the guard's one
+// structural blind spot. The detector requires the receiver to be a literal
+// `Flags()`/`PersistentFlags()` call, so a refactor to `fs := cmd.Flags(); fs.Float64Var(...)`
+// would make it silently stop seeing that registration — the guard would still PASS while no
+// longer guarding anything. This fails the moment such a style appears, naming the file.
+func TestPhysicsPricedFlagDefaults_DetectorSeesEveryRegistration(t *testing.T) {
+	files, scanned := parseCmdProductionSources(t)
+	if scanned == 0 {
+		t.Fatal("non-vacuity: no production sources were scanned")
+	}
+	totalSeen := 0
+	for _, name := range sortedSourceNames(files) {
+		viaAccessor, total := flagVarCallCounts(files[name].file)
+		totalSeen += viaAccessor
+		if viaAccessor != total {
+			t.Errorf("%s: %d of %d flag registrations do not go through Flags()/PersistentFlags() "+
+				"directly, so physicsPricedFlagDefaults cannot see them — either restore the "+
+				"`cmd.Flags().<T>Var(...)` form or widen the detector's receiver check (#1819)",
+				name, total-viaAccessor, total)
+		}
+	}
+	// Non-vacuity: this package really does register flags, so the equality above is not
+	// 0 == 0 in every file.
+	if totalSeen == 0 {
+		t.Fatal("non-vacuity: the detector saw no flag registrations at all in cmd/")
+	}
+}
+
+// sortedSourceNames keeps per-file diagnostics deterministic (INV-6).
+func sortedSourceNames(files map[string]parsedSource) []string {
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // parsedSource pairs a parsed file with its FileSet so positions stay resolvable.
