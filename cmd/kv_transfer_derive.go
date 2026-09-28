@@ -94,10 +94,10 @@ const (
 	// maxLegacyKVTransferTicksPerBlock bounds the bandwidth portion of the per-block tick
 	// charge handed to sim/kv, because sim/kv.TieredKVCache converts it with
 	// `int64(math.Ceil(block_tokens / rate))` (sim/kv/tiered.go) and Go's float→int64
-	// conversion is UNDEFINED when the value does not fit: on amd64 it yields MinInt64, so a
-	// read_bandwidth of, say, 1e-300 — positive, finite, and accepted by every check
-	// below — would inject a large NEGATIVE pending latency instead of a large positive one
-	// (#1840 review F3).
+	// conversion is IMPLEMENTATION-DEFINED when the value does not fit: amd64 wraps to MinInt64,
+	// arm64 saturates to MaxInt64. So a read_bandwidth of, say, 1e-300 — positive, finite, and
+	// accepted by every check below — would inject a garbage pending latency (a large NEGATIVE
+	// one on amd64, a ~292,000-year one on arm64) instead of the true charge (#1840 review F3).
 	//
 	// The bound is a property of the RATE, not of where the rate came from, so it is enforced
 	// on BOTH bandwidth paths through resolveLegacyKVTransferCost — the catalog-derived rate and a
@@ -205,9 +205,10 @@ func deriveLegacyKVTransferRate(dev kvOffloadDevice, perTokenKVBytes float64, bl
 			rate, dev.ReadBandwidth, perTokenKVBytes, legacyKVTransferResidual)
 	}
 	// "Positive and finite" is not enough: a rate small enough makes the library's
-	// ceil(block_tokens / rate) exceed int64, and Go's conversion then wraps to MinInt64
-	// rather than saturating. Refuse here, where the catalog device and the model are still
-	// nameable, instead of shipping a negative transfer latency into the DES.
+	// ceil(block_tokens / rate) exceed int64, and Go's conversion of that out-of-range value is
+	// implementation-defined (amd64 wraps to MinInt64, arm64 saturates to MaxInt64) — either way
+	// a garbage charge. Refuse here, where the catalog device and the model are still nameable,
+	// instead of shipping a bogus transfer latency into the DES.
 	if budgetErr := legacyKVTransferTickBudgetError(rate, blockSizeTokens); budgetErr != nil {
 		return 0, fmt.Errorf("the derivation produced %w: catalog device %q read_bandwidth=%v is "+
 			"implausibly small for per-token KV bytes=%v (residual=%v).\n"+
@@ -304,7 +305,8 @@ func resolveLegacyKVTransferCost(cmd *cobra.Command, mc sim.ModelConfig, tp int)
 		// "positive and finite" is exactly the condition maxLegacyKVTransferTicksPerBlock
 		// exists because it is not sufficient. An override of 1e-300 clears that range check
 		// and then lands in the same int64(ceil(block_tokens / rate)) conversion the derived
-		// path is bounded against, wrapping to MinInt64 and moving the clock backwards
+		// path is bounded against, whose out-of-range result is implementation-defined (amd64
+		// wraps to MinInt64 and moves the clock backwards; arm64 saturates to MaxInt64)
 		// (#1840 review N1). Refuse it here, blaming the flag rather than the catalog: the
 		// catalog is not at fault on this path and may not even have been read.
 		if budgetErr := legacyKVTransferTickBudgetError(cost.bandwidth, blockSizeTokens); budgetErr != nil {
