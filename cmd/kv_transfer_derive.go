@@ -80,10 +80,15 @@ const (
 	// meaningful behaviour the retired constant could not express (a model with a quarter
 	// the KV per token moves four times the tokens per tick over the same bus).
 	//
-	// AUTHORING IT INTO THE REGISTRY is the other half R2G3b asked for, and it is a
-	// cross-repository change this PR cannot make: blis-registry#17 tracks it, with the
-	// derivation table above and the "not an efficiency ≤ 1" warning, so the number is not
-	// left here with no filed owner (#1840 review F2).
+	// AUTHORED IN THE REGISTRY — the other half R2G3b asked for. This value now lives at
+	// blis-registry coefficients/legacy-kv-transfer.yaml -> kv_transfer_bandwidth_residual
+	// (authored in blis-registry#18), method: assumed, units: dimensionless, scope
+	// {hardware: [cpu_dram], model: [qwen3-14b], tp: [1]} — cpu_dram is the device whose
+	// bandwidth this residual corrects (not the anchor's H100, which the value does not
+	// depend on), and qwen3-14b is the bare catalog model identity. It carries the derivation
+	// table above and the "not an efficiency ≤ 1" warning, so this constant now mirrors a
+	// filed registry entry rather than a number with no owner. blis-registry#17 tracked the
+	// authoring (#1840 review F2).
 	legacyKVTransferResidual = 819.2
 
 	// maxLegacyKVTransferTicksPerBlock bounds the bandwidth portion of the per-block tick
