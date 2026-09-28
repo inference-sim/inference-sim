@@ -149,7 +149,10 @@ func loadCatalog(root string) (catalogLoadReport, error) {
 	// catalog does not have the moment CATALOG_REVISION advances past that PR. The PD-transfer
 	// base latency stays a CLI input owned by blis-registry (--pd-transfer-base-latency, default
 	// 0.05 ms, blis-registry#10): the effective value is that number alone, with no catalog 0 to
-	// compose with. cmd/catalog_networks_fabric_test.go holds the guards.
+	// compose with. cmd/catalog_networks_fabric_test.go holds the guards — and its BC-4 tripwire
+	// fires on ANY field this report gains, under any name, since a fabric reader could be called
+	// anything: it names the three rules and tells you to update its known-field set (or, for the
+	// fabric reader itself, to delete the tripwire) once you have read them.
 	for _, namespace := range []struct {
 		count *int
 		load  func(string) (int, []string)

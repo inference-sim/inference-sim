@@ -1,17 +1,23 @@
 package cmd
 
 import (
+	"bytes"
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 // R2H3 follow-up (#1838): the catalog's `networks/*.yaml` reusable fabric classes carry NO
@@ -41,16 +47,22 @@ import (
 // Four contracts encode them:
 //
 //	BC-1 no production Go source lets a config file supply the field (static guard);
-//	BC-2 no committed catalog file declares it, and a `networks/` fixture states its bandwidth
-//	     as InterNodeBwGBps (rule 1);
-//	BC-3 the number stays a CLI/registry input, identically on run and replay (rule 3, INV-13);
-//	BC-4 a tripwire on the loader's namespace report, so the reader cannot land without this
-//	     file's rules being read (rule 2).
+//	BC-2 no committed catalog file DECLARES it — established by parsing every catalog file and
+//	     walking its keys, not by pattern-matching lines — and a `networks/` fixture states its
+//	     bandwidth as InterNodeBwGBps with a usable positive number (rule 1);
+//	BC-3 the number stays a CLI/registry input, identically on run and replay: both register the
+//	     flag with the same default, the flag writes the variable, and that variable is what feeds
+//	     DeploymentConfig.PDTransferBaseLatencyMs on both paths (rule 3, INV-13);
+//	BC-4 a tripwire on the loader's namespace report, so no new catalog namespace reader can land
+//	     without this file's rules being read (rule 2).
 //
 // Rule 1 is deliberately NOT implemented here: PD-transfer bandwidth comes from
 // --pd-transfer-bandwidth (default 25 GB/s) today, and sourcing it from a fabric class would
 // change values, which R2 forbids (#1817 is value-preserving). It is recorded as a rule, and
-// BC-2 asserts it the moment a `networks/` fixture exists.
+// BC-2 asserts it the moment a `networks/` fixture exists. What no guard in this file can do is
+// prove that the future reader *assigns* the fabric's bandwidth to
+// DeploymentConfig.PDTransferBandwidthGBps — that behavior has no code to observe until the
+// reader exists, which is why BC-4 puts the rule in front of its author instead.
 
 // pdTransferBaseLatencyField is the Go field / config key at issue. Compared ASCII-folded
 // throughout, so a case variant cannot slip past the guards.
@@ -60,6 +72,15 @@ const pdTransferBaseLatencyField = "PDTransferBaseLatencyMs"
 // cluster.DeploymentConfig's CLI-sourced field. Relative to the repository root, so the guard
 // fails if the declaration moves to (or is copied into) a fabric-class struct.
 const pdTransferBaseLatencyOwner = "sim/cluster/deployment.go"
+
+// pdTransferBaseLatencyFlagVar is the package variable --pd-transfer-base-latency writes
+// (cmd/root.go), and therefore the ONLY expression DeploymentConfig.PDTransferBaseLatencyMs may
+// be fed from on either command. BC-3 checks both halves of that path.
+const pdTransferBaseLatencyFlagVar = "pdTransferBaseLatency"
+
+// fabricBandwidthKey is the fabric class's nominal inter-node bandwidth, which IS the PD-transfer
+// bandwidth figure — there is no separate PD one (rule 1, R2H2, blis-catalog#10).
+const fabricBandwidthKey = "InterNodeBwGBps"
 
 // ---------------------------------------------------------------------------
 // BC-1: no production Go source lets a config file supply the field
@@ -99,7 +120,7 @@ func TestNetworksFabric_NoConfigKeyBindsPDTransferBaseLatency(t *testing.T) {
 				for _, key := range configTagNames(t, rel, field) {
 					// Non-vacuity anchor: a real, unrelated fabric key proves the tag
 					// extraction below actually sees tag names.
-					if key == "InterNodeBwGBps" {
+					if key == fabricBandwidthKey {
 						sawKnownTag = true
 					}
 					if strings.ToLower(key) == folded {
@@ -132,8 +153,9 @@ func TestNetworksFabric_NoConfigKeyBindsPDTransferBaseLatency(t *testing.T) {
 		t.Fatal("non-vacuity: no production Go sources were scanned")
 	}
 	if !sawKnownTag {
-		t.Errorf("non-vacuity: the scan of %d file(s) saw no InterNodeBwGBps config tag, so the "+
-			"tag extraction is not reading tag names and the banned-key check proves nothing", scanned)
+		t.Errorf("non-vacuity: the scan of %d file(s) saw no %s config tag, so the "+
+			"tag extraction is not reading tag names and the banned-key check proves nothing",
+			scanned, fabricBandwidthKey)
 	}
 }
 
@@ -199,20 +221,121 @@ func configTagNames(t *testing.T, rel string, field *ast.Field) []string {
 // BC-2: no committed catalog file declares the field
 // ---------------------------------------------------------------------------
 
-// pdTransferBaseLatencyKeyRe matches a DECLARATION of the retired key in a catalog-authored
-// YAML or JSON file — line start, the key (optionally quoted, any letter case), a colon. Prose
-// in a `#` comment that names the key on purpose is therefore not matched, the same way
-// TestDefaultsBlockRemoved_StaticGuard matches declarations rather than mentions.
-var pdTransferBaseLatencyKeyRe = regexp.MustCompile(`(?mi)^[\t ]*"?PDTransferBaseLatencyMs"?[\t ]*:`)
+// catalogKeyDecl is one mapping key DECLARED somewhere in a catalog-authored file: the key as
+// written, the line it sits on, and the scalar it binds (isScalar is false when the value is a
+// nested mapping or a sequence).
+type catalogKeyDecl struct {
+	name     string
+	line     int
+	scalar   string
+	isScalar bool
+}
+
+// catalogKeyDecls returns every mapping key declared anywhere in a YAML or JSON document stream:
+// at any nesting depth, in block or flow style, quoted or bare, across every document of a
+// multi-document file.
+//
+// It PARSES rather than pattern-matches, and that is the whole point. The anchored regex this
+// replaced (`^[\t ]*"?Key"?[\t ]*:`) saw only keys at the start of a line, so a flow mapping
+// (`{Key: 0}`), a nested flow element, or a single-quoted key (`'Key':`) declared the retired
+// field without tripping the guard. Parsing also keeps the exclusions the regex bought by
+// accident but now holds by construction: a `#` comment contributes no keys, and a key named
+// inside a string VALUE is not a declaration.
+func catalogKeyDecls(t *testing.T, label string, data []byte) []catalogKeyDecl {
+	t.Helper()
+	var decls []catalogKeyDecl
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	for {
+		var doc yaml.Node
+		err := dec.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			// A catalog file that does not parse is a repository integrity problem, not a
+			// reason to skip the guard: JSON is YAML, so every committed catalog file must
+			// decode here or this contract is checking a subset of the catalog.
+			t.Fatalf("%s: parse as YAML/JSON: %v", label, err)
+		}
+		collectCatalogKeyDecls(&doc, &decls)
+	}
+	return decls
+}
+
+// collectCatalogKeyDecls appends every key of every mapping reachable from n, depth-first.
+func collectCatalogKeyDecls(n *yaml.Node, out *[]catalogKeyDecl) {
+	if n.Kind == yaml.MappingNode {
+		// Mapping content is a flat key, value, key, value, … list.
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			key, value := n.Content[i], n.Content[i+1]
+			*out = append(*out, catalogKeyDecl{
+				name:     key.Value,
+				line:     key.Line,
+				scalar:   value.Value,
+				isScalar: value.Kind == yaml.ScalarNode,
+			})
+			collectCatalogKeyDecls(value, out)
+		}
+		return
+	}
+	for _, child := range n.Content {
+		collectCatalogKeyDecls(child, out)
+	}
+}
+
+// catalogDeclsOf returns the declarations of one key (folded comparison) in a catalog file.
+func catalogDeclsOf(t *testing.T, label, key string, data []byte) []catalogKeyDecl {
+	t.Helper()
+	var hits []catalogKeyDecl
+	for _, decl := range catalogKeyDecls(t, label, data) {
+		if strings.EqualFold(decl.name, key) {
+			hits = append(hits, decl)
+		}
+	}
+	return hits
+}
 
 // TestNetworksFabric_FixtureCatalogDeclaresNoPDTransferBaseLatency is BC-2, over real committed
-// data. Both halves are forward-looking on purpose: the fixture catalog has no networks/
-// namespace today (the reader that would read one has not landed), so the second half is dormant
-// until a fabric fixture is added — and it is that addition, at the same moment as the reader,
-// that this contract exists to catch. The first half is live now over every committed catalog
-// file, and the scan count is asserted so it cannot pass by walking nothing.
+// data, in three parts:
+//
+//   - the detector sees a declaration in every form a catalog file could write one, and does not
+//     mistake a prose mention for one — the coverage half, and the reason the check parses;
+//   - no committed catalog file declares the retired key (live now, over every catalog file);
+//   - a `networks/` fabric fixture declares its bandwidth as InterNodeBwGBps with a usable
+//     positive number (rule 1). That part stays dormant until such a fixture exists — the reader
+//     that would read one has not landed — and it is that addition, at the same moment as the
+//     reader, that this contract exists to catch.
 func TestNetworksFabric_FixtureCatalogDeclaresNoPDTransferBaseLatency(t *testing.T) {
-	scanned := 0
+	// Coverage: every declaration form a catalog author could legally write must be detected,
+	// and a mention that is not a declaration must not be.
+	for _, tc := range []struct {
+		name    string
+		doc     string
+		declare bool
+	}{
+		{"block style", "PDTransferBaseLatencyMs: 0\n", true},
+		{"double-quoted key", "\"PDTransferBaseLatencyMs\": 0\n", true},
+		{"single-quoted key", "'PDTransferBaseLatencyMs': 0\n", true},
+		{"flow mapping", "{PDTransferBaseLatencyMs: 0}\n", true},
+		{"nested in a flow sequence", "fabrics: [{Name: ib-400g, PDTransferBaseLatencyMs: 0}]\n", true},
+		{"nested block mapping", "ib-400g:\n  PDTransferBaseLatencyMs: 0\n", true},
+		{"case variant", "pdtransferbaselatencyms: 0\n", true},
+		{"json object", "{\"PDTransferBaseLatencyMs\": 0}\n", true},
+		{"second document of a stream", "InterNodeBwGBps: 400\n---\nPDTransferBaseLatencyMs: 0\n", true},
+		{"comment mention", "# PDTransferBaseLatencyMs was removed by blis-catalog#12\nInterNodeBwGBps: 400\n", false},
+		{"string value mention", "note: PDTransferBaseLatencyMs is gone\n", false},
+	} {
+		got := len(catalogDeclsOf(t, tc.name, pdTransferBaseLatencyField, []byte(tc.doc))) > 0
+		if got != tc.declare {
+			t.Errorf("detector on %s: declares %s = %v, want %v — a form the guard misses is a form "+
+				"a catalog file could smuggle the retired key in (#1838)",
+				tc.name, pdTransferBaseLatencyField, got, tc.declare)
+		}
+	}
+
+	// Live: no committed catalog file declares the key. keys counts declarations across the
+	// whole catalog so the walk cannot pass by parsing nothing.
+	scanned, keys := 0, 0
 	err := filepath.WalkDir(fixtureCatalog, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -230,11 +353,16 @@ func TestNetworksFabric_FixtureCatalogDeclaresNoPDTransferBaseLatency(t *testing
 			return readErr
 		}
 		scanned++
-		if pdTransferBaseLatencyKeyRe.Match(data) {
-			t.Errorf("%s declares %s: the catalog does not carry that key (blis-catalog#12 removed "+
+		decls := catalogKeyDecls(t, path, data)
+		keys += len(decls)
+		for _, decl := range decls {
+			if !strings.EqualFold(decl.name, pdTransferBaseLatencyField) {
+				continue
+			}
+			t.Errorf("%s:%d declares %s: the catalog does not carry that key (blis-catalog#12 removed "+
 				"it from the closed networks/ fabric schema, which now rejects it), and the PD-transfer "+
 				"base latency comes from --pd-transfer-base-latency / blis-registry#10 (#1838)",
-				path, pdTransferBaseLatencyField)
+				path, decl.line, pdTransferBaseLatencyField)
 		}
 		return nil
 	})
@@ -243,6 +371,10 @@ func TestNetworksFabric_FixtureCatalogDeclaresNoPDTransferBaseLatency(t *testing
 	}
 	if scanned == 0 {
 		t.Fatalf("non-vacuity: no catalog files were scanned under %s", fixtureCatalog)
+	}
+	if keys == 0 {
+		t.Fatalf("non-vacuity: %d catalog file(s) under %s yielded no key declarations at all, so the "+
+			"parse is not reading keys and the banned-key check proves nothing", scanned, fixtureCatalog)
 	}
 
 	// Rule 1: a fabric class states its bandwidth as InterNodeBwGBps (nominal), which is the
@@ -264,10 +396,35 @@ func TestNetworksFabric_FixtureCatalogDeclaresNoPDTransferBaseLatency(t *testing
 		if readErr != nil {
 			t.Fatalf("read %s: %v", path, readErr)
 		}
-		if !strings.Contains(string(data), "InterNodeBwGBps") {
-			t.Errorf("%s declares no InterNodeBwGBps: a fabric class states its nominal inter-node "+
-				"bandwidth there, and that IS the PD-transfer bandwidth — there is no separate PD "+
-				"figure (#1838, blis-catalog#10)", path)
+		assertFabricDeclaresUsableBandwidth(t, path, data)
+	}
+}
+
+// assertFabricDeclaresUsableBandwidth checks rule 1's catalog-side half: the fabric class must
+// DECLARE InterNodeBwGBps as a key bound to a positive finite number, because that number is the
+// PD-transfer bandwidth. A key that is present but empty, non-numeric, zero, or negative is no
+// more usable to the reader than an absent one, so a mere "the name appears in the file" check
+// would let an unusable fixture through.
+func assertFabricDeclaresUsableBandwidth(t *testing.T, path string, data []byte) {
+	t.Helper()
+	decls := catalogDeclsOf(t, path, fabricBandwidthKey, data)
+	if len(decls) == 0 {
+		t.Errorf("%s declares no %s: a fabric class states its nominal inter-node bandwidth there, "+
+			"and that IS the PD-transfer bandwidth — there is no separate PD figure (#1838, "+
+			"blis-catalog#10)", path, fabricBandwidthKey)
+		return
+	}
+	for _, decl := range decls {
+		if !decl.isScalar {
+			t.Errorf("%s:%d: %s binds a mapping or sequence, want a single positive number — it is "+
+				"the fabric's nominal inter-node bandwidth in GB/s (#1838)", path, decl.line, fabricBandwidthKey)
+			continue
+		}
+		value, convErr := strconv.ParseFloat(decl.scalar, 64)
+		if convErr != nil || value <= 0 || math.IsInf(value, 0) {
+			t.Errorf("%s:%d: %s = %q, want a positive finite number: the reader takes the PD-transfer "+
+				"bandwidth from this figure, so a zero/empty/non-numeric one leaves it with nothing to "+
+				"read (#1838, blis-catalog#10)", path, decl.line, fabricBandwidthKey, decl.scalar)
 		}
 	}
 }
@@ -279,9 +436,14 @@ func TestNetworksFabric_FixtureCatalogDeclaresNoPDTransferBaseLatency(t *testing
 // TestNetworksFabric_PDTransferBaseLatencyStaysACLIInput is BC-3 and rule 3: the effective
 // PD-transfer base latency is the --pd-transfer-base-latency value ALONE. Its 0.05 ms default is
 // a modeling estimate owned by blis-registry (blis-registry#10, `method: assumed`), not a
-// datasheet fact a fabric class could state — so there is no catalog 0 to compose with, and the
-// flag must keep supplying it on BOTH commands with the same default (INV-13: a run that cannot
-// be replayed with identical flags is not reproducible).
+// datasheet fact a fabric class could state — so there is no catalog 0 to compose with.
+//
+// "Stays a CLI input" is the whole path, not just a registered flag, so all three links are
+// checked on BOTH commands (INV-13: a run that cannot be replayed with identical flags is not
+// reproducible): the flag exists with the same default, setting it writes
+// pdTransferBaseLatencyFlagVar, and that variable is what the DeploymentConfig the command builds
+// takes the field from. Checking only registration would pass while the assignment was deleted or
+// fed from something else, which is exactly how the number would stop being a CLI input.
 func TestNetworksFabric_PDTransferBaseLatencyStaysACLIInput(t *testing.T) {
 	const flagName = "pd-transfer-base-latency"
 	const wantDefault = "0.05"
@@ -303,11 +465,119 @@ func TestNetworksFabric_PDTransferBaseLatencyStaysACLIInput(t *testing.T) {
 		t.Errorf("--%s default differs between run (%q) and replay (%q): INV-13 requires identical "+
 			"flags to reproduce a run", flagName, runFlag.DefValue, replayFlag.DefValue)
 	}
+
+	// Link 2: the operator's value lands in the variable. Restored afterwards so the shared
+	// package state this suite reads elsewhere is left as found.
+	restore := pdTransferBaseLatency
+	t.Cleanup(func() { pdTransferBaseLatency = restore })
+	for _, tc := range []struct {
+		command *cobra.Command
+		label   string
+		set     string
+		want    float64
+	}{
+		{runCmd, "run", "0.17", 0.17},
+		{replayCmd, "replay", "0.31", 0.31},
+	} {
+		flag := tc.command.Flags().Lookup(flagName)
+		if err := flag.Value.Set(tc.set); err != nil {
+			t.Fatalf("%s --%s=%s: %v", tc.label, flagName, tc.set, err)
+		}
+		if pdTransferBaseLatency != tc.want {
+			t.Errorf("%s --%s=%s left %s = %v, want %v: the flag must write the variable the "+
+				"DeploymentConfig is built from, or the CLI is not the source of the number (#1838)",
+				tc.label, flagName, tc.set, pdTransferBaseLatencyFlagVar, pdTransferBaseLatency, tc.want)
+		}
+	}
+
+	// Link 3: that variable, and nothing else, feeds the deployment field on both paths.
+	for _, rel := range []string{"cmd/root.go", "cmd/replay.go"} {
+		sites := deploymentFieldSources(t, rel, pdTransferBaseLatencyField)
+		if len(sites) == 0 {
+			t.Errorf("%s no longer assigns %s: the PD-transfer base latency must reach the "+
+				"DeploymentConfig from --%s on this path, or a run/replay silently uses the zero "+
+				"value instead of the operator's (rule 3 of #1838, INV-13)",
+				rel, pdTransferBaseLatencyField, flagName)
+			continue
+		}
+		for _, site := range sites {
+			if site.source != pdTransferBaseLatencyFlagVar {
+				t.Errorf("%s:%d feeds %s from %s, want %s: the number is a CLI/registry input "+
+					"(blis-registry#10), and a fabric class carries none to source it from (#1838)",
+					rel, site.line, pdTransferBaseLatencyField, site.source, pdTransferBaseLatencyFlagVar)
+			}
+		}
+	}
+}
+
+// fieldSource is one site where a DeploymentConfig field is given a value, and the expression it
+// is given: the identifier's name, or a placeholder when the value is not a bare identifier
+// (which is itself a finding for a field that must come straight from a flag variable).
+type fieldSource struct {
+	line   int
+	source string
+}
+
+// deploymentFieldSources returns every site in one repository file that sets the named struct
+// field, whether as a composite-literal key (`Field: x`) or an assignment (`cfg.Field = x`).
+// Both forms are recognized so the guard survives a refactor of how the config is built.
+func deploymentFieldSources(t *testing.T, rel, field string) []fieldSource {
+	t.Helper()
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, filepath.Join("..", rel), nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("parse %s: %v", rel, err)
+	}
+	var sites []fieldSource
+	record := func(pos token.Pos, value ast.Expr) {
+		source := "an expression that is not a bare identifier"
+		if ident, ok := value.(*ast.Ident); ok {
+			source = ident.Name
+		}
+		sites = append(sites, fieldSource{line: fset.Position(pos).Line, source: source})
+	}
+	ast.Inspect(parsed, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.KeyValueExpr:
+			if key, ok := node.Key.(*ast.Ident); ok && key.Name == field {
+				record(node.Pos(), node.Value)
+			}
+		case *ast.AssignStmt:
+			for i, lhs := range node.Lhs {
+				sel, ok := lhs.(*ast.SelectorExpr)
+				if !ok || sel.Sel.Name != field || i >= len(node.Rhs) {
+					continue
+				}
+				record(lhs.Pos(), node.Rhs[i])
+			}
+		}
+		return true
+	})
+	return sites
 }
 
 // ---------------------------------------------------------------------------
 // BC-4: the reader cannot land without rule 2 being read
 // ---------------------------------------------------------------------------
+
+// catalogLoadReportKnownFields is the loader's namespace report as it stands while the `networks/`
+// fabric reader is absent: the four namespace counts cmd/catalog_load.go's hardcoded list loads,
+// plus the accumulated problems. BC-4 compares the report against this set EXACTLY, rather than
+// looking for a field whose name says "network" — a reader reported as `Interconnects`, or folded
+// into an embedded struct, would evade any name test, and a namespace count that grew into a
+// nested struct would evade a name-and-count one.
+//
+// A slice, not a map, so the diagnostics come out in one order whatever the run (INV-6's habit).
+var catalogLoadReportKnownFields = []struct {
+	name string
+	kind reflect.Kind
+}{
+	{"Models", reflect.Int},
+	{"Hardware", reflect.Int},
+	{"Presets", reflect.Int},
+	{"DeviceClasses", reflect.Int},
+	{"Problems", reflect.Slice},
+}
 
 // TestNetworksFabric_ReaderHasNotLandedYet is BC-4, a deliberate TRIPWIRE rather than a
 // regression test. #1838 is a coordination note whose whole purpose is that the `networks/`
@@ -315,26 +585,50 @@ func TestNetworksFabric_PDTransferBaseLatencyStaysACLIInput(t *testing.T) {
 // tripwire on the loader's own namespace report guarantees the rules are in front of whoever
 // writes it.
 //
-// It fails exactly once, when a networks/fabric namespace count joins catalogLoadReport — that
-// is, when the reader lands. The right response is not to delete this test: keep BC-1/BC-2/BC-3
-// (which then guard real code), point the new reader at InterNodeBwGBps for bandwidth, and drop
-// this function with the reader's own PR.
+// It fails exactly once, when catalogLoadReport grows past the shape above — that is, when a new
+// namespace reader lands. If that reader is the `networks/` one, the response is to obey the
+// three rules in the failure message, keep BC-1/BC-2/BC-3 (which then guard real code), and drop
+// this function in the reader's own PR. If it is an unrelated namespace (R2 adds `clusters` too,
+// #1817), the response is to add its field to catalogLoadReportKnownFields, having read the rules
+// on the way past — which is the cost of the tripwire and the reason it is one test, not a habit.
 func TestNetworksFabric_ReaderHasNotLandedYet(t *testing.T) {
 	typ := reflect.TypeOf(catalogLoadReport{})
 	if typ.NumField() == 0 {
 		t.Fatal("non-vacuity: catalogLoadReport has no fields to inspect")
 	}
+	known := make(map[string]reflect.Kind, len(catalogLoadReportKnownFields))
+	for _, f := range catalogLoadReportKnownFields {
+		known[f.name] = f.kind
+	}
+	seen := make(map[string]bool, typ.NumField())
 	for i := 0; i < typ.NumField(); i++ {
-		folded := strings.ToLower(typ.Field(i).Name)
-		if !strings.Contains(folded, "network") && !strings.Contains(folded, "fabric") {
+		field := typ.Field(i)
+		seen[field.Name] = true
+		want, isKnown := known[field.Name]
+		if !isKnown {
+			t.Errorf("catalogLoadReport.%s is a namespace the loader did not read when #1838 was "+
+				"written. If it is the networks/ fabric reader (under any name), re-read #1838 before "+
+				"relying on it: (1) the fabric's %s (nominal) is the PD-transfer bandwidth, there is no "+
+				"separate PD figure; (2) the fabric class carries NO %s (blis-catalog#12 removed it and "+
+				"the closed schema rejects it); (3) the PD-transfer base latency stays sourced from "+
+				"--pd-transfer-base-latency, owned by blis-registry#10 — the effective value is that "+
+				"number alone. Then delete this tripwire in the reader's PR. If it is an unrelated "+
+				"namespace, add %q to catalogLoadReportKnownFields and keep going.",
+				field.Name, fabricBandwidthKey, pdTransferBaseLatencyField, field.Name)
 			continue
 		}
-		t.Errorf("catalogLoadReport.%s means the networks/ fabric reader has landed — re-read #1838 "+
-			"before relying on it: (1) the fabric's InterNodeBwGBps (nominal) is the PD-transfer "+
-			"bandwidth, there is no separate PD figure; (2) the fabric class carries NO %s "+
-			"(blis-catalog#12 removed it and the closed schema rejects it); (3) the PD-transfer base "+
-			"latency stays sourced from --pd-transfer-base-latency, owned by blis-registry#10 — the "+
-			"effective value is that number alone. Then delete this tripwire in the reader's PR.",
-			typ.Field(i).Name, pdTransferBaseLatencyField)
+		if field.Type.Kind() != want {
+			t.Errorf("catalogLoadReport.%s is now a %s, not a %s: a namespace count that grew a shape "+
+				"is a reader gaining structure, so re-read #1838's three rules (a fabric class carries "+
+				"no %s) before relying on it, then update catalogLoadReportKnownFields.",
+				field.Name, field.Type.Kind(), want, pdTransferBaseLatencyField)
+		}
+	}
+	for _, f := range catalogLoadReportKnownFields {
+		if !seen[f.name] {
+			t.Errorf("catalogLoadReport no longer has %s: this tripwire's known-field set is stale, so "+
+				"it can no longer tell a new namespace reader from an old one — update "+
+				"catalogLoadReportKnownFields (#1838)", f.name)
+		}
 	}
 }
