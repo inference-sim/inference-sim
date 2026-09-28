@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/pflag"
+
 	"github.com/inference-sim/inference-sim/sim/latency"
 )
 
@@ -33,6 +35,8 @@ import (
 //	      catalog device table is required
 //	BC-8  a catalog that cannot supply cpu_dram is refused naming the path AND the
 //	      --kv-transfer-bandwidth escape hatch (R1)
+//	BC-9  derivation is selected by OMITTING --kv-transfer-bandwidth: a SUPPLIED 0 is
+//	      refused, and the flag help says so rather than advertising "0 = derive"
 //
 // The static half — "a physics literal cannot come back into a cmd/ flag default", plus the
 // LoRA defaults-vs-registry drift guard — lives in physics_literal_guard_test.go.
@@ -575,5 +579,70 @@ func TestRunCmd_LegacyKVTransfer_MissingDeviceTableIsRefused(t *testing.T) {
 	}
 	if !strings.Contains(overridden, "completed_requests") {
 		t.Fatalf("non-vacuity: the override leg produced no metrics:\n%s", overridden)
+	}
+}
+
+// TestRunCmd_LegacyKVTransfer_SuppliedZeroIsRefused pins the distinction the flag help and the
+// guides have to state precisely: DERIVATION IS SELECTED BY OMITTING THE FLAG, not by passing
+// 0. Zero is only the REGISTERED default — it has to be, because a physics number must not
+// live in a flag table (BC-G1) — but a SUPPLIED zero is an operator error, and swallowing it
+// as "derive" would make a typo silently change the transfer cost.
+//
+// Both legs run against the SAME catalog and differ only in whether the flag is present, so
+// the refusal is attributable to the supplied value and not to anything about the deployment.
+// It is this behaviour the documentation wording is checked against (#1840 correction round 1,
+// qa-review F2/G3).
+func TestRunCmd_LegacyKVTransfer_SuppliedZeroIsRefused(t *testing.T) {
+	if kvTransferCLISubprocess() {
+		return
+	}
+	const name = "TestRunCmd_LegacyKVTransfer_SuppliedZeroIsRefused"
+	catalog := filepath.Join("..", "testdata", "catalog")
+
+	out, errOut, err := runKVTransferCLILeg(t, name, "run", catalog, "0", "300", "")
+	if err == nil {
+		t.Fatalf("--kv-transfer-bandwidth 0 must be refused as a supplied out-of-range override, "+
+			"never read as a request to derive;\nstdout:\n%s", out)
+	}
+	for _, frag := range []string{"--kv-transfer-bandwidth", "when supplied"} {
+		if !strings.Contains(errOut, frag) {
+			t.Errorf("the refusal must name %q, got:\n%s", frag, errOut)
+		}
+	}
+
+	// The paired control: omitting the flag on the same catalog derives and runs. Without it
+	// the refusal above could just as well be a catalog or deployment failure.
+	derived, errOut, err := runKVTransferCLILeg(t, name, "run", catalog, "", "300", "")
+	if err != nil {
+		t.Fatalf("omitting --kv-transfer-bandwidth must derive and run: %v\nstdout:\n%s\nstderr:\n%s",
+			err, derived, errOut)
+	}
+	if !strings.Contains(derived, "completed_requests") {
+		t.Fatalf("non-vacuity: the derived control leg produced no metrics:\n%s", derived)
+	}
+}
+
+// TestKVTransferBandwidthFlagHelp_DoesNotPromiseZeroDerives keeps the user-facing wording
+// honest about what TestRunCmd_LegacyKVTransfer_SuppliedZeroIsRefused proves. The original
+// help text read "Unset (0) = derived", which reads as an invitation to pass 0 — the exact
+// mis-description qa-review F2 reported. The help must instead say derivation comes from
+// leaving the flag out.
+func TestKVTransferBandwidthFlagHelp_DoesNotPromiseZeroDerives(t *testing.T) {
+	for cmdName, flags := range map[string]*pflag.FlagSet{
+		"run": runCmd.Flags(), "replay": replayCmd.Flags(),
+	} {
+		f := flags.Lookup("kv-transfer-bandwidth")
+		if f == nil {
+			t.Fatalf("%s must register --kv-transfer-bandwidth", cmdName)
+		}
+		if strings.Contains(f.Usage, "(0) = derived") || strings.Contains(f.Usage, "0 = derive") {
+			t.Errorf("%s --kv-transfer-bandwidth help presents 0 as selecting derivation, but a "+
+				"supplied 0 is refused — say derivation comes from leaving the flag UNSET (#1819)\n"+
+				"  usage: %s", cmdName, f.Usage)
+		}
+		if !strings.Contains(strings.ToUpper(f.Usage), "UNSET") {
+			t.Errorf("%s --kv-transfer-bandwidth help must tell the operator that leaving the flag "+
+				"unset is what derives the rate\n  usage: %s", cmdName, f.Usage)
+		}
 	}
 }

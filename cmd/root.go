@@ -1421,9 +1421,11 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 	}
 	// Note: gpuMemoryUtilization and blockSizeTokens are validated in resolveLatencyConfig
 	// (before KV auto-calc). Not repeated here to avoid double-validation.
-	// #1819: unset (0) no longer means "invalid" — it means "derive from the catalog
-	// cpu_dram device" (resolveLegacyKVTransferBandwidth, called once the model config is
-	// resolved). Only an operator-SUPPLIED override is range-checked here, and it is checked
+	// #1819: an UNSUPPLIED --kv-transfer-bandwidth no longer means "invalid" — it means
+	// "derive from the catalog cpu_dram device" (resolveLegacyKVTransferBandwidth, called
+	// once the model config is resolved). Derivation is selected by OMITTING the flag, not by
+	// its zero value: only an operator-SUPPLIED override is range-checked here, so a supplied
+	// 0 is refused as out of range rather than silently read as "derive". It is checked
 	// whether or not the legacy tier is enabled so a typo is never silently inert.
 	if cmd.Flags().Changed("kv-transfer-bandwidth") &&
 		(kvTransferBandwidth <= 0 || math.IsNaN(kvTransferBandwidth) || math.IsInf(kvTransferBandwidth, 0)) {
@@ -1647,11 +1649,13 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// Tiered KV cache (PR12)
 	cmd.Flags().Int64Var(&kvCPUBlocks, "kv-cpu-blocks", 0, "CPU tier KV cache blocks (0 = disabled, single-tier mode). Typical: 1/3 of --total-kv-blocks")
 	cmd.Flags().Float64Var(&kvOffloadThreshold, "kv-offload-threshold", 0.9, "GPU utilization (0-1) above which blocks are offloaded to CPU. Default: offload when GPU >90% full")
-	// #1819 (R2G3b-sim): the default is 0 = DERIVE, not a rate. The legacy transfer cost is
-	// computed from the catalog cpu_dram device fact (see cmd/kv_transfer_derive.go); a
-	// physics number must not live in a flag default, which physicsPricedFlagDefaults
-	// enforces statically. A supplied value still overrides the derivation verbatim.
-	cmd.Flags().Float64Var(&kvTransferBandwidth, "kv-transfer-bandwidth", 0, "Override the CPU↔GPU transfer rate, in tokens per tick, used when --kv-cpu-blocks > 0. Unset (0) = derived from the catalog cpu_dram storage device (<catalog>/devices/storage.yaml). Higher = faster transfers")
+	// #1819 (R2G3b-sim): the REGISTERED default is 0 and means "nothing supplied ⇒ derive",
+	// not a rate of zero. The legacy transfer cost is computed from the catalog cpu_dram
+	// device fact (see cmd/kv_transfer_derive.go); a physics number must not live in a flag
+	// default, which physicsPricedFlagDefaults enforces statically. A supplied value
+	// overrides the derivation verbatim — including a supplied 0, which is therefore refused
+	// as out of range rather than read as a request to derive (resolvePolicies).
+	cmd.Flags().Float64Var(&kvTransferBandwidth, "kv-transfer-bandwidth", 0, "Override the CPU↔GPU transfer rate, in tokens per tick, used when --kv-cpu-blocks > 0. LEAVE IT UNSET to derive the rate from the catalog cpu_dram storage device (<catalog>/devices/storage.yaml) — derivation is selected by omitting the flag, not by passing 0, which is refused. A supplied value must be finite and > 0; higher = faster transfers")
 	cmd.Flags().Int64Var(&kvTransferBaseLatency, "kv-transfer-base-latency", 0, "Fixed per-transfer latency in ticks for CPU↔GPU KV transfers (0 = no fixed cost)")
 	cmd.Flags().Int64Var(&snapshotRefreshInterval, "snapshot-refresh-interval", 50000, "Prometheus snapshot refresh interval for all instance metrics in microseconds (0 = immediate/oracle mode, default 50ms = llm-d parity)")
 	cmd.Flags().Int64Var(&cacheSignalDelay, "cache-signal-delay", cluster.DefaultCacheSignalDelay, "Propagation delay for prefix cache signals in microseconds. Only affects precise-prefix-cache and no-hit-lru scorers; no effect on other routing policies. Default 50ms. Set to 0 for oracle mode (live cache state).")

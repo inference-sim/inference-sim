@@ -70,7 +70,7 @@ BLIS models tiered KV cache with GPU→CPU offloading:
 |------|---------|-------------|
 | `--kv-cpu-blocks` | 0 | CPU-tier blocks (0 = disabled) |
 | `--kv-offload-threshold` | 0.9 | GPU utilization fraction above which blocks offload to CPU |
-| `--kv-transfer-bandwidth` | 0 = derive | Override the CPU↔GPU transfer rate, in tokens/tick |
+| `--kv-transfer-bandwidth` | unset ⇒ derive | Override the CPU↔GPU transfer rate, in tokens/tick. Derivation is selected by **omitting** the flag; a supplied value must be finite and > 0, so `--kv-transfer-bandwidth 0` is refused rather than read as "derive" |
 | `--kv-transfer-base-latency` | 0 | Fixed per-transfer latency in ticks (not charged by default) |
 
 #### Where the transfer cost comes from (#1819)

@@ -161,7 +161,10 @@ func loadLegacyKVTransferDevice(catalog string) (kvOffloadDevice, error) {
 //  1. --kv-cpu-blocks == 0 (the default): the legacy tier is disabled and the rate is
 //     unused. Returned unchanged — no catalog read, no model arithmetic (INV-6).
 //  2. --kv-transfer-bandwidth supplied: the operator's override wins verbatim, exactly as
-//     before this change.
+//     before this change. Derivation is selected by OMITTING the flag, not by its zero
+//     registered default — a supplied 0 never reaches here, because resolvePolicies
+//     range-checks supplied values and refuses it (a typo must be loud, not silently read as
+//     "derive").
 //  3. otherwise: DERIVED from the catalog cpu_dram device (see the file comment).
 //
 // CLI boundary, so failures are logrus.Fatalf (R1) rather than a returned error.

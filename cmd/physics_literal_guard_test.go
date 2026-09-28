@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -19,11 +20,12 @@ import (
 // number that is authored in this repository instead of being read from its source of truth,
 // and that no behavioural test can see because it looks like ordinary Go.
 //
-//	BC-G1  no `cmd/` flag default prices physics with a numeric literal. #1819 converted
-//	       --kv-transfer-bandwidth from a 100.0 blocks/tick default into a derivation from
-//	       the catalog cpu_dram device; without a guard, the next edit that "restores a
-//	       sensible default" silently undoes it, and every test above would still pass
-//	       (they exercise the derivation, not the flag table).
+//	BC-G1  no `cmd/` flag default prices physics with a numeric literal, in ANY of pflag's
+//	       four registration forms. #1819 converted --kv-transfer-bandwidth from a 100.0
+//	       blocks/tick default into a derivation from the catalog cpu_dram device; without a
+//	       guard, the next edit that "restores a sensible default" silently undoes it, and
+//	       every test above would still pass (they exercise the derivation, not the flag
+//	       table).
 //	BC-G2  the live defaults.yaml `lora:` block does not diverge from blis-registry's
 //	       coefficients/lora-adapter-costs.yaml, which is a FROZEN SNAPSHOT of it. Those 9
 //	       values are not a `cmd/` flag default, so BC-G1 does not reach them, and nothing
@@ -61,8 +63,8 @@ var physicsPricedFlagExceptions = map[string]string{
 		"but still authored here. Retired by the PD half of R2, not by #1819.",
 }
 
-// flagDefaultFinding is one `cmd.Flags().<T>Var(&v, "name", <literal>, ...)` whose default is
-// a non-zero numeric literal and whose name prices physics.
+// flagDefaultFinding is one flag registration whose default is a non-zero numeric literal and
+// whose name prices physics — in any of pflag's four registration forms, not only `...Var`.
 type flagDefaultFinding struct {
 	file string
 	line int
@@ -70,78 +72,142 @@ type flagDefaultFinding struct {
 	lit  string
 }
 
+// flagArgPositions says where a *pflag.FlagSet registration method carries the flag NAME and
+// the DEFAULT value in its argument list. pflag ships four forms, and they put both in
+// different places:
+//
+//	XVar (p *T, name string,            value T, usage string)      name 1, default 2
+//	XVarP(p *T, name, shorthand string, value T, usage string)      name 1, default 3
+//	X    (      name string,            value T, usage string) *T   name 0, default 1
+//	XP   (      name, shorthand string, value T, usage string) *T   name 0, default 2
+type flagArgPositions struct{ nameIdx, defaultIdx int }
+
+// pflagRegistrationForms maps every *pflag.FlagSet registration method name to where it keeps
+// the flag name and the default.
+//
+// DERIVED BY REFLECTION over the linked pflag rather than hand-listed. An earlier version of
+// this guard recognized only method names ending in "Var", so `cmd.Flags().Float64("host-dram-
+// bandwidth", 2.0e4, ...)` — a perfectly ordinary registration — was invisible to it, and the
+// coverage test below shared the blind spot and therefore could not report it. Reading the
+// forms off pflag's own signatures closes that class of gap for good: a form this repository
+// does not use today, or a numeric type pflag adds tomorrow, is covered the moment it exists.
+//
+// The four shapes are distinguishable by signature alone (In(0) is the receiver). Requiring
+// the name argument and the LAST argument to be strings — every registration ends in
+// `usage string` — drops the same-shaped methods that register nothing (FlagSet.SetAnnotation,
+// FlagSet.VarPF).
+var pflagRegistrationForms = derivePflagRegistrationForms()
+
+func derivePflagRegistrationForms() map[string]flagArgPositions {
+	forms := make(map[string]flagArgPositions)
+	flagSet := reflect.TypeOf(&pflag.FlagSet{})
+	for i := 0; i < flagSet.NumMethod(); i++ {
+		method := flagSet.Method(i)
+		sig := method.Type
+		var pos flagArgPositions
+		switch {
+		case sig.NumOut() == 0 && sig.NumIn() == 5: // XVar
+			pos = flagArgPositions{nameIdx: 1, defaultIdx: 2}
+		case sig.NumOut() == 0 && sig.NumIn() == 6: // XVarP
+			pos = flagArgPositions{nameIdx: 1, defaultIdx: 3}
+		case sig.NumOut() == 1 && sig.NumIn() == 4: // X
+			pos = flagArgPositions{nameIdx: 0, defaultIdx: 1}
+		case sig.NumOut() == 1 && sig.NumIn() == 5: // XP
+			pos = flagArgPositions{nameIdx: 0, defaultIdx: 2}
+		default:
+			continue
+		}
+		if sig.In(1+pos.nameIdx).Kind() != reflect.String ||
+			sig.In(sig.NumIn()-1).Kind() != reflect.String {
+			continue
+		}
+		forms[method.Name] = pos
+	}
+	return forms
+}
+
+// flagRegistrationCall matches a call to any pflag registration method and returns its
+// selector, the literal flag name, and the expression supplying the default.
+//
+// It does not look at the receiver: whether the registration goes through a
+// Flags()/PersistentFlags() accessor is a separate question, asked by viaFlagsAccessor, so
+// that the coverage test can count the registrations the detector cannot attribute.
+func flagRegistrationCall(call *ast.CallExpr) (sel *ast.SelectorExpr, flagName string, def ast.Expr, ok bool) {
+	sel, isSelector := call.Fun.(*ast.SelectorExpr)
+	if !isSelector {
+		return nil, "", nil, false
+	}
+	pos, known := pflagRegistrationForms[sel.Sel.Name]
+	if !known || len(call.Args) <= pos.defaultIdx {
+		return nil, "", nil, false
+	}
+	flagName, isString := stringLiteral(call.Args[pos.nameIdx])
+	if !isString {
+		return nil, "", nil, false
+	}
+	return sel, flagName, call.Args[pos.defaultIdx], true
+}
+
+// viaFlagsAccessor reports whether a registration's receiver is a literal
+// Flags()/PersistentFlags() call — the form the detector can attribute to a cobra command.
+func viaFlagsAccessor(sel *ast.SelectorExpr) bool {
+	recv, isCall := sel.X.(*ast.CallExpr)
+	if !isCall {
+		return false
+	}
+	recvSel, isSelector := recv.Fun.(*ast.SelectorExpr)
+	return isSelector && (recvSel.Sel.Name == "Flags" || recvSel.Sel.Name == "PersistentFlags")
+}
+
 // physicsPricedFlagDefaults walks a parsed Go file for pflag registrations and reports the
 // physics-priced ones carrying a non-zero numeric literal default.
 //
-// A pure function over an AST rather than a regexp over text, so it sees the actual third
-// argument of the call (the default) and cannot be fooled by the flag name appearing in help
-// text, a comment, or an unrelated string. Kept exported-in-package and separately testable
-// so TestPhysicsPricedFlagDefaults_DetectorRejectsANewLiteral can prove it FIRES — a guard
-// that silently matches nothing is worse than no guard.
+// A pure function over an AST rather than a regexp over text, so it sees the actual default
+// argument of the call and cannot be fooled by the flag name appearing in help text, a
+// comment, or an unrelated string. Kept exported-in-package and separately testable so
+// TestPhysicsPricedFlagDefaults_DetectorRejectsANewLiteral can prove it FIRES — a guard that
+// silently matches nothing is worse than no guard.
 func physicsPricedFlagDefaults(fset *token.FileSet, file *ast.File, name string) []flagDefaultFinding {
 	var findings []flagDefaultFinding
 	ast.Inspect(file, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok || len(call.Args) < 3 {
+		call, isCall := n.(*ast.CallExpr)
+		if !isCall {
 			return true
 		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || !strings.HasSuffix(sel.Sel.Name, "Var") {
+		sel, flagName, def, isRegistration := flagRegistrationCall(call)
+		if !isRegistration || !viaFlagsAccessor(sel) || !physicsPricedFlagPattern.MatchString(flagName) {
 			return true
 		}
-		// The receiver must be a Flags()/PersistentFlags() call, so this matches flag
-		// registration and not any other three-argument ...Var method.
-		recv, ok := sel.X.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		recvSel, ok := recv.Fun.(*ast.SelectorExpr)
-		if !ok || (recvSel.Sel.Name != "Flags" && recvSel.Sel.Name != "PersistentFlags") {
-			return true
-		}
-		flagName, ok := stringLiteral(call.Args[1])
-		if !ok || !physicsPricedFlagPattern.MatchString(flagName) {
-			return true
-		}
-		lit, isNumeric := nonZeroNumericLiteral(call.Args[2])
+		lit, isNumeric := nonZeroNumericLiteral(def)
 		if !isNumeric {
 			return true
 		}
 		findings = append(findings, flagDefaultFinding{
-			file: name, line: fset.Position(call.Args[2].Pos()).Line, flag: flagName, lit: lit,
+			file: name, line: fset.Position(def.Pos()).Line, flag: flagName, lit: lit,
 		})
 		return true
 	})
 	return findings
 }
 
-// flagVarCallCounts counts the `<something>.<T>Var("name", ...)` calls in a file two ways:
-// `viaAccessor` applies the same Flags()/PersistentFlags() receiver filter the detector does,
-// `total` does not. They must be equal for the detector's coverage to be complete — see
+// flagRegistrationCounts counts the pflag registrations in a file two ways: `viaAccessor`
+// applies the same Flags()/PersistentFlags() receiver filter the detector does, `total` does
+// not. They must be equal for the detector's coverage to be complete — see
 // TestPhysicsPricedFlagDefaults_DetectorSeesEveryRegistration.
-func flagVarCallCounts(file *ast.File) (viaAccessor, total int) {
+func flagRegistrationCounts(file *ast.File) (viaAccessor, total int) {
 	ast.Inspect(file, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok || len(call.Args) < 3 {
+		call, isCall := n.(*ast.CallExpr)
+		if !isCall {
 			return true
 		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || !strings.HasSuffix(sel.Sel.Name, "Var") {
-			return true
-		}
-		if _, isString := stringLiteral(call.Args[1]); !isString {
+		sel, _, _, isRegistration := flagRegistrationCall(call)
+		if !isRegistration {
 			return true
 		}
 		total++
-		recv, ok := sel.X.(*ast.CallExpr)
-		if !ok {
-			return true
+		if viaFlagsAccessor(sel) {
+			viaAccessor++
 		}
-		recvSel, ok := recv.Fun.(*ast.SelectorExpr)
-		if !ok || (recvSel.Sel.Name != "Flags" && recvSel.Sel.Name != "PersistentFlags") {
-			return true
-		}
-		viaAccessor++
 		return true
 	})
 	return viaAccessor, total
@@ -273,11 +339,16 @@ func TestPhysicsPricedFlagDefaults_ConvertedFlagsAreZero(t *testing.T) {
 	}
 }
 
-// TestPhysicsPricedFlagDefaults_DetectorSeesEveryRegistration closes the guard's one
+// TestPhysicsPricedFlagDefaults_DetectorSeesEveryRegistration closes the guard's remaining
 // structural blind spot. The detector requires the receiver to be a literal
 // `Flags()`/`PersistentFlags()` call, so a refactor to `fs := cmd.Flags(); fs.Float64Var(...)`
 // would make it silently stop seeing that registration — the guard would still PASS while no
 // longer guarding anything. This fails the moment such a style appears, naming the file.
+//
+// The counting side no longer shares the detector's method filter with any hand-written list:
+// both go through flagRegistrationCall, whose method set is read off pflag by reflection, so a
+// registration form the detector cannot match is one the counter cannot match either only when
+// pflag itself does not have it.
 func TestPhysicsPricedFlagDefaults_DetectorSeesEveryRegistration(t *testing.T) {
 	files, scanned := parseCmdProductionSources(t)
 	if scanned == 0 {
@@ -285,12 +356,12 @@ func TestPhysicsPricedFlagDefaults_DetectorSeesEveryRegistration(t *testing.T) {
 	}
 	totalSeen := 0
 	for _, name := range sortedSourceNames(files) {
-		viaAccessor, total := flagVarCallCounts(files[name].file)
+		viaAccessor, total := flagRegistrationCounts(files[name].file)
 		totalSeen += viaAccessor
 		if viaAccessor != total {
 			t.Errorf("%s: %d of %d flag registrations do not go through Flags()/PersistentFlags() "+
 				"directly, so physicsPricedFlagDefaults cannot see them — either restore the "+
-				"`cmd.Flags().<T>Var(...)` form or widen the detector's receiver check (#1819)",
+				"`cmd.Flags().<T>[Var](...)` form or widen the detector's receiver check (#1819)",
 				name, total-viaAccessor, total)
 		}
 	}
@@ -298,6 +369,60 @@ func TestPhysicsPricedFlagDefaults_DetectorSeesEveryRegistration(t *testing.T) {
 	// 0 == 0 in every file.
 	if totalSeen == 0 {
 		t.Fatal("non-vacuity: the detector saw no flag registrations at all in cmd/")
+	}
+}
+
+// TestPflagRegistrationForms_CoverAllFourShapes is the non-vacuity proof for the reflection
+// table the detector's method set comes from. The failure this pins is the one the guard
+// actually shipped with: a table that only knows the `...Var` forms, which lets
+// `cmd.Flags().Float64("host-dram-bandwidth", 2.0e4, ...)` through unseen.
+//
+// Asserting the exact argument positions matters as much as membership — a form recognized at
+// the wrong index reads the usage text where the default should be and never matches a number.
+func TestPflagRegistrationForms_CoverAllFourShapes(t *testing.T) {
+	for _, want := range []struct {
+		method string
+		pos    flagArgPositions
+	}{
+		{"Float64Var", flagArgPositions{nameIdx: 1, defaultIdx: 2}},
+		{"Float64VarP", flagArgPositions{nameIdx: 1, defaultIdx: 3}},
+		{"Float64", flagArgPositions{nameIdx: 0, defaultIdx: 1}},
+		{"Float64P", flagArgPositions{nameIdx: 0, defaultIdx: 2}},
+		{"Int64Var", flagArgPositions{nameIdx: 1, defaultIdx: 2}},
+		{"Int64", flagArgPositions{nameIdx: 0, defaultIdx: 1}},
+		{"IntVar", flagArgPositions{nameIdx: 1, defaultIdx: 2}},
+		{"Int", flagArgPositions{nameIdx: 0, defaultIdx: 1}},
+	} {
+		got, known := pflagRegistrationForms[want.method]
+		if !known {
+			t.Errorf("pflagRegistrationForms does not recognize FlagSet.%s, so a physics literal "+
+				"registered that way is invisible to the guard (#1819)", want.method)
+			continue
+		}
+		if got != want.pos {
+			t.Errorf("FlagSet.%s: reflection put name at arg %d and the default at arg %d, want %d and %d",
+				want.method, got.nameIdx, got.defaultIdx, want.pos.nameIdx, want.pos.defaultIdx)
+		}
+	}
+	// The table must not be a `...Var`-only set again: at least one recognized form has the
+	// flag name in the first argument, which only the non-Var forms do.
+	nonVar := 0
+	for _, pos := range pflagRegistrationForms {
+		if pos.nameIdx == 0 {
+			nonVar++
+		}
+	}
+	if nonVar == 0 {
+		t.Error("pflagRegistrationForms recognizes no non-Var registration form — this is exactly " +
+			"the blind spot the reflection table exists to close (#1819)")
+	}
+	// Methods that share a registration's SHAPE but register nothing must stay out, or the
+	// coverage count above turns into noise that gets switched off.
+	for _, notARegistration := range []string{"SetAnnotation", "Var", "VarPF", "Lookup", "Set"} {
+		if _, known := pflagRegistrationForms[notARegistration]; known {
+			t.Errorf("pflagRegistrationForms must not treat FlagSet.%s as a flag registration",
+				notARegistration)
+		}
 	}
 }
 
@@ -382,6 +507,41 @@ func f(cmd *cobra.Command) {
 }`,
 			wantFlag: "weight-bytes",
 		},
+		// pflag's non-Var forms return the value instead of binding a pointer. They are
+		// ordinary registrations and the guard must see them — the form G5/F1 reported it
+		// missing (#1840 correction round 1).
+		{
+			name: "non_var_registration",
+			src: `package cmd
+func f(cmd *cobra.Command) {
+	hostDRAM = cmd.Flags().Float64("host-dram-bandwidth", 20000, "bytes/us")
+}`,
+			wantFlag: "host-dram-bandwidth",
+		},
+		{
+			name: "non_var_persistent_flags",
+			src: `package cmd
+func f(cmd *cobra.Command) {
+	cmd.PersistentFlags().Int64("weight-bytes", 4096, "bytes")
+}`,
+			wantFlag: "weight-bytes",
+		},
+		{
+			name: "non_var_with_shorthand",
+			src: `package cmd
+func f(cmd *cobra.Command) {
+	cmd.Flags().Float64P("fabric-bandwidth", "b", 1.5e4, "bytes/us")
+}`,
+			wantFlag: "fabric-bandwidth",
+		},
+		{
+			name: "var_with_shorthand",
+			src: `package cmd
+func f(cmd *cobra.Command) {
+	cmd.Flags().Float64VarP(&x, "nvlink-bandwidth", "n", 9.0e5, "bytes/us")
+}`,
+			wantFlag: "nvlink-bandwidth",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -414,6 +574,13 @@ func f(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&c, "host-dram-bandwidth", hostDRAMBandwidth, "bytes/us")
 	// The flag name in help text must not trip the AST detector.
 	cmd.Flags().IntVar(&d, "num-requests", 100, "see --pd-transfer-bandwidth 25.0")
+	// The same three exemptions in pflag's non-Var forms: the widened detector must not turn
+	// into one that fires on every registration it can now see.
+	e = cmd.Flags().Int("max-num-seqs", 256, "policy")
+	f2 = cmd.Flags().Float64("kv-transfer-bandwidth", 0, "derived")
+	g = cmd.Flags().Float64("host-dram-bandwidth", hostDRAMBandwidth, "bytes/us")
+	// Not a registration at all, though it has a registration's shape.
+	_ = cmd.Flags().SetAnnotation("kv-transfer-bandwidth", "cobra_annotation_bash_completion", nil)
 }`
 	if got := findingsFor(t, src); len(got) != 0 {
 		t.Errorf("detector must not flag policy knobs, zero sentinels or named constants, got: %+v", got)
