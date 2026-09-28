@@ -1885,3 +1885,94 @@ func TestToolLoopResumesAfterTransientFailure(t *testing.T) {
 		})
 	}
 }
+
+// TestChatCompletionTuningKnobsRejectUnusableValues pins that the QA_HTTP_*
+// knobs fail SOFT. They are optional tuning, so a typo, a zero, or a NaN must be
+// reported and ignored in favour of the default — never raised. A knob that could
+// crash the client on import would hand us a new way to reach the exact outcome
+// this change removes: no marker, MISSING, needs-human.
+//
+// NaN and Inf matter specifically because they parse as perfectly good floats and
+// would otherwise flow into urlopen(timeout=...) and time.sleep().
+func TestChatCompletionTuningKnobsRejectUnusableValues(t *testing.T) {
+	requirePython3(t)
+
+	// Print the three resolved settings after importing with the env in place.
+	prog := `
+import importlib, json, sys
+http = importlib.import_module("_http")
+json.dump({"timeout": http.TIMEOUT, "attempts": http.MAX_ATTEMPTS,
+           "backoff": http.BACKOFF}, sys.stdout)
+`
+	type settings struct {
+		Timeout  float64 `json:"timeout"`
+		Attempts int     `json:"attempts"`
+		Backoff  float64 `json:"backoff"`
+	}
+	resolve := func(t *testing.T, env ...string) (settings, string) {
+		t.Helper()
+		cmd := exec.Command("python3", "-c", prog)
+		cmd.Dir = qaScript(t, ".")
+		cmd.Env = append(os.Environ(), env...)
+		var stdout, stderr strings.Builder
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("resolving %v crashed the module: %v (stderr=%s)", env, err, stderr.String())
+		}
+		var got settings
+		if err := json.Unmarshal([]byte(stdout.String()), &got); err != nil {
+			t.Fatalf("settings probe output is not JSON: %v (%s)", err, stdout.String())
+		}
+		return got, stderr.String()
+	}
+
+	// The documented defaults, with no override in play.
+	defaults, stderr := resolve(t,
+		"QA_HTTP_TIMEOUT=", "QA_HTTP_MAX_ATTEMPTS=", "QA_HTTP_BACKOFF=")
+	if defaults.Timeout != 600 || defaults.Attempts != 5 || defaults.Backoff != 2 {
+		t.Errorf("defaults = %+v, want timeout 600s, 5 attempts, 2s backoff (as documented in "+
+			"_http.py and scripts/qa-review/README.md)", defaults)
+	}
+	if stderr != "" {
+		t.Errorf("importing with no overrides wrote to stderr: %q", stderr)
+	}
+
+	t.Run("a-valid-override-is-honoured", func(t *testing.T) {
+		got, stderr := resolve(t, "QA_HTTP_TIMEOUT=30", "QA_HTTP_MAX_ATTEMPTS=2", "QA_HTTP_BACKOFF=0.5")
+		if got.Timeout != 30 || got.Attempts != 2 || got.Backoff != 0.5 {
+			t.Errorf("overrides resolved to %+v, want timeout 30, attempts 2, backoff 0.5", got)
+		}
+		if stderr != "" {
+			t.Errorf("a valid override was reported as unusable: %q", stderr)
+		}
+	})
+
+	for _, bad := range []string{"0", "-1", "abc", "nan", "inf", "1e999"} {
+		t.Run("unusable-timeout-"+bad, func(t *testing.T) {
+			got, stderr := resolve(t, "QA_HTTP_TIMEOUT="+bad)
+			if got.Timeout != defaults.Timeout {
+				t.Errorf("QA_HTTP_TIMEOUT=%s resolved to %v, want the %v default", bad, got.Timeout,
+					defaults.Timeout)
+			}
+			// R1: falling back silently would leave an operator believing a knob
+			// they set is in effect.
+			if !strings.Contains(stderr, "ignoring unusable QA_HTTP_TIMEOUT") {
+				t.Errorf("QA_HTTP_TIMEOUT=%s was ignored silently: %q", bad, stderr)
+			}
+		})
+	}
+
+	// A budget below 1 must still make one attempt rather than fall through the
+	// loop and raise a None exception, which would bury the real mistake.
+	t.Run("a-sub-one-budget-still-makes-one-attempt", func(t *testing.T) {
+		got, _ := runHTTPProbe(t, `{"attempts":0,"outcomes":[{"kind":"http","code":504}]}`)
+		if len(got.Calls) != 1 {
+			t.Errorf("made %d attempts with a 0 budget, want exactly 1", len(got.Calls))
+		}
+		if got.Error == "" || !strings.Contains(got.Error, "504") {
+			t.Errorf("raised %q, want the 504 re-raised (never a TypeError about a None exception)",
+				got.Error)
+		}
+	})
+}

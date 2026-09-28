@@ -33,13 +33,14 @@ Retry policy:
 Env overrides (all optional, for CI tuning; an unusable value is reported on
 stderr and ignored rather than crashing the review):
 
-  QA_HTTP_TIMEOUT        per-attempt request timeout, seconds (default 300)
+  QA_HTTP_TIMEOUT        per-attempt request timeout, seconds (default 600)
   QA_HTTP_MAX_ATTEMPTS   total attempts including the first (default 5)
   QA_HTTP_BACKOFF        first backoff, seconds, doubled per retry (default 2)
 """
 
 import http.client
 import json
+import math
 import os
 import random
 import socket
@@ -57,14 +58,22 @@ RETRY_STATUSES = frozenset((408, 429))
 BACKOFF_CAP = 60.0
 RETRY_AFTER_CAP = 120.0
 
+# Cap on the doubling exponent. 2**30 already dwarfs BACKOFF_CAP, so this changes
+# no delay any configuration can actually produce — it only stops a large
+# QA_HTTP_MAX_ATTEMPTS from computing 2**N as a bignum and overflowing the float
+# multiply into an OverflowError instead of backing off.
+BACKOFF_MAX_SHIFT = 30
+
 
 def _env_number(name, default, cast):
-    """Positive number from the environment, else default.
+    """Positive finite number from the environment, else default.
 
-    An absent variable is the normal case. A malformed or non-positive one is
-    reported on stderr and ignored: this is delivery-loop infrastructure, and a
-    typo'd knob must not be the thing that turns a review into MISSING (R1 —
-    never fail silently, but never fail fatally on a tuning knob either).
+    An absent variable is the normal case. A malformed, non-positive or
+    non-finite one is reported on stderr and ignored: this is delivery-loop
+    infrastructure, and a typo'd tuning knob must not be the thing that turns a
+    review into MISSING (R1 — never fail silently, but never fail fatally on a
+    knob either). ``nan``/``inf`` parse fine as floats and would otherwise reach
+    ``urlopen(timeout=...)`` or ``time.sleep()``, so they are rejected here.
     """
     raw = os.environ.get(name, "").strip()
     if not raw:
@@ -73,7 +82,7 @@ def _env_number(name, default, cast):
         value = cast(raw)
     except (TypeError, ValueError):
         value = None
-    if value is None or value <= 0:
+    if value is None or not math.isfinite(value) or value <= 0:
         sys.stderr.write(
             "qa-review http: ignoring unusable %s=%r, using %r\n" % (name, raw, default)
         )
@@ -81,7 +90,12 @@ def _env_number(name, default, cast):
     return value
 
 
-TIMEOUT = _env_number("QA_HTTP_TIMEOUT", 300.0, float)
+# 600s per attempt is ~8x the incident's observed average turn (~30 min over up
+# to 24 turns), so it bounds a genuinely hung connection without turning a slow
+# but working completion into a failure — which would cause the very MISSING
+# this change exists to prevent. Before this there was no timeout at all, so a
+# hang consumed the whole 120-minute verify job.
+TIMEOUT = _env_number("QA_HTTP_TIMEOUT", 600.0, float)
 MAX_ATTEMPTS = _env_number("QA_HTTP_MAX_ATTEMPTS", 5, int)
 BACKOFF = _env_number("QA_HTTP_BACKOFF", 2.0, float)
 
@@ -146,7 +160,10 @@ def retry_after_seconds(exc):
         value = float(str(raw).strip())
     except (TypeError, ValueError):
         return None
-    if value < 0:
+    # A header is the one input here an upstream can choose freely, so a negative
+    # or non-finite value must fall through to the backoff schedule rather than
+    # reach time.sleep().
+    if not math.isfinite(value) or value < 0:
         return None
     return min(value, RETRY_AFTER_CAP)
 
@@ -163,7 +180,7 @@ def retry_delay(exc, attempt):
     after = retry_after_seconds(exc)
     if after is not None:
         return after
-    window = min(BACKOFF * (2 ** (attempt - 1)), BACKOFF_CAP)
+    window = min(BACKOFF * (2 ** min(attempt - 1, BACKOFF_MAX_SHIFT)), BACKOFF_CAP)
     return window * (0.5 + random.random() / 2.0)
 
 
@@ -190,8 +207,13 @@ def post_chat_completion(base_url, api_key, model, messages, tools=None):
         payload["tools"] = tools
     data = json.dumps(payload).encode("utf-8")
 
+    # Always make at least one attempt. _env_number already rejects a
+    # non-positive budget, but a caller that lowered MAX_ATTEMPTS directly would
+    # otherwise skip the loop entirely and reach `raise last` with last unset —
+    # a TypeError about a None exception, hiding the real configuration mistake.
+    attempts = max(1, MAX_ATTEMPTS)
     last = None
-    for attempt in range(1, MAX_ATTEMPTS + 1):
+    for attempt in range(1, attempts + 1):
         # A fresh Request per attempt: a Request carries per-send state (unredirected
         # headers, host), so reusing one across retries is not guaranteed to be clean.
         req = urllib.request.Request(url, data=data, method="POST")
@@ -199,24 +221,26 @@ def post_chat_completion(base_url, api_key, model, messages, tools=None):
         req.add_header("Authorization", "Bearer " + api_key)
         try:
             return json.loads(send(req, TIMEOUT))
-        except Exception as exc:  # noqa: BLE001 — classified immediately below
+        # Broad by design: every failure is classified on the next line, and a
+        # deterministic one is re-raised untouched.
+        except Exception as exc:
             if not is_retryable(exc):
                 # Deterministic failure (a 4xx, or a malformed body): re-raise
                 # untouched so the caller sees the same error it always did.
                 raise
             last = exc
-            if attempt >= MAX_ATTEMPTS:
+            if attempt >= attempts:
                 break
             delay = retry_delay(exc, attempt)
             sys.stderr.write(
                 "qa-review http: %s on attempt %d/%d, retrying in %.1fs\n"
-                % (describe(exc), attempt, MAX_ATTEMPTS, delay)
+                % (describe(exc), attempt, attempts, delay)
             )
             sleep(delay)
 
     sys.stderr.write(
         "qa-review http: giving up after %d attempts, last error %s — the script "
         "will exit without a verdict marker, so the gate reads MISSING and stops "
-        "for a human\n" % (MAX_ATTEMPTS, describe(last))
+        "for a human\n" % (attempts, describe(last))
     )
     raise last
