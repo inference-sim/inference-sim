@@ -147,7 +147,7 @@ Maps to `ModelHardwareConfig`.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--model` | string | (required) | LLM model name (e.g., `qwen/qwen3-14b`). |
-| `--hardware` | string | "" | **Required** GPU type (`run` and `replay`). Bundled options: `H100`, `A100-SXM`, `A100-80`. Never loaded from `defaults.yaml` — omitting it is refused naming the flag (NS-6, #1733). Add new GPUs to `hardware_config.json` (include `IntraNodeBwGBps`/`InterNodeBwGBps` if instances on that GPU may span nodes — see [Interconnect Calibration](#interconnect-calibration)). |
+| `--hardware` | string | "" | **Required** GPU type (`run` and `replay`). Bundled options: `H100`, `H200`, `A100-SXM`, `A100-80`, `L40S` (the full set of `hardware_config.json` entries — see [Generalization Scope](../guide/latency-models.md#generalization-scope) for each one's specs). Never loaded from `defaults.yaml` — omitting it is refused naming the flag (NS-6, #1733). Add new GPUs to `hardware_config.json` (include `IntraNodeBwGBps`/`InterNodeBwGBps` if instances on that GPU may span nodes — see [Interconnect Calibration](#interconnect-calibration)). |
 | `--tp` | int | 0 | **Required** tensor parallelism degree, > 0 (`run` and `replay`). Never loaded from `defaults.yaml` — omitting it is refused naming the flag (NS-6, #1733). |
 | `--dp` | int | 1 | Data parallelism degree (MoE models only; `--latency-model trained-physics` only). `--dp N` spawns N real single-node engine replicas per `--num-instances`, each sized per-rank (`DP=1`) — on both `blis run` (#1531) and `blis replay` (#1556); re-supply it identically on replay — the TraceV2 header has no `data_parallel` field at all, and replay reads no parallelism field back from it, so omitting `--dp` on the replay leg silently compares an N-replica run against a 1-replica replay. Supported with `--enable-expert-parallel` since #1548 (the EP group is those same replicas' GPUs; re-supply both flags on replay). Supported with PD disaggregation (each pool spawns N per-rank replicas) and node pools (N×M replicas reserve N×M×TP GPUs, each sized per-rank) since #1553. Rejected with the model autoscaler (#1553: dp-group co-scaling is undefined). |
 | `--enable-expert-parallel` | bool | false | Enable expert parallelism for MoE models (mirrors vLLM `--enable-expert-parallel`; `--latency-model trained-physics` only). Since #1548 it affects **step time** (routed-expert weights shard across the `TP·DP` EP group; the MoE FFN dispatch/combines instead of all-reducing) as well as KV-capacity sizing (#1656), and is supported alongside `--dp > 1`. Reserves no GPUs beyond those `--dp` placement already takes. |
@@ -716,6 +716,22 @@ Rules:
 
 To compare fabrics, change `InterNodeBwGBps` (a slower fabric never lowers the charged
 cost), or give pools distinct `gpu_type` entries with different values.
+
+!!! note "The catalog's `networks/` fabric classes state bandwidth, not a PD-transfer base latency"
+    The catalog's reusable fabric classes (`<catalog>/networks/*.yaml` — `ethernet-100gbe`,
+    `ib-400g`, `roce-200g`) state a nominal `InterNodeBwGBps`, and that figure **is** the
+    PD-transfer bandwidth: there is no separate PD bandwidth number
+    ([blis-catalog#10](https://github.com/inference-sim/blis-catalog/pull/10)). They carry **no**
+    `PDTransferBaseLatencyMs` — [blis-catalog#12](https://github.com/inference-sim/blis-catalog/pull/12)
+    removed it, because a fabric class has no inherent per-transfer base latency to state (the
+    nominal value was always a `0` placeholder), and the fabric schema is *closed*, so the catalog
+    CI gate now rejects the key as unknown. The PD-transfer base latency is a **modeling
+    estimate**, supplied by `--pd-transfer-base-latency` (default `0.05` ms) and owned by
+    [`blis-registry`](https://github.com/inference-sim/blis-registry/issues/10) (`method: assumed`);
+    the effective value is that number alone, with no catalog `0` to compose with. BLIS has no
+    `networks/` reader yet (nothing reads a fabric file today) — `cmd/catalog_networks_fabric_test.go`
+    guards the rule so the reader cannot be written against the retired field
+    ([#1838](https://github.com/inference-sim/inference-sim/issues/1838)).
 
 !!! note "Node-pool instances use the `--hardware` entry"
     A node-pool instance is calibrated from whichever `hardware_config.json` entry
