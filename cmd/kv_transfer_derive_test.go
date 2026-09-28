@@ -323,11 +323,15 @@ func TestDeriveLegacyKVTransferRate_RefusesDegenerateInputs(t *testing.T) {
 //
 // "Positive and finite" is not a sufficient condition on the derived rate. sim/kv.TieredKVCache
 // charges `int64(math.Ceil(block_tokens / rate))` per reloaded block, and a Go float→int64
-// conversion whose value does not fit is undefined: on amd64 it produces MinInt64. So a catalog
+// conversion whose value does not fit is IMPLEMENTATION-DEFINED: amd64 wraps it to MinInt64 (a
+// large NEGATIVE latency that moves the clock the wrong way), arm64 saturates it to MaxInt64 (a
+// ~292,000-year latency) — either way a garbage charge, not the true one. So a catalog
 // read_bandwidth of 1e-300 — positive, finite, and accepted by every other check — yields a
-// rate around 5e-303 that passes the guards and then charges a large NEGATIVE latency, moving
-// the clock the wrong way. The test asserts the refusal AND demonstrates the arithmetic it
-// prevents, so the bound cannot later be deleted as "defensive".
+// rate around 5e-303 that passes the pre-existing guards and then overflows this conversion.
+// The test asserts the refusal AND demonstrates the arithmetic it prevents; the demonstration is
+// stated in the FLOAT domain (the ceil'd charge exceeds the int64 range) so it holds on both
+// architectures rather than relying on how one of them realises the undefined conversion — so the
+// bound cannot later be deleted as "defensive".
 func TestDeriveLegacyKVTransferRate_RefusesRatesThatOverflowTheTickBudget(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -361,11 +365,16 @@ func TestDeriveLegacyKVTransferRate_RefusesRatesThatOverflowTheTickBudget(t *tes
 				}
 			}
 
-			// What the refusal prevents: the library's own conversion, unguarded.
-			charged := int64(math.Ceil(float64(tc.blockSize) / nominal))
-			if charged > 0 {
-				t.Fatalf("non-vacuity: the unguarded charge must be non-positive (an overflow), "+
-					"got %d — this case no longer demonstrates the failure it guards", charged)
+			// What the refusal prevents: the library's own int64(math.Ceil(...)) conversion is
+			// undefined here because the ceil'd charge does not fit int64. Assert that
+			// out-of-range condition in the FLOAT domain — performing the conversion and
+			// checking its sign would be non-portable (amd64 wraps to MinInt64, arm64 saturates
+			// to MaxInt64), which is the very undefinedness the bound exists to refuse.
+			overflowTicks := math.Ceil(float64(tc.blockSize) / nominal)
+			if overflowTicks <= float64(math.MaxInt64) {
+				t.Fatalf("non-vacuity: the unguarded charge must exceed the int64 range (an "+
+					"overflow), got %v — this case no longer demonstrates the failure it guards",
+					overflowTicks)
 			}
 		})
 	}
@@ -872,15 +881,17 @@ func TestLegacyKVTransfer_OverrideThatOverflowsTheTickBudgetIsRefused(t *testing
 	tracePrefix := filepath.Join(t.TempDir(), "legacy-kv-overflow")
 
 	// Non-vacuity, stated before the refusals: this really is a value resolvePolicies lets
-	// through, and the library conversion really does wrap on it. If either stops being true
-	// the test below is checking something else.
+	// through, and the library conversion really does overflow on it. If either stops being true
+	// the test below is checking something else. The overflow is stated in the FLOAT domain (the
+	// ceil'd charge exceeds the int64 range) rather than by converting and checking the sign,
+	// which is implementation-defined (amd64 wraps to MinInt64, arm64 saturates to MaxInt64).
 	const overflowing = "1e-300"
 	if bw := 1e-300; bw <= 0 || math.IsNaN(bw) || math.IsInf(bw, 0) {
 		t.Fatalf("non-vacuity: %s must pass resolvePolicies' range check", overflowing)
 	}
-	if charged := int64(math.Ceil(float64(referenceBlockSizeTokens) / 1e-300)); charged > 0 {
-		t.Fatalf("non-vacuity: the unguarded charge for %s must be an overflow, got %d",
-			overflowing, charged)
+	if overflowTicks := math.Ceil(float64(referenceBlockSizeTokens) / 1e-300); overflowTicks <= float64(math.MaxInt64) {
+		t.Fatalf("non-vacuity: the unguarded charge for %s must exceed the int64 range (an overflow), got %v",
+			overflowing, overflowTicks)
 	}
 
 	// The trace the replay leg needs, exported at the derived rate.
