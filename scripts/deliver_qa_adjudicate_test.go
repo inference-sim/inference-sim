@@ -8,6 +8,12 @@ package scripts_test
 // (a GitHub App installation token without the `workflows` permission) cannot push. As with #1715,
 // the workflow half was therefore applied by a workflows-scoped push rather than by the delivery
 // agent; the tests below assert the contract over the live workflow.
+//
+// #1834 adds guards for that same step at the bottom of this file. Its workflow half is still
+// PENDING, in scripts/deliver-verify-adjudicate-rc.patch, for the same permission reason — so
+// those guards read the step from whichever of the two currently carries it. #1834's primary fix
+// is deliberately NOT in that patch: it is live in scripts/qa-review/adjudicator.py, so the
+// re-verify works before any human applies anything.
 
 import (
 	"os"
@@ -329,5 +335,243 @@ func TestRoundCounterRelocationCannotChangeWhatItReads(t *testing.T) {
 	if n := strings.Count(workflow, "steps.round.outputs.value"); n < 2 {
 		t.Errorf("only %d step(s) read `steps.round.outputs.value`; the Decide step and the summary "+
 			"both did before the relocation, so the move dropped a consumer", n)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// #1834 — the re-verify must be able to find its OWN report, and must say so when it cannot.
+// ---------------------------------------------------------------------------
+
+// The pending workflow half of #1834. Both of its hunks are in the adjudication step; see the
+// patch's own header for why it is a patch (the delivering App token cannot push
+// .github/workflows/*, measured again on this delivery) and for why the PRIMARY fix is not in it
+// — that one is live in scripts/qa-review/adjudicator.py, so the loop is repaired whether or not
+// a human ever applies this file.
+const adjudicateRCPatch = "scripts/deliver-verify-adjudicate-rc.patch"
+
+// errorExitSafeCapture is the `-e`-safe exit-code capture the step must use. `bash -e {0}` is the
+// default shell and `set -uo pipefail` does not clear `-e`, so a bare `rc=$?` on the line AFTER
+// the invocation is never reached when the invocation fails.
+const errorExitSafeCapture = "|| rc=$?"
+
+func adjudicateRCPatchPath() string {
+	return filepath.Join("..", adjudicateRCPatch)
+}
+
+// adjudicationStepVariants returns the EXECUTABLE text of the adjudication step in every shape it
+// can actually run in on this tree, labelled — the LIVE workflow, and (while the workflow half is
+// still pending) the post-image of applying the patch to it.
+//
+// Both are returned rather than just the effective one because they differ in a way that matters:
+// the live workflow is what runs on the next delivery, and the patched one is what runs after a
+// human lands the patch. A guard that read only the post-image would go green on a tree whose LIVE
+// wiring is still broken — which is the state this repository is in until the patch is applied.
+//
+// A tree with NEITHER the live capture nor the patch is a failure, not a skip: these tests are the
+// only thing asserting the contract, so passing on a tree that has lost both halves would make the
+// guard optional. Applying the diff — rather than matching its added lines — is what makes a STALE
+// patch fail here, at every CI run, instead of at the moment a human tries to land it.
+func adjudicationStepVariants(t *testing.T) (variants map[string]string, live bool) {
+	t.Helper()
+
+	current := readFileOrFail(t, verifyWorkflowPath())
+	liveStep := requireStep(t, liveStepCode(t, current), qaAdjudicateStep)
+	if strings.Contains(liveStep, errorExitSafeCapture) {
+		// Applied. The patch must not also still be sitting in the tree: a leftover would read as
+		// "still pending" to anyone scanning for one, and would be re-applied on top of itself.
+		if _, err := os.Stat(adjudicateRCPatchPath()); err == nil {
+			t.Errorf("deliver-verify.yml already carries #1834's %q capture, but %s is still in the "+
+				"tree. Delete it in the commit that applies it, or a reader cannot tell which half is "+
+				"in force", errorExitSafeCapture, adjudicateRCPatch)
+		}
+		return map[string]string{"the live deliver-verify.yml": liveStep}, true
+	}
+
+	patch, err := os.ReadFile(adjudicateRCPatchPath())
+	if err != nil {
+		t.Fatalf("the %q step carries no %q capture and %s is missing (%v). One of the two must hold "+
+			"#1834's workflow half; with neither, a failing adjudication aborts the step under `bash -e` "+
+			"before its own `skip` can say why, and the delivery loop reports only the generic \"the "+
+			"verify phase failed or timed out\"",
+			qaAdjudicateStep, errorExitSafeCapture, adjudicateRCPatch, err)
+	}
+	patched, err := applyUnifiedDiff(current, string(patch), "deliver-verify.yml")
+	if err != nil {
+		t.Fatalf("%s no longer applies to deliver-verify.yml: %v\n\n"+
+			"It carries #1834's workflow half because the delivering App token lacks the `workflows` "+
+			"permission. A patch that does not apply cannot be landed, so regenerate it against the "+
+			"current workflow — do not delete this test to make the failure go away", adjudicateRCPatch, err)
+	}
+	patchedStep := requireStep(t, liveStepCode(t, patched), qaAdjudicateStep)
+	if !strings.Contains(patchedStep, errorExitSafeCapture) {
+		t.Fatalf("%s applies but the resulting %q step still has no %q capture, so it is not #1834's "+
+			"wiring", adjudicateRCPatch, qaAdjudicateStep, errorExitSafeCapture)
+	}
+	return map[string]string{
+		"the live deliver-verify.yml":               liveStep,
+		"deliver-verify.yml + " + adjudicateRCPatch: patchedStep,
+	}, false
+}
+
+// adjudicationStepWith1834Wiring returns the adjudication step as it will run once #1834's
+// workflow half is in place — the live step when it is applied, the patch's post-image while it is
+// pending — and whether it is already live.
+func adjudicationStepWith1834Wiring(t *testing.T) (step string, live bool) {
+	t.Helper()
+	variants, live := adjudicationStepVariants(t)
+	if live {
+		return variants["the live deliver-verify.yml"], true
+	}
+	return variants["deliver-verify.yml + "+adjudicateRCPatch], false
+}
+
+// TestQAAdjudicationStepSurfacesTheAdjudicatorsExitCode is #1834's secondary half: the step's
+// graceful degradation must actually run.
+//
+// The step is written to degrade — every early exit calls `skip`, which emits a ::warning:: naming
+// the reason and leaves no QA-VERDICT marker, so the gate reads MISSING and stops for a human who
+// can see WHY. That was defeated by `bash -e`: the adjudicator's invocation was followed by a bare
+// `rc=$?` on the next line, so a nonzero exit aborted the step at the invocation — before the
+// capture, before `cat`ing the captured stderr into the log, and before the `skip`. On PR #1832 the
+// step died with "Process completed with exit code 3" and the intended message ("no prior report to
+// adjudicate, or a failure") was never posted. That is why a deterministic, every-round regression
+// read as an intermittent infrastructure failure.
+func TestQAAdjudicationStepSurfacesTheAdjudicatorsExitCode(t *testing.T) {
+	step, _ := adjudicationStepWith1834Wiring(t)
+
+	// The invocation and the capture must be ONE command. A bare `rc=$?` statement is the bug.
+	for _, line := range strings.Split(step, "\n") {
+		if strings.TrimSpace(line) == "rc=$?" {
+			t.Errorf("the %q step captures the adjudicator's exit code with a standalone `rc=$?`. "+
+				"Under the default `bash -e {0}` — which `set -uo pipefail` does not clear — a nonzero "+
+				"exit aborts the step before that line, so the `skip` below it never runs and the real "+
+				"reason is swallowed. Use the inline %q form the sibling author-gate steps use",
+				qaAdjudicateStep, errorExitSafeCapture)
+		}
+	}
+	// And `rc` must be initialised, or `set -u` makes the `[[ "$rc" -eq 0 ]]` test below it an
+	// unbound-variable error on the success path.
+	if !strings.Contains(step, "rc=0") {
+		t.Errorf("the %q step does not initialise `rc=0` before the adjudicator runs. With %q the "+
+			"variable is only ever assigned on FAILURE, so under `set -u` the success path dies on the "+
+			"unbound `$rc`", qaAdjudicateStep, errorExitSafeCapture)
+	}
+	// The degradation the capture exists to reach must still be there.
+	for _, needle := range []string{`cat "$RUNNER_TEMP/qa-adjudication.err" >&2`, `[[ "$rc" -eq 0 ]]`} {
+		if !strings.Contains(step, needle) {
+			t.Errorf("the %q step no longer contains %q, so capturing the exit code buys nothing: the "+
+				"adjudicator's own diagnostics never reach the job log", qaAdjudicateStep, needle)
+		}
+	}
+}
+
+// TestQAReportAuthorFindsTheReportTheDeliveryLoopPosts is #1834's primary half, asserted
+// END TO END across the two halves that disagreed: the workflow's configured QA_REPORT_AUTHOR and
+// the login the comment source actually reports.
+//
+// Neither half is wrong in isolation, which is exactly why #1806 could break this with every one
+// of its own tests passing. So this guard does not assert a value — it takes whatever the workflow
+// configures and checks that adjudicator.py, given a report posted under the login
+// scripts/deliver-trusted-comments.sh emits, FINDS it. Before the fix that fails for the live
+// workflow's `github-actions` against REST's `github-actions[bot]`; it fails again if a future
+// edit changes either side alone.
+func TestQAReportAuthorFindsTheReportTheDeliveryLoopPosts(t *testing.T) {
+	requirePython3(t)
+
+	// The fixture login must be the one the filter really emits, or this test would assert against
+	// a spelling nothing produces. deliver-trusted-comments.sh reads REST precisely so its
+	// automation allowlist can key on the canonical suffixed form.
+	filter := readFileOrFail(t, filepath.Join("..", "scripts", "deliver-trusted-comments.sh"))
+	if !strings.Contains(filter, `"`+filterReportLogin+`"`) {
+		t.Fatalf("scripts/deliver-trusted-comments.sh no longer allowlists %q, so that is not the "+
+			"login it reports for the report's poster and this guard is checking the wrong spelling",
+			filterReportLogin)
+	}
+
+	// The THIRD side of the contract, since the `[bot]`-suffix equivalence became conditional on
+	// the trust label (#1834 G2): the adjudicator grants it only to a comment labelled
+	// `filterAutomationLabel`, so if the filter ever spells that label differently the equivalence
+	// silently stops applying — and #1834's silent needs-human comes straight back. Asserted
+	// against the emitting jq, which is where the string is produced.
+	labels := readFileOrFail(t, filepath.Join("..", "scripts", "deliver-trusted-comments.jq"))
+	if !strings.Contains(labels, `"`+filterAutomationLabel+`"`) {
+		t.Fatalf("scripts/deliver-trusted-comments.jq no longer emits the trust label %q, which is "+
+			"the evidence adjudicator.py requires before it treats `github-actions` and "+
+			"`github-actions[bot]` as one actor. Without it the restriction is exact again and "+
+			"every re-verify goes back to exiting 3", filterAutomationLabel)
+	}
+
+	// EVERY shape the step can run in, live included. The live workflow still carries the short
+	// form while the workflow patch is pending, and that is the one the next delivery uses — so it
+	// is the one that must work, not merely the post-patch shape.
+	variants, _ := adjudicationStepVariants(t)
+	for _, name := range sortedKeys(variants) {
+		t.Run(name, func(t *testing.T) {
+			var configured string
+			for _, line := range strings.Split(variants[name], "\n") {
+				if rest, ok := strings.CutPrefix(line, "QA_REPORT_AUTHOR: "); ok {
+					configured = strings.TrimSpace(rest)
+				}
+			}
+			// Retained, not dropped. It is defence in depth over the write-access filter now rather
+			// than the only barrier, but removing it is a decision, not a side effect of fixing a
+			// login form.
+			if configured == "" {
+				t.Fatalf("in %s the %q step sets no QA_REPORT_AUTHOR. Without it any comment the "+
+					"trusted-comments filter admits can supply the prior findings, and one with an "+
+					"empty Items-to-fix section clears every outstanding finding as a vacuous PASS",
+					name, qaAdjudicateStep)
+			}
+			if !selectionFindsReport(t, filterReportLogin, filterAutomationLabel, configured) {
+				t.Errorf("adjudicator.py does not find a qa-review report posted by %q when the "+
+					"restriction is QA_REPORT_AUTHOR=%q, as %s configures it. That is #1834: the "+
+					"report is skipped, fetch_comments returns None, main() exits 3 with no verdict "+
+					"line, and the gate reads MISSING — so EVERY correction round ends at needs-human "+
+					"no matter how good the corrections were", filterReportLogin, configured, name)
+			}
+		})
+	}
+}
+
+// TestAdjudicateRCWiringStatusMatchesReality mirrors TestApproverWiringStatusMatchesReality for
+// #1834's patch: the patch and the doc note describing it as pending must both be present while the
+// workflow half has not landed, and both gone once it has.
+//
+// A leftover patch reads as pending work that is already done, and would make the staleness check
+// in adjudicationStepVariants unreachable. A leftover doc note is worse: it tells a reader the
+// adjudication step still swallows its failure reason when it no longer does. #1715 shipped exactly
+// that stale status and needed a follow-up commit to remove it.
+func TestAdjudicateRCWiringStatusMatchesReality(t *testing.T) {
+	const docPath = "docs/contributing/automated-delivery.md"
+	doc := readFileOrFail(t, filepath.Join("..", "docs", "contributing", "automated-delivery.md"))
+	// Matched on the patch FILENAME rather than on prose: the paragraph can be reworded freely, but
+	// naming a patch file that no longer exists is the specific staleness this catches.
+	docSaysPending := strings.Contains(doc, "deliver-verify-adjudicate-rc.patch")
+	_, patchErr := os.Stat(adjudicateRCPatchPath())
+	patchExists := patchErr == nil
+	liveStep := requireStep(t, liveStepCode(t, readFileOrFail(t, verifyWorkflowPath())), qaAdjudicateStep)
+	live := strings.Contains(liveStep, errorExitSafeCapture)
+
+	if live {
+		if patchExists {
+			t.Errorf("deliver-verify.yml carries #1834's %q capture AND %s still exists. Delete the "+
+				"patch in the commit that applies it — a leftover patch describes work that is already "+
+				"done", errorExitSafeCapture, adjudicateRCPatch)
+		}
+		if docSaysPending {
+			t.Errorf("deliver-verify.yml carries #1834's %q capture but %s still describes it as "+
+				"pending in a patch. Remove that text in the same commit: a doc saying a live fix is "+
+				"unwired is worse than no doc", errorExitSafeCapture, docPath)
+		}
+		return
+	}
+
+	if !patchExists {
+		t.Errorf("#1834's workflow half is neither live nor in %s (%v)", adjudicateRCPatch, patchErr)
+	}
+	if !docSaysPending {
+		t.Errorf("#1834's workflow half is pending in %s but %s does not say so. A reader hitting the "+
+			"generic \"the verify phase failed or timed out\" has no way to learn that the step's own "+
+			"reason is being swallowed by `bash -e`", adjudicateRCPatch, docPath)
 	}
 }

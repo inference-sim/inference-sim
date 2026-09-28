@@ -69,7 +69,7 @@ func implementWorkflowWithApproverWiring(t *testing.T) (workflow string, live bo
 			"this guard would be asserting against an unchanged file",
 			recordStep, approverPatch, err)
 	}
-	patched, err := applyUnifiedDiff(current, string(patch))
+	patched, err := applyUnifiedDiff(current, string(patch), "deliver-implement.yml")
 	if err != nil {
 		t.Fatalf("%s no longer applies to deliver-implement.yml: %v\n\n"+
 			"The patch carries #1790's workflow half because the delivering App token lacks the "+
@@ -85,7 +85,10 @@ func implementWorkflowWithApproverWiring(t *testing.T) (workflow string, live bo
 }
 
 // applyUnifiedDiff applies the single-file unified diff embedded in patch to orig and returns the
-// post-image.
+// post-image. `wantFile` is the path the diff's `diff --git` header must name — a patch that
+// touches anything else is refused rather than partially applied (see below). It is a parameter
+// rather than a constant because #1834 carries a second pending workflow patch, against
+// deliver-verify.yml, through this same reconstruction.
 //
 // Deliberately hand-rolled rather than shelling out to `git apply`. The point of this test is the
 // staleness check, and reconstructing the post-image in memory is what lets the assertions below
@@ -100,8 +103,19 @@ func implementWorkflowWithApproverWiring(t *testing.T) (workflow string, live bo
 //
 // Both inputs are normalized to LF first. A `git format-patch` diff carries LF line endings; if the
 // checked-out workflow has CRLF (a Windows checkout, or `core.autocrlf`), otherwise-identical
-// context lines would compare unequal and a good patch would be reported as stale.
-func applyUnifiedDiff(orig, patch string) (string, error) {
+// context lines would compare unequal and a good patch would be reported as stale. The post-image
+// is therefore LF-only. That is sound BECAUSE it is never written back to disk — the callers parse
+// it as YAML in memory and assert on step order — so it is a comparison form, not a replacement
+// file. Do not start writing the result out without reinstating the original line endings.
+//
+// WHERE IT STOPS SHORT OF `git apply`, stated so a caller does not over-trust it: it takes a single
+// file, refuses anything else, needs exact context (no fuzz, no offset search, no `-R`), ignores
+// index/mode/rename headers, and does not do binary or empty-file creation/deletion. It DOES honour
+// `\ No newline at end of file` on both sides, checking the old side's claim against the file and
+// reproducing the new side's state (#1834 G4). Within that subset a patch it accepts is one `git
+// apply` accepts, and a post-image it returns is the one `git apply` would write — which is what
+// the staleness guard needs. Outside it, the helper errors rather than guessing.
+func applyUnifiedDiff(orig, patch, wantFile string) (string, error) {
 	orig = strings.ReplaceAll(orig, "\r\n", "\n")
 	patch = strings.ReplaceAll(patch, "\r\n", "\n")
 	lines := strings.Split(patch, "\n")
@@ -116,7 +130,7 @@ func applyUnifiedDiff(orig, patch string) (string, error) {
 	if start < 0 {
 		return "", fmt.Errorf("no `diff --git` header found, so this is not a git patch")
 	}
-	// A second file header means the patch touches more than deliver-implement.yml. Refused rather
+	// A second file header means the patch touches more than the one workflow. Refused rather
 	// than partially applied: the caller is asserting that this patch IS the workflow half, and a
 	// patch that quietly also edits something else is not that.
 	for _, l := range lines[start+1:] {
@@ -124,13 +138,17 @@ func applyUnifiedDiff(orig, patch string) (string, error) {
 			return "", fmt.Errorf("patch contains more than one file diff; expected only the workflow")
 		}
 	}
-	if !strings.Contains(lines[start], ".github/workflows/deliver-implement.yml") {
-		return "", fmt.Errorf("patch's file header is %q, not deliver-implement.yml", lines[start])
+	if !strings.Contains(lines[start], ".github/workflows/"+wantFile) {
+		return "", fmt.Errorf("patch's file header is %q, not %s", lines[start], wantFile)
 	}
 
 	src := strings.Split(orig, "\n")
 	var out []string
 	next := 0 // 0-based index of the next unconsumed line of src
+
+	// Whether a `\ No newline at end of file` marker claimed each side of the diff ends without a
+	// trailing newline. See the marker case below and the reconciliation after the loop.
+	sawMarker, oldNoEOL, newNoEOL := false, false, false
 
 	i := start
 	for i < len(lines) {
@@ -154,7 +172,12 @@ func applyUnifiedDiff(orig, patch string) (string, error) {
 
 		i++
 		consumed := 0
-		for consumed < oldCount || (i < len(lines) && strings.HasPrefix(lines[i], "+")) {
+		// The `+` term keeps additions that follow the last old-side line inside the hunk; the
+		// marker term does the same for an EOF annotation trailing the `+` group, which the hunk's
+		// old count likewise does not account for. Without it the marker fell through to the
+		// outer scan and was skipped, so the NEW side's newline state went unread (#1834 G4).
+		for consumed < oldCount ||
+			(i < len(lines) && (strings.HasPrefix(lines[i], "+") || lines[i] == noNewlineMarker)) {
 			if i >= len(lines) {
 				return "", fmt.Errorf("patch ends mid-hunk at %q", line)
 			}
@@ -178,8 +201,35 @@ func applyUnifiedDiff(orig, patch string) (string, error) {
 				}
 				next++
 				consumed++
-			case body == "\\ No newline at end of file":
-				// Nothing to apply.
+			case body == noNewlineMarker:
+				// In a unified diff the marker qualifies the PRECEDING line: the side that line
+				// belongs to ends without a trailing newline. Honoured rather than discarded
+				// (#1834 G4) — dropping it silently carried the OLD side's newline state into the
+				// post-image and never checked the claim against the file, so a patch that
+				// changes that state reconstructed something `git apply` would not produce, and a
+				// patch whose claim the file contradicts was reported as applying cleanly.
+				prev := lines[i-1] // safe: a hunk header was consumed before this line
+				switch {
+				case strings.HasPrefix(prev, "+"):
+					newNoEOL = true
+				case strings.HasPrefix(prev, "-"):
+					oldNoEOL = true
+				case strings.HasPrefix(prev, " "), prev == "":
+					// A context line belongs to both sides, so neither ends with a newline.
+					oldNoEOL, newNoEOL = true, true
+				default:
+					return "", fmt.Errorf("%q does not follow a diff line (previous line %q)",
+						noNewlineMarker, prev)
+				}
+				// The staleness check for the marker. strings.Split encodes "the content ends
+				// with a newline" as a trailing empty element, so a file the old side claims ends
+				// without one must have nothing left after the line just consumed.
+				if oldNoEOL && next != len(src) {
+					return "", fmt.Errorf(
+						"context mismatch at line %d: patch says the file ends there without a "+
+							"trailing newline, but it has %d more line(s)", next, len(src)-next)
+				}
+				sawMarker = true
 			case body == "":
 				// A context line for a blank line loses its leading space in some transports.
 				if next >= len(src) {
@@ -199,8 +249,24 @@ func applyUnifiedDiff(orig, patch string) (string, error) {
 		}
 	}
 	out = append(out, src[next:]...)
+	// Reconcile the post-image's trailing newline with what the markers declared for the NEW side.
+	// Only the trailing empty element has to move: with no marker the state is copied from the
+	// original, which is what every hunk that does not touch EOF wants. A marker on the old side
+	// alone means the patch ADDS the newline the original lacked, so the element has to appear.
+	if sawMarker {
+		endsWithNewline := len(out) > 0 && out[len(out)-1] == ""
+		switch {
+		case newNoEOL && endsWithNewline:
+			out = out[:len(out)-1]
+		case !newNoEOL && !endsWithNewline:
+			out = append(out, "")
+		}
+	}
 	return strings.Join(out, "\n"), nil
 }
+
+// noNewlineMarker is git's end-of-file annotation in a unified diff.
+const noNewlineMarker = `\ No newline at end of file`
 
 func parseHunkHeader(line string) (oldStart, oldCount int, err error) {
 	// `@@ -a,b +c,d @@ …` — the counts default to 1 when omitted.
@@ -618,10 +684,53 @@ func TestApplyUnifiedDiff(t *testing.T) {
 			patch: workflowDiff("@@ -1,2 +1,3 @@\n a\n?bad\n b\n"),
 			errIs: "unexpected line in hunk",
 		},
+
+		// `\ No newline at end of file` (#1834 G4). The marker was previously discarded, so the
+		// post-image always inherited the ORIGINAL's trailing-newline state and the marker's claim
+		// about the file was never checked. Each case below distinguishes a state the old code
+		// collapsed; `git apply` was run by hand on all four to confirm these are its answers.
+		{
+			name:  "a trailing newline is preserved when no hunk touches EOF",
+			orig:  "a\nb\nc\n",
+			patch: workflowDiff("@@ -1,2 +1,3 @@\n a\n+X\n b\n"),
+			want:  "a\nX\nb\nc\n",
+		},
+		{
+			name: "both sides lack a trailing newline",
+			orig: "a\nb",
+			patch: workflowDiff("@@ -1,2 +1,2 @@\n a\n-b\n" + noNewlineMarker +
+				"\n+B\n" + noNewlineMarker + "\n"),
+			want: "a\nB",
+		},
+		{
+			name: "the patch adds the trailing newline the original lacked",
+			orig: "a\nb",
+			patch: workflowDiff("@@ -1,2 +1,2 @@\n a\n-b\n" + noNewlineMarker + "\n+B\n"),
+			want: "a\nB\n",
+		},
+		{
+			name:  "the patch removes the trailing newline the original had",
+			orig:  "a\nb\n",
+			patch: workflowDiff("@@ -1,2 +1,2 @@\n a\n-b\n+B\n" + noNewlineMarker + "\n"),
+			want:  "a\nB",
+		},
+		{
+			name: "an old-side no-newline claim the file contradicts is reported as stale",
+			orig: "a\nb\nc\n",
+			patch: workflowDiff("@@ -1,2 +1,2 @@\n a\n-b\n" + noNewlineMarker +
+				"\n+B\n" + noNewlineMarker + "\n"),
+			errIs: "without a trailing newline",
+		},
+		{
+			name:  "a marker that follows no diff line is refused",
+			orig:  "a",
+			patch: workflowDiff("@@ -1,1 +1,1 @@\n" + noNewlineMarker + "\n a\n"),
+			errIs: "does not follow a diff line",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := applyUnifiedDiff(tt.orig, tt.patch)
+			got, err := applyUnifiedDiff(tt.orig, tt.patch, "deliver-implement.yml")
 			if tt.errIs != "" {
 				if err == nil {
 					t.Fatalf("expected an error containing %q, got none (result %q)", tt.errIs, got)
