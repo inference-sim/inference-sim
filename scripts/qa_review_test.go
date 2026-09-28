@@ -968,13 +968,29 @@ const malformedBulletReportShape = "## qa-review — PR #1736: ⛔ BLOCK\n" +
 	"- _None._\n"
 
 // comment builds one entry of the deliver-trusted-comments.sh `--json` shape (#1806): the
-// selection consumes `source`/`author.login`/`body`, and only CONVERSATION entries feed it.
+// selection consumes `source`/`author.login`/`body`/`label`, and only CONVERSATION entries
+// feed it.
+//
+// No `label` key, deliberately: that is the fail-closed default the author restriction must
+// hold to when the trust label is missing or unrecognised, so every case below that does not
+// care about the label exercises it. Use labelledComment for the cases that do.
 func comment(author, body string) map[string]any {
 	return map[string]any{
 		"author": map[string]any{"login": author},
 		"body":   body,
 		"source": "conversation",
 	}
+}
+
+// labelledComment is comment() plus the trust label the filter attaches: `automation` for one
+// of this repository's allowlisted App logins, `write access` for a human it admitted on a
+// permission lookup. The label is what gates the `[bot]`-suffix equivalence (#1834 G2), so it
+// is a separate helper rather than a default — a fixture that means "the App posted this" has
+// to say so.
+func labelledComment(author, label, body string) map[string]any {
+	c := comment(author, body)
+	c["label"] = label
+	return c
 }
 
 // selectionProbe stubs the comment-read call in fetch_comments so the whole selection
@@ -1231,6 +1247,185 @@ func TestAdjudicatorSelectsTheGenuineReportComment(t *testing.T) {
 			if tc.wantInResp != "" && !strings.Contains(got.Responses, tc.wantInResp) {
 				t.Errorf("the author-defence text does not contain %q, so a comment after the report "+
 					"was dropped: %q", tc.wantInResp, got.Responses)
+			}
+		})
+	}
+}
+
+// filterReportLogin is the login scripts/deliver-trusted-comments.sh reports for the identity
+// that posts the qa-review report — `gh pr comment` under GITHUB_TOKEN. It reads via REST since
+// #1806, so it emits the CANONICAL App login, suffix included; the script's own
+// AUTOMATION_LOGINS allowlist is keyed on exactly this spelling, and
+// TestQAReportAuthorFindsTheReportTheDeliveryLoopPosts cross-checks that it still is.
+const filterReportLogin = "github-actions[bot]"
+
+// filterAutomationLabel is the trust label scripts/deliver-trusted-comments.jq attaches to a
+// comment from one of this repository's allowlisted automation logins (as against `write access`
+// for a human it admitted on a permission lookup). Since #1834 G2 it is load-bearing, not
+// decoration: it is the evidence that gates the `[bot]`-suffix equivalence, so
+// TestQAReportAuthorFindsTheReportTheDeliveryLoopPosts cross-checks the emitting jq still
+// produces exactly this string.
+const filterAutomationLabel = "automation"
+
+// selectionFindsReport runs adjudicator.fetch_comments over a single genuine report authored by
+// `poster` and carrying trust label `label`, with the report-author restriction set to
+// `configured`, and reports whether the report was found. An empty `label` omits the key, which
+// is the fail-closed shape.
+//
+// False is the failure mode #1834 is about: no report found means `items` is None, which main()
+// turns into exit 3 with no verdict line — which the delivery gate reads as MISSING.
+func selectionFindsReport(t *testing.T, poster, label, configured string) bool {
+	t.Helper()
+	fixture := comment(poster, genuineReport)
+	if label != "" {
+		fixture = labelledComment(poster, label, genuineReport)
+	}
+	raw, err := json.Marshal([]map[string]any{fixture})
+	if err != nil {
+		t.Fatalf("marshalling the report fixture: %v", err)
+	}
+	stdout, stderr, code := runPython(t, "", "-c", selectionProbe, string(raw), configured)
+	if code != 0 {
+		t.Fatalf("selection probe exit=%d stderr=%s", code, stderr)
+	}
+	var got struct {
+		Items *[]struct {
+			ID string `json:"id"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("selection probe output is not JSON: %v (%s)", err, stdout)
+	}
+	return got.Items != nil && len(*got.Items) > 0
+}
+
+// TestAdjudicatorFindsItsOwnReportAcrossLoginForms is the #1834 regression guard.
+//
+// The adjudicate-only re-verify (#1716) restricts the prior-report search to the login that
+// POSTED the round-0 report (QA_REPORT_AUTHOR). #1806 then rewired fetch_comments onto
+// scripts/deliver-trusted-comments.sh, which reads REST and so reports the canonical App login
+// `github-actions[bot]` where the GraphQL projection it replaced reported the short
+// `github-actions`. The restriction was still spelled short and the comparison was exact, so the
+// adjudicator could no longer find its OWN report: select_report_comment returned -1,
+// fetch_comments returned None, and the tool exited 3 on EVERY re-verify — deterministically, for
+// every multi-round PR (observed on PR #1832, run 36432999708).
+//
+// The contract: the two spellings of one App actor match in BOTH directions, so neither the
+// pre-#1806 short form nor the canonical form is silently required — while a DIFFERENT login is
+// still rejected, which is what the restriction exists for.
+//
+// The equivalence is GATED on the filter's `automation` trust label (#1834 G2). Login strings
+// alone cannot distinguish the App `github-actions[bot]` from a bare `github-actions` a human
+// could register — GitHub reserves only the suffixed form — so unconditional suffix stripping
+// turned the restriction from "the App posted this" into "some account with this stem did".
+// The label is the independent evidence: deliver-trusted-comments.sh grants it only on its
+// canonical `[bot]`-keyed allowlist, and a human admitted for write access gets `write access`
+// instead. So the tolerance is spelled per-case here, and the write-access rows are what stop
+// the fix from re-opening the hole.
+//
+// Logins are also compared case-insensitively, since GitHub account identity is (#1834 G1).
+func TestAdjudicatorFindsItsOwnReportAcrossLoginForms(t *testing.T) {
+	requirePython3(t)
+
+	const (
+		automation  = filterAutomationLabel // the filter's label for this repo's own App logins
+		writeAccess = "write access"        // its label for a human admitted on a permission lookup
+	)
+
+	cases := []struct {
+		name       string
+		poster     string // the login the comment source reports for the report's author
+		label      string // the trust label the source attached ("" = none, fail closed)
+		configured string // the QA_REPORT_AUTHOR value the restriction is written with
+		wantFound  bool
+		why        string
+	}{
+		{
+			name: "canonical-restriction-matches-canonical-poster", poster: filterReportLogin,
+			label: automation, configured: filterReportLogin, wantFound: true,
+			why: "the canonical REST spelling on both sides is the post-#1806 steady state",
+		},
+		{
+			name: "short-restriction-matches-canonical-poster", poster: filterReportLogin,
+			label: automation, configured: "github-actions", wantFound: true,
+			why: "THE #1834 BUG. A restriction still spelled the pre-#1806 short way must not stop " +
+				"the adjudicator finding the report the REST-reading filter hands it — that mismatch " +
+				"is what made every correction round end at needs-human",
+		},
+		{
+			name: "canonical-restriction-matches-short-poster", poster: "github-actions",
+			label: automation, configured: filterReportLogin, wantFound: true,
+			why: "the other direction too: a source that reverts to the GraphQL short projection " +
+				"must not re-break a restriction written canonically. Tolerating one direction only " +
+				"would leave the same trap set for the next source switch",
+		},
+		{
+			name: "short-restriction-matches-short-poster", poster: "github-actions",
+			label: automation, configured: "github-actions", wantFound: true,
+			why: "the pre-#1806 behaviour is preserved, so this is a widening and not a swap",
+		},
+		{
+			name: "a-human-holding-the-short-login-does-not-match-the-app", poster: "github-actions",
+			label: writeAccess, configured: filterReportLogin, wantFound: false,
+			why: "#1834 G2. Identical strings to the row above, opposite verdict, and the label is " +
+				"the only difference — which is the point. The bare spelling is one a human account " +
+				"CAN hold (deliver-trusted-comments.sh keys its own allowlist on the suffixed form " +
+				"for exactly this reason), so granting it the App's restriction on the strength of " +
+				"the string alone would turn `QA_REPORT_AUTHOR` from an actor check into a stem check",
+		},
+		{
+			name: "an-unlabelled-short-poster-does-not-match-the-app", poster: "github-actions",
+			configured: filterReportLogin, wantFound: false,
+			why: "fail closed on a missing or unrecognised label: the equivalence is granted on " +
+				"positive evidence of App-ness, never on the absence of evidence to the contrary",
+		},
+		{
+			name: "case-differences-still-match", poster: "GitHub-Actions[bot]",
+			label: automation, configured: "github-actions", wantFound: true,
+			why: "#1834 G1. GitHub account identity is case-insensitive and no two accounts can " +
+				"differ by case alone, so a case variant is the SAME poster; a case-sensitive " +
+				"comparison would reproduce #1834's silent needs-human on a differently-cased source",
+		},
+		{
+			name: "surrounding-whitespace-in-the-restriction-still-matches", poster: filterReportLogin,
+			label: automation, configured: "  github-actions[bot]\n", wantFound: true,
+			why: "a login can never contain whitespace, so whitespace here came from the env var or " +
+				"the command line that carried the value, not from the name — trimming it cannot " +
+				"conflate two accounts, while not trimming it fails closed for an invisible reason",
+		},
+		{
+			name: "a-different-app-is-still-rejected", poster: "third-party-reviewer[bot]",
+			label: automation, configured: filterReportLogin, wantFound: false,
+			why: "the restriction must still discriminate. A third-party App's comment is as " +
+				"untrusted as a stranger's, so it must not be able to supply the prior findings",
+		},
+		{
+			name: "a-different-human-is-still-rejected", poster: "outsider",
+			label: writeAccess, configured: filterReportLogin, wantFound: false,
+			why: "suffix tolerance must not degrade into matching any login: an unrelated account " +
+				"could otherwise post a report-shaped comment with no findings and clear the gate",
+		},
+		{
+			name: "the-suffix-alone-is-not-a-login", poster: filterReportLogin,
+			label: automation, configured: "[bot]", wantFound: false,
+			why: "the suffix is stripped, not treated as a wildcard — `[bot]` folds to the empty " +
+				"string and must match no login rather than every App",
+		},
+		{
+			name: "a-whitespace-only-restriction-is-not-a-login", poster: filterReportLogin,
+			label: automation, configured: "   ", wantFound: false,
+			why: "a whitespace-only QA_REPORT_AUTHOR is a misconfiguration, not the empty value " +
+				"that means `any author`: it must match nothing rather than becoming a wildcard " +
+				"once the value is trimmed",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := selectionFindsReport(t, tc.poster, tc.label, tc.configured)
+			if got != tc.wantFound {
+				t.Errorf("report from %q (label %q) found under QA_REPORT_AUTHOR=%q = %v, want %v: %s",
+					tc.poster, tc.label, tc.configured, got, tc.wantFound, tc.why)
 			}
 		})
 	}
