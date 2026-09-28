@@ -377,6 +377,33 @@ func TestNetworksFabric_FixtureCatalogDeclaresNoPDTransferBaseLatency(t *testing
 			"parse is not reading keys and the banned-key check proves nothing", scanned, fixtureCatalog)
 	}
 
+	// Coverage: the rule-1 usability predicate, which is dormant until a `networks/` fixture
+	// exists and so would otherwise ship unexercised. Every value the reader cannot divide by
+	// must be rejected — NaN included, since it passes an ordering test and an IsInf test both.
+	for _, tc := range []struct {
+		scalar string
+		usable bool
+	}{
+		{"400", true},
+		{"400.5", true},
+		{"4e2", true},
+		{"0.5", true},
+		{"", false},
+		{"0", false},
+		{"-400", false},
+		{"fast", false},
+		{"NaN", false},
+		{"nan", false},
+		{"Inf", false},
+		{"-Inf", false},
+	} {
+		if got := fabricBandwidthUsable(tc.scalar); got != tc.usable {
+			t.Errorf("fabricBandwidthUsable(%q) = %v, want %v — an unusable bandwidth the guard accepts "+
+				"is a fixture the reader cannot take a PD-transfer bandwidth from (#1838)",
+				tc.scalar, got, tc.usable)
+		}
+	}
+
 	// Rule 1: a fabric class states its bandwidth as InterNodeBwGBps (nominal), which is the
 	// PD-transfer bandwidth figure — there is no separate PD one (R2H2, blis-catalog#10).
 	networksDir := filepath.Join(fixtureCatalog, "networks")
@@ -420,13 +447,30 @@ func assertFabricDeclaresUsableBandwidth(t *testing.T, path string, data []byte)
 				"the fabric's nominal inter-node bandwidth in GB/s (#1838)", path, decl.line, fabricBandwidthKey)
 			continue
 		}
-		value, convErr := strconv.ParseFloat(decl.scalar, 64)
-		if convErr != nil || value <= 0 || math.IsInf(value, 0) {
+		if !fabricBandwidthUsable(decl.scalar) {
 			t.Errorf("%s:%d: %s = %q, want a positive finite number: the reader takes the PD-transfer "+
 				"bandwidth from this figure, so a zero/empty/non-numeric one leaves it with nothing to "+
 				"read (#1838, blis-catalog#10)", path, decl.line, fabricBandwidthKey, decl.scalar)
 		}
 	}
+}
+
+// fabricBandwidthUsable reports whether a scalar bound to InterNodeBwGBps is a figure the
+// PD-transfer path could divide a payload by: a real, strictly positive, finite number.
+//
+// NaN is the case worth stating outright, because it slips through the obvious phrasing of this
+// check: ParseFloat accepts "NaN", and every comparison against NaN is false, so a *rejecting*
+// form written as `value <= 0 || math.IsInf(value, 0)` lets it pass (IsInf is false for NaN too).
+// A NaN bandwidth is worse than an absent key — it reaches sim/cluster/pd_events.go and turns
+// every PD-transfer duration NaN silently. The *requiring* form below excludes NaN through
+// `value > 0` on its own; the explicit IsNaN keeps that true if the condition is ever inverted
+// back, and the coverage table asserts the outcome either way.
+func fabricBandwidthUsable(scalar string) bool {
+	value, err := strconv.ParseFloat(scalar, 64)
+	if err != nil {
+		return false
+	}
+	return !math.IsNaN(value) && !math.IsInf(value, 0) && value > 0
 }
 
 // ---------------------------------------------------------------------------
