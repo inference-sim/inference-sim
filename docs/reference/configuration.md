@@ -68,8 +68,8 @@ All internal timestamps in the DES (arrival time, schedule time, completion time
 | `--admission-latency`, `--routing-latency` | ticks (μs) | Decision latency injected into the DES event queue |
 | `think_time_us` (workload YAML) | microseconds | Inter-round delay in multi-turn sessions. 5,000,000 = 5 seconds |
 | `aggregate_rate`, `--rate` | requests/second | Not ticks — real-world time unit |
-| `--kv-transfer-bandwidth` | blocks/tick | Transfer rate between GPU and CPU KV tiers |
-| `--kv-transfer-base-latency` | ticks (μs) | Fixed per-transfer overhead |
+| `--kv-transfer-bandwidth` | tokens/tick | Transfer rate between GPU and CPU KV tiers on the legacy `--kv-cpu-blocks` path. Unset ⇒ **derived** from the catalog `cpu_dram` device (#1819) |
+| `--kv-transfer-base-latency` | ticks (μs) | Fixed per-transfer overhead. `0` = not charged (the `blis-registry` `kv_transfer_base_latency` coefficient) |
 
 ### Common Pitfalls
 
@@ -107,8 +107,8 @@ Controls GPU and CPU memory simulation for key-value cache blocks. Maps to `KVCa
 | `--block-size-in-tokens` | int64 | 16 | Tokens per KV block. |
 | `--kv-cpu-blocks` | int64 | 0 | CPU-tier blocks. 0 disables tiered caching. |
 | `--kv-offload-threshold` | float64 | 0.9 | GPU utilization fraction above which blocks are offloaded to CPU. Range [0, 1]. |
-| `--kv-transfer-bandwidth` | float64 | 100.0 | GPU-CPU transfer rate in blocks/tick. Required > 0 when CPU blocks > 0. |
-| `--kv-transfer-base-latency` | int64 | 0 | Fixed per-transfer latency in ticks. |
+| `--kv-transfer-bandwidth` | float64 | 0 = derive | GPU↔CPU transfer rate in tokens/tick for the legacy `--kv-cpu-blocks` tier. **Unset ⇒ derived** from the catalog `cpu_dram` storage device: `ticks/block = per_block_bytes / bandwidth`, with the R2G3b efficiency residual applied (#1819). Supply a value to override the derivation; it must then be finite and > 0. Enabling `--kv-cpu-blocks > 0` without an override requires `<catalog>/devices/storage.yaml` to define `cpu_dram`. |
+| `--kv-transfer-base-latency` | int64 | 0 | Fixed per-transfer latency in ticks. This is the *modelling* per-transfer cost (`blis-registry` `kv_transfer_base_latency`, `method: not_charged`), **not** `cpu_dram`'s physical `base_latency` — the two are distinct quantities. |
 
 \* The effective value of `--total-kv-blocks` follows a 3-layer resolution: (1) explicit `--total-kv-blocks` CLI flag, (2) auto-calculation from model architecture and GPU memory via `CalculateKVBlocks` (for all backends when `config.json` and `MemoryGiB` are available), (3) hardcoded default of 1,000,000 blocks. See [Resolution Process](#resolution-process) for details.
 

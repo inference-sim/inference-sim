@@ -11,7 +11,7 @@ type KVCacheConfig struct {
 	BlockSizeTokens       int64   // tokens per block (must be > 0)
 	KVCPUBlocks           int64   // CPU tier capacity (0 = single-tier, default)
 	KVOffloadThreshold    float64 // DEPRECATED: Ignored in vLLM v1 mirror model. Was: GPU utilization threshold for offload. (CLI default: 0.9, zero-value: 0)
-	KVTransferBandwidth   float64 // blocks/tick transfer rate (CLI default: 100.0, zero-value: 0)
+	KVTransferBandwidth   float64 // transfer rate in TOKENS per tick (TieredKVCache charges ceil(BlockSizeTokens/rate) per block); no CLI default since #1819 — cmd/ derives it from the catalog cpu_dram device (cmd/kv_transfer_derive.go)
 	KVTransferBaseLatency int64   // fixed cost per transfer (ticks, default 0)
 	// Offload captures vLLM's multi-tier KV-offload config surface (H5, #1587). Its
 	// zero value is inert (Enabled=false) and unread by sim/kv in this PR (INV-6);

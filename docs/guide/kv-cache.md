@@ -63,7 +63,6 @@ BLIS models tiered KV cache with GPU→CPU offloading:
 ./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
   --kv-cpu-blocks 50000 \
   --kv-offload-threshold 0.9 \
-  --kv-transfer-bandwidth 100.0 \
   --rate 100 --num-requests 500
 ```
 
@@ -71,8 +70,38 @@ BLIS models tiered KV cache with GPU→CPU offloading:
 |------|---------|-------------|
 | `--kv-cpu-blocks` | 0 | CPU-tier blocks (0 = disabled) |
 | `--kv-offload-threshold` | 0.9 | GPU utilization fraction above which blocks offload to CPU |
-| `--kv-transfer-bandwidth` | 100.0 | GPU→CPU transfer rate in blocks/tick |
-| `--kv-transfer-base-latency` | 0 | Fixed per-transfer latency in ticks |
+| `--kv-transfer-bandwidth` | 0 = derive | Override the CPU↔GPU transfer rate, in tokens/tick |
+| `--kv-transfer-base-latency` | 0 | Fixed per-transfer latency in ticks (not charged by default) |
+
+#### Where the transfer cost comes from (#1819)
+
+The per-block transfer cost on this path is **derived**, not defaulted:
+
+```
+ticks per block = per_block_bytes / bandwidth        per_block_bytes = KVBytesPerToken × block_size
+```
+
+`bandwidth` is the **catalog** fact for the `cpu_dram` storage device —
+`<catalog>/devices/storage.yaml`, the same table `--kv-offload-config`'s `device_class` reads
+— scaled by a dimensionless **efficiency residual** (R2G3b). So enabling `--kv-cpu-blocks > 0`
+without an override needs that device class to exist; if it does not, BLIS refuses naming the
+path and pointing at `--kv-transfer-bandwidth`, rather than falling back to an invented rate.
+
+The residual is not an efficiency below 1. It is anchored so the derived rate reproduces the
+rate this flag used to default to (100.0) at one named reference deployment
+(`qwen/qwen3-14b`, TP=1) — which works out to **≈819×** `cpu_dram`'s rated bandwidth. That
+number is the honest record of what the retired default asserted, and it is preserved rather
+than corrected because the conversion is value-preserving by design: a physics correction is a
+separate, arguable change. **If you want a faithful CPU-offload cost, use
+`--kv-offload-config`**, whose tiers price the catalog device directly with no residual.
+
+Away from the reference the derived rate scales as `1 / KVBytesPerToken` — a model with a
+quarter the KV per token moves four times the tokens per tick over the same bus, which the
+retired constant could not express.
+
+`--kv-transfer-base-latency` is a different quantity and keeps its `0` default: it is the
+*modelling* per-transfer cost (`blis-registry`'s `kv_transfer_base_latency`, `method:
+not_charged`), not `cpu_dram`'s physical `base_latency`.
 
 ### Multi-Tier Offload Config Surface (`--kv-offload-config`)
 
