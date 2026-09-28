@@ -3284,7 +3284,7 @@ exactly these three" — the same false premise, on the same self-hosted runner,
 </tr>
 <tr>
 <td><code>QA_VERDICT</code></td>
-<td>the <code>QA-VERDICT: PASS</code> / <code>BLOCK</code> marker from the <strong>cross-vendor qa-review pass</strong> (#1715, RFC #1603) — a questioner and an isolated answerer from a different model family than the implementer and the reviewer above. Same author-trust and last-line rules as <code>AGENT_VERDICT</code>. <code>BLOCK</code> routes to a correction round; <code>MISSING</code> (no marker) <strong>blocks</strong>, so a qa-review that crashed or lost its model can never be read as a pass</td>
+<td>the <code>QA-VERDICT: PASS</code> / <code>BLOCK</code> marker from the <strong>cross-vendor qa-review pass</strong> (#1715, RFC #1603) — a questioner and an isolated answerer from a different model family than the implementer and the reviewer above. Same author-trust and last-line rules as <code>AGENT_VERDICT</code>. <code>BLOCK</code> routes to a correction round; <code>MISSING</code> (no marker) <strong>blocks</strong>, so a qa-review that crashed or lost its model can never be read as a pass. A <em>transient</em> gateway error no longer gets there: since #1833 the shared client (<code>scripts/qa-review/_http.py</code>) retries <code>408</code>/<code>429</code>/<code>5xx</code>, connection failures and an undecodable response body with backoff (honouring <code>Retry-After</code> in full), resuming the failed call in place, so <code>MISSING</code> now means a sustained failure rather than one 504 — the block is unchanged, only its hair-trigger is gone</td>
 </tr>
 <tr>
 <td><code>DISMISSALS</code></td>
