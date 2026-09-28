@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/parser"
+	"go/printer"
 	"go/token"
 	"path/filepath"
 	"reflect"
@@ -21,7 +22,8 @@ import (
 // and that no behavioural test can see because it looks like ordinary Go.
 //
 //	BC-G1  no `cmd/` flag default prices physics with a numeric literal, in ANY of pflag's
-//	       four registration forms. #1819 converted --kv-transfer-bandwidth from a 100.0
+//	       four registration forms and under a flag name the guard can actually READ (a
+//	       non-literal name is reported, not skipped). #1819 converted --kv-transfer-bandwidth from a 100.0
 //	       blocks/tick default into a derivation from the catalog cpu_dram device; without a
 //	       guard, the next edit that "restores a sensible default" silently undoes it, and
 //	       every test above would still pass (they exercise the derivation, not the flag
@@ -63,13 +65,21 @@ var physicsPricedFlagExceptions = map[string]string{
 		"but still authored here. Retired by the PD half of R2, not by #1819.",
 }
 
-// flagDefaultFinding is one flag registration whose default is a non-zero numeric literal and
-// whose name prices physics — in any of pflag's four registration forms, not only `...Var`.
+// flagDefaultFinding is one flag registration the guard objects to — in any of pflag's four
+// registration forms, not only `...Var`. Two shapes:
+//
+//	a PRICED finding (unreadableName false): the flag name prices physics and the default is a
+//	non-zero numeric literal. `flag` is the flag name, `lit` the literal.
+//
+//	an UNREADABLE finding (unreadableName true): the flag NAME is not an inline string literal,
+//	so the guard cannot tell whether it prices physics. `flag` carries the name expression's
+//	source text instead. Reported rather than skipped — see flagRegistrationCall.
 type flagDefaultFinding struct {
-	file string
-	line int
-	flag string
-	lit  string
+	file           string
+	line           int
+	flag           string
+	lit            string
+	unreadableName bool
 }
 
 // flagArgPositions says where a *pflag.FlagSet registration method carries the flag NAME and
@@ -126,26 +136,58 @@ func derivePflagRegistrationForms() map[string]flagArgPositions {
 	return forms
 }
 
-// flagRegistrationCall matches a call to any pflag registration method and returns its
-// selector, the literal flag name, and the expression supplying the default.
+// flagRegistration is one matched pflag registration call: where it is, how the detector can
+// attribute it, its flag name, and the expression supplying its default.
+type flagRegistration struct {
+	sel *ast.SelectorExpr
+	// name is the flag name when nameIsLiteral, and the name expression's source text
+	// otherwise — always something a diagnostic can print.
+	name          string
+	nameIsLiteral bool
+	def           ast.Expr
+}
+
+// flagRegistrationCall matches a call to any pflag registration method.
+//
+// A registration whose NAME ARGUMENT is not an inline string literal is still a registration.
+// An earlier version returned `ok = false` for one, which dropped it from the detector AND
+// from the coverage counter that is supposed to notice such drops — so
+// `const n = "host-dram-bandwidth"; cmd.Flags().Float64(n, 20000, "...")` slipped a physics
+// literal past a guard that went on passing, and the coverage test shared the filter and
+// could not report it (#1840 review F4 / qa F1). It is matched here and rejected by
+// physicsPricedFlagDefaults as an UNREADABLE finding instead: the guard cannot prove such a
+// flag is harmless, so it must not pretend the flag is not there.
 //
 // It does not look at the receiver: whether the registration goes through a
 // Flags()/PersistentFlags() accessor is a separate question, asked by viaFlagsAccessor, so
 // that the coverage test can count the registrations the detector cannot attribute.
-func flagRegistrationCall(call *ast.CallExpr) (sel *ast.SelectorExpr, flagName string, def ast.Expr, ok bool) {
+func flagRegistrationCall(call *ast.CallExpr) (flagRegistration, bool) {
 	sel, isSelector := call.Fun.(*ast.SelectorExpr)
 	if !isSelector {
-		return nil, "", nil, false
+		return flagRegistration{}, false
 	}
 	pos, known := pflagRegistrationForms[sel.Sel.Name]
 	if !known || len(call.Args) <= pos.defaultIdx {
-		return nil, "", nil, false
+		return flagRegistration{}, false
 	}
-	flagName, isString := stringLiteral(call.Args[pos.nameIdx])
-	if !isString {
-		return nil, "", nil, false
+	nameArg := call.Args[pos.nameIdx]
+	reg := flagRegistration{sel: sel, def: call.Args[pos.defaultIdx]}
+	if flagName, isString := stringLiteral(nameArg); isString {
+		reg.name, reg.nameIsLiteral = flagName, true
+	} else {
+		reg.name = exprText(nameArg)
 	}
-	return sel, flagName, call.Args[pos.defaultIdx], true
+	return reg, true
+}
+
+// exprText renders a name expression for a diagnostic. Printed form, not evaluated: the guard
+// is deliberately syntactic, and an expression it cannot read is the finding.
+func exprText(e ast.Expr) string {
+	var buf strings.Builder
+	if err := printer.Fprint(&buf, token.NewFileSet(), e); err != nil {
+		return fmt.Sprintf("%T", e)
+	}
+	return buf.String()
 }
 
 // viaFlagsAccessor reports whether a registration's receiver is a literal
@@ -174,16 +216,28 @@ func physicsPricedFlagDefaults(fset *token.FileSet, file *ast.File, name string)
 		if !isCall {
 			return true
 		}
-		sel, flagName, def, isRegistration := flagRegistrationCall(call)
-		if !isRegistration || !viaFlagsAccessor(sel) || !physicsPricedFlagPattern.MatchString(flagName) {
+		reg, isRegistration := flagRegistrationCall(call)
+		if !isRegistration || !viaFlagsAccessor(reg.sel) {
 			return true
 		}
-		lit, isNumeric := nonZeroNumericLiteral(def)
+		// An unreadable flag name is itself the finding: physicsPricedFlagPattern cannot be
+		// applied to it, so the guard has no basis for letting the registration through.
+		if !reg.nameIsLiteral {
+			findings = append(findings, flagDefaultFinding{
+				file: name, line: fset.Position(call.Pos()).Line, flag: reg.name,
+				lit: exprText(reg.def), unreadableName: true,
+			})
+			return true
+		}
+		if !physicsPricedFlagPattern.MatchString(reg.name) {
+			return true
+		}
+		lit, isNumeric := nonZeroNumericLiteral(reg.def)
 		if !isNumeric {
 			return true
 		}
 		findings = append(findings, flagDefaultFinding{
-			file: name, line: fset.Position(def.Pos()).Line, flag: flagName, lit: lit,
+			file: name, line: fset.Position(reg.def.Pos()).Line, flag: reg.name, lit: lit,
 		})
 		return true
 	})
@@ -200,12 +254,12 @@ func flagRegistrationCounts(file *ast.File) (viaAccessor, total int) {
 		if !isCall {
 			return true
 		}
-		sel, _, _, isRegistration := flagRegistrationCall(call)
+		reg, isRegistration := flagRegistrationCall(call)
 		if !isRegistration {
 			return true
 		}
 		total++
-		if viaFlagsAccessor(sel) {
+		if viaFlagsAccessor(reg.sel) {
 			viaAccessor++
 		}
 		return true
@@ -281,6 +335,18 @@ func TestPhysicsPricedFlagDefaults_NoneInProductionSources(t *testing.T) {
 
 	seen := map[string]bool{}
 	for _, o := range offenders {
+		// An unreadable flag name is never excusable by the exception list (which is keyed by
+		// flag name) and must not enter `seen`, or it would silently keep a stale exception
+		// alive. Fix the registration instead: the guard is syntactic by design.
+		if o.unreadableName {
+			t.Errorf("%s:%d: a flag is registered with the non-literal name expression %s "+
+				"(default %s), so the physics-literal guard cannot read the flag name and cannot "+
+				"tell whether the registration prices physics.\n"+
+				"  Pass the flag name as an inline string literal — that is what keeps BC-G1 able "+
+				"to see it at all (#1819; the blind spot #1840 review F4 found).",
+				o.file, o.line, o.flag, o.lit)
+			continue
+		}
 		seen[o.flag] = true
 		if _, allowed := physicsPricedFlagExceptions[o.flag]; allowed {
 			continue
@@ -584,6 +650,83 @@ func f(cmd *cobra.Command) {
 }`
 	if got := findingsFor(t, src); len(got) != 0 {
 		t.Errorf("detector must not flag policy knobs, zero sentinels or named constants, got: %+v", got)
+	}
+}
+
+// TestPhysicsPricedFlagDefaults_DetectorRejectsAnUnreadableFlagName closes the LAST way a
+// physics literal could reach a cmd/ flag default unseen: hiding the flag NAME behind a
+// constant or any other non-literal expression.
+//
+// The guard used to drop such a registration entirely — from the detector AND from
+// flagRegistrationCounts, the coverage counter that exists to notice drops — so
+// `const n = "host-dram-bandwidth"; cmd.Flags().Float64(n, 20000, "...")` was invisible to
+// both and BC-G1 went on passing (#1840 review F4 / qa F1). Both halves are asserted here:
+// the detector must REPORT it, and the counter must COUNT it.
+func TestPhysicsPricedFlagDefaults_DetectorRejectsAnUnreadableFlagName(t *testing.T) {
+	cases := []struct {
+		name     string
+		src      string
+		wantName string
+	}{
+		{
+			name: "package_const_as_flag_name",
+			src: `package cmd
+const hostDRAMFlag = "host-dram-bandwidth"
+func f(cmd *cobra.Command) {
+	cmd.Flags().Float64(hostDRAMFlag, 20000, "bytes/us")
+}`,
+			wantName: "hostDRAMFlag",
+		},
+		{
+			name: "var_form_with_const_name",
+			src: `package cmd
+func f(cmd *cobra.Command) {
+	cmd.Flags().Float64Var(&x, kvTransferBandwidthFlag, 100.0, "rate")
+}`,
+			wantName: "kvTransferBandwidthFlag",
+		},
+		{
+			name: "concatenated_name",
+			src: `package cmd
+func f(cmd *cobra.Command) {
+	cmd.Flags().Float64Var(&x, "kv-transfer-"+"bandwidth", 100.0, "rate")
+}`,
+			wantName: `"kv-transfer-" + "bandwidth"`,
+		},
+		{
+			name: "computed_name",
+			src: `package cmd
+func f(cmd *cobra.Command) {
+	cmd.PersistentFlags().Int64(flagName("weight", "bytes"), 4096, "bytes")
+}`,
+			wantName: `flagName("weight", "bytes")`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := findingsFor(t, tc.src)
+			if len(got) != 1 {
+				t.Fatalf("detector must report the unreadable flag name, got %d findings: %+v", len(got), got)
+			}
+			if !got[0].unreadableName {
+				t.Errorf("finding must be marked unreadableName, got %+v", got[0])
+			}
+			if got[0].flag != tc.wantName {
+				t.Errorf("diagnostic names %q, want %q", got[0].flag, tc.wantName)
+			}
+			// The coverage counter must see it too: a registration the detector reports but
+			// the counter does not count is the asymmetry that hid this class of gap.
+			fset := token.NewFileSet()
+			parsed, err := parser.ParseFile(fset, "synthetic.go", tc.src, parser.ParseComments)
+			if err != nil {
+				t.Fatalf("parse synthetic source: %v", err)
+			}
+			viaAccessor, total := flagRegistrationCounts(parsed)
+			if viaAccessor != 1 || total != 1 {
+				t.Errorf("flagRegistrationCounts must count a non-literal-named registration "+
+					"(viaAccessor=%d total=%d, want 1 and 1)", viaAccessor, total)
+			}
+		})
 	}
 }
 

@@ -37,6 +37,9 @@ import (
 //	      --kv-transfer-bandwidth escape hatch (R1)
 //	BC-9  derivation is selected by OMITTING --kv-transfer-bandwidth: a SUPPLIED 0 is
 //	      refused, and the flag help says so rather than advertising "0 = derive"
+//	BC-10 a derived rate that is positive and finite but so small that the library's
+//	      int64(ceil(block_tokens / rate)) would overflow is REFUSED here, not shipped into
+//	      the DES as a negative latency (#1840 review F3)
 //
 // The static half — "a physics literal cannot come back into a cmd/ flag default", plus the
 // LoRA defaults-vs-registry drift guard — lives in physics_literal_guard_test.go.
@@ -59,6 +62,11 @@ const retiredKVTransferBandwidthDefault = 100.0
 // the residual.
 const referenceKVBytesPerToken = 163840.0
 
+// referenceBlockSizeTokens is --block-size-in-tokens at the reference deployment. The derived
+// RATE does not depend on it (block_size_tokens cancels — BC-1); it is passed only so the
+// int64 tick-budget bound BC-10 checks has a block size to check against.
+const referenceBlockSizeTokens = 16
+
 // referenceCPUDRAM is the cpu_dram entry the conversion reads, transcribed from
 // <catalog>/devices/storage.yaml. Frozen for the same reason.
 func referenceCPUDRAM() kvOffloadDevice {
@@ -75,7 +83,7 @@ func referenceCPUDRAM() kvOffloadDevice {
 // so the reference lands on 100.0 bit-for-bit, which is what makes an enabled legacy run
 // byte-identical rather than merely close (INV-6).
 func TestDeriveLegacyKVTransferRate_ReproducesRetiredDefault(t *testing.T) {
-	got, err := deriveLegacyKVTransferRate(referenceCPUDRAM(), referenceKVBytesPerToken)
+	got, err := deriveLegacyKVTransferRate(referenceCPUDRAM(), referenceKVBytesPerToken, referenceBlockSizeTokens)
 	if err != nil {
 		t.Fatalf("deriveLegacyKVTransferRate at the reference: %v", err)
 	}
@@ -157,11 +165,11 @@ func TestDeriveLegacyKVTransferRate_ReferenceMatchesCommittedCatalog(t *testing.
 func TestDeriveLegacyKVTransferRate_ChargesPerBlockBytesOverBandwidth(t *testing.T) {
 	dev := referenceCPUDRAM()
 	for _, perToken := range []float64{referenceKVBytesPerToken, 4096, 1e6} {
-		rate, err := deriveLegacyKVTransferRate(dev, perToken)
-		if err != nil {
-			t.Fatalf("derive(perToken=%v): %v", perToken, err)
-		}
 		for _, blockSizeTokens := range []int64{1, 16, 32, 128} {
+			rate, err := deriveLegacyKVTransferRate(dev, perToken, blockSizeTokens)
+			if err != nil {
+				t.Fatalf("derive(perToken=%v, blockSize=%d): %v", perToken, blockSizeTokens, err)
+			}
 			perBlockBytes := perToken * float64(blockSizeTokens)
 			// The library's charge: ceil(block_size_tokens / rate).
 			gotTicks := math.Ceil(float64(blockSizeTokens) / rate)
@@ -181,11 +189,11 @@ func TestDeriveLegacyKVTransferRate_ChargesPerBlockBytesOverBandwidth(t *testing
 // same bus. Stated as a ratio law so it survives any change to the residual's value.
 func TestDeriveLegacyKVTransferRate_ScalesInverselyWithPerTokenBytes(t *testing.T) {
 	dev := referenceCPUDRAM()
-	base, err := deriveLegacyKVTransferRate(dev, referenceKVBytesPerToken)
+	base, err := deriveLegacyKVTransferRate(dev, referenceKVBytesPerToken, referenceBlockSizeTokens)
 	if err != nil {
 		t.Fatalf("derive(base): %v", err)
 	}
-	quarter, err := deriveLegacyKVTransferRate(dev, referenceKVBytesPerToken/4)
+	quarter, err := deriveLegacyKVTransferRate(dev, referenceKVBytesPerToken/4, referenceBlockSizeTokens)
 	if err != nil {
 		t.Fatalf("derive(quarter): %v", err)
 	}
@@ -195,7 +203,7 @@ func TestDeriveLegacyKVTransferRate_ScalesInverselyWithPerTokenBytes(t *testing.
 	// And doubling the bus doubles the rate.
 	faster := dev
 	faster.ReadBandwidth *= 2
-	doubled, err := deriveLegacyKVTransferRate(faster, referenceKVBytesPerToken)
+	doubled, err := deriveLegacyKVTransferRate(faster, referenceKVBytesPerToken, referenceBlockSizeTokens)
 	if err != nil {
 		t.Fatalf("derive(faster bus): %v", err)
 	}
@@ -215,23 +223,26 @@ func TestDeriveLegacyKVTransferRate_ScalesInverselyWithPerTokenBytes(t *testing.
 func TestDeriveLegacyKVTransferRate_RefusesDegenerateInputs(t *testing.T) {
 	good := referenceCPUDRAM()
 	cases := []struct {
-		name     string
-		dev      kvOffloadDevice
-		perToken float64
-		wantFrag string
+		name      string
+		dev       kvOffloadDevice
+		perToken  float64
+		blockSize int64
+		wantFrag  string
 	}{
-		{"per_token_zero", good, 0, "per-token KV bytes"},
-		{"per_token_negative", good, -1, "per-token KV bytes"},
-		{"per_token_nan", good, math.NaN(), "per-token KV bytes"},
-		{"per_token_inf", good, math.Inf(1), "per-token KV bytes"},
-		{"bandwidth_zero", kvOffloadDevice{}, referenceKVBytesPerToken, "read_bandwidth"},
-		{"bandwidth_negative", kvOffloadDevice{ReadBandwidth: -1}, referenceKVBytesPerToken, "read_bandwidth"},
-		{"bandwidth_nan", kvOffloadDevice{ReadBandwidth: math.NaN()}, referenceKVBytesPerToken, "read_bandwidth"},
-		{"bandwidth_inf", kvOffloadDevice{ReadBandwidth: math.Inf(1)}, referenceKVBytesPerToken, "read_bandwidth"},
+		{"per_token_zero", good, 0, referenceBlockSizeTokens, "per-token KV bytes"},
+		{"per_token_negative", good, -1, referenceBlockSizeTokens, "per-token KV bytes"},
+		{"per_token_nan", good, math.NaN(), referenceBlockSizeTokens, "per-token KV bytes"},
+		{"per_token_inf", good, math.Inf(1), referenceBlockSizeTokens, "per-token KV bytes"},
+		{"bandwidth_zero", kvOffloadDevice{}, referenceKVBytesPerToken, referenceBlockSizeTokens, "read_bandwidth"},
+		{"bandwidth_negative", kvOffloadDevice{ReadBandwidth: -1}, referenceKVBytesPerToken, referenceBlockSizeTokens, "read_bandwidth"},
+		{"bandwidth_nan", kvOffloadDevice{ReadBandwidth: math.NaN()}, referenceKVBytesPerToken, referenceBlockSizeTokens, "read_bandwidth"},
+		{"bandwidth_inf", kvOffloadDevice{ReadBandwidth: math.Inf(1)}, referenceKVBytesPerToken, referenceBlockSizeTokens, "read_bandwidth"},
+		{"block_size_zero", good, referenceKVBytesPerToken, 0, "block size in tokens"},
+		{"block_size_negative", good, referenceKVBytesPerToken, -16, "block size in tokens"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			rate, err := deriveLegacyKVTransferRate(tc.dev, tc.perToken)
+			rate, err := deriveLegacyKVTransferRate(tc.dev, tc.perToken, tc.blockSize)
 			if err == nil {
 				t.Fatalf("expected a refusal, got rate %v", rate)
 			}
@@ -239,6 +250,69 @@ func TestDeriveLegacyKVTransferRate_RefusesDegenerateInputs(t *testing.T) {
 				t.Errorf("refusal must name %q, got: %v", tc.wantFrag, err)
 			}
 		})
+	}
+}
+
+// TestDeriveLegacyKVTransferRate_RefusesRatesThatOverflowTheTickBudget is BC-10, and it is a
+// simulation-INTEGRITY contract rather than a tidiness one.
+//
+// "Positive and finite" is not a sufficient condition on the derived rate. sim/kv.TieredKVCache
+// charges `int64(math.Ceil(block_tokens / rate))` per reloaded block, and a Go float→int64
+// conversion whose value does not fit is undefined: on amd64 it produces MinInt64. So a catalog
+// read_bandwidth of 1e-300 — positive, finite, and accepted by every other check — yields a
+// rate around 5e-303 that passes the guards and then charges a large NEGATIVE latency, moving
+// the clock the wrong way. The test asserts the refusal AND demonstrates the arithmetic it
+// prevents, so the bound cannot later be deleted as "defensive".
+func TestDeriveLegacyKVTransferRate_RefusesRatesThatOverflowTheTickBudget(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		bandwidth float64
+		blockSize int64
+	}{
+		{"denormal_bandwidth", 1e-300, referenceBlockSizeTokens},
+		{"tiny_bandwidth", 1e-20, referenceBlockSizeTokens},
+		{"large_block_size", 1e-15, 128},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dev := referenceCPUDRAM()
+			dev.ReadBandwidth = tc.bandwidth
+
+			// The rate the unbounded conversion would have returned is positive and finite,
+			// so the pre-existing guards do NOT catch this — that is the whole finding.
+			nominal := dev.ReadBandwidth / referenceKVBytesPerToken * legacyKVTransferResidual
+			if nominal <= 0 || math.IsNaN(nominal) || math.IsInf(nominal, 0) {
+				t.Fatalf("non-vacuity: this case must reach the new bound with a positive finite "+
+					"rate, got %v", nominal)
+			}
+
+			rate, err := deriveLegacyKVTransferRate(dev, referenceKVBytesPerToken, tc.blockSize)
+			if err == nil {
+				t.Fatalf("a rate of %v tokens/tick must be refused: it charges %v ticks for one "+
+					"%d-token block", rate, math.Ceil(float64(tc.blockSize)/rate), tc.blockSize)
+			}
+			for _, frag := range []string{"int64", "--kv-transfer-bandwidth", legacyKVTransferDeviceClass} {
+				if !strings.Contains(err.Error(), frag) {
+					t.Errorf("refusal must mention %q, got: %v", frag, err)
+				}
+			}
+
+			// What the refusal prevents: the library's own conversion, unguarded.
+			charged := int64(math.Ceil(float64(tc.blockSize) / nominal))
+			if charged > 0 {
+				t.Fatalf("non-vacuity: the unguarded charge must be non-positive (an overflow), "+
+					"got %d — this case no longer demonstrates the failure it guards", charged)
+			}
+		})
+	}
+
+	// The control: the reference deployment, and a generously slow but plausible bus, are NOT
+	// refused. A bound that rejects real catalogs would be removed rather than fixed.
+	for _, bandwidth := range []float64{2.0e4, 1.0, 1e-6} {
+		dev := referenceCPUDRAM()
+		dev.ReadBandwidth = bandwidth
+		if _, err := deriveLegacyKVTransferRate(dev, referenceKVBytesPerToken, 128); err != nil {
+			t.Errorf("read_bandwidth=%v must still be accepted: %v", bandwidth, err)
+		}
 	}
 }
 
@@ -261,7 +335,9 @@ func TestLoadLegacyKVTransferDevice_Diagnostics(t *testing.T) {
 			setup: func(t *testing.T) string {
 				return writeCatalogStorageDevices(t, "cpu_dram: {read_bandwidth: 1.0}\n")
 			},
-			frags: []string{"kv-cpu-blocks", "malformed", "base_latency"},
+			// The escape hatch too: the function contract promises EVERY failure names it,
+			// and this branch used to be the one that did not (#1840 review F5).
+			frags: []string{"kv-cpu-blocks", "malformed", "base_latency", "--kv-transfer-bandwidth"},
 		},
 		{
 			name: "class_absent",

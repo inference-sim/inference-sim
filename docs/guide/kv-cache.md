@@ -94,6 +94,8 @@ number is the honest record of what the retired default asserted, and it is pres
 than corrected because the conversion is value-preserving by design: a physics correction is a
 separate, arguable change. **If you want a faithful CPU-offload cost, use
 `--kv-offload-config`**, whose tiers price the catalog device directly with no residual.
+Authoring the residual into `blis-registry` alongside `kv_transfer_base_latency` is tracked in
+[blis-registry#17](https://github.com/inference-sim/blis-registry/issues/17).
 
 Away from the reference the derived rate scales as `1 / KVBytesPerToken` — a model with a
 quarter the KV per token moves four times the tokens per tick over the same bus, which the
@@ -101,7 +103,16 @@ retired constant could not express.
 
 `--kv-transfer-base-latency` is a different quantity and keeps its `0` default: it is the
 *modelling* per-transfer cost (`blis-registry`'s `kv_transfer_base_latency`, `method:
-not_charged`), not `cpu_dram`'s physical `base_latency`.
+not_charged`), not `cpu_dram`'s physical `base_latency`. Whether this path *should* charge
+`cpu_dram`'s 1.0 µs per transfer is an open physics question: charging it would change the cost
+of every enabled legacy run — 2 ticks per reference block where the retired configuration
+charged 1 — so it is outside the value-preserving conversion and is tracked separately in
+[inference-sim#1841](https://github.com/inference-sim/inference-sim/issues/1841).
+
+A derived rate must also leave the per-block tick charge inside the simulator's `int64` budget.
+A `cpu_dram` `read_bandwidth` small enough to break that — positive and finite, but so small the
+charge exceeds `2^52` ticks — is refused naming the device, the block size and
+`--kv-transfer-bandwidth`, rather than wrapping round to a negative transfer latency.
 
 ### Multi-Tier Offload Config Surface (`--kv-offload-config`)
 
