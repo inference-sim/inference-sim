@@ -10,6 +10,7 @@ package scripts_test
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1562,6 +1563,758 @@ sys.stdout.write(report)
 			t.Errorf("the adjudicator's OWN report is recognised as a qa-review report. Round 2 would "+
 				"then adjudicate round 1's adjudication instead of the findings the probe raised:\n%s",
 				stdout)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// _http.py — the one shared retrying chat-completions client (#1833).
+// ---------------------------------------------------------------------------
+
+// httpClientProbe drives _http.post_chat_completion against a SCRIPTED FAKE
+// TRANSPORT, replacing `_http.send` (the single named seam that touches the
+// network) and `_http.sleep` (so a real backoff is never spent). Everything
+// above the seam — failure classification, Retry-After, backoff, exhaustion —
+// is therefore exercised for real.
+//
+// Mocking one level lower than the rest of this file is deliberate: the other
+// probes monkeypatch `post_chat_completion` itself, which is exactly the
+// function under test here, so patching it would replace the retry policy
+// instead of covering it.
+//
+// argv[1] is a JSON spec: {"outcomes":[...], "attempts":N, "backoff":B,
+// "max_total_wait":W, "tools":[...]}. Each element of `outcomes` scripts one
+// transport attempt ("ok" => a valid completion, "garbage" => an unparseable
+// body, "http" with a code and optional retry_after/retry_after_in/date/body =>
+// an HTTPError, "urlerror"/"timeout"/"reset" => a connection-level failure);
+// attempts beyond the list succeed. `retry_after` is sent verbatim, so it covers
+// both the delay-seconds and the HTTP-date form; `retry_after_in` is seconds
+// from now rendered as an HTTP-date, for the no-Date-header case.
+//
+// stdout is a JSON object with "calls" (one {timeout,auth,ctype,url,messages,
+// tools} record per transport attempt), "delays" (one entry per backoff wait),
+// "module_timeout", and either "ok" (the completion content) or "error".
+const httpClientProbe = `
+import datetime, email.message, email.utils, importlib, io, json, socket, sys, urllib.error
+
+spec = json.loads(sys.argv[1])
+http = importlib.import_module("_http")
+if "attempts" in spec:
+    http.MAX_ATTEMPTS = spec["attempts"]
+if "backoff" in spec:
+    http.BACKOFF = spec["backoff"]
+if "max_total_wait" in spec:
+    http.MAX_TOTAL_WAIT = spec["max_total_wait"]
+
+def make_error(o):
+    kind = o["kind"]
+    if kind == "http":
+        headers = email.message.Message()
+        if o.get("retry_after") is not None:
+            headers["Retry-After"] = str(o["retry_after"])
+        if o.get("retry_after_in") is not None:
+            when = datetime.datetime.now(datetime.timezone.utc) \
+                + datetime.timedelta(seconds=o["retry_after_in"])
+            headers["Retry-After"] = email.utils.format_datetime(when)
+        if o.get("date") is not None:
+            headers["Date"] = o["date"]
+        body = io.BytesIO(o["body"].encode("utf-8")) if o.get("body") else None
+        return urllib.error.HTTPError("http://x/chat/completions", o["code"],
+                                      o.get("reason", "boom"), headers, body)
+    if kind == "urlerror":
+        return urllib.error.URLError("connection refused")
+    if kind == "timeout":
+        return socket.timeout("timed out")
+    if kind == "reset":
+        return ConnectionResetError("peer reset")
+    raise AssertionError("unknown kind " + kind)
+
+calls, delays = [], []
+
+def fake_send(req, timeout):
+    body = json.loads(req.data.decode("utf-8"))
+    calls.append({"timeout": timeout, "auth": req.get_header("Authorization"),
+                  "ctype": req.get_header("Content-type"), "url": req.full_url,
+                  "messages": len(body["messages"]), "tools": "tools" in body})
+    i = len(calls) - 1
+    o = spec["outcomes"][i] if i < len(spec["outcomes"]) else {"kind": "ok"}
+    if o["kind"] == "ok":
+        return json.dumps({"choices": [{"message": {"content": "done"}}]})
+    if o["kind"] == "garbage":
+        return "not json"
+    raise make_error(o)
+
+http.send = fake_send
+http.sleep = lambda s: delays.append(s)
+
+out = {"calls": calls, "delays": delays, "module_timeout": http.TIMEOUT}
+try:
+    resp = http.post_chat_completion("http://proxy/v1/", "KEY", "m",
+                                     [{"role": "user", "content": "q"}], spec.get("tools"))
+    out["ok"] = resp["choices"][0]["message"]["content"]
+except BaseException as exc:
+    out["error"] = type(exc).__name__ + ": " + str(exc)
+json.dump(out, sys.stdout)
+`
+
+type httpProbeCall struct {
+	Timeout  float64 `json:"timeout"`
+	Auth     string  `json:"auth"`
+	CType    string  `json:"ctype"`
+	URL      string  `json:"url"`
+	Messages int     `json:"messages"`
+	Tools    bool    `json:"tools"`
+}
+
+type httpProbeResult struct {
+	Calls         []httpProbeCall `json:"calls"`
+	Delays        []float64       `json:"delays"`
+	ModuleTimeout float64         `json:"module_timeout"`
+	OK            string          `json:"ok"`
+	Error         string          `json:"error"`
+}
+
+// runHTTPProbe reports what the client did (attempts, waits, outcome) and its
+// stderr diagnostics. The probe itself always exits 0 — a raised error is
+// captured into the JSON — so a non-zero exit is a broken probe, not a finding.
+func runHTTPProbe(t *testing.T, spec string) (httpProbeResult, string) {
+	t.Helper()
+	stdout, stderr, code := runPython(t, "", "-c", httpClientProbe, spec)
+	if code != 0 {
+		t.Fatalf("http probe exit=%d stderr=%s stdout=%s", code, stderr, stdout)
+	}
+	var got httpProbeResult
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("http probe output is not JSON: %v (%s)", err, stdout)
+	}
+	// BC-6 holds for every attempt in every case, so assert it here rather than
+	// in one test: an attempt made without an explicit positive timeout can hang
+	// the review forever instead of failing into a retry.
+	for i, c := range got.Calls {
+		if !(c.Timeout > 0) {
+			t.Errorf("attempt %d was made with timeout=%v, want an explicit positive timeout",
+				i+1, c.Timeout)
+		}
+		if c.Timeout != got.ModuleTimeout {
+			t.Errorf("attempt %d used timeout=%v but the module's configured timeout is %v",
+				i+1, c.Timeout, got.ModuleTimeout)
+		}
+	}
+	return got, stderr
+}
+
+// TestChatCompletionRetriesTransientFailures pins the contract this whole change
+// exists for: a transient failure on the completion call is retried, and the
+// call SUCCEEDS instead of crashing the script. This is the PR #1832 incident —
+// a single 504 killed the answerer ~30 min in, no QA-VERDICT marker was written,
+// and a fully-green delivery stopped for a human. Re-dispatching cleared it, so
+// the failure self-heals; the client just could not retry itself.
+func TestChatCompletionRetriesTransientFailures(t *testing.T) {
+	requirePython3(t)
+
+	// Every status/error the policy calls transient. 502/503/504 are the gateway
+	// family from the incident; 429 is rate limiting; 408 is a request timeout.
+	for _, tc := range []struct{ name, outcome string }{
+		{"504-gateway-timeout", `{"kind":"http","code":504,"reason":"Gateway Time-out"}`},
+		{"503-unavailable", `{"kind":"http","code":503}`},
+		{"502-bad-gateway", `{"kind":"http","code":502}`},
+		{"500-internal", `{"kind":"http","code":500}`},
+		{"429-rate-limited", `{"kind":"http","code":429}`},
+		{"408-request-timeout", `{"kind":"http","code":408}`},
+		{"connection-refused", `{"kind":"urlerror"}`},
+		{"socket-timeout", `{"kind":"timeout"}`},
+		{"connection-reset", `{"kind":"reset"}`},
+		// A body that will not parse is transient too. A proxy blip can answer 200
+		// with an HTML error page, or truncate the body mid-JSON, and urllib reports
+		// a perfectly clean response — the decode failure is the only evidence that
+		// this was not the model's answer, and the next attempt usually gets it.
+		{"unparseable-body", `{"kind":"garbage"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, stderr := runHTTPProbe(t, `{"outcomes":[`+tc.outcome+`]}`)
+
+			if got.Error != "" {
+				t.Fatalf("a single transient %s crashed the client (%s) instead of being retried — "+
+					"this is the failure that stopped delivery #1832", tc.name, got.Error)
+			}
+			if got.OK != "done" {
+				t.Errorf("client returned %q, want the completion from the retried attempt", got.OK)
+			}
+			if len(got.Calls) != 2 {
+				t.Errorf("made %d transport attempts, want 2 (the failure plus one retry)", len(got.Calls))
+			}
+			if len(got.Delays) != 1 {
+				t.Errorf("waited %d times, want exactly one backoff before the retry", len(got.Delays))
+			}
+			// R1: a retry must never be silent, or a gateway degrading on every
+			// call looks identical to a healthy run that is merely slow.
+			if !strings.Contains(stderr, "retrying in") {
+				t.Errorf("the retry was not reported on stderr: %q", stderr)
+			}
+		})
+	}
+
+	t.Run("retry-resends-the-same-request", func(t *testing.T) {
+		// The retry must re-send the caller's request verbatim — same URL, auth,
+		// content type and message history. A retry that rebuilt or truncated the
+		// payload would silently change what the model was asked.
+		got, _ := runHTTPProbe(t, `{"outcomes":[{"kind":"http","code":504}],"tools":[{"type":"function"}]}`)
+		if len(got.Calls) != 2 {
+			t.Fatalf("made %d attempts, want 2", len(got.Calls))
+		}
+		if got.Calls[0] != got.Calls[1] {
+			t.Errorf("the retry sent a different request:\nfirst = %+v\nretry = %+v",
+				got.Calls[0], got.Calls[1])
+		}
+		if got.Calls[0].URL != "http://proxy/v1/chat/completions" {
+			t.Errorf("posted to %q, want the base URL joined to /chat/completions", got.Calls[0].URL)
+		}
+		if got.Calls[0].Auth != "Bearer KEY" || got.Calls[0].CType != "application/json" {
+			t.Errorf("attempt headers = auth %q, content-type %q; want the bearer key and JSON",
+				got.Calls[0].Auth, got.Calls[0].CType)
+		}
+	})
+
+	t.Run("tools-omitted-when-the-caller-passes-none", func(t *testing.T) {
+		// The questioner calls the shared client with no tools. Its payload must
+		// stay exactly what it sent before this client existed: no "tools" key,
+		// not an empty one, which some gateways reject.
+		got, _ := runHTTPProbe(t, `{"outcomes":[]}`)
+		if len(got.Calls) != 1 || got.Calls[0].Tools {
+			t.Errorf("tool-free call sent tools=%v in %d attempts, want the key absent",
+				got.Calls[0].Tools, len(got.Calls))
+		}
+	})
+}
+
+// TestChatCompletionHonoursRetryAfter pins that a server-supplied Retry-After
+// beats the client's own schedule — the gateway knows its rate-limit window, and
+// retrying sooner than it asked just earns another 429.
+//
+// "Honoured" means IN FULL, in either form RFC 9110 allows. A shortened wait is
+// not a compromise between the gateway's window and the CI budget: it retries
+// inside the window, earns the same error, and spends the attempt for nothing.
+// A delay the client is unwilling to wait is therefore refused outright rather
+// than truncated (see the wait-budget case in the exhaustion test).
+func TestChatCompletionHonoursRetryAfter(t *testing.T) {
+	requirePython3(t)
+
+	t.Run("delay-seconds-is-used-verbatim", func(t *testing.T) {
+		got, _ := runHTTPProbe(t, `{"outcomes":[{"kind":"http","code":429,"retry_after":7}],"backoff":2}`)
+		if got.Error != "" {
+			t.Fatalf("client failed: %s", got.Error)
+		}
+		want := []float64{7}
+		if !reflect.DeepEqual(got.Delays, want) {
+			t.Errorf("waited %v, want %v from the Retry-After header (not the backoff schedule)",
+				got.Delays, want)
+		}
+	})
+
+	t.Run("a-long-delay-is-waited-in-full", func(t *testing.T) {
+		// A gateway under load asking for three minutes is ordinary, and it means
+		// three minutes: waiting less would retry inside its rate-limit window.
+		got, _ := runHTTPProbe(t, `{"outcomes":[{"kind":"http","code":429,"retry_after":180}]}`)
+		if got.Error != "" {
+			t.Fatalf("client failed: %s", got.Error)
+		}
+		want := []float64{180}
+		if !reflect.DeepEqual(got.Delays, want) {
+			t.Errorf("waited %v for Retry-After: 180, want %v — a truncated wait retries inside the "+
+				"window the gateway named and earns the same error", got.Delays, want)
+		}
+	})
+
+	t.Run("the-http-date-form-is-honoured", func(t *testing.T) {
+		// The absolute form is legal and gateways do send it. It is differenced
+		// against the response's own Date header, so both timestamps come from the
+		// gateway and a skewed runner clock cannot distort the window.
+		got, _ := runHTTPProbe(t, `{"outcomes":[{"kind":"http","code":503,`+
+			`"retry_after":"Wed, 21 Oct 2015 07:28:30 GMT","date":"Wed, 21 Oct 2015 07:28:00 GMT"}]}`)
+		if got.Error != "" {
+			t.Fatalf("client failed: %s", got.Error)
+		}
+		want := []float64{30}
+		if !reflect.DeepEqual(got.Delays, want) {
+			t.Errorf("waited %v, want %v — the 30s between the response's Date and its HTTP-date "+
+				"Retry-After", got.Delays, want)
+		}
+	})
+
+	t.Run("an-http-date-without-a-date-header-uses-our-clock", func(t *testing.T) {
+		// No Date header to difference against, so the runner's clock is the only
+		// reference left. HTTP-dates have whole-second resolution, so allow one.
+		got, _ := runHTTPProbe(t, `{"outcomes":[{"kind":"http","code":503,"retry_after_in":45}]}`)
+		if got.Error != "" {
+			t.Fatalf("client failed: %s", got.Error)
+		}
+		if len(got.Delays) != 1 {
+			t.Fatalf("waited %v, want one wait", got.Delays)
+		}
+		if got.Delays[0] < 43 || got.Delays[0] > 45 {
+			t.Errorf("waited %vs for an HTTP-date 45s out, want ~45s", got.Delays[0])
+		}
+	})
+
+	t.Run("an-unusable-header-falls-back-to-backoff", func(t *testing.T) {
+		// A negative count and an unparseable word are nonsense. A deadline already
+		// in the past is well-formed but says "retry now", and waiting the backoff
+		// instead is still not-before-T — it must not become a zero wait that
+		// hammers a gateway that just pushed back.
+		for _, raw := range []string{`-5`, `"soon"`, `"Wed, 21 Oct 2015 07:28:00 GMT"`} {
+			got, _ := runHTTPProbe(t,
+				`{"outcomes":[{"kind":"http","code":503,"retry_after":`+raw+`}],"backoff":2,"attempts":2}`)
+			if got.Error != "" {
+				t.Errorf("Retry-After: %s crashed the client: %s", raw, got.Error)
+				continue
+			}
+			if len(got.Delays) != 1 {
+				t.Errorf("Retry-After: %s produced waits %v, want one backoff", raw, got.Delays)
+				continue
+			}
+			// Backoff window for attempt 1 with BACKOFF=2 is [1, 2].
+			if got.Delays[0] < 1 || got.Delays[0] > 2 {
+				t.Errorf("Retry-After: %s waited %vs, want the backoff window [1,2]", raw, got.Delays[0])
+			}
+		}
+	})
+}
+
+// TestChatCompletionBackoffGrowsExponentially pins the shape of the wait
+// schedule: each retry waits longer, drawn from a jittered window, so a gateway
+// that is already struggling is not hammered at a fixed interval and concurrent
+// qa-review jobs do not resynchronise on it.
+func TestChatCompletionBackoffGrowsExponentially(t *testing.T) {
+	requirePython3(t)
+
+	got, _ := runHTTPProbe(t, `{"attempts":4,"backoff":2,"outcomes":[`+
+		`{"kind":"http","code":500},{"kind":"http","code":500},{"kind":"http","code":500}]}`)
+	if got.Error != "" {
+		t.Fatalf("three transient failures inside a 4-attempt budget failed: %s", got.Error)
+	}
+	if len(got.Delays) != 3 {
+		t.Fatalf("waited %v, want three backoffs before the 4th attempt", got.Delays)
+	}
+	// Half jitter: wait_n is drawn from [w/2, w] for w = BACKOFF * 2^(n-1).
+	// Asserting the window rather than an exact value tests the law and keeps the
+	// test independent of the RNG draw; the lower bound also pins that jitter can
+	// never produce a ~0 wait that would retry instantly.
+	for i, d := range got.Delays {
+		window := 2.0 * math.Pow(2, float64(i))
+		if d < window/2 || d > window {
+			t.Errorf("backoff %d = %vs, want the jitter window [%v, %v]", i+1, d, window/2, window)
+		}
+	}
+}
+
+// TestChatCompletionDoesNotRetryDeterministicErrors pins the other half of the
+// policy. A 4xx that is not 408/429 means the request itself is wrong (bad
+// payload, wrong key, unknown model): retrying cannot succeed, and doing so
+// would turn a fast, clear failure into minutes of pointless CI wall-clock
+// before the same error surfaced anyway.
+//
+// It also pins that the gateway's OWN EXPLANATION reaches stderr. The status
+// line says `Bad Request`; the body says which field, which model, or which
+// limit. Nothing catches these errors, so without this the payload is discarded
+// and an operator debugging a malformed request has nothing to work from.
+func TestChatCompletionDoesNotRetryDeterministicErrors(t *testing.T) {
+	requirePython3(t)
+
+	for _, tc := range []struct {
+		name, outcome, wantErr, wantBody string
+	}{
+		{
+			"400-bad-request",
+			`{"kind":"http","code":400,"reason":"Bad Request",` +
+				`"body":"{\"error\":{\"message\":\"tools are not supported by this model\"}}"}`,
+			"400", "tools are not supported by this model",
+		},
+		{"401-unauthorized", `{"kind":"http","code":401,"reason":"Unauthorized"}`, "401", ""},
+		{"403-forbidden", `{"kind":"http","code":403,"reason":"Forbidden"}`, "403", ""},
+		{
+			"404-unknown-model",
+			`{"kind":"http","code":404,"reason":"Not Found","body":"model gpt-nope not found"}`,
+			"404", "model gpt-nope not found",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, stderr := runHTTPProbe(t, `{"outcomes":[`+tc.outcome+`]}`)
+			if got.Error == "" {
+				t.Fatalf("a %s was swallowed (returned %q); it must reach the caller", tc.name, got.OK)
+			}
+			if !strings.Contains(got.Error, tc.wantErr) {
+				t.Errorf("raised %q, want an error naming %s", got.Error, tc.wantErr)
+			}
+			if len(got.Calls) != 1 {
+				t.Errorf("made %d transport attempts for a deterministic %s, want exactly 1",
+					len(got.Calls), tc.name)
+			}
+			if len(got.Delays) != 0 {
+				t.Errorf("slept %v before failing on a deterministic %s, want no backoff at all",
+					got.Delays, tc.name)
+			}
+			// R1: the decision not to retry is itself a decision, and must be visible.
+			if !strings.Contains(stderr, "is not transient") {
+				t.Errorf("%s was refused a retry silently: %q", tc.name, stderr)
+			}
+			if tc.wantBody != "" && !strings.Contains(stderr, tc.wantBody) {
+				t.Errorf("the gateway's explanation for %s never reached stderr (want %q): %q",
+					tc.name, tc.wantBody, stderr)
+			}
+		})
+	}
+}
+
+// TestChatCompletionFailsClosedWhenAttemptsAreExhausted pins the property the
+// issue is explicit about PRESERVING. Removing the single-blip hair-trigger must
+// not make a sustained outage look like a pass: once the budget is spent the
+// client re-raises, so the script exits non-zero, writes no QA-VERDICT marker,
+// and the gate still reads MISSING => needs-human. The diagnostic must say so,
+// because an operator reading the log needs to tell "the gateway is down" from
+// "the model could not decide".
+func TestChatCompletionFailsClosedWhenAttemptsAreExhausted(t *testing.T) {
+	requirePython3(t)
+
+	got, stderr := runHTTPProbe(t, `{"attempts":3,"backoff":2,"outcomes":[`+
+		`{"kind":"http","code":504},{"kind":"http","code":502},`+
+		`{"kind":"http","code":503,"reason":"Service Unavailable",`+
+		`"body":"upstream pool exhausted"}]}`)
+
+	if got.Error == "" {
+		t.Fatalf("three consecutive transient failures returned %q instead of raising — a sustained "+
+			"outage must still stop the delivery, not read as a result", got.OK)
+	}
+	if !strings.Contains(got.Error, "503") {
+		t.Errorf("raised %q, want the LAST transport error (503) re-raised", got.Error)
+	}
+	if len(got.Calls) != 3 {
+		t.Errorf("made %d transport attempts, want exactly the 3-attempt budget", len(got.Calls))
+	}
+	if len(got.Delays) != 2 {
+		t.Errorf("waited %d times for a 3-attempt budget, want 2 (no wait after the last attempt)",
+			len(got.Delays))
+	}
+	// The last error's body is the one place the gateway explains itself, and
+	// exhaustion is exactly when an operator needs it.
+	for _, want := range []string{"giving up after 3 attempts", "MISSING", "upstream pool exhausted"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("exhaustion diagnostic does not mention %q, so an operator cannot tell an infra "+
+				"outage from an undecided review: %q", want, stderr)
+		}
+	}
+
+	// A body that never parses is retried (a proxy blip can produce one), but it
+	// must not be retried forever: the budget applies to it exactly as it does to
+	// a 504, and the original decode error is what reaches the caller.
+	t.Run("a-persistently-unparseable-body-still-fails-closed", func(t *testing.T) {
+		got, stderr := runHTTPProbe(t, `{"attempts":3,"backoff":2,"outcomes":[`+
+			`{"kind":"garbage"},{"kind":"garbage"},{"kind":"garbage"}]}`)
+		if got.Error == "" {
+			t.Fatalf("three unparseable bodies returned %q instead of raising", got.OK)
+		}
+		if !strings.Contains(got.Error, "JSONDecodeError") {
+			t.Errorf("raised %q, want the decode error itself re-raised", got.Error)
+		}
+		if len(got.Calls) != 3 {
+			t.Errorf("made %d attempts, want exactly the 3-attempt budget", len(got.Calls))
+		}
+		if !strings.Contains(stderr, "MISSING") {
+			t.Errorf("exhaustion on unparseable bodies did not report the fail-closed outcome: %q", stderr)
+		}
+	})
+
+	// A Retry-After the client is unwilling to wait must not be truncated into an
+	// early retry (that earns the same error and spends an attempt for nothing).
+	// It ends the loop instead — the honest reading of the header, and a firmer
+	// bound on a hostile value than a cap was: no wait happens at all.
+	t.Run("a-retry-after-beyond-the-wait-budget-stops-instead-of-retrying-early", func(t *testing.T) {
+		got, stderr := runHTTPProbe(t,
+			`{"attempts":5,"max_total_wait":120,"outcomes":[{"kind":"http","code":429,"retry_after":9999}]}`)
+		if got.Error == "" {
+			t.Fatalf("a 9999s Retry-After returned %q instead of failing closed", got.OK)
+		}
+		if !strings.Contains(got.Error, "429") {
+			t.Errorf("raised %q, want the 429 re-raised", got.Error)
+		}
+		if len(got.Delays) != 0 {
+			t.Errorf("waited %v, want no wait at all — the job must not be parked, and a shorter wait "+
+				"would retry inside the window the gateway named", got.Delays)
+		}
+		if len(got.Calls) != 1 {
+			t.Errorf("made %d attempts, want 1 — the remaining budget cannot honour the delay",
+				len(got.Calls))
+		}
+		if !strings.Contains(stderr, "retry-wait budget") {
+			t.Errorf("stopping for the wait budget was not explained on stderr: %q", stderr)
+		}
+	})
+
+	// The budget is cumulative, not per wait: several individually-affordable
+	// delays cannot add up past it.
+	t.Run("the-wait-budget-is-cumulative-across-attempts", func(t *testing.T) {
+		got, _ := runHTTPProbe(t, `{"attempts":5,"max_total_wait":25,"outcomes":[`+
+			`{"kind":"http","code":503,"retry_after":10},{"kind":"http","code":503,"retry_after":10},`+
+			`{"kind":"http","code":503,"retry_after":10},{"kind":"http","code":503,"retry_after":10}]}`)
+		if got.Error == "" {
+			t.Fatalf("returned %q, want the 503 re-raised once the wait budget ran out", got.OK)
+		}
+		want := []float64{10, 10}
+		if !reflect.DeepEqual(got.Delays, want) {
+			t.Errorf("waited %v, want %v — a third 10s wait exceeds the 25s budget", got.Delays, want)
+		}
+		if len(got.Calls) != 3 {
+			t.Errorf("made %d attempts, want 3 (two affordable waits, then stop)", len(got.Calls))
+		}
+	})
+}
+
+// TestQAReviewScriptsShareOneChatClient pins that the retry policy exists in
+// exactly ONE place. Three near-identical copies are what made #1833 a
+// three-file bug in the first place, and a copy that drifted back would silently
+// reintroduce the crash for whichever agent owned it (R4 — one canonical site).
+func TestQAReviewScriptsShareOneChatClient(t *testing.T) {
+	requirePython3(t)
+
+	prog := `
+import importlib, json, sys
+http = importlib.import_module("_http")
+out = {}
+for name in ("answerer", "questioner", "adjudicator"):
+    mod = importlib.import_module(name)
+    out[name] = mod.post_chat_completion is http.post_chat_completion
+json.dump(out, sys.stdout)
+`
+	stdout, stderr, code := runPython(t, "", "-c", prog)
+	if code != 0 {
+		t.Fatalf("shared-client probe exit=%d stderr=%s", code, stderr)
+	}
+	var shared map[string]bool
+	if err := json.Unmarshal([]byte(stdout), &shared); err != nil {
+		t.Fatalf("shared-client probe output is not JSON: %v (%s)", err, stdout)
+	}
+	for _, name := range []string{"answerer", "questioner", "adjudicator"} {
+		if !shared[name] {
+			t.Errorf("%s.post_chat_completion is not _http.post_chat_completion — it has its own copy, "+
+				"so the retry policy does not apply to it", name)
+		}
+	}
+
+	// A copy would most likely reappear as a direct urlopen call. The scripts
+	// must reach the network only through the shared client.
+	for _, name := range []string{"answerer.py", "questioner.py", "adjudicator.py"} {
+		src, err := os.ReadFile(qaScript(t, name))
+		if err != nil {
+			t.Fatalf("reading %s: %v", name, err)
+		}
+		if strings.Contains(string(src), "urlopen") {
+			t.Errorf("%s calls urlopen directly; the LLM transport belongs only in _http.py", name)
+		}
+	}
+}
+
+// toolLoopRetryProbe drives the answerer/adjudicator tool loop with a transport
+// that raises ONE 504 part-way through, and records the message-history length
+// the transport saw on every attempt.
+//
+// argv[1] is the module name. stdout: {"seen":[n...], "turns":N, "got":[[id,verdict]...]}.
+const toolLoopRetryProbe = `
+import importlib, json, sys, urllib.error, email.message
+
+http = importlib.import_module("_http")
+mod = importlib.import_module(sys.argv[1])
+http.MAX_ATTEMPTS = 3
+http.sleep = lambda s: None
+
+answerer = sys.argv[1] == "answerer"
+final = json.dumps([{"id": "F1", "status": "CONFIDENT", "answer": "a"}]) if answerer \
+    else json.dumps([{"id": "F2", "verdict": "RESOLVED", "note": "n"}])
+
+seen = []
+state = {"turn": 0, "failed": False}
+
+def fake_send(req, timeout):
+    body = json.loads(req.data.decode("utf-8"))
+    seen.append(len(body["messages"]))
+    # One transient 504 on the THIRD transport attempt — mid tool loop, with two
+    # turns of tool work already accumulated in the history.
+    if len(seen) == 3 and not state["failed"]:
+        state["failed"] = True
+        raise urllib.error.HTTPError("http://x", 504, "Gateway Time-out",
+                                     email.message.Message(), None)
+    state["turn"] += 1
+    if state["turn"] <= 3:
+        return json.dumps({"choices": [{"message": {
+            "role": "assistant", "content": None,
+            "tool_calls": [{"id": "c%d" % state["turn"],
+                            "function": {"name": "list_dir", "arguments": "{}"}}]}}]})
+    return json.dumps({"choices": [{"message": {"role": "assistant", "content": final}}]})
+
+http.send = fake_send
+if answerer:
+    content = mod.answer_loop("http://x", "k", "m", ".", [{"id": "F1"}], True)
+    got = [[a["id"], a["status"]] for a in mod.parse_answers(content)]
+else:
+    items = [{"id": "F2", "was": "FLAW_FOUND", "text": "t"}]
+    content = mod.adjudicate_loop("http://x", "k", "m", ".", items, "responses", True)
+    got = [[v["id"], v["verdict"]] for v in mod.parse_verdicts(content)]
+json.dump({"seen": seen, "turns": state["turn"], "got": got}, sys.stdout)
+`
+
+// TestToolLoopResumesAfterTransientFailure pins the reason the retry belongs in
+// the client rather than in a workflow-level re-dispatch: the 504 arrives
+// mid-loop with the `messages` history intact, so retrying THAT ONE CALL resumes
+// in place and loses nothing. On PR #1832 the crash threw away ~30 minutes of
+// accumulated tool turns; a re-dispatch would have redone all of them.
+//
+// Two laws, both invisible to the plain retry tests:
+//   - the retried attempt re-sends the SAME history as the attempt that failed
+//     (no turn lost, no loop restarted), and the history only ever grows; and
+//   - the retry does not consume a tool turn out of MAX_TOOL_TURNS — the budget
+//     is for model turns, so gateway hiccups must not eat into the loop's
+//     ability to finish and push it into the blocking exhaustion path.
+func TestToolLoopResumesAfterTransientFailure(t *testing.T) {
+	requirePython3(t)
+
+	for _, tc := range []struct{ mod, wantID, wantVerdict string }{
+		{"answerer", "F1", "CONFIDENT"},
+		{"adjudicator", "F2", "RESOLVED"},
+	} {
+		t.Run(tc.mod, func(t *testing.T) {
+			stdout, stderr, code := runPython(t, "", "-c", toolLoopRetryProbe, tc.mod)
+			if code != 0 {
+				t.Fatalf("%s resume probe exit=%d stderr=%s stdout=%s", tc.mod, code, stderr, stdout)
+			}
+			var got struct {
+				Seen  []int      `json:"seen"`
+				Turns int        `json:"turns"`
+				Got   [][]string `json:"got"`
+			}
+			if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+				t.Fatalf("%s resume probe output is not JSON: %v (%s)", tc.mod, err, stdout)
+			}
+
+			want := [][]string{{tc.wantID, tc.wantVerdict}}
+			if !reflect.DeepEqual(got.Got, want) {
+				t.Errorf("%s produced %v after a mid-loop 504, want %v — the loop must finish normally",
+					tc.mod, got.Got, want)
+			}
+			// 5 transport attempts (the 504 plus its retry) for 4 model turns.
+			if len(got.Seen) != 5 {
+				t.Fatalf("%s made %d transport attempts, want 5 (4 turns plus one retry): %v",
+					tc.mod, len(got.Seen), got.Seen)
+			}
+			if got.Turns != 4 {
+				t.Errorf("%s consumed %d model turns, want 4 — the retry must not spend a tool turn",
+					tc.mod, got.Turns)
+			}
+			// Attempt 3 failed; attempt 4 is its retry and must carry the identical history.
+			if got.Seen[2] != got.Seen[3] {
+				t.Errorf("%s retried with a history of %d messages but the failed attempt had %d — the "+
+					"retry must resume in place, not rebuild or restart the loop", tc.mod,
+					got.Seen[3], got.Seen[2])
+			}
+			// A restarted loop would send a short history again after the failure.
+			for i := 1; i < len(got.Seen); i++ {
+				if got.Seen[i] < got.Seen[i-1] {
+					t.Errorf("%s message history shrank from %d to %d at attempt %d, so tool work was "+
+						"discarded: %v", tc.mod, got.Seen[i-1], got.Seen[i], i+1, got.Seen)
+				}
+			}
+		})
+	}
+}
+
+// TestChatCompletionTuningKnobsRejectUnusableValues pins that the QA_HTTP_*
+// knobs fail SOFT. They are optional tuning, so a typo, a zero, or a NaN must be
+// reported and ignored in favour of the default — never raised. A knob that could
+// crash the client on import would hand us a new way to reach the exact outcome
+// this change removes: no marker, MISSING, needs-human.
+//
+// NaN and Inf matter specifically because they parse as perfectly good floats and
+// would otherwise flow into urlopen(timeout=...) and time.sleep().
+func TestChatCompletionTuningKnobsRejectUnusableValues(t *testing.T) {
+	requirePython3(t)
+
+	// Print the three resolved settings after importing with the env in place.
+	prog := `
+import importlib, json, sys
+http = importlib.import_module("_http")
+json.dump({"timeout": http.TIMEOUT, "attempts": http.MAX_ATTEMPTS,
+           "backoff": http.BACKOFF, "max_total_wait": http.MAX_TOTAL_WAIT}, sys.stdout)
+`
+	type settings struct {
+		Timeout      float64 `json:"timeout"`
+		Attempts     int     `json:"attempts"`
+		Backoff      float64 `json:"backoff"`
+		MaxTotalWait float64 `json:"max_total_wait"`
+	}
+	resolve := func(t *testing.T, env ...string) (settings, string) {
+		t.Helper()
+		cmd := exec.Command("python3", "-c", prog)
+		cmd.Dir = qaScript(t, ".")
+		cmd.Env = append(os.Environ(), env...)
+		var stdout, stderr strings.Builder
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("resolving %v crashed the module: %v (stderr=%s)", env, err, stderr.String())
+		}
+		var got settings
+		if err := json.Unmarshal([]byte(stdout.String()), &got); err != nil {
+			t.Fatalf("settings probe output is not JSON: %v (%s)", err, stdout.String())
+		}
+		return got, stderr.String()
+	}
+
+	// The documented defaults, with no override in play.
+	defaults, stderr := resolve(t, "QA_HTTP_TIMEOUT=", "QA_HTTP_MAX_ATTEMPTS=",
+		"QA_HTTP_BACKOFF=", "QA_HTTP_MAX_TOTAL_WAIT=")
+	if defaults.Timeout != 600 || defaults.Attempts != 5 || defaults.Backoff != 2 ||
+		defaults.MaxTotalWait != 900 {
+		t.Errorf("defaults = %+v, want timeout 600s, 5 attempts, 2s backoff, 900s total wait "+
+			"(as documented in _http.py and scripts/qa-review/README.md)", defaults)
+	}
+	if stderr != "" {
+		t.Errorf("importing with no overrides wrote to stderr: %q", stderr)
+	}
+
+	t.Run("a-valid-override-is-honoured", func(t *testing.T) {
+		got, stderr := resolve(t, "QA_HTTP_TIMEOUT=30", "QA_HTTP_MAX_ATTEMPTS=2",
+			"QA_HTTP_BACKOFF=0.5", "QA_HTTP_MAX_TOTAL_WAIT=60")
+		if got.Timeout != 30 || got.Attempts != 2 || got.Backoff != 0.5 || got.MaxTotalWait != 60 {
+			t.Errorf("overrides resolved to %+v, want timeout 30, attempts 2, backoff 0.5, "+
+				"total wait 60", got)
+		}
+		if stderr != "" {
+			t.Errorf("a valid override was reported as unusable: %q", stderr)
+		}
+	})
+
+	for _, bad := range []string{"0", "-1", "abc", "nan", "inf", "1e999"} {
+		t.Run("unusable-timeout-"+bad, func(t *testing.T) {
+			got, stderr := resolve(t, "QA_HTTP_TIMEOUT="+bad)
+			if got.Timeout != defaults.Timeout {
+				t.Errorf("QA_HTTP_TIMEOUT=%s resolved to %v, want the %v default", bad, got.Timeout,
+					defaults.Timeout)
+			}
+			// R1: falling back silently would leave an operator believing a knob
+			// they set is in effect.
+			if !strings.Contains(stderr, "ignoring unusable QA_HTTP_TIMEOUT") {
+				t.Errorf("QA_HTTP_TIMEOUT=%s was ignored silently: %q", bad, stderr)
+			}
+		})
+	}
+
+	// A budget below 1 must still make one attempt rather than fall through the
+	// loop and raise a None exception, which would bury the real mistake.
+	t.Run("a-sub-one-budget-still-makes-one-attempt", func(t *testing.T) {
+		got, _ := runHTTPProbe(t, `{"attempts":0,"outcomes":[{"kind":"http","code":504}]}`)
+		if len(got.Calls) != 1 {
+			t.Errorf("made %d attempts with a 0 budget, want exactly 1", len(got.Calls))
+		}
+		if got.Error == "" || !strings.Contains(got.Error, "504") {
+			t.Errorf("raised %q, want the 504 re-raised (never a TypeError about a None exception)",
+				got.Error)
 		}
 	})
 }
