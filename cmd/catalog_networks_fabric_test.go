@@ -138,8 +138,8 @@ func TestNetworksFabric_NoConfigKeyBindsPDTransferBaseLatency(t *testing.T) {
 }
 
 // productionGoSources returns every non-test .go file in the repository, as paths relative to
-// the repository root. testdata/ is excluded (fixtures, covered by BC-2); .git and the
-// agent-local .worktrees/ are excluded because they are not this commit's sources.
+// the repository root. testdata/ is excluded (fixtures, covered by BC-2); .git, the agent-local
+// .worktrees/, and third-party trees are excluded because they are not this commit's sources.
 func productionGoSources(t *testing.T) []string {
 	t.Helper()
 	var files []string
@@ -153,7 +153,7 @@ func productionGoSources(t *testing.T) []string {
 		}
 		if d.IsDir() {
 			switch d.Name() {
-			case ".git", ".worktrees", "testdata", "node_modules":
+			case ".git", ".worktrees", "testdata", "vendor", "node_modules":
 				return fs.SkipDir
 			}
 			return nil
