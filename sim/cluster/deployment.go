@@ -77,6 +77,12 @@ type DeploymentConfig struct {
 	EncodeDecider   string // Encode decider: "", "never" (default), "always", "multimodal"
 
 	// PD KV transfer configuration (PR2)
+	//
+	// PDTransferBaseLatencyMs is a MODELING ESTIMATE, not a datasheet fact: its 0.05 ms default is
+	// a placeholder owned by blis-registry (blis-registry#10, `method: assumed`). It is sourced
+	// SOLELY from --pd-transfer-base-latency, and the effective base latency is that value alone —
+	// the catalog's networks/ fabric classes state no per-transfer base latency to compose with it
+	// (blis-catalog#12 removed the key; the closed fabric schema now rejects it, #1838).
 	PDTransferBandwidthGBps float64 // Inter-instance KV transfer bandwidth in GB/s (default 25.0)
 	PDTransferBaseLatencyMs float64 // Inter-instance KV transfer base latency in ms (default 0.05)
 	PDTransferContention    bool    // Enable fair-share bandwidth contention model (--pd-transfer-contention, INV-P2-2)
