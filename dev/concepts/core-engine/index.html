@@ -3842,6 +3842,7 @@ Dequeue requests from the wait queue:
 <li><strong>Offload trigger:</strong> When GPU utilization exceeds <code>--kv-offload-threshold</code> (default: 0.9), blocks are offloaded to CPU</li>
 <li><strong>Reload:</strong> On GPU allocation failure, blocks are reloaded from CPU with a transfer latency penalty</li>
 <li><strong>Transfer latency:</strong> Per reloaded block: <code>base_latency + ceil(block_size_tokens / bandwidth)</code>. Accumulated across all reloaded blocks. Non-blocking (added to step time).</li>
+<li><strong>Where transfer physics comes from:</strong> bandwidth and base latency are independently <strong>derived</strong> from the catalog <code>cpu_dram</code> storage device (#1819/#1841). <code>--kv-transfer-bandwidth</code> and <code>--kv-transfer-base-latency</code> independently override them; explicit base latency <code>0</code> disables the fixed cost. See <a href="../../guide/kv-cache/#tiered-caching-gpu--cpu-offload">Tiered Caching</a>.</li>
 <li><strong>Thrashing detection:</strong> Blocks offloaded and reloaded within 1000 ticks (1ms) increment a thrashing counter</li>
 </ul>
 <h2 id="latency-models">Latency Models<a class="headerlink" href="#latency-models" title="Permanent link">&para;</a></h2>

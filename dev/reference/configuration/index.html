@@ -3697,13 +3697,13 @@
 </tr>
 <tr>
 <td><code>--kv-transfer-bandwidth</code></td>
-<td>blocks/tick</td>
-<td>Transfer rate between GPU and CPU KV tiers</td>
+<td>tokens/tick</td>
+<td>Transfer rate between GPU and CPU KV tiers on the legacy <code>--kv-cpu-blocks</code> path. Unset ⇒ <strong>derived</strong> from the catalog <code>cpu_dram</code> device (#1819)</td>
 </tr>
 <tr>
 <td><code>--kv-transfer-base-latency</code></td>
 <td>ticks (μs)</td>
-<td>Fixed per-transfer overhead</td>
+<td>Fixed per-block overhead on the legacy CPU tier. Unset ⇒ derived from <code>cpu_dram.base_latency</code>; explicit <code>0</code> disables it</td>
 </tr>
 </tbody>
 </table>
@@ -3797,14 +3797,14 @@
 <tr>
 <td><code>--kv-transfer-bandwidth</code></td>
 <td>float64</td>
-<td>100.0</td>
-<td>GPU-CPU transfer rate in blocks/tick. Required &gt; 0 when CPU blocks &gt; 0.</td>
+<td>unset ⇒ derive</td>
+<td>GPU↔CPU transfer rate in tokens/tick for the legacy <code>--kv-cpu-blocks</code> tier. Omit it to derive from <code>cpu_dram.read_bandwidth</code> with the R2G3b residual; supply a finite positive value to override it. A rate whose per-block charge exceeds the safe tick budget is refused. Passing <code>0</code> is invalid, not a request to derive.</td>
 </tr>
 <tr>
 <td><code>--kv-transfer-base-latency</code></td>
 <td>int64</td>
-<td>0</td>
-<td>Fixed per-transfer latency in ticks.</td>
+<td>unset ⇒ derive</td>
+<td>Fixed per-block latency in ticks. Omit it to derive from <code>cpu_dram.base_latency</code> (microseconds rounded up to whole ticks); an explicitly supplied <code>0</code> is a valid independent override. If either transfer flag is omitted, <code>&lt;catalog&gt;/devices/storage.yaml</code> must define <code>cpu_dram</code>; if both are supplied, the table is not read. Combined and cumulative transfer-latency additions are checked against <code>int64</code>.</td>
 </tr>
 </tbody>
 </table>
