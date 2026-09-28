@@ -53,6 +53,54 @@ the LiteLLM proxy over its OpenAI-compatible `/chat/completions` surface.
 | `answerer.py` | agentic, read-only answerer over the worktree | `[{id,status,answer,evidence,note}]` |
 | `render_report.py` | report renderer (+ optional PR posting) | the Markdown report |
 | `adjudicator.py` | author-defence re-check (used by #1716) | the adjudication report |
+| `_http.py` | the one shared retrying chat-completions client (#1833) | — (library) |
+
+### _http.py
+
+Every completion the three agents make goes through one `post_chat_completion`
+here, wrapped in a **bounded retry with backoff**. They each used to issue their
+own single `urllib.request.urlopen` with no `timeout=` and no retry, so one
+transient gateway error crashed the script: on PR #1832 a `504` killed the
+answerer ~30 minutes into its tool loop, which wrote no `QA-VERDICT` marker, so
+the L1 gate read `QA_VERDICT=MISSING` and stopped a fully-green delivery for a
+human. Re-dispatching cleared it — the failure self-heals; the client simply
+could not retry itself.
+
+The retry is on the **single failed call**, with the caller's `messages` history
+untouched, so an answerer that trips a `504` on turn 18 resumes at turn 18
+rather than discarding seventeen turns of tool work — and the retry does not
+spend a turn out of `MAX_TOOL_TURNS`.
+
+- **Retried:** HTTP `408`/`429` and every `5xx`, plus connection-level failures
+  (`URLError`, socket timeout, connection reset, a disconnect mid-read), plus a
+  **response body that will not decode** — a proxy blip can answer `200` with an
+  HTML error page or a body truncated mid-JSON, which urllib reports as a
+  perfectly clean response, so the decode failure is the only evidence that this
+  was not the model's answer.
+- **Not retried:** every other `4xx`. `400`/`401`/`403`/`404` are deterministic
+  configuration errors (bad payload, wrong key, unknown model) — retrying them
+  cannot succeed and only burns CI wall-clock. The **gateway's own response body
+  is written to stderr** before the error is re-raised: the status line says
+  `Bad Request`, the body says which field, model or limit was rejected.
+- `Retry-After` wins when present, and is honoured **in full** — both the
+  delay-seconds and the HTTP-date form, never shortened. The absolute form is
+  differenced against the response's own `Date` header when it has one, so both
+  timestamps come from the gateway and a skewed runner clock cannot distort the
+  window. An unusable header (a negative count, an unparseable word, a deadline
+  already past) falls through to exponential backoff with half jitter, i.e. a
+  wait drawn from `[w/2, w]`.
+- **The waiting is bounded in aggregate, not per wait** (`QA_HTTP_MAX_TOTAL_WAIT`,
+  900s). A delay that does not fit the remaining budget **ends the retry loop**
+  rather than being truncated: retrying earlier than the gateway asked earns the
+  same error and spends an attempt for nothing. That is also a firmer bound on a
+  hostile `Retry-After: 99999` than a per-wait cap was — no wait happens at all.
+- Every attempt carries an **explicit `timeout=`**, so a hung connection fails
+  into a retry instead of hanging the review.
+- **Fail-closed on genuine exhaustion.** When the attempt budget (or the wait
+  budget) runs out the last error is re-raised after a stderr diagnostic naming
+  it and the gateway's body, so the script still exits without a marker and the
+  gate still reads `MISSING` ⇒ `needs-human`. Only the single-blip hair-trigger
+  is gone; a sustained outage still stops for a human.
 
 ### questioner.py
 
@@ -237,6 +285,14 @@ selects it by the round counter.)
 | `QA_REPORT_AUTHOR` | adjudicator: only adjudicate a prior report posted by this comment author login (the App `[bot]` suffix is optional — #1834) | empty (any author) |
 | `QA_REPO` | `owner/repo` for `gh` calls | `inference-sim/inference-sim` |
 | `QA_REPO_DIR` | local clone the worktree is cut from | — |
+| `QA_HTTP_TIMEOUT` | `_http.py`: per-attempt request timeout, seconds | `600` |
+| `QA_HTTP_MAX_ATTEMPTS` | `_http.py`: total attempts including the first | `5` |
+| `QA_HTTP_BACKOFF` | `_http.py`: first backoff, seconds, doubled per retry | `2` |
+| `QA_HTTP_MAX_TOTAL_WAIT` | `_http.py`: total waiting allowed between attempts, seconds, across the whole call | `900` |
+
+The `QA_HTTP_*` knobs are optional tuning only. An unusable value (not a
+number, or non-positive) is reported on stderr and ignored rather than raised: a
+typo'd knob must not be the thing that turns a review into `MISSING`.
 
 ## Tests
 
@@ -254,3 +310,17 @@ refusal when no report exists), the `--no-exec` `tools_for()` seam for both agen
 flags), and both agents' tool-loop exhaustion degradation (the one
 `post_chat_completion` stub is the only model-dependent piece). The model-calling
 paths need the live proxy and are not unit-tested here.
+
+`_http.py`'s retry policy is covered too (#1833), and its probes mock one level
+lower than the rest: they replace `_http.send` — the single named seam that
+touches the network — and `_http.sleep`, rather than `post_chat_completion`,
+which is the function under test. Pinned: retry-then-success for every transient
+status, connection error and unparseable body; the retry re-sending the request
+verbatim; `Retry-After` honoured in full in both forms (delay-seconds, HTTP-date
+differenced against the response `Date`) and falling back to backoff on an
+unusable value; the cumulative wait budget ending the loop rather than waiting a
+truncated delay; the jittered exponential window; no retry at all on a `4xx`,
+with the gateway's own body reaching stderr; the fail-closed re-raise and
+diagnostic on exhaustion (including a body that never parses); that all three
+agents share the one client; and that a mid-loop `504` resumes with its message
+history intact without spending a tool turn.

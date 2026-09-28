@@ -44,6 +44,7 @@ Env:
                         author login (empty = any author). Either spelling of a
                         GitHub App actor is accepted -- "github-actions" and
                         "github-actions[bot]" name the same poster (#1834).
+  QA_HTTP_*             transport timeout/retry knobs — see _http.py
 """
 
 import argparse
@@ -52,7 +53,12 @@ import os
 import re
 import subprocess
 import sys
-import urllib.request
+
+# The one canonical LLM transport, shared with answerer.py and questioner.py:
+# a bounded retry with backoff around each completion so a transient gateway
+# error no longer crashes a ~30-minute tool loop (#1833). Imported as a module
+# attribute so the existing tests can still monkeypatch post_chat_completion.
+from _http import post_chat_completion  # noqa: F401 — re-exported call target
 
 DEFAULT_MODEL = "azure/gpt-5.6-sol"
 MAX_TOOL_TURNS = 24
@@ -367,19 +373,6 @@ def tools_for(no_exec):
         schema = [t for t in TOOLS_SCHEMA if t["function"]["name"] != "go"]
         return impl, schema
     return dict(TOOLS_IMPL), list(TOOLS_SCHEMA)
-
-
-def post_chat_completion(base_url, api_key, model, messages, tools):
-    url = base_url.rstrip("/") + "/chat/completions"
-    payload = {"model": model, "messages": messages}
-    if tools:
-        payload["tools"] = tools
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, method="POST")
-    req.add_header("Content-Type", "application/json")
-    req.add_header("Authorization", "Bearer " + api_key)
-    with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read().decode("utf-8"))
 
 
 def run_tool(impl, worktree, name, arguments):

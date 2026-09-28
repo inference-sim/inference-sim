@@ -13,6 +13,7 @@ Env:
   OPENAI_BASE_URL       LiteLLM proxy base URL (required)
   OPENAI_API_KEY        proxy key; falls back to LITELLM_KEY
   QA_QUESTIONER_MODEL   default gcp/gemini-3.6-flash
+  QA_HTTP_*             transport timeout/retry knobs — see _http.py
 
 stdout: {"model", "questions":[{id,topic,question}]}
 """
@@ -22,7 +23,12 @@ import json
 import os
 import re
 import sys
-import urllib.request
+
+# The one canonical LLM transport, shared with answerer.py and adjudicator.py:
+# a bounded retry with backoff around each completion so a transient gateway
+# error no longer crashes the review (#1833). Imported as a module attribute so
+# tests can still monkeypatch post_chat_completion.
+from _http import post_chat_completion  # noqa: F401 — re-exported call target
 
 # The eight review topics the generated (G) questions are seeded across.
 TOPICS = [
@@ -120,17 +126,6 @@ def parse_generated(payload):
         return json.loads(payload)
     except json.JSONDecodeError:
         return json.loads(repair_json(payload))
-
-
-def post_chat_completion(base_url, api_key, model, messages):
-    """One POST to the OpenAI-compatible /chat/completions endpoint."""
-    url = base_url.rstrip("/") + "/chat/completions"
-    data = json.dumps({"model": model, "messages": messages}).encode("utf-8")
-    req = urllib.request.Request(url, data=data, method="POST")
-    req.add_header("Content-Type", "application/json")
-    req.add_header("Authorization", "Bearer " + api_key)
-    with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read().decode("utf-8"))
 
 
 def read_arg_or_file(value, path):
