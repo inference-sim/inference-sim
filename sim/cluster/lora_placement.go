@@ -26,7 +26,10 @@ import (
 //  1. index range — every key must lie in [0, NumInstances).
 //  2. id validity — every adapter id must be non-empty and registered.
 //  3. intra-index uniqueness — no id may repeat within one instance's list.
-//  4. capacity — an instance's assigned count must not exceed AdapterCapacity.
+//  4. capacity — an instance's assigned count must not exceed its capacity: its
+//     LoRAInstanceCapacity entry when set, else AdapterCapacity.
+//  5. rank cap — with LoRAInstanceMaxRank set, no assigned adapter's rank may exceed
+//     its instance's entry.
 //
 // An empty or absent placement map is always a no-op (returns nil), independent
 // of subsystem state — the zero value never surfaces an error (R20).
@@ -59,13 +62,15 @@ func validatePlacementMap(label string, placement map[int][]string,
 	}
 	sort.Ints(indices)
 
-	capacity := *dc.AdapterCapacity // non-nil: registry built only when set
 	for _, idx := range indices {
 		ids := placement[idx]
 		if idx < 0 || idx >= dc.NumInstances {
 			return fmt.Errorf("%s: instance index %d out of range [0, %d)",
 				label, idx, dc.NumInstances)
 		}
+		// Per-instance when LoRAInstanceCapacity is set, else the cluster-wide value
+		// (non-nil: the registry is built only when AdapterCapacity is set).
+		capacity := dc.instanceCapacity(idx)
 		seen := make(map[string]struct{}, len(ids))
 		for _, id := range ids {
 			if id == "" {
@@ -78,6 +83,15 @@ func validatePlacementMap(label string, placement map[int][]string,
 				return fmt.Errorf("%s: instance %d lists duplicate adapter %q", label, idx, id)
 			}
 			seen[id] = struct{}{}
+			// vLLM refuses to load an adapter above the instance's max_lora_rank, so a
+			// placement asking for one describes a deployment that cannot exist.
+			if len(dc.LoRAInstanceMaxRank) > 0 {
+				rank, _ := registry.RankOf(id) // registered: checked above
+				if limit := dc.LoRAInstanceMaxRank[idx]; rank > limit {
+					return fmt.Errorf("%s: instance %d assigned adapter %q of rank %d, above its max_lora_rank %d",
+						label, idx, id, rank, limit)
+				}
+			}
 		}
 		if len(ids) > capacity {
 			return fmt.Errorf("%s: instance %d assigned %d adapters, exceeds capacity %d",

@@ -247,11 +247,9 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	// invalid placement before any instance is constructed. Fails via panic (library
 	// layer, Principle V) mirroring ValidatePoolTopology above. The registry is not
 	// retained — instances build their own; this call only checks the placement map.
-	if placementRegistry, err := sim.BuildAdapterRegistry(config.ToSimConfig()); err != nil {
-		panic(fmt.Sprintf("ClusterSimulator: %v", err))
-	} else if err := ValidateLoRAPlacement(config, placementRegistry); err != nil {
-		panic(fmt.Sprintf("ClusterSimulator: %v", err))
-	} else if err := ValidateLoRAPlacementSchedule(config, placementRegistry); err != nil {
+	// The per-instance LoRA configuration is checked first, inside ValidateLoRADeployment,
+	// so the placement is judged against the per-instance caps it will run under.
+	if err := ValidateLoRADeployment(config); err != nil {
 		panic(fmt.Sprintf("ClusterSimulator: %v", err))
 	}
 

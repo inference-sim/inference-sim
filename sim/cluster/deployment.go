@@ -169,6 +169,17 @@ type DeploymentConfig struct {
 	// semantics: instance config, validated then read-only (R8).
 	LoRAAdapterPlacement map[int][]string `yaml:"lora_adapter_placement,omitempty"`
 
+	// LoRAInstanceMaxRank and LoRAInstanceCapacity configure each instance's LoRA slots
+	// as vLLM configures a deployment: max_lora_rank and max_loras, one value per
+	// instance in construction order (index i is instance_i). An instance reserves
+	// capacity × footprint_bytes_per_rank × max_rank of HBM before its KV cache is sized,
+	// so each instance's KV blocks are recomputed from its own reservation. Set together
+	// or not at all; absent => every instance uses the cluster-wide AdapterCapacity and
+	// the largest declared rank, byte-identical to before (INV-6). Validated by
+	// ValidateLoRAInstanceConfig; supported only without node pools and PD pools.
+	LoRAInstanceMaxRank  []int `yaml:"lora_instance_max_rank,omitempty"`
+	LoRAInstanceCapacity []int `yaml:"lora_instance_capacity,omitempty"`
+
 	// LoRAPeriodicIntervalUs declares the simulation-time interval (microseconds)
 	// between periodic LoRA creation ticks (Spec 3; the scaffold was B-7, #1495, D5).
 	// 0 = off/unset (the default).
