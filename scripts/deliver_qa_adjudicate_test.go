@@ -9,14 +9,18 @@ package scripts_test
 // the workflow half was therefore applied by a workflows-scoped push rather than by the delivery
 // agent; the tests below assert the contract over the live workflow.
 //
-// #1834 adds guards for that same step at the bottom of this file. Its workflow half is still
-// PENDING, in scripts/deliver-verify-adjudicate-rc.patch, for the same permission reason — so
-// those guards read the step from whichever of the two currently carries it. #1834's primary fix
-// is deliberately NOT in that patch: it is live in scripts/qa-review/adjudicator.py, so the
-// re-verify works before any human applies anything.
+// #1834 adds guards for that same step at the bottom of this file, plus a behavioral test that
+// EXECUTES the step under `bash -e`. Its workflow half — the canonical QA_REPORT_AUTHOR and the
+// `-e`-safe exit-code capture — was applied by a workflows-scoped push in #1837 (the delivering
+// token cannot push .github/workflows/*, the same permission reason as #1716/#1715). The guards
+// still read the step from whichever of the two carries it, so they keep working if that half is
+// ever regenerated as a patch. #1834's primary fix is live in scripts/qa-review/adjudicator.py, so
+// the re-verify worked before this half was applied.
 
 import (
+	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -573,5 +577,117 @@ func TestAdjudicateRCWiringStatusMatchesReality(t *testing.T) {
 		t.Errorf("#1834's workflow half is pending in %s but %s does not say so. A reader hitting the "+
 			"generic \"the verify phase failed or timed out\" has no way to learn that the step's own "+
 			"reason is being swallowed by `bash -e`", adjudicateRCPatch, docPath)
+	}
+}
+
+// adjudicationRunBody returns the `run:` shell body of the adjudication step (parsed out of the
+// YAML so it excludes the `if:`/`env:` lines and `${{ }}` expressions, which are not shell), and
+// whether that body carries #1834's `-e`-safe capture. Only the body is executable.
+func adjudicationRunBody(t *testing.T) (body string, wired bool) {
+	t.Helper()
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Name string `yaml:"name"`
+				Run  string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal([]byte(readFileOrFail(t, verifyWorkflowPath())), &wf); err != nil {
+		t.Fatalf("parsing deliver-verify.yml: %v", err)
+	}
+	for _, job := range wf.Jobs {
+		for _, s := range job.Steps {
+			if s.Name == qaAdjudicateStep {
+				return s.Run, strings.Contains(s.Run, errorExitSafeCapture)
+			}
+		}
+	}
+	t.Fatalf("no %q step with a run: body found in deliver-verify.yml", qaAdjudicateStep)
+	return "", false
+}
+
+// TestQAAdjudicationStepReachesSkipWhenTheAdjudicatorFails EXECUTES the adjudication step's run body
+// under `bash -e` with a stub adjudicator that exits nonzero, and asserts the step reaches its
+// graceful `skip` — a ::warning:: naming the exit code, the adjudicator's stderr replayed, and NO
+// verdict marker posted — rather than aborting at the invocation.
+//
+// This is the behavioral counterpart to TestQAAdjudicationStepSurfacesTheAdjudicatorsExitCode,
+// which only inspects the step's TEXT. #1834's defect was behavioral: under the default
+// `bash -e {0}` (which `set -uo pipefail` does not clear) a bare `rc=$?` on the line AFTER the
+// invocation is never reached, so the step died at the invocation and the `skip` never ran. A text
+// guard can be satisfied by a step that still misbehaves at runtime; this one runs the step, so
+// reverting to the bare-`rc=$?` shape makes it fail — the step exits nonzero and prints no warning.
+// python3/git/gh are replaced by PATH stubs so nothing real is invoked.
+func TestQAAdjudicationStepReachesSkipWhenTheAdjudicatorFails(t *testing.T) {
+	body, wired := adjudicationRunBody(t)
+	if !wired {
+		// The workflow half is still pending in the patch; the text guards and the patch-apply guard
+		// cover that state, and this executable test applies once the half is live.
+		t.Skipf("the %q step is not yet #1834-wired (no %q); pending-state guards cover it",
+			qaAdjudicateStep, errorExitSafeCapture)
+	}
+
+	dir := t.TempDir()
+	binDir := filepath.Join(dir, "bin")
+	runnerTemp := filepath.Join(dir, "runner")
+	for _, d := range []string{binDir, runnerTemp} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// gh must NOT run: the failure-path `skip` precedes the `gh pr comment`. The stub records a call
+	// so the test can prove it never happened.
+	ghRan := filepath.Join(runnerTemp, "gh-was-called")
+	stubs := map[string]string{
+		"git":     "#!/usr/bin/env bash\nexit 0\n",                                               // worktree add: no-op success
+		"python3": "#!/usr/bin/env bash\necho 'stub-adjudicator: no prior report' >&2\nexit 3\n", // the adjudicator's exit 3
+		"gh":      "#!/usr/bin/env bash\ntouch \"" + ghRan + "\"\nexit 0\n",
+	}
+	for name, script := range stubs {
+		if err := os.WriteFile(filepath.Join(binDir, name), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Match GitHub's `bash -e {0}` for a `run:` step; the body's own `set -uo pipefail` adds -u, so
+	// every referenced variable must be set.
+	cmd := exec.Command("bash", "-e", "-c", body)
+	cmd.Env = append(os.Environ(),
+		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"RUNNER_TEMP="+runnerTemp,
+		"WORKTREE="+filepath.Join(runnerTemp, "qa-head"),
+		"HEAD_SHA=0000000000000000000000000000000000000000",
+		"PR=0",
+		"REPO=example/repo",
+		"ROUND=1",
+	)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	runErr := cmd.Run()
+	got := out.String()
+
+	// 1. Graceful degradation: `skip`'s `exit 0`, not the adjudicator's 3 aborting the step.
+	if runErr != nil {
+		t.Fatalf("the %q step exited nonzero (%v) when the adjudicator failed, instead of reaching its "+
+			"`skip`. A bare `rc=$?` after the invocation reproduces this — the #1834 defect.\n\nOutput:\n%s",
+			qaAdjudicateStep, runErr, got)
+	}
+	// 2. The skip fired and named the exit code, so the gate reads MISSING with a stated reason.
+	if !strings.Contains(got, "the qa-review adjudicator exited 3") {
+		t.Errorf("the %q step did not emit its exit-3 skip warning; the intended MISSING reason was "+
+			"swallowed.\n\nOutput:\n%s", qaAdjudicateStep, got)
+	}
+	// 3. The adjudicator's captured stderr was replayed into the log (`cat ...err >&2`), or the
+	//    failure would be undiagnosable.
+	if !strings.Contains(got, "stub-adjudicator: no prior report") {
+		t.Errorf("the %q step did not replay the adjudicator's stderr into the log.\n\nOutput:\n%s",
+			qaAdjudicateStep, got)
+	}
+	// 4. No verdict marker posted: a skipped adjudication must not reach `gh pr comment`.
+	if _, statErr := os.Stat(ghRan); statErr == nil {
+		t.Errorf("the %q step ran `gh pr comment` despite the adjudicator failing; a skipped "+
+			"adjudication must leave no QA-VERDICT marker for the gate to read", qaAdjudicateStep)
 	}
 }
