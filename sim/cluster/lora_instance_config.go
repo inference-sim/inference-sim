@@ -112,3 +112,68 @@ func (d DeploymentConfig) instanceCapacity(idx int) int {
 	}
 	return *d.AdapterCapacity
 }
+
+// applyLoRAInstanceConfig specializes instance idx's SimConfig to its own slot
+// configuration and recomputes its KV blocks from its own reservation. No-op when the
+// per-instance lists are absent (INV-6). A fresh LoRAConfig pointer pair is installed, so
+// no instance shares a mutable field with another or with the DeploymentConfig (R8).
+//
+// Any failure panics: falling back to the inherited global capacity, as
+// applyPerInstanceKVCapacity does for node pools, would run the instance with a
+// reservation it never subtracted — the silent misconfiguration this feature exists
+// to rule out.
+//
+// It returns the instance's echo (PreemptionCount still zero; LoRAInstanceEchoes fills it
+// after the run), or nil when inert.
+func applyLoRAInstanceConfig(simCfg *sim.SimConfig, d DeploymentConfig, idx int, id InstanceID) *sim.LoRAInstanceEcho {
+	if len(d.LoRAInstanceMaxRank) == 0 {
+		return nil
+	}
+	rank, capacity := d.LoRAInstanceMaxRank[idx], d.LoRAInstanceCapacity[idx]
+	simCfg.LoRAConfig.InstanceMaxRank = &rank
+	simCfg.LoRAConfig.AdapterCapacity = &capacity
+
+	ac, err := sim.BuildAdapterCost(*simCfg)
+	if err != nil || ac == nil {
+		panic(fmt.Sprintf("ClusterSimulator: %s: per-instance LoRA cost model: err=%v, active=%v", id, err, ac != nil))
+	}
+	kv := d.KVAutoCalc
+	kv.AdapterReservedBytes = int64(ac.AdapterReservedBytes()) // NewCostModel caps it at 1e18
+	gpuMemoryGiB := simCfg.HWConfig.MemoryGiB
+	if gpuMemoryGiB <= 0 {
+		panic(fmt.Sprintf("ClusterSimulator: %s: per-instance LoRA configuration needs the GPU's "+
+			"memory to size KV, but hardware MemoryGiB is %v", id, gpuMemoryGiB))
+	}
+	blocks, err := perInstanceKVBlocks(simCfg, gpuMemoryGiB, kv)
+	if err != nil {
+		panic(fmt.Sprintf("ClusterSimulator: %s: per-instance KV sizing with max_lora_rank=%d, "+
+			"capacity=%d (reservation %d bytes) failed: %v", id, rank, capacity, kv.AdapterReservedBytes, err))
+	}
+	setInstanceKVBlocks(simCfg, blocks, gpuMemoryGiB, simCfg.GPU)
+	return &sim.LoRAInstanceEcho{
+		InstanceID:           string(id),
+		MaxLoRARank:          rank,
+		AdapterCapacity:      capacity,
+		AdapterReservedBytes: kv.AdapterReservedBytes,
+		TotalKVBlocks:        simCfg.TotalKVBlocks,
+	}
+}
+
+// LoRAInstanceEchoes returns each instance's per-instance LoRA configuration with its
+// preemption count, in construction order, or nil when the per-instance lists were not
+// set. Panics before Run(), like PerInstanceMetrics, since the counts are post-run.
+func (c *ClusterSimulator) LoRAInstanceEchoes() []sim.LoRAInstanceEcho {
+	if !c.hasRun {
+		panic("ClusterSimulator.LoRAInstanceEchoes() called before Run()")
+	}
+	var out []sim.LoRAInstanceEcho
+	for _, inst := range c.instances {
+		if inst.loraEcho == nil {
+			continue
+		}
+		e := *inst.loraEcho
+		e.PreemptionCount = inst.Metrics().PreemptionCount
+		out = append(out, e)
+	}
+	return out
+}

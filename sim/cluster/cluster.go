@@ -478,7 +478,11 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			// DeploymentConfig's embedded SimConfig) is the authoritative source (backward-compat).
 			// simCfg.GPU is already set — resolveConfigForRole returns config.SimConfig as-is
 			// for the default role, preserving ModelHardwareConfig.GPU from the CLI flag.
+			// Per-instance max_lora_rank / capacity: specialize this instance's slots and
+			// resize its KV from its own reservation. No-op when unset (INV-6).
+			loraEcho := applyLoRAInstanceConfig(&simCfg, config, idx, id)
 			inst := NewInstanceSimulator(id, simCfg)
+			inst.loraEcho = loraEcho
 			inst.Model = config.Model
 			// B-5 (#1493): seed cluster-assigned resident adapters (uncharged),
 			// keyed by the live construction-loop counter idx (DD-B5-g). No-op

@@ -1,10 +1,12 @@
 package cluster
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/latency"
 )
 
 // Config-time rank coupling: per-instance max_lora_rank and capacity. LoRA construction
@@ -143,4 +145,151 @@ func TestNewClusterSimulator_PanicsOnInvalidInstanceConfig(t *testing.T) {
 	requirePanicContaining(t, "above its max_lora_rank 8", func() {
 		NewClusterSimulator(dc, NewSliceRequestSource(nil), nil)
 	})
+}
+
+// expectedKVBlocks is the independent computation: CalculateKVBlocks on the fixture's
+// model and GPU, net of a reservation of capacity × footprint × rank.
+func expectedKVBlocks(t *testing.T, capacity, rank int) (reserved int64, blocks int64) {
+	t.Helper()
+	reserved = int64(float64(capacity) * instCfgFootprint * float64(rank))
+	blocks, err := latency.CalculateKVBlocks(kvAutoCalcTestModel(), sim.HardwareCalib{MemoryGiB: instCfgGPUMemGiB},
+		1, 1, instCfgBlockSize, instCfgMemUtil, kvAutoCalcTestParams(),
+		latency.WithAdapterReservedBytes(reserved))
+	if err != nil {
+		t.Fatalf("setup: CalculateKVBlocks: %v", err)
+	}
+	return reserved, blocks
+}
+
+// Each instance's reservation is its own capacity × footprint × max rank, and its KV
+// blocks are CalculateKVBlocks net of exactly that reservation — checked against an
+// independent computation, on the echo and on the constructed instance.
+func TestLoRAInstanceConfig_ReservationAndKVPerInstance(t *testing.T) {
+	ranks, caps := []int{16, 64}, []int{2, 1}
+	cs := NewClusterSimulator(instanceConfigFixture(t, ranks, caps, instCfgPlacement), NewSliceRequestSource(nil), nil)
+	mustRun(t, cs)
+	echoes := cs.LoRAInstanceEchoes()
+	if len(echoes) != 2 {
+		t.Fatalf("got %d echoes, want 2", len(echoes))
+	}
+	for i, e := range echoes {
+		wantReserved, wantBlocks := expectedKVBlocks(t, caps[i], ranks[i])
+		if e.MaxLoRARank != ranks[i] || e.AdapterCapacity != caps[i] {
+			t.Errorf("instance %d echo = (rank %d, capacity %d), want (%d, %d)", i, e.MaxLoRARank, e.AdapterCapacity, ranks[i], caps[i])
+		}
+		if e.AdapterReservedBytes != wantReserved {
+			t.Errorf("instance %d reservation = %d, want %d", i, e.AdapterReservedBytes, wantReserved)
+		}
+		if e.TotalKVBlocks != wantBlocks {
+			t.Errorf("instance %d echoed KV blocks = %d, want %d", i, e.TotalKVBlocks, wantBlocks)
+		}
+		if got := cs.Instances()[i].TotalKVBlocks(); got != wantBlocks {
+			t.Errorf("instance %d constructed with %d KV blocks, want %d", i, got, wantBlocks)
+		}
+	}
+	if echoes[0].TotalKVBlocks == echoes[1].TotalKVBlocks {
+		t.Errorf("premise: the two reservations should give different KV budgets, both got %d", echoes[0].TotalKVBlocks)
+	}
+}
+
+// With every instance's list entry equal to the cluster-wide value (the catalog maximum
+// rank and the global capacity), a run is indistinguishable from one without the lists,
+// provided the global KV count carries the same reservation — which is what the CLI's
+// global auto-calc computes. Compared on the full aggregated output, under adapter traffic.
+func TestLoRAInstanceConfig_UniformListsMatchClusterWide(t *testing.T) {
+	adapters := []string{"a8", "b16", "c64"}
+	placement := map[int][]string{0: {"a8", "b16"}, 1: {"c64", "a8"}}
+	run := func(dc DeploymentConfig) string {
+		cs := NewClusterSimulator(dc, NewSliceRequestSource(zipfianAdapterRequests(200, adapters)), nil)
+		mustRun(t, cs)
+		out, err := json.Marshal(cs.AggregatedMetrics().BuildOutput("cluster"))
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		return string(out)
+	}
+	_, globalBlocks := expectedKVBlocks(t, 3, 64)
+	clusterWide := instanceConfigFixture(t, nil, nil, placement)
+	clusterWide.KVCacheConfig = sim.NewKVCacheConfig(globalBlocks, instCfgBlockSize, 0, 0, 0, 0)
+	uniform := instanceConfigFixture(t, []int{64, 64}, []int{3, 3}, placement)
+
+	want, got := run(clusterWide), run(uniform)
+	if !strings.Contains(want, `"a8"`) {
+		t.Fatalf("premise: no adapter traffic reached the output: %s", want)
+	}
+	if got != want {
+		t.Errorf("uniform per-instance lists changed the run:\n got %s\nwant %s", got, want)
+	}
+}
+
+// A run-time load of an adapter above the instance's cap panics. Here c64 is placed
+// nowhere, so route-to-holder falls back to unconstrained routing and an instance capped
+// at rank 8 or 16 is asked to cold-load it — a load vLLM would refuse.
+func TestLoRAInstanceConfig_RunTimeLoadAboveCapPanics(t *testing.T) {
+	dc := instanceConfigFixture(t, []int{8, 16}, []int{2, 2}, map[int][]string{0: {"a8"}, 1: {"b16"}})
+	reqs := newTestRequests(5)
+	for _, r := range reqs {
+		r.Adapter = "c64"
+	}
+	cs := NewClusterSimulator(dc, NewSliceRequestSource(reqs), nil)
+	requirePanicContaining(t, `adapter "c64" has rank 64, above this instance's max_lora_rank`, func() {
+		_ = cs.Run()
+	})
+}
+
+// The seed site is guarded too, independently of the cluster's validation: an instance
+// built directly with a cap below a seeded adapter's rank panics at ApplyInitialCreation.
+func TestLoRAInstanceConfig_SeedAboveCapPanics(t *testing.T) {
+	dc := instanceConfigFixture(t, nil, nil, nil)
+	simCfg := dc.SimConfig
+	rank := 8
+	simCfg.LoRAConfig.InstanceMaxRank = &rank
+	inst := NewInstanceSimulator("instance_0", simCfg)
+	requirePanicContaining(t, `adapter "c64" has rank 64, above this instance's max_lora_rank 8`, func() {
+		inst.ApplyInitialCreation([]string{"c64"})
+	})
+}
+
+// A missing GPU memory figure is fatal on this path rather than a fallback to the
+// inherited global KV count, which would silently drop the per-instance reservation.
+func TestLoRAInstanceConfig_NoGPUMemoryPanics(t *testing.T) {
+	dc := instanceConfigFixture(t, []int{16, 64}, []int{2, 1}, instCfgPlacement)
+	dc.HWConfig.MemoryGiB = 0
+	requirePanicContaining(t, "hardware MemoryGiB is 0", func() {
+		NewClusterSimulator(dc, NewSliceRequestSource(nil), nil)
+	})
+}
+
+// The echo is absent without the lists, refuses to be read before Run, and carries each
+// instance's own post-run preemption count. The second run is KV-tight on purpose — 6.5
+// GiB leaves about 2200 and 1200 blocks, and 300 requests arrive at once — so the counts
+// are non-zero and differ between instances, and a missing or cluster-total count fails.
+func TestLoRAInstanceEchoes(t *testing.T) {
+	cs := NewClusterSimulator(instanceConfigFixture(t, nil, nil, instCfgPlacement), NewSliceRequestSource(nil), nil)
+	mustRun(t, cs)
+	if e := cs.LoRAInstanceEchoes(); e != nil {
+		t.Errorf("echo without per-instance lists = %v, want nil", e)
+	}
+
+	dc := instanceConfigFixture(t, []int{16, 64}, []int{2, 1}, instCfgPlacement)
+	dc.HWConfig.MemoryGiB = 6.5
+	reqs := zipfianAdapterRequests(300, []string{"a8", "b16", "c64"})
+	for _, r := range reqs {
+		r.ArrivalTime = 0
+	}
+	cs = NewClusterSimulator(dc, NewSliceRequestSource(reqs), nil)
+	requirePanicContaining(t, "called before Run()", func() { cs.LoRAInstanceEchoes() })
+	mustRun(t, cs)
+	a, b := cs.Instances()[0].Metrics().PreemptionCount, cs.Instances()[1].Metrics().PreemptionCount
+	if a+b == 0 || a == b {
+		t.Fatalf("premise: want non-zero, unequal per-instance preemptions, got %d and %d", a, b)
+	}
+	for i, e := range cs.LoRAInstanceEchoes() {
+		if want := cs.Instances()[i].Metrics().PreemptionCount; e.PreemptionCount != want {
+			t.Errorf("instance %d echoed %d preemptions, instance recorded %d", i, e.PreemptionCount, want)
+		}
+		if e.InstanceID != string(cs.Instances()[i].ID()) {
+			t.Errorf("echo %d names %q, want %q", i, e.InstanceID, cs.Instances()[i].ID())
+		}
+	}
 }
