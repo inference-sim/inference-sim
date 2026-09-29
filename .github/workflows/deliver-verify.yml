@@ -1276,7 +1276,14 @@ jobs:
           # this PUBLIC repository from supplying its own report-shaped comment with an empty
           # Items-to-fix section and clearing every outstanding finding. A mismatch is fail-closed:
           # the adjudicator finds no report, emits no verdict, and the gate stops for a human.
-          QA_REPORT_AUTHOR: github-actions
+          #
+          # Spelled CANONICALLY, with the `[bot]` suffix, because that is what the comment source
+          # reports: scripts/deliver-trusted-comments.sh reads REST (#1806), whose App logins carry
+          # the suffix. The short form here is what broke every re-verify in #1834 — fail-closed
+          # made it a silent needs-human on every multi-round delivery rather than a visible error.
+          # adjudicator.py now compares the two spellings as one actor (same_login), so this value
+          # is the canonical one rather than the only one that works.
+          QA_REPORT_AUTHOR: github-actions[bot]
           # The commit `Validate the target PR` recorded and CI verified, for the reason the
           # round-0 branch uses it: a bare FETCH_HEAD would follow whatever fetched last.
           HEAD_SHA: ${{ steps.target.outputs.sha }}
@@ -1294,12 +1301,21 @@ jobs:
 
           # stderr is captured rather than piped: it carries the verdict line AND the tool-loop
           # diagnostics, both of which belong in the job log too.
+          #
+          # `|| rc=$?` and not a bare `rc=$?` on the next line (#1834): this step runs under the
+          # default `bash -e {0}`, and `set -uo pipefail` above does NOT clear `-e`. A nonzero
+          # python3 therefore aborted the step AT THE INVOCATION — before the capture, before the
+          # `cat`, and before the `skip` — so the intended MISSING reason was never posted and the
+          # loop reported only the generic "the verify phase failed or timed out". That is how a
+          # deterministic exit 3 went undiagnosed. The sibling author-gate steps use this same
+          # inline form for the same reason.
+          rc=0
           python3 scripts/qa-review/adjudicator.py \
             --worktree "$WORKTREE" --no-exec \
             --pr "$PR" --repo "$REPO" \
             --out "$RUNNER_TEMP/qa-report.md" \
-            2> "$RUNNER_TEMP/qa-adjudication.err"
-          rc=$?
+            2> "$RUNNER_TEMP/qa-adjudication.err" \
+            || rc=$?
           cat "$RUNNER_TEMP/qa-adjudication.err" >&2 || true
           [[ "$rc" -eq 0 ]] \
             || skip "the qa-review adjudicator exited $rc (no prior report to adjudicate, or a failure)"
