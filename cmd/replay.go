@@ -418,6 +418,14 @@ Example:
 		// warranted for them (DD-B7-7). The autoscaler/node-pool fatals below remain
 		// the fail-fast mechanism for the genuinely unsupported cases.
 		parsedScorerConfigs, bundle := resolvePolicies(cmd)
+		// Per-instance LoRA slots (config-time rank coupling) are wired only into blis run:
+		// replay has no per-instance KV auto-calc, so it could not subtract each instance's
+		// reservation. INV-13: refuse rather than replay a different cluster.
+		for _, f := range []string{"lora-instance-max-rank", "lora-instance-capacity"} {
+			if cmd.Flags().Changed(f) {
+				logrus.Fatalf("--%s is not supported in blis replay; use blis run instead", f)
+			}
+		}
 		if cmd.Flags().Changed("model-autoscaler-interval-us") {
 			logrus.Fatalf("--model-autoscaler-interval-us is not supported in blis replay; remove this flag or use blis run instead")
 		}

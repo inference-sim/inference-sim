@@ -135,6 +135,8 @@ var (
 	loraAdapterPlacement      string  // --lora-adapter-placement (idx=id[,id...];... construction-index→adapter ids, B-6)
 	loraPlacementSchedule     string  // --lora-placement-schedule (timed placement file for the scheduled creation policy, Spec 4 Slice B)
 	loraBundle                string  // --lora-bundle (named strategy bundle => {routing,eviction,creation} triple; empty => none, B-7)
+	loraInstanceMaxRank       string  // --lora-instance-max-rank (comma list, one vLLM max_lora_rank per instance in construction order)
+	loraInstanceCapacity      string  // --lora-instance-capacity (comma list, one max_loras per instance in construction order)
 	loraPeriodicInterval      int64   // --lora-periodic-interval-us (periodic creation tick interval, µs; 0 => off; inert for a gate-only creation policy, INV-PS3')
 
 	// Speculative decoding / MTP (#1528). All default-off; num-speculative-tokens=0
@@ -1742,6 +1744,8 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&loraAdapterPlacement, "lora-adapter-placement", "", "Static per-instance adapter placement for the pre-placement creation policy, as \"idx=id[,id...];idx=id...\" (construction-index => adapter ids), e.g. \"0=A,B;1=C\". Adapters are seeded resident at t=0. Empty => no placement.")
 	cmd.Flags().StringVar(&loraPlacementSchedule, "lora-placement-schedule", "", "Path to a timed placement schedule for the scheduled creation policy, one entry per line as \"<t_us> <idx=id[,id...];idx=id...>\" (blank lines and #-comments ignored). Timestamps must strictly increase. Required by --creation-policy=scheduled and rejected under any other policy. Empty => none.")
 	cmd.Flags().StringVar(&loraBundle, "lora-bundle", "", fmt.Sprintf("Named LoRA strategy bundle expanding to a {routing, eviction, creation} policy triple. Valid: %s. Per-knob flags (--routing-policy/--eviction-policy/--creation-policy) override their knob; empty => no bundle (byte-identical to no LoRA).", strings.Join(sim.ValidLoRABundleNames(), ", ")))
+	cmd.Flags().StringVar(&loraInstanceMaxRank, "lora-instance-max-rank", "", fmt.Sprintf("Per-instance vLLM max_lora_rank, one comma-separated value per instance in construction order, e.g. \"8,8,32\". Each instance's slots are sized at its own cap, and an adapter above it can never be resident there. Each value must be one of %v. Requires --lora-instance-capacity and auto-calculated KV capacity; run only (replay rejects it). Empty => every instance uses the largest declared rank.", cluster.VLLMAllowedMaxLoRARanks))
+	cmd.Flags().StringVar(&loraInstanceCapacity, "lora-instance-capacity", "", "Per-instance vLLM max_loras (resident adapter slots), one comma-separated value per instance in construction order, e.g. \"4,5,3\". Overrides --lora-adapter-capacity per instance; each instance's KV blocks are recomputed net of capacity × footprint_bytes_per_rank × its max rank. Requires --lora-instance-max-rank; run only. Empty => --lora-adapter-capacity everywhere.")
 	cmd.Flags().Int64Var(&loraPeriodicInterval, "lora-periodic-interval-us", 0, "Simulation-time interval (µs) between periodic LoRA creation ticks. 0 = off. Takes effect only when --creation-policy names a tick-capable policy (keep-warm); with a gate-only policy (on-demand, pre-placement) any value is inert and byte-identical to 0. Must be >= 0.")
 
 	// Speculative decoding / MTP (#1528). Model-level; shared by run and replay so a
@@ -1979,6 +1983,46 @@ func resolveLoRAAdapterPlacement() map[int][]string {
 		logrus.Fatalf("Invalid --lora-adapter-placement: %v", err)
 	}
 	return placement
+}
+
+// parseLoRAInstanceList parses a per-instance LoRA list flag ("8,8,32") into ints. An
+// empty spec yields nil (flag unset). It validates shape only: every element must be a
+// base-10 integer, and empty elements ("8,,32" or a trailing comma) are rejected rather
+// than skipped, since a skipped element would shift every later instance's value. Range,
+// length and cross-field checks are cluster.ValidateLoRAInstanceConfig's.
+func parseLoRAInstanceList(spec string) ([]int, error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return nil, nil
+	}
+	parts := strings.Split(spec, ",")
+	out := make([]int, 0, len(parts))
+	for i, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			return nil, fmt.Errorf("element %d is empty", i)
+		}
+		v, err := strconv.Atoi(p)
+		if err != nil {
+			return nil, fmt.Errorf("element %d %q is not an integer", i, p)
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+// resolveLoRAInstanceLists parses --lora-instance-max-rank and --lora-instance-capacity,
+// aborting at the CLI boundary (Principle V) on a malformed list. run only: replay
+// rejects both flags before reaching here.
+func resolveLoRAInstanceLists() (maxRanks, capacities []int) {
+	var err error
+	if maxRanks, err = parseLoRAInstanceList(loraInstanceMaxRank); err != nil {
+		logrus.Fatalf("Invalid --lora-instance-max-rank: %v", err)
+	}
+	if capacities, err = parseLoRAInstanceList(loraInstanceCapacity); err != nil {
+		logrus.Fatalf("Invalid --lora-instance-capacity: %v", err)
+	}
+	return maxRanks, capacities
 }
 
 // resolveLoRAPeriodicInterval validates and returns the periodic creation tick
@@ -2947,6 +2991,7 @@ var runCmd = &cobra.Command{
 		// Unified cluster path (used for all values of numInstances).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/replay.go (replayCmd
 		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
+		loraInstanceMaxRanks, loraInstanceCapacities := resolveLoRAInstanceLists()
 		config := cluster.DeploymentConfig{
 			SimConfig: sim.SimConfig{
 				Horizon: simulationHorizon,
@@ -2970,6 +3015,8 @@ var runCmd = &cobra.Command{
 			},
 			NumInstances:                    numInstances,
 			LoRAAdapterPlacement:            resolveLoRAAdapterPlacement(),
+			LoRAInstanceMaxRank:             loraInstanceMaxRanks,
+			LoRAInstanceCapacity:            loraInstanceCapacities,
 			LoRAPeriodicIntervalUs:          resolveLoRAPeriodicInterval(),
 			AdmissionPolicy:                 admissionPolicy,
 			AdmissionLatency:                admissionLatency,
@@ -3060,6 +3107,14 @@ var runCmd = &cobra.Command{
 			clusterRequestSource = lazyRequestSource
 		} else {
 			clusterRequestSource = cluster.NewSliceRequestSource(preGeneratedRequests)
+		}
+		// Per-instance LoRA configuration: validate here so a bad list, or a placement that
+		// breaks a per-instance cap, exits with a message instead of NewClusterSimulator's
+		// panic. Gated on the flags so every other run keeps its existing path (INV-6).
+		if len(loraInstanceMaxRanks) > 0 || len(loraInstanceCapacities) > 0 {
+			if err := cluster.ValidateLoRADeployment(config); err != nil {
+				logrus.Fatalf("Invalid per-instance LoRA configuration: %v", err)
+			}
 		}
 		cs := cluster.NewClusterSimulator(config, clusterRequestSource, onRequestDone)
 
@@ -3204,6 +3259,8 @@ var runCmd = &cobra.Command{
 		// Attach run-level LoRA-seam provenance (B-7, FR-016; nil ⇒ key omitted for
 		// an all-baseline run, INV-6). Value parity with replay (INV-13).
 		clusterOutput.PolicyProvenance = computeLoRAProvenance(loraCfg)
+		// Per-instance LoRA configuration as it ran (nil ⇒ key omitted, INV-6). run only.
+		clusterOutput.LoRAInstances = cs.LoRAInstanceEchoes()
 
 		// Catalog provenance (#1732): file-only, so it is passed as an EmitOutput option
 		// rather than mutated onto clusterOutput above — stdout must stay byte-identical

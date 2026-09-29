@@ -1,0 +1,14 @@
+# Config-time rank coupling fixture (per-instance max_lora_rank / capacity): two
+# adapters whose ranks differ eightfold, so a per-instance cap at each one gives two
+# reservations, 1 × 8 × 2e6 and 1 × 64 × 2e6 bytes, that differ enough to move KV
+# blocks. See cmd/lora_instance_config_test.go.
+lora:
+  adapter_capacity: 2
+  load_base_latency_us: 1000.0
+  load_bandwidth_bytes_us: 2.0e6
+  footprint_bytes_per_rank: 2.0e6
+  adapters:
+    - id: a8
+      rank: 8
+    - id: c64
+      rank: 64
