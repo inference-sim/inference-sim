@@ -162,6 +162,10 @@ func TestLoRAInstanceConfigCLI_ViolationsAreFatal(t *testing.T) {
 			"Invalid --lora-instance-max-rank: element 1 is empty"},
 		{"explicit total-kv-blocks", []string{"--lora-instance-max-rank", "8,64", "--lora-instance-capacity", "1,1", "--total-kv-blocks", "5000"},
 			"requires auto-calculated KV capacity"},
+		// 100 × 512 × 2e6 bytes is 102 GB, beyond an 80 GiB H100: a sizing failure, which
+		// validation now reports instead of the construction-time panic.
+		{"reservation larger than the GPU", []string{"--lora-instance-max-rank", "512,64", "--lora-instance-capacity", "100,1"},
+			"instance 0: per-instance KV sizing with max_lora_rank=512"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -220,5 +224,40 @@ func TestReplayCmd_LoRAInstanceFlagsFatal(t *testing.T) {
 				t.Errorf("output lacks %q:\n%s", want, out)
 			}
 		})
+	}
+}
+
+// When KV cannot hold one full max_position_embeddings sequence, the global auto-calc caps
+// max-model-len from the cluster-wide reservation. Each instance must be re-capped from the
+// uncapped value by its own budget instead: at --gpu-memory-utilization 0.45 the global cap
+// fires (asserted from stderr, the premise), and the rank-8 and rank-64 instances, whose
+// budgets differ, must then report different max_model_len, each its own blocks × 16.
+func TestLoRAInstanceConfigCLI_MaxModelLenPerInstance(t *testing.T) {
+	metrics := filepath.Join(t.TempDir(), "metrics.json")
+	_, stderr, code := instanceConfigRun(t, "--lora-instance-max-rank", "8,64", "--lora-instance-capacity", "1,1",
+		"--gpu-memory-utilization", "0.45", "--metrics-path", metrics)
+	if code != 0 {
+		t.Fatalf("run exited %d; stderr:\n%s", code, stderr)
+	}
+	if !strings.Contains(stderr, "capping to") {
+		t.Fatalf("premise: the global max-model-len cap did not fire; stderr:\n%s", stderr)
+	}
+	body, err := os.ReadFile(metrics)
+	if err != nil {
+		t.Fatalf("read metrics file: %v", err)
+	}
+	var got struct {
+		LoRAInstances []sim.LoRAInstanceEcho `json:"lora_instances"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil || len(got.LoRAInstances) != 2 {
+		t.Fatalf("decode lora_instances: %v (%d entries)", err, len(got.LoRAInstances))
+	}
+	for i, e := range got.LoRAInstances {
+		if want := e.TotalKVBlocks * 16; e.MaxModelLen != want {
+			t.Errorf("instance %d max_model_len = %d, want its own KV-feasible %d (blocks %d × 16)", i, e.MaxModelLen, want, e.TotalKVBlocks)
+		}
+	}
+	if got.LoRAInstances[0].MaxModelLen == got.LoRAInstances[1].MaxModelLen {
+		t.Errorf("both instances run at max_model_len %d, the global cap", got.LoRAInstances[0].MaxModelLen)
 	}
 }

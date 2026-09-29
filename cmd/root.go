@@ -163,6 +163,13 @@ var (
 	// subsystem is inert, keeping KV capacity byte-identical to today (INV-6/PR5).
 	loraReservedBytesForKV int64
 
+	// maxModelLenBeforeKVCap is maxModelLen as resolved (flag or max_position_embeddings)
+	// before resolveLatencyConfig caps it to the global KV count. That cap is computed
+	// from the cluster-wide LoRA reservation, so with --lora-instance-max-rank each
+	// instance is re-capped from this value by its own KV budget instead
+	// (DeploymentConfig.LoRAInstanceMaxModelLen). 0 when the cap block never ran.
+	maxModelLenBeforeKVCap int64
+
 	// Fitness evaluation config (PR9)
 	fitnessWeights string // Fitness weights string "key:val,key:val"
 
@@ -1160,6 +1167,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		}
 
 		// Cap maxModelLen at KV-feasible maximum (matches vLLM's _maybe_limit_model_len).
+		maxModelLenBeforeKVCap = maxModelLen
 		if maxModelLen > 0 && blockSizeTokens > 0 {
 			blocksNeeded := maxModelLen / blockSizeTokens
 			if maxModelLen%blockSizeTokens != 0 {
@@ -3017,6 +3025,7 @@ var runCmd = &cobra.Command{
 			LoRAAdapterPlacement:            resolveLoRAAdapterPlacement(),
 			LoRAInstanceMaxRank:             loraInstanceMaxRanks,
 			LoRAInstanceCapacity:            loraInstanceCapacities,
+			LoRAInstanceMaxModelLen:         maxModelLenBeforeKVCap,
 			LoRAPeriodicIntervalUs:          resolveLoRAPeriodicInterval(),
 			AdmissionPolicy:                 admissionPolicy,
 			AdmissionLatency:                admissionLatency,

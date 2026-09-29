@@ -293,3 +293,77 @@ func TestLoRAInstanceEchoes(t *testing.T) {
 		}
 	}
 }
+
+// The global CLI caps max-model-len once, from the global KV count, which is net of the
+// cluster-wide reservation. Each instance must instead be capped from the UNCAPPED value
+// by its own KV budget, as vLLM's _maybe_limit_model_len does per server. The fixture's
+// MaxModelLen of 1000 stands for a stale global cap; LoRAInstanceMaxModelLen carries the
+// uncapped value, here far above either instance's KV, so each ends at its own blocks × 16.
+func TestLoRAInstanceConfig_MaxModelLenRecappedPerInstance(t *testing.T) {
+	ranks, caps := []int{16, 64}, []int{2, 1}
+	dc := instanceConfigFixture(t, ranks, caps, instCfgPlacement)
+	dc.MaxModelLen = 1000
+	dc.LoRAInstanceMaxModelLen = 1 << 40
+	cs := NewClusterSimulator(dc, NewSliceRequestSource(nil), nil)
+	mustRun(t, cs)
+	echoes := cs.LoRAInstanceEchoes()
+	for i, e := range echoes {
+		_, blocks := expectedKVBlocks(t, caps[i], ranks[i])
+		if want := blocks * instCfgBlockSize; e.MaxModelLen != want {
+			t.Errorf("instance %d max_model_len = %d, want its own KV-feasible %d", i, e.MaxModelLen, want)
+		}
+	}
+	if echoes[0].MaxModelLen == echoes[1].MaxModelLen {
+		t.Errorf("premise: the two KV budgets should give different caps, both %d", echoes[0].MaxModelLen)
+	}
+
+	// Without an uncapped value (0), the configured MaxModelLen is kept when it fits.
+	dc = instanceConfigFixture(t, ranks, caps, instCfgPlacement)
+	dc.MaxModelLen = 1000
+	cs = NewClusterSimulator(dc, NewSliceRequestSource(nil), nil)
+	mustRun(t, cs)
+	for i, e := range cs.LoRAInstanceEchoes() {
+		if e.MaxModelLen != 1000 {
+			t.Errorf("instance %d max_model_len = %d, want the configured 1000", i, e.MaxModelLen)
+		}
+	}
+}
+
+// The rank guard runs where a load STARTS, before a victim is evicted, so a load whose
+// completion would fall past the horizon cannot leave an eviction recorded for a load
+// vLLM would refuse. Here the only request arrives 1000 µs before the horizon and the
+// c64 load takes about 1064 µs, so completion never runs.
+func TestLoRAInstanceConfig_AboveCapLoadNearHorizonPanics(t *testing.T) {
+	dc := instanceConfigFixture(t, []int{8, 16}, []int{2, 2}, map[int][]string{0: {"a8"}, 1: {"b16"}})
+	reqs := newTestRequests(1)
+	reqs[0].Adapter = "c64"
+	dc.Horizon = reqs[0].ArrivalTime + 1000
+	cs := NewClusterSimulator(dc, NewSliceRequestSource(reqs), nil)
+	requirePanicContaining(t, `adapter "c64" has rank 64, above this instance's max_lora_rank`, func() {
+		_ = cs.Run()
+	})
+}
+
+// A prefetch above the cap panics when it is requested, before it can evict anything.
+func TestLoRAInstanceConfig_PrefetchAboveCapPanicsAtStart(t *testing.T) {
+	cs := NewClusterSimulator(instanceConfigFixture(t, []int{8, 16}, []int{2, 2}, map[int][]string{0: {"a8"}, 1: {"b16"}}),
+		NewSliceRequestSource(nil), nil)
+	requirePanicContaining(t, `adapter "c64" has rank 64, above this instance's max_lora_rank 8`, func() {
+		cs.Instances()[0].StartPrefetch(0, "c64")
+	})
+}
+
+// ValidateLoRADeployment sizes every instance's KV, so a GPU with no memory figure or a
+// reservation larger than the GPU is a validation error the CLI can report, not a
+// construction panic.
+func TestValidateLoRAInstanceConfig_SizesKV(t *testing.T) {
+	dc := instanceConfigFixture(t, []int{16, 64}, []int{2, 1}, instCfgPlacement)
+	dc.HWConfig.MemoryGiB = 0
+	if err := ValidateLoRADeployment(dc); err == nil || !strings.Contains(err.Error(), "hardware MemoryGiB is 0") {
+		t.Errorf("no GPU memory: got %v", err)
+	}
+	dc = instanceConfigFixture(t, []int{512, 64}, []int{100, 1}, instCfgPlacement)
+	if err := ValidateLoRADeployment(dc); err == nil || !strings.Contains(err.Error(), "instance 0: per-instance KV sizing with max_lora_rank=512") {
+		t.Errorf("oversized reservation: got %v", err)
+	}
+}

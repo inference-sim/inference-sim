@@ -179,6 +179,11 @@ type DeploymentConfig struct {
 	// ValidateLoRAInstanceConfig; supported only without node pools and PD pools.
 	LoRAInstanceMaxRank  []int `yaml:"lora_instance_max_rank,omitempty"`
 	LoRAInstanceCapacity []int `yaml:"lora_instance_capacity,omitempty"`
+	// LoRAInstanceMaxModelLen is the max-model-len BEFORE the CLI's global KV cap, which
+	// is computed from the cluster-wide reservation. With the per-instance lists set,
+	// each instance is re-capped from this value by its own KV budget, as vLLM caps each
+	// server. 0 => keep SimConfig.MaxModelLen as configured. Set by the CLI only.
+	LoRAInstanceMaxModelLen int64 `yaml:"-"`
 
 	// LoRAPeriodicIntervalUs declares the simulation-time interval (microseconds)
 	// between periodic LoRA creation ticks (Spec 3; the scaffold was B-7, #1495, D5).

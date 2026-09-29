@@ -372,9 +372,12 @@ func (s *Simulator) ApplyInitialCreation(assigned []string) {
 }
 
 // requireRankFits panics when adapter id's declared rank exceeds this instance's
-// max_lora_rank. It guards the only two sites that make an adapter resident
-// (ApplyInitialCreation and completeAdapterLoad). vLLM refuses such a load outright
-// (peft_helper.py), so continuing would simulate a server that cannot exist. The
+// max_lora_rank. It guards the t=0 seed (ApplyInitialCreation) and the only two sites
+// that start a run-time load (maybeStartAdapterLoad and StartPrefetch), which schedule
+// every AdapterLoadCompletionEvent. Checking at the start rather than at completion means
+// a refused load neither evicts a victim nor escapes by completing past the horizon.
+// vLLM refuses such a load outright (peft_helper.py), so continuing would simulate a
+// server that cannot exist. The
 // cluster rejects a violating seed or schedule before construction; reaching this
 // panic means a run-time load (a no-holder routing fallback, or a prefetch) asked
 // for an adapter the instance was configured never to hold. No-op when uncapped.
@@ -1171,6 +1174,9 @@ func (sim *Simulator) maybeStartAdapterLoad(now int64) {
 	// The capacity bound itself (INV-L2, |resident| <= capacity) is structural in
 	// residentSet.Store; committing here rather than at completion is what makes the
 	// Store in completeAdapterLoad unable to fail, and §12's no-deadlock argument sound.
+	// The rank guard runs first, before any victim is evicted: a load vLLM would refuse
+	// must not leave an eviction behind, even if its completion falls past the horizon.
+	sim.requireRankFits(head.Adapter)
 	if sim.residentAdapters.AtCapacity() {
 		victim, ok := sim.evictionPolicy.SelectVictim(sim.buildEvictionContext())
 		if !ok {
@@ -1236,6 +1242,7 @@ func (sim *Simulator) StartPrefetch(now int64, adapter string) bool {
 	if adapter == "" || sim.residentAdapters.IsResident(adapter) {
 		return false // nothing to do; never charge a load for a resident adapter
 	}
+	sim.requireRankFits(adapter) // before any eviction; see maybeStartAdapterLoad
 	if sim.residentAdapters.AtCapacity() {
 		victim, ok := sim.evictionPolicy.SelectVictim(sim.buildEvictionContext())
 		if !ok {
@@ -1275,7 +1282,6 @@ func (sim *Simulator) completeAdapterLoad(now int64, adapter string) {
 	// is intentionally discarded: the eviction (and its AdapterEvictionCounts
 	// increment) already happened at load-start, so it is always "" here; any future
 	// path that calls Store at capacity would need to account for that eviction.
-	sim.requireRankFits(adapter)
 	if _, admitted := sim.residentAdapters.Store(adapter); admitted {
 		sim.Metrics.AdapterLoadCounts[adapter]++ // charged once per cold transition (INV-L3)
 		if sim.loadIsPrefetch {

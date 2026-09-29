@@ -141,7 +141,8 @@ type MetricsOutput struct {
 
 // LoRAInstanceEcho is one instance's per-instance LoRA configuration and the two
 // quantities it determines. AdapterReservedBytes is capacity × footprint_bytes_per_rank
-// × max_lora_rank; TotalKVBlocks is the KV budget left after it. PreemptionCount is the
+// × max_lora_rank; TotalKVBlocks is the KV budget left after it, and MaxModelLen the
+// longest sequence that budget admits (0 = unlimited). PreemptionCount is the
 // instance's own count, read after the run, since whether KV binds is per instance.
 type LoRAInstanceEcho struct {
 	InstanceID           string `json:"instance_id"`
@@ -149,6 +150,7 @@ type LoRAInstanceEcho struct {
 	AdapterCapacity      int    `json:"adapter_capacity"`
 	AdapterReservedBytes int64  `json:"adapter_reserved_bytes"`
 	TotalKVBlocks        int64  `json:"total_kv_blocks"`
+	MaxModelLen          int64  `json:"max_model_len"`
 	PreemptionCount      int64  `json:"preemption_count"`
 }
 
