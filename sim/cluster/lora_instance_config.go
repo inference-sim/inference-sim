@@ -130,8 +130,8 @@ func applyLoRAInstanceConfig(simCfg *sim.SimConfig, d DeploymentConfig, idx int,
 		return nil
 	}
 	rank, capacity := d.LoRAInstanceMaxRank[idx], d.LoRAInstanceCapacity[idx]
-	simCfg.LoRAConfig.InstanceMaxRank = &rank
-	simCfg.LoRAConfig.AdapterCapacity = &capacity
+	simCfg.InstanceMaxRank = &rank
+	simCfg.AdapterCapacity = &capacity
 
 	ac, err := sim.BuildAdapterCost(*simCfg)
 	if err != nil || ac == nil {

@@ -133,7 +133,7 @@ func TestLoRAInstanceConfigCLI_EchoesConfigurationThatRan(t *testing.T) {
 			t.Errorf("echo %d reservation = %d, want 1 × %d × %.0f = %d", i, e.AdapterReservedBytes, rank, footprint, want)
 		}
 	}
-	if !(got.LoRAInstances[0].TotalKVBlocks > got.LoRAInstances[1].TotalKVBlocks) {
+	if got.LoRAInstances[0].TotalKVBlocks <= got.LoRAInstances[1].TotalKVBlocks {
 		t.Errorf("rank-8 instance has %d KV blocks, rank-64 instance %d; the smaller reservation must leave more",
 			got.LoRAInstances[0].TotalKVBlocks, got.LoRAInstances[1].TotalKVBlocks)
 	}

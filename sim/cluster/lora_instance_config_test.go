@@ -243,7 +243,7 @@ func TestLoRAInstanceConfig_SeedAboveCapPanics(t *testing.T) {
 	dc := instanceConfigFixture(t, nil, nil, nil)
 	simCfg := dc.SimConfig
 	rank := 8
-	simCfg.LoRAConfig.InstanceMaxRank = &rank
+	simCfg.InstanceMaxRank = &rank
 	inst := NewInstanceSimulator("instance_0", simCfg)
 	requirePanicContaining(t, `adapter "c64" has rank 64, above this instance's max_lora_rank 8`, func() {
 		inst.ApplyInitialCreation([]string{"c64"})
