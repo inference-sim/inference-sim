@@ -39,8 +39,9 @@ type CostModel struct {
 	ranks map[string]int // adapter id -> declared rank (registry projection)
 
 	// adapterCapacity and maxRank size the static HBM reservation (PR5): the
-	// resident-slot count and the largest declared rank, resolved once at
-	// construction. per-slot footprint = footprintBytesPerRank · maxRank, so the
+	// resident-slot count and the slot rank, resolved once at construction. The slot
+	// rank is the instance's max_lora_rank when LoRAConfig.InstanceMaxRank is set,
+	// else the largest declared rank. per-slot footprint = footprintBytesPerRank · maxRank, so the
 	// reservation (capacity × per-slot) is a constant regardless of which adapters
 	// are resident (D2 / INV-L4). Both are 0 when no capacity / no adapters are
 	// declared, making the reservation 0 (INV-6 no-op).
@@ -92,6 +93,17 @@ func NewCostModel(cfg sim.LoRAConfig) (*CostModel, error) {
 		if a.Rank > maxRank {
 			maxRank = a.Rank
 		}
+	}
+
+	// A per-instance max_lora_rank replaces the catalog maximum as the slot size
+	// (config-time rank coupling): vLLM sizes every slot at the instance's own cap,
+	// not at the largest rank the catalog declares. Applied only when adapters are
+	// declared, so an inert config keeps maxRank == 0 and a zero reservation.
+	if cfg.InstanceMaxRank != nil && len(cfg.Adapters) > 0 {
+		if *cfg.InstanceMaxRank <= 0 {
+			return nil, fmt.Errorf("lora.NewCostModel: instance max_lora_rank must be > 0, got %d", *cfg.InstanceMaxRank)
+		}
+		maxRank = *cfg.InstanceMaxRank
 	}
 
 	// AdapterCapacity may be nil when adapters are absent (the config is inert);
