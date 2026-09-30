@@ -2018,8 +2018,16 @@ func TestCalculateKVBlocks_GpuMemoryUtilization_HigherUtilProducesMoreBlocks(t *
 //
 // 4. Sufficient TP — simulation succeeds:
 //    $ ./blis run --model deepseek-ai/DeepSeek-V3 --tp 16 --hardware H100 --num-requests 10
-//    => SUCCESS: auto-calculated total-kv-blocks=293387 (GPU=80 GiB, TP=16, block_size=16, MoE=true)
+//    => SUCCESS: auto-calculated total-kv-blocks=18336 (GPU=80 GiB, TP=16, block_size=16, MoE=true)
 //    => Completed 10 requests successfully
+//
+//    That 18,336 supersedes the 293,387 this block recorded when it was written: #1846
+//    multiplied the block-cost denominator by TP, and DeepSeek-V3's MLA latent is
+//    TP-replicated (KVBytesPerToken returns a TP-invariant per-GPU value), so the count
+//    divides by exactly 16 here. The new figure is DERIVED from the recorded one rather
+//    than re-measured — the run needs 16 H100s — and the derivation is exact: the old
+//    integer division fixes allocatable/perBlock in [293387, 293388), which forces
+//    allocatable/(16 x perBlock) to 18,336 whatever those two operands individually are.
 
 // --- DP scaling tests (#1420) ---
 
