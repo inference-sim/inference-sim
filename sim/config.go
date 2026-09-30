@@ -629,6 +629,14 @@ type LoRAConfig struct {
 	// hundred entries, published as its own artifact rather than inlined into a config.
 	// Empty => `scheduled` never proposes anything, which cmd rejects before it can happen.
 	PlacementSchedule []PlacementScheduleEntry `yaml:"-"`
+
+	// InstanceMaxRank is this instance's max_lora_rank: the rank every adapter slot is
+	// sized for, as vLLM sizes its slots (max_loras × max_lora_rank, allocated before the
+	// KV cache). nil => the largest declared rank, the cluster-wide default. Set only by
+	// the cluster, per instance, from DeploymentConfig.LoRAInstanceMaxRank; deliberately
+	// NOT a YAML field, since one config file describes every instance. An adapter whose
+	// rank exceeds it can never become resident on the instance (vLLM refuses the load).
+	InstanceMaxRank *int `yaml:"-"`
 }
 
 // HasAdapters reports whether any adapter is declared. When false the subsystem is
@@ -651,6 +659,10 @@ func (c LoRAConfig) Validate() error {
 	// actually declared (adapters present but zero/negative slots is unservable).
 	if c.HasAdapters() && c.AdapterCapacity != nil && *c.AdapterCapacity <= 0 {
 		return fmt.Errorf("LoRAConfig: adapter_capacity must be > 0 when adapters are declared, got %d", *c.AdapterCapacity)
+	}
+
+	if c.InstanceMaxRank != nil && *c.InstanceMaxRank <= 0 {
+		return fmt.Errorf("LoRAConfig: instance max_lora_rank must be > 0, got %d", *c.InstanceMaxRank)
 	}
 
 	// Adapter registry entries: unique non-empty ids, positive rank (R3).

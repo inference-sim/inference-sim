@@ -247,11 +247,9 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	// invalid placement before any instance is constructed. Fails via panic (library
 	// layer, Principle V) mirroring ValidatePoolTopology above. The registry is not
 	// retained — instances build their own; this call only checks the placement map.
-	if placementRegistry, err := sim.BuildAdapterRegistry(config.ToSimConfig()); err != nil {
-		panic(fmt.Sprintf("ClusterSimulator: %v", err))
-	} else if err := ValidateLoRAPlacement(config, placementRegistry); err != nil {
-		panic(fmt.Sprintf("ClusterSimulator: %v", err))
-	} else if err := ValidateLoRAPlacementSchedule(config, placementRegistry); err != nil {
+	// The per-instance LoRA configuration is checked first, inside ValidateLoRADeployment,
+	// so the placement is judged against the per-instance caps it will run under.
+	if err := ValidateLoRADeployment(config); err != nil {
 		panic(fmt.Sprintf("ClusterSimulator: %v", err))
 	}
 
@@ -480,7 +478,11 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			// DeploymentConfig's embedded SimConfig) is the authoritative source (backward-compat).
 			// simCfg.GPU is already set — resolveConfigForRole returns config.SimConfig as-is
 			// for the default role, preserving ModelHardwareConfig.GPU from the CLI flag.
+			// Per-instance max_lora_rank / capacity: specialize this instance's slots and
+			// resize its KV from its own reservation. No-op when unset (INV-6).
+			loraEcho := applyLoRAInstanceConfig(&simCfg, config, idx, id)
 			inst := NewInstanceSimulator(id, simCfg)
+			inst.loraEcho = loraEcho
 			inst.Model = config.Model
 			// B-5 (#1493): seed cluster-assigned resident adapters (uncharged),
 			// keyed by the live construction-loop counter idx (DD-B5-g). No-op

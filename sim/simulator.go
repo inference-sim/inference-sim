@@ -145,6 +145,10 @@ type Simulator struct {
 	// inactive. lru ignores rank, but the context builder reads it every eviction so
 	// B-4's rank-aware policy has a live source.
 	adapterRegistry AdapterRegistry
+	// instanceMaxRank is this instance's max_lora_rank (LoRAConfig.InstanceMaxRank),
+	// or 0 when uncapped. Every Store into residentAdapters is checked against it,
+	// because vLLM refuses to load an adapter whose rank exceeds the cap.
+	instanceMaxRank int
 	// evictionPolicy selects the victim when the cold-load gate must free a slot
 	// (#1491). Hardwired to "lru" in B-3 (byte-identical to the former EvictLRU);
 	// non-nil together with residentAdapters, nil when LoRA is inactive.
@@ -282,6 +286,9 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 			return nil, fmt.Errorf("NewSimulator: adapter registry: %w", err)
 		}
 		s.adapterRegistry = reg
+		if cfg.InstanceMaxRank != nil {
+			s.instanceMaxRank = *cfg.InstanceMaxRank
+		}
 		// NewEvictionPolicyFunc is wired in the same sim/lora init() as the funcs
 		// gating this block, so reaching here implies it is non-nil. Guard it
 		// explicitly anyway, matching BuildAdapterCost / BuildAdapterRegistry, so a
@@ -359,7 +366,29 @@ func (s *Simulator) ApplyInitialCreation(assigned []string) {
 	for _, id := range seed {
 		// Store bypasses the cold-load metric/latency path (that lives at the
 		// cold-load completion in maybeStartAdapterLoad), so seeding is uncharged.
+		s.requireRankFits(id)
 		s.residentAdapters.Store(id)
+	}
+}
+
+// requireRankFits panics when adapter id's declared rank exceeds this instance's
+// max_lora_rank. It guards the t=0 seed (ApplyInitialCreation) and the only two sites
+// that start a run-time load (maybeStartAdapterLoad and StartPrefetch), which schedule
+// every AdapterLoadCompletionEvent. Checking at the start rather than at completion means
+// a refused load neither evicts a victim nor escapes by completing past the horizon.
+// vLLM refuses such a load outright (peft_helper.py), so continuing would simulate a
+// server that cannot exist. The
+// cluster rejects a violating seed or schedule before construction; reaching this
+// panic means a run-time load (a no-holder routing fallback, or a prefetch) asked
+// for an adapter the instance was configured never to hold. No-op when uncapped.
+func (s *Simulator) requireRankFits(id string) {
+	if s.instanceMaxRank == 0 || s.adapterRegistry == nil {
+		return
+	}
+	if rank, ok := s.adapterRegistry.RankOf(id); ok && rank > s.instanceMaxRank {
+		panic(fmt.Sprintf("adapter %q has rank %d, above this instance's max_lora_rank %d: "+
+			"vLLM refuses the load. Route its requests only to instances configured for it",
+			id, rank, s.instanceMaxRank))
 	}
 }
 
@@ -1145,6 +1174,9 @@ func (sim *Simulator) maybeStartAdapterLoad(now int64) {
 	// The capacity bound itself (INV-L2, |resident| <= capacity) is structural in
 	// residentSet.Store; committing here rather than at completion is what makes the
 	// Store in completeAdapterLoad unable to fail, and §12's no-deadlock argument sound.
+	// The rank guard runs first, before any victim is evicted: a load vLLM would refuse
+	// must not leave an eviction behind, even if its completion falls past the horizon.
+	sim.requireRankFits(head.Adapter)
 	if sim.residentAdapters.AtCapacity() {
 		victim, ok := sim.evictionPolicy.SelectVictim(sim.buildEvictionContext())
 		if !ok {
@@ -1210,6 +1242,7 @@ func (sim *Simulator) StartPrefetch(now int64, adapter string) bool {
 	if adapter == "" || sim.residentAdapters.IsResident(adapter) {
 		return false // nothing to do; never charge a load for a resident adapter
 	}
+	sim.requireRankFits(adapter) // before any eviction; see maybeStartAdapterLoad
 	if sim.residentAdapters.AtCapacity() {
 		victim, ok := sim.evictionPolicy.SelectVictim(sim.buildEvictionContext())
 		if !ok {

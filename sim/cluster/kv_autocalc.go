@@ -1,6 +1,8 @@
 package cluster
 
 import (
+	"fmt"
+
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/latency"
 	"github.com/sirupsen/logrus"
@@ -68,6 +70,44 @@ func applyPerInstanceKVCapacity(simCfg *sim.SimConfig, gpuMemoryGiB float64, cfg
 		return
 	}
 
+	blocks, err := perInstanceKVBlocks(simCfg, gpuMemoryGiB, cfg)
+	if err != nil {
+		logrus.Warnf("[cluster] per-instance KV auto-calc for GPU %q failed: %v; "+
+			"using inherited total-kv-blocks=%d", gpuType, err, simCfg.TotalKVBlocks)
+		return
+	}
+	setInstanceKVBlocks(simCfg, blocks, gpuMemoryGiB, gpuType)
+}
+
+// setInstanceKVBlocks installs a per-instance KV-block count and, when the new capacity
+// cannot hold MaxModelLen, caps MaxModelLen to it (mirrors the CLI per-pool auto-cap) so
+// the instance constructs instead of failing NewSimulator's KV-too-small check.
+func setInstanceKVBlocks(simCfg *sim.SimConfig, blocks int64, gpuMemoryGiB float64, gpuType string) {
+	simCfg.TotalKVBlocks = blocks
+
+	// Cap MaxModelLen to the per-GPU KV-feasible maximum when the recomputed (possibly
+	// smaller) capacity cannot hold the configured MaxModelLen. Mirrors the CLI per-pool
+	// auto-cap (cmd/root.go) so a small-memory GPU constructs successfully rather than
+	// tripping NewSimulator's "KV cache too small for MaxModelLen" error.
+	if simCfg.MaxModelLen > 0 {
+		kvFeasibleMax := blocks * simCfg.BlockSizeTokens
+		if kvFeasibleMax < simCfg.MaxModelLen {
+			logrus.Infof("[cluster] per-instance KV auto-calc for GPU %q: auto-capped max-model-len=%d "+
+				"(pool KV capacity smaller than global)", gpuType, kvFeasibleMax)
+			simCfg.MaxModelLen = kvFeasibleMax
+		}
+	}
+
+	logrus.Infof("[cluster] per-instance KV auto-calc for GPU %q: total-kv-blocks=%d "+
+		"(GPU=%.0f GiB, TP=%d, DP=%d, EP-group DP=%d, EP=%d)", gpuType, blocks, gpuMemoryGiB,
+		simCfg.TP, simCfg.EffectiveDP(), simCfg.EffectiveEPGroupDP(), simCfg.EffectiveEP())
+}
+
+// perInstanceKVBlocks computes one instance's KV-block budget on a GPU with gpuMemoryGiB
+// of HBM, net of cfg.AdapterReservedBytes. It returns an error instead of logging, so each
+// caller decides whether a failure falls back (applyPerInstanceKVCapacity) or is fatal
+// (applyLoRAInstanceConfig, where a fallback would silently drop the reservation).
+func perInstanceKVBlocks(simCfg *sim.SimConfig, gpuMemoryGiB float64, cfg KVAutoCalcConfig) (int64, error) {
 	hc := sim.HardwareCalib{MemoryGiB: gpuMemoryGiB}
 	// Expert-parallel weight sharding (#1656) and its deployment width (#1548).
 	//
@@ -98,9 +138,7 @@ func applyPerInstanceKVCapacity(simCfg *sim.SimConfig, gpuMemoryGiB float64, cfg
 		latency.WithExpertParallelSize(simCfg.EffectiveEP()),
 	)
 	if err != nil {
-		logrus.Warnf("[cluster] per-instance KV auto-calc for GPU %q failed: %v; "+
-			"using inherited total-kv-blocks=%d", gpuType, err, simCfg.TotalKVBlocks)
-		return
+		return 0, err
 	}
 	// Divide the DP-aggregate back to this instance's own budget. Gated on exactly the
 	// condition CalculateKVBlocks multiplies under (MoE && dp > 1), so a dense model — or the
@@ -120,29 +158,10 @@ func applyPerInstanceKVCapacity(simCfg *sim.SimConfig, gpuMemoryGiB float64, cfg
 	if cfg.Params.IsMoE && epGroupDP > 1 {
 		blocks /= int64(epGroupDP)
 		if blocks <= 0 {
-			logrus.Warnf("[cluster] per-instance KV auto-calc for GPU %q: the per-rank share of the "+
-				"auto-derived capacity across %d expert-parallel DP ranks is not positive; using inherited "+
-				"total-kv-blocks=%d", gpuType, epGroupDP, simCfg.TotalKVBlocks)
-			return
+			return 0, fmt.Errorf("the per-rank share of the auto-derived capacity across %d "+
+				"expert-parallel DP ranks is not positive", epGroupDP)
 		}
 	}
 
-	simCfg.TotalKVBlocks = blocks
-
-	// Cap MaxModelLen to the per-GPU KV-feasible maximum when the recomputed (possibly
-	// smaller) capacity cannot hold the configured MaxModelLen. Mirrors the CLI per-pool
-	// auto-cap (cmd/root.go) so a small-memory GPU constructs successfully rather than
-	// tripping NewSimulator's "KV cache too small for MaxModelLen" error.
-	if simCfg.MaxModelLen > 0 {
-		kvFeasibleMax := blocks * simCfg.BlockSizeTokens
-		if kvFeasibleMax < simCfg.MaxModelLen {
-			logrus.Infof("[cluster] per-instance KV auto-calc for GPU %q: auto-capped max-model-len=%d "+
-				"(pool KV capacity smaller than global)", gpuType, kvFeasibleMax)
-			simCfg.MaxModelLen = kvFeasibleMax
-		}
-	}
-
-	logrus.Infof("[cluster] per-instance KV auto-calc for GPU %q: total-kv-blocks=%d "+
-		"(GPU=%.0f GiB, TP=%d, DP=%d, EP-group DP=%d, EP=%d)", gpuType, blocks, gpuMemoryGiB,
-		simCfg.TP, simCfg.EffectiveDP(), epGroupDP, simCfg.EffectiveEP())
+	return blocks, nil
 }

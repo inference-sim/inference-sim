@@ -130,6 +130,28 @@ type MetricsOutput struct {
 	// omitempty, so a results file written without the option is byte-identical to
 	// a pre-feature build.
 	Catalog *CatalogProvenance `json:"catalog,omitempty"`
+
+	// LoRAInstances echoes each instance's LoRA slot configuration as it actually ran,
+	// in construction order, so a manifest records the configuration that ran rather
+	// than the one requested. Set by the CLI only when --lora-instance-max-rank and
+	// --lora-instance-capacity are given; nil otherwise, and omitempty drops the key, so
+	// a run without those flags is byte-identical to a pre-feature build (INV-6).
+	LoRAInstances []LoRAInstanceEcho `json:"lora_instances,omitempty"`
+}
+
+// LoRAInstanceEcho is one instance's per-instance LoRA configuration and the two
+// quantities it determines. AdapterReservedBytes is capacity × footprint_bytes_per_rank
+// × max_lora_rank; TotalKVBlocks is the KV budget left after it, and MaxModelLen the
+// longest sequence that budget admits (0 = unlimited). PreemptionCount is the
+// instance's own count, read after the run, since whether KV binds is per instance.
+type LoRAInstanceEcho struct {
+	InstanceID           string `json:"instance_id"`
+	MaxLoRARank          int    `json:"max_lora_rank"`
+	AdapterCapacity      int    `json:"adapter_capacity"`
+	AdapterReservedBytes int64  `json:"adapter_reserved_bytes"`
+	TotalKVBlocks        int64  `json:"total_kv_blocks"`
+	MaxModelLen          int64  `json:"max_model_len"`
+	PreemptionCount      int64  `json:"preemption_count"`
 }
 
 // CatalogProvenance attributes a results file to the model catalog that produced it

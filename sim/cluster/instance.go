@@ -54,6 +54,11 @@ type InstanceSimulator struct {
 	// scoped to what the scheduling hook and the load gate consume), so the value is
 	// stored here rather than the interface widened for one read.
 	adapterCapacity int
+
+	// loraEcho is this instance's per-instance LoRA configuration (max_lora_rank,
+	// capacity, reservation, KV blocks) as constructed, or nil when the per-instance
+	// lists are unset. Read by ClusterSimulator.LoRAInstanceEchoes.
+	loraEcho *sim.LoRAInstanceEcho
 }
 
 // NewInstanceSimulator creates an InstanceSimulator from a SimConfig struct.

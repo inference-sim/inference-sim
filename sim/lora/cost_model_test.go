@@ -344,3 +344,53 @@ func TestCostModel_RejectsOverflowingReservation(t *testing.T) {
 		t.Errorf("error must identify the HBM reservation guard, got: %v", err)
 	}
 }
+
+// TestCostModel_InstanceMaxRankSizesSlots verifies config-time rank coupling: with a
+// per-instance max_lora_rank set, every slot is sized at that cap rather than at the
+// largest declared rank, as vLLM sizes max_loras × max_lora_rank. A cap BELOW the
+// catalog maximum is the case that matters (the catalog here declares rank 32), and a
+// cap above it is honoured too, since vLLM reserves whatever the operator configures.
+func TestCostModel_InstanceMaxRankSizesSlots(t *testing.T) {
+	build := func(instanceMaxRank *int) *CostModel {
+		t.Helper()
+		capacity := 4
+		cm, err := NewCostModel(sim.LoRAConfig{
+			AdapterCapacity:       &capacity,
+			LoadBaseLatencyUs:     fptr(1000.0),
+			LoadBandwidthBytesUs:  fptr(2.0e6),
+			FootprintBytesPerRank: fptr(2.0e6),
+			Adapters:              []sim.AdapterSpec{{ID: "a8", Rank: 8}, {ID: "a32", Rank: 32}},
+			InstanceMaxRank:       instanceMaxRank,
+		})
+		if err != nil {
+			t.Fatalf("NewCostModel: %v", err)
+		}
+		return cm
+	}
+	if got, want := build(nil).AdapterReservedBytes(), 4.0*32.0*2.0e6; got != want {
+		t.Fatalf("premise: unset cap reserves %v, want the catalog-maximum %v", got, want)
+	}
+	for _, r := range []int{8, 64} {
+		r := r
+		if got, want := build(&r).AdapterReservedBytes(), 4.0*float64(r)*2.0e6; got != want {
+			t.Errorf("max_lora_rank %d reserves %v, want capacity × %d × footprint = %v", r, got, r, want)
+		}
+	}
+}
+
+// TestNewCostModel_RejectsNonPositiveInstanceMaxRank mirrors LoRAConfig.Validate, so a
+// model built directly is as safe as one from a validated config.
+func TestNewCostModel_RejectsNonPositiveInstanceMaxRank(t *testing.T) {
+	capacity, zero := 4, 0
+	_, err := NewCostModel(sim.LoRAConfig{
+		AdapterCapacity:       &capacity,
+		LoadBaseLatencyUs:     fptr(1000.0),
+		LoadBandwidthBytesUs:  fptr(2.0e6),
+		FootprintBytesPerRank: fptr(2.0e6),
+		Adapters:              []sim.AdapterSpec{{ID: "a8", Rank: 8}},
+		InstanceMaxRank:       &zero,
+	})
+	if err == nil || !strings.Contains(err.Error(), "max_lora_rank must be > 0") {
+		t.Fatalf("got %v, want a max_lora_rank error", err)
+	}
+}
