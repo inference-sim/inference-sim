@@ -35,17 +35,19 @@ Each stage is configurable:
 
 ## Tensor Parallelism
 
-The `--tp` flag sets the tensor parallelism degree for all instances. TP affects both latency (FLOPs split across GPUs) and memory (KV blocks split across GPUs):
+The `--tp` flag sets the tensor parallelism degree for all instances. TP affects both latency (FLOPs split across the TP ranks) and memory (each rank contributes its GPU's memory to one shared budget):
 
 ```bash
 # TP=2: 2 GPUs per instance
 ./blis run --model qwen/qwen3-14b --hardware H100 \
   --num-instances 4 --tp 2 --rate 100 --num-requests 500
 
-# TP=4: 4 GPUs per instance (lower latency, fewer KV blocks per GPU)
+# TP=4: 4 GPUs per instance (lower latency, and usually a larger total KV pool)
 ./blis run --model qwen/qwen3-14b --hardware H100 \
   --num-instances 2 --tp 4 --rate 100 --num-requests 500
 ```
+
+`total_kv_blocks` is a **global** count for the instance, not a per-GPU one: every TP rank stores its own shard of each block, so raising `--tp` does not split a fixed pool into smaller per-GPU pieces. It usually *increases* the pool, because each added GPU brings a whole GPU of memory while the model weights stay one fixed total shared across the ranks. See [KV Cache Management](kv-cache.md#how-the-auto-calculated-pool-is-sized) for the formula and its accuracy limits.
 
 !!! note "Homogeneous instances"
     All instances share the same SimConfig (model, GPU, TP, KV blocks). BLIS does not currently model heterogeneous fleets (mixed GPU types or TP configurations).

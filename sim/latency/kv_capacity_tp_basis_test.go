@@ -21,6 +21,15 @@ package latency_test
 //  4. Agreement with the two REAL MEASURED pools the bug was reported against, within a
 //     stated tolerance (the last sentence of #1846 acceptance criterion 2).
 //  5. TP=1 byte-identity (INV-6) — the correction must be inert on one GPU.
+//
+// One cross-cutting caveat, which every test below states at its own site: KVBytesPerToken
+// divides the model's KV bytes by tp even when numKVHeads < tp, where vLLM would instead
+// replicate KV heads per rank (a documented optimistic approximation that predates #1846
+// and is out of its scope). A TP=16 assertion on an 8-KV-head fixture therefore pins the
+// aggregate UNITS basis — the thing this file guards — without being a physically
+// realizable per-GPU derivation. The llama-2-7b (32 KV heads) and llama-3.1-405b (16 KV
+// heads) fixtures have numKVHeads divisible by 16, so they carry the first-principles
+// claim at TP=16 that #1846 acceptance criterion 2 asks for.
 
 import (
 	"math"
@@ -58,6 +67,57 @@ func llama70bModelConfig() sim.ModelConfig {
 	}
 }
 
+// --- Fixtures whose KV-head count is a multiple of TP=16 (no head replication) ---
+//
+// The three GQA fixtures above and below all carry 8 KV heads, which is FEWER than 16.
+// KVBytesPerToken documents that regime as a known optimistic approximation
+// (kv_capacity.go, "when numKVHeads < TP ... vLLM replicates KV heads per GPU; dividing
+// by TP underestimates per-GPU KV bytes"): the code divides the whole model's KV bytes by
+// tp regardless, so at TP=16 an 8-KV-head fixture's implied per-GPU cost is half what vLLM
+// would actually allocate. That approximation predates #1846 and is out of its scope — but
+// it means a TP=16 golden on an 8-KV-head fixture pins the UNITS BASIS of the division
+// without being a physically realizable per-GPU derivation.
+//
+// The two fixtures below have numKVHeads % 16 == 0, so at TP=16 the heads divide evenly,
+// no replication applies, and their goldens are first-principles all the way down — which
+// is what #1846 acceptance criterion 2 asks for at TP=16.
+
+// llama2MHAModelConfig is the Llama-2-7B shape (32 layers, 4096 hidden, 32 heads, 32 KV
+// heads — MHA, no GQA grouping, so numKVHeads is divisible by every tp in 1..16, bf16,
+// 11008 FFN, 32000 vocab). It is the only fixture in this file that is on the exact
+// per-GPU basis at EVERY tp tested AND small enough to fit on one 80 GiB H100, which is
+// what lets the realizability check anchor it from its own TP=1 call.
+func llama2MHAModelConfig() sim.ModelConfig {
+	return sim.ModelConfig{
+		NumLayers:       32,
+		HiddenDim:       4096,
+		NumHeads:        32,
+		NumKVHeads:      32,
+		VocabSize:       32000,
+		BytesPerParam:   2,
+		IntermediateDim: 11008,
+	}
+}
+
+// llama405bModelConfig is the Llama-3.1-405B shape (126 layers, 16384 hidden, 128 heads,
+// 16 GQA KV heads, 53248 FFN, bf16). 16 KV heads divides both 8 and 16, so this fixture is
+// exact at both high-TP points — and unlike the synthetic option of bumping an 8B model's
+// head count, it is a real deployment that genuinely REQUIRES TP>=8 (its weights alone are
+// ~764 GiB), i.e. the regime #1846 was reported in. It cannot be exercised below TP=7 at
+// all: CalculateKVBlocks refuses TP=2 and TP=4 on a 141 GiB H200 because the weight term
+// exceeds the aggregate budget.
+func llama405bModelConfig() sim.ModelConfig {
+	return sim.ModelConfig{
+		NumLayers:       126,
+		HiddenDim:       16384,
+		NumHeads:        128,
+		NumKVHeads:      16,
+		VocabSize:       128256,
+		BytesPerParam:   2,
+		IntermediateDim: 53248,
+	}
+}
+
 // h200HWConfig is the catalog H200 entry's memory (141 GiB HBM3e); only MemoryGiB is
 // read by CalculateKVBlocks.
 func h200HWConfig() sim.HardwareCalib {
@@ -78,6 +138,15 @@ type tpBasisCase struct {
 	// produced for the same inputs, recorded so the anti-assertion below is a real
 	// measurement of the regression rather than a restatement of wantBlocks*tp.
 	wantPreFixBlocks int64
+	// headReplicationRegime marks a case where numKVHeads < tp, i.e. where vLLM would
+	// replicate KV heads across ranks but KVBytesPerToken divides by tp anyway (the
+	// documented optimistic approximation, pre-existing and out of #1846's scope). Such a
+	// case still pins the aggregate UNITS basis this file exists to guard — the divisor's
+	// tp factor is what it measures — but its per-GPU cost is not a physically realizable
+	// number, so it is not first-principles coverage in the sense acceptance criterion 2
+	// asks for. Recorded per case rather than left implicit so the distinction is visible
+	// in the table instead of buried in prose.
+	headReplicationRegime bool
 }
 
 func tpBasisCases() []tpBasisCase {
@@ -99,6 +168,7 @@ func tpBasisCases() []tpBasisCase {
 		{
 			name: "llama-3.1-8b/H100/tp16", mc: validDenseModelConfig(), hc: validHWConfig(),
 			params: validDenseKVParams(), tp: 16, wantBlocks: 574434, wantPreFixBlocks: 9190952,
+			headReplicationRegime: true, // 8 KV heads < tp=16
 		},
 		// Llama-3.1-70B on a 141 GiB H200. Per-token KV over the whole model is
 		// 80 x 2 x 128 x 8 x 2 = 327,680 B, so one block costs 5,242,880 B across the
@@ -111,6 +181,7 @@ func tpBasisCases() []tpBasisCase {
 		{
 			name: "llama-3.1-70b/H200/tp16", mc: llama70bModelConfig(), hc: h200HWConfig(),
 			params: validDenseKVParams(), tp: 16, wantBlocks: 385819, wantPreFixBlocks: 6173109,
+			headReplicationRegime: true, // 8 KV heads < tp=16
 		},
 		// Mixtral-8x7B-shaped MoE on an 80 GiB H100 (same attention shape as the 8B
 		// fixture, 8 routed experts of 14336). Covers the MoE branch: the higher 8.0 GiB
@@ -123,7 +194,83 @@ func tpBasisCases() []tpBasisCase {
 		{
 			name: "mixtral-8x7b/H100/tp16", mc: validMoEModelConfig(), hc: validHWConfig(),
 			params: validMoEKVParams(), tp: 16, wantBlocks: 535521, wantPreFixBlocks: 8568344,
+			headReplicationRegime: true, // 8 KV heads < tp=16
 		},
+		// --- Exact-at-TP=16 fixtures (numKVHeads % 16 == 0, no head replication) ---
+		//
+		// Llama-2-7B on an 80 GiB H100, bf16, block size 16, util 0.9. MHA: 32 KV heads, so
+		// every tp in 1..16 divides them evenly and the per-GPU cost below is the physical
+		// one, not the approximation. Per-token KV over the whole model is
+		// 32 layers x 2 (K+V) x 128 headDim x 32 KV heads x 2 B = 524,288 B, so one 16-token
+		// block costs exactly 8 MiB across the TP group at any tp and 1 GiB of freed budget
+		// buys exactly 128 blocks. Weights are 6.738B params x 2 B = 12.5513 GiB (the
+		// standard transformer count for this shape: 2 x 32000 x 4096 embed+lm_head,
+		// 32 x (4096 x (4096 + 2 x 4096) + 4096 x 4096 + 2 x 4096) attention+norms, and
+		// 32 x 3 x 4096 x 11008 SwiGLU MLP). Budget is (71.4 x tp - 18.0513) GiB, so
+		// blocks = floor((71.4 x tp - 18.0513) x 128).
+		// tp=8:  (571.2 - 18.0513) x 128  = 70,803.x  -> 70,803
+		// tp=16: (1142.4 - 18.0513) x 128 = 143,916.x -> 143,916
+		{
+			name: "llama-2-7b/H100/tp8", mc: llama2MHAModelConfig(), hc: validHWConfig(),
+			params: validDenseKVParams(), tp: 8, wantBlocks: 70803, wantPreFixBlocks: 566424,
+		},
+		{
+			name: "llama-2-7b/H100/tp16", mc: llama2MHAModelConfig(), hc: validHWConfig(),
+			params: validDenseKVParams(), tp: 16, wantBlocks: 143916, wantPreFixBlocks: 2302666,
+		},
+		// Llama-3.1-405B on a 141 GiB H200. 16 GQA KV heads divides both 8 and 16 evenly, so
+		// both points are exact. Per-token KV over the whole model is
+		// 126 x 2 x 128 x 16 x 2 = 1,032,192 B, so one block costs 16,515,072 B across the
+		// group and 1 GiB buys 65.0159 blocks. Weights are 410.081B params x 2 B =
+		// 763.8358 GiB (same standard count, at 16384 hidden / 53248 FFN / 128256 vocab).
+		// Budget is (126.3 x tp - 769.3358) GiB, so blocks = floor(budget x 65.0159).
+		// tp=8:  241.0642 x 65.0159  = 15,672.x -> 15,672
+		// tp=16: 1251.4642 x 65.0159 = 81,365.x -> 81,365
+		{
+			name: "llama-3.1-405b/H200/tp8", mc: llama405bModelConfig(), hc: h200HWConfig(),
+			params: validDenseKVParams(), tp: 8, wantBlocks: 15672, wantPreFixBlocks: 125383,
+		},
+		{
+			name: "llama-3.1-405b/H200/tp16", mc: llama405bModelConfig(), hc: h200HWConfig(),
+			params: validDenseKVParams(), tp: 16, wantBlocks: 81365, wantPreFixBlocks: 1301840,
+		},
+	}
+}
+
+// TestCalculateKVBlocks_KnownAnswerFixtures_CoverExactTP16 guards the PROPERTY that makes
+// the goldens above first-principles rather than self-consistent: at least one TP=16 case
+// must be outside the head-replication approximation, and every case claiming to be
+// outside it must really have numKVHeads % tp == 0.
+//
+// Without this, the table could drift back to all-8-KV-head fixtures at TP=16 — the exact
+// gap @namasl's review caught — and every other test in this file would still pass, because
+// the aggregate per-block cost is tp-invariant whether or not the per-GPU value it divides
+// into is physically realizable.
+func TestCalculateKVBlocks_KnownAnswerFixtures_CoverExactTP16(t *testing.T) {
+	exactTP16 := 0
+	for _, tc := range tpBasisCases() {
+		kvHeads := tc.mc.NumKVHeads
+		if kvHeads == 0 {
+			kvHeads = tc.mc.NumHeads
+		}
+		replicates := kvHeads < tc.tp
+		if replicates != tc.headReplicationRegime {
+			t.Errorf("%s: headReplicationRegime = %v but numKVHeads=%d vs tp=%d says %v",
+				tc.name, tc.headReplicationRegime, kvHeads, tc.tp, replicates)
+		}
+		if tc.tp == 16 && !replicates {
+			if kvHeads%tc.tp != 0 {
+				t.Errorf("%s: %d KV heads is not a multiple of tp=16, so the per-GPU cost is not exact",
+					tc.name, kvHeads)
+			}
+			exactTP16++
+		}
+	}
+	if exactTP16 == 0 {
+		t.Errorf("no TP=16 case has numKVHeads >= 16: every TP=16 golden would then rest on the "+
+			"documented head-replication approximation (numKVHeads < tp), which is not the "+
+			"first-principles per-GPU basis #1846 acceptance criterion 2 asks for; got %d exact cases",
+			exactTP16)
 	}
 }
 
@@ -137,6 +284,17 @@ func tpBasisCases() []tpBasisCase {
 // and activation terms out entirely) and by
 // TestCalculateKVBlocks_PoolIsPhysicallyRealizable. So they are not golden-only values
 // that could perpetuate the behavior they were captured from (R7 / test epistemology).
+//
+// ONE LIMIT ON "first principles", and it is the reason the table carries a
+// headReplicationRegime flag: at TP=16 the three 8-KV-head GQA fixtures sit in the
+// approximation KVBytesPerToken documents (numKVHeads < tp ⇒ vLLM replicates heads per
+// rank, BLIS divides by tp anyway). For those three the derivation above reproduces what
+// BLIS computes and pins the tp factor in the divisor — which is the regression this file
+// exists to catch — but the per-GPU cost it implies is optimistic by 16/8, so it is not a
+// physically realizable per-GPU derivation. The llama-2-7b (32 KV heads) and
+// llama-3.1-405b (16 KV heads) cases are exact at TP=16 and carry the first-principles
+// claim there; TestCalculateKVBlocks_KnownAnswerFixtures_CoverExactTP16 keeps at least one
+// such case in the table. The 16/8 optimism itself predates #1846 and is out of its scope.
 //
 // Each case also asserts the count is NOT the pre-#1846 value, so no tolerance or
 // refactor can leave both readings acceptable.
@@ -174,6 +332,17 @@ func TestCalculateKVBlocks_KnownAnswer_HighTP(t *testing.T) {
 // block size on the MHA/GQA path. Both sides are computed here from published hardware
 // numbers and the KV shape alone.
 //
+// WHAT THE LAW DOES AND DOES NOT CERTIFY. blockCostBytes is tp-invariant whether or not
+// numKVHeads >= tp, because KVBytesPerToken divides by tp unconditionally and this law
+// multiplies that back. So on the three 8-KV-head fixtures the tp=16 step is a statement
+// about the division's units basis, not about a physically realizable per-GPU cost — at
+// 8 KV heads and tp=16 vLLM would replicate heads and the real per-GPU cost is 2x what
+// the invariance guard below measures (kv_capacity.go's documented optimistic
+// approximation, out of #1846's scope). The llama-2-7b (32 KV heads, exact at every tp
+// here) and llama-3.1-405b (16 KV heads, exact at 8 and 16) fixtures carry the law on the
+// exact per-GPU basis, so the slope is validated in both regimes rather than only the
+// approximate one.
+//
 // This law is exactly what the bug broke. Pre-#1846 the block count carried a factor of
 // tp, so the left-hand side grew super-linearly in tp and missed the right-hand side by
 // hundreds of thousands of blocks. tp >= 2 throughout, because tp=1 uses the smaller
@@ -198,6 +367,11 @@ func TestCalculateKVBlocks_PerTPSlopeLaw(t *testing.T) {
 		{"llama-3.1-8b/H100", validDenseModelConfig(), validHWConfig(), validDenseKVParams(), 5.5, []int{2, 4, 8, 16}},
 		{"llama-3.1-70b/H200", llama70bModelConfig(), h200HWConfig(), validDenseKVParams(), 5.5, []int{2, 4, 8, 16}},
 		{"mixtral-8x7b/H100", validMoEModelConfig(), validHWConfig(), validMoEKVParams(), 8.0, []int{2, 4, 8, 16}},
+		// 32 KV heads: exact at every tp below, so the law is checked off the approximation.
+		{"llama-2-7b/H100", llama2MHAModelConfig(), validHWConfig(), validDenseKVParams(), 5.5, []int{2, 4, 8, 16}},
+		// 16 KV heads: exact at both points. Only 8 and 16 — a 764 GiB weight term does not
+		// fit in the aggregate budget of 2 or 4 H200s, so CalculateKVBlocks refuses those.
+		{"llama-3.1-405b/H200", llama405bModelConfig(), h200HWConfig(), validDenseKVParams(), 5.5, []int{8, 16}},
 	}
 
 	const blockSize = int64(16)
@@ -280,46 +454,86 @@ func TestCalculateKVBlocks_PerTPSlopeLaw(t *testing.T) {
 //
 // Pre-#1846 this failed at every tp >= 2: at TP=8 the 8B fixture claimed 2,255,841
 // blocks, which is ~551 GiB of KV per GPU on an 80 GiB card.
+//
+// TWO FIXTURES, because perGPUBytesPerToken on the left-hand side is KVBytesPerToken's own
+// value and that value is the documented optimistic approximation once numKVHeads < tp:
+//
+//   - llama-3.1-8b (8 KV heads) is exact up to tp=8 and approximate at tp=16, where the
+//     left-hand side under-charges KV by 16/8 — so at that one point the check is
+//     correspondingly lenient, and passing it is not a claim about vLLM's real footprint.
+//   - llama-2-7b (32 KV heads, MHA) is exact at EVERY tp here, so its tp=16 row is a real
+//     physical-realizability statement. It is also small enough to fit on one 80 GiB H100,
+//     which is what lets the same TP=1 anchoring work for it.
+//
+// Both are anchored the same way and neither anchor is derived from a TP>1 result, so the
+// check stays non-circular for both.
 func TestCalculateKVBlocks_PoolIsPhysicallyRealizable(t *testing.T) {
-	mc, hc, params := validDenseModelConfig(), validHWConfig(), validDenseKVParams()
+	fixtures := []struct {
+		name   string
+		mc     sim.ModelConfig
+		params latency.KVCapacityParams
+		// exactAtEveryTP records whether numKVHeads >= 16, i.e. whether the tp=16 row is on
+		// the exact per-GPU basis or inside the head-replication approximation.
+		exactAtEveryTP bool
+	}{
+		{"llama-3.1-8b/H100", validDenseModelConfig(), validDenseKVParams(), false},
+		{"llama-2-7b/H100", llama2MHAModelConfig(), validDenseKVParams(), true},
+	}
+
 	const blockSize = int64(16)
 	const util = 0.9
+	hc := validHWConfig()
 	perGPUBudgetGiB := hc.MemoryGiB * util
 
-	// Recover the tp-independent weights+activation total from the single-GPU budget:
-	//   blocks(1) x blockCost(1) = (gpu_mem x util - (W+A) - 0.15) x 2^30
-	blocks1, err := latency.CalculateKVBlocks(mc, hc, 1, 1, blockSize, util, params)
-	if err != nil {
-		t.Fatalf("TP=1: %v", err)
-	}
-	kvGiB1 := float64(blocks1*blockBudgetCostFor(t, mc, 1, blockSize)) / bytesPerGiB
-	weightsPlusActivationGiB := perGPUBudgetGiB - nonTorchPerGPUTP1GiB - kvGiB1
-	if weightsPlusActivationGiB <= 0 {
-		t.Fatalf("recovered weights+activation total is %.2f GiB; fixture cannot anchor the check",
-			weightsPlusActivationGiB)
-	}
+	for _, f := range fixtures {
+		t.Run(f.name, func(t *testing.T) {
+			// Recover the tp-independent weights+activation total from the single-GPU budget:
+			//   blocks(1) x blockCost(1) = (gpu_mem x util - (W+A) - 0.15) x 2^30
+			blocks1, err := latency.CalculateKVBlocks(f.mc, hc, 1, 1, blockSize, util, f.params)
+			if err != nil {
+				t.Fatalf("TP=1: %v", err)
+			}
+			kvGiB1 := float64(blocks1*blockBudgetCostFor(t, f.mc, 1, blockSize)) / bytesPerGiB
+			weightsPlusActivationGiB := perGPUBudgetGiB - nonTorchPerGPUTP1GiB - kvGiB1
+			if weightsPlusActivationGiB <= 0 {
+				t.Fatalf("recovered weights+activation total is %.2f GiB; fixture cannot anchor the check",
+					weightsPlusActivationGiB)
+			}
 
-	for _, tp := range []int{1, 2, 4, 8, 16} {
-		blocks, err := latency.CalculateKVBlocks(mc, hc, tp, 1, blockSize, util, params)
-		if err != nil {
-			t.Fatalf("TP=%d: %v", tp, err)
-		}
-		nonTorch := nonTorchPerGPUMultiGiB
-		if tp == 1 {
-			nonTorch = nonTorchPerGPUTP1GiB
-		}
-		kvPerGPUGiB := float64(blocks) * float64(blockSize) * perGPUKVBytesPerToken(t, mc, tp) / bytesPerGiB
-		usedPerGPUGiB := kvPerGPUGiB + weightsPlusActivationGiB/float64(tp) + nonTorch
+			for _, tp := range []int{1, 2, 4, 8, 16} {
+				blocks, err := latency.CalculateKVBlocks(f.mc, hc, tp, 1, blockSize, util, f.params)
+				if err != nil {
+					t.Fatalf("TP=%d: %v", tp, err)
+				}
+				nonTorch := nonTorchPerGPUMultiGiB
+				if tp == 1 {
+					nonTorch = nonTorchPerGPUTP1GiB
+				}
+				kvPerGPUGiB := float64(blocks) * float64(blockSize) * perGPUKVBytesPerToken(t, f.mc, tp) / bytesPerGiB
+				usedPerGPUGiB := kvPerGPUGiB + weightsPlusActivationGiB/float64(tp) + nonTorch
 
-		// Tolerance of one block's per-GPU bytes absorbs the two truncations.
-		oneBlockGiB := float64(blockSize) * perGPUKVBytesPerToken(t, mc, tp) / bytesPerGiB
-		if usedPerGPUGiB > perGPUBudgetGiB+oneBlockGiB {
-			t.Errorf("TP=%d: auto-calculated pool of %d blocks needs %.2f GiB per GPU "+
-				"(%.2f KV + %.2f weights+activation share + %.2f non-torch) but only %.2f GiB is available "+
-				"per GPU — the pool is not physically realizable",
-				tp, blocks, usedPerGPUGiB, kvPerGPUGiB, weightsPlusActivationGiB/float64(tp), nonTorch,
-				perGPUBudgetGiB)
-		}
+				// Tolerance of one block's per-GPU bytes absorbs the two truncations.
+				oneBlockGiB := float64(blockSize) * perGPUKVBytesPerToken(t, f.mc, tp) / bytesPerGiB
+				if usedPerGPUGiB > perGPUBudgetGiB+oneBlockGiB {
+					t.Errorf("TP=%d: auto-calculated pool of %d blocks needs %.2f GiB per GPU "+
+						"(%.2f KV + %.2f weights+activation share + %.2f non-torch) but only %.2f GiB is available "+
+						"per GPU — the pool is not physically realizable",
+						tp, blocks, usedPerGPUGiB, kvPerGPUGiB, weightsPlusActivationGiB/float64(tp), nonTorch,
+						perGPUBudgetGiB)
+				}
+			}
+
+			// Guard the fixture property the leniency note above depends on, so a later
+			// head-count edit cannot silently turn the exact tp=16 row into an approximate one.
+			kvHeads := f.mc.NumKVHeads
+			if kvHeads == 0 {
+				kvHeads = f.mc.NumHeads
+			}
+			if exact := kvHeads >= 16 && kvHeads%16 == 0; exact != f.exactAtEveryTP {
+				t.Errorf("exactAtEveryTP = %v but %d KV heads vs tp=16 says %v",
+					f.exactAtEveryTP, kvHeads, exact)
+			}
+		})
 	}
 }
 
