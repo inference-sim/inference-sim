@@ -267,3 +267,12 @@ func (m *Model) Engine() (scenario.Engine, error) {
 	}
 	return e, nil
 }
+
+// DataParallelWidth is the pool's attention data-parallel width.
+//
+// vLLM runs this many independent EngineCores, each with its own sequence cap, token budget
+// and KV budget, and splits requests disjointly across them. A single-instance simulator
+// modelling the aggregate must scale all three.
+func (m *Model) DataParallelWidth() int {
+	return m.scenario.Pools[m.poolIndex].Parallel.DP
+}

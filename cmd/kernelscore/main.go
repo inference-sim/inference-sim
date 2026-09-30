@@ -86,6 +86,11 @@ func main() {
 	}
 	var rows []row
 	var allMine, allTheirs []float64
+	// The monotone subset, scored alongside the whole. See Sweep.MonotoneMeasurement for
+	// why the split is a property of the measurement and why it raises the bar rather than
+	// lowering it.
+	var monoMine, monoTheirs []float64
+	var anomalous []string
 	byFramework := map[string][]float64{}
 	byFrameworkTheirs := map[string][]float64{}
 	byChip := map[string][]float64{}
@@ -150,6 +155,13 @@ func main() {
 		rows = append(rows, row{sw, mine, theirs})
 		allMine = append(allMine, mine...)
 		allTheirs = append(allTheirs, theirs...)
+		if sw.MonotoneMeasurement() {
+			monoMine = append(monoMine, mine...)
+			monoTheirs = append(monoTheirs, theirs...)
+		} else {
+			anomalous = append(anomalous, fmt.Sprintf("%s %s (%d points)",
+				sw.Scenario, sw.Label, len(mine)))
+		}
 		byFramework[sw.Framework] = append(byFramework[sw.Framework], mine...)
 		byFrameworkTheirs[sw.Framework] = append(byFrameworkTheirs[sw.Framework], theirs...)
 		chip := family(sw.GPU)
@@ -171,6 +183,25 @@ func main() {
 		len(allMine), harness.MAPE2(allMine), harness.Median(allMine), maxOf(allMine))
 	fmt.Printf("%-30s %5d %7.2f%% %7.2f%% %7.2f%%\n", "AISimulate (same points)",
 		len(allTheirs), harness.MAPE2(allTheirs), harness.Median(allTheirs), maxOf(allTheirs))
+
+	if len(monoMine) > 0 && len(monoMine) < len(allMine) {
+		fmt.Printf("\nExcluding sweeps whose MEASURED curve is non-monotone in concurrency.\n"+
+			"Time per output token cannot fall when a fixed deployment is given more\n"+
+			"concurrent work, so such a sweep is not recording a steady-state response and\n"+
+			"no monotone model can reproduce it. The predicate reads the measurement only,\n"+
+			"never a prediction, and removing these sweeps IMPROVES AISimulate's score too,\n"+
+			"so it raises the bar rather than lowering it.\n\n")
+		fmt.Printf("%-30s %5s %8s %8s %8s\n", "model (monotone only)", "n", "MAPE", "median", "worst")
+		fmt.Printf("%-30s %5d %7.2f%% %7.2f%% %7.2f%%\n", "BLIS + blis-latency-kernel",
+			len(monoMine), harness.MAPE2(monoMine), harness.Median(monoMine), maxOf(monoMine))
+		fmt.Printf("%-30s %5d %7.2f%% %7.2f%% %7.2f%%\n", "AISimulate (same points)",
+			len(monoTheirs), harness.MAPE2(monoTheirs), harness.Median(monoTheirs),
+			maxOf(monoTheirs))
+		fmt.Printf("\nexcluded (%d sweep(s)):\n", len(anomalous))
+		for _, a := range anomalous {
+			fmt.Printf("  %s\n", a)
+		}
+	}
 
 	fmt.Printf("\nAISimulate publishes %.2f%% TPOT shape error over its whole %d-point\n"+
 		"snapshot. The row above is the check that this harness measures that same\n"+

@@ -9,8 +9,21 @@ On the 238 points measured under vLLM -- the engine BLIS models:
 
 | Model | n | MAPE | median | worst |
 |---|---|---|---|---|
-| BLIS + blis-latency-kernel | 238 | **11.38%** | 7.82% | 62.15% |
+| BLIS + blis-latency-kernel | 238 | **11.26%** | 7.82% | 66.14% |
 | AISimulate, same points | 238 | **7.15%** | 4.19% | 75.12% |
+
+Excluding the four sweeps whose MEASURED curve is non-monotone in concurrency:
+
+| Model | n | MAPE | median |
+|---|---|---|---|
+| BLIS + blis-latency-kernel | 213 | **10.72%** | 7.51% |
+| AISimulate, same points | 213 | **6.68%** | 4.09% |
+
+Both figures are reported because the exclusion criterion, while defensible, moves the
+comparison. It is a property of the measurement alone -- time per output token cannot fall
+when a fixed deployment is given more concurrent work -- it never reads a prediction, and it
+IMPROVES AISimulate's score (7.15% to 6.68%) as well as ours, so it raises the bar rather
+than lowering it.
 
 **AISimulate is still ahead.** The goal was to beat 9.41%; this does not.
 
@@ -91,3 +104,52 @@ points and 23.57% error.
 
 The 209 non-vLLM points (sglang, trt) are out of scope for a BLIS fidelity claim and are not
 included above. Running them would produce a number, not evidence.
+
+## The ceiling on what this comparison can show
+
+Two bugs were found and fixed after the first score. One was serious; the second finding is
+a limit rather than a bug, and it bounds the whole exercise.
+
+**Fixed: data parallelism was not scaling the batch caps.** vLLM runs `dp` independent
+EngineCores, each with its own `max_num_seqs` and token budget, splitting requests disjointly
+across them -- the same rule `KVBudget` already applied to KV blocks. The harness set a single
+core's caps. On the two `ep4-dp2` sweeps, which begin at concurrency 256 against a stated
+`max_num_seqs` of 256, the resident batch saturated at the very first point and the predicted
+curve went FLAT: 1.002 and 1.003 across a four-fold concurrency rise, against a measurement
+that doubled. At concurrency 512 the error fell from 59.47% to 0.84% once dp was applied.
+
+Aggregate effect was small -- 11.38% to 11.26% -- because only 3 of 238 points sit above
+`256 x dp`. A serious bug on few points.
+
+**The limit: the snapshot publishes no engine settings.** Its topology records carry
+`framework`, `precision`, `serving`, `spec_method` and the five parallelism widths. They do
+NOT carry `max_num_seqs`, `max_num_batched_tokens`, `block_size`,
+`gpu_memory_utilization`, `cudagraph_mode`, `scheduling_policy`, or the chunked-prefill and
+prefix-caching flags.
+
+The scenario files generated for the earlier step-time comparison say so, and justify
+defaulting them on the grounds that "the comparison scores a ratio across concurrency at a
+fixed deployment, so a constant cancels". That reasoning is correct for a step-time ratio and
+WRONG once a scheduler is in the loop: `max_num_seqs` and the token budget bound the resident
+batch, and the resident batch is what sets the shape of the curve. A default that cancelled
+before is load-bearing now.
+
+So part of the residual is attributable to engine settings this project has to guess. The
+honest consequence: this comparison cannot be driven to AISimulate's figure by any amount of
+correct modelling, because AISimulate replays the engine that produced the measurements and
+therefore knows the settings, while BLIS is given a guess. Closing the remaining gap by
+adjusting those guesses until the 238 points improve would be fitting to the evaluation set.
+
+## What was ruled out as the cause of the minimax deficit
+
+`ExpertsTouched(tokens, E, k, local) = local * (1 - ((E-k)/E)^tokens)` is identical for
+minimax (E=256, k=8) and gpt-oss (E=128, k=4) at every batch size -- 0.031 at one token,
+0.398 at 16, 0.983 at 128 -- because the two models' E/k ratios coincide. So the expert-count
+term cannot explain a minimax-specific error, and the hypothesis that it did is rejected.
+
+## Standing
+
+The goal was to beat AISimulate. On the vLLM subset AISimulate scores 7.15% (6.68% on the
+monotone subset), not the 9.41% quoted in the goal, which is its figure over all 447 points
+including the sglang and trt arms BLIS does not model. BLIS scores 11.26% and 10.72%. The
+gap is real and is not closed.
