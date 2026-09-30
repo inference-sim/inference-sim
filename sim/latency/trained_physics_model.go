@@ -738,10 +738,33 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	// Routed-expert weight bytes are scoped via ExpertPlacement (B1 fix, #1419):
 	// PerGPUExpertCount = numExperts/expertShardGroup full-expert-equivalents resident per
 	// GPU, replacing the old batch-dependent nEff = min(N, max(k, B·k))/tp. It is applied
-	// unconditionally for MoE, including DP=1/EP-off. It is the saturation-point behaviour
-	// the model targets and INTENTIONALLY changes MoE step-time output versus the old
-	// batch-dependent term. Weight loading is /tp (not /dp): weights are replicated across
-	// DP groups.
+	// unconditionally for MoE, including DP=1/EP-off. Weight loading is /tp (not /dp):
+	// weights are replicated across DP groups.
+	//
+	// That resident count is the CEILING, not the per-step cost. #1419 left the term
+	// batch-INDEPENDENT — every resident expert streamed on every step — which made MoE
+	// decode ITL flat in batch size: already saturated at B=1 (over-charging expert
+	// bandwidth by ~N/k there: 4× for Mixtral-8x7B, ~32× for a DeepSeek-V3-scale router)
+	// and therefore unable to rise as the running batch grows. #1849 restores the batch
+	// dependence ON TOP OF the corrected #1419/#1548 basis by scaling the resident count
+	// by the expected fraction of experts that any token in the step actually routes to:
+	//
+	//	activatedFraction(B) = nEff(B)/N = 1 − ((N−k)/N)^B
+	//
+	// the same coupon-collector expectation the roofline backend has used since #764/#790,
+	// now shared via activatedExpertFraction. B is the step's total token population
+	// (prefill + decode) — the value already passed to placement.Resolve.
+	//
+	// The fraction lies in [0,1], so it can only scale the resident count DOWN: the
+	// shard-group ceiling from #1419/#1548 is untouched and DP/EP sharding correctness is
+	// preserved, while B → ∞ recovers #1419's saturation behaviour exactly. This
+	// INTENTIONALLY changes MoE trained-physics step-time output (as #1419 itself did);
+	// dense models take neither branch below, so their output is byte-identical.
+	//
+	// Known first-order approximation (#1849, deferred in the spirit of #789): the fraction
+	// is GLOBAL. Under expert parallelism the distinct activated experts are spread across
+	// the group, so one rank's activated fraction of ITS OWN resident experts differs from
+	// the global fraction. The two agree at saturation.
 	//
 	// The divisor is expertWeightShardGroup, NOT moeGroup (#1548). They coincide for every
 	// pre-#1548 config — EP-off tensor-shards the experts over the flattened TP·DP group,
@@ -755,8 +778,10 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	// MoE and dense layers have different FFN dims and different weight loading.
 	var bytesFfn float64
 	if m.numMoELayers > 0 {
-		wLoad := m.placement.Resolve(totalPrefillTokens+totalDecodeTokens, kEff, m.numExperts, m.expertWeightShardGroup, m.dp)
-		bytesFfn += float64(m.numMoELayers) * wLoad.PerGPUExpertCount * 3 * d * float64(m.dFFMoE) * bpp
+		weightTokens := totalPrefillTokens + totalDecodeTokens
+		wLoad := m.placement.Resolve(weightTokens, kEff, m.numExperts, m.expertWeightShardGroup, m.dp)
+		activated := activatedExpertFraction(m.numExperts, m.kEff, weightTokens)
+		bytesFfn += float64(m.numMoELayers) * wLoad.PerGPUExpertCount * activated * 3 * d * float64(m.dFFMoE) * bpp
 		// Shared-expert weight (B3): a standard MLP sharded over the attention TP group
 		// (size tp, NOT the flattened MoE group), loaded once per MoE layer.
 		if m.sharedExpertFFNDim > 0 {
