@@ -81,13 +81,17 @@ func main() {
 	if *framework != "" {
 		fmt.Printf("restricted to framework %q\n", *framework)
 	}
-	fmt.Printf("each point: max(%d, %d x concurrency) completions, first %.0f%% discarded\n",
-		*sessions, *cycles, 100**warmup)
-	fmt.Printf("  A closed-loop pool does not start in its steady state, and a budget that\n")
-	fmt.Printf("  does not scale with concurrency covers fewer pool cycles as the level\n")
-	fmt.Printf("  rises. Both were measured: without them the same score read 9.89%% to\n")
-	fmt.Printf("  11.20%% with no trend across session budgets, which is harness noise\n")
-	fmt.Printf("  rather than a property of the deployment.\n")
+	fmt.Printf("workload: AISimulate's replay spec. At an isl:osl label both lengths are\n")
+	fmt.Printf("  sampled uniformly and independently on [int(label*0.8), label] inclusive --\n")
+	fmt.Printf("  the label is an UPPER BOUND, not a value -- and each point runs\n")
+	fmt.Printf("  concurrency*10 requests. Source: run_e2e_accuracy.py (random_range_ratio\n")
+	fmt.Printf("  0.8, request_count concurrency*10) and runner.py (lower = int(upper*ratio),\n")
+	fmt.Printf("  inclusive randint). The first %.0f%% of completions are discarded: a\n", 100**warmup)
+	fmt.Printf("  closed-loop pool does not start in its steady state.\n")
+	fmt.Printf("error: anchor EXCLUDED, matching build_e2e_accuracy_overview.py. Both sides\n")
+	fmt.Printf("  are normalised to their own lowest concurrency. Verified by reproduction:\n")
+	fmt.Printf("  this definition on AISimulate's own data returns its published %.2f%%.\n",
+		c.AISimulateTotals.TPOTShapeErrorPct)
 	fmt.Println()
 
 	type row struct {

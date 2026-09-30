@@ -124,3 +124,51 @@ definition its whole-snapshot shape error is 10.05%, and on the 447-point subset
 
 Until 1 and 2 are done, no BLIS-vs-AISimulate figure from this worktree is apples to apples,
 including the ones already recorded.
+
+## The guarantee, as executable checks
+
+`sim/kernelmodel/harness/parity_test.go` holds the checks that fail when the comparison stops
+being apples to apples. Each was verified to fail on the defect it guards, and two of them
+were themselves wrong on the first attempt in ways worth recording.
+
+**The error definition is settled by reproduction.** AISimulate's definition, applied to
+AISimulate's own per-point relatives over the whole 1137-point snapshot, must return the
+`tpot_shape_error_pct` it publishes. It does: **10.05% on 878 comparisons against a published
+10.05%**. The anchor-inclusive variant returns something else, so the check discriminates
+rather than merely passing.
+
+A first version of this check compared against the 447-point SCORED SUBSET and passed the
+WRONG definition. On that subset the anchor-inclusive figure (9.41%) happens to sit nearer the
+whole-snapshot 10.05% than the correct anchor-exclusive one (11.55%). That is a coincidence of
+subsetting, and comparing a subset figure to a whole-snapshot published number was never
+valid. The check now reads the full snapshot.
+
+**The workload constants are asserted against literals restated from AISimulate's source**,
+not against the package constants the harness uses. A first version compared
+`w.RequestCount` to `concurrency * aisimulateRequestsPerUser` -- the same constant the code
+reads -- so changing the constant changed both sides and the check still passed. Verified by
+mutation: setting the ratio to 0.9 or the count to 4 cycles now fails.
+
+**The distribution reaching BLIS is verified end to end.** 400 generated requests span exactly
+[819, 1024] with mean 920.1 against an expected 921.5, through BLIS's `empirical` sampler.
+
+## What is now matched, and what cannot be
+
+| Property | Real measurement | AISimulate | BLIS (this harness) |
+|---|---|---|---|
+| ISL interval at the 1k label | unknown | [819, 1024] | [819, 1024] |
+| OSL interval at the 1k label | unknown | [819, 1024] | [819, 1024] |
+| Length sampling | unknown | uniform, independent per request | uniform, independent per request |
+| Requests per point | unknown | concurrency x 10 | concurrency x 10 |
+| Arrival | unknown | all at t=0, concurrency gates | all at t=0, concurrency gates |
+| Prefix reuse | unknown | none (`cached_prefix_tokens` 0) | none |
+| Draw sequence | unknown | Python MT, seed 0 | Go RNG, seed 42 |
+| Error definition | — | anchor excluded | anchor excluded |
+
+BLIS now matches AISimulate on every property the snapshot and AISimulate's source specify.
+The two remaining differences are stated rather than hidden: the draw SEQUENCE differs (the
+distribution does not), and the REAL benchmark's workload is unknown -- InferenceX records
+only `isl` and `osl` integers, and vLLM's own `range_ratio` is symmetric where AISimulate's is
+one-sided, so AISimulate's replay simulates a ~10% shorter mean context than the real runs
+under either reading. That is a property of the baseline and it bounds how closely any
+simulator can match these measurements.

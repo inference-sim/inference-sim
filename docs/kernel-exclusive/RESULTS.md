@@ -317,3 +317,120 @@ here for that decision rather than taken.
 Worth noting what it does NOT explain: the ratio falls below 1.0 by batch 1024, so the
 over-prediction is not uniform, and the three worst points in the corpus sit at concurrency
 1024 and 2048 where attention is UNDER-predicted. More than one term is in play.
+
+## Correction: the attention over-prediction is not family-wide
+
+The 1.29x decode-attention over-prediction recorded earlier was measured on ONE geometry --
+12 query heads, 2 KV heads, head dimension 128, which is minimax-m2.5's per-rank shape at tp=4
+-- on 26 points. `blis-registry/scripts/validate_against_aisimulate_tables.py` now prices the
+committed coefficients against every measured shape in the family and finds:
+
+| population | n | predicted / measured |
+|---|---|---|
+| h200 gqa, corpus regime, minimax per-rank geometry | 26 | **1.294** |
+| h200 gqa, corpus regime, every geometry | 3,003 | **0.795** |
+
+Both figures are correct and they answer different questions. Across the family the committed
+form is 20% too CHEAP; on one shape it is 29% too expensive. A coefficient scoped to a part
+applies to every geometry on it, so the family-wide figure is the one that describes the
+coefficient, and the per-geometry figure describes the residual at the shape minimax happens to
+run.
+
+The consequence matters more than either number: a form that is 0.80 on average and 1.29 on one
+shape is NOT uniformly mis-scaled. Its error depends on geometry. That is scatter, not bias,
+and it is precisely what the error decomposition predicted -- BLIS and AISimulate carry
+identical mean log-error and differ only in spread. A re-fit of the floor and rate moves the
+average and cannot fix the geometry dependence, which is why "recalibrate attention" would not
+have closed the gap and why the decomposition was worth doing before the re-fit.
+
+Two filtering details had to be right for the two figures to be comparable at all, and both
+were wrong in a first version of the gate:
+
+  - The KV cache dtype halves or doubles bytes per token. Pooling fp8 and bfloat16 rows gave
+    1.156 where the fp8 rows alone give 1.294. The corpus runs fp8 throughout, so the check
+    filters to it.
+  - The collection must be pinned. Globbing every framework and version gave 66,148 rows where
+    the committed fit used 40,367, and a different fit with them.
+
+## What the sliding-window split changed, measured
+
+The per-kind swa coefficients are better calibrated in isolation -- a windowed kernel sustains
+0.26 of peak bandwidth on h200 against 0.58 for full attention, and the naive form is 32x to
+245x wrong on windowed rows across six parts. Dispatching on the kind made the END-TO-END shape
+score WORSE:
+
+| | before | after |
+|---|---|---|
+| all 447 points | 13.67% | 13.86% |
+| gpt-oss only (the only model with swa layers) | 11.65% | 12.09% |
+
+147 points moved, 85 worse and 62 better. The mechanism is visible: the swa law makes windowed
+layers more expensive, gpt-oss was already over-predicting on 79 of its 190 points, and the
+change raised the prediction on 146 of them.
+
+So a more accurate per-kernel coefficient moved the aggregate the wrong way. That is a finding
+about gpt-oss, not an argument against the coefficient: something else in its step is already
+too expensive, and under-charging the windowed layers was partly cancelling it. The
+coefficients stay, because they are measured and the cancellation was accidental; the
+cancelling term is the thing to find.
+
+## T6: re-baseline after the per-kind attention work
+
+| Model | n | MAPE | median | worst |
+|---|---|---|---|---|
+| BLIS + blis-latency-kernel | 192 | **14.98%** | 11.64% | 73.86% |
+| AISimulate, same points | 192 | **8.87%** | 5.68% | 75.12% |
+
+Against 14.31% before the per-kind split. The change made the score WORSE by 0.67 points, and
+the reason is the one already recorded for the 447-point shape score: the windowed law makes
+gpt-oss's windowed layers more expensive, gpt-oss was already over-predicting, and
+under-charging those layers had been partly cancelling another term that is too expensive.
+
+**SOTA was not attained.** AISimulate remains ahead, 8.87% against 14.98% on the apples-to-apples
+vLLM subset.
+
+## What the work established, which is not the same as what it scored
+
+The tasks were executed as specified and every correctness gate passes. What they produced is
+diagnostic rather than a score improvement, and two of the diagnoses contradict conclusions
+this project had previously recorded:
+
+**The decode-attention form is correct where the evaluation models run.** Its error depends on
+the GQA group size, not on the part:
+
+| group (query heads per KV head) | ratio | what occupies it |
+|---|---|---|
+| 2 | 1.42 | — |
+| 6 to 16 | **1.064** | all four evaluation models |
+| 32 | 0.70 | nemotron-3-ultra |
+| 64 to 128 | 0.09 to 0.14 | kimi-k3, the GLM-5 family |
+
+So the pooled 0.78 figure that looked like a 22% systematic under-charge is a COVERAGE gap:
+group sizes above 32 are MLA and sparse-MLA models, a different architecture priced by the GQA
+law because the kernel has no MLA law. At 0.09 the law is wrong by more than 10x there. Acting
+on the pooled figure would have re-fitted a coefficient that is already right for the models
+being scored.
+
+**The earlier 1.294 over-prediction was one geometry on 26 points.** Family-wide it is 0.795,
+and at evaluation geometries 1.064. All three figures are correct and answer different
+questions; conflating them is what made a re-fit look justified.
+
+**A better per-kernel coefficient can make the aggregate worse.** The windowed fits are sound --
+naive error 32x to 245x across six parts, and a windowed kernel demonstrably sustains 0.26 of
+peak against 0.58 for full attention on h200. They still moved the score the wrong way, because
+they removed an accidental cancellation. That is a fact about gpt-oss's other terms, not an
+argument against the measurement.
+
+## The remaining gap, located
+
+MLA and sparse MLA have 29,429 measured rows on h200 alone and no law of their own. They are
+priced by the GQA law at a ratio of 0.09 to 0.14. Four of this project's catalog models are
+MLA or sparse-MLA (kimi-k3, glm-5, glm-5.2, glm-5.3), and glm-5 carries 74 of the 447 scored
+points at a 17.78% mean error -- the worst of any model in the corpus.
+
+That is the next piece of work, and it is a new FORM rather than a re-fit: the MLA parquets
+carry no KV-head or head-dimension column because an MLA kernel's byte count is a property of
+the architecture -- one latent vector per token, of width kv_lora_rank + qk_rope_head_dim --
+rather than of a head width in the sweep. `scripts/fit_attention_by_kind.py` reports those kinds
+as unfittable rather than fitting them from a guess, which is why the gap is visible rather
+than absorbed.
