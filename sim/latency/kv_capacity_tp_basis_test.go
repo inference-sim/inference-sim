@@ -183,7 +183,7 @@ func TestCalculateKVBlocks_KnownAnswer_HighTP(t *testing.T) {
 // thousands of blocks. The anti-assertion below states that explicitly, so the
 // asymmetry is a tested decision rather than an accident — the residual it leaves (the
 // reason a corrected estimate lands ~1.09x a measured pool rather than ~1.0x) is
-// documented at the subtraction site and tracked separately.
+// documented at the subtraction site and tracked as #1848.
 func TestCalculateKVBlocks_PerTPSlopeLaw(t *testing.T) {
 	cases := []struct {
 		name          string

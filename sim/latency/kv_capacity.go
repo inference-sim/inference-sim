@@ -515,7 +515,7 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, dp int,
 	// leaves the auto-calc slightly OPTIMISTIC at high TP. That residual is the reason
 	// the corrected estimate lands ~1.09× a measured pool rather than ~1.0×, and it is
 	// explicitly out of scope for #1846 (which tracks only the block-division units
-	// mismatch) — see the follow-up issue linked from that one. Changing it here would
+	// mismatch) and is tracked as #1848. Changing it here would
 	// also be a silent second behavior change inside a fix whose contract is "TP=1
 	// byte-identical, TP>1 corrected by exactly the units factor".
 	var activationGiB float64
