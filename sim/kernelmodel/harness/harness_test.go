@@ -176,3 +176,107 @@ func TestTheErrorStatisticsAreWhatTheyClaim(t *testing.T) {
 		t.Error("MAPE2 of nothing must be NaN, not a number that reads as perfect")
 	}
 }
+
+// The measured mean must not depend on how many requests the run happened to complete. That
+// dependence is harness noise, and before the warm-up discard and the cycle-scaled budget it
+// was worth 1.3 points of MAPE with no trend -- larger than several of the modelling effects
+// this comparison reports.
+//
+// Behavioural: it runs the same point under budgets that differ by a factor of five and
+// requires the observed mean to agree within a tolerance far below the effects being claimed.
+func TestTheObservedMeanDoesNotDependOnTheSessionBudget(t *testing.T) {
+	c := corpus(t)
+	var sw Sweep
+	for _, s := range c.Sweeps {
+		if s.Scenario == "minimax-m2.5-b200-fp8-vllm-tp4.yaml" && s.Label == "1k1k" {
+			sw = s
+		}
+	}
+	if sw.Scenario == "" {
+		t.Skip("reference sweep absent from the corpus")
+	}
+	// Concurrency 32 is where the dependence was worst: a 40-completion budget covered
+	// barely one pool cycle there.
+	const concurrency = 32
+	base := cfg()
+	var first float64
+	for _, floor := range []int{24, 60, 120} {
+		c := base
+		c.SessionsPerPoint = floor
+		obs, err := Run(sw, concurrency, c)
+		if err != nil {
+			t.Fatalf("floor %d: %v", floor, err)
+		}
+		if obs.Measured <= 0 {
+			t.Fatalf("floor %d: no requests contributed to the mean", floor)
+		}
+		if first == 0 {
+			first = obs.MeanITLUs
+			continue
+		}
+		rel := math.Abs(obs.MeanITLUs-first) / first
+		if rel > 0.05 {
+			t.Errorf("a %d-completion floor gave %.0f us against %.0f at the smallest "+
+				"floor, a %.1f%% difference; the mean is still tracking the budget rather "+
+				"than the deployment", floor, obs.MeanITLUs, first, 100*rel)
+		}
+	}
+}
+
+// The budget must scale with concurrency, or a high-concurrency point measures fewer pool
+// cycles than a low one and its mean is correspondingly noisier.
+func TestTheCompletionBudgetScalesWithConcurrency(t *testing.T) {
+	c := corpus(t)
+	sw := c.Sweeps[0]
+	low, err := Run(sw, 4, cfg())
+	if err != nil {
+		t.Fatalf("c=4: %v", err)
+	}
+	high, err := Run(sw, 64, cfg())
+	if err != nil {
+		t.Fatalf("c=64: %v", err)
+	}
+	if high.Completed <= low.Completed {
+		t.Errorf("concurrency 64 completed %d requests and concurrency 4 completed %d; the "+
+			"budget is not scaling, so the wider pool measures fewer cycles",
+			high.Completed, low.Completed)
+	}
+	// And both must measure several cycles, not one.
+	if got := float64(high.Measured) / 64; got < 1.5 {
+		t.Errorf("concurrency 64 measured %d requests, only %.1f pool cycles after the "+
+			"warm-up discard", high.Measured, got)
+	}
+}
+
+// The warm-up discard must actually discard, and must never discard everything: a run that
+// measured nothing would report a zero mean, which reads as a perfect score.
+func TestTheWarmupDiscardLeavesSomethingMeasured(t *testing.T) {
+	c := corpus(t)
+	sw := c.Sweeps[0]
+	conf := cfg()
+	conf.WarmupFraction = 0.5
+	obs, err := Run(sw, 8, conf)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if obs.WarmupDiscarded == 0 {
+		t.Error("a 50% warm-up fraction discarded nothing")
+	}
+	if obs.Measured == 0 {
+		t.Fatal("nothing was measured, so the reported mean is zero and would read as a " +
+			"perfect prediction")
+	}
+	if obs.WarmupDiscarded+obs.Measured > obs.Completed {
+		t.Errorf("discarded %d + measured %d exceeds %d completions",
+			obs.WarmupDiscarded, obs.Measured, obs.Completed)
+	}
+	// An absurd fraction must fall back rather than measure nothing.
+	conf.WarmupFraction = 0.999999
+	obs2, err := Run(sw, 8, conf)
+	if err != nil {
+		t.Fatalf("Run at an extreme warmup: %v", err)
+	}
+	if obs2.Measured == 0 || obs2.MeanITLUs <= 0 {
+		t.Error("an extreme warm-up fraction left nothing measured instead of falling back")
+	}
+}

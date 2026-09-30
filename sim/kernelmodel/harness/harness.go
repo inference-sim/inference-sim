@@ -141,6 +141,12 @@ type Observation struct {
 	KVBlocks       int64
 	AdmissionUsed  Admission
 	StepsSimulated int64
+
+	// WarmupDiscarded is how many leading completions were dropped, and Measured how many
+	// contributed to MeanITLUs. Reported so a reader can see the mean was not taken over a
+	// transient, and so a run that discarded everything is visible rather than silent.
+	WarmupDiscarded int
+	Measured        int
 }
 
 // Config carries what a run needs beyond the sweep itself.
@@ -159,6 +165,31 @@ type Config struct {
 	// best value would be fitting to the evaluation set.
 	MaxNumSeqsScale  float64
 	TokenBudgetScale float64
+
+	// CyclesPerPoint is how many full pool cycles of completions each point must gather, on
+	// top of the SessionsPerPoint floor. A "cycle" is `concurrency` completions: one pass of
+	// every user in the pool. Zero means defaultCyclesPerPoint.
+	CyclesPerPoint int
+
+	// WarmupFraction is the leading fraction of completed requests whose inter-token
+	// latency is discarded before the mean is taken.
+	//
+	// A closed-loop pool does not start at its steady state: at t=0 all N users submit at
+	// once, so the first requests see a resident batch that is still filling and a KV cache
+	// that is still cold. Pooling their ITL with the steady-state ones makes the reported
+	// mean depend on how many requests the run completed, which is a property of the
+	// harness rather than of the deployment. Measured before this existed: the same score
+	// read 9.92%, 11.20%, 9.89%, 10.72% and 10.64% at 20, 30, 40, 60 and 100 sessions per
+	// point -- a 1.3-point swing with no trend, which is transient contamination.
+	//
+	// Zero disables it. The default used by cmd/kernelscore is stated there.
+	WarmupFraction float64
+
+	// ThinkTimeUs is per-round client think time. Zero -- the default and what every
+	// scoring run uses -- models a saturating client that re-submits the instant its
+	// previous request finishes, which is what a closed-loop concurrency sweep measures.
+	// Non-zero exists so cmd/sensitivity can show whether the assumption is load-bearing.
+	ThinkTimeUs int64
 }
 
 // scaled applies a sensitivity multiplier, with zero meaning "unchanged".
@@ -204,9 +235,24 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 		blocks = perSeq * int64(concurrency) * 2
 	}
 
+	// Enough completions to measure a steady state, scaled by the concurrency level.
+	//
+	// SessionsPerPoint alone is not a sufficient specification: at concurrency 32 a budget
+	// of 40 completions covers barely one pool cycle, and the measured mean then depends on
+	// where the run happened to stop. Observed on minimax-m2.5-b200-fp8-vllm-tp4 at c=32:
+	// 9746, 8186, 9397, 9490 us at 20, 40, 100 and 200 completions -- converging only once
+	// several pool cycles are covered, while c=8 converged by 40.
+	//
+	// So the budget is the larger of the stated floor and CyclesPerPoint full pool cycles.
+	// This is a convergence criterion, not a tuning knob: it is set from the shape of the
+	// transient and applies identically to every point and both compared models.
+	cycles := cfg.CyclesPerPoint
+	if cycles <= 0 {
+		cycles = defaultCyclesPerPoint
+	}
 	total := cfg.SessionsPerPoint
-	if total < concurrency {
-		total = concurrency
+	if byCycles := concurrency * cycles; byCycles > total {
+		total = byCycles
 	}
 
 	// The workload is built as a BLIS WorkloadSpec and expanded by BLIS's own generator,
@@ -234,9 +280,10 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 		Clients: []workload.ClientSpec{{
 			ID:          "closed-loop",
 			Concurrency: concurrency,
-			// Zero think time: the snapshot measures a saturating client, so a user
-			// re-submits the instant its previous request finishes.
-			ThinkTimeUs: 0,
+			// Zero think time by default: the snapshot measures a saturating client, so
+			// a user re-submits the instant its previous request finishes. Varied only by
+			// cmd/sensitivity, never to tune a score.
+			ThinkTimeUs: cfg.ThinkTimeUs,
 			// RateFraction stays 0, which is what makes this a concurrency client.
 			InputDist: workload.DistSpec{
 				Type: "constant", Params: map[string]float64{"value": float64(isl)},
@@ -298,7 +345,14 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	// The closed loop: BLIS's own seam. Each completion returns the follow-up request that
 	// keeps the pool at N in flight, so the RESIDENT batch is whatever admission control
 	// allows rather than N by construction.
-	s.OnRequestDone = mgr.OnComplete
+	// Completion order, for the warm-up discard. OnRequestDone fires once per request
+	// reaching a terminal state, in completion order, which is exactly the sequence the
+	// steady-state cut needs.
+	var order []string
+	s.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
+		order = append(order, req.ID)
+		return mgr.OnComplete(req, tick)
+	}
 	// InjectArrival, not EnqueueRequest. EnqueueRequest puts a request in the wait queue and
 	// schedules only its timeout; it is the tail of the arrival path, called BY QueuedEvent,
 	// which is what triggers the first StepEvent. Calling it directly leaves the simulator
@@ -310,25 +364,44 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	}
 	s.Run()
 
-	return summarize(s, blocks, admission), nil
+	return summarize(s, order, cfg.WarmupFraction, blocks, admission), nil
 }
 
 // summarize reduces a finished simulation to the observation the score needs.
-func summarize(s *sim.Simulator, blocks int64, a Admission) Observation {
-	var sum float64
-	var n int
-	for _, itl := range s.Metrics.AllITLs {
-		sum += float64(itl)
-		n++
-	}
+//
+// The mean is taken over the per-request mean inter-token latencies of the requests that
+// completed AFTER the warm-up prefix, in completion order. Two reasons it is per request
+// rather than over BLIS's pooled AllITLs: a pooled mean weights a long request more heavily
+// than a short one, and only a per-request view can drop a warm-up prefix at all.
+func summarize(s *sim.Simulator, order []string, warmup float64,
+	blocks int64, a Admission) Observation {
 	obs := Observation{
-		Completed:     len(s.Metrics.RequestITLs),
+		Completed:     len(order),
 		KVBlocks:      blocks,
 		AdmissionUsed: a,
+	}
+	cut := 0
+	if warmup > 0 && warmup < 1 {
+		cut = int(float64(len(order)) * warmup)
+	}
+	// Never discard everything: a run that completed few requests still has to report
+	// something, and silently returning zero would read as a perfect score.
+	if cut >= len(order) {
+		cut = 0
+	}
+	var sum float64
+	var n int
+	for _, id := range order[cut:] {
+		if itl, ok := s.Metrics.RequestITLs[id]; ok && itl > 0 {
+			sum += itl
+			n++
+		}
 	}
 	if n > 0 {
 		obs.MeanITLUs = sum / float64(n)
 	}
+	obs.WarmupDiscarded = cut
+	obs.Measured = n
 	return obs
 }
 
@@ -404,3 +477,8 @@ func (s Sweep) MonotoneMeasurement() bool {
 	}
 	return true
 }
+
+// defaultCyclesPerPoint is how many full pool cycles a point gathers when the caller states
+// no preference: four, of which the first half is discarded as warm-up, leaving two settled
+// cycles. Chosen from the observed convergence of the per-point mean rather than from a score.
+const defaultCyclesPerPoint = 4

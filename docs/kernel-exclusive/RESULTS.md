@@ -9,31 +9,66 @@ On the 238 points measured under vLLM -- the engine BLIS models:
 
 | Model | n | MAPE | median | worst |
 |---|---|---|---|---|
-| BLIS + blis-latency-kernel | 238 | **11.26%** | 7.82% | 66.14% |
+| BLIS + blis-latency-kernel | 238 | **12.01%** | — | — |
 | AISimulate, same points | 238 | **7.15%** | 4.19% | 75.12% |
 
 Excluding the four sweeps whose MEASURED curve is non-monotone in concurrency:
 
-| Model | n | MAPE | median |
-|---|---|---|---|
-| BLIS + blis-latency-kernel | 213 | **10.72%** | 7.51% |
-| AISimulate, same points | 213 | **6.68%** | 4.09% |
+| Model | n | MAPE | median | worst |
+|---|---|---|---|---|
+| BLIS + blis-latency-kernel | 213 | **11.54%** | 8.74% | 67.07% |
+| AISimulate, same points | 213 | **6.68%** | 4.09% | 75.12% |
 
-Both figures are reported because the exclusion criterion, while defensible, moves the
-comparison. It is a property of the measurement alone -- time per output token cannot fall
-when a fixed deployment is given more concurrent work -- it never reads a prediction, and it
-IMPROVES AISimulate's score (7.15% to 6.68%) as well as ours, so it raises the bar rather
-than lowering it.
+**AISimulate is ahead.** The goal was to beat it; this does not.
 
-**AISimulate is still ahead.** The goal was to beat 9.41%; this does not.
+These figures are HIGHER than the 11.26% and 10.72% this document reported earlier, and the
+earlier numbers were wrong. They were taken before the harness had a convergence criterion,
+and part of their apparent advantage was measurement noise flattering the result. See
+"Making the measurement converge" below. Both corrections are recorded rather than quietly
+replaced, because a number that moved when the method was fixed is exactly the kind of thing
+a reviewer needs to see.
 
-What did improve, and it is the thesis working: the kernel alone scores 13.67% on the full
-447 points with resident batch assumed equal to client concurrency. Letting BLIS's scheduler
-decide the resident batch moves the vLLM subset to 11.38%. The comparable AISimulate figure
-on that same subset is 7.15%, not 9.41% -- the 9.41% is over all 447 points, and the vLLM
-subset is one AISimulate happens to fit better than average.
+What the thesis did establish: the kernel alone scores 13.67% on the full 447 points with the
+resident batch assumed equal to client concurrency. Letting BLIS's scheduler decide the
+resident batch moves the vLLM subset to 12.01%. Part of the gap closed, and a larger part
+remains.
 
-So the honest statement is: the scheduler closed part of the gap, and a gap remains.
+Note also that the 9.41% named in the goal is AISimulate's figure over all 447 points,
+including the sglang and trt arms BLIS does not model. On the vLLM subset AISimulate scores
+7.15%, and 6.68% on the monotone part of it. That is the real bar.
+
+## Making the measurement converge
+
+Before any modelling conclusion could be trusted, the harness had to stop reporting a number
+that depended on itself. It did:
+
+| Completions per point | MAPE (monotone vLLM) |
+|---|---|
+| 20 | 9.92% |
+| 30 | 11.20% |
+| 40 | 9.89% |
+| 60 | 10.72% |
+| 100 | 10.64% |
+
+A 1.3-point swing with no trend -- larger than several of the modelling effects this document
+reports, and enough to make any comparison between two variants meaningless. Two causes, both
+properties of the harness rather than of the deployment:
+
+**A closed-loop pool does not start in its steady state.** At t=0 all N users submit at once,
+so the first requests see a resident batch that is still filling and a cold KV cache. Their
+inter-token latency was pooled with the settled requests', so the mean depended on what
+fraction of the run was transient.
+
+**A fixed completion budget covers fewer pool cycles as concurrency rises.** At concurrency 32
+a 40-completion budget is barely one cycle, and the mean then depends on where the run
+stopped. Measured on `minimax-m2.5-b200-fp8-vllm-tp4` at c=32: 9746, 8186, 9397, 9490 us at
+20, 40, 100, 200 completions, while c=8 had converged by 40.
+
+The criterion now: each point gathers `max(24, 4 x concurrency)` completions and discards the
+first half. With it, the score is monotone and tight in the budget -- 11.31%, 11.54%, 11.68%
+at 2, 4 and 6 cycles -- so a 0.4-point modelling effect is now resolvable where before it was
+buried in noise. The criterion is set from the shape of the transient, applies identically to
+every point, and is not a tuning knob: it made the reported score WORSE.
 
 ## The comparison is verified, not asserted
 

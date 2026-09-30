@@ -51,7 +51,9 @@ func main() {
 		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/aisimulate", "scenario directory")
 	catalog := flag.String("catalog", "/Users/sri/Documents/Projects/blis-catalog", "")
 	registry := flag.String("registry", "/Users/sri/Documents/Projects/blis-registry", "")
-	sessions := flag.Int("sessions", 120, "requests completed per point")
+	sessions := flag.Int("sessions", 24, "floor on requests completed per point")
+	cycles := flag.Int("cycles", 4, "full pool cycles of completions per point")
+	warmup := flag.Float64("warmup", 0.5, "leading fraction of completions discarded")
 	seed := flag.Int64("seed", 42, "")
 	framework := flag.String("framework", "", "restrict to one framework (vllm, sglang, trt)")
 	verbose := flag.Bool("verbose", false, "print every point")
@@ -68,6 +70,8 @@ func main() {
 		},
 		Admission:        harness.AdmissionKernelKV,
 		SessionsPerPoint: *sessions,
+		CyclesPerPoint:   *cycles,
+		WarmupFraction:   *warmup,
 		Seed:             *seed,
 	}
 
@@ -77,6 +81,13 @@ func main() {
 	if *framework != "" {
 		fmt.Printf("restricted to framework %q\n", *framework)
 	}
+	fmt.Printf("each point: max(%d, %d x concurrency) completions, first %.0f%% discarded\n",
+		*sessions, *cycles, 100**warmup)
+	fmt.Printf("  A closed-loop pool does not start in its steady state, and a budget that\n")
+	fmt.Printf("  does not scale with concurrency covers fewer pool cycles as the level\n")
+	fmt.Printf("  rises. Both were measured: without them the same score read 9.89%% to\n")
+	fmt.Printf("  11.20%% with no trend across session budgets, which is harness noise\n")
+	fmt.Printf("  rather than a property of the deployment.\n")
 	fmt.Println()
 
 	type row struct {
