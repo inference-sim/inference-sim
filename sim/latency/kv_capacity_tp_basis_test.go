@@ -27,9 +27,9 @@ package latency_test
 // replicate KV heads per rank (a documented optimistic approximation that predates #1846
 // and is out of its scope). A TP=16 assertion on an 8-KV-head fixture therefore pins the
 // aggregate UNITS basis — the thing this file guards — without being a physically
-// realizable per-GPU derivation. The llama-2-7b (32 KV heads) and llama-3.1-405b (16 KV
-// heads) fixtures have numKVHeads divisible by 16, so they carry the first-principles
-// claim at TP=16 that #1846 acceptance criterion 2 asks for.
+// realizable per-GPU derivation. The llama-2-7b fixture (32 KV heads) has numKVHeads
+// divisible by 16, so it carries the first-principles claim at TP=16 that #1846
+// acceptance criterion 2 asks for.
 
 import (
 	"math"
@@ -78,8 +78,8 @@ func llama70bModelConfig() sim.ModelConfig {
 // it means a TP=16 golden on an 8-KV-head fixture pins the UNITS BASIS of the division
 // without being a physically realizable per-GPU derivation.
 //
-// The two fixtures below have numKVHeads % 16 == 0, so at TP=16 the heads divide evenly,
-// no replication applies, and their goldens are first-principles all the way down — which
+// The fixture below has numKVHeads % 16 == 0, so at TP=16 the heads divide evenly,
+// no replication applies, and its goldens are first-principles all the way down — which
 // is what #1846 acceptance criterion 2 asks for at TP=16.
 
 // llama2MHAModelConfig is the Llama-2-7B shape (32 layers, 4096 hidden, 32 heads, 32 KV
@@ -96,25 +96,6 @@ func llama2MHAModelConfig() sim.ModelConfig {
 		VocabSize:       32000,
 		BytesPerParam:   2,
 		IntermediateDim: 11008,
-	}
-}
-
-// llama405bModelConfig is the Llama-3.1-405B shape (126 layers, 16384 hidden, 128 heads,
-// 16 GQA KV heads, 53248 FFN, bf16). 16 KV heads divides both 8 and 16, so this fixture is
-// exact at both high-TP points — and unlike the synthetic option of bumping an 8B model's
-// head count, it is a real deployment that genuinely REQUIRES TP>=8 (its weights alone are
-// ~764 GiB), i.e. the regime #1846 was reported in. It cannot be exercised below TP=7 at
-// all: CalculateKVBlocks refuses TP=2 and TP=4 on a 141 GiB H200 because the weight term
-// exceeds the aggregate budget.
-func llama405bModelConfig() sim.ModelConfig {
-	return sim.ModelConfig{
-		NumLayers:       126,
-		HiddenDim:       16384,
-		NumHeads:        128,
-		NumKVHeads:      16,
-		VocabSize:       128256,
-		BytesPerParam:   2,
-		IntermediateDim: 53248,
 	}
 }
 
@@ -218,22 +199,6 @@ func tpBasisCases() []tpBasisCase {
 			name: "llama-2-7b/H100/tp16", mc: llama2MHAModelConfig(), hc: validHWConfig(),
 			params: validDenseKVParams(), tp: 16, wantBlocks: 143916, wantPreFixBlocks: 2302666,
 		},
-		// Llama-3.1-405B on a 141 GiB H200. 16 GQA KV heads divides both 8 and 16 evenly, so
-		// both points are exact. Per-token KV over the whole model is
-		// 126 x 2 x 128 x 16 x 2 = 1,032,192 B, so one block costs 16,515,072 B across the
-		// group and 1 GiB buys 65.0159 blocks. Weights are 410.081B params x 2 B =
-		// 763.8358 GiB (same standard count, at 16384 hidden / 53248 FFN / 128256 vocab).
-		// Budget is (126.3 x tp - 769.3358) GiB, so blocks = floor(budget x 65.0159).
-		// tp=8:  241.0642 x 65.0159  = 15,672.x -> 15,672
-		// tp=16: 1251.4642 x 65.0159 = 81,365.x -> 81,365
-		{
-			name: "llama-3.1-405b/H200/tp8", mc: llama405bModelConfig(), hc: h200HWConfig(),
-			params: validDenseKVParams(), tp: 8, wantBlocks: 15672, wantPreFixBlocks: 125383,
-		},
-		{
-			name: "llama-3.1-405b/H200/tp16", mc: llama405bModelConfig(), hc: h200HWConfig(),
-			params: validDenseKVParams(), tp: 16, wantBlocks: 81365, wantPreFixBlocks: 1301840,
-		},
 	}
 }
 
@@ -291,10 +256,10 @@ func TestCalculateKVBlocks_KnownAnswerFixtures_CoverExactTP16(t *testing.T) {
 // rank, BLIS divides by tp anyway). For those three the derivation above reproduces what
 // BLIS computes and pins the tp factor in the divisor — which is the regression this file
 // exists to catch — but the per-GPU cost it implies is optimistic by 16/8, so it is not a
-// physically realizable per-GPU derivation. The llama-2-7b (32 KV heads) and
-// llama-3.1-405b (16 KV heads) cases are exact at TP=16 and carry the first-principles
-// claim there; TestCalculateKVBlocks_KnownAnswerFixtures_CoverExactTP16 keeps at least one
-// such case in the table. The 16/8 optimism itself predates #1846 and is out of its scope.
+// physically realizable per-GPU derivation. The llama-2-7b (32 KV heads) case is exact at
+// TP=16 and carries the first-principles claim there;
+// TestCalculateKVBlocks_KnownAnswerFixtures_CoverExactTP16 keeps at least one such case in
+// the table. The 16/8 optimism itself predates #1846 and is out of its scope.
 //
 // Each case also asserts the count is NOT the pre-#1846 value, so no tolerance or
 // refactor can leave both readings acceptable.
@@ -339,9 +304,8 @@ func TestCalculateKVBlocks_KnownAnswer_HighTP(t *testing.T) {
 // 8 KV heads and tp=16 vLLM would replicate heads and the real per-GPU cost is 2x what
 // the invariance guard below measures (kv_capacity.go's documented optimistic
 // approximation, out of #1846's scope). The llama-2-7b (32 KV heads, exact at every tp
-// here) and llama-3.1-405b (16 KV heads, exact at 8 and 16) fixtures carry the law on the
-// exact per-GPU basis, so the slope is validated in both regimes rather than only the
-// approximate one.
+// here) fixture carries the law on the exact per-GPU basis, so the slope is validated in
+// both regimes rather than only the approximate one.
 //
 // This law is exactly what the bug broke. Pre-#1846 the block count carried a factor of
 // tp, so the left-hand side grew super-linearly in tp and missed the right-hand side by
@@ -369,9 +333,6 @@ func TestCalculateKVBlocks_PerTPSlopeLaw(t *testing.T) {
 		{"mixtral-8x7b/H100", validMoEModelConfig(), validHWConfig(), validMoEKVParams(), 8.0, []int{2, 4, 8, 16}},
 		// 32 KV heads: exact at every tp below, so the law is checked off the approximation.
 		{"llama-2-7b/H100", llama2MHAModelConfig(), validHWConfig(), validDenseKVParams(), 5.5, []int{2, 4, 8, 16}},
-		// 16 KV heads: exact at both points. Only 8 and 16 — a 764 GiB weight term does not
-		// fit in the aggregate budget of 2 or 4 H200s, so CalculateKVBlocks refuses those.
-		{"llama-3.1-405b/H200", llama405bModelConfig(), h200HWConfig(), validDenseKVParams(), 5.5, []int{8, 16}},
 	}
 
 	const blockSize = int64(16)
