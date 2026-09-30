@@ -274,3 +274,46 @@ optimistic; it is not what this experiment is chasing, but it belongs in the rec
 This is the second hypothesis rejected by data rather than by argument, after `ExpertsTouched`.
 Both rejections cost little and prevented a change that would have been justified by a story
 instead of a measurement.
+
+## A confirmed over-prediction in decode attention
+
+With the MoE rate rejected, the search narrowed to a term that GROWS with batch and is charged
+too heavily. Decode attention is the other batch-scaling term in the per-resource breakdown,
+and NVIDIA's generation-attention sweep can test it directly.
+
+`h200_sxm/attention/trtllm/1.3.0rc20/generation_attention_perf.parquet`, filtered to
+minimax-m2.5's per-rank attention geometry at tp=4 -- 12 query heads, 2 KV heads, head
+dimension 128, full attention, fp8 KV cache -- gives 164 measured points.
+
+One column reading had to be corrected before the comparison meant anything. `isl` is 1 for
+every generation row; the context length is carried by `step`, which runs 1 to 131071. A first
+pass used `isl`, which made the predicted KV read about 2000x too small and collapsed the
+prediction onto the floor, giving 0.754. Checking that latency actually tracks `step` -- 5.78 us
+at step 1 rising to 140.75 us at step 131071, at fixed batch 8 -- settled it. The first check of
+that ("latency is flat in step") looked only at steps 1 to 63, where the floor dominates and it
+IS flat; extending the range corrected it.
+
+Predicted over measured, where the prediction is the registry's own form
+`floor + kv_bytes/rate` with the committed h200 constants (floor 11.0 us, rate 2.784e6 B/us):
+
+| batch | 1 | 8 | 32 | 128 | 256 | 512 | 1024 | 2048 |
+|---|---|---|---|---|---|---|---|---|
+| geo-mean ratio | 1.372 | 1.548 | 1.563 | 1.506 | 1.195 | 1.027 | 0.680 | 0.432 |
+
+Restricted to the regime the corpus actually runs -- context 512 to 8191, batch 4 to 256, which
+is where 121 of the 213 scored points sit -- 26 measured points give a geometric mean of
+**1.294**, and the ratio stays between 1.20 and 1.39 across every batch size in that band.
+
+**So decode attention is over-predicted by about 30% in the regime being scored.** That is the
+right sign and the right place: it is charged too heavily, it scales with batch, and its excess
+is largest in the 8-128 band where the residual is worst.
+
+This is a calibration finding about `blis-registry`, not about BLIS or the adapter. Acting on
+it means re-fitting `attention_decode_floor` and `attention_decode_rate` against this sweep,
+which is a change to a committed coefficient set outside this worktree, and the fit would have
+to hold across every part rather than being tuned on the arm that exposed it. It is recorded
+here for that decision rather than taken.
+
+Worth noting what it does NOT explain: the ratio falls below 1.0 by batch 1024, so the
+over-prediction is not uniform, and the three worst points in the corpus sit at concurrency
+1024 and 2048 where attention is UNDER-predicted. More than one term is in play.
