@@ -459,7 +459,7 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, dp int,
 		return 0, fmt.Errorf("CalculateKVBlocks: %w", epErr)
 	}
 
-	// --- Step 3: Per-block bytes ---
+	// --- Step 3: Per-block bytes, PER GPU ---
 	// Multiply by blockSize before truncating to int64 to avoid loss when the
 	// per-token value is fractional (e.g., INT4 quantization with small head dims).
 	perBlockBytes := int64(perTokenKVBytesPerGPUF * float64(blockSize))
@@ -468,6 +468,31 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, dp int,
 			"CalculateKVBlocks: per-block KV bytes is %d (expected > 0); "+
 				"perTokenKVBytesPerGPU=%.6f, blockSize=%d — check BytesPerParam and TP",
 			perBlockBytes, perTokenKVBytesPerGPUF, blockSize)
+	}
+
+	// Aggregate cost of ONE block across the rank's tp GPUs (#1846). The memory budget
+	// assembled in Step 4 is a TOTAL across those tp GPUs (gpu_mem × util × tp, less
+	// totals for weights and non-torch overhead), while perBlockBytes above is the
+	// PER-GPU cost of a block. The two must be brought onto the same basis before the
+	// division in Step 5, or the block count comes out ~tp× too large.
+	//
+	// The aggregate basis is the correct one because a KV block is a GLOBAL quantity in
+	// the runtime, not a per-GPU one: a request is charged ceil(InputLen/BlockSize)
+	// blocks once against the pool (sim/simulator.go), and the reported pool size is
+	// TotalBlocks × BlockSizeTokens tokens (sim/cluster/routing.go) — the same accounting
+	// vLLM uses when it reports "GPU KV cache size: N tokens". Allocating one global
+	// block therefore consumes perBlockBytes on EVERY one of the tp GPUs: each rank
+	// stores its own shard of that block (its KV-head slice on the MHA/GQA path, or a
+	// full replica of the compressed latent on the MLA path — KVBytesPerToken already
+	// returns the correct per-GPU figure for both).
+	//
+	// tp == 1 leaves the divisor untouched, so single-GPU block counts are byte-identical
+	// to a pre-#1846 build (INV-6).
+	perBlockBytesAllGPUs := perBlockBytes * int64(tp)
+	if perBlockBytesAllGPUs/int64(tp) != perBlockBytes {
+		return 0, fmt.Errorf(
+			"CalculateKVBlocks: aggregate per-block KV bytes overflows int64 "+
+				"(perGPU=%d bytes × TP=%d)", perBlockBytes, tp)
 	}
 
 	// --- Step 4: Available memory budget (total across all TP GPUs) ---
@@ -481,6 +506,18 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, dp int,
 	// Activation memory: per-replica constant, NOT multiplied by TP. This budget is
 	// computed per DP rank; dp scaling (#1420) applies only to the final block count,
 	// not to per-rank overhead (each rank has its own GPUs with this same overhead).
+	//
+	// RESIDUAL, deliberately unchanged by #1846: this is the one overhead term that is
+	// NOT on the aggregate-over-tp basis the other three use (weights are a tp-total,
+	// non-torch is per-GPU × tp, the adapter reservation is a tp-total). vLLM's peak
+	// torch activation is a per-GPU quantity, so a fully consistent aggregate budget
+	// would charge it × tp; charging it once under-subtracts (tp-1) × ~5.5–8 GiB and so
+	// leaves the auto-calc slightly OPTIMISTIC at high TP. That residual is the reason
+	// the corrected estimate lands ~1.09× a measured pool rather than ~1.0×, and it is
+	// explicitly out of scope for #1846 (which tracks only the block-division units
+	// mismatch) — see the follow-up issue linked from that one. Changing it here would
+	// also be a silent second behavior change inside a fix whose contract is "TP=1
+	// byte-identical, TP>1 corrected by exactly the units factor".
 	var activationGiB float64
 	if params.IsMoE {
 		activationGiB = activationMemoryMoEGiB
@@ -558,11 +595,15 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, dp int,
 	allocatableBytes := int64(allocatableGiB * float64(gibToBytes))
 
 	// --- Step 5: Total blocks (per DP rank) ---
-	totalBlocks := allocatableBytes / perBlockBytes
+	// Aggregate budget ÷ aggregate per-block cost (#1846): both sides are totals over
+	// the rank's tp GPUs. See perBlockBytesAllGPUs above for why the block is charged on
+	// every rank.
+	totalBlocks := allocatableBytes / perBlockBytesAllGPUs
 	if totalBlocks <= 0 {
 		return 0, fmt.Errorf(
-			"CalculateKVBlocks: computed 0 blocks (allocatable=%.2f GiB, per_block=%d bytes)",
-			allocatableGiB, perBlockBytes)
+			"CalculateKVBlocks: computed 0 blocks (allocatable=%.2f GiB across %d GPUs, "+
+				"per_block=%d bytes/GPU × %d GPUs = %d bytes)",
+			allocatableGiB, tp, perBlockBytes, tp, perBlockBytesAllGPUs)
 	}
 
 	// --- Step 6: DP scaling (#1420) ---
