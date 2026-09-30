@@ -311,6 +311,16 @@ Example:
 		// it. Reservation is 0 when the subsystem is inert (INV-6). Set before
 		// resolveLatencyConfig.
 		loraCfg := resolveLoRAConfig(cmd)
+		// INV-13 parity (Fix round 1, Important 2): --lora-placement-schedule is registered
+		// on replayCmd via registerSimConfigFlags and reaches NewClusterSimulator through
+		// the same LoRAConfig/DeploymentConfig literal runCmd uses, so the cross-flag guard
+		// runCmd applies must run here too — otherwise `blis replay --creation-policy
+		// scheduled` with no schedule silently runs pre-placement, and the structural
+		// validator alone can't catch that (it has nothing to check against).
+		if err := validateLoRAScheduleFlags(loraCfg.CreationPolicy, loraPlacementSchedule,
+			loraCfg.PlacementSchedule, resolveLoRAAdapterPlacement()); err != nil {
+			logrus.Fatalf("%v", err)
+		}
 		loraReservedBytesForKV = adapterReservedBytesFor(loraCfg)
 
 		// KV-cache offload config (#1587, BC-G6): the trace header is authoritative on
@@ -394,7 +404,28 @@ Example:
 		// Resolve policy configuration (single code path shared with runCmd).
 		// Autoscaler and node-pool configs are not supported in replay — fail fast
 		// rather than silently producing divergent results (INV-13, Track B).
+		//
+		// INV-13 sync point (B-7, #1495): the LoRA-seam selections — routing
+		// (--routing-policy/--lora-bundle, via resolvePolicies), eviction/creation
+		// (--eviction-policy/--creation-policy/--lora-bundle, via resolveLoRAConfig),
+		// placement (--lora-adapter-placement), and the periodic creation tick
+		// interval (--lora-periodic-interval-us) — all flow through this SAME shared
+		// resolution path and are set identically in the run and replay
+		// DeploymentConfig literals. All are replay-supported: the seams build
+		// identical clusters in both commands, so the periodic tick — live since
+		// Spec 3, and inert in BOTH commands alike for a gate-only creation policy
+		// (INV-PS3') — behaves identically here and under blis run. NO new fail-fast is
+		// warranted for them (DD-B7-7). The autoscaler/node-pool fatals below remain
+		// the fail-fast mechanism for the genuinely unsupported cases.
 		parsedScorerConfigs, bundle := resolvePolicies(cmd)
+		// Per-instance LoRA slots (config-time rank coupling) are wired only into blis run:
+		// replay has no per-instance KV auto-calc, so it could not subtract each instance's
+		// reservation. INV-13: refuse rather than replay a different cluster.
+		for _, f := range []string{"lora-instance-max-rank", "lora-instance-capacity"} {
+			if cmd.Flags().Changed(f) {
+				logrus.Fatalf("--%s is not supported in blis replay; use blis run instead", f)
+			}
+		}
 		if cmd.Flags().Changed("model-autoscaler-interval-us") {
 			logrus.Fatalf("--model-autoscaler-interval-us is not supported in blis replay; remove this flag or use blis run instead")
 		}
@@ -731,6 +762,8 @@ Example:
 				SLOPriorityOverrides: sloPriorityOverrides,
 			},
 			NumInstances:                    numInstances,
+			LoRAAdapterPlacement:            resolveLoRAAdapterPlacement(),
+			LoRAPeriodicIntervalUs:          resolveLoRAPeriodicInterval(),
 			AdmissionPolicy:                 admissionPolicy,
 			AdmissionLatency:                admissionLatency,
 			RoutingLatency:                  routingLatency,
@@ -738,6 +771,7 @@ Example:
 			TokenBucketRefillRate:           tokenBucketRefillRate,
 			RoutingPolicy:                   routingPolicy,
 			RoutingScorerConfigs:            parsedScorerConfigs,
+			RoutingDeterministicTiebreak:    routingDeterministicTiebreak,
 			TraceLevel:                      traceLevel,
 			CounterfactualK:                 counterfactualK,
 			SnapshotRefreshInterval:         snapshotRefreshInterval,
@@ -889,6 +923,11 @@ Example:
 				clusterOutput.Saturation = final
 			}
 		}
+
+		// Attach run-level LoRA-seam provenance (B-7, FR-016; nil ⇒ key omitted for
+		// an all-baseline run, INV-6). Value parity with run (INV-13): the same
+		// resolved triple is recorded from the shared resolution path.
+		clusterOutput.PolicyProvenance = computeLoRAProvenance(loraCfg)
 
 		// --metrics-path (#1583): write the aggregate MetricsOutput JSON (which gains
 		// the file-only cache_hit_rate) so `blis calibrate --sim-metrics` can read the

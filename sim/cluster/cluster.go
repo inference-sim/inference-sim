@@ -116,6 +116,13 @@ type ClusterSimulator struct {
 	autoscaler      *autoscalerPipeline
 	pendingArrivals int // count of ClusterArrivalEvents not yet executed; used by scheduleNextTick to stop ticking when all work is done
 
+	// Spec 3: periodic LoRA creation pipeline. Nil unless the LoRA subsystem is active,
+	// LoRAPeriodicIntervalUs > 0, AND the effective creation policy implements
+	// sim.PeriodicCreationPolicy — which is what makes INV-PS3' structural (see
+	// newLoRAPeriodicPipeline). Nil is the pre-Spec-3 behaviour in full: no tick is
+	// scheduled and no demand is recorded.
+	loraPeriodic *loraPeriodicPipeline
+
 	// sessionCallback is the raw onRequestDone parameter for session follow-up
 	// generation in PD mode. Called from detectDecodeCompletions with the original
 	// request (which carries SessionID). Separate from the per-instance closure to
@@ -233,6 +240,17 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	// different shared pods). Only reject when PD is entirely disabled. (#1276)
 	if config.PDTransferContention && config.PrefillInstances == 0 && config.DecodeInstances == 0 && config.SharedInstances == 0 {
 		panic("ClusterSimulator: PDTransferContention requires PD disaggregation (--prefill-instances, --decode-instances, or --prefill-decode-instances must be set)")
+	}
+
+	// Validate cluster-scoped LoRA adapter placement early (B-5, #1493, INV-PS2):
+	// build the read-only adapter registry once (nil when LoRA is off) and reject an
+	// invalid placement before any instance is constructed. Fails via panic (library
+	// layer, Principle V) mirroring ValidatePoolTopology above. The registry is not
+	// retained — instances build their own; this call only checks the placement map.
+	// The per-instance LoRA configuration is checked first, inside ValidateLoRADeployment,
+	// so the placement is judged against the per-instance caps it will run under.
+	if err := ValidateLoRADeployment(config); err != nil {
+		panic(fmt.Sprintf("ClusterSimulator: %v", err))
 	}
 
 	// Build pre-construction pool membership so instance construction can resolve per-pool config.
@@ -391,7 +409,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 				if unplacedFirstErr == nil {
 					unplacedFirstErr = err
 				}
-				cs.placement.AddPending(id, config.Model, "", tpDegree, simCfg)
+				cs.placement.AddPending(id, config.Model, "", tpDegree, simCfg, config.LoRAAdapterPlacement[idx])
 				continue
 			}
 			// Placement succeeded: use pool's GPU type (SC-004: pool-authoritative, not CLI flag).
@@ -428,6 +446,11 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			cs.applyPlacementTopology(&simCfg, gpuIDs)
 			inst := NewInstanceSimulator(id, simCfg)
 			inst.Model = config.Model
+			// B-5 (#1493): seed the cluster-assigned resident adapters via the
+			// CreationPolicy.Initial seam (uncharged). Keyed by the live
+			// construction-loop counter idx — never re-derived elsewhere. No-op
+			// when placement is absent or the subsystem is inert.
+			inst.ApplyInitialCreation(config.LoRAAdapterPlacement[idx])
 			inst.nodeID = nodeID
 			inst.allocatedGPUIDs = gpuIDs
 			inst.TPDegree = tpDegree
@@ -455,8 +478,16 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			// DeploymentConfig's embedded SimConfig) is the authoritative source (backward-compat).
 			// simCfg.GPU is already set — resolveConfigForRole returns config.SimConfig as-is
 			// for the default role, preserving ModelHardwareConfig.GPU from the CLI flag.
+			// Per-instance max_lora_rank / capacity: specialize this instance's slots and
+			// resize its KV from its own reservation. No-op when unset (INV-6).
+			loraEcho := applyLoRAInstanceConfig(&simCfg, config, idx, id)
 			inst := NewInstanceSimulator(id, simCfg)
+			inst.loraEcho = loraEcho
 			inst.Model = config.Model
+			// B-5 (#1493): seed cluster-assigned resident adapters (uncharged),
+			// keyed by the live construction-loop counter idx (DD-B5-g). No-op
+			// when placement is absent or the subsystem is inert.
+			inst.ApplyInitialCreation(config.LoRAAdapterPlacement[idx])
 			inst.warmUpRemaining = config.InstanceLifecycle.WarmUpRequestCount
 			if inst.warmUpRemaining > 0 {
 				inst.TransitionTo(sim.InstanceStateWarmingUp)
@@ -483,7 +514,14 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	// Initialize snapshot provider with exactly the placed instances.
 	// Deferred instances are registered via CachedSnapshotProvider.AddInstance
 	// when NodeReadyEvent.Execute constructs them (Phase 4, T017).
-	cs.snapshotProvider = NewCachedSnapshotProvider(instanceMap, newObservabilityConfig(config.SnapshotRefreshInterval, config.CacheSignalDelay))
+	obsConfig := newObservabilityConfig(config.SnapshotRefreshInterval, config.CacheSignalDelay)
+	if config.RoutingPolicy == "route-to-holder" {
+		// D7 (#1490): route-to-holder needs live holder truth at routing time, so
+		// pin ResidentAdapters to Immediate regardless of the global refresh interval.
+		// Narrow, single-field override — all other signals keep their global mode.
+		obsConfig.PinResidentAdaptersImmediate()
+	}
+	cs.snapshotProvider = NewCachedSnapshotProvider(instanceMap, obsConfig)
 
 	// Build cacheQueryFn from the unified snapshot provider (#1060).
 	// When CacheSignalDelay > 0, CachedSnapshotProvider manages stale snapshots.
@@ -491,13 +529,30 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	cs.cacheQueryFn = cs.snapshotProvider.BuildCacheQueryFn()
 
 	// Create routing policies now that cacheQueryFn is available.
-	cs.routingPolicy = sim.NewRoutingPolicyWithCache(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem(sim.SubsystemRouter), cs.cacheQueryFn)
+	//
+	// Spec 3 / backlog #3: a nil RNG selects the routing policies' existing positional
+	// tie-break instead of the random one. Scoped to the routing partition only — the
+	// call to rng.ForSubsystem(SubsystemRouter) below still happens unconditionally (each
+	// subsystem's seed is independently derived from the master seed, so this touches
+	// nothing else); only the value passed to the routing policy is swapped for nil when
+	// the knob is on.
+	routerRNG := rng.ForSubsystem(sim.SubsystemRouter)
+	if config.RoutingDeterministicTiebreak {
+		routerRNG = nil
+	}
+	cs.routingPolicy = sim.NewRoutingPolicyWithCache(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens, routerRNG, cs.cacheQueryFn)
 	if len(config.PrefillScorerConfigs) > 0 {
 		cs.prefillRoutingPolicy = sim.NewRoutingPolicyWithCache("weighted", config.PrefillScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("prefill-router"), cs.cacheQueryFn)
 	}
 	if len(config.DecodeScorerConfigs) > 0 {
 		cs.decodeRoutingPolicy = sim.NewRoutingPolicyWithCache("weighted", config.DecodeScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("decode-router"), cs.cacheQueryFn)
 	}
+
+	// Spec 3: resolve the cluster's own periodic creation pipeline, mirroring the
+	// routing-policy resolution above (resolve by config name at construction). Returns
+	// nil — the pre-Spec-3 behaviour in full — unless the LoRA subsystem is active, the
+	// interval is positive, and the creation policy can act on a tick (INV-PS3').
+	cs.loraPeriodic = newLoRAPeriodicPipeline(config)
 
 	// PD disaggregation: construct the decider now that cacheQueryFn is available.
 	// PrefixThresholdDecider consumes the per-pod cache-query map; other deciders
@@ -802,6 +857,18 @@ func (c *ClusterSimulator) Run() error {
 	if c.autoscaler != nil && c.config.ModelAutoscalerIntervalUs > 0 {
 		heap.Push(&c.clusterEvents, clusterEventEntry{
 			event: &ScalingTickEvent{At: c.clock},
+			seqID: c.nextSeqID(),
+		})
+	}
+
+	// Spec 3: first periodic creation tick at t = clock + Interval, NOT at t = clock.
+	// t=0 belongs to CreationPolicy.Initial, and the demand window is necessarily empty
+	// then (no arrival has executed), so a tick there could only ever return no
+	// decisions. The pipeline is nil unless a tick can fire at all, so this push is
+	// itself the enforcement point for INV-PS3'.
+	if c.loraPeriodic != nil {
+		heap.Push(&c.clusterEvents, clusterEventEntry{
+			event: &LoRAPeriodicTriggerEvent{At: c.clock + c.loraPeriodic.interval},
 			seqID: c.nextSeqID(),
 		})
 	}
@@ -1191,6 +1258,18 @@ func (c *ClusterSimulator) preemptionsTotal() int64 {
 		total += inst.Metrics().PreemptionCount
 	}
 	return total
+}
+
+// instanceByID returns the live InstanceSimulator with the given id, or nil if
+// none is registered. Linear scan over cs.instances — used only on rare paths
+// (e.g. B-5 deferred-placement adapter seeding), not in the request hot path.
+func (cs *ClusterSimulator) instanceByID(id InstanceID) *InstanceSimulator {
+	for _, inst := range cs.instances {
+		if inst.ID() == id {
+			return inst
+		}
+	}
+	return nil
 }
 
 // addLiveInstance constructs, registers, and activates an InstanceSimulator for a
@@ -1835,6 +1914,9 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		}
 		for k, v := range m.AdapterEvictionCounts {
 			merged.AdapterEvictionCounts[k] += v
+		}
+		for k, v := range m.AdapterPrefetchCounts {
+			merged.AdapterPrefetchCounts[k] += v
 		}
 		merged.PreemptionCount += m.PreemptionCount
 		merged.KVAllocationFailures += m.KVAllocationFailures

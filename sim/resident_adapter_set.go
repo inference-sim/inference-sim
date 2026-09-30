@@ -9,9 +9,12 @@ package sim
 // import).
 //
 // The interface is scoped to what the scheduling hook and the cold-load
-// pre-admission gate consume (R13). The gate (#1466) added AtCapacity / EvictLRU
-// (to commit an eviction victim and reserve a slot at load-start) and Pin / Unpin
-// (to protect an adapter in use by an in-flight request from eviction, INV-L5).
+// pre-admission gate consume (R13). The gate (#1466) added AtCapacity and Pin /
+// Unpin (to protect an adapter in use by an in-flight request from eviction,
+// INV-L5). Victim selection moved to the eviction seam (B-3, #1491): the gate now
+// reads UnpinnedCandidates() to build the eviction context and calls Evict(id) to
+// remove the chosen victim; the concrete residentSet retains EvictLRU for Store's
+// internal replacement and unit tests, but it is no longer part of this interface.
 type ResidentAdapterSet interface {
 	// IsResident reports whether id currently occupies a slot.
 	IsResident(id string) bool
@@ -36,10 +39,13 @@ type ResidentAdapterSet interface {
 	// AtCapacity reports whether every slot is occupied (Len == capacity). The
 	// cold-load gate uses it to decide whether a slot must be freed before a load.
 	AtCapacity() bool
-	// EvictLRU removes the least-recently-used non-pinned adapter and returns its id
-	// and true, or ("", false) if the set is empty or every entry is pinned. The gate
-	// calls it at load-start to commit the eviction victim and reserve a slot (§7).
-	EvictLRU() (string, bool)
+	// UnpinnedCandidates returns the resident, unpinned adapter ids in LRU→MRU
+	// (eviction-priority) order; nil when none are evictable. The eviction seam
+	// selects a victim only from these.
+	UnpinnedCandidates() []string
+	// Evict removes an unpinned resident id, returning true on removal and false
+	// if the id is absent or pinned (INV-L5).
+	Evict(id string) bool
 	// Pin protects id from eviction while an in-flight request references it
 	// (reference-counted). No-op if id is absent.
 	Pin(id string)

@@ -767,7 +767,7 @@ func TestRetryPendingInstances_SpanningPlacement(t *testing.T) {
 	pm := newTestPM([]NodePoolConfig{
 		{Name: "h100", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 0, MinNodes: 0, MaxNodes: 2, GPUMemoryGiB: 80},
 	})
-	pm.AddPending("inst-0", "model-a", "H100", 16, sim.SimConfig{})
+	pm.AddPending("inst-0", "model-a", "H100", 16, sim.SimConfig{}, nil)
 
 	// First node ready: still cannot span (needs 2 whole nodes).
 	n0, _ := pm.ProvisionNode("h100", 0)

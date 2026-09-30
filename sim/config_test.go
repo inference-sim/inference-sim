@@ -683,6 +683,30 @@ func TestLoRAConfig_Validate(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "instance max_lora_rank zero",
+			cfg: LoRAConfig{
+				AdapterCapacity:       loraIntPtr(4),
+				LoadBaseLatencyUs:     float64Ptr(1500.0),
+				LoadBandwidthBytesUs:  float64Ptr(2.0e6),
+				FootprintBytesPerRank: float64Ptr(2.0e6),
+				Adapters:              []AdapterSpec{{ID: "adapter_0", Rank: 8}},
+				InstanceMaxRank:       loraIntPtr(0),
+			},
+			wantErr: true,
+		},
+		{
+			name: "instance max_lora_rank positive",
+			cfg: LoRAConfig{
+				AdapterCapacity:       loraIntPtr(4),
+				LoadBaseLatencyUs:     float64Ptr(1500.0),
+				LoadBandwidthBytesUs:  float64Ptr(2.0e6),
+				FootprintBytesPerRank: float64Ptr(2.0e6),
+				Adapters:              []AdapterSpec{{ID: "adapter_0", Rank: 8}},
+				InstanceMaxRank:       loraIntPtr(8),
+			},
+			wantErr: false,
+		},
+		{
 			name: "adapter rank zero",
 			cfg: LoRAConfig{
 				AdapterCapacity: loraIntPtr(4),
