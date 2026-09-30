@@ -101,7 +101,7 @@ func TestCalculateKVBlocks_EP_ShardsRoutedExpertsAcrossTheEPGroup(t *testing.T) 
 	if routedBytes <= 0 {
 		t.Fatalf("test fixture has no routed-expert weights; the law below would be vacuous")
 	}
-	perBlock := perBlockBytesFor(t, mc, tp, blockSize)
+	perBlock := blockBudgetCostFor(t, mc, tp, blockSize)
 
 	// Per-rank freed bytes → per-rank blocks. Step 6 scales the per-rank total by dp for
 	// MoE, so dividing the observed delta by dp recovers the per-rank gain exactly. The
@@ -424,7 +424,7 @@ func TestCalculateKVBlocks_EP_ExactLawOnDensePrefixSharedExpertModel(t *testing.
 	}
 
 	routedBytes := routedExpertWeightBytes(mc, params)
-	perBlock := perBlockBytesFor(t, mc, tp, blockSize)
+	perBlock := blockBudgetCostFor(t, mc, tp, blockSize)
 	wantPerRank := routedBytes * (1.0 - float64(tp)/float64(ep)) / float64(perBlock)
 	gotPerRank := float64(on-off) / float64(dp)
 	if math.Abs(gotPerRank-wantPerRank) > 2.0 {
@@ -457,7 +457,7 @@ func TestCalculateKVBlocks_EP_RoutedWeightConservation(t *testing.T) {
 	}
 
 	routedBytes := routedExpertWeightBytes(mc, params)
-	perBlock := perBlockBytesFor(t, mc, tp, blockSize)
+	perBlock := blockBudgetCostFor(t, mc, tp, blockSize)
 
 	// Bytes freed across the whole deployment = dp·R − R = (dp−1)·R.
 	wantFreedTotal := routedBytes * float64(dp-1)
