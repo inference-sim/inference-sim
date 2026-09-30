@@ -54,6 +54,11 @@ func ValidateLoRAPlacement(dc DeploymentConfig, registry sim.AdapterRegistry) er
 // on these strings.
 func validatePlacementMap(label string, placement map[int][]string,
 	dc DeploymentConfig, registry sim.AdapterRegistry) error {
+	// The checks below index the per-instance lists by instance; a malformed pair is an
+	// error here too, not an index-out-of-range panic (both exported callers reach this).
+	if err := instanceListShapeErr(dc); err != nil {
+		return err
+	}
 	// Visit indices in ascending order so the first reported error is
 	// deterministic (INV-6).
 	indices := make([]int, 0, len(placement))

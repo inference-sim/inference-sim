@@ -163,13 +163,6 @@ var (
 	// subsystem is inert, keeping KV capacity byte-identical to today (INV-6/PR5).
 	loraReservedBytesForKV int64
 
-	// maxModelLenBeforeKVCap is maxModelLen as resolved (flag or max_position_embeddings)
-	// before resolveLatencyConfig caps it to the global KV count. That cap is computed
-	// from the cluster-wide LoRA reservation, so with --lora-instance-max-rank each
-	// instance is re-capped from this value by its own KV budget instead
-	// (DeploymentConfig.LoRAInstanceMaxModelLen). 0 when the cap block never ran.
-	maxModelLenBeforeKVCap int64
-
 	// Fitness evaluation config (PR9)
 	fitnessWeights string // Fitness weights string "key:val,key:val"
 
@@ -1167,7 +1160,6 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		}
 
 		// Cap maxModelLen at KV-feasible maximum (matches vLLM's _maybe_limit_model_len).
-		maxModelLenBeforeKVCap = maxModelLen
 		if maxModelLen > 0 && blockSizeTokens > 0 {
 			blocksNeeded := maxModelLen / blockSizeTokens
 			if maxModelLen%blockSizeTokens != 0 {
@@ -1752,7 +1744,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&loraAdapterPlacement, "lora-adapter-placement", "", "Static per-instance adapter placement for the pre-placement creation policy, as \"idx=id[,id...];idx=id...\" (construction-index => adapter ids), e.g. \"0=A,B;1=C\". Adapters are seeded resident at t=0. Empty => no placement.")
 	cmd.Flags().StringVar(&loraPlacementSchedule, "lora-placement-schedule", "", "Path to a timed placement schedule for the scheduled creation policy, one entry per line as \"<t_us> <idx=id[,id...];idx=id...>\" (blank lines and #-comments ignored). Timestamps must strictly increase. Required by --creation-policy=scheduled and rejected under any other policy. Empty => none.")
 	cmd.Flags().StringVar(&loraBundle, "lora-bundle", "", fmt.Sprintf("Named LoRA strategy bundle expanding to a {routing, eviction, creation} policy triple. Valid: %s. Per-knob flags (--routing-policy/--eviction-policy/--creation-policy) override their knob; empty => no bundle (byte-identical to no LoRA).", strings.Join(sim.ValidLoRABundleNames(), ", ")))
-	cmd.Flags().StringVar(&loraInstanceMaxRank, "lora-instance-max-rank", "", fmt.Sprintf("Per-instance vLLM max_lora_rank, one comma-separated value per instance in construction order, e.g. \"8,8,32\". Each instance's slots are sized at its own cap, and an adapter above it can never be resident there. Each value must be one of %v. Requires --lora-instance-capacity and auto-calculated KV capacity; run only (replay rejects it). Empty => every instance uses the largest declared rank.", cluster.VLLMAllowedMaxLoRARanks))
+	cmd.Flags().StringVar(&loraInstanceMaxRank, "lora-instance-max-rank", "", fmt.Sprintf("Per-instance vLLM max_lora_rank, one comma-separated value per instance in construction order, e.g. \"8,8,32\". Each instance's slots are sized at its own cap, and an adapter above it can never be resident there. Each value must be one of %v. Requires --lora-instance-capacity and auto-calculated KV capacity; run only (replay rejects it). Empty => every instance uses the largest declared rank.", cluster.VLLMAllowedMaxLoRARanks()))
 	cmd.Flags().StringVar(&loraInstanceCapacity, "lora-instance-capacity", "", "Per-instance vLLM max_loras (resident adapter slots), one comma-separated value per instance in construction order, e.g. \"4,5,3\". Overrides --lora-adapter-capacity per instance; each instance's KV blocks are recomputed net of capacity × footprint_bytes_per_rank × its max rank. Requires --lora-instance-max-rank; run only. Empty => --lora-adapter-capacity everywhere.")
 	cmd.Flags().Int64Var(&loraPeriodicInterval, "lora-periodic-interval-us", 0, "Simulation-time interval (µs) between periodic LoRA creation ticks. 0 = off. Takes effect only when --creation-policy names a tick-capable policy (keep-warm); with a gate-only policy (on-demand, pre-placement) any value is inert and byte-identical to 0. Must be >= 0.")
 
@@ -2322,6 +2314,16 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("%v", err)
 		}
 		loraReservedBytesForKV = adapterReservedBytesFor(loraCfg)
+		// Per-instance LoRA slots, resolved BEFORE resolveLatencyConfig reads the reservation:
+		// with the lists set, each instance subtracts its own capacity × footprint × max rank
+		// at construction, so the cluster-wide figure (adapter_capacity × the catalog's
+		// largest rank) describes no instance. Charging it in the global KV pre-pass could
+		// refuse a run whose actual reservations all fit, and would log a reservation nothing
+		// makes. The per-instance sizing in cluster.ValidateLoRADeployment owns the fit.
+		loraInstanceMaxRanks, loraInstanceCapacities := resolveLoRAInstanceLists()
+		if len(loraInstanceMaxRanks) > 0 || len(loraInstanceCapacities) > 0 {
+			loraReservedBytesForKV = 0
+		}
 
 		// KV-cache offload config surface (#1587): resolve ONCE (R4), validated at the
 		// CLI boundary. Inert (zero value) when --kv-offload-config is absent (BC-G5).
@@ -2999,7 +3001,6 @@ var runCmd = &cobra.Command{
 		// Unified cluster path (used for all values of numInstances).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/replay.go (replayCmd
 		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
-		loraInstanceMaxRanks, loraInstanceCapacities := resolveLoRAInstanceLists()
 		config := cluster.DeploymentConfig{
 			SimConfig: sim.SimConfig{
 				Horizon: simulationHorizon,
@@ -3025,7 +3026,6 @@ var runCmd = &cobra.Command{
 			LoRAAdapterPlacement:            resolveLoRAAdapterPlacement(),
 			LoRAInstanceMaxRank:             loraInstanceMaxRanks,
 			LoRAInstanceCapacity:            loraInstanceCapacities,
-			LoRAInstanceMaxModelLen:         maxModelLenBeforeKVCap,
 			LoRAPeriodicIntervalUs:          resolveLoRAPeriodicInterval(),
 			AdmissionPolicy:                 admissionPolicy,
 			AdmissionLatency:                admissionLatency,

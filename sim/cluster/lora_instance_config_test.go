@@ -294,16 +294,13 @@ func TestLoRAInstanceEchoes(t *testing.T) {
 	}
 }
 
-// The global CLI caps max-model-len once, from the global KV count, which is net of the
-// cluster-wide reservation. Each instance must instead be capped from the UNCAPPED value
-// by its own KV budget, as vLLM's _maybe_limit_model_len does per server. The fixture's
-// MaxModelLen of 1000 stands for a stale global cap; LoRAInstanceMaxModelLen carries the
-// uncapped value, here far above either instance's KV, so each ends at its own blocks × 16.
-func TestLoRAInstanceConfig_MaxModelLenRecappedPerInstance(t *testing.T) {
+// Each instance caps max-model-len by its own KV budget: a configured value above it is
+// capped to that instance's blocks × 16, and one that fits is kept. The two instances'
+// budgets differ, so a cap taken from anything but the instance itself would tie them.
+func TestLoRAInstanceConfig_MaxModelLenCappedPerInstance(t *testing.T) {
 	ranks, caps := []int{16, 64}, []int{2, 1}
 	dc := instanceConfigFixture(t, ranks, caps, instCfgPlacement)
-	dc.MaxModelLen = 1000
-	dc.LoRAInstanceMaxModelLen = 1 << 40
+	dc.MaxModelLen = 1 << 40
 	cs := NewClusterSimulator(dc, NewSliceRequestSource(nil), nil)
 	mustRun(t, cs)
 	echoes := cs.LoRAInstanceEchoes()
@@ -317,7 +314,6 @@ func TestLoRAInstanceConfig_MaxModelLenRecappedPerInstance(t *testing.T) {
 		t.Errorf("premise: the two KV budgets should give different caps, both %d", echoes[0].MaxModelLen)
 	}
 
-	// Without an uncapped value (0), the configured MaxModelLen is kept when it fits.
 	dc = instanceConfigFixture(t, ranks, caps, instCfgPlacement)
 	dc.MaxModelLen = 1000
 	cs = NewClusterSimulator(dc, NewSliceRequestSource(nil), nil)
@@ -365,5 +361,60 @@ func TestValidateLoRAInstanceConfig_SizesKV(t *testing.T) {
 	dc = instanceConfigFixture(t, []int{512, 64}, []int{100, 1}, instCfgPlacement)
 	if err := ValidateLoRADeployment(dc); err == nil || !strings.Contains(err.Error(), "instance 0: per-instance KV sizing with max_lora_rank=512") {
 		t.Errorf("oversized reservation: got %v", err)
+	}
+}
+
+// The exported placement validators check the per-instance lists' shape themselves, so a
+// caller that skips ValidateLoRAInstanceConfig gets an error, never an index-out-of-range
+// panic. A placement on instance 1 with one-entry lists is the case that indexed [1].
+func TestValidateLoRAPlacement_MalformedListsAreErrors(t *testing.T) {
+	placement := map[int][]string{1: {"c64"}}
+	schedule := []sim.PlacementScheduleEntry{{AtUs: 10, Placement: placement}}
+	cases := []struct {
+		name        string
+		ranks, caps []int
+		want        string
+	}{
+		{"short lists", []int{64}, []int{1}, "lora_instance_max_rank has 1 entries"},
+		{"ranks only", []int{16, 64}, nil, "must be set together"},
+		{"capacities only", nil, []int{2, 1}, "must be set together"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dc := instanceConfigFixture(t, tc.ranks, tc.caps, placement)
+			dc.PlacementSchedule = schedule
+			registry, err := sim.BuildAdapterRegistry(dc.ToSimConfig())
+			if err != nil || registry == nil {
+				t.Fatalf("setup: registry: %v", err)
+			}
+			for name, validate := range map[string]func(DeploymentConfig, sim.AdapterRegistry) error{
+				"ValidateLoRAPlacement":         ValidateLoRAPlacement,
+				"ValidateLoRAPlacementSchedule": ValidateLoRAPlacementSchedule,
+			} {
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							t.Errorf("%s panicked: %v", name, r)
+						}
+					}()
+					if err := validate(dc, registry); err == nil || !strings.Contains(err.Error(), tc.want) {
+						t.Errorf("%s: got %v, want an error containing %q", name, err, tc.want)
+					}
+				}()
+			}
+		})
+	}
+}
+
+// The allowed-rank set cannot be changed from outside the package: the accessor returns a
+// copy, and mutating it leaves validation unchanged.
+func TestVLLMAllowedMaxLoRARanks_IsACopy(t *testing.T) {
+	got := VLLMAllowedMaxLoRARanks()
+	got[0] = 12
+	if !isVLLMMaxLoRARank(1) || isVLLMMaxLoRARank(12) {
+		t.Fatalf("mutating the returned slice changed the validation set")
+	}
+	if again := VLLMAllowedMaxLoRARanks(); again[0] != 1 {
+		t.Errorf("second call returned %v, want the original set", again)
 	}
 }

@@ -261,3 +261,35 @@ func TestLoRAInstanceConfigCLI_MaxModelLenPerInstance(t *testing.T) {
 		t.Errorf("both instances run at max_model_len %d, the global cap", got.LoRAInstances[0].MaxModelLen)
 	}
 }
+
+// With the lists set, the per-instance reservations own the fit decision. The global KV
+// pre-pass must not charge the cluster-wide reservation (adapter_capacity × catalog max
+// rank): here that is 1000 × 64 × 2e6 bytes, 119 GiB, beyond an H100, while the actual
+// reservations are 1 × 8 × 2e6 and 1 × 64 × 2e6 bytes. The run must succeed, and the
+// startup log must not report the cluster-wide figure as reserved.
+func TestLoRAInstanceConfigCLI_GlobalReservationSupersededByLists(t *testing.T) {
+	metrics := filepath.Join(t.TempDir(), "metrics.json")
+	_, stderr, code := instanceConfigRun(t, "--lora-adapter-capacity", "1000",
+		"--lora-instance-max-rank", "8,64", "--lora-instance-capacity", "1,1", "--metrics-path", metrics)
+	if code != 0 {
+		t.Fatalf("run exited %d; the cluster-wide reservation must not gate a per-instance run; stderr:\n%s", code, stderr)
+	}
+	if strings.Contains(stderr, "reserved 119.21 GiB") {
+		t.Errorf("startup log reports the superseded cluster-wide reservation:\n%s", stderr)
+	}
+	body, err := os.ReadFile(metrics)
+	if err != nil {
+		t.Fatalf("read metrics file: %v", err)
+	}
+	var got struct {
+		LoRAInstances []sim.LoRAInstanceEcho `json:"lora_instances"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil || len(got.LoRAInstances) != 2 {
+		t.Fatalf("decode lora_instances: %v (%d entries)", err, len(got.LoRAInstances))
+	}
+	for i, want := range []int64{1 * 8 * 2e6, 1 * 64 * 2e6} {
+		if r := got.LoRAInstances[i].AdapterReservedBytes; r != want {
+			t.Errorf("instance %d reserved %d bytes, want %d", i, r, want)
+		}
+	}
+}

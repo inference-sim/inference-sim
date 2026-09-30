@@ -6,23 +6,29 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-// VLLMAllowedMaxLoRARanks is the set vLLM accepts for --max-lora-rank
+// vllmAllowedMaxLoRARanks is the set vLLM accepts for --max-lora-rank
 // (vllm/config/lora.py, MaxLoRARanks). A per-instance cap outside it is a deployment
-// vLLM would refuse to start, so the simulator refuses it too.
-var VLLMAllowedMaxLoRARanks = []int{1, 8, 16, 32, 64, 128, 256, 320, 512}
+// vLLM would refuse to start, so the simulator refuses it too. Unexported so no importer
+// can widen the validation set; VLLMAllowedMaxLoRARanks returns a copy.
+var vllmAllowedMaxLoRARanks = []int{1, 8, 16, 32, 64, 128, 256, 320, 512}
+
+// VLLMAllowedMaxLoRARanks returns a copy of the ranks vLLM accepts for --max-lora-rank.
+func VLLMAllowedMaxLoRARanks() []int {
+	return append([]int(nil), vllmAllowedMaxLoRARanks...)
+}
 
 // ValidateLoRAInstanceConfig checks DeploymentConfig.LoRAInstanceMaxRank and
 // LoRAInstanceCapacity (config-time rank coupling). Both absent is always valid and
 // inert (R20). Otherwise, in this order, the first violation is returned:
 //
 //  1. both lists are set, or neither;
-//  2. the LoRA subsystem is active (registry non-nil);
-//  3. each list has exactly NumInstances entries;
+//  2. each list has exactly NumInstances entries;
+//  3. the LoRA subsystem is active (registry non-nil);
 //  4. no node pools and no PD pools: those paths size KV per pool or per role, and a
 //     per-instance reservation there is not implemented;
 //  5. KV capacity is auto-calculated (KVAutoCalc.Enabled): with an explicit
 //     --total-kv-blocks the per-instance reservation would be silently ignored;
-//  6. every rank is in VLLMAllowedMaxLoRARanks and every capacity is >= 1;
+//  6. every rank is in vLLM's allowed set and every capacity is >= 1;
 //  7. every instance's KV can be sized net of its reservation (sizeLoRAInstance).
 //
 // The per-adapter checks (a seeded or scheduled adapter's rank within its instance's cap,
@@ -33,21 +39,12 @@ func ValidateLoRAInstanceConfig(dc DeploymentConfig, registry sim.AdapterRegistr
 	if len(ranks) == 0 && len(caps) == 0 {
 		return nil
 	}
-	if len(ranks) == 0 || len(caps) == 0 {
-		return fmt.Errorf("lora_instance_max_rank and lora_instance_capacity must be set together "+
-			"(got %d and %d entries)", len(ranks), len(caps))
+	if err := instanceListShapeErr(dc); err != nil {
+		return err
 	}
 	if registry == nil {
 		return fmt.Errorf("lora_instance_max_rank set but LoRA disabled: the adapter subsystem is " +
 			"inactive (no adapters/capacity configured)")
-	}
-	if len(ranks) != dc.NumInstances {
-		return fmt.Errorf("lora_instance_max_rank has %d entries, want one per instance (%d)",
-			len(ranks), dc.NumInstances)
-	}
-	if len(caps) != dc.NumInstances {
-		return fmt.Errorf("lora_instance_capacity has %d entries, want one per instance (%d)",
-			len(caps), dc.NumInstances)
 	}
 	if len(dc.NodePools) > 0 {
 		return fmt.Errorf("lora_instance_max_rank is not supported with node_pools: pool placement " +
@@ -65,7 +62,7 @@ func ValidateLoRAInstanceConfig(dc DeploymentConfig, registry sim.AdapterRegistr
 	for i, r := range ranks {
 		if !isVLLMMaxLoRARank(r) {
 			return fmt.Errorf("lora_instance_max_rank[%d] = %d is not a rank vLLM accepts %v",
-				i, r, VLLMAllowedMaxLoRARanks)
+				i, r, vllmAllowedMaxLoRARanks)
 		}
 	}
 	for i, c := range caps {
@@ -85,8 +82,32 @@ func ValidateLoRAInstanceConfig(dc DeploymentConfig, registry sim.AdapterRegistr
 	return nil
 }
 
+// instanceListShapeErr runs checks 1 and 2 of ValidateLoRAInstanceConfig: both lists
+// set or neither, and each with exactly NumInstances entries. The exported placement
+// validators run it too, because they index the lists by instance and must return an
+// error, not panic, for a caller that skipped ValidateLoRAInstanceConfig.
+func instanceListShapeErr(dc DeploymentConfig) error {
+	ranks, caps := dc.LoRAInstanceMaxRank, dc.LoRAInstanceCapacity
+	if len(ranks) == 0 && len(caps) == 0 {
+		return nil
+	}
+	if len(ranks) == 0 || len(caps) == 0 {
+		return fmt.Errorf("lora_instance_max_rank and lora_instance_capacity must be set together "+
+			"(got %d and %d entries)", len(ranks), len(caps))
+	}
+	if len(ranks) != dc.NumInstances {
+		return fmt.Errorf("lora_instance_max_rank has %d entries, want one per instance (%d)",
+			len(ranks), dc.NumInstances)
+	}
+	if len(caps) != dc.NumInstances {
+		return fmt.Errorf("lora_instance_capacity has %d entries, want one per instance (%d)",
+			len(caps), dc.NumInstances)
+	}
+	return nil
+}
+
 func isVLLMMaxLoRARank(r int) bool {
-	for _, a := range VLLMAllowedMaxLoRARanks {
+	for _, a := range vllmAllowedMaxLoRARanks {
 		if r == a {
 			return true
 		}
@@ -157,10 +178,9 @@ func sizeLoRAInstance(simCfg *sim.SimConfig, d DeploymentConfig, idx int) (reser
 // configuration and installs the KV blocks sizeLoRAInstance computes from its own
 // reservation. No-op when the per-instance lists are absent (INV-6).
 //
-// MaxModelLen is re-derived per instance: when the CLI supplied the pre-cap value
-// (LoRAInstanceMaxModelLen), the instance starts from it and setInstanceKVBlocks caps it
-// by this instance's own KV budget, rather than keeping a cap the CLI computed from the
-// cluster-wide reservation.
+// MaxModelLen is then capped by this instance's own KV budget (setInstanceKVBlocks). The
+// inherited value is never tighter than that: with the lists set, the CLI's global KV
+// pre-pass charges no reservation, so its cap is at most the unreserved budget.
 //
 // A failure panics, never falling back to the inherited global capacity as
 // applyPerInstanceKVCapacity does for node pools: that would run the instance with a
@@ -176,9 +196,6 @@ func applyLoRAInstanceConfig(simCfg *sim.SimConfig, d DeploymentConfig, idx int,
 	reserved, blocks, err := sizeLoRAInstance(simCfg, d, idx)
 	if err != nil {
 		panic(fmt.Sprintf("ClusterSimulator: %s: %v", id, err))
-	}
-	if d.LoRAInstanceMaxModelLen > 0 {
-		simCfg.MaxModelLen = d.LoRAInstanceMaxModelLen
 	}
 	setInstanceKVBlocks(simCfg, blocks, simCfg.HWConfig.MemoryGiB, simCfg.GPU)
 	return &sim.LoRAInstanceEcho{
