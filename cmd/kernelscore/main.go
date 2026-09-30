@@ -146,8 +146,20 @@ func main() {
 			predicted := obs.MeanITLUs / anchor
 			errMine := math.Abs(predicted/p.MeasuredRelative-1) * 100
 			errTheirs := math.Abs((p.AISimulateRelative/theirAnchor)/p.MeasuredRelative-1) * 100
-			mine = append(mine, errMine)
-			theirs = append(theirs, errTheirs)
+			// The anchor is EXCLUDED from the mean, matching AISimulate's own definition
+			// (scripts/build_e2e_accuracy_overview.py: `for ... in points[1:]`). Its error
+			// is exactly zero by construction -- each side divided by itself -- so
+			// including it adds one free zero per sweep and dilutes every figure.
+			//
+			// This is not a stylistic choice. Applying the anchor-exclusive definition to
+			// AISimulate's own per-point data over its whole 1137-point snapshot reproduces
+			// the 10.05% tpot_shape_error_pct it publishes, on 878 comparisons, exact to two
+			// decimals. The anchor-inclusive variant gives 9.41% and cannot reproduce it.
+			// The published figure is the arbiter.
+			if i > 0 {
+				mine = append(mine, errMine)
+				theirs = append(theirs, errTheirs)
+			}
 			if *verbose {
 				if i == 0 {
 					fmt.Printf("--- %s %s %s %s tp=%d\n", sw.Scenario, sw.Label,

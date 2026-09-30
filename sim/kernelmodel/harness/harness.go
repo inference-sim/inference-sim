@@ -235,44 +235,33 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 		blocks = perSeq * int64(concurrency) * 2
 	}
 
-	// Enough completions to measure a steady state, scaled by the concurrency level.
-	//
-	// SessionsPerPoint alone is not a sufficient specification: at concurrency 32 a budget
-	// of 40 completions covers barely one pool cycle, and the measured mean then depends on
-	// where the run happened to stop. Observed on minimax-m2.5-b200-fp8-vllm-tp4 at c=32:
-	// 9746, 8186, 9397, 9490 us at 20, 40, 100 and 200 completions -- converging only once
-	// several pool cycles are covered, while c=8 converged by 40.
-	//
-	// So the budget is the larger of the stated floor and CyclesPerPoint full pool cycles.
-	// This is a convergence criterion, not a tuning knob: it is set from the shape of the
-	// transient and applies identically to every point and both compared models.
-	cycles := cfg.CyclesPerPoint
-	if cycles <= 0 {
-		cycles = defaultCyclesPerPoint
-	}
-	total := cfg.SessionsPerPoint
-	if byCycles := concurrency * cycles; byCycles > total {
-		total = byCycles
-	}
+	// The workload AISimulate's replay drives, from its own source constants. See
+	// workload.go for the citations and for why the distribution is matched rather than the
+	// individual draws.
+	w := AISimulateWorkload(isl, osl, concurrency)
+	total := w.RequestCount
 
-	// The workload is built as a BLIS WorkloadSpec and expanded by BLIS's own generator,
-	// rather than by assembling SessionBlueprints here. Three reasons, all about fidelity:
+	// Built as a BLIS WorkloadSpec and expanded by BLIS's own generator rather than by
+	// assembling SessionBlueprints here. Three reasons, all about fidelity:
 	//
-	//   - A Concurrency client is BLIS's native closed-loop primitive. GenerateWorkload
-	//     emits N seed requests plus unlimited-round blueprints for them, and
-	//     SessionPoolDriver/SessionManager then produce a follow-up for each completion.
-	//     That is a fixed pool of N users, which is what the snapshot's concurrency means.
-	//   - Concurrency and RateFraction are mutually exclusive in BLIS, and Validate()
-	//     enforces it. Going through the spec means that invariant is checked rather than
-	//     assumed.
-	//   - Every other knob (think time, prefix sharing, multimodal, reasoning, LoRA,
-	//     network, lifecycle, SLO) is left at its zero value, so the spec records exactly
-	//     what this comparison does and does not exercise.
+	//   - A Concurrency client is BLIS's native closed-loop primitive. GenerateWorkload emits
+	//     N seed requests plus unlimited-round blueprints, and SessionManager.OnComplete
+	//     supplies a follow-up per completion, holding N users in flight. That is what the
+	//     snapshot's concurrency means, and it leaves the RESIDENT batch to BLIS's admission
+	//     control rather than fixing it at N.
+	//   - Concurrency and RateFraction are mutually exclusive in BLIS and Validate() enforces
+	//     it, so that invariant is checked rather than assumed.
+	//   - Every other knob (prefix sharing, multimodal, reasoning, LoRA, network, lifecycle,
+	//     SLO) is left at its zero value, so the spec records exactly what this comparison
+	//     does and does not exercise.
 	//
-	// Input and output lengths are constant distributions at the sweep's stated ISL and
-	// OSL. The snapshot gives one pair per sweep with no spread, so a constant sampler is
-	// the faithful choice; any distribution with the same mean would add variance the
-	// measurement does not have.
+	// Lengths are discrete uniform over AISimulate's one-sided interval, expressed through
+	// BLIS's existing `empirical` sampler. The label is an upper bound: at "1024:1024" the
+	// interval is [819, 1024] on both axes. An earlier version used a constant at the label,
+	// which drove a mean context about 10% longer than the baseline's and removed the length
+	// variance entirely -- and variance matters here beyond its mean, because variable output
+	// lengths make requests retire at different times, so the resident batch churns instead
+	// of finishing in lockstep.
 	spec := &workload.WorkloadSpec{
 		Version:  "v1",
 		Seed:     cfg.Seed,
@@ -280,19 +269,19 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 		Clients: []workload.ClientSpec{{
 			ID:          "closed-loop",
 			Concurrency: concurrency,
-			// Zero think time by default: the snapshot measures a saturating client, so
-			// a user re-submits the instant its previous request finishes. Varied only by
-			// cmd/sensitivity, never to tune a score.
+			// Zero think time by default: the snapshot's replay sets no request rate or
+			// arrival interval, so every arrival is at t=0 and concurrency alone gates
+			// execution -- a saturating client. Varied only by cmd/sensitivity.
 			ThinkTimeUs: cfg.ThinkTimeUs,
 			// RateFraction stays 0, which is what makes this a concurrency client.
 			InputDist: workload.DistSpec{
-				Type: "constant", Params: map[string]float64{"value": float64(isl)},
+				Type: "empirical", Params: pdfParams(uniformPDF(w.ISLLow, w.ISLHigh)),
 			},
 			OutputDist: workload.DistSpec{
-				Type: "constant", Params: map[string]float64{"value": float64(osl)},
+				Type: "empirical", Params: pdfParams(uniformPDF(w.OSLLow, w.OSLHigh)),
 			},
 			// No shared prefix: a prefix-cache hit would change the work per request, and
-			// the snapshot states no prefix reuse.
+			// AISimulate's spec sets cached_prefix_tokens to zero.
 			PrefixLength: 0,
 			Streaming:    true,
 		}},
