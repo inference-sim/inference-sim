@@ -1,6 +1,7 @@
 package kernelmodel
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -60,51 +61,85 @@ func TestKVBudgetGrowsWithTensorParallelWidth(t *testing.T) {
 	}
 }
 
-// The refusal must fire, with a diagnostic, when the kernel reports a per-rank occupancy
-// above the device size. Compensating silently would produce a plausible capacity built on
-// a known-wrong weight figure, and the resident batch is the quantity this whole experiment
-// measures.
+// A per-rank occupancy must be physically possible: it cannot exceed the part it sits on.
+// The guard in KVBudget exists because an impossible figure divided into a budget yields a
+// plausible-looking capacity built on a wrong weight term, and the resident batch is the
+// quantity this experiment measures.
 //
-// Behavioural: it asserts that no budget is returned and that the error names the defect,
-// not that any particular source line exists.
-func TestAnImpossiblePerRankOccupancyIsRefusedNotCompensated(t *testing.T) {
-	m := open(t, "glm-5-h200-fp8-sglang-tp8.yaml")
-	b, err := m.KVBudget()
-	if err == nil {
-		t.Fatalf("a %.1f GiB per-rank occupancy on a 141 GiB device produced a budget of "+
-			"%d blocks instead of an error",
-			float64(m.Kernel().FixedBytes().Total())/(1<<30), b.TotalBlocks)
-	}
-	if b.TotalBlocks != 0 {
-		t.Errorf("a refused budget still reported %d blocks", b.TotalBlocks)
-	}
-	for _, want := range []string{"per-rank", "UpstreamExpertWeightDefect"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the refusal does not mention %q, so a reader cannot tell why "+
-				"capacity is unavailable: %v", want, err)
+// This asserts the guard does not fire on any evaluation deployment -- i.e. that every one
+// of them reports a possible occupancy and a derivable budget. It replaced a test that
+// asserted the opposite: before the upstream /expertTensorShards fix, 17 of 39 deployments
+// reported more per-rank memory than their device had.
+func TestEveryEvaluationDeploymentHasADerivableBudget(t *testing.T) {
+	for _, scenario := range evaluationScenarios(t) {
+		m, err := Open(scenario, repos())
+		if err != nil {
+			t.Errorf("%s: Open: %v", scenario, err)
+			continue
+		}
+		b, err := m.KVBudget()
+		if err != nil {
+			t.Errorf("%s: %v", scenario, err)
+			continue
+		}
+		if b.TotalBlocks <= 0 {
+			t.Errorf("%s: %d blocks", scenario, b.TotalBlocks)
+		}
+		if b.FixedBytes >= b.DeviceBytes {
+			t.Errorf("%s: per-rank occupancy %.1f GiB does not fit a %.1f GiB device",
+				scenario, float64(b.FixedBytes)/(1<<30),
+				float64(b.DeviceBytes)/(1<<30))
 		}
 	}
 }
 
-// The defect's signature, asserted as behaviour: with expert parallelism OFF, the kernel's
-// reported weights are consistent with undivided expert bytes. This test documents the bug
-// so that fixing it upstream makes this test fail loudly rather than leaving a stale
-// workaround in place.
-func TestExpertWeightsAreUndividedWithExpertParallelismOff(t *testing.T) {
+// Expert weights must be TENSOR-SLICED when expert parallelism is off: a rank holds every
+// expert, each divided across the tensor-parallel group. The signature is arithmetic rather
+// than a recorded byte count.
+//
+// GLM-5 served fp8 has 75 MoE layers of 256 experts, three matrices each at 2048x6144, so
+// 675 GiB of expert parameters for the whole model and 84.4 GiB for one rank of eight. A
+// rank reporting the whole model's figure is the defect this test was written against; it
+// now pins the fix.
+func TestExpertWeightsAreTensorSlicedWhenExpertParallelismIsOff(t *testing.T) {
 	m := open(t, "glm-5-h200-fp8-sglang-tp8.yaml")
 	if w := m.Kernel().Resolved().ExpertParallelWidth; w > 1 {
-		t.Skipf("this scenario resolved expert-parallel width %d; the defect needs it off", w)
+		t.Skipf("this scenario resolved expert-parallel width %d; the test needs it off", w)
 	}
-	// GLM-5: 75 MoE layers, 256 experts, 3 matrices, n=2048, k=6144, fp8 at 1 byte.
-	const wholeModelExpertBytes = 75.0 * 256 * 3 * 2048 * 6144
+	const (
+		wholeModelExpertBytes = 75.0 * 256 * 3 * 2048 * 6144
+		tp                    = 8.0
+	)
+	perRank := wholeModelExpertBytes / tp
 	got := float64(m.Kernel().FixedBytes().Weights)
-	// Undivided, the expert term alone is 675 GiB; the reported figure adds dense layers,
-	// embeddings and the head, so it sits just above. Correctly divided by tp=8 it would be
-	// near 84 GiB. A 20% band distinguishes those two cases unambiguously.
-	if got < wholeModelExpertBytes*0.95 {
-		t.Errorf("reported weights %.1f GiB are below the undivided expert term "+
-			"%.1f GiB: the upstream defect may have been fixed, in which case the "+
-			"refusal in KVBudget and its documentation should be removed",
-			got/(1<<30), wholeModelExpertBytes/(1<<30))
+
+	// Above the expert slice (dense layers, embeddings and the head add to it) and well
+	// below twice it. The undivided figure is 8x, so this band excludes it decisively.
+	if got < perRank || got > perRank*1.5 {
+		t.Errorf("a tp=8 rank reports %.1f GiB of weights; the expert slice is %.1f GiB "+
+			"and the dense remainder is small, so anything outside [%.1f, %.1f] GiB means "+
+			"the expert term is sharded wrongly",
+			got/(1<<30), perRank/(1<<30), perRank/(1<<30), perRank*1.5/(1<<30))
 	}
+}
+
+// evaluationScenarios lists the scenario files the comparison runs over. Reading the
+// directory rather than hardcoding a list means a scenario added upstream is covered
+// automatically instead of silently skipped.
+func evaluationScenarios(t *testing.T) []string {
+	t.Helper()
+	ents, err := os.ReadDir(repos().Scenarios)
+	if err != nil {
+		t.Fatalf("reading scenarios: %v", err)
+	}
+	var out []string
+	for _, e := range ents {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".yaml") {
+			out = append(out, e.Name())
+		}
+	}
+	if len(out) == 0 {
+		t.Fatal("no scenario files found, so this test would pass vacuously")
+	}
+	return out
 }

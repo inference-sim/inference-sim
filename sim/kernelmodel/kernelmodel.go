@@ -243,3 +243,27 @@ func shapeOf(req *sim.Request) kernel.ReqShape {
 // clampToInt64 on a float microsecond value. The largest error is 1 tick, which on the
 // smallest step in the evaluation corpus (553 us for an empty batch) is under 0.2%.
 func ticks(d interface{ Microseconds() int64 }) int64 { return d.Microseconds() }
+
+// Engine reports the engine settings of the pool this kernel prices.
+//
+// A caller configuring a simulator needs the same block size, token budget and sequence cap
+// the kernel resolved against, or the two would describe different deployments: a scheduler
+// admitting 512 sequences while the kernel priced a 256-sequence engine is not a
+// disagreement the numbers would reveal.
+//
+// It returns the scenario's own values rather than a copy with defaults filled in, and
+// errors when a value a simulator requires is absent, so a missing setting is a failure
+// rather than a silent zero.
+func (m *Model) Engine() (scenario.Engine, error) {
+	e := m.scenario.Pools[m.poolIndex].Engine
+	if e.BlockSize <= 0 {
+		return e, fmt.Errorf("kernelmodel: scenario states no block_size")
+	}
+	if e.MaxNumSeqs <= 0 {
+		return e, fmt.Errorf("kernelmodel: scenario states no max_num_seqs")
+	}
+	if e.MaxNumBatchedTokens <= 0 {
+		return e, fmt.Errorf("kernelmodel: scenario states no max_num_batched_tokens")
+	}
+	return e, nil
+}
