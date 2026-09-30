@@ -363,6 +363,12 @@ func ClampExpertShardToExpertCount(ep, numRoutedExperts int) (int, bool) {
 // overhead, and (optionally) the static LoRA adapter HBM reservation. The base
 // formula matches the llm-d-benchmark capacity_planner.py reference.
 //
+// The returned count is a GLOBAL block count on the same basis the runtime and vLLM
+// both use — the pool holds blocks × blockSize tokens in total, and each of the rank's
+// tp GPUs holds its own shard of every block. Both sides of the division are therefore
+// aggregates over the tp GPUs: see Step 5 for the reconciliation (#1846) and why mixing
+// the aggregate budget with the per-GPU per-block cost inflates the count by ~tp.
+//
 // Parameters:
 //
 //   - mc: model architecture (layers, heads, dims, precision)
@@ -470,31 +476,6 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, dp int,
 			perBlockBytes, perTokenKVBytesPerGPUF, blockSize)
 	}
 
-	// Aggregate cost of ONE block across the rank's tp GPUs (#1846). The memory budget
-	// assembled in Step 4 is a TOTAL across those tp GPUs (gpu_mem × util × tp, less
-	// totals for weights and non-torch overhead), while perBlockBytes above is the
-	// PER-GPU cost of a block. The two must be brought onto the same basis before the
-	// division in Step 5, or the block count comes out ~tp× too large.
-	//
-	// The aggregate basis is the correct one because a KV block is a GLOBAL quantity in
-	// the runtime, not a per-GPU one: a request is charged ceil(InputLen/BlockSize)
-	// blocks once against the pool (sim/simulator.go), and the reported pool size is
-	// TotalBlocks × BlockSizeTokens tokens (sim/cluster/routing.go) — the same accounting
-	// vLLM uses when it reports "GPU KV cache size: N tokens". Allocating one global
-	// block therefore consumes perBlockBytes on EVERY one of the tp GPUs: each rank
-	// stores its own shard of that block (its KV-head slice on the MHA/GQA path, or a
-	// full replica of the compressed latent on the MLA path — KVBytesPerToken already
-	// returns the correct per-GPU figure for both).
-	//
-	// tp == 1 leaves the divisor untouched, so single-GPU block counts are byte-identical
-	// to a pre-#1846 build (INV-6).
-	perBlockBytesAllGPUs := perBlockBytes * int64(tp)
-	if perBlockBytesAllGPUs/int64(tp) != perBlockBytes {
-		return 0, fmt.Errorf(
-			"CalculateKVBlocks: aggregate per-block KV bytes overflows int64 "+
-				"(perGPU=%d bytes × TP=%d)", perBlockBytes, tp)
-	}
-
 	// --- Step 4: Available memory budget (total across all TP GPUs) ---
 	// Reference: available_memory = gpu_mem * gpu_mem_util * gpu_count
 	totalAvailableGiB := hc.MemoryGiB * gpuMemoryUtilization * float64(tp)
@@ -515,9 +496,9 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, dp int,
 	// leaves the auto-calc slightly OPTIMISTIC at high TP. That residual is the reason
 	// the corrected estimate lands ~1.09× a measured pool rather than ~1.0×, and it is
 	// explicitly out of scope for #1846 (which tracks only the block-division units
-	// mismatch) and is tracked as #1848. Changing it here would
-	// also be a silent second behavior change inside a fix whose contract is "TP=1
-	// byte-identical, TP>1 corrected by exactly the units factor".
+	// mismatch); it is tracked as #1848. Changing it here would also be a silent second
+	// behavior change inside a fix whose contract is "TP=1 byte-identical, TP>1
+	// corrected by exactly the units factor".
 	var activationGiB float64
 	if params.IsMoE {
 		activationGiB = activationMemoryMoEGiB
@@ -595,9 +576,30 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, dp int,
 	allocatableBytes := int64(allocatableGiB * float64(gibToBytes))
 
 	// --- Step 5: Total blocks (per DP rank) ---
-	// Aggregate budget ÷ aggregate per-block cost (#1846): both sides are totals over
-	// the rank's tp GPUs. See perBlockBytesAllGPUs above for why the block is charged on
-	// every rank.
+	// Aggregate budget ÷ AGGREGATE per-block cost (#1846). allocatableBytes above is a
+	// TOTAL across the rank's tp GPUs (gpu_mem × util × tp, less totals for weights and
+	// non-torch overhead), while perBlockBytes from Step 3 is the PER-GPU cost of a
+	// block. Dividing the first by the second — which is what this line used to do —
+	// mixes the two bases and inflates the block count by ~tp.
+	//
+	// The aggregate basis is the correct one to reconcile onto, because a KV block is a
+	// GLOBAL quantity in the runtime, not a per-GPU one: a request is charged
+	// ceil(InputLen/BlockSize) blocks once against the pool (sim/simulator.go), and the
+	// reported pool size is TotalBlocks × BlockSizeTokens tokens (sim/cluster/routing.go)
+	// — the same accounting vLLM uses when it reports "GPU KV cache size: N tokens".
+	// Allocating one global block therefore consumes perBlockBytes on EVERY one of the tp
+	// GPUs: each rank stores its own shard of that block (its KV-head slice on the
+	// MHA/GQA path, or a full replica of the compressed latent on the MLA path —
+	// KVBytesPerToken already returns the correct per-GPU figure for both).
+	//
+	// tp == 1 leaves the divisor untouched, so single-GPU block counts are byte-identical
+	// to a pre-#1846 build (INV-6).
+	perBlockBytesAllGPUs := perBlockBytes * int64(tp)
+	if perBlockBytesAllGPUs/int64(tp) != perBlockBytes {
+		return 0, fmt.Errorf(
+			"CalculateKVBlocks: aggregate per-block KV bytes overflows int64 "+
+				"(perGPU=%d bytes × TP=%d)", perBlockBytes, tp)
+	}
 	totalBlocks := allocatableBytes / perBlockBytesAllGPUs
 	if totalBlocks <= 0 {
 		return 0, fmt.Errorf(
