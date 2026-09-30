@@ -233,3 +233,44 @@ are charged at, which is a calibration question answerable against AISimulate's 
 measurement parquets rather than by adjusting a number.
 
 That is the open lead. It is checkable, which is the bar for pursuing it.
+
+## The expert-rate hypothesis, tested and rejected
+
+The residual's signature -- a systematic over-prediction growing with batch, concentrated on
+the model whose decode step is 87-98% expert-weight traffic -- pointed at the rate those bytes
+are charged at. That is checkable against NVIDIA's own MoE measurements rather than adjustable,
+which is why it was the lead worth pursuing.
+
+`b200_sxm/moe/trtllm/1.3.0rc20/moe_perf.parquet` holds 218,457 measured MoE latencies, and
+6,804 of them are at minimax-m2.5's exact geometry: hidden 3072, inter 1536, 256 experts,
+top_k 8. Filtering further to the deployment actually being scored -- `moe_tp_size` 4 with
+`moe_ep_size` 1, nvfp4, balanced routing -- leaves 27 points per kernel implementation.
+
+The sweep carries two implementations, which matters and nearly produced a wrong conclusion:
+`moe_torch_flow_min_latency` and `moe_torch_flow_cutlass` differ by roughly 5x at every token
+count. A latency-sensitive engine picks the faster one, so that is the comparison.
+
+Predicted over measured, where the prediction is the kernel's own form
+`max(flops/(peak x eff), touched_expert_bytes/bandwidth)`:
+
+| tokens | 1 | 8 | 32 | 64 | 80 | 3072 | 8192 | 16384 |
+|---|---|---|---|---|---|---|---|---|
+| vs min_latency | 0.12 | 0.65 | 0.76 | 0.99 | 1.03 | 0.53 | 0.37 | 0.39 |
+| vs cutlass | 0.03 | 0.13 | 0.15 | 0.22 | 0.23 | 0.14 | 0.09 | 0.10 |
+
+Geometric mean against the faster kernel: **0.625**. Against the slower: 0.153.
+
+**The hypothesis is rejected.** The MoE term is UNDER-predicted at almost every token count --
+it crosses 1.0 only briefly around 64-80 tokens and falls back to 0.37-0.53 at large batches.
+An under-predicted term cannot produce the observed over-prediction, and its shape in the batch
+is wrong for the residual too: the error grows with batch while this ratio falls.
+
+So the expert rate is not the cause. Two things follow. The residual must come from a term that
+grows with batch and is charged too heavily -- attention, the collectives, or the per-layer
+composition rather than the MoE GEMM. And separately, the MoE term being 0.625 of measurement
+is a real calibration gap in its own right, in the direction that would make predictions
+optimistic; it is not what this experiment is chasing, but it belongs in the record.
+
+This is the second hypothesis rejected by data rather than by argument, after `ExpertsTouched`.
+Both rejections cost little and prevented a change that would have been justified by a story
+instead of a measurement.
