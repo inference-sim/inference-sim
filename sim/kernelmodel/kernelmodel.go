@@ -224,10 +224,18 @@ func (m *Model) PostDecodeFixedOverhead() int64 { return m.completionTicks }
 //	PromptLen    <- InputLen(). Computed against PromptLen is what separates a
 //	                chunked-prefill tail from a decode, and the two use different
 //	                attention laws.
-//	CachedTokens <- 0. BLIS subtracts prefix-cache hits before setting NumNewTokens, so
-//	                the hit is already reflected in Scheduled. Passing it again here
-//	                would subtract it twice. The kernel's field exists for a caller that
-//	                has not yet subtracted it.
+//	CachedTokens <- 0. A prefix-cache hit is already reflected in Computed: BLIS's
+//	                batch_formation sets numNewTokens = InputLen() - ProgressIndex, and
+//	                the cache-aware allocation path is what advances ProgressIndex. So the
+//	                hit is excluded from Scheduled before the adapter sees it, and passing
+//	                a cached count here would subtract the same tokens twice. The kernel's
+//	                field exists for a caller that has NOT yet subtracted it.
+//
+//	                Note what this does NOT rest on: BLIS implements prefix caching
+//	                unconditionally, in sim/kv, not behind a flag. An earlier version of
+//	                this comment said BLIS "subtracts hits before setting NumNewTokens",
+//	                which is the right conclusion from a premise that would have been
+//	                false if caching were the thing being relied on.
 func shapeOf(req *sim.Request) kernel.ReqShape {
 	return kernel.ReqShape{
 		Scheduled:    req.NumNewTokens,
@@ -275,4 +283,22 @@ func (m *Model) Engine() (scenario.Engine, error) {
 // modelling the aggregate must scale all three.
 func (m *Model) DataParallelWidth() int {
 	return m.scenario.Pools[m.poolIndex].Parallel.DP
+}
+
+// StepEstimate exposes the kernel's full band for one batch: the overlap edge, the serialized
+// edge, the binding resource and the per-resource breakdown.
+//
+// StepTime returns only the overlap edge, because sim.LatencyModel is a single int64. A
+// caller diagnosing WHY a step costs what it does needs the rest, and asking the kernel again
+// through this method is cheaper and less error-prone than rebuilding the batch translation.
+func (m *Model) StepEstimate(batch []*sim.Request) kernel.StepEstimate {
+	b := kernel.Batch{
+		Reqs:            make([]kernel.ReqShape, 0, len(batch)),
+		DecodeThreshold: m.decodeThreshold,
+		SMBudget:        m.smBudget,
+	}
+	for _, req := range batch {
+		b.Reqs = append(b.Reqs, shapeOf(req))
+	}
+	return m.k.StepTime(b)
 }

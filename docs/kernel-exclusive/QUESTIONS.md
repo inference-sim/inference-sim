@@ -221,3 +221,103 @@ harness, and the comparison on the 2 unaffected deployments plus every deploymen
 `max_num_seqs`-only admission. That establishes the pipeline end to end and quantifies what
 KV pressure would add, so applying the upstream fix later is a one-line change followed by a
 re-run rather than new work.
+
+## Round 3: ten questions on correctness and on reaching SOTA
+
+Asked after the first scores, prompted by one flaw whose shape is worth naming: a
+justification that was TRUE in one measurement regime was carried unexamined into another
+where it is false. "max_num_seqs is a default, and a constant cancels in a ratio" holds for a
+ratio of two StepTime calls. It fails the moment a scheduler is in the loop, because
+max_num_seqs bounds the resident batch and the resident batch sets the curve's shape.
+
+Every question below is therefore of the form "what else did I carry across a regime change,
+and does it still hold?"
+
+### Correctness
+
+1. Which values does this comparison supply that the snapshot does not state, and how much
+   does each move the score? (Answered by measurement, not judgement -- cmd/sensitivity.)
+2. Is `cache_dtype: fp8` an assumption that changes KV bytes per token, and therefore the
+   KV-bound resident batch, rather than a cosmetic label?
+3. Does `engine_version: "0.29.0"` select engine rules that differ from what the measured
+   runs used, and would a different pack change the collective backends or async scheduling?
+4. Does the adapter's `CachedTokens: 0` still hold? It assumed BLIS subtracts prefix-cache
+   hits before setting NumNewTokens. With prefix caching off this is vacuous; if a default
+   turned it on, the kernel would be told a hit it has already been charged for.
+5. Is `Overlap` the right band edge for a SIMULATED step, or does a real engine's step sit
+   between Overlap and NoOverlap in a way that a step-time ratio hid?
+6. Does the harness's zero think time match how the snapshot's client behaved, or does a
+   saturating loop overstate the offered load?
+
+### Reaching SOTA
+
+7. Where is the remaining error concentrated after the dp fix -- is it a few arms, a
+   concurrency band, or spread evenly? A spread residual is a modelling gap; a concentrated
+   one is usually a specific wrong assumption.
+8. Is the residual the same SIGN everywhere? Systematic over-prediction points at one term;
+   mixed signs point at the scheduler or at the data.
+9. Can any part of the gap be closed by something CHECKABLE against vLLM's source or
+   NVIDIA's data, rather than by adjusting a number until the score improves?
+10. What is the floor this comparison can reach at all, given that AISimulate replays the
+    engine that produced the measurements and therefore knows the settings BLIS must guess?
+
+## Round 3 answers
+
+**Q1. How much does each unstated setting move the score?** Measured, one at a time, on the
+213 monotone vLLM points:
+
+| Setting | n | MAPE | delta |
+|---|---|---|---|
+| scenario values (baseline) | 213 | 11.20% | — |
+| max_num_seqs x2 | 213 | 11.05% | -0.16 |
+| max_num_seqs x4 | 213 | 11.03% | -0.17 |
+| max_num_seqs /2 | 213 | 11.56% | +0.36 |
+| token budget x2 | 213 | 11.24% | +0.03 |
+| token budget /2 | 213 | 11.22% | +0.02 |
+| admission: seqs only, no KV bound | 213 | 11.21% | +0.00 |
+
+**This overturns the conclusion recorded in RESULTS.md.** I had written that part of the
+residual is attributable to the unstated engine settings and that the comparison therefore
+cannot be driven to AISimulate's figure by correct modelling. The sensitivity sweep says the
+opposite: quadrupling max_num_seqs moves the score by 0.17 points and halving it by 0.36,
+against a 4.5-point gap. Even removing the KV bound on admission entirely changes nothing to
+two decimal places.
+
+So the unstated settings are a footnote, not a ceiling. The resident batch in this corpus is
+set by the offered concurrency and the work per request, not by the caps -- which is why
+scaling the caps barely registers. The 4.5-point gap is a modelling gap, and it is mine to
+close. That correction matters more than the original claim: it would have excused the
+residual on a cause that measurement does not support.
+
+The dp fix remains a genuine bug fix for a different reason: those 3 points sat AT the cap,
+where the cap binds absolutely rather than marginally.
+
+**Q4. Does `CachedTokens: 0` still hold?** Yes, but the justification was wrong and is
+corrected. BLIS implements prefix caching UNCONDITIONALLY (`sim/kv/cache.go`), not behind a
+flag, so the assumption cannot rest on caching being off. The real mechanism:
+`batch_formation` sets `numNewTokens = InputLen() - ProgressIndex`, and the cache-aware
+allocation path advances `ProgressIndex`, so a hit is excluded from `Scheduled` before the
+adapter sees it. Passing a cached count again would subtract the same tokens twice. A
+behavioural test pins that a half-computed prompt costs less than a cold one; it SKIPS on the
+double-subtraction half with a stated reason, because this kernel does not consume
+`CachedTokens` for that shape and the zero is harmless either way.
+
+**Q7/Q8. Where is the residual, and what sign?** Concentrated and signed. After the dp fix
+the error is still worst on minimax-m2.5 (7 of the 10 worst sweeps) and grows monotonically
+with concurrency within an arm -- on `minimax-m2.5-b200-fp8-vllm-tp4` at 1k1k it runs 6.34%,
+15.23%, 22.11%, 32.41% across c=8..64, every point an OVER-prediction. A systematic,
+batch-growing over-prediction on one model points at a term that scales with batch on that
+model specifically, not at the scheduler and not at the data.
+
+**Q9. Is `ExpertsTouched` that term?** No, rejected by arithmetic:
+`local * (1 - ((E-k)/E)^tokens)` is identical for minimax (E=256, k=8) and gpt-oss (E=128,
+k=4) at every batch size, because the two E/k ratios coincide. A minimax-specific error
+cannot come from a function that treats them identically.
+
+**Q10. What floor can this reach?** Higher than I claimed. With the settings shown to be
+worth under half a point, there is no measured ceiling from the unstated-configuration
+argument. AISimulate's advantage on the vLLM subset is 6.68% against 10.72%, and nothing
+measured so far explains it away.
+
+Still open: Q2 (cache_dtype), Q3 (engine_version rules pack), Q5 (Overlap vs NoOverlap for a
+simulated step), Q6 (think time).

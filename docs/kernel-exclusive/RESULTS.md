@@ -121,24 +121,31 @@ that doubled. At concurrency 512 the error fell from 59.47% to 0.84% once dp was
 Aggregate effect was small -- 11.38% to 11.26% -- because only 3 of 238 points sit above
 `256 x dp`. A serious bug on few points.
 
-**The limit: the snapshot publishes no engine settings.** Its topology records carry
-`framework`, `precision`, `serving`, `spec_method` and the five parallelism widths. They do
-NOT carry `max_num_seqs`, `max_num_batched_tokens`, `block_size`,
+**Measured, not assumed: the snapshot publishes no engine settings, and it barely matters.**
+Its topology records carry `framework`, `precision`, `serving`, `spec_method` and the five
+parallelism widths. They do NOT carry `max_num_seqs`, `max_num_batched_tokens`, `block_size`,
 `gpu_memory_utilization`, `cudagraph_mode`, `scheduling_policy`, or the chunked-prefill and
-prefix-caching flags.
+prefix-caching flags. The scenario files default them.
 
-The scenario files generated for the earlier step-time comparison say so, and justify
-defaulting them on the grounds that "the comparison scores a ratio across concurrency at a
-fixed deployment, so a constant cancels". That reasoning is correct for a step-time ratio and
-WRONG once a scheduler is in the loop: `max_num_seqs` and the token budget bound the resident
-batch, and the resident batch is what sets the shape of the curve. A default that cancelled
-before is load-bearing now.
+A first draft of this document argued that this bounds what the comparison can show, because
+the defaults were justified for a step-time ratio ("a constant cancels") and that
+justification fails with a scheduler in the loop. The first half is right; the conclusion was
+not, and `cmd/sensitivity` settles it by measurement on the 213 monotone vLLM points:
 
-So part of the residual is attributable to engine settings this project has to guess. The
-honest consequence: this comparison cannot be driven to AISimulate's figure by any amount of
-correct modelling, because AISimulate replays the engine that produced the measurements and
-therefore knows the settings, while BLIS is given a guess. Closing the remaining gap by
-adjusting those guesses until the 238 points improve would be fitting to the evaluation set.
+| Setting | MAPE | delta |
+|---|---|---|
+| scenario values | 11.20% | — |
+| max_num_seqs x4 | 11.03% | -0.17 |
+| max_num_seqs /2 | 11.56% | +0.36 |
+| token budget x2 | 11.24% | +0.03 |
+| KV bound removed entirely | 11.21% | +0.00 |
+
+Against a 4.5-point gap, the largest of these is 0.36. The resident batch in this corpus is
+set by the offered concurrency and the work per request rather than by the caps, so the caps
+barely register. The unstated settings are a footnote, and the gap is a modelling gap.
+
+The dp fix stands for a different reason: its 3 points sat AT the cap, where it binds
+absolutely rather than marginally.
 
 ## What was ruled out as the cause of the minimax deficit
 
@@ -153,3 +160,41 @@ The goal was to beat AISimulate. On the vLLM subset AISimulate scores 7.15% (6.6
 monotone subset), not the 9.41% quoted in the goal, which is its figure over all 447 points
 including the sglang and trt arms BLIS does not model. BLIS scores 11.26% and 10.72%. The
 gap is real and is not closed.
+
+## Where the residual actually is, decomposed
+
+The per-resource breakdown at decode (context 1024, microseconds per step) isolates it:
+
+| batch | minimax SM | minimax HBM | gpt-oss SM | gpt-oss HBM |
+|---|---|---|---|---|
+| 1 | 793 | 1,107 | 507 | 566 |
+| 8 | 827 | 2,900 | 545 | 1,310 |
+| 32 | 942 | 6,786 | 673 | 2,936 |
+| 64 | 1,096 | 9,043 | 844 | 3,907 |
+| 256 | 2,020 | 11,143 | 1,870 | 5,049 |
+
+Both are HBM-bound and the overlap-to-serialized ratio is similar (1.26-1.47 on both), so the
+choice of band edge is not the minimax-specific cause.
+
+The cause is the composition of that HBM term. For minimax at tp=4 with expert parallelism
+off -- 62 layers, 256 experts, three matrices at 1536x3072, fp8 -- expert weights are
+
+| batch | experts touched | expert GiB | KV GiB | expert share |
+|---|---|---|---|---|
+| 1 | 8.0 | 1.63 | 0.030 | 98.2% |
+| 8 | 57.4 | 11.73 | 0.242 | 98.0% |
+| 32 | 163.3 | 33.37 | 0.969 | 97.2% |
+| 64 | 222.4 | 45.46 | 1.938 | 95.9% |
+| 256 | 255.9 | 52.30 | 7.750 | 87.1% |
+
+So 87-98% of minimax's decode HBM traffic is expert weights, and the term grows 32x between
+batch 1 and 256 as `ExpertsTouched` saturates toward all 256 local experts. That is exactly
+the shape of the observed error: a systematic over-prediction that GROWS with batch, on the
+model whose step is most dominated by this one term.
+
+`ExpertsTouched` itself is not the culprit -- it is identical for minimax (E=256, k=8) and
+gpt-oss (E=128, k=4) at every batch size. The remaining candidate is the RATE the expert bytes
+are charged at, which is a calibration question answerable against AISimulate's own MoE
+measurement parquets rather than by adjusting a number.
+
+That is the open lead. It is checkable, which is the bar for pursuing it.

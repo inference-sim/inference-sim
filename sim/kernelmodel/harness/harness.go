@@ -151,6 +151,26 @@ type Config struct {
 	// run stops. Larger is steadier and slower; the value is recorded in the report.
 	SessionsPerPoint int
 	Seed             int64
+
+	// MaxNumSeqsScale and TokenBudgetScale multiply the scenario's stated caps. They exist
+	// for cmd/sensitivity, which measures how much the score depends on settings the
+	// snapshot does not publish. Zero means "use the scenario's value unchanged", which is
+	// what every scoring run does -- these are never set to tune a result, and choosing the
+	// best value would be fitting to the evaluation set.
+	MaxNumSeqsScale  float64
+	TokenBudgetScale float64
+}
+
+// scaled applies a sensitivity multiplier, with zero meaning "unchanged".
+func scaled(v int64, factor float64) int64 {
+	if factor <= 0 {
+		return v
+	}
+	out := int64(float64(v) * factor)
+	if out < 1 {
+		return 1
+	}
+	return out
 }
 
 // Run drives one point.
@@ -267,7 +287,8 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 		Seed:          cfg.Seed,
 		KVCacheConfig: sim.NewKVCacheConfig(blocks, int64(eng.BlockSize), 0, 0, 0, 0),
 		BatchConfig: sim.NewBatchConfig(
-			int64(eng.MaxNumSeqs)*dp, int64(eng.MaxNumBatchedTokens)*dp, 0),
+			scaled(int64(eng.MaxNumSeqs)*dp, cfg.MaxNumSeqsScale),
+			scaled(int64(eng.MaxNumBatchedTokens)*dp, cfg.TokenBudgetScale), 0),
 	}
 	kvStore := sim.MustNewKVStoreFromConfig(cfgSim.KVCacheConfig)
 	s, err := sim.NewSimulator(cfgSim, kvStore, m)

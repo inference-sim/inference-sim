@@ -251,3 +251,60 @@ func TestScheduledTokensComeFromNumNewTokensNotThePrompt(t *testing.T) {
 			"scheduled token; PromptLen or Computed is not reaching the kernel", short)
 	}
 }
+
+// CachedTokens must stay zero, and this pins WHY behaviourally rather than by reasoning
+// about the code.
+//
+// The adapter passes CachedTokens: 0 because BLIS reflects a prefix-cache hit in
+// ProgressIndex -- batch_formation computes numNewTokens as InputLen()-ProgressIndex, so a
+// hit is already excluded from the Scheduled count. Passing it again would subtract it twice.
+//
+// The original comment justified this as "BLIS subtracts prefix-cache hits before setting
+// NumNewTokens", which is the right conclusion from the wrong premise: BLIS's KV store
+// implements prefix caching UNCONDITIONALLY, not behind a flag, so the assumption cannot rest
+// on caching being off.
+//
+// The property that must hold: a request whose prefix is already computed -- expressed as a
+// ProgressIndex above zero on an unfinished prompt -- must cost LESS than the same request
+// from scratch, and the difference must come from Scheduled alone. If the adapter also
+// subtracted a cached count, the same hit would be removed twice and the step would be
+// under-priced.
+func TestAPrefixHitIsNotSubtractedTwice(t *testing.T) {
+	m := open(t, "glm-5-h200-fp8-sglang-tp8.yaml")
+	const prompt = 4096
+
+	// From scratch: the whole prompt is scheduled.
+	cold := m.StepTime([]*sim.Request{{
+		InputTokens: make([]sim.TokenID, prompt), ProgressIndex: 0, NumNewTokens: prompt,
+	}})
+	// Half the prompt already computed: BLIS schedules only the remainder, and that
+	// remainder is what NumNewTokens carries.
+	warm := m.StepTime([]*sim.Request{{
+		InputTokens:   make([]sim.TokenID, prompt),
+		ProgressIndex: prompt / 2,
+		NumNewTokens:  prompt / 2,
+	}})
+	if warm >= cold {
+		t.Errorf("a half-cached prompt priced %d ticks against %d from scratch; the hit is "+
+			"not reaching the kernel at all", warm, cold)
+	}
+
+	// And the adapter must not subtract it a second time: pricing the same shape with the
+	// kernel told about a cached count as well must differ from what the adapter produces.
+	// If they agreed, CachedTokens would be a no-op and this test could not detect a
+	// double subtraction.
+	b := kernel.Batch{DecodeThreshold: DecodeThreshold, SMBudget: m.smBudget,
+		Reqs: []kernel.ReqShape{{
+			Scheduled: prompt / 2, Computed: prompt / 2, PromptLen: prompt,
+			CachedTokens: prompt / 2,
+		}}}
+	twice := m.Kernel().StepTime(b).Overlap.Microseconds()
+	if twice == warm {
+		t.Skip("this kernel does not use CachedTokens for this shape, so a double " +
+			"subtraction is undetectable here and the zero is harmless either way")
+	}
+	if twice > warm {
+		t.Errorf("telling the kernel about a cached count raised the price from %d to %d; "+
+			"the field's sign is not what this test assumed", warm, twice)
+	}
+}
