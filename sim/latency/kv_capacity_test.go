@@ -1030,13 +1030,39 @@ func TestCalculateKVBlocks_TPDivisibility_ReturnError(t *testing.T) {
 func llama31_8B_ModelConfig() sim.ModelConfig { return validDenseModelConfig() }
 func h100HWConfig() sim.HardwareCalib         { return validHWConfig() }
 
+// globalBasisBaseline converts a TP>1 `total_kv_blocks` entry from the legacy
+// defaults.yaml calibration table into the GLOBAL block count BLIS's runtime uses, by
+// dividing out the tp factor (#1846).
+//
+// Those entries are on the same inflated aggregate-budget-over-per-GPU-cost basis the
+// #1846 fix removed from CalculateKVBlocks, and the fidelity baselines below were
+// originally set FROM them (#474 raised the budget to a TP total without scaling the
+// divisor, then updated these constants to match). Read as global block counts they are
+// not physically realizable, which is how we know which basis they are on:
+//
+//   - Llama-3.1-8B at TP=2 stores 65,536 KV bytes/token on each rank, so 132,139 blocks
+//     x 16 tokens is 129 GiB of KV per GPU on an 80 GiB H100 — impossible. 132,139/2 =
+//     66,069 blocks is 64.6 GiB/GPU, which fits the 72 GiB (0.9 x 80) budget beside the
+//     7.5 GiB/GPU weight share.
+//   - TP=4: 559,190 blocks is 273 GiB/GPU; /4 is 68.3 GiB/GPU against the same 72 GiB.
+//   - Mixtral-8x7B at TP=2: 58,377 blocks is 57 GiB/GPU of KV on top of a 43.5 GiB/GPU
+//     weight share (100.5 GiB total); /2 is 28.5 GiB, and 28.5 + 43.5 = 72.0 exactly.
+//
+// The tolerances below are therefore still measuring fidelity to the calibration table,
+// on the one basis in which that table is physically possible. The first-principles
+// guards for the basis itself live in kv_capacity_tp_basis_test.go.
+func globalBasisBaseline(legacyAggregate int64, tp int) int64 {
+	return legacyAggregate / int64(tp)
+}
+
 func TestCalculateKVBlocks_Llama31_8B_H100_TP2_WithinTolerance(t *testing.T) {
 	mc := llama31_8B_ModelConfig()
 	hc := h100HWConfig()
 	params := latency.NewKVCapacityParams(false, 0, false, "silu", 0, 0)
 
 	// Empirical baseline from defaults.yaml: Llama-3.1-8B / H100 / TP=2 = 132,139 blocks
-	const empirical int64 = 132139
+	// on the legacy aggregate basis ⇒ 66,069 global blocks (see globalBasisBaseline).
+	var empirical = globalBasisBaseline(132139, 2)
 	const tolerance = 0.10
 
 	got, err := latency.CalculateKVBlocks(mc, hc, 2, 1, 16, 0.9, params)
@@ -1060,7 +1086,8 @@ func TestCalculateKVBlocks_Llama31_8B_H100_TP4_WithinTolerance(t *testing.T) {
 	params := latency.NewKVCapacityParams(false, 0, false, "silu", 0, 0)
 
 	// Empirical baseline from defaults.yaml: Llama-3.1-8B / H100 / TP=4 = 559,190 blocks
-	const empirical int64 = 559190
+	// on the legacy aggregate basis ⇒ 139,797 global blocks (see globalBasisBaseline).
+	var empirical = globalBasisBaseline(559190, 4)
 	const tolerance = 0.10
 
 	got, err := latency.CalculateKVBlocks(mc, hc, 4, 1, 16, 0.9, params)
@@ -1170,7 +1197,8 @@ func TestCalculateKVBlocks_Mixtral_8x7B_H100_TP2_WithinTolerance(t *testing.T) {
 	params := latency.NewKVCapacityParams(true, 8, false, "silu", 0, 0)
 
 	// Empirical baseline from defaults.yaml: Mixtral-8x7B / H100 / TP=2 = 58,377 blocks
-	const empirical int64 = 58377
+	// on the legacy aggregate basis ⇒ 29,188 global blocks (see globalBasisBaseline).
+	var empirical = globalBasisBaseline(58377, 2)
 	const tolerance = 0.20
 
 	got, err := latency.CalculateKVBlocks(mc, hc, 2, 1, 16, 0.9, params)
@@ -1698,8 +1726,9 @@ func TestCalculateKVBlocks_Dense_UnchangedWithNewParams(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Must match the existing Llama-3.1-8B empirical baseline
-	const empirical int64 = 132139
+	// Must match the existing Llama-3.1-8B empirical baseline, on the global block
+	// basis the runtime uses (see globalBasisBaseline).
+	var empirical = globalBasisBaseline(132139, 2)
 	const tolerance = 0.10
 	deviation := math.Abs(float64(blocks)-float64(empirical)) / float64(empirical)
 	if deviation > tolerance {
@@ -2051,7 +2080,7 @@ func TestCalculateKVBlocks_DPScaling_KVSizingEPIndependent(t *testing.T) {
 	params := validMoEKVParams()
 
 	// Per-token/per-block KV bytes: no EP input exists, and the value is TP-sized only.
-	perBlockTP2 := perBlockBytesFor(t, mc, 2, 16)
+	perBlockTP2 := perBlockBytesPerGPUFor(t, mc, 2, 16)
 	if perBlockTP2 <= 0 {
 		t.Fatalf("per-block bytes must be positive, got %d", perBlockTP2)
 	}
@@ -2142,15 +2171,27 @@ func TestCalculateKVBlocks_RejectsInvalidDP(t *testing.T) {
 // (R22), and the zero reservation is byte-identical to the pre-feature result
 // (INV-6).
 
-// perBlockBytesFor mirrors CalculateKVBlocks' per-block byte computation so tests
-// can reason about block-count deltas.
-func perBlockBytesFor(t *testing.T, mc sim.ModelConfig, tp int, blockSize int64) int64 {
+// perBlockBytesPerGPUFor mirrors CalculateKVBlocks' PER-GPU per-block byte
+// computation: what one block of the pool occupies on a single rank.
+func perBlockBytesPerGPUFor(t *testing.T, mc sim.ModelConfig, tp int, blockSize int64) int64 {
 	t.Helper()
 	perTok, err := latency.KVBytesPerToken(mc, tp)
 	if err != nil {
 		t.Fatalf("KVBytesPerToken: %v", err)
 	}
 	return int64(perTok * float64(blockSize))
+}
+
+// blockBudgetCostFor is the cost of one block of the pool as charged against
+// CalculateKVBlocks' memory budget: the per-GPU cost on EVERY one of the rank's tp
+// GPUs (#1846). Blocks are a global quantity, so freeing N bytes of the (aggregate)
+// budget buys N/blockBudgetCostFor blocks — this is the right divisor for every
+// byte-conservation law below. The two helpers are deliberately separate rather than
+// one function with a flag: conflating the per-GPU cost with the budget cost is
+// exactly the bug #1846 fixed, and a test that picks the wrong one should read wrong.
+func blockBudgetCostFor(t *testing.T, mc sim.ModelConfig, tp int, blockSize int64) int64 {
+	t.Helper()
+	return perBlockBytesPerGPUFor(t, mc, tp, blockSize) * int64(tp)
 }
 
 // TestCalculateKVBlocks_AdapterReservationShrinksAndConserves verifies a non-zero
@@ -2180,7 +2221,7 @@ func TestCalculateKVBlocks_AdapterReservationShrinksAndConserves(t *testing.T) {
 
 	// Conservation: the bytes carved out (lost blocks × per-block) equal the
 	// reservation, within one block of int64 truncation.
-	perBlock := perBlockBytesFor(t, mc, tp, blockSize)
+	perBlock := blockBudgetCostFor(t, mc, tp, blockSize)
 	lostBlocks := base - withRes
 	expectedLost := reserved / perBlock
 	if lostBlocks < expectedLost-1 || lostBlocks > expectedLost+1 {
@@ -2267,7 +2308,7 @@ func TestCalculateKVBlocks_AdapterReservationPerDPRankScaling(t *testing.T) {
 		t.Fatalf("reservation did not shrink MoE dp=2 blocks: base=%d withReservation=%d", base, withRes)
 	}
 
-	perBlock := perBlockBytesFor(t, mc, tp, blockSize)
+	perBlock := blockBudgetCostFor(t, mc, tp, blockSize)
 	lostBlocks := base - withRes
 	expectedLost := int64(dp) * (reserved / perBlock) // per-rank loss, aggregated across dp ranks
 	// Tolerance ±dp: one block of int64 truncation per DP rank.
