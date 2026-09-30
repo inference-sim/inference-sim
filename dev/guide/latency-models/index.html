@@ -3483,12 +3483,13 @@ config. <code>--catalog</code> names the catalog clone ROOT, so the model's <cod
 <p>The <code>--tp</code> flag divides FLOPs and memory traffic across TP ranks:</p>
 <ul>
 <li>Higher TP reduces per-GPU step time (more parallelism)</li>
-<li>Higher TP reduces KV blocks per GPU (memory split across ranks)</li>
+<li>Higher TP usually <em>increases</em> <code>total_kv_blocks</code> — it adds whole GPUs of memory to the budget while the model weights stay a fixed total shared across them</li>
 </ul>
+<p><code>total_kv_blocks</code> is a <strong>global</strong> count, not a per-GPU one: every TP rank stores its own shard of every block, so adding ranks does not divide the pool between them. (Whether TP sharding shrinks the <em>per-GPU</em> cost of a block depends on the attention architecture — it does for MHA/GQA, where KV heads are sharded, but not for MLA, where the compressed latent is replicated on every rank.) See <a href="../kv-cache/#how-the-auto-calculated-pool-is-sized">KV Cache Management</a> for the formula.</p>
 <p>When choosing between TP and replication (more instances): TP reduces per-request latency, replication increases throughput. For capacity planning, simulate both configurations.</p>
 <div class="admonition note">
 <p class="admonition-title">Automatic KV block calculation</p>
-<p>For both latency backends (roofline, trained-physics), <code>--total-kv-blocks</code> is automatically derived from model architecture and GPU memory if not explicitly set. The auto-calculated value accounts for TP (KV heads are sharded across ranks; total GPU memory scales with GPU count). Override with <code>--total-kv-blocks &lt;N&gt;</code> for non-standard deployments. The auto-calculation uses reference constants (90% GPU utilization, standard activation/overhead budgets matching the llm-d-benchmark capacity planner) and requires SwiGLU-family activations.</p>
+<p>For both latency backends (roofline, trained-physics), <code>--total-kv-blocks</code> is automatically derived from model architecture and GPU memory if not explicitly set. The auto-calculated value accounts for TP on both sides of its division: the memory budget scales with GPU count, and the cost of one global block is its per-GPU cost on every one of the TP GPUs (#1846). Override with <code>--total-kv-blocks &lt;N&gt;</code> for non-standard deployments. The auto-calculation uses reference constants (90% GPU utilization, standard activation/overhead budgets matching the llm-d-benchmark capacity planner) and requires SwiGLU-family activations. It is an analytical estimate rather than a reproduction of vLLM's own per-rank memory profiling, and stays slightly optimistic at high TP — pin <code>--total-kv-blocks</code> when the pool must match a specific deployment.</p>
 </div>
 <div class="admonition note">
 <p class="admonition-title">Automatic MaxModelLen derivation</p>
