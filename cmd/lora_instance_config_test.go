@@ -293,3 +293,15 @@ func TestLoRAInstanceConfigCLI_GlobalReservationSupersededByLists(t *testing.T) 
 		}
 	}
 }
+
+// With the lists set, the cluster-wide reservation is not even built: building it runs
+// the cost model's overflow guard on a figure no instance reserves. Here it is
+// 1e10 × 64 × 2e6 = 1.28e18 bytes, above that guard's 1e18 cap, while the instances
+// reserve 16 MB and 128 MB.
+func TestLoRAInstanceConfigCLI_GlobalReservationNotBuiltWithLists(t *testing.T) {
+	_, stderr, code := instanceConfigRun(t, "--lora-adapter-capacity", "10000000000",
+		"--lora-instance-max-rank", "8,64", "--lora-instance-capacity", "1,1")
+	if code != 0 {
+		t.Fatalf("run exited %d; the unused cluster-wide reservation must not be validated; stderr:\n%s", code, stderr)
+	}
+}

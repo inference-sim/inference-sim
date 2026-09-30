@@ -2313,16 +2313,20 @@ var runCmd = &cobra.Command{
 			loraCfg.PlacementSchedule, resolveLoRAAdapterPlacement()); err != nil {
 			logrus.Fatalf("%v", err)
 		}
-		loraReservedBytesForKV = adapterReservedBytesFor(loraCfg)
-		// Per-instance LoRA slots, resolved BEFORE resolveLatencyConfig reads the reservation:
-		// with the lists set, each instance subtracts its own capacity × footprint × max rank
-		// at construction, so the cluster-wide figure (adapter_capacity × the catalog's
-		// largest rank) describes no instance. Charging it in the global KV pre-pass could
-		// refuse a run whose actual reservations all fit, and would log a reservation nothing
-		// makes. The per-instance sizing in cluster.ValidateLoRADeployment owns the fit.
+		// Per-instance LoRA slots, resolved BEFORE the cluster-wide reservation: with the lists
+		// set, each instance subtracts its own capacity × footprint × max rank at
+		// construction, so the cluster-wide figure (adapter_capacity × the catalog's largest
+		// rank) describes no instance. It is then not built at all. Building it runs the cost
+		// model's overflow guard on that figure, and charging it in the global KV pre-pass
+		// (resolveLatencyConfig) could refuse a run whose actual reservations all fit, and
+		// would log a reservation nothing makes. The per-instance sizing in
+		// cluster.ValidateLoRADeployment owns the fit, and each instance's own cost model
+		// runs the same guards on its own figure.
 		loraInstanceMaxRanks, loraInstanceCapacities := resolveLoRAInstanceLists()
 		if len(loraInstanceMaxRanks) > 0 || len(loraInstanceCapacities) > 0 {
 			loraReservedBytesForKV = 0
+		} else {
+			loraReservedBytesForKV = adapterReservedBytesFor(loraCfg)
 		}
 
 		// KV-cache offload config surface (#1587): resolve ONCE (R4), validated at the
