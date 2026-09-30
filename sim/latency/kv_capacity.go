@@ -369,6 +369,18 @@ func ClampExpertShardToExpertCount(ep, numRoutedExperts int) (int, bool) {
 // aggregates over the tp GPUs: see Step 5 for the reconciliation (#1846) and why mixing
 // the aggregate budget with the per-GPU per-block cost inflates the count by ~tp.
 //
+// SAME BASIS IS NOT THE SAME VALUE. This is an analytical estimate that reproduces
+// llm-d-benchmark's capacity_planner.py constants and formula — NOT a re-derivation of
+// what vLLM itself does, and it does not generally reproduce vLLM's multi-GPU counts:
+// vLLM PROFILES each rank's free memory after a warm-up forward pass, so it charges the
+// peak torch activation on every GPU, while the budget below subtracts one fixed
+// 5.5/8.0 GiB allowance from an aggregate over tp GPUs (see Step 4's RESIDUAL note and
+// #1848). The two therefore agree at tp=1 and diverge with tp, this estimate staying the
+// optimistic one — measured at ~1.09× a real TP=8 pool on a 141 GiB H200 and ~1.36× on a
+// weight-cramped 80 GiB H100 (sim/latency/kv_capacity_tp_basis_test.go pins both against
+// the engines' own reported pools). Pin --total-kv-blocks to a deployment's reported
+// "GPU KV cache size" ÷ block size when the pool must match that deployment exactly.
+//
 // Parameters:
 //
 //   - mc: model architecture (layers, heads, dims, precision)
@@ -585,8 +597,9 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, dp int,
 	// The aggregate basis is the correct one to reconcile onto, because a KV block is a
 	// GLOBAL quantity in the runtime, not a per-GPU one: a request is charged
 	// ceil(InputLen/BlockSize) blocks once against the pool (sim/simulator.go), and the
-	// reported pool size is TotalBlocks × BlockSizeTokens tokens (sim/cluster/routing.go)
-	// — the same accounting vLLM uses when it reports "GPU KV cache size: N tokens".
+	// reported pool size is TotalBlocks × BlockSizeTokens tokens (sim/cluster/instance.go's
+	// TotalKvCapacityTokens) — the same UNITS vLLM reports its "GPU KV cache size: N
+	// tokens" in, though not the same value at tp > 1 (see the doc comment's basis note).
 	// Allocating one global block therefore consumes perBlockBytes on EVERY one of the tp
 	// GPUs: each rank stores its own shard of that block (its KV-head slice on the
 	// MHA/GQA path, or a full replica of the compressed latent on the MLA path —
