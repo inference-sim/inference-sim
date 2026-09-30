@@ -445,7 +445,7 @@ MoE-model step time **intentionally changes** at `DP=1`/EP-off (B1 routed-expert
 
 **Verification:** `sim/latency/trained_physics_dpep_test.go` — `TestINVBCDP1_DenseStepTimeByteIdentical` (golden across TP∈{1,2,4,8}) with companion `TestINVBCDP1_DenseDP1Determinism` (dense step time is invariant to the EP flag and the MoE comm backend, and deterministic across calls).
 
-**Evidence:** Dense experiments in the trained-physics golden dataset (`testdata/trained_physics_iter29.json`) are unchanged across the #1419 refactor; only the four Llama-4 Scout (MoE) experiments shift.
+**Evidence:** Dense experiments in the trained-physics golden dataset (`testdata/trained_physics_iter29.json`) are unchanged across the #1419 refactor and again across the #1849 activated-fraction change; in both, only the four Llama-4 Scout (MoE) experiments shift. Keeping the dense rows byte-identical is condition 3 of that dataset's regeneration policy (`testdata/README.md#golden-regeneration-policy`).
 
 **Hypothesis family:** Latency-model invariants (correctness/conservation).
 

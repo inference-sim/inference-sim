@@ -761,10 +761,27 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	// INTENTIONALLY changes MoE trained-physics step-time output (as #1419 itself did);
 	// dense models take neither branch below, so their output is byte-identical.
 	//
-	// Known first-order approximation (#1849, deferred in the spirit of #789): the fraction
-	// is GLOBAL. Under expert parallelism the distinct activated experts are spread across
-	// the group, so one rank's activated fraction of ITS OWN resident experts differs from
-	// the global fraction. The two agree at saturation.
+	// The fraction is GLOBAL — derived from the model's own N and k — and multiplies a rank's
+	// resident count. Expert PARALLELISM does not make that a per-rank approximation: under
+	// uniform top-k every expert carries the SAME activation probability 1 − ((N−k)/N)^B
+	// whichever rank owns it, so linearity of expectation gives E[experts activated on a
+	// rank] = residentCount · activatedFraction(B) exactly, for any balanced placement of the
+	// experts (BalancedPlacement is balanced by construction). What is approximate lies
+	// elsewhere, and all three of these vanish at saturation, where the fraction is 1 and the
+	// term recovers #1419's resident-count charge exactly:
+	//
+	//   - B is THIS step's token population. With a single ModelHardwareConfig at DP>1 that
+	//     is already the group-wide count the /dp divisors above presuppose (placement.Resolve
+	//     names the parameter globalTokens), which is the right B for all-to-all dispatch: a
+	//     rank's experts are activated by the whole group's tokens. Under DP-as-placement
+	//     (#1531/#1556) the two separate — the replica runs dp==1 over its OWN batch while
+	//     expertWeightShardGroup is the wider LOGICAL EP width — so B understates the tokens
+	//     that really dispatch here and the fraction is charged low below saturation.
+	//   - It prices the EXPECTATION, not a realized per-step distinct-expert count. The
+	//     relative spread around it is widest when a rank holds few whole experts (EP-on over
+	//     a wide group).
+	//   - Uniform independent routing, no skew and no capacity limits — the shared pessimism
+	//     documented on activatedExpertFraction, whose refinement is deferred to #789.
 	//
 	// The divisor is expertWeightShardGroup, NOT moeGroup (#1548). They coincide for every
 	// pre-#1548 config — EP-off tensor-shards the experts over the flattened TP·DP group,

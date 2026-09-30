@@ -243,10 +243,22 @@ group, however few experts they hold.
 
 The #1849 activated fraction that scales the resident weight bytes is **global** — computed
 from the model's `N` and `k` over the whole step — and is applied to each rank's resident
-count. Under expert parallelism the distinct activated experts are spread across the group, so
-one rank's activated fraction of *its own* experts is not exactly the global fraction; the two
-coincide at saturation, and the per-rank refinement is deferred in the spirit of #789
-(non-uniform routing).
+count. EP ownership does **not** make that a per-rank approximation: under uniform top-k every
+expert carries the same activation probability `1 − ((N−k)/N)^B` whichever rank holds it, so by
+linearity of expectation a rank with `R` resident experts activates exactly `R ·
+activatedFraction(B)` of them in expectation, for any balanced placement. The residual
+approximations are elsewhere, and each vanishes at saturation:
+
+- **`B` is the step's own token population.** For a single `ModelHardwareConfig` at `DP>1`
+  that is already the group-wide count the `/dp` divisors presuppose — the right `B`, since
+  all-to-all dispatch means a rank's experts see the whole group's tokens. Under
+  DP-as-placement the two separate: the replica runs `DP=1` over its own batch while the
+  expert-shard group is the wider *logical* EP width, so `B` understates the tokens that
+  really dispatch to that rank and the fraction is charged **low** below saturation.
+- **It prices the expectation, not a realized per-step count** — the relative spread is widest
+  when a rank holds few whole experts (EP on over a wide group).
+- **Uniform, independent, unskewed routing with no capacity limits**, the shared pessimism of
+  the coupon-collector term itself; refinement deferred to #789.
 
 Compute is EP-mode-invariant on purpose: with EP on, the `EP` GPUs jointly process the
 whole group's tokens, so per-GPU FLOPs land on the same value tensor-sharding gives. EP

@@ -1,5 +1,5 @@
 {
-  "description": "Trained-physics latency model iter29 golden values. Generated with alpha/beta coefficients from iteration 29 sequential golden section search (loss=34.5675%). Update only when the trained-physics backend is intentionally versioned (rename backend first).",
+  "description": "Trained-physics latency model iter29 golden values. Generated with alpha/beta coefficients from iteration 29 sequential golden section search (loss=34.5675%). 'iter29' names the coefficient set, not a frozen output snapshot: expected values are regenerated in place for a deliberate, issue-scoped change to what the backend computes under these same coefficients (#1419, #1849), while re-fitting the coefficients renames the backend and starts a new dataset. See testdata/README.md#golden-regeneration-policy.",
   "backend": "trained-physics",
   "alpha_coeffs": [
     15563.199579,
