@@ -55,6 +55,30 @@ min_blocks = ceil(max_input_tokens / block_size)
 
 For a workload with max 7,000 input tokens and block size 16: `ceil(7000/16) = 438` blocks minimum. Below this, requests are dropped. Below ~2x this threshold, cascading preemptions cause severe throughput degradation.
 
+## How the auto-calculated pool is sized
+
+A KV block is a **global** quantity, in the same units vLLM reports: one block holds `--block-size-in-tokens` tokens of one sequence, a request is charged `ceil(inputTokens / blockSize)` blocks once, and the pool holds `total_kv_blocks × block_size` tokens in total. On a TP>1 deployment each of the TP ranks stores its own shard of every block (its KV-head slice, or a full replica of the compressed latent for an MLA model), so allocating one block consumes memory on **every** GPU in the group.
+
+`CalculateKVBlocks` therefore divides an aggregate budget by an aggregate per-block cost:
+
+```
+blocks = (gpu_mem × util × TP − weights − activation − non_torch × TP − lora_reservation)
+         ─────────────────────────────────────────────────────────────────────────────────
+                         per_GPU_KV_bytes_per_token × block_size × TP
+```
+
+Before #1846 the denominator omitted the `× TP`, dividing a group-total budget by a per-GPU cost and over-estimating the pool by ~TP (measured at 8.7× on a 230B MoE / H200 / TP8 deployment and 10.9× on H100 / TP8). Because the error only bites once a run approaches KV exhaustion, an oversized pool is silent below the knee and then removes the knee entirely — which is usually the headline of a capacity study. TP=1 was and is unaffected.
+
+!!! note "Same units as vLLM, not the same number"
+    The formula above reproduces the constants and structure of llm-d-benchmark's `capacity_planner.py`. It is an **analytical estimate**, not a re-derivation of vLLM's own sizing: vLLM *profiles* each rank's free memory after a warm-up forward pass, so it charges the peak torch activation on every GPU, whereas `activation` above is subtracted **once** from a budget aggregated over TP GPUs. The auto-calc therefore under-charges roughly `(TP − 1) × 5.5–8 GiB`. The two agree at TP=1 and diverge with TP, this estimate staying the optimistic one:
+
+    | Deployment (230B MoE, TP=8, fp8 KV) | Engine's measured pool | BLIS auto-calc | Ratio |
+    |---|---|---|---|
+    | H200, 141 GiB | 480,473 blocks | 521,563 | 1.09× |
+    | H100, 80 GiB | 89,552 blocks | 121,793 | 1.36× |
+
+    The H100 residual is larger because the fixed overhead constants are a bigger share of the budget when the weights nearly fill the card — a second-order effect #1846 scoped out. Both rows are pinned as tests in `sim/latency/kv_capacity_tp_basis_test.go`; the activation basis is tracked as issue #1848. Pin `--total-kv-blocks` to the engine's reported `GPU KV cache size ÷ block_size` when you need the pool to match a specific deployment exactly.
+
 ## Tiered Caching (GPU + CPU Offload)
 
 BLIS models tiered KV cache with GPU→CPU offloading:
