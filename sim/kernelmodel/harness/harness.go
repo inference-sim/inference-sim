@@ -322,3 +322,20 @@ func Median(xs []float64) float64 {
 	}
 	return (c[len(c)/2-1] + c[len(c)/2]) / 2
 }
+
+// MAPE2 is the mean of a slice of per-point percentage errors.
+//
+// Distinct from MAPE, which takes predicted and measured and computes the errors itself.
+// Both exist because the caller here has already computed per-point errors on both sides and
+// must average them identically -- averaging two differently-derived quantities is the error
+// class this whole comparison is guarding against.
+func MAPE2(errs []float64) float64 {
+	if len(errs) == 0 {
+		return math.NaN()
+	}
+	var s float64
+	for _, e := range errs {
+		s += e
+	}
+	return s / float64(len(errs))
+}
