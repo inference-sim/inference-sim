@@ -121,6 +121,7 @@ nav:
       - Configuration: reference/configuration.md
       - Model Compatibility: reference/models.md
       - Workload Spec Schema: reference/workload-spec.md
+      - "Declarative API Document (v1)": reference/api-document.md
   - Methodology:
       - methodology/index.md
       - Strategy Evolution: methodology/strategy-evolution.md
