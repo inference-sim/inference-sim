@@ -1,0 +1,91 @@
+{
+  "$id": "https://github.com/inference-sim/inference-sim/raw/main/api/schema/llm-d-perf-simulator-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The envelope shared by every BLIS input and output document. API-1 constrains envelope structure only: the spec and result bodies are opaque open objects until the per-verb sections land (epic #1855).",
+  "oneOf": [
+    {
+      "description": "An input document carries a spec and no result.",
+      "not": {
+        "required": [
+          "result"
+        ]
+      },
+      "properties": {
+        "kind": {
+          "enum": [
+            "Calibrate",
+            "Convert",
+            "Observe",
+            "Replay",
+            "Run"
+          ]
+        }
+      },
+      "required": [
+        "spec"
+      ]
+    },
+    {
+      "description": "An output document carries a result and no spec.",
+      "not": {
+        "required": [
+          "spec"
+        ]
+      },
+      "properties": {
+        "kind": {
+          "enum": [
+            "CalibrateResult",
+            "ConvertResult",
+            "ObserveResult",
+            "ReplayResult",
+            "RunResult"
+          ]
+        }
+      },
+      "required": [
+        "result"
+      ]
+    }
+  ],
+  "properties": {
+    "apiVersion": {
+      "const": "llm-d-perf-simulator/v1",
+      "description": "Document format version. Exactly one value is defined.",
+      "type": "string"
+    },
+    "kind": {
+      "description": "Which document this is. Input kinds carry a spec; …Result kinds carry a result.",
+      "enum": [
+        "Calibrate",
+        "CalibrateResult",
+        "Convert",
+        "ConvertResult",
+        "Observe",
+        "ObserveResult",
+        "Replay",
+        "ReplayResult",
+        "Run",
+        "RunResult"
+      ],
+      "type": "string"
+    },
+    "result": {
+      "additionalProperties": true,
+      "description": "Opaque document body. API-1 constrains envelope structure only; the per-verb sections are defined by later PRs in epic #1855.",
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": true,
+      "description": "Opaque document body. API-1 constrains envelope structure only; the per-verb sections are defined by later PRs in epic #1855.",
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind"
+  ],
+  "title": "BLIS declarative document (llm-d-perf-simulator/v1)",
+  "type": "object"
+}

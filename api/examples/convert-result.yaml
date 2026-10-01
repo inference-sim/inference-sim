@@ -1,0 +1,9 @@
+# Minimal `kind: ConvertResult` OUTPUT document — what `blis convert` will emit once
+# API-2 onward wire the envelope into the verbs (epic #1855).
+#
+# API-1 (#1856) defines the envelope only, so `result` is an opaque open object and the
+# example leaves it empty on purpose; the result body (summary, conservation, kv, …) is
+# defined by the later PRs.
+apiVersion: llm-d-perf-simulator/v1
+kind: ConvertResult
+result: {}

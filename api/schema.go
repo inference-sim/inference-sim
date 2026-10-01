@@ -64,28 +64,32 @@ func GenerateSchema() ([]byte, error) {
 	return append(out, '\n'), nil
 }
 
-// kindPartition expresses "an input kind carries a spec, an output kind carries a result"
-// as a two-branch oneOf. It is derived from the kind lists, so a kind added to inputKinds
-// lands in both the enum and the partition.
+// kindPartition expresses "an input kind carries a spec and only a spec, an output kind
+// carries a result and only a result" as a two-branch oneOf. It is derived from the kind
+// lists, so a kind added to inputKinds lands in both the enum and the partition.
 //
 // A document matches exactly one branch: the branches' kind enums are disjoint, so a
 // document whose kind is an input kind but which carries only a result matches neither and
-// is refused.
+// is refused. The `not` clauses carry the exclusivity half of [Document]'s "exactly one of
+// spec and result" — without them a document carrying both bodies would satisfy its branch,
+// and the Go types and the published schema would disagree about what a document is.
 func kindPartition() []any {
 	return []any{
 		map[string]any{
-			"description": "An input document carries a spec.",
+			"description": "An input document carries a spec and no result.",
 			"properties": map[string]any{
 				"kind": map[string]any{"enum": kindStrings(InputKinds())},
 			},
 			"required": []string{"spec"},
+			"not":      map[string]any{"required": []string{"result"}},
 		},
 		map[string]any{
-			"description": "An output document carries a result.",
+			"description": "An output document carries a result and no spec.",
 			"properties": map[string]any{
 				"kind": map[string]any{"enum": kindStrings(OutputKinds())},
 			},
 			"required": []string{"result"},
+			"not":      map[string]any{"required": []string{"spec"}},
 		},
 	}
 }
@@ -95,16 +99,17 @@ func kindPartition() []any {
 // unhandled type would publish a contract that constrains nothing (R1), so a later PR that
 // adds, say, a time.Time field is told to teach the generator about it instead.
 func schemaForType(t reflect.Type) (map[string]any, error) {
+	// Dereference FIRST. A pointer is the "zero is meaningful" encoding of its element
+	// (R9) and has the same document shape — and *T inherits T's value methods, so the
+	// constrainer lookup below would otherwise match on a nil receiver and panic.
+	if t.Kind() == reflect.Pointer {
+		return schemaForType(t.Elem())
+	}
 	if c, ok := reflect.Zero(t).Interface().(schemaConstrainer); ok {
 		return c.schemaConstraints(), nil
 	}
 
 	switch t.Kind() {
-	case reflect.Pointer:
-		// A pointer is the "zero is meaningful" encoding of its element (R9); the
-		// document shape is the element's.
-		return schemaForType(t.Elem())
-
 	case reflect.Struct:
 		return schemaForStruct(t)
 

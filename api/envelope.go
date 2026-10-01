@@ -149,14 +149,19 @@ func (Body) schemaConstraints() map[string]any {
 // and Result is populated, chosen by Kind: a spec for an input kind, a result for an
 // output kind.
 //
+// Spec and Result are POINTERS because an empty body is a meaningful value, distinct from
+// an absent one (R9): `spec: {}` is a valid minimal input document, and a plain map would
+// serialize away under omitempty, turning "present and empty" into "missing" on every
+// round trip.
+//
 // The struct is the single source of the committed JSON Schema — GenerateSchema derives
 // the schema from these fields and their types, so a field added here without
 // regenerating fails TestCommittedSchemaIsCurrent.
 type Document struct {
 	APIVersion APIVersion `json:"apiVersion" yaml:"apiVersion"`
 	Kind       Kind       `json:"kind" yaml:"kind"`
-	Spec       Body       `json:"spec,omitempty" yaml:"spec,omitempty"`
-	Result     Body       `json:"result,omitempty" yaml:"result,omitempty"`
+	Spec       *Body      `json:"spec,omitempty" yaml:"spec,omitempty"`
+	Result     *Body      `json:"result,omitempty" yaml:"result,omitempty"`
 }
 
 // NewSpec returns an input document of the given kind carrying body. It is the canonical
@@ -171,7 +176,7 @@ func NewSpec(kind Kind, body Body) (Document, error) {
 	if body == nil {
 		body = Body{}
 	}
-	return Document{APIVersion: Version, Kind: kind, Spec: body}, nil
+	return Document{APIVersion: Version, Kind: kind, Spec: &body}, nil
 }
 
 // NewResult returns an output document of the given kind carrying body. Canonical
@@ -184,7 +189,7 @@ func NewResult(kind Kind, body Body) (Document, error) {
 	if body == nil {
 		body = Body{}
 	}
-	return Document{APIVersion: Version, Kind: kind, Result: body}, nil
+	return Document{APIVersion: Version, Kind: kind, Result: &body}, nil
 }
 
 // Validate reports whether d is a well-formed envelope, naming every problem it finds
@@ -205,11 +210,21 @@ func (d Document) Validate() error {
 		problems = append(problems, fmt.Sprintf("kind is %q, want one of %s",
 			d.Kind, strings.Join(kindStrings(AllKinds()), ", ")))
 	}
-	switch {
-	case IsInput(d.Kind) && d.Spec == nil:
-		problems = append(problems, fmt.Sprintf("kind %q is an input kind and must carry a spec", d.Kind))
-	case IsOutput(d.Kind) && d.Result == nil:
-		problems = append(problems, fmt.Sprintf("kind %q is an output kind and must carry a result", d.Kind))
+	if IsInput(d.Kind) {
+		if d.Spec == nil {
+			problems = append(problems, fmt.Sprintf("kind %q is an input kind and must carry a spec", d.Kind))
+		}
+		if d.Result != nil {
+			problems = append(problems, fmt.Sprintf("kind %q is an input kind and must not carry a result", d.Kind))
+		}
+	}
+	if IsOutput(d.Kind) {
+		if d.Result == nil {
+			problems = append(problems, fmt.Sprintf("kind %q is an output kind and must carry a result", d.Kind))
+		}
+		if d.Spec != nil {
+			problems = append(problems, fmt.Sprintf("kind %q is an output kind and must not carry a spec", d.Kind))
+		}
 	}
 	if len(problems) == 0 {
 		return nil

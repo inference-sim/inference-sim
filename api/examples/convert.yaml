@@ -1,0 +1,9 @@
+# Minimal `kind: Convert` INPUT document.
+#
+# API-1 (#1856) defines the envelope only, so `spec` is an opaque open object and the
+# example leaves it empty on purpose: a placeholder key here would read as part of the
+# contract. The per-verb `spec` sections arrive with API-3 onward (epic #1855), and this
+# file grows with them.
+apiVersion: llm-d-perf-simulator/v1
+kind: Convert
+spec: {}

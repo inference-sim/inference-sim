@@ -75,7 +75,7 @@ var annotationKeywords = []string{"$schema", "$id", "title", "description", "$co
 // assertionKeywords are the keywords this validator implements. Kept beside
 // annotationKeywords so the "do I understand this schema?" check is one lookup over two
 // explicit lists rather than a default-allow switch.
-var assertionKeywords = []string{"type", "const", "enum", "properties", "required", "additionalProperties", "items", "oneOf"}
+var assertionKeywords = []string{"type", "const", "enum", "properties", "required", "additionalProperties", "items", "oneOf", "not"}
 
 func (c *checker) check(schema map[string]any, value any, path string) []string {
 	if c.defect != nil {
@@ -97,6 +97,7 @@ func (c *checker) check(schema map[string]any, value any, path string) []string 
 	problems = append(problems, c.checkObject(schema, value, path)...)
 	problems = append(problems, c.checkItems(schema, value, path)...)
 	problems = append(problems, c.checkOneOf(schema, value, path)...)
+	problems = append(problems, c.checkNot(schema, value, path)...)
 	if c.defect != nil {
 		return nil
 	}
@@ -292,6 +293,28 @@ func (c *checker) checkOneOf(schema map[string]any, value any, path string) []st
 		return []string{fmt.Sprintf("%s: matches %d of the %d alternatives, want exactly one",
 			path, matched, len(branches))}
 	}
+}
+
+// checkNot inverts a subschema: the value must NOT satisfy it. The envelope uses it for
+// body exclusivity — an input document must not also carry a result — so the message names
+// the forbidden shape rather than echoing the inner schema.
+func (c *checker) checkNot(schema map[string]any, value any, path string) []string {
+	raw, ok := schema["not"]
+	if !ok {
+		return nil
+	}
+	inner, ok := raw.(map[string]any)
+	if !ok {
+		c.defect = fmt.Errorf("at %s: \"not\" must be an object schema, got %T", path, raw)
+		return nil
+	}
+	if len(c.check(inner, value, path)) > 0 || c.defect != nil {
+		return nil // it violates the inner schema, which is exactly what "not" demands
+	}
+	if forbidden, ok := asStrings(inner["required"]); ok {
+		return []string{fmt.Sprintf("%s: must not carry %s", path, strings.Join(forbidden, ", "))}
+	}
+	return []string{fmt.Sprintf("%s: must not satisfy the \"not\" subschema", path)}
 }
 
 // matchesType reports whether value has the JSON type named by want. "integer" accepts a
