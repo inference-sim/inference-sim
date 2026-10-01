@@ -6,15 +6,12 @@ toolchain go1.24.4
 
 require (
 	github.com/google/uuid v1.6.0
+	github.com/inference-sim/blis-latency-kernel v0.0.0-20261001005325-63b08d6bc43c
+	github.com/inference-sim/blis-schemas v0.0.0-20261001004101-d2993cfe976c
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.7.0
 	gopkg.in/yaml.v3 v3.0.1
-)
-
-require (
-	github.com/inference-sim/blis-latency-kernel v0.0.0 // indirect
-	github.com/inference-sim/blis-schemas v0.0.0 // indirect
 )
 
 require (
@@ -28,6 +25,3 @@ require (
 // Local link for the kernel-exclusive experiment (worktree-only; see
 // docs/kernel-exclusive/PLAN.md). Points at the working copies on disk rather than
 // vendoring or copying, so the experiment measures the kernel as committed elsewhere.
-replace github.com/inference-sim/blis-latency-kernel => /Users/sri/Documents/Projects/blis-latency-kernel
-
-replace github.com/inference-sim/blis-schemas => /Users/sri/Documents/Projects/blis-schemas
