@@ -47,39 +47,39 @@ func newDPEPModel(t *testing.T, mc *sim.ModelConfig, tp, dp int, ep bool, backen
 	return m
 }
 
-// TestMoEWeight_BatchIndependent verifies the B1 fix (#1419): routed-expert weight
-// bytes are now scoped via PerGPUExpertCount = numExperts/moeGroup, which is
-// independent of batch size — unlike the old batch-dependent nEff = min(N, max(k,
-// B·k))/tp. Two batches of very different sizes must yield the SAME weight-driven
-// floor, so the step-time difference between them is attributable only to the
-// compute/KV terms that legitimately scale with tokens, never to weight loading.
+// TestMoEWeight_ResidentCeilingBoundsBatchGrowth verifies the half of the B1 fix
+// (#1419) that #1849 preserved. #1419 scoped routed-expert weight bytes to
+// PerGPUExpertCount = numExperts/moeGroup, replacing the old nEff = min(N, max(k,
+// B·k))/tp; #1849 then made the STREAMED FRACTION of that count batch-dependent again
+// (the coupon-collector 1 − ((N−k)/N)^B), because a fraction pinned at 1 left MoE decode
+// ITL flat in batch size. What survives unchanged is the CEILING: the fraction is at
+// most 1, so no batch size can charge more than the resident shard-group count.
 //
-// We assert batch-independence behaviorally: hold a single decode token fixed and
-// confirm the per-step weight contribution (isolated by comparing a 1-request vs a
-// large-request decode batch at matched per-request context) does not blow up with
-// the old B·k ceiling. Concretely, the old model's nEff saturated at numExperts for
-// large B; the new model is flat from B=1. We check that doubling the batch does not
-// increase step time by the weight term's batch-scaling (which would be present under
-// the old nEff for small B below the N ceiling).
-func TestMoEWeight_BatchIndependent(t *testing.T) {
+// The behavioural witness is the same one #1419 used, and it discriminates the same
+// failure: the old pre-#1419 nEff = min(8, max(2, B·2))/tp quadrupled the WHOLE weight
+// term between B=1 and B=8 (2 → 8 experts) on top of a /tp divisor rather than the
+// shard group, pushing t8 well past 4×t1. Under the resident ceiling, growth between
+// B=1 and B=8 is bounded by the 8/2 = 4× activated-fraction headroom applied to a
+// ceiling that is itself ~4× smaller, so t8 stays under 4×t1.
+//
+// The complementary direction — that the term does RISE with B below saturation, and
+// exactly how — is pinned by TestMoEWeight_StrictlyRisesWithDecodeBatch and
+// TestMoEWeight_ActivatedFractionDecaysAsProbNotSelected, which isolate T_weight with a
+// β₂-only coefficient set rather than inferring it from a full step time.
+func TestMoEWeight_ResidentCeilingBoundsBatchGrowth(t *testing.T) {
 	m := newDPEPModel(t, dpepMoEModelConfig(), 2, 1, false, "")
 
-	// Single decode request vs. eight, same per-request context. Under the OLD model,
-	// nEff = min(8, max(2, B·2)) grows from 2 (B=1) to 8 (B>=4): a 4× weight increase
-	// purely from batch. Under B1, weight is fixed at numExperts/moeGroup, so the
-	// step-time delta between B=1 and B=8 reflects only compute/KV growth, which for a
-	// pure-decode batch is far smaller than a 4× weight blow-up.
 	one := makeDecodeBatch(1, 256)
 	eight := makeDecodeBatch(8, 256)
 	t1 := m.StepTime(one)
 	t8 := m.StepTime(eight)
 
-	// Behavioral law: with batch-independent weight, 8 decode tokens cost less than
-	// 8× a single token (shared weight floor dominates). Under the old batch-dependent
-	// nEff the weight itself quadrupled, which combined with compute would push t8
-	// well above 4×t1. We assert t8 < 4×t1 as a robust witness of weight flatness.
 	assert.Less(t, t8, 4*t1,
-		"B1: batch-independent expert weight ⇒ 8 decode tokens cost < 4× a single (got t1=%d t8=%d)", t1, t8)
+		"B1 ceiling: the resident shard-group count bounds routed-expert weight, so 8 decode "+
+			"tokens must cost < 4× a single (got t1=%d t8=%d)", t1, t8)
+	assert.Greater(t, t8, t1,
+		"#1849: eight decode tokens must cost strictly more than one — a flat MoE decode step "+
+			"time is the bug (got t1=%d t8=%d)", t1, t8)
 }
 
 // TestMoECommTaxonomy_DPBoundary verifies the mutual-exclusive MoE-FFN comm gates

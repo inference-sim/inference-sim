@@ -67,10 +67,12 @@ func loadRooflineGoldenDataset(t *testing.T) *rooflineGoldenDataset {
 // bugs independently of the golden values, satisfying the "test laws not just
 // values" principle from principles.md.
 //
-// Golden values must not be regenerated in place. If the roofline backend
-// behavior needs to change intentionally, rename the backend (e.g.
-// "roofline-v2") and add a new dataset. Renaming prevents silent behavioral
-// regressions from accumulating.
+// Regenerating these values follows the shared golden-dataset policy in
+// testdata/README.md#golden-regeneration-policy (canonical): a re-derivation
+// that makes this a different analytical model renames the backend (e.g.
+// "roofline-v2") and starts a new dataset, while a deliberate, issue-scoped fix
+// to what the existing backend computes regenerates in place — never to make a
+// failing test go green, and never leaving unrelated rows churned.
 //
 // Regression guard: This test will catch any unintended changes to roofline
 // model calculations, including Scout MoE interleaved architecture handling

@@ -631,3 +631,136 @@ func TestSpecDecode_DecodeStepCostIsVerifyWidth_NotGrantedTokens(t *testing.T) {
 			"%s: K=%d must still cost more than K=0 at the same granted count (guards against a vacuous equality)", name, k)
 	}
 }
+
+// ─── #1849: MoE activated-expert (coupon-collector) weight loading ──────────
+
+// weightOnlyCoeffs isolates T_weight: β₂ (the weight coefficient, index 2) is 1 and
+// every other β is 0, so StepTime collapses to exactly tWeight µs. That makes the
+// routed-expert weight term directly observable through the public StepTime surface —
+// no internal-field peeking, and no other basis function can mask or mimic a change
+// in it. α plays no part in the step-time formula.
+func weightOnlyCoeffs() *sim.LatencyCoeffs {
+	return &sim.LatencyCoeffs{
+		AlphaCoeffs: []float64{0, 0, 0},
+		BetaCoeffs:  []float64{0, 0, 1.0, 0, 0, 0, 0, 0, 0, 0, 0},
+	}
+}
+
+// saturatingBatchSize is a decode batch large enough that every router shape used
+// below has activatedFraction == 1.0 exactly in float64 — ((N−k)/N)^B underflows
+// below 2⁻⁵³, so 1 − it rounds to exactly 1. It is the reference point that recovers
+// the pre-#1849 (#1419) batch-independent resident-count charge.
+const saturatingBatchSize = 4096
+
+// TestMoEWeight_ActivatedFractionDecaysAsProbNotSelected is the quantitative StepTime
+// witness for #1849, and the test that fails outright on the pre-fix model.
+//
+// With T_weight isolated (weightOnlyCoeffs), StepTime(B) = (bytesAttn +
+// numMoELayers·PerGPUExpertCount·activatedFraction(B)·3·d·dFFMoE·bpp) / bwHbm. The
+// constant attention-weight part is unknown to this test, so it is cancelled by
+// measuring against the SATURATED step time:
+//
+//	g(B) := StepTime(saturating) − StepTime(B)  ∝  1 − activatedFraction(B) = ((N−k)/N)^B
+//
+// so g(B)/g(1) must equal ((N−k)/N)^(B−1) — a pure geometric decay in the batch size,
+// with no model constant left in it. For N=8, k=2 that is 0.75^(B−1).
+//
+// Why this is discriminating: on the pre-#1849 model the weight term does not depend
+// on B at all, so every g(B) is 0 and the ratio is undefined — the require.Positive
+// on g(1) below fails first, naming the flat term. A β-only recalibration cannot
+// produce this shape either: it scales tWeight uniformly, which cancels in the ratio.
+func TestMoEWeight_ActivatedFractionDecaysAsProbNotSelected(t *testing.T) {
+	mc := dpepMoEModelConfig() // N=8, k=2 ⇒ probNotSelected = 0.75
+	mhw := sim.NewModelHardwareConfig(*mc, dpepTestHW(), "m", "H100", 1, 1, false, "", "trained-physics", 0)
+	m, err := NewTrainedPhysicsModel(*weightOnlyCoeffs(), mhw)
+	require.NoError(t, err)
+
+	tSat := m.StepTime(makeDecodeBatch(saturatingBatchSize, 256))
+	g := func(b int) float64 { return float64(tSat - m.StepTime(makeDecodeBatch(b, 256))) }
+
+	g1 := g(1)
+	require.Positive(t, g1,
+		"a single-token step must charge STRICTLY less routed-expert weight than a saturated one; "+
+			"g(1)=0 means the weight term is still batch-independent (#1849 regression)")
+
+	const probNotSelected = 0.75 // (N−k)/N = (8−2)/8
+	for b := 2; b <= 6; b++ {
+		want := math.Pow(probNotSelected, float64(b-1))
+		assert.InEpsilonf(t, want, g(b)/g1, 1e-3,
+			"g(%d)/g(1) must decay as ((N−k)/N)^(B−1) = %.6f (got %.6f)", b, want, g(b)/g1)
+	}
+}
+
+// TestMoEWeight_StrictlyRisesWithDecodeBatch is the headline symptom guard: MoE decode
+// step time must RISE with the running batch. It runs on the weight-isolated
+// coefficients precisely so the rise cannot be credited to the compute/KV terms that
+// legitimately scale with tokens — on the pre-#1849 model this sweep is flat, and the
+// flatness was the bug (ITL too high at low concurrency, too low at high).
+//
+// It also pins the CEILING that #1419/#1548 established: past saturation the term stops
+// growing, because activatedFraction is capped at 1 and the resident shard-group count
+// is untouched.
+func TestMoEWeight_StrictlyRisesWithDecodeBatch(t *testing.T) {
+	mc := dpepMoEModelConfig()
+	mhw := sim.NewModelHardwareConfig(*mc, dpepTestHW(), "m", "H100", 1, 1, false, "", "trained-physics", 0)
+	m, err := NewTrainedPhysicsModel(*weightOnlyCoeffs(), mhw)
+	require.NoError(t, err)
+
+	prev := int64(0)
+	for _, b := range []int{1, 2, 3, 4, 6, 8, 12, 16, 24, 32} {
+		got := m.StepTime(makeDecodeBatch(b, 256))
+		assert.Greaterf(t, got, prev,
+			"weight-driven decode step time must strictly increase through the sub-saturation region (B=%d)", b)
+		prev = got
+	}
+
+	// Ceiling: two batches far past saturation charge exactly the same weight.
+	atSat := m.StepTime(makeDecodeBatch(saturatingBatchSize, 256))
+	assert.Equal(t, atSat, m.StepTime(makeDecodeBatch(2*saturatingBatchSize, 256)),
+		"past saturation the activated fraction is pinned at 1, so the resident shard-group "+
+			"ceiling from #1419/#1548 must hold — weight cannot keep growing with B")
+	assert.Greater(t, atSat, prev, "the sub-saturation sweep must stay below the saturated ceiling")
+}
+
+// TestMoEWeight_SmallerRouterActivatesMoreOfItself is the cross-router law: at a FIXED
+// batch, a router with fewer experts activates a larger FRACTION of them
+// (1 − (1−k/N)^B decreases in N), so it streams a larger share of its resident
+// experts. Guards against wiring the fraction to the wrong expert count (e.g. the
+// per-GPU resident count rather than the model's N), which would invert or flatten
+// this ordering.
+func TestMoEWeight_SmallerRouterActivatesMoreOfItself(t *testing.T) {
+	base := *dpepMoEModelConfig()
+	fractionAt := func(n int) float64 { return activatedExpertFraction(n, base.NumExpertsPerTok, 8) }
+	assert.Greater(t, fractionAt(8), fractionAt(16), "a narrower router is more fully activated")
+	assert.Greater(t, fractionAt(16), fractionAt(128), "and more fully than a much wider one")
+}
+
+// TestMoEWeight_DenseStepTimeIgnoresRouterConfig is the dense byte-identity guard
+// (#1849 changes MoE output only). numExperts and kEff reach step time exclusively
+// through the numMoELayers > 0 branches, so for a dense model (NumLocalExperts = 0)
+// varying NumExpertsPerTok — the only input the activated fraction adds to the weight
+// term — must leave StepTime bit-for-bit unchanged. Were the fraction ever hoisted out
+// of that branch, dense output would move and this fails. The absolute dense values are
+// pinned separately by TestINVBCDP1_DenseStepTimeByteIdentical.
+func TestMoEWeight_DenseStepTimeIgnoresRouterConfig(t *testing.T) {
+	base := *dpepMoEModelConfig()
+	base.NumLocalExperts = 0 // dense: every layer is a dense FFN
+	base.MoEExpertFFNDim = 0
+	batch := dpepMixedBatch()
+
+	stepTimeWithK := func(k int) int64 {
+		mc := base
+		mc.NumExpertsPerTok = k
+		mhw := sim.NewModelHardwareConfig(mc, dpepTestHW(), "m", "H100", 2, 1, false, "", "trained-physics", 0)
+		m, err := NewTrainedPhysicsModel(*testCoeffs(), mhw)
+		require.NoError(t, err)
+		return m.StepTime(batch)
+	}
+
+	want := stepTimeWithK(0)
+	for _, k := range []int{1, 2, 4, 8} {
+		assert.Equalf(t, want, stepTimeWithK(k),
+			"dense step time must be byte-identical across top-k values (k=%d): the activated "+
+				"fraction must stay inside the MoE branch", k)
+	}
+}

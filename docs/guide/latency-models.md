@@ -205,7 +205,7 @@ Trained-physics uses up to **14 coefficients** (11 beta: prefill compute/memory 
 
 For MoE deployments, trained-physics models data parallelism (`--dp`) and expert parallelism (`--enable-expert-parallel`) the way vLLM does (mirrors `vllm-project/vllm`):
 
-- **Routed-expert weight/compute** are scoped via the `ExpertPlacement` seam. **Compute** uses the flattened MoE group `moeGroup = TP·DP`. **Weights** use the *expert-shard* group (#1548), which equals `moeGroup` unless expert parallelism widens it: each GPU holds `numExperts/expertShardGroup` full-expert-equivalents. This replaces a batch-dependent heuristic, so MoE step time at `DP=1` intentionally differs from pre-DP/EP BLIS (a deliberate fidelity fix). Dense models at `DP=1` are byte-identical (INV-BC-DP1). For a *single* `ModelHardwareConfig` at `TP·DP`, both EP modes give per-GPU routed bytes `numExperts/(TP·DP)` and that matches vLLM: `FusedMoEParallelConfig.make` flattens TP across DP for MoE layers *unconditionally*. Under DP-as-placement the two modes separate, because a replica's own DP is 1 — see [Expert Parallelism](#expert-parallelism-ep-1548). The step-time and capacity models now agree on the same expert-shard group in both modes, closing the inconsistency [#1666](https://github.com/inference-sim/inference-sim/issues/1666) tracks (that issue also covers the EP-**off** `DP>1` baseline, which BLIS deliberately keeps conservative and #1548 does not change).
+- **Routed-expert weight/compute** are scoped via the `ExpertPlacement` seam. **Compute** uses the flattened MoE group `moeGroup = TP·DP`. **Weights** use the *expert-shard* group (#1548), which equals `moeGroup` unless expert parallelism widens it: each GPU holds `numExperts/expertShardGroup` full-expert-equivalents. That resident count is the **ceiling**, not the per-step charge: since [#1849](https://github.com/inference-sim/inference-sim/issues/1849) the weight term scales it by the expected fraction of experts some token in the step actually routes to, `activatedFraction(B) = 1 − ((N−k)/N)^B` for `B` tokens in the step (the coupon-collector occupancy expectation the roofline backend has used since #764/#790, now shared by both backends). So MoE decode step time rises with the running batch again: `B=1` streams only the `~k` experts one token routes to, and `B → ∞` recovers the full resident count. Because the fraction is in `[0,1]` it only scales the ceiling *down*, so the #1548 expert-shard scoping is untouched. MoE step time at `DP=1` therefore intentionally differs both from pre-DP/EP BLIS and from pre-#1849 BLIS (deliberate fidelity fixes). Dense models at `DP=1` are byte-identical (INV-BC-DP1). For a *single* `ModelHardwareConfig` at `TP·DP`, both EP modes give per-GPU routed bytes `numExperts/(TP·DP)` and that matches vLLM: `FusedMoEParallelConfig.make` flattens TP across DP for MoE layers *unconditionally*. Under DP-as-placement the two modes separate, because a replica's own DP is 1 — see [Expert Parallelism](#expert-parallelism-ep-1548). The step-time and capacity models now agree on the same expert-shard group in both modes, closing the inconsistency [#1666](https://github.com/inference-sim/inference-sim/issues/1666) tracks (that issue also covers the EP-**off** `DP>1` baseline, which BLIS deliberately keeps conservative and #1548 does not change).
 - **Sequence-split terms** (attention/dense-FFN compute, KV read/write) gain a `/dp` factor — each DP rank processes ~`1/dp` of the tokens. Weights stay `/tp` (replicated across DP groups).
 - **Shared experts** (DeepSeek/Qwen-style) are charged for every token when the model exposes a shared-expert FFN dim; a no-op otherwise (including Llama-4 Scout until its shared-expert dim — `config.intermediate_size`, not `intermediate_size_mlp` which is the dense-layer FFN — is mapped).
 - **MoE-FFN communication** partitions on the `DP`-or-`EP` boundary: with EP off at `DP=1, TP>1` an all-reduce over the TP group; at `DP>1`, or whenever expert parallelism is on, a dispatch/combine all-to-all (β_EP). Exactly one of the two is charged.
@@ -240,6 +240,25 @@ warns. It applies to EP-**on** only: with EP off the experts are tensor-sharded,
 genuinely holds a *fraction* of every expert and a sub-1 value is the correct charge. The
 dispatch collective is deliberately **not** clamped — it really does span every rank in the
 group, however few experts they hold.
+
+The #1849 activated fraction that scales the resident weight bytes is **global** — computed
+from the model's `N` and `k` over the whole step — and is applied to each rank's resident
+count. EP ownership does **not** make that a per-rank approximation: under uniform top-k every
+expert carries the same activation probability `1 − ((N−k)/N)^B` whichever rank holds it, so by
+linearity of expectation a rank with `R` resident experts activates exactly `R ·
+activatedFraction(B)` of them in expectation, for any balanced placement. The residual
+approximations are elsewhere, and each vanishes at saturation:
+
+- **`B` is the step's own token population.** For a single `ModelHardwareConfig` at `DP>1`
+  that is already the group-wide count the `/dp` divisors presuppose — the right `B`, since
+  all-to-all dispatch means a rank's experts see the whole group's tokens. Under
+  DP-as-placement the two separate: the replica runs `DP=1` over its own batch while the
+  expert-shard group is the wider *logical* EP width, so `B` understates the tokens that
+  really dispatch to that rank and the fraction is charged **low** below saturation.
+- **It prices the expectation, not a realized per-step count** — the relative spread is widest
+  when a rank holds few whole experts (EP on over a wide group).
+- **Uniform, independent, unskewed routing with no capacity limits**, the shared pessimism of
+  the coupon-collector term itself; refinement deferred to #789.
 
 Compute is EP-mode-invariant on purpose: with EP on, the `EP` GPUs jointly process the
 whole group's tokens, so per-GPU FLOPs land on the same value tensor-sharding gives. EP

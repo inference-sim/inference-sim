@@ -515,11 +515,25 @@ func TestStepTime_EPOffFractionalExpertShareIsNotClamped(t *testing.T) {
 // exactly num_routed_experts. So an 8-expert model at EP=16 must cost precisely what a
 // 16-expert model at EP=16 costs — both charge one whole expert per loaded rank.
 //
-// Same isolation as above (numExperts reaches only the weight term), and it is the assertion
-// the EP-off test proves must NOT hold when expert parallelism is off.
+// It is the assertion the EP-off test proves must NOT hold when expert parallelism is off.
+//
+// The isolation needs one more ingredient than it did before #1849. numExperts used to reach
+// step time through PerGPUExpertCount alone, so any batch isolated the divisor; since #1849 it
+// ALSO sets the activated fraction 1 − ((N−k)/N)^B, which is genuinely larger for the narrower
+// router at a fixed B. The batch here is therefore SATURATING, where the fraction is exactly
+// 1.0 for both expert counts and the divisor is again the only difference. The unsaturated
+// case is not an inconvenience to be avoided but a contract of its own — the companion test
+// below pins it.
 func TestStepTime_EPOnClampLandsExactlyOnTheExpertCount(t *testing.T) {
 	base := *dpepMoEModelConfig()
-	batch := makeDecodeBatch(4, 256)
+	// Saturating batch: ((N−k)/N)^B underflows for both routers, so activatedExpertFraction
+	// is exactly 1.0 either way and cannot mask or mimic a divergent clamp.
+	batch := makeDecodeBatch(saturatingBatchSize, 256)
+	require.Equal(t, 1.0, activatedExpertFraction(8, base.NumExpertsPerTok, saturatingBatchSize),
+		"probe precondition: the 8-expert router must be fully saturated at this batch")
+	require.Equal(t, 1.0, activatedExpertFraction(16, base.NumExpertsPerTok, saturatingBatchSize),
+		"probe precondition: the 16-expert router must be fully saturated at this batch")
+
 	withExperts := func(n int) int64 {
 		mc := base
 		mc.NumLocalExperts = n
@@ -529,6 +543,30 @@ func TestStepTime_EPOnClampLandsExactlyOnTheExpertCount(t *testing.T) {
 	assert.Equal(t, withExperts(16), withExperts(8),
 		"under EP-on the weight divisor must clamp to exactly num_routed_experts, so an 8-expert model "+
 			"at EP=16 charges one whole expert per rank — identical to a 16-expert model at EP=16")
+}
+
+// TestStepTime_EPOnNarrowRouterIsMoreActivatedBelowSaturation is the companion the test above
+// deliberately stepped around, and it states why saturating the batch there was necessary
+// rather than convenient (#1849).
+//
+// Below saturation the two routers are NOT interchangeable even though the clamp gives them the
+// same per-GPU resident count: a narrower router has a larger activated fraction at a fixed
+// batch (1 − (1−k/8)^B > 1 − (1−k/16)^B), so it streams more of its resident experts and costs
+// strictly MORE. Equality here would mean the activated fraction never reached the weight term
+// — the exact pre-#1849 flatness — and the saturating probe above would then pass vacuously.
+func TestStepTime_EPOnNarrowRouterIsMoreActivatedBelowSaturation(t *testing.T) {
+	base := *dpepMoEModelConfig()
+	batch := makeDecodeBatch(4, 256) // B=4 ≪ saturation for both routers
+	withExperts := func(n int) int64 {
+		mc := base
+		mc.NumLocalExperts = n
+		return newEPModel(t, mc, 8, 1, true, "", 2).StepTime(batch)
+	}
+	eight, sixteen := withExperts(8), withExperts(16)
+	assert.Greater(t, eight, sixteen,
+		"below saturation the narrower router activates a larger fraction of its (equally clamped) "+
+			"resident experts, so it must cost strictly more; equality would mean the activated "+
+			"fraction never reaches T_weight (8=%dµs, 16=%dµs)", eight, sixteen)
 }
 
 // TestStepTime_EPDispatchGroupIsNotClampedToExpertCount is the other half of the clamp

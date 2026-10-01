@@ -58,18 +58,25 @@ func loadTrainedPhysicsGoldenDataset(t *testing.T) *trainedPhysicsGoldenDataset 
 }
 
 // TestTrainedPhysics_GoldenDataset verifies that the trained-physics latency
-// backend produces byte-for-byte identical TTFT and E2E predictions to the
-// iter29 coefficients baseline (overall loss 34.5675%, derived via sequential
-// golden section search).
+// backend reproduces the TTFT, E2E and ITL predictions recorded in
+// testdata/trained_physics_iter29.json for the iter29 coefficient set (overall
+// loss 34.5675%, derived via sequential golden section search) — byte-for-byte
+// up to the dataset's own 1e-9 relative tolerance.
 //
 // Companion invariant assertions (conservation, causality, non-zero TTFT) catch
 // bugs independently of the golden values, satisfying the "test laws not just
 // values" principle from principles.md.
 //
-// Golden values must not be regenerated in place. If the trained-physics backend
-// behavior needs to change intentionally, rename the backend (e.g.
-// "trained-physics-v2") and add a new dataset. Renaming prevents silent
-// behavioral regressions from accumulating across training iterations.
+// Regenerating the expected values with -update-golden is allowed ONLY for a
+// deliberate, issue-scoped change to what the backend computes under these SAME
+// coefficients (as #1419 did when it rescoped routed-expert weight bytes, and
+// #1849 when it restored their batch dependence). Re-FITTING the coefficients is
+// a different model: rename the backend ("trained-physics-v2") and start a new
+// dataset, so successive training iterations cannot overwrite each other's
+// evidence. testdata/README.md#golden-regeneration-policy is canonical and
+// carries the three conditions an in-place regeneration must satisfy — in
+// particular that experiments the change cannot affect stay byte-identical
+// (every dense row, for a MoE-only change: INV-BC-DP1's stated evidence).
 //
 // Regression guard for issue #965: inference_perf SLOClass "batch" caused
 // deferred-queue serialization, inflating TTFT 6-100× across all experiments.

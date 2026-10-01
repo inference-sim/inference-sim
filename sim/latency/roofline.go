@@ -237,19 +237,13 @@ func calculateMemoryAccessBytes(
 		// MoE: only the expected unique experts are loaded from HBM per step.
 		// Formula: nEff = N * (1 - ((N-k)/N)^B)
 		//   N = total experts, k = active experts per token, B = tokens in this step.
-		// Derivation: P(expert i not selected by any token) = ((N-k)/N)^B, so
-		//   E[unique experts loaded] = N * (1 - ((N-k)/N)^B).
-		// Assumes uniform random routing, which maximizes nEff and overestimates weight
-		// bandwidth. In practice tokens tend to activate the same experts (correlated
-		// routing), so actual nEff ≤ formula — making this a conservative (pessimistic)
-		// upper bound for capacity planning.
-		// See issue #789 for non-uniform routing research.
+		// The derivation, the limiting cases, the uniform-routing pessimism (#789) and
+		// the degenerate-input handling all live on activatedExpertFraction, which the
+		// trained-physics weight term shares since #1849 — one MoE activation
+		// convention for both backends. The arithmetic is unchanged from the inline
+		// form this replaced, so roofline output is byte-identical.
 		N := float64(config.NumLocalExperts)
-		k := float64(config.NumExpertsPerTok)
-		B := float64(newTokens)
-
-		probNotSelected := (N - k) / N
-		nEff := N * (1.0 - math.Pow(probNotSelected, B))
+		nEff := N * activatedExpertFraction(config.NumLocalExperts, config.NumExpertsPerTok, float64(newTokens))
 
 		moeMLPWeights = moeMLPWeightsPerLayer * nEff * float64(numMoELayers)
 	}
