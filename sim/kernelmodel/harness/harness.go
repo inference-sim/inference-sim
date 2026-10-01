@@ -77,11 +77,46 @@ type Sweep struct {
 // Point is one concurrency level. Every latency is normalised to the sweep's lowest
 // concurrency, because the snapshot does not disclose absolute times.
 type Point struct {
-	Concurrency        int     `json:"concurrency"`
+	Concurrency int `json:"concurrency"`
+	// MeasuredRelative and AISimulateRelative keep their names for TPOT, which every figure
+	// published before TTFT scoring existed was computed from.
 	MeasuredRelative   float64 `json:"measured_tpot_relative"`
 	AISimulateRelative float64 `json:"aisimulate_tpot_relative"`
 	Status             string  `json:"status"`
+
+	// TTFT, and AIC's predictions for both metrics. The artifact carries all of these per point;
+	// an earlier revision of the extractor kept only TPOT under AISimulate.
+	//
+	// AIC and AISimulate are the same project -- snapshot.aic_source names ai-dynamo/aisimulate
+	// for both -- AIC being the analytic configurator path now absorbed into the simulator. They
+	// are two modes of one product, not two baselines, and are reported that way.
+	MeasuredTTFTRelative   float64 `json:"measured_ttft_relative"`
+	AISimulateTTFTRelative float64 `json:"aisimulate_ttft_relative"`
+	AICRelative            float64 `json:"aic_tpot_relative"`
+	AICTTFTRelative        float64 `json:"aic_ttft_relative"`
 }
+
+// MetricOf selects one metric's measured and predicted relatives from a point, so a scorer can
+// loop over metrics instead of duplicating its arithmetic per metric.
+func (p Point) MetricOf(m Metric) (measured, aisimulate, aic float64) {
+	if m == MetricTTFT {
+		return p.MeasuredTTFTRelative, p.AISimulateTTFTRelative, p.AICTTFTRelative
+	}
+	return p.MeasuredRelative, p.AISimulateRelative, p.AICRelative
+}
+
+// Metric names a published latency metric.
+type Metric string
+
+const (
+	// MetricTPOT is time per output token: the steady-state decode metric.
+	MetricTPOT Metric = "TPOT"
+	// MetricTTFT is time to first token: prefill, queueing and admission.
+	MetricTTFT Metric = "TTFT"
+)
+
+// AllMetrics is the reporting order.
+var AllMetrics = []Metric{MetricTPOT, MetricTTFT}
 
 // ISLOSL parses a "<isl>:<osl>" workload identity.
 func (s Sweep) ISLOSL() (isl, osl int, err error) {
@@ -133,7 +168,15 @@ const (
 // quantity this experiment is about and a mean latency with no batch beside it cannot be
 // interpreted.
 type Observation struct {
-	MeanITLUs      float64
+	MeanITLUs float64
+	// MeanTTFTUs is the mean time to first token over the same requests MeanITLUs covers.
+	//
+	// The snapshot publishes TTFT alongside TPOT and the baseline is far weaker on it -- 22.82%
+	// shape error against 10.05% for TPOT over the whole snapshot -- so a comparison that reports
+	// only TPOT reports the half the baseline is better at. It is measured over the SAME
+	// post-warm-up completions, by the same cut, so the two metrics describe one steady state.
+	MeanTTFTUs     float64
+	MeasuredTTFT   int
 	Completed      int
 	MeanResident   float64
 	PeakResident   int
@@ -419,15 +462,28 @@ func summarize(s *sim.Simulator, order []string, warmupCount int, warmupFraction
 	}
 	var sum float64
 	var n int
+	var ttftSum float64
+	var ttftN int
 	for _, id := range order[cut:] {
 		if itl, ok := s.Metrics.RequestITLs[id]; ok && itl > 0 {
 			sum += itl
 			n++
 		}
+		// TTFT is counted separately rather than inside the ITL branch: a request that emitted
+		// exactly one token has a TTFT and no inter-token interval, so requiring both would
+		// silently drop it from the TTFT mean.
+		if t, ok := s.Metrics.RequestTTFTs[id]; ok && t > 0 {
+			ttftSum += t
+			ttftN++
+		}
 	}
 	if n > 0 {
 		obs.MeanITLUs = sum / float64(n)
 	}
+	if ttftN > 0 {
+		obs.MeanTTFTUs = ttftSum / float64(ttftN)
+	}
+	obs.MeasuredTTFT = ttftN
 	obs.WarmupDiscarded = cut
 	obs.Measured = n
 	return obs
