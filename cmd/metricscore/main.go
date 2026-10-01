@@ -64,12 +64,23 @@ func main() {
 	registry := flag.String("registry", "/Users/sri/Documents/Projects/blis-registry", "")
 	hwConfig := flag.String("hardware-config", "hardware_config.json", "")
 	defaults := flag.String("defaults", "defaults.yaml", "")
+	absolutes := flag.String("absolutes",
+		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/inferencex_absolutes.json",
+		"InferenceX absolute measured latencies; enables the mape column for simulated arms")
 	framework := flag.String("framework", "vllm", "restrict to one framework")
 	hopper := flag.String("hopper", "", "set to \"yes\" to restrict to h100/h200 and add the analytic arms")
 	seed := flag.Int64("seed", 42, "")
 	flag.Parse()
 
 	c, err := harness.LoadCorpus(*corpusPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	// The measured absolute curves. Without them a simulated arm has no mape, because the
+	// artifact ships only ratios; with them mape is computed against the same InferenceX rows
+	// the baseline was scored on.
+	abs, err := harness.LoadAbsolutes(*absolutes)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -121,6 +132,7 @@ func main() {
 	byChip := map[string]map[int]map[harness.Metric][]float64{}
 	var failures []string
 	sweeps, points := 0, 0
+	ttftExcluded := 0
 
 	for i := range c.Sweeps {
 		sw := c.Sweeps[i]
@@ -132,9 +144,20 @@ func main() {
 			continue
 		}
 
+		// Points whose MEASURED TTFT is an isolated artefact, excluded from TTFT for EVERY arm
+		// so the columns stay comparable. TPOT is unaffected: these sweeps' TPOT curves are
+		// sound, and dropping the whole sweep would discard eleven good points to remove four
+		// bad ones.
+		spike := map[int]bool{}
+		for _, idx := range sw.TTFTSpikeIndices(harness.DefaultTTFTSpikeFactor) {
+			spike[idx] = true
+			ttftExcluded++
+		}
+
 		// Every arm must score the SAME points or the columns are not comparable, so a sweep is
 		// taken whole or not at all.
 		sim := map[harness.Estimator]map[harness.Metric][]float64{}
+		simMape := map[harness.Estimator]map[harness.Metric][]float64{}
 		ok := true
 		for _, a := range arms {
 			if a.est == "" {
@@ -144,6 +167,8 @@ func main() {
 			cfg.Estimator = a.est
 			var anchorITL, anchorTTFT float64
 			per := map[harness.Metric][]float64{}
+			perMape := map[harness.Metric][]float64{}
+			measured := abs.For(sw)
 			for j, p := range sw.Points {
 				obs, err := harness.Run(sw, p.Concurrency, cfg)
 				if err != nil {
@@ -158,9 +183,19 @@ func main() {
 					ok = false
 					break
 				}
+				// mape at EVERY point including the anchor: it compares two absolute values
+				// and has no anchor to cancel.
+				if v, ok := measured.At(harness.MetricTPOT, p.Concurrency); ok {
+					perMape[harness.MetricTPOT] = append(perMape[harness.MetricTPOT],
+						(obs.MeanITLUs/v-1)*100)
+				}
+				if v, ok := measured.At(harness.MetricTTFT, p.Concurrency); ok && !spike[j] {
+					perMape[harness.MetricTTFT] = append(perMape[harness.MetricTTFT],
+						(obs.MeanTTFTUs/v-1)*100)
+				}
 				if j == 0 {
 					anchorITL, anchorTTFT = obs.MeanITLUs, obs.MeanTTFTUs
-					continue // the anchor's error is zero by construction; excluded
+					continue // the anchor's SHAPE error is zero by construction; excluded
 				}
 				mt, _, _ := p.MetricOf(harness.MetricTPOT)
 				tt, _, _ := p.MetricOf(harness.MetricTTFT)
@@ -170,13 +205,16 @@ func main() {
 				}
 				per[harness.MetricTPOT] = append(per[harness.MetricTPOT],
 					(obs.MeanITLUs/anchorITL/mt-1)*100)
-				per[harness.MetricTTFT] = append(per[harness.MetricTTFT],
-					(obs.MeanTTFTUs/anchorTTFT/tt-1)*100)
+				if !spike[j] {
+					per[harness.MetricTTFT] = append(per[harness.MetricTTFT],
+						(obs.MeanTTFTUs/anchorTTFT/tt-1)*100)
+				}
 			}
 			if !ok {
 				break
 			}
 			sim[a.est] = per
+			simMape[a.est] = perMape
 		}
 		if !ok {
 			continue
@@ -203,9 +241,14 @@ func main() {
 					}
 					// mape at EVERY point including the anchor: pred/measured is a real ratio
 					// there too, since both carry the same measured denominator.
-					perMape[m] = append(perMape[m], (pred/measured-1)*100)
+					if !(m == harness.MetricTTFT && spike[j]) {
+						perMape[m] = append(perMape[m], (pred/measured-1)*100)
+					}
 					if j == 0 {
 						anchor = pred
+						continue
+					}
+					if m == harness.MetricTTFT && spike[j] {
 						continue
 					}
 					per[m] = append(per[m], (pred/anchor/measured-1)*100)
@@ -229,13 +272,15 @@ func main() {
 		points += len(sim[harness.EstimatorKernel][harness.MetricTPOT])
 		for ai, a := range arms {
 			src := pub[ai]
+			srcMape := pubMape[ai]
 			if a.est != "" {
 				src = sim[a.est]
+				srcMape = simMape[a.est]
 			}
 			for _, m := range harness.AllMetrics {
 				errs[ai][m] = append(errs[ai][m], src[m]...)
-				if pubMape[ai] != nil {
-					mapes[ai][m] = append(mapes[ai][m], pubMape[ai][m]...)
+				if srcMape != nil {
+					mapes[ai][m] = append(mapes[ai][m], srcMape[m]...)
 				}
 				if byChip[chip] == nil {
 					byChip[chip] = map[int]map[harness.Metric][]float64{}
@@ -267,7 +312,16 @@ func main() {
 	fmt.Println("tpot_relative and ttft_relative and nothing else -- so a mean ABSOLUTE percentage")
 	fmt.Println("error cannot be computed against it by anyone. Each side is normalised to its own")
 	fmt.Println("value at the sweep's lowest concurrency, and that anchor is excluded.")
-	fmt.Printf("\n%d sweeps, %d points per metric\n", sweeps, points)
+	fmt.Printf("\n%d sweeps, %d points for TPOT\n", sweeps, points)
+	if ttftExcluded > 0 {
+		fmt.Printf("%d point(s) excluded from TTFT for EVERY arm: the measured TTFT is an\n"+
+			"  isolated excursion more than %.0fx both neighbours. Over the 281 interior points\n"+
+			"  the excursion ratio has median 0.738 and p90 0.903, its four largest values are\n"+
+			"  52.31x, 22.30x, 11.18x and 10.71x, and the fifth is 1.74x -- so every threshold\n"+
+			"  from 2x to 10x selects the same four points. TPOT keeps them: those sweeps'\n"+
+			"  TPOT curves are sound, and excluding the sweeps would discard 11 good points to\n"+
+			"  remove 4 bad ones.\n", ttftExcluded, harness.DefaultTTFTSpikeFactor)
+	}
 
 	for _, m := range harness.AllMetrics {
 		fmt.Printf("\n=== %s shape error (level divided out; curvature only)\n", m)

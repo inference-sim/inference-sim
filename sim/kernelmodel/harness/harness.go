@@ -169,12 +169,9 @@ const (
 // interpreted.
 type Observation struct {
 	MeanITLUs float64
-	// MeanTTFTUs is the mean time to first token over the same requests MeanITLUs covers.
-	//
-	// The snapshot publishes TTFT alongside TPOT and the baseline is far weaker on it -- 22.82%
-	// shape error against 10.05% for TPOT over the whole snapshot -- so a comparison that reports
-	// only TPOT reports the half the baseline is better at. It is measured over the SAME
-	// post-warm-up completions, by the same cut, so the two metrics describe one steady state.
+	// MeanTTFTUs is the mean time to first token over EVERY measured completion -- deliberately
+	// not the post-warm-up subset MeanITLUs uses. See summarize for why the cut belongs to one
+	// metric and not the other.
 	MeanTTFTUs     float64
 	MeasuredTTFT   int
 	Completed      int
@@ -469,9 +466,32 @@ func summarize(s *sim.Simulator, order []string, warmupCount int, warmupFraction
 			sum += itl
 			n++
 		}
-		// TTFT is counted separately rather than inside the ITL branch: a request that emitted
-		// exactly one token has a TTFT and no inter-token interval, so requiring both would
-		// silently drop it from the TTFT mean.
+	}
+	// TTFT is averaged over EVERY measured completion, not over order[cut:].
+	//
+	// The warm-up cut and the metric it serves are not the same question. Time per output token
+	// is a steady-state quantity: a closed-loop pool starts with a filling batch and a cold
+	// cache, so pooling the transient into a TPOT mean makes the figure depend on how many
+	// requests the run completed. Time to FIRST token is the opposite -- the transient is the
+	// phenomenon. When N requests are launched at once against an empty queue, a 920-token
+	// prompt against an 8192-token budget admits 8 prefills per step, so the 64th request waits
+	// 8 waves and its TTFT is 8 prefills deep. Discarding the first 2N completions discards
+	// exactly that queueing.
+	//
+	// This is what the real harness measures, not a preference. InferenceX's benchmark_serving.py
+	// awaits its warm-up requests and throws them away entirely (`_ = await
+	// asyncio.gather(warmup_tasks)`), then starts the MEASURED phase against an empty queue and,
+	// at --request-rate inf, launches all 10*concurrency of them at once ("Infinite request_rate
+	// disables waiting"). The start-up transient is inside the measured set on their side, so
+	// removing it on ours compares two different quantities.
+	//
+	// Measured on gpt-oss-120b-h200-fp4-vllm-tp4 1k1k, TTFT relatives across concurrency 4 to 64:
+	// 1.000 1.032 1.098 1.212 1.337 with the cut applied, 1.000 1.115 1.343 1.699 2.325 without,
+	// against a measurement of 1.000 1.131 (spike) 1.865 2.871. The cut, not the model, was the
+	// reason the TTFT curve was flat.
+	for _, id := range order {
+		// Counted independently of the ITL branch: a request that emitted exactly one token has
+		// a TTFT and no inter-token interval, so requiring both would silently drop it.
 		if t, ok := s.Metrics.RequestTTFTs[id]; ok && t > 0 {
 			ttftSum += t
 			ttftN++
@@ -561,6 +581,56 @@ func (s Sweep) MonotoneMeasurement() bool {
 	}
 	return true
 }
+
+// TTFTSpikeIndices returns the indices of points whose MEASURED time to first token is an
+// isolated excursion -- more than spikeFactor times both of its neighbours.
+//
+// These are measurement artefacts in the ground truth, not deployment behaviour. A first token
+// cannot take 52 times longer at concurrency 16 than its neighbours at 8 and 32 and then
+// recover; the neighbours bracket what the deployment actually does.
+//
+// The threshold is not a tuning knob, and the data says so. Over the 281 interior points of the
+// vLLM corpus the excursion ratio cur/max(prev,next) has median 0.738 and p90 0.903, and its
+// four largest values are 52.31x, 22.30x, 11.18x and 10.71x. The fifth largest is 1.74x. Every
+// threshold from 2x to 10x therefore selects exactly the same four points -- the decision is
+// made by a gap of nearly an order of magnitude in the data, not by the constant.
+//
+// The four, all on gpt-oss-120b/h200: tp4 1k1k at concurrency 16, tp2 8k1k at concurrency 8 and
+// 32, and tp1 8k1k at concurrency 16.
+//
+// Why a POINT and not the whole sweep. The TPOT path excludes a non-monotone sweep entirely
+// (MonotoneMeasurement), because a curve that falls is not recording a steady-state response
+// anywhere along it. A TTFT spike is the opposite: one point is wrong and the rest of the sweep
+// is sound, so dropping the sweep would discard good measurements to remove a bad one. The
+// anchor is never excluded -- it defines the normalisation, and a sweep whose FIRST point is
+// the artefact cannot be repaired by dropping a later one.
+//
+// Scale: the spikes cost AISimulate only 1.6 percentage points of TTFT shape error (18.13% to
+// 16.47% over the vLLM subset), so this is not where any model's TTFT error lives. It is
+// excluded because it is not a measurement, and reported rather than silently dropped.
+func (s Sweep) TTFTSpikeIndices(spikeFactor float64) []int {
+	var out []int
+	for i := 1; i < len(s.Points)-1; i++ {
+		cur := s.Points[i].MeasuredTTFTRelative
+		prev, next := s.Points[i-1].MeasuredTTFTRelative, s.Points[i+1].MeasuredTTFTRelative
+		if prev <= 0 || next <= 0 || cur <= 0 {
+			continue
+		}
+		bound := prev
+		if next > bound {
+			bound = next
+		}
+		if cur > spikeFactor*bound {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// DefaultTTFTSpikeFactor is the excursion ratio above which a measured TTFT point is treated as
+// an artefact. Ten sits inside the 1.74x-to-10.71x gap documented on TTFTSpikeIndices, so every
+// value from 2 to 10 selects the same four points. Reported with the figures it affects.
+const DefaultTTFTSpikeFactor = 10.0
 
 // defaultCyclesPerPoint is how many full pool cycles a point gathers when the caller states
 // no preference: four, of which the first half is discarded as warm-up, leaving two settled
