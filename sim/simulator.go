@@ -324,6 +324,11 @@ func (sim *Simulator) ProcessNextEvent() Event {
 	if te, ok := ev.(*TimeoutEvent); ok && te.Request.State == StateCompleted {
 		return ev
 	}
+	// Same for a superseded idle wake (scheduleStepBy): it must not advance the clock
+	// or end-of-run time.
+	if se, ok := ev.(*StepEvent); ok && se.cancelled {
+		return ev
+	}
 
 	sim.Clock = ev.Timestamp()
 	logrus.Debugf("[tick %07d] Executing %T", sim.Clock, ev)
@@ -498,11 +503,42 @@ func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 // with pending work. Used by gateway eviction to maintain INV-8 after removing
 // the last request from RunningBatch.
 func (sim *Simulator) ScheduleStepIfIdle(time int64) {
-	if sim.stepEvent == nil && sim.WaitQ.Len() > 0 {
-		step := &StepEvent{time: time}
-		sim.stepEvent = step
-		sim.Schedule(step)
+	if sim.WaitQ.Len() > 0 {
+		sim.scheduleStepBy(time)
 	}
+}
+
+// scheduleStepBy makes sure a StepEvent fires no later than t. It schedules one at t
+// when none is pending, and supersedes a pending idle wake that is later than t, so
+// work that arrives during an idle wait is served at once (INV-8). Any other pending
+// step is left alone, exactly as the previous stepEvent == nil guards did.
+func (sim *Simulator) scheduleStepBy(t int64) {
+	if sim.stepEvent != nil {
+		pending, ok := sim.stepEvent.(*StepEvent)
+		if !ok || !pending.idleWake || pending.time <= t {
+			return
+		}
+		pending.cancelled = true
+	}
+	step := &StepEvent{time: t}
+	sim.stepEvent = step
+	sim.Schedule(step)
+}
+
+// idleDeferralWake returns the next tick at which a deferred request can change
+// state, when every waiting request is deferred. Until then an empty step admits
+// nothing, so the scheduler can sleep instead of re-polling every tick.
+func (sim *Simulator) idleDeferralWake(now int64) (int64, bool) {
+	d, ok := sim.KVCache.(DeferrableKVStore)
+	if !ok {
+		return 0, false
+	}
+	for i := 0; i < sim.WaitQ.Len(); i++ {
+		if !d.IsDeferred(sim.WaitQ.PeekAt(i).ID) {
+			return 0, false
+		}
+	}
+	return d.NextDeferralWake(now)
 }
 
 // PostDecodeFixedOverhead returns the latency model's fixed per-request post-decode
@@ -672,14 +708,8 @@ func (sim *Simulator) EnqueueDecodeSubRequest(r *Request, clusterTime int64) {
 	// Trigger StepEvent if idle (work-conserving: INV-8).
 	// Use max(sim.Clock, clusterTime) so the decode sub-request is not processed
 	// at a stale instance time that precedes the cluster time when it was injected.
-	if (sim.RunningBatch == nil || len(sim.RunningBatch.Requests) == 0) && sim.stepEvent == nil {
-		stepTime := sim.Clock
-		if clusterTime > stepTime {
-			stepTime = clusterTime
-		}
-		step := &StepEvent{time: stepTime}
-		sim.stepEvent = step
-		sim.Schedule(step)
+	if sim.RunningBatch == nil || len(sim.RunningBatch.Requests) == 0 {
+		sim.scheduleStepBy(max(sim.Clock, clusterTime))
 	}
 }
 
@@ -1270,8 +1300,18 @@ func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*
 		// AdapterLoadCompletionEvent — which re-forms a step on completion via
 		// ScheduleStepIfIdle. Scheduling an empty step here instead would spin one
 		// step per tick for the whole load. Inert when no LoRA (loadingAdapter == "").
+		//
+		// Idle wake: when every waiting request is deferred on a KV fetch, an empty step
+		// costs 1 tick and admits nothing, so re-polling every tick crawls through a
+		// millisecond transfer in thousands of steps. Sleep until the next tick a
+		// deferred request can change state instead; arrivals pull the wake forward
+		// (scheduleStepBy). Admission lands on the same tick either way.
 		if sim.WaitQ.Len() > 0 && sim.loadingAdapter == "" {
-			pbe := StepEvent{time: now + currStepAdvance}
+			next, idle := now+currStepAdvance, false
+			if wake, ok := sim.idleDeferralWake(now); ok && wake > next {
+				next, idle = wake, true
+			}
+			pbe := StepEvent{time: next, idleWake: idle}
 			sim.Schedule(&pbe)
 			sim.stepEvent = &pbe
 		}

@@ -366,6 +366,17 @@ func (s *TransferStation) Poll(now int64) []JobID {
 	return res
 }
 
+// NextCompletion returns the earliest completion tick among in-service jobs across
+// all tiers, and false when nothing is in service. Queued jobs need no separate
+// answer: they start only when an in-service job completes (work-conserving
+// assign). Pure query.
+func (s *TransferStation) NextCompletion() (int64, bool) {
+	if s.inflight.Len() == 0 {
+		return 0, false
+	}
+	return s.inflight[0].completeAt, true
+}
+
 // ActiveJobs returns the number of jobs of the given direction currently in
 // service (assigned to a server, not yet completed) on the given tier. It counts
 // by the job's own direction regardless of which server group is serving it, so
