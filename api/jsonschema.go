@@ -6,7 +6,6 @@ import (
 	"math"
 	"reflect"
 	"slices"
-	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -410,7 +409,7 @@ func sortedKeys(m map[string]any) []string {
 	for key := range m {
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	return keys
 }
 

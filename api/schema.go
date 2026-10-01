@@ -98,6 +98,10 @@ func kindPartition() []any {
 // the envelope uses and returns an error for anything else: a silently-empty schema for an
 // unhandled type would publish a contract that constrains nothing (R1), so a later PR that
 // adds, say, a time.Time field is told to teach the generator about it instead.
+//
+// It inlines every type and emits no $defs/$ref, so a RECURSIVE type (a spec section holding
+// a slice of itself) would recurse forever. The envelope has no such type; a later PR that
+// introduces one must add $ref support here and the matching keyword to the checker.
 func schemaForType(t reflect.Type) (map[string]any, error) {
 	// Dereference FIRST. A pointer is the "zero is meaningful" encoding of its element
 	// (R9) and has the same document shape — and *T inherits T's value methods, so the

@@ -333,6 +333,7 @@ inference-sim/
 │   ├── hfconfig.go         # Catalog lookup of a model's config.json (read-only; refuses an uncatalogued model)
 │   ├── catalog_workloads.go # Named workload presets read from <catalog>/workloads/<name>.yaml (#1769)
 │   └── default_config.go   # defaults.yaml loading (shipped constants only; no per-model deployment policy since #1768, no workload presets since #1769 — those live in the catalog)
+├── api/                    # Declarative API document format (epic #1855): the envelope types, the generated JSON Schema in api/schema/, one example envelope per kind. Not yet wired into any command
 ├── sim/                    # Core simulation engine
 │   ├── config.go           # Module-scoped sub-config types (R16)
 │   ├── doc.go              # Package reading guide
