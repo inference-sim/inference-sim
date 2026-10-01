@@ -30,7 +30,7 @@ inference-sim/
 │   ├── schemagen/             # `go generate` target (package main) that writes the committed schema
 │   ├── schema/                # The PUBLISHED contract: llm-d-perf-simulator-v1.json (generated; un-ignored in .gitignore, which ignores *.json wholesale)
 │   └── examples/              # One minimal envelope per kind, validated against the committed schema in CI
-├── api_schema_gate_test.go    # Root-package mirror of the api schema-staleness + example-validation gates. Exists because ci.yml's test matrix lists packages explicitly and does not list ./api/...; replace with a matrix entry when a human next edits that workflow
+├── api_schema_gate_test.go    # Root-package mirror of the api schema-staleness + example-validation gates. Exists because ci.yml's test matrix lists packages explicitly and does not list ./api/...; replace with a matrix entry when a human next edits that workflow (#1866)
 ├── internal/                  # Repo-root internal packages (test tooling; not importable outside this module)
 │   └── invariantscan/         # AST scan for hand-rolled INV-1 conservation sums (#1720) — used by the guard tests in sim/, sim/cluster/. Root-level rather than sim/internal so cmd/ can import it too.
 ├── sim/                       # Core single-instance simulator

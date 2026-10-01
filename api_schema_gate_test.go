@@ -18,7 +18,7 @@ import (
 //
 // Replace this file with a `./api/...` entry in ci.yml's matrix (and `api` in its
 // pull_request branch list, since epic #1855 targets that branch) the first time a human edits
-// that workflow. Keeping both is harmless but redundant.
+// that workflow — tracked by #1866. Keeping both is harmless but redundant.
 //
 // They use only package api's exported surface, so they are a gate, not a copy of its tests.
 
