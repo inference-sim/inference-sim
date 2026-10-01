@@ -16,8 +16,8 @@ const SchemaDraft = "https://json-schema.org/draft/2020-12/schema"
 // the contract by this id; it changes only when the apiVersion does.
 const SchemaID = "https://github.com/inference-sim/inference-sim/raw/main/api/schema/llm-d-perf-simulator-v1.json"
 
-// SchemaPath is the committed schema's path relative to this package's directory. The
-// go:generate directive in doc.go writes it and the embed below reads it, so the two
+// SchemaPath is the committed schema's path relative to this package's directory.
+// doc.go's go:generate directive writes it and the embed below reads it, so the two
 // cannot drift apart.
 const SchemaPath = "schema/llm-d-perf-simulator-v1.json"
 

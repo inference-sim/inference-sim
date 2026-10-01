@@ -282,10 +282,10 @@ func (c *checker) checkOneOf(schema map[string]any, value any, path string) []st
 		}
 		reasons = append(reasons, fmt.Sprintf("alternative %d: %s", i+1, strings.Join(problems, ", ")))
 	}
-	switch {
-	case matched == 1:
+	switch matched {
+	case 1:
 		return nil
-	case matched == 0:
+	case 0:
 		return []string{fmt.Sprintf("%s: matches none of the %d alternatives (%s)",
 			path, len(branches), strings.Join(reasons, "; "))}
 	default:
