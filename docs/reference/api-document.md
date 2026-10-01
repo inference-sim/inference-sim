@@ -81,10 +81,19 @@ types, regenerate it:
 go generate ./api/...
 ```
 
-CI fails if the committed schema differs from the one the types derive, so the published
+A test fails if the committed schema differs from the one the types derive, so the published
 contract cannot drift from the code that implements it. The example documents in
 `api/examples/` (one minimal envelope per kind) are validated against the committed schema in
 the same test run.
+
+Both gates reach CI through `api_schema_gate_test.go` in the repository root, because
+`.github/workflows/ci.yml` lists its test packages explicitly and does not yet list
+`./api/...`; that bridge also runs the api package's own suite as a subprocess. Two caveats
+until [#1866](https://github.com/inference-sim/inference-sim/issues/1866) adds the matrix
+entry: the workflow does not trigger on pull requests targeting the `api` branch that epic
+[#1855](https://github.com/inference-sim/inference-sim/issues/1855) uses, so those PRs are
+exercised by a manual `workflow_dispatch` run rather than automatically; and `go test ./...`
+locally is the only way to run the api package directly.
 
 Validating from Go uses the same schema the published file holds:
 
@@ -95,9 +104,14 @@ if err := api.ValidateDocument(data); err != nil { /* every problem, named */ }
 ```
 
 `api.Document` is the Go form of the envelope, and `api.Document.Validate` applies the same
-rules as the schema — a test holds the two to the same verdict on every example and every
-negative case, because a schema that disagreed with the implementation would be worse than no
-schema.
+rules as the schema — a test holds the two to the same verdict on every envelope shape that
+has a `Document` form: each valid and invalid combination of `apiVersion`, `kind`, `spec` and
+`result`. A schema that disagreed with the implementation would be worse than no schema.
+
+The schema checker is additionally tested on raw documents the Go types cannot express — a
+malformed scalar, a non-string object key, an unknown top-level key. Those cases have no
+`Document` form, so there is no Go verdict to compare them against, and they are checked
+against the schema alone.
 
 ## Invariants
 

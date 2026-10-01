@@ -198,9 +198,15 @@ func NewResult(kind Kind, body Body) (Document, error) {
 // failure mode in slow motion.
 //
 // This is the Go-side twin of the committed JSON Schema. The two MUST agree, and
-// TestGoValidationAgreesWithSchema holds them to it over the example corpus and the
-// negative cases: a schema that rejects what the Go types accept (or the reverse) would
-// make the published contract a lie.
+// TestGoValidationAgreesWithTheSchema holds them to it over every envelope shape THIS
+// function can distinguish — each valid and invalid combination of apiVersion, kind, spec
+// and result, as a Document put through both validators. A schema that rejected what the Go
+// types accept (or the reverse) would make the published contract a lie.
+//
+// The raw-document negatives in jsonschema_test.go are deliberately not part of that
+// comparison: a malformed scalar, a non-string object key or an unknown top-level key has no
+// Document form to validate, so there is no Go verdict to agree with. The schema checker is
+// the only validator those cases reach.
 func (d Document) Validate() error {
 	var problems []string
 	if !d.APIVersion.Valid() {

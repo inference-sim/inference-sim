@@ -28,8 +28,10 @@
 //
 //	go generate ./api/...
 //
-// TestCommittedSchemaIsCurrent fails if the committed copy is stale, so CI refuses a
-// type change that was not regenerated.
+// TestCommittedSchemaIsCurrent fails if the committed copy is stale, so a type change that
+// was not regenerated is refused. Until ./api/... is in ci.yml's test matrix (#1866), the
+// job that actually runs in CI is the root-package bridge in ../api_schema_gate_test.go,
+// which mirrors that gate and runs this package's suite as a subprocess.
 //
 // This package depends only on the standard library and gopkg.in/yaml.v3; it imports no
 // other BLIS package, which keeps the document format free of the simulator's dependency

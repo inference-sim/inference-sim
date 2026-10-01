@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -228,6 +229,44 @@ func TestSchemaForTypeRefusesAnUntranslatableType(t *testing.T) {
 	}
 	if _, err := schemaForType(reflect.TypeOf(withNonStringKey{})); err == nil {
 		t.Error("a map with a non-string key produced a schema; a JSON object key is always a string")
+	}
+}
+
+// pointerOnlyConstrainer makes the pointer-receiver mistake on purpose. The envelope's own
+// constrainers all use value receivers, so only a test can exercise the refusal.
+type pointerOnlyConstrainer string
+
+func (*pointerOnlyConstrainer) schemaConstraints() map[string]any {
+	return map[string]any{"const": "unreachable: the generator must refuse this type"}
+}
+
+// TestSchemaForTypeRefusesAPointerReceiverConstrainer is the other half of the R1 guard
+// above, for the failure that is NOT an unhandled type: a constrainer the generator cannot
+// see. schemaConstraints on *T is absent from T's method set, so the zero-value lookup
+// misses it and the kind switch would happily emit the bare `{"type":"string"}` — a schema
+// that publishes less than the type promises, with no error to say so. Pointer and value
+// forms must both be refused, since schemaForType dereferences before it looks.
+func TestSchemaForTypeRefusesAPointerReceiverConstrainer(t *testing.T) {
+	var value pointerOnlyConstrainer
+	cases := []struct {
+		name string
+		typ  reflect.Type
+	}{
+		{"value type", reflect.TypeOf(value)},
+		{"pointer to it", reflect.TypeOf(&value)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			schema, err := schemaForType(tc.typ)
+			if err == nil {
+				t.Fatalf("schemaForType(%s) = %v, want a refusal: a constrainer the generator "+
+					"cannot read off the zero value must abort generation, not silently publish "+
+					"the unconstrained kind schema", tc.typ, schema)
+			}
+			if !strings.Contains(err.Error(), "value receiver") {
+				t.Errorf("refusal %q does not name the fix (declare the method with a value receiver)", err)
+			}
+		})
 	}
 }
 

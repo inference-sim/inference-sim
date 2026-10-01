@@ -1,15 +1,18 @@
 package api
 
 import (
+	"fmt"
+	"go/parser"
+	"go/token"
 	"io/fs"
-	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
 
-// importPath is this package's import path, as it appears in another package's import block.
-const importPath = `"github.com/inference-sim/inference-sim/api"`
+// importPath is this package's import path.
+const importPath = "github.com/inference-sim/inference-sim/api"
 
 // TestEnvelopeIsInert is the "deliberately inert" contract of API-1 (#1856), checked rather
 // than asserted in prose: no PRODUCTION file outside api/ may import the envelope yet, so this
@@ -23,8 +26,14 @@ const importPath = `"github.com/inference-sim/inference-sim/api"`
 // This is scaffolding for exactly one PR. API-2 (#1857) wires the envelope into `blis run`,
 // which is the moment this test SHOULD be deleted — its failure there is the signal that the
 // wiring landed, not a regression. Delete it; do not add an exception list.
+//
+// It PARSES each file's import block rather than searching its text. A substring search over
+// the quoted path reads every ordinary import — aliased, dot, grouped — but misses the one
+// spelling that is still a legal import of this package, a raw-string literal in backticks,
+// and an inertness check with a spelling that evades it is not a check.
 func TestEnvelopeIsInert(t *testing.T) {
 	scanned := 0
+	fileSet := token.NewFileSet()
 	err := filepath.WalkDir("..", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -39,15 +48,22 @@ func TestEnvelopeIsInert(t *testing.T) {
 		if !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
 			return nil
 		}
-		source, err := os.ReadFile(path)
+		parsed, err := parser.ParseFile(fileSet, path, nil, parser.ImportsOnly)
 		if err != nil {
-			return err
+			return fmt.Errorf("parsing %s: %w", path, err)
 		}
 		scanned++
-		if strings.Contains(string(source), importPath) {
-			t.Errorf("%s imports the envelope package. API-1 is inert by contract: if you are "+
-				"wiring the document into a verb (API-2 onward), delete TestEnvelopeIsInert in "+
-				"the same change rather than excluding this file.", path)
+		for _, spec := range parsed.Imports {
+			// Unquote handles both literal forms the language allows for an import path.
+			imported, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				return fmt.Errorf("%s: import path %s is not a valid string literal: %w", path, spec.Path.Value, err)
+			}
+			if imported == importPath {
+				t.Errorf("%s imports the envelope package. API-1 is inert by contract: if you are "+
+					"wiring the document into a verb (API-2 onward), delete TestEnvelopeIsInert in "+
+					"the same change rather than excluding this file.", path)
+			}
 		}
 		return nil
 	})

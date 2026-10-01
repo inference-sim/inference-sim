@@ -3,24 +3,29 @@ package main
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/api"
 )
 
-// The two gates below belong to package api and are also tested there, in full. They are
-// MIRRORED here because .github/workflows/ci.yml's test job lists its packages EXPLICITLY
-// (there is no `go test ./...` in CI), and the root package "." is already one of them, while
-// `./api/...` is not. The issue that introduced the envelope (#1856) requires CI to fail on a
-// stale published schema, and a GitHub App token without `workflows` permission cannot add the
-// matrix entry that would run the api tests directly.
+// This file stands in for an `./api/...` entry in .github/workflows/ci.yml's test matrix.
+// That matrix lists its packages EXPLICITLY (there is no `go test ./...` in CI) and the root
+// package "." is already one of them, while `./api/...` is not. The issue that introduced the
+// envelope (#1856) requires CI to fail on a stale published schema, and a GitHub App token
+// without `workflows` permission cannot add the matrix entry that would run the api tests
+// directly. Delete this whole file when a human adds that entry — tracked by #1866.
 //
-// Replace this file with a `./api/...` entry in ci.yml's matrix (and `api` in its
-// pull_request branch list, since epic #1855 targets that branch) the first time a human edits
-// that workflow — tracked by #1866. Keeping both is harmless but redundant.
+// It bridges the api suite in two layers, which are deliberately not one:
 //
-// They use only package api's exported surface, so they are a gate, not a copy of its tests.
+//   - TestCommittedAPISchemaIsNotStale and TestAPIExampleDocumentsValidate express the two
+//     gates #1856 NAMES, natively and in-process, over package api's exported surface only.
+//     They need nothing but this test binary, so the gates the issue requires hold even where
+//     the layer below cannot run.
+//   - TestAPIPackageTestsPass runs the package's REAL suite as a subprocess, so a test added
+//     to api/ later is covered without anyone remembering to mirror it here. Without it, this
+//     file would silently cover exactly the two tests that existed when it was written.
 
 // TestCommittedAPISchemaIsNotStale fails when api/schema/llm-d-perf-simulator-v1.json no
 // longer matches the schema derived from the Go envelope types. SchemaJSON returns the
@@ -57,5 +62,25 @@ func TestAPIExampleDocumentsValidate(t *testing.T) {
 		if err := api.ValidateDocument(data); err != nil {
 			t.Errorf("%s does not validate against the committed schema: %v", path, err)
 		}
+	}
+}
+
+// TestAPIPackageTestsPass runs `go test ./api/...` so that EVERY test in the api package runs
+// wherever this package's tests run, not just the two mirrored above. The mirrors are a fixed
+// list, and a fixed list silently stops covering the package the moment someone adds a test to
+// it — the failure mode is a test that looks green in CI because it never ran.
+//
+// A missing toolchain is a failure, not a skip: a skipped bridge is indistinguishable from a
+// passing one in CI output, which is the same silence this test exists to remove.
+func TestAPIPackageTestsPass(t *testing.T) {
+	goTool, err := exec.LookPath("go")
+	if err != nil {
+		t.Fatalf("cannot locate the go tool to run the api package's own tests: %v", err)
+	}
+	// -count=1 because a cached PASS from an earlier identical run is a correct answer, but
+	// only for code identical to this commit's; the explicit flag says that is intended.
+	output, err := exec.Command(goTool, "test", "-count=1", "-timeout", "3m", "./api/...").CombinedOutput()
+	if err != nil {
+		t.Errorf("`go test ./api/...` failed (%v). Fix it in the api package, not here:\n%s", err, output)
 	}
 }

@@ -36,9 +36,14 @@ func SchemaJSON() []byte { return slices.Clone(committedSchema) }
 // generator change, because the enum is read back off the type.
 //
 // Implement it with a VALUE receiver; the generator looks the method up on the zero value.
+// A pointer-receiver-only implementation is REFUSED rather than ignored — see schemaForType.
 type schemaConstrainer interface {
 	schemaConstraints() map[string]any
 }
+
+// schemaConstrainerType lets schemaForType ask whether *T implements the interface when T
+// does not, which is the pointer-receiver mistake it refuses.
+var schemaConstrainerType = reflect.TypeOf((*schemaConstrainer)(nil)).Elem()
 
 // GenerateSchema derives the JSON Schema of the envelope from [Document] and returns it as
 // the exact bytes the committed file holds — indented with two spaces and newline
@@ -111,6 +116,14 @@ func schemaForType(t reflect.Type) (map[string]any, error) {
 	}
 	if c, ok := reflect.Zero(t).Interface().(schemaConstrainer); ok {
 		return c.schemaConstraints(), nil
+	}
+	// schemaConstraints declared on *T is not in T's method set, so the lookup above misses
+	// it and the switch below would emit the bare kind schema instead — publishing a contract
+	// that silently constrains LESS than the type intends (R1). Refuse, naming the fix.
+	if reflect.PointerTo(t).Implements(schemaConstrainerType) {
+		return nil, fmt.Errorf("type %s declares schemaConstraints with a POINTER receiver, so the "+
+			"generator cannot read it off the zero value and would emit an unconstrained schema; "+
+			"declare the method with a value receiver", t)
 	}
 
 	switch t.Kind() {
