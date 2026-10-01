@@ -1,5 +1,5 @@
 {
-  "description": "Trained-physics latency model iter29 golden values. Generated with alpha/beta coefficients from iteration 29 sequential golden section search (loss=34.5675%). Update only when the trained-physics backend is intentionally versioned (rename backend first).",
+  "description": "Trained-physics latency model iter29 golden values. Generated with alpha/beta coefficients from iteration 29 sequential golden section search (loss=34.5675%). 'iter29' names the coefficient set, not a frozen output snapshot: expected values are regenerated in place for a deliberate, issue-scoped change to what the backend computes under these same coefficients (#1419, #1849), while re-fitting the coefficients renames the backend and starts a new dataset. See testdata/README.md#golden-regeneration-policy.",
   "backend": "trained-physics",
   "alpha_coeffs": [
     15563.199579,
@@ -58,14 +58,14 @@
         "completed_requests": 5100,
         "total_input_tokens": 2789700,
         "total_output_tokens": 1264800,
-        "ttft_sum_us": 282782175,
-        "ttft_mean_ms": 55.44748529411765,
-        "ttft_p90_ms": 64.8184,
-        "ttft_p99_ms": 67.75814,
-        "e2e_mean_ms": 6467.512167254902,
-        "e2e_p90_ms": 6601.9296,
-        "e2e_p99_ms": 6682.66798,
-        "itl_mean_ms": 25.956630291339206
+        "ttft_sum_us": 274117610,
+        "ttft_mean_ms": 53.74855098039216,
+        "ttft_p90_ms": 63.1782,
+        "ttft_p99_ms": 67.67809000000003,
+        "e2e_mean_ms": 5783.920891176471,
+        "e2e_p90_ms": 6263.2841,
+        "e2e_p99_ms": 6558.74434,
+        "itl_mean_ms": 23.19593255140113
       }
     },
     {
@@ -107,14 +107,14 @@
         "completed_requests": 9000,
         "total_input_tokens": 5094000,
         "total_output_tokens": 2223000,
-        "ttft_sum_us": 512112080,
-        "ttft_mean_ms": 56.90134222222222,
-        "ttft_p90_ms": 66.99210000000001,
-        "ttft_p99_ms": 70.22809,
-        "e2e_mean_ms": 6569.284114,
-        "e2e_p90_ms": 6777.0001999999995,
-        "e2e_p99_ms": 6837.58314,
-        "itl_mean_ms": 26.469942161698285
+        "ttft_sum_us": 500748998,
+        "ttft_mean_ms": 55.638777555555556,
+        "ttft_p90_ms": 66.645,
+        "ttft_p99_ms": 78.827,
+        "e2e_mean_ms": 6230.504940333334,
+        "e2e_p90_ms": 6707.182,
+        "e2e_p99_ms": 6829.49,
+        "itl_mean_ms": 25.097923425925924
       }
     },
     {
@@ -295,14 +295,14 @@
         "completed_requests": 7200,
         "total_input_tokens": 5400000,
         "total_output_tokens": 1807200,
-        "ttft_sum_us": 403713700,
-        "ttft_mean_ms": 56.07134722222222,
-        "ttft_p90_ms": 66.0363,
-        "ttft_p99_ms": 68.713,
-        "e2e_mean_ms": 6623.304852222222,
-        "e2e_p90_ms": 6667.89,
-        "e2e_p99_ms": 6669.46504,
-        "itl_mean_ms": 26.26582602
+        "ttft_sum_us": 414897846,
+        "ttft_mean_ms": 57.624700833333335,
+        "ttft_p90_ms": 71.0424,
+        "ttft_p99_ms": 98.646,
+        "e2e_mean_ms": 6170.707929583334,
+        "e2e_p90_ms": 6496.5725,
+        "e2e_p99_ms": 6611.011,
+        "itl_mean_ms": 24.449224915
       }
     },
     {
@@ -340,14 +340,14 @@
         "completed_requests": 1200,
         "total_input_tokens": 1240800,
         "total_output_tokens": 1737600,
-        "ttft_sum_us": 67887221,
-        "ttft_mean_ms": 56.57268416666667,
-        "ttft_p90_ms": 66.70129999999999,
-        "ttft_p99_ms": 69.16869000000001,
-        "e2e_mean_ms": 38388.25184416667,
-        "e2e_p90_ms": 38564.6258,
-        "e2e_p99_ms": 38591.97013,
-        "itl_mean_ms": 26.489911651693156
+        "ttft_sum_us": 64946428,
+        "ttft_mean_ms": 54.12202333333333,
+        "ttft_p90_ms": 62.9744,
+        "ttft_p99_ms": 65.51320000000001,
+        "e2e_mean_ms": 32292.6353875,
+        "e2e_p90_ms": 33046.1738,
+        "e2e_p99_ms": 33267.607449999996,
+        "itl_mean_ms": 22.279016146625203
       }
     },
     {
