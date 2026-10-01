@@ -110,6 +110,8 @@ func main() {
 	byFrameworkTheirs := map[string][]float64{}
 	byChip := map[string][]float64{}
 	byChipTheirs := map[string][]float64{}
+	byConc := map[int][]float64{}
+	byConcTheirs := map[int][]float64{}
 	var failures []string
 
 	for _, sw := range c.Sweeps {
@@ -120,6 +122,7 @@ func main() {
 			continue
 		}
 		var mine, theirs []float64
+		var concOf []int
 		var anchor, theirAnchor float64
 		bad := false
 		for i, p := range sw.Points {
@@ -148,8 +151,13 @@ func main() {
 				}
 			}
 			predicted := obs.MeanITLUs / anchor
-			errMine := math.Abs(predicted/p.MeasuredRelative-1) * 100
-			errTheirs := math.Abs((p.AISimulateRelative/theirAnchor)/p.MeasuredRelative-1) * 100
+			// SIGNED: positive means the model predicted a LARGER relative rise than was
+			// measured. The magnitude is recovered with harness.Abs at each aggregation, so
+			// every absolute figure is unchanged; the sign is retained because the direction
+			// of the error discriminates a miscalibrated coefficient (consistent sign) from
+			// a missing mechanism (sign that turns with batch size).
+			errMine := (predicted/p.MeasuredRelative - 1) * 100
+			errTheirs := ((p.AISimulateRelative/theirAnchor)/p.MeasuredRelative - 1) * 100
 			// The anchor is EXCLUDED from the mean, matching AISimulate's own definition
 			// (scripts/build_e2e_accuracy_overview.py: `for ... in points[1:]`). Its error
 			// is exactly zero by construction -- each side divided by itself -- so
@@ -163,6 +171,7 @@ func main() {
 			if i > 0 {
 				mine = append(mine, errMine)
 				theirs = append(theirs, errTheirs)
+				concOf = append(concOf, p.Concurrency)
 			}
 			if *verbose {
 				if i == 0 {
@@ -180,6 +189,10 @@ func main() {
 			continue
 		}
 		rows = append(rows, row{sw, mine, theirs})
+		for j, cc := range concOf {
+			byConc[cc] = append(byConc[cc], mine[j])
+			byConcTheirs[cc] = append(byConcTheirs[cc], theirs[j])
+		}
 		allMine = append(allMine, mine...)
 		allTheirs = append(allTheirs, theirs...)
 		if sw.MonotoneMeasurement() {
@@ -207,23 +220,23 @@ func main() {
 	fmt.Printf("%d sweeps, %d points\n\n", len(rows), len(allMine))
 	fmt.Printf("%-30s %5s %8s %8s %8s\n", "model", "n", "MAPE", "median", "worst")
 	fmt.Printf("%-30s %5d %7.2f%% %7.2f%% %7.2f%%\n", "BLIS + blis-latency-kernel",
-		len(allMine), harness.MAPE2(allMine), harness.Median(allMine), maxOf(allMine))
+		len(allMine), harness.MAPE2(harness.Abs(allMine)), harness.Median(harness.Abs(allMine)), maxOf(harness.Abs(allMine)))
 	fmt.Printf("%-30s %5d %7.2f%% %7.2f%% %7.2f%%\n", "AISimulate (same points)",
-		len(allTheirs), harness.MAPE2(allTheirs), harness.Median(allTheirs), maxOf(allTheirs))
+		len(allTheirs), harness.MAPE2(harness.Abs(allTheirs)), harness.Median(harness.Abs(allTheirs)), maxOf(harness.Abs(allTheirs)))
 
 	if len(monoMine) > 0 && len(monoMine) < len(allMine) {
-		fmt.Printf("\nExcluding sweeps whose MEASURED curve is non-monotone in concurrency.\n"+
-			"Time per output token cannot fall when a fixed deployment is given more\n"+
-			"concurrent work, so such a sweep is not recording a steady-state response and\n"+
-			"no monotone model can reproduce it. The predicate reads the measurement only,\n"+
-			"never a prediction, and removing these sweeps IMPROVES AISimulate's score too,\n"+
+		fmt.Printf("\nExcluding sweeps whose MEASURED curve is non-monotone in concurrency.\n" +
+			"Time per output token cannot fall when a fixed deployment is given more\n" +
+			"concurrent work, so such a sweep is not recording a steady-state response and\n" +
+			"no monotone model can reproduce it. The predicate reads the measurement only,\n" +
+			"never a prediction, and removing these sweeps IMPROVES AISimulate's score too,\n" +
 			"so it raises the bar rather than lowering it.\n\n")
 		fmt.Printf("%-30s %5s %8s %8s %8s\n", "model (monotone only)", "n", "MAPE", "median", "worst")
 		fmt.Printf("%-30s %5d %7.2f%% %7.2f%% %7.2f%%\n", "BLIS + blis-latency-kernel",
-			len(monoMine), harness.MAPE2(monoMine), harness.Median(monoMine), maxOf(monoMine))
+			len(monoMine), harness.MAPE2(harness.Abs(monoMine)), harness.Median(harness.Abs(monoMine)), maxOf(harness.Abs(monoMine)))
 		fmt.Printf("%-30s %5d %7.2f%% %7.2f%% %7.2f%%\n", "AISimulate (same points)",
-			len(monoTheirs), harness.MAPE2(monoTheirs), harness.Median(monoTheirs),
-			maxOf(monoTheirs))
+			len(monoTheirs), harness.MAPE2(harness.Abs(monoTheirs)), harness.Median(harness.Abs(monoTheirs)),
+			maxOf(harness.Abs(monoTheirs)))
 		fmt.Printf("\nexcluded (%d sweep(s)):\n", len(anomalous))
 		for _, a := range anomalous {
 			fmt.Printf("  %s\n", a)
@@ -240,14 +253,61 @@ func main() {
 	fmt.Printf("%-10s %5s %9s %9s\n", "framework", "n", "BLIS", "AISimulate")
 	for _, f := range sortedKeys(byFramework) {
 		fmt.Printf("%-10s %5d %8.2f%% %8.2f%%\n", f, len(byFramework[f]),
-			harness.MAPE2(byFramework[f]), harness.MAPE2(byFrameworkTheirs[f]))
+			harness.MAPE2(harness.Abs(byFramework[f])), harness.MAPE2(harness.Abs(byFrameworkTheirs[f])))
 	}
 
 	fmt.Printf("\nBy chip family:\n")
 	fmt.Printf("%-10s %5s %9s %9s\n", "family", "n", "BLIS", "AISimulate")
 	for _, k := range sortedKeys(byChip) {
 		fmt.Printf("%-10s %5d %8.2f%% %8.2f%%\n", k, len(byChip[k]),
-			harness.MAPE2(byChip[k]), harness.MAPE2(byChipTheirs[k]))
+			harness.MAPE2(harness.Abs(byChip[k])), harness.MAPE2(harness.Abs(byChipTheirs[k])))
+	}
+
+	fmt.Printf("\nSigned error, where POSITIVE means the model predicted a larger relative\n" +
+		"rise in time per output token than was measured. Magnitude answers how wrong a\n" +
+		"model is; sign answers which way, and the two imply different fixes. A consistent\n" +
+		"sign is a miscalibrated coefficient and is removable by rescaling. A sign that\n" +
+		"turns with batch size is a missing mechanism and is not.\n\n")
+	fmt.Printf("%-30s %5s %9s %9s %9s %7s %9s %9s\n",
+		"model", "n", "mean", "median", "mean|e|", "over", "p10", "p90")
+	for _, r := range []struct {
+		name string
+		errs []float64
+	}{
+		{"BLIS + blis-latency-kernel", allMine},
+		{"AISimulate (same points)", allTheirs},
+	} {
+		st := harness.Signed(r.errs)
+		fmt.Printf("%-30s %5d %+8.2f%% %+8.2f%% %8.2f%% %6.0f%% %+8.2f%% %+8.2f%%\n",
+			r.name, st.N, st.Mean, st.Median, st.MeanAbs, 100*st.FractionOver, st.P10, st.P90)
+	}
+
+	fmt.Printf("\nBias and scatter, in log space. mean(log r) is the bias a single rescaling could\n" +
+		"remove; sd(log r) is the scatter it could not. 'floor' is the mean magnitude that\n" +
+		"would remain after removing the bias perfectly -- the ceiling on what recalibration\n" +
+		"alone can buy.\n\n")
+	fmt.Printf("%-30s %5s %10s %10s %10s %9s\n",
+		"model", "n", "mean log", "sd log", "bias %", "floor")
+	for _, r := range []struct {
+		name string
+		errs []float64
+	}{
+		{"BLIS + blis-latency-kernel", allMine},
+		{"AISimulate (same points)", allTheirs},
+	} {
+		st := harness.Logs(r.errs)
+		fmt.Printf("%-30s %5d %+9.4f %10.4f %+9.2f%% %8.2f%%\n",
+			r.name, st.N, st.MeanLog, st.SDLog, st.GeoMeanPct, st.ResidualFloor)
+	}
+
+	fmt.Printf("\nBy client concurrency. Both columns are signed means; the magnitude follows\n" +
+		"in brackets. A model whose error is small at low concurrency and grows with it is\n" +
+		"not mis-costing a single step -- it is mis-composing a batch.\n\n")
+	fmt.Printf("%6s %5s %20s %20s\n", "conc", "n", "BLIS", "AISimulate")
+	for _, cc := range sortedIntKeys(byConc) {
+		m, t := harness.Signed(byConc[cc]), harness.Signed(byConcTheirs[cc])
+		fmt.Printf("%6d %5d   %+7.2f%% (%5.2f%%)   %+7.2f%% (%5.2f%%)\n",
+			cc, m.N, m.Mean, m.MeanAbs, t.Mean, t.MeanAbs)
 	}
 
 	if len(failures) > 0 {
@@ -268,14 +328,25 @@ func family(gpu string) string {
 	return gpu
 }
 
+// maxOf is the largest MAGNITUDE in xs. It takes magnitudes, not signed errors: seeded at
+// zero it would report 0 for an all-negative slice, so callers pass harness.Abs(...).
 func maxOf(xs []float64) float64 {
 	m := 0.0
 	for _, x := range xs {
-		if x > m {
-			m = x
+		if a := math.Abs(x); a > m {
+			m = a
 		}
 	}
 	return m
+}
+
+func sortedIntKeys(m map[int][]float64) []int {
+	ks := make([]int, 0, len(m))
+	for k := range m {
+		ks = append(ks, k)
+	}
+	sort.Ints(ks)
+	return ks
 }
 
 func sortedKeys(m map[string][]float64) []string {

@@ -77,6 +77,78 @@ simulation of `12 x concurrency` requests.
 Determinism: the seed is fixed (`-seed`, default 42) and a point is a pure function of its
 inputs, so two runs agree exactly. `TestARunIsDeterministicAtAFixedSeed` asserts it.
 
+The same command prints the signed and log-space reports. Expected:
+
+| model | n | mean | median | mean abs | over | p10 | p90 |
+|---|---|---|---|---|---|---|---|
+| BLIS + blis-latency-kernel | 192 | +2.71% | +0.78% | 10.41% | 53% | -11.61% | +19.60% |
+| AISimulate, same points | 192 | +5.39% | +4.02% | 8.87% | 71% | -6.83% | +19.77% |
+
+| model | n | mean log | sd log | bias | floor |
+|---|---|---|---|---|---|
+| BLIS + blis-latency-kernel | 192 | +0.0165 | 0.1442 | +1.67% | 10.23% |
+| AISimulate, same points | 192 | +0.0462 | 0.1122 | +4.73% | 7.73% |
+
+plus the per-concurrency signed breakdown. The signed figures are the ones that killed the
+batch-composition hypothesis; see `RESULTS.md`.
+
+## Four estimators on the Hopper subset
+
+```bash
+cd inference-sim
+go run ./cmd/estimatorscore
+```
+
+Scores blis-latency-kernel, AISimulate, roofline and trained-physics on the Hopper vLLM subset,
+with the KV budget, engine settings and host per-token cost taken from the kernel for every arm so
+that only the forward-pass model differs. Expected:
+
+| estimator | n | mean | median | mean abs | over |
+|---|---|---|---|---|---|
+| blis-latency-kernel | 104 | +1.71% | -0.46% | 8.87% | 44% |
+| AISimulate | 104 | +1.75% | +2.02% | 6.04% | 66% |
+| roofline | 104 | +161.54% | +135.30% | 161.54% | 100% |
+| trained-physics | 104 | -38.93% | -39.04% | 38.93% | 0% |
+
+Roughly twenty minutes: 24 sweeps x 3 arms. It also prints the per-scenario breakdown and the one
+point that could not be scored (`gpt-oss-120b-h100-fp4-vllm-tp2 1k8k` at concurrency 4 under
+trained-physics, which completes no requests within the horizon).
+
+`-hardware-config` and `-defaults` default to the repository's own `hardware_config.json` and
+`defaults.yaml`, so run it from the repository root.
+
+### The audit behind that table
+
+```bash
+go run ./cmd/estimatorscore -curves gpt-oss-120b-h200-fp4-vllm-tp4.yaml
+```
+
+A mean error cannot distinguish a bad model from a broken harness. This prints each arm's
+predicted curve, the absolute latencies that explain its shape, and the admission facts the arms
+must share. Expected:
+
+| concurrency | measured | kernel | roofline | trained-physics |
+|---|---|---|---|---|
+| 4 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| 8 | 1.1565 | 1.1329 | 1.7947 | 1.0027 |
+| 16 | 1.3275 | 1.3579 | 3.1124 | 1.0082 |
+| 32 | 1.8010 | 1.6830 | 4.9277 | 1.0191 |
+| 64 | 2.3641 | 2.0878 | 6.7031 | 1.0408 |
+
+with anchors of 3,336 us (kernel), 1,087 us (roofline) and 17,743 us (trained-physics), and an
+admission block reporting 817,357 KV blocks and `12 x concurrency` completions, `identical across
+arms: yes` at every point. A `NO` there means the comparison is contaminated and the table above
+is not a step-time comparison.
+
+### Checking the KV number itself
+
+The arms sharing one KV budget does not make that budget correct. Deriving it a second way, through
+`latency.CalculateKVBlocks`, is what found **inference-sim#1852**: the two paths agree to within
+1.8% on `minimax-m2.5` (fp8) and disagree by 1.60x on `gpt-oss-120b` (mxfp4), because the legacy
+path does not recognise mxfp4 and sizes those weights at bf16 -- 217 GiB against the config's own
+54.3 GiB. At tp=2 it returns an error instead of a block count. The kernel is the correct side, and
+no scoring path calls `CalculateKVBlocks`, so no figure here is affected.
+
 ## The kernel's own scores, without the simulator
 
 ```bash
@@ -135,6 +207,29 @@ makes the gate trustworthy on a new one:
 Those three attention figures are the same coefficient measured over three populations. They
 differ because the error depends on the GQA group size, not on the part, and conflating them
 would justify a re-fit in the wrong direction.
+
+## The prefill-attention axis probe
+
+Marked in `RESULTS.md` as a defect found and deliberately not fixed. Needs the parquet
+collections.
+
+```bash
+cd blis-registry
+python scripts/probe_attention_prefill_axis.py --parts h200_sxm \
+    --data /tmp/aisim/python/aisimulate/src/aisimulate_core/systems/data
+python scripts/probe_attention_prefill_axis.py --residuals h200_sxm \
+    --data /tmp/aisim/python/aisimulate/src/aisimulate_core/systems/data
+```
+
+The first prints the held-out A/B over four efficiency keys and the guard line, which must read
+`OK`: the current key fitted on all rows has to reproduce the committed h200 entry (n 55096,
+floor 26.5, scale 0.48). The second prints signed residuals by batch, which is what shows that no
+single scalar key removes the trend.
+
+The step-frequency figures that make the defect irrelevant here (98.33% of steps carry no prefill
+request) came from temporary instrumentation in `Model.StepTime`, counting prefill requests per
+step over a full `cmd/kernelscore -framework vllm` run. The instrumentation was removed; to
+re-derive, count `Reqs[i].Scheduled > DecodeThreshold` per batch in a histogram.
 
 ## Reproducing the error definition
 

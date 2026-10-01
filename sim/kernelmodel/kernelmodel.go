@@ -302,3 +302,40 @@ func (m *Model) StepEstimate(batch []*sim.Request) kernel.StepEstimate {
 	}
 	return m.k.StepTime(b)
 }
+
+// Deployment reports the scenario facts an ALTERNATIVE latency backend needs to be
+// constructed for the same deployment this kernel models.
+//
+// It exists for cmd/kernelscore's four-estimator comparison, which scores the kernel against
+// BLIS's own roofline and trained-physics backends on one subset. Those backends are
+// configured from a HuggingFace config.json and a hardware-calibration entry rather than from
+// the catalog and registry, so the harness needs the scenario's model name, chip, tensor
+// width and the two precisions -- and must read them from the SAME scenario the kernel was
+// opened from, or the arms would describe different deployments.
+//
+// Nothing here is a latency coefficient: this is deployment identity, not calibration.
+func (m *Model) Deployment() Deployment {
+	p := m.scenario.Pools[m.poolIndex]
+	return Deployment{
+		Model:        m.scenario.Model,
+		Hardware:     m.scenario.Hardware,
+		TP:           p.Parallel.TP,
+		DP:           p.Parallel.DP,
+		Quantization: p.Engine.Quantization,
+		CacheDType:   p.Engine.CacheDType,
+		BlockSize:    int64(p.Engine.BlockSize),
+		GPUMemUtil:   p.Engine.GPUMemoryUtilization,
+	}
+}
+
+// Deployment is the scenario identity an alternative backend is built from.
+type Deployment struct {
+	Model        string
+	Hardware     string
+	TP           int
+	DP           int
+	Quantization string
+	CacheDType   string
+	BlockSize    int64
+	GPUMemUtil   float64
+}

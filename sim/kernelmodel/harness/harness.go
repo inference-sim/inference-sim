@@ -49,9 +49,9 @@ import (
 
 // Corpus is the evaluation set as blis-latency-kernel's extractor writes it.
 type Corpus struct {
-	Source             string `json:"source"`
-	MeasurementSource  string `json:"measurement_source"`
-	AISimulateTotals   struct {
+	Source            string `json:"source"`
+	MeasurementSource string `json:"measurement_source"`
+	AISimulateTotals  struct {
 		TPOTMapePct       float64 `json:"tpot_mape_pct"`
 		TPOTShapeErrorPct float64 `json:"tpot_shape_error_pct"`
 		Points            int     `json:"points"`
@@ -170,6 +170,18 @@ type Config struct {
 	// top of the SessionsPerPoint floor. A "cycle" is `concurrency` completions: one pass of
 	// every user in the pool. Zero means defaultCyclesPerPoint.
 	CyclesPerPoint int
+
+	// Estimator selects which latency model supplies step time. The zero value is
+	// EstimatorKernel, so a caller that does not set it gets blis-latency-kernel and is
+	// byte-identical to a build without this field (INV-6).
+	//
+	// Only STEP TIME changes with this field. KV blocks still come from the kernel's memory
+	// methods, and the host per-token cost is taken from the kernel and given to every arm,
+	// so an arm differs from another on the forward-pass model alone. See backends.go.
+	Estimator Estimator
+	// Backends locates the inputs the analytic arms need. Required only when Estimator is
+	// not the kernel.
+	Backends BackendPaths
 
 	// WarmupFraction is the leading fraction of completed requests whose inter-token
 	// latency is discarded before the mean is taken.
@@ -338,8 +350,21 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 			scaled(int64(eng.MaxNumSeqs)*dp, cfg.MaxNumSeqsScale),
 			scaled(int64(eng.MaxNumBatchedTokens)*dp, cfg.TokenBudgetScale), 0),
 	}
+	// The latency model under test. The KERNEL supplied everything above -- the KV budget,
+	// the engine settings, the dp width -- so swapping only this leaves the resident batch
+	// and the admission behaviour decided identically for every arm, which is what makes the
+	// comparison a step-time comparison.
+	var lm sim.LatencyModel = m
+	if cfg.Estimator != "" && cfg.Estimator != EstimatorKernel {
+		alt, err := altModel(cfg.Estimator, m.Deployment(), cfg.Backends,
+			hostCosts{perOutputTokenUs: m.OutputTokenProcessingTime()})
+		if err != nil {
+			return Observation{}, fmt.Errorf("%s: %w", sw.Scenario, err)
+		}
+		lm = alt
+	}
 	kvStore := sim.MustNewKVStoreFromConfig(cfgSim.KVCacheConfig)
-	s, err := sim.NewSimulator(cfgSim, kvStore, m)
+	s, err := sim.NewSimulator(cfgSim, kvStore, lm)
 	if err != nil {
 		return Observation{}, err
 	}
@@ -485,3 +510,153 @@ func (s Sweep) MonotoneMeasurement() bool {
 // no preference: four, of which the first half is discarded as warm-up, leaving two settled
 // cycles. Chosen from the observed convergence of the per-point mean rather than from a score.
 const defaultCyclesPerPoint = 4
+
+// SignedStats summarises a slice of SIGNED per-point percentage errors, where a positive
+// value means the model predicted a LARGER relative rise than was measured.
+//
+// MAPE2 answers "how big is the error"; these fields answer "which way does it run, and is
+// that consistent". A model whose errors are symmetric scatter has Mean near zero and
+// FractionOver near 0.5. A model with a systematic direction has |Mean| approaching MeanAbs
+// and FractionOver approaching 0 or 1. The two cases call for different fixes -- rescaling a
+// coefficient removes bias but cannot remove scatter -- which is why the sign is retained
+// through aggregation rather than discarded at the point of computation.
+type SignedStats struct {
+	N            int
+	Mean         float64 // signed; cancellation is the point
+	MeanAbs      float64 // identical to MAPE2 over the same slice
+	Median       float64 // signed
+	FractionOver float64 // share with error > 0
+	P10, P90     float64 // signed, to expose asymmetric tails
+}
+
+// Signed computes SignedStats over signed per-point percentage errors.
+func Signed(errs []float64) SignedStats {
+	if len(errs) == 0 {
+		return SignedStats{Median: math.NaN(), Mean: math.NaN(), MeanAbs: math.NaN(),
+			FractionOver: math.NaN(), P10: math.NaN(), P90: math.NaN()}
+	}
+	s := SignedStats{N: len(errs)}
+	var sum, sumAbs float64
+	over := 0
+	for _, e := range errs {
+		sum += e
+		sumAbs += math.Abs(e)
+		if e > 0 {
+			over++
+		}
+	}
+	s.Mean = sum / float64(len(errs))
+	s.MeanAbs = sumAbs / float64(len(errs))
+	s.Median = Median(errs)
+	s.FractionOver = float64(over) / float64(len(errs))
+	s.P10 = Percentile(errs, 10)
+	s.P90 = Percentile(errs, 90)
+	return s
+}
+
+// Percentile returns the p-th percentile of xs by linear interpolation between the two
+// bracketing order statistics.
+//
+// Interpolation rather than nearest-rank because nearest-rank is not symmetric under
+// p -> 100-p at small n: with six points, Go's half-away-from-zero rounding sends both the
+// 10th and the 90th percentile UP a rank, so the pair no longer mirrors and a two-sided tail
+// report acquires a direction that is not in the data. Per-concurrency buckets here run as
+// small as one point, so the small-n behaviour is the common case, not the edge case.
+func Percentile(xs []float64, p float64) float64 {
+	if len(xs) == 0 {
+		return math.NaN()
+	}
+	c := append([]float64(nil), xs...)
+	sort.Float64s(c)
+	if p <= 0 {
+		return c[0]
+	}
+	if p >= 100 {
+		return c[len(c)-1]
+	}
+	pos := p / 100 * float64(len(c)-1)
+	lo := int(math.Floor(pos))
+	hi := int(math.Ceil(pos))
+	if lo == hi {
+		return c[lo]
+	}
+	return c[lo] + (pos-float64(lo))*(c[hi]-c[lo])
+}
+
+// Abs returns a copy of errs with every element replaced by its magnitude, so a caller
+// holding signed errors can obtain the absolute aggregate without mutating its own slice.
+func Abs(errs []float64) []float64 {
+	out := make([]float64, len(errs))
+	for i, e := range errs {
+		out[i] = math.Abs(e)
+	}
+	return out
+}
+
+// LogStats summarises per-point errors in LOG space, which is the natural space for a ratio.
+//
+// Mean and SD of log(predicted/measured) decompose a model's error into the part a single
+// rescaling could remove (bias: the mean) and the part it could not (scatter: the SD). That
+// decomposition is what tells a reader whether chasing a coefficient is worthwhile, and it is
+// not recoverable from a percentage mean -- mean(log r) is the log of the GEOMETRIC mean of
+// the ratios, while the arithmetic mean of (r-1) upweights over-predictions, so the two differ
+// and the arithmetic one is always the larger (Jensen).
+//
+// ResidualFloor is the mean absolute percentage error that would remain if the bias were
+// removed perfectly and the scatter left untouched: the floor on what recalibration can buy.
+//
+// ResidualFloor is NOT guaranteed to be below the error it decomposes. De-biasing scales every
+// ratio by one constant, and in percentage space that can cost more than it saves when a point
+// sits near a predicted value of zero: measured over random inputs, a pair like
+// {-99.97%, +41.6%} yields a floor 3419 percentage points ABOVE its own mean absolute error,
+// because |exp(d)-1| is convex and log compresses the two measures differently near -100%.
+// The quantity is therefore informative for a model whose points are not near-total
+// under-predictions -- which the kernel's are not, its p10 being -10.76% -- and misleading for
+// one whose points are. Read it with the spread, never alone.
+type LogStats struct {
+	N             int
+	MeanLog       float64 // bias, in nats
+	SDLog         float64 // scatter, in nats
+	GeoMeanPct    float64 // 100*(exp(MeanLog)-1), the bias as a percentage
+	ResidualFloor float64 // mean |e| after perfect bias removal, in percent
+}
+
+// Logs computes LogStats from SIGNED percentage errors, where e is 100*(predicted/measured-1).
+//
+// A point with e <= -100 implies a non-positive predicted value, which cannot arise from a
+// positive latency ratio; such a point is excluded and N reports how many were used.
+func Logs(errs []float64) LogStats {
+	var logs []float64
+	for _, e := range errs {
+		if r := 1 + e/100; r > 0 {
+			logs = append(logs, math.Log(r))
+		}
+	}
+	if len(logs) == 0 {
+		return LogStats{MeanLog: math.NaN(), SDLog: math.NaN(),
+			GeoMeanPct: math.NaN(), ResidualFloor: math.NaN()}
+	}
+	var sum float64
+	for _, l := range logs {
+		sum += l
+	}
+	mean := sum / float64(len(logs))
+	var ss, resid float64
+	for _, l := range logs {
+		d := l - mean
+		ss += d * d
+		// The error this point would still carry with the bias removed.
+		resid += math.Abs(math.Exp(d) - 1)
+	}
+	sd := 0.0
+	if len(logs) > 1 {
+		sd = math.Sqrt(ss / float64(len(logs)-1))
+	}
+	return LogStats{
+		N:             len(logs),
+		MeanLog:       mean,
+		SDLog:         sd,
+		GeoMeanPct:    100 * (math.Exp(mean) - 1),
+		ResidualFloor: 100 * resid / float64(len(logs)),
+	}
+}

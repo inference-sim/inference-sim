@@ -1,9 +1,18 @@
 # Result: BLIS on blis-latency-kernel, against AISimulate
 
-Worktree-scoped experiment. Latency comes exclusively from `blis-latency-kernel`; no
-roofline or trained-physics model is constructed.
+Worktree-scoped experiment. In the headline comparison latency comes exclusively from
+`blis-latency-kernel`. BLIS's roofline and trained-physics backends are constructed only by
+`cmd/estimatorscore`, which scores them as additional columns on the subset they are
+calibrated for; they supply nothing to the figures below.
 
-## Headline
+> **Reading order.** This document is chronological: it records what was measured when, including
+> figures that a later measurement superseded. The live numbers are under
+> [Current standing](#current-standing). The Headline below is the FIRST scored run and is
+> superseded -- it predates the InferenceX protocol match, which changed both the point count
+> (238 to 192) and AISimulate's own re-anchored figure (7.15% to 8.87%). It is kept because the
+> path from it to the current number is the evidence that no step was tuned.
+
+## Headline (superseded -- see [Current standing](#current-standing))
 
 On the 238 points measured under vLLM -- the engine BLIS models:
 
@@ -415,14 +424,281 @@ one.
 
 ### What remains
 
-About 1.5 points, and it is not closable by recalibration. BLIS and AISimulate carry
-near-identical mean log-error -- +0.0461 against +0.0462 -- and differ only in spread, 0.1677
-against 0.1119. Removing this project's bias perfectly would reach 12.65%. The difference is
-scatter, which is what a closed-form model trades away against a 1.87-million-row interpolation
-over 14 operator families.
+About 1.5 points, and it is not closable by recalibration. `cmd/kernelscore` reports the
+decomposition directly (`harness.Logs`), in log space, where a ratio's bias and scatter separate:
+
+| model | n | mean log | sd log | bias | floor |
+|---|---|---|---|---|---|
+| BLIS + blis-latency-kernel | 192 | +0.0165 | 0.1442 | +1.67% | **10.23%** |
+| AISimulate, same points | 192 | +0.0462 | 0.1122 | +4.73% | 7.73% |
+
+`mean log` is the bias a single rescaling could remove; `sd log` is the scatter it could not;
+`floor` is the mean magnitude surviving perfect bias removal.
+
+This kernel's bias is 2.8x SMALLER than AISimulate's -- +0.0165 against +0.0462 -- and its
+scatter is 1.29x larger. The whole of the 1.5-point deficit is scatter: removing this project's
+bias perfectly would reach 10.23%, still above AISimulate's 8.87%, while removing AISimulate's
+would take it to 7.73%. There is more recalibration headroom in the baseline than in this kernel,
+and none of it is available to this kernel by recalibration.
+
+Scatter is what a closed-form model trades away against a 1.87-million-row interpolation over 14
+operator families.
+
+> An earlier version of this section reported "near-identical mean log-error -- +0.0461 against
+> +0.0462 -- and differ only in spread, 0.1677 against 0.1119", concluding the two models carry
+> the same bias. The AISimulate figure was right and this project's was not. Those numbers were
+> prose with no command behind them, which is how the error survived; they are now computed by
+> the scorer and reproduced by `REPRODUCE.md`. The qualitative conclusion -- the gap is scatter,
+> not bias -- is unchanged and in fact strengthened.
 
 One regression is unexplained and is recorded rather than buried: on the absolute-ITL corpus the
 two Granite arms improved sharply and Kimi-K3 improved, while Nemotron-3-Ultra worsened from
 86.8% to 117.6%. Three hypotheses about it were tested against NVIDIA's tables and all three were
 wrong, including one that scored better and was reverted because it was right for MoE and wrong
 for dense GEMM. A change justified on MoE tables should not have made Nemotron worse.
+
+## Reporting the sign, and what it changed
+
+Until this point every figure here was an absolute MAPE. Magnitude answers how wrong a model is;
+it cannot answer which way, and the two imply different fixes. A consistent sign is a
+miscalibrated coefficient and is removable by rescaling. A sign that turns with batch size is a
+missing mechanism and is not.
+
+`cmd/kernelscore` now reports both. Errors are kept SIGNED at the point of computation and
+absoluted only at each aggregation (`harness.Abs`), so every previously published absolute figure
+is unchanged by construction -- the headline reproduces at 10.41% against 8.87% on 192 points.
+
+| model | n | mean | median | mean abs | over | p10 | p90 |
+|---|---|---|---|---|---|---|---|
+| BLIS + blis-latency-kernel | 192 | +2.71% | **+0.78%** | 10.41% | **53%** | -11.61% | +19.60% |
+| AISimulate, same points | 192 | +5.39% | +4.02% | **8.87%** | 71% | -6.83% | +19.77% |
+
+Positive means the model predicted a LARGER relative rise in time per output token than was
+measured. This kernel is nearly unbiased -- a median of +0.78% and a coin-flip 53% of points over
+-- while AISimulate over-predicts on 71% of points with a median of +4.02%. Read with the log-space
+decomposition above, the ranking by absolute MAPE conceals that this kernel already wins the part
+of the error that is cheap to fix and loses the part that is not.
+
+### A hypothesis the sign killed
+
+The per-concurrency magnitudes rise monotonically -- 4.79% at concurrency 8 to 12.76% at 128 --
+which reads as a mechanism that compounds with batch size, and the obvious candidate was missing
+contention: a `max` over resources that under-states a step the more requests share it.
+
+The sign refutes it. Missing contention would show a consistent NEGATIVE sign that deepens with
+concurrency. Instead:
+
+| conc | n | BLIS signed (magnitude) | AISimulate signed (magnitude) |
+|---|---|---|---|
+| 8 | 43 | +2.40% (4.79%) | +4.19% (5.66%) |
+| 16 | 43 | +3.38% (10.38%) | +2.66% (7.27%) |
+| 32 | 40 | +5.38% (11.73%) | +0.43% (6.35%) |
+| 64 | 38 | +2.14% (12.36%) | +8.56% (11.31%) |
+| 128 | 14 | +0.25% (12.76%) | +16.50% (20.06%) |
+| 256 | 4 | -4.37% (7.66%) | +6.21% (6.21%) |
+| 1024 | 2 | -21.73% (21.73%) | +15.55% (16.58%) |
+| 2048 | 1 | -47.87% (47.87%) | +15.91% (15.91%) |
+
+The signed mean does not grow with concurrency; it wanders and then turns negative at the top.
+Magnitude grows while direction does not, which is scatter increasing, not bias accumulating. An
+earlier version of this document presented the magnitude column alone and drew the
+batch-composition conclusion from it; that conclusion was unsupported and the sign is what showed
+it.
+
+The three points above concurrency 512 deserve their own note: -21.73% and -47.87% are large
+under-predictions on two and one point respectively, the opposite sign from the rest of the curve,
+and AISimulate is better there (+15.55%, +15.91%). That is a real weakness on 3 of 192 points, and
+it is not the same phenomenon as the 16-64 band.
+
+## Prefill attention: the right defect, the wrong regime
+
+One structural defect was found, measured, and deliberately NOT fixed. It is recorded because the
+measurement is reusable and the reasoning is the point.
+
+The kernel prices prefill attention as `floor + causal_flops / (peak * eff(tokens) * work_scale)`,
+where `eff` is the dense-GEMM ramp `eps_max * m / (m + m_half)` keyed on the step's total scheduled
+tokens. That ramp is fitted on MATMUL ROWS (`gemm_eps_max_bf16`, `gemm_m_half_bf16`), so one
+request of 2048 tokens and eight of 256 receive identical attention efficiency despite entirely
+different attention shapes.
+
+AISimulate's own interpolation design states the governing fact: curvature is a property of the
+AXIS, not the table -- context attention is quadratic along sequence and roughly linear along
+batch and heads, and confining a sqrt transform to the sequence axis moved their measured interior
+error from 9.44% to 2.00%.
+
+Tested against NVIDIA's context-attention parquets by
+`blis-registry/scripts/probe_attention_prefill_axis.py`, which refits `(floor, work_scale)` per arm
+on the same rows over the same grids as the shipping fitter and scores on held-out shapes:
+
+| key | h200 | h100 | b200 | b300 | gb200 | l40s |
+|---|---|---|---|---|---|---|
+| `b*isl` (current) | — | — | — | — | — | — |
+| `isl` only | **-5.2%** | **-7.6%** | **-5.7%** | **-5.9%** | **-5.7%** | **-10.6%** |
+| `sqrt(b)*isl` | -0.6% | -1.0% | -0.7% | -0.8% | -0.7% | -1.6% |
+| `b*sqrt(isl)` | +6.2% | +9.4% | +7.3% | +8.0% | +7.6% | +8.3% |
+
+`isl` alone wins on every part, with `work_scale` barely moving (0.48 to 0.48 on h200), so this is
+a better key rather than a rescaling. The script guards itself: the current key fitted on all rows
+must reproduce the registry's committed h200 entry -- n=55,096, floor 26.5us, work_scale 0.48 -- and
+it prints `GUARD FAILED` and exits non-zero if it cannot, because a harness that cannot reproduce
+the published fit from the published data is not measuring the same quantity.
+
+The mechanism is measurable directly. At fixed sequence length and head count, measured latency
+scales as `batch^0.730` (isl=512), `batch^0.843` (2048) and `batch^0.943` (8192): sub-linear,
+approaching linear as sequences grow. `causal_flops` already scales linearly in batch, so putting
+batch in the efficiency key as well makes efficiency RISE with batch and partially cancels the
+over-count -- an accidental approximation of sub-linearity with the wrong functional form,
+confounded across two axes.
+
+Neither key fixes the trend, which is why no change was made. Signed residuals by batch, h200:
+
+| batch | `b*isl` (current) | `isl` only |
+|---|---|---|
+| 1 | +28.2% | +24.4% |
+| 16 | -8.6% | -7.3% |
+| 64 | -50.7% | -46.0% |
+| 256 | -80.2% | -73.7% |
+
+Both fail from +28% over-prediction at batch 1 to -80% under at batch 256. `isl` only reduces the
+trend; no single scalar key can remove it, because the model needs a batch term with its own
+exponent.
+
+### Why it was not fixed
+
+Instrumenting `StepTime` over the whole vLLM corpus -- 8,186,921 simulated steps -- gives the
+distribution of prefill requests per step:
+
+| prefill requests in the step | steps | share |
+|---|---|---|
+| 0 | 8,050,278 | 98.33% |
+| 1 | 109,115 | 1.33% |
+| 2 or more | 27,528 | 0.336% |
+| 16 or more | 54 | 0.00066% |
+
+The defect can only bite where two or more prefills share a step, which is 0.336% of steps, and
+the large residuals need batch 16 or more, which is 0.00066%. Weighting the measured per-batch
+improvement by these frequencies bounds the effect on step time across the run at **-0.0388%**,
+and that is generous because attention is only part of a step.
+
+A single 2,877-token prefill already fills the token budget, so vLLM's scheduler essentially never
+co-schedules prefills. The parquet sweeps batch 1 to 256 uniformly; real serving traffic does not.
+
+The finding stands and the fix is not worth making here. It would matter for a deployment that
+batches prefills -- a long-context ingestion workload, or an engine with a much larger token
+budget -- and the measurement above is what a future change should be judged against.
+
+Since 98.33% of steps are pure decode, that is where essentially all of the 10.41% must live.
+
+## Four estimators on the Hopper subset
+
+The comparison above asks how this kernel compares with NVIDIA's simulator. It does not ask what
+the kernel earned over what BLIS shipped before. `cmd/estimatorscore` answers that by scoring four
+estimators on one subset, with everything except the forward-pass model held fixed.
+
+24 sweeps, 104 points, framework vLLM, chips h100 and h200:
+
+| estimator | n | mean | median | mean abs | over | p10 | p90 |
+|---|---|---|---|---|---|---|---|
+| blis-latency-kernel | 104 | +1.71% | **-0.46%** | **8.87%** | 44% | -10.76% | +16.91% |
+| AISimulate | 104 | +1.75% | +2.02% | **6.04%** | 66% | -7.13% | +10.45% |
+| roofline | 104 | +161.54% | +135.30% | 161.54% | 100% | +53.12% | +279.13% |
+| trained-physics | 104 | -38.93% | -39.04% | 38.93% | 0% | -67.20% | -12.59% |
+
+The kernel is **18x better than roofline and 4.4x better than trained-physics** on identical
+points. That is the justification for the kernel, measured rather than asserted.
+
+### What is held fixed
+
+Step time, and nothing else:
+
+- **KV blocks come from the kernel for every arm.** BLIS normally sizes KV with
+  `latency.CalculateKVBlocks`, which sits outside the `sim.LatencyModel` seam. Letting each arm
+  size its own pool would give each a different resident batch and the result would mix admission
+  behaviour into a step-time comparison.
+- **The host per-token cost is the kernel's for every arm**, 45.9 us/token. The metric is mean
+  inter-token latency, so an arm with a different per-token host cost would differ for reasons
+  unrelated to step time. Zeroing it -- the first attempt -- would have made every analytic arm
+  45.9 us/token cheaper than the kernel per token.
+- Workload, seed, warm-up discard, request budget, batch caps and dp scaling are the harness's,
+  untouched.
+
+Audited rather than assumed: at every concurrency on `gpt-oss-120b-h200-fp4-vllm-tp4`, all three
+arms report an identical KV pool of 817,357 blocks, complete exactly `12 x concurrency` requests
+and discard exactly `2 x concurrency`.
+
+### The two analytic arms fail structurally, in opposite directions
+
+Roofline is over on 100% of points and trained-physics under on 0% -- saturated signs, which
+indicate a missing term rather than a mis-set coefficient. The predicted curves show it, against a
+measurement that rises 2.36x:
+
+| concurrency | measured | kernel | roofline | trained-physics |
+|---|---|---|---|---|
+| 4 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| 8 | 1.1565 | 1.1329 | 1.7947 | 1.0027 |
+| 16 | 1.3275 | 1.3579 | 3.1124 | 1.0082 |
+| 32 | 1.8010 | 1.6830 | 4.9277 | 1.0191 |
+| 64 | 2.3641 | 2.0878 | **6.7031** | **1.0408** |
+
+The absolute levels explain both. Roofline anchors at 1,086 us against the kernel's 3,336 and
+reaches 7,283: it is nearly free at low batch, having no fixed overhead to speak of, so
+normalising to its own anchor inflates every later point. Trained-physics runs 17,743 us to
+18,466 us -- a 1.04x rise -- because its per-layer and per-step constants dominate and concurrency
+barely moves it.
+
+### What this comparison does not show
+
+- **Neither analytic arm was calibrated for these deployments.** Trained-physics is a single
+  global fit (11 beta + 3 alpha, iter29, loss 34.57%) transcribed from `defaults.yaml`, with no
+  pipeline on `main` that can re-derive it, and it is not scoped per chip. Roofline reads
+  `mfuPrefill`/`mfuDecode` per chip but has never seen mxfp4 gpt-oss or fp8 minimax. This is a fair
+  measurement of what BLIS shipped, not an indictment of those models in the regime they were
+  fitted for.
+- **Hopper only, and that is forced rather than chosen.** `hardware_config.json` carries H100,
+  H200, A100-SXM, A100-80 and L40S; `blis-registry` has no `roofline-b200.yaml` or
+  `roofline-b300.yaml`. Scoring roofline on Blackwell would mean inventing `mfu` values. The
+  kernel-against-AISimulate headline covers every chip and is unaffected.
+- **These 104 points are not the headline's 108.** The subset is Hopper sweeps where all three arms
+  scored every point. `gpt-oss-120b-h100-fp4-vllm-tp2 1k8k` was dropped for all arms because
+  trained-physics completed no requests at concurrency 4 within the horizon, consistent with step
+  times roughly 3x the kernel's starving the run.
+- **The KV pool never binds on this subset.** 817,357 blocks of 16 tokens is about 13 million
+  tokens, roughly 6,400 concurrent 2k-token sequences, against a stated `max_num_seqs` of 256. The
+  resident batch is governed by the sequence cap and the token budget, not by memory. This holds
+  for all four arms equally so the ranking is unaffected, but the subset does not exercise
+  KV-pressure behaviour at all.
+- **Activation precision is resolved, not assumed.** `gpt-oss-120b` (mxfp4) and `minimax-m2.5`
+  (fp8) declare no `torch_dtype` or `dtype`, so `GetModelConfigFromHF` returns a zero
+  `BytesPerParam` and both analytic arms refuse to construct. vLLM resolves exactly this case: with
+  no dtype in the config it reads the safetensors weight metadata and otherwise falls back to the
+  platform's first supported dtype, which on any device of capability 80 or above is bfloat16
+  (`transformers_utils/model_arch_config_convertor.py` `get_torch_dtype`, `config/model.py`
+  `_resolve_auto_dtype`, `platforms/cuda.py` `supported_dtypes`). The arms use 2 bytes because that
+  is what the engine being modelled runs.
+
+### A defect in BLIS's own KV sizing, found by this audit
+
+Verifying that the shared KV number is not merely shared but CORRECT required deriving it a second
+way, through `latency.CalculateKVBlocks`. The two paths disagree, model-specifically:
+
+| deployment | kernel | legacy path | ratio |
+|---|---|---|---|
+| minimax-m2.5 h200 tp4 | 153,471 | 150,788 | 1.018 |
+| minimax-m2.5 h200 tp8 | 419,483 | 417,795 | 1.004 |
+| gpt-oss-120b h200 tp4 | 817,357 | 509,966 | **1.603** |
+| gpt-oss-120b h200 tp8 | 1,733,706 | 1,429,655 | **1.213** |
+| gpt-oss-120b h100 tp2 | 159,297 | **error** | — |
+
+The legacy path sizes `gpt-oss-120b`'s weights at 217 GiB. The config's own arithmetic -- 36 layers
+x 128 experts x 3 matrices of 2880x2880, plus attention and embeddings, 116.5B parameters -- gives
+217.0 GiB at 2 bytes per parameter and 54.3 GiB at 0.5, identifying the assumed precision as bf16
+on a model served at mxfp4. At tp=2 the over-count exceeds the device budget and KV sizing returns
+an error rather than a number.
+
+The kernel is right: 58.6 GiB of whole-model weights at tp4, 56.5 at tp2. Filed upstream as
+**inference-sim#1852**, a sibling of #1563 which covers nvfp4 but not mxfp4 and does not state the
+hard-failure consequence.
+
+This does not affect any figure in this document: every arm draws its KV budget from the kernel's
+memory methods, and no scoring path calls `CalculateKVBlocks`. The defect was visible only because
+the audit derived the same quantity twice.
