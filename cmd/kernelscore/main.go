@@ -51,9 +51,8 @@ func main() {
 		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/aisimulate", "scenario directory")
 	catalog := flag.String("catalog", "/Users/sri/Documents/Projects/blis-catalog", "")
 	registry := flag.String("registry", "/Users/sri/Documents/Projects/blis-registry", "")
-	sessions := flag.Int("sessions", 24, "floor on requests completed per point")
-	cycles := flag.Int("cycles", 4, "full pool cycles of completions per point")
-	warmup := flag.Float64("warmup", 0.5, "leading fraction of completions discarded")
+	sessions := flag.Int("sessions", 0, "floor on requests per point; 0 uses the harness's own budget")
+	warmup := flag.Float64("warmup", 0, "override the warm-up as a fraction; 0 uses 2 x concurrency")
 	seed := flag.Int64("seed", 42, "")
 	framework := flag.String("framework", "", "restrict to one framework (vllm, sglang, trt)")
 	verbose := flag.Bool("verbose", false, "print every point")
@@ -70,7 +69,6 @@ func main() {
 		},
 		Admission:        harness.AdmissionKernelKV,
 		SessionsPerPoint: *sessions,
-		CyclesPerPoint:   *cycles,
 		WarmupFraction:   *warmup,
 		Seed:             *seed,
 	}
@@ -81,13 +79,15 @@ func main() {
 	if *framework != "" {
 		fmt.Printf("restricted to framework %q\n", *framework)
 	}
-	fmt.Printf("workload: AISimulate's replay spec. At an isl:osl label both lengths are\n")
-	fmt.Printf("  sampled uniformly and independently on [int(label*0.8), label] inclusive --\n")
-	fmt.Printf("  the label is an UPPER BOUND, not a value -- and each point runs\n")
-	fmt.Printf("  concurrency*10 requests. Source: run_e2e_accuracy.py (random_range_ratio\n")
-	fmt.Printf("  0.8, request_count concurrency*10) and runner.py (lower = int(upper*ratio),\n")
-	fmt.Printf("  inclusive randint). The first %.0f%% of completions are discarded: a\n", 100**warmup)
-	fmt.Printf("  closed-loop pool does not start in its steady state.\n")
+	fmt.Printf("workload: the protocol InferenceX measured with, which AISimulate's replay\n")
+	fmt.Printf("  also matches. At an isl:osl label both lengths are sampled uniformly and\n")
+	fmt.Printf("  independently on [int(label*0.8), label] INCLUSIVE -- the label is an upper\n")
+	fmt.Printf("  bound, not a value. Each point runs 2*concurrency warm-up requests, which\n")
+	fmt.Printf("  are discarded, then 10*concurrency measured ones.\n")
+	fmt.Printf("  Sources: InferenceX srt_fixed_sequence.sh (--random-range-ratio 0.8,\n")
+	fmt.Printf("  --num-warmups 2*CONC, --num-prompts CONC*10) and bench_serving\n")
+	fmt.Printf("  sample_uniform (lower = int(seq_len*ratio), randint(lower, upper+1));\n")
+	fmt.Printf("  AISimulate run_e2e_accuracy.py and runner.py agree on ratio and count.\n")
 	fmt.Printf("error: anchor EXCLUDED, matching build_e2e_accuracy_overview.py. Both sides\n")
 	fmt.Printf("  are normalised to their own lowest concurrency. Verified by reproduction:\n")
 	fmt.Printf("  this definition on AISimulate's own data returns its published %.2f%%.\n",

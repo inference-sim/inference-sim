@@ -35,32 +35,75 @@ label.
 `max(24, 4 x concurrency)` requests. So: no variance, a 10% higher mean context, and a
 different request count. The label was read as a value.
 
-**The real benchmark (1)** is NOT specified by anything available here. The InferenceX
-`benchmark_results` rows carry `isl` and `osl` as plain integers and nothing else --
-confirmed against the 1,217 cached vLLM-family rows, whose only workload fields are `isl`
-and `osl`. No `range_ratio`, no dataset name, no seed.
+**The real benchmark (1)** IS specified, in SemiAnalysis's own repository, and this document
+previously said otherwise. The correction matters because it removes most of the gap it claimed.
 
-This matters because vLLM's own `range_ratio` has DIFFERENT semantics from AISimulate's.
-`vllm/benchmarks/datasets/utils.py:72-75`:
+`SemiAnalysisAI/InferenceX`, `inferencex-e2e/benchmarks/single_node/srt_fixed_sequence.sh`, drives
+the measurement:
 
-```python
-input_low  = math.floor(real_input_len * (1 - input_range_ratio))
-input_high = math.ceil(real_input_len * (1 + input_range_ratio))
+```
+run_benchmark_serving --input-len "$ISL" --output-len "$OSL" \
+    --random-range-ratio "$RANDOM_RANGE_RATIO" \
+    --num-prompts "$((CONC * 10))" --max-concurrency "$CONC"
 ```
 
-Symmetric about the target, not below it. So:
+which `benchmarks/benchmark_lib.sh` turns into
 
-| Workload | ISL interval at the 1k label | Mean ISL |
-|---|---|---|
-| Real, if run at vLLM default `range_ratio=0.0` | [1024, 1024] | 1024 |
-| Real, if run at `range_ratio=0.8` | [204, 1844] | 1024 |
-| AISimulate's replay | [819, 1024] | 922 |
-| BLIS, as run here | [1024, 1024] | 1024 |
+```
+python3 -m infx.bench_serving.benchmark_serving --dataset-name random \
+    --random-input-len $ISL --random-output-len $OSL --random-range-ratio $RATIO \
+    --num-prompts $((CONC*10)) --max-concurrency $CONC --request-rate inf \
+    --ignore-eos --num-warmups $((2*CONC)) --percentile-metrics 'ttft,tpot,itl,e2el'
+```
 
-AISimulate's own simulated workload has a ~10% shorter mean context than whatever the real
-benchmark used, under either reading of the real one. That is a property of the baseline, not
-something this project can fix, and it is recorded because it bounds how well ANY simulator
-can match those measurements.
+and whose sampler, `infx/bench_serving/benchmark_serving.py`, is
+
+```python
+def sample_uniform(seq_len: int) -> list[int]:
+    lower = int(seq_len * range_ratio)
+    upper = seq_len
+    return np.random.randint(lower, upper + 1, size=num_prompts).tolist()
+```
+
+`RANDOM_RANGE_RATIO` is `0.8` in every recipe that sets it: of 466 recipe files in the live tree,
+50 set it and all 50 use 0.8.
+
+**What this document got wrong.** It previously asserted that vLLM's `--random-range-ratio` is
+SYMMETRIC -- `[len(1-r), len(1+r)]`, which is true of `vllm/benchmarks/datasets/utils.py` -- and
+concluded that AISimulate's one-sided interval therefore differs from the real benchmark under
+either reading. InferenceX does not use vLLM's client. It uses its own
+`infx.bench_serving.benchmark_serving`, whose sampler is one-sided and identical to AISimulate's
+`_sample_synthetic_lengths`. So the three workloads agree on the distribution, and the ~10%
+mean-context gap this document attributed to the baseline does not exist.
+
+### The protocol, now matched exactly
+
+| Property | InferenceX (real) | AISimulate | BLIS (this harness) |
+|---|---|---|---|
+| ISL, OSL interval at `1024:1024` | `[819, 1024]` inclusive | same | same |
+| Sampling | uniform, independent per request | same | same |
+| Measured requests per point | `10 x CONC` | `10 x CONC` | `10 x CONC` |
+| Warm-up requests per point | `2 x CONC`, discarded | not stated | `2 x CONC`, discarded |
+| Arrival | `--request-rate inf` + `--max-concurrency` | all at t=0, concurrency gates | all at t=0, concurrency gates |
+| Output length | `--ignore-eos`: exactly OSL | fixed | fixed |
+| Prefix reuse | none | `cached_prefix_tokens` 0 | none |
+| Draw sequence | NumPy RandomState | Python MT, seed 0 | Go RNG |
+
+The warm-up was this harness's last real difference. It previously used `max(24, 4 x concurrency)`
+completions with the leading half discarded -- a criterion derived here from the shape of the
+transient. That converged, but it measured about `2 x concurrency` requests where the real harness
+measures `10 x`, and it discarded a fraction rather than a fixed phase. Matching the harness
+removes a difference that had to be argued for.
+
+Effect: **10.39% to 10.41%** on the 192 vLLM points. The change is behaviour-neutral to two
+decimal places, which is the useful result -- it confirms the earlier criterion was converged, and
+it means no figure in this project rests on the harness's own choice of budget.
+
+Three differences remain and are stated rather than hidden: the draw SEQUENCE differs, since
+matching NumPy's RandomState from Go would mean shipping precomputed length vectors; `1k1k` and
+`1k8k` have no recipe file in the live tree, so their ratio is confirmed only through the shared
+sampler and harness rather than from a recipe; and only 53.2% of the snapshot's points were
+measured under vLLM, the engine BLIS models.
 
 ### Consequence for BLIS
 

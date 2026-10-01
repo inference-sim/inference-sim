@@ -235,11 +235,23 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 		blocks = perSeq * int64(concurrency) * 2
 	}
 
-	// The workload AISimulate's replay drives, from its own source constants. See
-	// workload.go for the citations and for why the distribution is matched rather than the
-	// individual draws.
+	// The workload the REAL harness drives, from its own source constants, which AISimulate's
+	// replay also matches. See workload.go for the citations and for why the distribution is
+	// matched rather than the individual draws.
+	//
+	// The request budget is the real harness's too: InferenceX runs `--num-warmups
+	// $((2 * CONC))` and then measures `--num-prompts $((CONC * 10))`, so a point is
+	// 12 x concurrency requests of which the leading 2 x concurrency are discarded. An earlier
+	// version used max(24, 4 x concurrency) with the leading half discarded -- a criterion
+	// derived here from the shape of the transient. It converged, but it measured about
+	// 2 x concurrency requests where the harness measures 10 x, and it discarded a fraction
+	// rather than a fixed phase. SessionsPerPoint survives only as a floor.
 	w := AISimulateWorkload(isl, osl, concurrency)
-	total := w.RequestCount
+	warmup := w.WarmupCount
+	total := w.WarmupCount + w.RequestCount
+	if floor := cfg.SessionsPerPoint; floor > total {
+		total = floor
+	}
 
 	// Built as a BLIS WorkloadSpec and expanded by BLIS's own generator rather than by
 	// assembling SessionBlueprints here. Three reasons, all about fidelity:
@@ -353,7 +365,7 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	}
 	s.Run()
 
-	return summarize(s, order, cfg.WarmupFraction, blocks, admission), nil
+	return summarize(s, order, warmup, cfg.WarmupFraction, blocks, admission), nil
 }
 
 // summarize reduces a finished simulation to the observation the score needs.
@@ -362,16 +374,18 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 // completed AFTER the warm-up prefix, in completion order. Two reasons it is per request
 // rather than over BLIS's pooled AllITLs: a pooled mean weights a long request more heavily
 // than a short one, and only a per-request view can drop a warm-up prefix at all.
-func summarize(s *sim.Simulator, order []string, warmup float64,
+func summarize(s *sim.Simulator, order []string, warmupCount int, warmupFraction float64,
 	blocks int64, a Admission) Observation {
 	obs := Observation{
 		Completed:     len(order),
 		KVBlocks:      blocks,
 		AdmissionUsed: a,
 	}
-	cut := 0
-	if warmup > 0 && warmup < 1 {
-		cut = int(float64(len(order)) * warmup)
+	// The real harness's fixed warm-up phase. WarmupFraction overrides it for
+	// cmd/sensitivity, which varies it to show the score does not turn on the choice.
+	cut := warmupCount
+	if warmupFraction > 0 && warmupFraction < 1 {
+		cut = int(float64(len(order)) * warmupFraction)
 	}
 	// Never discard everything: a run that completed few requests still has to report
 	// something, and silently returning zero would read as a perfect score.

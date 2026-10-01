@@ -186,14 +186,21 @@ func TestTheWorkloadMatchesAISimulatesReplaySpec(t *testing.T) {
 		if w.OSLHigh != tc.osl {
 			t.Errorf("osl=%d: high bound %d must be the label itself", tc.osl, w.OSLHigh)
 		}
-		// Literal 10, not the package constant. Asserting against the same constant the
-		// code uses is circular: changing the constant would change both sides and the
-		// check would still pass, which is exactly what happened to a first version of
-		// this test. The 10 comes from AISimulate's source
-		// (run_e2e_accuracy.py: "request_count": request.workload.concurrency * 10) and
-		// must be restated independently here.
+		// Literals, not the package constants. Asserting against the same constant the code
+		// uses is circular: changing the constant would change both sides and the check would
+		// still pass, which is exactly what happened to a first version of this test.
+		//
+		// Both numbers are restated from the REAL harness rather than from AISimulate's
+		// replay, because that is the protocol the measurements were taken under:
+		// InferenceX's srt_fixed_sequence.sh passes --num-prompts $((CONC * 10)) and
+		// --num-warmups $((2 * CONC)). AISimulate's replay independently uses the same
+		// request count, so matching the harness matches it too.
 		if got, want := w.RequestCount, tc.concurrency*10; got != want {
-			t.Errorf("concurrency=%d: request count %d, AISimulate uses concurrency*10=%d",
+			t.Errorf("concurrency=%d: measured request count %d, the harness uses "+
+				"concurrency*10=%d", tc.concurrency, got, want)
+		}
+		if got, want := w.WarmupCount, tc.concurrency*2; got != want {
+			t.Errorf("concurrency=%d: warm-up count %d, the harness uses concurrency*2=%d",
 				tc.concurrency, got, want)
 		}
 		// The mean must sit BELOW the label, which is the whole point.

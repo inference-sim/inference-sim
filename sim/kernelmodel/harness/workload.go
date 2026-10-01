@@ -57,13 +57,25 @@ const (
 	aisimulateRequestsPerUser = 10
 	aisimulateLengthSeed      = 0
 	aisimulateArrivalSeed     = 42
+
+	// Warm-up requests per user, from the real harness rather than from AISimulate's replay.
+	// InferenceX's own client runs `--num-warmups $((2 * CONC))` BEFORE the measured
+	// `--num-prompts $((CONC * 10))`, so warm-up requests are excluded from the measurement
+	// entirely rather than being a fraction of it
+	// (inferencex-e2e/benchmarks/single_node/srt_fixed_sequence.sh and benchmark_lib.sh).
+	inferencexWarmupsPerUser = 2
 )
 
 // Workload is the sampling interval and request count for one (label, concurrency) point.
 type Workload struct {
 	ISLLow, ISLHigh int
 	OSLLow, OSLHigh int
-	RequestCount    int
+	// RequestCount is the MEASURED request count: concurrency x 10.
+	RequestCount int
+	// WarmupCount is the leading requests to run and discard: concurrency x 2. The real
+	// harness runs these as a separate phase before the measured ones, so the measured count
+	// is not reduced by them.
+	WarmupCount int
 }
 
 // AISimulateWorkload returns the workload AISimulate's replay drives for a sweep labelled
@@ -78,6 +90,7 @@ func AISimulateWorkload(isl, osl, concurrency int) Workload {
 		// convergence criterion of four pool cycles; ten is more, so convergence still holds
 		// and the budget is now the baseline's rather than this project's choice.
 		RequestCount: concurrency * aisimulateRequestsPerUser,
+		WarmupCount:  concurrency * inferencexWarmupsPerUser,
 	}
 }
 

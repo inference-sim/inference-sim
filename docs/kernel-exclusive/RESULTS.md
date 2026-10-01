@@ -374,63 +374,55 @@ too expensive, and under-charging the windowed layers was partly cancelling it. 
 coefficients stay, because they are measured and the cancellation was accidental; the
 cancelling term is the thing to find.
 
-## T6: re-baseline after the per-kind attention work
+## Current standing
+
+Measured under the protocol InferenceX actually used, which `APPLES-TO-APPLES.md` documents and
+`REPRODUCE.md` shows how to re-run:
 
 | Model | n | MAPE | median | worst |
 |---|---|---|---|---|
-| BLIS + blis-latency-kernel | 192 | **14.98%** | 11.64% | 73.86% |
+| BLIS + blis-latency-kernel | 192 | **10.41%** | 7.59% | 76.72% |
 | AISimulate, same points | 192 | **8.87%** | 5.68% | 75.12% |
 
-Against 14.31% before the per-kind split. The change made the score WORSE by 0.67 points, and
-the reason is the one already recorded for the 447-point shape score: the windowed law makes
-gpt-oss's windowed layers more expensive, gpt-oss was already over-predicting, and
-under-charging those layers had been partly cancelling another term that is too expensive.
+Monotone subset only: 9.92% against 8.32% on 171 points.
 
-**SOTA was not attained.** AISimulate remains ahead, 8.87% against 14.98% on the apples-to-apples
-vLLM subset.
+By chip family:
 
-## What the work established, which is not the same as what it scored
+| Family | n | BLIS | AISimulate |
+|---|---|---|---|
+| Blackwell | 84 | **11.91%** | 12.61% |
+| Hopper | 108 | 9.24% | 5.96% |
 
-The tasks were executed as specified and every correctness gate passes. What they produced is
-diagnostic rather than a score improvement, and two of the diagnoses contradict conclusions
-this project had previously recorded:
+**AISimulate is ahead overall and this kernel is ahead on Blackwell.** That split is the most
+useful diagnostic here: AISimulate's error more than doubles between the families while this
+kernel's moves by two and a half points. A table-interpolating model is limited by how densely
+the part was collected; a closed-form one is limited by its forms, which do not know which part
+they are on.
 
-**The decode-attention form is correct where the evaluation models run.** Its error depends on
-the GQA group size, not on the part:
+### How the figure moved
 
-| group (query heads per KV head) | ratio | what occupies it |
-|---|---|---|
-| 2 | 1.42 | — |
-| 6 to 16 | **1.064** | all four evaluation models |
-| 32 | 0.70 | nemotron-3-ultra |
-| 64 to 128 | 0.09 to 0.14 | kimi-k3, the GLM-5 family |
+| Stage | vLLM subset |
+|---|---|
+| Kernel alone, resident batch assumed equal to concurrency | 13.67% (447 pts) |
+| BLIS scheduler deciding the resident batch | 14.98% |
+| Routed-expert term composing as a sum | 10.39% |
+| Warm-up and request budget matched to InferenceX's protocol | **10.41%** |
 
-So the pooled 0.78 figure that looked like a 22% systematic under-charge is a COVERAGE gap:
-group sizes above 32 are MLA and sparse-MLA models, a different architecture priced by the GQA
-law because the kernel has no MLA law. At 0.09 the law is wrong by more than 10x there. Acting
-on the pooled figure would have re-fitted a coefficient that is already right for the models
-being scored.
+The last step is behaviour-neutral to two decimal places, which is the useful result: it confirms
+the harness's earlier convergence criterion was already converged, so no figure in this project
+rests on a budget this project chose. The protocol is now the measured one rather than a defended
+one.
 
-**The earlier 1.294 over-prediction was one geometry on 26 points.** Family-wide it is 0.795,
-and at evaluation geometries 1.064. All three figures are correct and answer different
-questions; conflating them is what made a re-fit look justified.
+### What remains
 
-**A better per-kernel coefficient can make the aggregate worse.** The windowed fits are sound --
-naive error 32x to 245x across six parts, and a windowed kernel demonstrably sustains 0.26 of
-peak against 0.58 for full attention on h200. They still moved the score the wrong way, because
-they removed an accidental cancellation. That is a fact about gpt-oss's other terms, not an
-argument against the measurement.
+About 1.5 points, and it is not closable by recalibration. BLIS and AISimulate carry
+near-identical mean log-error -- +0.0461 against +0.0462 -- and differ only in spread, 0.1677
+against 0.1119. Removing this project's bias perfectly would reach 12.65%. The difference is
+scatter, which is what a closed-form model trades away against a 1.87-million-row interpolation
+over 14 operator families.
 
-## The remaining gap, located
-
-MLA and sparse MLA have 29,429 measured rows on h200 alone and no law of their own. They are
-priced by the GQA law at a ratio of 0.09 to 0.14. Four of this project's catalog models are
-MLA or sparse-MLA (kimi-k3, glm-5, glm-5.2, glm-5.3), and glm-5 carries 74 of the 447 scored
-points at a 17.78% mean error -- the worst of any model in the corpus.
-
-That is the next piece of work, and it is a new FORM rather than a re-fit: the MLA parquets
-carry no KV-head or head-dimension column because an MLA kernel's byte count is a property of
-the architecture -- one latent vector per token, of width kv_lora_rank + qk_rope_head_dim --
-rather than of a head width in the sweep. `scripts/fit_attention_by_kind.py` reports those kinds
-as unfittable rather than fitting them from a guess, which is why the gap is visible rather
-than absorbed.
+One regression is unexplained and is recorded rather than buried: on the absolute-ITL corpus the
+two Granite arms improved sharply and Kimi-K3 improved, while Nemotron-3-Ultra worsened from
+86.8% to 117.6%. Three hypotheses about it were tested against NVIDIA's tables and all three were
+wrong, including one that scored better and was reverted because it was right for MoE and wrong
+for dense GEMM. A change justified on MoE tables should not have made Nemotron worse.
