@@ -8,7 +8,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/latency"
 	"github.com/inference-sim/inference-sim/sim/workload"
-	"github.com/spf13/pflag"
+	"github.com/spf13/cobra"
 )
 
 // TestPrefixCachingFlag_RegisteredOnRunAndReplay pins the CLI surface required by
@@ -16,7 +16,7 @@ import (
 func TestPrefixCachingFlag_RegisteredOnRunAndReplay(t *testing.T) {
 	for _, c := range []struct {
 		name string
-		cmd  interface{ Flags() *pflag.FlagSet }
+		cmd  *cobra.Command
 	}{
 		{"run", runCmd},
 		{"replay", replayCmd},
@@ -37,8 +37,13 @@ func TestPrefixCachingFlag_RegisteredOnRunAndReplay(t *testing.T) {
 // or this production wiring is removed, this test fails while the lower-level batch
 // formation tests can still pass.
 func TestBatchConfigFromCLI_PrefixCachingDisabled(t *testing.T) {
-	orig := noEnablePrefixCaching
-	defer func() { noEnablePrefixCaching = orig }()
+	origNoPrefix := noEnablePrefixCaching
+	origMaxSeqs, origMaxTokens, origLongPrefill := maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold
+	defer func() {
+		noEnablePrefixCaching = origNoPrefix
+		maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold = origMaxSeqs, origMaxTokens, origLongPrefill
+	}()
+	maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold = 64, 2048, 0
 
 	noEnablePrefixCaching = false
 	if got := batchConfigFromCLI().PrefixCachingDisabled; got {
@@ -117,8 +122,13 @@ func assertFloatMapEqual(t *testing.T, label string, want, got map[string]float6
 // workload, while the disabled run must record zero. That non-vacuity check proves the
 // flag changes actual simulator behavior rather than merely surviving configuration.
 func TestINV13_RunReplayParity_PrefixCachingDisabled(t *testing.T) {
-	orig := noEnablePrefixCaching
-	defer func() { noEnablePrefixCaching = orig }()
+	origNoPrefix := noEnablePrefixCaching
+	origMaxSeqs, origMaxTokens, origLongPrefill := maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold
+	defer func() {
+		noEnablePrefixCaching = origNoPrefix
+		maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold = origMaxSeqs, origMaxTokens, origLongPrefill
+	}()
+	maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold = 64, 2048, 0
 
 	noEnablePrefixCaching = false
 	enabledCfg := prefixCachingTestDeployment(t, batchConfigFromCLI())
