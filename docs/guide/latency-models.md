@@ -104,6 +104,25 @@ When choosing between TP and replication (more instances): TP reduces per-reques
 !!! note "Automatic MaxModelLen derivation"
     When using roofline or trained-physics mode and `--max-model-len` is not explicitly set, BLIS auto-derives it from `max_position_embeddings` in the HuggingFace `config.json`. For models with `rope_scaling`, the scaling factor is applied based on vLLM's blacklist approach: types `linear`, `dynamic`, `yarn`, `default`, and `mrope` apply the factor; types `su`, `longrope`, and `llama3` are excluded (these encode the full context in `max_position_embeddings`). For `yarn`, `original_max_position_embeddings` is used as the base when present. `gemma3` models skip `rope_scaling` entirely (`max_position_embeddings` is pre-scaled). The derived value is then capped at the KV-feasible maximum (`total_kv_blocks * block_size`) to prevent context windows from exceeding GPU memory capacity. Override with `--max-model-len` <N>` when needed.
 
+### Prefix caching engine setting
+
+`blis run` and `blis replay` expose `--no-enable-prefix-caching` to mirror vLLM's
+engine-level negative flag. The default is unchanged: prefix caching is enabled. When the
+flag is present, a newly admitted request receives no cross-request GPU prefix credit, so its
+prefill is charged from the start of the prompt. A request already in progress still resumes
+from its own computed position.
+
+The switch deliberately does **not** disable CPU/offload-tier reloads. vLLM treats local
+prefix-cache lookup and external KV reload as independent mechanisms, and BLIS keeps the same
+boundary. The setting is also a deployment input rather than trace data: re-supply
+`--no-enable-prefix-caching` on replay to reproduce a run (INV-13), like
+`--kv-cache-dtype`.
+
+Scope note: this flag currently gates batch-formation reuse only. The cluster routing scorers
+`precise-prefix-cache` and `no-hit-lru` still query cache affinity; making those scorers
+ignore affinity when engine prefix caching is disabled is a separate cluster-level follow-up
+rather than being silently conflated with the simulator gate in #1867.
+
 ## How Trained-Physics Works
 
 Trained-physics mode applies **learned correction factors** to analytical roofline basis functions, combining the physical grounding of roofline with the accuracy of data-driven fitting. Coefficients are fitted from real vLLM measurements and generalize across model architectures, workloads, and TP configurations.

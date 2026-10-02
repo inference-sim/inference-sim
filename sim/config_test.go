@@ -28,8 +28,16 @@ func TestNewBatchConfig_FieldEquivalence(t *testing.T) {
 		MaxNumSeqs:                10,
 		MaxNumBatchedTokens:       1000,
 		LongPrefillTokenThreshold: 200,
+		PrefixCachingDisabled:     false,
 	}
 	assert.Equal(t, want, got)
+}
+
+func TestNewBatchConfig_WithPrefixCachingDisabled(t *testing.T) {
+	got := NewBatchConfig(10, 1000, 200, WithPrefixCachingDisabled(true))
+	if !got.PrefixCachingDisabled {
+		t.Fatal("WithPrefixCachingDisabled(true) must reach BatchConfig")
+	}
 }
 
 func TestNewLatencyCoeffs_FieldEquivalence(t *testing.T) {
