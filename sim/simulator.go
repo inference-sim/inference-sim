@@ -113,6 +113,7 @@ type Simulator struct {
 	// max total number of new tokens across all requests in RunningBatch
 	maxNumBatchedTokens       int64
 	longPrefillTokenThreshold int64
+	prefixCachingDisabled     bool
 	stepEvent                 Event
 	stepCount                 int
 	// map of request IDs to total num computed tokens (including cached tokens)
@@ -203,6 +204,7 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		maxNumSeqs:                cfg.MaxNumSeqs,
 		maxNumBatchedTokens:       cfg.MaxNumBatchedTokens,
 		longPrefillTokenThreshold: cfg.LongPrefillTokenThreshold,
+		prefixCachingDisabled:     cfg.PrefixCachingDisabled,
 		stepEvent:                 nil,
 		stepCount:                 0,
 		reqNumComputedTokens:      make(map[string]int64),
@@ -863,6 +865,7 @@ func (sim *Simulator) scheduleBatch(now int64) {
 		MaxNumBatchedTokens:   sim.maxNumBatchedTokens,
 		MaxNumSeqs:            sim.maxNumSeqs,
 		PrefillTokenThreshold: sim.longPrefillTokenThreshold,
+		PrefixCachingDisabled: sim.prefixCachingDisabled,
 		MaxModelLen:           sim.maxModelLen,
 		Now:                   now,
 		StepCount:             sim.stepCount,

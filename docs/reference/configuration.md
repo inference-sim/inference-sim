@@ -155,6 +155,7 @@ Maps to `ModelHardwareConfig`.
 | `--prefill-moe-comm-backend` | string | "" | Per-role MoE all-to-all backend for prefill pool instances (`""` = inherit `--moe-comm-backend`). Mirrors `VLLM_ALL2ALL_BACKEND` being per-process, so prefill and decode engines can run different modes (#1548). |
 | `--decode-moe-comm-backend` | string | "" | Per-role MoE all-to-all backend for decode pool instances (`""` = inherit `--moe-comm-backend`) (#1548). |
 | `--max-model-len` | int64 | 0 | Max total sequence length (input + output) in tokens. 0 = unlimited. Mirrors vLLM's `--max-model-len`. Auto-derived from `max_position_embeddings` in HuggingFace `config.json` for roofline/trained-physics backends. Applies `rope_scaling` factor for types `linear`, `dynamic`, `yarn`, `default`, `mrope`; excludes `su`, `longrope`, `llama3`; skips entirely for `gemma3` models. Capped at KV-feasible maximum. |
+| `--no-enable-prefix-caching` | bool | false | Disable cross-request GPU prefix reuse, mirroring vLLM's `--no-enable-prefix-caching`. Default false means prefix caching remains enabled (INV-6). The flag affects batch-formation work only; CPU/offload reload remains independent. Re-supply it identically on `replay` for INV-13; it is not persisted in the TraceV2 header. |
 
 ### Roofline Mode
 
