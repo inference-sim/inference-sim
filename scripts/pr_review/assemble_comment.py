@@ -24,15 +24,29 @@ def main() -> int:
     ap.add_argument("--archon", default="")
     ap.add_argument("--qa", default="")
     ap.add_argument("--blis", default="")
+    ap.add_argument("--head-sha", default="", help="the commit SHA that was reviewed")
+    ap.add_argument("--stale", action="store_true",
+                    help="the PR head moved since the review was captured")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
+    # Name the reviewed commit so a reader knows exactly what was assessed — the
+    # worktree, archon and diff are all pinned to this SHA.
+    reviewed = f" · reviewed at `{args.head_sha}`" if args.head_sha else ""
     parts = [
-        f"## /pr-review — PR #{args.pr}",
+        f"## /pr-review — PR #{args.pr}{reviewed}",
         "",
         "_Automated, **advisory** review (archon + blis-pr-review + qa-review). "
         "It gates nothing and merges nothing; a human maintainer decides._",
         "",
+    ]
+    if args.stale:
+        parts += [
+            f"> ⚠️ The PR head moved after this review started. This reflects "
+            f"`{args.head_sha}`, **not** the current head — re-run `/pr-review`.",
+            "",
+        ]
+    parts += [
         _section("Architecture (archon)", args.archon),
         _section("Correctness (blis-pr-review)", args.blis),
         _section("Cross-vendor (qa-review)", args.qa),

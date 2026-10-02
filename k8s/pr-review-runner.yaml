@@ -100,6 +100,12 @@ spec:
       # is constrained by the SCC and the NetworkPolicy; the load-bearing controls
       # are the key-in-sidecar isolation and egress-lock, not the uid.
       serviceAccountName: anyuid-sa
+      # The runner authenticates to GitHub with its own PAT (ACCESS_TOKEN), never
+      # the Kubernetes SA token — and this pod reads untrusted PR content, so a
+      # projected SA token would be an exfiltration target for nothing. Refuse the
+      # automount: there is then no SA token in the pod for an injected reviewer
+      # to find (addresses the review on the "nothing to exfiltrate" claim).
+      automountServiceAccountToken: false
       imagePullSecrets:
       - name: dockerhub-secret
       affinity:

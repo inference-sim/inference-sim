@@ -225,6 +225,29 @@ func TestPrReviewBlisHasNoBash(t *testing.T) {
 	}
 }
 
+// TestPrReviewActionsArePinnedToSHA enforces #1879's requirement that every
+// third-party action — especially the one that creates the tool-restricted blis
+// session — is pinned to a full 40-char commit SHA, not a mutable tag.
+func TestPrReviewActionsArePinnedToSHA(t *testing.T) {
+	wf := prReviewWorkflow(t)
+	uses := regexp.MustCompile(`uses:\s+(\S+)`)
+	pinned := regexp.MustCompile(`^[^@]+@[0-9a-f]{40}(\s|$)`)
+	found := false
+	for _, m := range uses.FindAllStringSubmatch(wf, -1) {
+		ref := m[1]
+		if strings.HasPrefix(ref, "./") {
+			continue // local action, no SHA
+		}
+		found = true
+		if !pinned.MatchString(ref + " ") {
+			t.Errorf("action %q is not pinned to a 40-char SHA (mutable ref)", ref)
+		}
+	}
+	if !found {
+		t.Error("no third-party actions found to check — did the parse break?")
+	}
+}
+
 func TestPrReviewKeyNeverInSession(t *testing.T) {
 	wf := prReviewWorkflow(t)
 	// The real LiteLLM key is a GitHub Actions secret used by the delivery loop;

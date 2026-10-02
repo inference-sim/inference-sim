@@ -51,7 +51,7 @@ jobs:
     steps:
       - name: Precise command match + invoker write access
         id: check
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
             // PRECISE match: `/pr-review` as a whole token, NOT `/blis-pr-review`,
@@ -85,7 +85,7 @@ jobs:
       - name: Resolve PR refs
         id: refs
         if: steps.check.outputs.allowed == 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
             const { data: pr } = await github.rest.pulls.get({
@@ -120,12 +120,12 @@ jobs:
       # branch, never from the PR. persist-credentials:false so no token lands in
       # .git/config where a reviewer's Read tool could reach it.
       - name: Trusted checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.26'
 
@@ -204,7 +204,10 @@ jobs:
           soft() { echo "::warning::qa-review: $1"; : > "$OUT"; exit 0; }
           title=$(gh pr view "$PR" --repo "$REPO" --json title --jq '.title // ""') || soft "could not read PR title"
           gh pr view "$PR" --repo "$REPO" --json body --jq '.body // ""' > "$RUNNER_TEMP/qa-body.txt" || soft "could not read PR body"
-          gh pr diff "$PR" --repo "$REPO" > "$RUNNER_TEMP/qa-diff.txt" || soft "could not read the diff"
+          # Diff from the CAPTURED base/head SHAs (git objects already fetched),
+          # NOT `gh pr diff` which reads the live mutable head — so a push mid-run
+          # cannot slip a newer diff past the SHA the worktree/archon reviewed.
+          git diff "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/qa-diff.txt" || soft "could not build the diff for $BASE_SHA..$HEAD_SHA"
           python3 scripts/qa-review/questioner.py \
             --title="$title" --body-file "$RUNNER_TEMP/qa-body.txt" --diff-file "$RUNNER_TEMP/qa-diff.txt" \
             > "$RUNNER_TEMP/qa-questions.json" || soft "questioner failed"
@@ -230,7 +233,7 @@ jobs:
           PR_REVIEW_VERDICT_FILE: ${{ runner.temp }}/blis-verdict.md
           PR_REVIEW_WORKTREE: ${{ steps.worktree.outputs.path }}
           PR_REVIEW_DIFF_FILE: ${{ runner.temp }}/qa-diff.txt
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1
         with:
           anthropic_api_key: ${{ env.LLM_DUMMY_KEY }}
           allowed_bots: "github-actions"
@@ -296,15 +299,26 @@ jobs:
       - name: Assemble + scrub the combined comment
         run: |
           set -euo pipefail
+          # Freshness: if the author pushed while this job ran, the live head no
+          # longer equals the SHA we reviewed. We still post (the review is valid
+          # for HEAD_SHA), but we NAME the reviewed SHA and flag staleness so the
+          # comment can never be mistaken for a review of the current head.
+          stale=""
+          cur=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq '.headRefOid' 2>/dev/null || echo "")
+          if [[ -n "$cur" && "$cur" != "$HEAD_SHA" ]]; then
+            echo "::warning::PR head moved $HEAD_SHA -> $cur during the review; flagging the comment as stale"
+            stale="--stale"
+          fi
           python3 scripts/pr_review/assemble_comment.py \
             --pr "$PR" \
+            --head-sha "$HEAD_SHA" $stale \
             --archon "$RUNNER_TEMP/archon-output.md" \
             --qa "$RUNNER_TEMP/qa-output.md" \
             --blis "$RUNNER_TEMP/blis-verdict.md" \
             --out "$RUNNER_TEMP/combined.md"
           python3 scripts/pr_review/scrub_secrets.py < "$RUNNER_TEMP/combined.md" > "$RUNNER_TEMP/comment.md"
       - name: Upload the comment
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pr-review-comment
           path: ${{ runner.temp }}/comment.md
@@ -322,7 +336,7 @@ jobs:
       - name: Download the comment
         id: dl
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: pr-review-comment
           path: out
