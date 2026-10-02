@@ -34,6 +34,28 @@ Prefix caching is automatic when using the `weighted` routing policy. The defaul
   --prefix-tokens 512 --rate 100 --num-requests 500
 ```
 
+### Disabling reuse across requests
+
+A deployment launched with vLLM's `--no-enable-prefix-caching` reuses nothing across
+requests. A scenario states that with `enable_prefix_caching: false` on its pool's engine
+block; the field is tri-state, and omitting it takes vLLM's own default, which is **on**.
+
+The setting changes the work a prefill does, not only the memory it holds: with reuse on, a
+matched prefix arrives as already-computed tokens and only the remainder is charged. A
+request's own progress is unaffected either way — a chunked prefill resumes from where it
+stopped, because that is not another request's block.
+
+```yaml
+pools:
+  - role: colocated
+    engine:
+      enable_prefix_caching: false
+```
+
+A workload whose requests share no prefix is unaffected by the setting, because there is
+nothing to reuse. That is the case for the AISimulate accuracy corpus, whose spec sets
+`cached_prefix_tokens` to zero.
+
 ## Minimum KV Block Requirements
 
 !!! danger "DroppedUnservable rejection"
