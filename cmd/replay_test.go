@@ -122,7 +122,7 @@ func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
 		"catalog", "hardware-config",
 
 		// registerSimConfigFlags: vLLM server configs
-		"total-kv-blocks", "max-num-seqs", "max-num-batched-tokens",
+		"total-kv-blocks", "max-num-seqs", "max-num-batched-tokens", "no-enable-prefix-caching",
 		// Deprecated aliases (issue #1570).
 		"max-num-running-reqs", "max-num-scheduled-tokens",
 		"beta-coeffs", "alpha-coeffs", "block-size-in-tokens",

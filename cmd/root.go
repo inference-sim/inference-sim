@@ -58,6 +58,7 @@ var (
 	totalKVBlocks             int64     // Total number of KV blocks available on GPU
 	maxNumSeqs                int64     // Maximum number of requests in the Running batch (vLLM: --max-num-seqs)
 	maxNumBatchedTokens       int64     // Maximum total number of tokens across requests in the Running batch (vLLM: --max-num-batched-tokens)
+	noEnablePrefixCaching     bool      // --no-enable-prefix-caching: disable cross-request GPU prefix reuse (vLLM parity, #1867)
 	blockSizeTokens           int64     // Number of tokens per KV block
 	betaCoeffs                []float64 // List of beta coeffs corresponding to step features
 	alphaCoeffs               []float64 // List of alpha coeffs corresponding to pre, postprocessing delays
@@ -1576,6 +1577,14 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 	return parsedScorerConfigs, loadedBundle
 }
 
+// batchConfigFromCLI is the single run/replay wiring seam for vLLM batch settings.
+// Keeping both commands on this helper makes the prefix-caching toggle structurally
+// symmetric for INV-13 rather than relying on two call sites to stay in sync.
+func batchConfigFromCLI() sim.BatchConfig {
+	return sim.NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold,
+		sim.WithPrefixCachingDisabled(noEnablePrefixCaching))
+}
+
 // registerSimConfigFlags registers all simulation-engine configuration flags
 // on the given command. Called by both runCmd and replayCmd to avoid
 // duplicating ~50 flag registrations.
@@ -1591,6 +1600,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&totalKVBlocks, "total-kv-blocks", 1000000, "Total number of KV cache blocks")
 	cmd.Flags().Int64Var(&maxNumSeqs, "max-num-seqs", 256, "Maximum number of requests running together (vLLM parity)")
 	cmd.Flags().Int64Var(&maxNumBatchedTokens, "max-num-batched-tokens", 2048, "Maximum total number of new tokens across running requests (vLLM parity)")
+	cmd.Flags().BoolVar(&noEnablePrefixCaching, "no-enable-prefix-caching", false, "Disable cross-request GPU prefix-cache reuse (mirrors vLLM --no-enable-prefix-caching). Default is caching enabled; re-supply this flag on replay for run/replay parity (INV-13). CPU/offload reloads remain independent.")
 	// Deprecated aliases bound to the same vars for backward compatibility (issue #1570).
 	// pflag emits the deprecation warning to stderr, so stdout stays byte-identical (INV-6).
 	cmd.Flags().Int64Var(&maxNumSeqs, "max-num-running-reqs", 256, "Deprecated: use --max-num-seqs")
@@ -2741,7 +2751,7 @@ var runCmd = &cobra.Command{
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency,
 					sim.WithKVOffload(kvOffloadCfg)),
-				BatchConfig:   sim.NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold),
+				BatchConfig:   batchConfigFromCLI(),
 				LatencyCoeffs: sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
 				// DP-as-placement (#1531): dpPlan.PerRankDP is the per-replica DP — 1 when
 				// the plan is active (each replica is one rank), else the CLI dataParallelism
