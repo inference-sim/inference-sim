@@ -243,8 +243,12 @@ func TestPrReviewKeyNeverInSession(t *testing.T) {
 
 func TestPrReviewVerdictIsAdvisoryOnePost(t *testing.T) {
 	wf := prReviewWorkflow(t)
-	if !strings.Contains(wf, "--edit-last --create-if-none") {
-		t.Error("the post job should keep ONE comment per PR (--edit-last --create-if-none)")
+	// Must NOT use --edit-last: this workflow posts as github-actions[bot], the
+	// same identity archon.yml and deliver-verify.yml use, so --edit-last would
+	// overwrite an existing archon or qa-review comment on the PR. Post a fresh
+	// comment instead.
+	if strings.Contains(wf, "--edit-last") {
+		t.Error("the post job must NOT use --edit-last; it would clobber archon/deliver-verify comments posted under the same bot identity")
 	}
 	if !strings.Contains(wf, "scripts/pr_review/scrub_secrets.py") {
 		t.Error("the combined comment must be secret-scrubbed before posting")

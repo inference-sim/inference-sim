@@ -175,6 +175,11 @@ jobs:
           WORKTREE: ${{ runner.temp }}/pr-head
         run: |
           set -euo pipefail
+          # Fetch the head here too, not only in the archon step above: this
+          # decouples the worktree from archon's ordering so a future reorder or
+          # removal of the archon steps cannot silently leave $HEAD_SHA absent.
+          # Idempotent — the object is usually already present.
+          git fetch --no-tags origin "pull/${PR}/head"
           git -c core.hooksPath=/dev/null worktree add --detach "$WORKTREE" "$HEAD_SHA"
           scripts/pr_review/scrub_symlinks.sh "$WORKTREE"
           echo "path=$WORKTREE" >> "$GITHUB_OUTPUT"
@@ -201,7 +206,7 @@ jobs:
           gh pr view "$PR" --repo "$REPO" --json body --jq '.body // ""' > "$RUNNER_TEMP/qa-body.txt" || soft "could not read PR body"
           gh pr diff "$PR" --repo "$REPO" > "$RUNNER_TEMP/qa-diff.txt" || soft "could not read the diff"
           python3 scripts/qa-review/questioner.py \
-            --title "$title" --body-file "$RUNNER_TEMP/qa-body.txt" --diff-file "$RUNNER_TEMP/qa-diff.txt" \
+            --title="$title" --body-file "$RUNNER_TEMP/qa-body.txt" --diff-file "$RUNNER_TEMP/qa-diff.txt" \
             > "$RUNNER_TEMP/qa-questions.json" || soft "questioner failed"
           python3 scripts/qa-review/answerer.py \
             --worktree "$WORKTREE" --no-exec \
@@ -209,7 +214,7 @@ jobs:
             > "$RUNNER_TEMP/qa-answers.json" || soft "answerer failed"
           python3 scripts/qa-review/render_report.py \
             --questions "$RUNNER_TEMP/qa-questions.json" --answers "$RUNNER_TEMP/qa-answers.json" \
-            --pr "$PR" --title "$title" --amodel "$QA_ANSWERER_MODEL" \
+            --pr "$PR" --title="$title" --amodel "$QA_ANSWERER_MODEL" \
             --out "$OUT" || soft "renderer failed"
 
       # BLIS — tool-restricted single session: read-only tools scoped to the
@@ -244,7 +249,7 @@ jobs:
             }
           claude_args: |
             --model ${{ vars.BLIS_REVIEW_MODEL || 'claude-opus-4-8' }}
-            --allowedTools "Read(${{ runner.temp }}/pr-head/**),Grep(${{ runner.temp }}/pr-head/**),Glob(${{ runner.temp }}/pr-head/**),Read(${{ runner.temp }}/qa-diff.txt),Read(${{ github.workspace }}/docs/**),Write(${{ runner.temp }}/blis-verdict.md)"
+            --allowedTools "Read(${{ runner.temp }}/pr-head/**),Grep(${{ runner.temp }}/pr-head/**),Glob(${{ runner.temp }}/pr-head/**),Read(${{ runner.temp }}/qa-diff.txt),Read(${{ github.workspace }}/docs/**),Read(${{ github.workspace }}/CLAUDE.md),Write(${{ runner.temp }}/blis-verdict.md)"
             --disallowedTools "Bash,Edit,NotebookEdit,WebFetch,WebSearch,Agent,Read(/proc/**),Read(~/.aws/**)"
             --setting-sources user
             --add-dir ${{ runner.temp }}
@@ -331,5 +336,10 @@ jobs:
             echo "::warning::no review comment artifact (the review job produced nothing); posting a failure note"
             printf '## /pr-review\n\nThe review did not complete and produced no output. See the workflow run logs.\n' > out/comment.md
           fi
-          # One comment per PR, edited in place (scoped to github-actions[bot]).
-          gh pr comment "$PR_NUMBER" --body-file out/comment.md --edit-last --create-if-none
+          # Post a NEW comment deliberately, rather than editing the last one by
+          # this identity. We post as github-actions[bot] — the SAME identity
+          # archon.yml and deliver-verify.yml use — so editing-the-last would
+          # clobber an existing archon or qa-review comment on the PR. A fresh
+          # comment (headed "## /pr-review") is unambiguous; occasional duplicates
+          # on repeat runs are acceptable for a manual command.
+          gh pr comment "$PR_NUMBER" --body-file out/comment.md
