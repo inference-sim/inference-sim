@@ -225,6 +225,29 @@ func TestPrReviewBlisHasNoBash(t *testing.T) {
 	}
 }
 
+// TestPrReviewBlisSkipsOIDC pins the #1883 fix: the blis action must be given the
+// job's read-only github_token so claude-code-action takes its OVERRIDE_GITHUB_TOKEN
+// path and SKIPS the OIDC exchange. Without it the action calls getIDToken(), which
+// needs `id-token: write` — a privilege we withhold from the untrusted review job —
+// and aborts before the model runs. The review job must therefore ALSO not grant
+// id-token: write (the whole point is to stay least-privilege, not to add it).
+func TestPrReviewBlisSkipsOIDC(t *testing.T) {
+	wf := prReviewWorkflow(t)
+	if !strings.Contains(wf, "github_token: ${{ secrets.GITHUB_TOKEN }}") {
+		t.Error("the blis step must pass github_token: ${{ secrets.GITHUB_TOKEN }} so claude-code-action skips the OIDC exchange (#1883)")
+	}
+	p := parsePrReview(t)
+	review, ok := p.Jobs["review"]
+	if !ok {
+		t.Fatal("no `review` job in pr-review.yml")
+	}
+	var perms map[string]string
+	_ = review.Permissions.Decode(&perms)
+	if _, has := perms["id-token"]; has {
+		t.Error("the `review` job must NOT grant id-token (the untrusted box stays least-privilege; the github_token override removes the need for OIDC)")
+	}
+}
+
 // TestPrReviewActionsArePinnedToSHA enforces #1879's requirement that every
 // third-party action — especially the one that creates the tool-restricted blis
 // session — is pinned to a full 40-char commit SHA, not a mutable tag.
