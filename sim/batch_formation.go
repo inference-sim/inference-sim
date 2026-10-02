@@ -51,6 +51,15 @@ type BatchContext struct {
 	// a per-step execution read of OutputTokens that INV-9 permits here, not a
 	// servability decision.
 	DecodeTokensPerStep func(req *Request) int64
+
+	// PrefixCachingDisabled suppresses cross-request prefix reuse, mirroring vLLM's
+	// --no-enable-prefix-caching (#1867).
+	//
+	// False preserves the existing behavior and vLLM's default (prefix caching on),
+	// which keeps existing scenarios byte-identical (INV-6). This switch applies only
+	// to GPU prefix reuse at admission; a RUNNING request resumes chunked prefill from
+	// its own ProgressIndex, and offload-tier reloads remain a separate mechanism.
+	PrefixCachingDisabled bool
 }
 
 // ScheduledRequest carries metadata about a newly scheduled request.
@@ -335,7 +344,14 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			continue
 		}
 
-		cachedBlocks := ctx.KVCache.GetCachedBlocks(next.FullInputTokens())
+		// GetCachedBlocks is cross-request prefix reuse: it matches token-block hashes
+		// without tracking which request produced them. When prefix caching is disabled,
+		// skip that lookup entirely so a new admission is billed from the start of its
+		// prompt instead of receiving credit for another request's cached blocks.
+		var cachedBlocks []int64
+		if !ctx.PrefixCachingDisabled {
+			cachedBlocks = ctx.KVCache.GetCachedBlocks(next.FullInputTokens())
+		}
 		startIndex := util.Len64(cachedBlocks) * ctx.KVCache.BlockSize()
 
 		// #1699/#1706: fold the same-step CPU->GPU-reloadable offload prefix into the
