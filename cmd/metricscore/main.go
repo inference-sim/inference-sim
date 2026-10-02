@@ -78,6 +78,22 @@ func main() {
 			"line) or \"resolved\" (vLLM's defaults, no log captured). Empty includes both, "+
 			"which mixes two kinds of evidence in one average")
 	hopper := flag.String("hopper", "", "set to \"yes\" to restrict to h100/h200 and add the analytic arms")
+	// trained-physics applies one alpha/beta pair with no hardware key -- defaults.yaml
+	// carries a single entry, trained across H100 and A100 and used hardware-agnostically,
+	// so it can be scored on any part. Roofline cannot: its per-chip MFU constants come
+	// from hardware_config.json, which carries no Blackwell part. -trained-physics adds
+	// the one analytic arm that travels, without the Hopper restriction roofline forces.
+	withTrained := flag.Bool("trained-physics", false,
+		"add the trained-physics arm on every chip, without restricting to Hopper")
+	// A corpus measured directly against InferenceX carries no published prediction: an
+	// artifact prediction is keyed per (model, gpu, precision, framework, workload, tp,
+	// concurrency), and a direct corpus separates deployments the artifact never did --
+	// container image, stated engine settings -- so one prediction would have to stand for
+	// up to fourteen different deployments. Those arms are dropped rather than scored
+	// against a zero, which the sweep-whole-or-not rule would otherwise read as a failed
+	// sweep and discard the kernel's own points with it.
+	simulatedOnly := flag.Bool("simulated-only", false,
+		"score only the simulated arms; for a corpus with no published predictions")
 	seed := flag.Int64("seed", 42, "")
 	flag.Parse()
 
@@ -135,6 +151,18 @@ func main() {
 		arms = append(arms,
 			arm{name: "roofline", est: harness.EstimatorRoofline},
 			arm{name: "trained-physics", est: harness.EstimatorTrainedPhysics})
+	} else if *withTrained {
+		arms = append(arms,
+			arm{name: "trained-physics", est: harness.EstimatorTrainedPhysics})
+	}
+	if *simulatedOnly {
+		kept := arms[:0]
+		for _, a := range arms {
+			if a.est != "" {
+				kept = append(kept, a)
+			}
+		}
+		arms = kept
 	}
 	if publishedOnly {
 		kept := arms[:0]
