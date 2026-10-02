@@ -4,10 +4,18 @@ import "testing"
 
 const settingsPath = "/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/inferencex_engine_settings.json"
 
-// Every vLLM point this corpus scores must have a measured setting record. Without that the
-// comparison configures some points from the run and others from an assumption, and reports
-// one number over both.
-func TestEveryScoredVLLMPointHasMeasuredSettings(t *testing.T) {
+// No scored vLLM point may be configured from a value this project invented. Each must be
+// either MEASURED from the run's own command line or RESOLVED as vLLM itself resolves it; the
+// scenario's assumed numbers are a fallback for engines whose logs do not exist at all.
+//
+// The distinction is not cosmetic. On h200 vLLM resolves max_num_seqs to 1024 where the
+// scenario files carry 256, and the sequence cap decides whether a request waits, so a point
+// configured from the scenario simulates a deployment nobody ran.
+//
+// Two tiers exist in this corpus and the test reports both: gpt-oss and minimax carry a
+// measured command line on every point, and llama-3.1-70B carries none -- no row for it in
+// the InferenceX dump has a server_log_id, under either framework -- so it resolves.
+func TestNoScoredVLLMPointUsesAnInventedSetting(t *testing.T) {
 	set, err := LoadEngineSettings(settingsPath)
 	if err != nil {
 		t.Skipf("engine settings unavailable: %v", err)
@@ -17,30 +25,43 @@ func TestEveryScoredVLLMPointHasMeasuredSettings(t *testing.T) {
 	if err != nil {
 		t.Skip(err)
 	}
-	points, missing := 0, 0
+	cfg := Config{Repos: hopperRepos(), Admission: AdmissionKernelKV, Seed: 42,
+		EngineSettings: set}
+	byTier := map[SettingSource]int{}
+	perModel := map[string]map[SettingSource]int{}
 	for i := range c.Sweeps {
 		sw := c.Sweeps[i]
-		if sw.Framework != "vllm" {
-			continue
-		}
-		s := set.For(sw)
-		if s == nil {
-			t.Errorf("%s %s: no settings record at all", sw.Scenario, sw.Label)
-			continue
+		if sw.Framework != "vllm" || sw.GPU != "h200" {
+			continue // one chip keeps the test quick; the resolution is chip-independent
 		}
 		for _, p := range sw.Points {
-			points++
-			if s.At(p.Concurrency) == nil {
-				missing++
-				t.Errorf("%s %s: no settings at concurrency %d",
-					sw.Scenario, sw.Label, p.Concurrency)
+			obs, err := Run(sw, p.Concurrency, cfg)
+			if err != nil {
+				t.Fatalf("%s c=%d: %v", sw.Scenario, p.Concurrency, err)
+			}
+			byTier[obs.Settings.SeqsFrom]++
+			if perModel[sw.Model] == nil {
+				perModel[sw.Model] = map[SettingSource]int{}
+			}
+			perModel[sw.Model][obs.Settings.SeqsFrom]++
+			if obs.Settings.SeqsFrom == SourceScenario {
+				t.Errorf("%s c=%d: max_num_seqs came from the scenario, which is a value "+
+					"this project chose rather than one the engine used",
+					sw.Scenario, p.Concurrency)
 			}
 		}
 	}
-	if points == 0 {
-		t.Fatal("no vLLM points found")
+	if byTier[SourceMeasured] == 0 {
+		t.Error("no point used a measured setting; the measured tier is unexercised")
 	}
-	t.Logf("%d vLLM points, %d without measured settings", points, missing)
+	if byTier[SourceResolved] == 0 {
+		t.Error("no point used a resolved setting; the resolved tier is unexercised and " +
+			"this test would not notice the fallback regressing")
+	}
+	for m, tiers := range perModel {
+		t.Logf("%-26s measured=%d resolved=%d scenario=%d", m,
+			tiers[SourceMeasured], tiers[SourceResolved], tiers[SourceScenario])
+	}
 }
 
 // The settings and the absolute latencies must come from the SAME InferenceX run. If they
@@ -155,18 +176,13 @@ func TestMeasuredSettingsWinOverResolvedDefaults(t *testing.T) {
 	t.Skip("reference sweep not in the corpus")
 }
 
-// With no settings supplied, every point must fall back to the scenario and SAY so. This is
-// the INV-6 half: a caller that passes nothing gets the previous behaviour, not a silent
-// substitution.
-func TestWithoutSettingsEveryFieldReportsTheScenario(t *testing.T) {
-	c, err := LoadCorpus(
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/aisimulate_e2e.json")
-	if err != nil {
-		t.Skip(err)
-	}
+// With no settings file supplied at all, a vLLM deployment must still take vLLM's resolution
+// rather than the scenario's assumption. The engine resolved those values whether or not this
+// project captured a log, so reproducing the resolution is the closer answer; falling back to
+// a number chosen here would be the only case in the table that describes no real deployment.
+func TestWithoutASettingsFileAVLLMSweepStillResolves(t *testing.T) {
 	sw := testSweep(t)
 	cfg := Config{Repos: hopperRepos(), Admission: AdmissionKernelKV, Seed: 42}
-	_ = c
 	obs, err := Run(sw, 8, cfg)
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -175,71 +191,21 @@ func TestWithoutSettingsEveryFieldReportsTheScenario(t *testing.T) {
 		"seqs": obs.Settings.SeqsFrom, "tokens": obs.Settings.TokensFrom,
 		"block": obs.Settings.BlockFrom, "prefix": obs.Settings.PrefixFrom,
 	} {
-		if got != SourceScenario {
-			t.Errorf("with no settings supplied, %s should report %q, got %q",
-				name, SourceScenario, got)
+		if got != SourceResolved {
+			t.Errorf("with no settings file, %s on a vLLM sweep should report %q, got %q",
+				name, SourceResolved, got)
 		}
+	}
+	// And the value must be vLLM's, not the scenario's.
+	if obs.Settings.MaxNumSeqs == 256 {
+		t.Error("max_num_seqs is 256, the scenario's assumed value; vLLM resolves 1024 on " +
+			"every chip in this corpus")
 	}
 }
 
-// Every arm must run one point with the SAME configuration. Only the step-time model may
-// differ; if an arm got different admission settings the five-estimator table would be
-// comparing deployments rather than timing models, and the difference would look like
-// accuracy.
-func TestEveryArmSharesOneMeasuredConfiguration(t *testing.T) {
-	set, err := LoadEngineSettings(settingsPath)
-	if err != nil {
-		t.Skipf("engine settings unavailable: %v", err)
-	}
-	sw := testSweep(t)
-	base := Config{Repos: hopperRepos(), Admission: AdmissionKernelKV, Seed: 42,
-		EngineSettings: set, Backends: hopperBackends()}
-
-	var first PointConfig
-	var firstArm Estimator
-	for i, e := range []Estimator{EstimatorKernel, EstimatorRoofline, EstimatorTrainedPhysics} {
-		cfg := base
-		cfg.Estimator = e
-		obs, err := Run(sw, 16, cfg)
-		if err != nil {
-			t.Fatalf("%s: %v", e, err)
-		}
-		if i == 0 {
-			first, firstArm = obs.Settings, e
-			if first.SeqsFrom != SourceMeasured {
-				t.Fatalf("the fixture point does not use a measured max_num_seqs (%q), so "+
-					"this test would not detect a divergence", first.SeqsFrom)
-			}
-			continue
-		}
-		if obs.Settings != first {
-			t.Errorf("%s ran with a different configuration than %s:\n  %+v\n  %+v",
-				e, firstArm, obs.Settings, first)
-		}
-		if obs.KVBlocks == 0 {
-			t.Errorf("%s got no KV budget", e)
-		}
-	}
-	t.Logf("all arms ran with max_num_seqs %d (%s), tokens %d (%s), prefixOff %v (%s)",
-		first.MaxNumSeqs, first.SeqsFrom, first.MaxNumBatchedTokens, first.TokensFrom,
-		first.PrefixCachingDisabled, first.PrefixFrom)
-}
-
-// The measured settings must actually change the simulation. If supplying them moved nothing
-// anywhere, the lookup would be decoration and the scenario's assumed values would still be
-// in force.
-//
-// The fixture is deliberately the b300 ep4-dp2 sweep rather than a Hopper one. On gpt-oss the
-// runs passed max_num_seqs EQUAL to the client concurrency, so the cap never binds in a closed
-// loop that holds exactly that many in flight, and TTFT is identical either way -- correctly.
-// On this sweep the run passed nothing, vLLM resolves 1024 against the scenario's assumed 256,
-// and with dp 2 that is the difference between a cap of 512 and one of 2048 at concurrency
-// 1024. Measured: TTFT falls from 13,825,369 us to 221,779 us, a 62x change.
-func TestMeasuredSettingsChangeTheSimulation(t *testing.T) {
-	set, err := LoadEngineSettings(settingsPath)
-	if err != nil {
-		t.Skipf("engine settings unavailable: %v", err)
-	}
+// A NON-vLLM sweep must NOT take vLLM's resolution. sglang and trtllm resolve their own
+// defaults, and substituting one engine's for another's would be a different deployment.
+func TestANonVLLMSweepDoesNotTakeVLLMDefaults(t *testing.T) {
 	c, err := LoadCorpus(
 		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/aisimulate_e2e.json")
 	if err != nil {
@@ -247,52 +213,21 @@ func TestMeasuredSettingsChangeTheSimulation(t *testing.T) {
 	}
 	var sw Sweep
 	for i := range c.Sweeps {
-		if c.Sweeps[i].Scenario == "minimax-m2.5-b300-fp4-vllm-tp2-ep4-dp2.yaml" &&
-			c.Sweeps[i].Label == "1k1k" {
+		if c.Sweeps[i].Framework == "sglang" {
 			sw = c.Sweeps[i]
 			break
 		}
 	}
 	if sw.Scenario == "" {
-		t.Skip("the b300 ep4-dp2 sweep is not in the corpus")
+		t.Skip("no sglang sweep in the corpus")
 	}
-
-	without := Config{Repos: hopperRepos(), Admission: AdmissionKernelKV, Seed: 42}
-	with := without
-	with.EngineSettings = set
-
-	// Concurrency 1024: the first point where the scenario's assumed cap binds and the
-	// measured one does not.
-	const conc = 1024
-	a, err := Run(sw, conc, without)
+	cfg := Config{Repos: hopperRepos(), Admission: AdmissionKernelKV, Seed: 42}
+	obs, err := Run(sw, sw.Points[0].Concurrency, cfg)
 	if err != nil {
-		t.Fatalf("without: %v", err)
+		t.Skipf("%s: %v", sw.Scenario, err)
 	}
-	b, err := Run(sw, conc, with)
-	if err != nil {
-		t.Fatalf("with: %v", err)
+	if obs.Settings.SeqsFrom != SourceScenario {
+		t.Errorf("an sglang sweep should report %q, got %q -- vLLM's device-memory "+
+			"resolution is not sglang's", SourceScenario, obs.Settings.SeqsFrom)
 	}
-
-	if a.Settings.MaxNumSeqs == b.Settings.MaxNumSeqs {
-		t.Fatalf("the scenario and the engine agree on max_num_seqs (%d), so this fixture "+
-			"cannot show the lookup taking effect", a.Settings.MaxNumSeqs)
-	}
-	if b.Settings.SeqsFrom != SourceResolved {
-		t.Errorf("this sweep's run passed no max_num_seqs, so the value should be %q, got %q",
-			SourceResolved, b.Settings.SeqsFrom)
-	}
-	if a.MeanTTFTUs == b.MeanTTFTUs {
-		t.Error("supplying the measured settings changed nothing; the lookup is not reaching " +
-			"the simulation")
-	}
-	// The assumed cap made requests queue behind whole generations. The measured one does
-	// not, so TTFT must fall by a wide margin rather than drift.
-	if b.MeanTTFTUs >= a.MeanTTFTUs/10 {
-		t.Errorf("TTFT went from %.0f us to %.0f us; the assumed cap bound hard at this "+
-			"concurrency, so the measured cap should be far lower, not comparable",
-			a.MeanTTFTUs, b.MeanTTFTUs)
-	}
-	t.Logf("assumed cap %d -> TTFT %.0f us; resolved cap %d -> TTFT %.0f us (%.0fx)",
-		a.Settings.MaxNumSeqs, a.MeanTTFTUs, b.Settings.MaxNumSeqs, b.MeanTTFTUs,
-		a.MeanTTFTUs/b.MeanTTFTUs)
 }

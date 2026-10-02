@@ -176,42 +176,71 @@ func resolveAdmission(sw Sweep, concurrency int, eng scenario.Engine,
 		BlockFrom:           SourceScenario,
 		PrefixFrom:          SourceScenario,
 	}
-	// vLLM's resolution, which applies to any setting the run did not pass.
+	// vLLM's resolution, which applies to any setting the run did not pass -- whether the
+	// run passed SOME settings and not others, or carries no log at all. It is gated on the
+	// framework: resolving an sglang or trtllm deployment with vLLM's device-memory defaults
+	// would substitute one engine's behaviour for another's.
+	vllm := sw.Framework == "vllm"
 	fallback := latency.ResolveVLLMBatchDefaults(dep.DeviceMemoryGiB, dep.Hardware)
+
+	// What a setting falls back to when the run did not pass it. Factored out because it
+	// applies in two places that are easy to let drift: a point with a log that omits one
+	// field, and a point with no log at all.
+	applyVLLMDefaults := func() {
+		if !vllm {
+			return
+		}
+		if fallback.MaxNumSeqs > 0 {
+			a.MaxNumSeqs, a.SeqsFrom = fallback.MaxNumSeqs, SourceResolved
+		}
+		if fallback.MaxNumBatchedTokens > 0 {
+			a.MaxNumBatchedTokens, a.TokensFrom = fallback.MaxNumBatchedTokens, SourceResolved
+		}
+		// vLLM's CacheConfig.DEFAULT_BLOCK_SIZE is 16, which is what the scenarios already
+		// carry, so an unpassed block size needs no substitution. Recorded as resolved
+		// rather than scenario because the agreement is a fact about vLLM, not a coincidence.
+		a.BlockFrom = SourceResolved
+		// vLLM caches unless told not to.
+		a.PrefixCachingDisabled, a.PrefixFrom = false, SourceResolved
+	}
 
 	p := set.For(sw).At(concurrency)
 	if p == nil {
-		// No measurement: the scenario's values stand, and prefix caching follows the
-		// scenario's tri-state, which the caller already resolved.
+		// No log for this point at all. Llama-3.1-70B is the case: no row for it in the
+		// InferenceX dump carries a server_log_id, under either framework, so its settings
+		// were never captured.
+		//
+		// The engine still resolved them, and reproducing that resolution is closer to the
+		// truth than the value this project assumed: on h200 vLLM resolves max_num_seqs to
+		// 1024 where the scenario files carry 256, and the sequence cap decides whether a
+		// request waits. Falling back to the scenario here -- which an earlier revision did
+		// -- simulated a deployment nobody ran, and reported the provenance as "scenario"
+		// while every other point in the table read "measured".
+		//
+		// This is still NOT a measurement, and the provenance says "resolved" so a reader
+		// can separate the two. A comparison that mixes the two kinds in one average is the
+		// thing that distinction exists to prevent.
+		applyVLLMDefaults()
 		return a
 	}
 	a.MeasuredGPUKVTokens = p.Resolved.GPUKVTokens
 	a.EngineVersion = p.Resolved.EngineVersion
 
+	// Start from what the engine would resolve, then let each measured value override it.
+	// Ordering matters: a field the run passed must win, and a field it did not pass must
+	// read "resolved" rather than inheriting the scenario's assumption.
+	applyVLLMDefaults()
 	if v := p.Passed.MaxNumSeqs; v != nil {
 		a.MaxNumSeqs, a.SeqsFrom = *v, SourceMeasured
-	} else if fallback.MaxNumSeqs > 0 {
-		a.MaxNumSeqs, a.SeqsFrom = fallback.MaxNumSeqs, SourceResolved
 	}
 	if v := p.Passed.MaxNumBatchedTokens; v != nil {
 		a.MaxNumBatchedTokens, a.TokensFrom = *v, SourceMeasured
-	} else if fallback.MaxNumBatchedTokens > 0 {
-		a.MaxNumBatchedTokens, a.TokensFrom = fallback.MaxNumBatchedTokens, SourceResolved
 	}
 	if v := p.Passed.BlockSize; v != nil {
 		a.BlockSize, a.BlockFrom = *v, SourceMeasured
-	} else {
-		// vLLM's CacheConfig.DEFAULT_BLOCK_SIZE is 16, which is what the scenarios already
-		// carry, so an unpassed block size needs no substitution. Recorded as resolved
-		// rather than scenario because the agreement is a fact about vLLM, not a
-		// coincidence.
-		a.BlockFrom = SourceResolved
 	}
 	if v := p.Passed.EnablePrefixCaching; v != nil {
 		a.PrefixCachingDisabled, a.PrefixFrom = !*v, SourceMeasured
-	} else {
-		// vLLM caches unless told not to.
-		a.PrefixCachingDisabled, a.PrefixFrom = false, SourceResolved
 	}
 	return a
 }
