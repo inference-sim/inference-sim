@@ -21,6 +21,7 @@ name: PR Review (external)
 
 permissions:
   contents: read
+  pull-requests: read
 
 on:
   issue_comment:
@@ -102,11 +103,12 @@ jobs:
     # `self-hosted` runners. See k8s/pr-review-runner.yaml.
     runs-on: [pr-review-untrusted]
     timeout-minutes: 30
-    # NO pull-requests: write here. The box that reads untrusted code cannot post
+    # NO pull-requests: WRITE here. The box that reads untrusted code cannot post
     # or push; the `post` job does that. contents: read is for the trusted
-    # checkout and the read-only gh calls qa-review's tools make.
+    # checkout; pull-requests: read is for qa-review's `gh pr view/diff` reads.
     permissions:
       contents: read
+      pull-requests: read
     env:
       PR: ${{ needs.gate.outputs.pr_number }}
       REPO: ${{ github.repository }}
