@@ -4,6 +4,8 @@ One comment delivers a sub-issue. Agents implement, verify, correct, and re-veri
 
 This is the automated counterpart to [PR Workflow](pr-workflow.md), which remains the manual path and the source of the rules the implement phase follows.
 
+> This loop is gated to **maintainer-authored** work. For reviewing an **external/fork** PR, a maintainer runs [`/pr-review`](external-pr-review.md) — the same reviews on a locked-down, read-never-execute footing with the LiteLLM key held out of the session.
+
 ## The command
 
 Comment on the sub-issue you want delivered:
