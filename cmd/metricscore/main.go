@@ -64,6 +64,9 @@ func main() {
 	registry := flag.String("registry", "/Users/sri/Documents/Projects/blis-registry", "")
 	hwConfig := flag.String("hardware-config", "hardware_config.json", "")
 	defaults := flag.String("defaults", "defaults.yaml", "")
+	settings := flag.String("engine-settings",
+		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/inferencex_engine_settings.json",
+		"the settings each measured run was launched with; configures each point as the run was")
 	absolutes := flag.String("absolutes",
 		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/inferencex_absolutes.json",
 		"InferenceX absolute measured latencies; enables the mape column for simulated arms")
@@ -85,6 +88,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	// The settings each run was launched with. Without these a point is configured from an
+	// assumed default while being scored against a run that used something else.
+	eset, err := harness.LoadEngineSettings(*settings)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	base := harness.Config{
 		Repos: kernelmodel.Repos{
 			Scenarios: *scenarios, Catalog: *catalog, Registry: *registry,
@@ -94,6 +104,7 @@ func main() {
 		Backends: harness.BackendPaths{
 			Catalog: *catalog, HWConfig: *hwConfig, Defaults: *defaults,
 		},
+		EngineSettings: eset,
 	}
 	hopperOnly := *hopper != ""
 

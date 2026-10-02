@@ -323,6 +323,8 @@ func (m *Model) Deployment() Deployment {
 		DP:           p.Parallel.DP,
 		Quantization: p.Engine.Quantization,
 		CacheDType:   p.Engine.CacheDType,
+		// The chip's total memory, which is what vLLM resolves its batch defaults from.
+		DeviceMemoryGiB: m.chipMemoryGiB,
 		// Tri-state in the scenario, resolved here to the engine's default. vLLM caches
 		// unless told not to, so nil means ON and only an explicit false disables it.
 		PrefixCachingDisabled: p.Engine.EnablePrefixCaching != nil &&
@@ -343,6 +345,10 @@ type Deployment struct {
 	// PrefixCachingDisabled is the engine's --no-enable-prefix-caching, already resolved
 	// from the scenario's tri-state against vLLM's default of ON.
 	PrefixCachingDisabled bool
-	BlockSize             int64
-	GPUMemUtil            float64
+	// DeviceMemoryGiB is the chip's total memory. vLLM resolves max_num_seqs and
+	// max_num_batched_tokens from it for a deployment that passes neither, so reproducing
+	// that resolution needs it.
+	DeviceMemoryGiB float64
+	BlockSize       int64
+	GPUMemUtil      float64
 }

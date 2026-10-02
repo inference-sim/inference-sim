@@ -187,6 +187,10 @@ type Observation struct {
 	// transient, and so a run that discarded everything is visible rather than silent.
 	WarmupDiscarded int
 	Measured        int
+
+	// Settings is the configuration this point ran with and where each field came from, so
+	// a report can distinguish a measured setting from a resolved default.
+	Settings PointConfig
 }
 
 // Config carries what a run needs beyond the sweep itself.
@@ -222,6 +226,11 @@ type Config struct {
 	// Backends locates the inputs the analytic arms need. Required only when Estimator is
 	// not the kernel.
 	Backends BackendPaths
+
+	// EngineSettings carries the settings each measured run was launched with. When nil,
+	// every point falls back to the scenario's values -- which is what this experiment did
+	// before the settings were extracted, and is reported as such rather than assumed.
+	EngineSettings *EngineSettingSet
 
 	// WarmupFraction is the leading fraction of completed requests whose inter-token
 	// latency is discarded before the mean is taken.
@@ -382,18 +391,31 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	if dp < 1 {
 		dp = 1
 	}
+	// The three settings that decide admission, each taken from the strongest source
+	// available for THIS point and reported so a reader knows which was used:
+	//
+	//   measured  the run's own command line, from its engine log
+	//   resolved  vLLM's device-memory resolution, for a setting the run did not pass
+	//   scenario  the value in the scenario file, when no measurement exists at all
+	//
+	// The ordering matters because the settings are not uniform. Across the 238 scored
+	// points the runs passed max_num_seqs equal to the client concurrency on 92, a fixed
+	// value on 69, and nothing on 77, so neither a single value nor a single rule is right
+	// anywhere near everywhere.
+	admit := resolveAdmission(sw, concurrency, eng, m.Deployment(), cfg.EngineSettings)
+	obsSettings := admit
+
 	cfgSim := sim.SimConfig{
 		Horizon:       math.MaxInt64,
 		Seed:          cfg.Seed,
-		KVCacheConfig: sim.NewKVCacheConfig(blocks, int64(eng.BlockSize), 0, 0, 0, 0),
+		KVCacheConfig: sim.NewKVCacheConfig(blocks, int64(admit.BlockSize), 0, 0, 0, 0),
 		BatchConfig: sim.NewBatchConfig(
-			scaled(int64(eng.MaxNumSeqs)*dp, cfg.MaxNumSeqsScale),
-			scaled(int64(eng.MaxNumBatchedTokens)*dp, cfg.TokenBudgetScale), 0,
-			// The deployment's own setting, resolved from the scenario's tri-state against
-			// vLLM's default of ON. InferenceX launched 1,354 of the 1,501 runs this corpus
-			// scores with --no-enable-prefix-caching, so a comparison that cached
-			// unconditionally charged less prefill work than the engine did (#1867).
-			sim.WithPrefixCachingDisabled(m.Deployment().PrefixCachingDisabled)),
+			scaled(int64(admit.MaxNumSeqs)*dp, cfg.MaxNumSeqsScale),
+			scaled(int64(admit.MaxNumBatchedTokens)*dp, cfg.TokenBudgetScale), 0,
+			// InferenceX launched 233 of the 238 scored points with
+			// --no-enable-prefix-caching, so a comparison that cached unconditionally
+			// charged less prefill work than the engine did (#1867).
+			sim.WithPrefixCachingDisabled(admit.PrefixCachingDisabled)),
 	}
 	// The latency model under test. The KERNEL supplied everything above -- the KV budget,
 	// the engine settings, the dp width -- so swapping only this leaves the resident batch
@@ -435,7 +457,9 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	}
 	s.Run()
 
-	return summarize(s, order, warmup, cfg.WarmupFraction, blocks, admission), nil
+	obs := summarize(s, order, warmup, cfg.WarmupFraction, blocks, admission)
+	obs.Settings = obsSettings
+	return obs, nil
 }
 
 // summarize reduces a finished simulation to the observation the score needs.
