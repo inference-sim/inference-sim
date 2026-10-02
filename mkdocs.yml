@@ -130,6 +130,7 @@ nav:
       - Extension Recipes: contributing/extension-recipes.md
       - PR Workflow: contributing/pr-workflow.md
       - Automated Delivery (L1): contributing/automated-delivery.md
+      - External PR Review: contributing/external-pr-review.md
       - RFC Template: contributing/rfc.md
       - Hypothesis Experiments: contributing/hypothesis.md
       - Review Perspectives: contributing/perspectives.md
