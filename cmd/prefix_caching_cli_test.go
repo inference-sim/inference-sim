@@ -156,7 +156,7 @@ func TestINV13_RunReplayParity_PrefixCachingDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadTraceV2: %v", err)
 	}
-	replayReqs, err := workload.LoadTraceV2Requests(traceData, disabledCfg.SimConfig.Seed)
+	replayReqs, err := workload.LoadTraceV2Requests(traceData, disabledCfg.Seed)
 	if err != nil {
 		t.Fatalf("LoadTraceV2Requests: %v", err)
 	}
