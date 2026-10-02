@@ -323,8 +323,12 @@ func (m *Model) Deployment() Deployment {
 		DP:           p.Parallel.DP,
 		Quantization: p.Engine.Quantization,
 		CacheDType:   p.Engine.CacheDType,
-		BlockSize:    int64(p.Engine.BlockSize),
-		GPUMemUtil:   p.Engine.GPUMemoryUtilization,
+		// Tri-state in the scenario, resolved here to the engine's default. vLLM caches
+		// unless told not to, so nil means ON and only an explicit false disables it.
+		PrefixCachingDisabled: p.Engine.EnablePrefixCaching != nil &&
+			!*p.Engine.EnablePrefixCaching,
+		BlockSize:  int64(p.Engine.BlockSize),
+		GPUMemUtil: p.Engine.GPUMemoryUtilization,
 	}
 }
 
@@ -336,6 +340,9 @@ type Deployment struct {
 	DP           int
 	Quantization string
 	CacheDType   string
-	BlockSize    int64
-	GPUMemUtil   float64
+	// PrefixCachingDisabled is the engine's --no-enable-prefix-caching, already resolved
+	// from the scenario's tri-state against vLLM's default of ON.
+	PrefixCachingDisabled bool
+	BlockSize             int64
+	GPUMemUtil            float64
 }

@@ -113,14 +113,15 @@ type Simulator struct {
 	// max total number of new tokens across all requests in RunningBatch
 	maxNumBatchedTokens       int64
 	longPrefillTokenThreshold int64
+	prefixCachingDisabled     bool
 	stepEvent                 Event
 	stepCount                 int
 	// map of request IDs to total num computed tokens (including cached tokens)
 	reqNumComputedTokens map[string]int64
 	batchFormation       BatchFormation
-	model       string
-	gpu         string
-	maxModelLen int64 // max total sequence length (0 = unlimited)
+	model                string
+	gpu                  string
+	maxModelLen          int64 // max total sequence length (0 = unlimited)
 	// Speculative decoding / MTP (#1528). specEnabled gates ALL spec-decode behavior;
 	// when false every decode path is byte-identical to a pre-feature build (INV-6).
 	// specTokensPerStep is the mean accepted tokens/step (1+α·K) consumed by the
@@ -203,6 +204,7 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		maxNumSeqs:                cfg.MaxNumSeqs,
 		maxNumBatchedTokens:       cfg.MaxNumBatchedTokens,
 		longPrefillTokenThreshold: cfg.LongPrefillTokenThreshold,
+		prefixCachingDisabled:     cfg.PrefixCachingDisabled,
 		stepEvent:                 nil,
 		stepCount:                 0,
 		reqNumComputedTokens:      make(map[string]int64),
@@ -863,6 +865,7 @@ func (sim *Simulator) scheduleBatch(now int64) {
 		MaxNumBatchedTokens:   sim.maxNumBatchedTokens,
 		MaxNumSeqs:            sim.maxNumSeqs,
 		PrefillTokenThreshold: sim.longPrefillTokenThreshold,
+		PrefixCachingDisabled: sim.prefixCachingDisabled,
 		MaxModelLen:           sim.maxModelLen,
 		Now:                   now,
 		StepCount:             sim.stepCount,

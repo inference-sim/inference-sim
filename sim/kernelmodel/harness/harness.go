@@ -388,7 +388,12 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 		KVCacheConfig: sim.NewKVCacheConfig(blocks, int64(eng.BlockSize), 0, 0, 0, 0),
 		BatchConfig: sim.NewBatchConfig(
 			scaled(int64(eng.MaxNumSeqs)*dp, cfg.MaxNumSeqsScale),
-			scaled(int64(eng.MaxNumBatchedTokens)*dp, cfg.TokenBudgetScale), 0),
+			scaled(int64(eng.MaxNumBatchedTokens)*dp, cfg.TokenBudgetScale), 0,
+			// The deployment's own setting, resolved from the scenario's tri-state against
+			// vLLM's default of ON. InferenceX launched 1,354 of the 1,501 runs this corpus
+			// scores with --no-enable-prefix-caching, so a comparison that cached
+			// unconditionally charged less prefill work than the engine did (#1867).
+			sim.WithPrefixCachingDisabled(m.Deployment().PrefixCachingDisabled)),
 	}
 	// The latency model under test. The KERNEL supplied everything above -- the KV budget,
 	// the engine settings, the dp width -- so swapping only this leaves the resident batch

@@ -87,13 +87,31 @@ type BatchConfig struct {
 	MaxNumSeqs                int64 // max requests in RunningBatch (vLLM: --max-num-seqs)
 	MaxNumBatchedTokens       int64 // max total new tokens across all requests in RunningBatch (vLLM: --max-num-batched-tokens)
 	LongPrefillTokenThreshold int64 // threshold for long prefill chunking
+	// PrefixCachingDisabled suppresses cross-request prefix reuse (vLLM:
+	// --no-enable-prefix-caching). False ⇒ reuse as before, which is both the engine's
+	// own default and byte-identical to a pre-feature build (INV-6).
+	PrefixCachingDisabled bool
+}
+
+// BatchOption is a functional option applied inside NewBatchConfig. It lets the
+// constructor take a new field without a 4th positional parameter, which would touch
+// every one of the existing call sites while changing none of their behaviour, and keeps
+// the single struct-literal construction site intact (R4).
+type BatchOption func(*BatchConfig)
+
+// WithPrefixCachingDisabled suppresses cross-request prefix reuse, mirroring a
+// deployment launched with --no-enable-prefix-caching (#1867). Absent ⇒ reuse is on, which
+// is vLLM's default.
+func WithPrefixCachingDisabled(disabled bool) BatchOption {
+	return func(c *BatchConfig) { c.PrefixCachingDisabled = disabled }
 }
 
 // NewBatchConfig creates a BatchConfig with all fields explicitly set.
 // This is the canonical constructor — all construction sites must use it (R4).
 // Panics on invalid values: MaxNumSeqs and MaxNumBatchedTokens must be > 0,
 // LongPrefillTokenThreshold must be >= 0 (0 means disabled).
-func NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold int64) BatchConfig {
+func NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold int64,
+	opts ...BatchOption) BatchConfig {
 	if maxNumSeqs <= 0 {
 		panic(fmt.Sprintf("NewBatchConfig: MaxNumSeqs must be > 0, got %d", maxNumSeqs))
 	}
@@ -103,11 +121,15 @@ func NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold i
 	if longPrefillTokenThreshold < 0 {
 		panic(fmt.Sprintf("NewBatchConfig: LongPrefillTokenThreshold must be >= 0, got %d", longPrefillTokenThreshold))
 	}
-	return BatchConfig{
+	cfg := BatchConfig{
 		MaxNumSeqs:                maxNumSeqs,
 		MaxNumBatchedTokens:       maxNumBatchedTokens,
 		LongPrefillTokenThreshold: longPrefillTokenThreshold,
 	}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	return cfg
 }
 
 // MaxSpeculativeTokens bounds SpeculativeConfig.K so verify width (K+1) and the
