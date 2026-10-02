@@ -70,7 +70,9 @@ func main() {
 	absolutes := flag.String("absolutes",
 		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/inferencex_absolutes.json",
 		"InferenceX absolute measured latencies; enables the mape column for simulated arms")
-	framework := flag.String("framework", "vllm", "restrict to one framework")
+	framework := flag.String("framework", "vllm",
+		"restrict to one framework; empty scores every framework, which only the published "+
+			"arms can do (BLIS models vLLM)")
 	hopper := flag.String("hopper", "", "set to \"yes\" to restrict to h100/h200 and add the analytic arms")
 	seed := flag.Int64("seed", 42, "")
 	flag.Parse()
@@ -108,6 +110,12 @@ func main() {
 	}
 	hopperOnly := *hopper != ""
 
+	// With no framework restriction the corpus spans sglang and trtllm, which BLIS does not
+	// model and for which no vLLM engine log exists. The published arms still can be scored
+	// there -- their predictions come from the artifact and need no configuration from us --
+	// so the comparison is widened to the whole corpus and the simulated arms are dropped
+	// rather than run on a deployment they cannot describe.
+	publishedOnly := *framework == ""
 	arms := []arm{
 		{name: "blis-latency-kernel", est: harness.EstimatorKernel},
 		{name: "AISimulate", published: func(p harness.Point, m harness.Metric) float64 {
@@ -123,6 +131,15 @@ func main() {
 		arms = append(arms,
 			arm{name: "roofline", est: harness.EstimatorRoofline},
 			arm{name: "trained-physics", est: harness.EstimatorTrainedPhysics})
+	}
+	if publishedOnly {
+		kept := arms[:0]
+		for _, a := range arms {
+			if a.est == "" {
+				kept = append(kept, a)
+			}
+		}
+		arms = kept
 	}
 
 	// errs[arm][metric] accumulates signed per-point SHAPE errors; mapes[arm][metric] the
@@ -141,6 +158,7 @@ func main() {
 		mapes[i] = map[harness.Metric][]float64{}
 	}
 	byChip := map[string]map[int]map[harness.Metric][]float64{}
+	byFramework := map[string]map[int]map[harness.Metric][]float64{}
 	var failures []string
 	sweeps, points := 0, 0
 	ttftExcluded := 0
@@ -280,7 +298,13 @@ func main() {
 		}
 
 		sweeps++
-		points += len(sim[harness.EstimatorKernel][harness.MetricTPOT])
+		// Count from whichever arm is present: in published-only mode there is no simulated
+		// arm, and the published arms carry the same point set.
+		if n := len(sim[harness.EstimatorKernel][harness.MetricTPOT]); n > 0 {
+			points += n
+		} else if pub[0] != nil {
+			points += len(pub[0][harness.MetricTPOT])
+		}
 		for ai, a := range arms {
 			src := pub[ai]
 			srcMape := pubMape[ai]
@@ -300,6 +324,14 @@ func main() {
 					byChip[chip][ai] = map[harness.Metric][]float64{}
 				}
 				byChip[chip][ai][m] = append(byChip[chip][ai][m], src[m]...)
+				if byFramework[sw.Framework] == nil {
+					byFramework[sw.Framework] = map[int]map[harness.Metric][]float64{}
+				}
+				if byFramework[sw.Framework][ai] == nil {
+					byFramework[sw.Framework][ai] = map[harness.Metric][]float64{}
+				}
+				byFramework[sw.Framework][ai][m] = append(
+					byFramework[sw.Framework][ai][m], src[m]...)
 			}
 		}
 	}
@@ -315,6 +347,9 @@ func main() {
 	title := "every chip"
 	if hopperOnly {
 		title = "Hopper only (h100, h200), with BLIS's analytic backends"
+	}
+	if publishedOnly {
+		title = "every chip and every framework; published arms only"
 	}
 	fmt.Printf("Shape error by metric, framework %s, %s\n", *framework, title)
 	fmt.Printf("corpus: %s\n", c.Source)
@@ -382,6 +417,34 @@ func main() {
 				fmt.Printf(" %17.2f%%", harness.MAPE2(harness.Abs(v)))
 			}
 			fmt.Printf("   n=%d\n", len(byChip[chip][0][m]))
+		}
+	}
+
+	if len(byFramework) > 1 {
+		fmt.Printf("\n=== By framework (mean|e|)\n")
+		fws := make([]string, 0, len(byFramework))
+		for k := range byFramework {
+			fws = append(fws, k)
+		}
+		sort.Strings(fws)
+		fmt.Printf("%-10s %-8s", "framework", "metric")
+		for _, a := range arms {
+			fmt.Printf(" %18s", trunc(a.name, 18))
+		}
+		fmt.Println()
+		for _, fw := range fws {
+			for _, m := range harness.AllMetrics {
+				fmt.Printf("%-10s %-8s", fw, m)
+				for ai := range arms {
+					v := byFramework[fw][ai][m]
+					if len(v) == 0 {
+						fmt.Printf(" %18s", "--")
+						continue
+					}
+					fmt.Printf(" %17.2f%%", harness.MAPE2(harness.Abs(v)))
+				}
+				fmt.Printf("   n=%d\n", len(byFramework[fw][0][m]))
+			}
 		}
 	}
 
