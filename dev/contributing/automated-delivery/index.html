@@ -14,7 +14,7 @@
         <link rel="prev" href="../pr-workflow/">
       
       
-        <link rel="next" href="../rfc/">
+        <link rel="next" href="../external-pr-review/">
       
       
         
@@ -1633,6 +1633,8 @@
       
         
       
+        
+      
     
     
     
@@ -1949,6 +1951,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../external-pr-review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    External PR Review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../rfc/" class="md-nav__link">
         
   
@@ -2059,10 +2089,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_8" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_9" >
         
           
-          <label class="md-nav__link" for="__nav_7_8" id="__nav_7_8_label" tabindex="">
+          <label class="md-nav__link" for="__nav_7_9" id="__nav_7_9_label" tabindex="">
             
   
   
@@ -2080,8 +2110,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_8_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7_8">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_9">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2218,10 +2248,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_9" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_10" >
         
           
-          <label class="md-nav__link" for="__nav_7_9" id="__nav_7_9_label" tabindex="">
+          <label class="md-nav__link" for="__nav_7_10" id="__nav_7_10_label" tabindex="">
             
   
   
@@ -2239,8 +2269,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_9_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7_9">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_10">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2405,10 +2435,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_10" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_11" >
         
           
-          <label class="md-nav__link" for="__nav_7_10" id="__nav_7_10_label" tabindex="">
+          <label class="md-nav__link" for="__nav_7_11" id="__nav_7_11_label" tabindex="">
             
   
   
@@ -2426,8 +2456,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_10_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7_10">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_11">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3102,6 +3132,9 @@
 <h1 id="automated-delivery-l1">Automated Delivery (L1)<a class="headerlink" href="#automated-delivery-l1" title="Permanent link">&para;</a></h1>
 <p>One comment delivers a sub-issue. Agents implement, verify, correct, and re-verify until the PR is either ready for a human to merge or stopped with a reason. <strong>The loop never merges</strong> — it labels, and a human merges.</p>
 <p>This is the automated counterpart to <a href="../pr-workflow/">PR Workflow</a>, which remains the manual path and the source of the rules the implement phase follows.</p>
+<blockquote>
+<p>This loop is gated to <strong>maintainer-authored</strong> work. For reviewing an <strong>external/fork</strong> PR, a maintainer runs <a href="../external-pr-review/"><code>/pr-review</code></a> — the same reviews on a locked-down, read-never-execute footing with the LiteLLM key held out of the session.</p>
+</blockquote>
 <h2 id="the-command">The command<a class="headerlink" href="#the-command" title="Permanent link">&para;</a></h2>
 <p>Comment on the sub-issue you want delivered:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>/approve-issue-for-pr-delivery
@@ -3537,13 +3570,13 @@ regress quietly.</p>
         
         
           
-          <a href="../rfc/" class="md-footer__link md-footer__link--next" aria-label="Next: RFC Template">
+          <a href="../external-pr-review/" class="md-footer__link md-footer__link--next" aria-label="Next: External PR Review">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                RFC Template
+                External PR Review
               </div>
             </div>
             <div class="md-footer__button md-icon">

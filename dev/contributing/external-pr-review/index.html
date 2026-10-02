@@ -11,10 +11,10 @@
       
       
       
-        <link rel="prev" href="../quickstart/">
+        <link rel="prev" href="../automated-delivery/">
       
       
-        <link rel="next" href="../../concepts/">
+        <link rel="next" href="../rfc/">
       
       
         
@@ -25,7 +25,7 @@
     
     
       
-        <title>Tutorial: Capacity Planning - BLIS — Blackbox Inference Simulator</title>
+        <title>External PR Review - BLIS — Blackbox Inference Simulator</title>
       
     
     
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#tutorial-capacity-planning" class="md-skip">
+        <a href="#external-fork-pr-review-pr-review" class="md-skip">
           Skip to content
         </a>
       
@@ -116,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Tutorial: Capacity Planning
+              External PR Review
             
           </span>
         </div>
@@ -246,13 +246,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="../" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
           
   
   
@@ -358,11 +356,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../../contributing/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
           
   
   
@@ -474,8 +474,6 @@
       
   
   
-    
-  
   
   
     
@@ -495,23 +493,22 @@
     
     
       
-        
-        
-      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../" class="md-nav__link ">
+            <a href="../../getting-started/" class="md-nav__link ">
               
   
   
@@ -529,13 +526,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -555,7 +552,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../installation/" class="md-nav__link">
+      <a href="../../getting-started/installation/" class="md-nav__link">
         
   
   
@@ -583,7 +580,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../quickstart/" class="md-nav__link">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
         
   
   
@@ -608,37 +605,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Tutorial: Capacity Planning
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../getting-started/tutorial/" class="md-nav__link">
         
   
   
@@ -654,125 +624,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#step-1-estimate-instance-capacity" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 1: Estimate Instance Capacity
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-2-baseline-single-instance-at-low-load" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 2: Baseline — Single Instance at Low Load
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-3-scale-up-and-find-the-saturation-point" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 3: Scale Up and Find the Saturation Point
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-4-identify-the-bottleneck-type" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 4: Identify the Bottleneck Type
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-5-compare-routing-policies" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 5: Compare Routing Policies
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-6-evaluate-with-fitness-scores" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 6: Evaluate with Fitness Scores
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-7-validate-against-your-slo" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 7: Validate Against Your SLO
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#key-takeaways" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Key Takeaways
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#whats-next" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What's Next
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1753,6 +1604,8 @@
       
   
   
+    
+  
   
   
     
@@ -1786,22 +1639,23 @@
     
     
       
+        
+        
+      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../contributing/" class="md-nav__link ">
+            <a href="../" class="md-nav__link ">
               
   
   
@@ -1819,13 +1673,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="0">
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_7">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1845,7 +1699,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/extension-recipes/" class="md-nav__link">
+      <a href="../extension-recipes/" class="md-nav__link">
         
   
   
@@ -1873,7 +1727,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/pr-workflow/" class="md-nav__link">
+      <a href="../pr-workflow/" class="md-nav__link">
         
   
   
@@ -1901,7 +1755,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/automated-delivery/" class="md-nav__link">
+      <a href="../automated-delivery/" class="md-nav__link">
         
   
   
@@ -1926,10 +1780,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../contributing/external-pr-review/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    External PR Review
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1945,6 +1826,114 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#how-to-run-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to run it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-threat-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The threat model
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-one-invariant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The one invariant
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-containment-control-by-control" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The containment, control by control
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-no-pull_request_target-two-stage-split" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why no pull_request_target two-stage split
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#infrastructure-prerequisites-not-created-by-the-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Infrastructure prerequisites (not created by the workflow)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#residual-risks-we-accept" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Residual risks we accept
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#validation-before-enabling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validation before enabling
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1957,7 +1946,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/rfc/" class="md-nav__link">
+      <a href="../rfc/" class="md-nav__link">
         
   
   
@@ -1985,7 +1974,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/hypothesis/" class="md-nav__link">
+      <a href="../hypothesis/" class="md-nav__link">
         
   
   
@@ -2013,7 +2002,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/perspectives/" class="md-nav__link">
+      <a href="../perspectives/" class="md-nav__link">
         
   
   
@@ -2055,10 +2044,13 @@
       
       
         
+          
+          
+        
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
@@ -2067,7 +2059,7 @@
         <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_9" >
         
           
-          <label class="md-nav__link" for="__nav_7_9" id="__nav_7_9_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_7_9" id="__nav_7_9_label" tabindex="">
             
   
   
@@ -2103,7 +2095,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/archon/baseline-analysis/" class="md-nav__link">
+      <a href="../archon/baseline-analysis/" class="md-nav__link">
         
   
   
@@ -2131,7 +2123,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/archon/encode-plan/" class="md-nav__link">
+      <a href="../archon/encode-plan/" class="md-nav__link">
         
   
   
@@ -2159,7 +2151,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/archon/pr-review-context/" class="md-nav__link">
+      <a href="../archon/pr-review-context/" class="md-nav__link">
         
   
   
@@ -2211,10 +2203,13 @@
       
       
         
+          
+          
+        
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
@@ -2223,7 +2218,7 @@
         <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_10" >
         
           
-          <label class="md-nav__link" for="__nav_7_10" id="__nav_7_10_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_7_10" id="__nav_7_10_label" tabindex="">
             
   
   
@@ -2259,7 +2254,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/standards/experiments/" class="md-nav__link">
+      <a href="../standards/experiments/" class="md-nav__link">
         
   
   
@@ -2287,7 +2282,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/standards/rules/" class="md-nav__link">
+      <a href="../standards/rules/" class="md-nav__link">
         
   
   
@@ -2315,7 +2310,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/standards/invariants/" class="md-nav__link">
+      <a href="../standards/invariants/" class="md-nav__link">
         
   
   
@@ -2343,7 +2338,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/standards/principles/" class="md-nav__link">
+      <a href="../standards/principles/" class="md-nav__link">
         
   
   
@@ -2395,10 +2390,13 @@
       
       
         
+          
+          
+        
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
@@ -2407,7 +2405,7 @@
         <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_11" >
         
           
-          <label class="md-nav__link" for="__nav_7_11" id="__nav_7_11_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_7_11" id="__nav_7_11_label" tabindex="">
             
   
   
@@ -2443,7 +2441,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/templates/design-guidelines/" class="md-nav__link">
+      <a href="../templates/design-guidelines/" class="md-nav__link">
         
   
   
@@ -2471,7 +2469,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/templates/micro-plan/" class="md-nav__link">
+      <a href="../templates/micro-plan/" class="md-nav__link">
         
   
   
@@ -2499,7 +2497,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/templates/archon-issue-examples/" class="md-nav__link">
+      <a href="../templates/archon-issue-examples/" class="md-nav__link">
         
   
   
@@ -2527,7 +2525,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contributing/templates/hypothesis/" class="md-nav__link">
+      <a href="../templates/hypothesis/" class="md-nav__link">
         
   
   
@@ -2958,10 +2956,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#step-1-estimate-instance-capacity" class="md-nav__link">
+  <a href="#how-to-run-it" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 1: Estimate Instance Capacity
+        How to run it
       
     </span>
   </a>
@@ -2969,10 +2967,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-2-baseline-single-instance-at-low-load" class="md-nav__link">
+  <a href="#the-threat-model" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 2: Baseline — Single Instance at Low Load
+        The threat model
       
     </span>
   </a>
@@ -2980,10 +2978,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-3-scale-up-and-find-the-saturation-point" class="md-nav__link">
+  <a href="#the-one-invariant" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 3: Scale Up and Find the Saturation Point
+        The one invariant
       
     </span>
   </a>
@@ -2991,10 +2989,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-4-identify-the-bottleneck-type" class="md-nav__link">
+  <a href="#the-containment-control-by-control" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 4: Identify the Bottleneck Type
+        The containment, control by control
       
     </span>
   </a>
@@ -3002,10 +3000,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-5-compare-routing-policies" class="md-nav__link">
+  <a href="#why-no-pull_request_target-two-stage-split" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 5: Compare Routing Policies
+        Why no pull_request_target two-stage split
       
     </span>
   </a>
@@ -3013,10 +3011,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-6-evaluate-with-fitness-scores" class="md-nav__link">
+  <a href="#infrastructure-prerequisites-not-created-by-the-workflow" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 6: Evaluate with Fitness Scores
+        Infrastructure prerequisites (not created by the workflow)
       
     </span>
   </a>
@@ -3024,10 +3022,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-7-validate-against-your-slo" class="md-nav__link">
+  <a href="#residual-risks-we-accept" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 7: Validate Against Your SLO
+        Residual risks we accept
       
     </span>
   </a>
@@ -3035,21 +3033,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#key-takeaways" class="md-nav__link">
+  <a href="#validation-before-enabling" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Key Takeaways
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#whats-next" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What's Next
+        Validation before enabling
       
     </span>
   </a>
@@ -3076,140 +3063,124 @@
   
 
 
-<h1 id="tutorial-capacity-planning">Tutorial: Capacity Planning<a class="headerlink" href="#tutorial-capacity-planning" title="Permanent link">&para;</a></h1>
-<p>This tutorial walks through a complete capacity planning exercise: determining how many inference instances you need to serve a target request rate while meeting latency SLOs.</p>
-<p><strong>Scenario:</strong> You're deploying Qwen3 14B on H100 GPUs with TP=1. Your SLO is TTFT p99 &lt; 500ms. You need to find the minimum number of instances for 200 requests/second.</p>
-<div class="admonition note">
-<p class="admonition-title">Locate the model catalog first</p>
-<p>Every command below needs the model catalog located — <code>--catalog &lt;path&gt;</code> or the
-<code>BLIS_CATALOG</code> environment variable, with no default and no search path. Clone the
-<a href="https://github.com/inference-sim/blis-catalog"><code>blis-catalog</code></a> repository at the pinned
-release tag — <code>git clone --branch 0.1.1 --depth 1 https://github.com/inference-sim/blis-catalog.git</code>
-— and run <code>export BLIS_CATALOG=$PWD/blis-catalog</code> once, and the examples work as written.
-See <a href="../quickstart/">Quick Start</a> and
-<a href="../installation/#catalog-compatibility">Catalog compatibility</a>.</p>
-</div>
-<h2 id="step-1-estimate-instance-capacity">Step 1: Estimate Instance Capacity<a class="headerlink" href="#step-1-estimate-instance-capacity" title="Permanent link">&para;</a></h2>
-<p>Before scaling up, measure the throughput of a single instance under load. Run enough requests at a high arrival rate to saturate the instance — this reveals the maximum throughput with continuous batching:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">2000</span>
-</code></pre></div>
-<p>Check the <code>responses_per_sec</code> value in the output. For Qwen3 14B / H100 / TP=1 with default workload (512 input / 512 output tokens), a saturated instance handles roughly <strong>17 requests/second</strong>.</p>
-<div class="admonition note">
-<p class="admonition-title">Why measure at high load?</p>
-<p>With continuous batching, throughput depends on batch size. At low arrival rates (e.g., <code>--rate 2</code>), requests trickle in one at a time and the instance processes only ~2 req/s — not because it's slow, but because there's nothing else to batch. At saturation, many concurrent requests share each decode step, amortizing overhead and reaching ~17 req/s. Always measure capacity under load.</p>
-</div>
-<p>This means for 200 req/s, you need at minimum <code>ceil(200/17) = 12</code> instances. Let's verify with simulation.</p>
-<div class="admonition info">
-<p class="admonition-title"><code>--rate</code> is the total arrival rate</p>
-<p>The <code>--rate</code> flag specifies the <strong>total</strong> arrival rate across the cluster, not per-instance. With <code>--rate 200 --num-instances 8</code>, each instance receives roughly 200/8 = 25 req/s (distributed by the routing policy).</p>
-</div>
-<h2 id="step-2-baseline-single-instance-at-low-load">Step 2: Baseline — Single Instance at Low Load<a class="headerlink" href="#step-2-baseline-single-instance-at-low-load" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">2</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">50</span>
-</code></pre></div>
-<p>At 2 req/s (well below capacity), TTFT p99 is around 50ms. Note this value — this is your best-case baseline that won't improve further with more instances.</p>
-<h2 id="step-3-scale-up-and-find-the-saturation-point">Step 3: Scale Up and Find the Saturation Point<a class="headerlink" href="#step-3-scale-up-and-find-the-saturation-point" title="Permanent link">&para;</a></h2>
-<p>Run simulations at increasing instance counts for 200 req/s:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># 4 instances (50 req/s per instance vs ~17 saturated capacity → heavily overloaded)</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">200</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">1000</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="c1"># 8 instances (25 req/s per instance → still above capacity but batching helps)</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">200</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">1000</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="c1"># 12 instances (~17 req/s per instance → balanced, near baseline)</span>
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">200</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">1000</span>
-</code></pre></div>
-<p>Compare the cluster-level <code>ttft_p99_ms</code> across runs:</p>
+<h1 id="external-fork-pr-review-pr-review">External / fork PR review (<code>/pr-review</code>)<a class="headerlink" href="#external-fork-pr-review-pr-review" title="Permanent link">&para;</a></h1>
+<p>External contributors cannot use the <a href="../automated-delivery/">L1 automated delivery loop</a> — it is
+gated to maintainer-authored work (#1813), because an AI agent that reads a PR and holds credentials
+can be prompt-injected by a hostile author. <code>/pr-review</code> closes that gap: a maintainer runs the same
+three reviews on <strong>any</strong> PR, including forks, on a footing where a successful injection is harmless.</p>
+<h2 id="how-to-run-it">How to run it<a class="headerlink" href="#how-to-run-it" title="Permanent link">&para;</a></h2>
+<p>Comment <strong><code>/pr-review</code></strong> on the pull request. Only a user with <code>admin</code>/<code>write</code>/<code>maintain</code> on the
+repository triggers it; a stranger's comment does nothing. It posts one <strong>advisory</strong> comment with
+three sections: architecture (archon), correctness (blis-pr-review), and a cross-vendor second
+opinion (qa-review).</p>
+<p>The verdict <strong>gates nothing and merges nothing</strong> — it is input for a human, not a status check.</p>
+<h2 id="the-threat-model">The threat model<a class="headerlink" href="#the-threat-model" title="Permanent link">&para;</a></h2>
+<p>The PR's code, diff, title, and comments are <strong>attacker-controlled</strong>. An LLM that reads them may be
+instructed — through text hidden in those bytes — to exfiltrate a secret, run a command, or post
+attacker content. We do not try to <em>prevent</em> injection (no filter is reliable); we <strong>contain</strong> it so
+a successful injection can steal nothing and change nothing. This is the pattern established by
+GitHub's own guidance and by projects that run LLM review on untrusted PRs (e.g.
+<code>pytorch/pytorch</code>'s hardened PR review); it is the lesson of the 2026 "Comment and Control" finding,
+where a PR <em>title</em> drove AI review actions into posting their own API keys as PR comments.</p>
+<h2 id="the-one-invariant">The one invariant<a class="headerlink" href="#the-one-invariant" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p><strong>PR code is READ, never EXECUTED</strong> — and the LiteLLM key is never in the reviewer's session.</p>
+</blockquote>
+<p>How each reviewer gets the PR without executing it:</p>
+<table>
+<thead>
+<tr>
+<th>Reviewer</th>
+<th>Needs</th>
+<th>How, safely</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>archon</strong> (no LLM)</td>
+<td>base &amp; head Go trees</td>
+<td><code>git fetch pull/N/head</code> into the <strong>object store only</strong> (no checkout); the trusted-branch archon binary reads both trees. Static analysis — no <code>go build</code> on PR code.</td>
+</tr>
+<tr>
+<td><strong>qa-review</strong> (LLM)</td>
+<td>read the PR files</td>
+<td>a <strong>safe read-only checkout</strong> + <code>answerer.py --no-exec</code> (its code-executing <code>go</code> tool is dropped; <code>read_file</code>/<code>grep</code>/<code>list_dir</code> stay sandboxed to the checkout)</td>
+</tr>
+<tr>
+<td><strong>blis-pr-review</strong> (LLM)</td>
+<td>read the PR files</td>
+<td>the same checkout + a <strong>tool-restricted</strong> session: <code>Read</code>/<code>Grep</code>/<code>Glob</code> only, <strong>no <code>Bash</code>/<code>Edit</code>/<code>WebFetch</code>/<code>WebSearch</code>/<code>Agent</code></strong>, writes confined to a verdict file by a <code>PreToolUse</code> hook</td>
+</tr>
+</tbody>
+</table>
+<p>"Safe read-only checkout" means: git hooks disabled (<code>core.hooksPath=/dev/null</code>),
+<code>persist-credentials: false</code> (no token written where a Read tool could reach it), submodules off, and
+escaping symlinks scrubbed (<code>scripts/pr_review/scrub_symlinks.sh</code>) before any reviewer reads the tree.</p>
+<blockquote>
+<p>blis runs the <strong>blis-pr-review methodology read-only</strong> — the real review perspectives (correctness,
+INV-<em> invariants, run/replay/observe parity, preemption/timeout, boundaries, behavioural test
+quality, R1–R23, docs) inlined into the prompt — rather than the stock <code>pr-review-toolkit</code> plugin.
+The plugin shells out (<code>Bash</code>/<code>gh</code>), which is both unsafe on untrusted code and non-functional
+without a shell, so it is not used on forks — the same reason <code>pytorch/pytorch</code> encodes its review
+as a read-only skill instead of a generic toolkit. </em><em>Read-only sub-agent fan-out</em>* (<code>Agent</code>, to run
+the perspectives in parallel like the full toolkit) is a follow-up gated on the dry-run verifying
+that sub-agents inherit the no-<code>Bash</code> deny on the pinned action version (as pytorch verified).</p>
+</blockquote>
+<h2 id="the-containment-control-by-control">The containment, control by control<a class="headerlink" href="#the-containment-control-by-control" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>4 instances:</strong> TTFT p99 around 1,500ms — the per-instance arrival rate (50 req/s) far exceeds capacity (~17 req/s), so requests queue up and wait</li>
-<li><strong>8 instances:</strong> TTFT p99 drops to around 60ms — per-instance arrival rate (25 req/s) is above single-request capacity but manageable with continuous batching</li>
-<li><strong>12 instances:</strong> TTFT p99 around 54ms — near baseline, with comfortable headroom</li>
+<li><strong>Maintainer-only trigger</strong> (<code>.github/workflows/pr-review.yml</code>, <code>gate</code> job): the comment must match
+  <code>/pr-review</code> as a precise token (not <code>/blis-pr-review</code>, <code>/archon-pr-review</code>, or a future
+  <code>/pr-review-*</code>) <strong>and</strong> the commenter must hold write access. Both are checked from the trusted ref.</li>
+<li><strong>Three jobs so the box that reads untrusted code cannot act:</strong> <code>gate</code> (ubuntu-latest, touches no PR
+  content) → <code>review</code> (<code>pr-review-untrusted</code> runner, <code>contents: read</code>, <strong>no</strong> <code>pull-requests: write</code>)
+  → <code>post</code> (ubuntu-latest, <code>pull-requests: write</code>, never reads PR code).</li>
+<li><strong>Key out of the session:</strong> LiteLLM needs the VPN, so the runner is self-hosted — but the key lives
+  <strong>only in a sidecar container</strong> (<code>k8s/pr-review-runner.yaml</code>). The reviewer talks to
+  <code>http://localhost:4000</code> with a <strong>dummy</strong> key; the sidecar injects the real one (both
+  <code>Authorization: Bearer</code> for qa and <code>x-api-key</code> for blis). A runtime step asserts no real key is in
+  the job env.</li>
+<li><strong>Egress lock — follow-up (not yet enabled).</strong> A default-deny egress <code>NetworkPolicy</code> is the intended
+  belt-and-suspenders, but on this cluster the pod's DNS resolver (<code>172.21.0.10</code>) is a node-local/host
+  resolver that neither a <code>namespaceSelector</code> nor an <code>ipBlock: 0.0.0.0/0</code> egress peer matches, so every
+  vanilla <code>NetworkPolicy</code> form tried blocked DNS and broke the runner (a non-443 port <em>was</em> correctly
+  blocked, so the policy enforces — it just can't thread cluster DNS). Enabling it needs an
+  <code>AdminNetworkPolicy</code> or node-CIDR allowance, tracked as a follow-up. This is acceptable for v1 because
+  the <strong>primary</strong> control is that no high-value secret is in the session: the LiteLLM key is in the
+  sidecar, and the job's <code>GITHUB_TOKEN</code> is read-only (<code>contents</code>/<code>pull-requests: read</code>), so there is
+  nothing worth exfiltrating even over open 443.</li>
+<li><strong>Output scrub:</strong> the combined comment passes <code>scripts/pr_review/scrub_secrets.py</code> before posting —
+  a last line, not the control (the control is that there is no key to leak).</li>
+<li><strong>Advisory:</strong> the verdict is never a required status check, so an injected review cannot block a
+  merge by failing the job.</li>
 </ul>
-<div class="admonition tip">
-<p class="admonition-title">Understanding saturation</p>
-<p><strong>Saturation means requests arrive faster than they can be served, so the queue grows continuously.</strong> In queueing theory terms, the per-instance excess rate is <code>excess = λ/k - μ</code>, where λ is the total arrival rate (200 req/s), k is the instance count, and μ is the per-instance service rate (~17 req/s). When excess &gt; 0, the queue grows at that rate and TTFT degrades.</p>
-<p>The improvement from 4→8 instances is dramatic (1,500ms → 60ms) because the excess rate drops from ~33 req/s to ~8 req/s per instance — a much larger relative change than the 2x instance count would suggest.</p>
-</div>
-<h2 id="step-4-identify-the-bottleneck-type">Step 4: Identify the Bottleneck Type<a class="headerlink" href="#step-4-identify-the-bottleneck-type" title="Permanent link">&para;</a></h2>
-<p>When TTFT is high, there are three possible causes:</p>
-<ol>
-<li><strong>Queue saturation</strong> — arrival rate exceeds service capacity → add instances</li>
-<li><strong>Memory saturation</strong> — KV cache preemptions degrade throughput → add KV blocks or reduce batch size</li>
-<li><strong>Compute saturation</strong> — step time dominates → reduce batch size or use chunked prefill</li>
-</ol>
-<p>Check the output for clues:</p>
+<h2 id="why-no-pull_request_target-two-stage-split">Why no <code>pull_request_target</code> two-stage split<a class="headerlink" href="#why-no-pull_request_target-two-stage-split" title="Permanent link">&para;</a></h2>
+<p><code>pytorch/pytorch</code> needs two workflows because its trigger (<code>pull_request_target</code>) hands a privileged
+token into the untrusted PR context. <code>/pr-review</code> uses a <strong>maintainer comment</strong> instead, and no
+reviewer holds a shell on untrusted input, so a single workflow with a write-access gate is enough.</p>
+<h2 id="infrastructure-prerequisites-not-created-by-the-workflow">Infrastructure prerequisites (not created by the workflow)<a class="headerlink" href="#infrastructure-prerequisites-not-created-by-the-workflow" title="Permanent link">&para;</a></h2>
 <ul>
-<li>High <code>preemption_count</code> → memory saturation</li>
-<li>High <code>scheduling_delay_p99_ms</code> → queue saturation (requests waiting in the WaitQ)</li>
-<li>Low <code>preemption_count</code> + low <code>scheduling_delay</code> + high TTFT → compute saturation</li>
+<li>A self-hosted runner labelled <strong><code>pr-review-untrusted</code></strong> with the <strong>LiteLLM sidecar</strong>
+  (<code>k8s/pr-review-runner.yaml</code>), isolated from the delivery-loop <code>self-hosted</code> pool.</li>
+<li>The sidecar's <code>nous-wiki-llm</code> secret (LiteLLM endpoint + key). The workflow is inert-but-safe until
+  these exist — it is maintainer-gated, so it cannot fire accidentally.</li>
+<li>(Follow-up) the egress <code>NetworkPolicy</code> once the cluster-DNS issue above is resolved.</li>
 </ul>
-<h2 id="step-5-compare-routing-policies">Step 5: Compare Routing Policies<a class="headerlink" href="#step-5-compare-routing-policies" title="Permanent link">&para;</a></h2>
-<p>With 8 instances at 200 req/s (near saturation), compare routing strategies:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Round-robin (baseline)</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">200</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">1000</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span>--routing-policy<span class="w"> </span>round-robin
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># Weighted (default profile)</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">200</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">1000</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>
-<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="c1"># Least-loaded</span>
-<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">200</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">1000</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="w">  </span>--routing-policy<span class="w"> </span>least-loaded
-</code></pre></div>
-<p>With uniform workloads (same prompt/output distribution), routing policies produce similar results because all instances are roughly equally loaded. Routing differentiation becomes meaningful with <strong>heterogeneous workloads</strong> — for example, prefix-heavy traffic where <code>prefix-affinity</code> routing concentrates same-prefix requests on the same instance for KV cache reuse:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">200</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">1000</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span>--routing-scorers<span class="w"> </span><span class="s2">"prefix-affinity:5,queue-depth:1"</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span>--prefix-tokens<span class="w"> </span><span class="m">512</span>
-</code></pre></div>
-<h2 id="step-6-evaluate-with-fitness-scores">Step 6: Evaluate with Fitness Scores<a class="headerlink" href="#step-6-evaluate-with-fitness-scores" title="Permanent link">&para;</a></h2>
-<p>For automated comparison across many configurations, use fitness evaluation:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">200</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">1000</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span>--fitness-weights<span class="w"> </span><span class="s2">"p99_ttft:3,mean_e2e:1,throughput:2"</span>
-</code></pre></div>
-<p>The fitness score is a weighted sum of normalized metrics — <strong>higher is better</strong>. Each latency metric is normalized to a [0, 1] range using <code>1/(1+x/1000)</code>, and throughput is normalized to [0, 1] using <code>throughput/max_throughput</code>. With weights <code>p99_ttft:3, mean_e2e:1, throughput:2</code>, the score is a weighted sum out of a theoretical maximum of 6.0 (the sum of all weights).</p>
-<div class="admonition warning">
-<p class="admonition-title">Fitness score normalization</p>
-<p>The <code>1/(1+x/1000)</code> normalization compresses large raw differences into small score differences. A 38% TTFT improvement may appear as only an 8% fitness score difference. Always examine raw metrics (<code>ttft_p99_ms</code>, <code>e2e_mean_ms</code>, <code>responses_per_sec</code>) alongside fitness scores when making capacity decisions.</p>
-</div>
-<h2 id="step-7-validate-against-your-slo">Step 7: Validate Against Your SLO<a class="headerlink" href="#step-7-validate-against-your-slo" title="Permanent link">&para;</a></h2>
-<p>Your SLO: TTFT p99 &lt; 500ms at 200 req/s.</p>
-<p>From the simulations above, 8 instances already meet the SLO (TTFT p99 ~60ms), and 12 instances provide comfortable headroom (~54ms). Add 20-30% headroom for traffic spikes (real deployments see bursty traffic that exceeds the Poisson assumption).</p>
-<h2 id="key-takeaways">Key Takeaways<a class="headerlink" href="#key-takeaways" title="Permanent link">&para;</a></h2>
-<ol>
-<li><strong>Measure capacity under load</strong> — run at high arrival rates (e.g., <code>--rate 500</code>) to measure saturated throughput; low-load measurements underestimate capacity due to small batch sizes</li>
-<li><strong>Saturation is non-linear</strong> — TTFT degrades super-linearly as you approach capacity. Scaling from 4→8 instances can produce a 25x improvement, not just 2x, because the per-instance excess rate drops dramatically</li>
-<li><strong>Check the bottleneck type</strong> — preemption count, scheduling delay, and raw TTFT tell you whether to add instances, add memory, or tune batch size</li>
-<li><strong>Routing matters for heterogeneous workloads</strong> — with uniform traffic, routing policies produce similar results; with prefix-heavy or mixed-SLO workloads, prefix-affinity and load-aware routing provide meaningful differentiation</li>
-<li><strong>Deterministic replay</strong> — use <code>--seed</code> to get identical results for A/B comparisons</li>
-</ol>
-<h2 id="whats-next">What's Next<a class="headerlink" href="#whats-next" title="Permanent link">&para;</a></h2>
+<h2 id="residual-risks-we-accept">Residual risks we accept<a class="headerlink" href="#residual-risks-we-accept" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong><a href="../../guide/routing/">Routing Policies</a></strong> — deep dive into scorer composition and signal freshness</li>
-<li><strong><a href="../../guide/kv-cache/">KV Cache &amp; Memory</a></strong> — tune KV blocks, prefix caching, and chunked prefill</li>
-<li><strong><a href="../../guide/results/">Metrics &amp; Results</a></strong> — understand all output fields and common patterns</li>
+<li><strong>A weak/odd advisory comment.</strong> An injection could nudge the LLM to write something unhelpful. It
+  is visible, scrubbed, and non-authoritative; a human reads it.</li>
+<li><strong>Gateway spend.</strong> Bounded by the LiteLLM budget on the shared key; the session's dummy key is useless
+  (it only reaches the in-pod sidecar).</li>
+<li><strong>No egress-lock yet</strong> (see the follow-up above). Mitigated by the keyless session + read-only token:
+  there is no high-value secret on the box to exfiltrate.</li>
+<li><strong>Platform trust.</strong> We trust <code>claude-code-action</code> and the runner image to hold; actions are
+  SHA-pinnable.</li>
 </ul>
+<h2 id="validation-before-enabling">Validation before enabling<a class="headerlink" href="#validation-before-enabling" title="Permanent link">&para;</a></h2>
+<p>Because the verdict is advisory, green CI is not the bar. Before relying on this: run an <strong>adversarial
+dry-run</strong> on a throwaway fork PR carrying an injection payload (title, comment, and a file body) and
+confirm the key is not exfiltrated, no PR code executes, and the comment is harmless; capture the
+containment proof (no real key in the job env); and get a human maintainer sign-off.</p>
 
 
 
@@ -3245,7 +3216,7 @@ See <a href="../quickstart/">Quick Start</a> and
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../quickstart/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Quick Start">
+          <a href="../automated-delivery/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Automated Delivery (L1)">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -3255,20 +3226,20 @@ See <a href="../quickstart/">Quick Start</a> and
                 Previous
               </span>
               <div class="md-ellipsis">
-                Quick Start
+                Automated Delivery (L1)
               </div>
             </div>
           </a>
         
         
           
-          <a href="../../concepts/" class="md-footer__link md-footer__link--next" aria-label="Next: Concepts">
+          <a href="../rfc/" class="md-footer__link md-footer__link--next" aria-label="Next: RFC Template">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Concepts
+                RFC Template
               </div>
             </div>
             <div class="md-footer__button md-icon">
