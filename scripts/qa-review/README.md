@@ -256,7 +256,12 @@ seam exists so #1715/#1716 can run the answerer/adjudicator on the self-hosted
 runner while preserving `deliver-verify.yml`'s invariant that the PR's code is
 never compiled or executed there.
 
-## Orchestration (from the prototype `SKILL.md`)
+## Orchestration
+
+Two consumers drive these scripts in this same order: the delivery gate
+(`.github/workflows/deliver-verify.yml`), and — on demand, for a human or agent —
+the committed `qa-review` skill (`.claude/skills/qa-review/SKILL.md`), which shells
+out to the scripts here rather than copying them, so it cannot drift from the gate.
 
 1. Resolve the PR → materialize the PR head into a throwaway **read-only**
    worktree.
