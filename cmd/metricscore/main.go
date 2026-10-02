@@ -73,6 +73,10 @@ func main() {
 	framework := flag.String("framework", "vllm",
 		"restrict to one framework; empty scores every framework, which only the published "+
 			"arms can do (BLIS models vLLM)")
+	tier := flag.String("config-tier", "",
+		"restrict to points whose engine configuration is \"measured\" (the run's own command "+
+			"line) or \"resolved\" (vLLM's defaults, no log captured). Empty includes both, "+
+			"which mixes two kinds of evidence in one average")
 	hopper := flag.String("hopper", "", "set to \"yes\" to restrict to h100/h200 and add the analytic arms")
 	seed := flag.Int64("seed", 42, "")
 	flag.Parse()
@@ -159,6 +163,7 @@ func main() {
 	}
 	byChip := map[string]map[int]map[harness.Metric][]float64{}
 	byFramework := map[string]map[int]map[harness.Metric][]float64{}
+	byModel := map[string]map[int]map[harness.Metric][]float64{}
 	var failures []string
 	sweeps, points := 0, 0
 	ttftExcluded := 0
@@ -171,6 +176,16 @@ func main() {
 		chip := family(sw.GPU)
 		if hopperOnly && chip != "h100" && chip != "h200" {
 			continue
+		}
+
+		// Configuration tier: a sweep is taken whole or not at all, because a mean over a
+		// mix of measured and resolved settings is not a statement about either.
+		if *tier != "" {
+			rec := eset.For(sw)
+			measured := rec != nil && rec.At(sw.Points[0].Concurrency) != nil
+			if (*tier == "measured") != measured {
+				continue
+			}
 		}
 
 		// Points whose MEASURED TTFT is an isolated artefact, excluded from TTFT for EVERY arm
@@ -332,6 +347,13 @@ func main() {
 				}
 				byFramework[sw.Framework][ai][m] = append(
 					byFramework[sw.Framework][ai][m], src[m]...)
+				if byModel[sw.Model] == nil {
+					byModel[sw.Model] = map[int]map[harness.Metric][]float64{}
+				}
+				if byModel[sw.Model][ai] == nil {
+					byModel[sw.Model][ai] = map[harness.Metric][]float64{}
+				}
+				byModel[sw.Model][ai][m] = append(byModel[sw.Model][ai][m], src[m]...)
 			}
 		}
 	}
@@ -350,6 +372,9 @@ func main() {
 	}
 	if publishedOnly {
 		title = "every chip and every framework; published arms only"
+	}
+	if *tier != "" {
+		title += "; " + *tier + "-configuration points only"
 	}
 	fmt.Printf("Shape error by metric, framework %s, %s\n", *framework, title)
 	fmt.Printf("corpus: %s\n", c.Source)
@@ -417,6 +442,34 @@ func main() {
 				fmt.Printf(" %17.2f%%", harness.MAPE2(harness.Abs(v)))
 			}
 			fmt.Printf("   n=%d\n", len(byChip[chip][0][m]))
+		}
+	}
+
+	if len(byModel) > 1 {
+		fmt.Printf("\n=== By model (mean|e|)\n")
+		ms := make([]string, 0, len(byModel))
+		for k := range byModel {
+			ms = append(ms, k)
+		}
+		sort.Strings(ms)
+		fmt.Printf("%-24s %-8s", "model", "metric")
+		for _, a := range arms {
+			fmt.Printf(" %18s", trunc(a.name, 18))
+		}
+		fmt.Println()
+		for _, mm := range ms {
+			for _, m := range harness.AllMetrics {
+				fmt.Printf("%-24s %-8s", trunc(mm, 24), m)
+				for ai := range arms {
+					v := byModel[mm][ai][m]
+					if len(v) == 0 {
+						fmt.Printf(" %18s", "--")
+						continue
+					}
+					fmt.Printf(" %17.2f%%", harness.MAPE2(harness.Abs(v)))
+				}
+				fmt.Printf("   n=%d\n", len(byModel[mm][0][m]))
+			}
 		}
 	}
 
