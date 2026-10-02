@@ -40,9 +40,14 @@ How each reviewer gets the PR without executing it:
 `persist-credentials: false` (no token written where a Read tool could reach it), submodules off, and
 escaping symlinks scrubbed (`scripts/pr_review/scrub_symlinks.sh`) before any reviewer reads the tree.
 
-> blis runs as a **bounded single session**, not the full `pr-review-toolkit` orchestration — that
-> needs `Bash`/`Agent`, which is unsafe on untrusted input. The external review trades the toolkit's
-> depth for a locked-down tool surface.
+> blis runs the **blis-pr-review methodology read-only** — the real review perspectives (correctness,
+> INV-* invariants, run/replay/observe parity, preemption/timeout, boundaries, behavioural test
+> quality, R1–R23, docs) inlined into the prompt — rather than the stock `pr-review-toolkit` plugin.
+> The plugin shells out (`Bash`/`gh`), which is both unsafe on untrusted code and non-functional
+> without a shell, so it is not used on forks — the same reason `pytorch/pytorch` encodes its review
+> as a read-only skill instead of a generic toolkit. **Read-only sub-agent fan-out** (`Agent`, to run
+> the perspectives in parallel like the full toolkit) is a follow-up gated on the dry-run verifying
+> that sub-agents inherit the no-`Bash` deny on the pinned action version (as pytorch verified).
 
 ## The containment, control by control
 
