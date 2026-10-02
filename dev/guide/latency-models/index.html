@@ -1145,6 +1145,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#prefix-caching-engine-setting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prefix caching engine setting
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3178,6 +3189,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#prefix-caching-engine-setting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prefix caching engine setting
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3495,6 +3517,21 @@ config. <code>--catalog</code> names the catalog clone ROOT, so the model's <cod
 <p class="admonition-title">Automatic MaxModelLen derivation</p>
 <p>When using roofline or trained-physics mode and <code>--max-model-len</code> is not explicitly set, BLIS auto-derives it from <code>max_position_embeddings</code> in the HuggingFace <code>config.json</code>. For models with <code>rope_scaling</code>, the scaling factor is applied based on vLLM's blacklist approach: types <code>linear</code>, <code>dynamic</code>, <code>yarn</code>, <code>default</code>, and <code>mrope</code> apply the factor; types <code>su</code>, <code>longrope</code>, and <code>llama3</code> are excluded (these encode the full context in <code>max_position_embeddings</code>). For <code>yarn</code>, <code>original_max_position_embeddings</code> is used as the base when present. <code>gemma3</code> models skip <code>rope_scaling</code> entirely (<code>max_position_embeddings</code> is pre-scaled). The derived value is then capped at the KV-feasible maximum (<code>total_kv_blocks * block_size</code>) to prevent context windows from exceeding GPU memory capacity. Override with <code>--max-model-len</code> <N>` when needed.</p>
 </div>
+<h3 id="prefix-caching-engine-setting">Prefix caching engine setting<a class="headerlink" href="#prefix-caching-engine-setting" title="Permanent link">&para;</a></h3>
+<p><code>blis run</code> and <code>blis replay</code> expose <code>--no-enable-prefix-caching</code> to mirror vLLM's
+engine-level negative flag. The default is unchanged: prefix caching is enabled. When the
+flag is present, a newly admitted request receives no cross-request GPU prefix credit, so its
+prefill is charged from the start of the prompt. A request already in progress still resumes
+from its own computed position.</p>
+<p>The switch deliberately does <strong>not</strong> disable CPU/offload-tier reloads. vLLM treats local
+prefix-cache lookup and external KV reload as independent mechanisms, and BLIS keeps the same
+boundary. The setting is also a deployment input rather than trace data: re-supply
+<code>--no-enable-prefix-caching</code> on replay to reproduce a run (INV-13), like
+<code>--kv-cache-dtype</code>.</p>
+<p>Scope note: this flag currently gates batch-formation reuse only. The cluster routing scorers
+<code>precise-prefix-cache</code> and <code>no-hit-lru</code> still query cache affinity; making those scorers
+ignore affinity when engine prefix caching is disabled is a separate cluster-level follow-up
+rather than being silently conflated with the simulator gate in #1867.</p>
 <h2 id="how-trained-physics-works">How Trained-Physics Works<a class="headerlink" href="#how-trained-physics-works" title="Permanent link">&para;</a></h2>
 <p>Trained-physics mode applies <strong>learned correction factors</strong> to analytical roofline basis functions, combining the physical grounding of roofline with the accuracy of data-driven fitting. Coefficients are fitted from real vLLM measurements and generalize across model architectures, workloads, and TP configurations.</p>
 <p><strong>StepTime formula</strong> (10 beta coefficients in bundled defaults):</p>
