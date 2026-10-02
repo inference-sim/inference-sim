@@ -138,3 +138,8 @@ docs/plans/
 # Nous campaign orchestration (experiment worktrees + state, not committed)
 .nous-experiments/
 .nous/
+
+# compiled scoring binaries (built with `go run`/`go build`; never artefacts in git)
+/kernelscore
+/estimatorscore
+/metricscore
