@@ -55,8 +55,11 @@ escaping symlinks scrubbed (`scripts/pr_review/scrub_symlinks.sh`) before any re
   `/pr-review` as a precise token (not `/blis-pr-review`, `/archon-pr-review`, or a future
   `/pr-review-*`) **and** the commenter must hold write access. Both are checked from the trusted ref.
 - **Three jobs so the box that reads untrusted code cannot act:** `gate` (ubuntu-latest, touches no PR
-  content) → `review` (`pr-review-untrusted` runner, `contents: read`, **no** `pull-requests: write`)
-  → `post` (ubuntu-latest, `pull-requests: write`, never reads PR code).
+  content) → `review` (`pr-review-untrusted` runner, `contents: read`, **no** `pull-requests: write`,
+  **no** `id-token: write`) → `post` (ubuntu-latest, `pull-requests: write`, never reads PR code).
+  blis's `claude-code-action` is handed the job's read-only `github_token` so it takes its
+  `OVERRIDE_GITHUB_TOKEN` path and **skips the OIDC exchange** — which would otherwise need
+  `id-token: write` on the untrusted box and would mint the Anthropic App's *write* token (#1883).
 - **Key out of the session:** LiteLLM needs the VPN, so the runner is self-hosted — but the key lives
   **only in a sidecar container** (`k8s/pr-review-runner.yaml`). The reviewer talks to
   `http://localhost:4000` with a **dummy** key; the sidecar injects the real one (both
