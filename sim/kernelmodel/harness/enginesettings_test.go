@@ -181,3 +181,118 @@ func TestWithoutSettingsEveryFieldReportsTheScenario(t *testing.T) {
 		}
 	}
 }
+
+// Every arm must run one point with the SAME configuration. Only the step-time model may
+// differ; if an arm got different admission settings the five-estimator table would be
+// comparing deployments rather than timing models, and the difference would look like
+// accuracy.
+func TestEveryArmSharesOneMeasuredConfiguration(t *testing.T) {
+	set, err := LoadEngineSettings(settingsPath)
+	if err != nil {
+		t.Skipf("engine settings unavailable: %v", err)
+	}
+	sw := testSweep(t)
+	base := Config{Repos: hopperRepos(), Admission: AdmissionKernelKV, Seed: 42,
+		EngineSettings: set, Backends: hopperBackends()}
+
+	var first PointConfig
+	var firstArm Estimator
+	for i, e := range []Estimator{EstimatorKernel, EstimatorRoofline, EstimatorTrainedPhysics} {
+		cfg := base
+		cfg.Estimator = e
+		obs, err := Run(sw, 16, cfg)
+		if err != nil {
+			t.Fatalf("%s: %v", e, err)
+		}
+		if i == 0 {
+			first, firstArm = obs.Settings, e
+			if first.SeqsFrom != SourceMeasured {
+				t.Fatalf("the fixture point does not use a measured max_num_seqs (%q), so "+
+					"this test would not detect a divergence", first.SeqsFrom)
+			}
+			continue
+		}
+		if obs.Settings != first {
+			t.Errorf("%s ran with a different configuration than %s:\n  %+v\n  %+v",
+				e, firstArm, obs.Settings, first)
+		}
+		if obs.KVBlocks == 0 {
+			t.Errorf("%s got no KV budget", e)
+		}
+	}
+	t.Logf("all arms ran with max_num_seqs %d (%s), tokens %d (%s), prefixOff %v (%s)",
+		first.MaxNumSeqs, first.SeqsFrom, first.MaxNumBatchedTokens, first.TokensFrom,
+		first.PrefixCachingDisabled, first.PrefixFrom)
+}
+
+// The measured settings must actually change the simulation. If supplying them moved nothing
+// anywhere, the lookup would be decoration and the scenario's assumed values would still be
+// in force.
+//
+// The fixture is deliberately the b300 ep4-dp2 sweep rather than a Hopper one. On gpt-oss the
+// runs passed max_num_seqs EQUAL to the client concurrency, so the cap never binds in a closed
+// loop that holds exactly that many in flight, and TTFT is identical either way -- correctly.
+// On this sweep the run passed nothing, vLLM resolves 1024 against the scenario's assumed 256,
+// and with dp 2 that is the difference between a cap of 512 and one of 2048 at concurrency
+// 1024. Measured: TTFT falls from 13,825,369 us to 221,779 us, a 62x change.
+func TestMeasuredSettingsChangeTheSimulation(t *testing.T) {
+	set, err := LoadEngineSettings(settingsPath)
+	if err != nil {
+		t.Skipf("engine settings unavailable: %v", err)
+	}
+	c, err := LoadCorpus(
+		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/aisimulate_e2e.json")
+	if err != nil {
+		t.Skip(err)
+	}
+	var sw Sweep
+	for i := range c.Sweeps {
+		if c.Sweeps[i].Scenario == "minimax-m2.5-b300-fp4-vllm-tp2-ep4-dp2.yaml" &&
+			c.Sweeps[i].Label == "1k1k" {
+			sw = c.Sweeps[i]
+			break
+		}
+	}
+	if sw.Scenario == "" {
+		t.Skip("the b300 ep4-dp2 sweep is not in the corpus")
+	}
+
+	without := Config{Repos: hopperRepos(), Admission: AdmissionKernelKV, Seed: 42}
+	with := without
+	with.EngineSettings = set
+
+	// Concurrency 1024: the first point where the scenario's assumed cap binds and the
+	// measured one does not.
+	const conc = 1024
+	a, err := Run(sw, conc, without)
+	if err != nil {
+		t.Fatalf("without: %v", err)
+	}
+	b, err := Run(sw, conc, with)
+	if err != nil {
+		t.Fatalf("with: %v", err)
+	}
+
+	if a.Settings.MaxNumSeqs == b.Settings.MaxNumSeqs {
+		t.Fatalf("the scenario and the engine agree on max_num_seqs (%d), so this fixture "+
+			"cannot show the lookup taking effect", a.Settings.MaxNumSeqs)
+	}
+	if b.Settings.SeqsFrom != SourceResolved {
+		t.Errorf("this sweep's run passed no max_num_seqs, so the value should be %q, got %q",
+			SourceResolved, b.Settings.SeqsFrom)
+	}
+	if a.MeanTTFTUs == b.MeanTTFTUs {
+		t.Error("supplying the measured settings changed nothing; the lookup is not reaching " +
+			"the simulation")
+	}
+	// The assumed cap made requests queue behind whole generations. The measured one does
+	// not, so TTFT must fall by a wide margin rather than drift.
+	if b.MeanTTFTUs >= a.MeanTTFTUs/10 {
+		t.Errorf("TTFT went from %.0f us to %.0f us; the assumed cap bound hard at this "+
+			"concurrency, so the measured cap should be far lower, not comparable",
+			a.MeanTTFTUs, b.MeanTTFTUs)
+	}
+	t.Logf("assumed cap %d -> TTFT %.0f us; resolved cap %d -> TTFT %.0f us (%.0fx)",
+		a.Settings.MaxNumSeqs, a.MeanTTFTUs, b.Settings.MaxNumSeqs, b.MeanTTFTUs,
+		a.MeanTTFTUs/b.MeanTTFTUs)
+}
