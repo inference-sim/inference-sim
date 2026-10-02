@@ -204,10 +204,14 @@ jobs:
           soft() { echo "::warning::qa-review: $1"; : > "$OUT"; exit 0; }
           title=$(gh pr view "$PR" --repo "$REPO" --json title --jq '.title // ""') || soft "could not read PR title"
           gh pr view "$PR" --repo "$REPO" --json body --jq '.body // ""' > "$RUNNER_TEMP/qa-body.txt" || soft "could not read PR body"
-          # Diff from the CAPTURED base/head SHAs (git objects already fetched),
-          # NOT `gh pr diff` which reads the live mutable head — so a push mid-run
-          # cannot slip a newer diff past the SHA the worktree/archon reviewed.
-          git diff "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/qa-diff.txt" || soft "could not build the diff for $BASE_SHA..$HEAD_SHA"
+          # Diff from the CAPTURED SHAs (git objects already fetched), NOT
+          # `gh pr diff` (live mutable head). Against the MERGE BASE, not the base
+          # tip: `pr.base.sha` is the base branch tip, which for a diverged branch
+          # is not the fork point, so a two-tree `base..head` diff would render
+          # commits the base gained since divergence as reverse PR changes. The
+          # three-dot `merge-base..head` is the PR's own change set.
+          MB=$(git merge-base "$BASE_SHA" "$HEAD_SHA") || soft "could not compute merge-base of $BASE_SHA and $HEAD_SHA"
+          git diff "$MB" "$HEAD_SHA" > "$RUNNER_TEMP/qa-diff.txt" || soft "could not build the diff for $MB..$HEAD_SHA"
           python3 scripts/qa-review/questioner.py \
             --title="$title" --body-file "$RUNNER_TEMP/qa-body.txt" --diff-file "$RUNNER_TEMP/qa-diff.txt" \
             > "$RUNNER_TEMP/qa-questions.json" || soft "questioner failed"
@@ -305,8 +309,11 @@ jobs:
           # comment can never be mistaken for a review of the current head.
           stale=""
           cur=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq '.headRefOid' 2>/dev/null || echo "")
-          if [[ -n "$cur" && "$cur" != "$HEAD_SHA" ]]; then
-            echo "::warning::PR head moved $HEAD_SHA -> $cur during the review; flagging the comment as stale"
+          # Fail CLOSED: an empty/failed lookup is treated as "cannot confirm the
+          # head is unchanged" and flagged stale, so a flaky `gh` can never let a
+          # moved-head result publish as if it were fresh.
+          if [[ -z "$cur" || "$cur" != "$HEAD_SHA" ]]; then
+            echo "::warning::could not confirm head unchanged (reviewed $HEAD_SHA, live '${cur:-unknown}'); flagging the comment stale"
             stale="--stale"
           fi
           python3 scripts/pr_review/assemble_comment.py \
@@ -343,9 +350,14 @@ jobs:
       - name: Post one comment
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
           PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
         run: |
           set -uo pipefail
+          # mkdir -p: this job does NOT check out the repo and the download step
+          # continues-on-error, so when the artifact is absent `out/` may not
+          # exist — create it before writing the fallback.
+          mkdir -p out
           if [[ ! -s out/comment.md ]]; then
             echo "::warning::no review comment artifact (the review job produced nothing); posting a failure note"
             printf '## /pr-review\n\nThe review did not complete and produced no output. See the workflow run logs.\n' > out/comment.md
@@ -356,4 +368,6 @@ jobs:
           # clobber an existing archon or qa-review comment on the PR. A fresh
           # comment (headed "## /pr-review") is unambiguous; occasional duplicates
           # on repeat runs are acceptable for a manual command.
-          gh pr comment "$PR_NUMBER" --body-file out/comment.md
+          # --repo is REQUIRED: this job has no checkout, so gh cannot infer the
+          # repository from a git remote and would otherwise fail.
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file out/comment.md

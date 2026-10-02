@@ -280,6 +280,50 @@ func TestPrReviewVerdictIsAdvisoryOnePost(t *testing.T) {
 
 // --- Helper-script behaviour ---
 
+// Pins the fixes from the second namasl review round.
+func TestPrReviewSecondRoundHardening(t *testing.T) {
+	wf := prReviewWorkflow(t)
+	checks := []struct{ needle, why string }{
+		{"git merge-base", "the qa diff must be against the merge base, not the base tip (diverged-branch correctness)"},
+		{`-z "$cur"`, "the freshness check must fail CLOSED (empty live-head lookup => stale)"},
+		{`gh pr comment "$PR_NUMBER" --repo "$REPO"`, "the post job has no checkout, so gh pr comment must pass --repo"},
+		{"mkdir -p out", "the post fallback must create out/ (download continues-on-error)"},
+	}
+	for _, c := range checks {
+		if !strings.Contains(wf, c.needle) {
+			t.Errorf("pr-review.yml missing %q — %s", c.needle, c.why)
+		}
+	}
+	// The sidecar must bind loopback only (k8s manifest), not all interfaces.
+	runner := readFileOrFail(t, filepath.Join("..", "k8s", "pr-review-runner.yaml"))
+	if !strings.Contains(runner, "listen 127.0.0.1:4000") {
+		t.Error("the LiteLLM sidecar must listen on 127.0.0.1 only, not all interfaces")
+	}
+	if strings.Contains(runner, "listen 4000;") {
+		t.Error("the sidecar still binds all interfaces (listen 4000); must be 127.0.0.1:4000")
+	}
+}
+
+func TestAssembleCommentCapsOversizeBody(t *testing.T) {
+	requirePython3(t)
+	dir := t.TempDir()
+	big := filepath.Join(dir, "big.md")
+	out := filepath.Join(dir, "out.md")
+	_ = os.WriteFile(big, []byte(strings.Repeat("x", 80000)), 0o644)
+	_, code := runPy(t, "", "pr_review/assemble_comment.py",
+		"--pr", "1", "--archon", big, "--out", out)
+	if code != 0 {
+		t.Fatalf("assemble_comment exited %d", code)
+	}
+	body := readFileOrFail(t, out)
+	if len(body) > 65536 {
+		t.Errorf("combined comment is %d chars, over GitHub's 65536 limit", len(body))
+	}
+	if !strings.Contains(body, "truncated") {
+		t.Error("an over-limit comment must carry a truncation notice")
+	}
+}
+
 func TestScrubSecretsRedactsButKeepsProse(t *testing.T) {
 	requirePython3(t)
 	in := "normal prose line\nsk-abcdef1234567890 and Bearer AbCdEf123456xyz789\nx-api-key: supersecretvalue123\nkeep this\n"

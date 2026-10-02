@@ -51,7 +51,12 @@ data:
   # LITELLM_ names so nginx's own `$host` etc. survive).
   default.conf.template: |
     server {
-      listen 4000;
+      # Bind LOOPBACK ONLY, not 0.0.0.0: the runner container shares this pod's
+      # network namespace so it reaches the proxy at 127.0.0.1:4000, but no OTHER
+      # pod can reach the credential-injecting proxy via this pod's IP. Binding
+      # all interfaces would let any workload that can route to the pod use the
+      # real LiteLLM credential.
+      listen 127.0.0.1:4000;
       # Strip any client-supplied auth; this proxy is the only thing that
       # decides the credential, so a dummy or hostile Authorization from the
       # runner container is overwritten, never forwarded.

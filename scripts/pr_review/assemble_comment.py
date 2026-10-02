@@ -51,8 +51,18 @@ def main() -> int:
         _section("Correctness (blis-pr-review)", args.blis),
         _section("Cross-vendor (qa-review)", args.qa),
     ]
+    body = "\n".join(parts).rstrip() + "\n"
+
+    # GitHub rejects an issue comment over 65,536 chars. archon alone can approach
+    # 60 KB, so a legitimate combined review can exceed the limit and the post
+    # would fail. Truncate with a notice rather than lose the whole comment.
+    LIMIT = 65000
+    if len(body) > LIMIT:
+        notice = "\n\n_… truncated — the combined review exceeded GitHub's comment limit; see the workflow run logs for the full output._\n"
+        body = body[: LIMIT - len(notice)] + notice
+
     with open(args.out, "w", encoding="utf-8") as fh:
-        fh.write("\n".join(parts).rstrip() + "\n")
+        fh.write(body)
     return 0
 
 
