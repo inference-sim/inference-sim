@@ -33,20 +33,31 @@ def main() -> int:
     # Name the reviewed commit so a reader knows exactly what was assessed — the
     # worktree, archon and diff are all pinned to this SHA.
     reviewed = f" · reviewed at `{args.head_sha}`" if args.head_sha else ""
+
+    # STALE: the head moved (or couldn't be confirmed) during the review. We do
+    # NOT publish the reviewer sections — a reviewer (notably qa's answerer, whose
+    # pr_diff tool reads the live PR) may have mixed the moved head with the
+    # captured tree, so presenting findings "at <sha>" would be a false claim.
+    # Publish only a re-run notice. (Suppress, don't annotate — per review.)
+    if args.stale:
+        body = "\n".join([
+            f"## /pr-review — PR #{args.pr}{reviewed}",
+            "",
+            f"> ⚠️ The PR head moved during this review (or could not be confirmed), so the "
+            f"reviewers' inputs may mix `{args.head_sha}` with a newer head. Findings are "
+            f"**withheld** rather than shown under a SHA they may not reflect. "
+            f"**Re-run `/pr-review`** on the current head.",
+        ]).rstrip() + "\n"
+        with open(args.out, "w", encoding="utf-8") as fh:
+            fh.write(body)
+        return 0
+
     parts = [
         f"## /pr-review — PR #{args.pr}{reviewed}",
         "",
         "_Automated, **advisory** review (archon + blis-pr-review + qa-review). "
         "It gates nothing and merges nothing; a human maintainer decides._",
         "",
-    ]
-    if args.stale:
-        parts += [
-            f"> ⚠️ The PR head moved after this review started. This reflects "
-            f"`{args.head_sha}`, **not** the current head — re-run `/pr-review`.",
-            "",
-        ]
-    parts += [
         _section("Architecture (archon)", args.archon),
         _section("Correctness (blis-pr-review)", args.blis),
         _section("Cross-vendor (qa-review)", args.qa),

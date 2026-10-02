@@ -324,6 +324,33 @@ func TestAssembleCommentCapsOversizeBody(t *testing.T) {
 	}
 }
 
+// When the head moved (stale), the comment must publish ONLY a re-run notice —
+// never the reviewer sections under a SHA they may not reflect (review finding).
+func TestAssembleCommentStaleWithholdsSections(t *testing.T) {
+	requirePython3(t)
+	dir := t.TempDir()
+	ar := filepath.Join(dir, "ar.md")
+	out := filepath.Join(dir, "out.md")
+	_ = os.WriteFile(ar, []byte("ARCHON-SECTION-CONTENT"), 0o644)
+	_, code := runPy(t, "", "pr_review/assemble_comment.py",
+		"--pr", "9", "--head-sha", "deadbeef", "--stale", "--archon", ar, "--out", out)
+	if code != 0 {
+		t.Fatalf("assemble_comment exited %d", code)
+	}
+	body := readFileOrFail(t, out)
+	if strings.Contains(body, "ARCHON-SECTION-CONTENT") {
+		t.Error("stale comment must NOT publish reviewer section content")
+	}
+	for _, h := range []string{"Architecture (archon)", "Correctness (blis", "Cross-vendor (qa"} {
+		if strings.Contains(body, h) {
+			t.Errorf("stale comment must omit section header %q", h)
+		}
+	}
+	if !strings.Contains(body, "Re-run") && !strings.Contains(body, "re-run") {
+		t.Error("stale comment must tell the reader to re-run")
+	}
+}
+
 func TestScrubSecretsRedactsButKeepsProse(t *testing.T) {
 	requirePython3(t)
 	in := "normal prose line\nsk-abcdef1234567890 and Bearer AbCdEf123456xyz789\nx-api-key: supersecretvalue123\nkeep this\n"
