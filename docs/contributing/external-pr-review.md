@@ -57,8 +57,15 @@ escaping symlinks scrubbed (`scripts/pr_review/scrub_symlinks.sh`) before any re
   `http://localhost:4000` with a **dummy** key; the sidecar injects the real one (both
   `Authorization: Bearer` for qa and `x-api-key` for blis). A runtime step asserts no real key is in
   the job env.
-- **Egress lock:** a Calico `NetworkPolicy` (`k8s/pr-review-netpol.yaml`) default-denies egress except
-  DNS and 443.
+- **Egress lock — follow-up (not yet enabled).** A default-deny egress `NetworkPolicy` is the intended
+  belt-and-suspenders, but on this cluster the pod's DNS resolver (`172.21.0.10`) is a node-local/host
+  resolver that neither a `namespaceSelector` nor an `ipBlock: 0.0.0.0/0` egress peer matches, so every
+  vanilla `NetworkPolicy` form tried blocked DNS and broke the runner (a non-443 port *was* correctly
+  blocked, so the policy enforces — it just can't thread cluster DNS). Enabling it needs an
+  `AdminNetworkPolicy` or node-CIDR allowance, tracked as a follow-up. This is acceptable for v1 because
+  the **primary** control is that no high-value secret is in the session: the LiteLLM key is in the
+  sidecar, and the job's `GITHUB_TOKEN` is read-only (`contents`/`pull-requests: read`), so there is
+  nothing worth exfiltrating even over open 443.
 - **Output scrub:** the combined comment passes `scripts/pr_review/scrub_secrets.py` before posting —
   a last line, not the control (the control is that there is no key to leak).
 - **Advisory:** the verdict is never a required status check, so an injected review cannot block a
@@ -74,23 +81,24 @@ reviewer holds a shell on untrusted input, so a single workflow with a write-acc
 
 - A self-hosted runner labelled **`pr-review-untrusted`** with the **LiteLLM sidecar**
   (`k8s/pr-review-runner.yaml`), isolated from the delivery-loop `self-hosted` pool.
-- The egress `NetworkPolicy` (`k8s/pr-review-netpol.yaml`).
 - The sidecar's `nous-wiki-llm` secret (LiteLLM endpoint + key). The workflow is inert-but-safe until
   these exist — it is maintainer-gated, so it cannot fire accidentally.
+- (Follow-up) the egress `NetworkPolicy` once the cluster-DNS issue above is resolved.
 
 ## Residual risks we accept
 
 - **A weak/odd advisory comment.** An injection could nudge the LLM to write something unhelpful. It
   is visible, scrubbed, and non-authoritative; a human reads it.
-- **Gateway spend.** Bounded by the LiteLLM budget on the shared key; egress-locked so a leaked dummy
-  is useless.
-- **Platform trust.** We trust `claude-code-action`, the runner image, and Calico to hold; actions are
-  SHA-pinnable and the egress policy is enforced by the CNI.
+- **Gateway spend.** Bounded by the LiteLLM budget on the shared key; the session's dummy key is useless
+  (it only reaches the in-pod sidecar).
+- **No egress-lock yet** (see the follow-up above). Mitigated by the keyless session + read-only token:
+  there is no high-value secret on the box to exfiltrate.
+- **Platform trust.** We trust `claude-code-action` and the runner image to hold; actions are
+  SHA-pinnable.
 
 ## Validation before enabling
 
 Because the verdict is advisory, green CI is not the bar. Before relying on this: run an **adversarial
 dry-run** on a throwaway fork PR carrying an injection payload (title, comment, and a file body) and
 confirm the key is not exfiltrated, no PR code executes, and the comment is harmless; capture the
-containment proof (no real key in the job env; a blocked egress endpoint); and get a human maintainer
-sign-off.
+containment proof (no real key in the job env); and get a human maintainer sign-off.
