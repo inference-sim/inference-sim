@@ -1,0 +1,40 @@
+# Egress lock for the external-PR reviewer pod (#1879). Calico enforces
+# networking.k8s.io/v1 NetworkPolicy in this cluster (verified: Calico CRDs
+# present). Default-deny egress, then allow only what the pod needs.
+#
+# HONEST LIMITATION: vanilla NetworkPolicy allowlists by IP/CIDR/port, NOT by
+# hostname, so this cannot say "only github.com and the LiteLLM host". It allows
+# DNS + outbound 443 and relies on the PRIMARY control — the LiteLLM key never
+# being in the session (it lives in the sidecar) — so there is nothing to
+# exfiltrate even over an open 443. Tightening to a domain allowlist needs
+# Calico domain rules (GlobalNetworkPolicy) or an egress gateway; tracked as a
+# hardening follow-up, not a blocker, because containment does not depend on it.
+#
+# runner <-> sidecar traffic is pod-local (localhost) and not subject to this
+# policy, so the sidecar reaching the real LiteLLM endpoint is the one egress
+# that matters here.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pr-review-egress-lock
+  namespace: blis
+spec:
+  podSelector:
+    matchLabels:
+      app: github-runner-pr-review
+  policyTypes:
+  - Egress
+  egress:
+  # DNS — both protocols, to any resolver (kube-dns lives in another namespace).
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Outbound HTTPS: GitHub (runner API, checkout) and the LiteLLM endpoint
+  # (sidecar, over the VPN). Not domain-restricted — see the limitation note.
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443

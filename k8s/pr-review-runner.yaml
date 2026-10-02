@@ -1,0 +1,209 @@
+# Self-hosted runner for the EXTERNAL/fork PR reviewer (`/pr-review`, issue #1879).
+#
+# This is a SEPARATE pod from the delivery-loop runners (k8s/deployment.yaml) on
+# purpose. It runs untrusted PR content, so it must never share a runner with the
+# trusted delivery loop. Two things make it its own pool:
+#
+#   1. A DISTINCT RUNNER LABEL — `pr-review-untrusted`, not `self-hosted`. Only
+#      .github/workflows/pr-review.yml targets this label, and the delivery loop
+#      (which targets `self-hosted`) never lands here. Getting this wrong is the
+#      whole risk, so the label is the one value you must not copy from the
+#      delivery runner.
+#
+#   2. A LiteLLM SIDECAR that holds the key. The real LiteLLM credential is a
+#      GitHub Actions secret today, injected into the step env — readable by a
+#      prompt-injected reviewer. Here the key lives ONLY in the sidecar container
+#      (from `litellm-sidecar-secret`); the runner container gets no key and the
+#      workflow points the LLM clients at http://localhost:4000. Pod containers
+#      do not share env or filesystem, so the runner container (where injection
+#      runs) cannot read the sidecar's key. The key being fixed/non-rotatable is
+#      exactly why it must never enter the session.
+#
+# Ephemerality, per-pod names, and the ephemeral-storage limit are inherited from
+# the delivery runner's hard-won settings — see k8s/deployment.yaml's header.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-sidecar-nginx
+  namespace: blis
+data:
+  # Main config. `worker_processes 1` is load-bearing: `auto` spawns one worker
+  # per core, and on this cluster's large nodes that was ~130 workers — which
+  # OOMKilled the 128Mi sidecar (exit 137) in a restart loop. A proxy sidecar
+  # needs exactly one. pid under /tmp because the image runs unprivileged.
+  nginx.conf: |
+    worker_processes 1;
+    error_log /var/log/nginx/error.log notice;
+    pid /tmp/nginx.pid;
+    events { worker_connections 1024; }
+    http {
+      include /etc/nginx/mime.types;
+      default_type application/octet-stream;
+      access_log /var/log/nginx/access.log;
+      include /etc/nginx/conf.d/*.conf;
+    }
+  # A minimal auth-injecting reverse proxy. The runner container talks plain
+  # http to localhost:4000 with a dummy key; this adds the real Bearer token
+  # (from the sidecar's env, sourced from nous-wiki-llm) and forwards to the real
+  # LiteLLM endpoint over the VPN. `${VAR}` are substituted at container start by
+  # the official nginx image's envsubst (NGINX_ENVSUBST_FILTER limits it to our
+  # LITELLM_ names so nginx's own `$host` etc. survive).
+  default.conf.template: |
+    server {
+      listen 4000;
+      # Strip any client-supplied auth; this proxy is the only thing that
+      # decides the credential, so a dummy or hostile Authorization from the
+      # runner container is overwritten, never forwarded.
+      location / {
+        proxy_pass ${LITELLM_UPSTREAM};
+        proxy_set_header Authorization "Bearer ${LITELLM_KEY}";
+        # Leave Host as the upstream host (nginx default = proxy_pass host): the
+        # VPC ingress routes by Host, so blanking it 503s. SNI matches via
+        # proxy_ssl_server_name.
+        proxy_ssl_server_name on;
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-runner-pr-review
+  namespace: blis
+  labels:
+    app: github-runner-pr-review
+spec:
+  # One is enough for external-PR volume; reviews run serially. Raise only if a
+  # backlog is observed. Each is ephemeral (one job per container, fresh layer).
+  replicas: 1
+  selector:
+    matchLabels:
+      app: github-runner-pr-review
+  strategy:
+    # Recreate, not surge: the namespace CPU quota has no room for a second
+    # (surge) replica during a rollout, so a RollingUpdate wedges. One replica,
+    # brief gap on update — fine for an on-demand reviewer.
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: github-runner-pr-review
+    spec:
+      # TODO(hardening): a dedicated non-root SA would be ideal for the untrusted
+      # box. Reusing anyuid-sa to match the proven delivery-runner config so the
+      # first bring-up is not also debugging SCC/permissions. Container-root here
+      # is constrained by the SCC and the NetworkPolicy; the load-bearing controls
+      # are the key-in-sidecar isolation and egress-lock, not the uid.
+      serviceAccountName: anyuid-sa
+      imagePullSecrets:
+      - name: dockerhub-secret
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: ibm-cloud.kubernetes.io/worker-pool-name
+                operator: NotIn
+                values:
+                - trusted-image-repo
+      containers:
+      - name: runner
+        image: myoung34/github-runner:ubuntu-jammy
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: REPO_URL
+          value: "https://github.com/inference-sim/inference-sim"
+        - name: RUNNER_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        # THE isolation label. Only pr-review.yml targets it.
+        - name: LABELS
+          value: "pr-review-untrusted"
+        - name: RUNNER_SCOPE
+          value: "repo"
+        - name: EPHEMERAL
+          value: "true"
+        - name: DISABLE_AUTO_UPDATE
+          value: "true"
+        - name: RUN_AS_ROOT
+          value: "true"
+        - name: RUNNER_WORKDIR
+          value: "/tmp/runner/_work"
+        # Reuses the delivery pool's registration PAT — same repo scope; only the
+        # LABEL differs, so no new token is needed. (If you later want this
+        # runner's registration isolated too, point this at its own secret.)
+        - name: ACCESS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-runner-secret
+              key: github_token
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        resources:
+          requests:
+            # 500m, not 1 core: the namespace CPU quota (requests.cpu) is the
+            # binding constraint, and a review is I/O-bound — it mostly waits on
+            # the remote LLM. The limit still allows a burst to 2 cores for the
+            # brief archon-go build. (Raising this back to 1 needs quota headroom.)
+            cpu: "500m"
+            memory: "2Gi"
+            ephemeral-storage: "2Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+            ephemeral-storage: "12Gi"
+      # The auth-holding sidecar. The runner container reaches it at
+      # localhost:4000; it is the ONLY container that holds the LiteLLM key.
+      - name: litellm-sidecar
+        image: nginxinc/nginx-unprivileged:stable
+        imagePullPolicy: IfNotPresent
+        env:
+        # Reuses the existing in-namespace LiteLLM credential (`nous-wiki-llm`),
+        # the only k8s secret that holds a LiteLLM key + endpoint
+        # (https://ete-litellm.ai-models.vpc-int.res.ibm.com, internal VPC). The
+        # delivery loop's key is a GitHub Actions secret, not a k8s one, so it is
+        # NOT reusable here. Mounted ONLY in this sidecar — never in the runner
+        # container. (If nous-wiki-llm is ever removed with nous-wiki, copy it to
+        # a dedicated secret: `oc get secret nous-wiki-llm -o yaml | sed
+        # s/nous-wiki-llm/litellm-sidecar-secret/ | oc apply -f -`.)
+        - name: LITELLM_UPSTREAM
+          valueFrom:
+            secretKeyRef:
+              name: nous-wiki-llm
+              key: base-url
+        - name: LITELLM_KEY
+          valueFrom:
+            secretKeyRef:
+              name: nous-wiki-llm
+              key: api-key
+        # envsubst only our two names; leave nginx runtime vars intact.
+        - name: NGINX_ENVSUBST_FILTER
+          value: "LITELLM_"
+        ports:
+        - containerPort: 4000
+        volumeMounts:
+        - name: litellm-nginx
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        - name: litellm-nginx
+          mountPath: /etc/nginx/templates/default.conf.template
+          subPath: default.conf.template
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "250m"
+            memory: "128Mi"
+      volumes:
+      - name: tmp
+        emptyDir:
+          sizeLimit: 6Gi
+      - name: litellm-nginx
+        configMap:
+          name: litellm-sidecar-nginx
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
