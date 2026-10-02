@@ -70,6 +70,11 @@ func TestDisablingPrefixCachingChargesWholePrompt(t *testing.T) {
 		t.Fatalf("prefix caching disabled: charged %d tokens, want whole %d-token prompt",
 			withoutCaching, wantWholePrompt)
 	}
+	wantCachedWork := int(tailBlocks * blockSize)
+	if withCaching != wantCachedWork {
+		t.Fatalf("default/enabled prefix caching should credit the %d-token shared prefix and charge %d tail tokens, got %d",
+			sharedBlocks*blockSize, wantCachedWork, withCaching)
+	}
 	if withCaching >= withoutCaching {
 		t.Fatalf("prefix caching enabled should reduce scheduled prefill work: enabled=%d disabled=%d",
 			withCaching, withoutCaching)
