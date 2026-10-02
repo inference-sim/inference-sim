@@ -57,7 +57,12 @@ data:
       # runner container is overwritten, never forwarded.
       location / {
         proxy_pass ${LITELLM_UPSTREAM};
+        # Inject auth in BOTH shapes: qa-review uses the OpenAI format
+        # (Authorization: Bearer), blis via claude-code-action uses the Anthropic
+        # format (x-api-key). The real key goes out in both; whatever dummy the
+        # client sent is overwritten, never forwarded.
         proxy_set_header Authorization "Bearer ${LITELLM_KEY}";
+        proxy_set_header x-api-key "${LITELLM_KEY}";
         # Leave Host as the upstream host (nginx default = proxy_pass host): the
         # VPC ingress routes by Host, so blanking it 503s. SNI matches via
         # proxy_ssl_server_name.
