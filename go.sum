@@ -10,12 +10,16 @@ github.com/inference-sim/blis-latency-kernel v0.0.0-20261001005325-63b08d6bc43c 
 github.com/inference-sim/blis-latency-kernel v0.0.0-20261001005325-63b08d6bc43c/go.mod h1:4XVyDLo4/aYLUNRPGdBrMNXZlUWONJUgR7JVnP2Ave8=
 github.com/inference-sim/blis-latency-kernel v0.0.0-20261002164322-ab61faad861c h1:6kJpDm5tp3IgsjvbC/C4UcO6beIgDfBoa6ljCC0KS7E=
 github.com/inference-sim/blis-latency-kernel v0.0.0-20261002164322-ab61faad861c/go.mod h1:ysPHAHM/ikJVM27ixDQdWGw5+EwqLKcTF5qhBDtXHH8=
+github.com/inference-sim/blis-latency-kernel v0.0.0-20261003145215-0bbcb971ae7a h1:n0s7jgmMvtWC845GVEwgyRMOurcnDcQsutI8Al5p31c=
+github.com/inference-sim/blis-latency-kernel v0.0.0-20261003145215-0bbcb971ae7a/go.mod h1:7S9/hL8IGIHAfPck0L7TnTKDmXc2If5t/psqGvBBzaU=
 github.com/inference-sim/blis-schemas v0.0.0-20261001004101-d2993cfe976c h1:6EOG3mBgn77j8TnoMwpMv4ybSPTQCZ2FdMGGI5TK9D0=
 github.com/inference-sim/blis-schemas v0.0.0-20261001004101-d2993cfe976c/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
 github.com/inference-sim/blis-schemas v0.0.0-20261002000632-52dfe537d544 h1:EMEQh/keSO8lX1//ftN2GXmoLc1BWNHmpL/popuOioY=
 github.com/inference-sim/blis-schemas v0.0.0-20261002000632-52dfe537d544/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
 github.com/inference-sim/blis-schemas v0.0.0-20261002162723-3881c2cd2e58 h1:s0d1maq+qOHAS3GSEUblNZ1FnHW9BVEjrNWnOFtpWd4=
 github.com/inference-sim/blis-schemas v0.0.0-20261002162723-3881c2cd2e58/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
+github.com/inference-sim/blis-schemas v0.0.0-20261003144903-04672bc5153b h1:W+rjmFuGV3ccp4c+qOVTxJUr7k7ZfcGtjH7Xo6sGvcE=
+github.com/inference-sim/blis-schemas v0.0.0-20261003144903-04672bc5153b/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=

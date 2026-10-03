@@ -181,10 +181,30 @@ func (m *Model) Kernel() *latencykernel.Kernel { return m.k }
 
 // StepTime prices one forward pass over the scheduled batch.
 //
-// The Overlap estimate is used rather than NoOverlap: it is the kernel's per-layer
-// max-composed band edge, which is what a real engine achieves, and NoOverlap is the
-// fully serialized upper bound. blis-latency-kernel's own scoring commands use Overlap
-// for the same reason, so this keeps BLIS and those commands on one quantity.
+// StepEstimate.Expected is read rather than either band edge. The kernel reports a band
+// -- Overlap sums the max over resources within each layer, NoOverlap sums every resource
+// -- and Expected is the edge its own measured evidence selects, so this consumer does not
+// re-decide. An earlier version of this comment claimed Overlap "is what a real engine
+// achieves"; NVIDIA's FPM dataset, which measures one synchronized whole-forward iteration
+// at a known batch and KV-token count, contradicts that. Over 219 points spanning two
+// models, two parts and five parallelism topologies:
+//
+//	edge       mean|err|   signed
+//	Overlap      14.70%   -10.80%
+//	NoOverlap    10.16%    -0.73%
+//
+// NoOverlap is closer on four of the five cells and is nearly unbiased, where Overlap
+// carries a one-sided deficit of the same magnitude BLIS shows end to end. The physical
+// reason is PIECEWISE cudagraph mode: attention runs eagerly between captured segments,
+// so per-layer overlap is structurally limited.
+//
+// The one dissenting cell is pure-tp2 -- the whole model on two GPUs, where the expert
+// weight read dominates a single resource and per-stage max is the right composition.
+// Even there NoOverlap wins at batch >= 128. That is a regime boundary worth revisiting
+// with a resource-aware blend, not a reason to keep the optimistic edge everywhere.
+//
+// FPM is used only to choose between the kernel's own two edges. It is not fitted
+// against, and the InferenceX corpus BLIS is scored on is never used for either.
 func (m *Model) StepTime(batch []*sim.Request) int64 {
 	b := kernel.Batch{
 		Reqs:            make([]kernel.ReqShape, 0, len(batch)),
@@ -196,7 +216,7 @@ func (m *Model) StepTime(batch []*sim.Request) int64 {
 	}
 	// max(1) upholds BLIS's postcondition without depending on a registry value staying
 	// non-zero. See the package comment.
-	return max(1, ticks(m.k.StepTime(b).Overlap))
+	return max(1, ticks(m.k.StepTime(b).Expected))
 }
 
 // QueueingTime is the host work before a request can be scheduled: tokenization and

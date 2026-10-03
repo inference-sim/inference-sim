@@ -2,6 +2,7 @@ package kernelmodel
 
 import (
 	"testing"
+	"time"
 
 	"github.com/inference-sim/blis-schemas/kernel"
 
@@ -46,7 +47,7 @@ func TestStepTimeIsTheKernelsOwnNumberInTicks(t *testing.T) {
 	for _, r := range batch {
 		b.Reqs = append(b.Reqs, shapeOf(r))
 	}
-	want := m.Kernel().StepTime(b).Overlap.Microseconds()
+	want := m.Kernel().StepTime(b).Expected.Microseconds()
 	if got != want {
 		t.Errorf("adapter returned %d ticks, the kernel says %d", got, want)
 	}
@@ -136,9 +137,18 @@ func TestPrefillAndDecodeArePricedByDifferentLaws(t *testing.T) {
 	}
 }
 
-// At one scheduled token the step is host-bound, so the two regimes coincide. Pinning this
-// separately keeps the test above honest about WHERE the regimes diverge: a version that
-// only checked a single batch shape could pass on a coincidence.
+// At one scheduled token the step is host-bound, and the two regimes coincide ON THE
+// OVERLAP EDGE: a per-stage max is taken over resources, and the host term dominates every
+// stage, so the attention read's difference between a prefill chunk and a decode never
+// surfaces. Pinning this separately keeps the test above honest about WHERE the regimes
+// diverge: a version that only checked a single batch shape could pass on a coincidence.
+//
+// It is asserted against Overlap rather than against the adapter's own number, because the
+// adapter reads StepEstimate.Expected and that is NoOverlap, which sums every resource
+// instead of maxing within a stage. Summing keeps the HBM difference -- 2.447 ms for the
+// prefill chunk against 2.589 ms for the decode on this deployment -- so the two regimes
+// do NOT coincide there, and should not. The host-bound claim is a property of the
+// max-composed edge, so that is the edge it is checked on.
 func TestTheRegimesCoincideWhenTheStepIsHostBound(t *testing.T) {
 	m := open(t, "glm-5-h200-fp8-sglang-tp8.yaml")
 	const prompt = 4096
@@ -148,11 +158,20 @@ func TestTheRegimesCoincideWhenTheStepIsHostBound(t *testing.T) {
 	decode := &sim.Request{
 		InputTokens: make([]sim.TokenID, prompt), ProgressIndex: prompt, NumNewTokens: 1,
 	}
-	pt, dt := m.StepTime([]*sim.Request{prefill}), m.StepTime([]*sim.Request{decode})
+	pt := overlapOf(m, prefill)
+	dt := overlapOf(m, decode)
 	if pt != dt {
-		t.Errorf("at one scheduled token a prefill chunk priced %d and a decode %d; both "+
-			"are host-bound at this size and should coincide", pt, dt)
+		t.Errorf("at one scheduled token a prefill chunk priced %v and a decode %v on the "+
+			"overlap edge; both are host-bound at this size and should coincide", pt, dt)
 	}
+}
+
+// overlapOf prices one request on the band's max-composed edge, for a test whose claim is
+// about that edge rather than about what the adapter reports.
+func overlapOf(m *Model, r *sim.Request) time.Duration {
+	b := kernel.Batch{DecodeThreshold: DecodeThreshold, SMBudget: m.smBudget}
+	b.Reqs = append(b.Reqs, shapeOf(r))
+	return m.Kernel().StepTime(b).Overlap
 }
 
 // Step time must not fall when a request is scheduled more tokens. A mapping that sent
