@@ -13,7 +13,11 @@ import (
 // enabled: a small GPU + small CPU tier and one fast "fs" secondary tier. A churny
 // shared-prefix workload (below) evicts re-used prefixes down to the secondary
 // tier, so later requests hit it and take the H3 step-boundary deferral path.
-func offloadE2ECfg(seed int64) sim.SimConfig {
+func offloadE2ECfg(seed int64) sim.SimConfig { return offloadE2ECfgReadBW(seed, 7000) }
+
+// offloadE2ECfgReadBW is offloadE2ECfg with the secondary tier's read bandwidth set
+// (bytes/tick), so a test can make promotions far slower than a step.
+func offloadE2ECfgReadBW(seed int64, readBW float64) sim.SimConfig {
 	off := sim.KVOffloadConfig{
 		Enabled:           true,
 		CPUBytesToUse:     24 * 4096, // 24 CPU blocks
@@ -25,7 +29,7 @@ func offloadE2ECfg(seed int64) sim.SimConfig {
 		OffloadPromptOnly: true,
 		Tiers: []sim.KVOffloadTier{{
 			Type: "fs", RootDir: "/mnt", NReadThreads: 4, NWriteThreads: 4,
-			DirectIO: true, ReadBandwidth: 7000, WriteBandwidth: 5000, BaseLatency: 80,
+			DirectIO: true, ReadBandwidth: readBW, WriteBandwidth: 5000, BaseLatency: 80,
 		}},
 	}
 	return sim.SimConfig{
@@ -115,6 +119,44 @@ func TestInstanceSimulator_Offload_EndToEnd_DrainsAndDeterministic(t *testing.T)
 	}
 	if a.Metrics().TotalOutputTokens != b.Metrics().TotalOutputTokens {
 		t.Fatalf("offload run must be deterministic (INV-6): TotalOutputTokens %d vs %d", a.Metrics().TotalOutputTokens, b.Metrics().TotalOutputTokens)
+	}
+}
+
+// A secondary tier far slower than a step (a 3-block promotion takes ~123 ms at 0.1
+// bytes/tick) leaves the instance idle with every waiting request deferred. The run
+// must still drain (INV-1, INV-8) and stay deterministic (INV-6), and superseded idle
+// wakes must not stretch the run past its last completion (SimEndedTime).
+func TestInstanceSimulator_Offload_SlowTierIdleWaitDrains(t *testing.T) {
+	const injected = 48
+	run := func() *InstanceSimulator {
+		inst := NewInstanceSimulator(InstanceID("offload-slow"), offloadE2ECfgReadBW(7, 0.1))
+		for _, r := range cyclingPrefixWorkload(7, 12, 4) {
+			inst.InjectRequest(r)
+		}
+		inst.Run()
+		return inst
+	}
+
+	a := run()
+	m := a.Metrics()
+	if m.CompletedRequests != injected {
+		t.Fatalf("every request must complete (INV-1, INV-8): completed=%d want %d", m.CompletedRequests, injected)
+	}
+	if oc := a.sim.KVCache.(*kv.OffloadCache); oc.DeferralsStarted() == 0 {
+		t.Fatal("the slow tier must actually defer requests, otherwise this tests nothing")
+	}
+	lastDone := 0.0
+	for _, done := range m.RequestCompletionTimes {
+		lastDone = math.Max(lastDone, done)
+	}
+	if float64(m.SimEndedTime) > lastDone {
+		t.Fatalf("SimEndedTime %d is past the last completion %.0f: a superseded wake advanced the clock", m.SimEndedTime, lastDone)
+	}
+
+	b := run()
+	if m.SimEndedTime != b.Metrics().SimEndedTime || m.TTFTSum != b.Metrics().TTFTSum {
+		t.Fatalf("slow-tier run must be deterministic (INV-6): SimEndedTime %d/%d TTFTSum %d/%d",
+			m.SimEndedTime, b.Metrics().SimEndedTime, m.TTFTSum, b.Metrics().TTFTSum)
 	}
 }
 

@@ -62,6 +62,9 @@ func (f *fakeDeferKV) IsDeferred(id string) bool { return f.deferred[id] && !f.r
 
 func (f *fakeDeferKV) ClearDeferred(id string) { delete(f.deferred, id) }
 
+// NextDeferralWake reports no wake, so this double keeps the per-tick re-poll.
+func (f *fakeDeferKV) NextDeferralWake(_ int64) (int64, bool) { return 0, false }
+
 // Inert KVStore stubs.
 func (f *fakeDeferKV) GetCachedBlocks(_ []TokenID) []int64  { return nil }
 func (f *fakeDeferKV) ReleaseKVBlocks(_ *Request)           {}

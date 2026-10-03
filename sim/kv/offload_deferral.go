@@ -267,6 +267,40 @@ func (o *OffloadCache) awaitedState(keys []kvkey.BlockKey) cpuLookupResult {
 	return cpuHitPending
 }
 
+// NextDeferralWake returns the earliest tick at which a still-pending deferral can
+// change state, and false when none is pending. A deferRetry needs one more
+// scheduler round (now+1). A deferPromoting request can only change when a station
+// transfer completes, since evictions happen only inside allocation, which an idle
+// scheduler does not run. Failing that, it changes at its maxDeferTicks backstop.
+// The scheduler uses this to sleep through an idle wait instead of stepping 1 tick
+// at a time.
+func (o *OffloadCache) NextDeferralWake(now int64) (int64, bool) {
+	wake, ok := int64(0), false
+	consider := func(t int64) {
+		if !ok || t < wake {
+			wake, ok = t, true
+		}
+	}
+	for _, st := range o.deferred {
+		if st.resolved || st.recompute {
+			continue
+		}
+		if st.phase == deferRetry {
+			return now + 1, true
+		}
+		consider(st.startTick + maxDeferTicks + 1)
+	}
+	if !ok {
+		return 0, false
+	}
+	if o.station != nil {
+		if t, inFlight := o.station.NextCompletion(); inFlight {
+			consider(t)
+		}
+	}
+	return wake, true
+}
+
 // IsDeferred reports whether the request is currently set aside and still pending
 // (not yet resolved/recompute). Batch formation calls it after a failed admission
 // to tell a fresh deferral (skip) apart from GPU pressure (break); a resolved
