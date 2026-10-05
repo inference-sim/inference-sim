@@ -143,3 +143,6 @@ docs/plans/
 /kernelscore
 /estimatorscore
 /metricscore
+
+# Compiled probe binaries built in the repo root by `go build ./cmd/...`.
+/signedprobe
