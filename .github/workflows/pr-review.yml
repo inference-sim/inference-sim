@@ -324,6 +324,15 @@ jobs:
             echo "::warning::could not confirm head unchanged (reviewed $HEAD_SHA, live '${cur:-unknown}'); flagging the comment stale"
             stale="--stale"
           fi
+          # Each reviewer step is continue-on-error (one reviewer's failure must
+          # not sink the others), so a crash is otherwise visible ONLY as a "did
+          # not complete" section in the posted comment. Surface it as a run
+          # annotation too, so a silent reviewer failure is not missed in the
+          # Actions UI (jgchn review, #1883).
+          for r in "archon=$RUNNER_TEMP/archon-output.md" "qa-review=$RUNNER_TEMP/qa-output.md" "blis-pr-review=$RUNNER_TEMP/blis-verdict.md"; do
+            name="${r%%=*}"; f="${r#*=}"
+            [[ -s "$f" ]] || echo "::warning::pr-review: the ${name} reviewer produced no output; its section will read 'did not complete' — see the step logs"
+          done
           python3 scripts/pr_review/assemble_comment.py \
             --pr "$PR" \
             --head-sha "$HEAD_SHA" $stale \

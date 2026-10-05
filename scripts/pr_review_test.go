@@ -232,19 +232,61 @@ func TestPrReviewBlisHasNoBash(t *testing.T) {
 // and aborts before the model runs. The review job must therefore ALSO not grant
 // id-token: write (the whole point is to stay least-privilege, not to add it).
 func TestPrReviewBlisSkipsOIDC(t *testing.T) {
-	wf := prReviewWorkflow(t)
-	if !strings.Contains(wf, "github_token: ${{ secrets.GITHUB_TOKEN }}") {
-		t.Error("the blis step must pass github_token: ${{ secrets.GITHUB_TOKEN }} so claude-code-action skips the OIDC exchange (#1883)")
+	// Parse the blis step precisely and assert ITS `with.github_token` is the
+	// read-only job token. A file-global Contains would also be satisfied by a
+	// github_token: on any OTHER step even if the blis step regressed (jgchn).
+	type step struct {
+		Uses string            `yaml:"uses"`
+		With map[string]string `yaml:"with"`
 	}
-	p := parsePrReview(t)
-	review, ok := p.Jobs["review"]
+	var wf struct {
+		Jobs map[string]struct {
+			Permissions yaml.Node `yaml:"permissions"`
+			Steps       []step    `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal([]byte(prReviewWorkflow(t)), &wf); err != nil {
+		t.Fatalf("parsing pr-review.yml: %v", err)
+	}
+	review, ok := wf.Jobs["review"]
 	if !ok {
 		t.Fatal("no `review` job in pr-review.yml")
 	}
-	var perms map[string]string
-	_ = review.Permissions.Decode(&perms)
-	if _, has := perms["id-token"]; has {
-		t.Error("the `review` job must NOT grant id-token (the untrusted box stays least-privilege; the github_token override removes the need for OIDC)")
+	var blis *step
+	for i := range review.Steps {
+		if strings.Contains(review.Steps[i].Uses, "claude-code-action") {
+			blis = &review.Steps[i]
+			break
+		}
+	}
+	if blis == nil {
+		t.Fatal("no claude-code-action (blis) step in the review job")
+	}
+	if got := blis.With["github_token"]; !strings.Contains(got, "secrets.GITHUB_TOKEN") {
+		t.Errorf("the blis step must pass github_token: ${{ secrets.GITHUB_TOKEN }} so claude-code-action skips the OIDC exchange (#1883); got %q", got)
+	}
+	// The review job must NOT grant id-token — neither as an explicit key nor via
+	// a `write-all` scalar, which implicitly includes id-token: write and decodes
+	// to an empty map (jgchn). Check the node shape before decoding.
+	assertNoIDTokenGrant(t, review.Permissions)
+}
+
+// assertNoIDTokenGrant fails if the job permissions grant id-token in any form:
+// the explicit `id-token: write/read` key, or the `write-all` scalar shorthand.
+func assertNoIDTokenGrant(t *testing.T, perms yaml.Node) {
+	t.Helper()
+	if perms.Kind == yaml.ScalarNode {
+		if perms.Value == "write-all" {
+			t.Error("the review job uses `permissions: write-all`, which implicitly grants id-token: write; it must be an explicit least-privilege block")
+		}
+		return
+	}
+	var m map[string]string
+	if err := perms.Decode(&m); err != nil {
+		t.Fatalf("decoding review permissions: %v", err)
+	}
+	if v, has := m["id-token"]; has && v != "none" {
+		t.Errorf("the review job must NOT grant id-token (got %q); the github_token override removes the need for OIDC", v)
 	}
 }
 
