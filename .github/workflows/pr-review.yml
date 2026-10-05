@@ -239,6 +239,14 @@ jobs:
           PR_REVIEW_DIFF_FILE: ${{ runner.temp }}/qa-diff.txt
         uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1
         with:
+          # Feed the job's read-only token so the action takes its
+          # OVERRIDE_GITHUB_TOKEN path and SKIPS the OIDC exchange. Without it the
+          # action calls getIDToken(), which needs `id-token: write` — a privilege
+          # we deliberately withhold from this untrusted box — and aborts before
+          # the model runs (#1883). This also avoids minting the Anthropic App's
+          # *write* token here; the token stays contents/pull-requests:read and the
+          # session has no Bash/WebFetch/Agent to use or exfiltrate it.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           anthropic_api_key: ${{ env.LLM_DUMMY_KEY }}
           allowed_bots: "github-actions"
           settings: |
@@ -316,6 +324,15 @@ jobs:
             echo "::warning::could not confirm head unchanged (reviewed $HEAD_SHA, live '${cur:-unknown}'); flagging the comment stale"
             stale="--stale"
           fi
+          # Each reviewer step is continue-on-error (one reviewer's failure must
+          # not sink the others), so a crash is otherwise visible ONLY as a "did
+          # not complete" section in the posted comment. Surface it as a run
+          # annotation too, so a silent reviewer failure is not missed in the
+          # Actions UI (jgchn review, #1883).
+          for r in "archon=$RUNNER_TEMP/archon-output.md" "qa-review=$RUNNER_TEMP/qa-output.md" "blis-pr-review=$RUNNER_TEMP/blis-verdict.md"; do
+            name="${r%%=*}"; f="${r#*=}"
+            [[ -s "$f" ]] || echo "::warning::pr-review: the ${name} reviewer produced no output; its section will read 'did not complete' — see the step logs"
+          done
           python3 scripts/pr_review/assemble_comment.py \
             --pr "$PR" \
             --head-sha "$HEAD_SHA" $stale \
