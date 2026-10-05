@@ -252,27 +252,32 @@ func TestPrReviewBlisSkipsOIDC(t *testing.T) {
 	if !ok {
 		t.Fatal("no `review` job in pr-review.yml")
 	}
-	var blis *step
+	// Assert on EVERY claude-code-action step, not just the first: a second such
+	// step added later without github_token must not slip through on the first
+	// match (code-reviewer note).
+	var found bool
 	for i := range review.Steps {
-		if strings.Contains(review.Steps[i].Uses, "claude-code-action") {
-			blis = &review.Steps[i]
-			break
+		if !strings.Contains(review.Steps[i].Uses, "claude-code-action") {
+			continue
+		}
+		found = true
+		if got := review.Steps[i].With["github_token"]; !strings.Contains(got, "secrets.GITHUB_TOKEN") {
+			t.Errorf("the claude-code-action (blis) step must pass github_token: ${{ secrets.GITHUB_TOKEN }} so it skips the OIDC exchange (#1883); got %q", got)
 		}
 	}
-	if blis == nil {
+	if !found {
 		t.Fatal("no claude-code-action (blis) step in the review job")
 	}
-	if got := blis.With["github_token"]; !strings.Contains(got, "secrets.GITHUB_TOKEN") {
-		t.Errorf("the blis step must pass github_token: ${{ secrets.GITHUB_TOKEN }} so claude-code-action skips the OIDC exchange (#1883); got %q", got)
-	}
-	// The review job must NOT grant id-token — neither as an explicit key nor via
-	// a `write-all` scalar, which implicitly includes id-token: write and decodes
-	// to an empty map (jgchn). Check the node shape before decoding.
+	// The review job must NOT grant id-token: write — neither as an explicit key
+	// nor via a `write-all` scalar, which implicitly includes it and decodes to an
+	// empty map (jgchn). Check the node shape before decoding.
 	assertNoIDTokenGrant(t, review.Permissions)
 }
 
-// assertNoIDTokenGrant fails if the job permissions grant id-token in any form:
-// the explicit `id-token: write/read` key, or the `write-all` scalar shorthand.
+// assertNoIDTokenGrant fails if the job permissions grant the id-token: write
+// scope that enables OIDC minting — either an explicit `id-token: write` key or
+// the `write-all` scalar shorthand. A `read-all` scalar or `id-token: read`
+// grants no minting scope (GitHub's getIDToken needs write), so it is allowed.
 func assertNoIDTokenGrant(t *testing.T, perms yaml.Node) {
 	t.Helper()
 	if perms.Kind == yaml.ScalarNode {
@@ -285,8 +290,8 @@ func assertNoIDTokenGrant(t *testing.T, perms yaml.Node) {
 	if err := perms.Decode(&m); err != nil {
 		t.Fatalf("decoding review permissions: %v", err)
 	}
-	if v, has := m["id-token"]; has && v != "none" {
-		t.Errorf("the review job must NOT grant id-token (got %q); the github_token override removes the need for OIDC", v)
+	if m["id-token"] == "write" {
+		t.Errorf("the review job must NOT grant id-token: write (the minting scope); the github_token override removes the need for OIDC")
 	}
 }
 
