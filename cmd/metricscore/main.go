@@ -94,6 +94,13 @@ func main() {
 	// sweep and discard the kernel's own points with it.
 	simulatedOnly := flag.Bool("simulated-only", false,
 		"score only the simulated arms; for a corpus with no published predictions")
+	lengthRatio := flag.Float64("length-range-ratio", 0,
+		"override the prompt-length sampling interval as a fraction of the labelled "+
+			"length: 0 keeps AISimulate's one-sided 0.8 (mean 0.9x len), 1.0 gives "+
+			"constant lengths, which is what vLLM's client does when no "+
+			"--random-range-ratio is passed. Applies to the INPUT length only: output "+
+			"variance sets the queueing regime, not the prompt shape. A sensitivity "+
+			"control, not a tuning knob.")
 	seed := flag.Int64("seed", 42, "")
 	flag.Parse()
 
@@ -121,8 +128,9 @@ func main() {
 		Repos: kernelmodel.Repos{
 			Scenarios: *scenarios, Catalog: *catalog, Registry: *registry,
 		},
-		Admission: harness.AdmissionKernelKV,
-		Seed:      *seed,
+		Admission:        harness.AdmissionKernelKV,
+		Seed:             *seed,
+		LengthRangeRatio: *lengthRatio,
 		Backends: harness.BackendPaths{
 			Catalog: *catalog, HWConfig: *hwConfig, Defaults: *defaults,
 		},

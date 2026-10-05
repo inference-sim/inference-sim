@@ -210,6 +210,28 @@ type Config struct {
 	MaxNumSeqsScale  float64
 	TokenBudgetScale float64
 
+	// LengthRangeRatio overrides the prompt-length sampling interval, as a FRACTION of
+	// the labelled length. It exists because the replayed workload and the measured one
+	// are not the same distribution, and which one to replay is a question the data
+	// cannot settle.
+	//
+	// AISimulate's replay draws one-sided, [ratio*len, len], so at the default 0.8 the
+	// mean prompt is 0.9*len. vLLM's own benchmark client draws SYMMETRICALLY,
+	// [floor(len*(1-r)), ceil(len*(1+r))], with r defaulting to "0.0"
+	// (vllm/benchmarks/datasets/datasets.py:1944 and datasets/utils.py:72-74) -- so a run
+	// that passed no --random-range-ratio used CONSTANT lengths of exactly len, with a
+	// mean 11% longer than what is replayed here.
+	//
+	// InferenceX's rows carry isl and osl as plain integers with no ratio, dataset name
+	// or seed, and the engine-settings extraction finds no ratio either, so neither
+	// reading can be confirmed from the data. This knob makes the alternative testable
+	// rather than asserted. A value of 0 keeps AISimulate's default; 1.0 means constant
+	// lengths, which is vLLM's documented default behaviour.
+	//
+	// Like the two scales above, this is a sensitivity control. Picking whichever value
+	// scores best would be fitting to the evaluation set.
+	LengthRangeRatio float64
+
 	// CyclesPerPoint is how many full pool cycles of completions each point must gather, on
 	// top of the SessionsPerPoint floor. A "cycle" is `concurrency` completions: one pass of
 	// every user in the pool. Zero means defaultCyclesPerPoint.
@@ -308,6 +330,14 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	// 2 x concurrency requests where the harness measures 10 x, and it discarded a fraction
 	// rather than a fixed phase. SessionsPerPoint survives only as a floor.
 	w := AISimulateWorkload(isl, osl, concurrency)
+	// Applied to the INPUT length only. Output-length variance is what makes requests
+	// retire at different times, so the resident batch churns rather than finishing in
+	// lockstep; removing it changes the queueing regime rather than the prompt shape,
+	// and a first version of this knob that flattened both took TTFT's shape error from
+	// 16.22% to 53.73%.
+	if cfg.LengthRangeRatio > 0 {
+		w.ISLLow = int(float64(isl) * cfg.LengthRangeRatio)
+	}
 	warmup := w.WarmupCount
 	total := w.WarmupCount + w.RequestCount
 	if floor := cfg.SessionsPerPoint; floor > total {
