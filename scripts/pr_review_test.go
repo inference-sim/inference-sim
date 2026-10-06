@@ -295,6 +295,55 @@ func assertNoIDTokenGrant(t *testing.T, perms yaml.Node) {
 	}
 }
 
+// TestPrReviewWorktreeIsIdempotent pins the #1888 fix: the worktree step must
+// clear a leaked registration (prune) and any leftover directory (rm) BEFORE
+// `worktree add`, so a restarted ephemeral runner that kept the _work emptyDir
+// cannot exit-128 on a "missing but already registered" worktree.
+func TestPrReviewWorktreeIsIdempotent(t *testing.T) {
+	wf := prReviewWorkflow(t)
+	rm := strings.Index(wf, `rm -rf "$WORKTREE"`)
+	prune := strings.Index(wf, "git worktree prune")
+	add := strings.Index(wf, "worktree add --detach")
+	if rm < 0 || prune < 0 || add < 0 {
+		t.Fatal(`worktree step must run rm -rf "$WORKTREE" and git worktree prune before worktree add --detach (#1888)`)
+	}
+	if rm > add || prune > add {
+		t.Error("the worktree cleanup (rm + prune) must come BEFORE `worktree add` to be idempotent (#1888)")
+	}
+}
+
+// TestPrReviewBlisWriteIsBareWithHook pins the #1888 fix: blis must grant a BARE
+// Write tool — a path-qualified Write(...) allow-rule refuses silently in the
+// action (see scripts/pr_review/restrict-write.sh), so the verdict never gets
+// written — with the restrict-write PreToolUse hook as the actual path boundary.
+func TestPrReviewBlisWriteIsBareWithHook(t *testing.T) {
+	wf := prReviewWorkflow(t)
+	// blis is the only --allowedTools in the workflow; assert that so this test
+	// can't silently validate some other step's allow-list (code-reviewer note).
+	if n := strings.Count(wf, "--allowedTools"); n != 1 {
+		t.Fatalf("expected exactly one --allowedTools (blis), found %d", n)
+	}
+	allow := regexp.MustCompile(`--allowedTools\s+"([^"]*)"`).FindStringSubmatch(wf)
+	if allow == nil {
+		t.Fatal("no --allowedTools found for blis")
+	}
+	var hasBareWrite bool
+	for _, tool := range strings.Split(allow[1], ",") {
+		tool = strings.TrimSpace(tool)
+		if tool == "Write" {
+			hasBareWrite = true
+		} else if strings.HasPrefix(tool, "Write(") {
+			t.Errorf("blis must grant a BARE Write, not a path-qualified %q (it refuses silently in the action, #1888)", tool)
+		}
+	}
+	if !hasBareWrite {
+		t.Error("blis must grant a bare Write tool so the verdict file can be written (#1888)")
+	}
+	if !strings.Contains(wf, "scripts/pr_review/restrict-write.sh") {
+		t.Error("blis must confine the bare Write via the restrict-write PreToolUse hook")
+	}
+}
+
 // TestPrReviewActionsArePinnedToSHA enforces #1879's requirement that every
 // third-party action — especially the one that creates the tool-restricted blis
 // session — is pinned to a full 40-char commit SHA, not a mutable tag.
