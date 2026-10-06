@@ -15,20 +15,32 @@ set -uo pipefail
 allowed="${PR_REVIEW_VERDICT_FILE:-}"
 input=$(cat)
 
-path=$(printf '%s' "$input" \
-  | python3 -c 'import sys,json
-try:
-    d=json.load(sys.stdin)
-    print((d.get("tool_input") or {}).get("file_path",""))
-except Exception:
-    print("")' 2>/dev/null || echo "")
-
 if [[ -z "$allowed" ]]; then
   echo "restrict-write: PR_REVIEW_VERDICT_FILE is unset; refusing all writes" >&2
   exit 2
 fi
-if [[ "$path" == "$allowed" ]]; then
+
+# Decide on the RESOLVED target, not its spelling: canonicalize both the write
+# path and the allowed path (symlinks, `..`, relative) so a path alias cannot
+# slip past a literal string compare. python3 is already required to parse the
+# payload and is portable across the Linux runner and macOS tests (`realpath -m`
+# is GNU-only). Prints OK iff the target resolves to the allowed verdict file;
+# any parse error, missing path, or mismatch prints DENY (fail closed).
+verdict=$(printf '%s' "$input" | ALLOWED="$allowed" python3 -c 'import sys, os, json
+try:
+    d = json.load(sys.stdin)
+    p = (d.get("tool_input") or {}).get("file_path", "")
+except Exception:
+    p = ""
+if not p:
+    print("DENY")
+elif os.path.realpath(p) == os.path.realpath(os.environ["ALLOWED"]):
+    print("OK")
+else:
+    print("DENY")' 2>/dev/null || echo "DENY")
+
+if [[ "$verdict" == "OK" ]]; then
   exit 0
 fi
-echo "restrict-write: write to '$path' refused; this review may only write $allowed" >&2
+echo "restrict-write: write refused; this review may only write $allowed" >&2
 exit 2

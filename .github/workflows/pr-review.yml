@@ -180,6 +180,13 @@ jobs:
           # removal of the archon steps cannot silently leave $HEAD_SHA absent.
           # Idempotent — the object is usually already present.
           git fetch --no-tags origin "pull/${PR}/head"
+          # Idempotent against a leaked registration: an ephemeral runner that
+          # only restarts its CONTAINER keeps the _work emptyDir, so a prior job's
+          # worktree can linger as a "missing but already registered" entry and
+          # make `worktree add` exit-128 (#1888). Clear both the stale admin record
+          # (prune) and any leftover directory (rm) before re-adding.
+          rm -rf "$WORKTREE"
+          git worktree prune
           git -c core.hooksPath=/dev/null worktree add --detach "$WORKTREE" "$HEAD_SHA"
           scripts/pr_review/scrub_symlinks.sh "$WORKTREE"
           echo "path=$WORKTREE" >> "$GITHUB_OUTPUT"
@@ -264,7 +271,7 @@ jobs:
             }
           claude_args: |
             --model ${{ vars.BLIS_REVIEW_MODEL || 'claude-opus-4-8' }}
-            --allowedTools "Read(${{ runner.temp }}/pr-head/**),Grep(${{ runner.temp }}/pr-head/**),Glob(${{ runner.temp }}/pr-head/**),Read(${{ runner.temp }}/qa-diff.txt),Read(${{ github.workspace }}/docs/**),Read(${{ github.workspace }}/CLAUDE.md),Write(${{ runner.temp }}/blis-verdict.md)"
+            --allowedTools "Read(${{ runner.temp }}/pr-head/**),Grep(${{ runner.temp }}/pr-head/**),Glob(${{ runner.temp }}/pr-head/**),Read(${{ runner.temp }}/qa-diff.txt),Read(${{ github.workspace }}/docs/**),Read(${{ github.workspace }}/CLAUDE.md),Write"
             --disallowedTools "Bash,Edit,NotebookEdit,WebFetch,WebSearch,Agent,Read(/proc/**),Read(~/.aws/**)"
             --setting-sources user
             --add-dir ${{ runner.temp }}
