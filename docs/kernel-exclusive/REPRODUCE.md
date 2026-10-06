@@ -12,7 +12,7 @@ simulator.
 ```
 git clone https://github.com/inference-sim/blis-schemas.git
 git clone https://github.com/inference-sim/blis-latency-kernel.git
-git clone -b modeling https://github.com/inference-sim/blis-catalog.git
+git clone --branch 0.2.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
 git clone -b modeling https://github.com/inference-sim/blis-registry.git
 git clone https://github.com/inference-sim/inference-sim.git     # this repository
 ```

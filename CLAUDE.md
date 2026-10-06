@@ -21,7 +21,7 @@ Every `blis run` / `blis replay` obeys these; see `docs/getting-started/` and `d
 
 1. **Locate the catalog** with `--catalog <path>` or the `BLIS_CATALOG` env var — no default, no search path, no remote fetch (`--catalog` wins, announced on stderr; neither is refused). Both name the catalog **clone root**. Clone `blis-catalog` at its pinned release tag and export it once (`docs/getting-started/installation.md#catalog-compatibility` is canonical):
    ```bash
-   git clone --branch 0.1.1 --depth 1 https://github.com/inference-sim/blis-catalog.git
+   git clone --branch 0.2.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
    export BLIS_CATALOG=$PWD/blis-catalog
    ```
 2. **A model runs iff it is in the catalog.** Its config is read from `<catalog>/models/<short-name>/config.json`; an absent entry is refused naming that path. No run-time HuggingFace fetch; no command creates or modifies a catalog file. Add a model by committing its config to `blis-catalog`.

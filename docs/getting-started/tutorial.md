@@ -8,7 +8,7 @@ This tutorial walks through a complete capacity planning exercise: determining h
     Every command below needs the model catalog located — `--catalog <path>` or the
     `BLIS_CATALOG` environment variable, with no default and no search path. Clone the
     [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository at the pinned
-    release tag — `git clone --branch 0.1.1 --depth 1 https://github.com/inference-sim/blis-catalog.git`
+    release tag — `git clone --branch 0.2.0 --depth 1 https://github.com/inference-sim/blis-catalog.git`
     — and run `export BLIS_CATALOG=$PWD/blis-catalog` once, and the examples work as written.
     See [Quick Start](quickstart.md) and
     [Catalog compatibility](installation.md#catalog-compatibility).

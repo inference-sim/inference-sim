@@ -37,7 +37,7 @@ repository **at the pinned release tag** (see [Catalog compatibility](#catalog-c
 below) and point BLIS at the clone root:
 
 ```bash
-git clone --branch 0.1.1 --depth 1 https://github.com/inference-sim/blis-catalog.git
+git clone --branch 0.2.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
 export BLIS_CATALOG=$PWD/blis-catalog   # or pass --catalog on every command
 ```
 
@@ -51,7 +51,7 @@ compatible version is stated; every other page's clone command pins the same tag
      line below and requires every documented blis-catalog clone to pin exactly it, so keep
      the `**Compatible blis-catalog release: `<tag>`**` shape intact when bumping. -->
 
-**Compatible blis-catalog release: `0.1.1`** — [release notes](https://github.com/inference-sim/blis-catalog/releases/tag/0.1.1).
+**Compatible blis-catalog release: `0.2.0`** — [release notes](https://github.com/inference-sim/blis-catalog/releases/tag/0.2.0).
 
 Why pin at all: BLIS parses every catalog file strictly (`KnownFields(true)`), and strict
 parsing is one-way — an added or renamed key in a future catalog schema is a **hard load

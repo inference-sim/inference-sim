@@ -14,13 +14,13 @@ search path**: supply `--catalog <path>` or set `BLIS_CATALOG` (the flag wins wh
 set), or the run is refused naming both forms.
 
 ```bash
-git clone --branch 0.1.1 --depth 1 https://github.com/inference-sim/blis-catalog.git
+git clone --branch 0.2.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
 export BLIS_CATALOG=$PWD/blis-catalog   # or pass --catalog on every command
 ```
 
 The examples below (and elsewhere in these docs) assume you have exported it.
 
-The clone pins release tag `0.1.1` — the catalog version BLIS is tested against — so a later
+The clone pins release tag `0.2.0` — the catalog version BLIS is tested against — so a later
 catalog release cannot change what a fresh clone hands your build. See
 [Catalog compatibility](installation.md#catalog-compatibility) for why, and for how to move
 to a newer catalog release deliberately.
