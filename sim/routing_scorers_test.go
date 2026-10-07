@@ -746,8 +746,8 @@ func cloneRegistry(src map[string]scorerConstructor) map[string]scorerConstructo
 }
 
 // stubScorerCtor is a minimal constructor used by the registration guard tests.
-func stubScorerCtor(_ int, _ cacheQueryFn) (scorerFunc, observerFunc) {
-	return scoreQueueDepth, nil
+func stubScorerCtor(_ int, _ cacheQueryFn) scorerParts {
+	return scorerParts{score: scoreQueueDepth}
 }
 
 // TestScorerRegistry_ReproducesSwitchSelection (BC-1): the registry must map

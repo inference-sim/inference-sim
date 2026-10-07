@@ -173,6 +173,30 @@ func (ll *LeastLoaded) Route(req *Request, state *RouterState) RoutingDecision {
 // Used by scorers like prefix-affinity that track routing history.
 type observerFunc func(req *Request, targetInstance string)
 
+// completionObserverFunc is called when a request reaches a terminal state on an
+// instance (see RequestCompletionObserver). Lets a stateful scorer learn when work
+// it routed has left an instance. req.Adapter names the adapter; req.State tells a
+// normal completion from a timeout.
+type completionObserverFunc func(req *Request, instanceID string, tick int64)
+
+// RequestCompletionObserver is an optional interface a RoutingPolicy implements to be
+// told when a request reaches a terminal state on an instance — the same event that
+// fires the instance's Simulator.OnRequestDone (completed, length-capped, or timed
+// out; NOT requests dropped before reaching an instance). The cluster invokes it at
+// both OnRequestDone wiring sites (startup and live-added instances), once per
+// terminal request per instance, and only when ObservesRequestCompletion reports
+// true at cluster construction — so a policy with no subscribing scorer leaves the
+// per-instance callback exactly as it was.
+//
+// The event is delivered for every terminal request on the instance, including ones
+// routed by another policy (e.g. PD prefill/decode pools); a subscriber that cares
+// only about requests it routed must filter by req.ID. Observers must not mutate req
+// or cluster state: they run inside the instance's completion event.
+type RequestCompletionObserver interface {
+	ObservesRequestCompletion() bool
+	OnRequestCompletion(req *Request, instanceID string, tick int64)
+}
+
 // WeightedScoring routes requests using a composable scorer pipeline.
 //
 // Each scorer evaluates all instances on a [0,1] scale. Scores are combined
@@ -187,6 +211,8 @@ type observerFunc func(req *Request, targetInstance string)
 //
 // Stateful scorers (prefix-affinity, no-hit-lru) register observers that update internal
 // state after each routing decision. Observers are called after argmax selection.
+// Scorers may also register completion observers (RequestCompletionObserver), called
+// when a request reaches a terminal state on an instance.
 //
 // Higher scores are preferred. Ties broken randomly when rng is non-nil;
 // by first occurrence (lowest index) when rng is nil.
@@ -194,7 +220,24 @@ type WeightedScoring struct {
 	scorers   []scorerFunc
 	weights   []float64 // normalized to sum to 1.0
 	observers []observerFunc
-	rng       *rand.Rand
+	// completionObservers are fanned out by OnRequestCompletion, in scorer-config
+	// order. Empty for every built-in scorer today.
+	completionObservers []completionObserverFunc
+	rng                 *rand.Rand
+}
+
+// ObservesRequestCompletion reports whether any configured scorer subscribed to
+// request-completion events (RequestCompletionObserver).
+func (ws *WeightedScoring) ObservesRequestCompletion() bool {
+	return len(ws.completionObservers) > 0
+}
+
+// OnRequestCompletion forwards a terminal-request event to every subscribed scorer
+// (RequestCompletionObserver).
+func (ws *WeightedScoring) OnRequestCompletion(req *Request, instanceID string, tick int64) {
+	for _, obs := range ws.completionObservers {
+		obs(req, instanceID, tick)
+	}
 }
 
 // Route implements RoutingPolicy for WeightedScoring.
@@ -317,6 +360,20 @@ func (r *RouteToHolder) Route(req *Request, state *RouterState) RoutingDecision 
 	return r.inner.Route(req, state)
 }
 
+// ObservesRequestCompletion delegates to the inner policy (RequestCompletionObserver),
+// so route-to-holder carries its weighted scorers' completion subscriptions.
+func (r *RouteToHolder) ObservesRequestCompletion() bool {
+	o, ok := r.inner.(RequestCompletionObserver)
+	return ok && o.ObservesRequestCompletion()
+}
+
+// OnRequestCompletion delegates to the inner policy (RequestCompletionObserver).
+func (r *RouteToHolder) OnRequestCompletion(req *Request, instanceID string, tick int64) {
+	if o, ok := r.inner.(RequestCompletionObserver); ok {
+		o.OnRequestCompletion(req, instanceID, tick)
+	}
+}
+
 // AlwaysBusiest routes requests to the instance with maximum (QueueDepth + BatchSize + InFlightRequests).
 // Pathological template for testing load imbalance detection.
 // Ties broken by first occurrence in snapshot order (lowest index).
@@ -380,15 +437,20 @@ func newRoutingPolicyInternal(name string, scorerConfigs []ScorerConfig, blockSi
 		}
 		scorers := make([]scorerFunc, len(scorerConfigs))
 		var observers []observerFunc
+		var completionObservers []completionObserverFunc
 		for i, cfg := range scorerConfigs {
-			scorer, obs := newScorerWithObserver(cfg.Name, int(blockSize), cacheFn)
-			scorers[i] = scorer
-			if obs != nil {
-				observers = append(observers, obs)
+			parts := newScorerParts(cfg.Name, int(blockSize), cacheFn)
+			scorers[i] = parts.score
+			if parts.observe != nil {
+				observers = append(observers, parts.observe)
+			}
+			if parts.onComplete != nil {
+				completionObservers = append(completionObservers, parts.onComplete)
 			}
 		}
 		weights := normalizeScorerWeights(scorerConfigs)
-		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers, rng: rng}
+		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers,
+			completionObservers: completionObservers, rng: rng}
 	case "route-to-holder":
 		// D1 (#1490): strict LoRA-affinity routing. Delegates to an inner "weighted"
 		// policy built via the SAME canonical construction path (R4) — same

@@ -93,6 +93,10 @@ type ClusterSimulator struct {
 	droppedAtDecodeKV       int               // requests dropped due to insufficient KV at decode
 	prefillRoutingPolicy    sim.RoutingPolicy // nil = use main routingPolicy
 	decodeRoutingPolicy     sim.RoutingPolicy // nil = use main routingPolicy
+	// completionObservers are the routing policies subscribed to request-completion
+	// events (sim.RequestCompletionObserver), collected once at construction; nil
+	// when no configured scorer subscribes. Read by wireOnRequestDone.
+	completionObservers []sim.RequestCompletionObserver
 
 	// E/P/D disaggregation state (GAP-4, issue #1264).
 	// encodeDecider is nil when --encode-instances == 0, which disables the encode stage.
@@ -699,32 +703,19 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	// Store raw callback for PD session follow-up (issue #884).
 	cs.sessionCallback = onRequestDone
 
+	// Collect routing policies whose scorers subscribe to request completions
+	// (sim.RequestCompletionObserver). Empty for every built-in scorer today, so
+	// the OnRequestDone guard below is unchanged unless a subscriber is configured.
+	cs.completionObservers = collectCompletionObservers(
+		cs.routingPolicy, cs.prefillRoutingPolicy, cs.decodeRoutingPolicy)
+
 	// Wire OnRequestDone callback on each instance (BC-9: follow-ups route through cluster pipeline).
 	// The callback pushes follow-up requests as ClusterArrivalEvents, ensuring they go through
 	// admission → routing → instance injection. The callback returns nil so the per-instance
 	// simulator does not inject locally.
 	// Phase 1B-2a: also notify tenantTracker on completion when budgets are configured.
-	if onRequestDone != nil || cs.tenantTracker != nil || cs.evictionTracker != nil {
-		for _, inst := range cs.instances {
-			inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
-				// Phase 1B-2a: release tenant in-flight slot on every terminal state.
-				if cs.tenantTracker != nil {
-					cs.tenantTracker.OnComplete(req.TenantID)
-				}
-				// Remove from eviction tracker on normal completion (BC-3).
-				if cs.evictionTracker != nil {
-					cs.evictionTracker.Untrack(req.ID)
-				}
-				if onRequestDone == nil {
-					return nil
-				}
-				nextReqs := onRequestDone(req, tick)
-				for _, next := range nextReqs {
-					cs.pushArrival(next, next.ArrivalTime)
-				}
-				return nil // don't inject locally — route through cluster pipeline
-			}
-		}
+	for _, inst := range cs.instances {
+		cs.wireOnRequestDone(inst)
 	}
 
 	return cs
@@ -1272,6 +1263,64 @@ func (cs *ClusterSimulator) instanceByID(id InstanceID) *InstanceSimulator {
 	return nil
 }
 
+// wireOnRequestDone installs inst's per-request terminal-state callback. It is the
+// single wiring site for both the startup path (NewClusterSimulator) and live-added
+// instances (addLiveInstance), so the two cannot drift (R4).
+//
+// The callback is installed only when something consumes it — the session
+// follow-up callback, the tenant tracker, the eviction tracker, or a routing policy
+// subscribed to request completions (cs.completionObservers) — and otherwise
+// inst.sim.OnRequestDone is left nil, exactly as before completion observers
+// existed. Within the callback, completion observers are notified once per terminal
+// request, with this instance's id, after the trackers and before session
+// follow-ups are generated.
+func (cs *ClusterSimulator) wireOnRequestDone(inst *InstanceSimulator) {
+	onRequestDone := cs.sessionCallback
+	observers := cs.completionObservers
+	if onRequestDone == nil && cs.tenantTracker == nil && cs.evictionTracker == nil && len(observers) == 0 {
+		return
+	}
+	instID := string(inst.ID())
+	inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
+		// Phase 1B-2a: release tenant in-flight slot on every terminal state.
+		if cs.tenantTracker != nil {
+			cs.tenantTracker.OnComplete(req.TenantID)
+		}
+		// Remove from eviction tracker on normal completion (BC-3).
+		if cs.evictionTracker != nil {
+			cs.evictionTracker.Untrack(req.ID)
+		}
+		for _, obs := range observers {
+			obs.OnRequestCompletion(req, instID, tick)
+		}
+		if onRequestDone == nil {
+			return nil
+		}
+		nextReqs := onRequestDone(req, tick)
+		for _, next := range nextReqs {
+			cs.pushArrival(next, next.ArrivalTime)
+		}
+		return nil // don't inject locally — route through cluster pipeline
+	}
+}
+
+// collectCompletionObservers returns, in argument order, the non-nil policies that
+// implement sim.RequestCompletionObserver and report a subscriber. Returns nil when
+// none does. The main, prefill and decode policies are distinct objects (each built
+// by its own NewRoutingPolicyWithCache call), so no de-duplication is needed.
+func collectCompletionObservers(policies ...sim.RoutingPolicy) []sim.RequestCompletionObserver {
+	var out []sim.RequestCompletionObserver
+	for _, p := range policies {
+		if p == nil {
+			continue
+		}
+		if o, ok := p.(sim.RequestCompletionObserver); ok && o.ObservesRequestCompletion() {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
 // addLiveInstance constructs, registers, and activates an InstanceSimulator for a
 // placement that succeeded while the cluster is already running.
 // Called from NodeReadyEvent.Execute (deferred placement) and DirectActuator.scaleUp
@@ -1322,26 +1371,9 @@ func (cs *ClusterSimulator) addLiveInstance(
 		cs.registerInstanceCacheQueryFn(id, inst)
 	}
 
-	// Wire OnRequestDone callback — mirrors startup path in NewClusterSimulator (R4).
-	onRequestDone := cs.sessionCallback
-	if onRequestDone != nil || cs.tenantTracker != nil || cs.evictionTracker != nil {
-		inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
-			if cs.tenantTracker != nil {
-				cs.tenantTracker.OnComplete(req.TenantID)
-			}
-			if cs.evictionTracker != nil {
-				cs.evictionTracker.Untrack(req.ID)
-			}
-			if onRequestDone == nil {
-				return nil
-			}
-			nextReqs := onRequestDone(req, tick)
-			for _, next := range nextReqs {
-				cs.pushArrival(next, next.ArrivalTime)
-			}
-			return nil // don't inject locally — route through cluster pipeline
-		}
-	}
+	// Wire OnRequestDone callback — the same helper as the startup path in
+	// NewClusterSimulator (R4).
+	cs.wireOnRequestDone(inst)
 
 	return true
 }
