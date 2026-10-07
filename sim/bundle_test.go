@@ -355,7 +355,6 @@ func TestValidRoutingPolicyNames_Sorted(t *testing.T) {
 	}
 }
 
-
 func TestValidSchedulerNames_ReturnsAllNames(t *testing.T) {
 	names := ValidSchedulerNames()
 	assert.Contains(t, names, "fcfs")
@@ -603,21 +602,25 @@ func TestValidLatencyBackendNames_ExcludesRemoved(t *testing.T) {
 		}
 	}
 
-	// AND the list must contain exactly 2 backends
-	expected := []string{"roofline", "trained-physics"}
-	if len(names) != len(expected) {
-		t.Errorf("ValidLatencyBackendNames() returned %d backends; want %d: %v", len(names), len(expected), expected)
-	}
-
-	// AND they must be the correct backends
-	nameSet := make(map[string]bool)
+	// AND every supported backend is offered. Membership rather than an exact count:
+	// the list grows when a backend is added (blis-latency-kernel did), and a count
+	// assertion fails on that addition while saying nothing about the removal this test
+	// exists to guard.
+	nameSet := make(map[string]bool, len(names))
 	for _, name := range names {
 		nameSet[name] = true
 	}
-	for _, exp := range expected {
+	for _, exp := range []string{"roofline", "trained-physics", "blis-latency-kernel"} {
 		if !nameSet[exp] {
-			t.Errorf("ValidLatencyBackendNames() missing expected backend %q", exp)
+			t.Errorf("ValidLatencyBackendNames() missing supported backend %q; got %v", exp, names)
 		}
+	}
+
+	// AND the empty string is not offered as a name, though IsValidLatencyBackend
+	// accepts it: an empty --latency-model resolves to a default rather than naming a
+	// backend, so listing it would invite an operator to pass it.
+	if nameSet[""] {
+		t.Errorf("ValidLatencyBackendNames() offers the empty name; got %v", names)
 	}
 }
 

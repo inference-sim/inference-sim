@@ -1,6 +1,6 @@
 # Latency Models
 
-The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships two backends -- **trained-physics** (default, physics-informed roofline with MoE-aware corrections) and **roofline** (pure analytical) -- and the pluggable architecture supports adding custom backends.
+The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships three backends -- **trained-physics** (default, physics-informed roofline with MoE-aware corrections), **roofline** (pure analytical), and **blis-latency-kernel** (per-operator pricing from a committed scenario) -- and the pluggable architecture supports adding custom backends.
 
 **Migration note:** Three legacy backends have been removed (`blackbox`, `crossmodel`, `trained-roofline`). Use `--latency-model trained-physics` instead, which supersedes all three with improved accuracy and MoE support.
 
@@ -13,6 +13,14 @@ The `LatencyModel` interface determines how BLIS estimates GPU step time for eac
 ./blis run --model qwen/qwen3-14b \
   --latency-model roofline --hardware H100 --tp 1 \
   --num-instances 4 --rate 100 --num-requests 500
+
+# blis-latency-kernel — per-operator pricing. The deployment comes from the scenario,
+# so --model/--hardware/--tp are not passed.
+./blis run --latency-model blis-latency-kernel \
+  --scenario gpt-oss-120b-h200-fp4-vllm-tp4.yaml \
+  --scenarios ../blis-latency-kernel/testdata/aisimulate \
+  --registry ../blis-registry \
+  --concurrency 32 --num-requests 320
 ```
 
 ## Trained-Physics Mode (Default)
@@ -103,6 +111,85 @@ When choosing between TP and replication (more instances): TP reduces per-reques
 
 !!! note "Automatic MaxModelLen derivation"
     When using roofline or trained-physics mode and `--max-model-len` is not explicitly set, BLIS auto-derives it from `max_position_embeddings` in the HuggingFace `config.json`. For models with `rope_scaling`, the scaling factor is applied based on vLLM's blacklist approach: types `linear`, `dynamic`, `yarn`, `default`, and `mrope` apply the factor; types `su`, `longrope`, and `llama3` are excluded (these encode the full context in `max_position_embeddings`). For `yarn`, `original_max_position_embeddings` is used as the base when present. `gemma3` models skip `rope_scaling` entirely (`max_position_embeddings` is pre-scaled). The derived value is then capped at the KV-feasible maximum (`total_kv_blocks * block_size`) to prevent context windows from exceeding GPU memory capacity. Override with `--max-model-len` <N>` when needed.
+
+## blis-latency-kernel Mode
+
+This backend prices a step by composing per-operator costs -- GEMMs, attention, grouped
+expert GEMMs, recurrent state updates, collectives, elementwise and host terms -- from
+coefficients fitted against vendor kernel sweeps. The other two backends take their inputs
+from the command line; this one takes them from a committed artifact set, which is the
+main practical difference in using it.
+
+### Inputs
+
+Three paths, all required:
+
+| flag | what it names |
+|---|---|
+| `--scenario` | a scenario **file name** inside `--scenarios` |
+| `--scenarios` | the directory holding scenario YAML files |
+| `--registry` | a `blis-registry` clone root, holding the coefficient sets a scenario names |
+
+The catalog is located as it is for every command, by `--catalog` or `BLIS_CATALOG`.
+
+A scenario states the model, the hardware, the fabric, which coefficient sets to load, the
+engine version, and each pool's parallelism and engine settings. Because it states them,
+the flags that would restate them are refused rather than reconciled. Passing `--tp 2`
+alongside a scenario that states `parallel.tp` aborts with:
+
+```text
+--latency-model blis-latency-kernel reads the deployment from the scenario, so --tp is
+not accepted: s.yaml states it as the pool's parallel.tp. Edit the scenario rather than
+passing both.
+```
+
+The refused set is `--model`, `--hardware`, `--tp`, `--dp` and
+`--enable-expert-parallel`. Two sources for one fact would need precedence rules to decide
+between them, and a run that resolved a deployment nobody chose is the failure those rules
+invite. Everything a scenario does *not* state -- workload, concurrency, routing,
+admission, P/D instance counts, KV offload -- stays on the command line.
+
+### What it models that the others do not
+
+- **Expert and data parallelism** affect step time, so `--dp > 1` and
+  `--enable-expert-parallel` are accepted. Roofline refuses them, being DP/EP-blind for
+  step time; trained-physics accepts them.
+- **Expert geometry comes from the model graph**, not an HF config: a layer kind carrying
+  a `GroupedGEMM` node is what makes a model routed, and that node's `experts` and `top_k`
+  populate the MoE fields the DP/EP gates check.
+- **Per-pool pricing.** A disaggregated scenario states a prefill pool and a decode pool
+  that differ in the quantities setting step time. `kernelmodel.OpenPool` prices one named
+  pool; `kernelmodel.Open` is that function at pool 0, which is what a colocated scenario
+  has.
+
+### Failure is named, never silent
+
+A scenario that cannot be resolved -- absent file, unreadable coefficient set, unknown
+engine version -- aborts the run naming what failed. It does not fall back to another
+backend: a run served from coefficients the operator did not ask for reports numbers that
+cannot be traced to anything.
+
+### The published accuracy figures
+
+`cmd/metricscore` is the scorer behind the evaluation tables. It constructs the kernel
+directly, so its figures do not depend on this CLI path. Against `blis-latency-kernel` at
+`bd743a6` and `blis-registry` at `640a27e`:
+
+```bash
+go run ./cmd/metricscore -framework vllm -length-range-ratio 1.0 -config-tier measured \
+  -registry /path/to/blis-registry
+```
+
+| metric | mean absolute error |
+|---|---|
+| TPOT shape | 11.58% |
+| TPOT mape | 11.94% |
+| TTFT shape | 25.39% |
+| TTFT mape | 31.47% |
+
+A figure quoted without its three flags cannot be checked: `-config-tier`, `-framework`
+and `-length-range-ratio` each change every number. `blis-registry`'s
+`scripts/compare_registries.py --check` pins them against a recorded baseline.
 
 ## How Trained-Physics Works
 

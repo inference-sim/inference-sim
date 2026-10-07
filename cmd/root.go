@@ -18,6 +18,7 @@ import (
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
+	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/latency"
 	_ "github.com/inference-sim/inference-sim/sim/lora" // registers sim.NewAdapterRegistryFunc via init()
 	"github.com/inference-sim/inference-sim/sim/trace"
@@ -82,6 +83,11 @@ var (
 	outputTokensMin           int       // Min Output Token Count
 	outputTokensMax           int       // Max Output Token Count
 	latencyModelBackend       string    // CLI --latency-model flag: selects latency model backend (Cobra-bound, NEVER mutated inside Run)
+	kernelScenario            string    // CLI --scenario: scenario file name, kernel backend only
+	kernelScenarioDir         string    // CLI --scenarios: directory of scenario files, kernel backend only
+	kernelRegistry            string    // CLI --registry: blis-registry clone root, kernel backend only
+	kernelDeploymentExperts   int       // routed expert count from the model graph; 0 off the kernel backend
+	kernelDeploymentTopK      int       // routed experts per token from the model graph; 0 off the kernel backend
 	maxModelLen               int64     // CLI --max-model-len: max total sequence length (input + output); 0 = unlimited
 	// CLI flags for model, GPU, TP
 	model                string // LLM name
@@ -385,7 +391,11 @@ func allZeros(values []float64) bool {
 // Package-level vars (totalKVBlocks, maxModelLen, model, gpu, tensorParallelism,
 // modelConfigDir, hwConfigPath) are mutated as side effects.
 type latencyResolution struct {
-	Backend     string            // resolved latency backend name
+	Backend string // resolved latency backend name
+	// KernelModel is the built blis-latency-kernel adapter, non-nil only on that
+	// backend. The caller puts it on SimConfig.LatencyModelOverride; nil leaves the
+	// coefficient factory in charge, which is every other backend (INV-6).
+	KernelModel sim.LatencyModel
 	ModelConfig sim.ModelConfig   // HF-derived model architecture config
 	HWConfig    sim.HardwareCalib // hardware calibration config
 	AlphaCoeffs []float64         // resolved alpha coefficients (local copy, not package-level)
@@ -829,6 +839,84 @@ func requireDeploymentFlags(f deploymentFlagValues) {
 	}
 }
 
+// adoptKernelDeployment resolves the deployment from a kernel scenario, on the kernel
+// backend only, and is a no-op on every other (INV-6).
+//
+// The scenario is the committed record of what was deployed: it states the model, the
+// hardware, and each pool's tensor- and data-parallel width. Accepting the same facts as
+// flags too would mean writing precedence logic to decide between two sources, which is
+// complexity carrying no information -- so a flag that restates one is REFUSED naming
+// where the scenario says it, and the rest are derived.
+//
+// It runs before the deployment gates rather than inside resolveLatencyConfig because
+// those gates refuse a run whose deployment nobody chose (NS-6), and here the scenario is
+// who chose it. The gates still execute, on these values.
+func adoptKernelDeployment(cmd *cobra.Command) {
+	if latencyModelBackend != sim.LatencyBackendKernel {
+		return
+	}
+	missing := []string{}
+	if kernelScenario == "" {
+		missing = append(missing, "--scenario")
+	}
+	if kernelScenarioDir == "" {
+		missing = append(missing, "--scenarios")
+	}
+	if kernelRegistry == "" {
+		missing = append(missing, "--registry")
+	}
+	if len(missing) > 0 {
+		logrus.Fatalf("--latency-model %s requires %s: the kernel prices a step from a "+
+			"committed scenario plus the catalog and registry it names, none of which a "+
+			"coefficient flag can express",
+			sim.LatencyBackendKernel, strings.Join(missing, ", "))
+	}
+	for _, dup := range []struct{ flag, where string }{
+		{"model", "scenario.model"},
+		{"hardware", "scenario.hardware"},
+		{"tp", "the pool's parallel.tp"},
+		{"dp", "the pool's parallel.dp"},
+		{"enable-expert-parallel", "the pool's parallel.enable_expert_parallel"},
+	} {
+		if cmd.Flags().Changed(dup.flag) {
+			logrus.Fatalf("--latency-model %s reads the deployment from the scenario, so --%s "+
+				"is not accepted: %s states it as %s. Edit the scenario rather than passing both.",
+				sim.LatencyBackendKernel, dup.flag, kernelScenario, dup.where)
+		}
+	}
+	catalogRoot, err := resolveCatalogRoot()
+	if err != nil {
+		logrus.Fatalf("--latency-model %s: %v", sim.LatencyBackendKernel, err)
+	}
+	m, err := kernelmodel.Open(kernelScenario, kernelmodel.Repos{
+		Scenarios: kernelScenarioDir, Catalog: catalogRoot, Registry: kernelRegistry,
+	})
+	if err != nil {
+		// Named rather than fallen back on: a backend that silently served this run from
+		// coefficients would report numbers the operator did not ask for.
+		logrus.Fatalf("--latency-model %s: scenario %q: %v",
+			sim.LatencyBackendKernel, kernelScenario, err)
+	}
+	dep := m.Deployment()
+	model = strings.ToLower(dep.Model)
+	gpu = dep.Hardware
+	tensorParallelism = dep.TP
+	dataParallelism = dep.DP
+	enableExpertParallel = dep.ExpertParallel
+	// The expert geometry, so every MoE gate and the ModelHardwareConfig boundary see a
+	// routed model as routed. This backend parses a model GRAPH rather than an HF
+	// config, so ModelConfig would otherwise stay zero and read as dense -- and the
+	// library boundary's "DP > 1 needs >= 2 experts" would panic on a model that has
+	// 128 of them. Stating the counts satisfies that invariant with the model's own
+	// numbers instead of waiving it for this backend.
+	kernelDeploymentExperts = dep.Experts
+	kernelDeploymentTopK = dep.ExpertsPerTok
+	logrus.Infof("--latency-model %s: deployment from scenario %s -- model %s, hardware %s, "+
+		"tp %d, dp %d, expert-parallel %t",
+		sim.LatencyBackendKernel, kernelScenario, model, gpu,
+		tensorParallelism, dataParallelism, enableExpertParallel)
+}
+
 // resolveLatencyConfig resolves the latency backend configuration from CLI flags and
 // defaults.yaml. It is called by both runCmd and replayCmd to ensure a single code path
 // (R23: code path parity). This eliminates the R23 comment-sync markers in replay.go.
@@ -938,6 +1026,56 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		TP:          tensorParallelism,
 		TPSupplied:  cmd.Flags().Changed("tp"),
 	})
+
+	// --latency-model blis-latency-kernel
+	//
+	// The kernel's inputs are a committed artifact set, not CLI coefficients: a
+	// scenario names the model, hardware, fabric, coefficient sets, engine version and
+	// per-pool parallelism, and the catalog and registry supply what it names. So this
+	// branch validates those three paths and builds the adapter; it does NOT parse an HF
+	// config or auto-calc KV blocks, because the kernel derives the KV budget from its
+	// own memory methods and the scenario states the engine caps.
+	var kernelModel sim.LatencyModel
+	if backend == sim.LatencyBackendKernel {
+		missing := []string{}
+		if kernelScenario == "" {
+			missing = append(missing, "--scenario")
+		}
+		if kernelScenarioDir == "" {
+			missing = append(missing, "--scenarios")
+		}
+		if kernelRegistry == "" {
+			missing = append(missing, "--registry")
+		}
+		if len(missing) > 0 {
+			logrus.Fatalf("--latency-model %s requires %s: the kernel prices a step from a "+
+				"committed scenario plus the catalog and registry it names, none of which a "+
+				"coefficient flag can express",
+				sim.LatencyBackendKernel, strings.Join(missing, ", "))
+		}
+		catalogRoot, err := resolveCatalogRoot()
+		if err != nil {
+			logrus.Fatalf("--latency-model %s: %v", sim.LatencyBackendKernel, err)
+		}
+		m, err := kernelmodel.Open(kernelScenario, kernelmodel.Repos{
+			Scenarios: kernelScenarioDir,
+			Catalog:   catalogRoot,
+			Registry:  kernelRegistry,
+		})
+		if err != nil {
+			// Named rather than fallen back on: a backend that silently served this run
+			// from coefficients would report numbers the operator did not ask for.
+			logrus.Fatalf("--latency-model %s: scenario %q: %v",
+				sim.LatencyBackendKernel, kernelScenario, err)
+		}
+		kernelModel = m
+		// The expert geometry the graph stated, so the ModelHardwareConfig boundary and
+		// every MoE gate see a routed model as routed. Nothing else of ModelConfig is
+		// populated here: this backend parses no HF config, and a half-filled struct
+		// read as if complete is how a dense model comes to be priced as MoE.
+		modelConfig.NumLocalExperts = kernelDeploymentExperts
+		modelConfig.NumExpertsPerTok = kernelDeploymentTopK
+	}
 
 	// --latency-model roofline
 	if backend == "roofline" {
@@ -1174,7 +1312,8 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	if dataParallelism < 1 {
 		logrus.Fatalf("--dp must be >= 1, got %d", dataParallelism)
 	}
-	if (dataParallelism > 1 || enableExpertParallel) && backend != "trained-physics" {
+	if (dataParallelism > 1 || enableExpertParallel) &&
+		backend != "trained-physics" && backend != sim.LatencyBackendKernel {
 		// INV BC-ROOFLINE: roofline does not model DP/EP step-time effects, so
 		// accepting these flags there would imply unsupported latency semantics.
 		//
@@ -1186,6 +1325,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		// called from the PD override block in both runCmd and replayCmd — now a live path
 		// since #1553 made PD + --dp > 1 supported (BC-7).
 		logrus.Fatalf("--dp > 1 and --enable-expert-parallel require --latency-model trained-physics "+
+			"or blis-latency-kernel "+
 			"(got --dp=%d, --enable-expert-parallel=%t, --latency-model %s). The roofline backend is "+
 			"DP/EP-blind for step time.",
 			dataParallelism, enableExpertParallel, backend)
@@ -1240,6 +1380,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 
 	return latencyResolution{
 		Backend:     backend,
+		KernelModel: kernelModel,
 		ModelConfig: modelConfig,
 		HWConfig:    hwConfig,
 		AlphaCoeffs: alpha,
@@ -1613,7 +1754,10 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&dataParallelism, "dp", 1, "Data parallelism degree (MoE models only; --latency-model trained-physics only). --dp N spawns N real single-node engine replicas per --num-instances, each sized per-rank, on both `blis run` and `blis replay` (#1531, #1556). Supported with --enable-expert-parallel since #1548 (the EP group is those replicas' GPUs; re-supply both flags on replay). Supported with PD disaggregation (each pool spawns N per-rank replicas) and node pools (N×M replicas reserve N×M×TP GPUs) since #1553. Not supported with the model autoscaler (#1553: dp-group co-scaling is undefined)")
 	cmd.Flags().BoolVar(&enableExpertParallel, "enable-expert-parallel", false, "Enable expert parallelism for MoE models (mirrors vLLM --enable-expert-parallel; --latency-model trained-physics only)")
 	cmd.Flags().StringVar(&moeCommBackend, "moe-comm-backend", "", "MoE all-to-all comm backend for dispatch/combine cost (mirrors vLLM VLLM_ALL2ALL_BACKEND: naive, allgather_reducescatter [default], pplx, deepep_high_throughput, deepep_low_latency, mori, flashinfer_all2allv; MoE + --latency-model trained-physics + either --dp > 1 or --enable-expert-parallel)")
-	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "trained-physics", "Latency model backend: trained-physics (default), roofline")
+	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "trained-physics", "Latency model backend: trained-physics (default), roofline, blis-latency-kernel. The kernel backend prices a step from a committed scenario plus the catalog and registry it names, so it takes --scenario/--scenarios/--registry instead of coefficient flags, and it is the only backend that models expert parallelism and per-pool prefill/decode roles.")
+	cmd.Flags().StringVar(&kernelScenario, "scenario", "", "Scenario FILE NAME within --scenarios, e.g. gpt-oss-120b-h200-fp4-vllm-tp4.yaml (--latency-model blis-latency-kernel only; required there). The scenario states the model, hardware, fabric, coefficient sets, engine version and per-pool parallelism, so those are read from it rather than from flags.")
+	cmd.Flags().StringVar(&kernelScenarioDir, "scenarios", "", "Directory holding scenario YAML files (--latency-model blis-latency-kernel only; required there).")
+	cmd.Flags().StringVar(&kernelRegistry, "registry", "", "blis-registry clone root, holding the coefficient sets a scenario names (--latency-model blis-latency-kernel only; required there).")
 	cmd.Flags().StringVar(&kvCacheDtype, "kv-cache-dtype", "auto", "KV-cache storage precision, independent of compute and weight quantization (superset of vLLM's --kv-cache-dtype values): auto (default; follows the model/compute dtype), fp8, fp8_e4m3, fp8_e5m2, fp8_inc (1 byte/elem → ~2x KV capacity under bf16 compute), bf16, fp16, fp32. Only affects analytical backends' auto KV-block sizing (and PD KV-transfer sizing); re-supply identically on replay for run/replay parity (INV-13).")
 	cmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for analytical backends when not set.")
 
@@ -2038,6 +2182,13 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("Invalid log level: %s", logLevel)
 		}
 		logrus.SetLevel(level)
+
+		// The kernel backend reads the deployment from its scenario, so that resolution
+		// runs BEFORE the flag gates below and before requireDeploymentFlags inside
+		// resolveLatencyConfig: those refuse a run whose deployment nobody chose, and on
+		// this backend the scenario is who chose it. Ordering, not an exemption -- the
+		// gates still run, on the derived values.
+		adoptKernelDeployment(cmd)
 
 		if model == "" { // model not provided, exit
 			logrus.Fatalf("LLM name not provided. Exiting simulation.")
@@ -2754,6 +2905,10 @@ var runCmd = &cobra.Command{
 				LoRAConfig:           loraCfg,
 				SpeculativeConfig:    resolveSpeculativeConfig(cmd),
 				SLOPriorityOverrides: sloPriorityOverrides,
+				// nil on every backend but blis-latency-kernel, where the coefficient
+				// factory cannot build the model (INV-6: nil leaves construction
+				// exactly as it was).
+				LatencyModelOverride: lr.KernelModel,
 			},
 			NumInstances:                    numInstances,
 			AdmissionPolicy:                 admissionPolicy,

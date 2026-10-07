@@ -91,6 +91,17 @@ type SimConfig struct {
 	// Shared with admission: same overrides flow from policy bundle slo_priorities.
 	// Set programmatically in cmd/root.go and cmd/replay.go from parsed bundle/CLI overrides — no YAML tag needed.
 	SLOPriorityOverrides map[string]int
+
+	// LatencyModelOverride supplies an already-built latency model instead of letting
+	// the instance construct one from LatencyCoeffs and ModelHardwareConfig. It exists
+	// for a backend whose inputs are a committed artifact set rather than CLI
+	// coefficients -- blis-latency-kernel reads a scenario, a catalog and a registry,
+	// none of which the coefficient factory can express.
+	//
+	// nil (the zero value) is inert: the instance builds its model through
+	// latency.NewLatencyModel exactly as before, so a run that sets no override is
+	// byte-identical to a pre-feature build (INV-6). Set programmatically; no YAML tag.
+	LatencyModelOverride LatencyModel
 }
 
 // Simulator is the core object that holds simulation time, system state, and the event loop.

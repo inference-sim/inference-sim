@@ -64,11 +64,19 @@ func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	if err != nil {
 		panic(fmt.Sprintf("NewInstanceSimulator(%s): adapter cost model: %v", id, err))
 	}
-	latencyModel, err := latency.NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig,
-		latency.WithAdapterCost(adapterCost),
-		latency.WithSpeculativeDecode(cfg.K))
-	if err != nil {
-		panic(fmt.Sprintf("NewInstanceSimulator(%s): NewLatencyModel: %v", id, err))
+	// An override is a latency model the caller already built, for a backend the
+	// coefficient factory cannot express (blis-latency-kernel, whose inputs are a
+	// scenario plus a catalog and registry). Absent one -- every pre-feature run --
+	// the model is built here exactly as before (INV-6).
+	latencyModel := cfg.LatencyModelOverride
+	if latencyModel == nil {
+		built, err := latency.NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig,
+			latency.WithAdapterCost(adapterCost),
+			latency.WithSpeculativeDecode(cfg.K))
+		if err != nil {
+			panic(fmt.Sprintf("NewInstanceSimulator(%s): NewLatencyModel: %v", id, err))
+		}
+		latencyModel = built
 	}
 	s, err := sim.NewSimulator(cfg, kvStore, latencyModel)
 	if err != nil {

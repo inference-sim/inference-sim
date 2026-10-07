@@ -77,6 +77,8 @@ type Model struct {
 	poolIndex     int
 	chipMemoryGiB float64
 	isMoE         bool
+	experts       int
+	expertsPerTok int
 }
 
 var _ sim.LatencyModel = (*Model)(nil)
@@ -93,9 +95,24 @@ const DecodeThreshold = 8
 // so that duplication carries no modelling risk: if these two ever disagree, the
 // disagreement is about which file was read, not about what a step costs.
 func Open(scenario string, r Repos) (*Model, error) {
+	return OpenPool(scenario, r, 0)
+}
+
+// OpenPool builds a kernel for ONE pool of a scenario and adapts it.
+//
+// A disaggregated scenario states a prefill pool and a decode pool, and the two differ in
+// the quantities that set step time -- tensor-parallel width, expert parallelism, the
+// engine's token budget. Pricing both from pool 0 would charge the decode pool the
+// prefill pool's parallelism, so a caller serving roles separately opens one model per
+// pool. Open is this function at pool 0, which is what a colocated scenario has.
+func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
 	sc, err := schemas.LoadScenario(filepath.Join(r.Scenarios, scenario))
 	if err != nil {
 		return nil, err
+	}
+	if poolIndex < 0 || poolIndex >= len(sc.Pools) {
+		return nil, fmt.Errorf("scenario %q states %d pool(s); pool %d was requested",
+			scenario, len(sc.Pools), poolIndex)
 	}
 	graph, err := schemas.LoadModelGraph(
 		filepath.Join(r.Catalog, "models", sc.Model, "graph.yaml"))
@@ -134,7 +151,7 @@ func Open(scenario string, r Repos) (*Model, error) {
 			sc.EngineVersion, rules.Versions())
 	}
 	k, err := latencykernel.New(latencykernel.Inputs{
-		Scenario: sc, PoolIndex: 0, Model: graph, Chip: chip, Fabric: fabric,
+		Scenario: sc, PoolIndex: poolIndex, Model: graph, Chip: chip, Fabric: fabric,
 		Devices: devices, Coefficients: sets, Rules: pack,
 	})
 	if err != nil {
@@ -142,9 +159,10 @@ func Open(scenario string, r Repos) (*Model, error) {
 	}
 	m := New(k, chip.SMCount)
 	m.scenario = sc
-	m.poolIndex = 0
+	m.poolIndex = poolIndex
 	m.chipMemoryGiB = chip.MemoryGiB
 	m.isMoE = hasGroupedGEMM(graph)
+	m.experts, m.expertsPerTok = expertCounts(graph)
 	return m, nil
 }
 
@@ -152,14 +170,25 @@ func Open(scenario string, r Repos) (*Model, error) {
 // the DP scaling in KVBudget, mirroring latency.CalculateKVBlocks' IsMoE gate: vLLM runs dp
 // independent EngineCores for an MoE model, each holding a full KV budget.
 func hasGroupedGEMM(g *model.Graph) bool {
+	experts, _ := expertCounts(g)
+	return experts > 0
+}
+
+// expertCounts returns the routed expert count and top-k of the first routed layer kind,
+// or zeroes where no layer routes.
+//
+// A caller that must state a model's expert geometry without an HF config reads it here.
+// The first routed kind is representative: a graph whose kinds disagreed on expert count
+// would describe two different MoE models in one file.
+func expertCounts(g *model.Graph) (experts, topK int) {
 	for _, kind := range g.LayerKinds {
 		for _, n := range kind.Nodes {
 			if n.Op == model.OpGroupedGEMM {
-				return true
+				return n.Experts, n.TopK
 			}
 		}
 	}
-	return false
+	return 0, 0
 }
 
 // New adapts an already-built kernel. Exported so a caller that constructed a kernel
@@ -337,12 +366,16 @@ func (m *Model) StepEstimate(batch []*sim.Request) kernel.StepEstimate {
 func (m *Model) Deployment() Deployment {
 	p := m.scenario.Pools[m.poolIndex]
 	return Deployment{
-		Model:        m.scenario.Model,
-		Hardware:     m.scenario.Hardware,
-		TP:           p.Parallel.TP,
-		DP:           p.Parallel.DP,
-		Quantization: p.Engine.Quantization,
-		CacheDType:   p.Engine.CacheDType,
+		Model:          m.scenario.Model,
+		Hardware:       m.scenario.Hardware,
+		TP:             p.Parallel.TP,
+		DP:             p.Parallel.DP,
+		ExpertParallel: p.Parallel.EnableExpertParallel,
+		MoE:            m.isMoE,
+		Experts:        m.experts,
+		ExpertsPerTok:  m.expertsPerTok,
+		Quantization:   p.Engine.Quantization,
+		CacheDType:     p.Engine.CacheDType,
 		// The chip's total memory, which is what vLLM resolves its batch defaults from.
 		DeviceMemoryGiB: m.chipMemoryGiB,
 		// Tri-state in the scenario, resolved here to the engine's default. vLLM caches
@@ -356,12 +389,27 @@ func (m *Model) Deployment() Deployment {
 
 // Deployment is the scenario identity an alternative backend is built from.
 type Deployment struct {
-	Model        string
-	Hardware     string
-	TP           int
-	DP           int
-	Quantization string
-	CacheDType   string
+	Model    string
+	Hardware string
+	TP       int
+	DP       int
+	// ExpertParallel is the pool's parallel.enable_expert_parallel. Carried because a
+	// caller deriving its deployment from the scenario needs every field that sets step
+	// time, and expert parallelism changes which GEMM a routed layer runs.
+	ExpertParallel bool
+	// MoE reports whether the model routes tokens through experts, read from the graph
+	// (a layer kind carrying a GroupedGEMM) rather than from an HF config. A caller
+	// gating data parallelism on "is this MoE" needs it, and on this backend the graph
+	// is the only thing that was parsed.
+	MoE bool
+	// Experts and ExpertsPerTok are the routed geometry, from the same graph node. A
+	// caller whose library boundary validates "DP > 1 needs >= 2 experts" needs the
+	// counts themselves, not just the boolean, so that invariant is checked against the
+	// model rather than waived for this backend.
+	Experts       int
+	ExpertsPerTok int
+	Quantization  string
+	CacheDType    string
 	// PrefixCachingDisabled is the engine's --no-enable-prefix-caching, already resolved
 	// from the scenario's tri-state against vLLM's default of ON.
 	PrefixCachingDisabled bool

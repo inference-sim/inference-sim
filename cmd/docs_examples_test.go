@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/inference-sim/inference-sim/sim"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -64,6 +65,22 @@ func TestDocExamplesPassDeploymentFlags(t *testing.T) {
 				command += " " + lines[i]
 			}
 			examples++
+
+			// The kernel backend reads the deployment from its scenario and REFUSES
+			// --hardware/--tp, so an example that passed them would abort. The
+			// requirement is unchanged for every other backend; this is the one
+			// documented command line where supplying them is the error.
+			if hasFlag(command, "--latency-model") &&
+				strings.Contains(command, sim.LatencyBackendKernel) {
+				for _, refused := range []string{"--model", "--hardware", "--tp", "--dp"} {
+					if hasFlag(command, refused) {
+						t.Errorf("%s:%d: documented example passes %s to --latency-model %s, "+
+							"which refuses it and reads the deployment from the scenario:\n  %s",
+							file, start+1, refused, sim.LatencyBackendKernel, collapse(command))
+					}
+				}
+				continue
+			}
 
 			var missing []string
 			if !hasFlag(command, "--hardware") {

@@ -131,7 +131,7 @@ var (
 	validRoutingPolicies        = map[string]bool{"": true, "round-robin": true, "least-loaded": true, "weighted": true, "always-busiest": true}
 	validSchedulers             = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
 	validPreemptionPolicies     = map[string]bool{"": true, "fcfs": true, "priority": true}
-	validLatencyBackends        = map[string]bool{"": true, LatencyBackendRoofline: true, LatencyBackendTrainedPhysics: true}
+	validLatencyBackends        = map[string]bool{"": true, LatencyBackendRoofline: true, LatencyBackendTrainedPhysics: true, LatencyBackendKernel: true}
 	validDisaggregationDeciders = map[string]bool{"": true, "never": true, "always": true, "prefix-threshold": true}
 	validEncodeDeciders         = map[string]bool{"": true, "never": true, "always": true, "multimodal": true}
 	validSaturationDetectors    = map[string]bool{"": true, "never": true, "utilization": true, "concurrency": true}
@@ -170,6 +170,12 @@ func IsValidLatencyBackend(name string) bool { return validLatencyBackends[name]
 const (
 	LatencyBackendRoofline       = "roofline"
 	LatencyBackendTrainedPhysics = "trained-physics"
+	// LatencyBackendKernel prices a step with blis-latency-kernel, from a scenario
+	// plus the catalog and registry it names. It is the only backend whose inputs are
+	// a committed artifact set rather than CLI-supplied coefficients, and the only one
+	// that models expert parallelism and per-pool roles, so the DP/EP gate admits it
+	// alongside trained-physics.
+	LatencyBackendKernel = "blis-latency-kernel"
 )
 
 // ValidLatencyBackendNames returns sorted valid latency backend names (excluding empty).

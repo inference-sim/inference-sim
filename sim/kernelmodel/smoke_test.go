@@ -1,6 +1,7 @@
 package kernelmodel
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -137,32 +138,69 @@ func TestPrefillAndDecodeArePricedByDifferentLaws(t *testing.T) {
 	}
 }
 
-// At one scheduled token the step is host-bound, and the two regimes coincide ON THE
-// OVERLAP EDGE: a per-stage max is taken over resources, and the host term dominates every
-// stage, so the attention read's difference between a prefill chunk and a decode never
-// surfaces. Pinning this separately keeps the test above honest about WHERE the regimes
-// diverge: a version that only checked a single batch shape could pass on a coincidence.
+// The law: WHERE a step is host-bound, the mixer choice must not move it; where it is
+// compute-bound, it must. One scheduled token is the host-bound end and a full prompt is
+// the compute-bound end, so the two ends together say the step model is sensitive to the
+// prefill/decode distinction exactly where the hardware is.
 //
-// It is asserted against Overlap rather than against the adapter's own number, because the
-// adapter reads StepEstimate.Expected and that is NoOverlap, which sums every resource
-// instead of maxing within a stage. Summing keeps the HBM difference -- 2.447 ms for the
-// prefill chunk against 2.589 ms for the decode on this deployment -- so the two regimes
-// do NOT coincide there, and should not. The host-bound claim is a property of the
-// max-composed edge, so that is the edge it is checked on.
-func TestTheRegimesCoincideWhenTheStepIsHostBound(t *testing.T) {
+// This is a metamorphic claim about the two ends rather than a value at either. An earlier
+// version asserted exact float equality of the two prices at one token, which is the
+// "exact formula reproduction" pattern the standards prohibit (principles.md): it broke on
+// a coefficient refit that moved the host and attention terms by different amounts, while
+// the physics it meant to pin -- host dominance at one token -- still held. The ratio bound
+// below is loose because the claim is "negligible beside the host term", not a number.
+//
+// Asserted on the Overlap edge, where a per-stage max is taken over resources, because
+// that is where a dominant host term can hide the attention difference at all. The adapter
+// reads StepEstimate.Expected, which is NoOverlap and sums every resource, so the two
+// regimes do NOT coincide there and should not.
+func TestTheMixerChoiceMovesTheStepOnlyWhereComputeBinds(t *testing.T) {
 	m := open(t, "glm-5-h200-fp8-sglang-tp8.yaml")
 	const prompt = 4096
-	prefill := &sim.Request{
-		InputTokens: make([]sim.TokenID, prompt), ProgressIndex: 0, NumNewTokens: 1,
+
+	// hostBoundTolerance is how much of the host-bound price the mixer difference may
+	// account for. The host term dominates every stage at one scheduled token, so the
+	// attention read's contribution is a small fraction of it -- not zero, because
+	// NoOverlap's resource sum still carries it into the stage max on some deployments.
+	const hostBoundTolerance = 0.10
+	// computeBoundSeparation is how far apart the two regimes must be, relatively, once
+	// the prompt is priced. DIRECTION IS DELIBERATELY NOT ASSERTED: at 4,096 scheduled
+	// tokens on this deployment the decode is the DEARER of the two (4,096 queries each
+	// reading a 4,096-token cache, against a prefill chunk whose attention is triangular
+	// over the chunk), and which side wins is a property of the shapes rather than of the
+	// regime. The claim is separation, which is what a step model blind to the
+	// distinction would fail.
+	const computeBoundSeparation = 0.10
+
+	at := func(scheduled int) (prefill, decode float64) {
+		p := &sim.Request{
+			InputTokens: make([]sim.TokenID, prompt), ProgressIndex: 0, NumNewTokens: scheduled,
+		}
+		d := &sim.Request{
+			InputTokens: make([]sim.TokenID, prompt), ProgressIndex: prompt, NumNewTokens: scheduled,
+		}
+		return float64(overlapOf(m, p)), float64(overlapOf(m, d))
 	}
-	decode := &sim.Request{
-		InputTokens: make([]sim.TokenID, prompt), ProgressIndex: prompt, NumNewTokens: 1,
+
+	// Host-bound end: one scheduled token. The prices must be close.
+	pOne, dOne := at(1)
+	if pOne <= 0 || dOne <= 0 {
+		t.Fatalf("both prices must be positive, got prefill %v decode %v", pOne, dOne)
 	}
-	pt := overlapOf(m, prefill)
-	dt := overlapOf(m, decode)
-	if pt != dt {
-		t.Errorf("at one scheduled token a prefill chunk priced %v and a decode %v on the "+
-			"overlap edge; both are host-bound at this size and should coincide", pt, dt)
+	if rel := math.Abs(dOne-pOne) / math.Min(pOne, dOne); rel > hostBoundTolerance {
+		t.Errorf("at one scheduled token the mixer choice moved the step by %.1f%% "+
+			"(prefill %v, decode %v); the host term dominates this size, so the attention "+
+			"difference should be negligible beside it (tolerance %.0f%%)",
+			rel*100, pOne, dOne, hostBoundTolerance*100)
+	}
+
+	// Compute-bound end: the whole prompt in one chunk. The prices must SEPARATE.
+	pAll, dAll := at(prompt)
+	if rel := math.Abs(dAll-pAll) / math.Min(pAll, dAll); rel < computeBoundSeparation {
+		t.Errorf("pricing a %d-token chunk, prefill %v and decode %v differ by only %.1f%%; "+
+			"a step model blind to the prefill/decode distinction would price them alike, "+
+			"and this end is where the distinction must show (want >= %.0f%%)",
+			prompt, pAll, dAll, rel*100, computeBoundSeparation*100)
 	}
 }
 
