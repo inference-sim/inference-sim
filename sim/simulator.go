@@ -733,10 +733,10 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	// lands at InputLen+1 (one step past the InputLen threshold), so the decode-step count
 	// == OutputLen already — the guard prevents double-counting in that case.
 	//
-	// R23 (single source of truth): this is THE output-token count for the request. Every
-	// derived per-request metric reads it rather than re-deriving one — the length-capped
-	// mean-ITL denominator below did re-derive one, from len(req.ITL), and came out a token
-	// short of vLLM's maxModelLen-input (#1891).
+	// R23 (single source of truth): this is THE output-token count for the request, and
+	// every derived per-request metric below must read it rather than re-derive one. The
+	// length-capped mean-ITL denominator re-derived its own from len(req.ITL) and came out
+	// a token short of vLLM's maxModelLen-input (#1891).
 	outputTokens := int(req.ProgressIndex) - int(req.InputLen())
 	if outputTokens < len(req.OutputTokens) {
 		outputTokens++ // prefill-generated first token (vLLM parity)
@@ -773,24 +773,23 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 		// to avoid contaminating per-token ITL with the fixed post-decode overhead.
 		reqTotalOutput := itlSum
 		if req.LengthCapped {
-			// #588: len(req.OutputTokens) is the pre-determined (oracle) count, which a
-			// length cap never reaches — so the denominator must come from what the
-			// request actually emitted: `outputTokens` above, the single output-token
-			// count (#1891). TPOT convention: exclude the first generated token, hence -1.
+			// #588: len(req.OutputTokens) is the oracle count, which a length cap never
+			// reaches, so the denominator comes from what the request actually emitted —
+			// `outputTokens` above, minus one for the TPOT convention of excluding the
+			// first generated token.
 			//
-			// NOT len(req.ITL): an ITL entry is appended per decode STEP, and the first
-			// output token is charged to prefill (its latency is TTFT, not an ITL entry),
-			// so len(ITL) is already outputTokens-1 — and fewer still under speculative
-			// decoding / MTP, where one entry covers g tokens. The pre-#1891
-			// max(len(ITL)-1, 1) therefore divided by outputTokens-2, reporting TPOT as if
-			// the request had emitted one token fewer than vLLM's maxModelLen-input. It
-			// also disagreed with the spec-decode arm of the same branch, which already
-			// used this token-derived count — so a feature-off (g=1) run and a k=0
-			// spec-decode run reported different TPOT for the same length-capped request.
-			// One expression now serves both (max(outputTokens-1, 1) is identical to the
-			// old spec-decode arm's max((PI-InputLen+1)-1, 1): a length-capped request is
-			// capped short of its oracle output, so the prefill-token adjustment above
-			// always applies and outputTokens == PI-InputLen+1).
+			// NOT len(req.ITL) (#1891): an ITL entry is appended per decode STEP, and the
+			// first output token is charged to prefill (its latency is TTFT, not an ITL
+			// entry), so len(ITL) is already outputTokens-1 — fewer still under speculative
+			// decoding / MTP, where one entry covers g tokens. max(len(ITL)-1, 1) therefore
+			// divided by outputTokens-2, reporting TPOT as if the request had emitted one
+			// token fewer than vLLM's maxModelLen-input, and disagreed with this branch's
+			// former spec-decode arm, which already used the token-derived count — so a
+			// feature-off (g=1) run and a k=0 spec-decode run reported different TPOT for
+			// the same request. One expression now serves both: max(outputTokens-1, 1) is
+			// identical to that arm's max((PI-InputLen+1)-1, 1), because a length-capped
+			// request is always capped short of its oracle output and so always takes the
+			// prefill-token adjustment above (outputTokens == PI-InputLen+1).
 			//
 			// Caveat (PD): a PD decode sub-request at the MaxModelLen boundary emits its
 			// one final token even past MaxModelLen-1 (batch_formation.go floors the cap at
