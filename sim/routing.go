@@ -39,6 +39,23 @@ type RoutingSnapshot struct {
 	// when the interval is 0. Zero value (nil) ⇒ no adapter resident ⇒ scorer neutral,
 	// preserving byte-identical routing when the LoRA subsystem is inert (INV-6).
 	ResidentAdapters map[string]bool
+	// ActiveAdapters is the ROUTER-OBSERVABLE adapter signal: adapter id → number of
+	// this instance's requests that are queued or running with that adapter (only
+	// adapters with ≥1 such request appear). It mirrors vLLM's
+	// vllm:lora_requests_info running/waiting labels as llm-d reads them into
+	// ActiveModels/WaitingModels (whose values llm-d always sets to 0 — consumers
+	// that port llm-d must read membership only). Unlike ResidentAdapters it is
+	// not ground truth about GPU residency: an adapter can be resident and idle
+	// (absent here) or queued behind a cold load (present here, not yet resident).
+	// Freshness (R17, INV-7): Periodic at --snapshot-refresh-interval when > 0, else
+	// Immediate — like a metrics scrape; NOT pinned by route-to-holder. Nil when the
+	// instance has no adapter capacity (LoRA off — vLLM then publishes no LoRA
+	// metric) or no adapter request is queued/running.
+	ActiveAdapters map[string]int
+	// MaxLoras is the instance's GPU adapter capacity (vLLM max_loras, published as
+	// the max_lora label of vllm:lora_requests_info; llm-d's MaxActiveModels). 0 when
+	// the LoRA subsystem is inert. Refreshed with ActiveAdapters (same scrape).
+	MaxLoras int
 }
 
 // EffectiveLoad returns the total effective load on this instance:
