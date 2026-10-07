@@ -211,6 +211,7 @@ func init() {
 	registerScorer("load-aware", stateless(scoreLoadAware))
 	registerScorer("vllm-dp", stateless(scoreVLLMDP))
 	registerScorer("lora-affinity", stateless(scoreLoRAAffinity))
+	registerScorer("llmd-lora-affinity", stateless(scoreLLMDLoRAAffinity))
 }
 
 // newScorerWithObserver creates a scorer function and optional observer for a named scorer.

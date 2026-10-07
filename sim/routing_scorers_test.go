@@ -778,8 +778,9 @@ func TestScorerRegistry_ReproducesSwitchSelection(t *testing.T) {
 		{"load-aware", scoreLoadAware, false},
 		{"vllm-dp", scoreVLLMDP, false},
 		{"lora-affinity", scoreLoRAAffinity, false},
+		{"llmd-lora-affinity", scoreLLMDLoRAAffinity, false},
 	}
-	require.Len(t, cases, 11, "all 11 built-in scorers must be covered (BC-1)")
+	require.Len(t, cases, 12, "all 12 built-in scorers must be covered (BC-1)")
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
