@@ -3307,7 +3307,7 @@
 </div>
 <div class="admonition info">
 <p class="admonition-title">Proactive MaxModelLen cap</p>
-<p>When <code>--max-model-len</code> is set, a three-part enforcement matches vLLM's scheduler semantics: (1) <code>FormBatch</code> proactively clamps token scheduling to <code>maxModelLen - 1 - ProgressIndex</code>, (2) <code>executeBatchStep</code> skips decode when no tokens are allocated, and (3) <code>processCompletions</code> force-completes requests at the <code>maxModelLen - 1</code> boundary. Output per length-capped request: <code>maxModelLen - 1 - inputLen</code> tokens.</p>
+<p>When <code>--max-model-len</code> is set, a three-part enforcement matches vLLM's scheduler semantics: (1) <code>FormBatch</code> proactively clamps token scheduling to <code>maxModelLen - 1 - ProgressIndex</code>, (2) <code>executeBatchStep</code> skips decode when no tokens are allocated, and (3) <code>processCompletions</code> force-completes requests at the <code>maxModelLen - 1</code> boundary. Output per length-capped request: <code>maxModelLen - inputLen</code> tokens — <code>ProgressIndex</code> is BLIS's <code>num_computed_tokens</code> and lags the generated-token count by one (the first output token is charged to prefill), so stopping at <code>maxModelLen - 1</code> is exactly vLLM's <code>check_stop</code> (<code>num_tokens &gt;= max_model_len</code>) and the boundary token is counted.</p>
 </div>
 <p>Compute the minimum blocks needed for your workload:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>min_blocks = ceil(max_input_tokens / block_size)

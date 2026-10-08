@@ -3132,8 +3132,11 @@ that sub-agents inherit the no-<code>Bash</code> deny on the pinned action versi
   <code>/pr-review</code> as a precise token (not <code>/blis-pr-review</code>, <code>/archon-pr-review</code>, or a future
   <code>/pr-review-*</code>) <strong>and</strong> the commenter must hold write access. Both are checked from the trusted ref.</li>
 <li><strong>Three jobs so the box that reads untrusted code cannot act:</strong> <code>gate</code> (ubuntu-latest, touches no PR
-  content) → <code>review</code> (<code>pr-review-untrusted</code> runner, <code>contents: read</code>, <strong>no</strong> <code>pull-requests: write</code>)
-  → <code>post</code> (ubuntu-latest, <code>pull-requests: write</code>, never reads PR code).</li>
+  content) → <code>review</code> (<code>pr-review-untrusted</code> runner, <code>contents: read</code>, <strong>no</strong> <code>pull-requests: write</code>,
+  <strong>no</strong> <code>id-token: write</code>) → <code>post</code> (ubuntu-latest, <code>pull-requests: write</code>, never reads PR code).
+  blis's <code>claude-code-action</code> is handed the job's read-only <code>github_token</code> so it takes its
+  <code>OVERRIDE_GITHUB_TOKEN</code> path and <strong>skips the OIDC exchange</strong> — which would otherwise need
+  <code>id-token: write</code> on the untrusted box and would mint the Anthropic App's <em>write</em> token (#1883).</li>
 <li><strong>Key out of the session:</strong> LiteLLM needs the VPN, so the runner is self-hosted — but the key lives
   <strong>only in a sidecar container</strong> (<code>k8s/pr-review-runner.yaml</code>). The reviewer talks to
   <code>http://localhost:4000</code> with a <strong>dummy</strong> key; the sidecar injects the real one (both
