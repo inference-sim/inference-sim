@@ -2,7 +2,10 @@ package harness
 
 import (
 	"math"
+	"path/filepath"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 )
 
 // The warm-up cut must apply to TPOT and NOT to TTFT.
@@ -13,7 +16,7 @@ import (
 // mean untouched. If both move, the cut has leaked into TTFT and the TTFT curve will flatten.
 func TestWarmupCutAppliesToITLNotTTFT(t *testing.T) {
 	c, err := LoadCorpus(
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/aisimulate_e2e.json")
+		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"))
 	if err != nil {
 		t.Skip(err)
 	}
@@ -72,7 +75,7 @@ func TestWarmupCutAppliesToITLNotTTFT(t *testing.T) {
 // broken queueing path rather than on a modelling trade that is documented elsewhere.
 func TestTTFTRisesWithConcurrency(t *testing.T) {
 	c, err := LoadCorpus(
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/aisimulate_e2e.json")
+		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"))
 	if err != nil {
 		t.Skip(err)
 	}
@@ -106,7 +109,7 @@ func TestTTFTRisesWithConcurrency(t *testing.T) {
 // its answer with the constant would be a tuning knob rather than a measurement.
 func TestTTFTSpikeSelectionIsDecidedByTheDataNotTheThreshold(t *testing.T) {
 	c, err := LoadCorpus(
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/aisimulate_e2e.json")
+		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"))
 	if err != nil {
 		t.Skip(err)
 	}
@@ -141,7 +144,7 @@ func TestTTFTSpikeSelectionIsDecidedByTheDataNotTheThreshold(t *testing.T) {
 // it would renormalise the sweep rather than remove a bad point.
 func TestTTFTSpikeNeverExcludesTheAnchor(t *testing.T) {
 	c, err := LoadCorpus(
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/aisimulate_e2e.json")
+		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"))
 	if err != nil {
 		t.Skip(err)
 	}
@@ -163,7 +166,7 @@ func TestTTFTSpikeNeverExcludesTheAnchor(t *testing.T) {
 // four bad ones.
 func TestPointExclusionKeepsTheRestOfAnAffectedSweep(t *testing.T) {
 	c, err := LoadCorpus(
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/aisimulate_e2e.json")
+		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"))
 	if err != nil {
 		t.Skip(err)
 	}

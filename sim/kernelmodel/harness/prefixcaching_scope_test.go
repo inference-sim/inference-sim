@@ -14,9 +14,9 @@ import (
 func TestScenarioPrefixCachingReachesTheDeployment(t *testing.T) {
 	const scenario = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
 	committed := kernelmodel.Repos{
-		Scenarios: "/Users/sri/Documents/Projects/blis-latency-kernel/testdata/aisimulate",
-		Catalog:   "/Users/sri/Documents/Projects/blis-catalog",
-		Registry:  "/Users/sri/Documents/Projects/blis-registry",
+		Scenarios: kernelmodel.DefaultScenarios(),
+		Catalog:   kernelmodel.DefaultCatalog(),
+		Registry:  kernelmodel.DefaultRegistry(),
 	}
 	m, err := kernelmodel.Open(scenario, committed)
 	if err != nil {

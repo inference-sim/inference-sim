@@ -34,6 +34,8 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 	_ "github.com/inference-sim/inference-sim/sim/latency"
 	"gopkg.in/yaml.v3"
+
+	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 )
 
 // The coefficients inference-sim ships in defaults.yaml, transcribed so this harness needs
@@ -99,9 +101,9 @@ var deployments = map[string]deployment{
 }
 
 func main() {
-	catalog := flag.String("catalog", "/Users/sri/Documents/Projects/blis-catalog", "")
+	catalog := flag.String("catalog", kernelmodel.DefaultCatalog(), "")
 	corpus := flag.String("corpus",
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/scoreable.json",
+		filepath.Join(kernelmodel.DefaultMeasurements(), "scoreable.json"),
 		"")
 	verbose := flag.Bool("verbose", false, "print every point")
 	flag.Parse()

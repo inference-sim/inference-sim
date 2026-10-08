@@ -23,7 +23,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/inference-sim/blis-schemas/spec/scenario"
+	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/latency"
 )
@@ -165,7 +165,7 @@ type PointConfig struct {
 // setting the run did not pass -- the engine resolved it the same way, so reproducing that is
 // a measurement of the engine's behaviour rather than a guess. The scenario last, which in
 // practice means the non-vLLM sweeps where no log exists.
-func resolveAdmission(sw Sweep, concurrency int, eng scenario.Engine,
+func resolveAdmission(sw Sweep, concurrency int, eng deployment.Engine,
 	dep kernelmodel.Deployment, set *EngineSettingSet) PointConfig {
 	a := PointConfig{
 		MaxNumSeqs:          eng.MaxNumSeqs,

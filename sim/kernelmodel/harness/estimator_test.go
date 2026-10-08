@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
@@ -8,15 +9,15 @@ import (
 
 func hopperRepos() kernelmodel.Repos {
 	return kernelmodel.Repos{
-		Scenarios: "/Users/sri/Documents/Projects/blis-latency-kernel/testdata/aisimulate",
-		Catalog:   "/Users/sri/Documents/Projects/blis-catalog",
-		Registry:  "/Users/sri/Documents/Projects/blis-registry",
+		Scenarios: kernelmodel.DefaultScenarios(),
+		Catalog:   kernelmodel.DefaultCatalog(),
+		Registry:  kernelmodel.DefaultRegistry(),
 	}
 }
 
 func hopperBackends() BackendPaths {
 	return BackendPaths{
-		Catalog:  "/Users/sri/Documents/Projects/blis-catalog",
+		Catalog:  kernelmodel.DefaultCatalog(),
 		HWConfig: "../../../hardware_config.json",
 		Defaults: "../../../defaults.yaml",
 	}
@@ -27,7 +28,7 @@ func hopperBackends() BackendPaths {
 func testSweep(t *testing.T) Sweep {
 	t.Helper()
 	c, err := LoadCorpus(
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/aisimulate_e2e.json")
+		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"))
 	if err != nil {
 		t.Skipf("corpus unavailable: %v", err)
 	}

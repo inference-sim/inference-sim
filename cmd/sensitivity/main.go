@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/kernelmodel/harness"
@@ -39,11 +40,11 @@ import (
 
 func main() {
 	corpusPath := flag.String("corpus",
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/aisimulate_e2e.json", "")
+		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"), "")
 	scenarios := flag.String("scenarios",
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/aisimulate", "")
-	catalog := flag.String("catalog", "/Users/sri/Documents/Projects/blis-catalog", "")
-	registry := flag.String("registry", "/Users/sri/Documents/Projects/blis-registry", "")
+		kernelmodel.DefaultScenarios(), "")
+	catalog := flag.String("catalog", kernelmodel.DefaultCatalog(), "")
+	registry := flag.String("registry", kernelmodel.DefaultRegistry(), "")
 	framework := flag.String("framework", "vllm", "")
 	sessions := flag.Int("sessions", 40, "")
 	monotoneOnly := flag.Bool("monotone", true, "score only sweeps with a monotone measurement")

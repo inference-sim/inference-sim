@@ -36,6 +36,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -45,12 +46,12 @@ import (
 
 func main() {
 	corpusPath := flag.String("corpus",
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/aisimulate_e2e.json",
+		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"),
 		"the extracted AISimulate corpus")
 	scenarios := flag.String("scenarios",
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/aisimulate", "scenario directory")
-	catalog := flag.String("catalog", "/Users/sri/Documents/Projects/blis-catalog", "")
-	registry := flag.String("registry", "/Users/sri/Documents/Projects/blis-registry", "")
+		kernelmodel.DefaultScenarios(), "scenario directory")
+	catalog := flag.String("catalog", kernelmodel.DefaultCatalog(), "")
+	registry := flag.String("registry", kernelmodel.DefaultRegistry(), "")
 	sessions := flag.Int("sessions", 0, "floor on requests per point; 0 uses the harness's own budget")
 	warmup := flag.Float64("warmup", 0, "override the warm-up as a fraction; 0 uses 2 x concurrency")
 	seed := flag.Int64("seed", 42, "")

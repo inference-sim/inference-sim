@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 )
 
 // This file is the apples-to-apples guarantee, expressed as checks that fail when the
@@ -65,7 +68,10 @@ type errStat struct {
 }
 
 // snapshotPath is the full published snapshot, beside the extracted corpus.
-const snapshotPath = kernelRepo + "/testdata/measurements/aisimulate_summary.json"
+// A var rather than a const: resolved at run time from the vendored artifacts under
+// testdata/blis, or from BLIS_MEASUREMENTS.
+var snapshotPath = filepath.Join(
+	kernelmodel.DefaultMeasurements(), "aisimulate_summary.json")
 
 // loadSnapshot reads the nested published summary and its whole-snapshot shape error.
 func loadSnapshot(path string) (*snapshot, float64, error) {

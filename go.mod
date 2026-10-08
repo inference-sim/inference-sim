@@ -6,8 +6,8 @@ toolchain go1.24.4
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/inference-sim/blis-latency-kernel v0.0.0-20261006165710-bd743a633504
-	github.com/inference-sim/blis-schemas v0.0.0-20261005164647-f55991ca6989
+	github.com/inference-sim/blis-latency-kernel v0.0.0-20261008044115-545ac11b7954
+	github.com/inference-sim/blis-schemas v0.2.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.7.0

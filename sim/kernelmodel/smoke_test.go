@@ -10,19 +10,10 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-const (
-	kernelRepo = "/Users/sri/Documents/Projects/blis-latency-kernel"
-	catalog    = "/Users/sri/Documents/Projects/blis-catalog"
-	registry   = "/Users/sri/Documents/Projects/blis-registry"
-)
-
-func repos() Repos {
-	return Repos{
-		Scenarios: kernelRepo + "/testdata/aisimulate",
-		Catalog:   catalog,
-		Registry:  registry,
-	}
-}
+// Resolved at run time from the vendored artifacts under testdata/blis, or from the
+// BLIS_* environment overrides. Not consts: the resolvers are functions, and the point of
+// routing through them is that no path in this file names one developer's checkout.
+func repos() Repos { return DefaultRepos() }
 
 func open(t *testing.T, scenario string) *Model {
 	t.Helper()
@@ -48,7 +39,11 @@ func TestStepTimeIsTheKernelsOwnNumberInTicks(t *testing.T) {
 	for _, r := range batch {
 		b.Reqs = append(b.Reqs, shapeOf(r))
 	}
-	want := m.Kernel().StepTime(b).Expected.Microseconds()
+	// NoOverlap, matching the adapter. schemas v0.2.0 removed StepEstimate.Expected,
+	// which the kernel had set to NoOverlap from measured evidence; the adapter now names
+	// that edge directly. This test asserts the adapter forwards the kernel's answer
+	// unchanged, so it has to ask for the same edge.
+	want := m.Kernel().StepTime(b).NoOverlap.Microseconds()
 	if got != want {
 		t.Errorf("adapter returned %d ticks, the kernel says %d", got, want)
 	}
@@ -152,8 +147,10 @@ func TestPrefillAndDecodeArePricedByDifferentLaws(t *testing.T) {
 //
 // Asserted on the Overlap edge, where a per-stage max is taken over resources, because
 // that is where a dominant host term can hide the attention difference at all. The adapter
-// reads StepEstimate.Expected, which is NoOverlap and sums every resource, so the two
-// regimes do NOT coincide there and should not.
+// reads NoOverlap, which sums every resource, so the two regimes do NOT coincide there and
+// should not. (Before schemas v0.2.0 the adapter read StepEstimate.Expected, which the
+// kernel set to NoOverlap from measured evidence; the field is gone and the adapter names
+// the edge directly, so this paragraph describes the same two regimes it always did.)
 func TestTheMixerChoiceMovesTheStepOnlyWhereComputeBinds(t *testing.T) {
 	m := open(t, "glm-5-h200-fp8-sglang-tp8.yaml")
 	const prompt = 4096

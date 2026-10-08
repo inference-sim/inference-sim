@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim/latency"
+
 )
 
 // A scenario must not carry a batch setting that the deployment did not have.
@@ -23,7 +24,7 @@ import (
 func TestScenariosDoNotCarryGuessedBatchDefaults(t *testing.T) {
 	dir := os.Getenv("BLIS_SCENARIOS")
 	if dir == "" {
-		dir = "/Users/sri/Documents/Projects/blis-latency-kernel/testdata/aisimulate"
+		dir = DefaultScenarios()
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {

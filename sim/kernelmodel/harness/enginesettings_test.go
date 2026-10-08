@@ -1,8 +1,16 @@
 package harness
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
 
-const settingsPath = "/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/inferencex_engine_settings.json"
+	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+)
+
+// A var rather than a const: the path is resolved at run time from the vendored default or
+// an environment override, and a const cannot call a function.
+var settingsPath = filepath.Join(
+	kernelmodel.DefaultMeasurements(), "inferencex_engine_settings.json")
 
 // No scored vLLM point may be configured from a value this project invented. Each must be
 // either MEASURED from the run's own command line or RESOLVED as vLLM itself resolves it; the
@@ -21,7 +29,7 @@ func TestNoScoredVLLMPointUsesAnInventedSetting(t *testing.T) {
 		t.Skipf("engine settings unavailable: %v", err)
 	}
 	c, err := LoadCorpus(
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/aisimulate_e2e.json")
+		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"))
 	if err != nil {
 		t.Skip(err)
 	}
@@ -140,7 +148,7 @@ func TestMeasuredSettingsWinOverResolvedDefaults(t *testing.T) {
 		t.Skipf("engine settings unavailable: %v", err)
 	}
 	c, err := LoadCorpus(
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/aisimulate_e2e.json")
+		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"))
 	if err != nil {
 		t.Skip(err)
 	}
@@ -207,7 +215,7 @@ func TestWithoutASettingsFileAVLLMSweepStillResolves(t *testing.T) {
 // defaults, and substituting one engine's for another's would be a different deployment.
 func TestANonVLLMSweepDoesNotTakeVLLMDefaults(t *testing.T) {
 	c, err := LoadCorpus(
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/aisimulate_e2e.json")
+		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"))
 	if err != nil {
 		t.Skip(err)
 	}

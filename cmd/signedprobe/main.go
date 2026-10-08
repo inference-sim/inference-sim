@@ -21,8 +21,8 @@ import (
 func main() {
 	corpusPath := flag.String("corpus", "", "")
 	scenarios := flag.String("scenarios", "", "")
-	catalog := flag.String("catalog", "/Users/sri/Documents/Projects/blis-catalog", "")
-	registry := flag.String("registry", "/Users/sri/Documents/Projects/blis-registry", "")
+	catalog := flag.String("catalog", kernelmodel.DefaultCatalog(), "")
+	registry := flag.String("registry", kernelmodel.DefaultRegistry(), "")
 	absolutes := flag.String("absolutes", "", "")
 	settings := flag.String("engine-settings", "", "")
 	tier := flag.String("config-tier", "",

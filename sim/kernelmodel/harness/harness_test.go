@@ -2,25 +2,21 @@ package harness
 
 import (
 	"math"
+	"path/filepath"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 )
 
-const (
-	kernelRepo = "/Users/sri/Documents/Projects/blis-latency-kernel"
-	catalog    = "/Users/sri/Documents/Projects/blis-catalog"
-	registry   = "/Users/sri/Documents/Projects/blis-registry"
-	corpusPath = kernelRepo + "/testdata/measurements/aisimulate_e2e.json"
-)
+// Resolved at run time from the vendored artifacts under testdata/blis, or from the
+// BLIS_* environment overrides. A var rather than a const because the resolvers are
+// functions; the point of routing through them is that no path here names one developer's
+// checkout.
+var corpusPath = filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json")
 
 func cfg() Config {
 	return Config{
-		Repos: kernelmodel.Repos{
-			Scenarios: kernelRepo + "/testdata/aisimulate",
-			Catalog:   catalog,
-			Registry:  registry,
-		},
+		Repos:            kernelmodel.DefaultRepos(),
 		Admission:        AdmissionKernelKV,
 		SessionsPerPoint: 24,
 		Seed:             42,

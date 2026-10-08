@@ -74,7 +74,9 @@ type KVBudget struct {
 // simulation that silently ran with no KV would produce a number, and that number would be
 // meaningless.
 func (m *Model) KVBudget() (KVBudget, error) {
-	pool := m.scenario.Pools[m.poolIndex]
+	// Pools moved to the Deployment in blis-schemas v0.2.0: the layout and its engine
+	// knobs are the tunable configuration, where the Scenario fixes the problem.
+	pool := m.deployment.Pools[m.poolIndex]
 	util := pool.Engine.GPUMemoryUtilization
 	if util <= 0 || util > 1 {
 		return KVBudget{}, fmt.Errorf(

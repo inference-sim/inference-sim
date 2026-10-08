@@ -38,6 +38,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -56,19 +57,19 @@ type arm struct {
 
 func main() {
 	corpusPath := flag.String("corpus",
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/aisimulate_e2e.json",
+		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"),
 		"the extracted AISimulate corpus")
 	scenarios := flag.String("scenarios",
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/aisimulate", "scenario directory")
-	catalog := flag.String("catalog", "/Users/sri/Documents/Projects/blis-catalog", "")
-	registry := flag.String("registry", "/Users/sri/Documents/Projects/blis-registry", "")
+		kernelmodel.DefaultScenarios(), "scenario directory")
+	catalog := flag.String("catalog", kernelmodel.DefaultCatalog(), "")
+	registry := flag.String("registry", kernelmodel.DefaultRegistry(), "")
 	hwConfig := flag.String("hardware-config", "hardware_config.json", "")
 	defaults := flag.String("defaults", "defaults.yaml", "")
 	settings := flag.String("engine-settings",
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/inferencex_engine_settings.json",
+		filepath.Join(kernelmodel.DefaultMeasurements(), "inferencex_engine_settings.json"),
 		"the settings each measured run was launched with; configures each point as the run was")
 	absolutes := flag.String("absolutes",
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/inferencex_absolutes.json",
+		filepath.Join(kernelmodel.DefaultMeasurements(), "inferencex_absolutes.json"),
 		"InferenceX absolute measured latencies; enables the mape column for simulated arms")
 	framework := flag.String("framework", "vllm",
 		"restrict to one framework; empty scores every framework, which only the published "+

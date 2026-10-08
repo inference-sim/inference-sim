@@ -14,6 +14,8 @@ github.com/inference-sim/blis-latency-kernel v0.0.0-20261003145215-0bbcb971ae7a 
 github.com/inference-sim/blis-latency-kernel v0.0.0-20261003145215-0bbcb971ae7a/go.mod h1:7S9/hL8IGIHAfPck0L7TnTKDmXc2If5t/psqGvBBzaU=
 github.com/inference-sim/blis-latency-kernel v0.0.0-20261006165710-bd743a633504 h1:5OZTKYcTVH+alX6D6KJUmHxWkTtKB2uP0hMijyYq9XA=
 github.com/inference-sim/blis-latency-kernel v0.0.0-20261006165710-bd743a633504/go.mod h1:TanRp6QY0Ae6Xun6KLqsfBeUWcfBoIZ6LKoMWae7b2Y=
+github.com/inference-sim/blis-latency-kernel v0.0.0-20261008044115-545ac11b7954 h1:jiTeZGTOz1mCk+/qhoXpa41GA9wvH6G1n22yeBYVjGE=
+github.com/inference-sim/blis-latency-kernel v0.0.0-20261008044115-545ac11b7954/go.mod h1:bfiOxwt4mF9RWk35dXXMHJeULbqdEirvyMdukVSyx0c=
 github.com/inference-sim/blis-schemas v0.0.0-20261001004101-d2993cfe976c h1:6EOG3mBgn77j8TnoMwpMv4ybSPTQCZ2FdMGGI5TK9D0=
 github.com/inference-sim/blis-schemas v0.0.0-20261001004101-d2993cfe976c/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
 github.com/inference-sim/blis-schemas v0.0.0-20261002000632-52dfe537d544 h1:EMEQh/keSO8lX1//ftN2GXmoLc1BWNHmpL/popuOioY=
@@ -24,6 +26,8 @@ github.com/inference-sim/blis-schemas v0.0.0-20261003144903-04672bc5153b h1:W+rj
 github.com/inference-sim/blis-schemas v0.0.0-20261003144903-04672bc5153b/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
 github.com/inference-sim/blis-schemas v0.0.0-20261005164647-f55991ca6989 h1:5AikBegqbrEk6Mhc10KDukI0Rdims5CIMp5W7sEiPtA=
 github.com/inference-sim/blis-schemas v0.0.0-20261005164647-f55991ca6989/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
+github.com/inference-sim/blis-schemas v0.2.0 h1:vCgqQuGZ5Wv+gGgpD5z/qppM/gCLcFqJ2f1TscUCVtM=
+github.com/inference-sim/blis-schemas v0.2.0/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=

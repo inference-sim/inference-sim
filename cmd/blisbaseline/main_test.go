@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+)
 
 func fp(v float64) *float64 { return &v }
 
@@ -50,7 +54,9 @@ func TestBatchAndContextDerivationMatchTheKernelScorer(t *testing.T) {
 // Both existing models must actually build from a committed catalog entry, or the baseline is
 // reporting nothing. Skips when the catalog is absent rather than passing vacuously.
 func TestBothBackendsBuildFromTheCatalog(t *testing.T) {
-	const catalog = "/Users/sri/Documents/Projects/blis-catalog"
+	// A var rather than a const: the resolver is a function, and routing through it is
+	// what keeps this test free of a hardcoded checkout path.
+	var catalog = kernelmodel.DefaultCatalog()
 	d := deployments["granite5-h200-tp8-measured.yaml"]
 	for _, backend := range []string{"roofline", "trained-physics"} {
 		m, err := build(catalog, d, backend)
@@ -70,7 +76,9 @@ func TestBothBackendsBuildFromTheCatalog(t *testing.T) {
 // Speculation is applied identically in both harnesses, or a speculative arm would be scored
 // on two different bases.
 func TestSpeculationDividesIdentically(t *testing.T) {
-	const catalog = "/Users/sri/Documents/Projects/blis-catalog"
+	// A var rather than a const: the resolver is a function, and routing through it is
+	// what keeps this test free of a hardcoded checkout path.
+	var catalog = kernelmodel.DefaultCatalog()
 	m, err := build(catalog, deployments["granite5-h200-tp8-measured.yaml"], "roofline")
 	if err != nil {
 		t.Skipf("catalog unavailable: %v", err)
@@ -85,7 +93,9 @@ func TestSpeculationDividesIdentically(t *testing.T) {
 // The comparison this harness reports must stay true as the kernel changes. These pin the
 // three claims a reader would act on, computed from the same numbers the report prints.
 func TestTheReportedComparisonHolds(t *testing.T) {
-	const catalog = "/Users/sri/Documents/Projects/blis-catalog"
+	// A var rather than a const: the resolver is a function, and routing through it is
+	// what keeps this test free of a hardcoded checkout path.
+	var catalog = kernelmodel.DefaultCatalog()
 	if _, err := build(catalog, deployments["granite5-h200-tp8-measured.yaml"],
 		"roofline"); err != nil {
 		t.Skipf("catalog unavailable: %v", err)

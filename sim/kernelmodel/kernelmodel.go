@@ -41,6 +41,7 @@ import (
 	"github.com/inference-sim/blis-schemas/kernel"
 	"github.com/inference-sim/blis-schemas/rules"
 	"github.com/inference-sim/blis-schemas/spec/coefficient"
+	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"github.com/inference-sim/blis-schemas/spec/hardware"
 	"github.com/inference-sim/blis-schemas/spec/model"
 	"github.com/inference-sim/blis-schemas/spec/scenario"
@@ -73,7 +74,16 @@ type Model struct {
 
 	// Retained for KVBudget (capacity.go), which needs the engine settings and the chip's
 	// memory to turn the kernel's byte answers into a block count.
+	//
+	// Both documents are held because blis-schemas v0.2.0 splits them: a Scenario fixes
+	// the immutable problem (model, cluster inventory, engine version) and a Deployment
+	// carries the tunable layout (the pools, each with its own engine knobs). The engine
+	// settings KVBudget and Engine() read live on the Deployment's pool; the chip and
+	// cluster they are checked against live on the Scenario. Holding one and re-deriving
+	// the other would mean a caller could pair a deployment with a scenario it was not
+	// resolved against.
 	scenario      *scenario.Scenario
+	deployment    *deployment.Deployment
 	poolIndex     int
 	chipMemoryGiB float64
 	isMoE         bool
@@ -106,13 +116,13 @@ func Open(scenario string, r Repos) (*Model, error) {
 // prefill pool's parallelism, so a caller serving roles separately opens one model per
 // pool. Open is this function at pool 0, which is what a colocated scenario has.
 func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
-	sc, err := schemas.LoadScenario(filepath.Join(r.Scenarios, scenario))
+	sc, dep, err := loadBundle(filepath.Join(r.Scenarios, scenario))
 	if err != nil {
 		return nil, err
 	}
-	if poolIndex < 0 || poolIndex >= len(sc.Pools) {
-		return nil, fmt.Errorf("scenario %q states %d pool(s); pool %d was requested",
-			scenario, len(sc.Pools), poolIndex)
+	if poolIndex < 0 || poolIndex >= len(dep.Pools) {
+		return nil, fmt.Errorf("deployment %q states %d pool(s); pool %d was requested",
+			scenario, len(dep.Pools), poolIndex)
 	}
 	graph, err := schemas.LoadModelGraph(
 		filepath.Join(r.Catalog, "models", sc.Model, "graph.yaml"))
@@ -120,15 +130,15 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
 		return nil, fmt.Errorf("model %q: %w", sc.Model, err)
 	}
 	chip, err := schemas.LoadChip(
-		filepath.Join(r.Catalog, "hardware", sc.Hardware+".yaml"))
+		filepath.Join(r.Catalog, "hardware", sc.Cluster.Hardware+".yaml"))
 	if err != nil {
-		return nil, fmt.Errorf("hardware %q: %w", sc.Hardware, err)
+		return nil, fmt.Errorf("hardware %q: %w", sc.Cluster.Hardware, err)
 	}
 	var fabric *hardware.Fabric
-	if sc.Fabric != "" {
+	if sc.Cluster.Fabric != "" {
 		if fabric, err = schemas.LoadFabric(
-			filepath.Join(r.Catalog, "networks", sc.Fabric+".yaml")); err != nil {
-			return nil, fmt.Errorf("fabric %q: %w", sc.Fabric, err)
+			filepath.Join(r.Catalog, "networks", sc.Cluster.Fabric+".yaml")); err != nil {
+			return nil, fmt.Errorf("fabric %q: %w", sc.Cluster.Fabric, err)
 		}
 	}
 	sets := make([]*coefficient.Set, 0, len(sc.Coefficients))
@@ -151,7 +161,8 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
 			sc.EngineVersion, rules.Versions())
 	}
 	k, err := latencykernel.New(latencykernel.Inputs{
-		Scenario: sc, PoolIndex: poolIndex, Model: graph, Chip: chip, Fabric: fabric,
+		Scenario: sc, Deployment: dep, PoolIndex: poolIndex,
+		Model: graph, Chip: chip, Fabric: fabric,
 		Devices: devices, Coefficients: sets, Rules: pack,
 	})
 	if err != nil {
@@ -159,6 +170,7 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
 	}
 	m := New(k, chip.SMCount)
 	m.scenario = sc
+	m.deployment = dep
 	m.poolIndex = poolIndex
 	m.chipMemoryGiB = chip.MemoryGiB
 	m.isMoE = hasGroupedGEMM(graph)
@@ -243,9 +255,23 @@ func (m *Model) StepTime(batch []*sim.Request) int64 {
 	for _, req := range batch {
 		b.Reqs = append(b.Reqs, shapeOf(req))
 	}
+	// NoOverlap rather than Overlap, and this is a measured choice rather than a
+	// migration detail. schemas v0.2.0 removed StepEstimate.Expected, which the kernel
+	// had set from evidence so a caller wanting one number did not have to re-decide.
+	// The evidence it was set from, recorded in blis-registry's docs/band-selection.md
+	// and in the kernel's own StepTime comment: over 219 points of NVIDIA's FPM dataset
+	// spanning two models, two parts and five parallelism topologies, Overlap's signed
+	// error is -13.45% and NoOverlap's is -3.44%, and NoOverlap is closer on 158 of
+	// them. The physical reason is PIECEWISE cudagraph mode -- attention runs eagerly
+	// between captured segments, so per-layer overlap is structurally limited.
+	//
+	// The kernel's StepTime comment states the conclusion directly: "A caller that wants
+	// one figure should read NoOverlap." Reading Overlap here would silently under-price
+	// every simulated step by about ten points.
+	//
 	// max(1) upholds BLIS's postcondition without depending on a registry value staying
 	// non-zero. See the package comment.
-	return max(1, ticks(m.k.StepTime(b).Expected))
+	return max(1, ticks(m.k.StepTime(b).NoOverlap))
 }
 
 // QueueingTime is the host work before a request can be scheduled: tokenization and
@@ -308,19 +334,24 @@ func ticks(d interface{ Microseconds() int64 }) int64 { return d.Microseconds() 
 // admitting 512 sequences while the kernel priced a 256-sequence engine is not a
 // disagreement the numbers would reveal.
 //
-// It returns the scenario's own values rather than a copy with defaults filled in, and
+// It returns the deployment's own values rather than a copy with defaults filled in, and
 // errors when a value a simulator requires is absent, so a missing setting is a failure
 // rather than a silent zero.
-func (m *Model) Engine() (scenario.Engine, error) {
-	e := m.scenario.Pools[m.poolIndex].Engine
+//
+// The settings live on the DEPLOYMENT as of blis-schemas v0.2.0: engine knobs are tunable
+// configuration chosen against a scenario, not part of the immutable problem it states.
+// The error text says "deployment" for the same reason -- a reader told the scenario lacks
+// a block_size would look in the wrong document.
+func (m *Model) Engine() (deployment.Engine, error) {
+	e := m.deployment.Pools[m.poolIndex].Engine
 	if e.BlockSize <= 0 {
-		return e, fmt.Errorf("kernelmodel: scenario states no block_size")
+		return e, fmt.Errorf("kernelmodel: deployment states no block_size")
 	}
 	if e.MaxNumSeqs <= 0 {
-		return e, fmt.Errorf("kernelmodel: scenario states no max_num_seqs")
+		return e, fmt.Errorf("kernelmodel: deployment states no max_num_seqs")
 	}
 	if e.MaxNumBatchedTokens <= 0 {
-		return e, fmt.Errorf("kernelmodel: scenario states no max_num_batched_tokens")
+		return e, fmt.Errorf("kernelmodel: deployment states no max_num_batched_tokens")
 	}
 	return e, nil
 }
@@ -331,7 +362,7 @@ func (m *Model) Engine() (scenario.Engine, error) {
 // and KV budget, and splits requests disjointly across them. A single-instance simulator
 // modelling the aggregate must scale all three.
 func (m *Model) DataParallelWidth() int {
-	return m.scenario.Pools[m.poolIndex].Parallel.DP
+	return m.deployment.Pools[m.poolIndex].Parallel.DP
 }
 
 // StepEstimate exposes the kernel's full band for one batch: the overlap edge, the serialized
@@ -364,10 +395,14 @@ func (m *Model) StepEstimate(batch []*sim.Request) kernel.StepEstimate {
 //
 // Nothing here is a latency coefficient: this is deployment identity, not calibration.
 func (m *Model) Deployment() Deployment {
-	p := m.scenario.Pools[m.poolIndex]
+	// The layout comes from the Deployment and the identity from the Scenario, which is
+	// exactly the v0.2.0 split: what traffic runs on which hardware is the problem, how
+	// it is laid out is the choice. Both are the pair this model was opened from, so the
+	// arms cannot describe different deployments.
+	p := m.deployment.Pools[m.poolIndex]
 	return Deployment{
 		Model:          m.scenario.Model,
-		Hardware:       m.scenario.Hardware,
+		Hardware:       m.scenario.Cluster.Hardware,
 		TP:             p.Parallel.TP,
 		DP:             p.Parallel.DP,
 		ExpertParallel: p.Parallel.EnableExpertParallel,

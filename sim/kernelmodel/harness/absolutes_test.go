@@ -2,10 +2,13 @@ package harness
 
 import (
 	"math"
+	"path/filepath"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 )
 
-const absolutesPath = "/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/inferencex_absolutes.json"
+var absolutesPath = filepath.Join(kernelmodel.DefaultMeasurements(), "inferencex_absolutes.json")
 
 // The measured absolute curves must reproduce the artifact's own measured RELATIVES. This is the
 // check that the InferenceX rows loaded here are the same rows NVIDIA scored AISimulate against.
@@ -17,7 +20,7 @@ func TestAbsolutesReproduceTheArtifactsOwnRelatives(t *testing.T) {
 		t.Skipf("measured absolutes unavailable: %v", err)
 	}
 	c, err := LoadCorpus(
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/aisimulate_e2e.json")
+		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"))
 	if err != nil {
 		t.Skip(err)
 	}

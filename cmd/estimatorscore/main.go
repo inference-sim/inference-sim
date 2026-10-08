@@ -30,6 +30,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -42,12 +43,12 @@ var hopperChips = map[string]bool{"h100": true, "h200": true}
 
 func main() {
 	corpusPath := flag.String("corpus",
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/measurements/aisimulate_e2e.json",
+		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"),
 		"the extracted AISimulate corpus")
 	scenarios := flag.String("scenarios",
-		"/Users/sri/Documents/Projects/blis-latency-kernel/testdata/aisimulate", "scenario directory")
-	catalog := flag.String("catalog", "/Users/sri/Documents/Projects/blis-catalog", "")
-	registry := flag.String("registry", "/Users/sri/Documents/Projects/blis-registry", "")
+		kernelmodel.DefaultScenarios(), "scenario directory")
+	catalog := flag.String("catalog", kernelmodel.DefaultCatalog(), "")
+	registry := flag.String("registry", kernelmodel.DefaultRegistry(), "")
 	hwConfig := flag.String("hardware-config", "hardware_config.json",
 		"roofline/trained-physics hardware calibration")
 	defaults := flag.String("defaults", "defaults.yaml", "trained-physics coefficients")
