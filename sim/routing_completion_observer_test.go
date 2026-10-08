@@ -12,10 +12,14 @@ type completionEvent struct {
 	tick            int64
 }
 
-// Every built-in scorer leaves the completion hook unsubscribed, so the cluster's
-// OnRequestDone guard is unchanged for every existing configuration.
+// Every built-in scorer except lora-residency leaves the completion hook
+// unsubscribed, so the cluster's OnRequestDone guard is unchanged for every
+// configuration that does not name it.
 func TestRequestCompletionObserver_BuiltInsDoNotSubscribe(t *testing.T) {
 	for _, name := range ValidScorerNames() {
+		if name == "lora-residency" {
+			continue
+		}
 		t.Run(name, func(t *testing.T) {
 			p := NewRoutingPolicyWithCache("weighted", []ScorerConfig{{Name: name, Weight: 1}}, 16, nil, nil)
 			o, ok := p.(RequestCompletionObserver)
@@ -93,4 +97,18 @@ func TestRequestCompletionObserver_SharesScorerState(t *testing.T) {
 	assert.Equal(t, map[string]int{"a": 0, "b": 1}, inflight)
 	d3 := p.Route(&Request{ID: "r3"}, state)
 	assert.Equal(t, "a", d3.TargetInstance, "completion released a")
+}
+
+// lora-residency subscribes to both lifecycle events, through weighted and
+// route-to-holder alike.
+func TestLoRAResidencySubscribesToStartAndCompletion(t *testing.T) {
+	for _, pol := range []string{"weighted", "route-to-holder"} {
+		p := NewRoutingPolicyWithCache(pol, []ScorerConfig{{Name: "lora-residency", Weight: 1}}, 16, nil, nil)
+		c, ok := p.(RequestCompletionObserver)
+		require.True(t, ok, pol)
+		assert.True(t, c.ObservesRequestCompletion(), pol)
+		st, ok := p.(RequestStartObserver)
+		require.True(t, ok, pol)
+		assert.True(t, st.ObservesRequestStart(), pol)
+	}
 }
