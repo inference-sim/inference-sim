@@ -400,17 +400,7 @@ func TestReExport_DeltaLawIsExactInverseOfAccumulateGrowth(t *testing.T) {
 	// (or the reset marker on a compaction round). emitted_{k-1} is the growth law's own
 	// count — accumulatedOutputLen of the captured round — which is precisely what makes
 	// this the exact inverse.
-	gotAbs := make([]int, len(recs))
-	for i, rec := range recs {
-		switch {
-		case i == 0:
-			gotAbs[i] = rec.InputTokens
-		case rec.InputTokensReset != nil:
-			gotAbs[i] = int(*rec.InputTokensReset)
-		default:
-			gotAbs[i] = gotAbs[i-1] + accumulatedOutputLen(captured[i-1]) + rec.InputTokens
-		}
-	}
+	gotAbs := accumulateDeltaChainAbsolutes(recs, captured)
 	for i := range wantAbs {
 		if gotAbs[i] != wantAbs[i] {
 			t.Errorf("round %d: reconstructed absolute input = %d, want %d (delta law is not the exact inverse of the growth law)",
@@ -427,6 +417,231 @@ func TestReExport_DeltaLawIsExactInverseOfAccumulateGrowth(t *testing.T) {
 	for i, rec := range recs {
 		if rec.OutputTokens != len(captured[i].OutputTokens) {
 			t.Errorf("round %d: OutputTokens column = %d, want oracle %d", i, rec.OutputTokens, len(captured[i].OutputTokens))
+		}
+	}
+}
+
+// accumulateDeltaChainAbsolutes inverts the encoder's law over a re-exported accumulate
+// record set: abs_0 = delta_0; abs_k = abs_{k-1} + emitted_{k-1} + delta_k, or the reset
+// marker on a compaction round. emitted_{k-1} is the growth law's own count, which is
+// what makes the inversion exact rather than approximate.
+func accumulateDeltaChainAbsolutes(recs []TraceRecord, captured []*sim.Request) []int {
+	abs := make([]int, len(recs))
+	for i, rec := range recs {
+		switch {
+		case i == 0:
+			abs[i] = rec.InputTokens
+		case rec.InputTokensReset != nil:
+			abs[i] = int(*rec.InputTokensReset)
+		default:
+			abs[i] = abs[i-1] + accumulatedOutputLen(captured[i-1]) + rec.InputTokens
+		}
+	}
+	return abs
+}
+
+// TestReExport_DeltaLawInverse_ZeroOutputRound extends the #1630 round-trip law to the
+// boundary the multi-round inverse test above does not reach: a round whose oracle output
+// budget is ZERO, which completes at the end of prefill having emitted nothing.
+//
+// It is the one round shape where the #1893 adjustment must NOT fire. Everywhere else the
+// emitted count is the decode-step count plus the prefill-charged token #1; with an empty
+// OutputTokens there is no token #1 to charge, so EmittedOutputLen's `< len(OutputTokens)`
+// guard has to keep the count at 0 and the session buffer must grow by the new input
+// alone. Had the adjustment been written unconditionally, this round would claim one
+// phantom token, the re-exported delta for the FOLLOWING round would absorb it, and the
+// reconstruction below would drift from the absolutes the session actually ran.
+func TestReExport_DeltaLawInverse_ZeroOutputRound(t *testing.T) {
+	const (
+		rounds       = 3
+		newInputLen  = 10 // constantSampler in makeTestBlueprint
+		oracleOutLen = 5
+	)
+	bp := makeTestBlueprint("s-zero-out", rounds+1, 1000, "accumulate", 1_000_000)
+	// Round 2's output budget is 0 — the shape a trace carrying out_2: 0 replays as.
+	// Sample() is called once per follow-up generation, so values[k-1] is round k's budget.
+	bp.OutputSampler = &SequenceSampler{values: []int{oracleOutLen, 0, oracleOutLen}}
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req := &sim.Request{
+		ID: "request_0", SessionID: "s-zero-out", RoundIndex: 0,
+		State:         sim.StateCompleted,
+		InputTokens:   make([]sim.TokenID, 40),
+		OutputTokens:  make([]sim.TokenID, oracleOutLen),
+		ProgressIndex: 40 + oracleOutLen - 1, // fully generated
+	}
+	captured := []*sim.Request{req}
+	think := map[string]int64{}
+	for k := 1; k <= rounds; k++ {
+		follow := sm.OnComplete(req, int64(1000*k))
+		if len(follow) != 1 {
+			t.Fatalf("round %d: expected 1 follow-up, got %d", k, len(follow))
+		}
+		next := follow[0]
+		next.State = sim.StateCompleted
+		if len(next.OutputTokens) == 0 {
+			// Prefill-only round: no decode step runs, so it stops at InputLen.
+			next.ProgressIndex = next.InputLen()
+		} else {
+			next.ProgressIndex = int64(len(next.InputTokens) + len(next.OutputTokens) - 1)
+		}
+		think[next.ID] = 1000
+		captured = append(captured, next)
+		req = next
+	}
+
+	// The zero-output round must be in the corpus, or the test proves nothing.
+	zeroRound := -1
+	for i, r := range captured {
+		if len(r.OutputTokens) == 0 {
+			zeroRound = i
+		}
+	}
+	if zeroRound < 0 {
+		t.Fatalf("no zero-output round in the captured session: %d rounds", len(captured))
+	}
+	if got := accumulatedOutputLen(captured[zeroRound]); got != 0 {
+		t.Errorf("round %d emitted %d tokens on a zero output budget, want 0", zeroRound, got)
+	}
+	// The zero-output round grows the context by the new input alone — no phantom token.
+	wantZeroGrowth := int(captured[zeroRound].InputLen()) + newInputLen
+	if got := int(captured[zeroRound+1].InputLen()); got != wantZeroGrowth {
+		t.Errorf("round after the zero-output round ran at absolute input %d, want %d (context grew by a token the round never emitted)",
+			got, wantZeroGrowth)
+	}
+
+	wantAbs := make([]int, len(captured))
+	for i, r := range captured {
+		wantAbs[i] = int(r.InputLen())
+	}
+	recs, err := ReExportClosedLoopRecords(captured, think, "accumulate")
+	if err != nil {
+		t.Fatalf("ReExportClosedLoopRecords: %v", err)
+	}
+	if len(recs) != len(captured) {
+		t.Fatalf("re-exported %d records, want %d", len(recs), len(captured))
+	}
+	if recs[zeroRound].OutputTokens != 0 {
+		t.Errorf("zero-output round re-exported with OutputTokens = %d, want 0", recs[zeroRound].OutputTokens)
+	}
+	gotAbs := accumulateDeltaChainAbsolutes(recs, captured)
+	for i := range wantAbs {
+		if gotAbs[i] != wantAbs[i] {
+			t.Errorf("round %d: reconstructed absolute input = %d, want %d (delta law is not the exact inverse across a zero-output round)",
+				i, gotAbs[i], wantAbs[i])
+		}
+	}
+}
+
+// TestReExport_DeltaLawInverse_PreemptedRoundIsTransparent pins the other half of G5: a
+// round PREEMPTED mid-generation must reconstruct exactly like one that ran straight
+// through.
+//
+// Preemption (sim/batch_formation.go) rewinds ProgressIndex to 0 and the request
+// re-prefills and re-decodes from scratch, so by the time SessionManager.OnComplete sees
+// it the terminal ProgressIndex is the same InputLen + N − 1 an uninterrupted round
+// reaches. That is only safe because BOTH halves of the round-trip read a TERMINAL
+// quantity — EmittedOutputLen is derived at completion, never accumulated per step. This
+// is the workload-side counterpart of the deferral recordRequestCompletion documents
+// ("computed at completion time to avoid double-counting when a preempted request re-runs
+// from ProgressIndex=0"). Were either half to count decode steps as they happened, the
+// re-run steps would be counted twice and this session's delta chain would diverge from
+// the control session's.
+//
+// The rewind itself lives in package sim; what this test can hold is that driving a round
+// through the rewind changes neither the accumulate growth nor the re-exported records.
+func TestReExport_DeltaLawInverse_PreemptedRoundIsTransparent(t *testing.T) {
+	const (
+		rounds       = 3
+		oracleOutLen = 5 // constantSampler in makeTestBlueprint
+		preemptAt    = 2 // the round driven through a preemption rewind
+	)
+
+	// run drives an identical accumulate session; when preempt is set, round `preemptAt`
+	// walks the ProgressIndex trajectory a preemption produces — partway through decode,
+	// rewound to 0 on eviction, then re-prefilled and re-decoded to the same terminal
+	// index — instead of landing on that index directly. It returns the emitted count the
+	// law would have read at each point along the way, so the control and preempted runs
+	// can be shown to differ mid-flight and agree at completion.
+	run := func(t *testing.T, preempt bool) ([]TraceRecord, []*sim.Request, []int) {
+		t.Helper()
+		bp := makeTestBlueprint("s-preempt", rounds+1, 1000, "accumulate", 1_000_000)
+		sm := NewSessionManager([]SessionBlueprint{bp})
+		req := &sim.Request{
+			ID: "request_0", SessionID: "s-preempt", RoundIndex: 0,
+			State:         sim.StateCompleted,
+			InputTokens:   make([]sim.TokenID, 40),
+			OutputTokens:  make([]sim.TokenID, oracleOutLen),
+			ProgressIndex: 40 + oracleOutLen - 1,
+		}
+		captured := []*sim.Request{req}
+		think := map[string]int64{}
+		var preemptTrail []int
+		for k := 1; k <= rounds; k++ {
+			follow := sm.OnComplete(req, int64(1000*k))
+			if len(follow) != 1 {
+				t.Fatalf("round %d: expected 1 follow-up, got %d", k, len(follow))
+			}
+			next := follow[0]
+			terminal := int64(len(next.InputTokens) + len(next.OutputTokens) - 1)
+			trajectory := []int64{terminal}
+			if preempt && k == preemptAt {
+				trajectory = []int64{next.InputLen() + 2, 0, terminal}
+			}
+			for _, pi := range trajectory {
+				next.ProgressIndex = pi
+				if k == preemptAt {
+					preemptTrail = append(preemptTrail, accumulatedOutputLen(next))
+				}
+			}
+			next.State = sim.StateCompleted
+			think[next.ID] = 1000
+			captured = append(captured, next)
+			req = next
+		}
+		recs, err := ReExportClosedLoopRecords(captured, think, "accumulate")
+		if err != nil {
+			t.Fatalf("ReExportClosedLoopRecords: %v", err)
+		}
+		return recs, captured, preemptTrail
+	}
+
+	wantRecs, wantCaptured, wantTrail := run(t, false)
+	gotRecs, gotCaptured, gotTrail := run(t, true)
+
+	// Non-vacuity: the preempted round really did pass through states the control round
+	// never visited (3 tokens emitted, then 0 after the rewind), so the agreement below is
+	// a property of reading the TERMINAL index, not of the two runs being the same run.
+	if len(gotTrail) <= len(wantTrail) {
+		t.Fatalf("preempted round visited %d ProgressIndex states, control visited %d — the rewind was not exercised",
+			len(gotTrail), len(wantTrail))
+	}
+	if gotTrail[len(gotTrail)-1] != wantTrail[len(wantTrail)-1] {
+		t.Fatalf("preempted round completed with %d emitted tokens, control with %d", gotTrail[len(gotTrail)-1], wantTrail[len(wantTrail)-1])
+	}
+
+	// The preempted round's own emitted count, and therefore every later round's
+	// absolute input, is unchanged.
+	for i := range wantCaptured {
+		if gotCaptured[i].InputLen() != wantCaptured[i].InputLen() {
+			t.Errorf("round %d: preempted session ran at absolute input %d, want %d (preemption leaked into the accumulate growth law)",
+				i, gotCaptured[i].InputLen(), wantCaptured[i].InputLen())
+		}
+		if accumulatedOutputLen(gotCaptured[i]) != accumulatedOutputLen(wantCaptured[i]) {
+			t.Errorf("round %d: preempted session emitted %d tokens, want %d",
+				i, accumulatedOutputLen(gotCaptured[i]), accumulatedOutputLen(wantCaptured[i]))
+		}
+	}
+	// And the re-export is record-for-record identical, so the #1630 delta chain and the
+	// reconstruction it drives are preemption-transparent.
+	if !reflect.DeepEqual(gotRecs, wantRecs) {
+		t.Errorf("preempted session re-exported different records:\n got %+v\nwant %+v", gotRecs, wantRecs)
+	}
+	gotAbs := accumulateDeltaChainAbsolutes(gotRecs, gotCaptured)
+	for i, r := range gotCaptured {
+		if gotAbs[i] != int(r.InputLen()) {
+			t.Errorf("round %d: reconstructed absolute input = %d, want %d (delta law is not the exact inverse across a preempted round)",
+				i, gotAbs[i], int(r.InputLen()))
 		}
 	}
 }
