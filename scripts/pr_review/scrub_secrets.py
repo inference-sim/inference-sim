@@ -2,7 +2,7 @@
 """scrub_secrets.py — redact secret-shaped tokens from the review comment (stdin->stdout).
 
 Defence in depth, NOT the primary control: the real control is that the LiteLLM
-key never enters the reviewer's session (it lives in the sidecar). This is the
+key never enters the reviewer's session (it lives in the litellm-proxy). This is the
 last line in case a reviewer is coaxed into echoing a credential-shaped string it
 somehow obtained — it must never reach a public PR comment.
 
