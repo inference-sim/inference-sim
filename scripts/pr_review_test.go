@@ -372,14 +372,14 @@ func TestPrReviewKeyNeverInSession(t *testing.T) {
 	// The real LiteLLM key is a GitHub Actions secret used by the delivery loop;
 	// the external reviewer must NOT reference it — it uses the sidecar + a dummy.
 	if strings.Contains(wf, "secrets.LITELLM_API_KEY") {
-		t.Error("pr-review.yml must NOT reference secrets.LITELLM_API_KEY; the key lives in the sidecar")
+		t.Error("pr-review.yml must NOT reference secrets.LITELLM_API_KEY; the key lives in the litellm-proxy pod")
 	}
 	if !strings.Contains(wf, "Assert no LiteLLM key in the session") {
 		t.Error("pr-review.yml must assert at runtime that no real LiteLLM key is in the review job env")
 	}
-	// The LLM clients must point at the in-pod proxy.
+	// The LLM clients must point at the litellm-proxy Service.
 	if !strings.Contains(wf, "LLM_PROXY_URL") {
-		t.Error("pr-review.yml must route LLM calls through the sidecar proxy (LLM_PROXY_URL)")
+		t.Error("pr-review.yml must route LLM calls through the litellm-proxy (LLM_PROXY_URL)")
 	}
 }
 
@@ -413,13 +413,21 @@ func TestPrReviewSecondRoundHardening(t *testing.T) {
 			t.Errorf("pr-review.yml missing %q — %s", c.needle, c.why)
 		}
 	}
-	// The sidecar must bind loopback only (k8s manifest), not all interfaces.
+	// The untrusted runner must be egress-locked (k8s manifest). The proxy now
+	// lives in its OWN pod (so the per-pod NetworkPolicy can confine the runner
+	// tighter than the proxy), replacing the old loopback-bind invariant: the
+	// runner reaches the proxy by label and may not egress to the VPC or metadata.
 	runner := readFileOrFail(t, filepath.Join("..", "k8s", "pr-review-runner.yaml"))
-	if !strings.Contains(runner, "listen 127.0.0.1:4000") {
-		t.Error("the LiteLLM sidecar must listen on 127.0.0.1 only, not all interfaces")
+	hardening := []struct{ needle, why string }{
+		{"name: pr-review-runner-egress", "the runner must have a default-deny egress NetworkPolicy"},
+		{"app: litellm-proxy", "the runner must reach LiteLLM only via the separate litellm-proxy pod (by label)"},
+		{"169.254.0.0/16", "the runner egress must exclude the metadata endpoint"},
+		{"9.0.0.0/8", "the runner egress must exclude the IBM VPC (so it cannot reach LiteLLM directly)"},
 	}
-	if strings.Contains(runner, "listen 4000;") {
-		t.Error("the sidecar still binds all interfaces (listen 4000); must be 127.0.0.1:4000")
+	for _, c := range hardening {
+		if !strings.Contains(runner, c.needle) {
+			t.Errorf("pr-review-runner.yaml missing %q — %s", c.needle, c.why)
+		}
 	}
 }
 
