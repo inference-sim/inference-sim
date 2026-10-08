@@ -102,8 +102,14 @@ reviewer holds a shell on untrusted input, so a single workflow with a write-acc
   `litellm-proxy-egress` except-list too, not just the secret.
 - A cluster whose DNS Service ClusterIP is `172.21.0.10` (the default on this ROKS cluster, used by the
   proxy's nginx `resolver`). On a cluster with a different DNS IP, override the `LITELLM_RESOLVER` env
-  on the `litellm-proxy` container or nginx cannot resolve the upstream. The workflow is inert-but-safe
-  until these exist — it is maintainer-gated, so it cannot fire accidentally.
+  on the `litellm-proxy` container or nginx cannot resolve the upstream.
+- The standing namespace policy `allow-same-namespace` (an `Ingress` policy with `podSelector: {}`
+  that admits traffic from any pod in `blis`). The proxy's ingress reasoning assumes it: it is why
+  `litellm-proxy-ingress` is documented as recording intent rather than currently restricting callers.
+  If a fresh namespace lacks it, the new `litellm-proxy-ingress` policy instead makes the proxy
+  default-deny-ingress so ONLY the runner can reach `:4000` — stricter than described here, not weaker.
+  The workflow is inert-but-safe until these exist — it is maintainer-gated, so it cannot fire
+  accidentally.
 
 ## Residual risks we accept
 
