@@ -2146,21 +2146,26 @@ func TestDisaggregation_PD_SessionManager_ContextAccumulation(t *testing.T) {
 	}
 
 	// Context accumulation: round-1 input should include accumulated context from round-0.
-	// Round 0: input=50, actual output = PI - len(Input) = (50+20-1) - 50 = 19 tokens
-	// Accumulated context: 50 (round-0 input) + 19 (round-0 actual output) = 69
+	// Round 0: input=50, and it generated its full 20-token output — it ends at
+	// ProgressIndex = 50+20-1 = 69 because BLIS charges output token #1 to prefill
+	// completion, so the DECODE-STEP count is 19 while the EMITTED count is 20
+	// (sim.Request.EmittedOutputLen). The buffer grows by what the round emitted (#1893),
+	// so the accumulated context is 50 (round-0 input) + 20 (round-0 output) = 70.
 	// Round 1 new input: 50 (from constant sampler)
-	// Round 1 total input: 69 (context) + 50 (new) = 119
+	// Round 1 total input: 70 (context) + 50 (new) = 120
 	round1InputLen := len(round1Parent.OriginalRequest.InputTokens)
 	if round1InputLen <= round0InputLen {
 		t.Errorf("round-1 InputTokens length = %d, want > %d (context should have accumulated)",
 			round1InputLen, round0InputLen)
 	}
 
-	// Verify the exact accumulated length: context(69) + new_input(50) = 119
-	wantRound1InputLen := (round0InputLen + (round0OutputLen - 1)) + 50 // context + new_input
+	// Verify the exact accumulated length: context(70) + new_input(50) = 120.
+	// Pre-#1893 this read 119 — one token short, because the growth used the
+	// decode-step count instead of the emitted-token count.
+	wantRound1InputLen := (round0InputLen + round0OutputLen) + 50 // context + new_input
 	if round1InputLen != wantRound1InputLen {
 		t.Errorf("round-1 InputTokens length = %d, want %d (context=%d + new_input=50)",
-			round1InputLen, wantRound1InputLen, round0InputLen+(round0OutputLen-1))
+			round1InputLen, wantRound1InputLen, round0InputLen+round0OutputLen)
 	}
 
 	// All parents should have completed

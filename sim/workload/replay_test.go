@@ -1334,11 +1334,14 @@ func TestAccumulateReplay_TransitivityAndLengthCap(t *testing.T) {
 	t.Run("length-capped output", func(t *testing.T) {
 		round0, sm := mk()
 		round0.State = sim.StateCompleted
-		round0.ProgressIndex = int64(round0.InputLen()) + 5 // only 5 of the 10 output tokens generated
+		round0.ProgressIndex = int64(round0.InputLen()) + 5 // capped after 5 decode steps
 		round1 := next(sm, round0, 1_000_000)
-		// Appended segment tracks ACTUAL output, not the recorded count: 100 + 5 + 40 = 145.
-		if round1.InputLen() != 145 {
-			t.Errorf("length-capped round1 len = %d, want 145 (100 + actual-output 5 + delta 40)", round1.InputLen())
+		// Appended segment tracks the EMITTED output, not the recorded count: 5 decode
+		// steps plus the token charged to prefill completion = 6 tokens emitted of the 10
+		// budgeted, so 100 + 6 + 40 = 146. (Pre-#1893 this read 145, dropping the
+		// prefill-charged token — #1893.)
+		if round1.InputLen() != 146 {
+			t.Errorf("length-capped round1 len = %d, want 146 (100 + emitted-output 6 + delta 40)", round1.InputLen())
 		}
 	})
 }

@@ -1,10 +1,13 @@
 package workload
 
 import (
+	"bytes"
 	"math/rand"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
@@ -164,7 +167,7 @@ func TestSession_AccumulateContinuityGuard_RejectsShortSlice(t *testing.T) {
 }
 
 // TestSession_AccumulateOverCap_CancelsSession exercises the over-cap branch
-// of session.go's output accumulation: when actualOutputLen exceeds
+// of session.go's output accumulation: when the round's DECODE-STEP count exceeds
 // len(req.OutputTokens), the upstream ProgressIndex accounting has drifted.
 // The branch logs Error and cancels the session to contain the corruption
 // (susiejojo human review, #1445). A second OnComplete call confirms the
@@ -173,8 +176,10 @@ func TestSession_AccumulateOverCap_CancelsSession(t *testing.T) {
 	bp := makeTestBlueprint("sess-overcap", 3, 1000, "accumulate", 1_000_000)
 	sm := NewSessionManager([]SessionBlueprint{bp})
 
-	// actualOutputLen = max(ProgressIndex - InputLen, 0) = max(20 - 10, 0) = 10
-	// OutputTokens has only 5 → triggers the over-cap case (10 > 5).
+	// decode steps = ProgressIndex - InputLen = 20 - 10 = 10, but the oracle
+	// OutputTokens has only 5 → triggers the over-cap case (10 > 5). This is the
+	// shape #1657's speculative-decode overshoot produced before FormBatch capped
+	// the grant at the completion boundary.
 	req0 := &sim.Request{
 		ID: "r0", SessionID: "sess-overcap", RoundIndex: 0,
 		State:         sim.StateCompleted,
@@ -196,6 +201,157 @@ func TestSession_AccumulateOverCap_CancelsSession(t *testing.T) {
 	}
 	if follow := sm.OnComplete(req0Again, 6000); follow != nil {
 		t.Errorf("expected nil after session cancelled, got %d requests", len(follow))
+	}
+}
+
+// TestSession_AccumulateDecodeStepsEqualOracle_IsLegitimate pins the re-derived bound of
+// the over-cap corruption defence (#1893). The defence tests the raw decode-step count
+// against the oracle output length with a STRICT greater-than, because equality is a
+// legitimate shape: a PD 1-output decode sub-request starts at ProgressIndex == InputLen
+// and takes one step, landing at InputLen+1 with one oracle output token. A `>=` bound (or
+// a naive `ProgressIndex - InputLen + 1 > len(OutputTokens)` test) would cancel every such
+// session as corruption.
+func TestSession_AccumulateDecodeStepsEqualOracle_IsLegitimate(t *testing.T) {
+	bp := makeTestBlueprint("sess-pd-equality", 3, 1000, "accumulate", 1_000_000)
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	// PD decode sub-request shape: 1 oracle output token, ProgressIndex == InputLen+1,
+	// so decode steps (1) == len(OutputTokens) (1).
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "sess-pd-equality", RoundIndex: 0,
+		State:         sim.StateCompleted,
+		ProgressIndex: 11,
+		InputTokens:   make([]sim.TokenID, 10),
+		OutputTokens:  make([]sim.TokenID, 1),
+	}
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("decode steps == oracle must NOT cancel the session; got %d follow-ups, want 1", len(follow))
+	}
+	// Growth is the one token it emitted: 10 input + 1 output + 10 new input = 21.
+	if got := len(follow[0].InputTokens); got != 21 {
+		t.Errorf("round 1 InputLen = %d, want 21 (10 in + 1 emitted out + 10 new)", got)
+	}
+}
+
+// TestSession_AccumulateGrowsByEmittedOutput is the headline contract of #1893: an
+// accumulate round's context grows by the output tokens the round ACTUALLY EMITTED, which
+// is the decode-step count PLUS the token charged to prefill completion.
+//
+// Stated as a law over the real completion shape rather than a golden length: a
+// fully-generated round of N output tokens ends at ProgressIndex == InputLen+N-1 (BLIS
+// charges output token #1 to prefill), so round k's absolute input must be
+// abs_{k-1} + N_{k-1} + delta_k. Pre-#1893 the growth was the decode-step count, so each
+// round came out one token short and round k was low by k tokens — the compounding this
+// test's multi-round arm detects.
+func TestSession_AccumulateGrowsByEmittedOutput(t *testing.T) {
+	const (
+		inputLen  = 10 // constantSampler in makeTestBlueprint
+		outputLen = 5  // constantSampler in makeTestBlueprint
+		rounds    = 4
+	)
+	bp := makeTestBlueprint("sess-emitted-growth", rounds+1, 1000, "accumulate", 1_000_000)
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req := &sim.Request{
+		ID: "r0", SessionID: "sess-emitted-growth", RoundIndex: 0,
+		State: sim.StateCompleted,
+		// Fully-generated round 0: InputLen + outputLen - 1, the shape
+		// processCompletions actually produces (completionProgressIndex).
+		ProgressIndex: inputLen + outputLen - 1,
+		InputTokens:   make([]sim.TokenID, inputLen),
+		OutputTokens:  make([]sim.TokenID, outputLen),
+	}
+
+	wantAbs := inputLen
+	for k := 1; k <= rounds; k++ {
+		follow := sm.OnComplete(req, int64(1000*k))
+		if len(follow) != 1 {
+			t.Fatalf("round %d: expected 1 follow-up, got %d", k, len(follow))
+		}
+		next := follow[0]
+		// abs_k = abs_{k-1} + emitted output (the FULL oracle count, since the round
+		// generated all of it) + this round's fresh user turn.
+		wantAbs += outputLen + inputLen
+		if got := len(next.InputTokens); got != wantAbs {
+			t.Fatalf("round %d absolute input = %d, want %d (pre-#1893 shortfall would read %d)",
+				k, got, wantAbs, wantAbs-k)
+		}
+		next.State = sim.StateCompleted
+		next.ProgressIndex = int64(len(next.InputTokens) + len(next.OutputTokens) - 1)
+		req = next
+	}
+}
+
+// TestSession_AccumulateNormalRound_AppendsFullOutputVerbatim closes the second half of
+// the #1893 defect: pre-fix, `outTokens[:actualOutputLen]` truncated a NORMAL round's
+// output by one token (actualOutputLen was always one below the oracle), so the last
+// token the round generated never entered the conversation. A fully-generated round must
+// append its output tokens verbatim.
+func TestSession_AccumulateNormalRound_AppendsFullOutputVerbatim(t *testing.T) {
+	bp := makeTestBlueprint("sess-verbatim", 3, 1000, "accumulate", 1_000_000)
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	inputR0 := []sim.TokenID{1, 2, 3, 4}
+	outputR0 := []sim.TokenID{71, 72, 73}
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "sess-verbatim", RoundIndex: 0,
+		State:         sim.StateCompleted,
+		ProgressIndex: int64(len(inputR0) + len(outputR0) - 1), // fully generated
+		InputTokens:   inputR0,
+		OutputTokens:  outputR0,
+	}
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+	buf := follow[0].FullInputTokens()
+	// Layout: [r0 input (4) | r0 output (3) | new input (10)].
+	got := buf[len(inputR0) : len(inputR0)+len(outputR0)]
+	if !reflect.DeepEqual(got, outputR0) {
+		t.Errorf("accumulated output segment = %v, want %v verbatim (last token must not be dropped)", got, outputR0)
+	}
+}
+
+// TestSession_AccumulateCapLog_OnlyForGenuinelyCappedRounds pins the diagnostic half of
+// #1893: the "length-capped" debug log fired on EVERY normal round before the fix (the
+// growth count was always one below the oracle), so the message said a cap had truncated
+// output when nothing had. It must fire only when the round genuinely stopped short.
+func TestSession_AccumulateCapLog_OnlyForGenuinelyCappedRounds(t *testing.T) {
+	tests := []struct {
+		name          string
+		progressIndex int64
+		wantLog       bool
+	}{
+		// Fully generated: 10 input + 5 output ⇒ ProgressIndex 14. Emitted 5 of 5.
+		{name: "fully generated round does not log a cap", progressIndex: 14, wantLog: false},
+		// Stopped after 2 decode steps: emitted 3 of 5 — genuinely capped.
+		{name: "genuinely capped round logs the cap", progressIndex: 12, wantLog: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var logBuf bytes.Buffer
+			origOut, origLevel := logrus.StandardLogger().Out, logrus.GetLevel()
+			logrus.SetOutput(&logBuf)
+			logrus.SetLevel(logrus.DebugLevel)
+			t.Cleanup(func() { logrus.SetOutput(origOut); logrus.SetLevel(origLevel) })
+
+			bp := makeTestBlueprint("sess-cap-log", 3, 1000, "accumulate", 1_000_000)
+			sm := NewSessionManager([]SessionBlueprint{bp})
+			req0 := &sim.Request{
+				ID: "r0", SessionID: "sess-cap-log", RoundIndex: 0,
+				State:         sim.StateCompleted,
+				ProgressIndex: tc.progressIndex,
+				InputTokens:   make([]sim.TokenID, 10),
+				OutputTokens:  make([]sim.TokenID, 5),
+			}
+			if follow := sm.OnComplete(req0, 5000); len(follow) != 1 {
+				t.Fatalf("expected 1 follow-up, got %d", len(follow))
+			}
+			if got := strings.Contains(logBuf.String(), "length-capped"); got != tc.wantLog {
+				t.Errorf("length-capped log present = %v, want %v (log: %q)", got, tc.wantLog, logBuf.String())
+			}
+		})
 	}
 }
 
@@ -349,6 +505,14 @@ func TestSession_NonAccumulate_WithPrefix(t *testing.T) {
 // (i.e., round ≥ 1). An existing test covers this in round 0 (unseeded);
 // this test adds coverage for the post-seed path where the buffer is
 // already populated and the guard skips the output-append (MOD-R5-3, #1445).
+//
+// Since #1893 the only way to reach a zero emitted count on a COMPLETED round is a
+// round with no output budget at all: prefill completion itself emits output token #1,
+// so any round with a non-empty OutputTokens emitted at least one token even when it was
+// capped at the end of prefill. The round below therefore carries an empty OutputTokens
+// (a prefill-only round) rather than the pre-#1893 shape — ProgressIndex == InputLen
+// with a non-empty budget — which this test used to read as zero output and which
+// TestSession_AccumulateCappedAtPrefillEnd_AppendsOneToken now pins at one token.
 func TestSession_AccumulateZeroOutput_SeededRound(t *testing.T) {
 	bp := makeTestBlueprint("sess-zero-out-seeded", 3, 1000, "accumulate", 1_000_000)
 	sm := NewSessionManager([]SessionBlueprint{bp})
@@ -368,16 +532,16 @@ func TestSession_AccumulateZeroOutput_SeededRound(t *testing.T) {
 		t.Fatalf("round 1 InputLen = %d, want 25 (10 in + 5 out + 10 new)", len(r1.InputTokens))
 	}
 
-	// Round 1: present as a length-capped result with ZERO actual output
-	// (ProgressIndex == InputLen → actualOutputLen = max(0, 0) = 0). The
-	// guard `actualOutputLen > 0 && ...` must skip the output-append; only
-	// the new round's input gets appended.
+	// Round 1: a prefill-only round (no output budget at all), completing at
+	// ProgressIndex == InputLen with an empty OutputTokens → actualOutputLen = 0. The
+	// guard `actualOutputLen > 0 && len(req.OutputTokens) > 0` must skip the
+	// output-append; only the new round's input gets appended.
 	req1 := &sim.Request{
 		ID: "r1", SessionID: "sess-zero-out-seeded", RoundIndex: 1,
 		State:         sim.StateCompleted,
-		ProgressIndex: int64(len(r1.InputTokens)), // zero actual output
+		ProgressIndex: int64(len(r1.InputTokens)), // completes at the end of prefill
 		InputTokens:   r1.InputTokens,
-		OutputTokens:  r1.OutputTokens,
+		OutputTokens:  nil, // no output budget
 	}
 	follow2 := sm.OnComplete(req1, 10000)
 	if len(follow2) != 1 {
@@ -388,6 +552,33 @@ func TestSession_AccumulateZeroOutput_SeededRound(t *testing.T) {
 	// New input is 10 tokens. Round 2 InputLen = 25 + 0 + 10 = 35.
 	if len(r2.InputTokens) != 35 {
 		t.Fatalf("round 2 InputLen = %d, want 35 (25 buf + 0 out + 10 new)", len(r2.InputTokens))
+	}
+}
+
+// TestSession_AccumulateCappedAtPrefillEnd_AppendsOneToken covers the boundary the
+// pre-#1893 law got most visibly wrong: a round force-completed at the end of prefill,
+// before any decode step, still EMITTED output token #1 (BLIS charges it to prefill
+// completion). Its context must grow by that one token, where the decode-step count read
+// zero and dropped it entirely.
+func TestSession_AccumulateCappedAtPrefillEnd_AppendsOneToken(t *testing.T) {
+	bp := makeTestBlueprint("sess-prefill-end-cap", 4, 1000, "accumulate", 1_000_000)
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "sess-prefill-end-cap", RoundIndex: 0,
+		State:         sim.StateCompleted,
+		LengthCapped:  true,
+		ProgressIndex: 10, // == InputLen: prefill done, zero decode steps
+		InputTokens:   make([]sim.TokenID, 10),
+		OutputTokens:  make([]sim.TokenID, 5), // oracle budget never reached
+	}
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up (length-capped continues the session), got %d", len(follow))
+	}
+	// 10 input + 1 emitted output + 10 new input = 21 (pre-#1893: 20).
+	if got := len(follow[0].InputTokens); got != 21 {
+		t.Errorf("round 1 InputLen = %d, want 21 (10 in + 1 emitted out + 10 new)", got)
 	}
 }
 
