@@ -9,6 +9,7 @@ package scripts_test
 
 import (
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +19,58 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+// Minimal NetworkPolicy shape for parse-and-assert egress checks (refactor-proof:
+// asserts the except list on the actual :443 rule, not substring presence).
+type npParsed struct {
+	Kind     string `yaml:"kind"`
+	Metadata struct {
+		Name string `yaml:"name"`
+	} `yaml:"metadata"`
+	Spec struct {
+		PodSelector struct {
+			MatchLabels map[string]string `yaml:"matchLabels"`
+		} `yaml:"podSelector"`
+		Egress []struct {
+			To []struct {
+				PodSelector *struct {
+					MatchLabels map[string]string `yaml:"matchLabels"`
+				} `yaml:"podSelector"`
+				IPBlock *struct {
+					CIDR   string   `yaml:"cidr"`
+					Except []string `yaml:"except"`
+				} `yaml:"ipBlock"`
+			} `yaml:"to"`
+			Ports []struct {
+				Protocol string `yaml:"protocol"`
+				Port     int    `yaml:"port"`
+			} `yaml:"ports"`
+		} `yaml:"egress"`
+	} `yaml:"spec"`
+}
+
+// findNetworkPolicy decodes the multi-doc runner manifest and returns the
+// NetworkPolicy with the given name.
+func findNetworkPolicy(t *testing.T, name string) npParsed {
+	t.Helper()
+	data := readFileOrFail(t, filepath.Join("..", "k8s", "pr-review-runner.yaml"))
+	dec := yaml.NewDecoder(strings.NewReader(data))
+	for {
+		var np npParsed
+		err := dec.Decode(&np)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("decoding pr-review-runner.yaml: %v", err)
+		}
+		if np.Kind == "NetworkPolicy" && np.Metadata.Name == name {
+			return np
+		}
+	}
+	t.Fatalf("NetworkPolicy %q not found in pr-review-runner.yaml", name)
+	return npParsed{}
+}
 
 func prReviewWorkflowPath() string {
 	return filepath.Join("..", ".github", "workflows", "pr-review.yml")
@@ -415,20 +468,63 @@ func TestPrReviewSecondRoundHardening(t *testing.T) {
 	}
 	// The untrusted runner must be egress-locked (k8s manifest). The proxy now
 	// lives in its OWN pod (so the per-pod NetworkPolicy can confine the runner
-	// tighter than the proxy), replacing the old loopback-bind invariant: the
-	// runner reaches the proxy by label and may not egress to the VPC or metadata.
-	runner := readFileOrFail(t, filepath.Join("..", "k8s", "pr-review-runner.yaml"))
-	hardening := []struct{ needle, why string }{
-		{"name: pr-review-runner-egress", "the runner must have a default-deny egress NetworkPolicy"},
-		{"app: litellm-proxy", "the runner must reach LiteLLM only via the separate litellm-proxy pod (by label)"},
-		{"169.254.0.0/16", "the runner egress must exclude the metadata endpoint"},
-		{"9.0.0.0/8", "the runner egress must exclude the IBM VPC (so it cannot reach LiteLLM directly)"},
+	// tighter than the proxy), replacing the old loopback-bind invariant. Parse
+	// the policy and assert the actual rules — NOT substring presence — so a
+	// refactor that moved an except CIDR onto the proxy's rule or into a comment
+	// would fail here.
+	np := findNetworkPolicy(t, "pr-review-runner-egress")
+	if got := np.Spec.PodSelector.MatchLabels["app"]; got != "github-runner-pr-review" {
+		t.Errorf("runner egress policy must select app=github-runner-pr-review, got %q", got)
 	}
-	for _, c := range hardening {
-		if !strings.Contains(runner, c.needle) {
-			t.Errorf("pr-review-runner.yaml missing %q — %s", c.needle, c.why)
+	// Find the :443 egress rule and assert its ipBlock excludes metadata + the VPC.
+	var except []string
+	var found443, proxyByLabel bool
+	for _, rule := range np.Spec.Egress {
+		has443, has4000 := false, false
+		for _, p := range rule.Ports {
+			if p.Port == 443 {
+				has443 = true
+			}
+			if p.Port == 4000 {
+				has4000 = true
+			}
+		}
+		if has443 {
+			found443 = true
+			for _, peer := range rule.To {
+				if peer.IPBlock != nil {
+					except = peer.IPBlock.Except
+				}
+			}
+		}
+		if has4000 {
+			for _, peer := range rule.To {
+				if peer.PodSelector != nil && peer.PodSelector.MatchLabels["app"] == "litellm-proxy" {
+					proxyByLabel = true
+				}
+			}
 		}
 	}
+	if !found443 {
+		t.Fatal("runner egress policy has no :443 rule")
+	}
+	for _, cidr := range []string{"169.254.0.0/16", "9.0.0.0/8"} {
+		if !slicesContains(except, cidr) {
+			t.Errorf("runner :443 egress must except %s (metadata + IBM VPC must be unreachable); except=%v", cidr, except)
+		}
+	}
+	if !proxyByLabel {
+		t.Error("runner egress must allow :4000 to the litellm-proxy pod by label (app=litellm-proxy)")
+	}
+}
+
+func slicesContains(xs []string, want string) bool {
+	for _, x := range xs {
+		if x == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestAssembleCommentCapsOversizeBody(t *testing.T) {

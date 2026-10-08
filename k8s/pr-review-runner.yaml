@@ -31,9 +31,12 @@
 #      — so TODAY the proxy is a namespace-local LiteLLM relay, NOT caller-
 #      restricted. (The `litellm-proxy-ingress` policy records the runner-only
 #      target state but does not reduce reachability while that blanket policy
-#      stands — NetworkPolicies are additive.) Acceptable: PR content has no SA
-#      token (cannot create pods) and any blis workload can already read
-#      `nous-wiki-llm` directly.
+#      stands — NetworkPolicies are additive.) Why acceptable, two distinct
+#      threats: (a) the untrusted RUNNER can USE the proxy but cannot EXTRACT the
+#      key — it is injected outbound and never echoed back, and the runner has no
+#      SA token to read `nous-wiki-llm` directly either; (b) any OTHER blis pod
+#      reaching :4000 is a relay that grants nothing new — any blis workload with
+#      API access could already read `nous-wiki-llm` itself.
 #
 #   3. A DEFAULT-DENY EGRESS NetworkPolicy on each pod (vanilla k8s, no Calico /
 #      cluster-admin needed — see #1881). The runner may egress ONLY to DNS, the
@@ -82,8 +85,9 @@ data:
       # allow-same-namespace policy lets any blis pod reach :4000 today (the
       # litellm-proxy-ingress policy only records the runner-only target state).
       # The credential is safe anyway: it is injected outbound and never readable
-      # back, and any blis workload can already read nous-wiki-llm directly. See
-      # the header's point #2 for the full rationale.
+      # back, so a caller can USE the proxy but cannot EXTRACT the key (the
+      # untrusted runner has no SA token to read nous-wiki-llm directly either).
+      # See the header's point #2 for the full rationale.
       server_tokens off;
       listen 0.0.0.0:4000;
       # Re-resolve the LiteLLM hostname every 30s. A literal `proxy_pass host`
