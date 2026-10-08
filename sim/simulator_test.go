@@ -1833,9 +1833,22 @@ func TestSimulator_RuntimeLengthCap_E2E(t *testing.T) {
 	if sim.Metrics.TotalOutputTokens == 0 {
 		t.Error("TotalOutputTokens = 0, want > 0 (some decode work should have happened)")
 	}
-	// Regression anchor: proactive cap stops at MaxModelLen(100)-1-input(50) = 49 decode tokens + 1 prefill-generated = 50
+	// Regression anchor: proactive cap stops at MaxModelLen(100)-1-input(50) = 49 decode tokens
+	// + 1 prefill-generated = 50 — vLLM's check_stop count, MaxModelLen - input (#1891).
 	if sim.Metrics.TotalOutputTokens != 50 {
 		t.Errorf("TotalOutputTokens = %d, want 50 (regression anchor)", sim.Metrics.TotalOutputTokens)
+	}
+	// BC-2 (#1891): the reported mean ITL is the decode-interval sum over the emitted
+	// token count minus one — the same law the normal completion path applies — computed
+	// here from the request's own ITL entries rather than from a pinned value.
+	var itlSum int64
+	for _, v := range req.ITL {
+		itlSum += v
+	}
+	wantITL := float64(itlSum) / float64(sim.Metrics.TotalOutputTokens-1)
+	if got := sim.Metrics.RequestITLs[req.ID]; got != wantITL {
+		t.Errorf("RequestITLs = %f, want %f (itlSum %d / (emitted %d - 1))",
+			got, wantITL, itlSum, sim.Metrics.TotalOutputTokens)
 	}
 	// KV blocks released
 	if sim.KVCache.UsedBlocks() != 0 {
@@ -2690,8 +2703,10 @@ func TestProcessCompletions_LengthCapped_MetricsRefreshed(t *testing.T) {
 	}
 }
 
-// TestRecordRequestCompletion_LengthCapped_ITL verifies BC-8:
-// Length-capped request uses len(req.ITL)-1 as ITL denominator.
+// TestRecordRequestCompletion_LengthCapped_ITL verifies BC-8: a length-capped request's
+// ITL denominator comes from the output tokens it actually emitted, never from the oracle
+// len(req.OutputTokens) — which a length cap never reaches (#588), nor from len(req.ITL),
+// which counts decode steps and is one short of the token count (#1891).
 func TestRecordRequestCompletion_LengthCapped_ITL(t *testing.T) {
 	cfg := SimConfig{
 		Horizon:             1_000_000,
@@ -2703,13 +2718,16 @@ func TestRecordRequestCompletion_LengthCapped_ITL(t *testing.T) {
 	}
 	sim := mustNewSimulator(t, cfg)
 
-	// 200 pre-determined output tokens, but only 3 actual decode steps (ITL entries)
+	// 200 pre-determined output tokens, but the request was stopped after 3 decode steps:
+	// ProgressIndex = 50+3 = 53, so it emitted 4 tokens (1 charged to prefill + 3 decode),
+	// one ITL entry per decode step.
 	req := &Request{
 		ID:             "capped_itl",
 		InputTokens:    make([]TokenID, 50),
 		OutputTokens:   make([]TokenID, 200),
 		State:          StateCompleted,
 		LengthCapped:   true,
+		ProgressIndex:  53,
 		ArrivalTime:    0,
 		FirstTokenTime: 10000,
 		ITL:            []int64{5000, 5000, 5000}, // 3 intervals, sum=15000
@@ -2718,10 +2736,14 @@ func TestRecordRequestCompletion_LengthCapped_ITL(t *testing.T) {
 
 	sim.recordRequestCompletion(req)
 
-	// denominator = max(len(ITL)-1, 1) = max(3-1, 1) = 2 → avgITL = 15000/2 = 7500
+	// denominator = emitted-1 = 4-1 = 3 → avgITL = 15000/3 = 5000. Neither the oracle
+	// len(OutputTokens)-1 = 199 (75.4) nor the pre-#1891 len(ITL)-1 = 2 (7500).
 	gotITL := sim.Metrics.RequestITLs[req.ID]
-	if gotITL != 7500.0 {
-		t.Errorf("RequestITLs = %f, want 7500 (denom=max(len(ITL)-1,1)=2, not len(OutputTokens)-1=199)", gotITL)
+	if gotITL != 5000.0 {
+		t.Errorf("RequestITLs = %f, want 5000 (denom = emitted-1 = 3; not len(OutputTokens)-1=199, not len(ITL)-1=2)", gotITL)
+	}
+	if sim.Metrics.TotalOutputTokens != 4 {
+		t.Errorf("TotalOutputTokens = %d, want 4 (1 prefill-generated + 3 decode steps)", sim.Metrics.TotalOutputTokens)
 	}
 }
 
@@ -2755,6 +2777,156 @@ func TestRecordRequestCompletion_NormalRequest_ITL(t *testing.T) {
 	gotITL := sim.Metrics.RequestITLs[req.ID]
 	if gotITL != 5000.0 {
 		t.Errorf("RequestITLs = %f, want 5000", gotITL)
+	}
+}
+
+// TestLengthCap_VLLMParityOutputTokens verifies BC-1 (#1891): a length-capped request
+// emits exactly maxModelLen - input output tokens, and its sequence lands exactly ON the
+// context window rather than one token short of (or past) it.
+//
+// This is the vLLM check_stop law, not a golden value. BLIS's ProgressIndex is vLLM's
+// num_computed_tokens, which lags the generated-token count by exactly one — BLIS charges
+// output token #1 to prefill completion, just as vLLM's num_computed lags num_tokens by
+// the token the forward pass has just appended. So force-completing at
+// PI >= maxModelLen-1 IS vLLM's `num_tokens >= max_model_len`, and the emitted count is
+// maxModelLen - input. The assertions fail in both directions: dropping the
+// prefill-charged token (#1097) reads maxModelLen-input-1, and "fixing" the boundary to
+// PI >= maxModelLen reads maxModelLen-input+1 — a sequence one token past the window.
+func TestLengthCap_VLLMParityOutputTokens(t *testing.T) {
+	tests := []struct {
+		name        string
+		maxModelLen int64
+		inputLen    int64
+	}{
+		{"mid-window input", 100, 50},
+		{"single input token", 64, 1},
+		{"input one short of the window", 64, 63},
+		{"smallest window that admits a request", 2, 1},
+		{"odd window and input", 33, 17},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := SimConfig{
+				Horizon:             100_000_000,
+				Seed:                42,
+				KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+				BatchConfig:         NewBatchConfig(256, 2048, 0),
+				LatencyCoeffs:       NewLatencyCoeffs([]float64{6910, 17.67, 2.84}, []float64{0, 0, 0}),
+				ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", tc.maxModelLen),
+			}
+			s := mustNewSimulator(t, cfg)
+
+			// Assigned output reaches far past the window, so the length cap — not the
+			// oracle output length — is what stops this request.
+			req := &Request{
+				ID:           "capped",
+				InputTokens:  GenerateRandomTokenIDs(s.WorkloadRNG(), int(tc.inputLen)),
+				OutputTokens: GenerateRandomTokenIDs(s.WorkloadRNG(), int(tc.maxModelLen)*3),
+				ArrivalTime:  0,
+				State:        StateQueued,
+			}
+			s.InjectArrival(req)
+			s.Run()
+
+			if !req.LengthCapped || s.Metrics.LengthCappedRequests != 1 {
+				t.Fatalf("LengthCapped = %v, LengthCappedRequests = %d, want true/1 (request must stop at the window)",
+					req.LengthCapped, s.Metrics.LengthCappedRequests)
+			}
+			want := int(tc.maxModelLen - tc.inputLen)
+			if s.Metrics.TotalOutputTokens != want {
+				t.Errorf("TotalOutputTokens = %d, want %d (vLLM check_stop: maxModelLen(%d) - input(%d))",
+					s.Metrics.TotalOutputTokens, want, tc.maxModelLen, tc.inputLen)
+			}
+			// num_computed_tokens at the stop: vLLM's scheduler cap holds it at
+			// max_model_len-1, one behind the token count.
+			if req.ProgressIndex != tc.maxModelLen-1 {
+				t.Errorf("final ProgressIndex = %d, want %d (maxModelLen-1)", req.ProgressIndex, tc.maxModelLen-1)
+			}
+			// The context window is filled exactly, never overrun.
+			if seq := tc.inputLen + int64(s.Metrics.TotalOutputTokens); seq != tc.maxModelLen {
+				t.Errorf("final sequence length = %d, want %d (input + emitted must land ON the window)", seq, tc.maxModelLen)
+			}
+			assertINV1Conservation(t, s.Metrics, 1, "length-cap vLLM parity")
+		})
+	}
+}
+
+// TestRecordRequestCompletion_LengthCapped_ITLMatchesNormalPath verifies BC-2 (#1891):
+// the mean-ITL (TPOT) denominator of a length-capped request is derived from the
+// output-token count it actually emitted (tokens-1), exactly as the normal completion
+// path uses len(OutputTokens)-1. Two requests that emitted the same number of output
+// tokens with the same per-step latencies must report the same mean ITL — being
+// length-capped cannot change a per-token average.
+//
+// Before #1891 the capped branch divided by max(len(req.ITL)-1, 1). len(req.ITL) counts
+// decode STEPS, which is already tokens-1 (the first token's latency is TTFT, not an ITL
+// entry), so that denominator was tokens-2: the metric was computed as if the request had
+// emitted one output token fewer than vLLM's maxModelLen - input.
+func TestRecordRequestCompletion_LengthCapped_ITLMatchesNormalPath(t *testing.T) {
+	const (
+		maxModelLen = int64(100)
+		inputLen    = int64(50)
+		stepITL     = int64(5000)
+	)
+	// A request stopped at the boundary has num_computed = maxModelLen-1 and emitted
+	// maxModelLen-inputLen tokens: one charged to prefill (its latency is TTFT) plus
+	// maxModelLen-1-inputLen decode steps, each contributing one ITL entry.
+	emitted := int(maxModelLen - inputLen)
+	itls := make([]int64, emitted-1)
+	for i := range itls {
+		itls[i] = stepITL
+	}
+
+	newSim := func() *Simulator {
+		return mustNewSimulator(t, SimConfig{
+			Horizon:             1_000_000,
+			Seed:                42,
+			KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+			BatchConfig:         NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
+			ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", maxModelLen),
+		})
+	}
+
+	record := func(req *Request) float64 {
+		s := newSim()
+		s.Metrics.Requests[req.ID] = NewRequestMetrics(req, 0)
+		s.recordRequestCompletion(req)
+		if s.Metrics.TotalOutputTokens != emitted {
+			t.Fatalf("%s: TotalOutputTokens = %d, want %d", req.ID, s.Metrics.TotalOutputTokens, emitted)
+		}
+		return s.Metrics.RequestITLs[req.ID]
+	}
+
+	// Length-capped: oracle output far past the window, stopped at num_computed = 99.
+	gotCapped := record(&Request{
+		ID:             "capped",
+		InputTokens:    make([]TokenID, inputLen),
+		OutputTokens:   make([]TokenID, 200),
+		ProgressIndex:  maxModelLen - 1,
+		State:          StateCompleted,
+		LengthCapped:   true,
+		FirstTokenTime: 10000,
+		ITL:            itls,
+	})
+	// Normal completion of the same number of output tokens with the same step latencies.
+	gotNormal := record(&Request{
+		ID:             "normal",
+		InputTokens:    make([]TokenID, inputLen),
+		OutputTokens:   make([]TokenID, emitted),
+		ProgressIndex:  inputLen + int64(emitted) - 1,
+		State:          StateCompleted,
+		FirstTokenTime: 10000,
+		ITL:            itls,
+	})
+
+	if gotCapped != gotNormal {
+		t.Errorf("RequestITLs capped = %f, normal = %f — must be equal (same emitted tokens, same step latencies)", gotCapped, gotNormal)
+	}
+	// Every step took stepITL, so the per-token mean is stepITL regardless of path.
+	if gotCapped != float64(stepITL) {
+		t.Errorf("RequestITLs[capped] = %f, want %d (itlSum/(emitted-1) = %d/%d)",
+			gotCapped, stepITL, stepITL*int64(emitted-1), emitted-1)
 	}
 }
 

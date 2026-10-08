@@ -45,7 +45,7 @@ Prefix caching is automatic when using the `weighted` routing policy. The defaul
     Both guards fire at enqueue time, before the request enters the wait queue.
 
 !!! info "Proactive MaxModelLen cap"
-    When `--max-model-len` is set, a three-part enforcement matches vLLM's scheduler semantics: (1) `FormBatch` proactively clamps token scheduling to `maxModelLen - 1 - ProgressIndex`, (2) `executeBatchStep` skips decode when no tokens are allocated, and (3) `processCompletions` force-completes requests at the `maxModelLen - 1` boundary. Output per length-capped request: `maxModelLen - 1 - inputLen` tokens.
+    When `--max-model-len` is set, a three-part enforcement matches vLLM's scheduler semantics: (1) `FormBatch` proactively clamps token scheduling to `maxModelLen - 1 - ProgressIndex`, (2) `executeBatchStep` skips decode when no tokens are allocated, and (3) `processCompletions` force-completes requests at the `maxModelLen - 1` boundary. Output per length-capped request: `maxModelLen - inputLen` tokens — `ProgressIndex` is BLIS's `num_computed_tokens` and lags the generated-token count by one (the first output token is charged to prefill), so stopping at `maxModelLen - 1` is exactly vLLM's `check_stop` (`num_tokens >= max_model_len`) and the boundary token is counted.
 
 Compute the minimum blocks needed for your workload:
 
