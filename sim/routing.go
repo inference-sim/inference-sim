@@ -179,6 +179,22 @@ type observerFunc func(req *Request, targetInstance string)
 // normal completion from a timeout.
 type completionObserverFunc func(req *Request, instanceID string, tick int64)
 
+// startObserverFunc is called when a request routed to an instance produces its
+// first output token there (see RequestStartObserver).
+type startObserverFunc func(req *Request, instanceID string, tick int64)
+
+// RequestStartObserver is an optional interface a RoutingPolicy implements to be
+// told when a request produces its first output token on an instance — the event
+// that fires the instance's Simulator.OnFirstToken, i.e. the end of its prefill.
+// A router learns of it from the first streamed chunk. It fires again when a
+// preemption re-prefills the request, so a subscriber must tolerate repeats. The
+// cluster invokes it at both instance wiring sites, only when ObservesRequestStart
+// reports true at cluster construction.
+type RequestStartObserver interface {
+	ObservesRequestStart() bool
+	OnRequestStart(req *Request, instanceID string, tick int64)
+}
+
 // RequestCompletionObserver is an optional interface a RoutingPolicy implements to be
 // told when a request reaches a terminal state on an instance — the same event that
 // fires the instance's Simulator.OnRequestDone (completed, length-capped, or timed
@@ -220,9 +236,10 @@ type WeightedScoring struct {
 	scorers   []scorerFunc
 	weights   []float64 // normalized to sum to 1.0
 	observers []observerFunc
-	// completionObservers are fanned out by OnRequestCompletion, in scorer-config
-	// order. Empty for every built-in scorer today.
+	// completionObservers are fanned out by OnRequestCompletion, startObservers by
+	// OnRequestStart, in scorer-config order.
 	completionObservers []completionObserverFunc
+	startObservers      []startObserverFunc
 	rng                 *rand.Rand
 }
 
@@ -230,6 +247,20 @@ type WeightedScoring struct {
 // request-completion events (RequestCompletionObserver).
 func (ws *WeightedScoring) ObservesRequestCompletion() bool {
 	return len(ws.completionObservers) > 0
+}
+
+// ObservesRequestStart reports whether any configured scorer subscribed to
+// first-token events (RequestStartObserver).
+func (ws *WeightedScoring) ObservesRequestStart() bool {
+	return len(ws.startObservers) > 0
+}
+
+// OnRequestStart forwards a first-token event to every subscribed scorer
+// (RequestStartObserver).
+func (ws *WeightedScoring) OnRequestStart(req *Request, instanceID string, tick int64) {
+	for _, obs := range ws.startObservers {
+		obs(req, instanceID, tick)
+	}
 }
 
 // OnRequestCompletion forwards a terminal-request event to every subscribed scorer
@@ -367,6 +398,19 @@ func (r *RouteToHolder) ObservesRequestCompletion() bool {
 	return ok && o.ObservesRequestCompletion()
 }
 
+// ObservesRequestStart delegates to the inner policy (RequestStartObserver).
+func (r *RouteToHolder) ObservesRequestStart() bool {
+	o, ok := r.inner.(RequestStartObserver)
+	return ok && o.ObservesRequestStart()
+}
+
+// OnRequestStart delegates to the inner policy (RequestStartObserver).
+func (r *RouteToHolder) OnRequestStart(req *Request, instanceID string, tick int64) {
+	if o, ok := r.inner.(RequestStartObserver); ok {
+		o.OnRequestStart(req, instanceID, tick)
+	}
+}
+
 // OnRequestCompletion delegates to the inner policy (RequestCompletionObserver).
 func (r *RouteToHolder) OnRequestCompletion(req *Request, instanceID string, tick int64) {
 	if o, ok := r.inner.(RequestCompletionObserver); ok {
@@ -438,6 +482,7 @@ func newRoutingPolicyInternal(name string, scorerConfigs []ScorerConfig, blockSi
 		scorers := make([]scorerFunc, len(scorerConfigs))
 		var observers []observerFunc
 		var completionObservers []completionObserverFunc
+		var startObservers []startObserverFunc
 		for i, cfg := range scorerConfigs {
 			parts := newScorerParts(cfg.Name, int(blockSize), cacheFn)
 			scorers[i] = parts.score
@@ -447,10 +492,13 @@ func newRoutingPolicyInternal(name string, scorerConfigs []ScorerConfig, blockSi
 			if parts.onComplete != nil {
 				completionObservers = append(completionObservers, parts.onComplete)
 			}
+			if parts.onStart != nil {
+				startObservers = append(startObservers, parts.onStart)
+			}
 		}
 		weights := normalizeScorerWeights(scorerConfigs)
 		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers,
-			completionObservers: completionObservers, rng: rng}
+			completionObservers: completionObservers, startObservers: startObservers, rng: rng}
 	case "route-to-holder":
 		// D1 (#1490): strict LoRA-affinity routing. Delegates to an inner "weighted"
 		// policy built via the SAME canonical construction path (R4) — same

@@ -173,6 +173,11 @@ type Simulator struct {
 	// state (completed, length-capped, or timed out). Returns follow-up requests to inject.
 	// Set by the caller (cmd/root.go or ClusterSimulator). Nil = no callback.
 	OnRequestDone func(req *Request, tick int64) []*Request
+	// OnFirstToken is an optional callback invoked when a request's prefill
+	// completes and its first output token is produced, at that token's time. It
+	// fires again after a preemption re-prefills the request. Set by
+	// ClusterSimulator. Nil = no callback.
+	OnFirstToken func(req *Request, tick int64)
 
 	progressHook               ProgressHook
 	simClockProgressIntervalUs int64
@@ -1435,6 +1440,9 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
 			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)
+			if sim.OnFirstToken != nil {
+				sim.OnFirstToken(req, req.ArrivalTime+req.FirstTokenTime)
+			}
 		}
 	}
 

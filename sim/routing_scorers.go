@@ -170,6 +170,7 @@ type scorerParts struct {
 	score      scorerFunc
 	observe    observerFunc           // nil for stateless scorers
 	onComplete completionObserverFunc // nil unless the scorer tracks completions
+	onStart    startObserverFunc      // nil unless the scorer tracks first tokens
 }
 
 // scorerRegistry maps scorer names to their constructors. Unexported (R8) — all
@@ -213,6 +214,9 @@ func init() {
 	registerScorer("no-hit-lru", func(_ int, cacheFn cacheQueryFn) scorerParts {
 		score, observe := newNoHitLRUScorer(cacheFn)
 		return scorerParts{score: score, observe: observe}
+	})
+	registerScorer("lora-residency", func(_ int, _ cacheQueryFn) scorerParts {
+		return newLoRAResidencyScorer()
 	})
 	// Stateless scorers.
 	registerScorer("queue-depth", stateless(scoreQueueDepth))

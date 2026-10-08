@@ -97,6 +97,9 @@ type ClusterSimulator struct {
 	// events (sim.RequestCompletionObserver), collected once at construction; nil
 	// when no configured scorer subscribes. Read by wireOnRequestDone.
 	completionObservers []sim.RequestCompletionObserver
+	// startObservers are the routing policies subscribed to first-token events
+	// (sim.RequestStartObserver); nil when none does. Read by wireOnFirstToken.
+	startObservers []sim.RequestStartObserver
 
 	// E/P/D disaggregation state (GAP-4, issue #1264).
 	// encodeDecider is nil when --encode-instances == 0, which disables the encode stage.
@@ -708,6 +711,8 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	// the OnRequestDone guard below is unchanged unless a subscriber is configured.
 	cs.completionObservers = collectCompletionObservers(
 		cs.routingPolicy, cs.prefillRoutingPolicy, cs.decodeRoutingPolicy)
+	cs.startObservers = collectStartObservers(
+		cs.routingPolicy, cs.prefillRoutingPolicy, cs.decodeRoutingPolicy)
 
 	// Wire OnRequestDone callback on each instance (BC-9: follow-ups route through cluster pipeline).
 	// The callback pushes follow-up requests as ClusterArrivalEvents, ensuring they go through
@@ -716,6 +721,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	// Phase 1B-2a: also notify tenantTracker on completion when budgets are configured.
 	for _, inst := range cs.instances {
 		cs.wireOnRequestDone(inst)
+		cs.wireOnFirstToken(inst)
 	}
 
 	return cs
@@ -1304,6 +1310,38 @@ func (cs *ClusterSimulator) wireOnRequestDone(inst *InstanceSimulator) {
 	}
 }
 
+// wireOnFirstToken installs inst's first-token callback, fanning the event out to
+// the policies subscribed to it (cs.startObservers) with this instance's id. With
+// no subscriber inst.sim.OnFirstToken stays nil. Like wireOnRequestDone it is the
+// single wiring site for startup and live-added instances (R4).
+func (cs *ClusterSimulator) wireOnFirstToken(inst *InstanceSimulator) {
+	observers := cs.startObservers
+	if len(observers) == 0 {
+		return
+	}
+	instID := string(inst.ID())
+	inst.sim.OnFirstToken = func(req *sim.Request, tick int64) {
+		for _, obs := range observers {
+			obs.OnRequestStart(req, instID, tick)
+		}
+	}
+}
+
+// collectStartObservers returns, in argument order, the non-nil policies that
+// implement sim.RequestStartObserver and report a subscriber, or nil.
+func collectStartObservers(policies ...sim.RoutingPolicy) []sim.RequestStartObserver {
+	var out []sim.RequestStartObserver
+	for _, p := range policies {
+		if p == nil {
+			continue
+		}
+		if o, ok := p.(sim.RequestStartObserver); ok && o.ObservesRequestStart() {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
 // collectCompletionObservers returns, in argument order, the non-nil policies that
 // implement sim.RequestCompletionObserver and report a subscriber. Returns nil when
 // none does. The main, prefill and decode policies are distinct objects (each built
@@ -1371,9 +1409,10 @@ func (cs *ClusterSimulator) addLiveInstance(
 		cs.registerInstanceCacheQueryFn(id, inst)
 	}
 
-	// Wire OnRequestDone callback — the same helper as the startup path in
-	// NewClusterSimulator (R4).
+	// Wire OnRequestDone and OnFirstToken callbacks — the same helpers as the
+	// startup path in NewClusterSimulator (R4).
 	cs.wireOnRequestDone(inst)
+	cs.wireOnFirstToken(inst)
 
 	return true
 }
