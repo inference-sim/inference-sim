@@ -198,17 +198,26 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 	newInputTokens := sim.GenerateRandomTokenIDs(bp.RNG, inputLen)
 	outputTokens := sim.GenerateRandomTokenIDs(bp.RNG, outputLen)
 
-	// Context accumulation (BC-8): use ACTUAL generated output, not oracle OutputTokens.
-	// For length-capped requests, ProgressIndex - len(InputTokens) gives actual output count.
-	// A negative value is unreachable in normal flow (ProgressIndex always >= InputLen
-	// once prefill completes) but worth logging if it ever happens — it would indicate
-	// upstream accounting drift.
-	rawOutputLen := int(req.ProgressIndex) - int(req.InputLen())
-	if rawOutputLen < 0 {
+	// Context accumulation (BC-8): grow by the output the round ACTUALLY emitted, not the
+	// oracle OutputTokens budget. accumulatedOutputLen is the shared law
+	// (sim.Request.EmittedOutputLen) — the same count recordRequestCompletion reports and
+	// the exact inverse of the re-export delta law in reexport.go (#1630 round-trip).
+	//
+	// decodeSteps is ProgressIndex − InputLen, which is one FEWER than the emitted token
+	// count whenever the round stopped short of its oracle budget (output token #1 is
+	// charged to prefill completion). Using it as the growth amount made every accumulate
+	// round carry forward a context one token short, compounding across rounds (#1893);
+	// it survives here only as the raw diagnostic the two guards below are stated over.
+	//
+	// A negative decodeSteps is unreachable in normal flow (ProgressIndex always
+	// >= InputLen once prefill completes) but worth logging if it ever happens — it would
+	// indicate upstream accounting drift.
+	decodeSteps := int(req.ProgressIndex) - int(req.InputLen())
+	if decodeSteps < 0 {
 		logrus.Errorf("SessionManager.OnComplete: session %s round %d ProgressIndex=%d < InputLen=%d — clamping actualOutputLen to 0; upstream accounting drift",
 			req.SessionID, req.RoundIndex, req.ProgressIndex, req.InputLen())
 	}
-	actualOutputLen := max(rawOutputLen, 0)
+	actualOutputLen := accumulatedOutputLen(req)
 
 	var inputTokens []sim.TokenID
 	if bp.ContextGrowth == "accumulate" {
@@ -269,7 +278,7 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 			// round's encoded delta is 0, so it is an empty slice — the reset segment below
 			// replaces the whole buffer instead of appending it.
 			//
-			// The append branch's over-cap corruption defense (actualOutputLen >
+			// The append branch's over-cap corruption defense (decode steps >
 			// len(OutputTokens) => cancel session) is deliberately bypassed here: the reset
 			// discards the completed round's output entirely (it was folded into the recorded
 			// in_N), so ProgressIndex/actualOutputLen drift cannot propagate into the buffer.
@@ -281,18 +290,32 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 			if actualOutputLen > 0 && len(req.OutputTokens) > 0 {
 				outTokens := req.OutputTokens
 				switch {
-				case actualOutputLen > len(outTokens):
-					// Over-cap defense: ProgressIndex accounting should never produce
-					// an actualOutputLen exceeding the oracle output length. If it
+				case decodeSteps > len(outTokens):
+					// Over-cap defense: ProgressIndex accounting should never advance a
+					// request MORE decode steps than its oracle output length. If it
 					// does, cancel the session — the upstream computation has
 					// drifted and continuing would propagate the corruption to every
 					// subsequent round. Better to terminate one session loudly than
 					// silently corrupt many.
-					logrus.Errorf("SessionManager.OnComplete: session %s round %d actualOutputLen=%d > len(OutputTokens)=%d — cancelling session to contain corruption (ProgressIndex accounting drift)",
-						req.SessionID, req.RoundIndex, actualOutputLen, len(outTokens))
+					//
+					// The bound is stated over decodeSteps, not actualOutputLen (#1893):
+					// EmittedOutputLen clamps its result into [0, len(OutputTokens)], so
+					// actualOutputLen can no longer exceed the oracle and a test on it
+					// would be dead code. decodeSteps == len(outTokens) is LEGITIMATE (a
+					// PD 1-output decode sub-request lands exactly there), so the bound
+					// is strictly greater-than — which is precisely the condition #1657's
+					// speculative-decode overshoot produced, keeping this a genuine
+					// corruption detector (INV-11 evidence).
+					logrus.Errorf("SessionManager.OnComplete: session %s round %d decode steps=%d > len(OutputTokens)=%d — cancelling session to contain corruption (ProgressIndex accounting drift)",
+						req.SessionID, req.RoundIndex, decodeSteps, len(outTokens))
 					sess.state = sessionCancelled
 					return nil
 				case actualOutputLen < len(outTokens):
+					// Genuinely length-capped: the round stopped short of its oracle
+					// budget, so only what it emitted enters the buffer. Pre-#1893 this
+					// branch also fired on every NORMAL round (actualOutputLen was the
+					// decode-step count, always one below the budget), logging "length-capped"
+					// for rounds nothing had capped and truncating their output by a token.
 					outTokens = outTokens[:actualOutputLen]
 					logrus.Debugf("SessionManager.OnComplete: session %s round %d length-capped — accumulating %d/%d output tokens",
 						req.SessionID, req.RoundIndex, actualOutputLen, len(req.OutputTokens))

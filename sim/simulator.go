@@ -727,34 +727,21 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 
 	// Count output tokens at completion time (not inline per step) to avoid
 	// double-counting under preemption (ProgressIndex reset to 0 on eviction).
-	// PI - InputLen counts decode-step increments (= OutputLen - 1 for normal completion).
-	// Add 1 for the prefill-generated first token (#1097) when the decode-step count falls
-	// short of OutputLen. PD 1-output decode sub-requests are the exception: their PI_final
-	// lands at InputLen+1 (one step past the InputLen threshold), so the decode-step count
-	// == OutputLen already — the guard prevents double-counting in that case.
+	// Request.EmittedOutputLen holds the whole law — the #1097 prefill-charged token,
+	// the PD 1-output decode sub-request boundary, and the #1528 spec-decode overshoot
+	// clamp — and is the single source of truth (R23) shared with the workload package's
+	// accumulate growth / re-export delta laws (#1893).
 	//
-	// R23 (single source of truth): this is THE output-token count for the request, and
-	// every derived per-request metric below must read it rather than re-derive one. The
-	// length-capped mean-ITL denominator re-derived its own from len(req.ITL) and came out
-	// a token short of vLLM's maxModelLen-input (#1891).
-	outputTokens := int(req.ProgressIndex) - int(req.InputLen())
-	if outputTokens < len(req.OutputTokens) {
-		outputTokens++ // prefill-generated first token (vLLM parity)
-	}
-	// Speculative decoding / MTP overshoot clamp (#1528, BC-4): DEFENSE-IN-DEPTH.
-	// Since #1657, FormBatch caps each decode grant at the request's completion
-	// boundary, so a multi-token step no longer carries ProgressIndex past the target
-	// and this clamp is not expected to bind. It stays as a last line of defense for
-	// INV-1 conservation: a request must never count MORE output tokens than it was
-	// assigned, whatever a future step-sizing path does. No-op for g=1 (feature off).
-	// For a LENGTH-CAPPED request this clamp provably never binds: processCompletions
-	// reaches the cap branch only via its `else if` (not natural completion), so
-	// ProgressIndex-InputLen < len(OutputTokens) strictly, hence outputTokens == PI-InputLen+1
-	// — it can fire only on a non-capped spec-decode overshoot, which is what keeps the
-	// shared `outputTokens` safe for the length-capped denominator below.
-	if outputTokens > len(req.OutputTokens) {
-		outputTokens = len(req.OutputTokens)
-	}
+	// Every derived per-request metric below must read THIS value rather than re-derive
+	// one. The length-capped mean-ITL denominator re-derived its own from len(req.ITL)
+	// and came out a token short of vLLM's maxModelLen-input (#1891).
+	//
+	// For a LENGTH-CAPPED request the overshoot clamp provably never binds:
+	// processCompletions reaches the cap branch only via its `else if` (not natural
+	// completion), so ProgressIndex-InputLen < len(OutputTokens) strictly, hence
+	// outputTokens == PI-InputLen+1 — which is what keeps the shared `outputTokens`
+	// safe for the length-capped denominator below.
+	outputTokens := req.EmittedOutputLen()
 	if outputTokens > 0 {
 		sim.Metrics.TotalOutputTokens += outputTokens
 	}

@@ -102,14 +102,14 @@ func ReExportClosedLoopRecords(reqs []*sim.Request, thinkUsByReqID map[string]in
 				// The encoder's delta law is delta_k = abs_k − abs_{k-1} − prevOut, and it
 				// must be the EXACT inverse of the round's accumulate growth
 				// (abs_k = abs_{k-1} + actualOutput_{k-1} + delta_k, session.go). The buffer
-				// grows by actualOutputLen = ProgressIndex − InputLen (which can be < the oracle
-				// MaxOutputLen — e.g. the final decode token is not always counted, or a
-				// length-capped round), NOT len(OutputTokens). Feeding the oracle here would
-				// mis-derive every delta by (MaxOutputLen − actualOutput) and desync the
-				// reconstruction (issue #1630 round-trip). So feed actualOutputLen for the delta;
+				// grows by accumulatedOutputLen — the tokens the round actually EMITTED, which
+				// is below the oracle MaxOutputLen on a genuinely length-capped round — NOT by
+				// len(OutputTokens). Feeding the oracle here would mis-derive such a round's
+				// delta by (MaxOutputLen − emitted) and desync the reconstruction (issue #1630
+				// round-trip). Both sides call the one helper (#1893) so they cannot diverge;
 				// the emitted OutputTokens column is overwritten with the oracle MaxOutputLen
 				// below (re-replay's OutputSampler must drive the same completion → same
-				// actualOutput → exact abs).
+				// emitted count → exact abs).
 				rounds[i] = NormalizedRound{
 					InputTokensAbs: int(r.InputLen()),
 					OutputTokens:   accumulatedOutputLen(r),
@@ -204,16 +204,20 @@ func ReExportClosedLoopRecords(reqs []*sim.Request, thinkUsByReqID map[string]in
 }
 
 // accumulatedOutputLen returns the number of output tokens that actually grew the
-// session's accumulate buffer for this round — ProgressIndex − InputLen, clamped at 0 —
-// mirroring SessionManager.OnComplete's actualOutputLen. This (not len(OutputTokens),
-// the oracle budget) is the correct prevOut for the delta/reset law, so the re-derived
-// deltas are the exact inverse of the round's accumulate growth (#1630 round-trip).
+// session's accumulate buffer for this round. It is the SINGLE definition shared by both
+// halves of the round-trip — SessionManager.OnComplete's actualOutputLen (the growth law)
+// and the delta/reset derivation above (its inverse) — so the two cannot drift apart; the
+// delta law must be the exact inverse of the growth law or the #1630 reconstruction
+// desyncs, and before #1893 both sites independently spelled out an expression that was
+// one token short of what the round emitted.
+//
+// It is sim.Request.EmittedOutputLen, the engine-wide count (R23): ProgressIndex − InputLen
+// plus the prefill-charged output token #1 when the round stopped short of its oracle
+// budget, clamped into [0, len(OutputTokens)]. NOT len(OutputTokens) itself — feeding the
+// oracle budget here would mis-derive a genuinely length-capped round's delta by
+// (oracle − emitted).
 func accumulatedOutputLen(req *sim.Request) int {
-	ao := int(req.ProgressIndex) - int(req.InputLen())
-	if ao < 0 {
-		return 0
-	}
-	return ao
+	return req.EmittedOutputLen()
 }
 
 // copyReExportMetadata copies the per-request metadata that EncodeSessionToTraceRecords
