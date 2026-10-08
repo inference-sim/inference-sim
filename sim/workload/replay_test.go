@@ -1143,10 +1143,13 @@ func TestAccumulateReplay_StrictPrefixIdentity(t *testing.T) {
 	if round0.InputLen() != 100 {
 		t.Fatalf("round0 input len = %d, want 100", round0.InputLen())
 	}
-	// Simulate round 0 completing: mark completed with full output generated so
-	// ProgressIndex - InputLen == actual output (accumulate uses actual output).
+	// Simulate round 0 completing with its full 10-token output. A request that emitted
+	// N tokens lands at InputLen + N − 1, because output token #1 is charged to prefill
+	// completion rather than to a decode step (sim.Request.ProgressIndex); accumulate
+	// grows the context by EmittedOutputLen, which adds that token back, so the buffer
+	// below still gains the full 10.
 	round0.State = sim.StateCompleted
-	round0.ProgressIndex = int64(round0.InputLen()) + 10 // 10 output tokens generated
+	round0.ProgressIndex = int64(round0.InputLen()) + 10 - 1
 
 	// Capture round 0's input token IDs before follow-up assembly.
 	prefix := append([]sim.TokenID{}, round0.FullInputTokens()...)

@@ -548,8 +548,12 @@ func TestReExport_DeltaLawInverse_ZeroOutputRound(t *testing.T) {
 // re-run steps would be counted twice and this session's delta chain would diverge from
 // the control session's.
 //
-// The rewind itself lives in package sim; what this test can hold is that driving a round
-// through the rewind changes neither the accumulate growth nor the re-exported records.
+// The rewind itself lives in package sim, which this package cannot reach into, so the
+// trajectory below is walked by hand: what this test holds is that the LAW is blind to
+// it. The real path — a round genuinely evicted by batch formation under a tight KV
+// cache, rewound, re-prefilled and re-decoded — is driven end-to-end by
+// TestPreemption_AccumulateGrowthAndReExport_AreTransparent in sim/cluster, the one
+// package that can see both the simulator and the re-export.
 func TestReExport_DeltaLawInverse_PreemptedRoundIsTransparent(t *testing.T) {
 	const (
 		rounds       = 3
