@@ -113,3 +113,51 @@ func TestLoRAResidency_RejectedUnderDisaggregation(t *testing.T) {
 	assert.NotPanics(t, func() { NewClusterSimulator(dc, NewSliceRequestSource(nil), nil) })
 	assert.False(t, namesScorer("lora-residency", []sim.ScorerConfig{{Name: "queue-depth"}}, nil))
 }
+
+// lifecycleLog is a round-robin policy recording both lifecycle notifications,
+// in delivery order, with their ticks.
+type lifecycleLog struct {
+	inner sim.RoundRobin
+	kinds []string
+	ticks []int64
+}
+
+func (p *lifecycleLog) Route(req *sim.Request, s *sim.RouterState) sim.RoutingDecision {
+	return p.inner.Route(req, s)
+}
+func (p *lifecycleLog) ObservesRequestStart() bool      { return true }
+func (p *lifecycleLog) ObservesRequestCompletion() bool { return true }
+func (p *lifecycleLog) OnRequestStart(_ *sim.Request, _ string, tick int64) {
+	p.kinds, p.ticks = append(p.kinds, "start"), append(p.ticks, tick)
+}
+func (p *lifecycleLog) OnRequestCompletion(_ *sim.Request, _ string, tick int64) {
+	p.kinds, p.ticks = append(p.kinds, "done"), append(p.ticks, tick)
+}
+
+// Second review of PR #59: a 0- or 1-token request's first token and
+// completion come from the same prefill step, and the step reports completion
+// at its end while the first token carries the output-token processing time.
+// In a real run, the start must still be delivered first, and the completion
+// at the client-visible completion time.
+func TestLifecycleObservers_ShortRequestStartsBeforeItCompletes(t *testing.T) {
+	for _, outLen := range []int{0, 1, 5} { // 5: the response ends after its last token's processing
+		req := &sim.Request{ID: "short", State: sim.StateQueued, InputTokens: make([]sim.TokenID, 16),
+			OutputTokens: make([]sim.TokenID, outLen), MaxOutputLen: outLen}
+		cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource([]*sim.Request{req}), nil)
+		log := &lifecycleLog{}
+		cs.routingPolicy = log
+		cs.completionObservers = collectCompletionObservers(log)
+		cs.startObservers = collectStartObservers(log)
+		for _, inst := range cs.instances {
+			cs.wireOnRequestDone(inst)
+			cs.wireOnFirstToken(inst)
+		}
+		require.NoError(t, cs.Run())
+
+		require.Equal(t, []string{"start", "done"}, log.kinds, "output tokens %d", outLen)
+		completion, ok := cs.instances[0].sim.Metrics.RequestCompletionTimes["short"]
+		require.True(t, ok, "precondition: the request completed")
+		assert.LessOrEqual(t, log.ticks[0], log.ticks[1], "output tokens %d", outLen)
+		assert.Equal(t, int64(completion), log.ticks[1], "completion delivered at the client-visible time (output tokens %d)", outLen)
+	}
+}

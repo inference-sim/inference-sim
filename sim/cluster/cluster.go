@@ -1305,7 +1305,7 @@ func (cs *ClusterSimulator) wireOnRequestDone(inst *InstanceSimulator) {
 			cs.evictionTracker.Untrack(req.ID)
 		}
 		if len(observers) > 0 {
-			cs.notifyCompletion(req, instID, tick)
+			cs.notifyCompletion(req, instID, clientCompletionTick(inst.sim, req, tick))
 		}
 		if onRequestDone == nil {
 			return nil
@@ -1335,6 +1335,21 @@ func (cs *ClusterSimulator) wireOnFirstToken(inst *InstanceSimulator) {
 			}
 		})
 	}
+}
+
+// clientCompletionTick is when a client sees req end. The step reports
+// completion at its own end (tick), but the response ends after the last
+// token's processing time: RequestCompletionTimes, which recordRequestCompletion
+// sets before OnRequestDone fires, as ArrivalTime + FirstTokenTime + the
+// inter-token latencies, so never before the first token. For a 0- or 1-token
+// request, whose first token and completion come from the same step, reporting
+// completion at tick would deliver it before the first token. Requests that end
+// without completing (dropped, timed out) keep tick.
+func clientCompletionTick(s *sim.Simulator, req *sim.Request, tick int64) int64 {
+	if t, ok := s.Metrics.RequestCompletionTimes[req.ID]; ok && int64(t) > tick {
+		tick = int64(t)
+	}
+	return tick
 }
 
 // notifyCompletion tells the completion observers that req left instID at tick.
